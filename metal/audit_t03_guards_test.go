@@ -70,9 +70,9 @@ func TestPrefill_gptossFailsClosed(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	const path = "../decoder/testdata/gptoss_tiny.gguf"
-	// Loaded at int8int8 on the CPU and handed to buildResident directly, as tinyPrefillResident does: the resident
-	// re-quantizes to int4 (an int4 CPU load on arm64 keeps no canonical bytes for Metal).
-	m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
+	// Loaded at int4 with no Backend, which keeps the canonical int4 bytes Metal builds from (wantsCanonicalInt4), and
+	// handed to buildResident directly.
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load %s: %v", path, err)
 	}
@@ -109,7 +109,7 @@ func TestPrefill_gptossFailsClosed(t *testing.T) {
 // re-runs the prompt sequentially; finite logits pass.
 func TestPrefill_declinesNonFiniteLogits(t *testing.T) {
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
-	a := tinyPrefillResident(t, decoder.Options{Quant: "int8int8"}, 256)
+	a := tinyPrefillResident(t, decoder.Options{Quant: "int4"}, 256)
 	if _, err := a.PrefillLast(context.Background(), tinyEmbs(32), 0); err != nil {
 		t.Fatalf("the control declined: %v", err)
 	}

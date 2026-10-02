@@ -208,3 +208,10 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   - The 1.5B re-run on the steel build: 0 of 14,336,000 K/V elements and 0 of 151,936 logits differ at all seven
     sizes; appended to `docs/measurements/chunked-prefill-2026-09-27.md` with its log. `TestMC3Step_bitIdentical` and
     `TestSpecVerify_forwardNMatchesForward` also pass on the 1.5B through the restructured helpers.
+- 2026-10-01: the branch's tiny-fixture prefill tests (`TestPrefill_declinesNonFiniteLogits`, `TestPrefillFloor`,
+  `TestPrefill_gptossFailsClosed`) now load int4 rather than int8int8. Once `nativeInt8` is on (the int8 task's flip,
+  on main), an int8int8 load of the dense tiny fixture runs native int8 (every projection's columns divide by 4), and
+  batched prefill declines it before any of these guards is reached. A load with no Backend keeps canonical int4
+  (`wantsCanonicalInt4`), so int4 needs no re-quantization; the T0.3 comment that said otherwise is corrected. Main's
+  own `prefill_criticals_test.go` has the same dependency and is the flip's to fix. Each guard's mutation still fails
+  its test under int4 (1, 2 and 1 failures).

@@ -40,7 +40,7 @@ func TestPrefillFloor(t *testing.T) {
 		{"x", 0, 63, true}, // a value that does not parse leaves 64
 	} {
 		name := fmt.Sprintf("floor knob %q, startPos %d, M %d", c.knob, c.startPos, c.M)
-		a := tinyPrefillResident(t, decoder.Options{Quant: "int8int8",
+		a := tinyPrefillResident(t, decoder.Options{Quant: "int4",
 			Knobs: &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": c.knob}}, 2048)
 		// Nothing has written the cached prefix; zero it so an admitted call reads defined keys. The KV buffers are
 		// byte-sized, so Int8s is the view whose length matches them.
