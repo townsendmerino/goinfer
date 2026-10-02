@@ -145,6 +145,20 @@ spread to something one constant covers.
 Chapter 4 moves to the optimization that actually dominates: the cache that stops every token
 from redoing all the work of every token before it.
 
+
+## Try it
+
+With the 0.5B served as in the [README](./README.md), ask for one token and the model's top three candidates:
+
+```sh
+curl -s localhost:8080/v1/chat/completions -H 'content-type: application/json' -d '{"messages":[{"role":"user","content":"What is the capital of France? Answer in one word."}],"temperature":0,"max_tokens":1,"logprobs":true,"top_logprobs":3}'
+```
+
+`top_logprobs` holds natural-log probabilities from the model's own distribution, before any temperature. On an Apple
+Silicon CPU you should see `Paris` at 82.84% (e raised to its logprob), then `London` and `Br` near 2.3% each; on other
+hardware the last digits can differ. Divide the three logprobs by 0.2 and renormalise to see what a temperature of 0.2
+does to them. Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapter 3).
+
 ---
 
 *Sources: [`decoder/spec_optfwd.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/spec_optfwd.go), [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) (G26 ladder, sampler-share and crossover

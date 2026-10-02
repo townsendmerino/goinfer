@@ -12,6 +12,20 @@ concurrency with rollback.
 Each chapter ends with what the thing costs here, measured, with a pointer to the document
 that produced the number.
 
+Most chapters then end with **Try it**: one command you can run with the released binaries to see the chapter's
+number on your own machine. Download `goinfer-chat` and `goinfer-serve` for your platform from the
+[releases page](https://github.com/townsendmerino/goinfer/releases). The server-based ones assume the smallest model
+served on the CPU (an `hf:` reference is fetched on first use, about 0.5 GB):
+
+```sh
+goinfer-serve --model hf:Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF:q4_k_m --backend cpu
+```
+
+`goinfer-serve` listens on `localhost:8080`. Every figure a "Try it" quotes was measured with a release binary and
+is held to its record ([`docs/measurements/book-try-it-2026-10.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md))
+by the site's claims check, so it moves when the record does. Sizes and counts should match yours exactly; anything
+timed will not.
+
 | # | chapter | what it covers |
 |---|---|---|
 | 1 | [Text becomes numbers](./01-text-becomes-numbers.md) | Tokenization, and why vocabulary size reaches into the hot loop |

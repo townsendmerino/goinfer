@@ -187,6 +187,22 @@ The durable lesson: speculative decoding is not a speedup, it is a bet on α. Ev
 Chapter 10 goes down a level, to the kernels all of this runs on and the pure-Go constraint
 they operate under.
 
+
+## Try it
+
+Let the 0.5B draft for the 1.5B, greedy, on the CPU. `--draft` takes a file, so fetch the 0.5B first; `pull` prints
+where it saved it:
+
+```sh
+goinfer-chat pull Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF:q4_k_m
+echo "Write a Go function that reverses a string." | goinfer-chat --model hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m --draft <the path pull printed> --temp 0 --max 64 --backend cpu
+```
+
+The last line reads `[spec: 95% accepted, 4.6 tok/pass]` on an Apple Silicon CPU: four tokens proposed per pass, and
+on average 4.6 of a possible 5 kept, the drafted ones plus the one the target adds. Code this predictable is the
+drafter's best case; try a question with no single right answer and watch both numbers fall. The `tok/s` on the same
+line is your machine's. Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapter 9).
+
 ---
 
 *Sources: `docs/spec/00-core.md`, [`docs/spec/02-cache-ngram.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/02-cache-ngram.md), [`docs/spec/05-eagle3-head.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/05-eagle3-head.md),

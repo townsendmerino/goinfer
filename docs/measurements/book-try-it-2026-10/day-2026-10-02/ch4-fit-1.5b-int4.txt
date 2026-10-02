@@ -1,0 +1,6 @@
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf @ int4, ctx=8192 (read through its sidecar qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cpu-arm64.giw)
+
+cpu     RESIDENT
+        dense 0.93 GB + KV@8192 0.44 GB fits 4.06 GB free
+metal   RESIDENT
+        dense 0.93 GB + KV@8192 0.22 GB fits 4.07 GB free
