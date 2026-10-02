@@ -268,6 +268,31 @@
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
+    "name": "glm_ocr",
+    "model_types": [
+      "glm_ocr",
+      "glm_ocr_text"
+    ],
+    "display_name": "GLM-OCR",
+    "description": "Zhipu GLM-OCR text decoder (the VL wrapper's text_config): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; no vision tower yet",
+    "summary": "Zhipu's GLM-OCR document model, the text half only. It doesn't take images yet.",
+    "tasks": [
+      "chat"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "m-RoPE",
+    "norm": "RMSNorm, sandwich",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "gpt2",
     "model_types": [
       "gpt2"

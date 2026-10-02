@@ -16,6 +16,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | CPU |
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| GLM-OCR | ✅ | CPU | CPU | CPU |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 2 | ✅ | CPU | CPU | CPU |
