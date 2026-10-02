@@ -44,8 +44,8 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
   status column below says which. So far: F-G03 (the decode attention kernels tested past 4096 keys against a float64
   reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
   F-G01 (a default test of the steel prefill attention kernel against a float64 reference), A-G01 (the
-  fast-prefill floor), C-G01 (the load/Close leak test reads the device's own allocation total), and D-G02 (the
-  gated softmax layer's two kernels checked against the CPU).
+  fast-prefill floor), C-G01 (the load/Close leak test reads the device's own allocation total), D-G02 (the
+  gated softmax layer's two kernels checked against the CPU), and F-G04 (answered: where the verify gate went).
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
@@ -2509,6 +2509,13 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 #### F-G04. `cmd/gate gpu` and the vanished verify gate (Minor)
 
 - The v0.18.0 record shows the Metal device gate reporting 9 pass / 2 skip / 11 fail on a fresh worktree until three gitignored fixture directories were copied in (`c3-metal-consumer-window-v0.18.0.md:123-133`), and one memory-state-dependent failure (`TestDenseResidentParity`: "resident context 5689 positions exceeds this backend's hard ceiling of 4096", `:138-141`). Separately it records `TestBatchedVerifyKernelParity`, "the Metal decode==verify bit-identity gate", red since `26f64807` and blocking a release (`:185-238`). At HEAD `grep` finds that test name only in the doc; `bvk*` identifiers are gone from `metal/`. The record does not say it was fixed. Whether MC3's `mc3_step_test.go` (env-gated, F-G02) took over its role is not stated anywhere I read. `cmd/gate` is not in the snapshot.
+- **Status, 2026-10-01: answered.** `b51b846d` (2026-09-24) deleted the test together with the kernels it measured. The five
+  `gemv_w4a8_bvk_*` kernels of the batched-verify experiment (NO-GO, `docs/completed/task-metal-batched-verify-kernel.md`) were
+  never in `allKernels` or any dispatch path, so no production coverage went with them. The verify path that ships is another
+  one: `--spec ngram` verifies with ForwardN on the MC3 step kernels, and its decode-equals-verify gates are
+  `TestSpecVerify_forwardNMatchesForward` (logits and per-layer K/V, bit for bit) and `TestMC3Verify_sameSlotRowsBitIdentical`.
+  In that sense the MC3 tests took over the role. Both skip unless `GOINFER_METAL_MC3=1` and a real checkpoint are given, and
+  `cmd/gate` never sets that variable, so `gate gpu` does not run them; that is F-G02's gap.
 
 #### F-N01. `HiddenLast` evicts the bound slot's conversation (Minor)
 

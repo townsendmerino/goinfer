@@ -181,3 +181,9 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     interleaving (8608), no sigmoid (gate error 100) and the sigmoid's sign flipped (1) each fail.
   - The chain gate's comment said both kernels and the DeltaNet reset had no wiring; it now says where each is checked
     (the reset by the replay in `qwen35_resident_parity_test.go`).
+- 2026-10-01: **F-G04 answered** (no code). `TestBatchedVerifyKernelParity` was deleted with the kernels it measured in
+  `b51b846d` (2026-09-24): the batched-verify experiment's `gemv_w4a8_bvk_*` kernels were a NO-GO and never in
+  `allKernels` or a dispatch path. The shipped verify path (`--spec ngram`, ForwardN on the MC3 step kernels) is gated by
+  `TestSpecVerify_forwardNMatchesForward` and `TestMC3Verify_sameSlotRowsBitIdentical`, which need `GOINFER_METAL_MC3=1`
+  and a real checkpoint. `cmd/gate` never sets that variable, so `gate gpu` skips them: F-G02's gap, and the reason for
+  the two-slot fixture next.
