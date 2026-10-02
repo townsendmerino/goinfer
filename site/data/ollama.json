@@ -1,7 +1,7 @@
 {
- "snapshot": "docs/measurements/ollama-coverage-2026-09-30b.md",
- "read": "2026-09-30",
- "headline": "Of the 60 most-pulled models in Ollama's library on 2026-09-30, goinfer runs the families behind 92.4% of the pulls as Ollama ships them, and another 1.0% as text only.",
+ "snapshot": "docs/measurements/ollama-coverage-2026-10-02.md",
+ "read": "2026-10-02",
+ "headline": "Of the 60 most-pulled models in Ollama's library on 2026-10-02, goinfer runs the families behind 93.3% of the pulls as Ollama ships them, and another 1.0% as text only.",
  "rows": [
   {
    "rank": 1,
@@ -20,7 +20,7 @@
   {
    "rank": 2,
    "tag": "deepseek-r1",
-   "pulls_m": 93.3,
+   "pulls_m": 93.4,
    "ollama_caps": [
     "tools",
     "thinking"
@@ -38,7 +38,7 @@
   {
    "rank": 3,
    "tag": "nomic-embed-text",
-   "pulls_m": 87.6,
+   "pulls_m": 87.8,
    "ollama_caps": [
     "embedding"
    ],
@@ -66,7 +66,7 @@
   {
    "rank": 5,
    "tag": "qwen2.5",
-   "pulls_m": 41.4,
+   "pulls_m": 41.5,
    "ollama_caps": [
     "tools"
    ],
@@ -80,7 +80,7 @@
   {
    "rank": 6,
    "tag": "gemma3",
-   "pulls_m": 40.8,
+   "pulls_m": 40.9,
    "ollama_caps": [
     "vision"
    ],
@@ -94,7 +94,7 @@
   {
    "rank": 7,
    "tag": "qwen3",
-   "pulls_m": 38.5,
+   "pulls_m": 38.7,
    "ollama_caps": [
     "tools",
     "thinking"
@@ -108,6 +108,18 @@
   },
   {
    "rank": 8,
+   "tag": "gemma2",
+   "pulls_m": 33.9,
+   "ollama_caps": [],
+   "families": [
+    "gemma2"
+   ],
+   "note": "",
+   "unverified": false,
+   "needs": ""
+  },
+  {
+   "rank": 9,
    "tag": "mistral",
    "pulls_m": 33.8,
    "ollama_caps": [
@@ -121,21 +133,9 @@
    "needs": ""
   },
   {
-   "rank": 9,
-   "tag": "gemma2",
-   "pulls_m": 33.7,
-   "ollama_caps": [],
-   "families": [
-    "gemma2"
-   ],
-   "note": "",
-   "unverified": false,
-   "needs": ""
-  },
-  {
    "rank": 10,
    "tag": "gemma4",
-   "pulls_m": 26.1,
+   "pulls_m": 26.2,
    "ollama_caps": [
     "vision",
     "tools",
@@ -164,7 +164,7 @@
   {
    "rank": 12,
    "tag": "qwen2.5-coder",
-   "pulls_m": 21.9,
+   "pulls_m": 22.0,
    "ollama_caps": [
     "tools"
    ],
@@ -178,7 +178,7 @@
   {
    "rank": 13,
    "tag": "qwen3.5",
-   "pulls_m": 21.3,
+   "pulls_m": 21.4,
    "ollama_caps": [
     "vision",
     "tools",
@@ -207,7 +207,7 @@
   {
    "rank": 15,
    "tag": "mxbai-embed-large",
-   "pulls_m": 15.2,
+   "pulls_m": 15.3,
    "ollama_caps": [
     "embedding"
    ],
@@ -221,7 +221,7 @@
   {
    "rank": 16,
    "tag": "llava",
-   "pulls_m": 15.0,
+   "pulls_m": 15.1,
    "ollama_caps": [
     "vision"
    ],
@@ -248,7 +248,7 @@
   {
    "rank": 18,
    "tag": "qwen3-coder",
-   "pulls_m": 9.6,
+   "pulls_m": 9.7,
    "ollama_caps": [
     "tools"
    ],
@@ -283,6 +283,21 @@
   },
   {
    "rank": 21,
+   "tag": "glm-ocr",
+   "pulls_m": 7.8,
+   "ollama_caps": [
+    "vision",
+    "tools"
+   ],
+   "families": [
+    "glm_ocr"
+   ],
+   "note": "images from the safetensors checkpoint only (no GGUF); the vision tower runs on the CPU; tool calls are not rendered; parity tier experimental",
+   "unverified": false,
+   "needs": ""
+  },
+  {
+   "rank": 22,
    "tag": "phi4",
    "pulls_m": 7.7,
    "ollama_caps": [],
@@ -292,19 +307,6 @@
    "note": "Phi-4 uses the phi3 architecture",
    "unverified": false,
    "needs": ""
-  },
-  {
-   "rank": 22,
-   "tag": "glm-ocr",
-   "pulls_m": 7.7,
-   "ollama_caps": [
-    "vision",
-    "tools"
-   ],
-   "families": [],
-   "note": "",
-   "unverified": false,
-   "needs": "glm_ocr"
   },
   {
    "rank": 23,
@@ -321,7 +323,7 @@
   {
    "rank": 24,
    "tag": "bge-m3",
-   "pulls_m": 7.2,
+   "pulls_m": 7.3,
    "ollama_caps": [
     "embedding"
    ],
@@ -483,11 +485,13 @@
   },
   {
    "rank": 36,
-   "tag": "dolphin3",
-   "pulls_m": 4.1,
-   "ollama_caps": [],
+   "tag": "qwen3-embedding",
+   "pulls_m": 4.2,
+   "ollama_caps": [
+    "embedding"
+   ],
    "families": [
-    "llama"
+    "qwen3"
    ],
    "note": "",
    "unverified": false,
@@ -495,13 +499,11 @@
   },
   {
    "rank": 37,
-   "tag": "qwen3-embedding",
+   "tag": "dolphin3",
    "pulls_m": 4.1,
-   "ollama_caps": [
-    "embedding"
-   ],
+   "ollama_caps": [],
    "families": [
-    "qwen3"
+    "llama"
    ],
    "note": "",
    "unverified": false,
@@ -635,33 +637,8 @@
   },
   {
    "rank": 48,
-   "tag": "starcoder2",
-   "pulls_m": 3.0,
-   "ollama_caps": [],
-   "families": [],
-   "note": "",
-   "unverified": false,
-   "needs": "starcoder2"
-  },
-  {
-   "rank": 49,
-   "tag": "nemotron-3-super",
-   "pulls_m": 3.0,
-   "ollama_caps": [
-    "tools",
-    "thinking"
-   ],
-   "families": [
-    "nemotron_h"
-   ],
-   "note": "family matches; the Super MoE variant is unchecked",
-   "unverified": true,
-   "needs": ""
-  },
-  {
-   "rank": 50,
    "tag": "qwen3.8",
-   "pulls_m": 2.9,
+   "pulls_m": 3.0,
    "ollama_caps": [
     "vision",
     "tools",
@@ -673,6 +650,31 @@
    ],
    "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
    "unverified": false,
+   "needs": ""
+  },
+  {
+   "rank": 49,
+   "tag": "starcoder2",
+   "pulls_m": 3.0,
+   "ollama_caps": [],
+   "families": [],
+   "note": "",
+   "unverified": false,
+   "needs": "starcoder2"
+  },
+  {
+   "rank": 50,
+   "tag": "nemotron-3-super",
+   "pulls_m": 3.0,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "nemotron_h"
+   ],
+   "note": "family matches; the Super MoE variant is unchecked",
+   "unverified": true,
    "needs": ""
   },
   {
@@ -769,20 +771,6 @@
   },
   {
    "rank": 58,
-   "tag": "qwq",
-   "pulls_m": 2.3,
-   "ollama_caps": [
-    "tools"
-   ],
-   "families": [
-    "qwen2"
-   ],
-   "note": "",
-   "unverified": false,
-   "needs": ""
-  },
-  {
-   "rank": 59,
    "tag": "embeddinggemma",
    "pulls_m": 2.3,
    "ollama_caps": [
@@ -790,6 +778,20 @@
    ],
    "families": [
     "gemma3"
+   ],
+   "note": "",
+   "unverified": false,
+   "needs": ""
+  },
+  {
+   "rank": 59,
+   "tag": "qwq",
+   "pulls_m": 2.3,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "qwen2"
    ],
    "note": "",
    "unverified": false,

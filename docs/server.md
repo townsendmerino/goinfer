@@ -358,6 +358,17 @@ hardware; on plain AVX2 it measured a wash, which is why f32 stays the default.
 (needed for the resident GPU matmul weights); CUDA's resident tower measured 26.1 s
 against the same 41.3 s CPU baseline (1.58×, M-18).
 
+*Updated 2026-10-02 (O7 of `docs/tasks/task-glm-ocr-2026-10.md`): the families above are no longer the whole list. Two more read
+images on this route. **Qwen3.5+** (dense sizes, from safetensors; P8a) uses aikit's `Qwen3VisionEncoder`. **GLM-OCR** (a 0.9B
+document model; `model_type` `glm_ocr`) is auto-discovered from its checkpoint directory and uses aikit's own tower
+(`vision.GlmOcrVisionEncoder`, aikit v1.52.0), loaded on the first image. Unlike the rule in the previous paragraph, **GLM-OCR's
+tower is f32 on the CPU on every backend, and `--backend cuda`/`webgpu` do not force it to int8**: pass `-vision-quant int8` to
+choose it, since the int8 tower is not gated on the real checkpoint. Its decoder is CUDA-resident (int4; the pairwise rope
+kernels) and runs on the CPU on Metal and WebGPU. An image is at most 6,144 image tokens (about 4.8 megapixels) and there is no
+smaller default cap yet; one that does not fit the resolved context is refused with `image_too_large_for_context` before the tower
+runs. The CPU tower costs about 45 s for a 1,656-token page on this class of machine (exploratory, one rendered invoice). Structured
+extraction with `response_format` is described above; the measured accuracy is in `docs/measurements/glm-ocr-o5-2026-10/`.*
+
 ```bash
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it
 # then POST an image_url data: URI to /v1/chat/completions, or an image block to /v1/messages

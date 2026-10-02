@@ -1,13 +1,12 @@
 # Task: GLM-OCR — documents in, text and schema-bound JSON out (O0–O7) — 2026-10
 
-> **Status: O0, O1, O2, O3, O5 DONE (2026-10-01/02; goinfer commits local, nothing pushed).** Goinfer at f32 on the real checkpoint is
+> **Status: O0, O1, O2, O3, O5, O7 DONE (2026-10-01/02; goinfer commits local, nothing pushed).** Goinfer at f32 on the real checkpoint is
 > TOKEN-IDENTICAL to transformers 5.12.0 for 64/64 tokens on three rendered documents (O3); schema-constrained extraction works end to end:
 > `goinfer-chat --image invoice.png --schema invoice.schema.json` prints schema-valid JSON, and 15 rendered invoices read 383/397 fields
 > (96.5%) correctly at int4 on CUDA (O5). CUDA runs the whole thing resident (pairwise rope kernels, `a306d33e`); Metal and WebGPU decline it and
 > run it on the CPU. **aikit v1.52.0 is released (2026-10-02, with the GLM tower) and goinfer's five modules are pinned to it (`36aa0e73`), so root
-> builds `GOWORK=off`.** **Open: O4 (the pixel-cap default, an owner decision), O6 (Metal) and O7.** What still blocks a push: the site module's two
-> Ollama checks are red until O7's snapshot exists, and `origin/main` has moved (about 50 files, including `README.md`, `banner.go`, `assets.json`) so a merge
-> is due. O0's findings are in
+> builds `GOWORK=off`.** **Open: O4 (the pixel-cap default, an owner decision) and O6 (Metal).** The site's Ollama checks are green again (O7's new snapshot), and `origin/main` was merged
+> in on 2026-10-02 (`b57f9db0`); nothing is pushed. O0's findings are in
 > [§O0 results](#o0-results-2026-10-01), and the claims they overturned are corrected in place below, each marked
 > *Corrected 2026-10-01 (O0)*. The two that matter most: the pixel budget is half what §1 said (6,144 image tokens,
 > not ~12,000), and the tower is nearer aikit's Qwen3.5+ encoder than Qwen2.5-VL's. Everything after O0 is written to
@@ -522,6 +521,24 @@ demo and recomputed the accuracy table from the raw results file; both matched t
   `TestCheckOllama_theRealDataHolds` and `TestBuild_realRepo` (`GOWORK=off`, `site/internal/site`) fail, because Ollama
   row 22 `needs` the family. They demand the new dated snapshot described above after re-reading Ollama's page, and a faked
   one would defeat them. So the O1 commits should not be pushed until that snapshot exists (or the owner decides otherwise).
+
+**O7 RESULT, 2026-10-02: DONE, with one decision left open and one audit not done.**
+- **The Ollama-coverage snapshot.** `docs/measurements/ollama-coverage-2026-10-02.md` (a new dated file; the 09-30b one is untouched), with the raw page and its parser beside it. Ollama's
+  popularity page was re-read on 2026-10-02 at 09:52 PDT: the same 60 tags, 11 trade places (the largest move two ranks, qwen3.8 50 to 48), 16 pull counts moved by at most 0.2 M, no capability tag
+  changed. **Row 21 (glm-ocr) moves from N to S**; the note keeps what is not true: images from the safetensors checkpoint only (no GGUF), the vision tower runs on the CPU, **tool calls are not
+  rendered** (Ollama tags it with tools; by the snapshot's own precedent for audio, a non-vision capability gap is a note, not a status), parity tier experimental. Result: **S 47 tags / 864.2 M
+  pulls / 93.3%** (was 92.4%), T 2 / 1.0%, N 10 / 5.5%, U 1 / 0.3%, of 926.7 M. The status column is the reading at the last commit that touched the matrix (`e08c4831`).
+- **The site.** `site/data/ollama.json` and the `claims.json` Fact now cite the new snapshot; `site/internal/site` tests pass, including the two that were red (`TestCheckOllama_theRealDataHolds`,
+  `TestBuild_realRepo`), and `go run ./cmd/build` writes 40 families through every gate. One test (`TestCheckOllama_refuses`) hard-coded the old 92.4% in a negative case; it now replaces whatever
+  the first percentage in the headline is, so the next refresh cannot break it the same way.
+- **The Models-page entry.** A family page's only free text is the matrix `summary` (a recommended-checkpoint block needs a T3 parity method, and `glm_ocr` is still `experimental: tiny-oracle`).
+  The summary now carries the O5 one-liner (`goinfer-chat --image invoice.png --schema invoice.schema.json`) and the size limit: **images up to 6,144 image tokens, about 4.8 megapixels, "no smaller
+  default cap yet"**. **That sentence states the CURRENT behaviour, not a decision: O4's default is still the owner's call, and the summary must change when it is made.**
+- **Docs.** `docs/server.md`'s vision paragraph now lists Qwen3.5+ and GLM-OCR (a dated note, not a rewrite) and records that GLM-OCR's tower is f32 on the CPU and is NOT forced to int8 by
+  `--backend cuda`/`webgpu`. `docs/multimodal.md`'s status note now says five families read images. The README already carries the GLM-OCR extraction section (O5) and has no per-family vision
+  list to extend.
+- **NOT done: the per-backend audit of `docs/multimodal.md`.** Its 2026-09-15 paragraph says Metal has no vision tower and Qwen2.5-VL's tower is CPU-only; aikit has since shipped `qwencuda`,
+  `qwenmetal`, `visioncuda` and `visionmetal`. The paragraph is marked stale in place; a correct per-family, per-backend rewrite needs its own audit of what each backend runs today.
 
 ## 4. Would it make a good in-browser demo?
 

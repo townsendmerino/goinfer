@@ -24,9 +24,9 @@
       }
     },
     {
-      "text": "Of the 60 most-pulled models in Ollama's library on 2026-09-30, goinfer runs the families behind 92.4% of the pulls as Ollama ships them, and another 1.0% as text only.",
+      "text": "Of the 60 most-pulled models in Ollama's library on 2026-10-02, goinfer runs the families behind 93.3% of the pulls as Ollama ships them, and another 1.0% as text only.",
       "source": {
-        "path": "docs/measurements/ollama-coverage-2026-09-30b.md",
+        "path": "docs/measurements/ollama-coverage-2026-10-02.md",
         "heading": "Result"
       }
     }

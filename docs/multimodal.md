@@ -23,7 +23,13 @@
 > Qwen3.5+ (P8a) and **GLM-OCR**, which now reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded
 > on the first image) feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder
 > (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered documents
-> (`docs/measurements/glm-ocr-o3-2026-10/`); it needs an aikit release carrying the GLM tower before a push. O7 owns the full rewrite.
+> (`docs/measurements/glm-ocr-o3-2026-10/`). **O7 (2026-10-02) made the family list true and did not re-audit the rest.** Five
+> families read images on the OpenAI and Anthropic surfaces now: Gemma 3 (SigLIP), Qwen2.5-VL, Gemma 4, **Qwen3.5+** (dense sizes, from
+> safetensors; P8a) and **GLM-OCR** (aikit v1.52.0; its tower is f32 on the CPU by default on every backend, its decoder is
+> CUDA-resident and runs on the CPU on Metal and WebGPU). The per-backend sentences in the 2026-09-15 paragraph above are NOT
+> re-audited and are known to be stale: aikit has shipped `qwencuda`, `qwenmetal`, `visioncuda` and `visionmetal` modules since, so
+> "Metal has no vision tower for any family yet" and "Qwen2.5-VL's tower stays CPU-only" should not be relied on. A per-family,
+> per-backend rewrite needs its own audit.
 >
 > **Update 2026-10-02 (GLM-OCR O5, structured extraction):** an image request with `response_format` `json_schema` on GLM-OCR is an
 > extraction request: serve builds the model's JSON-template prompt from the schema and constrains the reply to it, and
