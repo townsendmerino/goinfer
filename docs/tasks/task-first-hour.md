@@ -1362,6 +1362,29 @@ same effect without touching a tracked file: a `go.work` outside the checkout (`
 `.`, `./cuda` and `./metal`). **Gate:** `scripts/check_release_assets.sh` reads a downloaded asset's build info with
 `go version -m` and fails on `vcs.modified=true`.
 
+**Fixed 2026-10-01 (unreleased; takes effect at the next tag).** Reproduced first, in a clean clone of `74fee5b1`: the workflow's own
+build shape (`go mod edit -replace` in `cuda/`, `GOFLAGS=-mod=mod`) gives `vcs.modified=true` with exactly one dirty file, `cuda/go.mod`;
+the same build through `GOWORK=<outside the checkout>/go.work` (`go work init . ./cuda ./metal`, no edit, no `-mod=mod`) gives
+`vcs.modified=false`, with the root still linked as `dep github.com/townsendmerino/goinfer (devel)`, so the stale-root check holds.
+`release-assets.yml` now builds the `metal/` and `cuda/` modules that way in **both** the chat and the serve steps; root builds are unchanged.
+
+**A second cause, not in the finding:** the `embedded` job downloads the model licence into `licenses/` inside the checkout, and an
+untracked file alone makes Go stamp `vcs.modified=true` (measured: one `licenses/X.txt`). It now goes to `$RUNNER_TEMP/licenses` (the
+uploaded artifact's contents are the same). `demo/chat/build-embed.sh` already skips its own `go mod edit -replace` whenever
+`go env GOWORK` names a workspace, so the embedded step only needed an external `GOWORK`; its staged `model.gguf`/`model.giw` are gitignored.
+
+**Gate.** `scripts/check_asset_vcs.sh <binary>...` reads each file's build info with `go version -m` and fails on `vcs.modified=true`, and
+also on a file with no `vcs.modified` line (unknown is not clean). `--selftest` builds a clean, an edited-`go.mod` and an unstamped probe and
+requires accept / reject / reject, so the check provably goes red; it also fails on the `-dirty` build from the reproduction above. It runs in
+the workflow after the chat+serve builds and after the embedded build, before anything is uploaded. (The finding named
+`check_release_assets.sh` for this; that script checks asset counts on the published Release and stays as it was.)
+
+**Verified.** The workflow's own step scripts, extracted from the YAML and run on a clean clone with the tag substituted: the six chat and six
+serve assets all read `vcs.modified=false`, the existing assertions (backend from build settings, `--version`, no proxy `h1:` root) still
+pass, and the checkout has 0 modified files afterwards. The embedded job's build on the local 0.5B Coder model (prequant bake, six targets):
+all six `vcs.modified=false`, 0 modified files. **Not verified:** a real tag run on GitHub, and a published asset's `--version` — the next
+release's `scripts/check_asset_vcs.sh dist/*` on the downloaded assets is the proof; until then v0.20.0 and earlier still read `-dirty`.
+
 ### R19 — the default context is smaller than a coding agent's first request
 
 **Found** (scenario B). opencode's first request was 11,137 tokens. `goinfer-serve` refused it with a 400

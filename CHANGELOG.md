@@ -17,6 +17,12 @@ any surface may still change.
 
 ### Changed
 
+- **Release binaries no longer read `-dirty` (takes effect at the next tag).** `goinfer-serve --version` printed `vX.Y.Z (<rev>-dirty)`
+  from the release assets because the build edited `cuda/go.mod`/`metal/go.mod` in the checkout (`go mod edit -replace`) and, for the
+  embedded assets, wrote the model licence into an untracked `licenses/`. Either marks the tree modified in the VCS stamp. The submodules
+  now build through a `go.work` outside the checkout, the licence goes to the runner's temp directory, and `scripts/check_asset_vcs.sh`
+  fails the workflow on any asset whose build info says `vcs.modified=true` (or has none). Reproduced and checked on a clean clone;
+  `docs/tasks/task-first-hour.md` R18.
 - **Parallel tool results are one user turn on the Qwen templates that write them so (Qwen2.5, Qwen3, Qwen3.5).** goinfer wrote a user turn per
   result; the templates open the user turn only after a non-tool message, so several results in a row share one. Read from the template text, so
   a ChatML template that does not group is unchanged; compared against HuggingFace for all three families. Single results are byte-identical to
