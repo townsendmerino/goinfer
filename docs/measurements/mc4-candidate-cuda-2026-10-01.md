@@ -348,3 +348,21 @@ were 3 to 16 tokens (the chat header); 64 leaves a margin; it is a constant, not
 - **Gate 1 of the registration is NOT re-graded by this.** The graded run (above) still FAILED identity as registered. This section shows the cause is fixed and that the default configuration now reproduces the sequential reply on the schedules that failed. A graded rerun of the same 72 cells on a binary built from the fix, under the registered gates and decision rule (the speed gates graded
   only if identity passes), is the way to a verdict; it has not been registered or run.
 
+## RERUN 2, registered 2026-10-02 before it ran
+
+The first rerun failed identity as registered (RERUN RESULT above); the cause is found (ROOT CAUSE) and fixed in the engine (FIX), so the graded run is repeated, as it was after the first fix: **same gates, same decision rule, same 72 cells, the same harness, the same arms**, with one
+change, the binary: `serve-cuda` built once from goinfer `644d8008` (`~/goinfer-bench/mc4-candidate-cuda-2026-10-01/serve-cuda-644d8008`, sha256 `365425d917281c6e90c7723891ad28276611bd7e0f84366dafc2d9461b014ee9`, `vcs.modified=false`). Harness `run-rerun2.sh`
+(`run-rerun.sh` with the binary and the output directory changed, `raw-rerun2/`); grade with
+`python3 docs/measurements/mc4-candidate-cuda-2026-10-01/gates.py docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun2`. `gates.py`, `bench_spec_copy.py` and `bench_w7_plain.py` are unchanged since the first rerun.
+
+**What is NOT held constant, disclosed.** The engine differs from `2f685d7e` by the short-lead reuse decline (`644d8008`) and by unrelated work the text-only Qwen2.5-coder run does not exercise (the GLM-OCR family and vision tower, the vision tower's CPU fallback and f32 default, an aikit bump). The aikit root module in the build is the local
+workspace checkout (`a143d8d`, which adds a Metal-only bind-count check), not a tagged release; `aikit/gpu` is `v0.33.3`. The scripts the harness calls are read from the working tree at run time, as before.
+
+- **Identity is gate 1 again and is hard, and the gate is NOT changed.** Every reply equals batch's, and batch's rounds agree with each other; a differing reply is a bug, not a result. No tolerance, no tie-aware criterion, no exact-prefill variant: the run is graded at the default configuration (fast prefill on) exactly as the first was.
+- **Prediction, written before the run.** Identity passes: 0 differing replies in every cell. Basis: the diagnostic runs on the fixed build (sequential, four-at-once and staggered; batch, spec-exclusive, candidate, never-yield) were 30/30 identical to the sequential reply, where the same runs before the fix had 1 to 3 differing in 30.
+  The graded cells are not the diagnostic ones (they add the 7B, chat turns, and 3 rounds of each), and a continuation reuse of 64 or more tokens (the chat cells) is unchanged by the fix, so a difference there would be a finding, not a surprise to hide. The batch-against-batch variation at 4 clients on copy, which also failed the first rerun, is predicted to be gone by the same mechanism.
+- **If identity fails again:** the same rule applies (a bug, find it); the speed numbers are recorded and not read.
+- **If identity passes, the speed gates are graded as registered.** No speed projection is carried forward except one observation, labelled as such: in the first rerun (identity failed, so not graded) chat at 4 clients read candidate / batch 0.850 against the hard bar of 0.97, with three pairs within 0.4 points. The fix does not touch the decode path, so
+  **chat gate 3 is expected to FAIL again**, and the decision rule then reads **parked with the numbers**; copy at 4 clients and the staggered cell are not projected. The rule's copy-only-miss clause (ambiguous, goes to the owner) applies unchanged if every chat gate and identity pass and only the copy or staggered gates miss.
+- Estimate 30 min (the first rerun took 19). Queued on nobara's night queue as `mc4-candidate-cuda-rerun2`; the owner starts the queue.
+
