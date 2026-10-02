@@ -425,8 +425,19 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 			got := resolveCtxCapFit(m, 0, 1<<20, slots)
 			pinned := resolveCtxCapFit(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots)
 			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
-			if one != fitDefaultCtx {
-				t.Fatalf("one slot chose ctx %d, want the full candidate %d — the forced budget did not leave one slot room", one, fitDefaultCtx)
+			// One slot gets the smaller of the candidate and what the forced budget holds (slots*target positions of KV beside the weights).
+			// With the candidate at 8192 that was always the candidate; at 16384 the 3000-position case holds only ~12000, which is the
+			// budget talking, not a shrink the slots rule did.
+			room := slots * c.target
+			wantOne := fitDefaultCtx
+			if room < fitDefaultCtx {
+				wantOne = room
+			}
+			if d := one - wantOne; d < -wantOne/50 || d > wantOne/50 {
+				t.Fatalf("one slot chose ctx %d, want ~%d (the candidate %d or the forced budget's %d positions, whichever is less)", one, wantOne, fitDefaultCtx, room)
+			}
+			if one <= got {
+				t.Fatalf("one slot (ctx %d) did not get more context than %d slots (ctx %d) — the slots rule shrank nothing, so this case shows no trade", one, slots, got)
 			}
 			if !c.want(got) {
 				t.Errorf("%d slots chose ctx %d, target %d", slots, got, c.target)

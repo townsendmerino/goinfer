@@ -1,0 +1,92 @@
+=== RUN   TestW8Native_S_decodeSpeed
+goinfer: batched prefill declined for a 128-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+[S] 1/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=0 metal-int8-native: 166.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=2s
+[S] 2/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=0 metal-int8-requant: 184.3 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=4s
+[S] 3/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=0 cpu-int8int8: 99.8 tok/s over 63 steps (cpu (int8int8)) elapsed=5s
+[S] 4/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=1 metal-int8-requant: 185.0 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=8s
+[S] 5/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=1 cpu-int8int8: 100.3 tok/s over 63 steps (cpu (int8int8)) elapsed=9s
+[S] 6/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=1 metal-int8-native: 165.7 tok/s over 63 steps (metal-resident (int8int8)) elapsed=10s
+[S] 7/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=2 cpu-int8int8: 100.1 tok/s over 63 steps (cpu (int8int8)) elapsed=12s
+[S] 8/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=2 metal-int8-native: 164.7 tok/s over 63 steps (metal-resident (int8int8)) elapsed=13s
+[S] 9/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=2 metal-int8-requant: 185.2 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=15s
+[S] 10/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=3 metal-int8-native: 168.8 tok/s over 63 steps (metal-resident (int8int8)) elapsed=17s
+[S] 11/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=3 metal-int8-requant: 184.3 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=19s
+[S] 12/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=3 cpu-int8int8: 99.6 tok/s over 63 steps (cpu (int8int8)) elapsed=20s
+[S] 13/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=4 metal-int8-requant: 184.0 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=23s
+[S] 14/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=4 cpu-int8int8: 99.8 tok/s over 63 steps (cpu (int8int8)) elapsed=24s
+[S] 15/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=4 metal-int8-native: 165.8 tok/s over 63 steps (metal-resident (int8int8)) elapsed=25s
+[S] 16/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=5 cpu-int8int8: 100.8 tok/s over 63 steps (cpu (int8int8)) elapsed=26s
+[S] 17/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=5 metal-int8-native: 164.8 tok/s over 63 steps (metal-resident (int8int8)) elapsed=28s
+[S] 18/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=5 metal-int8-requant: 184.9 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=30s
+[S] 19/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=6 metal-int8-native: 165.3 tok/s over 63 steps (metal-resident (int8int8)) elapsed=32s
+[S] 20/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=6 metal-int8-requant: 185.0 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=34s
+[S] 21/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=128 rep=6 cpu-int8int8: 100.0 tok/s over 63 steps (cpu (int8int8)) elapsed=35s
+[S] 22/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=0 metal-int8-native: 102.1 tok/s over 63 steps (metal-resident (int8int8)) elapsed=50s
+[S] 23/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=0 metal-int8-requant: 98.3 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=53s
+[S] 24/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=0 cpu-int8int8: 64.3 tok/s over 63 steps (cpu (int8int8)) elapsed=59s
+[S] 25/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=1 metal-int8-requant: 105.6 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=1m3s
+[S] 26/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=1 cpu-int8int8: 67.7 tok/s over 63 steps (cpu (int8int8)) elapsed=1m8s
+[S] 27/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=1 metal-int8-native: 102.2 tok/s over 63 steps (metal-resident (int8int8)) elapsed=1m23s
+[S] 28/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=2 cpu-int8int8: 65.4 tok/s over 63 steps (cpu (int8int8)) elapsed=1m29s
+[S] 29/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=2 metal-int8-native: 102.1 tok/s over 63 steps (metal-resident (int8int8)) elapsed=1m43s
+[S] 30/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=2 metal-int8-requant: 106.3 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=1m47s
+[S] 31/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=3 metal-int8-native: 103.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=2m2s
+[S] 32/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=3 metal-int8-requant: 109.1 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=2m5s
+[S] 33/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=3 cpu-int8int8: 64.1 tok/s over 63 steps (cpu (int8int8)) elapsed=2m11s
+[S] 34/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=4 metal-int8-requant: 106.6 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=2m15s
+[S] 35/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=4 cpu-int8int8: 68.7 tok/s over 63 steps (cpu (int8int8)) elapsed=2m20s
+[S] 36/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=4 metal-int8-native: 102.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=2m35s
+[S] 37/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=5 cpu-int8int8: 64.6 tok/s over 63 steps (cpu (int8int8)) elapsed=2m41s
+[S] 38/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=5 metal-int8-native: 101.7 tok/s over 63 steps (metal-resident (int8int8)) elapsed=2m55s
+[S] 39/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=5 metal-int8-requant: 106.5 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=2m59s
+[S] 40/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=6 metal-int8-native: 102.2 tok/s over 63 steps (metal-resident (int8int8)) elapsed=3m14s
+[S] 41/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=6 metal-int8-requant: 106.4 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=3m18s
+[S] 42/84 qwen2.5-coder-0.5b-instruct-q4_k_m depth=2048 rep=6 cpu-int8int8: 67.6 tok/s over 63 steps (cpu (int8int8)) elapsed=3m23s
+[S] 43/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=0 metal-int8-native: 71.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=3m27s
+[S] 44/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=0 metal-int8-requant: 89.2 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=3m33s
+[S] 45/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=0 cpu-int8int8: 45.3 tok/s over 63 steps (cpu (int8int8)) elapsed=3m36s
+[S] 46/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=1 metal-int8-requant: 88.8 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=3m42s
+[S] 47/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=1 cpu-int8int8: 45.4 tok/s over 63 steps (cpu (int8int8)) elapsed=3m45s
+[S] 48/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=1 metal-int8-native: 71.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=3m48s
+[S] 49/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=2 cpu-int8int8: 45.4 tok/s over 63 steps (cpu (int8int8)) elapsed=3m51s
+[S] 50/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=2 metal-int8-native: 71.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=3m54s
+[S] 51/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=2 metal-int8-requant: 89.4 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=4m1s
+[S] 52/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=3 metal-int8-native: 70.9 tok/s over 63 steps (metal-resident (int8int8)) elapsed=4m4s
+[S] 53/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=3 metal-int8-requant: 89.5 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=4m11s
+[S] 54/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=3 cpu-int8int8: 45.3 tok/s over 63 steps (cpu (int8int8)) elapsed=4m13s
+[S] 55/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=4 metal-int8-requant: 89.5 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=4m20s
+[S] 56/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=4 cpu-int8int8: 45.4 tok/s over 63 steps (cpu (int8int8)) elapsed=4m22s
+[S] 57/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=4 metal-int8-native: 71.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=4m26s
+[S] 58/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=5 cpu-int8int8: 45.2 tok/s over 63 steps (cpu (int8int8)) elapsed=4m28s
+[S] 59/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=5 metal-int8-native: 71.0 tok/s over 63 steps (metal-resident (int8int8)) elapsed=4m32s
+[S] 60/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=5 metal-int8-requant: 89.5 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=4m38s
+[S] 61/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=6 metal-int8-native: 71.1 tok/s over 63 steps (metal-resident (int8int8)) elapsed=4m42s
+[S] 62/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=6 metal-int8-requant: 89.5 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=4m48s
+[S] 63/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=128 rep=6 cpu-int8int8: 45.4 tok/s over 63 steps (cpu (int8int8)) elapsed=4m51s
+[S] 64/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=0 metal-int8-native: 65.8 tok/s over 63 steps (metal-resident (int8int8)) elapsed=5m21s
+[S] 65/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=0 metal-int8-requant: 82.2 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=5m30s
+[S] 66/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=0 cpu-int8int8: 32.6 tok/s over 63 steps (cpu (int8int8)) elapsed=5m40s
+[S] 67/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=1 metal-int8-requant: 81.8 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=5m49s
+[S] 68/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=1 cpu-int8int8: 32.9 tok/s over 63 steps (cpu (int8int8)) elapsed=5m59s
+[S] 69/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=1 metal-int8-native: 65.5 tok/s over 63 steps (metal-resident (int8int8)) elapsed=6m29s
+[S] 70/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=2 cpu-int8int8: 32.5 tok/s over 63 steps (cpu (int8int8)) elapsed=6m39s
+[S] 71/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=2 metal-int8-native: 65.8 tok/s over 63 steps (metal-resident (int8int8)) elapsed=7m10s
+[S] 72/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=2 metal-int8-requant: 82.8 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=7m19s
+[S] 73/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=3 metal-int8-native: 65.6 tok/s over 63 steps (metal-resident (int8int8)) elapsed=7m49s
+[S] 74/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=3 metal-int8-requant: 82.0 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=7m58s
+[S] 75/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=3 cpu-int8int8: 32.4 tok/s over 63 steps (cpu (int8int8)) elapsed=8m8s
+[S] 76/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=4 metal-int8-requant: 82.1 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=8m17s
+[S] 77/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=4 cpu-int8int8: 32.7 tok/s over 63 steps (cpu (int8int8)) elapsed=8m27s
+[S] 78/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=4 metal-int8-native: 67.3 tok/s over 63 steps (metal-resident (int8int8)) elapsed=8m57s
+[S] 79/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=5 cpu-int8int8: 32.6 tok/s over 63 steps (cpu (int8int8)) elapsed=9m8s
+[S] 80/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=5 metal-int8-native: 67.2 tok/s over 63 steps (metal-resident (int8int8)) elapsed=9m38s
+[S] 81/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=5 metal-int8-requant: 82.0 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=9m47s
+[S] 82/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=6 metal-int8-native: 65.4 tok/s over 63 steps (metal-resident (int8int8)) elapsed=10m17s
+[S] 83/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=6 metal-int8-requant: 82.2 tok/s over 63 steps (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=10m26s
+[S] 84/84 qwen2.5-coder-1.5b-instruct-q4_k_m depth=2048 rep=6 cpu-int8int8: 32.5 tok/s over 63 steps (cpu (int8int8)) elapsed=10m36s
+    w8_native_speed_test.go:102: S qwen2.5-coder-1.5b-instruct-q4_k_m depth 128: median tok/s native 71.0, requant 89.5, cpu 45.4; native/requant 0.794, native/cpu 1.565 (n = 7/7/7)
+    w8_native_speed_test.go:102: S qwen2.5-coder-1.5b-instruct-q4_k_m depth 2048: median tok/s native 65.8, requant 82.1, cpu 32.6; native/requant 0.801, native/cpu 2.020 (n = 7/7/7)
+    w8_native_speed_test.go:102: S qwen2.5-coder-0.5b-instruct-q4_k_m depth 128: median tok/s native 165.7, requant 184.9, cpu 100.0; native/requant 0.896, native/cpu 1.657 (n = 7/7/7)
+    w8_native_speed_test.go:102: S qwen2.5-coder-0.5b-instruct-q4_k_m depth 2048: median tok/s native 102.1, requant 106.4, cpu 65.4; native/requant 0.960, native/cpu 1.561 (n = 7/7/7)
+--- PASS: TestW8Native_S_decodeSpeed (636.31s)
+PASS

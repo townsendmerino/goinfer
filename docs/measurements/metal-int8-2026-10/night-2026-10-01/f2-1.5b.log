@@ -1,0 +1,13 @@
+=== RUN   TestW8Native_F2_matchesCPUAtSameQuant
+    w8_native_gate_test.go:41: prompt "The capital of France is" → [151643 785 6722 315 9625 374] → decodes to "<|endoftext|>The capital of France is"
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.9 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.7 GB; this machine currently has 7.7 GB of memory available (budget 5.4 GB = 70% of that) (86% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.1 GB of memory available (budget 5.0 GB = 70% of that) (90% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 6.6 GB of memory available (budget 4.6 GB = 70% of that) (97% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    w8_native_gate_test.go:44: /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf at int8int8 (metal-resident (int8int8)): 21/24 argmax-exact, worst near-tie 0.325%, 0 gaps >3%, min cosine 0.997700
+decoder: context capped at 26614 (model allows 32768) so that KV fits: weights 1.9 GB + KV 1.4 GB of budget 4.3 GB — pass -ctx to choose, or -stream-weights to lift
+decoder: context capped at 16533 (model allows 32768) so that KV fits: weights 1.9 GB + KV 0.9 GB of budget 3.8 GB — pass -ctx to choose, or -stream-weights to lift
+    w8_native_gate_test.go:45: /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf at int4 (metal-resident (int4)): 24/24 argmax-exact, worst near-tie 0.000%, 0 gaps >3%, min cosine 0.997514
+    w8_native_gate_test.go:49: F2: int8 pair min cosine 0.997700, argmax 21/24; int4 pair min cosine 0.997514, argmax 24/24
+    w8_native_gate_test.go:55: F2 fails on argmax: the int8 pair agrees at 21 steps, the int4 pair at 24
+--- FAIL: TestW8Native_F2_matchesCPUAtSameQuant (14.16s)
+FAIL

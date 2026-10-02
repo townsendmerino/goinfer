@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -176,5 +177,51 @@ func TestResolve_callsResolveOfflineBeforeCheckAccess(t *testing.T) {
 	if oi > ci {
 		t.Error("Resolve calls CheckAccess before resolveOffline — a cached demo: ref would hit " +
 			"the network anyway, defeating V-16's fix")
+	}
+}
+
+// R22: an mmproj file sits among a model repo's quants; it is named, not guessed from the quant.
+func TestMMProj(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		want bool
+	}{
+		{"mmproj-google_gemma-3-4b-it-f16.gguf", true},
+		{"MMPROJ-Model-F16.GGUF", true},
+		{"sub/dir/mmproj-x.gguf", true},
+		{"gemma-3-4b-it-Q4_K_M.gguf", false},
+		{"mmproj-readme.md", false},
+		{"model-q4_k_m.gguf", false},
+	} {
+		if got := IsMMProj(c.name); got != c.want {
+			t.Errorf("IsMMProj(%q) = %v, want %v", c.name, got, c.want)
+		}
+		if (MMProjNote(c.name) != "") != c.want {
+			t.Errorf("MMProjNote(%q) = %q, want a note iff %v", c.name, MMProjNote(c.name), c.want)
+		}
+	}
+	n := MMProjNote("mmproj-x.gguf")
+	for _, want := range []string{"vision projector", "cannot load GGUF mmproj", "--vision", "directory with a vision tower"} {
+		if !strings.Contains(n, want) {
+			t.Errorf("the note lacks %q: %s", want, n)
+		}
+	}
+}
+
+// R28: --help names the cache directory this process would use and the variable that moves it.
+func TestCacheHelp_namesTheDirectoryAndWhatMovesIt(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG_CACHE_HOME is what os.UserCacheDir reads on Linux only")
+	}
+	t.Setenv("XDG_CACHE_HOME", "/tmp/r28-cache")
+	h := CacheHelp()
+	for _, want := range []string{"/tmp/r28-cache/goinfer/models", "XDG_CACHE_HOME", "pull -o"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("CacheHelp lacks %q: %s", want, h)
+		}
+	}
+	t.Setenv("XDG_CACHE_HOME", "/tmp/r28-other")
+	if h2 := CacheHelp(); !strings.Contains(h2, "/tmp/r28-other/goinfer/models") || strings.Contains(h2, "r28-cache") {
+		t.Errorf("CacheHelp did not follow XDG_CACHE_HOME: %s", h2)
 	}
 }

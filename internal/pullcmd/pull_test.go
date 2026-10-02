@@ -110,3 +110,15 @@ func TestResolveRunRef_registryShortNameRewrites(t *testing.T) {
 		t.Errorf("resolveRunRef(%q).Bytes = %d, want the registry's Bytes %d", names[0], got.Bytes, c.Bytes)
 	}
 }
+
+// R22: the listing marks a projector among the quants (listingLine is what `pull <repo>` prints per file).
+func TestListingLine_marksVisionProjector(t *testing.T) {
+	q := listingLine(pull.File{Path: "gemma-3-4b-it-Q4_K_M.gguf", Size: 2 << 30})
+	m := listingLine(pull.File{Path: "mmproj-google_gemma-3-4b-it-f16.gguf", Size: 800 << 20})
+	if strings.Contains(q, "vision projector") || !strings.HasSuffix(q, "\n") {
+		t.Errorf("a quant row was marked or lost its newline: %q", q)
+	}
+	if !strings.Contains(m, "vision projector") || !strings.Contains(m, "cannot load it yet") {
+		t.Errorf("the mmproj row is not marked: %q", m)
+	}
+}

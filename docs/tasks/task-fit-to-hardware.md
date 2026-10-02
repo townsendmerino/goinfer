@@ -336,6 +336,8 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
 - **The default context.** 8192 is the agent-turn size `docs/server.md`'s dsh section measured;
   the model's full window is what a user expects to "just work". The plan can print both costs;
   which is the default is a product call, not a measurement.
+  **Decided 2026-10-01 (owner, R19 of `task-first-hour.md`): 16384** — a coding agent's first request was 11,137 tokens and 8192 refused it. It is the
+  candidate the planner tries, not a grant: a card or model that cannot hold it in every requested KV slot gets less, as before. Metal's default is unchanged.
 - **Lossy KV as a last resort.** `f16` KV doubles context at the same VRAM and is where llama.cpp
   and Ollama default. This doc says never silently; whether the plan may *offer* it in the decline
   line ("or `-kv f16` for 16k") is a one-line decision once G1 is green.
@@ -367,7 +369,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:370-288` (the flags the plan subsumes) · `decoder/model.go:308-252`
+`internal/serveapp/main.go:373-291` (the flags the plan subsumes) · `decoder/model.go:308-252`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:119-200` (the guard) ·
 `decoder/weightbytes.go:97` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:181` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the

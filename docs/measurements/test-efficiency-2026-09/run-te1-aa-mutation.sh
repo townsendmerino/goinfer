@@ -8,13 +8,15 @@
 #          which is when the harness enters the gate for the second cell. The gate must hold that cell for as long
 #          as the hog runs; the instant gate must release within 10 s of the hog stopping.
 #
-# Runs under night.py, which holds the TE9 timing lock; bench_peer.py inherits it. The harness default
-# BENCH_MAX_LOADAVG=1.0 applies (a night run).
+# Runs under night.py, which holds the TE9 timing lock; bench_peer.py inherits it. Attempt 5 (owner, 2026-10-02) runs the
+# load gate at BENCH_MAX_LOADAVG=3.0, its pre-wait at the same cap: attempts 2-4 showed this Mac's 1-min load average at
+# 1.7-2.9 with the CPU near idle, by day and at night, so the 1.0 default never let a load sweep finish.
 set -u
 REPO=/Users/francistownsend-merino/tmcode/goinfer
 # Each attempt writes to its own directory: bench_peer.py resumes from an existing results file, and an earlier
-# attempt's partial sweep (te1-2026-09-28/, te1-attempt2/, te1-attempt3/) must not be mixed into this one.
-D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt4
+# attempt's partial sweep (te1-2026-09-28/, te1-attempt2/ ... te1-attempt4/) must not be mixed into this one.
+D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt5
+LOAD_CAP=3.0
 HOG=$REPO/docs/measurements/test-efficiency-2026-09/te1_hog.py
 BIN=$HOME/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67
 mkdir -p "$D"
@@ -25,7 +27,7 @@ export OLLAMA_BIN=/opt/homebrew/bin/ollama OLLAMA_MODELS=$HOME/.ollama/models
 export BENCH_RUNS=3 BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cpu BENCH_DEPTHS=none BENCH_IDLE_WAIT=1800
 
 # bench_peer.py's preflight REFUSES a busy box rather than waiting (by design), so before each sweep and each mutation
-# wait until THAT sweep's own gate would pass (up to 30 min): the load gate's 1-min load average <= 1.0, or the instant
+# wait until THAT sweep's own gate would pass (up to 30 min): the load gate's 1-min load average <= LOAD_CAP, or the instant
 # gate's own sample (bench_peer.instant_idle_sample: CPU busy <= BENCH_MAX_BUSY and no timed workload active).
 # Attempt 1 ran sweeps back to back, and its load-gate sweeps were refused at start. Attempt 2 waited on the load
 # average for BOTH gates, which put the instant sweeps behind the very signal TE1 is testing (2026-09-29 08:42: CPU
@@ -35,7 +37,7 @@ gate_idle() { # gate -> exit 0 if that gate would pass now
   if [ "$1" = instant ]; then
     python3 -B -c "import sys; sys.path.insert(0, 'scripts'); import bench_peer as b; busy, active = b.instant_idle_sample(); sys.exit(0 if busy is not None and busy <= b.BUSY_CAP and not active else 1)"
   else
-    python3 -c "import os, sys; sys.exit(0 if os.getloadavg()[0] <= 1.0 else 1)"
+    python3 -c "import os, sys; sys.exit(0 if os.getloadavg()[0] <= $LOAD_CAP else 1)"
   fi
 }
 wait_idle() { # gate label
@@ -53,7 +55,7 @@ sweep() { # gate tag
   wait_idle "$1" "aa gate=$1 tag=$2"
   local out=$D/aa-$1-$2.json
   echo "=== $(date '+%F %T %Z') $(date +%s) START aa gate=$1 tag=$2" | tee -a "$D/timeline.txt"
-  BENCH_MODELS=0.5B,1.5B,7B BENCH_IDLE_GATE=$1 python3 scripts/bench_peer.py "$out"
+  BENCH_MODELS=0.5B,1.5B,7B BENCH_IDLE_GATE=$1 BENCH_MAX_LOADAVG=$LOAD_CAP python3 scripts/bench_peer.py "$out"
   local rc=$?
   echo "=== $(date '+%F %T %Z') $(date +%s) END aa gate=$1 tag=$2 rc=$rc" | tee -a "$D/timeline.txt"
 }
@@ -64,7 +66,7 @@ mutation() { # gate
   wait_idle "$1" "mutation gate=$1"
   echo "=== $(date '+%F %T %Z') $(date +%s) START mutation gate=$1" | tee -a "$D/timeline.txt"
   # >> (O_APPEND) so the HOG lines tee'd into the same log are not overwritten by the harness's own writes
-  BENCH_MODELS=0.5B BENCH_IDLE_GATE=$1 python3 scripts/bench_peer.py "$out" >> "$log" 2>&1 &
+  BENCH_MODELS=0.5B BENCH_IDLE_GATE=$1 BENCH_MAX_LOADAVG=$LOAD_CAP python3 scripts/bench_peer.py "$out" >> "$log" 2>&1 &
   local bp=$!
   until grep -q '"engine"' "$log" 2>/dev/null || ! kill -0 $bp 2>/dev/null; do sleep 0.2; done
   echo "=== $(python3 -c 'import time; print(f"{time.time():.2f}")') HOG START gate=$1" | tee -a "$log"

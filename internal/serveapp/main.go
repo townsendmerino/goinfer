@@ -28,6 +28,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -52,6 +53,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
 	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/pull"
 )
 
 // modelSpec is one --model entry: a served name (optional, from name=path), the
@@ -324,6 +326,7 @@ type config struct {
 	specAdaptive    bool          // -spec-adaptive: MC4 candidate, "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
 	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	logRequests     bool          // -log-requests: one stderr line per generation request (R25)
 	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
 	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence (K2); 0 = stay up
 	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener (K5); "" = off
@@ -375,6 +378,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir for a durable job journal — one JSONL line per generation state transition (pending/running/done/failed/cancelled), 0700/0600 permissions matching -session-dir. On restart, any job still 'running' at the last recorded transition is marked 'interrupted', never silently 'failed'. Off by default: every generation still gets an in-memory job record, just no durability across a restart")
 	fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
 	fs.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
+	fs.BoolVar(&cfg.logRequests, "log-requests", false, "write one line to stderr per generation request (/v1/chat/completions, /v1/completions, /v1/responses, /v1/messages) when it finishes: route, model, status, prompt and completion tokens, time to first token and total time. Off by default; a request that failed before generating shows `-` for the model and token counts")
 	fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
 	fs.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
 	fs.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
@@ -485,6 +489,8 @@ func Main() {
   %[1]s pull <ref>                                      fetch a model, sha256-verified
   %[1]s --version                                       version + the backends COMPILED IN
 
+%[3]s
+
 The flags people actually reach for:
 
   --model      what to serve; repeatable as name=path to serve several at once
@@ -499,7 +505,7 @@ The flags people actually reach for:
 
 All %[2]d flags, with the trade-offs each one makes, follow.
 
-`, self, countFlags())
+`, self, countFlags(), pull.CacheHelp())
 		flag.PrintDefaults()
 	}
 
@@ -663,10 +669,16 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// server with no /v1/chat/completions and no /v1/jobs for its whole life, and the web UI's own chat
 	// got a 404. Every handler resolves its model through resolveAndLock, which answers an unknown or
 	// absent model with the OpenAI-shaped 404 "model not found (served: …)".
-	mux.HandleFunc("POST /v1/chat/completions", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat)))))
-	mux.HandleFunc("POST /v1/completions", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions)))))
-	mux.HandleFunc("POST /v1/responses", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses)))))
-	mux.HandleFunc("POST /v1/messages", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages)))))
+	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is logged with its status too.
+	var reqLogOut io.Writer
+	if cfg.logRequests {
+		reqLogOut = os.Stderr
+	}
+	rl := func(h http.HandlerFunc) http.HandlerFunc { return logRequests(reqLogOut, h) }
+	mux.HandleFunc("POST /v1/chat/completions", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat))))))
+	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
+	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
+	mux.HandleFunc("POST /v1/messages", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages))))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
 	// Decisions (D5, docs/tasks/task-constrained-confidence.md): TypeSafe's POST /v1/systemone wire shape, served by
 	// label scoring (internal/decide), so jevx and the TypeSafe SDKs work against goinfer through their base-URL override.
@@ -1071,6 +1083,9 @@ func (s *server) loadVisionTower(cfg config) error {
 		if dir == "" {
 			return nil // no vision tower — text-only model
 		}
+	}
+	if err := visionPathError(dir); err != nil {
+		return err
 	}
 	// N-28 (docs/audit-2026-09-10.md): cfg.models, not s.models — loadAdapters (called just
 	// above) already populated s.models with each --adapter's OWN served name too, so
@@ -1580,4 +1595,18 @@ func thinkingNote(t *chat.Template) string {
 	}
 	def := map[bool]string{true: "on", false: "off"}[r.DefaultOn()]
 	return fmt.Sprintf(", thinking: template default %s, serving %s", def, t.ThinkMode())
+}
+
+// visionPathError is -vision's refusal for a path that is a file, not a vision-tower directory (R22, docs/tasks/task-first-hour.md).
+// A GGUF mmproj handed to it used to fail inside the encoder loader as ".../mmproj-....gguf/config.json: not a directory". A path that
+// does not exist, or a directory, is the loaders' to judge, with their own messages.
+func visionPathError(dir string) error {
+	fi, err := os.Stat(dir)
+	if err != nil || fi.IsDir() {
+		return nil
+	}
+	if strings.HasSuffix(strings.ToLower(dir), ".gguf") {
+		return fmt.Errorf("-vision %s: a GGUF mmproj file is not supported yet — -vision takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md", dir)
+	}
+	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
 }

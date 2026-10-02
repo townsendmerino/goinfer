@@ -1,0 +1,166 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-10-02T06:59:28Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "517c15c6",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67",
+    "mtime": "2026-09-28T17:54:22Z"
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/nonexistent/serve-metal",
+    "mtime": null
+   }
+  },
+  "serve_binaries_old": {
+   "cpu": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67",
+    "mtime": "2026-09-28T17:54:22Z"
+   }
+  },
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   0.94287109375,
+   1.45166015625,
+   1.71044921875
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   113.30355326582696,
+   116.90500457662317,
+   117.30468794134984
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.94287109375,
+    1.45166015625,
+    1.71044921875
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.94287109375
+   }
+  },
+  "secs": 18.3,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    113.50065521136256,
+    113.2262570769965,
+    113.23766249010058,
+    113.54018524814873,
+    112.93213340170301,
+    113.1669693185216,
+    112.84076400367557,
+    113.98379937610711,
+    114.42690992174651,
+    117.52687086203225,
+    117.41228904650055,
+    117.49309832074147,
+    117.03606175954948,
+    117.09648121678383,
+    117.33102644199036,
+    116.91729904364087,
+    117.55720781043159,
+    117.54765740398902,
+    117.24723044948956,
+    117.28141675487184,
+    116.94708696247973,
+    117.64348888797625,
+    117.46458290962725,
+    116.74883235193342
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 425616,
+   "phases": {
+    "start_to_listening_s": 0.52,
+    "warmup_s": 1.12,
+    "runs_wall_s": 13.59,
+    "decode_timed_s": 13.06,
+    "prefill_and_request_s": 0.53,
+    "teardown_s": 3.02
+   }
+  },
+  "mean": 115.8,
+  "spread": 4.0
+ }
+]

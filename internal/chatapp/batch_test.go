@@ -490,3 +490,17 @@ func TestEffort_replAndBuildPrompt(t *testing.T) {
 		t.Errorf("--reasoning-effort default = %q, %v", *cf.effort, err)
 	}
 }
+
+// R19: the GPU context is the limit -> the message names -ctx and the model's window; the model's own window is the limit -> it does not.
+func TestBatchContextMessage(t *testing.T) {
+	got := batchContextMessage(11137, 8192, 32768)
+	for _, want := range []string{"11137 tokens", "window is 8192", "context_length_exceeded", "-ctx 11138", "up to 32768", "not the model's limit"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("GPU-context message lacks %q: %s", want, got)
+		}
+	}
+	own := batchContextMessage(40000, 32768, 32768)
+	if strings.Contains(own, "-ctx") || !strings.Contains(own, "context_length_exceeded") {
+		t.Errorf("the model's own window is the limit; message = %s", own)
+	}
+}

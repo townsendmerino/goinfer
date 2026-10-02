@@ -292,6 +292,45 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   gate's preflight now polls up to `BENCH_IDLE_WAIT`, as its per-cell gate does, and still refuses on timeout
   (`scripts/test_bench_peer_preflight.py`, red on the old code with attempt 3's own message). Output goes to
   `te1-attempt4/`, graded as `te1_analyze.py te1-attempt4`, on the Mac night queue.
+- **Attempt 4, the Mac's night of 2026-10-01, graded 2026-10-02: INCOMPLETE** (`te1_analyze.py te1-attempt4`;
+  `te1-attempt4/timeline.txt`).
+  - **Both load-gate sweeps were refused after one cell each.** In each, the second cell's gate waited its full 1,800 s
+    and refused, the load still over 1.0 (sweeps 23:10–23:42 and 23:59–00:29; the pre-waits ended at 0.98 and 0.94). Nothing else was queued or running: the same signal attempt 2
+    saw by day, now at night. The load mutation's pre-wait gave up after 1,800 s (load 2.21) and its harness refused at
+    preflight.
+  - **The instant gate:** both sweeps ran (6 cells each, 5.2–5.3 min); its idle share was 6.3% (in band, ≤ 10%). The
+    A/A log ratios over its 6 values: −0.0026, −0.0187, +0.0075, −0.0103, −0.0221, +0.0040. The load gate has none, so
+    there is no RMS ratio.
+  - **The instant mutation held, and missed its release bar.** The hog ran 90.2 s; cell 2's gate waited 105.7 s. After
+    the hog stopped the box read 13.5% and 13.6% busy against the 10% cap, close to the 16.4% and 15.0% it read before
+    the hog started, so the gate released 15.5 s after the hog, not within 10 s. By the pre-registration a mutation
+    failure is a kill. The run is graded INCOMPLETE first, because a sweep is missing; whether this miss stands as a
+    kill once attempt 5 completes is the owner's reading. Attempt 3's instant mutation released within 10 s.
+- **Amendment for attempt 5, 2026-10-02, before it runs (owner: "reschedule it, with a cap of 3").** The load gate runs
+  at `BENCH_MAX_LOADAVG=3.0`, and its pre-wait uses the same cap. Attempts 2–4 found this Mac's 1-min load at 1.7–2.9
+  with the CPU near idle, by day and at night, so at 1.0 no load sweep finished; at 3.0 the load gate is weaker than
+  the harness default, which is disclosed here rather than corrected for. Everything else is unchanged: the design,
+  the bands, the instant gate's 10% busy cap, and the analyzer. The load mutation's hog drives the load well above 3,
+  so that gate still has a signal to hold on. Output goes to `te1-attempt5/`, graded as `te1_analyze.py te1-attempt5`,
+  on the Mac night queue.
+- **Attempt 5, run by day on 2026-10-02 on the owner's word (07:11–07:43 PDT, through the night runner), graded the
+  same day: PASS** by the pre-registered verdict (`te1_analyze.py te1-attempt5`; `te1-attempt5/`).
+  - **A/A spread:** RMS log ratio of the identical arms, load 0.0125 and instant 0.0130 over 6 values each; ratio
+    1.04 (pass ≤ 1.25, kill > 2.07). Mean log ratios −0.0010 and +0.0023, so no arm carries over into the other.
+  - **Idle-gate share:** instant 9.0% over its two sweeps (6.8%, 11.3%; band ≤ 10%), load 17.0% and 25.8% at the 3.0
+    cap. Sweep wall, instant against load: +13.4%, reported against the −30–45% band; it does not reach that band.
+  - **Mutations:** the instant gate held cell 2 for 97.6 s through a 90.2 s hog and released within 10 s; the load
+    gate held 180.0 s through 90.1 s, release lag +89.9 s (recorded, not graded).
+  - **Thermal:** no cell recorded a warning.
+  - **Conditions:** by day, with the owner's apps open (1-min load 2–5 during the run), and the load gate at the
+    amended 3.0 cap. Both are departures from the night design and are disclosed, not corrected for.
+  - **Done, 2026-10-02 (owner: "Make instant the default on darwin only"):** `scripts/bench_peer.py` defaults to
+    `BENCH_IDLE_GATE=instant` on darwin and keeps `load` elsewhere. Attempt 4's 15.5 s release (bar 10 s, with the box
+    at 13.5% busy before and after the hog) is read as a few seconds of waiting, not a defect: a gate holding at 13.5%
+    busy is doing its job. Linux keeps the load gate because TE1 measured only the Mac: nobara idles at load 0.00, its
+    load gate works, and the instant gate is unmeasured there until nobara runs its own A/A. Untested by TE1 on any
+    machine: Metal/GPU cells (it ran CPU decode cells only), and the A/A's 6 values per gate, which would still pass a
+    gate 1.5× noisier a third of the time.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 

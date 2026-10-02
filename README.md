@@ -7,7 +7,7 @@ cross-compile it like anything else. No Python, no llama.cpp, no C toolchain, no
   invalid token is unreachable, not retried.
 - **One static binary** — and, if you want, the model baked into it.
 - **39 model families**, each behind a HuggingFace logit-parity gate.
-- **CPU, CUDA, Metal and WebGPU**, all cgo-free.
+- **CPU, CUDA and Metal**, cgo-free; **WebGPU** as an opt-in cgo build.
 
 Also ships as a ready-made server (`goinfer-serve`: OpenAI and Anthropic APIs, web UI) and a
 single-shot chat binary (`goinfer-chat`).
@@ -164,7 +164,9 @@ goinfer-serve -web -model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 It is embedded in the binary, uses no external assets, is off by default, and starts fine with no
 model at all. The HTTP surface (OpenAI, Anthropic, multi-model, vision, embeddings, admin) is in
 [docs/server.md](docs/server.md). Pointing a real agent (Claude Code, opencode) at it:
-[docs/integrations/](docs/integrations). `serve check` and the `tools:` line of
+[docs/integrations/](docs/integrations). A coding agent's first request is about 11,000 tokens, more than the default GPU context
+on Metal (4096) or on a CUDA model too big to hold 16384 positions in each of its 4 KV slots (the server then picks less),
+so start the server for an agent with `-ctx 16384` as those recipes do; a longer prompt gets a 400 that names `-ctx`. `serve check` and the `tools:` line of
 `goinfer-chat models` report which checkpoints hold up under a real agent's tool schema.
 
 `POST /v1/systemone` answers TypeSafe's decisions wire shape, so clients such as jevx work against
@@ -319,8 +321,15 @@ in-process. Longer form: [docs/positioning.md](docs/positioning.md).
   [HuggingFace logit-parity gate per family](docs/what-parity-gated-means.md). A parity run proves
   what its fixtures cover, and a missing fixture skips rather than fails, so quote a run's counts
   (`28 ran / 20 skipped / 0 failed`): see `docs/parity-coverage-policy.md`.
-- **GPU** — WebGPU everywhere, plus cgo-free CUDA and Metal for dense and MoE models. Anything
-  unsupported declines at load and falls back to CPU. See [docs/cuda-backend.md](docs/cuda-backend.md)
+- **GPU** — CUDA and Metal are cgo-free: at runtime they open the vendor's own driver API
+  (`libcuda.so.1`, Metal.framework) and run kernels shipped in the binary, so there is no CUDA
+  toolkit to build against, and without the driver the load declines to the CPU path. WebGPU
+  (opt-in, `-tags gpu`) is the one cgo build: it links the prebuilt wgpu-native library, which
+  drives the system's Vulkan, Metal or DX12 driver, so it needs a C toolchain and is not in the
+  release binaries. Nothing that performs inference is loaded from outside the binary: no
+  llama.cpp, no libllama, no Python runtime. The library's `go.mod` has two direct requirements,
+  `github.com/townsendmerino/aikit` and `golang.org/x/text`; each GPU backend is its own module.
+  Dense and MoE models; anything unsupported declines at load and falls back to CPU. See [docs/cuda-backend.md](docs/cuda-backend.md)
   and [docs/gpu-residency-coverage.md](docs/gpu-residency-coverage.md). On CUDA, prompts of 512
   tokens or more use a fused FlashAttention-style kernel and a tensor-core int4 GEMM (3.9×
   end-to-end prefill at a 3900-token prompt on a 1.5B int4;

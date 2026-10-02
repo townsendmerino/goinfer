@@ -265,8 +265,13 @@ LOAD_TIMEOUT = int(os.environ.get("BENCH_LOAD_TIMEOUT", "180"))
 # that loaded the box to ~8 it waits ~2 min for the harness's OWN previous cell to drain, and it measured 44% of timed-run
 # wall. "instant" gates on what is running NOW: the share of all CPUs busy over BENCH_BUSY_WINDOW_S seconds (under
 # BENCH_MAX_BUSY percent), and no foreign timed workload (a server, a *.test binary, ollama, llama-server) burning
-# CPU. The refusal design is unchanged. "load" stays the default until TE1's pre-registered A/A + mutation night decides.
-IDLE_GATE = os.environ.get("BENCH_IDLE_GATE", "load")
+# CPU. The refusal design is unchanged.
+# The default is "instant" on darwin and "load" elsewhere (owner, 2026-10-02). TE1 attempt 5 passed its pre-registration
+# on the Mac (A/A RMS ratio 1.04; the mutation held and released; idle share 9.0%), where the load average sits at 2-3
+# with the CPU near idle and the 1.0 load gate never let a night sweep finish. Linux keeps "load" until nobara runs its
+# own A/A: there the load average idles at 0.00, the load gate works, and instant is unmeasured. Either is still chosen
+# with BENCH_IDLE_GATE.
+IDLE_GATE = os.environ.get("BENCH_IDLE_GATE", "instant" if sys.platform == "darwin" else "load")
 if IDLE_GATE not in ("load", "instant"):
     sys.exit(f"BENCH_IDLE_GATE: {IDLE_GATE!r} is not load|instant")
 BUSY_CAP = float(os.environ.get("BENCH_MAX_BUSY", "10"))

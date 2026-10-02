@@ -1,0 +1,720 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-10-02T14:30:15Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "4167a853",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67",
+    "mtime": "2026-09-28T17:54:22Z"
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/nonexistent/serve-metal",
+    "mtime": null
+   }
+  },
+  "serve_binaries_old": {
+   "cpu": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67",
+    "mtime": "2026-09-28T17:54:22Z"
+   }
+  },
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   3.2021484375,
+   3.439453125,
+   3.169921875
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   116.24026138668467,
+   118.50658543881734,
+   119.01804888811206
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    3.025390625,
+    3.39892578125,
+    3.15673828125
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 6.2
+   }
+  },
+  "secs": 17.7,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    115.87657788225468,
+    117.14656079746472,
+    116.6734365413164,
+    114.38440650522087,
+    116.31802666026333,
+    116.79507809150456,
+    116.07825928979005,
+    116.64974532566268,
+    117.98486523527505,
+    115.06645282963792,
+    120.0081530270802,
+    118.73366789605711,
+    119.98538283156398,
+    120.26020091732777,
+    118.1264027290533,
+    117.88755804454334,
+    119.78978809437513,
+    119.99547651858165,
+    117.99663251046427,
+    119.03485408947229,
+    120.12451949324112,
+    117.60193788659572,
+    118.28726595127654,
+    119.31391656088978
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 428000,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 0.81,
+    "runs_wall_s": 13.35,
+    "decode_timed_s": 12.82,
+    "prefill_and_request_s": 0.52,
+    "teardown_s": 3.01
+   }
+  },
+  "mean": 117.9,
+  "spread": 2.8
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer_old",
+  "backend": "cpu",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {},
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   117.83788597514027,
+   118.68310835507339,
+   120.13632016705887
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    3.06103515625,
+    3.38720703125,
+    3.158203125
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 9.0
+   }
+  },
+  "secs": 17.6,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    113.78616464794918,
+    115.00863426208369,
+    118.62994635253739,
+    119.26571124734427,
+    118.68946103048806,
+    119.14237349112909,
+    118.62088154293262,
+    119.55991522665778,
+    116.675003101515,
+    118.82021909487122,
+    118.0976991184863,
+    119.77802099344689,
+    119.26219297808012,
+    118.86400918846675,
+    117.98997536306209,
+    119.97774700265877,
+    122.5946377558885,
+    121.26825412176852,
+    115.25431213107251,
+    119.48920255730205,
+    121.17908190988526,
+    119.99381952422408,
+    120.00470487486346,
+    121.30654846146662
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 432800,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 0.8,
+    "runs_wall_s": 13.25,
+    "decode_timed_s": 12.72,
+    "prefill_and_request_s": 0.53,
+    "teardown_s": 3.01
+   }
+  },
+  "mean": 118.9,
+  "spread": 2.3
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   57.03456535109915,
+   57.726902032921885,
+   56.19555616056536
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    3.3447265625,
+    3.4267578125,
+    3.17724609375
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 6.9
+   }
+  },
+  "secs": 32.8,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    57.103484636732105,
+    56.90554208501505,
+    56.96488813937307,
+    56.930313024212865,
+    56.658654802173395,
+    56.92555466775673,
+    57.10267808956703,
+    57.68540736396292,
+    57.60129463789543,
+    57.954576032433195,
+    57.71525685686066,
+    57.764316945096176,
+    57.661635344039226,
+    57.60975302279069,
+    57.555917665678905,
+    57.95246575858078,
+    55.95429156608754,
+    57.67141368976308,
+    57.57847115588509,
+    57.8431771062693,
+    55.75549357154112,
+    55.03927319638114,
+    55.86379993463837,
+    53.858529063957256
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 1068576,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 1.73,
+    "runs_wall_s": 27.51,
+    "decode_timed_s": 26.54,
+    "prefill_and_request_s": 0.97,
+    "teardown_s": 3.01
+   }
+  },
+  "mean": 57.0,
+  "spread": 1.5
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer_old",
+  "backend": "cpu",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {},
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   55.01077151677545,
+   55.517479974159755,
+   55.65881329609443
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    3.06201171875,
+    3.373046875,
+    3.1728515625
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 20.0,
+    "busy_pct": 6.6
+   }
+  },
+  "secs": 33.6,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    53.3215969384269,
+    54.92357319653062,
+    56.36552204307511,
+    54.490755447838104,
+    55.058060581254445,
+    52.961927312224454,
+    57.19769211388173,
+    55.76704450097222,
+    55.680234604631906,
+    53.71822870480928,
+    55.50618407678175,
+    56.07481835874051,
+    55.621851750684264,
+    55.81087139155001,
+    55.84730106724384,
+    55.88034983883647,
+    55.52119547379236,
+    53.79710422338631,
+    54.737804995932365,
+    55.92719934232759,
+    56.77524277175118,
+    56.22106327056869,
+    54.96076722661227,
+    57.33012906438464
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 1083744,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 1.76,
+    "runs_wall_s": 28.31,
+    "decode_timed_s": 27.31,
+    "prefill_and_request_s": 1.0,
+    "teardown_s": 3.01
+   }
+  },
+  "mean": 55.4,
+  "spread": 0.6
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   18.629709945406432,
+   18.63515244506777,
+   18.626956133481688
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    3.740234375,
+    3.5048828125,
+    3.22705078125
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 7.8
+   }
+  },
+  "secs": 93.5,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    18.654201514669424,
+    18.64744621117621,
+    18.61296504748783,
+    18.73604392217258,
+    18.440527516581263,
+    18.562666918636527,
+    18.696719912644255,
+    18.68710851988336,
+    18.627583011266072,
+    18.665410553599447,
+    18.71492854155615,
+    18.530282415950452,
+    18.628622647672888,
+    18.705700153314343,
+    18.587270570729007,
+    18.6214216664538,
+    18.66906552808367,
+    18.613636191366822,
+    18.522547526749545,
+    18.611781438194857,
+    18.706128283632033,
+    18.692932773731183,
+    18.60936063210071,
+    18.59019669399467
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 4312288,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 6.09,
+    "runs_wall_s": 83.88,
+    "decode_timed_s": 81.16,
+    "prefill_and_request_s": 2.72,
+    "teardown_s": 3.04
+   }
+  },
+  "mean": 18.6,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer_old",
+  "backend": "cpu",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {},
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   18.38242175054181,
+   18.546769833472794,
+   18.584821147598976
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    4.36767578125,
+    3.9345703125,
+    3.43115234375
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 6.3
+   }
+  },
+  "secs": 94.0,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    18.1862120861857,
+    18.62914962901372,
+    18.701883005146513,
+    17.509806099576732,
+    18.585271662692367,
+    18.671326200229434,
+    18.248580865037585,
+    18.527144456452426,
+    18.631721148306752,
+    18.538876815584334,
+    18.552516468012676,
+    18.6872353160282,
+    18.512003218903136,
+    18.5920336495602,
+    18.4478235522948,
+    18.411948499092265,
+    18.57006724017452,
+    18.512471715501622,
+    18.508210115120853,
+    18.63674020373244,
+    18.65244590338789,
+    18.721299578611433,
+    18.489555667760143,
+    18.587778756502903
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]",
+   "rss_peak_kb": 4284528,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 5.98,
+    "runs_wall_s": 84.44,
+    "decode_timed_s": 81.72,
+    "prefill_and_request_s": 2.71,
+    "teardown_s": 3.04
+   }
+  },
+  "mean": 18.5,
+  "spread": 0.2
+ }
+]

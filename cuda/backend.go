@@ -98,7 +98,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// prints it once and records it as the model's ResidentDecline, which DecodePath and `serve check`
 	// report — before, it reached stderr only, and the model's recorded reason was a generic string.
 	declined := func(e error) (decoder.ResidentForward, bool, error) {
-		return nil, false, decoder.DeclineResident("cuda: %v", e)
+		// R20: the reason an operator reads names the cause and what to try; a recovered panic's stack goes to stderr beside it.
+		reason, detail := declineAdvice(e.Error(), m.MoECacheExperts())
+		if detail != "" {
+			fmt.Fprintf(os.Stderr, "[cuda] resident build failure, detail:\n%s\n", detail)
+		}
+		return nil, false, decoder.DeclineResident("cuda: %s", reason)
 	}
 
 	w := m.Weights()

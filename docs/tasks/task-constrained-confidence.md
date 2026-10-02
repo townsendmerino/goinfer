@@ -1,5 +1,9 @@
-# Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
+# Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D14) — 2026-09
 
+> **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
+> backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
+> needed. One backbone pass scores every question, so D8 does not apply to this route. Unstarted; D10 is reading only.
+>
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar, so the decision-model default is the owner's call
 > ([`decisions-d6b-2026-09/results.md`](../measurements/decisions-d6b-2026-09/results.md)); D7 projected.**
@@ -618,7 +622,7 @@ schema was never published (D0).
 
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:662`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:668`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -837,6 +841,125 @@ unless D7 is in), the capability matrix (decision routes per family),
 [`task-site-2026-09.md`](task-site-2026-09.md) (a models-page tag for decision models), and a recipe
 under `docs/integrations/` if D0 found the SDK base-URL override or when jevx acceptance passes.
 
+### Route C: Cloudflare's Clef (D10–D14, added 2026-10-01)
+
+**Why it is here.** Cloudflare released Clef and Clef-flash on 2026-10-01: Apache-2.0 decision models that speak
+TypeSafe's `/v1/systemone` API, which D5 already serves. Both are on Hugging Face, and both sit on backbones goinfer
+already loads:
+- **Clef:** Qwen3.8-27B, `model_type: qwen3_5`, 64 layers, hidden 5120.
+- **Clef-flash:** Qwen3.5-9B.
+
+What they add is a learned **joint head** that scores every option of every question together.
+
+It is a different, newer design from autotrust's JEV students (D2–D4). It is also the first one a well-known
+publisher maintains, which makes it the more likely thing a goinfer user asks for by name.
+
+**What the release is (read 2026-10-01 from the repo files and Cloudflare's blog; D10 re-verifies):**
+- **Backbone.** Cloudflare trained a frozen Qwen backbone with rank-256 adapters, but both repos ship **full
+  safetensors shards and no adapter files**. Clef's shards total about 55 GB in bf16. The adapters appear to be
+  merged, so **the checkpoint loads as a plain `qwen3_5` model** and needs nothing from D3. D10 confirms this.
+- **Head** (`joint_head.safetensors`, 256 MB, and `joint_head_config.json`: width 1024, 2 routing layers, 4 decoder
+  layers, 16 heads, feed-forward 4096), implemented in the custom module `joint_schema_model.py`:
+  - It reads `last_hidden_state` from the text model at **every position**, not only the last.
+  - It LayerNorms and projects that to the head width.
+  - It mean-pools the token spans of each question and each option.
+  - It routes evidence through `EvidenceRoutingLayer`s (multi-head attention), then `TransformerDecoderLayer`s.
+  - It scores each option as a prior (cosine of lexical anchors) plus `sigmoid(residual_gate)` times a joint term
+    (cosine plus a residual MLP over `[field, option, field·option, |field−option|]`), with learned logit scales
+    clamped at `log(100)`.
+  - It applies a softmax per question. Question kinds are `noul`, `choice` and `score`.
+- **One backbone pass for all questions.** The record encoder serializes the state and every schema field into one
+  chat prompt, ending with an empty `<think></think>` block and `JOINT SCHEMA DECISIONS:`. So a request with five
+  questions costs one prefill, not five. **D8's trigger does not apply to this route.**
+- **Images and video** go in through the backbone's own vision tower. goinfer's `qwen3_5` is text-only until
+  `multimodal.md` §P8a lands.
+- **An independent check exists, and it is modest:** one engineer's 42 labelled agent decisions. Clef-flash scored
+  66.7% against hosted Jev's 71.4%, with 83% agreement between them (a DEV Community write-up, local bf16 on an
+  RTX 3090). It is a small sample, and it is not ours.
+
+**Should goinfer support it?** Yes, scoped to text and JSON states first, with Clef-flash as the product target:
+- The endpoint, the fidelity method (D6b) and the backbone family all exist.
+- The new code is a seam, a small head and an encoder.
+- Clef 27B is about 15 GB at int4, so it runs on the Linux box's CPU, not resident on the 16 GB Mac or the 8 GB card.
+  It is a "runs, slowly" target, stated as such.
+- The risk is format churn: a custom Python module at version one. Pin the repo revision, and refuse any
+  `joint_head_config.json` key or tensor shape the loader does not know.
+
+#### D10 — prior art, reference fixture, and the encoder contract (no goinfer code)
+
+- **Read `joint_schema_model.py` in full, at a pinned revision.** Record, in this doc, every fact the port depends
+  on:
+  - **Encoder:** the exact prompt template; Python's JSON rendering of the state (`sort_keys=True` and the
+    separators actually passed); how question, option and lexical-anchor spans are computed from tokenizer
+    offsets.
+  - **Head:**
+    - which embedding table the lexical anchors average;
+    - the exact layer semantics of `EvidenceRoutingLayer`;
+    - `TransformerDecoderLayer`'s `norm_first` (PyTorch's default is post-norm), activation and `batch_first`;
+    - that dropout is inactive at inference;
+    - whether the head's input is before or after the backbone's final norm (HF's `last_hidden_state` is after).
+- **Confirm the merge.** Diff a handful of Clef-flash tensors against Qwen3.5-9B. Deltas should be nonzero on the
+  adapted projections. Note which projections were adapted, including the GDN ones; this is for the record only,
+  since nothing needs to merge.
+- **Prior-art sweep (mandatory):** Cloudflare's Workers AI page for Clef, any vLLM or SGLang integration they
+  published, and whether llama.cpp, Ollama or MLX run the head. As of the blog post none was named.
+- **Reference fixture.** Run Cloudflare's own code on Clef-flash on nobara (bf16, about 18 GB; CPU is fine offline).
+  Use the D0 fixture's 150 items, re-expressed as Clef records, and record:
+  - **the probabilities:** every per-option probability, as goldens under `testdata/decisions/clef/`;
+  - **the encoder:** the full prompt string, token ids and spans for every item;
+  - **the backbone's output:** `last_hidden_state` for 3 items, as intermediate goldens for D11 and D12.
+
+#### D11 — the all-positions hidden seam
+
+- `Model.PromptHiddenAll(ctx, prompt) ([][]float32, error)`: D2's loop already computes every position's
+  hidden state; apply the final norm to each and keep them. It is CPU-only like D2. Memory is K × H f32 (a
+  4K-token prompt on the 27B is about 84 MB).
+- **Gate:** per position, cosine ≥ 0.9999 and relative L2 ≤ 1e-5 against HF `last_hidden_state` at f32, on the
+  tiny fixtures including `qwen3_5-tiny-normw`. The same mutation discipline applies: dropping or doubling the
+  final norm must fail.
+- **Follow-up, its own measurement:** exposing all-position hidden states from the CUDA and Metal residents' batched
+  prefill. That is this route's speed lever, and it is not needed for correctness.
+
+#### D12 — the encoder and the joint head, in Go
+
+- **Encoder** (`internal/serveapp`, beside D1's decider): a port of Clef's record encoding.
+  - It needs a Python-compatible JSON renderer for the state. Go's `encoding/json` differs in key order,
+    separators and escaping.
+  - **Gate:** prompt string, token ids and every span identical to the D10 dump on all 150 items. This is the
+    same input-identity bar D6a held (150/150).
+- **Head:** load `joint_head.safetensors` and its config, refusing unknown keys or shapes. Implement LayerNorm,
+  linear, 16-head attention, the routing and decoder layers exactly as D10 records them, the residual scorer, the
+  prior, the clamped scales and the gate. At about 60M parameters in f32 it is a negligible cost on CPU.
+  - **Gate:** given the reference's own `last_hidden_state` as input (isolating the head), per-option probabilities
+    within 1e-5 absolute of the reference at f32.
+
+#### D13 — wiring and fidelity
+
+- **Loading:** a model directory carrying `joint_head.safetensors` loads as a decision model. `/v1/systemone` and
+  `/v1/decisions` (D5) gain `route: "clef"`, and `/v1/models` advertises it.
+- **Image parts on this route** are refused with a clear error until P8a.
+- **Fidelity, by D6b's method** (Clef-flash against the D10 goldens):
+  - arms: f32, int8int8, int4 and q4k;
+  - pre-registered: mean KL ≤ 0.01 at f32 and ≤ 0.03 at int4, top-1 agreement ≥ 98%;
+  - ECE reported per arm.
+- **Expect what D6b found for JEV:** quantized arms keep calibration and miss the top-1 bar. The decision-model
+  default quant is the owner's call that D6b already left open. Make it once, for both heads.
+- **Compare the trained routes on one fixture.** Clef-flash and JEV-9B are both 9B on `qwen3_5`, so run them on
+  the same items: top-1 against gold where it exists, ECE, and agreement. If Clef-flash is at least level on both,
+  JEV's route is kept but not extended.
+- **Then Clef 27B on the Linux box's CPU,** at f32 against a smaller reference set. Report its speed as measured,
+  with the machine named.
+
+#### D14 — speed, and the multi-question shape
+
+- **Projection first,** from D7's model: one prefill of the whole record, plus the head, against JEV's one prefill
+  per question.
+- **Measure:** latency for 1 and 5 questions about one state, Clef-flash against JEV-9B, on the Mac CPU, quiet box,
+  paired. This is the number that says whether Clef makes D8 unnecessary for TypeSafe-shaped requests.
+- **Resident:** once D11's follow-up exists, the same cells on CUDA and Metal, each with its own pre-registered band.
+- **Docs (D9's list):** the route, the per-arm fidelity figures, the measured latency with its machine, and the
+  §2 caveat. A site decision-model tag goes on Clef-flash only after D13's fidelity gate passes.
+
 ---
 
 ## 5. Pre-registered gates for C (D's are in D6)
@@ -860,6 +983,8 @@ Ambiguous → parked.
 C1 if C's gates clear; [D2 → D3 → D4 → D6b] if D6a says so → D5 → C2, D9 → D7. D8 waits on its
 trigger. D5 can land after D1 alone if D6a says Route A is enough.
 
+**Route C:** D10 → D11 ∥ D12 → D13 → D14. It shares D5's endpoint and D6b's method, and needs none of D3 or D8.
+
 ## 7. Not in scope, stated
 
 - **Compute-time LoRA for own-forward families** (one loaded model serving generation and
@@ -867,6 +992,8 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
   `SetAdapter`.
 - **Training or distilling** a decision head or a calibration model. goinfer runs published heads
   and fits one scalar temperature per kind.
+- **Training or fine-tuning Clef heads.** Cloudflare offers that on its own platform; goinfer runs published heads.
+- **Clef on images or video before `multimodal.md` §P8a.** The route refuses image parts until then.
 - **Calibrating free-string or numeric fields.** Raw, documented probabilities only.
 - **Open-ended "decisions"** (free text, unbounded option sets). That is generation, and the
   tool-grammar union covers structured generation.
@@ -891,14 +1018,14 @@ contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward ro
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:695`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:662` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:668` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·
 [Jev (AI model), Wikipedia](https://en.wikipedia.org/wiki/Jev_(AI_model)) (unpublished weights/architecture) ·
 [TechTarget, 2026-09-22](https://www.techtarget.com/it-infrastructure/news/366650696/Jev-decision-model-touted-as-quicker-cheaper-LLM-alternative) (launch, Vercel adoption figure) ·
 [awesome-typesafe-jev](https://github.com/valentynkit/awesome-jev-typesafe/wiki) (API endpoint, gateways, SDKs) ·
-[kyegomez/open-jev](https://github.com/kyegomez/open-jev) (random-weights reconstruction) ·
+[Cloudflare/clef](https://huggingface.co/Cloudflare/clef) (config, `joint_head_config.json`, `joint_schema_model.py`) · [Cloudflare/clef-flash](https://huggingface.co/Cloudflare/clef-flash) · [Introducing Clef (Cloudflare blog, 2026-10-01)](https://blog.cloudflare.com/clef-decision-models/) · [Clef-flash vs Jev, 42 agent decisions (DEV Community)](https://dev.to/prodbymarcu/i-benchmarked-cloudflares-new-open-decision-model-against-the-hosted-api-its-trying-to-replace-2ded) · [kyegomez/open-jev](https://github.com/kyegomez/open-jev) (random-weights reconstruction) ·
 [muthuishere/jevx](https://github.com/muthuishere/jevx) (CLI client)
 
 <!-- doc-reviewed: 2026-09-27 -->

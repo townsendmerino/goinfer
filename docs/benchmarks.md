@@ -213,6 +213,14 @@ A measurement enters a table **only if it satisfies all of**:
   ACCEPTANCE THRESHOLD is platform-specific, and it is why the threshold used is now a stated fact
   next to the number, not a silent assumption.
 
+  **Update 2026-10-02: on the Mac the default gate is no longer the load average.** `bench_peer.py`
+  now defaults to `BENCH_IDLE_GATE=instant` on darwin: before each cell it samples the share of all
+  CPUs busy (≤ `BENCH_MAX_BUSY`, 10%) and checks that no other timed workload is running. TE1
+  attempt 5 passed its pre-registration (`docs/tasks/task-test-efficiency-2026-09.md`): the A/A
+  spread matched the load gate's (RMS ratio 1.04), and the gate held through an all-core hog and
+  released within 10 s. Linux keeps the load gate at 1.0. A Mac row records which gate admitted
+  it, and rows from before this date were admitted by the load average as described above.
+
 Anything not matching all of these is `—` and a re-measure, never a guess. This page
 exists *because* a sloppy comparison is worse than none: `docs/completed/gpu-assessment.md`
 caught one of its own early runs comparing a **Qwen1.5-1.8B q4** against the

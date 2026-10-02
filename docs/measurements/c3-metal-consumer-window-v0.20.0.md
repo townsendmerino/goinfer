@@ -5,10 +5,10 @@ bumps aikit (v1.45.1 → v1.51.1; RELEASING.md, "C3 · Metal consumer window"). 
 `c3-metal-consumer-window-v0.18.0.md` rather than editing it. Run on `macbook-arm64` (Apple M1 Pro, 16 GB), macOS
 26.6.2, Go 1.27.0.
 
-> **Status: parts 1, 3 and 5 done by day on 2026-10-01; parts 2 and 4 queued for the Mac's night queue**
-> (`run-c3-night.sh` in `c3-metal-v0.20.0/`). By day the fit guard refused even the 1.5B: 3.8 GB available with the
-> owner's apps open, a 2.6 GB budget against 4.7 GB priced. A bypass on this 16 GB Mac is a standing no, and part 2 is a
-> timing, which belongs at night anyway.
+> **Status: complete. Parts 1, 3 and 5 by day on 2026-10-01; parts 2 and 4 on the Mac's night queue, 22:53–22:58 PDT
+> the same night** (`run-c3-night.sh`; logs in `c3-metal-v0.20.0/night-2026-10-01/`). By day the fit guard refused
+> even the 1.5B: 3.8 GB available with the owner's apps open, a 2.6 GB budget against 4.7 GB priced. A bypass on this
+> 16 GB Mac is a standing no, and part 2 is a timing, which belongs at night anyway.
 
 **Which commit.** As v0.18.0's C3 found, the root tag and the submodule tag are different commits under the two-step
 tag. `v0.20.0` is `890ca565`, whose `metal/go.mod` still requires root v0.19.0; `metal/v0.20.0` is `8e4fb57c`, which
@@ -34,10 +34,21 @@ no cgo runtime artifact. **The cgo-free claim holds, by compile flag and by bina
 
 ## 2. Decode tok/s against the 73.6 claim
 
-**Queued for tonight.** `TestZZ_metalDepthBench` (resident `ForwardArgmax`, decode only, min of 5 batches, W4A8,
-qwen2.5-coder-1.5b-instruct-q4_k_m), with `GOWORK=off`. By day its `decoder.Load` was refused by the fit guard, as
-described above. Pre-registered in `run-c3-night.sh`: reported against 73.6 and v0.18.0's 71.6 from the same harness;
-depth 128 below 70.0 (more than 5% under the claim) is a finding to investigate.
+`TestZZ_metalDepthBench` (resident `ForwardArgmax`, decode only, min of 5 batches, W4A8,
+qwen2.5-coder-1.5b-instruct-q4_k_m), with `GOWORK=off`, at `8e4fb57c`, on the night of 2026-10-01 (load 1.48 at the
+start). By day its `decoder.Load` was refused by the fit guard, as described above. Pre-registered in
+`run-c3-night.sh`: reported against 73.6 and v0.18.0's 71.6 from the same harness; depth 128 below 70.0 (more than 5%
+under the claim) is a finding to investigate.
+
+| depth | tok/s |
+|---|---|
+| 128 | **88.0** |
+| 512 | 81.1 |
+| 2048 | 80.2 |
+| 4000 | 74.6 |
+
+**No finding:** depth 128 is 88.0 tok/s, above the 73.6 claim and v0.18.0's 71.6 from the same harness. One run of the
+harness, so the figure is a pass against the floor, not a new claim. Log: `c3-metal-v0.20.0/night-2026-10-01/depth-bench.log`.
 
 ## 3. Bit-identity within machine and OS
 
@@ -57,8 +68,10 @@ output for an identical request on one machine, does not depend on the model's s
 
 ## 4. The Metal device gate (§C1-M)
 
-**Queued for tonight**, at `8e4fb57c`, through the release's own `run-metal-gate.sh` (copied beside the job,
-unchanged). The job's setup was dry-run by day: 24 fixtures linked, a clean tree, build and vet OK, no `vendor/`. For
+**PASS at `8e4fb57c`** (2026-10-02T05:58:51Z): 9 check groups declared and 9 reported, 10 verdicts pass, 2 skip, 0 fail.
+The skips are the clean-GPU check (no `nvidia-smi` on a Mac) and 18 Linux-only CI hygiene steps; neither is covered by
+this gate. Run through the release's own `run-metal-gate.sh` (copied beside the job, unchanged); log:
+`c3-metal-v0.20.0/night-2026-10-01/device-gate.log`. The job's setup was dry-run by day: 24 fixtures linked, a clean tree, build and vet OK, no `vendor/`. For
 reference, the release gate passed this morning at `f2e7c87c` (10 pass, 2 skip, 0 fail), which predates the tag's
 aikit v1.51.1 bump. That bump changes only an amd64 file, so arm64 and Metal compute what they did, but C3 asks for the
 tag itself.
@@ -79,11 +92,13 @@ a knob or environment switch. These four compare two paths through one:
 
 Sampled, not exhaustive: 4 of about 15 toggling files.
 
-## Verdict (by day; parts 2 and 4 pending tonight)
+## Verdict
 
 - **Builds with no Xcode:** the `CGO_ENABLED=0` form holds, from an empty consumer module and in-tree, and the binary
   links no Metal.framework or libobjc. **The cgo-free claim is confirmed.**
 - **Bit-identity within machine and OS: holds**, byte for byte, through the consumer-built binary.
 - **Tautological-gate shape: not found** in the four sampled path comparisons, each of which asserts its path or fails
   loud.
-- **Decode tok/s and the device gate:** queued for tonight; this file is completed from their logs in the morning.
+- **Decode tok/s:** 88.0 at depth 128, above the 73.6 claim; no finding.
+- **The Metal device gate at the tag: PASS** (10 pass, 2 skip, 0 fail).
+- **C3 for `metal/v0.20.0` is complete with no open finding.**

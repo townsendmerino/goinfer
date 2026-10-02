@@ -757,7 +757,9 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "messages is required and must contain at least one message")
 		return
 	}
-	// Multimodal: a message carrying an image_url part routes to the vision path.
+	// Multimodal: a message carrying an image_url part routes to the vision path. Images in earlier messages are replaced by a note first
+	// (image_history.go): the vision path takes one image, and a chat client resends its whole history.
+	noteOmittedImages(w.Header(), omitChatHistoryImages(req.Messages))
 	imgs, ierr := chatImages(req.Messages)
 	if ierr != nil {
 		writeErr(w, http.StatusBadRequest, ierr.Error())
@@ -1069,6 +1071,15 @@ func (lm *loadedModel) contextWindow(residentPath bool) int {
 	return ctx
 }
 
+// modelContextWindow is the model's own window, with no resident cap applied — what -ctx can raise the GPU context up to. Next to
+// contextWindow so the limits are derived in one place (prepare reads neither MaxPositions nor ResidentContextCap itself).
+func (lm *loadedModel) modelContextWindow() int {
+	if lm.model == nil {
+		return 0
+	}
+	return lm.model.Config().MaxPositions
+}
+
 // residentPath reports whether a text-completion request against lm will actually run the
 // stateless GPU-resident decode path, for contextWindow/prepare's residentPath argument (M-01,
 // docs/audit-2026-09-10.md). NOT `lm.adapter == ""`: an adapter model's FIRST turn
@@ -1174,7 +1185,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
-		if err := contextLengthError(len(promptIDs), ctx); err != nil {
+		if err := contextLengthErrorFor(len(promptIDs), ctx, lm.modelContextWindow()); err != nil {
 			return genRequest{}, err
 		}
 		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)
@@ -1253,6 +1264,20 @@ func contextLengthError(promptLen, ctx int) error {
 		return fmt.Errorf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, ctx)
 	}
 	return nil
+}
+
+// contextLengthErrorFor is contextLengthError plus the remedy, for the case where the window that rejected the prompt is the
+// server's resident KV capacity and not the model's own (ctx < modelWindow): a coding agent's first request is ~11k tokens
+// (R19, docs/tasks/task-first-hour.md), the default resident capacity is 8192 on CUDA and 4096 on Metal, and the 400 used to
+// say only "context window is 8192" — which reads as the model's limit, so the client (opencode) compacted 34 times instead of
+// the operator raising -ctx. When the model's own window is the limit, -ctx cannot help and the message is unchanged.
+func contextLengthErrorFor(promptLen, ctx, modelWindow int) error {
+	err := contextLengthError(promptLen, ctx)
+	if err == nil || modelWindow <= ctx {
+		return err
+	}
+	return fmt.Errorf("%w; this is the server's GPU context (-ctx), not the model's limit (%d tokens): restart goinfer-serve with -ctx %d or more (up to %d) to accept it",
+		err, modelWindow, promptLen+1, modelWindow)
 }
 
 // seedOrRandom returns the request's seed, or a fresh random seed when absent (M-03). OpenAI's contract
@@ -1702,9 +1727,13 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			printed = end
 		}
 	}
+	tr := traceFrom(parent) // -log-requests (reqlog.go); nil when it is off
 	for id := range stream {
 		if stopping {
 			continue // drain so the generation goroutine exits cleanly
+		}
+		if tr != nil && len(ids) == 0 {
+			tr.firstToken()
 		}
 		ids = append(ids, id)
 		// DecodePiece, not Decode/DecodeContinuation: these ids CONTINUE the prompt (no
@@ -1756,6 +1785,9 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		// goinfer_confidence: the stream has drained, so ids is everything this generation emitted (up to a stop
 		// string, if one ended it early — the confidences then cover the part the client received).
 		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
+	}
+	if tr != nil {
+		tr.generated(lm.name, len(gr.promptIDs), len(ids))
 	}
 	return finish, len(ids), stopHit
 }

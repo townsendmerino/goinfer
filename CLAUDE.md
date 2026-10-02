@@ -255,8 +255,8 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
   - The served gate stays the instrument for any end-to-end or peer claim.
   - A kernel-only microbenchmark gives direction, not size: its served effect ranged 0.05–1.72× of it.
   - `docs/measurements/test-efficiency-2026-09/te5b-concordance-2026-09-28.md` has the table.
-- **Night runs use the harness defaults** (`BENCH_MAX_LOADAVG=1.0`, not the daytime 2.5 deviation) — nothing else
-  is on the box.
+- **Night runs use the harness defaults** (on the Mac the instant idle gate since 2026-10-02, TE1; on Linux
+  `BENCH_MAX_LOADAVG=1.0`; not the daytime 2.5 deviation) — nothing else is on the box.
 - **Jobs of 3 h or less; never 6.** `add` refuses an estimate over 360 min. Shrink the sample or fix the slow path
   first, as D6a did. The runner does not START a job whose estimate would end after 06:30, so an over-full queue
   carries to the next night instead of running into the owner's morning.
