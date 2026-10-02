@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,22 +46,55 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	if testing.Short() {
 		t.Skip("long-running gate: skipped in -short")
 	}
-	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	// GOINFER_METAL_GATE_MODEL and GOINFER_METAL_GATE_CELL run another model against its own references: the 7B's
+	// .int4.metal.giw sidecar with cell "D7" (D7-K<K> files: int8-weight CPU references, so read beside the 1.5B's S
+	// cells, not graded by them). The defaults are the 1.5B and "S".
+	path := os.Getenv("GOINFER_METAL_GATE_MODEL")
+	if path == "" {
+		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	}
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set", path)
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
+	}
+	cell := os.Getenv("GOINFER_METAL_GATE_CELL")
+	if cell == "" {
+		cell = "S"
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	const K = 3900
+	// K is the decision cell's depth: 3900 by default (R2, R17). GOINFER_METAL_GATE_K picks another cell that has CPU
+	// references (S-K<K> files); GOINFER_METAL_GATE_FLOOR sets attnFAFloorOverride so the candidate arm engages below
+	// the production floor (B-P03, docs/tasks/task-metal-audit-2026-10.md: K = 1024 with the floor at 1024). Without
+	// the override a K below the floor fails the arm's own canUseAttnFA check rather than comparing a kernel with
+	// itself.
+	K := 3900
+	if v := os.Getenv("GOINFER_METAL_GATE_K"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 64 {
+			t.Fatalf("GOINFER_METAL_GATE_K=%q: want a reference depth >= 64", v)
+		}
+		K = n
+	}
+	floorOverride := 0
+	if v := os.Getenv("GOINFER_METAL_GATE_FLOOR"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			t.Fatalf("GOINFER_METAL_GATE_FLOOR=%q: want a positive key count", v)
+		}
+		floorOverride = n
+	}
 	const contN = 64
 	label, promptFiles := decoder.PrefillGatePromptSet()
 	// The reference directory follows the prompt set (refDirFor, the generator's own rule). This was hardcoded to set
 	// A's directory, so GOINFER_PREFILL_GATE_PROMPTS=b silently scored set-B prompts against set-A logits.
 	refDir := refDirFor(home, label)
 	for pi := range promptFiles {
-		p := filepath.Join(refDir, fmt.Sprintf("S-K%d-p%d.bin", K, pi))
+		p := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", cell, K, pi))
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("reference file missing: %s — run TestPrefillGateReference (decoder package) first", p)
 		}
@@ -82,9 +117,17 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	if r.attnFAPartial == (Buffer{}) {
 		t.Fatalf("attnFAPartial not allocated — attention_fa cannot engage on this model")
 	}
-	tk, err := tokenizer.LoadGGUF(path)
+	tkPath := path
+	if strings.HasSuffix(path, ".giw") {
+		tkPath = strings.TrimSuffix(path, ".int4.metal.giw") + ".gguf"
+	}
+	tk, err := tokenizer.LoadGGUF(tkPath)
 	if err != nil {
 		t.Fatalf("load tokenizer: %v", err)
+	}
+	r.attnFAFloorOverride = floorOverride
+	if floorOverride > 0 {
+		fmt.Printf("[%s] attention_fa floor overridden to %d keys (production %d); decision cell K=%d\n", tag, floorOverride, attnFADepthFloor, K)
 	}
 	if prep != nil {
 		prep(t, r)
@@ -98,7 +141,7 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	t0 := time.Now()
 	var suspect []int
 	for pi, ids := range prompts {
-		refPath := filepath.Join(refDir, fmt.Sprintf("S-K%d-p%d.bin", K, pi))
+		refPath := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", cell, K, pi))
 		_, _, refLogitsRef, err := decoder.ReadPrefillReferenceForTest(refPath)
 		if err != nil {
 			t.Fatalf("read reference %s: %v", refPath, err)
