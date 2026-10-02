@@ -708,7 +708,7 @@ supports.
 | `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|linalg/quant.go:135` | aikit | `func QuantizeRowInt8(row []float32, q []int8) (scale float32) {` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/attn_fused_test.go:18` | goinfer | `// plus "cosine >= 0.9999 per row", derived from f16 operand rounding. That bar failed w` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/prefill.go:697` | goinfer | `//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three crit` |
-| `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:118` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
+| `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:123` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/prefill.go:308` | goinfer | `if e := r.prefillStaticDecline(); e != nil {` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:225` | goinfer | `case "cuda":` |
@@ -752,7 +752,7 @@ supports.
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
-| `docs/queue-engineering.md|cuda/backend.go:1712` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
+| `docs/queue-engineering.md|cuda/backend.go:1717` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
 | `docs/queue-engineering.md|cuda/prefill.go:856` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:546` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:986` | goinfer | `// decodes garbage. The setup job's last statement returns r.setupErr, which BuildReside` |

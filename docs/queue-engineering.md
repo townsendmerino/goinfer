@@ -871,7 +871,7 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:1712` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:1717` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
 - `cuda/resident.go:546` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`

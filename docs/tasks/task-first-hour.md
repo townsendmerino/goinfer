@@ -1417,6 +1417,23 @@ priced KV at context 262144 (10.4 GB) where `fit` had said 3.44 GB at 8192. **On
 **Fix:** name the tensor kind and the remedy (`-moe-cache-experts`, or a supported `--quant`), and have `fit` and
 `serve` price the same default context. **Gate:** a test that a resident decline's message names a remedy.
 
+**Partly fixed 2026-10-01 (the message half).** Reproduced on this tree with the local 26B q4_0 on the 8 GB card: not the `kind ""` of the
+v0.19.0 run but its neighbour, a device OOM during the weight upload, surfaced through the executor's panic boundary as
+`executor job panicked: ... CUDA_ERROR_OUT_OF_MEMORY` **followed by a goroutine stack inside the decline reason**, repeated on the `decode path:`
+line, with no remedy. Now (`cuda/decline_advice.go`, used by the one closure every `BuildResident` decline goes through): the reason is one
+line, the cause then what to try (`-moe-cache-experts`, a smaller `-quant` or `-ctx`, `-backend cpu` on purpose; with the expert cache already
+on, `-moe-cache-slots` instead of the flag again), and the stack is printed once to stderr under `[cuda] resident build failure, detail:` (it
+once localized a real bug, so it is kept, only moved). The empty-weight case (`kind ""`) gets the same treatment. A feature decline ("arch
+needs unimplemented feature") is returned as it came. Remedy checked live: the same 26B with `-moe-cache-experts` reports
+`decode path: cuda-resident (int4)`. Gate: `TestDeclineAdvice` over the two real error strings, and a source guard that `declined` calls it
+(the closure needs a card to reach with a real OOM; two of three mutants are caught by the unit, the third, unwiring, by the guard).
+
+**Not done:** "have `fit` and `serve` price the same default context". After a decline the CPU path reports `context: 262144 tokens (model
+maximum)` and `fit: 262144-token cap needs 10.4 GB KV`, where `fit` priced the GPU plan at 8192 (3.44 GB). They answer different questions (the
+resident plan versus the CPU path, where `-ctx` does not apply), so this is a policy choice, not a defect in a message: cap the CPU
+fallback's default context, or say beside the figure that it is the CPU path's. Left for the owner; R21 (swap growth under that "tight"
+warning) is the consequence of the same line.
+
 ### R21 — swap grew under a "tight" warning, with no refusal
 
 **Found** (scenario D). `fit` and `serve` both warned "fit is tight ... 96% of budget" before any swap growth, so the

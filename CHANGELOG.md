@@ -17,6 +17,11 @@ any surface may still change.
 
 ### Changed
 
+- **A CUDA resident decline now says what to change.** A model that cannot become GPU-resident (the 26B on an 8 GB card without
+  `-moe-cache-experts`) printed a decline reason made of a Go panic message and a goroutine stack, or `unsupported projection kind ""`, and
+  nothing about how to stay on the GPU. The reason is now one line naming the cause and what to try (`-moe-cache-experts`, a smaller `-quant`
+  or `-ctx`, `-backend cpu`); the stack moves to a separate stderr block. `docs/tasks/task-first-hour.md` R20 (the context a CPU fallback
+  reports is not changed).
 - **A prompt too long for the GPU context now says what to change (`serve`, `goinfer-chat --batch`).** The 400 for a prompt that fills the
   resident KV capacity said only "the model's context window is 8192", which reads as the model's own limit; opencode answered an 11,137-token
   first request with 34 compaction retries. When the GPU context (`-ctx`, default 8192 on CUDA, 4096 on Metal) is smaller than the model's
