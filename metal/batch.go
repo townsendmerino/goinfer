@@ -138,6 +138,7 @@ kernel void mc3_bt(device const uint4* wq[[buffer(0)]], device const half* sct[[
     }
 }
 template [[host_name("mc3_bt_fb2")]] kernel decltype(mc3_bt<2>) mc3_bt<2>;
+template [[host_name("mc3_bt_fb4")]] kernel decltype(mc3_bt<4>) mc3_bt<4>;
 
 // mc3_btd: gemv_w4a8_resid_staged for 8 rows. That kernel sums per 8-k WORD (lane L: words L, L+32, ...), so each k
 // block's MMA runs into its own zero fragment (exactly that word's integer sum) and residues are words.
@@ -203,6 +204,7 @@ kernel void mc3_btd(device const uint4* wq[[buffer(0)]], device const half* sct[
     }
 }
 template [[host_name("mc3_btd_fb2")]] kernel decltype(mc3_btd<2>) mc3_btd<2>;
+template [[host_name("mc3_btd_fb4")]] kernel decltype(mc3_btd<4>) mc3_btd<4>;
 
 // mc3_lm: gemv_w8a8_coal for 8 rows. A 32-k slab's four MMAs stay below 2^24 (32*128*128), so each lane converts the
 // slab's exact integer and sums it in int32 — production's integer, in any order. Inside a slab k is permuted, the same
@@ -263,14 +265,18 @@ kernel void mc3_sstree(device const float* in [[buffer(0)]], device float* out [
 // per-sequence uniforms. nil when the resident cannot batch (batchIneligible).
 type batchState struct {
 	pack, packLM, bt, btd, lm Pipeline
-	xB, qkvB, guB, logitsB    Buffer // f32 rows
-	aqB, cqB, mqB, dqB        Buffer // int8 rows
-	aScB, cScB, mScB, dScB    Buffer // one f32 per row
-	aT, aTp                   Buffer // half [K][8]
-	uM, uQKV, uGU, uV         Buffer
-	uMode                     [3]Buffer
-	uPos, uNKeys, uQTemp      []Buffer
-	uFANSplit                 []Buffer
+	// E-P03: the same two fragments at FB = 4 (8*FB output rows per threadgroup: which rows a simdgroup owns, not how a row
+	// is summed, so bit-identical to FB = 2), and the FB each projection runs at, chosen per model by calibrateFB.
+	bt4, btd4              Pipeline
+	fbQKV, fbO, fbGU, fbD  int
+	xB, qkvB, guB, logitsB Buffer // f32 rows
+	aqB, cqB, mqB, dqB     Buffer // int8 rows
+	aScB, cScB, mScB, dScB Buffer // one f32 per row
+	aT, aTp                Buffer // half [K][8]
+	uM, uQKV, uGU, uV      Buffer
+	uMode                  [3]Buffer
+	uPos, uNKeys, uQTemp   []Buffer
+	uFANSplit              []Buffer
 	// per-row uniforms and outputs of a device draw (ForwardSample's gumbel dispatches, run on a row of logitsB)
 	uGInvT, uGK0, uGK1, uGD0, uGD1 []Buffer
 	gOut                           Buffer // [batchMaxSeqs] int32 ids
@@ -364,6 +370,8 @@ func (r *resident) buildBatch() {
 	b.qkvRows = b.nHhd + 2*g0.kvDim
 	b.kOff, b.vOff = b.nHhd*4, (b.nHhd+g0.kvDim)*4
 	b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), p("mc3_btd_fb2"), p("mc3_lm_fb4")
+	b.bt4, b.btd4 = p("mc3_bt_fb4"), p("mc3_btd_fb4")
+	b.fbQKV, b.fbO, b.fbGU, b.fbD = 2, 2, 2, 2
 	const B = batchMaxSeqs
 	maxK := max(r.H, b.nHhd, r.I)
 	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLen(B*r.H), d.NewBufferLen(B*b.qkvRows), d.NewBufferLen(B*2*r.I), d.NewBufferLen(B*r.V)
@@ -390,14 +398,90 @@ func (r *resident) buildBatch() {
 		b.uCount = append(b.uCount, NewBufferU32(d, uint32(k)))
 	}
 	r.batch = b
+	r.calibrateFB()
 	r.calibrateRows()
 	if r.specNgram {
 		r.calibrateVerifyCost() // E-P06: this model's own verify cost curve (verify_cost.go)
 	}
 }
 
-// batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
-const batchTGBytes = 4 * 2 * 32 * 8
+// frag is one fragment dispatch's pipeline, grid and threadgroup memory at FB = fb over n output rows: n/(8*fb)
+// threadgroups of 128 threads, and the Q exchange's 4 simdgroups x fb row blocks x 32 lanes of float2.
+func (b *batchState) frag(down bool, fb, n int) (p Pipeline, threads, tgBytes int) {
+	p = b.bt
+	if down {
+		p = b.btd
+	}
+	if fb == 4 {
+		p = b.bt4
+		if down {
+			p = b.btd4
+		}
+	}
+	return p, n / (8 * fb) * 128, 4 * fb * 32 * 8
+}
+
+// calibrateFB picks, once per model, FB = 2 or 4 for each of the four fragment projections (E-P03,
+// docs/audit-metal-2026-09-30.md): S0 recorded FB = 4 best for the 7B's gate|up and down and FB = 2 for every 1.5B
+// shape, and the shipped build ran FB = 2 everywhere. Both run on the real weights of the first layers, one layer's
+// weights per dispatch so the cache does not serve them, interleaved rep by rep, each keeping its fastest command
+// buffer after 3 warm-ups, as calibrateRows does. FB = 4 is taken only where the shape's rows divide by 32 and it is at
+// least 3% faster, so a near tie does not flip between loads. Speed only: a row's sum is the same at either FB.
+func (r *resident) calibrateFB() {
+	b := r.batch
+	n := min(8, r.nL)
+	b.uM.SetU32(batchMaxSeqs)
+	type shape struct {
+		name string
+		down bool
+		rows int
+		enc  func(e *Encoder, L *residLayer, p Pipeline, threads, tg int)
+		fb   *int
+	}
+	shapes := []shape{
+		{"qkv", false, b.qkvRows, func(e *Encoder, L *residLayer, p Pipeline, th, tg int) {
+			e.DispatchTG(p, th, 128, tg, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		}, &b.fbQKV},
+		{"o", false, r.H, func(e *Encoder, L *residLayer, p Pipeline, th, tg int) {
+			e.DispatchTG(p, th, 128, tg, L.oW, L.oS, b.aT, b.cScB, b.xB, L.geom.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
+		}, &b.fbO},
+		{"gate|up", false, 2 * r.I, func(e *Encoder, L *residLayer, p Pipeline, th, tg int) {
+			e.DispatchTG(p, th, 128, tg, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
+		}, &b.fbGU},
+		{"down", true, r.H, func(e *Encoder, L *residLayer, p Pipeline, th, tg int) {
+			e.DispatchTG(p, th, 128, tg, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
+		}, &b.fbD},
+	}
+	line := ""
+	for _, sh := range shapes {
+		if sh.rows%32 != 0 {
+			line += fmt.Sprintf(" %s 2 (%d rows)", sh.name, sh.rows)
+			continue
+		}
+		best := [2]float64{}
+		for rep := range 10 {
+			for a, fb := range [2]int{2, 4} {
+				p, th, tg := b.frag(sh.down, fb, sh.rows)
+				e := r.q.Begin()
+				for l := range n {
+					sh.enc(e, &r.layers[l], p, th, tg)
+				}
+				e.End()
+				if e.Err() != nil {
+					return // FB = 2 everywhere
+				}
+				if t := (e.GPUEnd() - e.GPUStart()) / float64(n); rep >= 3 && (best[a] == 0 || t < best[a]) {
+					best[a] = t
+				}
+			}
+		}
+		if best[0] > 0 && best[1] > 0 && best[1] < 0.97*best[0] {
+			*sh.fb = 4
+		}
+		line += fmt.Sprintf(" %s %d (%.3f / %.3f ms)", sh.name, *sh.fb, best[0]*1e3, best[1]*1e3)
+	}
+	fmt.Fprintf(os.Stderr, "metal: batched step fragments at FB (FB=2 / FB=4 per layer):%s\n", line)
+}
 
 // calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as
 // one fragment dispatch (MC3 S4, docs/tasks/task-concurrency-2026-09.md). The fragment's cost is fixed for any B up to
@@ -412,14 +496,16 @@ func (r *resident) calibrateRows() {
 	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
 	pg, ng := saRowsPick(r.pSA, r.pSARows, 2*r.I, r.gemvRows.gu)
 	arms := []func(e *Encoder, L *residLayer){
-		func(e *Encoder, L *residLayer) { // qkv, fragment
-			e.DispatchTG(b.bt, b.qkvRows/16*128, 128, batchTGBytes, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		func(e *Encoder, L *residLayer) { // qkv, fragment (at the FB calibrateFB chose)
+			p, th, tg := b.frag(false, b.fbQKV, b.qkvRows)
+			e.DispatchTG(p, th, 128, tg, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
 		},
 		func(e *Encoder, L *residLayer) { // qkv, one production GEMV
 			e.DispatchTG(pq, nq, 256, r.H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH)
 		},
-		func(e *Encoder, L *residLayer) { // gate|up, fragment
-			e.DispatchTG(b.bt, 2*r.I/16*128, 128, batchTGBytes, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
+		func(e *Encoder, L *residLayer) { // gate|up, fragment (at the FB calibrateFB chose)
+			p, th, tg := b.frag(false, b.fbGU, 2*r.I)
+			e.DispatchTG(p, th, 128, tg, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
 		},
 		func(e *Encoder, L *residLayer) { // gate|up, one production GEMV
 			e.DispatchTG(pg, ng, 256, r.H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH)
@@ -579,7 +665,10 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	// sub-row offset is always computed whole (row*n + off), never as row.At(off).
 	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
 	pack := func(e *Encoder, aq Buffer, K int, uK Buffer) { e.Dispatch(b.pack, K*8, 256, aq, b.aT, b.uM, uK) }
-	const tgb = batchTGBytes
+	pQKV, thQKV, tgQKV := b.frag(false, b.fbQKV, b.qkvRows) // E-P03: each projection at its calibrated FB
+	pO, thO, tgO := b.frag(false, b.fbO, H)
+	pGU, thGU, tgGU := b.frag(false, b.fbGU, 2*I)
+	pD, thD, tgD := b.frag(true, b.fbD, H)
 	// S4: below the calibrated sizes, qkv and gate|up run production's GEMV once per row (the row's int8 activations
 	// and scale in, its output row out), which is production's arithmetic by definition.
 	rowsQKV, rowsGU := B <= b.rowsQKV, B <= b.rowsGU
@@ -610,7 +699,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 			}
 		} else {
 			pack(e, b.aqB, H, r.uH)
-			e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+			e.DispatchTG(pQKV, thQKV, 128, tgQKV, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
 		}
 		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
 		// KV store and attention, each row over its OWN slot: a layer's slots are one allocation (kvContig), reached
@@ -635,7 +724,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		}
 		e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
 		pack(e, b.cqB, nHhd, g.uNHhd)
-		e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
+		e.DispatchTG(pO, thO, 128, tgO, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		if rowsGU {
 			for m := range B {
@@ -643,11 +732,11 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 			}
 		} else {
 			pack(e, b.mqB, H, r.uH)
-			e.DispatchTG(b.bt, 2*I/16*128, 128, tgb, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
+			e.DispatchTG(pGU, thGU, 128, tgGU, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
 		}
 		e.Dispatch(r.pSwRows, B*256, 256, b.guB, b.guB, b.dqB, b.dScB, r.uI, r.uAct)
 		pack(e, b.dqB, I, r.uI)
-		e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
+		e.DispatchTG(pD, thD, 128, tgD, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
 	}
 	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)

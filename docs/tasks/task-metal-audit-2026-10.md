@@ -438,6 +438,31 @@ the 7B at 2048, so part of it was depth, which this does not take. The 0.5B's cu
 | Rule | **≥ 1.02 on chat, with copy on the 1.5B ≥ 0.98: ships.** Otherwise killed: `SpecNgram`'s calibration and the measured curve are reverted, and the record keeps the numbers. |
 | Reported | The 0.5B (the largest curve change) and the 7B (whose curve should sit near the constant it was measured from: a check on the method), each against plain as well. |
 
+### E-P03: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+
+Built and bit-identical on the branch. The MC3 batched step ran its four fragment projections (qkv, o, gate|up, down)
+at FB = 2 on every model, where S0 recorded FB = 4 best for the 7B's gate|up and down.
+- **The build:** `mc3_bt` and `mc3_btd` are now instantiated at FB = 4 beside 2, and `calibrateFB` picks per
+  projection at build time. It times both on the first layers' real weights, the best of 10 interleaved reps after 3
+  warm-ups, as `calibrateRows` does. It takes FB = 4 only where the projection's rows divide by 32 and FB = 4 is at
+  least 3% faster. `calibrateRows` then runs on the chosen FB.
+- **Why it cannot change a bit:** FB changes which rows a simdgroup owns, not how a row is summed.
+- **`TestMC3Step_fb4BitIdentical`:** forces FB = 4 on every projection, with the fragment at every batch size. Over
+  4 sequences × 12 steps, 0 logits differ from production's single-token forward. Halving FB = 4's grid fails every
+  logit.
+- **On the real 1.5B** (two loads, exploratory): calibration keeps FB = 2 everywhere. gate|up reads 0.250 against
+  0.277 ms and down 0.136 against 0.164, as S0 recorded for that model.
+- **A one-rep smoke on the 0.5B,** where calibration also keeps FB = 2 (so both arms are the same build), read
+  0.97–1.10 per cell. That is the single-rep noise, which the rule below accounts for.
+
+| | |
+|---|---|
+| Instrument | `TestEP03StepAB` by `docs/measurements/metal-audit-2026-10/run-ep03-grade.sh` on the night queue: the 7B `.int4.metal.giw` and the 1.5B `.gguf`, 8 KV slots at a 2560 context. B = 4 and 8 sequences at depths 128 and 2048. 9 reps, each running the calibrated FB and FB = 2 everywhere, alternated, 6 steps each at the same positions and inputs. An arm's time is the median step GPU time. Estimate about 25 minutes (filling 8 slots to 2048 is most of it); queued at 35. |
+| Precondition | Every rep's first-step logits are equal across the arms. A difference kills. |
+| Graded | `E-P03 METRIC fb2/calibrated` on the **7B at B = 4, depth 128** (the audit's B ≥ 3 band). |
+| Rule | **≥ 1.02 with at least 7 of 9 reps above 1: ships.** Otherwise killed: `calibrateFB` and the FB = 4 instantiations are reverted, and the record keeps the numbers. If the 7B's calibration itself picks FB = 2 everywhere, the arms are the same build, and E-P03 is killed on the record of what it picked. |
+| Reported | The 7B's other cells. The 1.5B as an A/A control when its calibration keeps FB = 2 (expected): its readings are the noise floor the 7B's are read against. |
+
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
 
@@ -721,3 +746,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-02: **E-P09 done** (owner: "go"). Metal keeps 2 resident KV slots when `-kv-sessions` is not given; a given
   count is kept. Serve passes the distinction as `decoder.Options.ResidentKVSlotsDefault`. The docs (`server.md`,
   `flags.md`) and the CHANGELOG say so, including that batching 4 clients on Metal now takes `-kv-sessions 4`.
+- 2026-10-02: **E-P03 built, bit-identical, queued for its grade** (owner: "do e-p03 now"). FB = 4 is instantiated beside
+  2, and `calibrateFB` picks per projection at build. On the 1.5B it keeps FB = 2, as S0 found. The 7B decides tonight.

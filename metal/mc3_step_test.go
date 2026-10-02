@@ -139,6 +139,23 @@ func mc3Step(t *testing.T, r *resident, seqs []batchSeq) [][]float32 {
 //	GOINFER_METAL_MC3=1 go test -count=1 -run '^TestMC3Step_bitIdentical$' -v ./metal/
 func TestMC3Step_bitIdentical(t *testing.T) { mc3Identity(t, []int{5, 23, 40, 300}, 1024) }
 
+// TestMC3Step_fb4BitIdentical is E-P03's identity gate: the step with every fragment projection forced to FB = 4 (and the
+// fragment forced at every batch size, so qkv and gate|up do not take the per-row GEMVs) against production's
+// single-token forward, as TestMC3Step_bitIdentical. calibrateFB picks FB = 4 only for speed; this pins that it never
+// changes a bit.
+func TestMC3Step_fb4BitIdentical(t *testing.T) {
+	mc3IdentityWith(t, []int{5, 23, 40, 300}, 1024, func(r *resident) {
+		b := r.batch
+		for _, n := range []int{b.qkvRows, r.H, 2 * r.I} {
+			if n%32 != 0 {
+				t.Fatalf("the fixture has a %d-row projection, not FB = 4's multiple of 32", n)
+			}
+		}
+		b.fbQKV, b.fbO, b.fbGU, b.fbD = 4, 4, 4, 4
+		b.rowsQKV, b.rowsGU = 0, 0
+	})
+}
+
 // TestMC3Step_bitIdenticalDeep is the same check where production's single-token step plans attention_fa (at or above
 // attnFADepthFloor keys): two sequences past the floor, one crossing it during the 12 steps, one shallow — so the
 // batched step must reproduce each sequence's own attention plan, both kinds in one command buffer.
@@ -379,7 +396,7 @@ func TestMC3StepBreakdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	cats := map[string][]*Pipeline{
-		"matmul":    {&b.bt, &b.btd, &b.lm},
+		"matmul":    {&b.bt, &b.btd, &b.bt4, &b.btd4, &b.lm},
 		"attention": {&r.pAttn, &r.pAttnFA, &r.pAttnFACombine, &r.pAttnRows},
 		"per-row":   {&r.pRms, &r.pRope2, &r.pKv, &r.pQv, &r.pSw, &b.pack, &b.packLM, &r.pRmsRows, &r.pQvRows, &r.pSwRows, &r.pRope2Rows, &r.pKvRows},
 	}
