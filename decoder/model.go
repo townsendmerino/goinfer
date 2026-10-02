@@ -1677,6 +1677,12 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	mc3.prefillExclusive(func() {
 		if err = m.residentBind(slot); err == nil {
 			logits, err = m.residentPrefillSeed(ctx, prompt, from, false)
+			// The seed may be the resident's shared host buffer (a Forward, or a prefill path that returns it), and the
+			// generation reads it after this exclusive section, when another generation's token may be rewriting it:
+			// copy it while the resident is still ours (E-C01, docs/audit-metal-2026-09-30.md; generateInto's mc3Logits).
+			if err == nil {
+				logits = append([]float32(nil), logits...)
+			}
 		}
 	})
 	return logits, err
@@ -1952,6 +1958,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	var topKPre *SampleInfo
 	var topKPreFull bool
 	var topKFullBuf []float32
+	// mc3Logits holds an MC3 solo token's logits (E-C01, docs/audit-metal-2026-09-30.md): a resident's Forward returns its
+	// one host buffer, reused by every call, and this generation reads the logits after leaving the resident — in its
+	// LogitProcessor and its sampler — while another generation's solo token may already be rewriting that buffer.
+	var mc3Logits []float32
 	var optGate *optFwdGate
 	if optFwd {
 		optGate = &optFwdGate{}
@@ -2176,11 +2186,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				draw = &ResidentBatchDraw{Temperature: sp.Temperature, Seed: seed, Draw: d}
 			}
 			// residentCall is this token's production resident call.
+			viaForward := false // residentCall returned Forward's logits, the resident's shared host buffer
 			residentCall := func() error {
 				var ferr error
 				if needFull {
 					// The gated processor needs this position's full logits (it is about to mask them).
 					logits, ferr = m.resident.Forward(emb, pos)
+					viaForward = true
 				} else if fastGreedy {
 					// Greedy fast path: the resident picks the argmax on-device and returns
 					// just the id, skipping the full-logits readback.
@@ -2211,6 +2223,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					}
 				} else {
 					logits, ferr = m.resident.Forward(emb, pos)
+					viaForward = true
 				}
 				return ferr
 			}
@@ -2225,7 +2238,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 						if berr := m.residentBind(mc3Slot); berr != nil {
 							return berr
 						}
-						return residentCall()
+						if ferr := residentCall(); ferr != nil {
+							return ferr
+						}
+						if viaForward { // copy while this generation still holds the resident (E-C01, mc3Logits)
+							mc3Logits = append(mc3Logits[:0], logits...)
+							logits = mc3Logits
+						}
+						return nil
 					}}
 				err = mc3.forward(q)
 				if err == nil && q.out != nil {

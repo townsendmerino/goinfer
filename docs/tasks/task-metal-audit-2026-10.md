@@ -535,3 +535,9 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   tokens, which run sequentially. Its gain, from T1.10: the step at 0.40× the pass at 16 tokens (about −55 ms on the
   1.5B) and 0.80× at 32 (about −19 ms). It would also need the decoder's chunk cutter to keep tails above 32 tokens,
   not built. A-P01, graded tonight, speeds the same short passes while keeping the pass's numerics.
+- 2026-10-02: **E-C01 confirmed and fixed** (latent before, live with a slow `LogitProcessor`): under MC3 a solo token's
+  logits and the prompt's seed were the resident's shared host buffer, read by the generation after leaving the
+  resident. `TestMC3_soloLogitsSurviveAnotherGeneration` changed A's tokens on 3 of 3 runs before; both seams now copy
+  while the resident is held, and each copy's removal fails the test. E-P09: the owner asked whether 2 KV slots would be a
+  good compromise; recommended as a Metal-only default (keeps the batched step, saves about 224 MB on the 1.5B and 470
+  MB on the 7B from the first token, costs the 3rd and 4th concurrent clients their batching). Not built; awaiting the go.
