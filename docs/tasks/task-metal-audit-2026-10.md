@@ -69,6 +69,28 @@ committed before it runs.
 - **Owner-gated:** T1.8 and T1.9, both on M26.
 - **On nobara:** T1.13, the CPU-side requantisation-error script on the real gpt-oss checkpoint.
 
+### Batch A: pre-registration (written 2026-10-01, before any graded run)
+
+The probes are `metal/audit_batch_a_test.go`, run by `docs/measurements/metal-audit-2026-10/run-batch-a.sh` from a test
+binary built at a pinned commit. T1.5 is not in it: its 1.5B re-run and its default-run fixture were done by day on
+2026-10-01 (identity, not timing). Smoke runs at one repetition checked the harness only; none of their numbers is a
+result. Models are int4 from `~/models`: the 1.5B and the 0.5B are qwen2.5-coder-1.5b/0.5b-instruct q4_k_m `.gguf`; the 7B
+is qwen2.5-7b-instruct, loaded from its `.int4.metal.giw` sidecar as R18b did (file-backed, so lighter on this Mac's
+memory than the `.gguf`). Estimate: about 15 minutes of work and 7 model loads; queued at 20.
+
+| Probe | Models, sample | Reading | Rule |
+|---|---|---|---|
+| T1.1 (A-P03) | 1.5B; one `PrefillLast` pass at startPos 64, 2048, 8000 × C 16, 32, 48, 64; 7 reps, cells interleaved in a rotating order | paired delta, wall time, (startPos 2048) − (startPos 64) at C = 32, median of the 7 pairs | ≤ 10 ms: A-P03 closes. ≥ 25 ms: build the BQ=16 steel variant (Phase 3). Between: parked. |
+| T1.2 (B-P03) | 1.5B and 7B; 20 decode tokens per arm from 256, 384, 512, 768, 1024, 1280, 1535 keys; 5 reps, arms alternated; GPU time per token | legacy ÷ block kernel, per depth and model | Below 1.05 at 768 keys on both models: the floor stays (killed). Otherwise the candidate floor is the smallest depth with ≥ 1.10 on one model and ≥ 1.00 on the other, and it goes to the fidelity gate before anything ships. No such depth: parked. |
+| T1.3 (C-B01) | 1.5B and 0.5B; 200 greedy tokens through the pipelined `Forward` | GPU-idle gap GPUStart(t+1) − GPUEnd(t), median | Under 0.15 ms on both models: C-B01 is killed. At or above it on both: C-B01 stands, and the median replaces its projected band. Mixed: reported per model, parked. |
+| T1.4 (B-P04) | standalone `gemv_w4a8_sa_rows4` at ~15 MB of weights, K 1536, 2048, 3072; 7 reps, arms interleaved, weight copies rotated past the cache | GPU time per byte, K=1536 ÷ K=2048, with K=3072 ÷ K=2048 as the no-tail control | ≥ 1.10 with the control within ±5%: the idle tail is confirmed and B-P04's bit-identical build goes ahead. Under 1.05: B-P04's premise is killed. Otherwise parked. |
+| T1.10 timing (E-P01) | 1.5B and 7B; a fresh K = 8, 16, 32, 64 prompt three ways (sequential loop, the batched step in 8-row pieces, the batched pass with its floor off); 7 reps, arms interleaved | step ÷ sequential at K = 32, wall time; step ÷ pass at K ≥ 16, reported | Above 0.6 on either model: E-P01 is killed. At or under 0.6 on both: E-P01's route goes ahead (Phase 3 item 1), limited to the K where step is faster than the pass. |
+
+Two deviations from the audit's wording, both decided before the run. T1.3's gap uses GPUStartTime and GPUEndTime: the
+audit wrote kernStart/kernEnd, but Metal's kernelStart/EndTime are the CPU's scheduling window for a command buffer, not
+its execution (the probe prints that gap too, for reference). T1.2's two-model rule is spelled out above; the audit's
+"on either model" is read as "the floor stays unless at least one model gains 1.05×".
+
 ## Phase 3 — builds, in this order
 
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
@@ -271,3 +293,8 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     Log: `docs/measurements/metal-audit-2026-10/t16-kv-slot-footprint-2026-10-01.log`.
   - T1.12 not done: it needs a real MoE's routing, and the only MoEs on this Mac's local disk are M26 and M35
     (owner-gated). It joins the M26 night items.
+- 2026-10-01: **Phase 2, Batch A written and pre-registered** (the table under Phase 2): `metal/audit_batch_a_test.go`
+  holds the five probes, gated by `GOINFER_METAL_AUDIT_A=1`. A smoke run at one repetition (exploratory, numbers not
+  results) found two harness errors, both fixed before the pre-registration: T1.2 had read the CPU's scheduling window
+  (`kernStart/kernEnd`, ~0.1 ms) as the token's GPU time, and T1.1 printed an empty GPU column (`PrefillLast` records no
+  GPU timestamps; wall time only now).
