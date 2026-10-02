@@ -129,6 +129,10 @@ any surface may still change.
 
 ### Fixed
 
+- **An image request with `logprobs: true` now returns them.** The vision route accepted the flag and answered 200 with no `logprobs` field, because `driveVL` discarded the per-token
+  logprobs. The buffered reply carries `choices[0].logprobs` (one entry per completion token, with `top_logprobs`), and a streamed image request with `logprobs` is a 400, as on the text
+  route. Found while explaining why WebGPU Qwen2.5-VL gives different text on a cold and a prefix-reused turn at temperature 0 (a CPU-prefill versus GPU-last-token arithmetic gap, not a
+  defect; CUDA is identical). `docs/measurements/multimodal-audit-2026-10-02.md` items 8 and 10.
 - **A schema that types a numeric column as `string` no longer loops on whitespace until `max_tokens`.** The grammars allowed unlimited
   whitespace at every structural boundary, so when the model wanted a bare number where the schema said `string` the mask left whitespace as
   the best legal token and generation padded spaces forever, silently. Whitespace between tokens is now bounded at 64 bytes, and at 1 between a

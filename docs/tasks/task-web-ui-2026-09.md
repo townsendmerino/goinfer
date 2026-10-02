@@ -326,7 +326,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:1065`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:1070`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -1457,7 +1457,7 @@ not done: [`../measurements/web-ui-schema-2026-10-02/README.md`](../measurements
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:1057` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:1062` (`contextWindow`) ·
 `internal/serveapp/admin.go:125` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:552` (the sampling fields the page never sends) ·
 `anthropic.go`'s request type (no thinking block in v1; added 2026-09-30) · `pull/pull.go:181` (`Size`, for the

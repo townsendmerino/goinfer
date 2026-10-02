@@ -776,6 +776,11 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "tools are not supported together with image inputs; send images or tools, not both")
 			return
 		}
+		// The vision stream has no logprobs field, so a stream:true request would silently drop them: the text route's rule (400).
+		if req.Stream && req.sampling.Logprobs {
+			writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
+			return
+		}
 		s.serveVisionChat(w, r, req, imgs)
 		return
 	}
@@ -1612,11 +1617,11 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // resident backend, GenerateVL/GenerateQwenVL do their own resident-GPU-KV image
 // reuse when the SAME image is resent (P9a); vi.features is then never invoked at
 // all. Returns finish reason ("stop" | "length" | "cancelled" — K1), completion
-// token count, stop string, how many leading prompt tokens were reused (see
+// token count, the per-token logprobs (nil unless requested), stop string, how many leading prompt tokens were reused (see
 // drive's doc comment), the K1 admin-cancel reason (empty unless an admin cancel
 // ended the turn), and any terminal generation error (nil on a clean end — see
 // genErr). gens and jobs are drive's own K1/J2 parameters; see drive's doc comments.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	var g *generation
 	if gens != nil && gr.id != "" {
 		// See drive's identical block for why this must wrap parent, not the ctx derived below.
@@ -1664,7 +1669,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
-	return finish, n, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (including

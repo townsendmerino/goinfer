@@ -348,7 +348,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -371,7 +371,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	}
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -392,6 +392,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			"finish_reason": finish,
 		}},
 		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
+	}
+	if req.Logprobs {
+		vresp["choices"].([]any)[0].(map[string]any)["logprobs"] = lm.logprobs(lps)
 	}
 	if gr.conf != nil {
 		vresp["goinfer_confidence"] = gr.conf.payload()
@@ -475,7 +478,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, th.push)
 		if th.want {
 			streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
-				finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
+				finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
 				return finish, nComp, stopSeq, cancelReason, gerr
 			})
 			return
@@ -487,7 +490,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		// N-24 (docs/audit-2026-09-10.md): the ping above is one-shot, not a keep-alive — an
 		// image prefill on CPU can take minutes with nothing sent until the first token.
 		stopBeat := sseHeartbeat(ss)
-		finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
@@ -506,7 +509,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return

@@ -112,7 +112,7 @@ func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byt
 	}
 	gr.maxTokens = maxTokens
 	var sb strings.Builder
-	_, n, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(s string) { sb.WriteString(s) })
+	_, n, _, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(s string) { sb.WriteString(s) })
 	if err != nil {
 		t.Fatalf("driveVL: %v", err)
 	}
@@ -152,6 +152,45 @@ func TestGemma4VLReal_E2B(t *testing.T) {
 	}
 	if r := distinctTrigramRatioServeapp(text); r < 0.5 {
 		t.Errorf("answer looks degenerate (distinct-trigram %.3f < 0.5): %q", r, text)
+	}
+}
+
+// TestGemma4VLReal_E2B_logprobs: an image turn's driveVL returns the per-token logprobs the request asked for (they were
+// discarded before, so an image request with logprobs:true answered 200 with none). One entry per generated token, each with
+// the asked-for number of alternatives, the chosen token's logprob <= 0 and (greedy) no better than the top alternative,
+// and the OpenAI-shaped rendering carries the same count.
+func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	modelPath := filepath.Join(home, "models", "gemma-4-E2B_q4_0-it.gguf")
+	visionDir := filepath.Join(home, "models", "gemma-4-E2B-unq")
+	lm := loadGemma4VLReal(t, modelPath, visionDir, decoder.Options{})
+
+	img := solidColorPNG(t, 128, color.RGBA{R: 220, G: 30, B: 30, A: 255})
+	vi, err := lm.gemma4VisionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: "What color is this image? Answer in one word."}}, 0, imageRef{mediaType: "image/png", data: img})
+	if err != nil {
+		t.Fatalf("gemma4VisionPrompt: %v", err)
+	}
+	const top = 3
+	topN := top
+	gr, err := lm.prepare(sampling{Logprobs: true, TopLogprobs: &topN}, vi.ids, false)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	gr.maxTokens = 8
+	_, n, lps, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(string) {})
+	if err != nil {
+		t.Fatalf("driveVL: %v", err)
+	}
+	if n == 0 || len(lps) != n {
+		t.Fatalf("%d logprob entries for %d generated tokens", len(lps), n)
+	}
+	for i, lp := range lps {
+		if len(lp.Top) != top || lp.Logprob > 0 || lp.Logprob < lp.Top[0].Logprob-1e-9 {
+			t.Errorf("token %d: logprob %.4f, %d alternatives (want %d, best %.4f)", i, lp.Logprob, len(lp.Top), top, lp.Top[0].Logprob)
+		}
+	}
+	if c, _ := lm.logprobs(lps)["content"].([]any); len(c) != n {
+		t.Errorf("rendered logprobs.content has %d entries, want %d", len(c), n)
 	}
 }
 
