@@ -3,7 +3,10 @@
 > **PARKED, 2026-10-01 (owner), with one graded run queued.** Moved to `docs/tasks/parked/`; a pointer stub stays at the
 > old path because ~60 code comments and several docs cite it. MC0–MC3 (including MC3c) and chunked prefill shipped
 > (below), and nothing in this track is an unblocked build. Open:
-> - **The MC4 candidate's graded run on CUDA — queued for tonight** (`mc4-candidate-cuda`, nobara, ~45 min). The build is
+> - **The MC4 candidate's graded run on CUDA — RAN 2026-10-01 night: IDENTITY FAILED** (candidate replies differ from batch's on
+>   nearly every reply under 4-client load, identical alone; the speed gates are recorded, not read), so it is a bug to find, not a
+>   result; see the RESULT section of [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md).
+>   Do not treat `-spec-adaptive` as lossless. The run was queued as: (`mc4-candidate-cuda`, nobara, ~45 min). The build is
 >   `-spec-adaptive` (`6e9fcb99`, opt-in); the gates and the decision rule were registered before the run in
 >   [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md). The likeliest outcome is a
 >   copy-only miss that goes to the owner. The Metal run of the same gates (the Mac's night queue, ~60 min) is not queued.

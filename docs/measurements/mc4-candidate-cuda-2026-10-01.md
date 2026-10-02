@@ -97,3 +97,53 @@ the job log in `~/goinfer-logs/night/runs/<date>/mc4-candidate-cuda.log`. Grade 
 
 The Metal run of the same gates (`serve-metal`, the Mac's idle gate, ~60 min on the Mac's night queue) is separate and not
 queued from here.
+
+---
+
+# RESULT (graded 2026-10-02 morning; run 2026-10-01 night, nobara-pc, job `mc4-candidate-cuda`, 21 min)
+
+**IDENTITY FAILED, so by the registered rule this is a bug, not a result: gates 2–4 are recorded below and NOT read.** The rule
+in this record's "Decision rule": *"Identity fails: a bug, not a result. Stop, find it, fix it; nothing else is read."*
+
+Provenance: nobara-pc, RTX 2070 SUPER, driver 595.91.07, `serve-cuda` at `efaae8a6` (pinned binary), qwen2.5-coder-1.5b-instruct
+Q4_K_M int4 (7B reported), from `~/models`; 3 rotated rounds × 3 arms, 72 cells, all present (`raw/`); every cell idle-gated
+(load1 ≤ 2.0; the log shows several waits between 4-client cells and none that timed out); greedy. `gates.py` unchanged since the
+registration. Raw: `mc4-candidate-cuda-2026-10-01/raw/`, log `~/goinfer-logs/night/runs/2026-10-01/mc4-candidate-cuda.log`.
+
+## Gate 1: identity (hard)
+
+Replies compared by hash with the first batch cell of the same client count. Counts are differing replies out of the arm's replies.
+
+| workload, clients | candidate | spec-exclusive | batch vs batch |
+|---|---|---|---|
+| copy 1.5B, 1 | 0 / 6 | 0 / 6 | 0 / 6 |
+| copy 1.5B, 4 | **21 / 24** | 1 / 24 | 1 / 24 |
+| chat 1.5B, 1 | 0 / 18 | 0 / 18 | 0 / 18 |
+| chat 1.5B, 4 | **72 / 72** | 0 / 72 | 0 / 72 |
+| staggered copy 1.5B | **69 / 90** | 0 / 90 | 0 / 90 |
+| copy 7B, 1 (reported) | 0 / 6 | 0 / 6 | 0 / 6 |
+| copy 7B, 4 (reported) | **22 / 24** | 0 / 24 | 0 / 24 |
+
+- **Alone, the candidate is identical** to batch (every 1-client cell, both models). **Under concurrent load it differs from batch on
+  nearly every reply** (all 72 chat replies at 4 clients), while the spec-exclusive arm is identical to batch at the same load.
+  So this is not general numeric noise: it is specific to `-spec-adaptive` once a generation switches.
+- Baseline noise exists but is tiny: one reply in the copy-4 cells differs in a batch round (and one in a spec-exclusive round) out of 72.
+- **What it does and does not show.** It shows the candidate's output is not plain decode's under load, which is the lossless claim
+  the candidate rests on (`6e9fcb99`: "a switch at a round boundary changes only who runs the next committed token"). It does **not**
+  say where: only content hashes were recorded, not text, so the first divergent token is unknown. The fake-resident stress test
+  (200/200 under `-race`) checked scheduling, not numerics, which is consistent with this surviving it.
+
+## Gates 2–4 (recorded, NOT graded: identity failed)
+
+For the record only, candidate ÷ batch, paired median of 3: 1 client copy 2.113× and chat 1.259×; 4 clients copy 0.817× and chat
+0.692×; staggered 0.963× aggregate with p99 2.540×; 7B copy 2.081× alone and 0.637× at 4 clients. The 2026-09-29 exploratory smoke
+had projected the copy miss (about 0.78×); that projection was for the speed gates, which this identity failure supersedes.
+
+## What happens next
+
+- Do not recommend, default, or document `-spec-adaptive` as safe. The task doc's MC4 candidate entry carries this result.
+- **To find the bug:** rerun the 4-client chat workload with the candidate and with batch, keep reply TEXT (not hashes), and find the
+  first divergent token of one conversation; then bisect on whether the divergence starts at a switch boundary. A likely place to
+  look is a numeric difference between the CUDA spec verify path and the MC3 batched step (the lossless argument assumes they are
+  bit-identical for the same rows), or a position/KV off-by-one at the switch. This is a hypothesis, not a finding.
+- The Metal run of the same gates (the Mac's night queue) should not be queued until this is understood.
