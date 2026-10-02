@@ -1,0 +1,25 @@
+07:03:03 killwatch: baseline swap-used 486.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 8708
+07:03:03 t+0s swap_used=486.25MB delta=+0MB tick=0MB rss=7600KB free_disk=13G
+07:03:04 t+1s swap_used=486.25MB delta=+0MB tick=0MB rss=729184KB free_disk=13G
+07:03:05 t+2s swap_used=486.25MB delta=+0MB tick=0MB rss=1443344KB free_disk=13G
+07:03:06 t+3s swap_used=486.25MB delta=+0MB tick=0MB rss=2163488KB free_disk=13G
+07:03:07 t+4s swap_used=486.25MB delta=+0MB tick=0MB rss=3674288KB free_disk=13G
+07:03:08 t+5s swap_used=486.25MB delta=+0MB tick=0MB rss=2781600KB free_disk=13G
+07:03:09 t+6s swap_used=486.25MB delta=+0MB tick=0MB rss=3117616KB free_disk=13G
+07:03:10 t+7s swap_used=486.25MB delta=+0MB tick=0MB rss=3954688KB free_disk=13G
+07:03:11 t+8s swap_used=486.25MB delta=+0MB tick=0MB rss=5507568KB free_disk=13G
+07:03:12 t+9s swap_used=486.25MB delta=+0MB tick=0MB rss=5212832KB free_disk=13G
+07:03:13 t+10s swap_used=486.25MB delta=+0MB tick=0MB rss=4247920KB free_disk=13G
+07:03:14 t+12s swap_used=486.25MB delta=+0MB tick=0MB rss=3016752KB free_disk=13G
+07:03:16 t+13s swap_used=486.25MB delta=+0MB tick=0MB rss=2586880KB free_disk=13G
+07:03:17 t+14s swap_used=486.25MB delta=+0MB tick=0MB rss=2513264KB free_disk=13G
+07:03:18 t+15s swap_used=486.25MB delta=+0MB tick=0MB rss=2507248KB free_disk=13G
+07:03:19 t+16s swap_used=486.25MB delta=+0MB tick=0MB rss=2442128KB free_disk=13G
+07:03:20 t+17s swap_used=486.25MB delta=+0MB tick=0MB rss=2409920KB free_disk=13G
+07:03:21 t+18s swap_used=486.25MB delta=+0MB tick=0MB rss=2389520KB free_disk=13G
+07:03:22 t+19s swap_used=486.25MB delta=+0MB tick=0MB rss=2326208KB free_disk=13G
+07:03:23 t+20s swap_used=486.25MB delta=+0MB tick=0MB rss=2253536KB free_disk=13G
+07:03:24 t+21s swap_used=486.25MB delta=+0MB tick=0MB rss=2155808KB free_disk=13G
+07:03:25 t+22s swap_used=486.25MB delta=+0MB tick=0MB rss=2168112KB free_disk=13G
+07:03:26 t+23s swap_used=486.25MB delta=+0MB tick=0MB rss=2140448KB free_disk=13G
+07:03:27 killwatch: pid 8708 exited on its own, stopping watch

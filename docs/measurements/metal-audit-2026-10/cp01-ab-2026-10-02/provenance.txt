@@ -1,0 +1,59 @@
+binary:   f56b40ec sha256 e82447acb289f9d8
+binary:   2838b7de sha256 699a663aa5b78ee5
+binary:   494eb05a sha256 07cae9a6d82f633c
+model:    /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw (16222840395 bytes)
+started:  2026-10-02 06:53:42 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     2.02 2.48 2.31
+swap:     total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== warmup-old (f56b40ec) — 06:53:42
+warmup-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p1-old (f56b40ec) — 06:54:19
+p1-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p1-copy (2838b7de) — 06:55:00
+p1-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p1-pread (494eb05a) — 06:55:37
+p1-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p2-copy (2838b7de) — 06:56:13
+p2-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p2-pread (494eb05a) — 06:56:50
+p2-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p2-old (f56b40ec) — 06:57:26
+p2-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p3-pread (494eb05a) — 06:58:05
+p3-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p3-old (f56b40ec) — 06:58:42
+p3-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p3-copy (2838b7de) — 06:59:22
+p3-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p4-old (f56b40ec) — 06:59:59
+p4-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p4-copy (2838b7de) — 07:00:38
+p4-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p4-pread (494eb05a) — 07:01:15
+p4-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p5-copy (2838b7de) — 07:01:52
+p5-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p5-pread (494eb05a) — 07:02:28
+p5-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p5-old (f56b40ec) — 07:03:03
+p5-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p6-pread (494eb05a) — 07:03:42
+p6-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p6-old (f56b40ec) — 07:04:20
+p6-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p6-copy (2838b7de) — 07:05:00
+p6-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p7-old (f56b40ec) — 07:05:37
+p7-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p7-copy (2838b7de) — 07:06:16
+p7-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p7-pread (494eb05a) — 07:06:53
+p7-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p8-copy (2838b7de) — 07:07:30
+p8-copy rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p8-pread (494eb05a) — 07:08:06
+p8-pread rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+== p8-old (f56b40ec) — 07:08:42
+p8-old rc=0; swap now total = 2048.00M  used = 486.25M  free = 1561.75M  (encrypted)
+finished: 2026-10-02 07:09:22 PDT

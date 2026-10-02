@@ -1,0 +1,11 @@
+rev:      f56b40ec
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-tagged-f56b40ec.test (sha256 e82447acb289f9d8)
+model:    /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw (16222840395 bytes)
+started:  2026-10-02 06:48:33 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     1.64 1.86 1.97
+swap:     total = 2048.00M  used = 494.25M  free = 1553.75M  (encrypted)
+memory:   System-wide memory free percentage: 73%
+t1.9b-64slots rc=1; swap now total = 2048.00M  used = 494.25M  free = 1553.75M  (encrypted)
+t1.9b-64slots: the resident guard declined again (ungraded)
+finished: 2026-10-02 06:48:42 PDT

@@ -1,0 +1,12 @@
+round 1: old 9.99 tok/s (heap 3004.7 MB), copy 10.75 tok/s (heap 1553.0 MB), pread 10.61 tok/s (heap 1553.3 MB); copy/old 1.0761, pread/old 1.0621
+round 2: old 10.06 tok/s (heap 3004.7 MB), copy 10.64 tok/s (heap 1553.1 MB), pread 10.66 tok/s (heap 1553.3 MB); copy/old 1.0577, pread/old 1.0596
+round 3: old 10.15 tok/s (heap 3004.5 MB), copy 10.64 tok/s (heap 1553.1 MB), pread 10.71 tok/s (heap 1553.2 MB); copy/old 1.0483, pread/old 1.0552
+round 4: old 10.38 tok/s (heap 3004.7 MB), copy 10.76 tok/s (heap 1552.9 MB), pread 10.86 tok/s (heap 1553.1 MB); copy/old 1.0366, pread/old 1.0462
+round 5: old 10.13 tok/s (heap 3004.6 MB), copy 10.91 tok/s (heap 1552.9 MB), pread 11.02 tok/s (heap 1553.1 MB); copy/old 1.0770, pread/old 1.0879
+round 6: old 9.96 tok/s (heap 3004.6 MB), copy 10.66 tok/s (heap 1553.0 MB), pread 10.85 tok/s (heap 1553.1 MB); copy/old 1.0703, pread/old 1.0894
+round 7: old 9.92 tok/s (heap 3004.7 MB), copy 10.56 tok/s (heap 1553.1 MB), pread 10.64 tok/s (heap 1553.3 MB); copy/old 1.0645, pread/old 1.0726
+round 8: old 9.93 tok/s (heap 3004.5 MB), copy 10.65 tok/s (heap 1553.1 MB), pread 10.49 tok/s (heap 1553.4 MB); copy/old 1.0725, pread/old 1.0564
+copy/old: median 1.0674 (min 1.0366, max 1.0770), 0 of 8 below 1; heap at token 32 1553.0 MB, 1451.6 MB below old's 3004.6
+pread/old: median 1.0609 (min 1.0462, max 1.0894), 0 of 8 below 1; heap at token 32 1553.2 MB, 1451.4 MB below old's 3004.6
+VERDICT (pread): SHIP (median >= 0.97 and the heap dropped by >= 1.0 GB)
+copy/old is reported, not graded: it says what the pread step is worth

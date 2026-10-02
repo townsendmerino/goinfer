@@ -1,0 +1,25 @@
+06:57:26 killwatch: baseline swap-used 486.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 99466
+06:57:26 t+0s swap_used=486.25MB delta=+0MB tick=0MB rss=6720KB free_disk=13G
+06:57:27 t+1s swap_used=486.25MB delta=+0MB tick=0MB rss=714864KB free_disk=13G
+06:57:28 t+2s swap_used=486.25MB delta=+0MB tick=0MB rss=1431008KB free_disk=13G
+06:57:29 t+3s swap_used=486.25MB delta=+0MB tick=0MB rss=2148368KB free_disk=13G
+06:57:30 t+4s swap_used=486.25MB delta=+0MB tick=0MB rss=2801904KB free_disk=13G
+06:57:31 t+5s swap_used=486.25MB delta=+0MB tick=0MB rss=2974976KB free_disk=13G
+06:57:32 t+6s swap_used=486.25MB delta=+0MB tick=0MB rss=3472720KB free_disk=13G
+06:57:33 t+7s swap_used=486.25MB delta=+0MB tick=0MB rss=4763312KB free_disk=13G
+06:57:34 t+8s swap_used=486.25MB delta=+0MB tick=0MB rss=5639648KB free_disk=13G
+06:57:35 t+9s swap_used=486.25MB delta=+0MB tick=0MB rss=5071056KB free_disk=13G
+06:57:36 t+10s swap_used=486.25MB delta=+0MB tick=0MB rss=3650944KB free_disk=13G
+06:57:37 t+11s swap_used=486.25MB delta=+0MB tick=0MB rss=2755136KB free_disk=13G
+06:57:38 t+12s swap_used=486.25MB delta=+0MB tick=0MB rss=2585120KB free_disk=13G
+06:57:40 t+14s swap_used=486.25MB delta=+0MB tick=0MB rss=2545968KB free_disk=13G
+06:57:41 t+15s swap_used=486.25MB delta=+0MB tick=0MB rss=2496688KB free_disk=13G
+06:57:42 t+16s swap_used=486.25MB delta=+0MB tick=0MB rss=2371712KB free_disk=13G
+06:57:43 t+17s swap_used=486.25MB delta=+0MB tick=0MB rss=2326512KB free_disk=13G
+06:57:44 t+18s swap_used=486.25MB delta=+0MB tick=0MB rss=2290176KB free_disk=13G
+06:57:45 t+19s swap_used=486.25MB delta=+0MB tick=0MB rss=2166656KB free_disk=13G
+06:57:46 t+20s swap_used=486.25MB delta=+0MB tick=0MB rss=2022704KB free_disk=13G
+06:57:47 t+21s swap_used=486.25MB delta=+0MB tick=0MB rss=1949824KB free_disk=13G
+06:57:48 t+22s swap_used=486.25MB delta=+0MB tick=0MB rss=1909184KB free_disk=13G
+06:57:49 t+23s swap_used=486.25MB delta=+0MB tick=0MB rss=1902112KB free_disk=13G
+06:57:50 killwatch: pid 99466 exited on its own, stopping watch

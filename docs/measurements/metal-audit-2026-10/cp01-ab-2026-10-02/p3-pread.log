@@ -1,0 +1,26 @@
+=== RUN   TestAuditM26_pagedProbe
+[m26    0.0s] pid 807, model /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw, 8 slots per layer, 128 tokens, hold "/Users/francistownsend-merino/goinfer-logs/metal-audit-2026-10/cp01-ab/p3-pread.hold"
+[metal] weights aliased from gemma4-26b-int4-v14st.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1517 MB bound in place, 1 MB copied (anonymous) — 723 MB int4 nibbles (60 single tensors + 55 fused groups = 445 MB) + 704 MB int8 codes (1 matrices) + 90 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[m26    7.7s] built in 7.7 s: 30 paged MoE layers
+[m26    9.3s] token 8/128, 6.69 tok/s so far
+[m26   10.1s] token 16/128, 8.05 tok/s so far
+[m26   10.8s] token 24/128, 8.98 tok/s so far
+[m26   11.5s] token 32/128, 9.66 tok/s so far
+[m26   11.6s] HOLD at token 32: Go heap in use 1553.2 MB (heap sys 1694.9, sys 1707.7)
+[m26   12.6s] released
+[m26   13.4s] token 40/128, 9.32 tok/s so far
+[m26   14.2s] token 48/128, 9.50 tok/s so far
+[m26   15.0s] token 56/128, 9.67 tok/s so far
+[m26   15.7s] token 64/128, 9.80 tok/s so far
+[m26   16.5s] token 72/128, 9.85 tok/s so far
+[m26   17.2s] token 80/128, 10.00 tok/s so far
+[m26   17.8s] token 88/128, 10.18 tok/s so far
+[m26   18.5s] token 96/128, 10.30 tok/s so far
+[m26   19.2s] token 104/128, 10.38 tok/s so far
+[m26   19.9s] token 112/128, 10.50 tok/s so far
+[m26   20.5s] token 120/128, 10.60 tok/s so far
+[m26   21.2s] token 128/128, 10.70 tok/s so far
+[m26   21.2s] DECOMP/tok: token 93.4 ms | GPU-busy 42.1 | phase wall 63.1 | encode 4.0 | submit+wait 59.1 | stage 24.5 | idx-coord 0.0
+[m26   21.2s] RESULT 8 slots: 10.71 tok/s (93.4 ms per token over 128 tokens); per-CB round trip (submit+wait - GPU-busy) 17.0 ms per token = 0.182 of the token
+--- PASS: TestAuditM26_pagedProbe (21.28s)
+PASS

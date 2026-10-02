@@ -48,11 +48,13 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
   gated softmax layer's two kernels checked against the CPU), F-G04 (answered: where the verify gate went),
   E-G01 and F-G02 (the MC3 identity checks run by default on a generated fixture), and T0.5 (the stale comments and
   doc lines; two of its findings did not hold, see the Track 0 row).
-- 2026-10-02, on the branch: **C-P01 built, pending its A/B.** The night probe (T1.8) measured the scale cache at
-  1361.2 MB of 3004.6 MB of Go heap on M26 (0.453, parked by its rule); the owner promoted it on the absolute size. Both
-  pagers now stage each expert's f16 scales from its WeightMat (the mapping); the cache and `int4DirectBytes` are gone.
-  Bit-identical by an exhaustive binary16 round-trip test. The A/B on M26 is pre-registered in the program doc, with
-  this row's own kill line (decode worse than −3%) as its ship bar.
+- 2026-10-02, on the branch: **C-P01 done.** The night probe (T1.8) measured the scale cache at 1361.2 MB of 3004.6 MB
+  of Go heap on M26 (0.453, parked by its rule); the owner promoted it on the absolute size. Both pagers now stage each
+  expert's f16 scales from its WeightMat (the mapping), and the pread stage reads them from the file with the nibbles;
+  the cache and `int4DirectBytes` are gone. Bit-identical by an exhaustive binary16 round-trip test. A three-arm A/B
+  on M26 (old cache, copy, pread), with this row's own kill line (decode worse than −3%) as its ship bar, shipped the
+  pread build: decode 1.061× the old cache's, 8 of 8 rounds faster, and the Go heap at token 32 3004.6 → 1553.2 MB.
+  Records are in the program doc.
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows

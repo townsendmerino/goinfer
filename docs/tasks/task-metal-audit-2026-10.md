@@ -1,6 +1,6 @@
 # Metal audit program — 2026-10
 
-**Status: phase 1 done; phase 2 Batch A and the M26 job graded 2026-10-02; C-P01 built, its A/B queued (started 2026-10-01 on the local branch `metal-audit`, not pushed until the program is done).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
+**Status: phase 1 done; phase 2 Batch A and the M26 job graded 2026-10-02; C-P01 done (started 2026-10-01 on the local branch `metal-audit`, not pushed until the program is done).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
 order the audit's §10 items run in, re-tagged for the run-budget rules and this Mac's limits. Each item keeps the
 definition, band, probe and kill line its §10 row gives; this doc does not restate them, so read the row before
 starting an item. Item IDs are the audit's. Decisions marked **O-** are the audit's Track 4 owner decisions, not the
@@ -141,7 +141,7 @@ first process and after the last, and no kill-watch fired. Logs, `vmmap` and `fo
 For the record, tok/s from 40 tokens on 8 slots: 8.73 (T1.8's process, which held at token 32) and 10.02 (T1.9a's).
 One run each, so they say nothing about noise beyond a 15% spread between two processes of the same configuration.
 
-### C-P01: built, pending its A/B (owner, 2026-10-02)
+### C-P01: built and shipped on the branch (owner, 2026-10-02)
 
 The owner promoted C-P01 on the absolute saving, not on T1.8's ratio, and asked for an A/B to make sure the change
 does not slow decode much. Both pagers (`buildGemma4MoELayer` and the generic `buildMoELayer`) now stage each expert's
@@ -198,6 +198,32 @@ arms, each its own binary:
 - Estimate: 25 processes at about 45 s, about 19 minutes; re-queued at 30. Dry-run end to end on the tiny Gemma 4 MoE
   (24 rounds' processes completed and the summary graded; its numbers say nothing, as before).
 
+**Result, 2026-10-02 (run by day on the owner's word, 06:53–07:09 PDT): SHIP.** The queue ran the job at load 2.0–2.5
+with the owner's apps open; the arms were interleaved, so all three saw the same conditions. No kill-watch fired;
+swap stayed at 486 MB. Logs: `docs/measurements/metal-audit-2026-10/cp01-ab-2026-10-02/` (`summary.txt` is the graded
+output).
+
+| Arm | tok/s (8 rounds) | ÷ old, median (range) | rounds above old | Go heap at token 32 | per token: total / GPU-busy / stage (medians) |
+|---|---|---|---|---|---|
+| old `f56b40ec` | 9.92–10.38 | — | — | 3004.6 MB | 99.8 / 44.0 / 28.1 ms |
+| copy `2838b7de` | 10.56–10.91 | 1.0674 (1.0366–1.0770) | 8 of 8 | 1553.0 MB | 93.8 / 42.4 / 24.4 ms |
+| **pread `494eb05a`** | 10.49–11.02 | **1.0609** (1.0462–1.0894) | 8 of 8 | 1553.2 MB | 93.6 / 42.2 / 24.4 ms |
+
+- **Verdict by the rule:** pread ÷ old 1.061 ≥ 0.97, and the heap fell 1451.4 MB ≥ 1.0 GB: **ship**. C-P01 is done on
+  the branch, with pread as the staging path.
+- **Not a slowdown but a speedup**, about 6 ms per token: staging fell 28.1 → 24.4 ms and GPU-busy 44.0 → 42.2 ms.
+  The probe does not say why; less heap to keep resident on a 16 GB machine is the obvious candidate, untested.
+- **Copy and pread were indistinguishable here** (1.067 and 1.061, overlapping ranges, identical staging time). The
+  amendment expected copy to pay for page faults; with 73% of memory free, the scale pages were most likely already in
+  the page cache. Pread is kept because it is the path built for memory pressure, which this run did not create; that
+  case is unmeasured.
+- The 1361 MB the old probe sized by formula against a measured 1451 MB drop: the rest is the heap's own slack around
+  the freed slices, not measured separately.
+
+**T1.9b, the re-run (06:43–06:48, same day, by day): ungraded again.** The resident guard declined the 64-slot build:
+7.72 GB needed against a 4.69 GB budget, live-available memory with the owner's apps open. Swap did not move. It needs a
+real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2026-10/t19b-2026-10-02/`.
+
 ## Phase 3 — builds, in this order
 
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
@@ -214,7 +240,7 @@ gate runs at night before it ships.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02, D-P04, D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03, E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
-8. **Memory:** C-P01 (built 2026-10-02 on the owner's word, pending its A/B, above), E-P09 (after T1.6), F-D02.
+8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (after T1.6), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 until T1.7.
 
@@ -417,3 +443,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   The A/B's run script was dry-run end to end on the tiny Gemma 4 MoE (3 slots, 100 tokens): every process completed
   and the summary graded, with tok/s and heap numbers that say nothing (the fixture loads from safetensors, so there is
   no mapping to save).
+- 2026-10-02: **C-P01's A/B: SHIP** (pread ÷ old 1.061, 8 of 8 rounds; heap 3004.6 → 1553.2 MB), run by day on the
+  owner's word. Copy and pread were indistinguishable at 73% free memory. **T1.9b declined again** by day (budget 4.69
+  GB) and is re-queued for a real night.

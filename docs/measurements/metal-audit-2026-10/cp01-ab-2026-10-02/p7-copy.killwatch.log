@@ -1,0 +1,23 @@
+07:06:16 killwatch: baseline swap-used 486.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 13961
+07:06:16 t+0s swap_used=486.25MB delta=+0MB tick=0MB rss=6768KB free_disk=13G
+07:06:17 t+1s swap_used=486.25MB delta=+0MB tick=0MB rss=713920KB free_disk=13G
+07:06:18 t+2s swap_used=486.25MB delta=+0MB tick=0MB rss=1430768KB free_disk=13G
+07:06:20 t+4s swap_used=486.25MB delta=+0MB tick=0MB rss=2144704KB free_disk=13G
+07:06:21 t+5s swap_used=486.25MB delta=+0MB tick=0MB rss=2848880KB free_disk=13G
+07:06:22 t+6s swap_used=486.25MB delta=+0MB tick=0MB rss=3562496KB free_disk=13G
+07:06:23 t+7s swap_used=486.25MB delta=+0MB tick=0MB rss=4263712KB free_disk=13G
+07:06:24 t+8s swap_used=486.25MB delta=+0MB tick=0MB rss=3351760KB free_disk=13G
+07:06:25 t+9s swap_used=486.25MB delta=+0MB tick=0MB rss=4448176KB free_disk=13G
+07:06:26 t+10s swap_used=486.25MB delta=+0MB tick=0MB rss=3455664KB free_disk=13G
+07:06:27 t+11s swap_used=486.25MB delta=+0MB tick=0MB rss=3102256KB free_disk=13G
+07:06:28 t+12s swap_used=486.25MB delta=+0MB tick=0MB rss=3066528KB free_disk=13G
+07:06:29 t+13s swap_used=486.25MB delta=+0MB tick=0MB rss=3061664KB free_disk=13G
+07:06:30 t+14s swap_used=486.25MB delta=+0MB tick=0MB rss=2914880KB free_disk=13G
+07:06:31 t+15s swap_used=486.25MB delta=+0MB tick=0MB rss=2796000KB free_disk=13G
+07:06:32 t+16s swap_used=486.25MB delta=+0MB tick=0MB rss=2742240KB free_disk=13G
+07:06:33 t+17s swap_used=486.25MB delta=+0MB tick=0MB rss=2704128KB free_disk=13G
+07:06:34 t+18s swap_used=486.25MB delta=+0MB tick=0MB rss=2676144KB free_disk=13G
+07:06:35 t+19s swap_used=486.25MB delta=+0MB tick=0MB rss=2648480KB free_disk=13G
+07:06:36 t+20s swap_used=486.25MB delta=+0MB tick=0MB rss=2637072KB free_disk=13G
+07:06:37 t+21s swap_used=486.25MB delta=+0MB tick=0MB rss=2630848KB free_disk=13G
+07:06:38 killwatch: pid 13961 exited on its own, stopping watch
