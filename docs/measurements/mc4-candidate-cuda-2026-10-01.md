@@ -171,3 +171,44 @@ greedy, fresh server per arm, 4 concurrent clients unless stated.
   the shared resident between another generation's exclusive sections: a state the resident keeps at resident level rather than per
   slot, such as a position or token record), or the seed/first-round handoff. The next step is an in-process CUDA test with two
   concurrent adaptive generations on a tiny fixture (the existing stress test uses the fake resident, which has no numerics), then bisect there.
+
+## ROOT CAUSE AND FIX (2026-10-02, commit `2f685d7e`)
+
+**Cause.** An adaptive round claimed the resident through `claimExclusive`, which sets only `resBusy`, and then ran its verify
+(`residentBind(slot)` then `ForwardN`) directly. Every other resident-touching section of a generation, the slot pick
+(`residentAcquireSlot`), the prefill and the commit, runs under the batcher's **`busy`** flag (`exclusive` / `prefillExclusive`) and never
+reads `resBusy`. So with two or more generations in flight, one generation's bind-then-prefill interleaved with another's
+bind-then-verify, and each wrote the other's KV slot: the first token already wrong, then garbage. Alone, or with `-max-concurrent=1`,
+nothing interleaves, which is why every 1-client cell was identical. The original design (this doc's registration of the candidate)
+said "each round runs in `exclusive`"; the implementation used a bare CAS instead, and `6e9fcb99`'s own commit notes record a related
+rebind race found the same way, fixed for the prefill but not for the verify.
+
+**Why nothing caught it.** The 200/200 `-race` stress test (`decoder/spec_adaptive_switch_test.go`) runs on `mc3Fake`, which checks that
+resident access is *guarded* but has no numerics and no real KV slots, so a slot written by the wrong generation is invisible to it.
+
+**Fix.** The round's verify runs inside `batcher.exclusive` (decoder/spec_ngram.go), so it holds `busy` like every other resident touch.
+
+**Evidence.**
+- In-process on a real CUDA resident (`cuda/spec_adaptive_concurrent_test.go`: 4 concurrent adaptive generations against their lone
+  references, llama-tiny int4, 6 repeats): **23 of 24 differ without the fix, 0 of 24 with it**, and 5 further runs of the scratch version
+  were 0 of 24 each.
+- Served on the real 1.5B (text-level repro, `text-repro/`, same arms as above, 4 clients): candidate **0/8 → 8/8** identical to batch on
+  copy and **0/4 → 4/4** on chat; batch twice and spec-exclusive also identical.
+- Bisection that located it: 2 clients already fail; `GOINFER_SPEC_ADAPTIVE_NEVER_YIELD=1` still fails; `-max-concurrent=1` is identical;
+  the batched verify on a non-zero slot is bit-identical to a single-slot reference (so it was not the slot write itself).
+- Decoder adaptive/MC3 tests clean under `-race`; the 64 parity goldens pass with 0 `deps_hash` lines moved; tagged CUDA suite 190 pass.
+
+## RERUN, registered 2026-10-02 before it ran
+
+The first run's identity failure was a bug, so its speed numbers are not read (they stay recorded above). The fix changes the build, so the
+graded run is repeated: **same gates, same decision rule, same 72 cells**, with one change, the binary: `serve-cuda` at `2f685d7e`
+(`~/goinfer-bench/mc4-candidate-cuda-2026-10-01/serve-cuda-2f685d7e`, built once from the committed fix). Harness `run-rerun.sh`
+(`run.sh` with the binary and the output directory changed, `raw-rerun/`); grade with
+`python3 docs/measurements/mc4-candidate-cuda-2026-10-01/gates.py docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun`.
+
+- **Identity is gate 1 again and is hard.** A differing reply is a bug, not a result, exactly as registered.
+- **No speed projection is carried forward.** The "copy at 4 clients will miss, ~0.78×" projection above came from the 2026-09-29
+  exploratory smoke, which ran on the buggy build (its replies were corrupted and short, so its throughput meant nothing). The projection
+  is withdrawn. This rerun is the first valid speed measurement of the candidate under load.
+- The decision rule is unchanged, including the copy-only-miss-goes-to-the-owner clause.
+- Estimate 30 min (the first run took 21). Queued on nobara's night queue; the owner starts the queue.

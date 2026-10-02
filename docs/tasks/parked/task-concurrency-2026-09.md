@@ -3,9 +3,10 @@
 > **PARKED, 2026-10-01 (owner), with one graded run queued.** Moved to `docs/tasks/parked/`; a pointer stub stays at the
 > old path because ~60 code comments and several docs cite it. MC0–MC3 (including MC3c) and chunked prefill shipped
 > (below), and nothing in this track is an unblocked build. Open:
-> - **The MC4 candidate's graded run on CUDA — RAN 2026-10-01 night: IDENTITY FAILED** (candidate replies differ from batch's on
->   nearly every reply under 4-client load, identical alone; the speed gates are recorded, not read), so it is a bug to find, not a
->   result; see the RESULT section of [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md).
+> - **The MC4 candidate's graded run on CUDA — RAN 2026-10-01 night: IDENTITY FAILED; ROOT-CAUSED AND FIXED 2026-10-02 (`2f685d7e`:
+>   an adaptive round held `resBusy` but not the batcher's `busy` flag, so two generations wrote each other's KV slot); RERUN QUEUED**
+>   (`mc4-candidate-cuda-rerun`, same gates, fixed binary). The first run's speed gates are recorded, not read; see the RESULT, ROOT CAUSE
+>   and RERUN sections of [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md).
 >   Do not treat `-spec-adaptive` as lossless. The run was queued as: (`mc4-candidate-cuda`, nobara, ~45 min). The build is
 >   `-spec-adaptive` (`6e9fcb99`, opt-in); the gates and the decision rule were registered before the run in
 >   [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md). The likeliest outcome is a
