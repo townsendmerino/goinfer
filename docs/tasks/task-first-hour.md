@@ -1441,11 +1441,14 @@ needs unimplemented feature") is returned as it came. Remedy checked live: the s
 `decode path: cuda-resident (int4)`. Gate: `TestDeclineAdvice` over the two real error strings, and a source guard that `declined` calls it
 (the closure needs a card to reach with a real OOM; two of three mutants are caught by the unit, the third, unwiring, by the guard).
 
-**Not done:** "have `fit` and `serve` price the same default context". After a decline the CPU path reports `context: 262144 tokens (model
-maximum)` and `fit: 262144-token cap needs 10.4 GB KV`, where `fit` priced the GPU plan at 8192 (3.44 GB). They answer different questions (the
-resident plan versus the CPU path, where `-ctx` does not apply), so this is a policy choice, not a defect in a message: cap the CPU
-fallback's default context, or say beside the figure that it is the CPU path's. Left for the owner; R21 (swap growth under that "tight"
-warning) is the consequence of the same line.
+**Context pricing, done 2026-10-01 (owner: say it beside the figure; do not cap the fallback).** The two numbers answer different questions: `fit` priced the
+GPU-resident plan, and the CPU path has no `-ctx` cap at all (the window is the model's whole maximum), with KV allocated per request, so `262144 tokens` and `10.4 GB KV` are
+a **ceiling** reached only by a request that fills the window, not memory held. The banner now says so where the figures are printed. Real output, the 26B declining on the
+8 GB card: `context: 262144 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident
+load caps it with --ctx, but this model declined one (see decode path)` and `fit: 262144-token cap needs 10.4 GB KV (...) — a ceiling, reached only by a request that fills the window`.
+The first sentence also appears on any plain CPU load (same window, same ceiling); the second only after a decline. Nothing is capped: the same model on `-backend cpu` and
+after a fallback behave alike, and a long-context CPU user keeps the window. **Gate:** `TestBanner_cpuContextIsACeiling` (plain CPU, fallback after a decline, a resident
+model and a window below the maximum get no note) and `TestFactsOf_carriesTheResidentDecline` (a real model whose backend declined); six mutants red. R20 is closed.
 
 ### R21 — swap grew under a "tight" warning, with no refusal
 

@@ -112,7 +112,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:267` | goinfer | `if needHist {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:111` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
 | `docs/audit-2026-09-10.md|gpu/backend.go:197` | goinfer | `key := &bQ4[0]` |
-| `docs/audit-2026-09-10.md|internal/serveapp/banner.go:120` | goinfer | `ctxLine := "context: "` |
+| `docs/audit-2026-09-10.md|internal/serveapp/banner.go:124` | goinfer | `ctxLine := "context: "` |
 | `docs/audit-2026-09-10.md|internal/serveapp/openai.go:697` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
 | `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:221` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/webui.go:109` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
@@ -303,7 +303,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|decoder/weights.go:720` | goinfer | `m = quantizeWM(m, quant)` |
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:130` | goinfer | `// embedInt4 is --embed-int4 as the load should see it. The default is on, except on Met` |
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/banner.go:108` | goinfer | `out = append(out, "decode path: "+f.decodePath)` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/banner.go:112` | goinfer | `out = append(out, "decode path: "+f.decodePath)` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:178` | goinfer | `o := cfg.load.Options()` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:184` | goinfer | `o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:413` | goinfer | `fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled ` |

@@ -55,6 +55,9 @@ type bannerFacts struct {
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
 
+	// residentDecline: why a backend that was asked for did not build a resident path (decoder.Model.ResidentDecline), "" when it did or none was asked.
+	residentDecline string
+
 	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots; MC1,
 	// docs/tasks/task-concurrency-2026-09.md) — 1 for a backend or family without them, 0 off the resident path.
 	kvSlots int
@@ -85,6 +88,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
 	f.kvSlots = lm.model.ResidentKVSlots()
+	f.residentDecline = lm.model.ResidentDecline()
 	f.concurrent = lm.concurrent
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
@@ -130,6 +134,17 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	default:
 		ctxLine += fmt.Sprintf("%d tokens (model maximum)", f.ctxWindow)
 	}
+	// R20 (docs/tasks/task-first-hour.md): on the CPU path the window is the model's whole maximum — -ctx is the GPU-resident KV capacity and caps nothing
+	// here — and KV is allocated per request, so the figure (and the "fit:" KV cost below) is a ceiling a request reaches only by filling the window. A
+	// cold-user run read "262144 tokens, 10.4 GB KV" after a CUDA decline beside a `fit` that had priced the GPU plan at 8192, and took them for the same
+	// question. Said here, beside the figure, so it is not left to be worked out.
+	cpuNote := ""
+	if cpuCeiling := f.ctxWindow > 0 && !f.resident && f.ctxWindow == f.maxPositions; cpuCeiling {
+		cpuNote += " — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held"
+		if f.residentDecline != "" {
+			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
+		}
+	}
 	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
 	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32.
 	switch req := cfg.load.KV; {
@@ -143,6 +158,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	default:
 		ctxLine += " · KV f32"
 	}
+	ctxLine += cpuNote
 	out = append(out, ctxLine)
 
 	// R13: the memory this context cap actually costs, and what is left — the line a harness
@@ -156,10 +172,14 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// function's.
 	if f.fitKnown {
 		remaining := f.fitBudgetBytes - f.fitKVBytes
-		out = append(out, fmt.Sprintf(
+		fitLine := fmt.Sprintf(
 			"fit: %d-token cap needs %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
 			f.fitCtx, float64(f.fitKVBytes)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
-			float64(f.fitBudgetBytes)/(1<<30), float64(remaining)/(1<<30)))
+			float64(f.fitBudgetBytes)/(1<<30), float64(remaining)/(1<<30))
+		if !f.resident && f.ctxWindow > 0 && f.fitCtx == f.maxPositions { // the CPU path's ceiling, as the context line says
+			fitLine += " — a ceiling, reached only by a request that fills the window"
+		}
+		out = append(out, fitLine)
 	}
 
 	// Prefix reuse, and WHY when it is off or narrower than it sounds. This is the line that makes

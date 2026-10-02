@@ -17,6 +17,9 @@ any surface may still change.
 
 ### Changed
 
+- **The startup `context:` and `fit:` lines say when a figure is a CPU-path ceiling.** After a CUDA decline the CPU path printed `context: 262144 tokens` and `fit: ... 10.4 GB KV`
+  next to a `fit` that had priced the GPU plan at 8192, which read as a contradiction. On the CPU path `-ctx` caps nothing and KV is allocated per request, so those figures are a
+  ceiling, not memory held; the lines now say that, and after a decline that a GPU-resident load would have capped it. No limit changed. `docs/tasks/task-first-hour.md` R20.
 - **A chat that keeps its first image in history no longer fails (`/v1/chat/completions`, `/v1/messages`).** Chat clients resend the whole conversation, so the second image
   turn carried two images and got `400 v1 supports 1 image per request, got 2`. The newest image is kept; each image in an earlier message is replaced by a text note the
   model reads, and the response carries `X-Goinfer-Images-Omitted: <n>`. Several images in the one latest message are still a 400. Multi-image history is not supported (one
