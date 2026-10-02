@@ -74,7 +74,8 @@ committed before it runs.
 The probes are `metal/audit_batch_a_test.go`, run by `docs/measurements/metal-audit-2026-10/run-batch-a.sh` from a test
 binary built at a pinned commit. T1.5 is not in it: its 1.5B re-run and its default-run fixture were done by day on
 2026-10-01 (identity, not timing). Smoke runs at one repetition checked the harness only; none of their numbers is a
-result. Models are int4 from `~/models`: the 1.5B and the 0.5B are qwen2.5-coder-1.5b/0.5b-instruct q4_k_m `.gguf`; the 7B
+result. They ran before this table was written: its thresholds are the audit's, set on 2026-09-30, and what this table
+adds (the parked bands, T1.2's two-model reading, T1.4's control) is structure, not chosen from the smoke numbers. Models are int4 from `~/models`: the 1.5B and the 0.5B are qwen2.5-coder-1.5b/0.5b-instruct q4_k_m `.gguf`; the 7B
 is qwen2.5-7b-instruct, loaded from its `.int4.metal.giw` sidecar as R18b did (file-backed, so lighter on this Mac's
 memory than the `.gguf`). Estimate: about 15 minutes of work and 7 model loads; queued at 20.
 
