@@ -99,4 +99,5 @@ Once F1–F3 pass it runs int8 natively, the precision asked for, as CUDA does, 
     against a 2.2 GB budget, and still about 2.8 GB with the test's context pinned at 1024. A bypass is not used on
     this Mac. Gate S's harness ran once at smoke size by day to check it works; those numbers are not a result.
   - Queued for tonight on the Mac: `docs/measurements/metal-int8-2026-10/run-gates.sh` (F3 on the 0.5B and 1.5B, F2
-    on the 1.5B, S).
+    on the 1.5B, S), running a test binary built at `f73b980a`. Before the commit: the default Metal suite passed with
+    the switch off (157.7 s).
