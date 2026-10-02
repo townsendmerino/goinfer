@@ -313,6 +313,20 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   the bands, the instant gate's 10% busy cap, and the analyzer. The load mutation's hog drives the load well above 3,
   so that gate still has a signal to hold on. Output goes to `te1-attempt5/`, graded as `te1_analyze.py te1-attempt5`,
   on the Mac night queue.
+- **Attempt 5, run by day on 2026-10-02 on the owner's word (07:11–07:43 PDT, through the night runner), graded the
+  same day: PASS** by the pre-registered verdict (`te1_analyze.py te1-attempt5`; `te1-attempt5/`).
+  - **A/A spread:** RMS log ratio of the identical arms, load 0.0125 and instant 0.0130 over 6 values each; ratio
+    1.04 (pass ≤ 1.25, kill > 2.07). Mean log ratios −0.0010 and +0.0023, so no arm carries over into the other.
+  - **Idle-gate share:** instant 9.0% over its two sweeps (6.8%, 11.3%; band ≤ 10%), load 17.0% and 25.8% at the 3.0
+    cap. Sweep wall, instant against load: +13.4%, reported against the −30–45% band; it does not reach that band.
+  - **Mutations:** the instant gate held cell 2 for 97.6 s through a 90.2 s hog and released within 10 s; the load
+    gate held 180.0 s through 90.1 s, release lag +89.9 s (recorded, not graded).
+  - **Thermal:** no cell recorded a warning.
+  - **Conditions:** by day, with the owner's apps open (1-min load 2–5 during the run), and the load gate at the
+    amended 3.0 cap. Both are departures from the night design and are disclosed, not corrected for.
+  - **Open:** the pre-registration makes `instant` the default on a PASS, in a separate commit citing this result.
+    Attempt 4's instant mutation released 15.5 s after its hog (bar 10 s; the box at 13.5% busy before and after), and
+    whether that miss blocks the flip is the owner's reading. The flip waits on it.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 
