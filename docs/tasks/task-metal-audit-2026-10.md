@@ -141,6 +141,43 @@ first process and after the last, and no kill-watch fired. Logs, `vmmap` and `fo
 For the record, tok/s from 40 tokens on 8 slots: 8.73 (T1.8's process, which held at token 32) and 10.02 (T1.9a's).
 One run each, so they say nothing about noise beyond a 15% spread between two processes of the same configuration.
 
+### Batch B: pre-registration (written 2026-10-02, before any graded run; owner: run tonight, started early)
+
+Two night jobs. Neither changes code, and each is graded or recorded as follows.
+
+**T1.7 (B-P08), `metal-audit-t17`.** `TestAuditT17_attnStaircase` on the 1.5B `.gguf` and the 7B `.int4.metal.giw`:
+- What it measures: in-sequence attention work at 1536 … 6144 keys in 128-key steps (37 depths). Production's decode
+  token runs against the same token with every attention pipeline a no-op (R17's method). Each arm gets 8 tokens per
+  depth, 5 reps, interleaved and alternated. Attention work is the median of the paired differences.
+- **Reading 1, the audit's:** attention work ÷ keys, max over min across the depths. **Under 1.15: B-P08 killed.**
+- **Reading 2, registered beside it because the two can disagree:** attention has a fixed per-token part, so its cost
+  per key falls with depth even with no staircase. Reading 1 can pass on that alone. The staircase B-P08 claims is a
+  jump across a trip boundary, so this reading is the 128-key step from 2048 and from 4096, each over the median of the
+  other steps.
+- **B-P08 stands on a model only if reading 1 is ≥ 1.15 and either boundary step is ≥ 3× the median step.** At 2–3×
+  it is parked. Reading 1 ≥ 1.15 with both steps under 2× is killed (the spread is the fixed part), as is reading 1
+  under 1.15.
+- A by-day smoke over 3 depths (exploratory, not a result) checked that the probe runs: about 0.86–0.92 µs per key on
+  the 1.5B near 1536 keys.
+- Estimate about 15 minutes; queued at 25.
+
+**T1.11's 0.5B cells and T1.14, `metal-audit-peer-b`.** One same-session `bench_peer.py` sweep on Metal: greedy,
+3 runs per cell, depth 128 (phase A) and 2048 and 3900 (phase B).
+- Engines: goinfer, mlx-lm 0.31.3 and Ollama 0.32.5, on the 1.5B and 7B. The 0.5B runs goinfer and Ollama only, since
+  there is no mlx-community 0.5B here.
+- **goinfer is main as shipped (`71812d57`), not this branch.** The ratio is about what a user runs, and the branch
+  carries builds still waiting on tonight's grades.
+- mlx-lm runs mlx-community's own 4-bit conversion, a different quant from q4_k_m: every mlx ratio carries that caveat.
+- A by-day one-cell smoke (mlx-lm, 1.5B, depth 128, exploratory) checked that the mlx path runs under `bench_peer.py`.
+- Estimate about 50–75 minutes; queued at 90.
+- These are records, not gates:
+  - **T1.11 (B-D01):** the 0.5B's goinfer ÷ Ollama at 2048 and 3900 (the row's pre-registered cells read 0.75× and
+    0.58×). If both are ≥ 1.00, `docs/benchmarks.md`'s "AHEAD of Ollama in every cell" holds with the 0.5B added.
+    Otherwise it is reworded to "every 1.5B and 7B cell" and the 0.5B cells are listed.
+  - **T1.14:** goinfer ÷ mlx-lm and goinfer ÷ Ollama per cell (1.5B and 7B at 128, 2048 and 3900), the median of the
+    3 runs with their spread. These replace the cross-session 0.82× and 0.75× (goinfer ÷ mlx at depth 128) as the
+    ratios to quote. The box's recorded drift is about 3.5%, so a ratio within that of 1.00 is reported as level.
+
 ### C-P01: built and shipped on the branch (owner, 2026-10-02)
 
 The owner promoted C-P01 on the absolute saving, not on T1.8's ratio, and asked for an A/B to make sure the change
@@ -678,3 +715,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-02: **E-P06 built, lossless, queued for its grade** (owner: "this while we wait?"). The verify cost curve is
   measured at load for a model loaded for `--spec ngram`. The 1.5B's real curve at depth 2048 is 8–9% below the shipped
   constant, smaller than the audit's 12–51%, which mixed depth with model.
+- 2026-10-02: **Batch B prepared and queued for tonight** (owner: "do this for tonight, ill start it early"). T1.7 gains a
+  second, pre-registered reading (the boundary step), because the audit's per-key max/min can pass on attention's fixed
+  per-token part alone. The peer run's goinfer is main as shipped, not the branch.
