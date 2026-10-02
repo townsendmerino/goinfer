@@ -92,6 +92,27 @@ audit wrote kernStart/kernEnd, but Metal's kernelStart/EndTime are the CPU's sch
 its execution (the probe prints that gap too, for reference). T1.2's two-model rule is spelled out above; the audit's
 "on either model" is read as "the floor stays unless at least one model gains 1.05×".
 
+### The M26 job: pre-registration (written 2026-10-01; owner-approved the same evening, to run last in the queue)
+
+T1.8 and T1.9 on the Gemma 4 26B, `~/models/gemma4-26b-int4-v14st.metal.giw` (the only M26 on local disk: a v14
+metal-target bundle, which carries f16 scales in its mapping as a v15 one does; the pager builds its scale cache the
+same way on both). Probe: `TestAuditM26_pagedProbe` (`metal/audit_m26_test.go`), one configuration per process,
+loaded through the production Metal path with every guard on, 40 timed greedy tokens after a warm one. Each process
+runs under `scripts/swap_killwatch.sh` (1 s polls; kill on two consecutive ticks of more than 80 MB of swap growth, or
+1 GB over the run's baseline). Nothing forks from the probe: `vmmap` and `footprint` are taken from outside while it
+holds at token 32. Run script: `docs/measurements/metal-audit-2026-10/run-m26.sh`. Estimate about 5 minutes; queued at
+15, priority 90 so it runs after everything else.
+
+T1.12 is not in this job, and cannot run on M26: Metal's batched prefill excludes Gemma 4's MoE (`prefillOK` requires
+`!HasGemma4MoEResident()`), so M26's prompt runs token by token and never reaches the expert-major code D-B02 is
+about. M35 is excluded too (DeltaNet, and paged). T1.12 needs a fully resident generic MoE.
+
+| Run | Configuration | Reading | Rule |
+|---|---|---|---|
+| T1.8 (C-P01) | 8 slots per layer, held at token 32 | the pager's f16 scale cache (computed from the pool: experts × per-expert scale words × 2 bytes) ÷ the Go heap in use at token 32; `vmmap -summary` and `footprint` for the region breakdown | ≥ 0.50: C-P01 is confirmed, and serving the scales from the mapping (as the nibbles already are) goes to Phase 3. Under 0.20: C-P01's premise is killed, and the vmmap table names what the heap is. Between: parked. |
+| T1.9a (D-P02, M-11) | 8 slots, `GOINFER_MOE_PROF_SPLIT=1` | per-command-buffer round trip, (submit+wait − GPU-busy) per token ÷ the token's time, with the commit/wait split | Under 0.05: M-11's shared-event design is closed for M26, as D-P02 projects. ≥ 0.10: reopened, and C-B03's fence microbenchmark (aikit) is the next step. Between: parked. |
+| T1.9b (R11(c)) | 64 slots, last, and only if neither earlier run tripped the kill-watch | whether it completes without the kill-watch firing, and its peak swap growth; tok/s against the 8-slot run, reported only (one run each, separate processes) | Completes with swap growth under 256 MB: R11(c)'s "lower default" conclusion is withdrawn (its spirals predate the 2026-09-24 fork fix). The kill-watch fires: R11(c) stands at 64 slots. |
+
 ## Phase 3 — builds, in this order
 
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
@@ -299,3 +320,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   results) found two harness errors, both fixed before the pre-registration: T1.2 had read the CPU's scheduling window
   (`kernStart/kernEnd`, ~0.1 ms) as the token's GPU time, and T1.1 printed an empty GPU column (`PrefillLast` records no
   GPU timestamps; wall time only now).
+- 2026-10-01: **the M26 job, owner-approved to run last.** T1.8 and T1.9 written and pre-registered (the table under
+  Phase 2). `TestAuditM26_pagedProbe` was smoke-run on the tiny gemma4 MoE at 3 slots (paged build, the hold handshake,
+  the profile split); no M26 by day. T1.12 dropped out: M26's prefill never reaches the expert-major path it measures.
