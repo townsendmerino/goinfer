@@ -1,0 +1,7 @@
+=== RUN   TestGlmOcrCUDAResidentFullBudget
+[glm-ocr cuda] full budget: CPU prefill of 6156 tokens 58s
+    glm_ocr_real_image_test.go:303: 6156-token prompt (6144 image tokens, grid [1 128 192]): resident vs CPU prefill logits cosine 0.998628, argmax resident 1330 CPU 1330
+    glm_ocr_real_image_test.go:321: GenerateQwenVL 16 tokens: resident ImgPrefillResident=true, identical to CPU int4: true (first divergence -1)
+--- PASS: TestGlmOcrCUDAResidentFullBudget (167.86s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	167.932s

@@ -722,7 +722,7 @@
       "kind": "dir",
       "members": ["config.json", "preprocessor_config.json", "tokenizer.json", "chat_template.jinja", "model.safetensors"],
       "candidates": ["$MODELS/glm-ocr"],
-      "used_by": ["TestGlmOcrE2E_f32", "TestGlmOcrE2E_f32_hfPixels", "TestServe_glmOcrImage_O3", "TestGlmOcrCUDAContextFit", "TestGlmOcrCUDAResidentRealImage"],
+      "used_by": ["TestGlmOcrE2E_f32", "TestGlmOcrE2E_f32_hfPixels", "TestServe_glmOcrImage_O3", "TestGlmOcrCUDAContextFit", "TestGlmOcrCUDAResidentRealImage", "TestGlmOcrCUDAResidentFullBudget"],
       "note": "zai-org/GLM-OCR (GlmOcrForConditionalGeneration, bf16, 2.65 GB incl. the 218 M-parameter MTP layer the loader skips), revision 2e85a62840ccac27daa451df36c736c4636b8628. members names preprocessor_config.json because the loader reads size.* from it and HALVES it (multimodal.LoadGlmOcrPreprocessConfig). O3's gate: goinfer f32 vs transformers 5.12.0 f32, greedy 64 tokens, three procedurally rendered documents (testdata/glm_ocr; NOT real scans)."
     },
     {

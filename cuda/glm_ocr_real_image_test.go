@@ -220,3 +220,110 @@ func firstDiff(a, b []int) int {
 	}
 	return -1
 }
+
+// TestGlmOcrCUDAResidentFullBudget runs the processor's CEILING, a 6,144-image-token prompt (the 4.8 MP, 24,576-patch
+// budget; grid 128x192), through the CUDA resident at ResidentContext 8192, against the CPU prefill (int4 both), and then 16
+// greedy tokens through GenerateQwenVL on both. The tower for a real 4.8 MP page costs minutes of CPU, so the image rows are
+// the REAL invoice tower rows (real feature statistics) tiled to 6,144: the point here is the decoder at that length (the
+// resident m-RoPE prefill's chunking, the KV at 6.2k positions, decode past a 128x192 grid whose position delta is large),
+// not what the model reads. The prompt shape is the real template's.
+func TestGlmOcrCUDAResidentFullBudget(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := decoder.AssetPathForTest(t, "GOINFER_GLM_OCR")
+	pp, err := multimodal.LoadGlmOcrPreprocessConfig(ckpt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := vision.LoadGlmOcrVisionEncoder(ckpt, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	png, err := os.ReadFile(filepath.Join("..", "testdata", "glm_ocr", "invoice.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pv, grid, err := multimodal.QwenPreprocess(png, pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := enc.Forward(pv, [][3]int{grid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const hidden, nImg = 1536, 6144
+	feats := make([]float32, 0, nImg*hidden)
+	for len(feats) < nImg*hidden {
+		feats = append(feats, base[:min(len(base), nImg*hidden-len(feats))]...)
+	}
+	fullGrid := [3]int{1, 128, 192}
+	if multimodal.QwenMergedTokens(fullGrid, 2) != nImg {
+		t.Fatal("grid arithmetic")
+	}
+	const imageToken = 59280
+	ids := slices.Concat([]int{59248, 59250, 59253, 10, 59256}, slices.Repeat([]int{imageToken}, nImg), []int{59257, 3649, 7404, 49600, 58, 59254, 10})
+	const ctx, maxNew = 8192, 16
+	if len(ids)+maxNew > ctx {
+		t.Fatalf("%d + %d > %d", len(ids), maxNew, ctx)
+	}
+	mc, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close()
+	if !mc.ResidentActive() {
+		t.Fatalf("not resident at %d: %s", ctx, mc.ResidentDecline())
+	}
+	rmp, ok := mc.ResidentForwardForTest().(decoder.ResidentMRoPEPrefill)
+	if !ok {
+		t.Fatal("no ResidentMRoPEPrefill")
+	}
+	mcpu, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mcpu.Close()
+	mropePos, err := decoder.MRopePositionsForTest(ids, imageToken, [][3]int{fullGrid}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now()
+	cpuLogits, err := mcpu.PrefillLogitsQwenVLForTest(context.Background(), ids, feats, 5, nImg, mropePos, mcpu.NewCache(len(ids)+maxNew))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "[glm-ocr cuda] full budget: CPU prefill of %d tokens %.0fs\n", len(ids), time.Since(t0).Seconds())
+	resLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), rmp, ids, feats, 5, nImg, mropePos)
+	if err != nil {
+		t.Fatalf("resident m-RoPE prefill at %d tokens: %v", len(ids), err)
+	}
+	if gpuPos != len(ids) {
+		t.Errorf("gpuPos %d want %d", gpuPos, len(ids))
+	}
+	cs := cosine(cpuLogits, resLogits)
+	t.Logf("%d-token prompt (%d image tokens, grid %v): resident vs CPU prefill logits cosine %.6f, argmax resident %d CPU %d", len(ids), nImg, fullGrid, cs, argmaxF(resLogits), argmaxF(cpuLogits))
+	if cs < 0.99 || argmaxF(resLogits) != argmaxF(cpuLogits) {
+		t.Errorf("resident prefill at the full image budget diverges from the CPU: cosine %.6f", cs)
+	}
+	features := func() ([]float32, error) { return feats, nil }
+	run := func(m *decoder.Model) ([]int, *decoder.Generation) {
+		stream, gen := m.GenerateQwenVL(context.Background(), ids, 5, nImg, 0, features, [][3]int{fullGrid}, 2, imageToken, maxNew, decoder.SamplingParams{Temperature: 0})
+		var out []int
+		for id := range stream {
+			out = append(out, id)
+		}
+		if err := gen.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return out, gen
+	}
+	rt, rg := run(mc)
+	ct, _ := run(mcpu)
+	t.Logf("GenerateQwenVL %d tokens: resident ImgPrefillResident=%v, identical to CPU int4: %v (first divergence %d)", maxNew, rg.ImgPrefillResident, slices.Equal(rt, ct), firstDiff(rt, ct))
+	if !rg.ImgPrefillResident {
+		t.Error("the full-budget turn did not take the resident m-RoPE prefill (it fell back to the CPU prefill + upload)")
+	}
+	if !slices.Equal(rt, ct) {
+		t.Errorf("tokens differ: resident %v cpu %v", rt, ct)
+	}
+	_ = pp
+}
