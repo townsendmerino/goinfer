@@ -17,11 +17,23 @@ import (
 // prefix and the forward the chain queued past turn one's last token must not leak into turn two. (A Session is not
 // the multi-turn path on a resident: a plain session decodes on the CPU path, session.go.) The chain must have served
 // every turn's tokens, or the comparison is of a path with itself.
+//
+// Tied and untied heads both, and an untied head whose device embedding table does not fit: the chain must then decline
+// (decode keeps the full-logits path, the tokens unchanged) rather than allocate past the memory guard.
 func TestGreedyChain_generateMatchesFullLogits(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	path := writeMC3FixtureTied(t, 4096, true)
+	for _, c := range []struct {
+		name         string
+		tied, noRoom bool
+	}{{"tied", true, false}, {"untied", false, false}, {"untied-no-room", false, true}} {
+		t.Run(c.name, func(t *testing.T) { greedyChainGenerate(t, c.tied, c.noRoom) })
+	}
+}
+
+func greedyChainGenerate(t *testing.T, tied, noRoom bool) {
+	path := writeMC3FixtureTied(t, 4096, tied)
 	prompt := make([]int, 24)
 	for i := range prompt {
 		prompt[i] = (i*613 + 101) % mfVocab
@@ -41,6 +53,11 @@ func TestGreedyChain_generateMatchesFullLogits(t *testing.T) {
 		a, ok := m.ResidentForwardForTest().(*metalResident)
 		if !ok {
 			t.Fatalf("no metal resident: %s", m.ResidentDecline())
+		}
+		if noRoom && !off {
+			live := metalLiveAvailable
+			metalLiveAvailable = func() int64 { return 1 << 20 } // 1 MB free: the table cannot fit
+			defer func() { metalLiveAvailable = live }()
 		}
 		ctx := context.Background()
 		var o out
@@ -64,12 +81,16 @@ func TestGreedyChain_generateMatchesFullLogits(t *testing.T) {
 		return o
 	}
 	ref, got := run(true), run(false)
-	t.Logf("chain served %d tokens (off: %d); one %d tokens, turns %d + %d; turn two reused %d of %d prompt tokens (off: %d)",
-		got.served, ref.served, len(got.one), len(got.turn1), len(got.turn2), got.reused, len(prompt)+30+3, ref.reused)
+	t.Logf("tied %v, no room %v: chain served %d tokens (off: %d); one %d tokens, turns %d + %d; turn two reused %d of %d prompt tokens (off: %d)",
+		tied, noRoom, got.served, ref.served, len(got.one), len(got.turn1), len(got.turn2), got.reused, len(prompt)+30+3, ref.reused)
 	if ref.served != 0 {
 		t.Fatalf("greedyChainOff still served %d tokens", ref.served)
 	}
-	if want := 90 + 30 + 30; got.served < want-3 { // each generation's first token comes from its prompt's logits
+	if noRoom {
+		if got.served != 0 {
+			t.Fatalf("the chain served %d tokens with no room for its embedding table: it should have declined", got.served)
+		}
+	} else if want := 90 + 30 + 30; got.served < want-3 { // each generation's first token comes from its prompt's logits
 		t.Fatalf("the chain served %d tokens of the three generations' %d: it did not serve them all", got.served, want)
 	}
 	if got.reused == 0 || got.reused != ref.reused {

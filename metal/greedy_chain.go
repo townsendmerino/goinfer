@@ -4,7 +4,10 @@ package metal
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+
+	"golang.org/x/sys/unix"
 )
 
 // The greedy chain: C-B01 of docs/audit-metal-2026-09-30.md (Phase 3 item 5 of docs/tasks/task-metal-audit-2026-10.md).
@@ -15,7 +18,8 @@ import (
 // (T1.3 measured that idle gap at 0.58-0.66 ms per token on the 0.5B and 1.5B). For greedy decoding the pick needs no
 // host: each chained command buffer ends with the fused argmax head ForwardArgmax uses (gemv_w8a8_amax then
 // argmax_finish, writing a 4-byte id) and starts with embed_gather_i8, which writes that id's embedding into r.x from
-// the LM-head table (tied heads only). So t+1 can be committed before t finishes, and the queue runs it right after.
+// the int8 embedding table on the device (chainEmbedTable: the LM-head buffers for a tied head, else a copy made on
+// first use). So t+1 can be committed before t finishes, and the queue runs it right after.
 //
 // In flight: chainNext commits the buffer after the newest before it waits for the oldest, so the next token is always
 // queued when the host waits, and one buffer is outstanding between calls. Token t binds uniform set t%2 and writes its
@@ -47,14 +51,13 @@ type chainResp struct {
 // with the path it replaces.
 var greedyChainOff = false
 
-// greedyChainWhyNot is why this resident cannot run the greedy chain ("" if it can). It covers what the GPU side needs;
-// the decoder adds what only it knows (its embedding lookup has no multiplier, no adapter, no MC3).
+// greedyChainWhyNot is why this resident cannot run the greedy chain ("" if it can). It covers what the GPU side needs
+// apart from the gather table, which chainEmbedTable prices and makes; the decoder adds what only it knows (its
+// embedding lookup has no multiplier, no adapter, no MC3).
 func (r *resident) greedyChainWhyNot() string {
 	switch {
 	case greedyChainOff:
 		return "turned off (test)"
-	case !r.lmTied:
-		return "an untied LM head: the chain gathers the next token's embedding from the LM-head table"
 	case r.embedScale > 1:
 		return "an embedding scale (embed_gather_i8 applies none)"
 	case r.learnedPos:
@@ -76,13 +79,75 @@ func (r *resident) greedyChainWhyNot() string {
 	return ""
 }
 
+// chainEmbedTable is the int8 table and per-row scales the chain gathers the next token's embedding from, or why there
+// is none. A tied head's LM-head buffers are the embedding table. Otherwise the table is put on the device the first
+// time a chain is asked for (never for a resident that only samples) and kept until Close. It is priced first against
+// the memory guard's budget, on top of the build's own price, and against the memory available now. The price is the
+// whole table even where it aliases the .giw mapping, because Metal wires the pages a command buffer touches, which is
+// why the guard counts every weight. A table that does not fit declines the chain, and decode keeps the full-logits path.
+func (r *resident) chainEmbedTable() (Buffer, Buffer, string) {
+	if r.lmTied {
+		return r.lmW, r.lmS, ""
+	}
+	r.chainEmbMu.Lock()
+	defer r.chainEmbMu.Unlock()
+	if !r.chainEmbTried {
+		r.chainEmbTried = true
+		r.chainEmbW, r.chainEmbS, r.chainEmbWhy = r.buildChainEmbed()
+		if r.chainEmbWhy != "" {
+			fmt.Fprintf(os.Stderr, "metal: greedy chain off for this model: %s\n", r.chainEmbWhy)
+		}
+	}
+	return r.chainEmbW, r.chainEmbS, r.chainEmbWhy
+}
+
+func (r *resident) buildChainEmbed() (w, s Buffer, why string) {
+	q8, sc, _, ok := r.embed.Int8()
+	if !ok {
+		return Buffer{}, Buffer{}, fmt.Sprintf("an embedding table of kind %q (embed_gather_i8 reads int8)", r.embed.Kind())
+	}
+	need := int64(len(q8) + 4*len(sc))
+	const mb = 1 << 20
+	if !r.chainEmbGuardOff {
+		if ram, err := unix.SysctlUint64("hw.memsize"); err == nil && ram > 0 {
+			if ceil := metalStaticCeiling(ram); r.chainEmbBase+need > ceil {
+				return Buffer{}, Buffer{}, fmt.Sprintf("the untied head's device embedding table (%.0f MB) would take this resident (%.0f MB) over the memory guard's %.0f MB",
+					float64(need)/mb, float64(r.chainEmbBase)/mb, float64(ceil)/mb)
+			}
+		}
+		if live := metalLiveAvailable(); live > 0 && need > live {
+			return Buffer{}, Buffer{}, fmt.Sprintf("the untied head's device embedding table (%.0f MB) is more than the %.0f MB available now",
+				float64(need)/mb, float64(live)/mb)
+		}
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := NewARPool()
+	defer pool.Drain()
+	defer func() {
+		if p := recover(); p != nil { // mustBuf panics on a failed allocation, as buildResident's callers recover
+			w, s, why = Buffer{}, Buffer{}, fmt.Sprintf("allocating the untied head's device embedding table failed: %v", p)
+		}
+	}()
+	var err error
+	if w, s, err = int8BufA(r.d, r.alias, r.embed); err != nil {
+		return Buffer{}, Buffer{}, err.Error()
+	}
+	return w, s, ""
+}
+
 // chainStart opens a chain whose first input is token id at position pos, and commits that token's buffer. Every other
 // resident entry point stops the chain first (stopExec calls stopChain), so while one is open nothing else uses r.q.
 func (r *resident) chainStart(id, pos int) error {
 	if why := r.greedyChainWhyNot(); why != "" {
 		return fmt.Errorf("metal: no greedy chain on this resident: %s", why)
 	}
+	gw, gs, why := r.chainEmbedTable()
+	if why != "" {
+		return fmt.Errorf("metal: no greedy chain on this resident: %s", why)
+	}
 	r.stopExec() // the encode-ahead executor and any earlier chain
+	r.chainGW, r.chainGS = gw, gs
 	if r.chainTok[0] == (Buffer{}) {
 		for k := range r.chainSets {
 			r.chainTok[k] = NewBufferU32(r.d, 0)
@@ -125,7 +190,7 @@ func (r *resident) encodeChainCB(pos int, u posUniforms, in, out Buffer) *Encode
 	r.encNKeys, r.encFANSplit = pos+1, u.uFANSplit
 	defer func() { r.encNKeys, r.encFANSplit = 0, Buffer{} }()
 	e := r.q.BeginNP()
-	e.Dispatch(r.pEmbedGather, r.H, min(256, r.H), r.lmW, r.lmS, in, r.x, r.uH)
+	e.Dispatch(r.pEmbedGather, r.H, min(256, r.H), r.chainGW, r.chainGS, in, r.x, r.uH)
 	r.encodeTrunkWith(e, u.uPos, u.uNKeys, u.uQTempScale, u.uRopePos)
 	e.Dispatch(r.pGemvW8Amax, r.V*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH)
 	e.Dispatch(r.pArgFinish, 256, 256, r.part, out, r.uP)

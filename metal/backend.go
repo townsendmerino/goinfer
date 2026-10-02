@@ -1055,8 +1055,14 @@ func (a *metalResident) Reset() { a.r.resetDeltaNet() }
 var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
 
 // GreedyChainAvailable (decoder.ResidentGreedyChain, C-B01): the greedy chain is exact on this resident
-// (greedyChainWhyNot, greedy_chain.go).
-func (a *metalResident) GreedyChainAvailable() bool { return a.r.greedyChainWhyNot() == "" }
+// (greedyChainWhyNot, greedy_chain.go) and its gather table is on the device, or fits there now (chainEmbedTable).
+func (a *metalResident) GreedyChainAvailable() bool {
+	if a.r.greedyChainWhyNot() != "" {
+		return false
+	}
+	_, _, why := a.r.chainEmbedTable()
+	return why == ""
+}
 
 // GreedyChainStart opens the chain at token id, position pos.
 func (a *metalResident) GreedyChainStart(id, pos int) error {

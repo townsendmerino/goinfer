@@ -58,7 +58,10 @@ func TestCB01ChainAB(t *testing.T) {
 	if why := a.r.greedyChainWhyNot(); why != "" {
 		t.Fatalf("%s cannot run the greedy chain: %s", filepath.Base(path), why)
 	}
-	auditHB("cb01", t0, "loaded %s: %d reps of %d greedy tokens per arm", filepath.Base(path), reps, n)
+	if _, _, why := a.r.chainEmbedTable(); why != "" {
+		t.Fatalf("%s: no gather table for the greedy chain: %s", filepath.Base(path), why)
+	}
+	auditHB("cb01", t0, "loaded %s (tied head %v): %d reps of %d greedy tokens per arm", filepath.Base(path), a.r.lmTied, reps, n)
 	prompt := make([]int, 64)
 	for i := range prompt {
 		prompt[i] = 1000 + (i*37+5)%15000

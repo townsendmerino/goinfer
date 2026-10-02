@@ -245,14 +245,25 @@ type resident struct {
 	encFANSplit Buffer
 	// The greedy chain (greedy_chain.go, C-B01): its gather pipeline, its goroutine's channels, and its two alternating
 	// uniform sets and token-id buffers.
-	pEmbedGather            Pipeline
-	lmTied                  bool // lmW/lmS are the embedding table itself (a tied LM head), so a token's embedding can be gathered from them
-	chainReq                chan chainReq
-	chainResp               chan chainResp
-	chainDone               chan struct{}
-	chainSets               [2]posUniforms
-	chainTok                [2]Buffer
-	chainServed             int    // tokens chainNext has returned since the build (tests read it)
+	pEmbedGather Pipeline
+	lmTied       bool // lmW/lmS are the embedding table itself (a tied LM head): the chain gathers from them, no copy
+	chainReq     chan chainReq
+	chainResp    chan chainResp
+	chainDone    chan struct{}
+	chainSets    [2]posUniforms
+	chainTok     [2]Buffer
+	chainServed  int // tokens chainNext has returned since the build (tests read it)
+	// The untied head's gather table (C-B01): the int8 embedding table on the device, made the first time a chain is
+	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.
+	// chainEmbBase is the memory guard's price of this build (weights, host copy, every KV slot), which the table is
+	// priced on top of; chainEmbGuardOff is GOINFER_NO_RESIDENT_MEM_GUARD. chainGW/chainGS: the open chain's table.
+	chainEmbMu              sync.Mutex
+	chainEmbTried           bool
+	chainEmbW, chainEmbS    Buffer
+	chainEmbWhy             string
+	chainEmbBase            int64
+	chainEmbGuardOff        bool
+	chainGW, chainGS        Buffer
 	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
@@ -828,6 +839,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath}
+	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
+	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
 	}

@@ -12,25 +12,29 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// chainFixtureResident is the MC3 fixture with a tied LM head (writeMC3FixtureTied), loaded at int4 with one KV slot and
-// built as a Metal resident: the greedy chain (C-B01) needs the tie.
-func chainFixtureResident(t *testing.T, ctx int) *resident {
+// chainFixtureResident is the MC3 fixture with a tied or an untied LM head (writeMC3FixtureTied), loaded at int4 with one
+// KV slot and built as a Metal resident. The greedy chain (C-B01) gathers from the LM-head table when the head is tied
+// and from a device copy of the embedding table when it is not.
+func chainFixtureResident(t *testing.T, ctx int, tied bool) *resident {
 	t.Helper()
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	m, err := decoder.Load(writeMC3FixtureTied(t, max(ctx, 4096), true), decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: 1})
+	m, err := decoder.Load(writeMC3FixtureTied(t, max(ctx, 4096), tied), decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: 1})
 	if err != nil {
-		t.Fatalf("load the tied fixture: %v", err)
+		t.Fatalf("load the fixture: %v", err)
 	}
 	r, err := buildResident(m)
 	if err != nil {
 		m.Close()
-		t.Fatalf("build the tied fixture's resident: %v", err)
+		t.Fatalf("build the fixture's resident: %v", err)
 	}
 	t.Cleanup(func() { r.Close(); m.Close(); debug.FreeOSMemory() })
 	if why := r.greedyChainWhyNot(); why != "" {
-		t.Fatalf("the tied fixture cannot run the greedy chain: %s", why)
+		t.Fatalf("the fixture (tied %v) cannot run the greedy chain: %s", tied, why)
+	}
+	if r.lmTied != tied {
+		t.Fatalf("the fixture's head: lmTied %v, want %v", r.lmTied, tied)
 	}
 	return r
 }
@@ -40,9 +44,16 @@ func chainFixtureResident(t *testing.T, ctx int) *resident {
 // waits) against production's path (ForwardEmbPipe, host argmax, host embedding), from the same prompt. 80 tokens, so
 // the chain passes its pool drain at 64, with attention_fa's floor moved into the run so the attention plan changes
 // between two buffers in flight. Every token and every K/V element of every decoded position must match; after
-// stopChain the executor must carry on from the chain's last position exactly as the reference does.
+// stopChain the executor must carry on from the chain's last position exactly as the reference does. Tied and untied
+// heads both: the untied one gathers from the device embedding table chainEmbedTable makes.
 func TestGreedyChain_bitIdentical(t *testing.T) {
-	r := chainFixtureResident(t, 1024)
+	for _, tied := range []bool{true, false} {
+		t.Run(map[bool]string{true: "tied", false: "untied"}[tied], func(t *testing.T) { greedyChainBitIdentical(t, tied) })
+	}
+}
+
+func greedyChainBitIdentical(t *testing.T, tied bool) {
+	r := chainFixtureResident(t, 1024, tied)
 	const prompt, n = 40, 80
 	r.attnFAFloorOverride = prompt + 30 // the plan changes at 70 keys, mid-chain
 	t.Cleanup(func() { r.attnFAFloorOverride = 0 })
@@ -111,8 +122,11 @@ func TestGreedyChain_bitIdentical(t *testing.T) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "[greedy-chain] %d tokens from position %d, floor at %d keys: %d tokens and %d K/V elements differ; next token after the chain %d vs %d\n",
-		n, prompt, prompt+30, tok, kd, after, refAfter)
+	fmt.Fprintf(os.Stderr, "[greedy-chain] tied %v: %d tokens from position %d, floor at %d keys: %d tokens and %d K/V elements differ; next token after the chain %d vs %d\n",
+		tied, n, prompt, prompt+30, tok, kd, after, refAfter)
+	if !tied && r.chainEmbW == (Buffer{}) {
+		t.Fatal("the untied chain ran without its device embedding table")
+	}
 	if tok != 0 || kd != 0 || after != refAfter {
 		t.Fatalf("the greedy chain differs from production's greedy path: %d of %d tokens, %d K/V elements; after it %d vs %d", tok, n, kd, after, refAfter)
 	}
