@@ -134,7 +134,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:483` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/loadflags/loadflags.go:276` | goinfer | `"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the l` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1051` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1060` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1473` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
 | `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
@@ -304,10 +304,10 @@ supports.
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:130` | goinfer | `// embedInt4 is --embed-int4 as the load should see it. The default is on, except on Met` |
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/banner.go:108` | goinfer | `out = append(out, "decode path: "+f.decodePath)` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:177` | goinfer | `o := cfg.load.Options()` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:183` | goinfer | `o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:410` | goinfer | `fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled ` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:432` | goinfer | `fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) \| ngram — lossless` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:178` | goinfer | `o := cfg.load.Options()` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:184` | goinfer | `o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:413` | goinfer | `fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled ` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:435` | goinfer | `fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) \| ngram — lossless` |
 | `docs/audit-metal-2026-09-30.md|linalg/quant.go:568` | aikit | `func QuantizeGroupsInt4(w []float32, rows, cols, group int) (packed []byte, scales []flo` |
 | `docs/audit-metal-2026-09-30.md|metal.go:676` | gpu | `// tax finding). The default serial compute encoder inserts barriers between dependent` |
 | `docs/audit-metal-2026-09-30.md|metal.go:686` | gpu | `// Encode-tax trims (measured: together only ~0.5ms of the ~2.4ms/token overhead — the` |
@@ -766,7 +766,7 @@ supports.
 | `docs/queue-engineering.md|internal/giw/bundle.go:170` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:805` | goinfer | `go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:814` | goinfer | `go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)` |
 | `docs/queue-engineering.md|linalg/quant.go:214` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1492` | goinfer | `r.ensureBatchCap(16)` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:945` | goinfer | `def gate_cell_idle():` |
@@ -812,7 +812,7 @@ supports.
 | `docs/tasks/task-constrained-confidence.md|decoder/model.go:1304` | goinfer | `func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, ` |
 | `docs/tasks/task-constrained-confidence.md|decoder/weights.go:695` | goinfer | `if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {` |
 | `docs/tasks/task-constrained-confidence.md|decoder/weights.go:758` | goinfer | `if derr = lora.merge(name, data, out, in); derr != nil {` |
-| `docs/tasks/task-constrained-confidence.md|internal/serveapp/main.go:665` | goinfer | `// the mux is built once, so these routes registered only when a model existed at startu` |
+| `docs/tasks/task-constrained-confidence.md|internal/serveapp/main.go:668` | goinfer | `// the mux is built once, so these routes registered only when a model existed at startu` |
 | `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:34` | goinfer | `const maxTopLogprobs = 20` |
 | `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:556` | goinfer | `Logprobs            bool            `json:"logprobs"`` |
 | `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:558` | goinfer | `ResponseFormat      *respFormat     `json:"response_format"`` |
@@ -822,9 +822,9 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1436` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:331` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:520` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1331` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1382` | goinfer | `if reason == "" {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:377` | goinfer | `fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1340` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1391` | goinfer | `if reason == "" {` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:379` | goinfer | `fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:71` | goinfer | `func isVersionArg(a string) bool {` |
 | `docs/tasks/task-first-hour.md|linalg/weightmat_row4_arm64.go:23` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
@@ -833,7 +833,7 @@ supports.
 | `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:97` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
 | `docs/tasks/task-fit-to-hardware.md|internal/loadflags/loadflags.go:267` | goinfer | `"entrypoints (goinfer/metal/cmd/chat, goinfer/metal/cmd/serve) are darwin-gated and need` |
 | `docs/tasks/task-fit-to-hardware.md|internal/loadflags/loadflags.go:68` | goinfer | `fs.Float64Var(&f.WeightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB ` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:371` | goinfer | `sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:373` | goinfer | `sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:119` | goinfer | `if why := residentMemoryDecline(m); why != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:142` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:450` | goinfer | `"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machi` |
@@ -844,7 +844,7 @@ supports.
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:863` | goinfer | `if err != nil {` |
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
 | `docs/tasks/task-freetoken-techniques.md|decoder/model.go:349` | goinfer | `MoECacheSlots int` |
-| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:287` | goinfer | `func addrIsLoopback(addr string) bool {` |
+| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:288` | goinfer | `func addrIsLoopback(addr string) bool {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:306` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:333` | goinfer | `tail := tailKVOnly` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/embed.go:36` | goinfer | `// guard, as ForwardCapture.` |
@@ -861,7 +861,7 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1150` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:592` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/loadflags/loadflags.go:97` | goinfer | `MoECacheSlots:    f.MoECacheSlots,` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1018` | goinfer | `if base.adapter != "" {` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1027` | goinfer | `if base.adapter != "" {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1088` | goinfer | `// leaking 500 instead of a clean 400 (the R-10 regression this fixes). ResidentActive()` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1477` | goinfer | `// the staged/CPU path: measured 13 tok/s vs ~460 resident on a 0.5B (RTX 2070 SUPER).` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1500` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
@@ -878,8 +878,8 @@ supports.
 | `docs/tasks/task-halt-2026-09.md|demo/agent/agent/kenclient.go:42` | goinfer | `Name: "search",` |
 | `docs/tasks/task-halt-2026-09.md|internal/loadflags/loadflags.go:71` | goinfer | `fs.StringVar(&f.MoEPager, "moe-pager", decoder.MoEPagerDefault(runtime.GOOS), moePagerHe` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/helpers.go:531` | goinfer | `for i := 0; i < len(s); {` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:695` | goinfer | `mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:728` | goinfer | `// auth() made that impossible whenever -api-key was set (required off loopback): the` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:704` | goinfer | `mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:737` | goinfer | `// auth() made that impossible whenever -api-key was set (required off loopback): the` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1467` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:623` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
 | `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3906` | goinfer | `p := make([]uint32, N*(K/4))` |
@@ -891,7 +891,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:667` | goinfer | `type GIWTarget string` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:41` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
-| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:496` | goinfer | `--ctx        KV capacity in positions` |
+| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:499` | goinfer | `--ctx        KV capacity in positions` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:236` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:611` | goinfer | `return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kin` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:452` | goinfer | `if p := m.GiwPath(); p != "" {` |
@@ -942,8 +942,8 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:183` | goinfer | `func (s *server) publishLoaded(lm *loadedModel) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:258` | goinfer | `func (s *server) unloadByName(name string, wait time.Duration) (status int, body map[str` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/jobs_http.go:126` | goinfer | `// W28: a waiting job's place in line — its own request's state, the only queue informat` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:379` | goinfer | `fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present h` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:734` | goinfer | `// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:382` | goinfer | `fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present h` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:743` | goinfer | `// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:1051` | goinfer | `// Why the resident cap: on a resident backend the stateless path prefills the fixed-siz` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:1059` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:332` | goinfer | `func (lm *loadedModel) queueFullMsg() string {` |
@@ -967,19 +967,19 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/helpers.go:85` | goinfer | `// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot i` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/liveness.go:69` | goinfer | `func (s *server) resolveAndLock(name string) (*loadedModel, func()) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/liveness.go:94` | goinfer | `func (s *server) withModel(w http.ResponseWriter, name string, fn func(*loadedModel)) {` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:405` | goinfer | `fs.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resid` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:408` | goinfer | `fs.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resid` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1407` | goinfer | `// not a client disconnect or shutdown — ended the turn), and any terminal` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:298` | goinfer | `if hi := haltState(); hi != nil {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:97` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:63` | goinfer | `type responseStore struct {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
 | `docs/use-from-go.md|chat/chat.go:112` | goinfer | `// Render builds the complete prompt string (including any leading BOS marker the` |
-| `site/different/REVIEW-08.md|internal/serveapp/main.go:403` | goinfer | `fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at star` |
+| `site/different/REVIEW-08.md|internal/serveapp/main.go:406` | goinfer | `fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at star` |
 | `site/different/REVIEW-10.md|internal/serveapp/batches_http.go:84` | goinfer | `if req.Endpoint != "/v1/chat/completions" {` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:376` | goinfer | `fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir ` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:413` | goinfer | `fs.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests be` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:677` | goinfer | `// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets th` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:935` | goinfer | `func newServer(cfg config) (*server, error) {` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:378` | goinfer | `fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir ` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:416` | goinfer | `fs.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests be` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:686` | goinfer | `// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets th` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:944` | goinfer | `func newServer(cfg config) (*server, error) {` |
 | `site/different/REVIEW-11.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
 
 ## Bare file index

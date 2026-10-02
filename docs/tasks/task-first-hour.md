@@ -1486,6 +1486,19 @@ prefix reuse"). **Fix:** tracked there. **Gate:** scenario F's resend leg, once 
 no request-log flag exists. **Fix:** an opt-in one-line log per request (route, model, prompt and completion tokens,
 time to first token, status). **Gate:** a serve test asserting that line when the flag is set.
 
+**Fixed 2026-10-01.** `-log-requests` (off by default) writes one stderr line per generation request when it finishes, for `/v1/chat/completions`,
+`/v1/completions`, `/v1/responses` and `/v1/messages`:
+`request: POST /v1/chat/completions model=tiny status=200 prompt_tokens=9 completion_tokens=4 ttft=30ms total=35ms` (real output from the committed tiny
+checkpoint). A request that failed before generating shows `model=- ... prompt_tokens=- completion_tokens=- ttft=-` with its status (a 400, or a 401/429/503 from a
+gate, since the log wraps the routes outermost). The counts and the first-token time are taken in `streamTokens`, the shared tail of every generation, so a
+request that runs several generations (a tool loop) is one line: the first generation's prompt, the summed completion, the first generation's first token.
+**Gate:** `TestRequestLog_oneLinePerGenerationRequest` runs the real chat handler on `testdata/tiny-qwen2-moe` (a committed checkpoint dir with a tokenizer; the tiny GGUFs
+have none) and requires the line's token counts to equal the `usage` the response itself reported, a first-token time, one line per request, the streaming
+path unbroken by the status recorder, the failed-request shape, and — with the flag off — a handler that sees no trace and an unwrapped writer; five mutants red
+(one initially survived because the off-case assertion could not tell "untouched" from "wrapped quietly"; the assertion was changed, not the mutant dropped).
+`TestRequestLog_wiredIntoTheGenerationRoutes` reads `main.go` for the flag and the four wrapped routes, because the mux is built inside the serve entry point.
+**Not covered:** embeddings, batches, jobs and `/v1/systemone` are not logged (no generation passes through `streamTokens`); the other routes are not part of this.
+
 ### R26 — `goinfer-chat` has no plain one-shot mode
 
 **Found** (scenario A). There is no prompt argument. Piped stdin answers once, but prints a `you>` label, ANSI escapes

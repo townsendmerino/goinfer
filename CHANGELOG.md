@@ -17,6 +17,9 @@ any surface may still change.
 
 ### Changed
 
+- **`goinfer-serve -log-requests`: one line per generation request.** Route, model, status, prompt and completion tokens, time to first token and
+  total time, on stderr, for the chat, completions, responses and messages routes. Off by default. A cold-user run had learned its prompt sizes from
+  error bodies alone. `docs/tasks/task-first-hour.md` R25.
 - **`goinfer-chat -p "prompt"`, and plain output when it is scripted.** `-p` answers one prompt and exits, printing only the answer. Without `-p`, piped
   stdin or redirected stdout now gets plain output too: no banner, `you>` label, ANSI escapes or `bye` (a thinking model's reasoning goes to stderr). A
   script that matched the old `you>`/`bye` text in piped output will no longer see it. `docs/tasks/task-first-hour.md` R26.

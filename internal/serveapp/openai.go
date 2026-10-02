@@ -1725,9 +1725,13 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			printed = end
 		}
 	}
+	tr := traceFrom(parent) // -log-requests (reqlog.go); nil when it is off
 	for id := range stream {
 		if stopping {
 			continue // drain so the generation goroutine exits cleanly
+		}
+		if tr != nil && len(ids) == 0 {
+			tr.firstToken()
 		}
 		ids = append(ids, id)
 		// DecodePiece, not Decode/DecodeContinuation: these ids CONTINUE the prompt (no
@@ -1779,6 +1783,9 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		// goinfer_confidence: the stream has drained, so ids is everything this generation emitted (up to a stop
 		// string, if one ended it early — the confidences then cover the part the client received).
 		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
+	}
+	if tr != nil {
+		tr.generated(lm.name, len(gr.promptIDs), len(ids))
 	}
 	return finish, len(ids), stopHit
 }
