@@ -1,0 +1,10 @@
+backend: cuda (auto: a CUDA device answered; -backend cpu to use the CPU)
+loading + quantizing…
+loaded 16-layer model (hidden 1536, vocab 59392) in 2.309s [backend=cuda [int4 layout: canonical (down, gate/up, qkv)] decode=cuda-resident (int4)]
+chat template: glm_ocr
+constraining output to JSON Schema testdata/glm_ocr/invoice.schema.json
+loading the GLM-OCR vision tower…
+reading the image: 1656 image tokens through the vision tower (CPU, f32; about a minute per megapixel)…
+vision tower done in 43s
+[416 tok, 103.6 tok/s]
+wall 50.22s

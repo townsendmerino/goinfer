@@ -1,0 +1,26 @@
+queue_citation_lint: note: 1 untracked doc(s) not linted (commit them to bring their citations under the gate):
+    docs/measurements/glm-ocr-o5-2026-10/README.md
+queue_citation_lint: 1 cited line(s) MOVED but are unchanged — accepted; `--update` re-points the prose to the new line numbers:
+  docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:147 -> :151
+queue_sha_lint: 2 citation(s) DECLARED unresolvable here:
+    c8b65ba  UNPUSHED — the PRE-REBASE D3 flag-pair commit, on the local-only branch `flag-pair-moe-cache`; never pushed, so CI cannot resolve it (it failed there 2026-08-12). DELIBERATELY NOT re-pointed to its rebased successor `bacc04c` (on main via the D3 merge): the two have DIFFERENT patch-ids, and the passage citing this one is historical — it describes the branch as it stood BEFORE the rebase ("its branch predates the fix it completes"), which `bacc04c` no longer illustrates. Re-pointing would keep the lint green by making the surrounding sentence false. Allowlisted rather than laundered. Flagged 2026-08-12
+    d682315  UNPUSHED — Metal branch `metal-rope-merge`, mac-local; not on origin and not in any clone here. Owner: whoever cited it. P4's "already implemented, snapshot-golden byte-exact" rests on a commit only that machine can see; push the branch or the claim stays unverifiable from anywhere else. Flagged 2026-08-12
+queue_citation_lint: 5 citation(s) UNKEYABLE — the cited line's content does not discriminate (a bare `//`, a brace, a blank), so a match would be coincidence:
+    docs/audit-metal-2026-09-12.md|metal/cmdbuf_status_test.go:19
+    docs/audit-metal-2026-09-12.md|metal/moe_prefill_measure_test.go:14
+    docs/audit-metal-2026-09-30.md|metal/model.go:19
+    docs/audit-metal-2026-09-30.md|metal/prefill_attn_r19_test.go:11
+    docs/audit-metal-2026-09-30.md|metal/prefill_moe_parity_test.go:7
+queue_citation_lint: EXAMINED 461 live markdown document(s) of 611 in the tree (124 excluded as docs/completed/ by the archival rule below; 3 excluded as docs/internal/, which is gitignored and so resolves on this machine only). A document that leaves this denominator leaves the lint silently.
+queue_citation_lint: VALIDATED 44 commit citation(s) in docs/QUEUE.md, 918 path:line citation(s) across 69 live document(s), and 29 bare file reference(s) in the queue (existence only).
+  5 path citation(s) are EXISTENCE-CHECKED ONLY — their line content does not discriminate, so a shift in them is invisible.
+  CROSS-REPO RESOLUTION: 30 path lookup(s) answered from the MODULE CACHE at the version go.mod requires, 886 from a checkout.
+    github.com/townsendmerino/aikit -> module cache @ v1.52.0
+    github.com/townsendmerino/aikit/gpu -> module cache @ v0.33.3
+  docs/completed/ is EXCLUDED on purpose — archived records are supposed to age with the code they described, and linting them would fight the archival rule.
+  NOT validated: RELEVANCE. A commit citation is checked to resolve and to match its recorded subject; nothing checks that the commit SUPPORTS the claim made about it.
+    9e5f8fa passed green through two documents for weeks as "the goldens-refresh precedent" while touching the manifest not at all — a resolving sha with a matching subject and a false claim attached.
+    The same gap on the PATH side, and worse because the anchor keeps working: docs/task-moe-streaming.md read "goinfer is now on aikit v1.16.0 (go.mod:6)". The aikit bump changed what go.mod:6 SAYS without changing that it is the aikit require, so the content key still matched and the citation stayed green while the version it asserted went stale. A path citation is checked to point somewhere stable — not to still mean what the sentence around it claims.
+  Also NOT validated: every test name, tag, env var and URL — and for the bare file references, WHAT IS SAID ABOUT THEM, since there is no line to key against.
+  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — so the scope is printed with the green.
+  GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.

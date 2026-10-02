@@ -221,6 +221,18 @@ It is **not** the probability that the value is right, and it is **not calibrate
 not mean right nine times in ten. [server.md](server.md) has the full description; the server
 exposes the same numbers with `"goinfer_confidence": true`.
 
+## An image in, a struct out (GLM-OCR)
+
+[`examples/invoice/main.go`](../examples/invoice/main.go) reads a scanned invoice into a Go struct. The struct is the one source
+for both halves of the request: `constrain.TemplateFromStruct(Invoice{})` is the prompt, because GLM-OCR is prompted for extraction
+with a JSON *template* (an object of blank values) and not a JSON Schema, and `constrain.GrammarFromStruct(Invoice{})` is the
+guarantee. Type the amounts as numbers (`float64`, `int`): the model answers a numeric column with a bare number, and a
+string-typed field would leave the grammar only whitespace to emit (see `docs/server.md`). The image reaches the decoder through
+`multimodal.QwenPreprocess`, aikit's `vision.LoadGlmOcrVisionEncoder` and `Model.GenerateQwenVL`, with the image block spliced into the
+prompt by `multimodal.SpliceImageBlock`. Needs the GLM-OCR checkpoint (`zai-org/GLM-OCR`, about 2.7 GB); about a minute and a half
+on a CPU. Over HTTP the same request is an `image_url` part plus `response_format` (`docs/server.md`); in the terminal it is
+`goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json`.
+
 ## What v1.0 will bind
 
 goinfer is pre-1.0, so any of this can still change. Which surfaces the v1.0 tag will hold to
@@ -247,4 +259,5 @@ api-tiers.md places them, treat them as not yet promised. Two smaller ones are u
 go run ./examples/embed      ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "Reverse a string in Go"
 go run ./examples/structured ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "Ann Lee, 34, writes Go and Rust"
 go run ./examples/confidence ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "I was charged twice for order #123. - Ann"
+go run ./examples/invoice    ~/models/glm-ocr testdata/glm_ocr/invoice.png    # GLM-OCR checkpoint, not a GGUF
 ```

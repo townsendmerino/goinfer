@@ -1,0 +1,64 @@
+=== RUN   TestChatImage_demoEndToEnd
+    image_test.go:266: {
+            "invoice_number": "INV-2026-0417",
+            "date": "2026-09-18",
+            "due_date": "2026-10-18",
+            "vendor": "Harbor Light Supply Co.",
+            "bill_to": "Northwind Printing LLC",
+            "currency": "USD",
+            "paid": false,
+            "line_items": [
+                {
+                    "description": "Thermal label roll 100mm",
+                    "quantity": 12,
+                    "unit_price": 18.4,
+                    "amount": 220.8
+                },
+                {
+                    "description": "Ink cartridge, cyan",
+                    "quantity": 6,
+                    "unit_price": 42.15,
+                    "amount": 252.9
+                },
+                {
+                    "description": "Ink cartridge, black",
+                    "quantity": 6,
+                    "unit_price": 39.95,
+                    "amount": 239.7
+                },
+                {
+                    "description": "A4 paper, 80gsm (ream)",
+                    "quantity": 40,
+                    "unit_price": 5.25,
+                    "amount": 210.0
+                },
+                {
+                    "description": "Binding spine strips",
+                    "quantity": 8,
+                    "unit_price": 11.6,
+                    "amount": 92.8
+                },
+                {
+                    "description": "Shipping and handling",
+                    "quantity": 1,
+                    "unit_price": 35.0,
+                    "amount": 35.0
+                }
+            ],
+            "subtotal": 1051.2,
+            "tax": 89.35,
+            "total": 1140.55
+        }
+        
+        
+        loading + quantizing…
+        loaded 16-layer model (hidden 1536, vocab 59392) in 1.065s [backend=cpu [int4 layout: canonical (down, gate/up, qkv)] decode=cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]]
+        chat template: glm_ocr
+        constraining output to JSON Schema ../../testdata/glm_ocr/invoice.schema.json
+        loading the GLM-OCR vision tower…
+        reading the image: 1656 image tokens through the vision tower (CPU, f32; about a minute per megapixel)…
+        vision tower done in 44s
+        [416 tok, 15.0 tok/s]
+--- PASS: TestChatImage_demoEndToEnd (73.55s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/chatapp	73.549s

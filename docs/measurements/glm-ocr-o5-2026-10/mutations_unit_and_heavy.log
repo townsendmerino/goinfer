@@ -1,0 +1,110 @@
+# O5 unit-level mutations: each break applied to the file, the named tests run, the file restored (mut.py). exit=1 means RED.
+MUTATION template.go: 'return &tmplNode{kind: \'l\', lit: "0"}, nil\n\tcase "boolean"' -> 'return &tmplNode{kind: \'l\', lit: `""`}, nil\n\tcase "boolean"'
+  exit=1
+  --- FAIL: TestTemplateFromSchema_convention (0.00s)
+          template_test.go:92: got "\"\""
+          template_test.go:92: got "\"\""
+          template_test.go:92: got "\"\""
+          template_test.go:92: got "{\n    \"a\": \"\"\n}"
+          template_test.go:92: got "[\n    {\n        \"sku\": \"\",\n        \"qty\": \"\"\n    }\n]"
+          template_test.go:92: got "{\n    \"name\": \"\",\n    \"n\": \"\",\n    \"x\": \"\",\n    \"ok\": false,\n    \"tags\": [\n        \"\"\n    ],\n    \"inner\": {\n        \"k\": \"\"\n    }\n}"
+  --- FAIL: TestTemplateFromSchema_keywordNamedFields (0.00s)
+MUTATION template.go: '\t\tfor _, k := range props.keys {' -> '\t\tslices.Sort(props.keys)\n\t\tfor _, k := range props.keys {'
+  exit=1
+  --- FAIL: TestTemplateFromSchema_cardExampleByteExact (0.00s)
+      template_test.go:49: template differs from the model card's example
+  --- FAIL: TestTemplateFromSchema_convention (0.00s)
+          template_test.go:92: got "[\n    {\n        \"qty\": 0,\n        \"sku\": \"\"\n    }\n]"
+          template_test.go:92: got "{\n    \"inner\": {\n        \"k\": \"\"\n    },\n    \"n\": 0,\n    \"name\": \"\",\n    \"ok\": false,\n    \"tags\": [\n        \"\"\n    ],\n    \"x\": 0\n}"
+  --- FAIL: TestTemplateFromSchema_keywordNamedFields (0.00s)
+      template_test.go:110: got
+  FAIL
+MUTATION glm_ocr.go: 'const GlmOcrExtractionInstruction = "请按下列JSON格式输出图中信息:"' -> 'const GlmOcrExtractionInstruction = "请按下列JSON格式输出图中信息："'
+  exit=1
+  --- FAIL: TestGlmOcrExtractionInstruction_isTheCards (0.00s)
+      glm_ocr_test.go:142: instruction "请按下列JSON格式输出图中信息：", the card's is "请按下列JSON格式输出图中信息:"
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/multimodal	0.002s
+  FAIL
+MUTATION glm_ocr.go: '\tcase "", GlmOcrPromptText, GlmOcrPromptFormula, GlmOcrPromp' -> '\t}\n\treturn GlmOcrExtractionPrompt(template), true'
+  exit=1
+  --- FAIL: TestGlmOcrExtractionText_rule (0.00s)
+      glm_ocr_test.go:174: "请按下列JSON格式输出图中信息:\n{\n    \"vendor\": \"\"\n}": replaced=true text="请按下列JSON格式输出图中信息:\n{\n    \"total\": \"\"\n}"; the user's own text must be kept verbatim
+      glm_ocr_test.go:174: "What is the invoice total?": replaced=true text="请按下列JSON格式输出图中信息:\n{\n    \"total\": \"\"\n}"; the user's own text must be kept verbatim
+      glm_ocr_test.go:174: "Text Recognition: and the total": replaced=true text="请按下列JSON格式输出图中信息:\n{\n    \"total\": \"\"\n}"; the user's own text must be kept verbatim
+      glm_ocr_test.go:174: "text recognition:": replaced=true text="请按下列JSON格式输出图中信息:\n{\n    \"total\": \"\"\n}"; the user's own text must be kept verbatim
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/multimodal	0.003s
+  FAIL
+MUTATION vision_serve.go: '\tif err := lm.glmOcrExtractionTurn(req.sampling.ResponseForm' -> '\tif err := error(nil); err != nil {'
+  exit=1
+  --- FAIL: TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt (0.00s)
+      glm_ocr_extract_test.go:176: serveVisionChatWith must call glmOcrExtractionTurn, visionPrompt and prepare (found map[Context:15787 Error:13887 Len:17059 Now:14980 Sprintf:13485 String:17042 Unix:14980 WriteString:16637 constra
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.004s
+  FAIL
+MUTATION vision_serve.go: '\treq.sampling.confidenceOK = true // written back below (the' -> ''
+  exit=1
+  --- FAIL: TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt (0.00s)
+      glm_ocr_extract_test.go:172: serveVisionChatWith must set sampling.confidenceOK and write gr.conf.payload() back in the stream and the buffered reply (confidenceOK set: false, payload writes: 2)
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.004s
+  FAIL
+MUTATION glm_ocr_vision.go: '\tturns[idx].Content, _ = multimodal.GlmOcrExtractionText(tur' -> '\tturns[idx].Content = multimodal.GlmOcrExtractionPrompt(tmpl'
+  exit=1
+  --- FAIL: TestGlmOcr_extractionTurn (0.00s)
+      glm_ocr_extract_test.go:55: the user's own text "What is the total?" was changed to "请按下列JSON格式输出图中信息:\n{\n    \"invoice_number\": \"\",\n    \"total\": \"\"\n}" (<nil>)
+      glm_ocr_extract_test.go:55: the user's own text "请按下列JSON格式输出图中信息:\n{\n    \"vendor\": \"\"\n}" was changed to "请按下列JSON格式输出图中信息:\n{\n    \"invoice_number\": \"\",\n    \"total\": \"\"\n}" (<nil>)
+  --- FAIL: TestGlmOcr_extractionPromptIDs (0.11s)
+      glm_ocr_extract_test.go:127: the user's own prompt: the model reads
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.115s
+  FAIL
+MUTATION image.go: '\t\tout[idx].Content, _ = multimodal.GlmOcrExtractionText(out[' -> '\t\tout[idx].Content = multimodal.GlmOcrExtractionPrompt(tmpl)'
+  exit=1
+  --- FAIL: TestImageTurns (0.00s)
+      image_test.go:164: --schema, the user's own -p text became "请按下列JSON格式输出图中信息:\n{\n    \"invoice_number\": \"\",\n    \"total\": 0\n}": it must be sent as written
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/chatapp	0.004s
+  FAIL
+MUTATION image.go: '\tif batch != "" {\n\t\treturn fmt.Errorf("--image attaches' -> '\tif false {\n\t\treturn fmt.Errorf("--image attaches'
+  exit=1
+  --- FAIL: TestCheckImageFlags (0.00s)
+      image_test.go:103: image with --batch: error <nil>, want one naming "--batch"
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/chatapp	0.004s
+  FAIL
+MUTATION image.go: '\tpp, err := multimodal.LoadGlmOcrPreprocessConfig(dir)\n\tif e' -> '\tpp, err := multimodal.LoadGlmOcrPreprocessConfig(dir)\n\tpp.M'
+  exit=1
+  --- FAIL: TestLoadImageInput (0.00s)
+      image_test.go:121: pixel bounds 6272..9633792: the file's must be HALVED (6272..4816896), as in serve
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/chatapp	0.008s
+  FAIL
+MUTATION main.go: '\tTotal         float64    `json:"total"`' -> '\tTotal         float64    `json:"total"`\n\tExtra         stri'
+  exit=1
+  --- FAIL: TestInvoiceSchemaFileIsTheStructsSchema (0.00s)
+      main_test.go:38: ../../testdata/glm_ocr/invoice.schema.json is not constrain.SchemaFromStruct(Invoice{}):
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/examples/invoice	0.004s
+  FAIL
+
+# the heavy gates under a break that keeps the build green (GOINFER_HEAVY_TESTS=1, real checkpoint, CPU int4, ~75 s each)
+MUTATION main.go: '\tprompt := multimodal.GlmOcrExtractionPrompt(template)' -> '\tprompt := multimodal.GlmOcrPromptText + template[:0]'
+  exit=1
+  --- FAIL: TestInvoiceExample (126.78s)
+      main_test.go:88: run: exit status 1
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/examples/invoice	126.784s
+  FAIL
+MUTATION image.go: '\t\tout[idx].Content, _ = multimodal.GlmOcrExtractionText(out[' -> '\t\tout[idx].Content = multimodal.GlmOcrPromptText'
+  exit=1
+  FAIL	github.com/townsendmerino/goinfer/internal/chatapp [build failed]
+  FAIL
+MUTATION image.go: '\t\tout[idx].Content, _ = multimodal.GlmOcrExtractionText(out[' -> '\t\tout[idx].Content = multimodal.GlmOcrPromptText + tmpl[:0]'
+  exit=1
+  --- FAIL: TestChatImage_demoEndToEnd (163.51s)
+      image_test.go:253: stdout is not JSON: unexpected end of JSON input
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/chatapp	163.512s
+  FAIL

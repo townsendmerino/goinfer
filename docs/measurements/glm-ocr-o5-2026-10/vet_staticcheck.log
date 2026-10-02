@@ -1,0 +1,13 @@
+## gofmt -l . (root module; the only module touched; empty = clean)
+exit=0
+## go vet, untagged
+exit=0
+## go vet -tags realckpt
+exit=0
+## go vet -tags 'cuda goinfer_testhooks' ./cuda/ (not touched; the CUDA binaries build)
+exit=0
+## staticcheck 0.8.0 (installed binary), root packages touched, untagged then -tags realckpt
+exit=0
+exit=0
+## gate proven red: a throwaway package with an unused struct field (internal/zzsc, deleted again) printed:
+internal/zzsc/x.go:3:16: field deadField is unused (U1000)

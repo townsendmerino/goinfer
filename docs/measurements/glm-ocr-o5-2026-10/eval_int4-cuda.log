@@ -1,0 +1,55 @@
+[ 1/15] inv01.png  36.2s finish=stop completion_tokens=283 parsed=True fields 23/23  elapsed 36s
+[ 2/15] inv02.png  53.2s finish=stop completion_tokens=432 parsed=True fields 34/35  elapsed 89s
+[ 3/15] inv03.png  42.0s finish=stop completion_tokens=278 parsed=True fields 23/23  elapsed 131s
+[ 4/15] inv04.png  41.3s finish=stop completion_tokens=233 parsed=True fields 19/19  elapsed 173s
+[ 5/15] inv05.png  34.2s finish=stop completion_tokens=419 parsed=True fields 34/35  elapsed 207s
+[ 6/15] inv06.png  41.0s finish=stop completion_tokens=234 parsed=True fields 19/19  elapsed 248s
+[ 7/15] inv07.png  48.4s finish=stop completion_tokens=330 parsed=True fields 27/27  elapsed 296s
+[ 8/15] inv08.png  33.1s finish=stop completion_tokens=324 parsed=True fields 24/27  elapsed 329s
+[ 9/15] inv09.png  32.7s finish=stop completion_tokens=337 parsed=True fields 27/27  elapsed 362s
+[10/15] inv10.png  48.6s finish=stop completion_tokens=349 parsed=True fields 24/27  elapsed 411s
+[11/15] inv11.png  32.5s finish=stop completion_tokens=227 parsed=True fields 18/19  elapsed 443s
+[12/15] inv12.png  32.0s finish=stop completion_tokens=238 parsed=True fields 19/19  elapsed 475s
+[13/15] inv13.png  33.6s finish=stop completion_tokens=338 parsed=True fields 27/27  elapsed 509s
+[14/15] inv14.png  33.9s finish=stop completion_tokens=423 parsed=True fields 32/35  elapsed 543s
+[15/15] inv15.png  49.3s finish=stop completion_tokens=422 parsed=True fields 33/35  elapsed 592s
+
+## int4-cuda: 15 documents (synthetic invoices, not real scans)
+parsed: 15/15; finish=stop: 15/15
+
+| field | correct / n | exact-match |
+|---|---|---|
+| invoice_number | 15 / 15 | 100.0% |
+| date | 11 / 15 | 73.3% |
+| due_date | 11 / 15 | 73.3% |
+| vendor | 15 / 15 | 100.0% |
+| bill_to | 14 / 15 | 93.3% |
+| currency | 15 / 15 | 100.0% |
+| paid | 10 / 15 | 66.7% |
+| subtotal | 15 / 15 | 100.0% |
+| tax | 15 / 15 | 100.0% |
+| total | 15 / 15 | 100.0% |
+| line_item_count | 15 / 15 | 100.0% |
+| line_items.description | 58 / 58 | 100.0% |
+| line_items.quantity | 58 / 58 | 100.0% |
+| line_items.unit_price | 58 / 58 | 100.0% |
+| line_items.amount | 58 / 58 | 100.0% |
+| **all fields** | 383 / 397 | 96.5% |
+
+| document | fields correct | parsed | finish | seconds | wrong fields |
+|---|---|---|---|---|---|
+| inv01.png | 23 / 23 | True | stop | 36.2 | - |
+| inv02.png | 34 / 35 | True | stop | 53.2 | paid: True -> False |
+| inv03.png | 23 / 23 | True | stop | 42.0 | - |
+| inv04.png | 19 / 19 | True | stop | 41.3 | - |
+| inv05.png | 34 / 35 | True | stop | 34.2 | paid: True -> False |
+| inv06.png | 19 / 19 | True | stop | 41.0 | - |
+| inv07.png | 27 / 27 | True | stop | 48.4 | - |
+| inv08.png | 24 / 27 | True | stop | 33.1 | date: '08/11/2026' -> '2026-11-08'; due_date: '09/11/2026' -> '2026-11-09'; paid: True -> False |
+| inv09.png | 27 / 27 | True | stop | 32.7 | - |
+| inv10.png | 24 / 27 | True | stop | 48.6 | date: '4 Sep 2026' -> '2026-09-04'; due_date: '4 Oct 2026' -> '2026-10-04'; bill_to: 'Pioneer Ridge School District' -> 'Pioneer Ridge School District\n9 Foundry Way\nDenver, CO 80202' |
+| inv11.png | 18 / 19 | True | stop | 32.5 | paid: True -> False |
+| inv12.png | 19 / 19 | True | stop | 32.0 | - |
+| inv13.png | 27 / 27 | True | stop | 33.6 | - |
+| inv14.png | 32 / 35 | True | stop | 33.9 | date: '1 Aug 2026' -> '2026-08-01'; due_date: '1 Sep 2026' -> '2026-09-12'; paid: True -> False |
+| inv15.png | 33 / 35 | True | stop | 49.3 | date: '27 Mar 2026' -> '2026-03-27'; due_date: '27 Apr 2026' -> '2026-04-27' |

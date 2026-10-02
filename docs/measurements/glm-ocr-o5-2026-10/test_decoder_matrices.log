@@ -1,0 +1,14 @@
+=== RUN   TestCapabilityMatrix
+--- PASS: TestCapabilityMatrix (0.00s)
+=== RUN   TestCapabilityMatrix_checkpointLabels
+--- PASS: TestCapabilityMatrix_checkpointLabels (0.00s)
+=== RUN   TestCapabilityMatrix_siteDocsAreUsable
+--- PASS: TestCapabilityMatrix_siteDocsAreUsable (0.00s)
+=== RUN   TestCapabilityMatrix_CoverageComplete
+--- PASS: TestCapabilityMatrix_CoverageComplete (0.00s)
+=== RUN   TestHardwareMatrix_fresh
+--- PASS: TestHardwareMatrix_fresh (0.00s)
+=== RUN   TestHardwareMatrix_breakItFirst
+--- PASS: TestHardwareMatrix_breakItFirst (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.011s

@@ -95,11 +95,17 @@ def ask(url, png, schema, max_tokens, conf=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:18081")
-    ap.add_argument("--tag", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--tag", default="")
+    ap.add_argument("--out", default="")
     ap.add_argument("--docs", default="", help="comma list of 1-based document numbers (default: all 15)")
     ap.add_argument("--max-tokens", type=int, default=2500)
+    ap.add_argument("--report-only", default="", help="re-print the report (and the diagnostics) from a results_<tag>.json instead of running")
     a = ap.parse_args()
+    if a.report_only:
+        r = json.load(open(a.report_only))
+        report(r["tag"], r["results"])
+        diagnostics(r["results"])
+        return
     labels = json.load(open(os.path.join(DOCS, "invoices", "labels.json")))
     schema = json.load(open(os.path.join(DOCS, "invoice.schema.json")))
     pick = {int(x) for x in a.docs.split(",") if x} or set(range(1, len(labels) + 1))
@@ -127,6 +133,60 @@ def main():
               f"fields {ok}/{len(rows)}  elapsed {time.time() - t_all:.0f}s", flush=True)
         json.dump({"tag": a.tag, "url": a.url, "results": results}, open(os.path.join(a.out, f"results_{a.tag}.json"), "w"), indent=1, ensure_ascii=False)
     report(a.tag, results)
+    diagnostics(results)
+
+
+MON = {m: i + 1 for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])}
+
+
+def as_date(s):
+    """A calendar date from the three printed formats (ISO, mm/dd/yyyy, d Mon yyyy), else None."""
+    s = ws(s) if isinstance(s, str) else ""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        return tuple(map(int, m.groups()))
+    m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", s)
+    if m:
+        return (int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    m = re.fullmatch(r"(\d{1,2}) (\w{3}) (\d{4})", s)
+    if m and m.group(2) in MON:
+        return (int(m.group(3)), MON[m.group(2)], int(m.group(1)))
+    return None
+
+
+def auroc(pos, neg):
+    """P(a wrong field has LOWER confidence than a right one), ties 0.5; None when either class is empty."""
+    if not pos or not neg:
+        return None
+    return sum((p < q) + 0.5 * (p == q) for p in pos for q in neg) / (len(pos) * len(neg))
+
+
+def diagnostics(results):
+    """Reported beside the headline table, never instead of it."""
+    print("\n### Diagnostic 1: dates compared as CALENDAR dates (an extra normalisation, NOT the headline)")
+    labels = {l["file"]: l["truth"] for l in json.load(open(os.path.join(DOCS, "invoices", "labels.json")))}
+    n = ok = 0
+    for r in results:
+        g = r["content"] and json.loads(r["content"]) if r["parsed"] else {}
+        for k in ("date", "due_date"):
+            n += 1
+            want, have = as_date(labels[r["file"]][k]), as_date(g.get(k))
+            ok += want is not None and want == have
+    print(f"date + due_date: {ok} / {n} equal as calendar dates (as-printed exact match is in the table above)")
+    print("\n### Diagnostic 2: goinfer_confidence against correctness (integer and boolean fields only; AUROC = P(wrong has lower confidence than right))")
+    right = {"paid": [], "quantity": []}
+    wrong = {"paid": [], "quantity": []}
+    for r in results:
+        okpath = {p: o for p, w, h, o in r["rows"]}
+        for c in r["confidence"]:
+            kind = "paid" if c["path"] == "paid" else "quantity" if c["path"].endswith(".quantity") else None
+            if kind:
+                (right if okpath.get(c["path"]) else wrong)[kind].append(c["confidence"])
+    print("| field | n | wrong | min confidence of a right value | max confidence of a wrong value | AUROC |\n|---|---|---|---|---|---|")
+    for k in ("paid", "quantity"):
+        a = auroc(wrong[k], right[k])
+        print(f"| {k} | {len(right[k]) + len(wrong[k])} | {len(wrong[k])} | {min(right[k]):.4f} | {max(wrong[k]):.4f} | {'n/a (no wrong values)' if a is None else format(a, '.3f')} |"
+              if wrong[k] else f"| {k} | {len(right[k])} | 0 | {min(right[k]):.4f} | - | n/a (no wrong values) |")
 
 
 def report(tag, results):

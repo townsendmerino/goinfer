@@ -1,0 +1,745 @@
+{
+ "tag": "f32-cpu-subset-2-8-10",
+ "url": "http://127.0.0.1:18082",
+ "results": [
+  {
+   "file": "inv02.png",
+   "seconds": 114.0,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1832,
+    "completion_tokens": 432,
+    "total_tokens": 2264,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"06824\",\n    \"date\": \"03/13/2026\",\n    \"due_date\": \"04/13/2026\",\n    \"vendor\": \"Brightwater Logistics Ltd\",\n    \"bill_to\": \"Orchid Bay Hospitality\",\n    \"currency\": \"£\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"A4 paper, 80gsm (ream)\",\n            \"quantity\": 1,\n            \"unit_price\": 914.36,\n            \"amount\": 914.36\n        },\n        {\n            \"description\": \"Thermal label roll 100mm\",\n            \"quantity\": 1,\n            \"unit_price\": 190.36,\n            \"amount\": 190.36\n        },\n        {\n            \"description\": \"Site survey, per hour\",\n            \"quantity\": 12,\n            \"unit_price\": 597.69,\n            \"amount\": 7172.28\n        },\n        {\n            \"description\": \"Pallet wrap\",\n            \"quantity\": 6,\n            \"unit_price\": 343.91,\n            \"amount\": 2063.46\n        },\n        {\n            \"description\": \"Binding spine strips\",\n            \"quantity\": 5,\n            \"unit_price\": 636.02,\n            \"amount\": 3180.1\n        },\n        {\n            \"description\": \"Shipping and handling\",\n            \"quantity\": 12,\n            \"unit_price\": 316.17,\n            \"amount\": 3794.04\n        }\n    ],\n    \"subtotal\": 17314.6,\n    \"tax\": 1731.46,\n    \"total\": 19046.06\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "06824",
+     "06824",
+     true
+    ],
+    [
+     "date",
+     "03/13/2026",
+     "03/13/2026",
+     true
+    ],
+    [
+     "due_date",
+     "04/13/2026",
+     "04/13/2026",
+     true
+    ],
+    [
+     "vendor",
+     "Brightwater Logistics Ltd",
+     "Brightwater Logistics Ltd",
+     true
+    ],
+    [
+     "bill_to",
+     "Orchid Bay Hospitality",
+     "Orchid Bay Hospitality",
+     true
+    ],
+    [
+     "currency",
+     "GBP",
+     "£",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     17314.6,
+     17314.6,
+     true
+    ],
+    [
+     "tax",
+     1731.46,
+     1731.46,
+     true
+    ],
+    [
+     "total",
+     19046.06,
+     19046.06,
+     true
+    ],
+    [
+     "line_item_count",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "A4 paper, 80gsm (ream)",
+     "A4 paper, 80gsm (ream)",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     914.36,
+     914.36,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     914.36,
+     914.36,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Thermal label roll 100mm",
+     "Thermal label roll 100mm",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     190.36,
+     190.36,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     190.36,
+     190.36,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Site survey, per hour",
+     "Site survey, per hour",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     12,
+     12,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     597.69,
+     597.69,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     7172.28,
+     7172.28,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Pallet wrap",
+     "Pallet wrap",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     343.91,
+     343.91,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     2063.46,
+     2063.46,
+     true
+    ],
+    [
+     "line_items[4].description",
+     "Binding spine strips",
+     "Binding spine strips",
+     true
+    ],
+    [
+     "line_items[4].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[4].unit_price",
+     636.02,
+     636.02,
+     true
+    ],
+    [
+     "line_items[4].amount",
+     3180.1,
+     3180.1,
+     true
+    ],
+    [
+     "line_items[5].description",
+     "Shipping and handling",
+     "Shipping and handling",
+     true
+    ],
+    [
+     "line_items[5].quantity",
+     12,
+     12,
+     true
+    ],
+    [
+     "line_items[5].unit_price",
+     316.17,
+     316.17,
+     true
+    ],
+    [
+     "line_items[5].amount",
+     3794.04,
+     3794.04,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.854597666507565,
+     "distribution": {
+      "false": 0.854597666507565,
+      "true": 0.145402333492435
+     },
+     "undecided": 4.1954673748553544e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9969024671986529,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999986204884,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 12,
+     "confidence": 0.9999999987734256,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999956748837,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[4].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999931142938,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[5].quantity",
+     "kind": "integer",
+     "value": 12,
+     "confidence": 0.9999999975671301,
+     "free_tokens": 2,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv08.png",
+   "seconds": 79.0,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1448,
+    "completion_tokens": 324,
+    "total_tokens": 1772,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"66845\",\n    \"date\": \"2026-11-08\",\n    \"due_date\": \"2026-11-09\",\n    \"vendor\": \"Tamarack Surveying LLC\",\n    \"bill_to\": \"Sable Marine Services\",\n    \"currency\": \"USD\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Steel angle 40x40x3m\",\n            \"quantity\": 4,\n            \"unit_price\": 784.46,\n            \"amount\": 3137.84\n        },\n        {\n            \"description\": \"Laminated menu cards\",\n            \"quantity\": 1,\n            \"unit_price\": 393.45,\n            \"amount\": 393.45\n        },\n        {\n            \"description\": \"Binding spine strips\",\n            \"quantity\": 1,\n            \"unit_price\": 72.44,\n            \"amount\": 72.44\n        },\n        {\n            \"description\": \"Courier fee\",\n            \"quantity\": 1,\n            \"unit_price\": 534.71,\n            \"amount\": 534.71\n        }\n    ],\n    \"subtotal\": 4138.44,\n    \"tax\": 206.92,\n    \"total\": 4345.36\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "66845",
+     "66845",
+     true
+    ],
+    [
+     "date",
+     "08/11/2026",
+     "2026-11-08",
+     false
+    ],
+    [
+     "due_date",
+     "09/11/2026",
+     "2026-11-09",
+     false
+    ],
+    [
+     "vendor",
+     "Tamarack Surveying LLC",
+     "Tamarack Surveying LLC",
+     true
+    ],
+    [
+     "bill_to",
+     "Sable Marine Services",
+     "Sable Marine Services",
+     true
+    ],
+    [
+     "currency",
+     "USD",
+     "USD",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     4138.44,
+     4138.44,
+     true
+    ],
+    [
+     "tax",
+     206.92,
+     206.92,
+     true
+    ],
+    [
+     "total",
+     4345.36,
+     4345.36,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Steel angle 40x40x3m",
+     "Steel angle 40x40x3m",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     784.46,
+     784.46,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     3137.84,
+     3137.84,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Laminated menu cards",
+     "Laminated menu cards",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     393.45,
+     393.45,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     393.45,
+     393.45,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Binding spine strips",
+     "Binding spine strips",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     72.44,
+     72.44,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     72.44,
+     72.44,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Courier fee",
+     "Courier fee",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     534.71,
+     534.71,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     534.71,
+     534.71,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.748814275854789,
+     "distribution": {
+      "false": 0.748814275854789,
+      "true": 0.25118572414521073
+     },
+     "undecided": 4.880180299321158e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 4,
+     "confidence": 0.9828510052761507,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999987931503,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999997061195,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999995339479,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv10.png",
+   "seconds": 99.3,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1832,
+    "completion_tokens": 333,
+    "total_tokens": 2165,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"2026/7228\",\n    \"date\": \"2026-09-04\",\n    \"due_date\": \"2026-10-04\",\n    \"vendor\": \"Summit Peak Outfitters\",\n    \"bill_to\": \"Pioneer Ridge School District\",\n    \"currency\": \"$\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Cotton napkins, set of 12\",\n            \"quantity\": 6,\n            \"unit_price\": 860.68,\n            \"amount\": 5164.08\n        },\n        {\n            \"description\": \"Ink cartridge, black\",\n            \"quantity\": 1,\n            \"unit_price\": 496.72,\n            \"amount\": 496.72\n        },\n        {\n            \"description\": \"Pastry box, assorted\",\n            \"quantity\": 10,\n            \"unit_price\": 858.0,\n            \"amount\": 8580.0\n        },\n        {\n            \"description\": \"Oak shelf bracket\",\n            \"quantity\": 5,\n            \"unit_price\": 476.0,\n            \"amount\": 2380.0\n        }\n    ],\n    \"subtotal\": 16620.8,\n    \"tax\": 0.0,\n    \"total\": 16620.8\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "2026/7228",
+     "2026/7228",
+     true
+    ],
+    [
+     "date",
+     "4 Sep 2026",
+     "2026-09-04",
+     false
+    ],
+    [
+     "due_date",
+     "4 Oct 2026",
+     "2026-10-04",
+     false
+    ],
+    [
+     "vendor",
+     "Summit Peak Outfitters",
+     "Summit Peak Outfitters",
+     true
+    ],
+    [
+     "bill_to",
+     "Pioneer Ridge School District",
+     "Pioneer Ridge School District",
+     true
+    ],
+    [
+     "currency",
+     "USD",
+     "$",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     16620.8,
+     16620.8,
+     true
+    ],
+    [
+     "tax",
+     0.0,
+     0.0,
+     true
+    ],
+    [
+     "total",
+     16620.8,
+     16620.8,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Cotton napkins, set of 12",
+     "Cotton napkins, set of 12",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     860.68,
+     860.68,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     5164.08,
+     5164.08,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Ink cartridge, black",
+     "Ink cartridge, black",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     496.72,
+     496.72,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     496.72,
+     496.72,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Pastry box, assorted",
+     "Pastry box, assorted",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     10,
+     10,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     858.0,
+     858.0,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     8580.0,
+     8580.0,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Oak shelf bracket",
+     "Oak shelf bracket",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     476.0,
+     476.0,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     2380.0,
+     2380.0,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9975853816514759,
+     "distribution": {
+      "false": 0.9975853816514759,
+      "true": 0.002414618348524103
+     },
+     "undecided": 1.894643465012191e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9926213254794514,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999995734186,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 10,
+     "confidence": 0.999999998934058,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999910687194,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  }
+ ]
+}

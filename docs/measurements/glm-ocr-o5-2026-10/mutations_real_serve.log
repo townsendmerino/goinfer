@@ -1,0 +1,17 @@
+MUTATION vision_serve.go: '\tif err := lm.glmOcrExtractionTurn(req.sampling.ResponseForm' -> '\tif err := error(nil); err != nil {'
+  exit=1
+      glm_ocr_extract_real_test.go:140: usage.prompt_tokens = 1668, the extraction prompt is 1778 ids: the schema's template did not reach the model (a bare task prompt would be about 90 ids shorter)
+  --- FAIL: TestServe_glmOcrExtraction_O5 (55.02s)
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/serveapp	55.045s
+  FAIL
+MUTATION vision_serve.go: '\tgr, err := lm.prepare(req.sampling, vi.ids, false)\n\tif err ' -> '\tif !req.sampling.Confidence {\n\t\treq.sampling.ResponseFormat'
+  exit=1
+      glm_ocr_extract_real_test.go:143: (a) prompt: 1778 ids = the independently built extraction prompt (image run 1656)
+      glm_ocr_extract_real_test.go:151: reply (416 completion tokens, finish stop):
+      glm_ocr_extract_real_test.go:213: (e) capped reply:
+      glm_ocr_extract_real_test.go:219: (e) reply is not JSON: invalid character '`' looking for beginning of value
+  --- FAIL: TestServe_glmOcrExtraction_O5 (195.80s)
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/internal/serveapp	195.830s
+  FAIL
