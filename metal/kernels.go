@@ -577,6 +577,56 @@ inline void sa_rows_acc(device const uint4* wq, device const half* sct, device c
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
 }
+// B-P04 (docs/audit-metal-2026-09-30.md): sa_rows_acc with every lane busy in every trip when K % 512 == 0. The shipped
+// loop gives a lane whole 32-weight groups, g = lane, lane+32, ...; at K = 1536 (G = 48) lanes 16-31 sit out the second
+// trip (T1.4 measured 1.163x the time per byte of K = 2048). Here a trip is 512 weights: lane pair (2m, 2m+1) splits group
+// 16t+m, 16 weights each (one uint2 of nibbles, four half4 of activations). Each half's gf and sa are integers below
+// 2^24, so one simd_shuffle_xor(.,1) gives both lanes the group's exact sums, the same values sa_rows_acc forms. Then
+// simd_shuffle hands group g's sums to lane g mod 32, its owner in sa_rows_acc, which adds (gf - 8*sa)*scale to its
+// accumulators in the same expression and the same ascending order of g. Every lane's chain, and so simd_sum, is
+// sa_rows_acc's: bit-identical. The host takes it only for K % 512 == 0 (G % 16 == 0, whole trips).
+template <uint R>
+inline void sa_rows_acc_k512(device const uint4* wq, device const half* sct, device const char* aq, uint K,
+    threadgroup half* Ah, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* acc, thread uint& row0) {
+    constexpr float P4[4] = {1.0f, 0.0625f, 0.00390625f, 0.000244140625f};
+    constexpr float4 U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f); // undoes the pre-scale, exactly
+    for (uint i=tid;i<K;i+=tgs) Ah[i] = half(float(aq[i]) * P4[i & 3u]);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    row0 = (tgid*(tgs>>5u) + sgid)*R;
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    device const uint2* wq2 = reinterpret_cast<device const uint2*>(wq);
+    const uint hf = lane & 1u, m = lane >> 1u;
+    for (uint t=0; t*16u<G; t++) {
+        const uint g = t*16u + m;
+        float gf[R];
+        uint2 w[R];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) { gf[r] = 0.0f; w[r] = wq2[((row0+r)*G + g)*2u + hf]; }
+        threadgroup const half4* a4 = reinterpret_cast<threadgroup const half4*>(Ah + g*32u + hf*16u);
+        float sa = 0.0f;
+        SA_ROWS_UNROLL for (uint t2=0;t2<4u;t2++) {
+            float4 x = float4(a4[t2]);
+            sa += dot(x, U4);
+            SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+                uint word = (t2 < 2u) ? w[r].x : w[r].y;
+                uint u = (t2 & 1u) ? (word >> 16) : (word & 0xFFFFu);
+                gf[r] += dot(float4(float(u & 0xFu), float(u & 0xF0u), float(u & 0xF00u), float(u & 0xF000u)), x);
+            }
+        }
+        sa += simd_shuffle_xor(sa, 1u);
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) gf[r] += simd_shuffle_xor(gf[r], 1u);
+        // Trip t's groups 16t..16t+15 belong to lanes 16*(t&1) .. 16*(t&1)+15 (g mod 32); owner o reads pair o-16*(t&1).
+        const uint base = (t & 1u) * 16u;
+        const bool own = lane >= base && lane < base + 16u;
+        const uint src = ((lane - base) & 15u) * 2u;
+        const float so = simd_shuffle(sa, src);
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            const float go = simd_shuffle(gf[r], src);
+            if (own) acc[r] += (go - 8.0f*so) * float(sct[(row0+r)*G + t*16u + (lane - base)]);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
+}
 template <uint R>
 kernel void gemv_w4a8_sa_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
@@ -613,6 +663,42 @@ template [[host_name("gemv_w4a8_sa_bias_rows2")]] kernel decltype(gemv_w4a8_sa_b
 template [[host_name("gemv_w4a8_sa_bias_rows4")]] kernel decltype(gemv_w4a8_sa_bias_rows<4>) gemv_w4a8_sa_bias_rows<4>;
 template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
 template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
+template <uint R>
+kernel void gemv_w4a8_sa_rows_k512(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    sa_rows_acc_k512<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
+}
+template <uint R>
+kernel void gemv_w4a8_sa_bias_rows_k512(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup half* Ah [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    sa_rows_acc_k512<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0] + bias[row0+r]; }
+}
+template <uint R>
+kernel void gemv_w4a8_sa_resid_rows_k512(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    sa_rows_acc_k512<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += acc[r]*asc[0]; }
+}
+template [[host_name("gemv_w4a8_sa_rows_k512_2")]] kernel decltype(gemv_w4a8_sa_rows_k512<2>) gemv_w4a8_sa_rows_k512<2>;
+template [[host_name("gemv_w4a8_sa_rows_k512_4")]] kernel decltype(gemv_w4a8_sa_rows_k512<4>) gemv_w4a8_sa_rows_k512<4>;
+template [[host_name("gemv_w4a8_sa_bias_rows_k512_2")]] kernel decltype(gemv_w4a8_sa_bias_rows_k512<2>) gemv_w4a8_sa_bias_rows_k512<2>;
+template [[host_name("gemv_w4a8_sa_bias_rows_k512_4")]] kernel decltype(gemv_w4a8_sa_bias_rows_k512<4>) gemv_w4a8_sa_bias_rows_k512<4>;
+template [[host_name("gemv_w4a8_sa_resid_rows_k512_2")]] kernel decltype(gemv_w4a8_sa_resid_rows_k512<2>) gemv_w4a8_sa_resid_rows_k512<2>;
+template [[host_name("gemv_w4a8_sa_resid_rows_k512_4")]] kernel decltype(gemv_w4a8_sa_resid_rows_k512<4>) gemv_w4a8_sa_resid_rows_k512<4>;
 
 // R18: gemv_w4a8_resid (the coal down projection) with its int8 activations staged ONCE per threadgroup (K bytes of
 // threadgroup memory; the host checks it fits) and R rows per simdgroup. Lane l still owns words l, l+32, ... of each
