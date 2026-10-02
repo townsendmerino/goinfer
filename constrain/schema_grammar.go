@@ -55,14 +55,20 @@ type schemaGrammar struct {
 	stack []frame
 	done  bool // the root value is complete (closing delimiter consumed)
 
+	// ws counts the consecutive structural whitespace bytes just committed (see maxStructuralWS);
+	// any other byte resets it. String content is not structural, so a string's own spaces never count.
+	ws int
+
 	// snapshot buffers reused by TryBytes (no per-trial allocation).
 	sStack []frame
 	sDone  bool
+	sWS    int
 }
 
 func (g *schemaGrammar) Reset() {
 	g.stack = append(g.stack[:0], frame{n: g.root, state: fsValue})
 	g.done = false
+	g.ws = 0
 }
 
 // Clone returns an independent copy at the current state. root is the immutable
@@ -131,32 +137,43 @@ func (g *schemaGrammar) Commit(bs []byte) {
 func (g *schemaGrammar) snapshot() {
 	g.sStack = append(g.sStack[:0], g.stack...)
 	g.sDone = g.done
+	g.sWS = g.ws
 }
 
 func (g *schemaGrammar) restore() {
 	g.stack = append(g.stack[:0], g.sStack...)
 	g.done = g.sDone
+	g.ws = g.sWS
+}
+
+// wsStep accepts one structural whitespace byte unless it would be the (maxStructuralWS+1)th in a row.
+func (g *schemaGrammar) wsStep() bool {
+	g.ws++
+	return g.ws <= maxStructuralWS
 }
 
 // step advances over one byte, returning false if it isn't a legal next byte.
 // A loop lets a lazily-completing scalar (number/enum) finish and re-feed the
 // byte that ended it to the parent frame.
 func (g *schemaGrammar) step(b byte) bool {
+	if !isWS(b) {
+		g.ws = 0
+	}
 	for {
 		if len(g.stack) == 0 {
-			return isWS(b) // document complete; only trailing whitespace
+			return isWS(b) && g.wsStep() // document complete; only (bounded) trailing whitespace
 		}
 		f := &g.stack[len(g.stack)-1]
 		switch f.state {
 		case fsValue:
 			if isWS(b) {
-				return true
+				return g.wsStep() && g.ws <= maxValueWS
 			}
 			return g.dispatch(f, b)
 
 		case fsObjKeyOrClose:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == '}' {
 				if g.objCanClose(f) {
@@ -173,7 +190,7 @@ func (g *schemaGrammar) step(b byte) bool {
 
 		case fsObjKey:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == '"' && g.objHasUnseen(f) {
 				g.enterKey(f)
@@ -186,7 +203,7 @@ func (g *schemaGrammar) step(b byte) bool {
 
 		case fsObjColon:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ':' {
 				child := f.n.props[f.sel].schema
@@ -198,7 +215,7 @@ func (g *schemaGrammar) step(b byte) bool {
 
 		case fsObjComma:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ',' && g.objHasUnseen(f) {
 				f.state = fsObjKey
@@ -215,7 +232,7 @@ func (g *schemaGrammar) step(b byte) bool {
 
 		case fsArrValueOrClose:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ']' {
 				if f.count >= f.n.minItems {
@@ -234,7 +251,7 @@ func (g *schemaGrammar) step(b byte) bool {
 
 		case fsArrValue:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if f.n.maxItems >= 0 && f.count >= f.n.maxItems {
 				return false
@@ -246,7 +263,7 @@ func (g *schemaGrammar) step(b byte) bool {
 
 		case fsArrComma:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ',' && (f.n.maxItems < 0 || f.count < f.n.maxItems) {
 				f.state = fsArrValue

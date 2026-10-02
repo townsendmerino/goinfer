@@ -127,6 +127,16 @@ any surface may still change.
   (`docs/measurements/decisions-d6b-2026-09/results.md`). `int8int8` fits where f32 does not: JEV-9B at f32 is about
   36 GB. The capability matrix records the default.
 
+### Fixed
+
+- **A schema that types a numeric column as `string` no longer loops on whitespace until `max_tokens`.** The grammars allowed unlimited
+  whitespace at every structural boundary, so when the model wanted a bare number where the schema said `string` the mask left whitespace as
+  the best legal token and generation padded spaces forever, silently. Whitespace between tokens is now bounded at 64 bytes, and at 1 between a
+  `:` and its value (`constrain`; no API change; formatting only, no value the schema allows becomes unreachable). On a GLM-OCR invoice with
+  every amount typed `string` the reply went from no output to six correct line items in 445 tokens; correctly typed schemas are byte-identical.
+  `docs/measurements/constrain-whitespace-bound-2026-10-02.md`.
+
+
 ## [v0.20.0] — 2026-10-01
 
 ### Highlights
