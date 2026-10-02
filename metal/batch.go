@@ -496,7 +496,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && nKeys >= attnFADepthFloor
+	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && nKeys >= r.attnFAFloor()
 }
 
 // forwardMulti runs one decode token for each of seqs — 1..batchMaxSeqs sequences, each on its own resident KV slot at

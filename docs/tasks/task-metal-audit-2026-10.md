@@ -250,3 +250,11 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   - `docs/tasks/task-never-swap-2026-09.md`: C-D01 2, under "What this doc does not claim".
   - Two findings did not hold: A-D03's record is in the tree (`fdd990ba`; the audit's snapshot lacked it), and C-D01
     item 3's 16 cores (`system_profiler`: 14, as the constant says).
+- 2026-10-01: **Phase 1 item 7: T1.2's hook.** `attnFAFloorOverride` (test-only, zero in production) moves the key
+  count where attention_fa takes over, read through `attnFAFloor()` by `attnPlanFor`, `canUseAttnFA` and the batched
+  step's `canUseAttnFAAt`. The audit named only the first two; the third is needed because a batched step that planned
+  from the constant would no longer match the single-token step. `TestAttnFAFloorOverride_stepsPlanAlike` (default-run,
+  on the fixture) checks the three plans move together and that a step straddling a floor of 256 stays bit-identical
+  (0 logits differ over 4 sequences × 12 steps); with the batched check left on the constant, 149,563 logits differ.
+  Production's path is unchanged (the override is zero). The legacy-against-blk timing arms are night work (Phase 2).
+  Three citations of `gemvRowsFor`'s guard had pointed at `attnPlanFor` since before the branch; re-pointed.

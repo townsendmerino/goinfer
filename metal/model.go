@@ -211,6 +211,11 @@ type resident struct {
 	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
 	// (the grid's comes from planNKeys) — so the two cannot disagree.
 	attnFASplitOverride int
+	// attnFAFloorOverride, when > 0, replaces attnFADepthFloor as the key count at which attention_fa takes over.
+	// ZERO in production — set only by tests (T1.2 of docs/tasks/task-metal-audit-2026-10.md: legacy-against-blk arms
+	// below the floor). Read through attnFAFloor by attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token
+	// step and the batched step plan alike.
+	attnFAFloorOverride int
 	// gemvRows (R18, docs/measurements/metal-decode-gemv-r18-2026-09-26.md): rows per simdgroup for the dense decode
 	// layer's four int4 GEMVs — qkv, o, fused gate/up and down — set by buildResident through gemvRowsFor. When a field
 	// is > 0 that GEMV dispatches its rows kernel (pSABiasRows / pSAResidRows / pSARows / pGemvResidStaged, grid
@@ -2656,10 +2661,19 @@ type attnPlan struct {
 	f16Lane bool
 }
 
+// attnFAFloor is the key count at which attention_fa takes over: attnFADepthFloor unless a test set
+// attnFAFloorOverride.
+func (r *resident) attnFAFloor() int {
+	if r.attnFAFloorOverride > 0 {
+		return r.attnFAFloorOverride
+	}
+	return attnFADepthFloor
+}
+
 // attnPlanFor is the plan a decode command buffer running at nKeys keys needs.
 func (r *resident) attnPlanFor(nKeys int) attnPlan {
 	p := attnPlan{f16Lane: r.decodeLaneW4F16}
-	if r.decodeAttnFA && r.attnFAPartial != (Buffer{}) && r.attnFANKV > 0 && nKeys >= attnFADepthFloor {
+	if r.decodeAttnFA && r.attnFAPartial != (Buffer{}) && r.attnFANKV > 0 && nKeys >= r.attnFAFloor() {
 		p.fa, p.nSplit = true, r.attnFASplitFor(nKeys, r.attnFANKV)
 	}
 	return p
@@ -2685,7 +2699,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= attnFADepthFloor
+	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
 }
 
 // attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),

@@ -133,3 +133,26 @@ func mc3PrefillResident(t *testing.T, slots, ctx int) *metalResident {
 	}
 	return &metalResident{r: r, hidden: r.H}
 }
+
+// TestAttnFAFloorOverride_stepsPlanAlike: attnFAFloorOverride (T1.2's hook, docs/tasks/task-metal-audit-2026-10.md)
+// moves the key count where attention_fa takes over for the single-token plan, canUseAttnFA and the batched step
+// together. A step whose sequences straddle the lowered floor stays bit-identical to production's single-token
+// forward, which it would not if one of the three read the constant.
+func TestAttnFAFloorOverride_stepsPlanAlike(t *testing.T) {
+	_, r := mc3FixtureResident(t, 2, 4096)
+	if r.attnFAFloor() != attnFADepthFloor || r.attnPlanFor(300).fa || r.canUseAttnFAAt(0, 300) {
+		t.Fatal("with no override, attention_fa runs below attnFADepthFloor")
+	}
+	r.attnFAFloorOverride = 256
+	r.curNKeys = 300
+	if !r.attnPlanFor(300).fa || !r.canUseAttnFAAt(0, 300) || !r.canUseAttnFA(0) {
+		t.Errorf("with the floor at 256, a 300-key plan does not take attention_fa (plan %v, step %v, layer %v)",
+			r.attnPlanFor(300).fa, r.canUseAttnFAAt(0, 300), r.canUseAttnFA(0))
+	}
+	r.curNKeys = 200
+	if r.attnPlanFor(200).fa || r.canUseAttnFAAt(0, 200) || r.canUseAttnFA(0) {
+		t.Error("with the floor at 256, a 200-key plan takes attention_fa")
+	}
+	r.curNKeys = 0
+	mc3IdentityWith(t, []int{200, 250, 300, 40}, 1024, func(r *resident) { r.attnFAFloorOverride = 256 })
+}
