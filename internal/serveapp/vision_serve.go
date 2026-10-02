@@ -336,6 +336,11 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	system, turns := messagesToTurns(req.Messages)
+	// O5: an image plus response_format json_schema on GLM-OCR is an extraction request; its prompt is the schema's JSON template.
+	if err := lm.glmOcrExtractionTurn(req.sampling.ResponseFormat, turns); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ts, terr := s.resolveThink(req.think())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
@@ -350,6 +355,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.sampling.confidenceOK = true // written back below (the same two sites as the text route)
 	gr, err := lm.prepare(req.sampling, vi.ids, false)
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
@@ -389,6 +395,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		if gr.conf != nil {
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+		}
 		if cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
@@ -412,7 +421,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	if rb.Len() > 0 {
 		vmsg["reasoning_content"] = rb.String()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	vresp := map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{
 			"index":         0,
@@ -420,7 +429,11 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			"finish_reason": finish,
 		}},
 		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
-	})
+	}
+	if gr.conf != nil {
+		vresp["goinfer_confidence"] = gr.conf.payload()
+	}
+	writeJSON(w, http.StatusOK, vresp)
 }
 
 // serveVisionMessages handles an Anthropic /v1/messages request carrying an image

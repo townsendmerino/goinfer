@@ -132,3 +132,46 @@ func TestGlmOcrImageBlock(t *testing.T) {
 		t.Fatal("pad count")
 	}
 }
+
+// The instruction is the model card's, byte for byte: it is the string the model was trained to read, so a "tidied"
+// punctuation mark (the colon is ASCII ':' in the card) changes the prompt. The expected side is written as escapes so a
+// normalising editor cannot change both sides together.
+func TestGlmOcrExtractionInstruction_isTheCards(t *testing.T) {
+	const card = "请按下列JSON格式输出图中信息:"
+	if GlmOcrExtractionInstruction != card {
+		t.Fatalf("instruction %q, the card's is %q", GlmOcrExtractionInstruction, card)
+	}
+	if got := GlmOcrExtractionPrompt("{}"); got != card+"\n{}" {
+		t.Fatalf("prompt %q: want the instruction, a newline, the template", got)
+	}
+	// And against the checkpoint's own README when it is on this machine (skipped otherwise: a clean clone has no model).
+	if raw, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), "models", "glm-ocr", "README.md")); err == nil {
+		if !strings.Contains(string(raw), card+"\n{") {
+			t.Errorf("the model card no longer contains the instruction followed by a newline and an object")
+		}
+	}
+}
+
+// The O5 rule: the template prompt replaces EMPTY text and a BARE task prompt, and nothing else. The replaced=false rows
+// are the ones that must go red if the rule is widened to overwrite whatever the user wrote.
+func TestGlmOcrExtractionText_rule(t *testing.T) {
+	const tmpl = "{\n    \"total\": \"\"\n}"
+	want := GlmOcrExtractionPrompt(tmpl)
+	for _, in := range []string{"", "   ", "\n", GlmOcrPromptText, GlmOcrPromptTable, GlmOcrPromptFormula, "  Text Recognition:\n"} {
+		got, replaced := GlmOcrExtractionText(in, tmpl)
+		if !replaced || got != want {
+			t.Errorf("%q: replaced=%v text=%q; want the extraction prompt", in, replaced, got)
+		}
+	}
+	for _, in := range []string{
+		GlmOcrExtractionPrompt("{\n    \"vendor\": \"\"\n}"), // the user's OWN extraction prompt, different fields
+		"What is the invoice total?",
+		"Text Recognition: and the total",
+		"text recognition:", // case matters: only the card's exact strings are bare task prompts
+	} {
+		got, replaced := GlmOcrExtractionText(in, tmpl)
+		if replaced || got != in {
+			t.Errorf("%q: replaced=%v text=%q; the user's own text must be kept verbatim", in, replaced, got)
+		}
+	}
+}

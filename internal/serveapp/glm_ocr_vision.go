@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -124,5 +126,31 @@ func (lm *loadedModel) imageFitsContext(n int, grid [3]int) error {
 			"send a smaller image (the model's own ceiling is %d tokens, 4.8 MP) or raise the context", n, grid[2], grid[1], ctx,
 			lm.qwenPP.MaxPixels/(lm.qwenPP.PatchSize*lm.qwenPP.PatchSize*lm.qwenMerge*lm.qwenMerge))
 	}
+	return nil
+}
+
+// glmOcrExtractionTurn is O5 (docs/tasks/task-glm-ocr-2026-10.md): a GLM-OCR image request that carries response_format
+// json_schema is an EXTRACTION request. The model's extraction prompt is a JSON template (an object of empty values), not a
+// schema, so the template is built from the request's own schema (constrain.TemplateFromSchema: the same document the
+// grammar is compiled from, so the two cannot disagree) and becomes the last user turn's text, with the card's instruction in
+// front of it. The grammar itself is installed by prepare, exactly as on the text route (the vision route has always passed
+// the request's sampling, response_format included, through prepare and driveVL).
+//
+// The rule (multimodal.GlmOcrExtractionText): the template prompt REPLACES the user's text only when that text is empty or a
+// bare task prompt ("Text Recognition:", "Table Recognition:", "Formula Recognition:"); any other text is the user's own prompt
+// and is sent unchanged, still under the grammar. json_object (no schema) has no template to build and is left alone.
+func (lm *loadedModel) glmOcrExtractionTurn(rf *respFormat, turns []chat.Turn) error {
+	if lm.glm == nil || rf == nil || rf.Type != "json_schema" || rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
+		return nil
+	}
+	idx := lastUserTurn(turns)
+	if idx < 0 {
+		return nil
+	}
+	tmpl, err := constrain.TemplateFromSchema(rf.JSONSchema.Schema)
+	if err != nil {
+		return fmt.Errorf("response_format json_schema: cannot build the extraction template: %w", err)
+	}
+	turns[idx].Content, _ = multimodal.GlmOcrExtractionText(turns[idx].Content, tmpl)
 	return nil
 }

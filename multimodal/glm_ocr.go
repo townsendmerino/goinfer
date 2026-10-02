@@ -38,6 +38,31 @@ const (
 // GlmOcrDefaultPrompt is what an image request with no text part gets: plain text recognition.
 const GlmOcrDefaultPrompt = GlmOcrPromptText
 
+// GlmOcrExtractionInstruction opens the model's information-extraction prompt (the model card's own, verbatim: "output
+// the information in the image in the following JSON format"). It is followed by a newline and a JSON TEMPLATE, an
+// object whose values are empty strings, NOT a JSON Schema (O0, docs/tasks/task-glm-ocr-2026-10.md); build the template
+// with constrain.TemplateFromSchema / TemplateFromStruct so the prompt and the grammar come from one source.
+const GlmOcrExtractionInstruction = "请按下列JSON格式输出图中信息:"
+
+// GlmOcrExtractionPrompt is the user-turn text for extraction: the instruction, a newline, the template.
+func GlmOcrExtractionPrompt(template string) string {
+	return GlmOcrExtractionInstruction + "\n" + template
+}
+
+// GlmOcrExtractionText applies the O5 rule for a request that asks for schema-bound output ON AN IMAGE: the template
+// prompt REPLACES the text the user sent only when that text is empty (nothing but whitespace) or is exactly one of the
+// three bare task prompts (a client that always sends "Text Recognition:" next to a schema means "read the image into
+// this schema", and the task prompt would contradict the grammar). Any other text is the user's own prompt (their own
+// extraction prompt, a question, a different instruction) and is used UNCHANGED: the grammar still constrains the
+// reply, but the user owns what the model is told. replaced reports which happened.
+func GlmOcrExtractionText(userText, template string) (text string, replaced bool) {
+	switch strings.TrimSpace(userText) {
+	case "", GlmOcrPromptText, GlmOcrPromptFormula, GlmOcrPromptTable:
+		return GlmOcrExtractionPrompt(template), true
+	}
+	return userText, false
+}
+
 // LoadGlmOcrPreprocessConfig reads a GLM-OCR checkpoint's preprocessor_config.json into the QwenPreprocessConfig that
 // QwenPreprocess takes.
 //
