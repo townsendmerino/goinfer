@@ -1018,6 +1018,14 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 // agnostic and has no equivalent accessor.
 func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
 
+// PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE (adjacent dims
+// 2d, 2d+1 share frequency d: Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR) rather than the
+// NeoX half-split (d, d+half) every other family uses — the same predicate FeatPairwiseRoPE derives
+// from. A resident backend binds its pairwise rope kernels when this is true; running the half-split
+// kernels on such a model is exact at position 0 and wrong from position 1 (see FeatPairwiseRoPE).
+// False for MLA (DeepSeek/Kimi: mla.cu carries its own interleave, MLAResidentParams).
+func (m *Model) PairwiseRoPEResident() bool { return m.w.arch.pairwiseRoPE() }
+
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {
 	if e := float32(m.w.arch.NormEps); e != 0 {

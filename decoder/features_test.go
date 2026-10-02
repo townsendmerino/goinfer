@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -62,11 +63,11 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// GLM-OCR text decoder: Gemma's FOUR-norm sandwich placement (FeatSandwichNorm) over plain
 	// RMSNorm and a plain SwiGLU MLP, GQA with no bias or QK-norm, full-width rotary. NOTE what the
 	// feature taxonomy would otherwise miss: the rotation is PAIRWISE (GPT-J) over m-RoPE sections
-	// and every resident rope kernel is NeoX half-split, so the family also needs
-	// FeatPairwiseMRoPE, which no backend declares (CPU-only until a pairwise kernel lands).
-	// See TestGlmOcr_residentDeclined.
-	"glm_ocr":      {FeatPairwiseMRoPE, FeatSandwichNorm},
-	"glm_ocr_text": {FeatPairwiseMRoPE, FeatSandwichNorm},
+	// and the generic resident rope kernels are NeoX half-split, so the family needs
+	// FeatPairwiseRoPE (scalar rows, decode) AND FeatPairwiseMRoPE (image-block prefill). Only CUDA
+	// declares them (cuda/rope_pairwise.cu, 2026-10-01). See TestGlmOcr_residentDeclined.
+	"glm_ocr":      {FeatPairwiseMRoPE, FeatPairwiseRoPE, FeatSandwichNorm},
+	"glm_ocr_text": {FeatPairwiseMRoPE, FeatPairwiseRoPE, FeatSandwichNorm},
 	// Dense Granite 4.2: llama-shaped, and EMPTY on purpose, not by omission — checked against
 	// all three released sizes (3b/8b/30b), which all ship embedding_multiplier and
 	// logits_scaling at their identity value 1.0 (FeatEmbedScale/FeatLogitScale only trigger
@@ -82,10 +83,14 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// FeatSlidingWindow. This table states the BASE profile; the authoritative requirement is
 	// derived per-model at load (RequiredResidentFeatures), which is what admission uses. The
 	// table's job is to force a new arch to be classified, not to be the runtime check.
-	"phi3":    {},
-	"gpt2":    {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
-	"cohere":  {FeatLayerNorm, FeatLogitScale, FeatParallelBlock},
-	"cohere2": {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatParallelBlock, FeatSlidingWindow},
+	"phi3": {},
+	"gpt2": {FeatLayerNorm, FeatLearnedPos, FeatNonGatedMLP, FeatOutBias},
+	// Cohere's rotation is GPT-J PAIRWISE (rope_gptj), not NeoX: FeatPairwiseRoPE, added 2026-10-01
+	// after the CUDA resident (which ran it on NeoX kernels) measured wrong on real Command-R7B and
+	// Aya at int4. Declared by CUDA only; metal and webgpu DECLINE these families until their rope
+	// kernels have a pairwise variant.
+	"cohere":  {FeatLayerNorm, FeatLogitScale, FeatPairwiseRoPE, FeatParallelBlock},
+	"cohere2": {FeatLayerNorm, FeatLogitScale, FeatNoPE, FeatPairwiseRoPE, FeatParallelBlock, FeatSlidingWindow},
 	"mistral": {FeatSlidingWindow},
 	// Ministral 3: no sliding window on the real releases (confirmed null), so the only feature
 	// this family needs at all is the attn-temp query scale — G5 (docs/tasks/task-gpu-paths-2026-09.md)
@@ -215,8 +220,15 @@ var admissionGolden = map[string][]string{
 	// this backend had no mean-centered norm before. cohere2 needs FeatNoPE/FeatSlidingWindow
 	// too, both already declared on both backends from earlier G5 rows, so it reaches the same
 	// two backends cohere does.
-	"cohere":      {"cuda", "metal"},
-	"cohere2":     {"cuda", "metal"},
+	//
+	// CORRECTION 2026-10-01: CUDA ONLY now. Their rotation is GPT-J pairwise and the metal rope
+	// kernel is NeoX half-split; the CUDA resident had the same defect until cuda/rope_pairwise.cu
+	// (real Command-R7B / Aya-expanse-8B at int4, resident vs CPU: worst per-position cosine -0.075 /
+	// -0.041, exact at position 0 only). The old gates used flat 0.02-std fixtures where a wrong
+	// rotation reads 0.9997. FeatPairwiseRoPE is declared by cuda alone; metal declines these families
+	// to the CPU path until the Mac session ports the kernels.
+	"cohere":      {"cuda"},
+	"cohere2":     {"cuda"},
 	"deepseek_v2": {"cuda", "webgpu"},
 	"deepseek_v3": {"cuda", "webgpu"},
 	// G6 (docs/tasks/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
@@ -267,10 +279,11 @@ var admissionGolden = map[string][]string{
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"cuda", "webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
-	// GLM-OCR: CPU-only. FeatPairwiseMRoPE is declared by no backend because every resident rope
-	// kernel is NeoX half-split (measured: resident-vs-CPU cosine -0.34 on glm-ocr-tiny).
-	"glm_ocr":      {},
-	"glm_ocr_text": {},
+	// GLM-OCR: CUDA only (2026-10-01, cuda/rope_pairwise.cu; cuda.TestGlmOcrResidentParityCUDA).
+	// Admitted with the NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny; Metal and
+	// WebGPU still have only NeoX rope kernels and decline (FeatPairwiseRoPE + FeatPairwiseMRoPE).
+	"glm_ocr":      {"cuda"},
+	"glm_ocr_text": {"cuda"},
 	"llama":        {"cuda", "metal", "webgpu"},
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
 	// zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
@@ -410,7 +423,11 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatLayerNorm, FeatParallelBlock, FeatLogitScale,
-			FeatMLA},
+			FeatMLA,
+			// 2026-10-01: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
+			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the
+			// real Aya/R7B gate. metal and webgpu do NOT declare either.
+			FeatPairwiseRoPE, FeatPairwiseMRoPE},
 		// G6 (docs/tasks/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
 		// already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
 		// wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
@@ -473,6 +490,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// landed (rows 2-3) without being added here — the exact N-12 omission repeated, caught
 		// only when the last row's full-suite run exercised this test again.
 		FeatAttnTemp: true, FeatPostOnlyNorm: true, FeatQKNormWhole: true,
+		FeatPairwiseRoPE: true, FeatPairwiseMRoPE: true,
 	}
 	for be, set := range residentBackendFeatures {
 		for f := range set {
@@ -513,6 +531,8 @@ func TestResidentFeatures_derivation(t *testing.T) {
 		{"out-bias", func(a *Architecture) { a.OutBias = true }, FeatOutBias},
 		{"logit-scale", func(a *Architecture) { a.LogitScale = 8 }, FeatLogitScale},
 		{"moe", func(a *Architecture) { a.MoE = &MoEConfig{} }, FeatMoE},
+		{"pairwise-rope", func(a *Architecture) { a.ropeInterleave = true }, FeatPairwiseRoPE},
+		{"pairwise-mrope", func(a *Architecture) { a.ropeInterleave = true; a.MRopeSection = []int{16, 24, 24} }, FeatPairwiseMRoPE},
 		{"gemma4-e-model-ple", func(a *Architecture) { a.gemma4 = &gemma4Params{HiddenSizePerLayerInput: 256} }, FeatGemma4EModel},
 		{"gemma4-e-model-sharedkv", func(a *Architecture) { a.gemma4 = &gemma4Params{SharedKVLayers: 2} }, FeatGemma4EModel},
 		{"gemma4-e-model-ffnperlayer", func(a *Architecture) { a.gemma4 = &gemma4Params{FFNPerLayer: []int{1, 2}} }, FeatGemma4EModel},
@@ -530,6 +550,62 @@ func TestResidentFeatures_derivation(t *testing.T) {
 				t.Errorf("plain dense arch requires %v, want none", plain)
 			}
 		})
+	}
+}
+
+// TestPairwiseRoPE_derivationScope pins what FeatPairwiseRoPE is NOT: MLA carries its own interleave
+// flag into mla.cu (gated by FeatMLA, where pairwise rope already works), and qwen35's forward passes
+// interleave=false to ropeAt whatever ropeInterleave says. Neither may newly need the feature, or
+// DeepSeek/Kimi/Qwen3.5 admission would change under it. And PairwiseRoPEResident must read the same
+// predicate the feature derives from.
+func TestPairwiseRoPE_derivationScope(t *testing.T) {
+	base := func() *Architecture {
+		return &Architecture{NumLayers: 1, HeadDim: 128, NormPlacement: NormPre2, Act: ActSiLU, ropeInterleave: true}
+	}
+	if !slices.Contains(base().residentFeatures(), FeatPairwiseRoPE) {
+		t.Fatal("a generic ropeInterleave arch must need FeatPairwiseRoPE")
+	}
+	mla := base()
+	mla.mla = &mlaParams{ropeInterleave: true}
+	if slices.Contains(mla.residentFeatures(), FeatPairwiseRoPE) {
+		t.Error("an MLA arch must not need FeatPairwiseRoPE (mla.cu carries its own interleave)")
+	}
+	q35 := base()
+	q35.qwen35 = &qwen35Params{}
+	if slices.Contains(q35.residentFeatures(), FeatPairwiseRoPE) {
+		t.Error("qwen35 forwards with interleave=false and must not need FeatPairwiseRoPE")
+	}
+	for _, a := range []*Architecture{base(), mla, q35} {
+		m := &Model{w: &Weights{arch: a}}
+		if got, want := m.PairwiseRoPEResident(), slices.Contains(a.residentFeatures(), FeatPairwiseRoPE); got != want {
+			t.Errorf("PairwiseRoPEResident()=%v but the feature derivation says %v", got, want)
+		}
+	}
+}
+
+// TestPairwiseRoPE_declineNamesCause: the families that rotate pairwise are DECLINED on every backend
+// that has only NeoX rope kernels (metal, webgpu), and the decline reason names the missing feature,
+// so `serve check` / DecodePath tell the operator why instead of "arch is not eligible". CUDA admits
+// them (cuda/rope_pairwise.cu).
+func TestPairwiseRoPE_declineNamesCause(t *testing.T) {
+	for _, fam := range []string{"cohere", "cohere2", "glm_ocr"} {
+		arch, _, err := resolveArchitecture(representativeConfig(fam))
+		if err != nil {
+			t.Fatalf("%s: %v", fam, err)
+		}
+		for _, be := range []string{"metal", "webgpu"} {
+			if ResidentEligible(arch, be) {
+				t.Errorf("%s admitted on %s: only NeoX rope kernels there", fam, be)
+				continue
+			}
+			why := residentGateReason(arch, be)
+			if !strings.Contains(why, string(FeatPairwiseRoPE)) {
+				t.Errorf("%s on %s: decline reason %q does not name %q", fam, be, why, FeatPairwiseRoPE)
+			}
+		}
+		if !ResidentEligible(arch, "cuda") {
+			t.Errorf("%s declined on cuda: %s", fam, residentGateReason(arch, "cuda"))
+		}
 	}
 }
 

@@ -196,6 +196,19 @@ var attnImgPrefillPTX []byte
 //go:embed testdata/rope_mrope_prefill.ptx
 var ropeMRopePrefillPTX []byte
 
+// ropePairwisePTX: rope_kv_pw / rope_kv_batched_pw / rope_kv_mrope_batched_pw — the GPT-J PAIRWISE
+// (dims 2d, 2d+1) twins of rope_kv / rope_kv_batched / rope_kv_mrope_batched, with the SAME argument
+// lists and launch geometry, bound in their place when decoder.Model.PairwiseRoPEResident()
+// (Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR). The NeoX kernels rotate (d, d+half), so a
+// pairwise family run through them is exact at position 0 and wrong afterwards. Its own module so the
+// audited glue.ptx / gemv_fwd.ptx stay byte-identical (and prefill_batched.ptx / rope_mrope_prefill.ptx
+// are not regenerated). Built at NVRTC 12.6.85, the pinned toolchain, unlike the 12.9.86 builds of the
+// two neighbours; the control (glue.ptx and gemv_fwd.ptx rebuild byte-identically there) is recorded in
+// docs/measurements/cuda-pairwise-rope-2026-10-01.md. See cuda/rope_pairwise.cu.
+//
+//go:embed testdata/rope_pairwise.ptx
+var ropePairwisePTX []byte
+
 // layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched — the resident SigLIP vision
 // tower's LayerNorm (P6, docs/multimodal.md's "P6's other half"), a genuinely new primitive: no
 // text family in this codebase uses LayerNorm (mean+variance, weight+bias), only RMSNorm. Own

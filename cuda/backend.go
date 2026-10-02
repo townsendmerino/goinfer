@@ -866,7 +866,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// kv_store and rope are NOT bound: the fused rope_kv below subsumes both (the Incr1
 		// decode-fusion win). They were left bound and dead after that fusion shipped, JIT-compiled
 		// into every model load and launched by nothing — see TestPipelineLint_boundKernelsAreLaunched.
-		if r.ropeKV, e = r.dev.NewComputePipeline(gmod, "rope_kv"); e != nil {
+		// GPT-J pairwise rotation (Cohere/Cohere2/Aya, GLM-OCR): bind the pairwise twin of rope_kv
+		// (cuda/rope_pairwise.cu, same argument list and launch geometry) into the SAME field, so no
+		// launch site changes and every other family still gets exactly the NeoX kernel above.
+		// A load failure DECLINES — running the NeoX kernel on a pairwise model is silent-wrong from
+		// position 1 (real R7B/Aya at int4: worst cosine -0.075/-0.041), so there is no fallback.
+		r.pairwiseRoPE = m.PairwiseRoPEResident()
+		if r.pairwiseRoPE {
+			pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX)
+			if pe != nil {
+				return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
+			}
+			if r.ropeKV, e = r.dev.NewComputePipeline(pwmod, "rope_kv_pw"); e != nil {
+				return e
+			}
+		} else if r.ropeKV, e = r.dev.NewComputePipeline(gmod, "rope_kv"); e != nil {
 			return e
 		}
 		qmod, e2 := r.dev.CompileLibrary(fusedQKVPTX)
@@ -1010,7 +1024,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				load(&r.bRms, pbmod, "rmsnorm_quant_batched")
 				load(&r.bQKN, pbmod, "qk_norm_batched")
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
-				load(&r.bRopeKV, pbmod, "rope_kv_batched")
+				if r.pairwiseRoPE {
+					// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
+					if pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX); pe == nil {
+						load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
+					} else {
+						ok = false
+					}
+				} else {
+					load(&r.bRopeKV, pbmod, "rope_kv_batched")
+				}
 				load(&r.bAttn, pbmod, "attn_batched")
 				load(&r.bQuant, pbmod, "quant_vec_batched")
 				load(&r.bSw, pbmod, "glu_quant_batched")
@@ -1050,14 +1073,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// back to the CPU-prefill-then-UploadKV bridge.
 		if r.prefillReady {
 			if sec := m.MRopeSectionResident(); len(sec) == 3 {
-				if mmod, e9 := r.dev.CompileLibrary(ropeMRopePrefillPTX); e9 == nil {
+				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
+				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
+				mropePTX, mropeName := ropeMRopePrefillPTX, "rope_kv_mrope_batched"
+				if r.pairwiseRoPE {
+					mropePTX, mropeName = ropePairwisePTX, "rope_kv_mrope_batched_pw"
+				}
+				if mmod, e9 := r.dev.CompileLibrary(mropePTX); e9 == nil {
 					loadMRope := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(mmod, name); pe == nil {
 							*dst = pl
 							r.mropePrefillReady = true
 						}
 					}
-					loadMRope(&r.bRopeKVMRoPE, "rope_kv_mrope_batched")
+					loadMRope(&r.bRopeKVMRoPE, mropeName)
 					if r.mropePrefillReady {
 						r.mropeSec0, r.mropeSec1 = int32(sec[0]), int32(sec[0]+sec[1])
 					}

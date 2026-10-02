@@ -121,6 +121,15 @@ func renderHardwareMD(rows []hwRow) []byte {
 	b.WriteString("  docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`\n")
 	b.WriteString("  names this specific per-checkpoint gap for a loaded model; this table cannot, since its\n")
 	b.WriteString("  rows are one per architecture, not per checkpoint.\n")
+	b.WriteString("- **Command-R, Command-R7B (Aya) and GLM-OCR are CUDA-only for a stated reason.** Their rotary\n")
+	b.WriteString("  embedding is GPT-J PAIRWISE (dims 2d, 2d+1); the generic rope kernels on Metal and WebGPU are the\n")
+	b.WriteString("  NeoX half-split (d, d+half), so those backends do not declare `pairwise-rope` / `pairwise-mrope`\n")
+	b.WriteString("  and the families run on the CPU there. Running them on the NeoX kernels is exact at position 0 and\n")
+	b.WriteString("  wrong from position 1 with no error (measured 2026-10-01 on the CUDA resident before its pairwise\n")
+	b.WriteString("  kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst per-position cosine -0.075 /\n")
+	b.WriteString("  -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu`. A Metal or WebGPU row returns once that\n")
+	b.WriteString("  backend has pairwise rope kernels and a resident-vs-CPU gate on peaked attention\n")
+	b.WriteString("  (docs/measurements/cuda-pairwise-rope-2026-10-01.md).\n")
 	return []byte(b.String())
 }
 

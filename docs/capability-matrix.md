@@ -113,7 +113,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
-| GLM-OCR | `glm_ocr`, `glm_ocr_text` | dense | none | no | m-RoPE | RMSNorm, sandwich | SwiGLU | no | safetensors | text | no | experimental: tiny-oracle 100.0%/1.00000 |
+| GLM-OCR | `glm_ocr`, `glm_ocr_text` | dense | none | no | m-RoPE | RMSNorm, sandwich | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma | `gemma` | dense | none | no | full | RMSNorm, pre-norm | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma 2 | `gemma2` | dense | interleave | no | full | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | full-oracle 100.0%/1.00000 |

@@ -289,7 +289,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors",
     "modality": "text",
-    "gpu_residency_eligible": false,
+    "gpu_residency_eligible": true,
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {

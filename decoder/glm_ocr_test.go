@@ -98,12 +98,12 @@ func TestGlmOcr_realConfig(t *testing.T) {
 	}
 }
 
-// TestGlmOcr_residentDeclined: no resident backend may admit glm_ocr, because every resident rope
-// kernel is NeoX half-split and GLM-OCR rotates pairwise. Measured on the CUDA resident 2026-10-01
-// (cuda/glm_ocr_resident_test.go): admitting it gave resident-vs-CPU logit cosine -0.34, with no
-// error. The decline must also say WHY, so `serve check` shows the real cause. When a backend gains
-// a pairwise kernel and declares FeatPairwiseMRoPE, this test is the line to change, together with
-// an end-to-end resident parity gate on glm-ocr-tiny.
+// TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may
+// run it resident only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope
+// kernels. CUDA does (cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA); Metal and
+// WebGPU still have only the NeoX half-split kernels, and admitting glm_ocr there gave logit cosine
+// -0.34 resident-vs-CPU on the CUDA twin of that kernel set (2026-10-01), with no error. The decline
+// must name the missing features so `serve check` shows the real cause.
 func TestGlmOcr_residentDeclined(t *testing.T) {
 	cfg, err := loadConfig(os.DirFS("../testdata"), "glm_ocr_real_config.json")
 	if err != nil {
@@ -113,13 +113,30 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for backend := range residentBackendFeatures {
-		if ResidentEligible(arch, backend) {
+	for backend, feats := range residentBackendFeatures {
+		wantAdmit := feats[FeatPairwiseRoPE] && feats[FeatPairwiseMRoPE]
+		if backend == "cuda" && !wantAdmit {
+			t.Errorf("cuda must declare both pairwise features (cuda/rope_pairwise.cu)")
+		}
+		if backend != "cuda" && wantAdmit {
+			t.Errorf("backend %q declares the pairwise features: it needs pairwise rope kernels and a resident-vs-CPU gate on peaked attention first", backend)
+		}
+		got := ResidentEligible(arch, backend)
+		why := residentGateReason(arch, backend)
+		if backend == "cuda" {
+			if !got {
+				t.Errorf("cuda declines glm_ocr: %s", why)
+			}
+			continue
+		}
+		if got {
 			t.Errorf("backend %q admits glm_ocr: its rope kernels are NeoX, the model's rotation is pairwise", backend)
 			continue
 		}
-		if why := residentGateReason(arch, backend); !strings.Contains(why, string(FeatPairwiseMRoPE)) {
-			t.Errorf("backend %q decline reason %q does not name %q", backend, why, FeatPairwiseMRoPE)
+		for _, f := range []ResidentFeature{FeatPairwiseRoPE, FeatPairwiseMRoPE} {
+			if !strings.Contains(why, string(f)) {
+				t.Errorf("backend %q decline reason %q does not name %q", backend, why, f)
+			}
 		}
 	}
 }
