@@ -546,12 +546,23 @@ const copyOf = text => answerOf(text) || text;
 // Both parts go through Markdown.render — thinking is model output too, and gets no more trust.
 // e is the transcript entry: its thought (seconds) labels the fold, and a finished reply with no state
 // that thought but never answered says so rather than showing an empty bubble.
+// jsonBlock shows a structured reply (one generated under a response schema) as a JSON code block, so its
+// indentation survives Markdown and Copy on the block copies the JSON. The fence is longer than any run of
+// backticks inside the reply, so a value that contains a fence cannot close it early.
+function jsonBlock(text) {
+  let n = 3;
+  for (const m of text.matchAll(/`+/g)) n = Math.max(n, m[0].length + 1);
+  const fence = "`".repeat(n);
+  return fence + "json\n" + text + "\n" + fence;
+}
 function renderReply(out, text, live, e) {
+  const shown = t => (e && e.structured && t) ? jsonBlock(t) : t;
   const p = splitThinking(text, live);
   let box = out.firstElementChild;
   const folded = box && box.classList.contains("think");
   if (!p) {
     if (folded) out.replaceChildren();
+    text = shown(text);   // a structured reply is wrapped as a JSON block BEFORE the one Markdown.render call
     Markdown.render(out, text);
     hidePreviewsWhileLive(out, live);
     return;
@@ -576,7 +587,7 @@ function renderReply(out, text, live, e) {
   box.classList.toggle("live", p.open);
   Markdown.render(body, p.thinking);
   if (p.answer || live || !p.thinking || (e && e.state)) {
-    Markdown.render(ans, p.answer);
+    Markdown.render(ans, shown(p.answer));
   } else {
     ans.replaceChildren();
     const n = document.createElement("p");
@@ -746,6 +757,7 @@ function parseMessages(list) {
     if (m.role === "assistant" && typeof m.job === "string" && JOB_ID_OK.test(m.job)) e.job = m.job;   // W27
     if (typeof m.model === "string") e.model = m.model;
     if (m.role === "assistant" && typeof m.path === "string" && m.path.length <= 200) e.path = m.path;   // W18
+    if (m.role === "assistant" && m.structured === true) e.structured = true;   // generated under a response schema
     if (typeof m.meta === "string") e.meta = m.meta;
     if (m.state === "stopped" || m.state === "interrupted" || m.state === "failed" || m.state === "cancelled") e.state = m.state;
     if (typeof m.note === "string" && m.note.length <= 500) e.note = m.note;   // W13
@@ -857,6 +869,22 @@ function stopField(t) {
     .map(l => l.replace(/\\(\\|n|t)/g, (_, c) => c === "n" ? "\n" : c === "t" ? "\t" : "\\"));
   return list.length ? {value: list} : {};
 }
+// schemaField reads the response schema: a JSON Schema, or a whole response_format object pasted from an API call
+// ({"type":"json_schema","json_schema":{"name":…,"schema":{…}}}). Either becomes the request's response_format. The
+// server compiles the schema and refuses one it cannot enforce, with the reason; this only checks it is a JSON object.
+function schemaField(t) {
+  let v;
+  try { v = JSON.parse(t); } catch (err) { return {error: "Response schema is not valid JSON (" + String(err.message).slice(0, 120) + ")"}; }
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return {error: "Response schema must be a JSON object"};
+  const wrapped = v.type === "json_schema" && v.json_schema && typeof v.json_schema === "object" && !Array.isArray(v.json_schema);
+  if (wrapped) {
+    const inner = v.json_schema.schema;
+    if (inner === null || typeof inner !== "object" || Array.isArray(inner)) return {error: "Response schema: json_schema.schema must be a JSON object"};
+    const name = typeof v.json_schema.name === "string" && v.json_schema.name.trim() ? v.json_schema.name.trim() : "response";
+    return {value: {type: "json_schema", json_schema: {name, schema: inner}}};
+  }
+  return {value: {type: "json_schema", json_schema: {name: "response", schema: v}}};
+}
 const SAMPLING = [
   {id: "temp", key: "temperature", def: "0.7", required: true, parse: rangeField(0, 2, false, "Temperature")},
   {id: "max", key: "max_tokens", def: "512", required: true, parse: rangeField(1, 131072, true, "Max tokens")},
@@ -866,6 +894,7 @@ const SAMPLING = [
   {id: "freq-pen", key: "frequency_penalty", def: "", parse: rangeField(-2, 2, false, "Frequency penalty")},
   {id: "pres-pen", key: "presence_penalty", def: "", parse: rangeField(-2, 2, false, "Presence penalty")},
   {id: "stop", key: "stop", def: "", parse: stopField},
+  {id: "schema", key: "response_format", def: "", max: 65536, parse: schemaField},   // structured output: not a sampling knob, but kept and sent like one
 ];
 
 // readSampling returns {params} to merge into a request, or {error, field} for the first bad field. It also
@@ -898,8 +927,9 @@ function samplingOK() {
 }
 
 function showSamplingState() {
-  const custom = SAMPLING.filter(f => $(f.id).value !== f.def).length;
-  $("sampling-state").textContent = custom ? "· " + custom + " changed" : "";
+  const custom = SAMPLING.filter(f => f.id !== "schema" && $(f.id).value !== f.def).length;
+  const schemaOn = $("schema").value.trim() !== "";   // visible while the box is closed: a schema changes the shape of EVERY reply
+  $("sampling-state").textContent = (custom ? "· " + custom + " changed" : "") + (schemaOn ? (custom ? " " : "") + "· schema on" : "");
   readSampling();
 }
 function saveSampling() {
@@ -918,7 +948,7 @@ function loadSampling() {
   const fields = stored && stored.v === 1 && stored.fields && typeof stored.fields === "object" ? stored.fields : {};
   for (const f of SAMPLING) {
     const t = fields[f.id];
-    $(f.id).value = typeof t === "string" && t.length <= 4000 ? t : f.def;   // data, and shown: strings only
+    $(f.id).value = typeof t === "string" && t.length <= (f.max || 4000) ? t : f.def;   // data, and shown: strings only
   }
   showSamplingState();
 }
@@ -1270,6 +1300,7 @@ async function generate() {
   const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
   const entry = {role: "assistant", content: "", model, state: "generating"};
+  if (sampling.response_format) entry.structured = true;   // generated under a response schema: shown as a JSON block, and restored that way
   if (path) entry.path = path;   // W18: the compute path this reply was generated on
   labelReply(out, entry);
   transcript.push(entry);

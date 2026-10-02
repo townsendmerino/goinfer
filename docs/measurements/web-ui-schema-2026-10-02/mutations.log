@@ -1,0 +1,26 @@
+# four page mutations, each run against the full gate (scripts/webui_app_gate.mjs), unmutated gate 585 passed / 0 failed
+=== no-response-format: webui app gate: 575 passed, 9 failed
+  FAIL  schema: a JSON Schema is sent as response_format json_schema, named, with the schema untouched
+  FAIL  schema: the reply is shown as a JSON code block
+  FAIL  schema: the block keeps the reply's indentation
+  FAIL  schema: the reply is stored as structured, with its raw text
+  FAIL  schema: a reply containing a fence is still ONE block holding exactly the reply
+  FAIL  schema: a pasted response_format is sent as is, keeping its name
+  FAIL  schema: a pasted response_format without a name gets one
+  FAIL  schema after reload: the structured reply is rebuilt as a JSON code block
+  FAIL  schema after reload: the restored schema is what is sent
+=== no-code-block: webui app gate: 580 passed, 4 failed
+  FAIL  schema: the reply is shown as a JSON code block
+  FAIL  schema: the block keeps the reply's indentation
+  FAIL  schema: a reply containing a fence is still ONE block holding exactly the reply
+  FAIL  schema after reload: the structured reply is rebuilt as a JSON code block
+=== loose-whitelist: webui app gate: 583 passed, 1 failed
+  FAIL  schema after reload: stored 'structured' is kept only as the boolean true, and never on a user turn
+=== short-fence: webui app gate: 584 passed, 0 failed
+restored; diff vs keep: identical
+
+# the fence mutation re-run after the fence test was made to discriminate (the first version of that test stayed green under the mutation: backticks inside a one-line JSON value can never close a fence)
+=== unmutated: webui app gate: 585 passed, 0 failed
+=== short-fence: webui app gate: 584 passed, 1 failed
+  FAIL  schema: a reply containing a line of backticks is still ONE block holding exactly the reply
+restored: identical

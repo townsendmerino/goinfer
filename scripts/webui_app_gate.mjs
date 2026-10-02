@@ -1252,6 +1252,126 @@ const W11_PRELUDE = String.raw`
   const shape = () => (window.__lastBody?.messages || []).filter(m => m.role !== "system").map(m => m.role[0] + ":" + (Array.isArray(m.content) ? "[" + m.content.map(p => p.type === "text" ? "text:" + p.text : "image").join(",") + "]" : m.content)).join("|");
   const turn = async (q, a) => { stream(a); $("prompt").value = q; await send(); await idle(); await wait(30); };
 `;
+// ---- phases 19a–19b: the response-schema control — what is sent, rendered, refused, saved --------------------------------
+// A schema in the Sampling box is sent as response_format {type: "json_schema", json_schema: {name, schema}} with every
+// reply request (the chat route, and the jobs route text replies take). Replies generated under it are JSON, shown as a
+// code block so their indentation survives Markdown. The server compiles the schema; the page checks only that it is a
+// JSON object, refuses to send otherwise (as for any bad sampling field), and keeps it across reloads.
+const SCHEMA_PRELUDE = W10_PRELUDE + String.raw`
+  const SCHEMA = { type: "object", properties: { total: { type: "number" } }, required: ["total"] };
+  const SCHEMA_TEXT = JSON.stringify(SCHEMA);
+  const rf = () => (window.__lastBody || {}).response_format;
+  const tick = String.fromCharCode(96);
+`;
+const phase19a = phase(SCHEMA_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+  check("schema: blank by default, nothing marked, no summary text", $("schema").value === "" && $("sampling-state").textContent === "", $("sampling-state").textContent);
+  await turn("plain", "{\"total\": 1}");
+  check("schema: with no schema, response_format is not sent", !("response_format" in window.__lastBody), JSON.stringify(window.__lastBody));
+  check("schema: a plain reply that looks like JSON is NOT shown as a code block", !lastBot().querySelector(".md-code"), lastBot().innerHTML.slice(0, 120));
+  check("schema: and it is not stored as structured", stored().messages.at(-1).structured === undefined, JSON.stringify(stored().messages.at(-1)));
+
+  // ---- a JSON Schema ----
+  setField("schema", SCHEMA_TEXT);
+  check("schema: the summary says a schema is on, with the box closed", $("sampling-state").textContent === "· schema on", $("sampling-state").textContent);
+  await turn("extract", "{\n    \"total\": 12.5\n}");
+  check("schema: a JSON Schema is sent as response_format json_schema, named, with the schema untouched",
+    JSON.stringify(rf()) === JSON.stringify({ type: "json_schema", json_schema: { name: "response", schema: SCHEMA } }), JSON.stringify(rf()));
+  const only = JSON.parse(sentSampling());
+  check("schema: the sampling fields are unchanged beside it", only.temperature === 0.7 && only.max_tokens === 512 && !("top_p" in only), sentSampling());
+  const blk = lastBot().querySelector(".md-code");
+  check("schema: the reply is shown as a JSON code block", !!blk && blk.querySelector("pre code") && blk.querySelector(".md-lang")?.textContent === "json", lastBot().innerHTML.slice(0, 160));
+  check("schema: the block keeps the reply's indentation", blk && blk.querySelector("pre code").textContent === "{\n    \"total\": 12.5\n}", blk && blk.querySelector("pre code").textContent);
+  check("schema: the reply is stored as structured, with its raw text", stored().messages.at(-1).structured === true && stored().messages.at(-1).content === "{\n    \"total\": 12.5\n}", JSON.stringify(stored().messages.at(-1)));
+  await until(() => window.__titleBodies.length > 0);
+  check("schema: the background title request is not constrained by it", window.__titleBodies.length > 0 && window.__titleBodies.every(b => !("response_format" in b)), JSON.stringify(window.__titleBodies.at(-1)));
+  check("schema: Copy on the reply copies the JSON, not a fence", copyOf(stored().messages.at(-1).content) === "{\n    \"total\": 12.5\n}", copyOf(stored().messages.at(-1).content));
+
+  // a reply with a line of only backticks cannot close the block early. A reply the grammar kept valid never has one
+  // (a string cannot start a line), so this is the defence for a reply that is not clean JSON, cut off or from a server
+  // that did not enforce the schema: the fence is longer than any run of backticks inside it.
+  const tricky = "{\"s\": \"x\"}\n" + tick + tick + tick + "\nrest of a reply that is not JSON";
+  await turn("fence", tricky);
+  const tb = lastBot().querySelector(".md-code pre code");
+  check("schema: a reply containing a line of backticks is still ONE block holding exactly the reply", !!tb && tb.textContent === tricky && lastBot().querySelectorAll(".md-code").length === 1, tb && tb.textContent + " | blocks " + lastBot().querySelectorAll(".md-code").length);
+  const mid = "{\"s\": \"" + tick + tick + tick + "x" + tick + tick + tick + "\"}";
+  await turn("fence-inline", mid);
+  const mb = lastBot().querySelector(".md-code pre code");
+  check("schema: backticks inside a JSON string stay inside the block", !!mb && mb.textContent === mid && lastBot().querySelectorAll(".md-code").length === 1, mb && mb.textContent);
+
+  // ---- a whole response_format pasted from an API call ----
+  const wrapped = { type: "json_schema", json_schema: { name: "invoice", schema: SCHEMA } };
+  setField("schema", JSON.stringify(wrapped));
+  await turn("wrapped", "{\"total\": 2}");
+  check("schema: a pasted response_format is sent as is, keeping its name",
+    JSON.stringify(rf()) === JSON.stringify({ type: "json_schema", json_schema: { name: "invoice", schema: SCHEMA } }), JSON.stringify(rf()));
+  setField("schema", JSON.stringify({ type: "json_schema", json_schema: { schema: SCHEMA } }));
+  await turn("unnamed", "{\"total\": 3}");
+  check("schema: a pasted response_format without a name gets one", rf() && rf().json_schema.name === "response", JSON.stringify(rf()));
+
+  // ---- invalid input: refused before anything changes, like any bad sampling field ----
+  for (const [v, msg] of [
+    ["not json", "Response schema is not valid JSON"],
+    ["{\"type\": ", "Response schema is not valid JSON"],
+    ["[1, 2]", "Response schema must be a JSON object"],
+    ["null", "Response schema must be a JSON object"],
+    ["3", "Response schema must be a JSON object"],
+    [JSON.stringify({ type: "json_schema", json_schema: { name: "x", schema: 3 } }), "Response schema: json_schema.schema must be a JSON object"],
+    [JSON.stringify({ type: "json_schema", json_schema: { name: "x", schema: [] } }), "Response schema: json_schema.schema must be a JSON object"],
+  ]) {
+    setField("schema", v);
+    const bubbles = document.querySelectorAll("#log .msg").length, last = window.__lastBody;
+    $("sampling-box").open = false;
+    $("prompt").value = "should not send";
+    await send(); await wait(30);
+    check("schema " + JSON.stringify(v).slice(0, 28) + ": marked invalid and says why", $("schema").getAttribute("aria-invalid") === "true" && $("schema").classList.contains("invalid") && $("sampling-error").textContent.startsWith(msg), $("sampling-error").textContent);
+    check("schema " + JSON.stringify(v).slice(0, 28) + ": Send refuses, nothing sent, the message kept, the Sampling box opened", window.__lastBody === last && document.querySelectorAll("#log .msg").length === bubbles && $("prompt").value === "should not send" && $("sampling-box").open, $("sampling-error").textContent);
+  }
+  setField("schema", "");
+  check("schema: clearing it clears the mark and the message", $("schema").getAttribute("aria-invalid") !== "true" && $("sampling-error").hidden, $("sampling-error").textContent);
+  $("prompt").value = "";
+  await turn("cleared", "ok");
+  check("schema: cleared, response_format is no longer sent", !("response_format" in window.__lastBody), JSON.stringify(window.__lastBody));
+  check("schema: and a reply under it is not structured", stored().messages.at(-1).structured === undefined, JSON.stringify(stored().messages.at(-1)));
+
+  // leave a schema and one structured reply for the reload phase
+  setField("schema", SCHEMA_TEXT);
+  await turn("kept", "{\"total\": 9}");
+`);
+
+// ---- phase 19b: after a reload — the schema and its reply come back; hostile stored values are ignored ---------------------
+const phase19b = phase(SCHEMA_PRELUDE + String.raw`
+  check("schema after reload: the schema is restored, and the summary says so", $("schema").value === SCHEMA_TEXT && $("sampling-state").textContent === "· schema on", $("schema").value.slice(0, 40) + " / " + $("sampling-state").textContent);
+  const restored = lastBot();
+  check("schema after reload: the structured reply is rebuilt as a JSON code block", !!restored && !!restored.querySelector(".md-code pre code") && restored.querySelector(".md-code pre code").textContent === "{\"total\": 9}", restored && restored.innerHTML.slice(0, 140));
+  streamAnswer("{\"total\": 10}");
+  $("prompt").value = "after reload"; await send(); await idle(); await wait(30);
+  check("schema after reload: the restored schema is what is sent", JSON.stringify(rf()) === JSON.stringify({ type: "json_schema", json_schema: { name: "response", schema: SCHEMA } }), JSON.stringify(rf()));
+
+  // hostile stored content: structured is true only when it is exactly true, and only on a reply
+  const parsed = parseMessages([
+    { role: "assistant", content: "{}", structured: "yes" },
+    { role: "assistant", content: "{}", structured: 1 },
+    { role: "assistant", content: "{}", structured: true },
+    { role: "user", content: "hi", structured: true },
+  ]).messages;
+  check("schema after reload: stored 'structured' is kept only as the boolean true, and never on a user turn",
+    parsed[0].structured === undefined && parsed[1].structured === undefined && parsed[2].structured === true && parsed[3].structured === undefined, JSON.stringify(parsed));
+  // an oversize stored schema falls back to blank rather than being shown
+  localStorage.setItem("goinfer.sampling.v1", JSON.stringify({ v: 1, fields: { schema: "x".repeat(70000) } }));
+  loadSampling();
+  check("schema after reload: a stored schema over the limit is dropped, not loaded", $("schema").value === "" && $("sampling-state").textContent === "", $("schema").value.length);
+  // a long but allowed schema (over the 4,000 characters every other field is held to) survives a reload
+  const big = JSON.stringify({ type: "object", properties: Object.fromEntries(Array.from({ length: 200 }, (_, i) => ["field_number_" + i, { type: "string" }])) });
+  setField("schema", big);
+  loadSampling();
+  check("schema after reload: a schema longer than 4,000 characters is kept (" + big.length + ")", big.length > 4000 && $("schema").value === big, $("schema").value.length);
+
+  $("sampling-reset").click();
+  check("schema: Reset clears it and forgets the saved settings", $("schema").value === "" && localStorage.getItem("goinfer.sampling.v1") === null && $("sampling-state").textContent === "", $("schema").value.length);
+`);
+
 const phase20 = phase(W11_PRELUDE + String.raw`
   $("sampling-reset").click();
   $("newchat").click();
@@ -2654,7 +2774,7 @@ const phase43 = phase(String.raw`
 `);
 
 const all = [];
-const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
+const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase19a, phase19b, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
   async () => page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }),
   phase25,

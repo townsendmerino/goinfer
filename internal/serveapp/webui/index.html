@@ -51,6 +51,9 @@
       </div>
       <label for="stop">Stop sequences — one per line (\n is a newline)</label>
       <textarea id="stop" class="ambient amb-surface-concave amb-rounded" placeholder="none" aria-describedby="sampling-error"></textarea>
+      <label for="schema">Response schema — a JSON Schema; every reply is constrained to match it</label>
+      <textarea id="schema" class="ambient amb-surface-concave amb-rounded" rows="6" spellcheck="false" maxlength="65536" placeholder='none — e.g. {"type":"object","properties":{"total":{"type":"number"}},"required":["total"]}' aria-describedby="sampling-error schema-help"></textarea>
+      <p class="note" id="schema-help">Blank leaves replies unconstrained. With a schema on, every reply is JSON that matches it, so a long one can hit Max tokens (512 by default): raise it if a reply is cut off. A document-reading model such as GLM-OCR reads an attached image into this shape; leave the message empty to use its extraction prompt.</p>
       <p class="note err" id="sampling-error" hidden></p>
       <div class="sampling-foot">
         <p class="note">Blank uses the server's default. The same seed, prompt and settings give the same reply. Kept across reloads.</p>
