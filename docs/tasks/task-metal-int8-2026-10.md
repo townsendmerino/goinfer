@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status: slice 1 built, native path off by default until F3 and S pass (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stays off by default; next is a per-layer comparison against the CPU at the same quant (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -101,3 +101,26 @@ Once F1–F3 pass it runs int8 natively, the precision asked for, as CUDA does, 
   - Queued for tonight on the Mac: `docs/measurements/metal-int8-2026-10/run-gates.sh` (F3 on the 0.5B and 1.5B, F2
     on the 1.5B, S), running a test binary built at `f73b980a`. Before the commit: the default Metal suite passed with
     the switch off (157.7 s).
+- 2026-10-02: **the night gates (2026-10-01, 01:14–01:25 PDT, binary `metal-f73b980a.test`): F3 and F2 fail, so the
+  default does not flip.** Logs: `docs/measurements/metal-int8-2026-10/night-2026-10-01/`.
+  - **F3, 0.5B: FAIL.** Mean KL(f32 ‖ ·) over 22 positions: CPU int8int8 0.021989, Metal int8int8 0.027917 (1.270× the
+    CPU's; the bar is 1.10×), Metal int4 0.183825. Native int8 is 6.6× closer to f32 than today's re-quant, but not as
+    close as the CPU at the same quant.
+  - **F3, 1.5B: did not run.** The fit guard refused the f32 reference: 7.7 GB priced against 7.6 GB (70% of 10.9 GB
+    available). Not bypassed.
+  - **F2, 1.5B: FAIL on argmax.** Metal int8int8 against CPU int8int8: min cosine 0.997700, argmax 21/24, worst near-tie
+    0.325%, no gap over 3%. Metal int4 against CPU int4: 0.997514, 24/24. The cosine bars pass; the argmax bar (at
+    least the int4 pair's count) does not.
+  - **S** (decode, in-process interleaved, 7 reps, medians; reported, and S-auto is read only after slice 2):
+
+    | model | depth | native | re-quant | CPU int8int8 | native ÷ re-quant | native ÷ CPU |
+    |---|---|---|---|---|---|---|
+    | 0.5B | 128 | 165.7 | 184.9 | 100.0 | 0.896 | 1.657 |
+    | 0.5B | 2048 | 102.1 | 106.4 | 65.4 | 0.960 | 1.561 |
+    | 1.5B | 128 | 71.0 | 89.5 | 45.4 | 0.794 | 1.565 |
+    | 1.5B | 2048 | 65.8 | 82.1 | 32.6 | 0.801 | 2.020 |
+
+    The 1.5B's native ÷ re-quant is 0.79–0.80, under the 0.93 the doc estimated from the LM head's rate.
+  - What it means: F1 held every kernel bit-identical to the CPU, so the gap from CPU int8int8 comes from outside the
+    W8A8 GEMVs. The next step is a by-day per-layer comparison of Metal int8int8 against CPU int8int8 on the 0.5B
+    (no f32 reference needed), to name the first layer and op that diverges.

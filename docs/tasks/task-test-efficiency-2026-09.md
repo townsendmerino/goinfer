@@ -292,6 +292,27 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   gate's preflight now polls up to `BENCH_IDLE_WAIT`, as its per-cell gate does, and still refuses on timeout
   (`scripts/test_bench_peer_preflight.py`, red on the old code with attempt 3's own message). Output goes to
   `te1-attempt4/`, graded as `te1_analyze.py te1-attempt4`, on the Mac night queue.
+- **Attempt 4, the Mac's night of 2026-10-01, graded 2026-10-02: INCOMPLETE** (`te1_analyze.py te1-attempt4`;
+  `te1-attempt4/timeline.txt`).
+  - **Both load-gate sweeps were refused after one cell each.** In each, the second cell's gate waited its full 1,800 s
+    and refused, the load still over 1.0 (sweeps 23:10–23:42 and 23:59–00:29; the pre-waits ended at 0.98 and 0.94). Nothing else was queued or running: the same signal attempt 2
+    saw by day, now at night. The load mutation's pre-wait gave up after 1,800 s (load 2.21) and its harness refused at
+    preflight.
+  - **The instant gate:** both sweeps ran (6 cells each, 5.2–5.3 min); its idle share was 6.3% (in band, ≤ 10%). The
+    A/A log ratios over its 6 values: −0.0026, −0.0187, +0.0075, −0.0103, −0.0221, +0.0040. The load gate has none, so
+    there is no RMS ratio.
+  - **The instant mutation held, and missed its release bar.** The hog ran 90.2 s; cell 2's gate waited 105.7 s. After
+    the hog stopped the box read 13.5% and 13.6% busy against the 10% cap, close to the 16.4% and 15.0% it read before
+    the hog started, so the gate released 15.5 s after the hog, not within 10 s. By the pre-registration a mutation
+    failure is a kill. The run is graded INCOMPLETE first, because a sweep is missing; whether this miss stands as a
+    kill once attempt 5 completes is the owner's reading. Attempt 3's instant mutation released within 10 s.
+- **Amendment for attempt 5, 2026-10-02, before it runs (owner: "reschedule it, with a cap of 3").** The load gate runs
+  at `BENCH_MAX_LOADAVG=3.0`, and its pre-wait uses the same cap. Attempts 2–4 found this Mac's 1-min load at 1.7–2.9
+  with the CPU near idle, by day and at night, so at 1.0 no load sweep finished; at 3.0 the load gate is weaker than
+  the harness default, which is disclosed here rather than corrected for. Everything else is unchanged: the design,
+  the bands, the instant gate's 10% busy cap, and the analyzer. The load mutation's hog drives the load well above 3,
+  so that gate still has a signal to hold on. Output goes to `te1-attempt5/`, graded as `te1_analyze.py te1-attempt5`,
+  on the Mac night queue.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 

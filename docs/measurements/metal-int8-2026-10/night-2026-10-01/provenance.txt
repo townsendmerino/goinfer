@@ -1,0 +1,10 @@
+rev:      f73b980a
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-f73b980a.test (sha256 bc4984bdedb6947f)
+started:  2026-10-02 01:14:30 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     1.57 2.47 2.27
+== F3 on the 0.5B — 01:14:30
+== F3 on the 1.5B — 01:14:37
+== F2 on the 1.5B — 01:14:37
+== S, decode speed — 01:14:51
+finished: 2026-10-02 01:25:27 PDT

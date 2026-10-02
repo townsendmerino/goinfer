@@ -1,0 +1,33 @@
+# preflight OK: gate instant · loadavg [3.7724609375, 2.92138671875, 2.0224609375] · gpu None · compute apps []
+# 2 cells planned, 0 already done
+# cell gate (instant): busy 16.4% (cap 10%), waiting (3/1800s)
+# cell gate (instant): busy 15.0% (cap 10%), waiting (9/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 0.414 GiB (434176 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "cpu", "model": "0.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [116.96087182634551, 119.79036837064177, 120.0126969952501], "error": null, "machine": {"loadavg": [3.1318359375, 2.828125, 2.0087890625], "gpu": null, "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded", "gate": {"kind": "instant", "wait_s": 14.0, "busy_pct": 3.1}}, "secs": 17.6, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [117.06221230161012, 117.42624048158272, 116.8312490035363, 116.92049045881866, 117.17639310418555, 116.49112101787247, 117.1870459309264, 116.59222231223188, 119.58708287956976, 120.06538808028715, 119.5002517673758, 119.36957697670634, 119.34046390474427, 120.54816878885946, 119.71813038690657, 120.19388418068486, 120.06945939124647, 120.06173643726373, 120.01842180169913, 119.86828756588592, 120.18748307570758, 120.05821864421056, 119.85937458210195, 119.9785944638854], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]", "rss_peak_kb": 434176, "phases": {"start_to_listening_s": 0.52, "warmup_s": 0.82, "runs_wall_s": 13.24, "decode_timed_s": 12.72, "prefill_and_request_s": 0.52, "teardown_s": 3.01}}, "mean": 118.9, "spread": 3.1}
+=== 1790926553.36 HOG START gate=instant
+# cell gate (instant): busy 99.8% (cap 10%), waiting (3/1800s)
+# cell gate (instant): busy 99.6% (cap 10%), waiting (9/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (14/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (19/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (25/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (30/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (36/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (41/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (46/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (52/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (57/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (62/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (68/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (73/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (79/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (84/1800s)
+# cell gate (instant): busy 100.0% (cap 10%), waiting (90/1800s)
+=== 1790926643.56 HOG STOP gate=instant
+# cell gate (instant): busy 13.5% (cap 10%), waiting (95/1800s)
+# cell gate (instant): busy 13.6% (cap 10%), waiting (100/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 0.404 GiB (423472 KiB)
+{"phase": "A", "engine": "goinfer_old", "backend": "cpu", "model": "0.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {}, "note": "temperature=0 both sides (deterministic)", "runs": [116.67661996831453, 118.06384089861125, 121.36500597091002], "error": null, "machine": {"loadavg": [11.18798828125, 6.10400390625, 3.41259765625], "gpu": null, "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded", "gate": {"kind": "instant", "wait_s": 105.7, "busy_pct": 7.3}}, "secs": 17.6, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [115.86267262621931, 116.38081532574014, 116.69890300740293, 117.06649035566603, 116.75046388124437, 117.25833268043965, 116.28708280986298, 117.10819905994079, 117.50361707785244, 117.16074873487895, 116.88158072986012, 117.60636504915541, 116.93875672505396, 117.02077172269486, 120.64560726361401, 120.75327988578023, 120.31232505850132, 120.9829189353036, 120.53948097858206, 120.49267159536397, 120.25880451257234, 122.88516821401272, 122.54774831811548, 122.90093015482869], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "decode_path": "cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]", "rss_peak_kb": 423472, "phases": {"start_to_listening_s": 0.51, "warmup_s": 0.8, "runs_wall_s": 13.27, "decode_timed_s": 12.74, "prefill_and_request_s": 0.52, "teardown_s": 3.01}}, "mean": 118.7, "spread": 4.7}

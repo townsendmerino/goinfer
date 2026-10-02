@@ -1,0 +1,3 @@
+REFUSED: 1-min load average 2.21 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 1790928480.45 HOG START gate=load
+=== 1790928570.58 HOG STOP gate=load
