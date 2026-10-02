@@ -46,8 +46,10 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 ## In flight
 
 - **Metal runs int8 weights natively (W8A8)**, `docs/tasks/task-metal-int8-2026-10.md`. Slice 1, dense int8 decode,
-  started 2026-10-01; gates F1–F3 by day, S on the Mac's night queue. Owner decision O1 (explicit `-backend metal`
-  with an int8 model: native or re-quant) is open there.
+  built 2026-10-01 with the native path off by default; F1 and F2 passed by day, F3 and S are on the Mac's night queue.
+  Owner decision O1: native, once F3 and S pass.
+- **Metal audit program** (proposed 2026-10-01), `docs/tasks/task-metal-audit-2026-10.md`: the order of
+  `docs/audit-metal-2026-09-30.md` §10's items. Phase 1 (guards, gates, text) is day work; the probes are night batches.
 
 ## Queued
 
