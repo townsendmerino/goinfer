@@ -42,14 +42,15 @@ func init() {
 
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.
 var (
-	_ decoder.Backend             = (*metalBackend)(nil)
-	_ decoder.ResidencyBackend    = (*metalBackend)(nil)
-	_ decoder.ResidentForward     = (*metalResident)(nil)
-	_ decoder.ResidentMRoPE       = (*metalResident)(nil)
-	_ decoder.ResidentAdapter     = (*metalResident)(nil)
-	_ decoder.Prefiller           = (*metalResident)(nil)
-	_ decoder.PrefillPathReporter = (*metalResident)(nil)
-	_ decoder.VerifyPathReporter  = (*metalResident)(nil)
+	_ decoder.Backend               = (*metalBackend)(nil)
+	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
+	_ decoder.ResidentForward       = (*metalResident)(nil)
+	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
+	_ decoder.ResidentAdapter       = (*metalResident)(nil)
+	_ decoder.Prefiller             = (*metalResident)(nil)
+	_ decoder.PrefillPathReporter   = (*metalResident)(nil)
+	_ decoder.VerifyPathReporter    = (*metalResident)(nil)
+	_ decoder.ResidentQuantReporter = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -123,6 +124,9 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		return nil, false, decoder.DeclineResident("metal: %v", e)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
+	if res.w8 {
+		b.resident.quant = m.Quant()
+	}
 	return b.resident, true, nil
 }
 
@@ -460,6 +464,9 @@ type metalResident struct {
 	r      *resident
 	hidden int
 	exact  bool // the model was loaded with Options.ExactPrefill: fast prefill off for THIS resident
+	// quant is the precision ResidentQuant reports: the model's own quant when it runs int8 weights natively (r.w8),
+	// "" otherwise, which leaves the decoder's label (an int8 model on the int4 path is re-quantized, and says so).
+	quant string
 
 	// fast is the batched-prefill decision, made ONCE per resident on first use: the
 	// GOINFER_METAL_FAST_PREFILL env var used to be re-read on every prefill call, so a change to
@@ -691,9 +698,17 @@ func metalFusedAttentionEnabled(v string) bool {
 // the batched f16-MMA path. Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2
 // gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the enabled
 // state AND arch both allow batching.
+// ResidentQuant (decoder.ResidentQuantReporter) is the precision this resident runs its weights at, when the decoder
+// cannot infer it: an int8 model on the native path (r.w8) runs at its own quant, where one on the int4 path is
+// re-quantized. "" leaves the decoder's label.
+func (a *metalResident) ResidentQuant() string { return a.quant }
+
 func (a *metalResident) PrefillPath() (bool, string) {
 	if a.r.kvI8 {
 		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
+	}
+	if a.r.w8 {
+		return false, "sequential — the f16 MMA prefill kernels read int4 weights, and this model runs its int8 weights natively (docs/tasks/task-metal-int8-2026-10.md, slice 2)"
 	}
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"

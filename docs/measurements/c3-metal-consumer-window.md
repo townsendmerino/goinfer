@@ -50,7 +50,7 @@ but the **tagged go.mod still ships it**.
 **An earlier draft of this note claimed the resident path "is not drivable via the public API." That
 was WRONG — it was read off the *stale doc comment* on `decoder.Options.Backend` ("cpu/webgpu"), not
 the code.** `Options.Backend` actually accepts `cpu | webgpu | cuda | metal` (`decoder/model.go:764`),
-and `Load` calls `withResidency()` (`decoder/residency.go:1030`) which runs `NewBackend` → `BuildResident`
+and `Load` calls `withResidency()` (`decoder/residency.go:1037`) which runs `NewBackend` → `BuildResident`
 → attaches the resident **automatically**. So the full consumer path is:
 
     import _ "github.com/townsendmerino/goinfer/metal"          // registers the backend (darwin)
@@ -81,7 +81,7 @@ The CUDA tautology was four graph tests comparing graphs-on against graphs-off w
 graphs were *admitted*. **Metal has no CUDA-graph capture/replay** — it is a command-buffer execution
 model — so that specific shape has **no Metal analog**. The previously-known Metal instance (the
 snapshot golden driving `Forward`/`ForwardArgmax` without the embed scale) was already fixed (G-02).
-Metal tests assert admission (`metal/gemma_parity_test.go:85` fatals if the resident declined when it
+Metal tests assert admission (`metal/gemma_parity_test.go:94` fatals if the resident declined when it
 should be admitted). No "gate that can't fail" of the CUDA form is present on Metal.
 
 ## Verdict (revised 2026-08-15)

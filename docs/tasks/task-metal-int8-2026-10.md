@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status: slice 1 in progress (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status: slice 1 built, native path off by default until F3 and S pass (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -72,9 +72,9 @@ only if the fit guard admits it; this Mac has 16 GB, and no guard is bypassed.
   and 0.72× on the 7B, from int8 carrying 1.78× the bytes at the LM head's measured rate; it is reasoning, not a
   measurement.
 
-**Owner decision O1, open.** An explicit `-backend metal` with an int8 model has always run int4. Once F1–F3 pass,
-should it run int8 natively (the precision asked for, as CUDA does, likely slower), or keep the int4 re-quant (faster,
-not the precision asked for)? Proposed: native, with the speed disclosed in the CHANGELOG.
+**Owner decision O1, decided 2026-10-01: native.** An explicit `-backend metal` with an int8 model has always run int4.
+Once F1–F3 pass it runs int8 natively, the precision asked for, as CUDA does, with the speed disclosed in the CHANGELOG
+(gate S reports it). The int4 re-quant stays only for the models slice 1 does not cover.
 
 ## Tests to update
 
@@ -87,3 +87,16 @@ not the precision asked for)? Proposed: native, with the speed disclosed in the 
 ## Log
 
 - 2026-10-01: plan and gates committed; slice 1 started.
+- 2026-10-01: owner decision O1: native. F1 passed: 7 kernels × 8 shapes, 249,984 of 249,984 outputs bit-identical to
+  the CPU (`TestGemvW8A8Body_matchesCPU`). Its first run failed the residual kernels by many ulps where the residual
+  cancels the sum: fast math fused the product into the add. The kernels now round the product first, as the CPU does.
+- 2026-10-01: slice 1 built and committed with the native path **off by default** (`nativeInt8` in `metal/model.go`, set
+  only by the gate tests), so nothing changes for a user until F3 and S pass; then it becomes the default.
+  - **F2 passed on the 0.5B** (`TestW8Native_F2_matchesCPUAtSameQuant`): Metal int8int8 against CPU int8int8, min cosine
+    0.994500 and argmax 24/24; Metal int4 against CPU int4, 0.988340 and 23/24. Log:
+    `~/goinfer-logs/metal-int8/f2-f3-0.5b-2026-10-01.log`.
+  - **F3 deferred to the night queue.** The fit guard refused its f32 reference by day: the 0.5B at f32 priced 3.6 GB
+    against a 2.2 GB budget, and still about 2.8 GB with the test's context pinned at 1024. A bypass is not used on
+    this Mac. Gate S's harness ran once at smoke size by day to check it works; those numbers are not a result.
+  - Queued for tonight on the Mac: `docs/measurements/metal-int8-2026-10/run-gates.sh` (F3 on the 0.5B and 1.5B, F2
+    on the 1.5B, S).

@@ -363,6 +363,13 @@ type VerifyPathReporter interface {
 	VerifyPath() (batched bool, reason string)
 }
 
+// ResidentQuantReporter is an OPTIONAL resident extension: the precision the resident runs its weights at, when it
+// chose one the decoder cannot infer from the backend and the load quant. Metal runs some int8 models natively and
+// re-quantizes others to int4 (docs/tasks/task-metal-int8-2026-10.md). "" means residentQuantLabel applies.
+type ResidentQuantReporter interface {
+	ResidentQuant() string
+}
+
 // ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
 // KV context capacity (in positions). A write past it is an out-of-bounds device write
 // (silent KV corruption); the backends refuse it mid-generation, but generateInto also
@@ -1210,7 +1217,11 @@ func (m *Model) DecodePath() string {
 	}
 	switch {
 	case m.resident != nil:
-		return fmt.Sprintf("%s-resident (%s)", be, residentQuantLabel(be, m.Quant()))
+		label := residentQuantLabel(be, m.Quant())
+		if qr, ok := m.resident.(ResidentQuantReporter); ok && qr.ResidentQuant() != "" {
+			label = qr.ResidentQuant()
+		}
+		return fmt.Sprintf("%s-resident (%s)", be, label)
 	case be == "cpu":
 		s := fmt.Sprintf("cpu (%s)", m.Quant())
 		// The repacked-only int4 policy (wantsCanonicalInt4, aikit audit M-22) only ever
