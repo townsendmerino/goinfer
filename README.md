@@ -7,7 +7,7 @@ cross-compile it like anything else. No Python, no llama.cpp, no C toolchain, no
   invalid token is unreachable, not retried.
 - **One static binary** — and, if you want, the model baked into it.
 - **39 model families**, each behind a HuggingFace logit-parity gate.
-- **CPU, CUDA, Metal and WebGPU**, all cgo-free.
+- **CPU, CUDA and Metal**, cgo-free; **WebGPU** as an opt-in cgo build.
 
 Also ships as a ready-made server (`goinfer-serve`: OpenAI and Anthropic APIs, web UI) and a
 single-shot chat binary (`goinfer-chat`).
@@ -321,8 +321,15 @@ in-process. Longer form: [docs/positioning.md](docs/positioning.md).
   [HuggingFace logit-parity gate per family](docs/what-parity-gated-means.md). A parity run proves
   what its fixtures cover, and a missing fixture skips rather than fails, so quote a run's counts
   (`28 ran / 20 skipped / 0 failed`): see `docs/parity-coverage-policy.md`.
-- **GPU** — WebGPU everywhere, plus cgo-free CUDA and Metal for dense and MoE models. Anything
-  unsupported declines at load and falls back to CPU. See [docs/cuda-backend.md](docs/cuda-backend.md)
+- **GPU** — CUDA and Metal are cgo-free: at runtime they open the vendor's own driver API
+  (`libcuda.so.1`, Metal.framework) and run kernels shipped in the binary, so there is no CUDA
+  toolkit to build against, and without the driver the load declines to the CPU path. WebGPU
+  (opt-in, `-tags gpu`) is the one cgo build: it links the prebuilt wgpu-native library, which
+  drives the system's Vulkan, Metal or DX12 driver, so it needs a C toolchain and is not in the
+  release binaries. Nothing that performs inference is loaded from outside the binary: no
+  llama.cpp, no libllama, no Python runtime. The library's `go.mod` has two direct requirements,
+  `github.com/townsendmerino/aikit` and `golang.org/x/text`; each GPU backend is its own module.
+  Dense and MoE models; anything unsupported declines at load and falls back to CPU. See [docs/cuda-backend.md](docs/cuda-backend.md)
   and [docs/gpu-residency-coverage.md](docs/gpu-residency-coverage.md). On CUDA, prompts of 512
   tokens or more use a fused FlashAttention-style kernel and a tensor-core int4 GEMM (3.9×
   end-to-end prefill at a 3900-token prompt on a 1.5B int4;
