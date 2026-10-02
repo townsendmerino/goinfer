@@ -239,7 +239,20 @@ type resident struct {
 	// 0 = the buffer runs at the position setPos last set — every synchronous path sets the position, then
 	// encodes. Read through planNKeys by the two encode-time attention decisions (canUseAttnFA's depth gate,
 	// attention_fa's split grid). See execLoop and attnPlan.
-	encNKeys                int
+	encNKeys int
+	// encFANSplit, when set, is the attention_fa split uniform the command buffer being encoded binds instead of
+	// uAttnFANSplit: the greedy chain's per-token set (greedy_chain.go, C-B01). Zero outside its encode.
+	encFANSplit Buffer
+	// The greedy chain (greedy_chain.go, C-B01): its gather pipeline, its goroutine's channels, and its two alternating
+	// uniform sets and token-id buffers.
+	pEmbedGather            Pipeline
+	lmTied                  bool // lmW/lmS are the embedding table itself (a tied LM head), so a token's embedding can be gathered from them
+	chainReq                chan chainReq
+	chainResp               chan chainResp
+	chainDone               chan struct{}
+	chainSets               [2]posUniforms
+	chainTok                [2]Buffer
+	chainServed             int    // tokens chainNext has returned since the build (tests read it)
 	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
@@ -828,6 +841,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
 	r.pArgFinish = pipe("argmax_finish")
+	r.pEmbedGather = pipe("embed_gather_i8")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
 	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
@@ -1290,6 +1304,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	lm := &w.LMHead
 	if lm.Rows() == 0 {
 		lm = &w.Embed // tied
+		r.lmTied = true
 	}
 	// The LM head is LOGIT-CRITICAL and must stay int8. decoder/weightmat.go: "at int4 they flip
 	// the argmax and tank the cosine (the tied head dots every logit against them)" — which is
@@ -1671,10 +1686,20 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 	if len(ropePos) > 0 {
 		rp = ropePos[0]
 	}
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
 	r.curNKeys = pos + 1
-	r.uRopePos.SetU32(uint32(rp))
+	r.writePosUniforms(posUniforms{r.uPos, r.uNKeys, r.uRopePos, r.uQTempScale, r.uAttnFANSplit}, pos, rp)
+}
+
+// posUniforms is one set of the per-token uniforms a decode command buffer binds: setPos writes the resident's own
+// set, and the greedy chain (greedy_chain.go) alternates two of its own so a buffer can be committed while the one
+// before it still reads its set.
+type posUniforms struct{ uPos, uNKeys, uRopePos, uQTempScale, uFANSplit Buffer }
+
+// writePosUniforms writes token pos's values into set u: the one formula for both setPos and the chain.
+func (r *resident) writePosUniforms(u posUniforms, pos, rp int) {
+	u.uPos.SetU32(uint32(pos))
+	u.uNKeys.SetU32(uint32(pos + 1))
+	u.uRopePos.SetU32(uint32(rp))
 	// R2 fix: uAttnFAG/uAttnFANSplit written HERE, not at the per-layer dispatch
 	// site — see their own field comment. Same "safe because it happens before
 	// THIS buffer commits, not during the NEXT buffer's encode-ahead" argument
@@ -1684,13 +1709,13 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 	// divide-by-zero regardless.
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
-		r.uAttnFANSplit.SetU32(uint32(r.attnFASplitFor(r.curNKeys, r.attnFANKV)))
+		u.uFANSplit.SetU32(uint32(r.attnFASplitFor(pos+1, r.attnFANKV)))
 	}
 	scale := float32(1)
 	if r.attnTempBeta != 0 {
 		scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
 	}
-	r.uQTempScale.Floats()[0] = scale
+	u.uQTempScale.Floats()[0] = scale
 }
 
 // Forward runs token `id` at absolute position `pos` and returns logits[V]. The whole
@@ -2000,6 +2025,7 @@ func (r *resident) execLoop() {
 // waiting on an in-flight command buffer, and releasing a buffer it references is a
 // use-after-free. (CUDA hit the mirror-image ordering constraint in d8e81cb.)
 func (r *resident) stopExec() {
+	r.stopChain() // an open greedy chain has command buffers in flight on r.q too (greedy_chain.go)
 	if r.execReq != nil {
 		close(r.execReq)
 		r.execReq = nil
@@ -2652,6 +2678,15 @@ func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <
 
 // planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
 // it encodes, otherwise the position setPos last set.
+// fanSplitBuf is the attention_fa split-count uniform the command buffer being encoded binds: the greedy chain's own
+// set's while it encodes one of its buffers (encFANSplit), otherwise the resident's, which setPos writes.
+func (r *resident) fanSplitBuf() Buffer {
+	if r.encFANSplit != (Buffer{}) {
+		return r.encFANSplit
+	}
+	return r.uAttnFANSplit
+}
+
 func (r *resident) planNKeys() int {
 	if r.encNKeys > 0 {
 		return r.encNKeys
@@ -2864,8 +2899,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
-				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
-			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.uAttnFANSplit)
+				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.fanSplitBuf())
+			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.fanSplitBuf())
 		} else {
 			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 		}

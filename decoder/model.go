@@ -1911,6 +1911,25 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	fastGreedy := useGPU && hasGreedy && procFree &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
+	// The greedy chain (C-B01, ResidentGreedyChain): the same tokens with the next token's forward queued on the device
+	// before the host has seen this one. Unbatched only (MC3 serves its tokens through its own steps), with no processor
+	// at all (a gated one would need the full row mid-chain) and no adapter, and only where the embedding lookup is a
+	// plain table row, which the resident's gather reproduces.
+	chainRF, hasChain := m.resident.(ResidentGreedyChain)
+	useChain := useGPU && hasChain && mc3 == nil && sp.LogitProcessor == nil && lora == nil &&
+		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
+		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
+	if useChain {
+		fastGreedy = false
+	}
+	chainOpen, chainPos := false, 0
+	stopChain := func() {
+		if chainOpen {
+			chainRF.GreedyChainStop()
+			chainOpen = false
+		}
+	}
+	defer stopChain()
 
 	// Optimistic forward: sampled decode's (Temperature>0) sibling of the greedy fast path
 	// above, but overlapping rather than skipping the CPU sampler -- see spec_optfwd.go.
@@ -1919,7 +1938,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// the plain sequential path (escape hatch / A-B check), same convention as
 	// GOINFER_NO_GREEDY_FASTPATH.
 	// MC3 (mc3 != nil): off — optFwdStep drives the resident itself, outside the batcher's exclusive section.
-	optFwd := useGPU && mc3 == nil && !fastGreedy && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
+	optFwd := useGPU && mc3 == nil && !fastGreedy && !useChain && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (R7, sampler_topk.go): a FILTERED sampler (top_k / top_p / min_p at
 	// temperature > 0) needs only the K best logits, so the resident reduces the row on-device and reads
@@ -1935,7 +1954,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// still holds the resident, instead of at the top of the next iteration. It was simply off under MC3 until 2026-09-30,
 	// which sent every CUDA top-p request, alone or not, down the full-row path: a 151,936-logit readback and a host sort per
 	// token, 0.74× the top-K path's speed (docs/measurements/topp-regression-2026-09-30.md).
-	if useGPU && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
+	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
 		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
 				topKRF, topKWidth = rf, w
@@ -1946,7 +1965,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// Gumbel-max on-device and returns just the id, reusing the greedy fast path's fastNext mechanism. Same
 	// exclusions as the top-K path; GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
 	var sampleRF ResidentSample
-	if useGPU && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" && sampler.SampleEligible() {
+	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" && sampler.SampleEligible() {
 		if rf, ok := m.resident.(ResidentSample); ok && rf.SampleAvailable() {
 			sampleRF = rf
 		}
@@ -2006,6 +2025,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		}
 	}
 	commitResident := func() {
+		stopChain() // every exit commits; nothing queued on the device may outlive the decode loop
 		if mc3 == nil {
 			m.residentCommitIDs(prompt, generated, nil, lora)
 			return
@@ -2193,6 +2213,21 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					// The gated processor needs this position's full logits (it is about to mask them).
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
+				} else if useChain {
+					// The chain fed itself this token: it is the argmax of the chain's previous forward. The first token
+					// (from the prompt's seed logits) opens it.
+					if !chainOpen {
+						if ferr = chainRF.GreedyChainStart(next, pos); ferr == nil {
+							chainOpen, chainPos = true, pos
+						}
+					}
+					if ferr == nil && pos != chainPos {
+						ferr = fmt.Errorf("decoder: greedy chain is at position %d, the decode loop at %d", chainPos, pos)
+					}
+					if ferr == nil {
+						fastNext, ferr = chainRF.GreedyChainNext()
+						chainPos++
+					}
 				} else if fastGreedy {
 					// Greedy fast path: the resident picks the argmax on-device and returns
 					// just the id, skipping the full-logits readback.

@@ -893,6 +893,17 @@ kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint*
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (tid==0u){ float bv=tv[0];uint bi=ti[0]; for(uint s=1u;s<8u;s++) if(tv[s]>bv||(tv[s]==bv&&ti[s]<bi)){bv=tv[s];bi=ti[s];} tok[0]=bi; }
 }
+// embed_gather_i8 (C-B01, the greedy chain, greedy_chain.go): x[i] = float(q[tok*H + i]) * scale[tok], the host's
+// int8 Embed.Row (linalg.DequantizeRowInt8: float32(q)*scale, one rounded multiply per element) for the token id the
+// previous command buffer's argmax_finish wrote, so the next token's embedding never leaves the GPU. Only for a tied int8
+// table with no embedding multiplier (greedyChainWhyNot), so there is nothing else to apply.
+kernel void embed_gather_i8(device const char* q[[buffer(0)]], device const float* sc[[buffer(1)]],
+    device const uint* tok[[buffer(2)]], device float* x[[buffer(3)]], constant uint& H[[buffer(4)]],
+    uint i[[thread_position_in_grid]]) {
+    if (i >= H) return;
+    const uint t = tok[0];
+    x[i] = float(q[ulong(t)*ulong(H) + ulong(i)]) * sc[t];
+}
 // rope: NeoX half-split. Rotates pairs (d, half+d) for d in [0,half) within each head (stride
 // hd), where half = rotaryDim/2 = len(invf). half<hd/2 is PARTIAL rotary (Phi): dims
 // [2*half, hd) pass through unrotated. total = nHeads*half (the rotate-pair count).

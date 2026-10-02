@@ -26,6 +26,14 @@ const (
 // writeMC3Fixture writes the fixture into a fresh directory with a maxPositions-token window and returns it.
 func writeMC3Fixture(t *testing.T, maxPositions int) string {
 	t.Helper()
+	return writeMC3FixtureTied(t, maxPositions, false)
+}
+
+// writeMC3FixtureTied is writeMC3Fixture with the choice of a tied LM head (no lm_head.weight, tie_word_embeddings):
+// the greedy chain (C-B01) gathers each next token's embedding from the LM-head table, which it can only do when the two
+// are one table. Untied, it writes exactly writeMC3Fixture's tensors (the same random draws in the same order).
+func writeMC3FixtureTied(t *testing.T, maxPositions int, tied bool) string {
+	t.Helper()
 	dir := t.TempDir()
 	rng := rand.New(rand.NewSource(20261001))
 	rnd := func(n int, s float32) []float32 {
@@ -45,12 +53,14 @@ func writeMC3Fixture(t *testing.T, maxPositions int) string {
 	qDim, kvDim := mfHeads*mfHeadDim, mfKVHeads*mfHeadDim
 	writeConfig(t, dir, fmt.Sprintf(`{"model_type":"qwen2","vocab_size":%d,"hidden_size":%d,
 		"num_hidden_layers":%d,"num_attention_heads":%d,"num_key_value_heads":%d,"head_dim":%d,
-		"intermediate_size":%d,"max_position_embeddings":%d,"rms_norm_eps":1e-6,"rope_theta":1000000}`,
-		mfVocab, mfHidden, mfLayers, mfHeads, mfKVHeads, mfHeadDim, mfInter, maxPositions))
+		"intermediate_size":%d,"max_position_embeddings":%d,"rms_norm_eps":1e-6,"rope_theta":1000000,"tie_word_embeddings":%v}`,
+		mfVocab, mfHidden, mfLayers, mfHeads, mfKVHeads, mfHeadDim, mfInter, maxPositions, tied))
 	ts := map[string]stf32{
 		"model.embed_tokens.weight": {[]int{mfVocab, mfHidden}, rnd(mfVocab*mfHidden, 0.4)},
 		"model.norm.weight":         {[]int{mfHidden}, ones(mfHidden)},
-		"lm_head.weight":            {[]int{mfVocab, mfHidden}, rnd(mfVocab*mfHidden, 0.4)},
+	}
+	if lm := rnd(mfVocab*mfHidden, 0.4); !tied { // drawn either way, so the layers below get the same weights
+		ts["lm_head.weight"] = stf32{[]int{mfVocab, mfHidden}, lm}
 	}
 	for l := range mfLayers {
 		p := fmt.Sprintf("model.layers.%d.", l)

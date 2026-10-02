@@ -1052,6 +1052,26 @@ func (a *metalResident) TruncateTo(pos int) {}
 // sequence (audit C-01's CUDA analogue). See resetDeltaNet (deltanet.go).
 func (a *metalResident) Reset() { a.r.resetDeltaNet() }
 
+var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
+
+// GreedyChainAvailable (decoder.ResidentGreedyChain, C-B01): the greedy chain is exact on this resident
+// (greedyChainWhyNot, greedy_chain.go).
+func (a *metalResident) GreedyChainAvailable() bool { return a.r.greedyChainWhyNot() == "" }
+
+// GreedyChainStart opens the chain at token id, position pos.
+func (a *metalResident) GreedyChainStart(id, pos int) error {
+	if e := a.checkCap(pos, 1); e != nil {
+		return e
+	}
+	return a.r.chainStart(id, pos)
+}
+
+// GreedyChainNext returns the next greedy token.
+func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() }
+
+// GreedyChainStop closes the chain.
+func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
+
 // Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this resident
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.

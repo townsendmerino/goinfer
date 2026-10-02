@@ -279,6 +279,33 @@ result, but it says the audit's +3–7% projection may not hold.
 | Rule | **≥ 1.02: ships** (stays the default on the branch). **Below 1.02: killed** (the audit's kill line, the owner's "park only a couple of percent" bar): the production selection and the twins are reverted, and the record keeps the numbers. |
 | Reported | The 7B and depth 2048. If it ships on the 1.5B but the 7B reads below 1.00 at either depth, that goes to the owner (the selection could be made per model), before the merge. |
 
+### C-B01: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+
+Built and bit-identical on the branch (the commit that adds `metal/greedy_chain.go`): the greedy chain. Each chained
+command buffer starts with `embed_gather_i8`, which writes the previous buffer's argmax token's embedding into the input
+from the tied LM-head table. It ends with the fused argmax head `ForwardArgmax` uses (`gemv_w8a8_amax`, `argmax_finish`),
+which writes a 4-byte id. Token t+1's buffer is committed before the host waits for token t, so T1.3's 0.58–0.66 ms gap
+has nothing to wait on. Two alternating uniform sets carry the per-token position, key count and attention_fa split.
+Every 64 tokens the chain drains its autorelease pool, one gap per 64. The decoder takes it for unbatched greedy (or
+`top_k=1`) decode with no processor, no adapter and a plain table-row embedding. The resident refuses it for an untied
+head, an embedding scale, learned positions, paged experts, an adapter or recurrent state, so on today's bench set it
+covers the 0.5B and the 1.5B, not the 7B (untied).
+
+Identity, by day: `TestGreedyChain_bitIdentical` covers 80 tokens through `chainStart`/`chainNext` with the attention_fa
+floor moved mid-run. 0 tokens and 0 K/V elements differ, and the token after the chain matches. Three mutations each fail
+it: gathering from the chain's own output buffer, binding the wrong uniform set, and not switching the split.
+`TestGreedyChain_generateMatchesFullLogits` runs the same through `Generate`: 150 tokens over three generations, the
+third reusing the second's 54-token prefix. They equal the full-logits path's, and all 150 came from the chain. Opening
+the chain one position early fails it.
+
+| | |
+|---|---|
+| Instrument | `TestCB01ChainAB` by `docs/measurements/metal-audit-2026-10/run-cb01-grade.sh` on the night queue: one process per model, the 0.5B and the 1.5B q4_k_m `.gguf` at int4, a 64-token prompt, 256 greedy tokens per arm, 9 reps, arms alternated (off-on, then on-off), one warm-up of each discarded. Each arm's rate is its decode rate, from the first token's arrival to the last's. Estimate about 5 minutes; queued at 15. |
+| Precondition | Every rep's two token streams equal, the chain arm served by the chain (at least 255 tokens) and the off arm not at all. The test fails on any miss, and a failure kills. |
+| Graded | `C-B01 METRIC chain/off` on the **1.5B**: the median over 9 reps of the per-rep ratio of decode rates, chain over off. |
+| Rule | **≥ 1.02: ships** (the chain stays the default on the branch). **Below 1.02: killed** (the owner's "park only a couple of percent" bar; the chain adds a goroutine path to the decode loop): the decoder's `useChain` and the resident's chain are reverted, and the record keeps the numbers. |
+| Reported | The 0.5B, with its pairs-above-1 count. T1.3's gap predicts a larger share there (0.58 ms of a ~5.7 ms token against 0.66 of ~13.4). If the 1.5B is killed but the 0.5B reads ≥ 1.02, that goes to the owner before the revert. |
+
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
 
@@ -541,3 +568,9 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   while the resident is held, and each copy's removal fails the test. E-P09: the owner asked whether 2 KV slots would be a
   good compromise; recommended as a Metal-only default (keeps the batched step, saves about 224 MB on the 1.5B and 470
   MB on the 7B from the first token, costs the 3rd and 4th concurrent clients their batching). Not built; awaiting the go.
+- 2026-10-02: **C-B01 built, bit-identical, queued for its grade** (owner: "start it now"). The greedy chain
+  (`metal/greedy_chain.go`), its decoder wiring, and two identity tests. Each identity test's mutations fail it. The
+  grade's pre-registration is above ("C-B01: built, pending its grade"); the grade itself is queued for tonight.
+  The decoder half of the identity test first paired a `Session` turn, which ran nothing on Metal: a plain session decodes on the
+  CPU path. It now pairs two `Generate` calls whose second prompt extends the first, which is how a resident reuses a
+  prefix.
