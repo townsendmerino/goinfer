@@ -595,6 +595,9 @@ to ignore.**
     several is replayed as several call messages.
   - The reasoning budget can end the analysis before the model has chosen to call a tool; with a tool-using agent, give it room
     (`-reasoning-budget unlimited`, or a larger `max_tokens`).
+  - **Run live with a real Claude Code** (2026-10-01, `docs/measurements/claude-code-gptoss-2026-10-01/`): a `Read` tool loop completed through `/v1/messages` — thinking, tool call,
+    result, answer. One finding: the model's first call named the tool `read`, not `Read`; Claude Code's own error ("tool names are case-sensitive: call Read instead") was enough for it to retry. A
+    harness that does not say so would stop there. One run, one tool; not a measurement.
 
 **Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each
 input line is `{"custom_id": "a1", "method": "POST", "url": "/v1/chat/completions", "body": {chat request}}`; `custom_id` is
