@@ -14,6 +14,7 @@ Phases, each its own process (a bf16 load is ~19 GB, f32 ~38 GB; the two never s
   pin_clef_d10.py records              the 150 Clef records                         -> clef/records.jsonl
   pin_clef_d10.py encode               the official encoder on every record         -> clef/encoder.jsonl(.gz)
   pin_clef_d10.py model --dtype bf16   the release model, per-option probabilities  -> clef/probs_bf16.jsonl
+        (bf16 uses the f32-GEMM emulation by default, ~3x faster on this CPU: see install_bf16_gemm_emulation; --native-bf16 for PyTorch's own)
   pin_clef_d10.py model --dtype f32    the same at f32 (the exact reference)        -> clef/probs_f32.jsonl
         [--limit N]   stop after N new items (the probe that sizes a full run)
         [--hidden K]  also save last_hidden_state (f32) for the K items with the fewest tokens -> clef/hidden/*.npy
@@ -150,6 +151,22 @@ def cmd_encode(_):
 
 
 # ---- phase: model ------------------------------------------------------------------------------------------------
+def install_bf16_gemm_emulation():
+    """bf16 matmuls as f32 GEMMs, rounded back to bf16. This CPU (Ryzen 7 3700X, Zen 2: AVX2 and FMA, no AVX-512 or BF16 instructions) runs PyTorch's native bf16 GEMM at
+    53 GFLOP/s against f32's 337 (measured, 589 x 4096 x 12288; oneDNN on or off makes no difference). Converting the bf16 operands to f32, doing the f32 GEMM and rounding the
+    result to bf16 is the SAME ARITHMETIC a bf16 GEMM unit performs (bf16 inputs, exact products, f32 accumulation, a bf16-rounded output), differing only in summation order, and ran
+    3.2x faster on the 238-token probe item (15.7 s against 49.9 s; the remaining time is the f32 GEMMs themselves, then the conversions). Validated against the native-bf16 probe rows:
+    the logits differ by at most 0.031, one or two bf16 rounding steps. F.linear is replaced at module level, which also covers nn.MultiheadAttention (it looks `linear` up as a global of that module)."""
+    import torch, torch.nn.functional as F
+    orig = F.linear
+
+    def linear(x, w, b=None):
+        if x.dtype == torch.bfloat16 and w.dtype == torch.bfloat16:
+            return orig(x.float(), w.float(), None if b is None else b.float()).to(torch.bfloat16)
+        return orig(x, w, b)
+    F.linear = linear
+
+
 def load(dtype_name):
     """load_release_model's behaviour (backbone, strict head load) without device_map, so it needs no GPU; the module's own head class and config."""
     import torch
@@ -168,22 +185,25 @@ def load(dtype_name):
     return jsm, model
 
 
-def env_record(dtype_name):
+def env_record(dtype_name, native_bf16=False):
     import torch, transformers
     return {"model_repo": MODEL_REPO, "model_rev": MODEL_REV, "module_sha256": MODULE_SHA256, "head_sha256": HEAD_SHA256, "dtype": dtype_name,
             "torch": torch.__version__, "transformers": transformers.__version__, "release_tested_with": {"torch": "2.11", "transformers": "5.10.2"},
             "python": platform.python_version(), "machine": platform.machine(), "host": platform.node(), "cpu_threads": torch.get_num_threads(),
-            "date": time.strftime("%Y-%m-%d %H:%M:%S %Z"), "text_only": True}
+            "date": time.strftime("%Y-%m-%d %H:%M:%S %Z"), "text_only": True,
+            "bf16_matmul": ("native torch bf16 GEMM" if dtype_name == "bf16" and native_bf16 else "f32 GEMM, rounded to bf16" if dtype_name == "bf16" else "n/a (f32)")}
 
 
 def cmd_model(a):
     import torch
+    if a.dtype == "bf16" and not a.native_bf16:
+        install_bf16_gemm_emulation()
     jsm, model = load(a.dtype)
     tok = tokenizer()
     recs = read_jsonl("records.jsonl")
     out_name = f"probs_{a.dtype}.jsonl"
     done = {r["id"] for r in read_jsonl(out_name)}
-    json.dump(env_record(a.dtype), open(path(f"clef_env_{a.dtype}.json"), "w"), indent=1, sort_keys=True)
+    json.dump(env_record(a.dtype, a.native_bf16), open(path(f"clef_env_{a.dtype}.json"), "w"), indent=1, sort_keys=True)
     hidden_ids = set()
     if a.hidden:
         lens = sorted((len(jsm.encode_record(tok, r["request"]).input_ids), r["id"]) for r in recs)
@@ -255,6 +275,7 @@ def main():
     m.add_argument("--dtype", choices=("bf16", "f32"), required=True)
     m.add_argument("--limit", type=int, default=0)
     m.add_argument("--hidden", type=int, default=0)
+    m.add_argument("--native-bf16", action="store_true", help="use PyTorch's own bf16 GEMM (about 3x slower on this CPU) instead of the f32-GEMM emulation")
     a = ap.parse_args()
     {"records": cmd_records, "encode": cmd_encode, "model": cmd_model, "check": cmd_check}[a.cmd](a)
 

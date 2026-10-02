@@ -3,12 +3,13 @@
 # the 150 D0 items as Clef records. Unattended: a PINNED copy of scripts/pin_clef_d10.py and of records.jsonl (sha256 checked), output to a durable directory,
 # resumable (rows already written are skipped), no prompts. Fixture generation, not a timed measurement.
 #   DTYPE=f32 HIDDEN=3 bash run-clef-fixture.sh        all 150 items at f32 (~38 GB RAM) plus last_hidden_state for the 3 shortest items; est 50 min
-#   DTYPE=bf16 PART=1 bash run-clef-fixture.sh         bf16 (the release's dtype), the first 75 rows; est 95 min  (bf16 is ~5x slower than f32 on this CPU: no bf16 hardware)
-#   DTYPE=bf16 PART=2 bash run-clef-fixture.sh         bf16, the next 75 rows
+#   DTYPE=bf16 bash run-clef-fixture.sh                all 150 items at bf16 (the release's dtype) with bf16 GEMMs done as f32 GEMMs rounded to bf16 (this CPU has no bf16 hardware:
+#                                                      PyTorch's native bf16 GEMM runs 6x slower; see install_bf16_gemm_emulation in the script); est 65 min
+#   PART=1 / PART=2 (75 rows each) remain for a native-bf16 or interrupted run
 set -euo pipefail
 B=${B:-$HOME/goinfer-bench/decisions-d10}
 PY=${PY:-$HOME/d0venv/bin/python3}
-SCRIPT=$B/pin_clef_d10.py;  SCRIPT_SHA=caebd39a836e31463463f60eb6225a80e7db0f265de418a88a994afae5222b93
+SCRIPT=$B/pin_clef_d10.py;  SCRIPT_SHA=ad1e5d20fbe8e3835e86f60915c3ca0a890ec63b121cba63395dced4061901e8
 RECORDS=$B/out/records.jsonl; RECORDS_SHA=5942ccb997012d69c37945ef8cf3a2dd1974f62009ef14d9a668f5d4c49f9b7c
 DTYPE=${DTYPE:?f32 or bf16}
 chk() { [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$2" ] || { echo "$1: sha256 differs from the registered one"; exit 1; }; }
