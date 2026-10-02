@@ -393,7 +393,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/deltanet_kernels.go:144` | goinfer | `// CANDIDATE: manual 8-wide unroll (grounded in the measured trend: scalar ~409.8k -> 2-` |
 | `docs/audit-metal-2026-09-30.md|metal/deltanet_kernels.go:15` | goinfer | `// THE STATE IS STORED TRANSPOSED RELATIVE TO THE CPU, same as CUDA. decoder/deltanet.go` |
 | `docs/audit-metal-2026-09-30.md|metal/deltanet_kernels.go:235` | goinfer | `kernel void delta_qsplit(device const float* qg[[buffer(0)]], device float* q[[buffer(1)` |
-| `docs/audit-metal-2026-09-30.md|metal/deltanet_test.go:298` | goinfer | `// five-kernel recurrence chain, not yet the softmax-layer output gate (delta_qsplit/` |
+| `docs/audit-metal-2026-09-30.md|metal/deltanet_test.go:297` | goinfer | `// Four of CUDA's six documented mutations are reproducible here, because this file gate` |
 | `docs/audit-metal-2026-09-30.md|metal/deltanet_test.go:35` | goinfer | `if w.cos < 0.999999 \|\| w.rel > 1e-3 {` |
 | `docs/audit-metal-2026-09-30.md|metal/deltanet_test.go:71` | goinfer | `hk, hv   = 128, 128` |
 | `docs/audit-metal-2026-09-30.md|metal/expertpool.go:178` | goinfer | `// buffer and discard it — gpu.NewBufferLenOf allocates the right-sized, uninitialized d` |

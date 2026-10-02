@@ -44,7 +44,8 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
   status column below says which. So far: F-G03 (the decode attention kernels tested past 4096 keys against a float64
   reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
   F-G01 (a default test of the steel prefill attention kernel against a float64 reference), A-G01 (the
-  fast-prefill floor), and C-G01 (the load/Close leak test reads the device's own allocation total).
+  fast-prefill floor), C-G01 (the load/Close leak test reads the device's own allocation total), and D-G02 (the
+  gated softmax layer's two kernels checked against the CPU).
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
@@ -1556,7 +1557,7 @@ moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N
 | D-P03 | Minor (REVISIT) | 3k expert dispatches per layer vs one batched dispatch; "<1%" premise is paged-only | `metal/moe.go:711-731`; Sep 12 `:1662` | `quantized.h:2087-2209`, `quantized.cpp:1376-1424` | 20 fewer dispatches/layer at k=8 (cnt) | `gemv_w4a8_moe_bench_test.go` with z=k |
 | D-C01 | Minor | Expert-major branch hard-wires plain SwiGLU and no biases: wrong for gpt-oss if the feature map ever admits it | `metal/prefill.go:1139-1140,1200-1201`; `metal/model.go:100-116` | none | none today | add FeatAttnSink to a decline test |
 | D-D01 | Minor | Ten stale statements (docs and comments) | listed in the entry | none | none | none |
-| D-G02 | Minor | `delta_qsplit` / `delta_attn_gate` have no direct test or mutation | `metal/model.go:2765,2838`; `metal/deltanet_test.go:298-299` | none | none | add the two kernels to the chain gate |
+| D-G02 | Minor | `delta_qsplit` / `delta_attn_gate` have no direct test or mutation | `metal/model.go:2765,2838`; `metal/deltanet_test.go:297-301` | none | none | add the two kernels to the chain gate |
 | D-N01 | Minor | `touch()` allocates; PROF_SPLIT `os.Getenv` per token | `metal/expertpool.go:395`; `metal/gemma4_moe.go:518` | none | <0.1% (cnt) | none |
 
 ### (c) Full entries
@@ -1951,15 +1952,22 @@ The fix is a decline test on `isGptOss` inside the expert-major branch, so a fut
 7. `metal/model.go:94-98`: "the FFN half runs ROW BY ROW", true only for the fallback and the paged path.
 8. `metal/prefill_moe_parity_test.go:7-23`: same row-by-row description of the path under test.
 9. `metal/gptoss_kernels_test.go:8-10`: "FeatAttnSink is still not declared for Metal".
-10. `metal/deltanet_test.go:298-299`: "delta_qsplit/delta_attn_gate ... neither has Go-side wiring yet", wired at
+10. `metal/deltanet_test.go:297-301`: "delta_qsplit/delta_attn_gate ... neither has Go-side wiring yet", wired at
     `metal/model.go:2765,2838`. Also `metal/deltanet_kernels.go:144-146`: the `CANDIDATE` comment sits in shipped code and states
     a test whose result is not in the snapshot.
 
 #### D-G02 [G] Minor: two DeltaNet kernels with no direct gate
 
 `delta_qsplit` and `delta_attn_gate` (`metal/deltanet_kernels.go:235-246`) are wired (`metal/model.go:2765,2838`) but not in the chain
-gate (`metal/deltanet_test.go:298-299`) and have no mutation. `qwen35_resident_parity_test.go` covers them end to end only,
+gate (`metal/deltanet_test.go:297-301`) and have no mutation. `qwen35_resident_parity_test.go` covers them end to end only,
 which cannot localize a wrong q/gate split.
+
+**Status, 2026-10-01.** Done, beside the chain gate (tag `goinfer_testhooks`): `TestQGateKernels_cpuParity` runs
+`delta_qsplit` then `delta_attn_gate` as `encodeLayer` launches them, over three geometries with gate values out to ±100,
+against the CPU's own split and gate. Those are now `splitQGate` and `qGateContext` in `decoder/forward_qwen35.go`,
+called by both CPU paths and exported as test hooks. The split matches exactly and writes nothing past its length; the
+gate factor is within 2.1e-7 of the CPU's (bar 1e-6). `TestQGateKernels_mutations`: swapped halves, two blocks instead
+of per-head interleaving, no sigmoid, and the sigmoid's sign flipped each fail it.
 
 #### D-N01 [N] Minor
 

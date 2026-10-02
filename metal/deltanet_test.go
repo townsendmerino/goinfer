@@ -294,11 +294,11 @@ func TestDeltaNorm_zeroHead(t *testing.T) {
 // exactly once — Fatal if the anchor text has drifted, so a kernel rewrite can't silently make a
 // mutation a no-op) and re-runs deltaNetChainDrift, asserting the SAME threshold now fails.
 //
-// Four of CUDA's six documented mutations are reproducible here: this file gates only the
-// five-kernel recurrence chain, not yet the softmax-layer output gate (delta_qsplit/
-// delta_attn_gate) or the resident runner's Reset() — neither has Go-side wiring yet, so
-// "not applying the output gate" and "removing the state reset" have no wiring to mutate against
-// until that lands. Re-open this list once they do.
+// Four of CUDA's six documented mutations are reproducible here, because this file gates only the
+// five-kernel recurrence chain. The other two are elsewhere now that both are wired: "not applying
+// the output gate" is TestQGateKernels_mutations (qgate_kernels_test.go, which checks
+// delta_qsplit and delta_attn_gate against the CPU), and the state reset (resetDeltaNet) is
+// checked by the replay after Reset in qwen35_resident_parity_test.go, on a real checkpoint.
 func TestDeltaNetKernels_mutations(t *testing.T) {
 	cases := []struct {
 		name string

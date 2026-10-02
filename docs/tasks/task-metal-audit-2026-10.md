@@ -168,3 +168,16 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   resident built (the test's comment said about 0.7 GB; corrected). With `Close` made to skip `ReleaseAll`, the new
   check fails at +1,602,355,200 bytes, exactly 4 × one resident. The RSS check failed too, but it saw +631 MB and
   +1022 MB of the 1.6 GB in two runs.
+- 2026-10-01: **D-G02 done.** `TestQGateKernels_cpuParity` (tag `goinfer_testhooks`, beside the DeltaNet chain gate)
+  runs `delta_qsplit` then `delta_attn_gate` as `encodeLayer` launches them, at nH × hd of 16 × 256, 4 × 128 and 3 × 40,
+  with gate values out to ±100, against the CPU's own split and gate. Those were inline in both CPU paths; they are now
+  `splitQGate` and `qGateContext` in `decoder/forward_qwen35.go`, called by the per-token and the batched path and
+  exported as test hooks. The refactor moves no number: the forward goldens of all four families that own the file
+  (OlmoHybrid, Qwen35, Qwen3_5, Qwen3Next) ran green before the `deps_hash` refresh (39 passed, 24 skipped, 0 failed),
+  and `TestPromptHidden_batchedMatchesSequential` still bounds the batched path at relative L2 about 1e-7.
+  - Measured: the split matches exactly and writes nothing past its length; the gate factor is within 2.1e-7 of the
+    CPU's (bar 1e-6).
+  - `TestQGateKernels_mutations`: swapped halves (all 9456 elements differ), two blocks instead of per-head
+    interleaving (8608), no sigmoid (gate error 100) and the sigmoid's sign flipped (1) each fail.
+  - The chain gate's comment said both kernels and the DeltaNet reset had no wiring; it now says where each is checked
+    (the reset by the replay in `qwen35_resident_parity_test.go`).
