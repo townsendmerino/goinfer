@@ -2,7 +2,7 @@
 
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
-> needed. One backbone pass scores every question, so D8 does not apply to this route. Unstarted; D10 is reading only.
+> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 to D14 are unstarted.
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with
@@ -887,6 +887,8 @@ publisher maintains, which makes it the more likely thing a goinfer user asks fo
   `joint_head_config.json` key or tensor shape the loader does not know.
 
 #### D10 — prior art, reference fixture, and the encoder contract (no goinfer code)
+
+**Status 2026-10-02: read and swept; the fixture is queued.** Record: [`decisions-d10-clef-2026-10-02.md`](../measurements/decisions-d10-clef-2026-10-02.md) (the encoder and head contract in full, the merge check, the prior-art sweep, the pins). Done: the module read at the pinned revision; the merge confirmed (every linear projection adapted including the GDN ones, `embed_tokens`/`lm_head` and every norm untouched, MTP layer dropped; **no D3**); the sweep (llama.cpp PR #29831 open and text-only, MLX and Ollama conversions exist, vLLM none); the 150 items re-expressed as Clef records and the official encoder's output committed. Queued: the f32 run (with `last_hidden_state` for 3 items) and the bf16 run in two halves (bf16 is about 5x slower than f32 on this CPU). Corrections to this section's guesses: the head is **121.8M parameters** (not about 60M), and the reference defaults to a 16,384-token context.
 
 - **Read `joint_schema_model.py` in full, at a pinned revision.** Record, in this doc, every fact the port depends
   on:
