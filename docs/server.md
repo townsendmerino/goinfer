@@ -136,7 +136,7 @@ and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a fu
 returns 429 + Retry-After (no continuous batching).
 
 **`--max-concurrent N` (default 4) lets one CPU model run N generations at once** (Experimental; MC3c of
-`docs/tasks/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
+`docs/tasks/parked/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
 serialization). Each generation runs on its own session KV, so each
 conversation's output is byte-identical to serving it alone, and admission stays FIFO. N is capped by `--kv-sessions`
 (each running generation holds a session). A weight-streaming or vision model always runs one.
@@ -391,7 +391,7 @@ ordinary cold prefill uses, so it inherits that path's own exactness knob, not
 (`GOINFER_METAL_FAST_PREFILL=0`/`GOINFER_CUDA_FAST_PREFILL=0`). **WebGPU** — no
 fast/exact split exists on this backend, so there is nothing to opt out of.
 
-**On Metal, CUDA and WebGPU, several conversations stay resident** (MC1 of `docs/tasks/task-concurrency-2026-09.md`:
+**On Metal, CUDA and WebGPU, several conversations stay resident** (MC1 of `docs/tasks/parked/task-concurrency-2026-09.md`:
 Metal 2026-09-26, CUDA and WebGPU 2026-09-27). `--kv-sessions N` also asks the resident for N GPU KV slots, one
 conversation each. Each generation binds the slot that already holds its prompt's prefix; a new conversation
 takes an empty slot, else the least recently used one. A slot that shares only a chat template's lead with the

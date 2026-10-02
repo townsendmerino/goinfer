@@ -472,7 +472,7 @@ would plausibly turn a clean 1.024× into 1.3×, so not chased further).
 
 ## J8 — N decode workers per model: kill or earn
 
-**Folded 2026-09-26 into [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
+**Folded 2026-09-26 into [`task-concurrency-2026-09.md`](parked/task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
 N-independent-workers cell is measured there, in the same session as batched decode, so the two answers land side by
 side. Its band below is kept. It is not built as a feature either way. **Measured 2026-09-26 (Mac CPU,
 `concurrency-mc2-2026-09-26.md`):** 4 workers reach 2.00–2.48× aggregate, clearing the 1.25× half. **The p99 half, measured

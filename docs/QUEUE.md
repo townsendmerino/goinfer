@@ -212,7 +212,7 @@ is done and `docs/integrations/claude-code.md` is published with measured number
 - **Open-WebUI and Continue recipes** are unwritten, because §3.5's rule is that a recipe with no
   number is not published and neither has one.
 
-**Resident prefix reuse holds several conversations on every GPU backend now** (`tasks/task-concurrency-2026-09.md`):
+**Resident prefix reuse holds several conversations on every GPU backend now** (`tasks/parked/task-concurrency-2026-09.md`):
 - **MC1's KV slots** keep 4 conversations resident on Metal (2026-09-26), CUDA and WebGPU (2026-09-27). On discrete
   WebGPU GPUs they are clamp-only.
 - **MC3** runs them concurrently on Metal and CUDA.

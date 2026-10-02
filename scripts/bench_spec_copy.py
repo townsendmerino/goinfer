@@ -39,12 +39,21 @@ def request(text):
 
 
 def cell(url, a, secs):
-    res = [[None] * a.rounds for _ in range(a.clients)]
+    # Client i sends rounds[i] requests one after another, starting i*stagger_s after the cell began. With the defaults
+    # (every client `--rounds`, no stagger) this is the original shape. A staggered cell (--rounds-list, --stagger-s) is
+    # the one that exercises "speculate when alone, batch under load": clients join and leave at different times, so
+    # there are stretches with one generation decoding and stretches with several.
+    rounds = a.rounds_list or [a.rounds] * a.clients
+    first = [sum(rounds[:i]) for i in range(len(rounds))]
+    res = [[None] * n for n in rounds]
+    t0 = time.perf_counter()
 
     def client(i):
-        for r in range(a.rounds):
-            s = i * a.rounds + r
+        time.sleep(i * a.stagger_s)
+        for r in range(rounds[i]):
+            s = first[i] + r
             body = dict(request(secs[s]), max_tokens=a.max_tokens)
+            start = time.perf_counter() - t0
             try:
                 lat, resp = w7.post(url, body, timeout=600)
             except urllib.error.HTTPError as e:  # e.g. serve's 413 prefill-memory refusal: recorded, not fatal
@@ -52,12 +61,11 @@ def cell(url, a, secs):
                 continue
             u = resp.get("usage") or {}
             content = ((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-            res[i][r] = {"section": s, "latency_s": round(lat, 3), "prompt_tokens": u.get("prompt_tokens"),
-                         "completion_tokens": u.get("completion_tokens"),
+            res[i][r] = {"section": s, "start_s": round(start, 3), "latency_s": round(lat, 3),
+                         "prompt_tokens": u.get("prompt_tokens"), "completion_tokens": u.get("completion_tokens"),
                          "content_sha": hashlib.sha256(content.encode()).hexdigest()[:16]}
 
-    t0 = time.perf_counter()
-    ths = [threading.Thread(target=client, args=(i,)) for i in range(a.clients)]
+    ths = [threading.Thread(target=client, args=(i,)) for i in range(len(rounds))]
     for th in ths:
         th.start()
     for th in ths:
@@ -65,7 +73,7 @@ def cell(url, a, secs):
     wall = time.perf_counter() - t0
     toks = sum(x["completion_tokens"] or 0 for c in res for x in c)
     errs = [x["http_error"] for c in res for x in c if "http_error" in x]
-    return {"clients": a.clients, "wall_s": round(wall, 3), "completion_tokens": toks, "http_errors": errs,
+    return {"clients": len(rounds), "wall_s": round(wall, 3), "completion_tokens": toks, "http_errors": errs,
             "aggregate_tok_s": round(toks / wall, 3), "per_client": res}
 
 
@@ -75,6 +83,9 @@ def main():
     ap.add_argument("--key", required=True)
     ap.add_argument("--clients", type=int, default=1)
     ap.add_argument("--rounds", type=int, default=2)
+    ap.add_argument("--rounds-list", default="", help="comma list, one request count per client (overrides --clients and "
+                    "--rounds), e.g. 8,6,4,2 so clients leave at different times")
+    ap.add_argument("--stagger-s", type=float, default=0.0, help="client i starts i*this many seconds after the cell begins")
     ap.add_argument("--chars", type=int, default=3500, help="characters of source per request (~1000 tokens)")
     ap.add_argument("--max-tokens", type=int, default=256)
     ap.add_argument("--rev", default="cc5f8c2c", help="the commit decoder/model.go is read from")
@@ -82,7 +93,10 @@ def main():
     ap.add_argument("--serve-args", default="")
     ap.add_argument("--server-log", default="")
     a = ap.parse_args()
-    secs = sections(a.rev, a.chars, a.clients * a.rounds)
+    a.rounds_list = [int(x) for x in a.rounds_list.split(",") if x]
+    if a.rounds_list:
+        a.clients = len(a.rounds_list)
+    secs = sections(a.rev, a.chars, sum(a.rounds_list) if a.rounds_list else a.clients * a.rounds)
     res = {}
     if os.path.exists(a.out):
         res = json.load(open(a.out)).get("results", {})
