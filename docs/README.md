@@ -97,7 +97,8 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 
 [`task-glm-ocr-2026-10.md`](tasks/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01) scopes GLM-OCR, a 0.9B
 document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget
-for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 is reading only.
+for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 (reading) is done
+2026-10-01 and stops nothing: O1 (decoder) and O2 (tower, from aikit's Qwen3.5+ encoder) are unblocked.
 
 [`task-hardware-coverage-2026-10.md`](tasks/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01) is about
 the hardware goinfer is not built on: a checked census of every path selected by a CPU feature, a GPU attribute
