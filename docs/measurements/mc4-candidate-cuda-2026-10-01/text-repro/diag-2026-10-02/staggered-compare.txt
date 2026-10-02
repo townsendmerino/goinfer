@@ -1,0 +1,29 @@
+[13:19:43] b done in 37s
+[13:20:20] b2 done in 37s
+[13:20:43] s done in 23s
+[13:21:10] c1 done in 27s
+[13:21:37] c2 done in 27s
+[13:22:04] c3 done in 27s
+[13:22:27] cny done in 22s
+
+=== b2 vs b ===
+  b2: 30/30 identical to batch
+
+=== s vs b ===
+  s: 30/30 identical to batch
+
+=== c1 vs b ===
+  client 2 req 0 (index 21): first diff at char 6 of 967 (ctoks b 256, c1 256; started b 4.0s, c1 4.0s); b: ...'```go\nvar prefillDeclineSeen = map[s'  c1: ...'```go\n\n// prefillDeclineSeen is the '
+  c1: 29/30 identical to batch
+
+=== c2 vs b ===
+  client 2 req 0 (index 21): first diff at char 6 of 967 (ctoks b 256, c2 256; started b 4.0s, c2 4.0s); b: ...'```go\nvar prefillDeclineSeen = map[s'  c2: ...'```go\n\n// prefillDeclineSeen is the '
+  c2: 29/30 identical to batch
+
+=== c3 vs b ===
+  client 2 req 0 (index 21): first diff at char 6 of 967 (ctoks b 256, c3 256; started b 4.0s, c3 4.0s); b: ...'```go\nvar prefillDeclineSeen = map[s'  c3: ...'```go\n\n// prefillDeclineSeen is the '
+  c3: 29/30 identical to batch
+
+=== cny vs b ===
+  client 2 req 0 (index 21): first diff at char 6 of 967 (ctoks b 256, cny 256; started b 4.0s, cny 4.0s); b: ...'```go\nvar prefillDeclineSeen = map[s'  cny: ...'```go\n\n// prefillDeclineSeen is the '
+  cny: 29/30 identical to batch

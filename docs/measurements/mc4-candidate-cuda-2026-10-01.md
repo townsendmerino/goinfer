@@ -236,7 +236,7 @@ Two different things are in that table, and they should not be read together:
 - **Copy at 4 clients: not the candidate's.** Reply 0 of the cell has two variants. Batch round 1 and 3, candidate round 3 and spec-exclusive round 3 produce one; **batch round 2 itself**, candidate rounds 1 and 2 and spec-exclusive rounds 1
   and 2 produce the other. The reference arm differs from itself across rounds, so this is the engine's own run-to-run variation under four-way concurrency, present in all three arms. The registration did not anticipate it ("b's rounds also agree with each
   other" is part of the gate), the gate counts it, and **the bar is not moved here**: a bar is moved only with a mechanism, and none is established for this variation.
-- **Staggered: the candidate's, and reproducible.** The candidate differs from batch at reply index 21 of 30 in **all three rounds**; spec-exclusive and batch never differ. The same reply, three times out of three, that only the
+- **Staggered: only the candidate differs on this schedule, and it is reproducible. (The DIAGNOSIS section below supersedes the reading that follows: it is a 0.015-nat near-tie flip that other arms show too under simultaneous load.)** The candidate differs from batch at reply index 21 of 30 in **all three rounds**; spec-exclusive and batch never differ. The same reply, three times out of three, that only the
   adaptive policy changes: a deterministic candidate-specific divergence, which is what an identity gate exists to catch. By the grader's order (client by client, rounds 12, 9, 6, 3) index 21 is the first reply of the third client,
   which joins last but one; that mapping is not verified. **Not root-caused.** What is NOT known: whether it is a defect (a mode switch between a speculative round and a batched step leaving state that differs by more than numerics)
   or a legitimate numeric difference between the two modes that the first fix exposed.
@@ -262,6 +262,40 @@ number: candidate / spec-exclusive 0.808 on copy at 4 clients, and 1.265x batch.
 ### Decision
 
 Per the registered rule, **identity fails: a bug, not a result; stop and find it.** Nothing else is read. `-spec-adaptive` stays opt-in and experimental, and **must not be described as lossless**: it is not bit-identical
-to batch in the staggered workload (one reproducible reply). Next: root-cause the staggered reply-21 divergence (a text-level comparison against batch, which the raw files do not allow: they keep hashes, not replies), then
-fix or explain it, then the identity gate can be re-graded; separately, the copy-at-4-clients batch-against-batch variation is an engine question that predates this candidate.
+to batch in the staggered workload (one reproducible reply). Next (done in part, see DIAGNOSIS): the staggered reply-21 divergence is a near-tie flip, not corruption; the open question is where the numeric difference between concurrent and sequential serving enters, and whether the owner wants a pre-registered tie-aware identity gate.
+
+## DIAGNOSIS of the identity miss (2026-10-02 afternoon; exploratory, not a graded measurement)
+
+Question: is the staggered cell's candidate-only difference (reply 21 of 30, all three rounds) corruption, or something else? Tool: `text-repro/stag_text_repro.py` (reply TEXT kept, first divergence located), the
+same pinned binary `2f685d7e`, the same 30 prompts as the graded staggered cell, a fresh server per arm; evidence in `text-repro/diag-2026-10-02/`.
+
+**1. The miss reproduces, with text.** Reply 21 (the third client's first request, which starts at 4.0 s while two others decode) diverges from batch at character 6, in the candidate's three runs and in the never-yield
+variant, never in spec-exclusive or batch (`staggered-compare.txt`). Batch writes `` ```go\nvar prefillDeclineSeen = ... ``; the candidate writes `` ```go\n\n// prefillDeclineSeen is the ... ``. Both are coherent copies of the
+source, and the candidate's reply is 1010 characters against 967: not the garbage the first run produced (23 of 24 replies wrong).
+
+**2. It is a near-tie.** Solo, with logprobs (`solo_logprobs_21_and_0.txt`, deterministic across two captures), token 2 is `\n` at -0.710 against `\n\n` at -0.725: **a 0.015-nat gap**; token 3 is `var` at -0.726 against `//` at -0.841
+(0.115). The candidate's reply is exactly the `\n\n` then `//` branch. A numeric perturbation of that size flips it.
+
+**3. Without concurrency there is no difference, in any arm.** Control A (one client, the same 30 prompts one after another, `controlA-*`): spec-exclusive, candidate and never-yield are 30/30 identical to batch, and batch to itself.
+
+**4. With concurrency every arm departs from that solo reference, batch included.** Replies differing from control A's batch reply:
+
+| run | batch | spec-exclusive | candidate | never-yield |
+|---|---|---|---|---|
+| control B: the four clients start together | **3/30** (index 0, 2, 9) | **3/30** (2, 9, 21) | 1/30 (2) | 3/30 (2, 9, 21) |
+| staggered, joining every 2 s | 0/30 (two runs) | 0/30 | 1/30 (21), all 3 runs | 1/30 (21) |
+
+The same few prompts (2, 9, 21) are the ones that flip, across arms; each arm's differences are coherent near-tie continuations. So **reply 21's difference is not specific to `-spec-adaptive`**: spec-exclusive and the never-yield variant produce
+the identical alternative text in control B. What IS specific to the candidate is only that, on the staggered schedule, it lands on the alternative every time and batch and spec-exclusive do not, because the schedule fixes which rows share
+a step with which.
+
+**What this does and does not establish.**
+- Established: the staggered miss is a near-tie flip of a reply that is 0.015 nat from a tie, not a corruption signature; and that under four-way simultaneous load none of the three arms reproduces the sequential reply on every prompt.
+- NOT established: where the numeric difference enters (concurrent prefill, the batched decode step's row composition, or the slot a request lands in), why spec-exclusive differs from solo at all when it serves one generation at a time, or whether the
+  candidate adds any difference beyond what batch has. The solo reference is sequential, one client, with whatever prefix reuse sequential requests get; it is not a cold start per prompt.
+- **The gate is not re-graded.** Gate 1 as registered ("every reply equals batch's, and batch's rounds agree with each other") still FAILS, and nothing here moves its bar: a mechanism for the flip is shown, but an identity gate that tolerates
+  near-tie flips is a different gate, and it has to be written, with its tolerance, BEFORE a run it would grade. A pre-registered tie-aware criterion (a divergence counts as a miss unless the solo top-1/top-2 gap at the first differing token is
+  under a stated epsilon) is the owner's call, as is whether `-spec-adaptive` should be held to a standard batch itself does not meet.
+- **A claim this touches.** `docs/server.md` says a batched resident step's logits are "bit-identical to serving that conversation alone". That is what the step-level and 4x3-turn tests establish and what this run does not contradict at the step level; end to end, on four simultaneous
+  ~1,000-token copy requests, 1 to 3 of 30 replies in every arm (batch included) differed from the sequential reply, and the graded rerun's batch arm differed from itself once in 72. The doc now says so.
 

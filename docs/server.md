@@ -162,7 +162,7 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 2026-09-27). From 2026-09-28 to 2026-09-30 the `--embed-int4` default kept a default Metal load off the resident, so it did
 not batch; `--embed-int4` now defaults off on Metal (`quantization.md`). Under the same flag, each running generation holds its own resident KV slot (`--kv-sessions` sets the
 count, 4 by default). Their decode tokens run together in one step on the GPU, every logit bit-identical to serving
-that conversation alone.
+that conversation alone. *(Measured per decode step and on 4x3-turn tests. End to end, on four simultaneous ~1,000-token copy requests, 1 to 3 of 30 replies differed from the sequential reply at near-tied tokens, batch included: `measurements/mc4-candidate-cuda-2026-10-01.md`, DIAGNOSIS.)*
 - On CUDA (RTX 2070 SUPER, W7, 4 clients): qwen2.5-coder-1.5b reads 1.38× the one-at-a-time build, with p99 per turn
   from 2.68 s to 2.02 s. qwen2.5-7b-instruct reads 1.83×, with p99 from 7.2 s to 4.1 s. A lone request is unchanged.
   - Greedy and sampled requests both batch.
