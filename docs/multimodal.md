@@ -19,6 +19,12 @@
 > video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
 > registry, or the cold-user protocol. The next program is §"2026-09 update" below.
 >
+> **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** the "three families" count above predates both
+> Qwen3.5+ (P8a) and **GLM-OCR**, which now reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded
+> on the first image) feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder
+> (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered documents
+> (`docs/measurements/glm-ocr-o3-2026-10/`); it needs an aikit release carrying the GLM tower before a push. O7 owns the full rewrite.
+>
 > The June status text, kept as written: P0–P3 (image→logits at HF parity) landed through
 > `9412e4e`; P4 (serve vision API + agent image input) is a real user-facing feature —
 > `cmd/serve` accepts images on both the OpenAI (`image_url`) and Anthropic (`image`) surfaces,
