@@ -300,12 +300,21 @@ nothing here is a numeric match to a real forward; O1–O3's gates are.**
   half-split NeoX, and so are the m-RoPE image-prefill kernels. `FeatPairwiseMRoPE` (derived from `ropeInterleave &&
   MRopeSection`) is declared by no backend, so **`glm_ocr` runs on the CPU everywhere**; pinned by
   `TestGlmOcr_residentDeclined` and `cuda/glm_ocr_resident_test.go`.
-- **FINDING, not fixed, needs a decision: the Cohere and Cohere2 resident admission on CUDA and Metal is probably silently
-  wrong.** The same resident-vs-CPU probe on a cohere-tiny rebuilt with peaked attention (0.25-std weights) read worst cosine
-  0.06, where the committed 0.02-std fixture reads 0.9997: flat attention hides a wrong rotation, and
-  `TestCohereResidentParityCUDA` holds only cosine ≥ 0.995 on that flat fixture. Command-R, Command-R7B and Aya are admitted
-  on CUDA and Metal today. **Neither the agent nor the lead tested a real Cohere model resident**; this is a hypothesis that
-  one real-checkpoint resident-vs-CPU comparison would settle. Left unchanged here.
+- **FINDING, MEASURED 2026-10-01 (lead, after O1 reported it as a hypothesis): the CUDA resident is wrong on real Cohere and
+  Cohere2 checkpoints.** Scratch test (not committed), real checkpoints at int4 on the RTX 2070 SUPER with a 512-position
+  resident context (the default context does not fit beside int4 weights on 8 GB, so the first attempt declined for fit, which
+  is unrelated), resident against CPU at the same quant and against the HF f32 golden:
+  - **Command-R7B** (`cohere2`): position 0 matches exactly (cosine 1.000000); on the 6-token golden prompt the last position
+    reads 0.445 against the CPU, and the last token reads 0.583 against HF where CPU int4 reads 0.967; on a 48-token prompt the
+    worst position reads −0.075. The 8-token greedy continuation matches the golden 2/8 (CPU also 2/8 at int4).
+  - **Aya-expanse-8B** (`cohere`, no sliding window, no NoPE): 6-token prompt last token 0.988 against HF (CPU 0.997), but the
+    greedy continuation matches the golden **1/8 against the CPU's 8/8**; the 48-token prompt's worst position reads −0.041.
+  - **Reading:** exact at position 0 (rotation is the identity there) and diverging as positions grow, on a model with neither
+    sliding window nor NoPE, points at the rotation. The mechanism fits: the CUDA `rope` kernel rotates pairs `(d, d+half)` and
+    takes no interleave argument, while Cohere's is GPT-J pairwise `(2d, 2d+1)`. **Not isolated further** (no kernel-level
+    check), **Metal not run**, and the committed `TestCohereResidentParityCUDA` cannot see it (a flat 0.02-std fixture, bar 0.995).
+  - **Not fixed here.** Command-R, Command-R7B and Aya are admitted on CUDA and Metal today and shown as resident in the hardware
+    matrix. The options (decline them as `glm_ocr` is declined, or write pairwise kernels) are the owner's call.
 
 ### O2 — the tower in aikit
 
