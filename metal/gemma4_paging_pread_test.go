@@ -21,8 +21,8 @@ import (
 //
 // C-P01 (docs/audit-metal-2026-09-30.md): the pager stages each expert's f16 scales from the WeightMat instead of a
 // build-time heap cache. The test asserts what makes that a memory saving: every expert's scales lie inside the .giw
-// mapping, and the pager's stage function hands out those same bytes, so no heap copy of them exists. It also asserts that pread ran, or the pread arm would compare the
-// byte-copy path against itself.
+// mapping, and the pager's stage function hands out those same bytes, so no heap copy of them exists. It also
+// asserts that pread ran, nibbles and scales both, or the pread arm would compare the byte-copy path against itself.
 func TestGemma4PagingPread_matchesNonPaged(t *testing.T) {
 	const ckpt = "../testdata/gemma4-moe-tiny"
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
@@ -37,6 +37,7 @@ func TestGemma4PagingPread_matchesNonPaged(t *testing.T) {
 	type out struct {
 		logits      [][]float32
 		preads      int
+		scalePreads int64 // stages whose scales were pread too (C-P01)
 		stages      int
 		scalesTotal int
 		scalesInMap int
@@ -82,6 +83,7 @@ func TestGemma4PagingPread_matchesNonPaged(t *testing.T) {
 		for l := range mr.r.layers {
 			if gl := mr.r.layers[l].g4moe; gl != nil && gl.pool != nil {
 				o.preads += gl.pool.preads
+				o.scalePreads += gl.pool.scalePreads.Load()
 				o.stages += gl.pool.stages
 				for e := range 2 { // what the pager stages from: the mapping, not a heap copy of it
 					_, guS, _, dS := gl.pool.stage(e)
@@ -138,12 +140,15 @@ func TestGemma4PagingPread_matchesNonPaged(t *testing.T) {
 			if o.preads == 0 {
 				t.Fatal("pread never ran (0 preads): the arm compared the byte-copy path against itself")
 			}
+			if o.scalePreads != int64(o.preads) {
+				t.Fatalf("%d of %d pread stages read their scales from the file: on a metal .giw every one should (C-P01)", o.scalePreads, o.preads)
+			}
 			if o.stagedTotal == 0 || o.stagedInMap != o.stagedTotal {
 				t.Fatalf("%d of %d staged scale slices are the mapping's bytes: the pager holds a copy (C-P01)", o.stagedInMap, o.stagedTotal)
 			}
 			eq(t, o.logits, "pread")
-			t.Logf("slots=%s pread: %d tokens exact vs non-paged, %d stages by pread; %d/%d expert scale arrays in the mapping",
-				s, len(base.logits), o.preads, base.scalesInMap, base.scalesTotal)
+			t.Logf("slots=%s pread: %d tokens exact vs non-paged, %d stages by pread (%d with their scales); %d/%d expert scale arrays in the mapping",
+				s, len(base.logits), o.preads, o.scalePreads, base.scalesInMap, base.scalesTotal)
 		})
 	}
 }

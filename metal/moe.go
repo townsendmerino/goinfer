@@ -510,19 +510,21 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		// (gemma4's bundle hands over one already-fused gate|up span), so the slot's fused gate|up
 		// buffer is filled in two ranges — gate at byte 0, up at byte len(gate) — exactly reproducing
 		// the byte-copy path's append(gw, uw...) and hence the stacked layout gemv_w4a8_moe reads.
-		// The scales are copied from the WeightMats' f16 storage, which a v14 metal or v15 .giw maps, so
-		// they do fault (C-P01); gate's and up's go to the two halves of the slot's gate|up scale range.
+		// The f16 scales are pread the same way, into the two halves of the slot's gate|up scale range and
+		// the down scale buffer, when every expert's lie in the mapping (a v14 metal or v15 .giw, C-P01);
+		// otherwise they are copied from the WeightMats (an older file converts them onto the heap at load).
 		//
 		// Falls back to the byte-copy path if the fd is absent or ANY expert's nibbles aren't
 		// .giw-mmap-backed (e.g. a requantized HF/safetensors load): every offset must resolve for
 		// pread to be correct, so this is all-or-nothing per layer, never per expert.
 		if mo.giwFile != nil {
 			type expertSpan struct {
-				gOff, uOff, dOff int64
-				gLen, uLen, dLen int
+				gOff, uOff, dOff    int64
+				gLen, uLen, dLen    int
+				gsOff, usOff, dsOff int64 // the f16 scales' file offsets (C-P01), when scalesInFile
 			}
 			spans := make([]expertSpan, len(experts))
-			resolved := true
+			resolved, scalesInFile := true, true
 			for ei := range experts {
 				gq, _, _, okg := experts[ei].Gate.Int4F16()
 				uq, _, _, oku := experts[ei].Up.Int4F16()
@@ -538,7 +540,12 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 					resolved = false
 					break
 				}
-				spans[ei] = expertSpan{gOff, uOff, dOff, len(gq), len(uq), len(dq)}
+				spans[ei] = expertSpan{gOff: gOff, uOff: uOff, dOff: dOff, gLen: len(gq), uLen: len(uq), dLen: len(dq)}
+				var okgs, okus, okds bool
+				spans[ei].gsOff, okgs = scaleFileOffset(m, experts[ei].Gate.Int4ScalesF16())
+				spans[ei].usOff, okus = scaleFileOffset(m, experts[ei].Up.Int4ScalesF16())
+				spans[ei].dsOff, okds = scaleFileOffset(m, experts[ei].Down.Int4ScalesF16())
+				scalesInFile = scalesInFile && okgs && okus && okds
 			}
 			if resolved {
 				fd := int(mo.giwFile.Fd())
@@ -572,19 +579,42 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 						defer wg.Done()
 						errD = preadRangeIntoPoolSlot(fd, pool.dW, sl.slot, pool.nDW, 0, sp.dOff, sp.dLen)
 					}()
+					// C-P01: with the scales in the file, they are three more disjoint ranges: gate's and
+					// up's fill the two halves of the slot's gate|up scale range, down's its own buffer.
+					var errGS, errUS, errDS error
+					gsLen := 2 * len(experts[ei].Gate.Int4ScalesF16())
+					if scalesInFile {
+						wg.Add(3)
+						go func() {
+							defer wg.Done()
+							errGS = preadScalesIntoPoolSlot(fd, pool.guS, sl.slot, pool.nGuS, 0, sp.gsOff, gsLen)
+						}()
+						go func() {
+							defer wg.Done()
+							errUS = preadScalesIntoPoolSlot(fd, pool.guS, sl.slot, pool.nGuS, gsLen, sp.usOff, 2*pool.nGuS-gsLen)
+						}()
+						go func() {
+							defer wg.Done()
+							errDS = preadScalesIntoPoolSlot(fd, pool.dS, sl.slot, pool.nDS, 0, sp.dsOff, 2*pool.nDS)
+						}()
+					}
 					wg.Wait()
-					if errG != nil {
-						panic(fmt.Sprintf("metal MoE pread gate expert %d: %v", ei, errG))
+					for _, e := range []struct {
+						what string
+						err  error
+					}{{"gate", errG}, {"up", errU}, {"down", errD}, {"gate scales", errGS}, {"up scales", errUS}, {"down scales", errDS}} {
+						if e.err != nil {
+							panic(fmt.Sprintf("metal MoE pread %s expert %d: %v", e.what, ei, e.err))
+						}
 					}
-					if errU != nil {
-						panic(fmt.Sprintf("metal MoE pread up expert %d: %v", ei, errU))
+					if scalesInFile {
+						pool.scalePreads.Add(1)
+						return
 					}
-					if errD != nil {
-						panic(fmt.Sprintf("metal MoE pread down expert %d: %v", ei, errD))
-					}
-					// C-P01: scales from the WeightMats (the mapping). Gate's then up's fill the slot's
-					// gate|up scale range; the views are built from the pool's base buffer by slot
-					// number, because Buffer.At sets an absolute offset rather than adding to one.
+					// An older file: the scales are the WeightMats' heap copies, converted at load. Gate's
+					// then up's fill the slot's gate|up scale range; the views are built from the pool's
+					// base buffer by slot number, because Buffer.At sets an absolute offset rather than
+					// adding to one.
 					gs := experts[ei].Gate.Int4ScalesF16()
 					base := sl.slot * pool.nGuS * 2
 					copyU16sToBuf(pool.guS.At(base), gs)

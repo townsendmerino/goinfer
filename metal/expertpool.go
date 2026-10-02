@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/gpu"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // expertPool is a bounded per-layer LRU pool of N expert slots for SYNCHRONOUS Metal MoE paging.
@@ -114,7 +116,8 @@ type expertPool struct {
 	// it preads expert e's nibbles straight into slot s's unified-memory buffers — one syscall, one
 	// large sequential read, zero page faults (cold pread measured 3687 MB/s vs the mmap demand-fault's
 	// 375 MB/s, 9.8×). Fetch and copy collapse into the single read. nil ⇒ the mmap byte-copy path.
-	stagePread func(e int, s expertSlot)
+	stagePread  func(e int, s expertSlot)
+	scalePreads atomic.Int64 // stages whose f16 scales were pread from the file too (C-P01); atomic: batch stages run concurrently
 }
 
 // preadIntoPoolSlot/preadRangeIntoPoolSlot pread a SLOT within a pool's contiguous per-field buffer
@@ -153,6 +156,29 @@ func preadRangeIntoU32Buf(fd int, dst Buffer, dstOff int, off int64, n int) erro
 		return fmt.Errorf("pread range [%d,%d) outside %d-byte slot buffer", dstOff, dstOff+n, len(d)*4)
 	}
 	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*4)[dstOff : dstOff+n]
+	return preadFull(fd, db, off)
+}
+
+// preadScalesIntoPoolSlot is preadRangeIntoPoolSlot for a pool's f16 scale buffer (guS or dS, uint16 elements): it
+// reads n bytes from file offset off into slot's region at byte subOff, addressed against the BASE buffer by slot
+// number for the same reason (U16s ignores a Buffer.At view's offset). C-P01 (audit-metal-2026-09-30.md): a v14 metal
+// or v15 .giw stores each tensor's f16 scales in the file, so the pread stage reads them as it reads the nibbles,
+// instead of copying them out of the mapping and taking a page fault per 16 KB on a cold expert.
+func preadScalesIntoPoolSlot(fd int, base Buffer, slot, strideElems, subOff int, off int64, n int) error {
+	d := base.U16s()
+	if n == 0 {
+		return nil
+	}
+	dstOff := slot*strideElems*2 + subOff
+	if dstOff < 0 || n < 0 || dstOff+n > len(d)*2 {
+		return fmt.Errorf("pread range [%d,%d) outside %d-byte scale buffer", dstOff, dstOff+n, len(d)*2)
+	}
+	db := unsafe.Slice((*byte)(unsafe.Pointer(&d[0])), len(d)*2)[dstOff : dstOff+n]
+	return preadFull(fd, db, off)
+}
+
+// preadFull preads len(db) bytes from file offset off, looping on short reads.
+func preadFull(fd int, db []byte, off int64) error {
 	for done := 0; done < len(db); {
 		r, err := syscall.Pread(fd, db[done:], off+int64(done))
 		if err != nil {
@@ -164,6 +190,15 @@ func preadRangeIntoU32Buf(fd int, dst Buffer, dstOff int, off int64, n int) erro
 		done += r
 	}
 	return nil
+}
+
+// scaleFileOffset returns where an f16 scale slice lies in m's .giw mapping, if it does (C-P01). It views the slice's
+// bytes without copying; MmapByteOffset is pointer arithmetic and touches no page.
+func scaleFileOffset(m *decoder.Model, s []uint16) (int64, bool) {
+	if len(s) == 0 {
+		return 0, false
+	}
+	return m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(&s[0])), 2*len(s)))
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,
