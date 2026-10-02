@@ -357,16 +357,18 @@ was available.** Per family:*
 | family | the vision tower | the decoder after the image |
 |---|---|---|
 | **Gemma 3** (SigLIP) | CPU, f32. **On `--backend cuda` a resident CUDA tower (goinfer's own), on `--backend webgpu` a resident WebGPU tower**, both int8; Metal: CPU | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
-| **Gemma 4 E2B, E4B** | CPU (int8 on cuda/webgpu) | **CPU for the whole model on every backend** (no backend implements the E-model features) |
-| **Gemma 4 26B-A4B, 31B** | CPU (int8 on cuda/webgpu) | CPU bidirectional prefill, then resident decode through the bridge (26B-A4B run on CUDA; 31B unverified; Metal and WebGPU unverified) |
-| **Qwen2.5-VL** | CPU (int8 on cuda/webgpu): aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
-| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU (int8 on cuda/webgpu), loaded on the first image, at most 1,024 image tokens per image | **CPU prefill and CPU decode on every backend** (a recurrent family refuses every resident branch), so a repeated image re-runs the tower |
+| **Gemma 4 E2B, E4B** | CPU, f32 unless `-vision-quant int8` | **CPU for the whole model on every backend** (no backend implements the E-model features) |
+| **Gemma 4 26B-A4B, 31B** | CPU, f32 unless `-vision-quant int8` | CPU bidirectional prefill, then resident decode through the bridge (26B-A4B run on CUDA; 31B unverified; Metal and WebGPU unverified) |
+| **Qwen2.5-VL** | CPU, f32 unless `-vision-quant int8`: aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
+| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image | **CPU prefill and CPU decode on every backend** (a recurrent family refuses every resident branch), so a repeated image re-runs the tower |
 | **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
 
-**The tower-quant rule, exactly as `main.go` applies it.** `-vision-quant int8` gives an int8 tower. `--backend cuda` and `--backend webgpu` (including `--backend auto` when it resolves
-to CUDA) **also** pass an int8 tower to the Gemma 3, Qwen2.5-VL, Qwen3.5+ and Gemma 4 loaders, whatever `-vision-quant` says; only Gemma 3's resident tower needs int8 weights, so for the
-other three this is a CPU int8 tower. **GLM-OCR is the exception:** f32 unless `-vision-quant int8`, because its int8 tower is not gated on the real checkpoint. `EnableResident` is called
-in one place only (the Gemma 3 tower on cuda/webgpu). `-vision-quant int8` (default `f32`) is a CPU option: `docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound
+**The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. `--backend cuda` and `--backend webgpu` (including `--backend auto` when it
+resolves to CUDA) **also** give Gemma 3 an int8 tower whatever `-vision-quant` says, because only its resident tower has a GPU path and that path needs int8 weights. **Every other tower
+(Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`:** until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which was not faster and was
+not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`), and GLM-OCR's int8 form is not gated
+on the real checkpoint. The f32 tower holds more host memory. `EnableResident` is called in one place only (the Gemma 3 tower on cuda/webgpu); if it fails, serve warns and runs that tower on
+the CPU rather than refusing to start. `-vision-quant int8` (default `f32`) is a CPU option: `docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound
 prefill only on AVX512-VNNI hardware and measures a wash on plain AVX2, which is why f32 is the default.
 
 **Speed, each figure with its record.** CPU SigLIP tower ~31.3 s/image at 896² (recorded 2026-09-08, `docs/benchmarks.md` §A "Vision tower CPU prefill", not re-measured). CUDA Gemma 3 tower

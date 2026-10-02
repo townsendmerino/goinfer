@@ -539,7 +539,7 @@ demo and recomputed the accuracy table from the raw results file; both matched t
   list to extend.
 - **DONE 2026-10-02 (after this block was first written): the per-backend audit of `docs/multimodal.md`.** Record: `docs/measurements/multimodal-audit-2026-10-02.md` (a per-family x per-backend table, each cell
   labelled run / read / recorded / unverified, the claims it corrected, the contradictions it resolved). `docs/multimodal.md`'s status block, `docs/server.md`'s vision paragraph, `docs/ARCHITECTURE.md`, `docs/cuda-backend.md`,
-  `demo/agent/README.md` and two benchmark notes now agree with it. What it says about **GLM-OCR**: the tower is CPU f32 on every backend and never forced to int8 (`internal/serveapp/main.go:1109-1112`); the decoder is resident on CUDA
+  `demo/agent/README.md` and two benchmark notes now agree with it. What it says about **GLM-OCR**: the tower is CPU f32 on every backend and never forced to int8 (`internal/serveapp/main.go`); the decoder is resident on CUDA
   (run on the 2070 SUPER: `cuda-resident (int4)`, a repeat reused 163 of 164 prompt tokens, and the CUDA pairwise-rope tiny gates pass), **staged on WebGPU** (run: `webgpu-staged (int4)`, no resident KV, so not "the CPU" exactly) and
   the CPU on Metal (read from code). **Left unverified by the audit:** everything on Metal; the WebGPU and Metal rows of a real GLM-OCR page (only a 336x336 test image was served); Qwen3.5+ MoE images; the int8 forcing the
   rule applies to the Qwen2.5-VL, Qwen3.5+ and Gemma 4 towers (not GLM-OCR) has no gate I could find. Two things it found that belong to this task's neighbours and were **not fixed (docs-only pass)**: a failed

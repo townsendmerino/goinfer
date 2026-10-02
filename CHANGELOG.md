@@ -129,6 +129,14 @@ any surface may still change.
 
 ### Fixed
 
+- **A resident GPU vision tower that cannot be attached no longer stops serve from starting.** With `--backend webgpu` or `cuda`, Gemma 3's tower asks for a resident encoder; when the
+  upload failed (on an 8 GB card the decoder's KV took the VRAM) serve exited and threw away the model it had loaded. It now warns, runs the tower on the CPU, and the startup line says
+  `encoder int8` without `-resident`. Found by the multimodal audit (`docs/measurements/multimodal-audit-2026-10-02.md` item 1).
+- **The Qwen2.5-VL, Qwen3.5+ and Gemma 4 towers are no longer forced to int8 under `--backend cuda|webgpu`.** They are CPU-only, so the rule bought no speed, and against each tower's own f32
+  the int8 output was far off (relative L2 0.21, 0.14 and 0.31 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). They load f32 unless `-vision-quant int8`, as GLM-OCR
+  already did. Gemma 3 keeps int8 under those backends because its resident tower needs it. The f32 tower holds more host memory.
+- **`--help` said `--backend` defaults to `cpu`;** it is `auto`. The capability matrix lists `vision` for Gemma 3 and the hardware matrix explains that Gemma 4's E-models run on the CPU on every
+  backend. Two CUDA Gemma 3 real-checkpoint gates that skipped silently on an 8 GB card now pin a context and run.
 - **An image request with `logprobs: true` now returns them.** The vision route accepted the flag and answered 200 with no `logprobs` field, because `driveVL` discarded the per-token
   logprobs. The buffered reply carries `choices[0].logprobs` (one entry per completion token, with `top_logprobs`), and a streamed image request with `logprobs` is a 400, as on the text
   route. Found while explaining why WebGPU Qwen2.5-VL gives different text on a cold and a prefix-reused turn at temperature 0 (a CPU-prefill versus GPU-last-token arithmetic gap, not a

@@ -374,9 +374,10 @@
     ],
     "display_name": "Gemma 3",
     "description": "Google Gemma 3 dense (270M/1B/4B/12B/27B)",
-    "summary": "Google's Gemma 3, from 270M to 27B.",
+    "summary": "Google's Gemma 3, from 270M to 27B. The 4B and larger read images (verified on the 4B).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",

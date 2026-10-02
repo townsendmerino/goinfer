@@ -1,0 +1,130 @@
+// Throwaway test that produced docs/measurements/vision-tower-int8-fidelity-2026-10-02.md. It lived as internal/serveapp/zz_towerq_test.go
+// (rename to .go to run) and was deleted after the run. Run:
+//   ZZ_IMG1=<336x336 png> ZZ_IMG2=testdata/glm_ocr/invoice.png go test -count=1 -v -run 'TestZZ_' ./internal/serveapp
+package serveapp
+
+import (
+	"math"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
+)
+
+func zzCompare(t *testing.T, label string, a, b []float32, hid int) {
+	n := len(a) / hid
+	minCos, sumCos, num, den := 2.0, 0.0, 0.0, 0.0
+	for i := 0; i < n; i++ {
+		var dot, na, nb float64
+		for j := 0; j < hid; j++ {
+			x, y := float64(a[i*hid+j]), float64(b[i*hid+j])
+			dot += x * y
+			na += x * x
+			nb += y * y
+			num += (x - y) * (x - y)
+			den += x * x
+		}
+		c := dot / math.Sqrt(na*nb)
+		sumCos += c
+		minCos = math.Min(minCos, c)
+	}
+	t.Logf("%s: %d tokens: per-token cosine mean %.5f min %.5f, relative L2 %.4f", label, n, sumCos/float64(n), minCos, math.Sqrt(num/den))
+}
+
+func TestZZ_qwenTowerInt8VsF32(t *testing.T) {
+	dir := os.ExpandEnv("$HOME/models/qwen2.5-vl-3b")
+	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f32, err := vision.LoadQwenVisionEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i8, err := vision.LoadQwenVisionEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, img := range []string{os.Getenv("ZZ_IMG1"), os.Getenv("ZZ_IMG2")} {
+		data, err := os.ReadFile(img)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pv, grid, err := multimodal.QwenPreprocess(data, pp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t0 := time.Now()
+		a, err := f32.Forward(pv, [][3]int{grid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t1 := time.Now()
+		b, err := i8.Forward(pv, [][3]int{grid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t2 := time.Now()
+		zzCompare(t, img, a, b, len(a)/(grid[0]*grid[1]*grid[2]/4))
+		t.Logf("f32 %.1fs int8 %.1fs", t1.Sub(t0).Seconds(), t2.Sub(t1).Seconds())
+	}
+}
+
+func TestZZ_otherTowersInt8VsF32(t *testing.T) {
+	img, err := os.ReadFile(os.Getenv("ZZ_IMG2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g4 := os.ExpandEnv("$HOME/models/gemma-4-26b-a4b-it")
+	patches, pos, err := vision.Gemma4Preprocess(img, 280)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e32, err := vision.LoadGemma4Encoder(g4, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e8, err := vision.LoadGemma4Encoder(g4, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := e32.Forward(patches, pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := e8.Forward(patches, pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := multimodal.Gemma4PooledTokens(pos, e32.Cfg.PoolingKernelSize)
+	zzCompare(t, "gemma4 tower", a, b, len(a)/n)
+
+	q := os.ExpandEnv("$HOME/models/qwen3.5-0.8b")
+	pp, err := multimodal.LoadQwen3PreprocessConfig(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pv, grid, err := multimodal.QwenPreprocess(img, pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q32, err := vision.LoadQwen3VisionEncoder(q, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q8, err := vision.LoadQwen3VisionEncoder(q, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err = q32.Forward(pv, [][3]int{grid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err = q8.Forward(pv, [][3]int{grid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zzCompare(t, "qwen3.5 tower", a, b, len(a)/(grid[0]*grid[1]*grid[2]/4))
+}
