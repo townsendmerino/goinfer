@@ -269,8 +269,12 @@ type resident struct {
 	chainInvT, chainK0, chainK1   Buffer
 	chainD0, chainD1, chainLogits [2]Buffer
 	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
-	attnFANKV                     int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
-	uAttnFAG, uAttnFANSplit       Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
+	// specNgram is Options.SpecNgram (the caller will speculate), and verifyCost the verify cost curve measured at load
+	// when it is set (calibrateVerifyCost, E-P06); nil keeps stepVerifyCost.
+	specNgram               bool
+	verifyCost              []float64
+	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
+	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
 	// encoding of the NEXT command buffer while the CURRENT one was still executing on the GPU (the
 	// pipelined executor's own "encode t+1 while t runs" design, execLoop). That is a raw CPU write to
@@ -846,6 +850,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
+	r.specNgram = m.SpecNgram()
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
 	}

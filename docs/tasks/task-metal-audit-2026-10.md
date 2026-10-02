@@ -364,6 +364,43 @@ shows and an argmax does not. `TestCB01ChainAB` now discards one cold generation
 | Rule | **≥ 1.02: ships. Below 1.02: killed**, and the sampled chain alone is reverted (`ResidentSampleChain` and its branch). C-B01's grade decides the greedy chain separately. |
 | Reported | The 0.5B and the 7B, as for C-B01. The audit's band for the missing encode-ahead alone was up to 3.6–4.2% on the 0.5B. The chain also removes the host round trip, which C-B01's T1.3 measured. |
 
+### E-P06: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+
+Built and lossless on the branch. `--spec ngram`'s depth controller prices a step-kernel verify by a cost curve, and
+every Metal model reported one constant, `stepVerifyCost`: the 7B at depth 2048. Now a model loaded for speculation
+(`decoder.Options.SpecNgram`, set by serve's and chat's `--spec ngram`) measures its own curve while the resident is
+built (`calibrateVerifyCost`):
+- What runs: production's token and the argmax-only verify at 2, 4 and 8 rows, on slot 0 at depth 2048 (the
+  constant's own depth, so the curve stays as conservative in depth and differs only by model). The arms are
+  interleaved over 7 rounds, the first 2 discarded, and each GPU-time median is taken.
+- The curve keeps the constant's shape (3 and 5–7 interpolated, 9 an 8-row step plus one token).
+- A failed or non-rising measurement keeps the constant, and so does a load without `SpecNgram`.
+- Lossless: the curve sets only how many tokens a round drafts, never which ones come out.
+
+Day checks:
+- `TestVerifyCurveFrom` pins the arithmetic and the refusals.
+- `TestVerifyCost_measuredAtLoadLossless`: a `SpecNgram` load measures the curve, and greedy after it equals greedy
+  without it. Adaptive speculation with that curve equals plain greedy, through a drafter that proposes greedy's
+  continuation with every 5th token wrong (88 drafted, 51 accepted). A load without `SpecNgram` reports the constant.
+  `VerifyCost` ignoring the measured curve fails the test.
+- Two first versions of the test checked nothing, and the second caught the first. An n-gram drafter on random weights
+  proposes nothing (its match includes the token just generated, which a random model does not repeat). A first
+  greedy comparison also paired a warm generation against a cold one: the same confound as C-P02's below.
+- On the real models, a load-only look (exploratory, not a result): 2, 4 and 8 rows cost **1.20, 1.64 and 2.12**
+  tokens on the 0.5B and **1.64, 1.93 and 2.44** on the 1.5B, against the constant's 1.79, 2.11 and 2.65. The load
+  cost was within load-time noise.
+
+So at depth 2048 the 1.5B's curve is 8–9% below the constant. The audit's 12–51% compared the 1.5B at depth 128 with
+the 7B at 2048, so part of it was depth, which this does not take. The 0.5B's curve moves most.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-ep06-grade.sh` on the night queue, graded by `gates-ep06.py`. It is the spec record's served harness (`metal-spec-step-verify-2026-09-27.md`): copy (`bench_spec_copy.py`) and W7 chat (`bench_w7_plain.py`, fixed nonce), one client, greedy. Three arms rotated per round: plain (no spec, the do-nothing arm), spec-old (`--spec ngram`, the constant: serve at E-P06's parent) and spec-new (`--spec ngram`, the model's own curve). 5 rounds on the 1.5B, since the record's chat rounds spread 1.066–1.317×, and 3 on the 0.5B and 7B. Estimate about 50 minutes; queued at 60. |
+| Precondition | Every spec reply equals plain's, on every model and workload. A difference kills. |
+| Graded | `E-P06 METRIC`: on the **1.5B chat**, the median over 5 rounds of the per-round ratio spec-new ÷ spec-old. |
+| Rule | **≥ 1.02 on chat, with copy on the 1.5B ≥ 0.98: ships.** Otherwise killed: `SpecNgram`'s calibration and the measured curve are reverted, and the record keeps the numbers. |
+| Reported | The 0.5B (the largest curve change) and the 7B (whose curve should sit near the constant it was measured from: a check on the method), each against plain as well. |
+
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
 
@@ -638,3 +675,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   chain's: at T=1, a warm generation (prefix reused, last prompt token re-forwarded on the decode path) and a cold one
   part at token 18 on the 0.5B, where greedy does not. That is E-P01's numerics difference showing through a near-tie
   draw.
+- 2026-10-02: **E-P06 built, lossless, queued for its grade** (owner: "this while we wait?"). The verify cost curve is
+  measured at load for a model loaded for `--spec ngram`. The 1.5B's real curve at depth 2048 is 8–9% below the shipped
+  constant, smaller than the audit's 12–51%, which mixed depth with model.
