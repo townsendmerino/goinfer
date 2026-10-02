@@ -718,3 +718,25 @@ which this commit then models; a direct re-check shows the OpenAI loop now grows
 sweep held 32–39 GB and the swap guard shut serve down — so those await a quiet box. Two cells are NOT EXERCISED, which is not a pass:
 `truncated in reasoning` (max_tokens 3 is exactly the E2B's `<|channel>thought\n` opener, so no reasoning text exists yet) and
 `completes within 1500` (the seeded sampled reply did not think). Logs: `~/goinfer-bench/gemma4-old-template-2026-10-01/` (`run1/` is the 48/51).
+
+## The earlier Gemma 4 template (E2B GGUF) — managed (2026-10-01)
+
+The think-matrix's Gemma leg (night of 2026-09-30) failed on every thinking cell because the E2B was served `thinking: unmanaged`: the generic prompt
+ends in the canonical template's closed scaffold, which the E2B's template does not have, and with it the model closes a channel it never opened — it
+wrote `reasoning<channel|>answer` with no opener, and `<channel|>` leaked into `content`. Probed directly on the model: with the template's own thinking-off
+prompt (`<|turn>model\n`, nothing after) it answers plainly; with `<|think|>` in the system turn it opens `<|channel>thought\n`. So no opener-less splitter
+mode was needed, only the right prompt.
+
+Done: `detectOldGemma4Reasoning` (the `enable_thinking is defined and enable_thinking` control, no `default(false)`, nothing channel-shaped after the
+generation prompt) gives a Gemma 4 spec whose off form has no scaffold; history keeps a *calling* turn's reasoning in the loop in progress and writes no
+reopened channel after a result; native tool text stays canonical-only (the template-order A/B was measured on the canonical template only). Oracle:
+`testdata/chat_think_goldens/gemma4_old.json` (12 cases × unset/false/true, HuggingFace over the GGUF's own template text; `scripts/pin_gemma4_old.py`),
+byte-exact in `chat/gemma4_old_test.go`. Nine mutants of the rules turn it red. Not modelled: text beside a call (goinfer writes it before the call; the
+template after the results).
+
+Live, `think_matrix.py` on the E2B (CPU), commit `0ebb7ec8`: **51/51 cells pass in 180 s**, exit 2 (two cells not exercised, below). Prompt deltas are as computed
+independently from the golden (off +0, on +7 — the canonical template's +3 is smaller because it drops a scaffold). An earlier run, before the tool-loop
+history fix, passed 48/51; its 3 failures were exactly the tool-loop reasoning replay, since fixed and golden-covered.
+Two cells stay NOT EXERCISED on this model
+(`max_tokens 3` is spent on the `<|channel>thought\n` opener; the sampled seed-7 run chose not to think) — a coverage gap, not a pass. Logs:
+`~/goinfer-bench/gemma4-old-template-2026-10-01/`.
