@@ -1,11 +1,13 @@
 # Task: GLM-OCR — documents in, text and schema-bound JSON out (O0–O7) — 2026-10
 
-> **Status: O0, O1, O2, O3 DONE (2026-10-01/02; local commits, nothing pushed or released).** Goinfer at f32 on the real checkpoint is
-> TOKEN-IDENTICAL to transformers 5.12.0 for 64/64 tokens on three rendered documents (see O3's result); O1's decoder and O2's tower
-> match HF f32 on their own gates. CUDA runs the whole thing resident (pairwise rope kernels, `a306d33e`); Metal and WebGPU decline it
-> and run it on the CPU. **O4 (the pixel-cap default, an owner decision), O5 (extraction and `goinfer-chat --image`), O6 (Metal) and O7 are
-> open.** What blocks a push: serve imports the unreleased aikit GLM tower (aikit `ed8053c`), so every serve binary fails `GOWORK=off` until
-> aikit is released and the pin bumped; and the site module's two Ollama checks are red until O7's snapshot exists. O0's findings are in
+> **Status: O0, O1, O2, O3, O5 DONE (2026-10-01/02; goinfer commits local, nothing pushed).** Goinfer at f32 on the real checkpoint is
+> TOKEN-IDENTICAL to transformers 5.12.0 for 64/64 tokens on three rendered documents (O3); schema-constrained extraction works end to end:
+> `goinfer-chat --image invoice.png --schema invoice.schema.json` prints schema-valid JSON, and 15 rendered invoices read 383/397 fields
+> (96.5%) correctly at int4 on CUDA (O5). CUDA runs the whole thing resident (pairwise rope kernels, `a306d33e`); Metal and WebGPU decline it and
+> run it on the CPU. **aikit v1.52.0 is released (2026-10-02, with the GLM tower) and goinfer's five modules are pinned to it (`36aa0e73`), so root
+> builds `GOWORK=off`.** **Open: O4 (the pixel-cap default, an owner decision), O6 (Metal) and O7.** What still blocks a push: the site module's two
+> Ollama checks are red until O7's snapshot exists, and `origin/main` has moved (about 50 files, including `README.md`, `banner.go`, `assets.json`) so a merge
+> is due. O0's findings are in
 > [§O0 results](#o0-results-2026-10-01), and the claims they overturned are corrected in place below, each marked
 > *Corrected 2026-10-01 (O0)*. The two that matter most: the pixel budget is half what §1 said (6,144 image tokens,
 > not ~12,000), and the tower is nearer aikit's Qwen3.5+ encoder than Qwen2.5-VL's. Everything after O0 is written to
@@ -456,6 +458,45 @@ The processor's own ceiling (corrected 2026-10-01, O0: **4.82 MP, 24,576 patches
   validity needs no gate, because the grammar guarantees it. Report it with C1's per-field confidence where
   that applies.
 - The same flow works in the `-web` UI through W11's Attach image. Record a short capture of it for the site.
+
+**O5 RESULT, 2026-10-02: DONE** (local commits `af26fe3b`, `1aa61eb3`, `51aecda7`; record and logs in `docs/measurements/glm-ocr-o5-2026-10/`, README first). The lead re-ran the
+demo and recomputed the accuracy table from the raw results file; both matched the agent's report.
+- **The one-line demo** (CUDA int4, the committed rendered invoice): `goinfer-chat --model ~/models/glm-ocr --image testdata/glm_ocr/invoice.png --schema testdata/glm_ocr/invoice.schema.json`
+  prints schema-valid JSON: `invoice_number` INV-2026-0417, 6 line items, total 1140.55 (the CUDA chat binary, 50 s wall: the f32 vision tower on the CPU took 44 s, then 416 tokens
+  at about 104 tok/s; exploratory timing). On the CPU, int4, it takes about 73 s (`TestChatImage_demoEndToEnd`).
+- **Template convention.** `constrain.TemplateFromSchema` and `TemplateFromStruct` build the blank-valued JSON object from the same source the grammar is compiled from (a test checks the
+  card's own example byte for byte): strings `""`, integers and numbers `0`, booleans `false`, arrays one example element, 4-space indent; the prompt is the card's `请按下列JSON格式输出图中信息:` plus a
+  newline plus the template. Marshalling the Go zero value is not used because it gives `null` for slices.
+- **Serve rule.** For a GLM-OCR image request with `response_format` of type json_schema, the template prompt REPLACES the text part only when it is empty or exactly one of the bare task prompts;
+  any other text is sent verbatim, still under the grammar. `json_object` is untouched and an invalid schema is a 400. The vision route already honoured `response_format`; one small shared change:
+  the vision chat route now also writes `goinfer_confidence` back (buffered reply and the stream's trailing event) for every vision family (before, images plus that flag got a 400).
+  `multimodal.SpliceImageBlock` moved out of serveapp so serve, chat and the example share it. `goinfer-chat --image` implies a one-shot run, defaults `--temp 0` and `--max 2048`, sends no coding
+  system prompt, and is GLM-OCR only (a local checkpoint directory).
+- **Accuracy, REPORTED NOT GATED, on 15 SYNTHETIC rendered invoices (not real scans), int4 on CUDA, greedy, no text part** (0.99-1.31 MP; documents, labels and a sha256 manifest committed, 0.55 MB). Normalised:
+  whitespace collapsed in strings, a currency symbol mapped to its ISO code, money and quantities compared as numbers to the cent; dates compared as printed, nothing else. **15/15 replies parsed and
+  finished `stop`.** All fields **383/397 = 96.5%**. Per field: invoice_number, vendor, currency, subtotal, tax, total, line_item_count 15/15; line-item description, quantity, unit_price, amount 58/58;
+  bill_to 14/15; date 11/15; due_date 11/15; paid 10/15. Ten documents are perfect. The 14 misses: **`paid` is false on all five stamped documents (0 of 5 stamps read; the ten unstamped are right)**;
+  eight date fields were rewritten in ISO (compared as calendar dates 27/30 are right; the three real errors are a day/month swap in both date fields of one document and one due date misread);
+  one `bill_to` gained the street address.
+- **f32 (CPU) is only a 3-document subset** (documents 2, 8, 10, 79-114 s each, exploratory), chosen BECAUSE int4 had errors there, so it shows whether f32 recovers int4's misses, not f32 accuracy: 83/89 against
+  int4's 82/89 on the same three, the only difference being the over-long `bill_to`. The paid-stamp and date-format behaviour are the model's, not int4's. **The full 15-document f32 pass is queued
+  (`glm-ocr-o5-f32-15-invoices`, 40 min estimate, `docs/measurements/glm-ocr-o5-2026-10/run-f32-15.sh`, pinned CPU serve binary and eval script staged under `~/goinfer-logs/glm-ocr-o5/`) and has NOT run.**
+- **C1's per-field confidence applies to a vision request now.** It reports integer and boolean fields (quantity, paid), not strings or numbers; a Go struct cannot express an enum so none was evaluated. On `paid`, every wrong
+  answer (the five missed stamps, confidence 0.69-0.95) sits below every right one (0.995-0.998), AUROC 1.000; **n=15 with 5 wrong, an indication, not a calibration** (`calibrated` stays false). `quantity` is 58/58
+  correct so there is nothing to rank. The same ordering held at f32 on the subset.
+- **The `-web` UI:** Attach image reaches glm_ocr (`/v1/models` reports vision true; the UI sends an `image_url` part). **Missing: any `response_format`/schema control (`app.js` never sends it)**, so the UI gives
+  unconstrained OCR, or a hand-typed extraction prompt with no grammar; it also defaults to temperature 0.7 and `max_tokens` 512, which truncates a long extraction. No UI was built; the capture could not be recorded here.
+- **FINDING: a string-typed numeric column makes the grammar loop on whitespace until `max_tokens`, silently** (the model wants a bare number, the string grammar forbids it, whitespace is the only legal token left;
+  `string_typed_quantity_whitespace_runaway.txt`). The example, schema file and docs therefore type amounts as numbers. The root cause is `constrain`'s unbounded optional whitespace, which was not changed.
+- **Under the extraction prompt int4 reads the INV-2026-0417 header** on CUDA and CPU (plain OCR dropped it at int4 in O3). **Not isolated:** whether the model uses the Chinese instruction or just the template.
+- **Red/green proof** for each new gate under a deliberate break: template number convention, alphabetical key order, a full-width colon, always-replace instead of replace-only-if-bare; the serve extraction call removed, the
+  `confidenceOK` AST guard, the user-text-respected rule; the same rule in `imageTurns`, the `--batch` conflict check, unhalved bounds; an extra `Invoice` field (schema-file drift test). The real-checkpoint serve gate
+  `TestServe_glmOcrExtraction_O5` (195 s on CPU int4) fails without the template (1668 vs 1778 prompt ids) and, with the grammar off, check (e) fails (a schema capping `line_items` at 3 makes the reply not JSON).
+- **Evidence:** serveapp 292 PASS / 51 SKIP / 0 FAIL (the new tests pass, not skip), constrain 68 PASS / 2 SKIP, multimodal 20 PASS, chatapp 36 PASS / 1 SKIP (the heavy demo, run separately), examples 6 PASS / 1 SKIP
+  (heavy, run separately); gofmt, vet (untagged and `realckpt`), staticcheck 0.8.0 (proven red) and the citation lint (exit 0) clean; `GOWORK=off go build ./...` builds. **Not run:** `go run ./cmd/gate census`, the parity refresh
+  (no `decoder/*.go` change), the full CUDA suite. `docs/flags.md` is serve-only and generated, so `--image` is documented in its own help text, README, `docs/server.md`, `docs/multimodal.md` and `docs/use-from-go.md`.
+- **Caveats the agent flagged:** no real labelled documents exist; `scripts/readme_counts_check.py` exits 1 on count drift (tasks/ and measurements/ counts), not investigated or fixed; the README paragraph added
+  here will probably conflict with `origin/main`'s changes when merged.
 
 ### O6 — GPU paths (each on its own measurement; not blocking)
 
