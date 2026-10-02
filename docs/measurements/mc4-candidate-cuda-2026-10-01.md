@@ -147,3 +147,27 @@ had projected the copy miss (about 0.78×); that projection was for the speed ga
   look is a numeric difference between the CUDA spec verify path and the MC3 batched step (the lossless argument assumes they are
   bit-identical for the same rows), or a position/KV off-by-one at the switch. This is a hypothesis, not a finding.
 - The Metal run of the same gates (the Mac's night queue) should not be queued until this is understood.
+
+## Text-level follow-up (2026-10-02 morning, exploratory diagnosis, not a graded measurement)
+
+Reproduced with reply TEXT kept (`text-repro/`, `text_repro.py` and `text_repro2.py`), on the same pinned `serve-cuda` at `efaae8a6`, 1.5B int4,
+greedy, fresh server per arm, 4 concurrent clients unless stated.
+
+- **The candidate's output is garbage from the first 1–3 tokens, not a late near-tie flip.** The first token is right and the next ones
+  are not: `"```000.4.0.0.0…"`, `"TokenTokenToken…"`, `"If0.5*10000000000…"`, `"Sure0\nHello, how can I assist you"` (chat), and the
+  same on copy (candidate 0/8 identical to batch). Completion lengths are wrong too (1, 11, 27 and 157 tokens where batch gives 55–256).
+- **Controls:** batch run twice is identical (copy 8/8, chat 4/4); `-spec ngram` alone is identical on chat (4/4) and on copy 7/8 (one reply
+  diverges late, at char 540 of 693, consistent with the small baseline in the graded run).
+- **Bisection:**
+  - 2 clients is already garbage (0/2 identical), so it needs only two concurrent generations;
+  - `GOINFER_SPEC_ADAPTIVE_NEVER_YIELD=1` is garbage too, so it is **not** the yield policy (consistent with the 2026-09-29 note that the
+    cost is concurrent admission itself);
+  - `-spec ngram -spec-adaptive -max-concurrent=1` is identical to batch (4/4 and 2/2), so it is the adaptive path running with other
+    generations in flight.
+- **One hypothesis killed:** the CUDA resident's batched verify (`ForwardN`) on a non-zero KV slot after another slot ran a different
+  prompt is bit-identical to a single-slot reference (cosine 1.000000000 both directions, llama-tiny, int4; scratch test, not committed).
+  So the slot-write itself is fine in isolation.
+- **Not found yet.** What remains: the interleaving between generations (a generation's prefill, MC3 step or commit running against
+  the shared resident between another generation's exclusive sections: a state the resident keeps at resident level rather than per
+  slot, such as a position or token record), or the seed/first-round handoff. The next step is an in-process CUDA test with two
+  concurrent adaptive generations on a tiny fixture (the existing stress test uses the fake resident, which has no numerics), then bisect there.
