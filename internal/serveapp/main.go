@@ -52,6 +52,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
 	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/pull"
 )
 
 // modelSpec is one --model entry: a served name (optional, from name=path), the
@@ -485,6 +486,8 @@ func Main() {
   %[1]s pull <ref>                                      fetch a model, sha256-verified
   %[1]s --version                                       version + the backends COMPILED IN
 
+%[3]s
+
 The flags people actually reach for:
 
   --model      what to serve; repeatable as name=path to serve several at once
@@ -499,7 +502,7 @@ The flags people actually reach for:
 
 All %[2]d flags, with the trade-offs each one makes, follow.
 
-`, self, countFlags())
+`, self, countFlags(), pull.CacheHelp())
 		flag.PrintDefaults()
 	}
 

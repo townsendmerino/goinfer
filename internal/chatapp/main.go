@@ -231,9 +231,11 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
 Reads a .gguf or an HF checkpoint dir. The server (OpenAI/Anthropic routes, --web,
 model zoo) is a separate binary — see goinfer-serve.
 
+%[2]s
+
 All flags:
 
-`, self)
+`, self, pull.CacheHelp())
 		flag.PrintDefaults()
 	}
 

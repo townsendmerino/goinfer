@@ -17,6 +17,8 @@ any surface may still change.
 
 ### Changed
 
+- **`--help` names the model cache directory.** `goinfer-serve -h`, `goinfer-chat -h` and `pull -h` print where pulled models are cached on this
+  machine and what moves it (`XDG_CACHE_HOME` on Linux), instead of leaving it to be found by hand. `docs/tasks/task-first-hour.md` R28.
 - **`--vision <mmproj>.gguf` and `pull` of an mmproj file now say what is true.** Handing `serve` a llama.cpp-style mmproj GGUF failed with
   `.../config.json: not a directory`; it now says that `-vision` takes a directory with a vision tower and that GGUF mmproj is not supported yet. `pull`
   marks an mmproj file in a repo's listing and explains it before fetching one, instead of downloading a file nothing can load. Loading mmproj

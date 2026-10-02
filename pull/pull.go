@@ -562,6 +562,17 @@ func CacheRoot() (string, error) {
 	return filepath.Join(base, "goinfer", "models"), nil
 }
 
+// CacheHelp is the sentence --help prints about where `pull` puts models and what moves it (R28, docs/tasks/task-first-hour.md).
+// It names the directory this process would actually use, because "the user cache dir" is a different place on each OS and the tester
+// had to find it by hand; the variable is named for Linux, where XDG_CACHE_HOME is what os.UserCacheDir reads.
+func CacheHelp() string {
+	root, err := CacheRoot()
+	if err != nil {
+		return "Pulled models are cached under <user cache dir>/goinfer/models, but this system reports no user cache dir (" + err.Error() + "): set HOME or XDG_CACHE_HOME. `pull -o <dir>` writes elsewhere."
+	}
+	return "Pulled models are cached under " + root + " (the OS user cache dir + goinfer/models; XDG_CACHE_HOME moves it on Linux, ~/Library/Caches on macOS, %LocalAppData% on Windows). `pull -o <dir>` writes elsewhere."
+}
+
 // CacheDir is where pulled models land: <user cache>/goinfer/models/<owner>/<repo>.
 func CacheDir(repo string) (string, error) {
 	root, err := CacheRoot()

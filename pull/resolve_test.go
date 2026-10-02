@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -204,5 +205,23 @@ func TestMMProj(t *testing.T) {
 		if !strings.Contains(n, want) {
 			t.Errorf("the note lacks %q: %s", want, n)
 		}
+	}
+}
+
+// R28: --help names the cache directory this process would use and the variable that moves it.
+func TestCacheHelp_namesTheDirectoryAndWhatMovesIt(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG_CACHE_HOME is what os.UserCacheDir reads on Linux only")
+	}
+	t.Setenv("XDG_CACHE_HOME", "/tmp/r28-cache")
+	h := CacheHelp()
+	for _, want := range []string{"/tmp/r28-cache/goinfer/models", "XDG_CACHE_HOME", "pull -o"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("CacheHelp lacks %q: %s", want, h)
+		}
+	}
+	t.Setenv("XDG_CACHE_HOME", "/tmp/r28-other")
+	if h2 := CacheHelp(); !strings.Contains(h2, "/tmp/r28-other/goinfer/models") || strings.Contains(h2, "r28-cache") {
+		t.Errorf("CacheHelp did not follow XDG_CACHE_HOME: %s", h2)
 	}
 }

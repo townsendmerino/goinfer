@@ -1506,6 +1506,13 @@ docs, so this is a release-review item.
 Only `pull -o` sets a path. **On v0.20.0:** not checked. **Fix:** name the cache directory, and the variable that moves
 it, in `--help`. **Gate:** a help-text test.
 
+**Fixed 2026-10-01.** `goinfer-serve -h`, `goinfer-chat -h` and `pull -h` now print the directory this process would use and what moves it:
+`Pulled models are cached under /home/francis/.cache/goinfer/models (the OS user cache dir + goinfer/models; XDG_CACHE_HOME moves it on Linux,
+~/Library/Caches on macOS, %LocalAppData% on Windows). pull -o <dir> writes elsewhere.` (`pull.CacheHelp`, which asks `os.UserCacheDir`, so the path is
+the real one, not a description of it.) **Gate:** `TestHelp_namesTheModelCache` runs the real `-h` of both binaries and of `pull` with
+`XDG_CACHE_HOME` set to a temp dir and requires that dir and the variable name in the output; dropping the paragraph from any of the three pages turns
+it red. The macOS and Windows locations in the sentence are `os.UserCacheDir`'s documented behaviour, not checked here (this box is Linux).
+
 **Seen but not filed:** an odd ` Query issued,` reply to "Say hi." at default sampling on the 1.5B (fine at temperature
 0; one sample, not reproduced); Ollama's install script needing sudo (Ollama's, not goinfer's); finding `chat.Meta`
 from pkg.go.dev's method index (in scope for `docs/tasks/task-library-surface-review-2026-10.md`).
