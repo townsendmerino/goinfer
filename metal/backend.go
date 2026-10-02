@@ -723,6 +723,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
+		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", floor)
+	}
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
 	}
@@ -747,10 +750,19 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
-	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet, so the sequential path runs there; the
-	// lowest cells that passed are K=64 and 128 (the floor's own doc comment).
+	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet, so the batched pass declines there; the
+	// lowest cells that passed are K=64 and 128 (the floor's own doc comment). E-P01: a resident with the step kernels
+	// runs a prompt below the floor as decode rows on those kernels instead of declining to the sequential loop: the
+	// same bits, at about a quarter of its time (promptStepOK).
 	promptLen := startPos + len(embeddings)
-	if floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")); floor > 0 && promptLen < floor {
+	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+	if a.promptStepOK(len(embeddings), startPos, floor) {
+		if e := a.checkCap(startPos, len(embeddings)); e != nil {
+			return nil, e
+		}
+		return a.prefillByStep(ctx, embeddings, startPos)
+	}
+	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
 	}
 	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of

@@ -229,7 +229,8 @@ real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
 
-1. **E-P01:** short prompts through the 8-row step. Bit-identical, so no fidelity gate. T1.10 cleared it for K ≤ 32.
+1. **E-P01:** short prompts through the 8-row step. Bit-identical, so no fidelity gate. **Done 2026-10-02 below the
+   floor; the above-floor half is held** (log, 2026-10-02).
 2. **Decode attention, one campaign on one harness:** B-P03 (T1.2's candidate floor is 1024; re-bakes the snapshot golden that
    straddles the floor), B-P02, then B-P01. All gated.
 3. **Small-M prefill:** A-P01 (bit-identical), then A-P02 (gated). Then Metal int8 slice 2 on the same tile selector.
@@ -446,3 +447,21 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-02: **C-P01's A/B: SHIP** (pread ÷ old 1.061, 8 of 8 rounds; heap 3004.6 → 1553.2 MB), run by day on the
   owner's word. Copy and pread were indistinguishable at 73% free memory. **T1.9b declined again** by day (budget 4.69
   GB) and is re-queued for a real night.
+- 2026-10-02: **E-P01, Phase 3 item 1: done for prompts that end below the fast-prefill floor.** `metalResident.PrefillLast`
+  runs such a prompt as decode rows on the batched step kernels (`prefillByStep`, gated by `promptStepOK`: the
+  step-kernel verify's own eligibility, `VerifyCost`) instead of declining to the decoder's sequential loop. The rows
+  are that loop's bits, so no output changes; T1.10 timed the step at 0.22× sequential on the 1.5B and 0.25× on the 7B
+  at every K. Pieces before the last read only their argmax; a one-row last piece runs `Forward`; the route checks
+  cancellation between pieces, which the one-pass batched prefill cannot.
+  - `TestPrefillLast_stepRouteBitIdentical` (default-run, through `PrefillLast`): fresh prompts of 8, 9, 20, 33 and 63
+    tokens and a 23-token suffix at 40, every K/V element and every last-row logit equal to the sequential loop, on the
+    fixture and on the 1.5B (0 of 151,936 logits). Mutations: the first row's logits for the last's, positions shifted
+    by one, and the batched pass forced on prompts ending at 72, 81 and 132 keys each fail it.
+  - **Held: the above-floor half** (suffixes of up to 32 tokens on a prompt that reaches the floor, which T1.10 measured
+    faster than the pass). Built first, it broke chunked prefill: such a suffix is also a chunked prefill's tail, and
+    on the step it ran decode's numerics where the whole pass ran the pass's. `TestMC5_prefillChunkInvariance` did not
+    see it, because N = 1000 leaves every tail it tries above 32 tokens; with C = 81 (a 28-token tail at 972) all
+    20,480 last logits differed. C = 81 is now in the gate. Opening the half needs the decoder's chunk cutter to keep
+    a tail above 32 tokens on a resident that takes the step route, which is a decoder change, not done here.
+  - Not measured: the served TTFT. The speed claim is T1.10's in-process timing of the same step pieces; a served
+    check of a short prompt's TTFT, step against sequential, belongs to a night with Batch B.

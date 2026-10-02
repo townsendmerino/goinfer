@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -796,4 +797,66 @@ func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int)
 		from += n
 	}
 	return ids, nil
+}
+
+// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos (E-P01, audit-metal-2026-09-30):
+// the resident runs the step-kernel verify (VerifyCost: the batched step exists, and no logit transform separates its
+// rows from Forward's), and the prompt ends below the fast-prefill floor, where the batched pass declines and the
+// decoder would run the sequential loop. The step's rows are that loop's bits, so the route changes no output.
+//
+// It stops at the floor although T1.10 measured the step faster than the pass up to K = 32 (0.40× / 0.80× / 1.56× at
+// K = 16 / 32 / 64, docs/tasks/task-metal-audit-2026-10.md): above the floor a short suffix is also the tail of a
+// chunked prefill, and on the step it would differ from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's
+// C = 81 case: 20480 of 20480 logits differed with the route open there).
+func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
+	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
+		return false
+	}
+	return floor > 0 && startPos+n < floor
+}
+
+// prefillByStep is PrefillLast on the step kernels (E-P01): the prompt's positions run as consecutive rows of the bound
+// slot's sequence, batchMaxSeqs at a time, exactly as PrefillLastNArgmax runs a verify, and the last row's logits come
+// back. forwardMulti is bit-identical to production decode for such rows (TestMC3Verify_sameSlotRowsBitIdentical,
+// TestMC3Step_promptInRowsBitIdentical), so this is the sequential path's numerics at about a quarter of its time
+// (T1.10: 0.22× on the 1.5B, 0.25× on the 7B). Pieces before the last read only their argmax, which skips the
+// per-row logits copy; a one-row last piece runs production's own Forward. Cancellation is checked between pieces.
+func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error) {
+	r := a.r
+	defer func() {
+		if p := recover(); p != nil {
+			logits, err = nil, fmt.Errorf("metal: step prefill aborted: %v", p)
+		}
+	}()
+	for from := 0; from < len(embeddings); {
+		if e := ctx.Err(); e != nil {
+			return nil, e
+		}
+		n := min(batchMaxSeqs, len(embeddings)-from)
+		last := from+n == len(embeddings)
+		if n == 1 {
+			lg, err := a.Forward(embeddings[from], startPos+from)
+			if err != nil {
+				return nil, err
+			}
+			logits = lg
+		} else {
+			seqs := make([]batchSeq, n)
+			for i := range n {
+				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
+			}
+			rows, _, err := r.forwardMultiInto(seqs, !last)
+			if err != nil {
+				return nil, err
+			}
+			if last {
+				logits = rows[n-1]
+			}
+		}
+		from += n
+	}
+	if err := r.takeExecErr(); err != nil {
+		return nil, err
+	}
+	return logits, nil
 }

@@ -216,6 +216,9 @@ type resident struct {
 	// below the floor). Read through attnFAFloor by attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token
 	// step and the batched step plan alike.
 	attnFAFloorOverride int
+	// promptStepOff, when true, keeps PrefillLast off the step route (E-P01, prefillByStep). FALSE in production — set
+	// only by tests that measure the batched pass or the sequential decline on a resident that could take the route.
+	promptStepOff bool
 	// gemvRows (R18, docs/measurements/metal-decode-gemv-r18-2026-09-26.md): rows per simdgroup for the dense decode
 	// layer's four int4 GEMVs — qkv, o, fused gate/up and down — set by buildResident through gemvRowsFor. When a field
 	// is > 0 that GEMV dispatches its rows kernel (pSABiasRows / pSAResidRows / pSARows / pGemvResidStaged, grid

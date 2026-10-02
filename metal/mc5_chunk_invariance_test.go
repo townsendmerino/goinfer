@@ -54,8 +54,10 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 	// 100 and 77 start chunks off the steel kernel's 32-row tiles; a prefix-reuse turn's startPos is arbitrary too. The
 	// aligned sizes cannot see a bug at a tile edge, which shows the same way whole and chunked: with the kernel's causal
 	// limit moved one key, every aligned size still matched bit for bit, and 100 and 77 differed from the first chunk
-	// boundary on (2026-10-01, F-G02). 512 is serve's default chunk.
-	for _, C := range []int{64, 128, 256, 384, 512, 100, 77} {
+	// boundary on (2026-10-01, F-G02). 512 is serve's default chunk. 81 leaves a 28-token tail at position 972: the
+	// step route (E-P01, promptStepOK) must not take a short chunk above the floor, or the tail runs decode's numerics
+	// and differs from the whole pass (measured with the route open there: all 20480 logits).
+	for _, C := range []int{64, 128, 256, 384, 512, 100, 77, 81} {
 		if err := r.useKVSlot(1); err != nil {
 			t.Fatal(err)
 		}
