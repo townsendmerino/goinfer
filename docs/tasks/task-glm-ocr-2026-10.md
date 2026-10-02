@@ -1,9 +1,11 @@
 # Task: GLM-OCR — documents in, text and schema-bound JSON out (O0–O7) — 2026-10
 
-> **Status: O0, O1 and O2 DONE 2026-10-01 (local commits, nothing pushed or released).** O1's text decoder matches HF f32
-> (tiny fixture, image-style positions, and the real checkpoint); O2's tower matches HF f32 on the real checkpoint
-> (worst merged-row cosine 0.999999987). **O3 is unblocked.** Two things gate a push: the site module's Ollama check goes red
-> (see O7), and no GPU backend may run the family (see O6). O0's findings are in
+> **Status: O0, O1, O2, O3 DONE (2026-10-01/02; local commits, nothing pushed or released).** Goinfer at f32 on the real checkpoint is
+> TOKEN-IDENTICAL to transformers 5.12.0 for 64/64 tokens on three rendered documents (see O3's result); O1's decoder and O2's tower
+> match HF f32 on their own gates. CUDA runs the whole thing resident (pairwise rope kernels, `a306d33e`); Metal and WebGPU decline it
+> and run it on the CPU. **O4 (the pixel-cap default, an owner decision), O5 (extraction and `goinfer-chat --image`), O6 (Metal) and O7 are
+> open.** What blocks a push: serve imports the unreleased aikit GLM tower (aikit `ed8053c`), so every serve binary fails `GOWORK=off` until
+> aikit is released and the pin bumped; and the site module's two Ollama checks are red until O7's snapshot exists. O0's findings are in
 > [§O0 results](#o0-results-2026-10-01), and the claims they overturned are corrected in place below, each marked
 > *Corrected 2026-10-01 (O0)*. The two that matter most: the pixel budget is half what §1 said (6,144 image tokens,
 > not ~12,000), and the tower is nearer aikit's Qwen3.5+ encoder than Qwen2.5-VL's. Everything after O0 is written to
@@ -294,7 +296,8 @@ nothing here is a numeric match to a real forward; O1–O3's gates are.**
   clean; capability and hardware matrices regenerated; README "39" → "40 model families".
 - **O0 corrections: none.** One nuance: HF's `cos`/`sin` are `cat(freqs, freqs)` and the `repeat_interleave(2)` happens
   inside `apply_rotary_pos_emb` on the first half; the result is what §1 said.
-- **FINDING: no GPU backend may run `glm_ocr`.** With admission bypassed, resident-vs-CPU on the RTX 2070 SUPER (int8int8,
+- **FINDING (SUPERSEDED 2026-10-02: fixed on CUDA by new pairwise rope kernels, `a306d33e`; CUDA now admits `glm_ocr`, Metal and WebGPU still
+  decline): no GPU backend may run `glm_ocr`.** With admission bypassed, resident-vs-CPU on the RTX 2070 SUPER (int8int8,
   48-token prompt) read worst cosine −0.34 on glm-ocr-tiny; a NeoX llama control with the same peaked attention stayed at
   1.000000 and CPU int8int8 against f32 alone read 0.988. The CUDA `rope` and `rope_kv` kernels and Metal's `rope` kernel are
   half-split NeoX, and so are the m-RoPE image-prefill kernels. `FeatPairwiseMRoPE` (derived from `ropeInterleave &&
@@ -313,7 +316,10 @@ nothing here is a numeric match to a real forward; O1–O3's gates are.**
     sliding window nor NoPE, points at the rotation. The mechanism fits: the CUDA `rope` kernel rotates pairs `(d, d+half)` and
     takes no interleave argument, while Cohere's is GPT-J pairwise `(2d, 2d+1)`. **Not isolated further** (no kernel-level
     check), **Metal not run**, and the committed `TestCohereResidentParityCUDA` cannot see it (a flat 0.02-std fixture, bar 0.995).
-  - **Not fixed here.** Command-R, Command-R7B and Aya are admitted on CUDA and Metal today and shown as resident in the hardware
+  - **UPDATE 2026-10-02: FIXED ON CUDA** (pairwise rope kernels, `a306d33e`; real Aya and Command-R7B gate
+    `TestCohereRealResidentParityCUDA`, record `docs/measurements/cuda-pairwise-rope-2026-10-01.md`). Cohere, Cohere2 and `glm_ocr` are now
+    CUDA-only; Metal and WebGPU decline them until the Mac ports the rotation. What follows is the state when this was measured.
+  - **Not fixed here (as measured).** Command-R, Command-R7B and Aya were admitted on CUDA and Metal and shown as resident in the hardware
     matrix. The options (decline them as `glm_ocr` is declined, or write pairwise kernels) are the owner's call.
 
 ### O2 — the tower in aikit
@@ -375,6 +381,60 @@ lead: `TestGlmOcrVisionEncoder_*` all PASS, the real-checkpoint parity (small + 
   a page with a formula), at a pixel count both sides use.
 - **Gate:** a text-only turn on the same checkpoint is unchanged by O3, and the forward goldens stay green.
 
+**O3 RESULT, 2026-10-02: DONE, gate passes** (local commits `87efcaff`, `466115df`, `25569f32`, `18490f39`, `e08c4831`, `12f00af2`, `244646aa`,
+`2996ae23`; logs in `docs/measurements/glm-ocr-o3-2026-10/`). The agent's figures were re-checked by the lead on the invoice: `TestGlmOcrE2E_f32/invoice`
+PASS in 70 s, `TOKEN-IDENTICAL: 64/64`, cosine 0.999999995, max|diff| 0.00198, the same numbers the agent reported.
+- **The gate.** Goinfer at f32 (no quantisation) on the real checkpoint against transformers 5.12.0 f32 CPU eager, greedy, the checkpoint's own
+  processor and chat template. **All three images are procedurally rendered documents, NOT real scans** (`scripts/gen_glm_ocr_doc_images.py`,
+  PNGs and HF goldens committed under `testdata/glm_ocr/`, 0.94 MB):
+
+  | image (prompt) | grid, patches, image tokens, prompt ids | f32 identity | last-token logits, goinfer pixels | with HF's pixels |
+  |---|---|---|---|---|
+  | invoice 1000×1300 (`Text Recognition:`) | [1,92,72], 6,624, 1,656, 1,668 | **64/64** | cos 0.999999995, max 1.98e-3 | cos 1.000000000, 2.4e-5 |
+  | table 1200×900 (`Table Recognition:`) | [1,64,86], 5,504, 1,376, 1,388 | **64/64** | cos 1.000000000, 4.6e-4 | cos 1.000000000, 1.9e-5 |
+  | formula page 1000×1200 (`Formula Recognition:`) | [1,86,72], 6,192, 1,548, 1,561 | **64/64** | cos 0.999999990, 2.8e-3 | cos 1.000000000, 5.8e-5 |
+
+  No divergence, so no first-divergence step. HF's smallest top-1/top-2 gap over the 64 steps was 1.75 / 4.23 / 0.63 (no near-ties). The ~1e-3 residual in
+  the goinfer-pixels column is **preprocessing**: 99.967% / 99.881% / 99.965% of goinfer's `pixel_values` floats are bit-identical to HF's, the largest
+  difference is 2.1 eight-bit levels (PIL bicubic against goinfer's, "tolerance-matched, not bit-exact"), and feeding HF's own pixels drops it to ~1e-5.
+  Tests: `TestGlmOcrE2E_f32` and `TestGlmOcrE2E_f32_hfPixels` (decoder, tag `realckpt`, heavy; assets `GOINFER_GLM_OCR`, `GOINFER_GLM_OCR_E2E`);
+  serve stack `TestServe_glmOcrImage_O3`. Goinfer's serve prompt ids equal HF's, and the HTTP reply equals HF's 64 tokens decoded.
+- **What was built.** `glm_ocr` chat template (byte-exact against HF on text turns); the image block and task prompts; `multimodal.LoadGlmOcrPreprocessConfig`
+  with the **pixel bounds HALVED** (6,272 / 4,816,896), pinned by unit tests in `multimodal` and `serveapp` that fail if the file's values are used unhalved;
+  serve auto-discovery of a `glm_ocr` dir, a lazy f32 CPU tower (int8 only with `-vision-quant int8`, since the int8 tower is not gated on the real checkpoint), and
+  the prompt path. **No fork of `GenerateQwenVL`:** nothing differs, including no embed scale. Serve applies no per-image cap beyond the processor's own 6,144
+  tokens; the default is O4's decision.
+- **Image too large for the context:** a named HTTP 400 `image_too_large_for_context` before the tower runs (1,656-token invoice against a 1,024-token model
+  context). With `--ctx 1024` and the 1,668-token invoice serve falls back to the CPU path, returns the same text, and does not truncate the image.
+- **CUDA resident against CPU** (real pages, int4 both sides, resident context 4096): prefill logit cosine 0.9983 / 0.9979 / 0.9972, same argmax, and 64 greedy
+  tokens identical to the CPU on all three (the resident image prefill was taken). At the ceiling (6,156-token prompt, 6,144 image tokens, grid 128×192,
+  `ResidentContext` 8192): prefill cosine 0.9986, 16 tokens identical; **the image rows there are the invoice's real tower rows tiled to 6,144, not a real 4.8 MP
+  tower run** (not done: it would take minutes of CPU).
+- **Context that fits on the 8 GB card** (`TestGlmOcrCUDAContextFit`): resident at 2,048 through 32,768 positions; 65,536 declines with the reason shown (8.59 GB of KV at
+  128 KB per position against 6.97 GB free; about 54k positions by that arithmetic). 8,192 covers a 6,144-token image plus output with about 1 GB of KV.
+- **nil resident:** a CPU-only `glm_ocr` load runs the whole `GenerateQwenVL` turn, twice with the same image hash (`TestGlmOcr_generateQwenVL_cpuOnly`).
+- **HTTP smoke** (CUDA build the pinned way): banner `[chat: glm_ocr]`, `decode path: cuda-resident (int4)`, `context: 8192`; the CUDA reply equals the library-level resident
+  int4 text and the CPU-backend reply; full-length requests finish with `stop` after 321, 419 and 246 tokens.
+- **OCR text against ground truth** (we generated the images; default int4 on CUDA, full length): invoice: every number, address and line item matches, **but the
+  "Invoice No: INV-2026-0417" header line is dropped** (HF f32 reads it; int4 diverges from f32 at token 4). Table: all 36 cells exact, returned as an HTML table (the
+  caption and footer are omitted: `Table Recognition:` returns only the table); int4 matches f32 on all 64 tokens. Formula page: both equations correct as LaTeX, the prose comes out
+  as spaced-out `\mathrm{M o r e …}` with a few errors (expected for `Formula Recognition:` on a text-heavy page); int4 diverges from f32 at token 54. **int4 costs real accuracy here;
+  it is not the same OCR as f32.**
+- **`<think>`:** none appeared in any output (three f32 HF runs, three full-length int4 runs, the CPU smoke). The `glm_ocr` template has no reasoning detection, so serve does no
+  splitting; a block, if it opened, would appear verbatim in `content`. No think handling was built.
+- **Mutations, each shown red then reverted:** swapped norm names (e2e cosine 0.534, diverges at step 0); scalar positions in the image prefill (cosine 0.917, first 4 tokens
+  match, diverges at step 4); unhalved pixel bounds (unit tests red in `multimodal` and `serveapp`; the unhalved bounds give the wrong grid on 4 of the 6 HF-measured sizes); image placed
+  after the task prompt (ids test red); a newline concatenated onto the block (the AST guard red). **Gap:** the e2e documents are at most 1.3 MP, so unhalved bounds do not change
+  their grids; only the unit tests catch that mutation.
+- **Behaviour change to know:** `glm_ocr` text-only turns now go through the new chat template (before, detection found none and the message went in as a raw completion). The decoder forward
+  goldens are unchanged and the text-only prompt ids match HF.
+- **Evidence:** serveapp `go test -v` 289 PASS, 51 SKIP, 0 FAIL (the new tests pass, not skip); the VL decoder subset 54 PASS; parity refresh 64 goldens passed; gofmt, vet (untagged, `realckpt`,
+  `cuda`/`gpu goinfer_testhooks`) and staticcheck 0.8.0 (proven red on a dead field) clean; citation lint exit 0 (23 moved citations re-pointed by `--update`, one AMBIGUOUS re-pointed by hand).
+- **Not done:** a real 4.8 MP page through the tower; the full CUDA suite (only new test files changed there); `go run ./cmd/gate census`.
+- **Needs the unreleased aikit:** `GOWORK=off go build ./...` fails only in `internal/serveapp` ("undefined: vision.GlmOcrVisionEncoder"), which blocks root `cmd/serve`, `cuda/cmd/serve`,
+  `gpu/cmd/serve` and `metal/cmd/serve`, plus `decoder/glm_ocr_e2e_real_test.go` and `cuda/glm_ocr_real_image_test.go`. `chat`, `multimodal` and the untagged decoder build with `GOWORK=off`.
+- **`origin/main` has three new commits** touching `internal/serveapp/banner.go` and `testdata/assets.json`; they are not merged here and the `assets.json` append may conflict.
+
 ### O4 — the pixel budget (owner decision on the default)
 
 The processor's own ceiling (corrected 2026-10-01, O0: **4.82 MP, 24,576 patches, 6,144 image tokens**; the original
@@ -401,8 +461,9 @@ The processor's own ceiling (corrected 2026-10-01, O0: **4.82 MP, 24,576 patches
 
 - **Decode after the image:** confirm whether the CUDA and Metal residents serve GLM-OCR through
   `ResidentMRoPE`. If one does not, `GenerateQwenVL`'s CPU fallback is correct and slower; record which. **Corrected 2026-10-01 (O1): O0's expected split was wrong.** Every resident
-  rope kernel is half-split NeoX, scalar ones included, so no backend admits `glm_ocr`, and the whole turn, prefill and decode,
-  runs on the CPU. A GPU path needs pairwise variants of `rope`, `rope_kv` and `rope_kv_mrope_batched` on CUDA and the Metal
+  rope kernel was half-split NeoX, scalar ones included, so no backend admitted `glm_ocr`, and the whole turn, prefill and decode,
+  ran on the CPU. **UPDATE 2026-10-02: CUDA is done** (pairwise rope kernels `a306d33e`; O3 shows the CUDA resident matching the CPU on real pages and at the 6,144-token ceiling).
+  **Metal and WebGPU still decline and run it on the CPU; the Mac must port the rotation** (steps in `docs/measurements/cuda-pairwise-rope-2026-10-01.md`). A GPU path needs pairwise variants of `rope`, `rope_kv` and `rope_kv_mrope_batched` on CUDA and the Metal
   equivalents, gated first by a resident-vs-CPU parity test on glm-ocr-tiny (a flat-weight fixture cannot see this bug; see the
   Cohere finding under O1). Measure the CPU turn first (6,144 image rows through a 0.58 B decoder, then CPU decode); it may be
   cheap enough to leave.
