@@ -1444,6 +1444,12 @@ to zram as page cache filled, not goinfer's footprint. **On v0.20.0:** the swap 
 checked. **Fix:** none until measured. **Gate:** repeat scenario D on v0.20.0, as the run-2b amendment does for a
 skipped leg.
 
+**Measured 2026-10-01 (rule pre-registered and committed first): AMBIGUOUS, parked, no fix.** Scenario D on this tree (the 26B q4_0, `-backend cuda`,
+declining to the CPU) grew swap by **0.205 GB**, not 1.9 GB; the swap guard armed and did not trip (+512 MB). A control that filled the page cache by
+14 GB with no goinfer moved swap by **0**, so the "kernel moving cold pages" explanation is not supported either (MemAvailable stayed ≥ 37.8 GB). Neither
+registered bar was met (goinfer's footprint ≥ 0.5 GB and ≥ 2× the control; or the control ≥ half of it). One pass, warm page cache. The 1.9 GB is not
+reproduced. `docs/measurements/r21-swap-2026-10-01/` (rule, runner, raw samples, results).
+
 ### R22 — `--vision` rejects a GGUF mmproj with a file-system error
 
 **Found** (scenario F). `--vision <mmproj>.gguf` failed with `.../config.json: not a directory`, and with no `--vision`
