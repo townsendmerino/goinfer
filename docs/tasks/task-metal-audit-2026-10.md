@@ -226,6 +226,22 @@ real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2
 
 ## Phase 3 — builds, in this order
 
+### B-P03: fidelity gate at the 1024 floor (pre-registered 2026-10-02, before any graded run)
+
+T1.2 put the candidate floor at 1024 keys (the block kernel 1.167× the legacy kernel on the 1.5B, 1.056× on the 7B;
+768 did not qualify). Moving it puts the reassociating block kernel at 1024–1535 keys, where the exact legacy kernel runs
+today, so it is graded under the owner's 2026-09-25 bar for reordering-only decode-attention kernels
+(`docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md`), at the new depths. The floor constant stays
+1536 until this passes; the gate runs the candidate through `attnFAFloorOverride`.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-bp03-fidelity.sh` on the night queue, binary `metal-tagged-2c5cfe8f.test`, prompt set B. Deterministic: one run each. Estimate about 15 minutes; queued at 30. |
+| P1 | `TestR17KernelAccuracy`, arms `bp03` (the exact kernel, production's block kernel), 10 prompts, depths 1024, 1280 and 1535, the 1.5B and the 7B from their `.int4.metal.giw` sidecars. Passes per model if the block kernel's pooled **median and p99** per-head relative L2 against float64 are each ≤ the exact kernel's, and capture sanity is 100% bit-identical. |
+| P2 | `TestR17_decodeFidelityGate`, candidate `attention_fa` (production's block kernel), K = 1024 with the floor overridden to 1024, so all 64 teacher-forced positions per prompt (1024–1088 keys) run the block kernel in the candidate arm and the legacy kernel in the exact arm; the S-K1024 references, the 1.5B `.gguf`. Identity precondition: every prompt's seed-row KL ≤ 1.0, else VOID. **PASSES** on critA ∧ critB ∧ the 1.1× ceiling ∧ KL ratio ≤ 1.05; **PARKED** at 1.05 < ratio ≤ 1.10; otherwise **DOES NOT PASS**. |
+| Controls | The `exact-null` candidate on the same cell (its verdict reported; a P2 fail of it is a false fail of the amended form, flagged). The 7B's P2 against its D7-K1024 references, reported, not graded: they are int8-weight CPU runs, so their level is not the S cells'. |
+| Rule | **P1 passes on both models ∧ P2 PASSES (1.5B): the floor moves to 1024**, by day, with the snapshot golden that straddles it re-baked in the same commit (G-04) and the floor comments updated. **P2 PARKED**: to the owner. **Otherwise**: the floor stays at 1536, and B-P03 is recorded as failing fidelity at 1024. |
+
 ### A-P01: built, pending its grade (pre-registered 2026-10-02, before any graded run)
 
 Built and bit-identical on the branch: `gemm_w4f16_tile<TM, TN>` (prefill.go), R16's GEMM with the tile as template
