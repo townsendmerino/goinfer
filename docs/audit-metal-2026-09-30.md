@@ -50,6 +50,8 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/tasks/task-gpu-paths-2026-09.md`,
 labelled since M-25). Running those weights natively is planned in `docs/tasks/task-metal-int8-2026-10.md`.
 
+The order §10's items run in, under the run-budget rules and this Mac's limits, is `docs/tasks/task-metal-audit-2026-10.md`.
+
 **Reading order.** Part I (§0–§3) is the summary: the shape of it, the MLX technique ledger, the register of Critical and
 Major findings, and the cross-area notes. Part II (§4–§9) is the six area reports, A to F. Part III (§10–§13) is the
 program, the items closed earlier, the carry-forward of the Sep 12 IDs, and what could not be settled statically. A
