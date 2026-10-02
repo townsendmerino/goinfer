@@ -226,6 +226,22 @@ real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2
 
 ## Phase 3 — builds, in this order
 
+### B-P04: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+
+Built and bit-identical on the branch (`22819cc8`): the SA rows kernels' lane-balanced twins (`sa_rows_acc_k512`),
+taken where K % 512 == 0 (qkv, o and gate|up on the 1.5B and 7B; the 0.5B keeps the shipped kernels). Kernel gate 4608
+of 4608 outputs equal; decode through the executor 0 of 40 positions differ on the 1.5B and the 7B. A one-rep smoke of
+the grade harness, run only to check it, read **0.909×** (balanced slower; qkv 0.98 ms against 0.70). One rep is not a
+result, but it says the audit's +3–7% projection may not hold.
+
+| | |
+|---|---|
+| Instrument | `TestR18InSequence` (R18's grader) with its `pre-bp04` arm, by `docs/measurements/metal-audit-2026-10/run-bp04-grade.sh` on the night queue: binary `metal-tagged-22819cc8.test`, the 1.5B q4_k_m `.gguf` and the 7B `.int4.metal.giw`, depths 128 and 2048, 7 reps, 20 step pairs per category. Estimate about 12 minutes; queued at 25. |
+| Precondition | The harness's identity lines, production and pre-bp04 each against the shipped kernels: 0 positions differ at both depths on both models. Any difference kills. |
+| Graded | `B-P04 METRIC pre-bp04/production` (the previous kernels' in-sequence int4-GEMV work over the balanced kernels', paired per rep, median of 7) on the **1.5B at depth 128**, the model with the larger tail, as the audit specifies. |
+| Rule | **≥ 1.02: ships** (stays the default on the branch). **Below 1.02: killed** (the audit's kill line, the owner's "park only a couple of percent" bar): the production selection and the twins are reverted, and the record keeps the numbers. |
+| Reported | The 7B and depth 2048. If it ships on the 1.5B but the 7B reads below 1.00 at either depth, that goes to the owner (the selection could be made per model), before the merge. |
+
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
 
