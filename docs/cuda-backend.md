@@ -156,7 +156,7 @@ and **14.5× → 1.89×** (0.5B).
 **A reply can depend on the provenance of reused KV rows (measured 2026-10-02).** The fused kernels are start-offset-invariant (`TestPrefillStartOffset`: a prompt split across two prefill calls is bit-identical to one call when both run the fast
 kernels). What differs is a prompt whose reused prefix was computed by the EXACT kernels (a short earlier request, below the floor, left rows in the slot) and whose remaining rows then run fast: a 3-token reuse of such rows shifted the first logits by 0.18 to 0.36 nat and flipped
 a near-tied token (`measurements/mc4-candidate-cuda-2026-10-01.md`, ROOT CAUSE). Slot-level prefix reuse exists when several generations are in flight, so under concurrent load which request reuses which slot's rows is a race. `GOINFER_CUDA_FAST_PREFILL=0` (exact kernels) removes it:
-every arm and schedule tested was then identical to the sequential reply.
+every arm and schedule tested was then identical to the sequential reply. Since 2026-10-02 the decoder also declines a reuse of fewer than 64 tokens when the prompt will run the fast kernels (`decoder.declineShortLeadReuse`, via the `ResidentFastPrefill` capability this resident implements), which removes the short-lead case with fast prefill on; a longer reuse whose rows came from the exact kernels or the decode kernels is still a mix.
 
 **Why there is a 512-token floor, and why it is not a round number.** These kernels are not
 bit-identical — L2 uses f16 K/V with an online-rescaled softmax, L3 re-associates the cross-group

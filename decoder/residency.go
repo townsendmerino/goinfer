@@ -380,6 +380,15 @@ type ResidentCapped interface {
 	ContextCap() int
 }
 
+// ResidentFastPrefill is the optional capability of a resident whose batched prefill switches to NON-EXACT kernels once a prompt is long enough (CUDA's attn_fused and
+// gemm_w4a8_mma, from 512 prompt tokens). FastPrefillFloor is that prompt length, or 0 when the fast kernels are off. It exists for prefix reuse: rows a SHORT earlier
+// request computed on the exact kernels differ numerically from the same rows on the fast ones, so a long prompt that reuses even a few of them and prefills the rest
+// fast has a mixed KV and different logits than a cold prefill (docs/measurements/mc4-candidate-cuda-2026-10-01.md, ROOT CAUSE). residentAcquireSlot reads this to
+// decline such a reuse. A resident whose prefill is exact at every length need not implement it.
+type ResidentFastPrefill interface {
+	FastPrefillFloor() int
+}
+
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The cuda, metal and webgpu backends implement it.
 // withResidency applies residentAdmission's gates BEFORE calling it; the backend's own build can

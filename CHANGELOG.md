@@ -129,6 +129,10 @@ any surface may still change.
 
 ### Fixed
 
+- **On CUDA a reply no longer depends on a leftover KV slot's short prefix.** A long prompt (512 tokens or more, which prefills on the fast kernels) that reused even a 3-token chat header from a slot a SHORT earlier request had left behind
+  got a KV that was part exact-kernel and part fast-kernel, and a near-tied token could flip: under four-way simultaneous load every arm differed from the sequential reply in 1 to 3 replies of 30, which is also why the MC4 identity gate failed. A prefix reuse of fewer than 64 tokens is now declined
+  when the prompt will run the fast kernels (the prompt is prefilled whole); a reuse of 64 or more is unchanged. With the change those schedules reproduce the sequential reply in every arm. Not fixed: a longer reuse whose rows were computed by a different kernel class (a chat that began as a short turn and grew; generated tokens'
+  rows) can still differ from a cold prefill. The fused prefill kernels themselves are start-offset-invariant (`TestPrefillStartOffset`). `docs/measurements/mc4-candidate-cuda-2026-10-01.md`, ROOT CAUSE and FIX.
 - **A resident GPU vision tower that cannot be attached no longer stops serve from starting.** With `--backend webgpu` or `cuda`, Gemma 3's tower asks for a resident encoder; when the
   upload failed (on an 8 GB card the decoder's KV took the VRAM) serve exited and threw away the model it had loaded. It now warns, runs the tower on the CPU, and the startup line says
   `encoder int8` without `-resident`. Found by the multimodal audit (`docs/measurements/multimodal-audit-2026-10-02.md` item 1).

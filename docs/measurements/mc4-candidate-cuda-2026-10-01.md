@@ -325,3 +325,26 @@ and prefills the rest on the fast kernels, its KV is a mix, and its logits diffe
   (a) **do not reuse a prefix shorter than a threshold** (about 64 tokens) on a prompt above the fast floor: re-prefilling a header costs nothing and removes this case, but not provenance deeper in a long reused prefix (a chat that began as a short turn and grew);
   (b) **track provenance per slot** (which leading rows were computed fast and which exact) and reuse only rows whose class matches the new prompt's: full invariance, at the cost of re-prefilling generated tokens' rows (decode-produced, so exact) on every continuation, and real bookkeeping risk in the reuse code;
   (c) document it. `docs/cuda-backend.md` and `docs/server.md` now say it. A kernel change is NOT an option: there is nothing to fix there.
+
+### FIX (2026-10-02): decline a short prefix reuse under fast prefill, and its result
+
+`decoder.declineShortLeadReuse` (called from `residentAcquireSlot`, which every reuse caller goes through): when the resident reports non-exact prefill kernels (`decoder.ResidentFastPrefill`, implemented by CUDA) and the prompt is long enough to run them (at least the
+fast floor, 512 tokens), a reuse of fewer than **64 tokens** is zeroed and the prompt is prefilled whole into the slot it already bound. A reuse of 64 or more (a continuation) is kept. CPU, Metal, WebGPU, prompts under the floor and `GOINFER_CUDA_FAST_PREFILL=0` are unchanged. Observed leads
+were 3 to 16 tokens (the chat header); 64 leaves a margin; it is a constant, not an Options field, because it is a correctness margin. Unit tests drive it through `residentAcquire` (`decoder/resident_leadreuse_test.go`; red with the decline removed).
+
+**Result, on a binary built with the change, at the DEFAULT configuration (fast prefill ON), the configuration that failed** (`leadfix-*`):
+- **Cold, four prompts at once with the warm-up slot present, five runs:** every prompt `reused=0`, **0.0000 shift on all four in all five runs** (before: one prompt per run reused 3 tokens and moved 0.18 to 0.36 nat). Cold solo is unchanged against the old binary.
+- **Text level, replies differing from the sequential reply: zero in every arm and schedule:**
+
+  | | batch | spec-exclusive | candidate | never-yield |
+  |---|---|---|---|---|
+  | sequential, one client | 0/30 | 0/30 | 0/30 | 0/30 |
+  | four clients at once | 0/30 (before: 3) | 0/30 (before: 3) | 0/30 (before: 1) | 0/30 (before: 3) |
+  | staggered, joining every 2 s | 0/30 (two runs) | 0/30 | 0/30, three runs (before: 1 each) | 0/30 |
+
+  Every cell that differed before is now 30/30 identical, with fast prefill still on.
+- **What this does not fix.** A reuse of 64 or more tokens is still a mix when the reused rows were computed by a different kernel class: a conversation that began as a short turn (exact kernels) and grew past the floor, and the generated tokens' rows (decode kernels) that every continuation reuses.
+  Only tracking provenance per slot (reuse only rows whose kernel class matches the new prompt's) closes those, at the cost of re-prefilling the previous reply on each continuation and real bookkeeping risk in the reuse code. Not done; whether it is worth doing depends on how often a continuation's replies actually differ from a cold prefill, which has not been measured.
+- **Gate 1 of the registration is NOT re-graded by this.** The graded run (above) still FAILED identity as registered. This section shows the cause is fixed and that the default configuration now reproduces the sequential reply on the schedules that failed. A graded rerun of the same 72 cells on a binary built from the fix, under the registered gates and decision rule (the speed gates graded
+  only if identity passes), is the way to a verdict; it has not been registered or run.
+

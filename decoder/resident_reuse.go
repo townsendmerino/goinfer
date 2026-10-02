@@ -232,6 +232,34 @@ func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *l
 // residentAcquireSlot is residentAcquire that also returns the slot it bound, and never picks a slot busy marks (MC3:
 // another running generation's). With every slot busy it binds nothing and returns slot -1.
 func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
+	reuse, slot = m.residentAcquireSlotAll(prompt, imgs, lora, busy)
+	return m.declineShortLeadReuse(prompt, reuse), slot
+}
+
+// minLeadReuseFast is the shortest prefix worth reusing under a resident with non-exact prefill kernels (ResidentFastPrefill), for a prompt that will run them. Below it
+// the reused rows are a SHARED LEAD (a chat template's preamble, a few tokens left by an unrelated short request), re-prefilling them costs next to nothing, and keeping them
+// can change the reply: they were computed by the exact kernels while the rest of the prompt runs fast. Observed lead lengths were 3 to 16 tokens (the chat header under the
+// default templates, ~20 to 25 with a default system prompt), so 64 leaves a margin; a longer reuse is a continuation and is kept. Not an Options field: it is a correctness
+// margin, not an operator choice.
+const minLeadReuseFast = 64
+
+// declineShortLeadReuse zeroes a short reuse when the resident prefills this prompt on non-exact kernels, so the prompt is prefilled whole by one kernel class. Every caller
+// forgets the slot's ids and prefills from the returned index, so 0 simply means a cold prefill into the slot it already bound.
+func (m *Model) declineShortLeadReuse(prompt []int, reuse int) int {
+	if reuse <= 0 || reuse >= minLeadReuseFast {
+		return reuse
+	}
+	fp, ok := m.resident.(ResidentFastPrefill)
+	if !ok {
+		return reuse
+	}
+	if floor := fp.FastPrefillFloor(); floor <= 0 || len(prompt) < floor {
+		return reuse // fast kernels off, or a prompt that stays on the exact ones: the reused rows are the same class
+	}
+	return 0
+}
+
+func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
 	n := m.residentSlotCount()
 	if n <= 1 {
 		return m.residentReuseLen(prompt, imgs, lora), 0
