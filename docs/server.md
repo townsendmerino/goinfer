@@ -158,7 +158,7 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 **On Metal and CUDA, a dense resident model batches concurrent generations** (MC3: Metal 2026-09-26, CUDA
 2026-09-27). From 2026-09-28 to 2026-09-30 the `--embed-int4` default kept a default Metal load off the resident, so it did
 not batch; `--embed-int4` now defaults off on Metal (`quantization.md`). Under the same flag, each running generation holds its own resident KV slot (`--kv-sessions` sets the
-count, 4 by default). Their decode tokens run together in one step on the GPU, every logit bit-identical to serving
+count, 4 by default; 2 on Metal unless `--kv-sessions` is given, so pass `--kv-sessions 4` to batch 4 clients there). Their decode tokens run together in one step on the GPU, every logit bit-identical to serving
 that conversation alone.
 - On CUDA (RTX 2070 SUPER, W7, 4 clients): qwen2.5-coder-1.5b reads 1.38× the one-at-a-time build, with p99 per turn
   from 2.68 s to 2.02 s. qwen2.5-7b-instruct reads 1.83×, with p99 from 7.2 s to 4.1 s. A lone request is unchanged.
@@ -397,6 +397,9 @@ conversation each. Each generation binds the slot that already holds its prompt'
 takes an empty slot, else the least recently used one. A slot that shares only a chat template's lead with the
 prompt is never truncated to serve it. With `--max-concurrent` above 1, a dense model's generations also run at once,
 one per slot, on Metal and CUDA (MC3, above); WebGPU runs them one at a time. The memory guard clamps N to what fits
+Metal keeps 2 slots when `--kv-sessions` is not given (E-P09, 2026-10-02): on unified memory every slot's KV is
+resident from the first token, so the default's other 2 cost about 224 MB on the 1.5B and 470 MB on the 7B. Two keep
+batching for two concurrent clients and a second conversation's prefix, and `--kv-sessions N` asks for N.
 (each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k on Metal, 448 MB at 8k in
 CUDA's f32 KV), and the banner says what it allocated. On CUDA the slots alone, before MC3 batched the generations,
 stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 4 clients: 1.25× the one-slot build,

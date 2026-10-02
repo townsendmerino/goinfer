@@ -91,6 +91,7 @@ type Model struct {
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
+	resSlotsDef   bool         // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
 	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
@@ -247,6 +248,10 @@ func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1
 // for a family with recurrent state. A residency builder that supports slots (ResidentKVSlotter) allocates up to this
 // many, clamped by its fit guard.
+// ResidentKVSlotsIsDefault reports Options.ResidentKVSlotsDefault: the slot request is the caller's default, which a
+// backend may lower to its own (Metal: 2).
+func (m *Model) ResidentKVSlotsIsDefault() bool { return m.resSlotsDef }
+
 func (m *Model) ResidentKVSlotsRequest() int {
 	if m.hasRecurrentState() {
 		return 1 // its state is not part of a KV slot (resident_reuse.go residentSlotCount)
@@ -438,6 +443,11 @@ type Options struct {
 	// and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep
 	// one slot. serve sets it from -kv-sessions.
 	ResidentKVSlots int
+	// ResidentKVSlotsDefault says ResidentKVSlots is the caller's default, not a count the operator chose (serve sets it
+	// when -kv-sessions was not given). A backend may then lower it to its own default: Metal keeps 2 slots (E-P09,
+	// docs/audit-metal-2026-09-30.md), since every slot's KV is resident from the first token on unified memory, where
+	// the extra slots cost about 224 MB on the 1.5B and 470 MB on the 7B. CUDA and WebGPU keep the count asked.
+	ResidentKVSlotsDefault bool
 	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many
 	// tokens while other generations are decoding, one decode step between chunks, instead of in one pass that stalls
 	// them all for the whole prompt (docs/tasks/task-concurrency-2026-09.md, chunked prefill). 0 = off: whole
@@ -512,7 +522,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,

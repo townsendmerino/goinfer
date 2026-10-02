@@ -17,6 +17,11 @@ any surface may still change.
 
 ### Changed
 
+- **Changes resource use. Metal keeps 2 resident KV slots by default (was 4); `--kv-sessions N` still asks for N.** On unified memory every slot's KV is resident
+  from the first token (measured: 4 slots cost 335 MB more than 1 on the 1.5B after one token, though only one was written), so the default's other 2 slots
+  cost about 224 MB on the 1.5B and 470 MB on the 7B. Two slots keep MC3's batched decode for two concurrent clients and a second conversation's prefix; a
+  third and fourth client wait for a slot. The CPU path's session count and CUDA's and WebGPU's slots are unchanged. Audit E-P09
+  (`docs/audit-metal-2026-09-30.md`).
 - **The startup `context:` and `fit:` lines say when a figure is a CPU-path ceiling.** After a CUDA decline the CPU path printed `context: 262144 tokens` and `fit: ... 10.4 GB KV`
   next to a `fit` that had priced the GPU plan at 8192, which read as a contradiction. On the CPU path `-ctx` caps nothing and KV is allocated per request, so those figures are a
   ceiling, not memory held; the lines now say that, and after a decline that a GPU-resident load would have capped it. No limit changed. `docs/tasks/task-first-hour.md` R20.

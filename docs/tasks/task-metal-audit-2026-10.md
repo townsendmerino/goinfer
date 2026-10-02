@@ -453,7 +453,7 @@ gate runs at night before it ships.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02, D-P04, D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03, E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
-8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (after T1.6), F-D02.
+8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 until T1.7.
 
@@ -718,3 +718,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-02: **Batch B prepared and queued for tonight** (owner: "do this for tonight, ill start it early"). T1.7 gains a
   second, pre-registered reading (the boundary step), because the audit's per-key max/min can pass on attention's fixed
   per-token part alone. The peer run's goinfer is main as shipped, not the branch.
+- 2026-10-02: **E-P09 done** (owner: "go"). Metal keeps 2 resident KV slots when `-kv-sessions` is not given; a given
+  count is kept. Serve passes the distinction as `decoder.Options.ResidentKVSlotsDefault`. The docs (`server.md`,
+  `flags.md`) and the CHANGELOG say so, including that batching 4 clients on Metal now takes `-kv-sessions 4`.

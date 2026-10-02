@@ -194,7 +194,7 @@
   {
    "name": "kv-sessions",
    "group": "Sessions and KV cache",
-   "summary": "Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard."
+   "summary": "Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard. Metal keeps 2 slots unless this flag is given (each slot's KV is resident from the first token on unified memory)."
   },
   {
    "name": "session-dir",

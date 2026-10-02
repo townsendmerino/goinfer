@@ -195,7 +195,10 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	case f.resident && f.kvSlots > 1:
 		line := fmt.Sprintf("session reuse: on the GPU cache, %d conversations kept resident — each reuses its own prefix; "+
 			"a further one takes the least recently used slot and re-prefills", f.kvSlots)
-		if cfg.kvSessions > f.kvSlots {
+		if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet {
+			line += fmt.Sprintf(" (--kv-sessions not given: Metal keeps %d by default, and a memory guard may keep fewer; --kv-sessions %d asks for %d)",
+				f.kvSlots, cfg.kvSessions, cfg.kvSessions)
+		} else if cfg.kvSessions > f.kvSlots {
 			line += fmt.Sprintf(" (--kv-sessions %d; the memory guard allowed %d)", cfg.kvSessions, f.kvSlots)
 		}
 		out = append(out, line)

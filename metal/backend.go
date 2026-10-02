@@ -376,6 +376,11 @@ func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m)
 // (GOINFER_NO_RESIDENT_MEM_GUARD) allocates the request as asked; an unreadable RAM size allocates one.
 func metalKVSlots(m *decoder.Model) int {
 	n := m.ResidentKVSlotsRequest()
+	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
+		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)\n",
+			metalDefaultKVSlots, n)
+		n = metalDefaultKVSlots // E-P09: the caller's default, not the operator's count
+	}
 	if n <= 1 {
 		return 1
 	}
@@ -393,6 +398,14 @@ func metalKVSlots(m *decoder.Model) int {
 	}
 	return got
 }
+
+// metalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default
+// (decoder.Options.ResidentKVSlotsDefault: serve without -kv-sessions), E-P09 of docs/audit-metal-2026-09-30.md. Each
+// slot's KV is resident from the first token on (T1.6: 4 slots cost 335 MB more than 1 on the 1.5B after one token,
+// though only slot 0 was written), so the default 4 cost about 224 MB on the 1.5B and 470 MB on the 7B over 2. Two
+// keep MC3's batched step (it needs 2 slots) and a second conversation's prefix; a third and fourth concurrent client
+// lose their own slot and their batching. -kv-sessions N still asks for N.
+const metalDefaultKVSlots = 2
 
 // kvSlotsWithin is metalKVSlots' arithmetic: the largest slot count up to want whose resident build — base bytes for
 // the first slot (weights, host copy, one KV) plus perSlot for each further one — fits budget, and never below 1 (the
