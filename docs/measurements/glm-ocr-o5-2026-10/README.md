@@ -27,7 +27,7 @@ grammar is compiled from the same schema. The page is never described to the mod
 
 ## Result 1: schema validity
 
-**15 / 15 replies parsed as JSON (int4); 15 / 15 finished `stop`** (3 / 3 at f32). The grammar guarantees the SHAPE, so this is not a
+**15 / 15 replies parsed as JSON (int4); 15 / 15 finished `stop`** (15 / 15 at f32 as well, Result 3b). The grammar guarantees the SHAPE, so this is not a
 finding about the model; it is reported because it was checked: every key present, every number a number, no reply truncated.
 (A reply cut off by `max_tokens` would be a valid prefix and not parse. None was: the longest was 432 tokens against 2,500.)
 
@@ -93,9 +93,34 @@ misses", NOT "how accurate is f32"**: 83 / 89 fields (93.3%) there, against int4
 | inv10 | `date`, `due_date`, `bill_to` wrong | `date`, `due_date` wrong; **`bill_to` right** |
 
 So at f32 the only difference is the over-long `bill_to`. The stamp and the date-format behaviour are the model's, not int4's.
-**The full 15-document f32 pass is queued for tonight** as `glm-ocr-o5-f32-15-invoices` (`run-f32-15.sh`, pinned CPU binary and pinned
-copies of the eval script and the data staged under `~/goinfer-logs/glm-ocr-o5/`, est 40 min, results land in
-`~/goinfer-logs/glm-ocr-o5/f32-15-<date>/` and in `night.py morning`). It was NOT started. Until it runs, no f32 figure on 15 documents exists.
+**The full 15-document f32 pass has since run** (below). Until then no f32 figure on 15 documents existed.
+
+## Result 3b: f32 (CPU) on all 15 documents (night queue, 2026-10-02 12:14-12:36 PDT)
+
+Job `glm-ocr-o5-f32-15-invoices` (`run-f32-15.sh`): the pinned CPU `serve` binary (sha256 in `STAGED_f32-15.txt`, staged from goinfer `1aa61eb3`), `--backend cpu --quant f32 --ctx 8192`,
+the same 15 documents, schema, request shape and scorer as the int4 arm. Raw: `results_f32-cpu-15.json`, `eval_f32-cpu-15.log`, `serve_f32-cpu-15.log`. **15 / 15 replies parsed, 15 / 15 finished
+`stop`. All fields 378 / 397 = 95.2%, against int4's 383 / 397 = 96.5%.** Reported, not gated: f32 is not more accurate here, and the 5-field difference is formatting.
+
+| field | int4 (CUDA) | f32 (CPU) |
+|---|---|---|
+| invoice_number, vendor, currency, subtotal, tax, total, line item count | 15 / 15 each | 15 / 15 each |
+| line item description, quantity, unit_price, amount | 58 / 58 each | 58 / 58 each |
+| bill_to | 14 / 15 | **15 / 15** |
+| date | 11 / 15 | 8 / 15 |
+| due_date | 11 / 15 | 8 / 15 |
+| paid | 10 / 15 | 10 / 15 |
+| **all fields** | **383 / 397** | **378 / 397** |
+
+The two arms' replies are **byte-identical on 10 of the 15 documents**. The five that differ (differenced field by field from the two results files):
+- **inv01, inv07, inv12: int4 kept the printed date (`10/24/2026`), f32 rewrote both dates in ISO (`2026-10-24`).** The dates are the same calendar dates, so they are right as dates and wrong "as printed", which is the scoring rule
+  for the table. **Compared as calendar dates both arms read 27 / 30 date fields correctly** (diagnostic 1 in each log); that is the headline for dates, and the as-printed 8 / 15 against 11 / 15 is the format the schema does not pin.
+- **inv10: f32 read `bill_to` as the name alone; int4 added the street address.** This is the whole `bill_to` difference, and the only field f32 recovers.
+- **inv14: both wrong, differently.** Printed `1 Sep 2026`; int4 wrote `2026-09-12`, f32 `2026-09-13`.
+
+**`paid` is the same at both precisions: false on all five stamped documents (inv02, 05, 08, 11, 14), right on the ten unstamped.** The stamp misread is the model's, not int4's. Per-field confidence (Result 4) at f32:
+the five wrong `paid` values sit at or below 0.8546 and every right value at or above 0.9960, AUROC 1.000, the same ordering as int4 (n = 15, 5 wrong: an indication, not a calibration).
+
+**Seconds** (66 to 113 s a document, 1,291 s for the 15, f32 vision tower on the CPU about 45 s of each) are single runs from the night queue with no load or thermal record: not quotable. They match the daytime subset's 79 to 114 s.
 
 ## Result 4: per-field confidence (C1) on a vision request
 

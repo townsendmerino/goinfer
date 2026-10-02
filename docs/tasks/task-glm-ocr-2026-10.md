@@ -478,8 +478,9 @@ demo and recomputed the accuracy table from the raw results file; both matched t
   eight date fields were rewritten in ISO (compared as calendar dates 27/30 are right; the three real errors are a day/month swap in both date fields of one document and one due date misread);
   one `bill_to` gained the street address.
 - **f32 (CPU) is only a 3-document subset** (documents 2, 8, 10, 79-114 s each, exploratory), chosen BECAUSE int4 had errors there, so it shows whether f32 recovers int4's misses, not f32 accuracy: 83/89 against
-  int4's 82/89 on the same three, the only difference being the over-long `bill_to`. The paid-stamp and date-format behaviour are the model's, not int4's. **The full 15-document f32 pass is queued
-  (`glm-ocr-o5-f32-15-invoices`, 40 min estimate, `docs/measurements/glm-ocr-o5-2026-10/run-f32-15.sh`, pinned CPU serve binary and eval script staged under `~/goinfer-logs/glm-ocr-o5/`) and has NOT run.**
+  int4's 82/89 on the same three, the only difference being the over-long `bill_to`. The paid-stamp and date-format behaviour are the model's, not int4's. **The full 15-document f32 pass RAN 2026-10-02 (night queue, 22 min): 15/15 parsed and `stop`, all fields 378/397 = 95.2% against int4's 383/397 = 96.5%** (reported, not gated). The two arms' replies are byte-identical on 10 of 15
+documents; the differences are date format (f32 rewrote both dates in ISO on three more documents; compared as calendar dates both read 27/30), `bill_to` (f32 15/15, int4 14/15) and one date wrong in both. **`paid` is
+10/15 at both precisions: all five stamps missed.** So f32 is not the fix for the stamp or the date format. Record: `docs/measurements/glm-ocr-o5-2026-10/README.md` Result 3b.
 - **C1's per-field confidence applies to a vision request now.** It reports integer and boolean fields (quantity, paid), not strings or numbers; a Go struct cannot express an enum so none was evaluated. On `paid`, every wrong
   answer (the five missed stamps, confidence 0.69-0.95) sits below every right one (0.995-0.998), AUROC 1.000; **n=15 with 5 wrong, an indication, not a calibration** (`calibrated` stays false). `quantity` is 58/58
   correct so there is nothing to rank. The same ordering held at f32 on the subset.

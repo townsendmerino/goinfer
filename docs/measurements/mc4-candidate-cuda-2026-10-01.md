@@ -212,3 +212,56 @@ graded run is repeated: **same gates, same decision rule, same 72 cells**, with 
   is withdrawn. This rerun is the first valid speed measurement of the candidate under load.
 - The decision rule is unchanged, including the copy-only-miss-goes-to-the-owner clause.
 - Estimate 30 min (the first run took 21). Queued on nobara's night queue; the owner starts the queue.
+
+## RERUN RESULT (graded 2026-10-02 afternoon; run 11:55-12:14 PDT, nobara-pc, job `mc4-candidate-cuda-rerun`, 19 min against 30 estimated)
+
+**Gate 1, identity: FAIL. By the registered rule that is a bug, not a result: the speed gates below are recorded and NOT read as a verdict.** Grader output verbatim:
+[`mc4-candidate-cuda-2026-10-01/raw-rerun/gates-output.txt`](mc4-candidate-cuda-2026-10-01/raw-rerun/gates-output.txt); raw cells beside it; the runner's log is `raw-rerun/night-runner.log`.
+
+Provenance: `serve-cuda` at `2f685d7e` (the pinned binary, built once), RTX 2070 SUPER, driver 595.91.07, the 72 registered cells (a fresh server per cell, three rounds, arm order rotated), all from `~/models`.
+**The box was not quiet:** it ran by day (the queue was started at 11:54) and the CUDA idle gate (load1 <= 2.0, GPU baseline) waited 15 times and never gave up; load1 read 1.5 to 2.0 at the starts. No HTTP errors, no panics in the server logs.
+
+### Identity, in detail (this is the finding)
+
+| cell | replies compared | candidate differing | spec-exclusive differing | batch against batch differing |
+|---|---|---|---|---|
+| copy 1.5B, 1 client | 18 | 0 | 0 | 0 |
+| copy 1.5B, 4 clients | 72 | **2** | 2 | **1** |
+| chat 1.5B, 1 client | 54 | 0 | 0 | 0 |
+| chat 1.5B, 4 clients | 216 | 0 | 0 | 0 |
+| staggered copy 1.5B | 270 | **3** | 0 | 0 |
+| copy 7B, 1 and 4 clients (reported) | 18 + 72 | 0 | 0 | 0 |
+
+Two different things are in that table, and they should not be read together:
+- **Copy at 4 clients: not the candidate's.** Reply 0 of the cell has two variants. Batch round 1 and 3, candidate round 3 and spec-exclusive round 3 produce one; **batch round 2 itself**, candidate rounds 1 and 2 and spec-exclusive rounds 1
+  and 2 produce the other. The reference arm differs from itself across rounds, so this is the engine's own run-to-run variation under four-way concurrency, present in all three arms. The registration did not anticipate it ("b's rounds also agree with each
+  other" is part of the gate), the gate counts it, and **the bar is not moved here**: a bar is moved only with a mechanism, and none is established for this variation.
+- **Staggered: the candidate's, and reproducible.** The candidate differs from batch at reply index 21 of 30 in **all three rounds**; spec-exclusive and batch never differ. The same reply, three times out of three, that only the
+  adaptive policy changes: a deterministic candidate-specific divergence, which is what an identity gate exists to catch. By the grader's order (client by client, rounds 12, 9, 6, 3) index 21 is the first reply of the third client,
+  which joins last but one; that mapping is not verified. **Not root-caused.** What is NOT known: whether it is a defect (a mode switch between a speculative round and a batched step leaving state that differs by more than numerics)
+  or a legitimate numeric difference between the two modes that the first fix exposed.
+
+### Speed numbers (recorded, NOT graded: identity failed)
+
+Candidate / batch, paired, median of three; spec-exclusive shown for reference.
+
+| cell | candidate / batch | pairs | p99 candidate / batch | spec-excl / batch | candidate / spec-excl |
+|---|---|---|---|---|---|
+| copy 1.5B, 1 client | 2.114 | 2.114 2.114 2.118 | 0.511 | 2.110 | 1.004 |
+| chat 1.5B, 1 client | 1.257 | 1.256 1.257 1.262 | 0.863 | 1.258 | 1.002 |
+| copy 1.5B, 4 clients | 1.265 | 1.302 1.265 1.213 | 1.361 | 1.565 | 0.808 |
+| chat 1.5B, 4 clients | **0.850** | 0.851 0.847 0.850 | 1.313 | 0.791 | 1.073 |
+| staggered copy 1.5B | 1.454 | 1.425 1.454 1.459 | **1.860** | 1.720 | 0.838 |
+| copy 7B, 1 client | 2.080 | 2.078 2.083 2.080 | 0.483 | 2.082 | 0.999 |
+| copy 7B, 4 clients | 1.170 | 1.172 1.166 1.170 | 1.397 | 1.285 | 0.909 |
+
+Recorded without being read as a verdict: the grader flags chat at 4 clients (0.850 against the 0.97 bar) and the staggered p99 (1.860 against 1.10). The three chat pairs agree to 0.4 points, so
+that number is stable. Had identity passed, a chat hard-gate failure alone would park the candidate under the decision rule. The projection withdrawn above ("copy at 4 clients ~0.78x") is replaced by a valid but ungraded
+number: candidate / spec-exclusive 0.808 on copy at 4 clients, and 1.265x batch.
+
+### Decision
+
+Per the registered rule, **identity fails: a bug, not a result; stop and find it.** Nothing else is read. `-spec-adaptive` stays opt-in and experimental, and **must not be described as lossless**: it is not bit-identical
+to batch in the staggered workload (one reproducible reply). Next: root-cause the staggered reply-21 divergence (a text-level comparison against batch, which the raw files do not allow: they keep hashes, not replies), then
+fix or explain it, then the identity gate can be re-graded; separately, the copy-at-4-clients batch-against-batch variation is an engine question that predates this candidate.
+

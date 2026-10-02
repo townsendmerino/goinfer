@@ -1,0 +1,64 @@
+[ 1/15] inv01.png  74.7s finish=stop completion_tokens=283 parsed=True fields 21/23  elapsed 75s
+[ 2/15] inv02.png 112.8s finish=stop completion_tokens=432 parsed=True fields 34/35  elapsed 187s
+[ 3/15] inv03.png  83.5s finish=stop completion_tokens=278 parsed=True fields 23/23  elapsed 271s
+[ 4/15] inv04.png  77.6s finish=stop completion_tokens=233 parsed=True fields 19/19  elapsed 348s
+[ 5/15] inv05.png  91.1s finish=stop completion_tokens=419 parsed=True fields 34/35  elapsed 440s
+[ 6/15] inv06.png  77.5s finish=stop completion_tokens=234 parsed=True fields 19/19  elapsed 517s
+[ 7/15] inv07.png  98.9s finish=stop completion_tokens=330 parsed=True fields 25/27  elapsed 616s
+[ 8/15] inv08.png  78.8s finish=stop completion_tokens=324 parsed=True fields 24/27  elapsed 695s
+[ 9/15] inv09.png  79.9s finish=stop completion_tokens=337 parsed=True fields 27/27  elapsed 775s
+[10/15] inv10.png  99.1s finish=stop completion_tokens=333 parsed=True fields 25/27  elapsed 874s
+[11/15] inv11.png  66.2s finish=stop completion_tokens=227 parsed=True fields 18/19  elapsed 940s
+[12/15] inv12.png  67.2s finish=stop completion_tokens=238 parsed=True fields 17/19  elapsed 1007s
+[13/15] inv13.png  80.6s finish=stop completion_tokens=338 parsed=True fields 27/27  elapsed 1088s
+[14/15] inv14.png  91.6s finish=stop completion_tokens=423 parsed=True fields 32/35  elapsed 1179s
+[15/15] inv15.png 111.1s finish=stop completion_tokens=422 parsed=True fields 33/35  elapsed 1291s
+
+## f32-cpu: 15 documents (synthetic invoices, not real scans)
+parsed: 15/15; finish=stop: 15/15
+
+| field | correct / n | exact-match |
+|---|---|---|
+| invoice_number | 15 / 15 | 100.0% |
+| date | 8 / 15 | 53.3% |
+| due_date | 8 / 15 | 53.3% |
+| vendor | 15 / 15 | 100.0% |
+| bill_to | 15 / 15 | 100.0% |
+| currency | 15 / 15 | 100.0% |
+| paid | 10 / 15 | 66.7% |
+| subtotal | 15 / 15 | 100.0% |
+| tax | 15 / 15 | 100.0% |
+| total | 15 / 15 | 100.0% |
+| line_item_count | 15 / 15 | 100.0% |
+| line_items.description | 58 / 58 | 100.0% |
+| line_items.quantity | 58 / 58 | 100.0% |
+| line_items.unit_price | 58 / 58 | 100.0% |
+| line_items.amount | 58 / 58 | 100.0% |
+| **all fields** | 378 / 397 | 95.2% |
+
+| document | fields correct | parsed | finish | seconds | wrong fields |
+|---|---|---|---|---|---|
+| inv01.png | 21 / 23 | True | stop | 74.7 | date: '10/24/2026' -> '2026-10-24'; due_date: '11/24/2026' -> '2026-11-24' |
+| inv02.png | 34 / 35 | True | stop | 112.8 | paid: True -> False |
+| inv03.png | 23 / 23 | True | stop | 83.5 | - |
+| inv04.png | 19 / 19 | True | stop | 77.6 | - |
+| inv05.png | 34 / 35 | True | stop | 91.1 | paid: True -> False |
+| inv06.png | 19 / 19 | True | stop | 77.5 | - |
+| inv07.png | 25 / 27 | True | stop | 98.9 | date: '10/09/2026' -> '2026-10-09'; due_date: '11/09/2026' -> '2026-11-09' |
+| inv08.png | 24 / 27 | True | stop | 78.8 | date: '08/11/2026' -> '2026-11-08'; due_date: '09/11/2026' -> '2026-11-09'; paid: True -> False |
+| inv09.png | 27 / 27 | True | stop | 79.9 | - |
+| inv10.png | 25 / 27 | True | stop | 99.1 | date: '4 Sep 2026' -> '2026-09-04'; due_date: '4 Oct 2026' -> '2026-10-04' |
+| inv11.png | 18 / 19 | True | stop | 66.2 | paid: True -> False |
+| inv12.png | 17 / 19 | True | stop | 67.2 | date: '06/23/2026' -> '2026-06-23'; due_date: '07/23/2026' -> '2026-07-23' |
+| inv13.png | 27 / 27 | True | stop | 80.6 | - |
+| inv14.png | 32 / 35 | True | stop | 91.6 | date: '1 Aug 2026' -> '2026-08-01'; due_date: '1 Sep 2026' -> '2026-09-13'; paid: True -> False |
+| inv15.png | 33 / 35 | True | stop | 111.1 | date: '27 Mar 2026' -> '2026-03-27'; due_date: '27 Apr 2026' -> '2026-04-27' |
+
+### Diagnostic 1: dates compared as CALENDAR dates (an extra normalisation, NOT the headline)
+date + due_date: 27 / 30 equal as calendar dates (as-printed exact match is in the table above)
+
+### Diagnostic 2: goinfer_confidence against correctness (integer and boolean fields only; AUROC = P(wrong has lower confidence than right))
+| field | n | wrong | min confidence of a right value | max confidence of a wrong value | AUROC |
+|---|---|---|---|---|---|
+| paid | 15 | 5 | 0.9960 | 0.8546 | 1.000 |
+| quantity | 58 | 0 | 0.9652 | - | n/a (no wrong values) |

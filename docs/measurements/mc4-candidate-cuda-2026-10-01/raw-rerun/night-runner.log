@@ -1,0 +1,271 @@
+=== night job mc4-candidate-cuda-rerun
+=== cmd      bash docs/measurements/mc4-candidate-cuda-2026-10-01/run-rerun.sh
+=== cwd      /home/francis/mycode/goinfer
+=== rev      queued at 1e6aae87, now bf2f8646
+=== host     nobara-pc
+=== est      30.0 min, timeout 60.0 min
+=== by       vscode-claude, MC4 candidate graded RERUN after the 2f685d7e fix
+=== doc      docs/tasks/parked/task-concurrency-2026-09.md
+=== START    2026-10-02 11:55:00 PDT  loadavg 0.14
+11:55:00 == mc4-candidate-cuda RERUN start; tree bf2f8646; bin serve-cuda-2f685d7e; driver 595.91.07; gpu baseline 639MiB, 1 compute proc(s); 0.14 1.55 2.01 2/895 3282068
+11:55:00 idle: load1=0.14 gpu_used=639MiB compute_procs=1
+11:55:00 copy copy-15b.json b4 _1 clients=4
+[spec-copy] b4_1: clients=4 wall=7.733s aggregate=261.722 tok/s (2024 tokens; HTTP errors none)
+11:55:12 idle: load1=0.84 gpu_used=639MiB compute_procs=1
+11:55:12 copy copy-15b.json s4 _1 clients=4
+[spec-copy] s4_1: clients=4 wall=4.874s aggregate=420.178 tok/s (2048 tokens; HTTP errors none)
+11:55:21 idle: load1=0.79 gpu_used=639MiB compute_procs=1
+11:55:21 copy copy-15b.json c4 _1 clients=4
+[spec-copy] c4_1: clients=4 wall=6.008s aggregate=340.888 tok/s (2048 tokens; HTTP errors none)
+11:55:30 idle: load1=0.81 gpu_used=639MiB compute_procs=1
+11:55:30 copy copy-15b.json s4 _2 clients=4
+[spec-copy] s4_2: clients=4 wall=4.894s aggregate=418.456 tok/s (2048 tokens; HTTP errors none)
+11:55:39 idle: load1=1.00 gpu_used=639MiB compute_procs=1
+11:55:39 copy copy-15b.json c4 _2 clients=4
+[spec-copy] c4_2: clients=4 wall=6.056s aggregate=338.178 tok/s (2048 tokens; HTTP errors none)
+11:55:48 idle: load1=1.08 gpu_used=639MiB compute_procs=1
+11:55:48 copy copy-15b.json b4 _2 clients=4
+[spec-copy] b4_2: clients=4 wall=7.658s aggregate=267.426 tok/s (2048 tokens; HTTP errors none)
+11:55:59 idle: load1=1.07 gpu_used=639MiB compute_procs=1
+11:55:59 copy copy-15b.json c4 _3 clients=4
+[spec-copy] c4_3: clients=4 wall=6.307s aggregate=320.909 tok/s (2024 tokens; HTTP errors none)
+11:56:09 idle: load1=1.30 gpu_used=639MiB compute_procs=1
+11:56:09 copy copy-15b.json b4 _3 clients=4
+[spec-copy] b4_3: clients=4 wall=7.651s aggregate=264.544 tok/s (2024 tokens; HTTP errors none)
+11:56:21 idle: load1=1.22 gpu_used=639MiB compute_procs=1
+11:56:21 copy copy-15b.json s4 _3 clients=4
+[spec-copy] s4_3: clients=4 wall=5.0s aggregate=404.795 tok/s (2024 tokens; HTTP errors none)
+11:56:29 idle: load1=1.21 gpu_used=639MiB compute_procs=1
+11:56:29 copy copy-15b.json b1 _1 clients=1
+[spec-copy] b1_1: clients=1 wall=2.645s aggregate=184.516 tok/s (488 tokens; HTTP errors none)
+11:56:35 idle: load1=1.19 gpu_used=639MiB compute_procs=1
+11:56:35 copy copy-15b.json s1 _1 clients=1
+[spec-copy] s1_1: clients=1 wall=1.245s aggregate=392.044 tok/s (488 tokens; HTTP errors none)
+11:56:40 idle: load1=1.33 gpu_used=639MiB compute_procs=1
+11:56:40 copy copy-15b.json c1 _1 clients=1
+[spec-copy] c1_1: clients=1 wall=1.251s aggregate=390.115 tok/s (488 tokens; HTTP errors none)
+11:56:45 idle: load1=1.31 gpu_used=639MiB compute_procs=1
+11:56:45 copy copy-15b.json s1 _2 clients=1
+[spec-copy] s1_2: clients=1 wall=1.249s aggregate=390.724 tok/s (488 tokens; HTTP errors none)
+11:56:50 idle: load1=1.28 gpu_used=639MiB compute_procs=1
+11:56:50 copy copy-15b.json c1 _2 clients=1
+[spec-copy] c1_2: clients=1 wall=1.245s aggregate=392.117 tok/s (488 tokens; HTTP errors none)
+11:56:54 idle: load1=1.26 gpu_used=639MiB compute_procs=1
+11:56:54 copy copy-15b.json b1 _2 clients=1
+[spec-copy] b1_2: clients=1 wall=2.631s aggregate=185.501 tok/s (488 tokens; HTTP errors none)
+11:57:01 idle: load1=1.22 gpu_used=639MiB compute_procs=1
+11:57:01 copy copy-15b.json c1 _3 clients=1
+[spec-copy] c1_3: clients=1 wall=1.245s aggregate=391.897 tok/s (488 tokens; HTTP errors none)
+11:57:05 idle: load1=1.22 gpu_used=639MiB compute_procs=1
+11:57:05 copy copy-15b.json b1 _3 clients=1
+[spec-copy] b1_3: clients=1 wall=2.637s aggregate=185.04 tok/s (488 tokens; HTTP errors none)
+11:57:12 idle: load1=1.27 gpu_used=639MiB compute_procs=1
+11:57:12 copy copy-15b.json s1 _3 clients=1
+[spec-copy] s1_3: clients=1 wall=1.25s aggregate=390.345 tok/s (488 tokens; HTTP errors none)
+11:57:16 idle: load1=1.49 gpu_used=639MiB compute_procs=1
+11:57:16 chat b4_1 clients=4
+[w7-plain] b4_1 clients=4 starting fresh server
+[w7-plain] b4_1 clients=4: wall=8.041s aggregate=357.05 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 286, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:57:28 idle: load1=1.80 gpu_used=639MiB compute_procs=1
+11:57:28 chat s4_1 clients=4
+[w7-plain] resuming: 1 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] s4_1 clients=4 starting fresh server
+[w7-plain] s4_1 clients=4: wall=10.161s aggregate=282.56 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 288, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:57:42 waiting for idle: load1=2.08 gpu_used=639MiB procs=1 (0s)
+11:57:47 idle: load1=1.91 gpu_used=639MiB compute_procs=1
+11:57:47 chat c4_1 clients=4
+[w7-plain] resuming: 2 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] c4_1 clients=4 starting fresh server
+[w7-plain] c4_1 clients=4: wall=9.447s aggregate=303.91 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 286, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:58:00 waiting for idle: load1=2.24 gpu_used=639MiB procs=1 (0s)
+11:58:10 idle: load1=1.97 gpu_used=639MiB compute_procs=1
+11:58:10 chat s4_2 clients=4
+[w7-plain] resuming: 3 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] s4_2 clients=4 starting fresh server
+[w7-plain] s4_2 clients=4: wall=10.151s aggregate=282.84 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 288, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:58:23 waiting for idle: load1=2.14 gpu_used=639MiB procs=1 (0s)
+11:58:29 idle: load1=1.97 gpu_used=639MiB compute_procs=1
+11:58:29 chat c4_2 clients=4
+[w7-plain] resuming: 4 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] c4_2 clients=4 starting fresh server
+[w7-plain] c4_2 clients=4: wall=9.458s aggregate=303.57 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 286, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:58:41 waiting for idle: load1=2.21 gpu_used=639MiB procs=1 (0s)
+11:58:52 idle: load1=1.87 gpu_used=639MiB compute_procs=1
+11:58:52 chat b4_2 clients=4
+[w7-plain] resuming: 5 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] b4_2 clients=4 starting fresh server
+[w7-plain] b4_2 clients=4: wall=8.014s aggregate=358.23 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 286, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:59:03 idle: load1=1.96 gpu_used=639MiB compute_procs=1
+11:59:03 chat c4_3 clients=4
+[w7-plain] resuming: 6 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] c4_3 clients=4 starting fresh server
+[w7-plain] c4_3 clients=4: wall=9.465s aggregate=303.34 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 286, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:59:16 waiting for idle: load1=2.05 gpu_used=639MiB procs=1 (0s)
+11:59:21 idle: load1=1.88 gpu_used=639MiB compute_procs=1
+11:59:21 chat b4_3 clients=4
+[w7-plain] resuming: 7 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] b4_3 clients=4 starting fresh server
+[w7-plain] b4_3 clients=4: wall=8.048s aggregate=356.72 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 286, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:59:33 waiting for idle: load1=2.14 gpu_used=639MiB procs=1 (0s)
+11:59:38 idle: load1=1.96 gpu_used=639MiB compute_procs=1
+11:59:38 chat s4_3 clients=4
+[w7-plain] resuming: 8 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] s4_3 clients=4 starting fresh server
+[w7-plain] s4_3 clients=4: wall=10.138s aggregate=283.2 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 102, 195, 350, 502, 650], [0, 157, 311, 466, 618, 766], [0, 144, 288, 441, 593, 741]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+11:59:51 waiting for idle: load1=2.19 gpu_used=639MiB procs=1 (0s)
+12:00:01 idle: load1=1.85 gpu_used=639MiB compute_procs=1
+12:00:01 chat b1_1 clients=1
+[w7-plain] resuming: 9 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] b1_1 clients=1 starting fresh server
+[w7-plain] b1_1 clients=1: wall=3.381s aggregate=227.15 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:08 waiting for idle: load1=2.10 gpu_used=639MiB procs=1 (0s)
+12:00:13 idle: load1=1.93 gpu_used=639MiB compute_procs=1
+12:00:13 chat s1_1 clients=1
+[w7-plain] resuming: 10 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] s1_1 clients=1 starting fresh server
+[w7-plain] s1_1 clients=1: wall=2.688s aggregate=285.67 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:20 idle: load1=1.86 gpu_used=639MiB compute_procs=1
+12:00:20 chat c1_1 clients=1
+[w7-plain] resuming: 11 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] c1_1 clients=1 starting fresh server
+[w7-plain] c1_1 clients=1: wall=2.691s aggregate=285.38 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:26 idle: load1=1.89 gpu_used=639MiB compute_procs=1
+12:00:26 chat s1_2 clients=1
+[w7-plain] resuming: 12 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] s1_2 clients=1 starting fresh server
+[w7-plain] s1_2 clients=1: wall=2.697s aggregate=284.71 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:32 idle: load1=1.98 gpu_used=639MiB compute_procs=1
+12:00:32 chat c1_2 clients=1
+[w7-plain] resuming: 13 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] c1_2 clients=1 starting fresh server
+[w7-plain] c1_2 clients=1: wall=2.68s aggregate=286.57 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:38 idle: load1=1.98 gpu_used=639MiB compute_procs=1
+12:00:38 chat b1_2 clients=1
+[w7-plain] resuming: 14 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] b1_2 clients=1 starting fresh server
+[w7-plain] b1_2 clients=1: wall=3.368s aggregate=228.05 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:45 idle: load1=1.98 gpu_used=639MiB compute_procs=1
+12:00:45 chat c1_3 clients=1
+[w7-plain] resuming: 15 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] c1_3 clients=1 starting fresh server
+[w7-plain] c1_3 clients=1: wall=2.681s aggregate=286.44 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:51 idle: load1=1.91 gpu_used=639MiB compute_procs=1
+12:00:51 chat b1_3 clients=1
+[w7-plain] resuming: 16 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] b1_3 clients=1 starting fresh server
+[w7-plain] b1_3 clients=1: wall=3.384s aggregate=226.92 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:00:58 waiting for idle: load1=2.08 gpu_used=639MiB procs=1 (0s)
+12:01:03 idle: load1=1.91 gpu_used=639MiB compute_procs=1
+12:01:03 chat s1_3 clients=1
+[w7-plain] resuming: 17 cell(s) already in /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+[w7-plain] s1_3 clients=1 starting fresh server
+[w7-plain] s1_3 clients=1: wall=2.687s aggregate=285.87 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/mycode/goinfer/docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun/chat-15b.json
+12:01:09 idle: load1=1.84 gpu_used=639MiB compute_procs=1
+12:01:09 stagger bS_1
+[spec-copy] bS_1: clients=4 wall=33.316s aggregate=229.797 tok/s (7656 tokens; HTTP errors none)
+12:01:46 waiting for idle: load1=2.45 gpu_used=639MiB procs=1 (0s)
+12:02:01 idle: load1=1.91 gpu_used=639MiB compute_procs=1
+12:02:01 stagger sS_1
+[spec-copy] sS_1: clients=4 wall=19.373s aggregate=395.197 tok/s (7656 tokens; HTTP errors none)
+12:02:24 waiting for idle: load1=2.11 gpu_used=639MiB procs=1 (0s)
+12:02:30 idle: load1=1.94 gpu_used=639MiB compute_procs=1
+12:02:30 stagger cS_1
+[spec-copy] cS_1: clients=4 wall=23.373s aggregate=327.564 tok/s (7656 tokens; HTTP errors none)
+12:02:56 idle: load1=1.99 gpu_used=639MiB compute_procs=1
+12:02:56 stagger sS_2
+[spec-copy] sS_2: clients=4 wall=19.462s aggregate=393.379 tok/s (7656 tokens; HTTP errors none)
+12:03:19 waiting for idle: load1=2.06 gpu_used=639MiB procs=1 (0s)
+12:03:25 idle: load1=1.90 gpu_used=639MiB compute_procs=1
+12:03:25 stagger cS_2
+[spec-copy] cS_2: clients=4 wall=23.233s aggregate=329.526 tok/s (7656 tokens; HTTP errors none)
+12:03:51 idle: load1=1.80 gpu_used=639MiB compute_procs=1
+12:03:51 stagger bS_2
+[spec-copy] bS_2: clients=4 wall=33.773s aggregate=226.688 tok/s (7656 tokens; HTTP errors none)
+12:04:29 waiting for idle: load1=2.73 gpu_used=639MiB procs=1 (0s)
+12:04:49 idle: load1=1.96 gpu_used=639MiB compute_procs=1
+12:04:49 stagger cS_3
+[spec-copy] cS_3: clients=4 wall=22.89s aggregate=334.462 tok/s (7656 tokens; HTTP errors none)
+12:05:16 idle: load1=1.89 gpu_used=639MiB compute_procs=1
+12:05:16 stagger bS_3
+[spec-copy] bS_3: clients=4 wall=33.405s aggregate=229.187 tok/s (7656 tokens; HTTP errors none)
+12:05:53 waiting for idle: load1=2.31 gpu_used=639MiB procs=1 (0s)
+12:06:03 idle: load1=1.95 gpu_used=639MiB compute_procs=1
+12:06:03 stagger sS_3
+[spec-copy] sS_3: clients=4 wall=19.443s aggregate=393.76 tok/s (7656 tokens; HTTP errors none)
+12:06:26 waiting for idle: load1=2.29 gpu_used=639MiB procs=1 (0s)
+12:06:36 idle: load1=1.94 gpu_used=639MiB compute_procs=1
+12:06:36 copy copy-7b.json b4 _1 clients=4
+[spec-copy] b4_1: clients=4 wall=22.095s aggregate=92.69 tok/s (2048 tokens; HTTP errors none)
+12:07:12 idle: load1=1.60 gpu_used=639MiB compute_procs=1
+12:07:12 copy copy-7b.json s4 _1 clients=4
+[spec-copy] s4_1: clients=4 wall=17.125s aggregate=119.591 tok/s (2048 tokens; HTTP errors none)
+12:07:40 idle: load1=1.80 gpu_used=639MiB compute_procs=1
+12:07:40 copy copy-7b.json c4 _1 clients=4
+[spec-copy] c4_1: clients=4 wall=18.847s aggregate=108.666 tok/s (2048 tokens; HTTP errors none)
+12:08:11 idle: load1=1.45 gpu_used=639MiB compute_procs=1
+12:08:11 copy copy-7b.json s4 _2 clients=4
+[spec-copy] s4_2: clients=4 wall=17.114s aggregate=119.668 tok/s (2048 tokens; HTTP errors none)
+12:08:40 idle: load1=1.52 gpu_used=639MiB compute_procs=1
+12:08:40 copy copy-7b.json c4 _2 clients=4
+[spec-copy] c4_2: clients=4 wall=18.862s aggregate=108.577 tok/s (2048 tokens; HTTP errors none)
+12:09:10 idle: load1=1.38 gpu_used=639MiB compute_procs=1
+12:09:10 copy copy-7b.json b4 _2 clients=4
+[spec-copy] b4_2: clients=4 wall=21.993s aggregate=93.12 tok/s (2048 tokens; HTTP errors none)
+12:09:44 idle: load1=1.47 gpu_used=639MiB compute_procs=1
+12:09:44 copy copy-7b.json c4 _3 clients=4
+[spec-copy] c4_3: clients=4 wall=18.852s aggregate=108.638 tok/s (2048 tokens; HTTP errors none)
+12:10:14 idle: load1=1.62 gpu_used=639MiB compute_procs=1
+12:10:14 copy copy-7b.json b4 _3 clients=4
+[spec-copy] b4_3: clients=4 wall=22.059s aggregate=92.843 tok/s (2048 tokens; HTTP errors none)
+12:10:48 idle: load1=1.58 gpu_used=639MiB compute_procs=1
+12:10:48 copy copy-7b.json s4 _3 clients=4
+[spec-copy] s4_3: clients=4 wall=17.181s aggregate=119.205 tok/s (2048 tokens; HTTP errors none)
+12:11:17 idle: load1=1.42 gpu_used=639MiB compute_procs=1
+12:11:17 copy copy-7b.json b1 _1 clients=1
+[spec-copy] b1_1: clients=1 wall=8.754s aggregate=58.486 tok/s (512 tokens; HTTP errors none)
+12:11:37 idle: load1=1.44 gpu_used=639MiB compute_procs=1
+12:11:37 copy copy-7b.json s1 _1 clients=1
+[spec-copy] s1_1: clients=1 wall=4.214s aggregate=121.507 tok/s (512 tokens; HTTP errors none)
+12:11:53 idle: load1=1.34 gpu_used=639MiB compute_procs=1
+12:11:53 copy copy-7b.json c1 _1 clients=1
+[spec-copy] c1_1: clients=1 wall=4.212s aggregate=121.544 tok/s (512 tokens; HTTP errors none)
+12:12:09 idle: load1=1.50 gpu_used=639MiB compute_procs=1
+12:12:09 copy copy-7b.json s1 _2 clients=1
+[spec-copy] s1_2: clients=1 wall=4.189s aggregate=122.228 tok/s (512 tokens; HTTP errors none)
+12:12:25 idle: load1=1.39 gpu_used=639MiB compute_procs=1
+12:12:25 copy copy-7b.json c1 _2 clients=1
+[spec-copy] c1_2: clients=1 wall=4.206s aggregate=121.723 tok/s (512 tokens; HTTP errors none)
+12:12:41 idle: load1=1.72 gpu_used=639MiB compute_procs=1
+12:12:41 copy copy-7b.json b1 _2 clients=1
+[spec-copy] b1_2: clients=1 wall=8.76s aggregate=58.448 tok/s (512 tokens; HTTP errors none)
+12:13:01 idle: load1=1.82 gpu_used=639MiB compute_procs=1
+12:13:01 copy copy-7b.json c1 _3 clients=1
+[spec-copy] c1_3: clients=1 wall=4.206s aggregate=121.744 tok/s (512 tokens; HTTP errors none)
+12:13:17 idle: load1=1.80 gpu_used=639MiB compute_procs=1
+12:13:17 copy copy-7b.json b1 _3 clients=1
+[spec-copy] b1_3: clients=1 wall=8.749s aggregate=58.521 tok/s (512 tokens; HTTP errors none)
+12:13:37 idle: load1=1.72 gpu_used=639MiB compute_procs=1
+12:13:37 copy copy-7b.json s1 _3 clients=1
+[spec-copy] s1_3: clients=1 wall=4.202s aggregate=121.852 tok/s (512 tokens; HTTP errors none)
+12:13:54 == DONE
+grade: python3 docs/measurements/mc4-candidate-cuda-2026-10-01/gates.py docs/measurements/mc4-candidate-cuda-2026-10-01/raw-rerun
+
+=== END      2026-10-02 12:13:54 PDT  rc=0
