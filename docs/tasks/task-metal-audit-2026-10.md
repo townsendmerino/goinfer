@@ -123,3 +123,21 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     two features the prefill map lacks (`attn-sink`, `out-bias`); the test admits both, so the guard alone holds it.
   - A-C02: `PrefillLast` declines on a NaN or ±Inf logit, and the decoder re-runs the prompt sequentially.
   - Mutations: removing each guard fails its test (4, 1 and 1 failures).
+- 2026-10-01: **T0.4 (C-C01) done**, except that the fit guards are unchanged:
+  - Before the fix (each change reverted in turn, against the new tests): an auto-pin of 20000 allocated 20000 resident
+    positions, and one of 40000 was refused, which moves the whole forward to the CPU. `Plan("metal")` planned an
+    unpinned 8192 at 8192 and accepted 32769. On a 131072-window config with memory for 40000 f32 positions,
+    `guardGIWFit` pins 40000 on a Metal load, so the refusal half was reachable and the probe's kill line did not fire.
+  - The fix: `resolveMetalCtxCap` treats an auto-pin as a ceiling (`min(pin, 4096)`; an explicit `-ctx` is honoured up
+    to 32768 as before). `Plan("metal")` has Metal's ceiling, from new `decoder.MetalCtxDefault` and `MetalCtxCeiling`,
+    which `metal/model.go` now takes its constants from. Plan already priced Metal's KV at f16 (`ResidentKVBytes`).
+  - Not done: f16 pricing in the guards. They run before the backend decides whether it can host the model, and a
+    model Metal declines runs on the CPU, whose KV grows to the request (R13), so f16 pricing there would admit a load
+    the CPU fallback cannot hold. The cost: a machine too tight for the 2048-position floor at f32 is refused a load
+    Metal could run at f16.
+  - Also fixed: the floor refusal printed the whole window's need under "even at the 2048-token floor" (about 32 GB
+    for a 128k-window 7B); it now prints the floor's.
+  - Gates: the three changes' mutations fail their tests (2, 2 and 1 failures). The parity manifest stays fresh
+    (neither file is hashed), so no refresh. Default metal suite: 208 pass, 51 skip, 125 s.
+  - The citation re-point found 25 citations that the earlier rounds' `--update` had moved onto a neighbouring
+    citation's line, with the lint green. All are fixed against their originals on main, checked by line content.

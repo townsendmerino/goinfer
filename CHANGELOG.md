@@ -535,6 +535,14 @@ any surface may still change.
   buffer. And the exact prefill attention kernel, used when the fused one cannot run (head dim above 128, or
   `GOINFER_METAL_FUSED_ATTENTION=0`), holds 4096 scores and ran past them on a longer context. Both now decline batched
   prefill and take the sequential path, and say why.
+- **Metal: a machine short of memory could get a larger resident KV cache than a roomy one, or none at all**
+  (`docs/audit-metal-2026-09-30.md`, C-C01). When the load-time fit guard trimmed an unpinned context to what memory
+  allowed, Metal read the trimmed value as a request. A trim above 4096 allocated KV for that many positions instead of
+  the 4096 default, and one above 32768 (a long-window model with memory for most of its window) was refused, which
+  moved the whole forward to the CPU. Metal now treats the guard's value as a ceiling, so an unpinned load gets 4096
+  positions or fewer; an explicit `-ctx` is unchanged. `goinfer fit` plans Metal at the context Metal allocates (4096
+  unpinned, `-ctx` up to 32768, a decline above it). The refusal below the 2048-token floor now states the floor's
+  memory need, not the whole window's.
 - **Changes output. Phi-3 (and Phi-4, by model type; unmeasured) gave junk under every quantized precision.** Its
   projection inputs carry outliers that one int8 scale per row cannot hold (cosine ~0 by position 16). A default Phi-3
   load now uses `--quant q4k` on the CPU and CUDA (1.31x int8int8 + per-32 on the CPU; 1.26x / 1.17x at depth 128 / 2048

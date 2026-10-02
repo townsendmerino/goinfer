@@ -20,14 +20,14 @@ import (
 
 // metalCtxCapDefault is the resident KV capacity in positions when nothing asks for more (4096).
 // The staged/CPU path handles longer unless explicitly requested via decoder.Options.ResidentContext.
-const metalCtxCapDefault = 4096
+const metalCtxCapDefault = decoder.MetalCtxDefault
 
 // metalCtxCapMax is the ceiling on resident KV positions for this backend (32768). The decode attention
 // kernels that keep scores in a 4096-key threadgroup buffer (attention, attention_f32 and attention_i8;
 // attnScoreTileBound) tile past it with online softmax, which TestAttentionKernelsPastTileBound checks
 // against a float64 reference. The exact prefill kernel does not tile; PrefillLast declines it past
 // prefillExactAttnMaxKeys.
-const metalCtxCapMax = 32768
+const metalCtxCapMax = decoder.MetalCtxCeiling
 
 // attnScoreTileBound is the attention kernel's threadgroup score-buffer tile capacity:
 // `threadgroup float sc[4096]` in kernels.go holds one score per key in the active tile.
@@ -36,11 +36,17 @@ const attnScoreTileBound = 4096
 // resolveMetalCtxCap turns a request into the effective resident KV capacity, mirroring
 // cuda/resident.go's resolveCtxCap[Fit] in SHAPE: an unpinned load (req <= 0) gets metalCtxCapDefault (4096);
 // an explicit request up to metalCtxCapMax (32768) is honored (optionally clamped to the model's window);
-// and a request ABOVE metalCtxCapMax is REFUSED with the numbers.
+// and a request ABOVE metalCtxCapMax is REFUSED with the numbers. A context the load-time fit guard auto-pinned
+// (R13; the caller did not choose it) is a ceiling, not a request: it may lower the default, never raise it.
+// Read as a request it allocated KV several times the default on a tight machine and, above metalCtxCapMax, was
+// refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-09-30.md).
 func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	req := m.ResidentContextRequest()
 	if req <= 0 {
 		return metalCtxCapDefault, nil
+	}
+	if !m.ResidentContextPinned() {
+		req = min(req, metalCtxCapDefault)
 	}
 	if req > metalCtxCapMax {
 		return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "+

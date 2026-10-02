@@ -71,6 +71,10 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
+// AutoPinResidentContextForTest makes the model's resident context request ctx with the caller not having chosen it,
+// the state the load-time fit guard's auto-pin leaves (R13), which only a load under memory pressure produces.
+func (m *Model) AutoPinResidentContextForTest(ctx int) { m.resCtxReq, m.resCtxPinned = ctx, false }
+
 // ResidentImagePrefillForTest wraps residentImagePrefill (decoder/generate_vl_resident.go) — the
 // exact primitive GenerateVL's resident image-prefill fast path calls internally — so a
 // real-checkpoint gate (cuda/) can compare its logits directly against PrefillLogitsVLForTest's

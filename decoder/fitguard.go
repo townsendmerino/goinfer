@@ -404,12 +404,12 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
 			effCtx, float64(need)/fitGB, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
 	}
-	if needAt(ctxFloor) > budget {
+	if floorNeed := needAt(ctxFloor); floorNeed > budget {
 		return 0, fmt.Errorf(
 			"decoder: this model needs ~%.2f GB (KV + scratch) even at the %d-token floor, but only "+
 				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
 				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
-			float64(need)/fitGB, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+			float64(floorNeed)/fitGB, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
 	}
 	lo, hi := ctxFloor, effCtx
 	for lo < hi {
