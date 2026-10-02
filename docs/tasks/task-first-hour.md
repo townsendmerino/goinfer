@@ -1487,11 +1487,29 @@ turn fails. **On v0.20.0:** still true (`internal/serveapp/vision_serve.go`, `ma
 decision:** accept images already in history, or keep only the newest and say so. **Gate:** a serve test with two user
 turns that each carry an image.
 
+**Fixed 2026-10-01 (owner: no multi-image history; keep the newest and say so).** `/v1/chat/completions` and `/v1/messages` replace every image in a message
+**before the last message that carries one** with the text `[an earlier image in this conversation was omitted: this server keeps only the newest image]` (so the
+model knows something was there) and answer with `X-Goinfer-Images-Omitted: <n>`. Several images inside the one latest message are the caller's explicit request and
+stay a 400 (`v1 supports 1 image per request, got 2`). Live on Gemma 3 4B with its tower (CUDA): turn 1 (red image) "Red"; turn 2 resending the history (red, then blue)
+**200**, header `1`, "Blue.", 320 prompt tokens (one image's 256 plus the note), where it had been a 400; two images in one message still 400. **Gate:**
+`TestOmitChatHistoryImages` / `TestOmitAnthropicHistoryImages` run the sequence the handler runs (omit, then collect) and require exactly the newest image to reach the
+vision path, the same-message case to still show two, and untouched bytes when there is nothing to omit; `TestHandleChat_announcesOmittedHistoryImages` goes through
+both handlers on a text-only server and requires the header; six mutants red. **Not covered in CI:** the one-image guard itself behind a real tower (that needs a vision
+checkpoint; it was run by hand as above). Not changed: the image still attaches to the *latest user turn* wherever it was sent, as before; the web UI already sent only
+the newest image.
+
 ### R24 — re-sending an identical image is not reused
 
 **Found** (scenario F). Every image turn cost about 7.5 s to first token, a byte-identical resend included, against
 about 2 s for an 11,137-token text prompt. **On v0.20.0:** a known gap (`docs/multimodal.md`, "Image turns defeat
 prefix reuse"). **Fix:** tracked there. **Gate:** scenario F's resend leg, once R23 lets it run as written.
+
+**Resend leg run 2026-10-01, on this tree: the finding does not reproduce on this path.** Gemma 3 4B int4 with its tower, CUDA-resident, one single-image request, streamed,
+`max_tokens` 4, time to first content token: first send **4.53 s**; the byte-identical resend **0.02 s**; again **0.02 s**; a *different question about the same image* **0.05 s**
+(the P9a resident image reuse and the session prefix doing their work). So "a byte-identical resend costs the first send's time" is not what this box shows. What it does not
+cover: one model, one 64×64 image (the tower always emits 256 tokens, so size should not matter, but it was not varied), the CPU path, Qwen-VL, and a history that
+resends an image in an earlier turn (R23 now replaces it with a note, which changes that turn's bytes). The cold-user's 7.5 s figure was measured on the v0.19.0 build and a
+different request shape; until it is reproduced R24 should be read as unconfirmed, not closed.
 
 ### R25 — `serve` logs nothing per request
 

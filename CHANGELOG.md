@@ -17,6 +17,10 @@ any surface may still change.
 
 ### Changed
 
+- **A chat that keeps its first image in history no longer fails (`/v1/chat/completions`, `/v1/messages`).** Chat clients resend the whole conversation, so the second image
+  turn carried two images and got `400 v1 supports 1 image per request, got 2`. The newest image is kept; each image in an earlier message is replaced by a text note the
+  model reads, and the response carries `X-Goinfer-Images-Omitted: <n>`. Several images in the one latest message are still a 400. Multi-image history is not supported (one
+  image span per generation). `docs/tasks/task-first-hour.md` R23.
 - **Changes resource use. CUDA's default context is now up to 16384 (was 8192) when the card has room.** A coding agent's first request is about 11,000 tokens,
   which 8192 refused. The default is a candidate, not a grant: it is shrunk to what the card holds and until the 4 KV slots fit, so a model that could not hold it
   lands where it did before; `-moe-cache-experts` and `-fit=off` are unchanged. The cost is VRAM allocated up front: the 1.5B Coder holds 3507 → 5299 MiB on

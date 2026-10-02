@@ -555,7 +555,8 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
-	// Multimodal: image blocks route to the vision path.
+	// Multimodal: image blocks route to the vision path. Images in earlier messages are replaced by a note first (image_history.go).
+	noteOmittedImages(w.Header(), omitAnthropicHistoryImages(req.Messages))
 	imgs, ierr := anthropicImages(&req)
 	if ierr != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", ierr.Error())

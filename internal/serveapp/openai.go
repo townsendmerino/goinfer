@@ -757,7 +757,9 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "messages is required and must contain at least one message")
 		return
 	}
-	// Multimodal: a message carrying an image_url part routes to the vision path.
+	// Multimodal: a message carrying an image_url part routes to the vision path. Images in earlier messages are replaced by a note first
+	// (image_history.go): the vision path takes one image, and a chat client resends its whole history.
+	noteOmittedImages(w.Header(), omitChatHistoryImages(req.Messages))
 	imgs, ierr := chatImages(req.Messages)
 	if ierr != nil {
 		writeErr(w, http.StatusBadRequest, ierr.Error())
