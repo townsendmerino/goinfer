@@ -154,7 +154,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:702` | goinfer | `// gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the ` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:797` | goinfer | `anchor: func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:874` | goinfer | `anchor: func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, ` |
-| `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:162` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
+| `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:180` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmd/serve/main.go:5` | goinfer | `// Identical to the pure-Go root binary except it blank-imports the opt-in Metal module ` |
 | `docs/audit-metal-2026-09-12.md|metal/cmdbuf_status_test.go:19` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-12.md|metal/expertpool.go:180` | goinfer | `guW:  gpu.NewBufferLenOf[uint32](d, N*nGuW),` |
@@ -384,7 +384,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/batch_rows.go:146` | goinfer | `"    uint mc3_j = qh_rows / nH; if (mc3_j >= mc3_M) return; uint mc3_row = rowmap[mc3_j]` |
 | `docs/audit-metal-2026-09-30.md|metal/batch_rows.go:51` | goinfer | `func edit(k string, pairs ...string) string {` |
 | `docs/audit-metal-2026-09-30.md|metal/c02_paged_forward_entrypoints_test.go:28` | goinfer | `func TestPagedMoE_forwardEntryPointsDecline(t *testing.T) {` |
-| `docs/audit-metal-2026-09-30.md|metal/close_leak_test.go:144` | goinfer | `sizeBase := r.d.CurrentAllocatedSize()` |
+| `docs/audit-metal-2026-09-30.md|metal/close_leak_test.go:162` | goinfer | `sizeBase := r.d.CurrentAllocatedSize()` |
 | `docs/audit-metal-2026-09-30.md|metal/decode_attn_r17_test.go:42` | goinfer | `for _, k := range []string{"attention_fa_blk_g6", "attention_fa_blk_g7"} {` |
 | `docs/audit-metal-2026-09-30.md|metal/decode_decomp_test.go:80` | goinfer | `// Pin the resident context to 4096 (metalCtxCapDefault): enough for every depth here (3` |
 | `docs/audit-metal-2026-09-30.md|metal/deltanet.go:129` | goinfer | `func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {` |

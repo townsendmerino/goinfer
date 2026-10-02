@@ -1159,7 +1159,7 @@ re-baked by the code it checks (G-04).
   `metal/model.go:2687-2375`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
-- **Where:** `metal/close_leak_test.go:162-169,224-248` vs aikit `metal.go:396-390`
+- **Where:** `metal/close_leak_test.go:180-187,242-266` vs aikit `metal.go:396-390`
   (`ids := d.allocs; d.allocs = nil; … for … Send(selRelease)`): `LedgerLen()` is emptied
   regardless of whether `release` is sent; the test's own comment (`:229-231`) records RSS "DID NOT
   ratchet" under a neutered `ReleaseAll` because macOS compressed the pages. **Fix:** assert on

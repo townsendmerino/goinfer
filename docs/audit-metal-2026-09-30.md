@@ -43,8 +43,8 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 - Since 2026-10-01 the program in `docs/tasks/task-metal-audit-2026-10.md` fixes findings on a branch; the Track 0
   status column below says which. So far: F-G03 (the decode attention kernels tested past 4096 keys against a float64
   reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
-  F-G01 (a default test of the steel prefill attention kernel against a float64 reference), and A-G01 (the
-  fast-prefill floor).
+  F-G01 (a default test of the steel prefill attention kernel against a float64 reference), A-G01 (the
+  fast-prefill floor), and C-G01 (the load/Close leak test reads the device's own allocation total).
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
@@ -1381,7 +1381,9 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 #### C-G01 [G] RSS-only free test
 
-`TestMetal_CloseFreesMemory` (metal/close_leak_test.go) asserts on RSS. On UMA a GPU buffer is not necessarily in RSS, so a leak of device buffers does not move the number the test reads; sibling tests (metal/close_leak_test.go:144-282) read `CurrentAllocatedSize` and so can fail. Sep 12 G-06 closed two of its gates; this is the residue. Fix: assert `CurrentAllocatedSize` returns to its pre-load value (or below a stated slack) in the same test.
+`TestMetal_CloseFreesMemory` (metal/close_leak_test.go) asserts on RSS. On UMA a GPU buffer is not necessarily in RSS, so a leak of device buffers does not move the number the test reads; sibling tests (metal/close_leak_test.go:162-300) read `CurrentAllocatedSize` and so can fail. Sep 12 G-06 closed two of its gates; this is the residue. Fix: assert `CurrentAllocatedSize` returns to its pre-load value (or below a stated slack) in the same test.
+
+**Status, 2026-10-01.** Done: the test reads `CurrentAllocatedSize` through its own probe Device and fails if it ends more than 16 MiB above the post-warm-up value. Measured on the 0.5B: 655,360 bytes before and after every cycle, 401 MB with a resident built. With `Close` made to skip `ReleaseAll`, it fails at +1.6 GB (4 × 401 MB); RSS also failed, but saw only +631 MB and +1022 MB of it in two runs.
 
 #### C-D01 [D] Stale comments and specs
 
@@ -1455,7 +1457,7 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 | M-16 | Every buffer hazard-tracked, every encoder serial | NEGATIVE-CLOSED (serial-encoder premise) | aikit hazard_tracking_probe_test.go; audit :1779 |
 | C-05 | `Run1DBatchTG`/`Run1DTG` own an autorelease pool without the OS-thread pin | CLOSED-VERIFIED | aikit metal.go:954-955 and 988-992 (`runtime.LockOSThread`, "Missed here" note) |
 | G-05 | Shared-event verdict measured on a shape without the cost | OPEN (no re-run); see C-B03 | audit :1154-1160 |
-| G-06 | Device-ledger free assertions pass by construction | CLOSED for two gates; residue C-G01 | metal/close_leak_test.go:144-282 |
+| G-06 | Device-ledger free assertions pass by construction | CLOSED for two gates; residue C-G01 | metal/close_leak_test.go:162-300 |
 | G-10 | C-09 status latch inert on Apple silicon | pointer closed (host pre-checks are the gate; `recordExecErr` sites at metal/gumbel_sample.go:69-71, metal/model.go:2157) | audit :1244 |
 | N-20 | f32 heap scales re-derived per stage | CLOSED, but its replacement is C-P01 and its premise is stale under v15 | metal/model.go:530-537; metal/gemma4_moe.go:289-304 |
 | N-21 | Expert slots zero-initialised | FIXED (`NewBufferLenOf`) | audit :1407-1412 |
@@ -2529,7 +2531,7 @@ Status uses the five values from the brief. "Record only" means the cited target
 | G-03 | PARTIAL | Record says the fixture now mixes sliding and full layers; the checkpoint is gitignored and the generator absent from the snapshot, so not verifiable here. The kernel a real Gemma 3 reaches at hd=256 (`attention_prefill`, exact) has no hd=256 test at any length (F-C02). |
 | G-04 | PARTIAL | Golden still re-bakes with `GOINFER_UPDATE_GOLDENS` and no argmax/cosine gate (`metal/snapshot_golden_test.go:223-226`); `metal/kernels.go:135,180` still cite `scripts/autoresearch_rmsnorm_results.tsv`, absent. |
 | G-05 | OPEN (REVISIT) | `pagecost_sharedevent_test.go` comment still reads "recovers ~0% ... synchronous Metal MoE paging is not viable" (dense 1.5B, ~0.26 ms/boundary). REVISIT premise: measured on a dense shape where the boundary costs 0.26 ms, not the ~15 ms the paged 26B shows (`metal/residency_probe_test.go:11-12` per the old audit). Cheapest probe: re-run on the paged 26B (area D). |
-| G-06 | CLOSED-VERIFIED | `metal/close_leak_test.go:144-181,222-282` assert `CurrentAllocatedSize`; `metal/alias_fixtures_test.go:142-166` also. |
+| G-06 | CLOSED-VERIFIED | `metal/close_leak_test.go:162-199,240-300` assert `CurrentAllocatedSize`; `metal/alias_fixtures_test.go:142-166` also. |
 | G-07 | CLOSED-VERIFIED | `metal/prefill_gate_test.go:75` sets the floor to 0; `TestMetalPrefillDivergenceRate` is cited only in comments that say it no longer exists (`metal/prefill_gate_test.go:48,186`, `spec_*_test.go`). `docs/measurements/prefill-gate-l1-2026-09-05.md:66` still cites it as a name (a dated record). |
 | G-08 | PARTIAL | `prefill_startpos_test.go` exists and passes for hd=16 (fused). Steel at hd=128 with `startPos>0` is not covered (F-G01). |
 | G-09 | OPEN | `metal/moe_prefill_measure_test.go:33` skips without a checkpoint ("a manual measurement, not a CI gate") and `:54-55` still Fatals on a paged resident. Its comment still says default-ON "above the 512-token floor" (`:17-18`); the floor is 64 (`metal/backend.go:743`). |
@@ -2814,7 +2816,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | G-03 | PARTIAL | Record says the fixture now mixes sliding and full layers; the checkpoint is gitignored and the generator absent from the snapshot, so not verifiable here. The kernel a real Gemma 3 reaches at hd=256 (`attention_prefill`, exact) has no hd=256 test at any length (F-C02). |
 | G-04 | PARTIAL | Golden still re-bakes with `GOINFER_UPDATE_GOLDENS` and no argmax/cosine gate (`metal/snapshot_golden_test.go:223-226`); `metal/kernels.go:135,180` still cite `scripts/autoresearch_rmsnorm_results.tsv`, absent. |
 | G-05 | OPEN (REVISIT) | `pagecost_sharedevent_test.go` still reads "recovers ~0% … not viable", measured on a dense 1.5B where the boundary costs 0.26 ms, not the paged M26's. Cheapest probe: re-run on the paged 26B. C-B03 (MLX's spin fence is a different mechanism), D-P02 (premise stale). |
-| G-06 | CLOSED-VERIFIED for two gates; residue C-G01 | `metal/close_leak_test.go:144-181,222-282` and `metal/alias_fixtures_test.go:142-166` assert `CurrentAllocatedSize`; `TestMetal_CloseFreesMemory` still asserts RSS only. |
+| G-06 | CLOSED-VERIFIED for two gates; residue C-G01 | `metal/close_leak_test.go:162-199,240-300` and `metal/alias_fixtures_test.go:142-166` assert `CurrentAllocatedSize`; `TestMetal_CloseFreesMemory` still asserts RSS only. |
 | G-07 | CLOSED-VERIFIED | `metal/prefill_gate_test.go:75` sets the floor to 0; `TestMetalPrefillDivergenceRate` is cited only in comments that say it no longer exists (`metal/prefill_gate_test.go:48,186`, `spec_*_test.go`). `docs/measurements/prefill-gate-l1-2026-09-05.md:66` still cites it as a name (a dated record). |
 | G-08 | PARTIAL | `prefill_startpos_test.go` exists and passes for hd=16 (the fused kernel). Steel at hd=128 with `startPos>0` is not covered by any default test (F-G01, A-G01). |
 | G-09 | OPEN | `metal/moe_prefill_measure_test.go:33` skips without a checkpoint ("a manual measurement, not a CI gate") and `:54-55` still Fatals on a paged resident. Its comment still says default-ON "above the 512-token floor" (`:17-18`); the floor is 64 (`metal/backend.go:743`). |
