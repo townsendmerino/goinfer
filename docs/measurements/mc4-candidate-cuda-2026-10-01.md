@@ -289,13 +289,39 @@ The same few prompts (2, 9, 21) are the ones that flip, across arms; each arm's 
 the identical alternative text in control B. What IS specific to the candidate is only that, on the staggered schedule, it lands on the alternative every time and batch and spec-exclusive do not, because the schedule fixes which rows share
 a step with which.
 
-**What this does and does not establish.**
-- Established: the staggered miss is a near-tie flip of a reply that is 0.015 nat from a tie, not a corruption signature; and that under four-way simultaneous load none of the three arms reproduces the sequential reply on every prompt.
-- NOT established: where the numeric difference enters (concurrent prefill, the batched decode step's row composition, or the slot a request lands in), why spec-exclusive differs from solo at all when it serves one generation at a time, or whether the
-  candidate adds any difference beyond what batch has. The solo reference is sequential, one client, with whatever prefix reuse sequential requests get; it is not a cold start per prompt.
-- **The gate is not re-graded.** Gate 1 as registered ("every reply equals batch's, and batch's rounds agree with each other") still FAILS, and nothing here moves its bar: a mechanism for the flip is shown, but an identity gate that tolerates
-  near-tie flips is a different gate, and it has to be written, with its tolerance, BEFORE a run it would grade. A pre-registered tie-aware criterion (a divergence counts as a miss unless the solo top-1/top-2 gap at the first differing token is
-  under a stated epsilon) is the owner's call, as is whether `-spec-adaptive` should be held to a standard batch itself does not meet.
-- **A claim this touches.** `docs/server.md` says a batched resident step's logits are "bit-identical to serving that conversation alone". That is what the step-level and 4x3-turn tests establish and what this run does not contradict at the step level; end to end, on four simultaneous
-  ~1,000-token copy requests, 1 to 3 of 30 replies in every arm (batch included) differed from the sequential reply, and the graded rerun's batch arm differed from itself once in 72. The doc now says so.
+### ROOT CAUSE (2026-10-02 evening): a reused prefix computed by a different kernel class
 
+**A reply can differ because part of its prompt's KV was REUSED from rows computed by a different kernel class than the one that would have computed them now.** CUDA prefills a prompt of at least 512 tokens on the fast kernels (`attn_fused`, `gemm_w4a8_mma`) and anything
+shorter on the exact ones (`attn_batched`, the decode-shaped GEMV). A slot left behind by a short request (the warm-up request, or any short chat turn) holds exact-kernel rows. When a later long prompt reuses even a 3-token header of them
+and prefills the rest on the fast kernels, its KV is a mix, and its logits differ from a cold prefill of the same prompt. The kernels themselves are fine. Evidence, from runs in `text-repro/diag-2026-10-02/` and `cuda/prefill_startoffset_test.go`:
+
+1. **The fused kernels ARE start-offset-invariant** (`TestPrefillStartOffset`, the 1.5B, a 941-row prompt). Prefill the first r rows in one call and the rest in a second call at `startPos=r` (what a reuse does), against the whole prompt in one call. With the fast kernels on
+   BOTH calls (`GOINFER_CUDA_FAST_PREFILL_FLOOR=0`): **bit-identical at r = 16, 17, 33, 64, 100, 300 and 512 (0 of 151,936 logits differ)**. With the default floor, a first call under 512 rows is exact, and **every r below 512 differs (max |delta| 0.71 to 0.94 on random embeddings)**; r = 512 is
+   fast on both calls and is identical. At r = 3 and 15 the first call cannot be fast whatever the floor (the fast kernels need 16 rows), so those differ in both variants. The test pins the invariance (red if a fast-on-both-calls split ever differs) and logs the exact-first-call differences.
+2. **Exact prefill removes every serve-level difference.** `GOINFER_CUDA_FAST_PREFILL=0`, the three text-level runs: **all 30/30 identical to the sequential reply, zero differences in 15 arm-runs** (4 sequential, 4 simultaneous, 7 staggered; `exactprefill-*`).
+3. **The shift is exactly "a prompt reused the leftover slot".** Every prompt cold on a fresh server, four at once (`cold-*.json`, `cold_logprobs.py`):
+
+   | run | which prompt reused the warm-up slot's 3-token chat header | max shift of the first six logprobs vs cold solo |
+   |---|---|---|
+   | warm-up, run 1 | section 2 (`reused=3`) | **0.2555** nat; the other three 0.0000 |
+   | warm-up, run 2 | section 9 | **0.1800**; the other three 0.0000 |
+   | warm-up, run 3 | section 21 | **0.3612, and the token flip at position 2** (the gate's flip); the other three 0.0000 |
+   | no warm-up (nothing to reuse) | none | **0.0000 on all four** |
+
+   Which prompt grabs the leftover slot is a race, so a different reply flips from run to run, which is why arms differ at indexes 0, 2, 9 and 21 in different runs. The warm-up request is a ~9-token prompt, so its rows are exact: that is the provenance.
+4. **Either fast lever alone shows it.** `GOINFER_CUDA_FAST_PREFILL=attn` (only `attn_fused`) shifts the reusing prompt by 0.059; `=gemm` (only the GEMM) by 0.054 to 0.068: whichever lever is on, the reused exact rows differ from fast ones.
+5. **Why the candidate on the staggered schedule.** In that schedule nearly every reply reuses 13 to 16 header tokens in every arm (`staggered-with-reused-b-s-c1.json`), so each slot's header rows carry whatever provenance the slot's first occupant gave them (the benchmark's warm-up request lives in one slot).
+   The candidate's slot acquisition puts reply 21 on a different slot than batch's does. That mapping is inferred from the data (reply 21 reuses 13 tokens and flips in the candidate; batch and spec-exclusive do not), not observed slot by slot.
+6. Every sequential request showed `reused=0` (observed in each sequential run, not read from the code); a reused prefix appeared only when several generations were in flight.
+
+**Wrong turns, kept in the record.** (i) I first read the shift as chunked prefill breaking chunk-invariance, then as the fused kernel being start-offset-dependent; the second is what I was asked to fix, and the test above refutes it. `-prefill-chunk=0` and `-max-concurrent=1` "left every number unchanged" in
+`CONFOUNDED-*`, which proves nothing: (ii) `conc_logprobs.py` compared a cold prefill with a reused one (its second phase re-sent prompts the server had already seen). `cold_logprobs.py` replaces it.
+
+**What this changes.**
+- **The identity failure is explained and is not the candidate's defect, and not a kernel defect.** It is KV-cache provenance, in batch and spec-exclusive too.
+- **The gate is still not re-graded.** Gate 1 as registered still FAILS; nothing here moves its bar. A fixed-provenance identity gate (exact prefill, `GOINFER_CUDA_FAST_PREFILL=0`) measures the scheduler and is clean; it would be a new pre-registered gate and a new run, with the speed gates still graded
+  at the default configuration. A tie-aware criterion is the other route. The owner's call.
+- **A product-level consequence, separate from MC4.** With fast prefill on (the default above 512 tokens), a long prompt's reply can depend on whether a short earlier request left rows in the slot it reuses: up to 0.36 nat on the first logits here for a 3-token reuse. Options, none implemented:
+  (a) **do not reuse a prefix shorter than a threshold** (about 64 tokens) on a prompt above the fast floor: re-prefilling a header costs nothing and removes this case, but not provenance deeper in a long reused prefix (a chat that began as a short turn and grew);
+  (b) **track provenance per slot** (which leading rows were computed fast and which exact) and reuse only rows whose class matches the new prompt's: full invariance, at the cost of re-prefilling generated tokens' rows (decode-produced, so exact) on every continuation, and real bookkeeping risk in the reuse code;
+  (c) document it. `docs/cuda-backend.md` and `docs/server.md` now say it. A kernel change is NOT an option: there is nothing to fix there.

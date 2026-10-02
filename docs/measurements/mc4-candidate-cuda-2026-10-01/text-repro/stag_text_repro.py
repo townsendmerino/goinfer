@@ -37,7 +37,7 @@ def run(arm):
                 start = time.perf_counter() - t0
                 lat, resp = w7.post(srv.url, body, timeout=600)
                 c = resp["choices"][0]["message"]["content"] or ""
-                res[(i, r)] = {"text": c, "ctoks": (resp.get("usage") or {}).get("completion_tokens"), "start": round(start, 2), "lat": round(lat, 2)}
+                res[(i, r)] = {"text": c, "ctoks": (resp.get("usage") or {}).get("completion_tokens"), "reused": (resp.get("usage") or {}).get("prefill_reused_tokens"), "start": round(start, 2), "lat": round(lat, 2)}
         ths = [threading.Thread(target=client, args=(i,)) for i in range(len(ROUNDS))]
         [t.start() for t in ths]
         [t.join() for t in ths]

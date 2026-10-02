@@ -5,8 +5,8 @@
 > (below), and nothing in this track is an unblocked build. Open:
 > - **The MC4 candidate's graded run on CUDA — RAN 2026-10-01 night: IDENTITY FAILED; ROOT-CAUSED AND FIXED 2026-10-02 (`2f685d7e`:
 >   an adaptive round held `resBusy` but not the batcher's `busy` flag, so two generations wrote each other's KV slot); RERUN RAN 2026-10-02: IDENTITY STILL FAILS** (one reproducible
->   candidate-only divergence in the staggered workload, reply 21 of 30 in all three rounds; copy at 4 clients also varies, but batch differs from itself there, so that one is not the candidate's). DIAGNOSED the same day: the staggered reply is a 0.015-nat near-tie flip, and under four-way
->   simultaneous load every arm, batch included, differs from the sequential reply in 1 to 3 of 30 (`DIAGNOSIS` section); the gate is not re-graded;
+>   candidate-only divergence in the staggered workload, reply 21 of 30 in all three rounds; copy at 4 clients also varies, but batch differs from itself there, so that one is not the candidate's). ROOT-CAUSED the same day: the staggered reply is a near-tie flip caused by reused KV rows computed by a different kernel class (a short earlier request's exact rows under a long fast-prefilled prompt; a 3-token header reuse is enough), not by the candidate and not by the kernels (they are start-offset-invariant);
+>   with `GOINFER_CUDA_FAST_PREFILL=0` every arm and schedule is 30/30 identical to the sequential reply (`DIAGNOSIS` and `ROOT CAUSE` sections); the gate is not re-graded;
 >   the speed numbers are recorded, not read (chat at 4 clients 0.850x batch, below the 0.97 hard bar, would park it on its own). The first run's speed gates are recorded, not read; see the RESULT, ROOT CAUSE,
 >   RERUN and RERUN RESULT sections of [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md).
 >   Do not treat `-spec-adaptive` as lossless. The run was queued as: (`mc4-candidate-cuda`, nobara, ~45 min). The build is
