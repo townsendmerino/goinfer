@@ -1,0 +1,36 @@
+# Console output of probe.py for each served probe, transcribed from the session (probe.py printed these to stdout, which was
+# not saved to a file; the SERVER logs next to this file are the captured ones). One line per request. 2026-10-02, 10:09-10:27 PDT,
+# nobara-pc, RTX 2070 SUPER, binaries built from goinfer 9692b547 (see ../multimodal-audit-2026-10-02.md "What ran").
+# image: redsq.png (336x336, a red square on blue with a yellow disc) except Gemma 3 (testdata/gemma3_preprocess_image.png, 896x896).
+# prompt: "What shapes and colours are in this image? Answer briefly."  temperature 0, max_tokens 24, request 1 = the same request again.
+
+[gemma3     serve-cuda  --backend cuda]                                   up after 24.0s
+  req0: 4.9s  prompt_tokens=281 completion_tokens=24 prefill_reused_tokens=0    reply='Here’s a brief description of the shapes and colors in the image:\n\n*   **Shapes:** Gradient\n*'
+  req1: 0.3s  prompt_tokens=281 completion_tokens=24 prefill_reused_tokens=280  (same reply)
+[qwen25vl   serve-cuda  (no --backend: auto -> cuda)]                      up after 18.0s
+  req0: 2.0s  prompt_tokens=166 completion_tokens=7  prefill_reused_tokens=0    reply='square, yellow, red, blue'
+  req1: 0.1s  prompt_tokens=166 completion_tokens=7  prefill_reused_tokens=165  (same reply)
+[qwen35     serve-cuda  --backend cuda   Qwen3.5-0.8B]                      up after 7.0s
+  req0: 7.0s  prompt_tokens=126 completion_tokens=16 prefill_reused_tokens=0    reply='This image contains a blue square, a red square, and a yellow circle.'
+  req1: 6.7s  prompt_tokens=126 completion_tokens=16 prefill_reused_tokens=0    (same reply)
+[gemma4e2b  serve-cuda  --backend cuda  --model gemma-4-E2B_q4_0-it.gguf --vision gemma-4-E2B-unq]   up after 3.0s
+  req0: 25.3s prompt_tokens=279 completion_tokens=24 prefill_reused_tokens=0    reply='The image contains a **square** shape with a **red** background and a **yellow** circle in the center,'
+  req1: 24.4s prompt_tokens=279 completion_tokens=24 prefill_reused_tokens=0    (same reply)
+[glm        serve-cuda  --backend cuda   GLM-OCR]                           up after 3.0s
+  req0: 2.8s  prompt_tokens=164 completion_tokens=19 prefill_reused_tokens=0    reply='The image contains a square with a yellow circle in the center, surrounded by a red border.'
+  req1: 0.1s  prompt_tokens=164 completion_tokens=19 prefill_reused_tokens=163  (same reply)
+[ministral  serve-cuda  --backend cuda   ministral3-3b-bf16 (model_type mistral3)]
+  image request -> HTTP 400 {"error":{"message":"this model has no vision tower (start with --vision <dir> to enable image input)","type":"invalid_request_error"}}
+[gemma426b  serve-cuda  --backend cuda --moe-cache-experts --model gemma4-26b-int4.giw --vision gemma-4-26b-a4b-it]
+  run 1 (probe-gemma426b-run1.txt): req0 31.4s HTTP 200, prompt_tokens=283 completion_tokens=0, reply='' (finish_reason not printed by that version of the probe); swap guard tripped during it
+  run 2 (probe-gemma426b-run2.txt): req0 68.5s finish=stop prompt_tokens=283 completion_tokens=16 reply='The image contains a yellow circle, a red square, and a blue background.'
+[g3webgpu   serve-gpu (CGO build, -tags gpu)  --backend webgpu --ctx 4096 --kv-sessions 1   Gemma 3]   up after 18.0s
+  req0: 27.4s finish=length prompt_tokens=281 completion_tokens=24 prefill_reused_tokens=0    reply='Here’s a brief description of the shapes and colors in the image:\n\n*   **Shapes:** Gradient\n*'
+  req1: 0.8s  prompt_tokens=281 completion_tokens=24 prefill_reused_tokens=280  (same reply)
+  (first attempt WITHOUT --ctx 4096 --kv-sessions 1: the server exited at startup, "enable resident GPU vision encoder: gpu: upload vision tower: ... Not enough memory left" after the decoder took the VRAM; that attempt's log was overwritten by the second)
+[q25webgpu  serve-gpu  --backend webgpu --ctx 4096 --kv-sessions 1   Qwen2.5-VL-3B]   up after 14.0s
+  req0: 6.1s  finish=stop prompt_tokens=166 completion_tokens=7 prefill_reused_tokens=0     reply='square, red, yellow, blue'
+  req1: 0.1s  finish=stop prompt_tokens=166 completion_tokens=9 prefill_reused_tokens=165   reply='square, red, circle, yellow, blue'   (differs from req0 at temperature 0)
+[glmwebgpu  serve-gpu  --backend webgpu --ctx 4096 --kv-sessions 1   GLM-OCR]          up after 2.0s
+  req0: 5.3s  finish=stop prompt_tokens=164 completion_tokens=19 prefill_reused_tokens=0    reply='The image contains a square with a yellow circle in the center, surrounded by a red border.'
+  req1: 3.2s  finish=stop prompt_tokens=164 completion_tokens=19 prefill_reused_tokens=0    (same reply)

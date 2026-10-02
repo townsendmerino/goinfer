@@ -1,0 +1,25 @@
+=== RUN   TestLoadVisionTower_countsCfgModelsNotSMap
+loaded adapter "ft" on base "base" in 0s
+--- PASS: TestLoadVisionTower_countsCfgModelsNotSMap (0.00s)
+=== RUN   TestGlmOcr_extractionTurn
+--- PASS: TestGlmOcr_extractionTurn (0.00s)
+=== RUN   TestGlmOcr_extractionPromptIDs
+--- PASS: TestGlmOcr_extractionPromptIDs (0.12s)
+=== RUN   TestIsGlmOcrVisionDir
+--- PASS: TestIsGlmOcrVisionDir (0.00s)
+=== RUN   TestSetupGlmOcrVision
+--- PASS: TestSetupGlmOcrVision (0.00s)
+=== RUN   TestImageFitsContext
+--- PASS: TestImageFitsContext (0.00s)
+=== RUN   TestGlmOcr_visionPromptIDs
+--- PASS: TestGlmOcr_visionPromptIDs (0.16s)
+=== RUN   TestGlmOcr_textOnlyPromptIDs
+--- PASS: TestGlmOcr_textOnlyPromptIDs (0.18s)
+=== RUN   TestIsQwen35VisionDir
+--- PASS: TestIsQwen35VisionDir (0.00s)
+=== RUN   TestSetupQwen35Vision
+--- PASS: TestSetupQwen35Vision (0.00s)
+=== RUN   TestLoadVisionTower_ggufMmprojIsRefusedPlainly
+--- PASS: TestLoadVisionTower_ggufMmprojIsRefusedPlainly (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.474s

@@ -1,0 +1,17 @@
+=== RUN   TestForwardMRoPE_constantShiftInvariance
+    forwardmrope_parity_test.go:22: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestForwardMRoPE_constantShiftInvariance (0.00s)
+=== RUN   TestForwardMRoPE_equalArgsMatchesForward
+    forwardmrope_parity_test.go:93: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestForwardMRoPE_equalArgsMatchesForward (0.00s)
+=== RUN   TestUploadKV_matchesSequentialForward
+    uploadkv_parity_test.go:40: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestUploadKV_matchesSequentialForward (0.00s)
+=== RUN   TestVisionEncoder_parity
+    vision_test.go:206: resident GPU vs CPU-W8A8 cosine=1.000000 | GPU vs HF golden cosine=0.999959
+--- PASS: TestVisionEncoder_parity (0.84s)
+=== RUN   TestVisionEnableResident_parity
+    vision_test.go:268: EnableResident Forward vs CPU cosine=1.000000
+--- PASS: TestVisionEnableResident_parity (0.31s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	1.209s

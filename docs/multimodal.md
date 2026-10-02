@@ -1,35 +1,76 @@
 # Multimodal (vision-language) for goinfer — plan
 
-> **Status (2026-09-15, M-54): three families served, per-backend GPU support uneven — see below.
-> Everything below §"2026-09 update" is the June plan kept as the design record; it describes an
-> earlier, narrower state than either this line or that section's own body.** Where it stands
-> today, in one paragraph: images work end-to-end for **three families** — Gemma 3 (SigLIP
-> tower), Qwen2.5-VL (own ViT, image path now real, not text-only), and Gemma 4 (E2B/E4B/26B-A4B/
-> 31B) — on the OpenAI and Anthropic surfaces and in `demo/agent`. Per backend: **CPU** serves all
-> three, always. **CUDA** resident-serves Gemma 3's tower (wired 2026-09-15, M-18; 1.58×, 41.3 s →
-> 26.1 s CPU-vs-resident at int8) and can run GPU-resident decode after any tower for Gemma 3
-> (13.26×) or Qwen2.5-VL (3.86×); Qwen2.5-VL's and Gemma 4's own towers stay CPU-only (no
-> `EnableResident` path yet); Gemma 4's `GenerateGemma4VL` is CPU-only v1 with no resident decode
-> bridge at all. **WebGPU** resident-serves Gemma 3's tower (~9×, needs cgo). **Metal** has no
-> vision tower for any family yet. Both CUDA's and WebGPU's resident towers need cgo, so **the
-> cgo-free release binaries still have no GPU vision for any family** — a downloaded
-> `goinfer-serve` does every image at CPU speed regardless of which family. CPU tower cost is
-> ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in
-> `docs/benchmarks.md` — flat vs. the pre-measurement baseline, not a regression). No audio in, no
-> video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
-> registry, or the cold-user protocol. The next program is §"2026-09 update" below.
+> **Status (2026-10-02, audited: `docs/measurements/multimodal-audit-2026-10-02.md`): five families read images, and the GPU story differs by family and by backend.
+> Everything below §"2026-09 update" is the June plan kept as the design record; it describes an earlier, narrower state than this block.**
+> The per-family, per-backend table below replaces the 2026-09-15 paragraph (M-54), which is kept further down with each wrong sentence corrected in place.
+> Every cell carries a label in the audit record: **run** = run on `nobara-pc` on 2026-10-02 (CUDA and WebGPU only), **read** = read from code and never run
+> (**every Metal cell: no Mac was available**), **recorded** = a dated record in the tree, not re-measured. A cell marked unverified stays unverified here.
 >
-> **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** the "three families" count above predates both
-> Qwen3.5+ (P8a) and **GLM-OCR**, which now reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded
-> on the first image) feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder
-> (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered documents
-> (`docs/measurements/glm-ocr-o3-2026-10/`). **O7 (2026-10-02) made the family list true and did not re-audit the rest.** Five
-> families read images on the OpenAI and Anthropic surfaces now: Gemma 3 (SigLIP), Qwen2.5-VL, Gemma 4, **Qwen3.5+** (dense sizes, from
-> safetensors; P8a) and **GLM-OCR** (aikit v1.52.0; its tower is f32 on the CPU by default on every backend, its decoder is
-> CUDA-resident and runs on the CPU on Metal and WebGPU). The per-backend sentences in the 2026-09-15 paragraph above are NOT
-> re-audited and are known to be stale: aikit has shipped `qwencuda`, `qwenmetal`, `visioncuda` and `visionmetal` modules since, so
-> "Metal has no vision tower for any family yet" and "Qwen2.5-VL's tower stays CPU-only" should not be relied on. A per-family,
-> per-backend rewrite needs its own audit.
+> Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; one image per generation: serve keeps the newest image in a conversation and replaces earlier ones with a note, `internal/serveapp/image_history.go`; several images in the latest message are a 400) for **Gemma 3** (SigLIP),
+> **Gemma 4** (E2B/E4B/26B-A4B/31B), **Qwen2.5-VL**, **Qwen3.5+ dense** (0.8B and 9B gated; the MoE sizes are accepted by serve's auto-discovery and have never been
+> run) and **GLM-OCR**. Negatives: Qwen3-VL is its text decoder only (no tower), and a `mistral3` checkpoint's tower is ignored (an image gets HTTP 400).
+> In each cell, the first half is where the vision **tower** runs, the second where the **decoder** runs after the image.
+>
+> | | CPU | CUDA | Metal | WebGPU |
+> |---|---|---|---|---|
+> | **Gemma 3** | CPU / CPU | **resident tower (goinfer's own) / resident decode** (run) | CPU / resident decode through the `UploadKV` bridge (read) | resident tower / resident decode (run) |
+> | **Gemma 4 E2B, E4B** | CPU / CPU | CPU (int8) / **CPU, the whole model** (run) | CPU / CPU (read) | CPU (int8) / CPU (read) |
+> | **Gemma 4 26B-A4B, 31B** | CPU / CPU | CPU (int8) / CPU prefill, then resident decode (26B run; 31B unverified) | CPU / bridge (read) | CPU (int8) / unverified |
+> | **Qwen2.5-VL** | CPU / CPU | CPU (int8) / resident m-RoPE prefill and decode (run) | CPU / bridge decode (read) | CPU (int8) / bridge decode (run) |
+> | **Qwen3.5+ dense** | CPU / CPU | CPU (int8) / **CPU prefill and CPU decode** (run) | CPU / CPU (read) | CPU (int8) / CPU (read) |
+> | **GLM-OCR** | CPU (f32) / CPU | CPU (f32) / resident decode (run) | CPU (f32) / CPU (read) | CPU (f32) / staged, no resident KV (run) |
+>
+> The CPU column: tiny-fixture tests ran today (41 top-level `--- PASS`, 0 skipped); the real-checkpoint CPU results are recorded (Gemma 3 31.3 s/image 2026-09-08, Gemma 4
+> E2B and 26B-A4B 2026-09-10, Qwen3.5 0.8B and 9B 2026-09-30, GLM-OCR 2026-10-02). On CUDA and WebGPU, "(run)" means a served image request or a test on the real checkpoint.
+>
+> - **Tower.** Only Gemma 3's tower ever runs on a GPU, on CUDA and WebGPU. aikit now ships `gpu/qwencuda`, `gpu/qwenmetal`, `gpu/visioncuda` and `gpu/visionmetal`
+>   (and a Qwen resident seam), but **goinfer imports none of them** and serve calls `EnableResident` in exactly one place (`internal/serveapp/main.go:1125`, the Gemma 3
+>   tower, on `--backend cuda|webgpu`). So the Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR towers are CPU towers on every backend, and **Metal runs no tower at all**
+>   (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal tower was not wired; the 2026-09-30 audit found that unchanged).
+> - **int8.** `--backend cuda|webgpu` makes the Gemma 3, Qwen2.5-VL, Qwen3.5+ and Gemma 4 towers int8 whatever `-vision-quant` says (`internal/serveapp/main.go:1102`); only Gemma 3's
+>   resident tower needs it, so for the other three that is a CPU int8 tower. GLM-OCR is the exception (f32 unless `-vision-quant int8`). On CPU and Metal every tower is
+>   f32 unless asked.
+> - **Decoder.** Gemma 3 and Qwen2.5-VL decode resident after an image on every backend that has `UploadKV` and `ForwardMRoPE` (CUDA, WebGPU, Metal); only CUDA also has a
+>   resident image prefill (`ResidentImagePrefill`, `ResidentMRoPEPrefill`), the others prefill the image on the CPU and upload the KV. Gemma 4 26B/31B uses the same bridge
+>   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode**: a recurrent family refuses every resident branch (`decoder/generate_vl.go:280`), so a repeat
+>   of the same image also re-runs the tower. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
+>   resident on CUDA only (pairwise rope); on WebGPU it runs the staged path, on Metal the CPU.
+> - **Release binaries.** `goinfer-serve-linux-{amd64,arm64}` is built from `cuda/cmd/serve` with `CGO_ENABLED=0 -tags cuda`: **CUDA is cgo-free, so a downloaded Linux
+>   binary on an NVIDIA box does Gemma 3 images with the resident tower** (run: `encoder int8/cuda-resident`, 4.9 s for a cold image). The darwin binaries carry Metal (no tower,
+>   see above) and the Windows binaries are CPU. WebGPU is in **no** release binary: it is the one cgo build (`-tags gpu`, `gpu/cmd/serve`), and its resident tower needs
+>   `--ctx` small enough to leave VRAM for it (on an 8 GB card the default aborts startup). `goinfer-chat --image` is GLM-OCR only; `demo/agent` images are Gemma 3 only (tower
+>   `cpu` or `webgpu`).
+> - **Numbers, each with its record.** CPU SigLIP tower **31.3 s/image**, recorded 2026-09-08 (`docs/benchmarks.md` §A "Vision tower CPU prefill"), not re-measured. CUDA Gemma 3
+>   tower **26.0 s -> 4.1 s/image (6.4x)**, recorded 2026-09-21 (`docs/measurements/vision-tower-mma-2026-09-21.md`; the fused kernel is the default by the owner's override,
+>   `GOINFER_CUDA_VISION_ATTN=exact` restores the 26 s kernel); the 41.3 s -> 26.1 s "1.58x" this doc used to quote is the 2026-09-08 first version it replaced. Decode after an image on
+>   CUDA, recorded 2026-09-08 and not re-measured: Gemma 3 6.96 -> 92.27 tok/s (13.26x), Qwen2.5-VL 5.95 -> 22.98 tok/s (3.86x); resident image prefill 22.27x (Gemma 3) and 36.14x
+>   (Qwen2.5-VL). WebGPU's Gemma 3 tower **~9x (171 s -> 18.8 s)**, recorded 2026-06-11 before the 2026-08-25 re-anchor ("the absolute 18.8 s is not current"); today's one cold WebGPU request
+>   took 27.4 s end to end, exploratory. Nothing was re-measured on Metal.
+> - **Not verified** (audit "Could not verify"): all of Metal; Gemma 3's two CUDA decoder gates, which skip on an 8 GB box (the unpinned context does not fit), so their
+>   cosines are recorded 2026-09-08; Gemma 4 31B and E4B; Gemma 4 on WebGPU; Qwen3.5+ MoE images; int8 fidelity of the Qwen2.5-VL, Qwen3.5+ and Gemma 4 towers.
+>
+> No audio in, no video, no image out. (The audit did not cover `serve check`, the fit guard, the recommendation registry or the cold-user protocol; see the correction to the old
+> sentence about them below.) The next program is §"2026-09 update" below.
+>
+> **The 2026-09-15 paragraph (M-54) as it stood, each wrong sentence corrected in place (2026-10-02):**
+>
+> ~~Where it stands today, in one paragraph: images work end-to-end for **three families** — Gemma 3 (SigLIP tower), Qwen2.5-VL (own ViT, image path now real, not text-only), and
+> Gemma 4 (E2B/E4B/26B-A4B/31B) — on the OpenAI and Anthropic surfaces and in `demo/agent`.~~ **CORRECTED: five families (Qwen3.5+ dense from P8a, GLM-OCR from O3), and `demo/agent` takes
+> Gemma 3 only.** Per backend: **CPU** serves all three, always. *(True.)* **CUDA** resident-serves Gemma 3's tower (wired 2026-09-15, M-18; ~~1.58×, 41.3 s → 26.1 s CPU-vs-resident at int8~~
+> **superseded 2026-09-21: 4.1 s per image, 6.4x**) and can run GPU-resident decode after any tower for Gemma 3 (13.26×) or Qwen2.5-VL (3.86×) *(true; recorded 2026-09-08)*; Qwen2.5-VL's and
+> Gemma 4's own towers stay CPU-only (no `EnableResident` path yet) **(still true of what ships; aikit now has the Qwen seam and modules and goinfer does not use them)**; ~~Gemma 4's
+> `GenerateGemma4VL` is CPU-only v1 with no resident decode bridge at all~~ **WRONG since 2026-09-10 (P7 Phase D): the bridge exists for 26B-A4B/31B; only E2B/E4B are CPU for the whole model.**
+> **WebGPU** resident-serves Gemma 3's tower (~9×, needs cgo) *(true)*. **Metal** has no vision tower for any family yet *(true of the tower; Metal's decode bridge exists since 2026-09-17, unrun)*.
+> ~~Both CUDA's and WebGPU's resident towers need cgo, so **the cgo-free release binaries still have no GPU vision for any family** — a downloaded `goinfer-serve` does every image at CPU speed
+> regardless of which family.~~ **WRONG: only WebGPU needs cgo. The Linux release binary is `CGO_ENABLED=0` and carries the CUDA tower; it is the macOS and Windows binaries, and every family
+> but Gemma 3, that run the tower at CPU speed.** CPU tower cost is ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in `docs/benchmarks.md` — flat vs. the
+> pre-measurement baseline, not a regression) *(still the recorded CPU figure)*. No audio in, no video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
+> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/servecheck/check.go:391`; the registry and the cold-user protocol still have none)*.
+>
+> **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** GLM-OCR reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded on the first image)
+> feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered
+> documents (`docs/measurements/glm-ocr-o3-2026-10/`). O7 (2026-10-02) made the family list true; **the audit above (same day) re-checked the per-backend sentences** and they are replaced by the
+> table. (This note used to say the per-backend sentences "are NOT re-audited and are known to be stale".)
 >
 > **Update 2026-10-02 (GLM-OCR O5, structured extraction):** an image request with `response_format` `json_schema` on GLM-OCR is an
 > extraction request: serve builds the model's JSON-template prompt from the schema and constrains the reply to it, and
@@ -117,6 +158,9 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    overhead on the resident path. **Metal is out of scope**: `UploadKV` is unimplemented there
    (`metal/backend.go`), so this design doesn't reach it; a real gap for whoever picks up Metal
    residency next, not attempted here.
+   **CORRECTED 2026-10-02:** Metal's `UploadKV` and `ForwardMRoPE` were real by 2026-09-17 (`26f64807`; `metal/backend.go`), so this design does reach Metal for
+   Gemma 3 and Qwen2.5-VL (CPU prefill, then resident decode). No Mac run of it exists, so it is read from code, not shown to work
+   (`docs/measurements/multimodal-audit-2026-10-02.md`). Metal still has no resident image prefill and no tower.
    **UPDATE 2026-09-08: a cold (first-time) image turn's own PREFILL, not just decode, is now
    also resident (CUDA/Gemma-3 only).** Gap 0 as shipped deliberately kept CPU prefill (no
    resident equivalent of the bidirectional image-block mask existed) and only moved decode; this
@@ -156,7 +200,10 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    image blocks (as above), Metal/WebGPU.
 1. **A downloaded binary cannot use the GPU for images** (Metal has no vision tower yet; CUDA's
    and WebGPU's are both cgo — reached only via each backend's own submodule build, `cuda/cmd/serve`
-   / `-tags gpu`, never the pure-Go root binary a release download is). CUDA's tower was also never
+   / `-tags gpu`, never the pure-Go root binary a release download is). **CORRECTED 2026-10-02: CUDA is
+   not cgo.** The Linux release binary is `cuda/cmd/serve` built `CGO_ENABLED=0 -tags cuda`, so it carries the resident Gemma 3
+   tower (verified by running it, `docs/measurements/multimodal-audit-2026-10-02.md` P1). Only WebGPU needs cgo and ships in no release
+   binary; macOS and Windows downloads and every family but Gemma 3 still run the tower on the CPU. CUDA's tower was also never
    actually reachable from `serve --backend cuda` until M-18 (docs/audit-2026-09-10.md) wired
    `EnableResident()` into its load path, 2026-09-15 — see §P6's own CUDA entry below, which was
    itself stale on exactly this point. Every Mac and every Linux release-binary user still gets
@@ -170,7 +217,8 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    a vision gap — see Phase D below). **Real-checkpoint end-to-end validation CLOSED 2026-09-10
    (Phase E)** for both E2B and 26B-A4B — also fixed a real, load-blocking bug found along the
    way in `aikit`'s vision tower (`standardize=true` unimplemented, shipped as `aikit` v1.39.1).
-   Qwen-VL, the most-pulled VL line, is still text-only here.
+   Qwen-VL, the most-pulled VL line, is still text-only here. **CORRECTED 2026-10-02: Qwen2.5-VL
+   has served images since P5; "Qwen-VL" here meant Qwen3-VL, which is still its text decoder only (Qwen3.5+ images shipped as P8a). Vision is five families now.**
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
    reads neither half of that pair for vision.
 4. **Image turns defeat prefix reuse and the fit guard.** Agent harnesses with screenshots are the
@@ -224,7 +272,10 @@ number is published without provenance.
   tower" for the full writeup, both numbers, and the specific host-round-trip residual-add
   optimization named there as the natural next lever if the modest 1.58× ever needs to close
   further toward WebGPU's own ~9×). Metal, and Qwen2.5-VL's own (differently-shaped) tower, remain
-  explicitly out of scope for this pass.
+  explicitly out of scope for this pass. **UPDATE 2026-10-02: the 1.58× and its 26.1 s were overtaken on 2026-09-21 (R8 phase A, the fused
+  non-causal attention kernel, default since the owner's override): 26.0 s -> 4.1 s/image, `docs/measurements/vision-tower-mma-2026-09-21.md`.
+  A served cold Gemma 3 image on the Linux release-style CUDA build took 4.9 s end to end today. Metal still has no tower; Qwen2.5-VL's tower is still
+  CPU in goinfer although aikit's `gpu/qwencuda` and `gpu/qwenmetal` now exist (goinfer imports neither).**
 - **P7 · Gemma 4 vision (all sizes) and audio (E2B/E4B/26B-A4B).** Phase 0 from the real
   `Gemma4VisionConfig`/`Gemma4AudioConfig` and modeling file, not the summary above: the encoder
   block, the 3×3 pooling to soft tokens, the position table, the variable token budget and its
@@ -773,6 +824,10 @@ number is published without provenance.
        zero, PR #2304) is a reminder: never quantise `pos_embed`; ours stays f32 under `quant`.
      - Not found anywhere: an image-token-count off-by-one, or an m-RoPE bug tied to `partial_rotary_factor`
        0.25. Not verified by anyone: whether ggml's im2col patch conv rounds to F16.
+  **UPDATE 2026-10-02: the 9B leg ran** (night job 2026-09-30, `~/goinfer-logs/night/runs/2026-09-30/p8a-g2-9b.log`: `--- PASS: TestQwen35VLReal_G2_9B`, 32/32 tokens
+  identical on all three images, worst-row tower cosine 0.999999987 on the third), and aikit v1.52.0 is tagged and pinned by all five modules. Still open: resident image decode (a recurrent family
+  refuses every resident branch, so Qwen3.5+ images are CPU prefill and CPU decode on every backend, run on CUDA 2026-10-02), the MoE checkpoint (serve accepts the model type; no image has
+  been run through it), resize fidelity, and the think-block decision. Under `--backend cuda|webgpu` serve loads this tower as int8; the gates ran f32.
   **P8a STATUS 2026-09-30 (local commits, NOT pushed).** G0 (tower vs HF), G0b (preprocessing), G1 (tiny fixture),
   G3 (text path byte-identical), G2 (0.8B, 3 images, 32 tokens) and G4 (serve) all met on the 0.8B; results in
   `docs/measurements/p8a-qwen35-vl-2026-09/{g0-g0b-results,g1-g4-results}.md`, bars and two amendments in

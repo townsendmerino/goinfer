@@ -369,7 +369,7 @@ absent — this pass read the engine and packaging, not the library surface.
 | LoRA adapters | ✓ PEFT, merged at load ʰ | ✓ | ✓ | ✓ | ✓ | — | ✗ | — |
 | GPU | ~ WebGPU (broad residency) + **cgo-free CUDA & Metal** (dense + MoE; `features.go`-gated) ⁱ | ✓ CUDA/Metal/Vulkan | ✓ CUDA/ROCm/Vulkan/Metal | ✓ CUDA/Metal | ✓ CUDA/TPU/+ | ✓ inherits llama.cpp | ✗ CPU only | ✗ no GPU backend ᵏ |
 | Continuous batching | ✗ | ✓ | ~ parallel slots via llama-server ᵇ | ✓ | ✓ PagedAttention | — | ✗ | — |
-| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL + Qwen2.5-VL, pure-Go SigLIP/ViT → serve + agent; **31.3 s/image CPU** (SigLIP) — 2026-09-08 row, §A; `-tags gpu` webgpu resident figure (18.8 s) not re-measured at this row's date; no audio) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
+| Multimodal (vision/audio) | ~ **vision in** (Gemma 3 VL + Qwen2.5-VL, pure-Go SigLIP/ViT → serve + agent; **31.3 s/image CPU** (SigLIP) — 2026-09-08 row, §A; `-tags gpu` webgpu resident figure (18.8 s) not re-measured at this row's date; no audio; **2026-10-02: five families now (Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+ dense, GLM-OCR), and a CUDA Gemma 3 tower is 4.1 s/image since 2026-09-21, `docs/multimodal.md` status**) | ✓ | ✓ | ✓ | ✓ | ~ (yzma VLMs; gollama —) | ✗ | — |
 | Model coverage | ~ **36 architectures** ʲ | ✓ dozens | ✓ broad | ✓ broad | ✓ 200+ | ✓ inherits llama.cpp | ✗ Llama-2 toy | ✓ inherits llama.cpp (GGUF only) ᵏ |
 | Multi-threaded CPU decode | ✓ | — | — | — | — | — | — | ✗ single-threaded ᵏ |
 
@@ -836,7 +836,7 @@ The vision tower's own single-run cost measured here (31.324 s) is consistent wi
 median above (31.3 s).
 
 **Not yet measured**: CUDA is the only backend measured (Metal has no `UploadKV`/resident image-turn
-decode at all — out of scope, see `docs/multimodal.md`; WebGPU declines `gemma-3-4b-it` residency
+decode at all — out of scope, see `docs/multimodal.md` **[corrected 2026-10-02: Metal has had a real `UploadKV` and `ForwardMRoPE` since 2026-09-17, so the bridge exists there; still never run on a Mac]**; WebGPU declines `gemma-3-4b-it` residency
 on this box for an unrelated reason, missing arch features — see `cuda/resident_reuse_vl_parity_test.go`'s
 own doc comment).
 

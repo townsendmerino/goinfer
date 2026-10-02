@@ -221,8 +221,12 @@ Everything off that path routes to the existing staged/CPU path automatically �
 crash:
 
 - **No NVIDIA driver / dlopen fails** → declines, falls back to CPU, one-line stderr note.
-- **MLA / Mamba / hybrid / vision** → declines; runs staged. (A MoE with a shared expert no
-  longer belongs on this list — see above.)
+- **A family or checkpoint the resident path does not implement** → declines; runs staged or on the
+  CPU (`docs/hardware-matrix.md` is the current list: Mamba-2 hybrids such as Nemotron-H and Granite-4.0-H,
+  Gemma 4 E2B/E4B, and others). *Corrected 2026-10-02: this bullet used to read "MLA / Mamba / hybrid / vision".
+  MLA and the DeltaNet hybrids are resident now, as the list above says, and a vision checkpoint is not a decline:
+  its text decoder goes resident, and an image turn rides the `UploadKV` bridge — see `docs/multimodal.md`.
+  A MoE with a shared expert no longer belongs on this list either — see above.*
 - **Backend not built in** (`--backend cuda` on a binary without `-tags cuda`) → falls back
   to CPU with a note telling you to rebuild with `-tags cuda`.
 

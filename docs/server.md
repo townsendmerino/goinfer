@@ -340,34 +340,51 @@ Compatible, not full-spec (llama.cpp's bar): `thinking` / `cache_control` /
 (≥32k).
 
 **Vision (image→text), pure Go.** With a vision-capable checkpoint loaded behind
-`--vision <dir>` (auto-discovered when `--model` is a VL dir — Gemma 3's SigLIP
-projector, Qwen2.5-VL's own ViT, or Gemma 4's vision tower are each detected and
-routed to their own loader; `internal/serveapp/main.go`'s `loadVisionTower`), `cmd/serve`
-accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
-`image` blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an
-SSRF guard, returns 400). An image runs through the matching pure-Go vision tower
-(SigLIP encoder + projector for Gemma 3, HF-parity-gated) into the decoder's
-embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
-dropped/pasted image too. Caveat (Gemma 3's SigLIP path specifically): the tower's
-prefill is CPU-heavy — measured ~31.3 s/image at 896² (`docs/benchmarks.md` §A "Vision
-tower CPU prefill"), correct but slow. `-vision-quant int8` (default `f32`) is already
-shipped, not a future plan — `docs/completed/task-cpu-vision-prefill.md` is closed, and
-its own finding was that int8 only speeds this compute-bound prefill on AVX512-VNNI
-hardware; on plain AVX2 it measured a wash, which is why f32 stays the default.
-`--backend webgpu`/`--backend cuda` force the int8 tower regardless of `-vision-quant`
-(needed for the resident GPU matmul weights); CUDA's resident tower measured 26.1 s
-against the same 41.3 s CPU baseline (1.58×, M-18).
+`--vision <dir>` (auto-discovered when `--model` is a VL directory: `internal/serveapp/main.go`'s
+`loadVisionTower` detects Gemma 3's SigLIP projector, Qwen2.5-VL's own ViT, Gemma 4's vision
+tower, a Qwen3.5+ checkpoint and a GLM-OCR checkpoint, and routes each to its own loader),
+`cmd/serve` accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
+`image` blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an SSRF guard,
+returns 400), one image per generation (serve keeps the newest image in a conversation and replaces earlier ones with a visible note and an `X-Goinfer-Images-Omitted` header; several images in the latest message are a 400). An image runs through the matching pure-Go vision tower into the
+decoder's embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
+dropped/pasted image too, for Gemma 3 only. Qwen3-VL is its text decoder only (no tower), and a
+`mistral3` checkpoint's tower is ignored: an image on either is a 400 "this model has no vision tower".
 
-*Updated 2026-10-02 (O7 of `docs/tasks/task-glm-ocr-2026-10.md`): the families above are no longer the whole list. Two more read
-images on this route. **Qwen3.5+** (dense sizes, from safetensors; P8a) uses aikit's `Qwen3VisionEncoder`. **GLM-OCR** (a 0.9B
-document model; `model_type` `glm_ocr`) is auto-discovered from its checkpoint directory and uses aikit's own tower
-(`vision.GlmOcrVisionEncoder`, aikit v1.52.0), loaded on the first image. Unlike the rule in the previous paragraph, **GLM-OCR's
-tower is f32 on the CPU on every backend, and `--backend cuda`/`webgpu` do not force it to int8**: pass `-vision-quant int8` to
-choose it, since the int8 tower is not gated on the real checkpoint. Its decoder is CUDA-resident (int4; the pairwise rope
-kernels) and runs on the CPU on Metal and WebGPU. An image is at most 6,144 image tokens (about 4.8 megapixels) and there is no
-smaller default cap yet; one that does not fit the resolved context is refused with `image_too_large_for_context` before the tower
-runs. The CPU tower costs about 45 s for a 1,656-token page on this class of machine (exploratory, one rendered invoice). Structured
-extraction with `response_format` is described above; the measured accuracy is in `docs/measurements/glm-ocr-o5-2026-10/`.*
+*Rewritten 2026-10-02 from an audit of the tree and a run on the CUDA box (`docs/measurements/multimodal-audit-2026-10-02.md`; the previous text of this paragraph said "SigLIP
+path, CPU-heavy, 31.3 s" and "`--backend webgpu`/`--backend cuda` force the int8 tower", both true only of Gemma 3 on some backends). **Every Metal statement below is read from code; no Mac
+was available.** Per family:*
+
+| family | the vision tower | the decoder after the image |
+|---|---|---|
+| **Gemma 3** (SigLIP) | CPU, f32. **On `--backend cuda` a resident CUDA tower (goinfer's own), on `--backend webgpu` a resident WebGPU tower**, both int8; Metal: CPU | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
+| **Gemma 4 E2B, E4B** | CPU (int8 on cuda/webgpu) | **CPU for the whole model on every backend** (no backend implements the E-model features) |
+| **Gemma 4 26B-A4B, 31B** | CPU (int8 on cuda/webgpu) | CPU bidirectional prefill, then resident decode through the bridge (26B-A4B run on CUDA; 31B unverified; Metal and WebGPU unverified) |
+| **Qwen2.5-VL** | CPU (int8 on cuda/webgpu): aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
+| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU (int8 on cuda/webgpu), loaded on the first image, at most 1,024 image tokens per image | **CPU prefill and CPU decode on every backend** (a recurrent family refuses every resident branch), so a repeated image re-runs the tower |
+| **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
+
+**The tower-quant rule, exactly as `main.go` applies it.** `-vision-quant int8` gives an int8 tower. `--backend cuda` and `--backend webgpu` (including `--backend auto` when it resolves
+to CUDA) **also** pass an int8 tower to the Gemma 3, Qwen2.5-VL, Qwen3.5+ and Gemma 4 loaders, whatever `-vision-quant` says; only Gemma 3's resident tower needs int8 weights, so for the
+other three this is a CPU int8 tower. **GLM-OCR is the exception:** f32 unless `-vision-quant int8`, because its int8 tower is not gated on the real checkpoint. `EnableResident` is called
+in one place only (the Gemma 3 tower on cuda/webgpu). `-vision-quant int8` (default `f32`) is a CPU option: `docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound
+prefill only on AVX512-VNNI hardware and measures a wash on plain AVX2, which is why f32 is the default.
+
+**Speed, each figure with its record.** CPU SigLIP tower ~31.3 s/image at 896² (recorded 2026-09-08, `docs/benchmarks.md` §A "Vision tower CPU prefill", not re-measured). CUDA Gemma 3 tower
+**4.1 s/image** (recorded 2026-09-21: 26.0 s with the exact attention kernel, 6.4x with the fused one that is the default since the owner's override; `GOINFER_CUDA_VISION_ATTN=exact`
+restores the 26 s kernel; `docs/measurements/vision-tower-mma-2026-09-21.md`); a cold Gemma 3 image request took 4.9 s end to end on the 2070 SUPER on 2026-10-02 (exploratory). The WebGPU tower
+is recorded at ~9x over the CPU (2026-06-11, before the 2026-08-25 re-anchor; not re-measured), and its cold request took 27.4 s end to end on 2026-10-02 (exploratory). On an 8 GB card
+`--backend webgpu` needs `--ctx 4096 --kv-sessions 1` or more so that the tower fits beside the decoder's KV: at the default the load aborts at startup ("Not enough memory left"). A CPU
+tower costs what the CPU costs: tens of seconds per Gemma 3 image; on 2026-10-02 a 336x336 image took 7 s on Qwen3.5-0.8B and 25 s on Gemma 4 E2B (the whole model on the CPU) on this box,
+one sample each (exploratory). Nothing was timed on Metal.
+
+**Release binaries.** The Linux `goinfer-serve` is built `CGO_ENABLED=0` with CUDA, so **a downloaded Linux binary on an NVIDIA box gets the resident Gemma 3 tower and resident decode after an image
+for Gemma 3, Qwen2.5-VL and GLM-OCR (and Gemma 4 26B-A4B)** with no C toolchain. The macOS binaries carry Metal (no vision tower: the tower runs on the CPU) and the Windows binaries are CPU. WebGPU, the one cgo build,
+is in no release binary.
+
+**GLM-OCR** (a 0.9B document model; `model_type` `glm_ocr`) is auto-discovered from its checkpoint directory and uses aikit's own tower (`vision.GlmOcrVisionEncoder`, aikit v1.52.0), loaded on the
+first image. An image is at most 6,144 image tokens (about 4.8 megapixels) and there is no smaller default cap yet; one that does not fit the resolved context is refused with
+`image_too_large_for_context` before the tower runs. The CPU tower costs about 44 s for a 1,656-token page on this class of machine (exploratory, one rendered invoice). Structured extraction with
+`response_format` is described below; the measured accuracy is in `docs/measurements/glm-ocr-o5-2026-10/`.
 
 ```bash
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it

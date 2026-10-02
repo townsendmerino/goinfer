@@ -522,7 +522,7 @@ demo and recomputed the accuracy table from the raw results file; both matched t
   row 22 `needs` the family. They demand the new dated snapshot described above after re-reading Ollama's page, and a faked
   one would defeat them. So the O1 commits should not be pushed until that snapshot exists (or the owner decides otherwise).
 
-**O7 RESULT, 2026-10-02: DONE, with one decision left open and one audit not done.**
+**O7 RESULT, 2026-10-02: DONE, with one decision left open. (The per-backend audit it listed as not done was done later the same day: the last bullet.)**
 - **The Ollama-coverage snapshot.** `docs/measurements/ollama-coverage-2026-10-02.md` (a new dated file; the 09-30b one is untouched), with the raw page and its parser beside it. Ollama's
   popularity page was re-read on 2026-10-02 at 09:52 PDT: the same 60 tags, 11 trade places (the largest move two ranks, qwen3.8 50 to 48), 16 pull counts moved by at most 0.2 M, no capability tag
   changed. **Row 21 (glm-ocr) moves from N to S**; the note keeps what is not true: images from the safetensors checkpoint only (no GGUF), the vision tower runs on the CPU, **tool calls are not
@@ -537,8 +537,13 @@ demo and recomputed the accuracy table from the raw results file; both matched t
 - **Docs.** `docs/server.md`'s vision paragraph now lists Qwen3.5+ and GLM-OCR (a dated note, not a rewrite) and records that GLM-OCR's tower is f32 on the CPU and is NOT forced to int8 by
   `--backend cuda`/`webgpu`. `docs/multimodal.md`'s status note now says five families read images. The README already carries the GLM-OCR extraction section (O5) and has no per-family vision
   list to extend.
-- **NOT done: the per-backend audit of `docs/multimodal.md`.** Its 2026-09-15 paragraph says Metal has no vision tower and Qwen2.5-VL's tower is CPU-only; aikit has since shipped `qwencuda`,
-  `qwenmetal`, `visioncuda` and `visionmetal`. The paragraph is marked stale in place; a correct per-family, per-backend rewrite needs its own audit of what each backend runs today.
+- **DONE 2026-10-02 (after this block was first written): the per-backend audit of `docs/multimodal.md`.** Record: `docs/measurements/multimodal-audit-2026-10-02.md` (a per-family x per-backend table, each cell
+  labelled run / read / recorded / unverified, the claims it corrected, the contradictions it resolved). `docs/multimodal.md`'s status block, `docs/server.md`'s vision paragraph, `docs/ARCHITECTURE.md`, `docs/cuda-backend.md`,
+  `demo/agent/README.md` and two benchmark notes now agree with it. What it says about **GLM-OCR**: the tower is CPU f32 on every backend and never forced to int8 (`internal/serveapp/main.go:1109-1112`); the decoder is resident on CUDA
+  (run on the 2070 SUPER: `cuda-resident (int4)`, a repeat reused 163 of 164 prompt tokens, and the CUDA pairwise-rope tiny gates pass), **staged on WebGPU** (run: `webgpu-staged (int4)`, no resident KV, so not "the CPU" exactly) and
+  the CPU on Metal (read from code). **Left unverified by the audit:** everything on Metal; the WebGPU and Metal rows of a real GLM-OCR page (only a 336x336 test image was served); Qwen3.5+ MoE images; the int8 forcing the
+  rule applies to the Qwen2.5-VL, Qwen3.5+ and Gemma 4 towers (not GLM-OCR) has no gate I could find. Two things it found that belong to this task's neighbours and were **not fixed (docs-only pass)**: a failed
+  `EnableResident` aborts serve's startup (seen on `--backend webgpu` with Gemma 3 at the default context on an 8 GB card), and one real-26B Gemma 4 image request returned HTTP 200 with 0 completion tokens once and was not reproduced.
 
 ## 4. Would it make a good in-browser demo?
 

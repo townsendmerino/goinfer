@@ -1,0 +1,5 @@
+=== RUN   TestGemma3VisionResidentReal_gate
+    gemma3_vision_resident_real_test.go:93: gemma-3-4b-it vision tower, CPU vs resident CUDA: cosine=0.913292 max|diff|=31.2454 (4096 patches, 27 layers)
+--- PASS: TestGemma3VisionResidentReal_gate (26.78s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	26.873s
