@@ -134,3 +134,102 @@ func greedyChainBitIdentical(t *testing.T, tied bool) {
 		t.Fatal("no GPU timestamps recorded")
 	}
 }
+
+// TestSampleChain_bitIdentical is C-P02's identity gate at the resident: temperature-only sampling through the sampled
+// chain (chainStartSampled / chainNextSampled: the device draw, the next buffer committed before the host waits)
+// against production's device-sampled path (ForwardSample with host embedding, the draws Sampler.NextDraw would hand
+// it), from the same prompt, as TestGreedyChain_bitIdentical does for the argmax. Then the -1 recovery: a draw with
+// nothing comparable (forced by chainFallbackAtForTest) must give ForwardSample's own fallback, the argmax of that
+// row, with every later token and K/V element unchanged; and a draw that is not the chain's must be refused.
+func TestSampleChain_bitIdentical(t *testing.T) {
+	for _, tied := range []bool{true, false} {
+		t.Run(map[bool]string{true: "tied", false: "untied"}[tied], func(t *testing.T) { sampleChainBitIdentical(t, tied, -1) })
+	}
+	t.Run("fallback", func(t *testing.T) { sampleChainBitIdentical(t, false, 40+17) })
+}
+
+func sampleChainBitIdentical(t *testing.T, tied bool, fallbackAt int) {
+	r := chainFixtureResident(t, 1024, tied)
+	const prompt, n, temp = 40, 80, 0.9
+	const seed, draw0 = uint64(0x9e3779b97f4a7c15), uint64(5)
+	r.attnFAFloorOverride = prompt + 30
+	t.Cleanup(func() { r.attnFAFloorOverride = 0 })
+	ids := make([]int, prompt)
+	for i := range ids {
+		ids[i] = (i*977 + 31) % r.V
+	}
+	kv := func(n int) [][]uint16 {
+		var out [][]uint16
+		for l := range r.layers {
+			d := r.layers[l].geom.kvDim
+			o := r.kvHostOff(l, 2)
+			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+		}
+		return out
+	}
+	prefill := func() int {
+		var lg []float32
+		for i, id := range ids {
+			lg = r.ForwardEmbPipe(mc3Emb(r, id), i)
+		}
+		return argmaxF32(lg)
+	}
+	first := prefill()
+	var ref []int
+	id := first
+	for i := range n {
+		pos := prompt + i
+		var err error
+		if pos == fallbackAt { // ForwardSample's fallback for a row with nothing comparable: the argmax of the row
+			id = argmaxF32(r.ForwardEmbPipe(mc3Emb(r, id), pos))
+		} else if id, err = r.ForwardSample(mc3Emb(r, id), pos, temp, seed, draw0+uint64(i)); err != nil {
+			t.Fatalf("ForwardSample at %d: %v", pos, err)
+		}
+		ref = append(ref, id)
+	}
+	refKV := kv(prompt + n)
+
+	if got := prefill(); got != first {
+		t.Fatalf("the prompt's argmax changed between runs: %d then %d", first, got)
+	}
+	chainFallbackAtForTest = fallbackAt
+	t.Cleanup(func() { chainFallbackAtForTest = -1 })
+	if err := r.chainStartSampled(first, prompt, temp, seed, draw0); err != nil {
+		t.Fatalf("chainStartSampled: %v", err)
+	}
+	if _, err := r.chainNextSampled(seed, draw0+1); err == nil {
+		t.Fatal("chainNextSampled accepted a draw that is not the chain's")
+	}
+	var got []int
+	for i := range n {
+		id, err := r.chainNextSampled(seed, draw0+uint64(i))
+		if err != nil {
+			t.Fatalf("chainNextSampled after %d tokens: %v", len(got), err)
+		}
+		got = append(got, id)
+	}
+	r.stopChain()
+	gotKV := kv(prompt + n)
+	tok, kd, distinct := 0, 0, map[int]bool{}
+	for i := range ref {
+		if got[i] != ref[i] {
+			tok++
+		}
+		distinct[ref[i]] = true
+	}
+	for i := range refKV {
+		for j := range refKV[i] {
+			if refKV[i][j] != gotKV[i][j] {
+				kd++
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[sample-chain] tied %v, fallback at %d: %d tokens at T=%.1f (%d distinct): %d tokens and %d K/V elements differ\n",
+		tied, fallbackAt, n, temp, len(distinct), tok, kd)
+	if tok != 0 || kd != 0 {
+		t.Fatalf("the sampled chain differs from ForwardSample's path: %d of %d tokens, %d K/V elements", tok, n, kd)
+	}
+	if len(distinct) < n/4 {
+		t.Fatalf("only %d distinct tokens in %d: the draw is not sampling, so the comparison proves little", len(distinct), n)
+	}
+}

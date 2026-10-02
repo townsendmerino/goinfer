@@ -1078,6 +1078,26 @@ func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() 
 // GreedyChainStop closes the chain.
 func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
 
+var _ decoder.ResidentSampleChain = (*metalResident)(nil)
+
+// SampleChainAvailable (decoder.ResidentSampleChain, C-P02): the chain is available and so is the device draw.
+func (a *metalResident) SampleChainAvailable() bool {
+	return a.r.SampleAvailable() && a.GreedyChainAvailable()
+}
+
+// SampleChainStart opens a sampled chain at token id, position pos, drawing that forward with (seed, draw).
+func (a *metalResident) SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error {
+	if e := a.checkCap(pos, 1); e != nil {
+		return e
+	}
+	return a.r.chainStartSampled(id, pos, temperature, seed, draw)
+}
+
+// SampleChainNext returns the next sampled token; (seed, draw) is the caller's draw for it.
+func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
+	return a.r.chainNextSampled(seed, draw)
+}
+
 // Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this resident
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.

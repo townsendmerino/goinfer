@@ -317,9 +317,52 @@ Identity, by day, tied and untied fixtures both:
 |---|---|
 | Instrument | `TestCB01ChainAB` by `docs/measurements/metal-audit-2026-10/run-cb01-grade.sh` on the night queue. One process per model: the 1.5B and 0.5B q4_k_m `.gguf` and the 7B `.int4.metal.giw`, at int4. A 64-token prompt, 256 greedy tokens per arm, 9 reps, the arms alternated (off-on, then on-off), and one warm-up of each discarded. Each arm's rate is its decode rate, from the first token's arrival to the last's. Estimate about 10 minutes; queued at 20. |
 | Precondition | Every rep's two token streams are equal, the chain arm is served by the chain (at least 255 tokens), and the off arm not at all. The test fails on any miss, and a failure kills. |
-| Graded | `C-B01 METRIC chain/off` on the **1.5B**: the median over 9 reps of the per-rep ratio of decode rates, chain over off. |
+| Graded | `C-B01 METRIC chain/off greedy` on the **1.5B**: the median over 9 reps of the per-rep ratio of decode rates, chain over off. (The instrument discards one cold generation before its warm-up, so every compared arm reuses the prompt the same way; see C-P02 below.) |
 | Rule | **≥ 1.02: ships**, and the chain stays the default on the branch. **Below 1.02: killed**, by the owner's "park only a couple of percent" bar, since the chain adds a goroutine path to the decode loop and a resident table: the decoder's `useChain` and the resident's chain are reverted, and the record keeps the numbers. |
 | Reported | The 0.5B and the 7B, each with its pairs-above-1 count. T1.3's gap predicts a larger share on the 0.5B (0.58 ms of a ~5.7 ms token, against 0.66 of ~13.4). If the 1.5B is killed but the 0.5B reads ≥ 1.02, that goes to the owner before the revert. A 7B below 1.00 also goes to the owner, since the selection could be made per model. |
+
+### C-P02: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+
+Built and bit-identical on the branch: the sampled chain, C-B01's chain for temperature-only sampling. The decode
+loop's device draw (`ForwardSample`) ran one synchronous command buffer per token, outside the encode-ahead executor
+and with the host between tokens. The chain ends each buffer with `ForwardSample`'s own draw (the full LM-head row,
+`gumbel_stage1`, `gumbel_stage2`) and commits the next before the host waits.
+
+- **Draws.** `Sampler.NextDraw` keeps the seed fixed and counts the draw up, so the chain draws each forward with the
+  start draw plus its offset. Every `SampleChainNext` passes the decoder's own draw for that forward, and the resident
+  refuses one that is not the draw it used. The decoder takes its draws exactly as before.
+- **Nothing comparable.** A row with no finite logit makes `gumbel_stage2` write −1. `ForwardSample` then takes the
+  row's argmax, and so does the chain, from that forward's own logits row (one per uniform set). The buffers queued
+  after it gathered past the vocabulary: `embed_gather_i8` now writes zeros there. They are waited out and re-committed
+  from the argmax.
+- **Where it runs.** Wherever the device draw serves the token, with no MC3, adapter or processor and a plain table-row
+  embedding: today that is temperature-only sampling above 0.2 (at or below, optimistic forward runs).
+
+Identity, by day:
+- `TestSampleChain_bitIdentical` covers tied and untied fixtures at T=0.9: 80 tokens (80 distinct, so the draw is
+  sampling), 0 tokens and 0 K/V elements differ against per-token `ForwardSample`. A wrong draw is refused.
+- A third case gives one position's draw a row of −inf, so the device really writes −1. It matches `ForwardSample`'s
+  fallback, with every later token and K/V element unchanged.
+- `TestSampleChain_generateMatchesForwardSample` runs the same through `Generate` (150 tokens, a reused prefix
+  included). The tokens are equal, every decode token is device-drawn on both arms, and all are served by the chain.
+- Mutations: the draw written to the wrong uniform set fails every case. No wait-out and re-commit after a −1 fails the
+  third case (62 of 80 tokens).
+- On the real 0.5B and 1.5B `.gguf` at T=1.0, the chain's tokens equal `ForwardSample`'s in every rep of a smoke. Its
+  timing was exploratory and is not a result.
+
+**The instrument needed one fix first.** The smoke's first version compared a cold first generation with a warm second
+one, and at T=1 they parted. A diagnostic showed two chain-off arms, cold then warm, also part at token 18, while chain
+against off, both warm, never did. The warm arm reuses 63 of 64 prompt tokens and re-forwards the last on the decode
+path, whose logits differ by ulps from the pass's: E-P01's effect (log, 2026-10-02), which a near-tie Gumbel draw
+shows and an argmax does not. `TestCB01ChainAB` now discards one cold generation, so every compared arm is warm.
+
+| | |
+|---|---|
+| Instrument | `TestCB01ChainAB` with `GOINFER_METAL_CB01_TEMP=1.0` (the serve default), seed 11, in the same night job as C-B01's grade (`run-cb01-grade.sh`): the same models, prompt, 256 tokens, 9 reps and alternation. |
+| Precondition | As C-B01's: every rep's two token streams are equal, and the chain serves at least 255 tokens and the off arm none. In addition, every token after the first is device-drawn on both arms. |
+| Graded | `C-B01 METRIC chain/off sampled T=1` on the **1.5B**. |
+| Rule | **≥ 1.02: ships. Below 1.02: killed**, and the sampled chain alone is reverted (`ResidentSampleChain` and its branch). C-B01's grade decides the greedy chain separately. |
+| Reported | The 0.5B and the 7B, as for C-B01. The audit's band for the missing encode-ahead alone was up to 3.6–4.2% on the 0.5B. The chain also removes the host round trip, which C-B01's T1.3 measured. |
 
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
@@ -590,3 +633,8 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   The decoder half of the identity test first paired a `Session` turn, which ran nothing on Metal: a plain session decodes on the
   CPU path. It now pairs two `Generate` calls whose second prompt extends the first, which is how a resident reuses a
   prefix.
+- 2026-10-02: **C-P02 built, bit-identical, queued for its grade** (owner: "yes" to the sampled chain). It shares C-B01's
+  chain and night job (the job re-queued with both modes). On the way it measured a pre-existing effect, not the
+  chain's: at T=1, a warm generation (prefix reused, last prompt token re-forwarded on the decode path) and a cold one
+  part at token 18 on the 0.5B, where greedy does not. That is E-P01's numerics difference showing through a near-tie
+  draw.

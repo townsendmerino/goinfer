@@ -1970,6 +1970,16 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			sampleRF = rf
 		}
 	}
+	// The sampled chain (C-P02, ResidentSampleChain): where the device draw serves the token, the same draw with the next
+	// token's forward queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy
+	// chain's, and not where ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
+	var sChainRF ResidentSampleChain
+	if sampleRF != nil && mc3 == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
+		!math.IsInf(1/sp.Temperature, 0) {
+		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
+			sChainRF = rf
+		}
+	}
 	var topKRow *TopKRow // this step's device top-K row, set instead of logits when topKRF is active
 	// Under MC3 the top-K draw is made inside the resident call (see topKRF above): topKPre is the drawn token when the row
 	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
@@ -2227,6 +2237,23 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					if ferr == nil {
 						fastNext, ferr = chainRF.GreedyChainNext()
 						chainPos++
+					}
+				} else if sChainRF != nil {
+					// The sampled chain: as the greedy chain, with this token's draw (taken above, as ForwardSample's is).
+					if !chainOpen {
+						if ferr = sChainRF.SampleChainStart(next, pos, draw.Temperature, draw.Seed, draw.Draw); ferr == nil {
+							chainOpen, chainPos = true, pos
+						}
+					}
+					if ferr == nil && pos != chainPos {
+						ferr = fmt.Errorf("decoder: sampled chain is at position %d, the decode loop at %d", chainPos, pos)
+					}
+					if ferr == nil {
+						fastNext, ferr = sChainRF.SampleChainNext(draw.Seed, draw.Draw)
+						chainPos++
+					}
+					if ferr == nil {
+						g.DeviceSampled++
 					}
 				} else if fastGreedy {
 					// Greedy fast path: the resident picks the argmax on-device and returns

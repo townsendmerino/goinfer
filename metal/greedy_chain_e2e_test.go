@@ -28,11 +28,28 @@ func TestGreedyChain_generateMatchesFullLogits(t *testing.T) {
 		name         string
 		tied, noRoom bool
 	}{{"tied", true, false}, {"untied", false, false}, {"untied-no-room", false, true}} {
-		t.Run(c.name, func(t *testing.T) { greedyChainGenerate(t, c.tied, c.noRoom) })
+		t.Run(c.name, func(t *testing.T) { greedyChainGenerate(t, c.tied, c.noRoom, decoder.SamplingParams{}) })
 	}
 }
 
-func greedyChainGenerate(t *testing.T, tied, noRoom bool) {
+// TestSampleChain_generateMatchesForwardSample is C-P02 through the decoder: temperature-only sampling on Metal with the
+// sampled chain (ResidentSampleChain) against the same request with it off, where every token is ForwardSample's draw.
+// The same generations as the greedy test, at temperature 0.9 with a fixed seed: the tokens must be equal, every token
+// device-drawn on both arms, and all of the chain arm's served by the chain.
+func TestSampleChain_generateMatchesForwardSample(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	sp := decoder.SamplingParams{Temperature: 0.9, Seed: 11}
+	for _, c := range []struct {
+		name string
+		tied bool
+	}{{"tied", true}, {"untied", false}} {
+		t.Run(c.name, func(t *testing.T) { greedyChainGenerate(t, c.tied, false, sp) })
+	}
+}
+
+func greedyChainGenerate(t *testing.T, tied, noRoom bool, sp decoder.SamplingParams) {
 	path := writeMC3FixtureTied(t, 4096, tied)
 	prompt := make([]int, 24)
 	for i := range prompt {
@@ -41,6 +58,7 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool) {
 	type out struct {
 		one, turn1, turn2 []int
 		served, reused    int
+		deviceSampled     int
 	}
 	run := func(off bool) out {
 		greedyChainOff = off
@@ -62,7 +80,7 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool) {
 		ctx := context.Background()
 		var o out
 		gen := func(p []int, n int) []int {
-			ch, g := m.Generate(ctx, p, n, decoder.SamplingParams{})
+			ch, g := m.Generate(ctx, p, n, sp)
 			var ids []int
 			for id := range ch {
 				ids = append(ids, id)
@@ -71,6 +89,7 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool) {
 				t.Fatalf("generate: %v", err)
 			}
 			o.reused = g.PrefillReused
+			o.deviceSampled += g.DeviceSampled
 			return ids
 		}
 		o.one = gen(prompt, 90)
@@ -95,6 +114,13 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool) {
 	}
 	if got.reused == 0 || got.reused != ref.reused {
 		t.Fatalf("turn two reused %d prompt tokens with the chain, %d without: the test needs the resident's prefix reuse on both", got.reused, ref.reused)
+	}
+	if sp.Temperature > 0 {
+		// Every decode token is a device draw on both arms (the first of each generation is the prompt's, host-drawn).
+		if want := 90 + 30 + 30 - 3; got.deviceSampled < want || ref.deviceSampled < want {
+			t.Fatalf("device-drawn tokens: %d with the chain, %d without, want >= %d on both: a sampled arm left the device draw",
+				got.deviceSampled, ref.deviceSampled, want)
+		}
 	}
 	if !slices.Equal(got.one, ref.one) {
 		t.Fatalf("one generation: the chain's tokens %v differ from the full-logits path's %v", got.one, ref.one)

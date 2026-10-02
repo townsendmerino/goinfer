@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 
@@ -40,7 +41,12 @@ const (
 	chainOpStop
 )
 
-type chainReq struct{ op, id, pos int }
+type chainReq struct {
+	op, id, pos int
+	sampled     bool    // a temperature-only chain (chainStartSampled), or a sampled chainNext
+	invT        float32 // start, sampled: 1/temperature
+	seed, draw  uint64  // start: the first forward's draw; next: the decoder's draw for the forward it asks for
+}
 
 type chainResp struct {
 	id  int
@@ -136,9 +142,29 @@ func (r *resident) buildChainEmbed() (w, s Buffer, why string) {
 	return w, s, ""
 }
 
-// chainStart opens a chain whose first input is token id at position pos, and commits that token's buffer. Every other
-// resident entry point stops the chain first (stopExec calls stopChain), so while one is open nothing else uses r.q.
+// chainStart opens a greedy chain whose first input is token id at position pos, and commits that token's buffer.
 func (r *resident) chainStart(id, pos int) error {
+	return r.chainOpen(chainReq{op: chainOpStart, id: id, pos: pos})
+}
+
+// chainStartSampled opens a temperature-only chain (C-P02): each buffer ends with ForwardSample's draw (the full
+// LM-head row, then gumbel_stage1 and gumbel_stage2) instead of the argmax head. The forward at position pos draws with
+// (seed, draw), and each later one with the next draw, which is how decoder.Sampler.NextDraw advances (the seed fixed,
+// the draw counting up). chainNextSampled checks that against the decoder's own draw for every token.
+func (r *resident) chainStartSampled(id, pos int, temperature float64, seed, draw uint64) error {
+	invT := float32(1 / temperature)
+	if math.IsInf(float64(invT), 0) || math.IsNaN(float64(invT)) {
+		return fmt.Errorf("metal: no sampled chain at temperature %g (ForwardSample takes the argmax there)", temperature)
+	}
+	if !r.SampleAvailable() {
+		return fmt.Errorf("metal: no sampled chain on this resident: no device draw (SampleAvailable)")
+	}
+	return r.chainOpen(chainReq{op: chainOpStart, id: id, pos: pos, sampled: true, invT: invT, seed: seed, draw: draw})
+}
+
+// chainOpen starts the chain goroutine and its first buffer. Every other resident entry point stops the chain first
+// (stopExec calls stopChain), so while one is open nothing else uses r.q.
+func (r *resident) chainOpen(q chainReq) error {
 	if why := r.greedyChainWhyNot(); why != "" {
 		return fmt.Errorf("metal: no greedy chain on this resident: %s", why)
 	}
@@ -155,23 +181,38 @@ func (r *resident) chainStart(id, pos int) error {
 				NewBufferFloats(r.d, []float32{1}), NewBufferU32(r.d, 0)}
 		}
 	}
+	if q.sampled && r.chainLogits[0] == (Buffer{}) {
+		r.chainInvT, r.chainK0, r.chainK1 = NewBufferFloats(r.d, []float32{1}), NewBufferU32(r.d, 0), NewBufferU32(r.d, 0)
+		for k := range r.chainLogits {
+			r.chainLogits[k] = r.d.NewBufferLen(r.V)
+			r.chainD0[k], r.chainD1[k] = NewBufferU32(r.d, 0), NewBufferU32(r.d, 0)
+		}
+	}
 	r.chainReq, r.chainResp, r.chainDone = make(chan chainReq), make(chan chainResp), make(chan struct{})
 	go r.chainLoop()
-	r.chainReq <- chainReq{op: chainOpStart, id: id, pos: pos}
+	r.chainReq <- q
 	return (<-r.chainResp).err
 }
 
 // chainNext returns the argmax of the oldest committed forward, the next greedy token.
-func (r *resident) chainNext() (int, error) {
+func (r *resident) chainNext() (int, error) { return r.chainAsk(chainReq{op: chainOpNext}) }
+
+// chainNextSampled returns the oldest committed forward's draw, the next sampled token. (seed, draw) are the decoder's
+// draw for that forward; the chain refuses one that is not the draw it used.
+func (r *resident) chainNextSampled(seed, draw uint64) (int, error) {
+	return r.chainAsk(chainReq{op: chainOpNext, sampled: true, seed: seed, draw: draw})
+}
+
+func (r *resident) chainAsk(q chainReq) (int, error) {
 	if r.chainReq == nil {
 		return 0, fmt.Errorf("metal: greedy chain not open")
 	}
-	r.chainReq <- chainReq{op: chainOpNext}
-	q := <-r.chainResp
-	if q.err == nil {
+	r.chainReq <- q
+	a := <-r.chainResp
+	if a.err == nil {
 		r.chainServed++
 	}
-	return q.id, q.err
+	return a.id, a.err
 }
 
 // stopChain closes the chain, if one is open, and blocks until no buffer of it is in flight.
@@ -184,16 +225,49 @@ func (r *resident) stopChain() {
 	<-r.chainDone
 }
 
-// encodeChainCB encodes token pos's chained buffer: gather the embedding of the id in in, run the trunk with set u,
-// and write the argmax to out.
-func (r *resident) encodeChainCB(pos int, u posUniforms, in, out Buffer) *Encoder {
+// chainFallbackAtForTest, when >= 0, makes the sampled chain's draw at that position read a row of -inf instead of the
+// forward's logits, so gumbel_stage2 really writes the -1 of a row with nothing comparable: the next buffer then gathers
+// past the vocabulary, and a test can drive the recovery below on the device. -1 in production.
+var chainFallbackAtForTest = -1
+
+// chainNegInfForTest is the all -inf row chainFallbackAtForTest's draw reads, made on first use.
+func (r *resident) chainNegInfForTest() Buffer {
+	if r.chainNegInf == (Buffer{}) {
+		row := make([]float32, r.V)
+		for i := range row {
+			row[i] = float32(math.Inf(-1))
+		}
+		r.chainNegInf = NewBufferFloats(r.d, row)
+	}
+	return r.chainNegInf
+}
+
+// encodeChainCB encodes token pos's chained buffer with uniform set k: gather the embedding of the id in in, run the
+// trunk, and write the next token to out: the argmax head, or for a sampled chain the full LM-head row (into
+// chainLogits[k]) and ForwardSample's two gumbel dispatches.
+func (r *resident) encodeChainCB(pos, k int, sampled bool, in, out Buffer) *Encoder {
+	u := r.chainSets[k]
 	r.encNKeys, r.encFANSplit = pos+1, u.uFANSplit
 	defer func() { r.encNKeys, r.encFANSplit = 0, Buffer{} }()
 	e := r.q.BeginNP()
-	e.Dispatch(r.pEmbedGather, r.H, min(256, r.H), r.chainGW, r.chainGS, in, r.x, r.uH)
+	e.Dispatch(r.pEmbedGather, r.H, min(256, r.H), r.chainGW, r.chainGS, in, r.x, r.uH, r.uGumbelV)
 	r.encodeTrunkWith(e, u.uPos, u.uNKeys, u.uQTempScale, u.uRopePos)
-	e.Dispatch(r.pGemvW8Amax, r.V*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH)
-	e.Dispatch(r.pArgFinish, 256, 256, r.part, out, r.uP)
+	if !sampled {
+		e.Dispatch(r.pGemvW8Amax, r.V*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH)
+		e.Dispatch(r.pArgFinish, 256, 256, r.part, out, r.uP)
+	} else {
+		e.Dispatch(r.pGemvW8, r.V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.chainLogits[k], r.uH) // ForwardSample's head
+		drawRow := r.chainLogits[k]
+		if pos == chainFallbackAtForTest {
+			drawRow = r.chainNegInfForTest()
+		}
+		const gbThreads = 256
+		const gbShmBytes = gbThreads * 2 * 4
+		e.DispatchTG(r.pGumbel1, r.gumbelNB*gbThreads, gbThreads, gbShmBytes,
+			drawRow, r.uGumbelV, r.chainInvT, r.chainK0, r.chainK1, r.chainD0[k], r.chainD1[k],
+			r.gumbelBKey, r.gumbelBIdx)
+		e.DispatchTG(r.pGumbel2, gbThreads, gbThreads, gbShmBytes, r.gumbelBKey, r.gumbelBIdx, r.uGumbelNB, out)
+	}
 	e.FinishEncoding()
 	return e
 }
@@ -205,29 +279,36 @@ func (r *resident) chainLoop() {
 	defer close(r.chainDone)
 	pool := NewARPool()
 	type inflight struct {
-		e   *Encoder
-		pos int
+		e    *Encoder
+		pos  int
+		draw uint64
 	}
 	var fifo []inflight
 	next, sinceDrain := 0, 0
+	sampled, pos0, draw0 := false, 0, uint64(0)
 	commit := func() {
 		if next >= r.ctxCap { // nothing to speculate into: the next position is past the resident KV
 			return
 		}
 		k := next & 1
 		r.writePosUniforms(r.chainSets[k], next, next)
-		e := r.encodeChainCB(next, r.chainSets[k], r.chainTok[k^1], r.chainTok[k])
+		d := draw0 + uint64(next-pos0)
+		if sampled {
+			r.chainD0[k].SetU32(uint32(d))
+			r.chainD1[k].SetU32(uint32(d >> 32))
+		}
+		e := r.encodeChainCB(next, k, sampled, r.chainTok[k^1], r.chainTok[k])
 		e.Commit()
-		fifo = append(fifo, inflight{e, next})
+		fifo = append(fifo, inflight{e, next, d})
 		next++
 		sinceDrain++
 	}
-	oldest := func() (int, error) {
+	oldest := func() (inflight, error) {
 		f := fifo[0]
 		fifo = fifo[1:]
 		f.e.WaitDone()
 		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = f.e.GPUStart(), f.e.GPUEnd(), f.e.KernStart(), f.e.KernEnd()
-		return int(r.chainTok[f.pos&1].U32()), f.e.Err()
+		return f, f.e.Err()
 	}
 	drain := func() {
 		for len(fifo) > 0 {
@@ -237,12 +318,36 @@ func (r *resident) chainLoop() {
 		pool = NewARPool()
 		sinceDrain = 0
 	}
+	// pick is forward f's token. A sampled forward whose row had nothing comparable wrote -1, and ForwardSample takes the
+	// argmax of its row then; the buffers queued after it gathered from the -1 (embed_gather_i8 writes zeros past the
+	// vocabulary), so they are waited out and re-committed from the argmax. They overwrite the K/V the discarded ones
+	// wrote, at the same positions, before anything reads it.
+	pick := func(f inflight) int {
+		id := int32(r.chainTok[f.pos&1].U32())
+		if !sampled || id >= 0 {
+			return int(id)
+		}
+		am := argmaxF32(r.chainLogits[f.pos&1].Floats()[:r.V])
+		redo := len(fifo) > 0
+		drain()
+		r.chainTok[f.pos&1].SetU32(uint32(am))
+		next = f.pos + 1
+		if redo {
+			commit()
+		}
+		return am
+	}
 	defer func() { drain(); pool.Drain() }()
 	for q := range r.chainReq {
 		switch q.op {
 		case chainOpStart:
 			drain()
-			next = q.pos
+			next, sampled, pos0, draw0 = q.pos, q.sampled, q.pos, q.draw
+			if sampled {
+				r.chainInvT.Floats()[0] = q.invT
+				r.chainK0.SetU32(uint32(q.seed))
+				r.chainK1.SetU32(uint32(q.seed >> 32))
+			}
 			r.chainTok[(q.pos+1)&1].SetU32(uint32(q.id)) // token pos's buffer reads the id the "previous" one would have written
 			if r.attnFANKV > 0 {
 				r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
@@ -254,17 +359,34 @@ func (r *resident) chainLoop() {
 				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: no forward in flight")}
 				continue
 			}
+			if q.sampled != sampled {
+				r.chainResp <- chainResp{err: fmt.Errorf("metal: greedy chain: a sampled request on a greedy chain, or the reverse")}
+				continue
+			}
+			if want := draw0 + uint64(fifo[0].pos-pos0); sampled && (q.seed != draw0Seed(r) || q.draw != want) {
+				r.chainResp <- chainResp{err: fmt.Errorf("metal: sampled chain: the decoder's draw (%d, %d) for position %d is not the chain's (%d, %d)",
+					q.seed, q.draw, fifo[0].pos, draw0Seed(r), want)}
+				continue
+			}
 			if sinceDrain >= chainDrainEvery { // the one gap per chainDrainEvery tokens
-				id, err := oldest()
+				f, err := oldest()
 				drain()
+				id := 0
 				if err == nil {
-					commit()
+					id = pick(f)
+					if len(fifo) == 0 {
+						commit()
+					}
 				}
 				r.chainResp <- chainResp{id: id, err: err}
 				continue
 			}
 			commit() // the token after the newest, queued before the host waits
-			id, err := oldest()
+			f, err := oldest()
+			id := 0
+			if err == nil {
+				id = pick(f)
+			}
 			r.chainResp <- chainResp{id: id, err: err}
 		case chainOpStop:
 			drain()
@@ -272,3 +394,6 @@ func (r *resident) chainLoop() {
 		}
 	}
 }
+
+// draw0Seed is the seed the open sampled chain draws with (chainK1:chainK0).
+func draw0Seed(r *resident) uint64 { return uint64(r.chainK1.U32())<<32 | uint64(r.chainK0.U32()) }

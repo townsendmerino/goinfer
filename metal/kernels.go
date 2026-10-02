@@ -895,13 +895,14 @@ kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint*
 }
 // embed_gather_i8 (C-B01, the greedy chain, greedy_chain.go): x[i] = float(q[tok*H + i]) * scale[tok], the host's
 // int8 Embed.Row (linalg.DequantizeRowInt8: float32(q)*scale, one rounded multiply per element) for the token id the
-// previous command buffer's argmax_finish wrote, so the next token's embedding never leaves the GPU. Only for a tied int8
-// table with no embedding multiplier (greedyChainWhyNot), so there is nothing else to apply.
+// previous command buffer's argmax_finish (or gumbel_stage2) wrote, so the next token's embedding never leaves the GPU.
+// Only for an int8 table with no embedding multiplier (greedyChainWhyNot), so there is nothing else to apply.
 kernel void embed_gather_i8(device const char* q[[buffer(0)]], device const float* sc[[buffer(1)]],
     device const uint* tok[[buffer(2)]], device float* x[[buffer(3)]], constant uint& H[[buffer(4)]],
-    uint i[[thread_position_in_grid]]) {
+    constant uint& V[[buffer(5)]], uint i[[thread_position_in_grid]]) {
     if (i >= H) return;
     const uint t = tok[0];
+    if (t >= V) { x[i] = 0.0f; return; } // a sampled draw's -1 (no finite logit): the chain re-commits this buffer
     x[i] = float(q[ulong(t)*ulong(H) + ulong(i)]) * sc[t];
 }
 // rope: NeoX half-split. Rotates pairs (d, half+d) for d in [0,half) within each head (stride

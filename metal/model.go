@@ -257,15 +257,20 @@ type resident struct {
 	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.
 	// chainEmbBase is the memory guard's price of this build (weights, host copy, every KV slot), which the table is
 	// priced on top of; chainEmbGuardOff is GOINFER_NO_RESIDENT_MEM_GUARD. chainGW/chainGS: the open chain's table.
-	chainEmbMu              sync.Mutex
-	chainEmbTried           bool
-	chainEmbW, chainEmbS    Buffer
-	chainEmbWhy             string
-	chainEmbBase            int64
-	chainEmbGuardOff        bool
-	chainGW, chainGS        Buffer
-	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
-	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
+	chainEmbMu           sync.Mutex
+	chainEmbTried        bool
+	chainEmbW, chainEmbS Buffer
+	chainEmbWhy          string
+	chainEmbBase         int64
+	chainEmbGuardOff     bool
+	chainGW, chainGS     Buffer
+	// The sampled chain's own gumbel uniforms (C-P02): 1/temperature and the seed for the chain, the draw per uniform set,
+	// and a logits row per set (the -1 recovery takes the argmax of a row the next buffer has not overwritten).
+	chainInvT, chainK0, chainK1   Buffer
+	chainD0, chainD1, chainLogits [2]Buffer
+	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
+	attnFANKV                     int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
+	uAttnFAG, uAttnFANSplit       Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
 	// encoding of the NEXT command buffer while the CURRENT one was still executing on the GPU (the
 	// pipelined executor's own "encode t+1 while t runs" design, execLoop). That is a raw CPU write to

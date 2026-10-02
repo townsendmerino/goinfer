@@ -171,6 +171,19 @@ type ResidentGreedyChain interface {
 	GreedyChainStop()
 }
 
+// ResidentSampleChain is ResidentGreedyChain's temperature-only sibling (C-P02): the chained forward ends with the
+// resident's own Gumbel-max draw (ResidentSample's ForwardSample) instead of the argmax. SampleChainStart opens it with
+// the draw of the forward at pos; the resident draws each later forward with the next one, which is how
+// Sampler.NextDraw advances. Each SampleChainNext passes the caller's own draw for the forward it returns, and the
+// resident refuses one that is not the draw it used. GreedyChainStop closes it. The decode loop uses it where it would
+// call ForwardSample, with no MC3, adapter or processor and a plain table-row embedding; the tokens are ForwardSample's.
+type ResidentSampleChain interface {
+	ResidentGreedyChain
+	SampleChainAvailable() bool
+	SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error
+	SampleChainNext(seed, draw uint64) (int, error)
+}
+
 // TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
 // docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
 // order decoder.topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
