@@ -324,9 +324,13 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - **Thermal:** no cell recorded a warning.
   - **Conditions:** by day, with the owner's apps open (1-min load 2–5 during the run), and the load gate at the
     amended 3.0 cap. Both are departures from the night design and are disclosed, not corrected for.
-  - **Open:** the pre-registration makes `instant` the default on a PASS, in a separate commit citing this result.
-    Attempt 4's instant mutation released 15.5 s after its hog (bar 10 s; the box at 13.5% busy before and after), and
-    whether that miss blocks the flip is the owner's reading. The flip waits on it.
+  - **Done, 2026-10-02 (owner: "Make instant the default on darwin only"):** `scripts/bench_peer.py` defaults to
+    `BENCH_IDLE_GATE=instant` on darwin and keeps `load` elsewhere. Attempt 4's 15.5 s release (bar 10 s, with the box
+    at 13.5% busy before and after the hog) is read as a few seconds of waiting, not a defect: a gate holding at 13.5%
+    busy is doing its job. Linux keeps the load gate because TE1 measured only the Mac: nobara idles at load 0.00, its
+    load gate works, and the instant gate is unmeasured there until nobara runs its own A/A. Untested by TE1 on any
+    machine: Metal/GPU cells (it ran CPU decode cells only), and the A/A's 6 values per gate, which would still pass a
+    gate 1.5× noisier a third of the time.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 
