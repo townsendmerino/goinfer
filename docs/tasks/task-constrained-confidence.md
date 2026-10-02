@@ -416,7 +416,7 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   mutation dropping it passed). Fixed with a derived fixture, `qwen3_5-tiny-normw` (random final-norm weight), and the L2
   bound; both mutations now fail 20 checks.
   **Correction, found 2026-10-02 (during D11): that mutation proof held only where the fixture file existed.** D2's commit tracked `qwen3_5-tiny-normw/config.json` and `generation_config.json` but NOT its `model.safetensors`, so on any fresh checkout
-  (CI included) `TestPromptHidden_matchesHF/qwen3_5-tiny-normw` took its "no checkpoint" skip, and the one fixture that can see a missing or doubled final norm was never run there; `TestPromptHidden_batchedMatchesSequential` skips the same way. The file is
+  (CI included) `TestPromptHidden_matchesHF/qwen3_5-tiny-normw` took its "no checkpoint" skip (and so did `qwen3_5_moe-tiny`, whose weights were not committed either; both are committed now), and the one fixture that can see a missing or doubled final norm was never run there; `TestPromptHidden_batchedMatchesSequential` skips the same way. The file is
   deterministic (the dense tiny checkpoint with a seeded random final-norm weight) and is committed now: regenerated, it reproduces D2's committed golden at relative L2 3e-7, so it is the original. D11's tests fail instead of skipping when a fixture is absent.
 
 ### D3 — LoRA merge-at-load for the GDN projections (Route B)

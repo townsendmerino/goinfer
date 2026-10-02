@@ -58,6 +58,10 @@ demo/chat/dist/
 # weights are all 0, a scale of exactly 1), and D2 left its model.safetensors out of the commit because of the rule above, so the gate skipped it on every fresh checkout.
 !decoder/testdata/qwen3_5-tiny-normw/
 !decoder/testdata/qwen3_5-tiny-normw/model.safetensors
+# EXCEPTION: decoder/testdata/qwen3_5_moe-tiny (1.5 MB) has the same defect and the same fix: its config files were tracked and its model.safetensors was not, so every MoE
+# subtest of the prompt-hidden gates (D2, D11) skipped, or failed in D11's case, on a fresh checkout.
+!decoder/testdata/qwen3_5_moe-tiny/
+!decoder/testdata/qwen3_5_moe-tiny/model.safetensors
 # EXCEPTION: llama-tiny is a 710 KB deterministic random-weight PLAIN llama checkpoint
 # (scripts/pin_llama_tiny.py). Committed for the same reason as the four above, plus one of
 # its own: `llama` is a REQUIRED parity gate and the most common architecture in the

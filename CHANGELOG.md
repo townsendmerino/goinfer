@@ -134,8 +134,8 @@ any surface may still change.
 
 ### Fixed
 
-- **A decoder test fixture that had never been committed.** `decoder/testdata/qwen3_5-tiny-normw/model.safetensors` (the tiny checkpoint with a random final-norm weight) was missing from the repository, so `TestPromptHidden_matchesHF` skipped the one subtest that can see
-  a missing or doubled final norm on every fresh checkout. It is committed, and the new all-positions test fails instead of skipping when a fixture is absent.
+- **Two decoder test fixtures that had never been committed.** `decoder/testdata/qwen3_5-tiny-normw/model.safetensors` (the tiny checkpoint with a random final-norm weight) and `decoder/testdata/qwen3_5_moe-tiny/model.safetensors` were missing from the repository (the `*.safetensors` ignore rule), so
+  `TestPromptHidden_matchesHF` skipped the one subtest that can see a missing or doubled final norm, and every MoE subtest, on every fresh checkout. Both are committed, and the new all-positions test fails instead of skipping when a fixture is absent.
 - **On CUDA a reply no longer depends on a leftover KV slot's short prefix.** A long prompt (512 tokens or more, which prefills on the fast kernels) that reused even a 3-token chat header from a slot a SHORT earlier request had left behind
   got a KV that was part exact-kernel and part fast-kernel, and a near-tied token could flip: under four-way simultaneous load every arm differed from the sequential reply in 1 to 3 replies of 30, which is also why the MC4 identity gate failed. A prefix reuse of fewer than 64 tokens is now declined
   when the prompt will run the fast kernels (the prompt is prefilled whole); a reuse of 64 or more is unchanged. With the change those schedules reproduce the sequential reply in every arm. Not fixed: a longer reuse whose rows were computed by a different kernel class (a chat that began as a short turn and grew; generated tokens'
