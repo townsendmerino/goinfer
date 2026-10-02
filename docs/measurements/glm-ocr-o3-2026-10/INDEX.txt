@@ -1,0 +1,17 @@
+GLM-OCR O3 (end to end on the real checkpoint), 2026-10-02. Machine: nobara-pc (amd64, RTX 2070 SUPER 8 GB). Logs for the report; nothing here is a timed measurement.
+The three documents are PROCEDURALLY RENDERED (scripts/gen_glm_ocr_doc_images.py, Liberation Sans/Serif/Mono 2.1.5 + STIX Two 2.13b171, PIL 12.2.0), NOT real scans.
+Reference: transformers 5.12.0, torch 2.12.0+cpu, f32, eager attention, greedy, the checkpoint's own processor and chat template (scripts/pin_glm_ocr_e2e.py).
+
+pin_e2e_hf_f32.log                 HF reference runs (3 images, 64 greedy tokens each)
+e2e_f32_all.log                    THE GATE: goinfer f32 vs HF, goinfer's own pixels (decoder TestGlmOcrE2E_f32)
+e2e_f32_hfpixels_all.log           same, HF's own pixel_values (TestGlmOcrE2E_f32_hfPixels)
+serve_f32_o3.log                   serve stack, f32 CPU, image_url -> HTTP, text == HF's (internal/serveapp TestServe_glmOcrImage_O3)
+mutations_e2e.log                  e2e gate red under: swapped norm names; scalar positions (then green control)
+mutations_unit.log                 unit gates red under: unhalved pixel bounds; image after the task prompt; newline on the GLM block
+cuda_context_fit.log               resident context that fits beside the int4 decoder on the 8 GB card
+cuda_resident_real*.log            CUDA resident vs CPU on the real pages (int4 both); *_invoice_text adds the decoded texts
+serve_*.banner.log                 serve banners (cuda int4 ctx 8192 / ctx 1024; cpu int4 / small-context copy)
+smoke/                             HTTP responses (int4 CUDA full-length OCR of each page, 64-token CUDA/CPU, ctx-1024 fallback, the 400)
+staticcheck.log, vet.log           static checks (staticcheck 0.8.0 installed binary; the last block proves it can go red)
+parity_refresh.log                 scripts/refresh_parity_hashes.sh (64 forward goldens, 0 skipped)
+decoder_vl_subset.log, serveapp_all.summary.log   regression subsets for the other VL families

@@ -1,0 +1,90 @@
+{
+ "note": "Procedurally rendered documents, NOT real scans. Deterministic for this PIL and these fonts.",
+ "pil": "12.2.0",
+ "fonts": {
+  "sans": "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+  "sans_bold": "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf",
+  "serif": "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Regular.ttf",
+  "serif_italic": "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Italic.ttf",
+  "mono": "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Regular.ttf",
+  "math": "/usr/share/fonts/stix-fonts/STIXTwoMath-Regular.otf"
+ },
+ "font_packages": {
+  "liberation-sans-fonts": "liberation-sans-fonts-2.1.5-15.fc44.noarch",
+  "liberation-serif-fonts": "liberation-serif-fonts-2.1.5-15.fc44.noarch",
+  "liberation-mono-fonts": "liberation-mono-fonts-2.1.5-15.fc44.noarch",
+  "stix-fonts": "stix-fonts-2.13b171-10.fc44.noarch"
+ },
+ "images": {
+  "invoice": {
+   "file": "invoice.png",
+   "sha256": "813a59ffd8c334a2fb56e05faf82246c593b39cd5613cea61bf899c5e5f50f86",
+   "width": 1000,
+   "height": 1300,
+   "megapixels": 1.3,
+   "truth": [
+    "INVOICE",
+    "Invoice No: INV-2026-0417",
+    "Date: 2026-09-18",
+    "Due: 2026-10-18",
+    "From:",
+    "Harbor Light Supply Co.",
+    "88 Quay Street",
+    "Portland, OR 97209",
+    "Bill To:",
+    "Northwind Printing LLC",
+    "1204 Alder Avenue, Suite 5",
+    "Seattle, WA 98101",
+    "No | Description | Qty | Unit Price | Amount",
+    "1 | Thermal label roll 100mm | 12 | 18.40 | 220.80",
+    "2 | Ink cartridge, cyan | 6 | 42.15 | 252.90",
+    "3 | Ink cartridge, black | 6 | 39.95 | 239.70",
+    "4 | A4 paper, 80gsm (ream) | 40 | 5.25 | 210.00",
+    "5 | Binding spine strips | 8 | 11.60 | 92.80",
+    "6 | Shipping and handling | 1 | 35.00 | 35.00",
+    "Subtotal: 1051.20",
+    "Tax (8.5%): 89.35",
+    "Total Due: 1140.55",
+    "Payment terms: net 30 days.",
+    "Please quote the invoice number on your bank transfer.",
+    "Account: 4471 0093 2216    Bank: First Harbor Credit Union"
+   ]
+  },
+  "table": {
+   "file": "table.png",
+   "sha256": "d4352b060c390fd69db03d9d8c48be837ff7440c3350fa622722729087433b76",
+   "width": 1200,
+   "height": 900,
+   "megapixels": 1.08,
+   "truth": [
+    "Table 2. Quarterly unit sales by region (thousands)",
+    "Region | Q1 | Q2 | Q3 | Q4 | Total",
+    "North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5",
+    "South | 97.1 | 101.6 | 99.8 | 108.3 | 406.8",
+    "East | 210.5 | 224.0 | 231.7 | 246.9 | 913.1",
+    "West | 176.2 | 181.4 | 190.6 | 203.8 | 752.0",
+    "Central | 64.9 | 70.3 | 73.5 | 79.2 | 287.9",
+    "All regions | 677.1 | 713.2 | 737.8 | 789.2 | 2917.3",
+    "Source: internal sales ledger, FY2025. Totals may not sum due to rounding."
+   ]
+  },
+  "formula": {
+   "file": "formula.png",
+   "sha256": "e65385efe1e105ce69b82a3d349038bba50fbd9bd17aff35df1991b6bd8a0487",
+   "width": 1000,
+   "height": 1200,
+   "megapixels": 1.2,
+   "truth": [
+    "A Note on the Gaussian Integral",
+    "The Gaussian integral appears throughout probability and",
+    "statistics. Its value is classical and can be obtained by",
+    "squaring the integral and passing to polar coordinates.",
+    "integral from -infinity to infinity of e^{-x^2} dx = sqrt(pi)   (1)",
+    "More generally, for a > 0 the same argument gives the",
+    "following result, which defines the normal density.",
+    "f(x) = 1/(sigma*sqrt(2*pi)) * exp(-(x-mu)^2 / (2*sigma^2))   (2)",
+    "Here μ is the mean and σ² the variance of the distribution."
+   ]
+  }
+ }
+}

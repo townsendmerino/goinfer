@@ -1,0 +1,56 @@
+##### MUTATION A: norm names swapped (PostAttnNorm <-> PreMLPNorm)
+ decoder/weights.go | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+=== RUN   TestGlmOcrE2E_f32
+=== RUN   TestGlmOcrE2E_f32/invoice
+    glm_ocr_e2e_real_test.go:330: preprocess 0.1s: grid [1 92 72] (6624 patches, 1656 image tokens)
+    glm_ocr_e2e_real_test.go:337: pixel_values vs HF (7789824 floats): bit-identical 99.9671%, differ 2562, > 1 level 858 (0.0110%), max|diff| 0.0300 (2.1 levels), mean|diff| 4.82e-06, p99 (sampled) 0.0000
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] tower 43s for 6624 patches -> 1656 image tokens
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] last-prompt-token logits vs HF: cosine 0.533755498, max|diff| 27.6 at id 1330 (HF logit 29.3044, range 43.09), argmax goinfer 914 HF 1330
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] last-token logits cosine 0.533755498 < 0.9999
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] last-token argmax 914, HF 1330
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] generate 17s (prefill + 64 decode steps)
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] FIRST DIVERGENCE at step 0 of 64 (0/64 identical before it)
+           goinfer picked 914, HF picked 1330; goinfer top1-top2 gap 0.9716; goinfer's own logit for HF's token trails its pick by 7.2714 = 32.222% of its logit range 22.57 (3% rule: OUTSIDE it, a forward error is suspected)
+           HF's own top1-top2 gap at that step: 9.0703
+           goinfer: [914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 914 572]
+           HF:      [1330 25377 13035 378 928 26268 4355 58 4350 86 45 50 48 50 54 45 48 52 49 55 10 5774 58 32 50 48 50 54 45 48 57 45 49 56 10 51625 58 32 50 48 50 54 45 49 48 45 49 56 378 5894 58 9113 8016 19049 57736 5723 334 56 56 4623 426 12818 10 11236]
+--- FAIL: TestGlmOcrE2E_f32 (70.24s)
+    --- FAIL: TestGlmOcrE2E_f32/invoice (70.24s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	70.279s
+FAIL
+##### MUTATION B: scalar positions in the image prefill (cache.mropePos not set)
+ decoder/forwardn.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+=== RUN   TestGlmOcrE2E_f32
+=== RUN   TestGlmOcrE2E_f32/invoice
+    glm_ocr_e2e_real_test.go:330: preprocess 0.1s: grid [1 92 72] (6624 patches, 1656 image tokens)
+    glm_ocr_e2e_real_test.go:337: pixel_values vs HF (7789824 floats): bit-identical 99.9671%, differ 2562, > 1 level 858 (0.0110%), max|diff| 0.0300 (2.1 levels), mean|diff| 4.82e-06, p99 (sampled) 0.0000
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] tower 43s for 6624 patches -> 1656 image tokens
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] last-prompt-token logits vs HF: cosine 0.916683733, max|diff| 13 at id 17055 (HF logit 3.4044, range 43.09), argmax goinfer 1330 HF 1330
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] last-token logits cosine 0.916683733 < 0.9999
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] generate 16s (prefill + 64 decode steps)
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] FIRST DIVERGENCE at step 4 of 64 (4/64 identical before it)
+           goinfer picked 5894, HF picked 928; goinfer top1-top2 gap 4.6816; goinfer's own logit for HF's token trails its pick by 6.3489 = 17.936% of its logit range 35.40 (3% rule: OUTSIDE it, a forward error is suspected)
+           HF's own top1-top2 gap at that step: 5.2923
+           goinfer: [1330 25377 13035 378 5894 58 9113 8016 19049 57736 5723 334 52447 28342 22351 302 26658 10 56 56 4623 426 12818 10 49 50 48 52 382 44880 35585 44 38680 32 53 10 11236 2596 44 6355 32 57 55 50 48 57 10 11236 2596 44 6355 32 57 55 50 48 57 10 2916 10547 44 54904 32 57]
+           HF:      [1330 25377 13035 378 928 26268 4355 58 4350 86 45 50 48 50 54 45 48 52 49 55 10 5774 58 32 50 48 50 54 45 48 57 45 49 56 10 51625 58 32 50 48 50 54 45 49 48 45 49 56 378 5894 58 9113 8016 19049 57736 5723 334 56 56 4623 426 12818 10 11236]
+--- FAIL: TestGlmOcrE2E_f32 (70.03s)
+    --- FAIL: TestGlmOcrE2E_f32/invoice (70.03s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	70.051s
+FAIL
+##### CONTROL: reverted, tree clean
+=== RUN   TestGlmOcrE2E_f32
+=== RUN   TestGlmOcrE2E_f32/invoice
+    glm_ocr_e2e_real_test.go:330: preprocess 0.1s: grid [1 92 72] (6624 patches, 1656 image tokens)
+    glm_ocr_e2e_real_test.go:337: pixel_values vs HF (7789824 floats): bit-identical 99.9671%, differ 2562, > 1 level 858 (0.0110%), max|diff| 0.0300 (2.1 levels), mean|diff| 4.82e-06, p99 (sampled) 0.0000
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] tower 43s for 6624 patches -> 1656 image tokens
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] last-prompt-token logits vs HF: cosine 0.999999995, max|diff| 0.00198 at id 57469 (HF logit 7.0655, range 43.09), argmax goinfer 1330 HF 1330
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] generate 16s (prefill + 64 decode steps)
+    glm_ocr_e2e_real_test.go:341: [goinfer-pixels] TOKEN-IDENTICAL: 64/64 tokens equal HF's (HF stopped at <nil>)
+--- PASS: TestGlmOcrE2E_f32 (70.00s)
+    --- PASS: TestGlmOcrE2E_f32/invoice (70.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	70.034s

@@ -1,0 +1,14 @@
+{
+ "name": "table",
+ "prompt": "Table Recognition:",
+ "finish": "stop",
+ "usage": {
+  "prompt_tokens": 1388,
+  "completion_tokens": 419,
+  "total_tokens": 1807,
+  "prefill_reused_tokens": 0
+ },
+ "seconds_exploratory": 34.1,
+ "content": "<table class=\"table table-bordered\"><thead><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr></thead><tbody><tr><td>North</td><td>128.4</td><td>135.9</td><td>142.2</td><td>151.0</td><td>557.5</td></tr><tr><td>South</td><td>97.1</td><td>101.6</td><td>99.8</td><td>108.3</td><td>406.8</td></tr><tr><td>East</td><td>210.5</td><td>224.0</td><td>231.7</td><td>246.9</td><td>913.1</td></tr><tr><td>West</td><td>176.2</td><td>181.4</td><td>190.6</td><td>203.8</td><td>752.0</td></tr><tr><td>Central</td><td>64.9</td><td>70.3</td><td>73.5</td><td>79.2</td><td>287.9</td></tr><tr><td>All regions</td><td>677.1</td><td>713.2</td><td>737.8</td><td>789.2</td><td>2917.3</td></tr></tbody></table>",
+ "reasoning": null
+}

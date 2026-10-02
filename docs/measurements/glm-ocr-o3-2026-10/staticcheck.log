@@ -1,0 +1,9 @@
+== staticcheck 0.8.0 ./... (root)
+exit=0
+== realckpt
+exit=0
+== cuda 'cuda goinfer_testhooks'
+exit=0
+== proof the gate can go red (scratch pkg with an unused struct field)
+a.go:5:2: field deadField is unused (U1000)
+exit=1

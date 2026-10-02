@@ -1,0 +1,3 @@
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	130.982s
+PASS 289 SKIP 51 FAIL 0  (top-level counts, go test ./internal/serveapp -v)

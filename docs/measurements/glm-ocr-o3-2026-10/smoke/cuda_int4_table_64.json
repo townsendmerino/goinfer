@@ -1,0 +1,14 @@
+{
+ "name": "table",
+ "prompt": "Table Recognition:",
+ "finish": "length",
+ "usage": {
+  "prompt_tokens": 1388,
+  "completion_tokens": 64,
+  "total_tokens": 1452,
+  "prefill_reused_tokens": 0
+ },
+ "seconds_exploratory": 32.9,
+ "content": "<table class=\"table table-bordered\"><thead><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr></thead><tbody><tr><td>North</",
+ "reasoning": null
+}

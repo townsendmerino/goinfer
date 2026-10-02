@@ -1,0 +1,14 @@
+{
+ "name": "invoice",
+ "prompt": "Text Recognition:",
+ "finish": "length",
+ "usage": {
+  "prompt_tokens": 1668,
+  "completion_tokens": 64,
+  "total_tokens": 1732,
+  "prefill_reused_tokens": 0
+ },
+ "seconds_exploratory": 45.0,
+ "content": "INVOICE\n\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom:\nHarbor Light Supply Co.\n88 Quay Street\nPortland, OR 97209\n\nBill To:\nNorthwind Printing",
+ "reasoning": null
+}

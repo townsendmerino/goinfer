@@ -1,0 +1,31 @@
+##### MUTATION C: unhalved pixel bounds (halveForTemporalFrames is the identity)
+--- FAIL: TestLoadGlmOcrPreprocessConfig_halvesPixelBounds (0.00s)
+    glm_ocr_test.go:59: pixel bounds 12544..9633792, want the file's 12544..9633792 halved: 6272..4816896
+--- FAIL: TestLoadGlmOcrPreprocessConfig_realFile (0.00s)
+    glm_ocr_test.go:116: real file: bounds 12544..9633792, want 6272..4816896
+FAIL
+FAIL	github.com/townsendmerino/goinfer/multimodal	0.004s
+FAIL
+--- FAIL: TestSetupGlmOcrVision (0.00s)
+    glm_ocr_vision_test.go:62: pixel bounds 12544..9633792, want 6272..4816896 (the file's, halved); passing them unhalved doubles the image budget
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.004s
+FAIL
+##### MUTATION D: template puts the task prompt BEFORE the image block
+--- FAIL: TestGlmOcr_visionPromptIDs (0.16s)
+    glm_ocr_vision_test.go:182: text recognition: ids [59248 59250 59253 10 3649 7404 49600 58 59256 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280
+         want [59248 59250 59253 10 59256 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 5928
+    glm_ocr_vision_test.go:185: text recognition: imgPos 9 qwen true
+    glm_ocr_vision_test.go:182: no text part: the default prompt: ids [59248 59250 59253 10 3649 7404 49600 58 59256 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 5
+         want [59248 59250 59253 10 59256 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 5928
+    glm_ocr_vision_test.go:185: no text part: the default prompt: imgPos 9 qwen true
+    glm_ocr_vision_test.go:182: whitespace only: the default prompt: ids [59248 59250 59253 10 3649 7404 49600 58 59256 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 59280 5928
+##### MUTATION E: a newline concatenated onto the GLM block (AST guard)
+--- FAIL: TestVision_imageBlockNewlinesMatchTheRealProcessors (0.00s)
+    vision_hardening_test.go:237: glmOcrVisionPrompt: block := multimodal.GlmOcrImageBlock(n) + "\n", want exactly multimodal.GlmOcrImageBlock(n) — a newline was concatenated onto (or dropped from) the real processor's shape (M-38)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.005s
+FAIL
+##### CONTROL
+ok  	github.com/townsendmerino/goinfer/multimodal	0.003s
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.300s

@@ -1,0 +1,12 @@
+=== RUN   TestGlmOcrCUDAContextFit
+    glm_ocr_real_image_test.go:65: ResidentContext   2048: resident=true cap=2048 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext   4096: resident=true cap=4096 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext   8192: resident=true cap=8192 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext  12288: resident=true cap=12288 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext  16384: resident=true cap=16384 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext  24576: resident=true cap=24576 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext  32768: resident=true cap=32768 decline="" path=cuda-resident (int4)
+    glm_ocr_real_image_test.go:65: ResidentContext  65536: resident=false cap=0 decline="backend failed to build a resident path: cuda: resident context 65536 positions needs 8.59 GB of KV (128.0 KB/position across 16 layers) but only 6.97 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model" path=cpu (int4) — requested cuda → running on cpu: backend failed to build a resident path: cuda: resident context 65536 positions needs 8.59 GB of KV (128.0 KB/position across 16 layers) but only 6.97 GB is free on the device beside the weights (plus 384 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model, and cuda has no staged decode path
+--- PASS: TestGlmOcrCUDAContextFit (17.43s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	17.499s

@@ -1,0 +1,16 @@
+=== RUN   TestGlmOcrCUDAResidentRealImage
+    glm_ocr_real_image_test.go:94: CUDA resident: cuda-resident (int4) (cap 4096)
+=== RUN   TestGlmOcrCUDAResidentRealImage/invoice
+[glm-ocr cuda] invoice: tower 43s
+[glm-ocr cuda] invoice: CPU prefill 9s
+    glm_ocr_real_image_test.go:157: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.998299, argmax resident 1330 CPU 1330 HF 1330; cosine to HF f32: CPU 0.980200 resident 0.981324
+[glm-ocr cuda] invoice: resident generate 0s
+[glm-ocr cuda] invoice: cpu generate 11s
+    glm_ocr_real_image_test.go:197: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence 4, CPU int4 vs HF f32 first divergence 4
+    glm_ocr_real_image_test.go:203: TEXT resident int4 : "INVOICE\n\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom:\nHarbor Light Supply Co.\n88 Quay Street\nPortland, OR 97209\n\nBill To:\nNorthwind Printing"
+        TEXT cpu int4      : "INVOICE\n\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom:\nHarbor Light Supply Co.\n88 Quay Street\nPortland, OR 97209\n\nBill To:\nNorthwind Printing"
+        TEXT HF f32        : "INVOICE\n\nInvoice No: INV-2026-0417\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom: Harbor Light Supply Co.\n88 Quay Street\nPort"
+--- PASS: TestGlmOcrCUDAResidentRealImage (68.78s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/invoice (64.58s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	68.862s
