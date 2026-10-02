@@ -93,6 +93,10 @@ var censusList = []string{
 	// STATE, so this is the same generic dense field set every llama-shaped fixture already
 	// covers -- added anyway per the census's own default.
 	"../testdata/smollm3-tiny",
+	// glm-ocr-tiny (2026-10-01; tracked since glm_ocr O1, ff79b92a, but never listed — found red by the targeted
+	// decoder run for the pairwise-rope change): the pairwise rotation flag (ropeInterleave) and the m-RoPE
+	// sections are the per-Architecture fields a GIW round trip could drop.
+	"../testdata/glm-ocr-tiny",
 	// olmo3-tiny (2026-09-06, batch 2 G2): NormPostOnly (no pre-norm) and QKNormWhole (whole-vector
 	// QK-norm, not per-head) are per-Architecture scalars affecting layer STRUCTURE, not per-layer
 	// state -- added anyway per the census's own default.

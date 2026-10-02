@@ -30,7 +30,9 @@ and runs them **in-process**. What makes it different — you don't have to choo
   table reads 27 of 36 families resident on Metal, 26 on CUDA, 23 on WebGPU, 19 on all three;
   the recurrent families (Mamba-2, Gated DeltaNet) and MoE are among them. The gaps are specific:
   MLA (DeepSeek-V2/V3, Kimi K2) and Nemotron-H are WebGPU-only; Gemma 4, Command-R, Olmo,
-  SmolLM3 and Ministral 3 are CUDA/Metal-only; Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
+  SmolLM3 and Ministral 3 are CUDA/Metal-only (correction 2026-10-01: Command-R is now CUDA-only, its Metal
+  resident ran a NeoX rotation on a GPT-J pairwise family and is declined until its kernels are ported;
+  see `docs/measurements/cuda-pairwise-rope-2026-10-01.md`); Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
   run on the CPU path everywhere. Going fast never costs you the single binary.
 - **36 model families, one binary.** All six attention / sequence-mixing families —
   softmax·GQA, gated-linear (DeltaNet, KDA), state-space (Mamba-2), short-conv (LFM2),

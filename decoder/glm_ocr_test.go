@@ -93,7 +93,7 @@ func TestGlmOcr_realConfig(t *testing.T) {
 	if err != nil || arch2.HeadDim != 128 || !reflect.DeepEqual(arch2.MRopeSection, []int{16, 24, 24}) {
 		t.Errorf("model_type glm_ocr_text: arch=%+v err=%v", arch2, err)
 	}
-	if got, want := arch.residentFeatures(), []ResidentFeature{FeatPairwiseMRoPE, FeatSandwichNorm}; !slices.Equal(got, want) {
+	if got, want := arch.residentFeatures(), []ResidentFeature{FeatPairwiseMRoPE, FeatPairwiseRoPE, FeatSandwichNorm}; !slices.Equal(got, want) {
 		t.Errorf("residentFeatures = %v, want %v", got, want)
 	}
 }

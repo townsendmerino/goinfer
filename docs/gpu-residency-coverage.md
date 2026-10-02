@@ -107,7 +107,14 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   all three uniformly until an E-model bridge lands (the dense bridges were built PLE-free and
   would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
   cannot distinguish E2B/E4B from the dense shape it actually measures.
-- **Command-R / Command-R7B** — resident on CUDA and Metal, CPU on WebGPU. Missing
+- **Command-R / Command-R7B** — **CORRECTION 2026-10-01: resident on CUDA ONLY; CPU on WebGPU and Metal.**
+  The paragraph below was written when all three backends ran Cohere's rotation on the NeoX half-split
+  kernels. Cohere rotates GPT-J pairwise (dims 2d, 2d+1), so those kernels are exact at position 0 and wrong
+  after it: the CUDA resident measured worst per-position cosine -0.075 (Command-R7B) and -0.041 (Aya-expanse-8B)
+  against the CPU at int4 on a 48-token prompt, while the flat-weight tiny gate read 0.9997. CUDA now has
+  pairwise kernels (`cuda/rope_pairwise.cu`) and declares `FeatPairwiseRoPE`; Metal and WebGPU do not, so
+  Metal now declines these families to the CPU path with a reason naming the feature. The record is
+  `docs/measurements/cuda-pairwise-rope-2026-10-01.md`. Original text, for the feature list it describes: resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatLayerNorm` (declared `decoder/features.go:686` for cuda, `decoder/features.go:781` for
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
