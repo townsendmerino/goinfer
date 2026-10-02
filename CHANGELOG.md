@@ -127,8 +127,15 @@ any surface may still change.
   (`docs/measurements/decisions-d6b-2026-09/results.md`). `int8int8` fits where f32 does not: JEV-9B at f32 is about
   36 GB. The capability matrix records the default.
 
+### Added
+
+- **`decoder.Model.PromptHiddenAll(ctx, prompt)`** returns the final-norm hidden state at every prompt position (K rows), the input a decision head that reads all positions consumes (Route C, Cloudflare's Clef). CPU only. Matches HF's
+  `last_hidden_state` at f32 on the tiny Qwen3.5 checkpoints, per position, to relative L2 4e-7.
+
 ### Fixed
 
+- **A decoder test fixture that had never been committed.** `decoder/testdata/qwen3_5-tiny-normw/model.safetensors` (the tiny checkpoint with a random final-norm weight) was missing from the repository, so `TestPromptHidden_matchesHF` skipped the one subtest that can see
+  a missing or doubled final norm on every fresh checkout. It is committed, and the new all-positions test fails instead of skipping when a fixture is absent.
 - **On CUDA a reply no longer depends on a leftover KV slot's short prefix.** A long prompt (512 tokens or more, which prefills on the fast kernels) that reused even a 3-token chat header from a slot a SHORT earlier request had left behind
   got a KV that was part exact-kernel and part fast-kernel, and a near-tied token could flip: under four-way simultaneous load every arm differed from the sequential reply in 1 to 3 replies of 30, which is also why the MC4 identity gate failed. A prefix reuse of fewer than 64 tokens is now declined
   when the prompt will run the fast kernels (the prompt is prefilled whole); a reuse of 64 or more is unchanged. With the change those schedules reproduce the sequential reply in every arm. Not fixed: a longer reuse whose rows were computed by a different kernel class (a chat that began as a short turn and grew; generated tokens'

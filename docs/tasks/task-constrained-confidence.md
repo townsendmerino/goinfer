@@ -415,6 +415,9 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   weights are all 0, a scale of 1 under the add-one RMSNorm, so cosine alone could not see a missing or doubled final norm (a
   mutation dropping it passed). Fixed with a derived fixture, `qwen3_5-tiny-normw` (random final-norm weight), and the L2
   bound; both mutations now fail 20 checks.
+  **Correction, found 2026-10-02 (during D11): that mutation proof held only where the fixture file existed.** D2's commit tracked `qwen3_5-tiny-normw/config.json` and `generation_config.json` but NOT its `model.safetensors`, so on any fresh checkout
+  (CI included) `TestPromptHidden_matchesHF/qwen3_5-tiny-normw` took its "no checkpoint" skip, and the one fixture that can see a missing or doubled final norm was never run there; `TestPromptHidden_batchedMatchesSequential` skips the same way. The file is
+  deterministic (the dense tiny checkpoint with a seeded random final-norm weight) and is committed now: regenerated, it reproduces D2's committed golden at relative L2 3e-7, so it is the original. D11's tests fail instead of skipping when a fixture is absent.
 
 ### D3 — LoRA merge-at-load for the GDN projections (Route B)
 
@@ -913,6 +916,15 @@ publisher maintains, which makes it the more likely thing a goinfer user asks fo
   - **the backbone's output:** `last_hidden_state` for 3 items, as intermediate goldens for D11 and D12.
 
 #### D11 — the all-positions hidden seam
+
+**DONE 2026-10-02.** `decoder.Model.PromptHiddenAll(ctx, prompt) ([][]float32, error)` (`decoder/prompt_hidden_all.go`): the post-final-norm hidden state at every position, K rows of HiddenDim. CPU only and it says so (it never asks a resident backend). It takes
+the same paths `PromptHidden` takes, in the same order: the generic batched path (`runLayersFromEmbedN`), Qwen3.5's batched forward (`runLayersQwen35N`), and a per-token fallback with the final norm applied to a copy of each row; both batched paths already
+returned post-final-norm rows, so most of the work was the gate. **Gate passed** (`TestPromptHiddenAll_matchesHF`, golden `decoder/testdata/prompt_hidden_all_golden.json` from `scripts/pin_prompt_hidden_all.py`, transformers 5.16.1, f32): per position
+cosine 1.00000000 and relative L2 at most 4e-7 (the bar is 1e-5) over 117 positions per fixture on dense, MoE and `qwen3_5-tiny-normw`, on BOTH the public path and the sequential path. The same five prompts as D2's golden (asserted equal by the pin script) plus one
+length-1 prompt per fixture that checks shape only (attention over one key is the identity, so it is not a bar). Also: the last row equals `PromptHidden`'s exactly; the batched path is within 1.4e-7 of the per-token one at every position (bar 1e-6), f32 and int4,
+dense and MoE; bad input and cancellation are refused on both paths; the rows do not alias. **Mutation proof, four ways:** dropping or doubling the final norm in the sequential path fails the HF subtests for all three fixtures on `sequential`; dropping or
+doubling it in the shared Qwen3.5 batched path fails all three on `public`. **Not done, by design:** the resident follow-up (all-position hidden states from the CUDA and Metal batched prefill), which the spec names as this route's speed lever and its own measurement.
+**A defect found on the way, in D2** (below): the key fixture's weights were never committed, so D2's strongest subtest skipped on a fresh checkout.
 
 - `Model.PromptHiddenAll(ctx, prompt) ([][]float32, error)`: D2's loop already computes every position's
   hidden state; apply the final norm to each and keep them. It is CPU-only like D2. Memory is K × H f32 (a

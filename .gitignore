@@ -53,6 +53,11 @@ demo/chat/dist/
 # assertion in TestLFM2_textParity is the only thing that would catch either coming back.
 !testdata/lfm2-tiny/
 !testdata/lfm2-tiny/model.safetensors
+# EXCEPTION: decoder/testdata/qwen3_5-tiny-normw is the dense Qwen3.5 tiny checkpoint with a seeded random final-norm weight (873 KB, deterministic:
+# scripts/pin_prompt_hidden.py, scripts/pin_prompt_hidden_all.py). It is the only fixture that can see a missing or doubled final norm (the others' final-norm
+# weights are all 0, a scale of exactly 1), and D2 left its model.safetensors out of the commit because of the rule above, so the gate skipped it on every fresh checkout.
+!decoder/testdata/qwen3_5-tiny-normw/
+!decoder/testdata/qwen3_5-tiny-normw/model.safetensors
 # EXCEPTION: llama-tiny is a 710 KB deterministic random-weight PLAIN llama checkpoint
 # (scripts/pin_llama_tiny.py). Committed for the same reason as the four above, plus one of
 # its own: `llama` is a REQUIRED parity gate and the most common architecture in the
