@@ -360,7 +360,8 @@ lead: `TestGlmOcrVisionEncoder_*` all PASS, the real-checkpoint parity (small + 
   gitignored in aikit) so the tiny gate cannot skip on a clean clone. Owner's call whether to keep it.
 - **Cost, NOT gated:** the only number is 30.0 s at 1 MP on nobara at load average ~14, **contaminated and not quotable**.
   The 1 / 2 / 4.8 MP sweep (`TestGlmOcrVisionEncoder_costSweep`, `AIKIT_GLM_OCR_COST=1,2,4.8`, grids [1,70,72], [1,100,102],
-  [1,128,192]) is a Mac night job; a paste-ready prompt was given to Francis. The 4.8 MP point is guessed at 10–20 min.
+  [1,128,192]) is a Mac night job, **queued 2026-10-02** as `glm-ocr-tower-cost` (3 repeats, one process per point;
+  pre-registration in `docs/measurements/glm-ocr-tower-cost-2026-10/README.md`). The 4.8 MP point is guessed at 10–20 min.
 - **Two small facts:** the merger's inner width 4608 is `out_hidden_size × in_channels` (1536 × 3), which only happens to equal
   the text MLP width; and a Conv3d-as-Conv2d over the temporal-summed kernel is exact mathematically but not bit-equal in f32,
   so the reference path is the plain 1176-wide matmul.
