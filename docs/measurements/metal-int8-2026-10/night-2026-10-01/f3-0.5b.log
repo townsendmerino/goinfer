@@ -1,0 +1,6 @@
+=== RUN   TestW8Native_F3_closerToF32
+    w8_native_gate_test.go:67: prompt "The capital of France is" → [151643 785 6722 315 9625 374] → decodes to "<|endoftext|>The capital of France is"
+    w8_native_gate_test.go:81: F3: mean KL(f32 ‖ ·) over 22 positions: CPU int8int8 0.021989, Metal int8int8 0.027917 (1.270× the CPU's), Metal int4 0.183825
+    w8_native_gate_test.go:89: F3 fails: KL(f32 ‖ Metal int8int8) 0.027917 is above 1.10 × the CPU int8int8's 0.021989
+--- FAIL: TestW8Native_F3_closerToF32 (5.95s)
+FAIL

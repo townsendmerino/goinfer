@@ -1,0 +1,7 @@
+rev:      8e4fb57c306ea6874f2b96cf84db9c1cb32b4682 (metal/v0.20.0 = 8e4fb57c306ea6874f2b96cf84db9c1cb32b4682)
+started:  2026-10-01 22:53:48 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     1.48 1.72 1.84
+== part 2: depth bench — 22:53:48
+== part 4: device gate — 22:54:50
+finished: 2026-10-01 22:58:51 PDT

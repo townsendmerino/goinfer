@@ -1,0 +1,9 @@
+=== RUN   TestW8Native_F3_closerToF32
+    w8_native_gate_test.go:67: prompt "The capital of France is" → [151643 785 6722 315 9625 374] → decodes to "<|endoftext|>The capital of France is"
+    w8_native_gate_test.go:69: the fit guard refused the CPU "" load on this machine now: decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~6.6 GB resident at quant f32 + 0.1 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 7.7 GB; this machine currently has 10.9 GB of memory available (budget 7.7 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- SKIP: TestW8Native_F3_closerToF32 (0.16s)
+PASS

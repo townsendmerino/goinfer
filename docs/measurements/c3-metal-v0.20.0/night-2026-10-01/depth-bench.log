@@ -1,0 +1,9 @@
+=== RUN   TestZZ_metalDepthBench
+    depth_bench_test.go:91: Metal greedy decode by KV depth — qwen2.5-coder-1.5b (W4A8, attention_fa (default since 2026-09-21)), M1 Pro, current binary:
+    depth_bench_test.go:99:   depth   128:   88.0 tok/s
+    depth_bench_test.go:99:   depth   512:   81.1 tok/s  (+2.522 µs/pos vs previous)
+    depth_bench_test.go:99:   depth  2048:   80.2 tok/s  (+0.083 µs/pos vs previous)
+    depth_bench_test.go:99:   depth  4000:   74.6 tok/s  (+0.485 µs/pos vs previous)
+--- PASS: TestZZ_metalDepthBench (57.96s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	58.490s

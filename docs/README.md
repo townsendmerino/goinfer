@@ -88,12 +88,15 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
-[`task-constrained-confidence.md`](tasks/task-constrained-confidence.md) (C0–C2 and D0–D9, filed
+[`task-constrained-confidence.md`](tasks/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
 2026-09-27) is confidence on answers.
 - **Shipped:** per-field probabilities on schema-constrained output (C0–C2), and a TypeSafe-compatible decisions
   endpoint, `POST /v1/systemone` (D5). It takes a state plus typed questions in and returns a distribution over the
   allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).
-- **Open:** D6a, pending, decides whether autotrust's trained JEV decision heads on `qwen3_5` are built (D2–D4).
+- **Route B:** D6a graded "build", and autotrust's JEV decision heads on `qwen3_5` are built (D2–D4). D6b passed at f32; the
+  quantized arms keep calibration but miss the 98% top-1 bar, so the decision-model default quant is the owner's call.
+- **Added 2026-10-01:** Route C, Cloudflare's Clef and Clef-flash (D10–D14): a joint head over all positions' hidden states on a
+  merged `qwen3_5` backbone, one backbone pass for every question.
 
 [`task-glm-ocr-2026-10.md`](tasks/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01) scopes GLM-OCR, a 0.9B
 document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget

@@ -1,0 +1,66 @@
+rev:      8e4fb57c306ea6874f2b96cf84db9c1cb32b4682
+started:  2026-10-01 22:54:51 PDT
+fixtures: 24 gitignored entries linked from /Users/francistownsend-merino/tmcode/goinfer
+tree:     0 entries in git status (0 = clean)
+go:       go version go1.27.0 darwin/arm64, GOWORK=/Users/francistownsend-merino/goinfer-bench/release-v0.20.0/wt-metal/go.work
+
+[1m== provenance ==[0m
+  repo        8e4fb57c
+  date (UTC)  2026-10-02T05:54:54Z
+  host        Darwin arm64
+  backend     metal
+  models      /Users/francistownsend-merino/models
+  webgpu      adapter present (backend=metal)
+  gpu         Apple M1 Pro
+
+[1m== 0. clean GPU ==[0m
+  [33mSKIP[0m  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2. Metal suite ==[0m
+   ... metal-suite: 1m0s elapsed, 143 tests finished, last: TestLayerA_vectorAddDispatch | in flight: TestMMAPrefill (17s)
+   ... metal-suite: 2m0s elapsed, 243 tests finished, last: TestMetalEmbedScale_forwardMatchesForwardEmb | in flight: TestMetalSnapshotGolden (0s)
+  [32mPASS[0m  full metal suite
+      ok  	github.com/townsendmerino/goinfer/metal	121.278s
+
+[1m== 2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==[0m
+  [32mPASS[0m  resident parity gates (dense, gemma3, gemma4 MoE, qwen3.5, mellum, gpt-oss, paging bit-exactness)
+
+[1m== 3. cgo-free ==[0m
+  [32mPASS[0m  metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)
+
+[1m== 4. lifecycle ==[0m
+  [32mPASS[0m  Close() frees — sawtooth not staircase, and frees with a second model resident
+          close_leak_test.go:85: trajectory: base 1294 MB → peak 1295 MB → end 1295 MB (growth +1 MB over 4 cycles)
+          close_leak_test.go:281: A+B alive → closed A: A ledger now 0 buf/0 obj (want 0/0), B ledger 539 buf/45 obj (unchanged from 539/45); device CurrentAllocatedSize 801767424 → 401276928 bytes; B bit-identical. RSS 2838 MB (informational)
+
+[1m== 4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN) ==[0m
+  [32mPASS[0m  prefill matches sequential decode and emits finite logits (no NaN)
+          prefill_gemma_test.go:91: gemma prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:30: moe prefill last-token argmax matches sequential ✓ (cosine 0.9999)
+          prefill_parity_test.go:75: prefill last-token argmax matches sequential ✓ (cosine 0.9979)
+          prefill_parity_test.go:96: prefill 140 tokens: sequential 757.94 ms vs PrefillLast 72.47 ms => 10.5x faster TTFT
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+  [32mPASS[0m  webgpu suite (backend=metal)
+      ok  	github.com/townsendmerino/goinfer/gpu	23.250s
+  [32mPASS[0m  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	14.929s
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  [33mSKIP[0m  18 linux-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  9 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 9 declared -> 9 reported   |   verdicts within them: 10 pass, 2 skip, 0 fail
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: 18 linux-only CI hygiene step(s) — wrong platform for this host
+
+  [32mPASS[0m — metal on Darwin @ 8e4fb57c (2026-10-02T05:58:51Z)
+  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.
+finished: 2026-10-01 22:58:51 PDT
