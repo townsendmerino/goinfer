@@ -255,7 +255,7 @@
         "decoder/glm_ocr_test.go",
         "scripts/pin_glm_ocr_tiny.py"
       ],
-      "deps_hash": "sha256:611567a8691f43247c7f310d63bf72dbcaa42701b992ba40f348af47bbbafbf3",
+      "deps_hash": "sha256:d719b7d67c3f91dc142e572839a30967a472849a372bf13edcb4107dc2d88b9f",
       "status": "experimental",
       "validated_at": "ff79b92a",
       "date": "2026-10-01",

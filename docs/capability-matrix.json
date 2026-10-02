@@ -274,10 +274,11 @@
       "glm_ocr_text"
     ],
     "display_name": "GLM-OCR",
-    "description": "Zhipu GLM-OCR text decoder (the VL wrapper's text_config): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; no vision tower yet",
-    "summary": "Zhipu's GLM-OCR document model, the text half only. It doesn't take images yet.",
+    "description": "Zhipu GLM-OCR (0.9B document OCR): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; its own vision tower (aikit, CPU) feeds merged rows through the Qwen-shaped image path",
+    "summary": "Zhipu's GLM-OCR document model. Reads images: a page in, text, a table or a formula out (verified on the real checkpoint, token-identical to transformers at f32).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
@@ -288,7 +289,7 @@
     "activation": "SwiGLU",
     "tied_lm_head": false,
     "loaders": "safetensors",
-    "modality": "text",
+    "modality": "text (+ vision tower, CPU)",
     "gpu_residency_eligible": true,
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
