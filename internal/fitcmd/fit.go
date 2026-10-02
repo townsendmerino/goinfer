@@ -44,11 +44,15 @@ no live free-memory probe yet — WebGPU exposes no portable query for it — so
 memory probe available... skipped" until one exists.
 `
 
+// defaultCtx is `fit`'s -ctx default: the CUDA planner's candidate context (cuda/resident.go's fitDefaultCtx), so the dry run prices what the real load
+// picks. TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn keeps the two equal.
+const defaultCtx = 16384
+
 // Run implements `fit`. args excludes the program name and the "fit" word. Returns an exit code.
 func Run(args []string) int {
 	fs := flag.NewFlagSet("fit", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprintf(os.Stderr, fitUsage, self()) }
-	ctx := fs.Int("ctx", 8192, "context to plan for (tasks/task-fit-to-hardware.md §8: 8192 is the agent-turn size, not the model's max — pass the model's own window explicitly if you want that priced instead)")
+	ctx := fs.Int("ctx", defaultCtx, "context to plan for (tasks/task-fit-to-hardware.md §8: 16384 is the size of a coding agent's turn — opencode's first request was 11,137 tokens — not the model's max; pass the model's own window explicitly if you want that priced instead)")
 	quant := fs.String("quant", "int4", "weight quant to plan at: int4 | int4mix | int8int8 | int8 | \"\" (f32)")
 	kvF16 := fs.Bool("kv-f16", false, "plan KV at f16 instead of f32 (halves KV bytes; a lossy precision choice, never chosen silently)")
 	kvI8 := fs.Bool("kv-i8", false, "plan KV at int8 instead of f32 (further shrinks KV bytes; lossy)")

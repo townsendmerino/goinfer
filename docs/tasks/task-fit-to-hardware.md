@@ -336,6 +336,8 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
 - **The default context.** 8192 is the agent-turn size `docs/server.md`'s dsh section measured;
   the model's full window is what a user expects to "just work". The plan can print both costs;
   which is the default is a product call, not a measurement.
+  **Decided 2026-10-01 (owner, R19 of `task-first-hour.md`): 16384** — a coding agent's first request was 11,137 tokens and 8192 refused it. It is the
+  candidate the planner tries, not a grant: a card or model that cannot hold it in every requested KV slot gets less, as before. Metal's default is unchanged.
 - **Lossy KV as a last resort.** `f16` KV doubles context at the same VRAM and is where llama.cpp
   and Ollama default. This doc says never silently; whether the plan may *offer* it in the decline
   line ("or `-kv f16` for 16k") is a one-line decision once G1 is green.

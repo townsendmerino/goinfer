@@ -17,6 +17,11 @@ any surface may still change.
 
 ### Changed
 
+- **Changes resource use. CUDA's default context is now up to 16384 (was 8192) when the card has room.** A coding agent's first request is about 11,000 tokens,
+  which 8192 refused. The default is a candidate, not a grant: it is shrunk to what the card holds and until the 4 KV slots fit, so a model that could not hold it
+  lands where it did before; `-moe-cache-experts` and `-fit=off` are unchanged. The cost is VRAM allocated up front: the 1.5B Coder holds 3507 → 5299 MiB on
+  an 8 GB card, with the same decode speed. A 7B on 8 GB still needs `-ctx 16384`. `goinfer-chat fit` plans at 16384 to match. Metal's default (4096) is
+  unchanged. `docs/tasks/task-first-hour.md` R19.
 - **`goinfer-serve -log-requests`: one line per generation request.** Route, model, status, prompt and completion tokens, time to first token and
   total time, on stderr, for the chat, completions, responses and messages routes. Off by default. A cold-user run had learned its prompt sizes from
   error bodies alone. `docs/tasks/task-first-hour.md` R25.

@@ -243,8 +243,8 @@ func (e embedInt4Flag) IsBoolFlag() bool { return true }
 
 func ctxHelp(app App, per string) string {
 	s := "GPU-resident KV capacity in positions" + per + ". 0 (default) keeps the backend default — on CUDA, " +
-		"4096 with -fit=off, or 8192 (cuda/resident.go's fitDefaultCtx, whatever the card's free VRAM actually admits) " +
-		"with -fit at its default of ON; on Metal, 4096 (up to 32768); on webgpu, the ceiling -kv's precision sets. " +
+		"4096 with -fit=off, or up to 16384 (cuda/resident.go's fitDefaultCtx, shrunk to what the card's free VRAM actually admits " +
+		"beside the requested KV slots) with -fit at its default of ON; on Metal, 4096 (up to 32768); on webgpu, the ceiling -kv's precision sets. " +
 		"The real per-card ceiling is typically far higher and worth measuring for your model/quant " +
 		"(docs/tasks/parked/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, " +
 		"refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is " +

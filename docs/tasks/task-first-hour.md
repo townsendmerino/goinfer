@@ -1395,7 +1395,7 @@ release's `scripts/check_asset_vcs.sh dist/*` on the downloaded assets is the pr
 put the remedy in the 400's message and in the README's agent line. **Gate:** a harness-scale `serve check` row run at
 the default context (`docs/tasks/task-harness-reliability-2026-10.md`, gates 1 and 2).
 
-**Partly fixed 2026-10-01 (the half that does not need a decision).** The 400 used to say "the model's context window is 8192", which
+**Fixed 2026-10-01: the message, then the default (below).** The 400 used to say "the model's context window is 8192", which
 reads as the model's own limit, so a client compacts and retries instead of the operator raising `-ctx`. When the window that rejected the
 prompt is the **server's GPU context** (smaller than the model's own), `serve` and the `goinfer-chat --batch` runner now say so and name the
 way out: `...; this is the server's GPU context (-ctx), not the model's limit (32768 tokens): restart goinfer-serve with -ctx 11138 or more
@@ -1403,10 +1403,23 @@ way out: `...; this is the server's GPU context (-ctx), not the model's limit (3
 `prepare`, the caller, checks both; two mutants of the condition turn it red). The README's agent paragraph now says an agent's first request is
 about 11,000 tokens, above the default (8192 CUDA, 4096 Metal), and to start the server with `-ctx 16384` as the recipes do.
 
-**Still open, the owner's decision:** raising serve's *default* when the fit admits it. Not done, because it changes what a plain
-`goinfer-serve` asks of VRAM on every card (the fit planner's candidate in `cuda/resident.go`, Metal's own 4096) and the numbers that were
-measured at 8192; it needs a measurement of what 16384 costs the cards in use, not a guess. **Gate still open:** the harness-scale
-`serve check` row at the default context. This item is not closed.
+**Default raised 2026-10-01 (owner: "R19 - yes").** CUDA's unpinned context candidate (`fitDefaultCtx`, and `goinfer-chat fit`'s `-ctx` default with it)
+goes from 8192 to **16384**. It is a candidate, not a grant: the planner shrinks it to what the card holds and then until the requested KV slots (4) all fit
+(the 2026-09-27 owner decision, context before conversations), and `-moe-cache-experts` and `-fit=off` loads still opt out. Measured on this box (RTX 2070 SUPER, 8 GB):
+
+| model (int4) | per-slot KV at 8192 → 16384 | default before → after, 4 slots | 11k-token prompt |
+|---|---|---|---|
+| Qwen2.5-Coder-1.5B | 0.44 → 0.88 GB | 8192 → **16384** (VRAM held 3507 → **5299 MiB**) | 400 → **200** (10,812 tokens, 4.4 s) |
+| Qwen2.5-7B | 0.88 → 1.75 GB | ~5.5k → ~5.5k (4 slots do not fit more; unchanged) | 400, naming `-ctx 10813` (as before, with the remedy) |
+| Mistral-7B (full MHA) | 2.00 → 4.00 GB | unchanged (shrinks for slots) | — |
+
+So the change helps the models that have the room (small and medium ones, and bigger cards), and costs them **VRAM: +1.8 GB on the 1.5B**, because the extra
+context is allocated up front in each of 4 slots. A 7B on 8 GB is where it does not reach: an agent there still passes `-ctx 16384` (the build then grants fewer
+slots). Decode speed is unchanged: interleaved default vs `-ctx 8192` on the 1.5B, two rounds each, 272–274 tok/s in every arm (exploratory: one model, one card,
+not a result). **Metal is not changed** (4096; no Metal box here to measure, and its planner is separate). **Gates:** `TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn`
+(fit's default equals the planner's candidate, and both hold an agent's first request with headroom; three mutants red); the existing slot-shrink test's precondition
+("one slot gets the whole candidate") was true only because 8192 < 4×3000 and now states the real invariant. **Benchmarks:** harness cells without `BENCH_CTX` are unpinned, so
+they now allocate more KV on a card with room; decode work at a given depth is the same (above), but a row's provenance should say its context. R19 is closed for CUDA.
 
 ### R20 — a CUDA resident decline that names no reason a user can act on
 
