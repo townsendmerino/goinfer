@@ -1,0 +1,44 @@
+=== RUN   TestCohereRealResidentParityCUDA
+=== RUN   TestCohereRealResidentParityCUDA/aya-expanse-8b
+    cohere_real_resident_test.go:80: [   0.0s] loading CUDA resident (int4, context 512)
+    cohere_real_resident_test.go:80: [  26.5s] loading CPU model (int4)
+    cohere_real_resident_test.go:80: [  40.6s] golden prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:201: GOLDEN PROMPT (6 tokens), resident vs CPU int4:
+    cohere_real_resident_test.go:183:   sequential decode: mean cosine 0.999422, worst 0.998727 (pos 2), worst relL2 0.0516 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) met
+    cohere_real_resident_test.go:203:   last token vs HF f32 golden: resident cosine 0.997293 | CPU int4 cosine 0.997058 | argmax resident 5641 CPU 5641 golden 5641
+    cohere_real_resident_test.go:190:   batched prefill: last-token cosine 0.999101 relL2 0.0426 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:80: [  41.9s] 48-token prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:214: 48-TOKEN PROMPT, resident vs CPU int4:
+    cohere_real_resident_test.go:183:   sequential decode: mean cosine 0.997495, worst 0.940916 (pos 7), worst relL2 0.4023 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) NOT met (int4 noise on this model; see the header)
+    cohere_real_resident_test.go:190:   batched prefill: last-token cosine 0.997022 relL2 0.0781 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:80: [  52.2s] greedy continuation, teacher-forced on the CPU's tokens
+    cohere_real_resident_test.go:242:   step 4: resident picks 1671, CPU picks 6090; the CPU's own gap between them is 0.1718% of its logit range (near-tie rule: 3%)
+    cohere_real_resident_test.go:242:   step 5: resident picks 1812, CPU picks 1709; the CPU's own gap between them is 0.0693% of its logit range (near-tie rule: 3%)
+    cohere_real_resident_test.go:262: GREEDY CONTINUATION (8 tokens, resident teacher-forced on the CPU's tokens): 2 argmax flip(s) vs the CPU int4, CPU == HF golden 8/8
+    cohere_real_resident_test.go:263:   golden [5641 21 2332 1801 6090 1709 1690 6427] | CPU [5641 21 2332 1801 6090 1709 1690 6427]
+    cohere_real_resident_test.go:80: [  55.1s] control: NeoX rope kernels forced into the same resident, 48-token prompt
+    cohere_real_resident_test.go:271: NEOX CONTROL, 48-token prompt, resident vs CPU int4: decode mean cosine 0.579072 worst -0.041113 (pos 34) worst relL2 1.4745 | batched prefill last-token cosine 0.772003 relL2 0.6619 (2026-10-01 reference worst decode cosine: -0.075 R7B / -0.041 Aya)
+    cohere_real_resident_test.go:80: [  56.0s] done
+=== RUN   TestCohereRealResidentParityCUDA/command-r7b
+    cohere_real_resident_test.go:80: [   0.0s] loading CUDA resident (int4, context 512)
+    cohere_real_resident_test.go:80: [  26.0s] loading CPU model (int4)
+    cohere_real_resident_test.go:80: [  37.9s] golden prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:201: GOLDEN PROMPT (6 tokens), resident vs CPU int4:
+    cohere_real_resident_test.go:183:   sequential decode: mean cosine 0.995605, worst 0.987022 (pos 3), worst relL2 0.1844 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) NOT met (int4 noise on this model; see the header)
+    cohere_real_resident_test.go:203:   last token vs HF f32 golden: resident cosine 0.976092 | CPU int4 cosine 0.966724 | argmax resident 5641 CPU 5641 golden 5641
+    cohere_real_resident_test.go:190:   batched prefill: last-token cosine 0.994122 relL2 0.1084 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:80: [  39.3s] 48-token prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:214: 48-TOKEN PROMPT, resident vs CPU int4:
+    cohere_real_resident_test.go:183:   sequential decode: mean cosine 0.996714, worst 0.987022 (pos 3), worst relL2 0.1844 | pre-registered tight tier (cos >= 0.995, relL2 <= 0.15) NOT met (int4 noise on this model; see the header)
+    cohere_real_resident_test.go:190:   batched prefill: last-token cosine 0.993572 relL2 0.1137 (bar cosine >= 0.98)
+    cohere_real_resident_test.go:80: [  49.7s] greedy continuation, teacher-forced on the CPU's tokens
+    cohere_real_resident_test.go:262: GREEDY CONTINUATION (8 tokens, resident teacher-forced on the CPU's tokens): 0 argmax flip(s) vs the CPU int4, CPU == HF golden 2/8
+    cohere_real_resident_test.go:263:   golden [5641 19 1671 5079 4376 1794 2517 3015] | CPU [5641 21 1896 5079 1801 6090 1812 1690]
+    cohere_real_resident_test.go:80: [  52.8s] control: NeoX rope kernels forced into the same resident, 48-token prompt
+    cohere_real_resident_test.go:271: NEOX CONTROL, 48-token prompt, resident vs CPU int4: decode mean cosine 0.545042 worst -0.075327 (pos 46) worst relL2 1.5687 | batched prefill last-token cosine 0.827705 relL2 1.0165 (2026-10-01 reference worst decode cosine: -0.075 R7B / -0.041 Aya)
+    cohere_real_resident_test.go:80: [  53.6s] done
+--- PASS: TestCohereRealResidentParityCUDA (110.19s)
+    --- PASS: TestCohereRealResidentParityCUDA/aya-expanse-8b (56.29s)
+    --- PASS: TestCohereRealResidentParityCUDA/command-r7b (53.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	110.840s

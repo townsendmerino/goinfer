@@ -1,0 +1,1979 @@
+=== RUN   TestActivationQuantHazard_declinesGPUResidency
+--- PASS: TestActivationQuantHazard_declinesGPUResidency (0.00s)
+=== RUN   TestAssetRegistry_usedByExists
+--- PASS: TestAssetRegistry_usedByExists (0.31s)
+=== RUN   TestAssetRegistry_noDirectReads
+--- PASS: TestAssetRegistry_noDirectReads (0.29s)
+=== RUN   TestAssetRegistry_agreesWithPreflight
+--- PASS: TestAssetRegistry_agreesWithPreflight (0.11s)
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/no_GPU_backend_linked
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/cuda_with_a_device
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/cuda_without_a_device
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/metal_on_Apple_silicon
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/metal_on_an_Intel_Mac
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/cuda_before_metal
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/metal_after_a_cuda_with_no_device
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/webgpu_alone_is_never_picked
+=== RUN   TestAutoBackend_picksTheFirstGPUThatAnswers/webgpu_does_not_outrank_cuda
+--- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/no_GPU_backend_linked (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/cuda_with_a_device (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/cuda_without_a_device (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/metal_on_Apple_silicon (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/metal_on_an_Intel_Mac (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/cuda_before_metal (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/metal_after_a_cuda_with_no_device (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/webgpu_alone_is_never_picked (0.00s)
+    --- PASS: TestAutoBackend_picksTheFirstGPUThatAnswers/webgpu_does_not_outrank_cuda (0.00s)
+=== RUN   TestLoad_autoResolvesBeforeTheLoad
+--- PASS: TestLoad_autoResolvesBeforeTheLoad (0.00s)
+=== RUN   TestAutoMetalPrecision_keepsTheLoadedPrecision
+=== RUN   TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="int4"
+=== RUN   TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="int8int8"
+=== RUN   TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="int8"
+=== RUN   TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant=""
+=== RUN   TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=false_quant="int8int8"
+--- PASS: TestAutoMetalPrecision_keepsTheLoadedPrecision (0.01s)
+    --- PASS: TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="int4" (0.00s)
+    --- PASS: TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="int8int8" (0.00s)
+    --- PASS: TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="int8" (0.00s)
+    --- PASS: TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=true_quant="" (0.00s)
+    --- PASS: TestAutoMetalPrecision_keepsTheLoadedPrecision/auto=false_quant="int8int8" (0.00s)
+=== RUN   TestBailingHybrid_forwardParity
+    bailing_hybrid_test.go:125: bailing_hybrid: argmax=3 (want 3) | maxSampleΔ=0.00000 | cosine=0.9999999999999226
+--- PASS: TestBailingHybrid_forwardParity (0.00s)
+=== RUN   TestCapabilityMatrix
+--- PASS: TestCapabilityMatrix (0.00s)
+=== RUN   TestCapabilityMatrix_checkpointLabels
+--- PASS: TestCapabilityMatrix_checkpointLabels (0.00s)
+=== RUN   TestCapabilityMatrix_siteDocsAreUsable
+--- PASS: TestCapabilityMatrix_siteDocsAreUsable (0.00s)
+=== RUN   TestCapabilityMatrix_CoverageComplete
+--- PASS: TestCapabilityMatrix_CoverageComplete (0.00s)
+=== RUN   TestCohere2_forwardParity
+    cohere2_test.go:82: argmax: got 164 | want 164
+    cohere2_test.go:98: last-logit parity: cosine=1.00000000 maxAbs=5.215e-08 over 256 vocab
+    cohere2_test.go:123: continuation: got [164 164 164 164 164 164] | want [164 164 164 164 164 164]
+--- PASS: TestCohere2_forwardParity (0.02s)
+=== RUN   TestCohere2_batchedPrefillMatchesSequential
+    cohere2_test.go:173: batched vs sequential maxAbs=0.000e+00
+--- PASS: TestCohere2_batchedPrefillMatchesSequential (0.00s)
+=== RUN   TestCohere_forwardParity
+    cohere_test.go:72: argmax: got 240 (logit 0.1016) | want 240 (golden logit 0.1016)
+    cohere_test.go:90: last-logit parity: cosine=1.00000000 maxAbs=2.235e-08 over 256 vocab
+    cohere_test.go:116: continuation: got [240 240 240 240 240 240] | want [240 240 240 240 240 240]
+--- PASS: TestCohere_forwardParity (0.03s)
+=== RUN   TestCohere_batchedPrefillMatchesSequential
+    cohere_test.go:171: batched vs sequential maxAbs=0.000e+00
+--- PASS: TestCohere_batchedPrefillMatchesSequential (0.00s)
+=== RUN   TestDecodeParity
+--- PASS: TestDecodeParity (1.44s)
+=== RUN   TestDecode_greedyContinuationParity
+    decode_test.go:104: greedy continuation (48 tok) matches HF: " Paris. It is the most visited city in the world. It is the most visited city in the world. It is the most visited city in the world. It is the most visited city in the world. It is the most visited city"
+--- PASS: TestDecode_greedyContinuationParity (3.67s)
+=== RUN   TestGenerate_streamMatchesGolden
+--- PASS: TestGenerate_streamMatchesGolden (2.81s)
+=== RUN   TestDeepseek_descriptor
+--- PASS: TestDeepseek_descriptor (0.00s)
+=== RUN   TestDeepseek_v2lite_descriptor
+--- PASS: TestDeepseek_v2lite_descriptor (0.00s)
+=== RUN   TestDeepseek_textParity
+    deepseek_test.go:122: deepseek text parity: argmax got=115 want=115 | logit cosine=1.000000
+--- PASS: TestDeepseek_textParity (0.01s)
+=== RUN   TestMLAAbsorb_parity
+    deepseek_test.go:223: MLA absorb vs naive: argmax seq abs=[115 34 51 105 84 61] naive=[115 34 51 105 84 61] | last-logit cosine=1.000000
+--- PASS: TestMLAAbsorb_parity (0.00s)
+=== RUN   TestDFlash_referenceParity
+=== RUN   TestDFlash_referenceParity/raw
+    dflash_test.go:127: layer_out.0: cosine 1.00000000 maxAbs 4.883e-04
+    dflash_test.go:127: layer_out.1: cosine 1.00000000 maxAbs 9.766e-04
+    dflash_test.go:127: layer_out.2: cosine 1.00000000 maxAbs 9.766e-04
+    dflash_test.go:127: layer_out.3: cosine 1.00000000 maxAbs 1.465e-03
+    dflash_test.go:127: layer_out.4: cosine 1.00000000 maxAbs 2.930e-03
+    dflash_test.go:141: trunk_out: cosine 1.00000000 maxAbs 5.150e-05 (ctx=5 block=16)
+=== RUN   TestDFlash_referenceParity/chat
+    dflash_test.go:127: layer_out.0: cosine 1.00000000 maxAbs 3.662e-04
+    dflash_test.go:127: layer_out.1: cosine 1.00000000 maxAbs 1.709e-03
+    dflash_test.go:127: layer_out.2: cosine 1.00000000 maxAbs 1.221e-03
+    dflash_test.go:127: layer_out.3: cosine 1.00000000 maxAbs 9.766e-04
+    dflash_test.go:127: layer_out.4: cosine 1.00000000 maxAbs 2.930e-03
+    dflash_test.go:141: trunk_out: cosine 1.00000000 maxAbs 3.052e-05 (ctx=23 block=16)
+--- PASS: TestDFlash_referenceParity (7.32s)
+    --- PASS: TestDFlash_referenceParity/raw (4.08s)
+    --- PASS: TestDFlash_referenceParity/chat (3.16s)
+=== RUN   TestDFlash_targetEndToEnd
+    dflash_test.go:191: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDFlash_targetEndToEnd (0.00s)
+=== RUN   TestDFlash_refusesV2
+--- PASS: TestDFlash_refusesV2 (0.00s)
+=== RUN   TestDSpark_referenceParity
+=== RUN   TestDSpark_referenceParity/raw
+    dspark_test.go:116: layer_out.0: cosine 1.00000000 maxAbs 6.104e-05
+    dspark_test.go:116: layer_out.1: cosine 1.00000000 maxAbs 1.221e-04
+    dspark_test.go:116: layer_out.2: cosine 1.00000000 maxAbs 1.831e-04
+    dspark_test.go:116: layer_out.3: cosine 1.00000000 maxAbs 4.883e-04
+    dspark_test.go:116: layer_out.4: cosine 1.00000000 maxAbs 8.545e-04
+    dspark_test.go:128: trunk_out: cosine 1.00000000 maxAbs 3.815e-05 (ctx=5 block=7)
+    dspark_test.go:141: markov_logits[pos0]: cosine 1.00000000 maxAbs 2.074e-05
+    dspark_test.go:145: drafted got  = [13 576 6722 315 279 3070 59604]
+    dspark_test.go:146: drafted want = [13 576 6722 315 279 3070 59604]
+    dspark_test.go:162: confidence got  = [0.4751528 -0.35897404 0.29218185 -0.7315626 -1.2808691 -1.4823396 -1.5907209]
+    dspark_test.go:163: confidence want = [0.47515374 -0.3589743 0.29218298 -0.7315606 -1.2808692 -1.4823388 -1.5907199]
+=== RUN   TestDSpark_referenceParity/chat
+    dspark_test.go:116: layer_out.0: cosine 1.00000000 maxAbs 6.104e-05
+    dspark_test.go:116: layer_out.1: cosine 1.00000000 maxAbs 6.104e-05
+    dspark_test.go:116: layer_out.2: cosine 1.00000000 maxAbs 1.221e-04
+    dspark_test.go:116: layer_out.3: cosine 1.00000000 maxAbs 2.441e-04
+    dspark_test.go:116: layer_out.4: cosine 1.00000000 maxAbs 7.019e-04
+    dspark_test.go:128: trunk_out: cosine 1.00000000 maxAbs 3.624e-05 (ctx=23 block=7)
+    dspark_test.go:141: markov_logits[pos0]: cosine 1.00000000 maxAbs 1.335e-05
+    dspark_test.go:145: drafted got  = [0 5692 594 264 13027 729 429]
+    dspark_test.go:146: drafted want = [0 5692 594 264 13027 729 429]
+    dspark_test.go:162: confidence got  = [11.420493 5.958566 8.342214 8.71747 6.1519895 6.3614974 2.4713767]
+    dspark_test.go:163: confidence want = [11.420502 5.9585648 8.342215 8.71747 6.151985 6.361499 2.4713798]
+--- PASS: TestDSpark_referenceParity (5.09s)
+    --- PASS: TestDSpark_referenceParity/raw (3.27s)
+    --- PASS: TestDSpark_referenceParity/chat (1.73s)
+=== RUN   TestDSpark_targetEndToEnd
+    dspark_test.go:177: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDSpark_targetEndToEnd (0.00s)
+=== RUN   TestEnvVars_docAndCodeAgree
+--- PASS: TestEnvVars_docAndCodeAgree (0.42s)
+=== RUN   TestLoad_staged_resolvesEOSIntoConfig
+--- PASS: TestLoad_staged_resolvesEOSIntoConfig (0.00s)
+=== RUN   TestGIWRoundTrip_preservesMergedEOSIDs
+--- PASS: TestGIWRoundTrip_preservesMergedEOSIDs (0.00s)
+=== RUN   TestResidentAdmission_registryCovered
+--- PASS: TestResidentAdmission_registryCovered (0.00s)
+=== RUN   TestResidentAdmission_matrix
+    features_test.go:373: bailing_hybrid       → admitted by []
+    features_test.go:373: cohere               → admitted by [cuda]
+    features_test.go:373: cohere2              → admitted by [cuda]
+    features_test.go:373: deepseek_v2          → admitted by [cuda webgpu]
+    features_test.go:373: deepseek_v3          → admitted by [cuda webgpu]
+    features_test.go:373: gemma                → admitted by [cuda metal webgpu]
+    features_test.go:373: gemma2               → admitted by []
+    features_test.go:373: gemma3               → admitted by [cuda metal webgpu]
+    features_test.go:373: gemma3_text          → admitted by [cuda metal webgpu]
+    features_test.go:373: gemma4               → admitted by [cuda metal webgpu]
+    features_test.go:373: gemma4_text          → admitted by [cuda metal webgpu]
+    features_test.go:373: gemma4_unified_text  → admitted by [cuda metal webgpu]
+    features_test.go:373: glm4_moe             → admitted by [cuda metal webgpu]
+    features_test.go:373: glm_ocr              → admitted by [cuda]
+    features_test.go:373: glm_ocr_text         → admitted by [cuda]
+    features_test.go:373: gpt2                 → admitted by [metal]
+    features_test.go:373: gpt_oss              → admitted by [cuda metal webgpu]
+    features_test.go:373: granite              → admitted by [cuda metal webgpu]
+    features_test.go:373: granitemoehybrid     → admitted by [webgpu]
+    features_test.go:373: internlm2            → admitted by [cuda metal webgpu]
+    features_test.go:373: internlm3            → admitted by [cuda metal webgpu]
+    features_test.go:373: kimi_k2              → admitted by [cuda webgpu]
+    features_test.go:373: laguna               → admitted by []
+    features_test.go:373: lfm2                 → admitted by []
+    features_test.go:373: llama                → admitted by [cuda metal webgpu]
+    features_test.go:373: llama4_text          → admitted by [cuda metal webgpu]
+    features_test.go:373: mellum               → admitted by [cuda metal webgpu]
+    features_test.go:373: ministral3           → admitted by [cuda metal]
+    features_test.go:373: mistral              → admitted by [cuda metal webgpu]
+    features_test.go:373: mistral3             → admitted by [cuda metal]
+    features_test.go:373: mixtral              → admitted by [cuda metal webgpu]
+    features_test.go:373: nemotron_h           → admitted by [webgpu]
+    features_test.go:373: olmo3                → admitted by [cuda metal]
+    features_test.go:373: olmo_hybrid          → admitted by [cuda metal]
+    features_test.go:373: phi3                 → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen2                → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen2_5_vl           → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen2_moe            → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3                → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_5              → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_5_moe          → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_5_moe_text     → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_5_text         → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_moe            → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_next           → admitted by [cuda metal webgpu]
+    features_test.go:373: qwen3_vl             → admitted by [cuda metal webgpu]
+    features_test.go:373: smollm3              → admitted by [cuda metal]
+    features_test.go:373: spark2_5             → admitted by []
+--- PASS: TestResidentAdmission_matrix (0.00s)
+=== RUN   TestResidentBackendFeatures_noOverclaim
+--- PASS: TestResidentBackendFeatures_noOverclaim (0.00s)
+=== RUN   TestResidentFeatures_derivation
+=== RUN   TestResidentFeatures_derivation/qk-norm
+=== RUN   TestResidentFeatures_derivation/sliding-window
+=== RUN   TestResidentFeatures_derivation/partial-rotary
+=== RUN   TestResidentFeatures_derivation/rms-add-one
+=== RUN   TestResidentFeatures_derivation/embed-scale
+=== RUN   TestResidentFeatures_derivation/final-softcap
+=== RUN   TestResidentFeatures_derivation/attn-softcap
+=== RUN   TestResidentFeatures_derivation/sandwich
+=== RUN   TestResidentFeatures_derivation/layer-norm
+=== RUN   TestResidentFeatures_derivation/parallel-block
+=== RUN   TestResidentFeatures_derivation/nope
+=== RUN   TestResidentFeatures_derivation/gated-gelu
+=== RUN   TestResidentFeatures_derivation/non-gated
+=== RUN   TestResidentFeatures_derivation/learned-pos
+=== RUN   TestResidentFeatures_derivation/out-bias
+=== RUN   TestResidentFeatures_derivation/logit-scale
+=== RUN   TestResidentFeatures_derivation/moe
+=== RUN   TestResidentFeatures_derivation/pairwise-rope
+=== RUN   TestResidentFeatures_derivation/pairwise-mrope
+=== RUN   TestResidentFeatures_derivation/gemma4-e-model-ple
+=== RUN   TestResidentFeatures_derivation/gemma4-e-model-sharedkv
+=== RUN   TestResidentFeatures_derivation/gemma4-e-model-ffnperlayer
+--- PASS: TestResidentFeatures_derivation (0.00s)
+    --- PASS: TestResidentFeatures_derivation/qk-norm (0.00s)
+    --- PASS: TestResidentFeatures_derivation/sliding-window (0.00s)
+    --- PASS: TestResidentFeatures_derivation/partial-rotary (0.00s)
+    --- PASS: TestResidentFeatures_derivation/rms-add-one (0.00s)
+    --- PASS: TestResidentFeatures_derivation/embed-scale (0.00s)
+    --- PASS: TestResidentFeatures_derivation/final-softcap (0.00s)
+    --- PASS: TestResidentFeatures_derivation/attn-softcap (0.00s)
+    --- PASS: TestResidentFeatures_derivation/sandwich (0.00s)
+    --- PASS: TestResidentFeatures_derivation/layer-norm (0.00s)
+    --- PASS: TestResidentFeatures_derivation/parallel-block (0.00s)
+    --- PASS: TestResidentFeatures_derivation/nope (0.00s)
+    --- PASS: TestResidentFeatures_derivation/gated-gelu (0.00s)
+    --- PASS: TestResidentFeatures_derivation/non-gated (0.00s)
+    --- PASS: TestResidentFeatures_derivation/learned-pos (0.00s)
+    --- PASS: TestResidentFeatures_derivation/out-bias (0.00s)
+    --- PASS: TestResidentFeatures_derivation/logit-scale (0.00s)
+    --- PASS: TestResidentFeatures_derivation/moe (0.00s)
+    --- PASS: TestResidentFeatures_derivation/pairwise-rope (0.00s)
+    --- PASS: TestResidentFeatures_derivation/pairwise-mrope (0.00s)
+    --- PASS: TestResidentFeatures_derivation/gemma4-e-model-ple (0.00s)
+    --- PASS: TestResidentFeatures_derivation/gemma4-e-model-sharedkv (0.00s)
+    --- PASS: TestResidentFeatures_derivation/gemma4-e-model-ffnperlayer (0.00s)
+=== RUN   TestPairwiseRoPE_derivationScope
+--- PASS: TestPairwiseRoPE_derivationScope (0.00s)
+=== RUN   TestPairwiseRoPE_declineNamesCause
+--- PASS: TestPairwiseRoPE_declineNamesCause (0.00s)
+=== RUN   TestResidentFeatures_derivationMatchesProfile
+--- PASS: TestResidentFeatures_derivationMatchesProfile (0.00s)
+=== RUN   TestResidentMoECapacity_routerCap
+--- PASS: TestResidentMoECapacity_routerCap (0.00s)
+=== RUN   TestPlan_tableDriven
+=== RUN   TestPlan_tableDriven/dense/cpu/generous
+=== RUN   TestPlan_tableDriven/dense/cuda/tight_shrinks_ctx
+=== RUN   TestPlan_tableDriven/dense/metal/pinned_ctx_declines_rather_than_shrinks
+=== RUN   TestPlan_tableDriven/dense/cpu/never_declines_falls_to_weight_paged
+=== RUN   TestPlan_tableDriven/dense/cuda/impossible_declines
+=== RUN   TestPlan_tableDriven/moe/metal/generous_admits_resident
+=== RUN   TestPlan_tableDriven/moe/cuda/tight_caches_a_subset_of_experts
+=== RUN   TestPlan_tableDriven/moe/cuda/below_topk_declines
+=== RUN   TestPlan_tableDriven/moe/nonsense_backend_declines_on_features_not_bytes
+=== RUN   TestPlan_tableDriven/hybrid/metal/generous
+=== RUN   TestPlan_tableDriven/dense/webgpu/generous_admits_like_other_backends
+=== RUN   TestPlan_tableDriven/dense/webgpu/kv_i8_ctx_capped_at_fixed_ceiling_even_with_room
+=== RUN   TestPlan_tableDriven/dense/webgpu/pinned_ctx_above_ceiling_declines
+=== RUN   TestPlan_tableDriven/hybrid/webgpu/kv_precision_declines_on_family_not_bytes
+--- PASS: TestPlan_tableDriven (0.02s)
+    --- PASS: TestPlan_tableDriven/dense/cpu/generous (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/cuda/tight_shrinks_ctx (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/metal/pinned_ctx_declines_rather_than_shrinks (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/cpu/never_declines_falls_to_weight_paged (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/cuda/impossible_declines (0.00s)
+    --- PASS: TestPlan_tableDriven/moe/metal/generous_admits_resident (0.01s)
+    --- PASS: TestPlan_tableDriven/moe/cuda/tight_caches_a_subset_of_experts (0.00s)
+    --- PASS: TestPlan_tableDriven/moe/cuda/below_topk_declines (0.00s)
+    --- PASS: TestPlan_tableDriven/moe/nonsense_backend_declines_on_features_not_bytes (0.00s)
+    --- PASS: TestPlan_tableDriven/hybrid/metal/generous (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/webgpu/generous_admits_like_other_backends (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/webgpu/kv_i8_ctx_capped_at_fixed_ceiling_even_with_room (0.00s)
+    --- PASS: TestPlan_tableDriven/dense/webgpu/pinned_ctx_above_ceiling_declines (0.00s)
+    --- PASS: TestPlan_tableDriven/hybrid/webgpu/kv_precision_declines_on_family_not_bytes (0.00s)
+=== RUN   TestPlan_extraBytesReservedAheadOfExperts
+--- PASS: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+=== RUN   TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch
+--- PASS: TestPlan_unrecognisedBackendDeclinesEvenForAFeatureFreeArch (0.00s)
+=== RUN   TestFixtureIdentity_update
+    fixture_identity_test.go:184: set GOINFER_FIXTURE_IDENTITY_UPDATE=1 to rewrite testdata/fixture_identity.json from local fixtures
+--- SKIP: TestFixtureIdentity_update (0.00s)
+=== RUN   TestFixtureIdentityMismatch
+--- PASS: TestFixtureIdentityMismatch (0.00s)
+=== RUN   TestFixtureIdentity_manifestIsComplete
+--- PASS: TestFixtureIdentity_manifestIsComplete (0.02s)
+=== RUN   TestLoad_protectsTheWholeGIWMappingFromFork
+--- PASS: TestLoad_protectsTheWholeGIWMappingFromFork (0.00s)
+=== RUN   TestExcludeFromFork_realMapping
+--- PASS: TestExcludeFromFork_realMapping (0.00s)
+=== RUN   TestForward_logitParity
+    forward_test.go:122: argmax=9079 (want 9079) | maxSampleΔ=0.00001 | sum rel=8.83e-07 | cosine=NaN
+--- PASS: TestForward_logitParity (0.43s)
+=== RUN   TestGemma12_forwardParity
+=== RUN   TestGemma12_forwardParity/gemma1
+    gemma12_test.go:96: gemma1 per-token: max |Δlogit| 9.54e-07, cosine 1.00000000
+    gemma12_test.go:104: gemma1 batched: max |Δlogit| 9.54e-07, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma2
+    gemma12_test.go:96: gemma2 per-token: max |Δlogit| 2.15e-06, cosine 1.00000000
+    gemma12_test.go:104: gemma2 batched: max |Δlogit| 2.15e-06, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma1.gguf
+    gemma12_test.go:96: gemma1 per-token: max |Δlogit| 9.54e-07, cosine 1.00000000
+    gemma12_test.go:104: gemma1 batched: max |Δlogit| 9.54e-07, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma2-hd.gguf
+    gemma12_test.go:96: gemma2-hd per-token: max |Δlogit| 2.38e-06, cosine 1.00000000
+    gemma12_test.go:104: gemma2-hd batched: max |Δlogit| 2.38e-06, cosine 1.00000000
+--- PASS: TestGemma12_forwardParity (0.02s)
+    --- PASS: TestGemma12_forwardParity/gemma1 (0.00s)
+    --- PASS: TestGemma12_forwardParity/gemma2 (0.00s)
+    --- PASS: TestGemma12_forwardParity/gemma1.gguf (0.00s)
+    --- PASS: TestGemma12_forwardParity/gemma2-hd.gguf (0.01s)
+=== RUN   TestGemma3VL_textParity
+    gemma3_vl_test.go:56: gemma3-VL text parity: argmax got=246 want=246 | logit cosine=1.000000
+--- PASS: TestGemma3VL_textParity (0.00s)
+=== RUN   TestGemma3VL_imageParity
+    gemma3_vl_test.go:121: gemma3-VL image parity: argmax got=179 want=179 | logit cosine=0.994641
+--- PASS: TestGemma3VL_imageParity (0.00s)
+=== RUN   TestGemma4_12B_logitParity
+    gemma4_12b_parity_test.go:19: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_12B_logitParity (0.00s)
+=== RUN   TestGemma4Admission_unconditional
+--- PASS: TestGemma4Admission_unconditional (0.00s)
+=== RUN   TestGemma4RunLayersFromEmbed_matchesTokenPath
+    gemma4_embed_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4RunLayersFromEmbed_matchesTokenPath (0.00s)
+=== RUN   TestGemma4EModel_realDeclinesResident
+    gemma4_emodel_real_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4EModel_realDeclinesResident (0.00s)
+=== RUN   TestGemma4MoE_forwardParity
+    gemma4_moe_forward_test.go:121: argmax: got 88 (logit 1.1106) | want 88 (golden logit 1.1106)
+    gemma4_moe_forward_test.go:121: last-logit parity: cosine=1.00000000 maxAbs=3.219e-06 over 256 vocab
+    gemma4_moe_forward_test.go:121: continuation: got [88 88 88 161 161 161] | want [88 88 88 161 161 161]
+--- PASS: TestGemma4MoE_forwardParity (0.03s)
+=== RUN   TestGemma4MoEUnified_forwardParity
+    gemma4_moe_forward_test.go:135: argmax: got 88 (logit 1.1106) | want 88 (golden logit 1.1106)
+    gemma4_moe_forward_test.go:135: last-logit parity: cosine=1.00000000 maxAbs=3.219e-06 over 256 vocab
+    gemma4_moe_forward_test.go:135: continuation: got [88 88 88 161 161 161] | want [88 88 88 161 161 161]
+--- PASS: TestGemma4MoEUnified_forwardParity (0.04s)
+=== RUN   TestGemma4DenseTwoGeom_forwardParity
+    gemma4_moe_forward_test.go:148: argmax: got 67 (logit 1.1321) | want 67 (golden logit 1.1321)
+    gemma4_moe_forward_test.go:148: last-logit parity: cosine=1.00000000 maxAbs=1.032e-06 over 256 vocab
+    gemma4_moe_forward_test.go:148: continuation: got [67 67 67 67 67 67] | want [67 67 67 67 67 67]
+--- PASS: TestGemma4DenseTwoGeom_forwardParity (0.03s)
+=== RUN   TestGemma4DenseScaled_forwardParity
+    gemma4_moe_forward_test.go:160: argmax: got 200 (logit 3.3384) | want 200 (golden logit 3.3384)
+    gemma4_moe_forward_test.go:160: last-logit parity: cosine=1.00000000 maxAbs=1.518e-04 over 256 vocab
+    gemma4_moe_forward_test.go:160: continuation: got [200 200 200 200 200 200] | want [200 200 200 200 200 200]
+--- PASS: TestGemma4DenseScaled_forwardParity (3.37s)
+=== RUN   TestGemma4MoEKV_forwardParity
+    gemma4_moe_forward_test.go:172: argmax: got 14 (logit 0.4197) | want 14 (golden logit 0.4197)
+    gemma4_moe_forward_test.go:172: last-logit parity: cosine=1.00000000 maxAbs=2.161e-06 over 256 vocab
+    gemma4_moe_forward_test.go:172: continuation: got [14 209 26 26 26 171] | want [14 209 26 26 26 171]
+--- PASS: TestGemma4MoEKV_forwardParity (0.01s)
+=== RUN   TestGemma4_logitParity
+    gemma4_parity_test.go:17: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_logitParity (0.00s)
+=== RUN   TestGemma4Architecture
+--- PASS: TestGemma4Architecture (0.00s)
+=== RUN   TestGemma4MoEDescriptor
+--- PASS: TestGemma4MoEDescriptor (0.00s)
+=== RUN   TestGemma4VLBidir_textParity
+    gemma4_vl_bidir_test.go:71: sequential: argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:89: batched:    argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:101: sequential vs batched: logit cosine=1.00000000
+--- PASS: TestGemma4VLBidir_textParity (0.01s)
+=== RUN   TestGemma4VLBidir_imageParity
+    gemma4_vl_bidir_test.go:173: bidirectional: argmax got=142 want=142 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:192: causal-only:   argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:201: bidirectional vs causal-only: logit cosine=0.953037 (must be well below 1.0 — fixture must be non-vacuous)
+--- PASS: TestGemma4VLBidir_imageParity (0.01s)
+=== RUN   TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional
+--- PASS: TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional (0.00s)
+=== RUN   TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped
+--- PASS: TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped (0.00s)
+=== RUN   TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU
+--- PASS: TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU (0.01s)
+=== RUN   TestGenerateGemma4VL_sequentialPathNeverTouchesResident
+--- PASS: TestGenerateGemma4VL_sequentialPathNeverTouchesResident (0.01s)
+=== RUN   TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse
+--- PASS: TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse (0.00s)
+=== RUN   TestGemma4VL_textParity
+    gemma4_vl_test.go:69: gemma4-VL text parity: argmax got=8 want=8 | logit cosine=1.000000
+--- PASS: TestGemma4VL_textParity (0.01s)
+=== RUN   TestGemma4VL_imageParity
+    gemma4_vl_test.go:134: gemma4-VL image parity: argmax got=207 want=207 | logit cosine=1.000000
+--- PASS: TestGemma4VL_imageParity (0.00s)
+=== RUN   TestGenerateVL_streams
+    generate_vl_test.go:74: GenerateVL streamed 5 tokens (first=179 == argmax 179)
+--- PASS: TestGenerateVL_streams (0.00s)
+=== RUN   TestGGUF_Q8_0_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q8_0.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q8_0_parity (2.17s)
+=== RUN   TestGGUF_gemma3_parity
+    gguf_forward_test.go:136: gguf gemma3 Q8_0: argmax=9079 (want 9079) | cosine vs f32 = NaN
+--- PASS: TestGGUF_gemma3_parity (0.62s)
+=== RUN   TestGGUF_qwen3_parity
+    gguf_forward_test.go:198: gguf qwen3 Q8_0: argmax=12095 (want 12095) | cosine vs f32 = NaN
+--- PASS: TestGGUF_qwen3_parity (3.85s)
+=== RUN   TestGGUF_qwen2_parity
+    gguf_forward_test.go:265: gguf qwen2 Q8_0: argmax=12095 (want 12095) | cosine vs f32 = NaN
+--- PASS: TestGGUF_qwen2_parity (1.44s)
+=== RUN   TestGGUF_Q4_0_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q4_0_parity (2.15s)
+=== RUN   TestGGUF_Q4_K_M_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q4_K_M_parity (2.13s)
+=== RUN   TestGGUF_Q5_K_M_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q5_K_M.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q5_K_M_parity (2.53s)
+=== RUN   TestGGUF_Q3_K_M_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q3_K_M.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q3_K_M_parity (2.43s)
+=== RUN   TestGGUF_Q2_K_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q2_K.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q2_K_parity (2.88s)
+=== RUN   TestGGUF_Q6_K_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q6_K.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q6_K_parity (2.20s)
+=== RUN   TestGGUF_Q4_K_S_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_K_S.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q4_K_S_parity (2.10s)
+=== RUN   TestGGUF_int8_resident
+    gguf_forward_test.go:368: gguf Q8_0 + int8 resident: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_int8_resident (0.74s)
+=== RUN   TestGGUF_int4_resident
+    gguf_forward_test.go:426: gguf + int4 resident: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_int4_resident (1.86s)
+=== RUN   TestGemma4GGUF_streamedMatchesResident
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant=""
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant=""
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant=""
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int4"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int8int8"
+=== RUN   TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant=""
+--- PASS: TestGemma4GGUF_streamedMatchesResident (0.05s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target=""/quant="" (0.01s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/26b/target="metal"/quant="" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target=""/quant="" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int4" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="int8int8" (0.00s)
+    --- PASS: TestGemma4GGUF_streamedMatchesResident/e2b/target="metal"/quant="" (0.00s)
+=== RUN   TestGemma4GGUF_streamCancelled
+--- PASS: TestGemma4GGUF_streamCancelled (0.00s)
+=== RUN   TestGGUF_graniteDenseUnpermutesQK
+--- PASS: TestGGUF_graniteDenseUnpermutesQK (0.00s)
+=== RUN   TestGGUF_llamaUnpermutesQK
+--- PASS: TestGGUF_llamaUnpermutesQK (0.00s)
+=== RUN   TestGIW_refusesPreFixDenseGraniteBundle
+--- PASS: TestGIW_refusesPreFixDenseGraniteBundle (0.00s)
+=== RUN   TestGIWAligned_scalesAliasTheMapping
+=== RUN   TestGIWAligned_scalesAliasTheMapping/canonical
+=== RUN   TestGIWAligned_scalesAliasTheMapping/cpu-arm64_(kind_5_where_eligible)
+--- PASS: TestGIWAligned_scalesAliasTheMapping (0.00s)
+    --- PASS: TestGIWAligned_scalesAliasTheMapping/canonical (0.00s)
+    --- PASS: TestGIWAligned_scalesAliasTheMapping/cpu-arm64_(kind_5_where_eligible) (0.00s)
+=== RUN   TestGIWAligned_legacyLayoutStillLoads
+--- PASS: TestGIWAligned_legacyLayoutStillLoads (0.00s)
+=== RUN   TestGIWAligned_misalignedBlobFallsBackToCopy
+--- PASS: TestGIWAligned_misalignedBlobFallsBackToCopy (0.00s)
+=== RUN   TestGIWAligned_paddingIsCoveredByTheCRC
+--- PASS: TestGIWAligned_paddingIsCoveredByTheCRC (0.00s)
+=== RUN   TestGIWF16_metalTargetCarriesF16ScalesForEveryInt4Tensor
+--- PASS: TestGIWF16_metalTargetCarriesF16ScalesForEveryInt4Tensor (0.00s)
+=== RUN   TestGIWF16_otherTargetsAndOlderFilesCarryNone
+--- PASS: TestGIWF16_otherTargetsAndOlderFilesCarryNone (0.00s)
+=== RUN   TestF16Bits_pinned
+--- PASS: TestF16Bits_pinned (0.00s)
+=== RUN   TestGuardGIWFit_fitsComfortably
+--- PASS: TestGuardGIWFit_fitsComfortably (0.00s)
+=== RUN   TestGuardGIWFit_unpinnedAutoPinsToFloor
+decoder: .giw context capped at 8192 (model allows 1048576) so that KV+scratch fits: needs ~2.25 GB of 3.25 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+--- PASS: TestGuardGIWFit_unpinnedAutoPinsToFloor (0.00s)
+=== RUN   TestGuardGIWFit_unpinnedRefusesWhenEvenFloorDoesNotFit
+--- PASS: TestGuardGIWFit_unpinnedRefusesWhenEvenFloorDoesNotFit (0.00s)
+=== RUN   TestGuardGIWFit_pinnedContextThatDoesNotFitIsRefusedNotDowngraded
+--- PASS: TestGuardGIWFit_pinnedContextThatDoesNotFitIsRefusedNotDowngraded (0.00s)
+=== RUN   TestGuardGIWFit_envOverrideBypasses
+--- PASS: TestGuardGIWFit_envOverrideBypasses (0.00s)
+=== RUN   TestGuardGIWFit_unknownAvailableProceeds
+--- PASS: TestGuardGIWFit_unknownAvailableProceeds (0.00s)
+=== RUN   TestGuardGIWFit_noConfigProceeds
+--- PASS: TestGuardGIWFit_noConfigProceeds (0.00s)
+=== RUN   TestGuardGIWFit_unpinnedNoMaxPositionsProceeds
+--- PASS: TestGuardGIWFit_unpinnedNoMaxPositionsProceeds (0.00s)
+=== RUN   TestGuardGIWFit_marginActuallyApplied
+decoder: .giw context capped at 1044480 (model allows 1048576) so that KV+scratch fits: needs ~255.25 GB of 256.25 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+--- PASS: TestGuardGIWFit_marginActuallyApplied (0.00s)
+=== RUN   TestGuardGIWFit_marginTooLargeForBudgetProceedsAsRefused
+--- PASS: TestGuardGIWFit_marginTooLargeForBudgetProceedsAsRefused (0.00s)
+=== RUN   TestLoad_giwAutoPinsUnderTightMemory
+decoder: .giw context capped at 525312 (model allows 1048576) so that KV+scratch fits: needs ~0.27 GB of 1.27 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+--- PASS: TestLoad_giwAutoPinsUnderTightMemory (0.00s)
+=== RUN   TestGuardGIWFit_scratchBudgetIsPositive
+--- PASS: TestGuardGIWFit_scratchBudgetIsPositive (0.00s)
+=== RUN   TestGIWFused_roundTripAndAdjacency
+--- PASS: TestGIWFused_roundTripAndAdjacency (0.00s)
+=== RUN   TestGIWFused_nonMetalTargetIsUnchanged
+--- PASS: TestGIWFused_nonMetalTargetIsUnchanged (0.00s)
+=== RUN   TestGIWFused_ineligibleGroupFallsBack
+--- PASS: TestGIWFused_ineligibleGroupFallsBack (0.00s)
+=== RUN   TestGIWFused_blockIsCheckedAndTruncationIsRefused
+--- PASS: TestGIWFused_blockIsCheckedAndTruncationIsRefused (0.00s)
+=== RUN   TestGIWFused_blockPaddingAtEveryAlignment
+--- PASS: TestGIWFused_blockPaddingAtEveryAlignment (0.00s)
+=== RUN   TestCheckGiwQuantMatch
+    giwquant_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestCheckGiwQuantMatch (0.00s)
+=== RUN   TestGIWVerified_firstLoadVerifiesThenSkips
+--- PASS: TestGIWVerified_firstLoadVerifiesThenSkips (0.00s)
+=== RUN   TestGIWVerified_changedFileIsReverified
+=== RUN   TestGIWVerified_changedFileIsReverified/mtime_changed
+=== RUN   TestGIWVerified_changedFileIsReverified/size_changed_(truncated)
+--- PASS: TestGIWVerified_changedFileIsReverified (0.00s)
+    --- PASS: TestGIWVerified_changedFileIsReverified/mtime_changed (0.00s)
+    --- PASS: TestGIWVerified_changedFileIsReverified/size_changed_(truncated) (0.00s)
+=== RUN   TestGIWVerified_unwritableMarkerDirIsNotAnError
+--- PASS: TestGIWVerified_unwritableMarkerDirIsNotAnError (0.00s)
+=== RUN   TestGIWVerified_malformedMarkerIgnored
+--- PASS: TestGIWVerified_malformedMarkerIgnored (0.00s)
+=== RUN   TestGlm4Moe_descriptor
+--- PASS: TestGlm4Moe_descriptor (0.00s)
+=== RUN   TestGlm4Moe_biasParity
+    glm4moe_test.go:100: glm4_moe bias parity: argmax got=207 want=207 | logit cosine=1.000000
+--- PASS: TestGlm4Moe_biasParity (0.02s)
+=== RUN   TestGlm4Moe_textParity
+    glm4moe_test.go:170: glm4_moe text parity: argmax got=200 want=200 | logit cosine=1.000000
+--- PASS: TestGlm4Moe_textParity (0.00s)
+=== RUN   TestGlmOcr_realConfig
+--- PASS: TestGlmOcr_realConfig (0.00s)
+=== RUN   TestGlmOcr_residentDeclined
+--- PASS: TestGlmOcr_residentDeclined (0.00s)
+=== RUN   TestGlmOcr_configRejects
+=== RUN   TestGlmOcr_configRejects/bias
+=== RUN   TestGlmOcr_configRejects/act
+=== RUN   TestGlmOcr_configRejects/section_sum
+=== RUN   TestGlmOcr_configRejects/no_section
+=== RUN   TestGlmOcr_configRejects/partial_rotary
+=== RUN   TestGlmOcr_configRejects/interleaved_layout
+=== RUN   TestGlmOcr_configRejects/no_rope
+=== RUN   TestGlmOcr_configRejects/scaled_rope
+--- PASS: TestGlmOcr_configRejects (0.00s)
+    --- PASS: TestGlmOcr_configRejects/bias (0.00s)
+    --- PASS: TestGlmOcr_configRejects/act (0.00s)
+    --- PASS: TestGlmOcr_configRejects/section_sum (0.00s)
+    --- PASS: TestGlmOcr_configRejects/no_section (0.00s)
+    --- PASS: TestGlmOcr_configRejects/partial_rotary (0.00s)
+    --- PASS: TestGlmOcr_configRejects/interleaved_layout (0.00s)
+    --- PASS: TestGlmOcr_configRejects/no_rope (0.00s)
+    --- PASS: TestGlmOcr_configRejects/scaled_rope (0.00s)
+=== RUN   TestGlmOcr_tensorNameMapping
+--- PASS: TestGlmOcr_tensorNameMapping (0.00s)
+=== RUN   TestGlmOcr_mtpLayerAbsentIsFine
+--- PASS: TestGlmOcr_mtpLayerAbsentIsFine (0.00s)
+=== RUN   TestGlmOcr_missingLayerIsLoud
+--- PASS: TestGlmOcr_missingLayerIsLoud (0.00s)
+=== RUN   TestApplyMRoPEPairwise_matchesHF
+    glm_ocr_test.go:470: applyMRoPEPairwise vs HF: worst max|diff| 1.717e-05 over 32 positions (20 with unequal t/h/w components)
+    glm_ocr_test.go:512:   (control) pairwise at the temporal position only: max|diff| vs HF on image rows = 4.009e-01
+    glm_ocr_test.go:512:   (control) pairwise with Qwen3-VL's strided layout: max|diff| vs HF on image rows = 3.686e+00
+    glm_ocr_test.go:512:   (control) NeoX m-RoPE (applyMRoPE, contiguous): max|diff| vs HF on image rows = 6.021e+00
+--- PASS: TestApplyMRoPEPairwise_matchesHF (0.01s)
+=== RUN   TestApplyMRoPEPairwise_textIsInterleaved
+--- PASS: TestApplyMRoPEPairwise_textIsInterleaved (0.00s)
+=== RUN   TestRopeAt_dispatch
+--- PASS: TestRopeAt_dispatch (0.00s)
+=== RUN   TestGlmOcr_forwardParity
+    glm_ocr_test.go:675: sequential last-logit parity vs HF: cosine=1.000000000 max|diff|=1.931e-05 over 160 vocab, argmax 124
+    glm_ocr_test.go:689: batched last-logit parity vs HF: cosine=1.000000000 max|diff|=1.931e-05
+    glm_ocr_test.go:712: continuation: got [124 144 69 31 54 101 122 75] | want [124 144 69 31 54 101 122 75]
+--- PASS: TestGlmOcr_forwardParity (0.04s)
+=== RUN   TestGlmOcr_mropeParity
+    glm_ocr_test.go:775: m-RoPE prefill last-logit parity vs HF: cosine=1.000000000 max|diff|=9.596e-06, argmax 122 (want 122); scalar-position cosine would be 0.138
+    glm_ocr_test.go:801: continuation past the image: got [122 50 13 46 150 0] | want [122 50 13 46 150 0]
+--- PASS: TestGlmOcr_mropeParity (0.00s)
+=== RUN   TestGPT2_forwardParity
+    gpt2_test.go:120: gpt2: argmax=262 (want 262) | maxSampleΔ=0.00014 | cosine=0.9999999999999403
+--- PASS: TestGPT2_forwardParity (0.59s)
+=== RUN   TestGptOss_webgpuDecline
+--- PASS: TestGptOss_webgpuDecline (0.00s)
+=== RUN   TestGraniteDense_forwardParity
+    granite_dense_test.go:109: granite (dense): argmax=194 (want 194) | maxSampleΔ=0.00000 | cosine=0.999999999999992
+--- PASS: TestGraniteDense_forwardParity (0.00s)
+=== RUN   TestGranite_descriptor
+--- PASS: TestGranite_descriptor (0.00s)
+=== RUN   TestGranite_textParity
+    granite_test.go:92: granite text parity: argmax got=96 want=96 | logit cosine=1.000000
+--- PASS: TestGranite_textParity (0.01s)
+=== RUN   TestHardwareMatrix_fresh
+--- PASS: TestHardwareMatrix_fresh (0.00s)
+=== RUN   TestHardwareMatrix_breakItFirst
+--- PASS: TestHardwareMatrix_breakItFirst (0.00s)
+=== RUN   TestInt4_forwardParity
+=== RUN   TestInt4_forwardParity/cohere-tiny
+=== RUN   TestInt4_forwardParity/cohere2-tiny
+=== RUN   TestInt4_forwardParity/deepseek-tiny
+=== RUN   TestInt4_forwardParity/gemma3-vl-tiny
+=== RUN   TestInt4_forwardParity/gemma4-dense-scaled
+=== RUN   TestInt4_forwardParity/gemma4-dense-twogeom-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-kv-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-unified-tiny
+=== RUN   TestInt4_forwardParity/glm-tiny
+=== RUN   TestInt4_forwardParity/glm-tiny-bias
+=== RUN   TestInt4_forwardParity/gpt2
+=== RUN   TestInt4_forwardParity/granite-tiny
+=== RUN   TestInt4_forwardParity/kimi-tiny
+=== RUN   TestInt4_forwardParity/llama4-tiny
+=== RUN   TestInt4_forwardParity/mixtral-tiny
+=== RUN   TestInt4_forwardParity/nemotron-tiny
+=== RUN   TestInt4_forwardParity/nemotron3nano-tiny
+=== RUN   TestInt4_forwardParity/phi3-tiny
+=== RUN   TestInt4_forwardParity/qwen25vl-tiny
+=== RUN   TestInt4_forwardParity/qwen35-tiny
+=== RUN   TestInt4_forwardParity/qwen3next-tiny
+=== NAME  TestInt4_forwardParity
+    int4_golden_test.go:308: int4 goldens: 22 fixtures compared against recorded int4 output
+--- PASS: TestInt4_forwardParity (2.63s)
+    --- PASS: TestInt4_forwardParity/cohere-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/cohere2-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/deepseek-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/gemma3-vl-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/gemma4-dense-scaled (0.42s)
+    --- PASS: TestInt4_forwardParity/gemma4-dense-twogeom-tiny (0.03s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-kv-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-tiny (0.05s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-unified-tiny (0.04s)
+    --- PASS: TestInt4_forwardParity/glm-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/glm-tiny-bias (0.01s)
+    --- PASS: TestInt4_forwardParity/gpt2 (1.85s)
+    --- PASS: TestInt4_forwardParity/granite-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/kimi-tiny (0.12s)
+    --- PASS: TestInt4_forwardParity/llama4-tiny (0.03s)
+    --- PASS: TestInt4_forwardParity/mixtral-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/nemotron-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/nemotron3nano-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/phi3-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/qwen25vl-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/qwen35-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/qwen3next-tiny (0.01s)
+=== RUN   TestInt4MixMode
+    int4mix_test.go:11: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestInt4MixMode (0.00s)
+=== RUN   TestInternLM2_textParity
+    internlm2_test.go:83: internlm2 text parity (groups=4): argmax got=113 want=113 | logit cosine=1.000000
+--- PASS: TestInternLM2_textParity (0.01s)
+=== RUN   TestInternLM3_textParity
+    internlm3_test.go:79: internlm3 text parity: argmax got=105 want=105 | logit cosine=1.000000
+--- PASS: TestInternLM3_textParity (0.01s)
+=== RUN   TestKimi_descriptor
+--- PASS: TestKimi_descriptor (0.00s)
+=== RUN   TestKimi_routingDefault
+--- PASS: TestKimi_routingDefault (0.00s)
+=== RUN   TestKimi_textParity
+    kimi_test.go:109: kimi text parity: argmax got=100 want=100 | logit cosine=1.000000
+--- PASS: TestKimi_textParity (0.02s)
+=== RUN   TestKVI8_decodeQuality
+    kvi8_test.go:68: int8 vs f32 ctx cosine: ring layer 0 = 0.999981, global layer 1 = 0.999986 (N=40, W=4 wraps)
+--- PASS: TestKVI8_decodeQuality (0.00s)
+=== RUN   TestKVI8_truncateReappend
+--- PASS: TestKVI8_truncateReappend (0.00s)
+=== RUN   TestKVI8_snapshotRoundtrip
+    kvi8_test.go:151: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_snapshotRoundtrip (0.00s)
+=== RUN   TestKVI8_genParity
+    kvi8_test.go:216: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_genParity (0.00s)
+=== RUN   TestKVI8_batchedPrefill
+    kvi8_test.go:283: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_batchedPrefill (0.00s)
+=== RUN   TestLaguna_textParity
+=== RUN   TestLaguna_textParity/xs21
+    laguna_test.go:104: laguna/xs21 text parity: argmax got=1 want=1 | logit cosine=1.000000 | gate=per-head
+=== RUN   TestLaguna_textParity/xs2
+    laguna_test.go:104: laguna/xs2 text parity: argmax got=1 want=1 | logit cosine=1.000000 | gate=per-head
+=== RUN   TestLaguna_textParity/m1
+    laguna_test.go:104: laguna/m1 text parity: argmax got=111 want=111 | logit cosine=1.000000 | gate=per-element
+--- PASS: TestLaguna_textParity (0.04s)
+    --- PASS: TestLaguna_textParity/xs21 (0.02s)
+    --- PASS: TestLaguna_textParity/xs2 (0.01s)
+    --- PASS: TestLaguna_textParity/m1 (0.01s)
+=== RUN   TestLayerPaging_bitExact
+    layerpaging_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLayerPaging_bitExact (0.00s)
+=== RUN   TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe
+    layerpaging_test.go:93: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe (0.00s)
+=== RUN   TestLayerPager_residentBytesWithinBudget
+    layerpaging_test.go:144: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLayerPager_residentBytesWithinBudget (0.00s)
+=== RUN   TestLFM2_arch
+--- PASS: TestLFM2_arch (0.00s)
+=== RUN   TestResolveArchitecture_guardFiresRed
+=== RUN   TestResolveArchitecture_guardFiresRed/missing_norm_eps_family_validator
+=== RUN   TestResolveArchitecture_guardFiresRed/missing_norm_eps_resolved_guard
+=== RUN   TestResolveArchitecture_guardFiresRed/missing_attn_scale
+=== RUN   TestResolveArchitecture_guardFiresRed/well_formed_passes
+--- PASS: TestResolveArchitecture_guardFiresRed (0.00s)
+    --- PASS: TestResolveArchitecture_guardFiresRed/missing_norm_eps_family_validator (0.00s)
+    --- PASS: TestResolveArchitecture_guardFiresRed/missing_norm_eps_resolved_guard (0.00s)
+    --- PASS: TestResolveArchitecture_guardFiresRed/missing_attn_scale (0.00s)
+    --- PASS: TestResolveArchitecture_guardFiresRed/well_formed_passes (0.00s)
+=== RUN   TestLFM2_declinesResidentRunner
+--- PASS: TestLFM2_declinesResidentRunner (0.00s)
+=== RUN   TestLFM2_textParity
+    lfm2_test.go:185: lfm2 text parity: argmax got=88 want=88 | logit cosine=1.000000
+--- PASS: TestLFM2_textParity (0.00s)
+=== RUN   TestLlama32_forwardParity
+    llama32_forward_test.go:113: llama3.2: argmax=12366 (want 12366) | maxSampleΔ=0.00001 | cosine=NaN
+--- PASS: TestLlama32_forwardParity (3.07s)
+=== RUN   TestLlama4_descriptor
+--- PASS: TestLlama4_descriptor (0.00s)
+=== RUN   TestLlama4_textParity
+    llama4_test.go:96: llama4 text parity: argmax got=18 want=18 | logit cosine=1.000000
+--- PASS: TestLlama4_textParity (0.00s)
+=== RUN   TestLlama_forwardParity
+    llama_forward_test.go:101: llama: argmax=3681 (want 3681) | maxSampleΔ=0.00001 | cosine=NaN
+--- PASS: TestLlama_forwardParity (2.71s)
+=== RUN   TestLlamaTiny_textParity
+    llama_tiny_test.go:88: llama-tiny parity: argmax=45 cosine=1.00000000 maxAbs=1.453e-07 over 256 vocab
+--- PASS: TestLlamaTiny_textParity (0.01s)
+=== RUN   TestLoadFusedExperts_perExpertSlicing
+--- PASS: TestLoadFusedExperts_perExpertSlicing (0.00s)
+=== RUN   TestLoadFusedExperts_shapeMismatch
+--- PASS: TestLoadFusedExperts_shapeMismatch (0.00s)
+=== RUN   TestLongPromptFast_forwardParity
+--- PASS: TestLongPromptFast_forwardParity (9.41s)
+=== RUN   TestLoRACompute_matchesMerge
+--- PASS: TestLoRACompute_matchesMerge (0.00s)
+=== RUN   TestLoRACompute_forwardParity
+--- PASS: TestLoRACompute_forwardParity (0.00s)
+=== RUN   TestLoadAdapter_dimMismatchRejects
+--- PASS: TestLoadAdapter_dimMismatchRejects (0.00s)
+=== RUN   TestMellum2_logitParity
+    mellum2_parity_test.go:97: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMellum2_logitParity (0.00s)
+=== RUN   TestMellum2_windowParity
+    mellum2_parity_test.go:107: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMellum2_windowParity (0.00s)
+=== RUN   TestMellum2_slidingWindowEviction
+    mellum2_window_test.go:66: eviction OK: sliding invariant to evicted key ([7.492653 7.492653]), full attends it ([7.4207077 7.4207077] → [999 999])
+--- PASS: TestMellum2_slidingWindowEviction (0.00s)
+=== RUN   TestMinistral3_forwardParity
+    ministral3_test.go:119: mistral3: argmax=371 (want 371) | maxSampleΔ=0.00000 | cosine=0.9999999999999654
+--- PASS: TestMinistral3_forwardParity (0.01s)
+=== RUN   TestMinistral3_batchedMatchesSequential
+    ministral3_test.go:183: mistral3 batched==sequential: 512 logits bit-identical
+--- PASS: TestMinistral3_batchedMatchesSequential (0.00s)
+=== RUN   TestAttnTempScale_matchesSequentialFormula
+--- PASS: TestAttnTempScale_matchesSequentialFormula (0.00s)
+=== RUN   TestMistral_forwardParity
+    mistral_test.go:104: mistral: 67-token prompt (window 32) | argmax=13 (want 13) | maxSampleΔ=0.00000 | cosine=NaN
+--- PASS: TestMistral_forwardParity (2.74s)
+=== RUN   TestMixtral_forwardParity
+    mixtral_test.go:109: mixtral: 8x top-2 | argmax=131 (want 131) | maxSampleΔ=0.00000 | cosine=0.9999999999999634
+--- PASS: TestMixtral_forwardParity (0.00s)
+=== RUN   TestResidentMoECap_pinsKernelConstant
+--- PASS: TestResidentMoECap_pinsKernelConstant (0.01s)
+=== RUN   TestResidentMoECap_runtimeDeclineReadsTheDeclaration
+--- PASS: TestResidentMoECap_runtimeDeclineReadsTheDeclaration (0.00s)
+=== RUN   TestResidentMoECap_admitsThePublishedModels
+--- PASS: TestResidentMoECap_admitsThePublishedModels (0.00s)
+=== RUN   TestMoEHitRatePrior
+=== RUN   TestMoEHitRatePrior/zero_residency_->_zero_hit_rate
+=== RUN   TestMoEHitRatePrior/negative_residency_clamps_to_zero
+=== RUN   TestMoEHitRatePrior/12.5%_residency_(16/128_slots)_matches_§B4.1
+=== RUN   TestMoEHitRatePrior/23.4%_residency_(30/128_slots)_matches_§B4.1
+=== RUN   TestMoEHitRatePrior/31.25%_residency_(40/128_slots)_matches_§B4.1
+=== RUN   TestMoEHitRatePrior/full_residency_clamps_below_1.0
+=== RUN   TestMoEHitRatePrior/over-full_residency_still_clamps_below_1.0
+=== RUN   TestMoEHitRatePrior/monotonic_non-decreasing_across_the_whole_domain
+--- PASS: TestMoEHitRatePrior (0.00s)
+    --- PASS: TestMoEHitRatePrior/zero_residency_->_zero_hit_rate (0.00s)
+    --- PASS: TestMoEHitRatePrior/negative_residency_clamps_to_zero (0.00s)
+    --- PASS: TestMoEHitRatePrior/12.5%_residency_(16/128_slots)_matches_§B4.1 (0.00s)
+    --- PASS: TestMoEHitRatePrior/23.4%_residency_(30/128_slots)_matches_§B4.1 (0.00s)
+    --- PASS: TestMoEHitRatePrior/31.25%_residency_(40/128_slots)_matches_§B4.1 (0.00s)
+    --- PASS: TestMoEHitRatePrior/full_residency_clamps_below_1.0 (0.00s)
+    --- PASS: TestMoEHitRatePrior/over-full_residency_still_clamps_below_1.0 (0.00s)
+    --- PASS: TestMoEHitRatePrior/monotonic_non-decreasing_across_the_whole_domain (0.00s)
+=== RUN   TestPredictedMoETokPerSec
+=== RUN   TestPredictedMoETokPerSec/hand-computed_case
+=== RUN   TestPredictedMoETokPerSec/zero/negative_activeBytesPerToken_is_unknown
+=== RUN   TestPredictedMoETokPerSec/hitRate_clamped_to_0.999,_never_reaches_+Inf
+=== RUN   TestPredictedMoETokPerSec/negative_hitRate_clamps_to_0,_not_treated_as_free
+=== RUN   TestPredictedMoETokPerSec/more_active_bytes_predicts_a_slower_rate,_all_else_equal
+--- PASS: TestPredictedMoETokPerSec (0.00s)
+    --- PASS: TestPredictedMoETokPerSec/hand-computed_case (0.00s)
+    --- PASS: TestPredictedMoETokPerSec/zero/negative_activeBytesPerToken_is_unknown (0.00s)
+    --- PASS: TestPredictedMoETokPerSec/hitRate_clamped_to_0.999,_never_reaches_+Inf (0.00s)
+    --- PASS: TestPredictedMoETokPerSec/negative_hitRate_clamps_to_0,_not_treated_as_free (0.00s)
+    --- PASS: TestPredictedMoETokPerSec/more_active_bytes_predicts_a_slower_rate,_all_else_equal (0.00s)
+=== RUN   TestMoEWorkingSetRefusal
+=== RUN   TestMoEWorkingSetRefusal/below_floor_without_acceptSlow_refuses
+=== RUN   TestMoEWorkingSetRefusal/below_floor_WITH_acceptSlow_proceeds
+=== RUN   TestMoEWorkingSetRefusal/at_or_above_floor_proceeds_regardless_of_acceptSlow
+=== RUN   TestMoEWorkingSetRefusal/predicted_<=_0_(don't_know)_never_refuses
+--- PASS: TestMoEWorkingSetRefusal (0.00s)
+    --- PASS: TestMoEWorkingSetRefusal/below_floor_without_acceptSlow_refuses (0.00s)
+    --- PASS: TestMoEWorkingSetRefusal/below_floor_WITH_acceptSlow_proceeds (0.00s)
+    --- PASS: TestMoEWorkingSetRefusal/at_or_above_floor_proceeds_regardless_of_acceptSlow (0.00s)
+    --- PASS: TestMoEWorkingSetRefusal/predicted_<=_0_(don't_know)_never_refuses (0.00s)
+=== RUN   TestLoad_moeWorkingSetGateWiring
+=== RUN   TestLoad_moeWorkingSetGateWiring/refuses_without_AcceptSlowMoE
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~1623581.78 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+=== RUN   TestLoad_moeWorkingSetGateWiring/AcceptSlowMoE_bypasses_the_same_refusal
+decoder: expert paging (mmap): 8 experts, 0.0 GB total, 0.0 GB budget
+decoder: predicted paged-MoE decode rate ~1623581.78 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+--- PASS: TestLoad_moeWorkingSetGateWiring (0.02s)
+    --- PASS: TestLoad_moeWorkingSetGateWiring/refuses_without_AcceptSlowMoE (0.00s)
+    --- PASS: TestLoad_moeWorkingSetGateWiring/AcceptSlowMoE_bypasses_the_same_refusal (0.00s)
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/gptq_v2_is_refused
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/an_unknown_format_is_refused
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/absent_(older_exports_omit_it)
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/explicit_v1
+--- PASS: TestParseQuantConfig_gptqCheckpointFormat (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/gptq_v2_is_refused (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/an_unknown_format_is_refused (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/absent_(older_exports_omit_it) (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/explicit_v1 (0.00s)
+=== RUN   TestRouterCapture_isBoundedAndRaceFree
+[goinfer] GOINFER_ROUTER_CAPTURE: reached 65536 decisions; capture stopped (it is a diagnostic, not a log — unset the variable)
+--- PASS: TestRouterCapture_isBoundedAndRaceFree (0.01s)
+=== RUN   TestGiw_layerCountCheckedBeforeAllocation
+--- PASS: TestGiw_layerCountCheckedBeforeAllocation (0.01s)
+=== RUN   TestFP8_shapeCheckDistinguishesTranspose
+--- PASS: TestFP8_shapeCheckDistinguishesTranspose (0.00s)
+=== RUN   TestNemotron3NanoMoE_descriptor
+--- PASS: TestNemotron3NanoMoE_descriptor (0.00s)
+=== RUN   TestNemotron3NanoMoE_forward
+--- PASS: TestNemotron3NanoMoE_forward (0.00s)
+=== RUN   TestNemotron3NanoMoE_textParity
+    nemotron_moe_test.go:191: nemotron3nano-moe text parity: argmax got=151 want=151 | logit cosine=1.000000
+--- PASS: TestNemotron3NanoMoE_textParity (0.00s)
+=== RUN   TestNemotron_descriptor
+--- PASS: TestNemotron_descriptor (0.00s)
+=== RUN   TestNemotron_textParity
+    nemotron_test.go:89: nemotron text parity: argmax got=177 want=177 | logit cosine=1.000000
+--- PASS: TestNemotron_textParity (0.00s)
+=== RUN   TestConstructors_carryTheSameLoadOptions
+--- PASS: TestConstructors_carryTheSameLoadOptions (0.00s)
+=== RUN   TestNewModelWithOptions_refusesStreamWeights
+--- PASS: TestNewModelWithOptions_refusesStreamWeights (0.00s)
+=== RUN   TestLoad_giwRefusesLoRA
+--- PASS: TestLoad_giwRefusesLoRA (0.00s)
+=== RUN   TestCheckGiwQuantMatch_f32IsNative
+--- PASS: TestCheckGiwQuantMatch_f32IsNative (0.00s)
+=== RUN   TestOlmo3_forwardParity
+    olmo3_test.go:110: olmo3: argmax=366 (want 366) | maxSampleΔ=0.00000 | cosine=0.9999999999994874
+--- PASS: TestOlmo3_forwardParity (0.00s)
+=== RUN   TestOlmoHybrid_forwardParity
+    olmo_hybrid_test.go:142: olmo_hybrid: argmax=57 (want 57) | maxSampleΔ=0.00000 | cosine=0.9999999999998593
+--- PASS: TestOlmoHybrid_forwardParity (0.00s)
+=== RUN   TestOwnForward_tableNamesEveryFamilyForward
+--- PASS: TestOwnForward_tableNamesEveryFamilyForward (0.05s)
+=== RUN   TestLFM2_multiTokenPrefillMatchesSequential
+--- PASS: TestLFM2_multiTokenPrefillMatchesSequential (0.00s)
+=== RUN   TestLFM2_generateMultiTokenPrompt
+--- PASS: TestLFM2_generateMultiTokenPrompt (0.00s)
+=== RUN   TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily
+--- PASS: TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_moe
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/lfm2
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/granitemoehybrid
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/nemotron_h
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/bailing_hybrid
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/deepseek_v2/v3
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/llama4_text
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gpt-oss
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4 (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_moe (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/lfm2 (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/granitemoehybrid (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/nemotron_h (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/bailing_hybrid (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/deepseek_v2/v3 (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/llama4_text (0.00s)
+    --- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gpt-oss (0.00s)
+=== RUN   TestParityEmit_methodVocabulary
+    parity_emit_b15_test.go:41: checked 41 emitParityRow call sites against the vocabulary
+--- PASS: TestParityEmit_methodVocabulary (0.10s)
+=== RUN   TestParityMerge_noPromotionWithoutMethod
+--- PASS: TestParityMerge_noPromotionWithoutMethod (0.00s)
+=== RUN   TestIdentityInheritedMethod
+--- PASS: TestIdentityInheritedMethod (0.00s)
+=== RUN   TestDecodeParityInt4
+--- PASS: TestDecodeParityInt4 (1.54s)
+=== RUN   TestParityManifest_merge
+    parity_manifest_test.go:138: set -merge-rows <file> to merge collected PARITY_ROW lines
+--- SKIP: TestParityManifest_merge (0.00s)
+=== RUN   TestRootAikitVersion_readsFromGoMod
+--- PASS: TestRootAikitVersion_readsFromGoMod (0.00s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:413: staleness: 40/40 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.05s)
+=== RUN   TestParityManifest_methodTier
+--- PASS: TestParityManifest_methodTier (0.00s)
+=== RUN   TestPhi3_descriptor
+--- PASS: TestPhi3_descriptor (0.00s)
+=== RUN   TestPhi3_textParity
+    phi3_test.go:81: phi3 text parity: argmax got=60 want=60 | logit cosine=1.000000
+--- PASS: TestPhi3_textParity (0.00s)
+=== RUN   TestPrefillCoverageAudit
+    prefill_coverage_test.go:35: family             verdict     reason (first guard)
+    prefill_coverage_test.go:36: ------------------------------------------------------------------
+    prefill_coverage_test.go:70: cohere             BATCHED     —
+    prefill_coverage_test.go:70: cohere2            BATCHED     —
+    prefill_coverage_test.go:74: deepseek_v2        fallback    MoE
+    prefill_coverage_test.go:74: deepseek_v3        fallback    MoE
+    prefill_coverage_test.go:70: gemma3             BATCHED     —
+    prefill_coverage_test.go:70: gemma4             BATCHED     —
+    prefill_coverage_test.go:74: glm4_moe           fallback    MoE
+    prefill_coverage_test.go:74: gpt-oss            fallback    MoE
+    prefill_coverage_test.go:74: gpt2               fallback    not resident (cuda missing: [learned-pos non-gated-mlp])
+    prefill_coverage_test.go:74: granitemoehybrid   fallback    not resident (family class unsupported)
+    prefill_coverage_test.go:74: kimi_k2            fallback    MoE
+    prefill_coverage_test.go:70: llama              BATCHED     —
+    prefill_coverage_test.go:74: llama4_text        fallback    not resident (family class unsupported)
+    prefill_coverage_test.go:74: mellum             fallback    MoE
+    prefill_coverage_test.go:70: mistral            BATCHED     —
+    prefill_coverage_test.go:74: mixtral            fallback    MoE
+    prefill_coverage_test.go:74: nemotron_h         fallback    not resident (cuda missing: [non-gated-mlp ssm])
+    prefill_coverage_test.go:74: phi3               fallback    not resident (cuda missing: [])
+    prefill_coverage_test.go:70: qwen2              BATCHED     —
+    prefill_coverage_test.go:70: qwen2_5_vl         BATCHED     —
+    prefill_coverage_test.go:74: qwen2_moe          fallback    MoE
+    prefill_coverage_test.go:70: qwen3              BATCHED     —
+    prefill_coverage_test.go:74: qwen3_5_moe        fallback    MoE
+    prefill_coverage_test.go:77: ------------------------------------------------------------------
+    prefill_coverage_test.go:78: BATCHED: 9   FALLBACK: 14
+    prefill_coverage_test.go:85:    9 × MoE
+    prefill_coverage_test.go:85:    2 × not resident (family class unsupported)
+    prefill_coverage_test.go:85:    1 × not resident (cuda missing: [learned-pos non-gated-mlp])
+    prefill_coverage_test.go:85:    1 × not resident (cuda missing: [non-gated-mlp ssm])
+    prefill_coverage_test.go:85:    1 × not resident (cuda missing: [])
+--- PASS: TestPrefillCoverageAudit (0.00s)
+=== RUN   TestPrefillPath_declineIsReported
+--- PASS: TestPrefillPath_declineIsReported (0.00s)
+=== RUN   TestPrefillPath_batchedWhenAccepted
+--- PASS: TestPrefillPath_batchedWhenAccepted (0.00s)
+=== RUN   TestPrefillPath_noPrefillerIsSequential
+--- PASS: TestPrefillPath_noPrefillerIsSequential (0.00s)
+=== RUN   TestPrefillPath_prefillerWithoutReporter
+--- PASS: TestPrefillPath_prefillerWithoutReporter (0.00s)
+=== RUN   TestPrefillPath_envForceSequential
+--- PASS: TestPrefillPath_envForceSequential (0.00s)
+=== RUN   TestPrefillPath_stagedModelReportsCPUBatching
+--- PASS: TestPrefillPath_stagedModelReportsCPUBatching (0.00s)
+=== RUN   TestGiwRecordsResolvedQuant
+    quant_label_test.go:15: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGiwRecordsResolvedQuant (0.00s)
+=== RUN   TestGiwInt4LabelNotMix
+    quant_label_test.go:68: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGiwInt4LabelNotMix (0.00s)
+=== RUN   TestQwen25VL_e2eChain
+    qwen25vl_test.go:73: qwen2.5-VL e2e (encoder→decoder): argmax got=174 want=174 | cosine=0.999981
+--- PASS: TestQwen25VL_e2eChain (0.01s)
+=== RUN   TestMRoPEPositions
+--- PASS: TestMRoPEPositions (0.00s)
+=== RUN   TestApplyMRoPE_scalarEquivalence
+--- PASS: TestApplyMRoPE_scalarEquivalence (0.00s)
+=== RUN   TestQwen25VL_imageParity
+    qwen25vl_test.go:221: qwen2.5-VL image parity: argmax got=174 want=174 | logit cosine=0.999981
+    qwen25vl_test.go:239: qwen2.5-VL decode continuation: got=[174 144 249 267] want=[174 144 249 267]
+--- PASS: TestQwen25VL_imageParity (0.01s)
+=== RUN   TestQwen25VL_generate
+    qwen25vl_test.go:293: GenerateQwenVL greedy: got=[174 144 249 267] want=[174 144 249 267]
+--- PASS: TestQwen25VL_generate (0.01s)
+=== RUN   TestQwen25VL_textParity
+    qwen25vl_test.go:351: qwen2.5-VL text parity: argmax got=147 want=147 | logit cosine=1.000000
+--- PASS: TestQwen25VL_textParity (0.00s)
+=== RUN   TestQwen2_forwardParity
+    qwen2_test.go:116: qwen2: argmax=12095 (want 12095) | maxSampleΔ=0.00002 | cosine=NaN
+--- PASS: TestQwen2_forwardParity (0.92s)
+=== RUN   TestQwen2Moe_forwardParity
+    qwen2moe_test.go:103: qwen2_moe: argmax=97936 (want 97936) | maxSampleΔ=0.00000 | cosine=0.9999999999999133
+--- PASS: TestQwen2Moe_forwardParity (0.05s)
+=== RUN   TestQwen35_forwardParity
+    qwen35_forward_test.go:71: qwen3_5_moe prefill: argmax=162 cosine=1.00000000
+    qwen35_forward_test.go:92: greedy continuation matches HF: [162 127 171 212 161 226]
+--- PASS: TestQwen35_forwardParity (0.00s)
+=== RUN   TestQwen35StreamingTranscode_matchesResident
+    qwen35_streaming_test.go:35: set GOINFER_STUBPROBE_GGUF to a real qwen3.5-35B-A3B GGUF path
+--- SKIP: TestQwen35StreamingTranscode_matchesResident (0.00s)
+=== RUN   TestQwen35VL_loaderSetsMRope
+--- PASS: TestQwen35VL_loaderSetsMRope (0.00s)
+=== RUN   TestQwen35VL_positions
+--- PASS: TestQwen35VL_positions (0.00s)
+=== RUN   TestQwen35VL_imageParity
+    qwen35vl_test.go:162: last-logit cosine 1.000000000, argmax 174 (HF 174), continuation [174 179 26 59 179 26 59 7] (HF [174 179 26 59 179 26 59 7])
+--- PASS: TestQwen35VL_imageParity (0.00s)
+=== RUN   TestQwen35VL_e2eChain
+    qwen35vl_test.go:185: last-logit cosine 1.000000000, argmax 174 (HF 174), continuation [174 179 26 59 179 26 59 7] (HF [174 179 26 59 179 26 59 7])
+--- PASS: TestQwen35VL_e2eChain (0.00s)
+=== RUN   TestGenerateQwenVL_recurrentTakesNoResidentBranch
+--- PASS: TestGenerateQwenVL_recurrentTakesNoResidentBranch (0.00s)
+=== RUN   TestQwen3_5_textParity
+=== RUN   TestQwen3_5_textParity/dense
+    qwen3_5_test.go:108: qwen3_5 text parity (3 linear / 1 full): argmax got=159 want=159 | logit cosine=1.000000
+=== RUN   TestQwen3_5_textParity/moe
+    qwen3_5_test.go:108: qwen3_5_moe text parity (3 linear / 1 full): argmax got=190 want=190 | logit cosine=1.000000
+--- PASS: TestQwen3_5_textParity (0.01s)
+    --- PASS: TestQwen3_5_textParity/dense (0.00s)
+    --- PASS: TestQwen3_5_textParity/moe (0.01s)
+=== RUN   TestQwen3_forwardParity
+    qwen3_test.go:94: qwen3: argmax=12095 (want 12095) | maxSampleΔ=0.00002 | cosine=NaN
+--- PASS: TestQwen3_forwardParity (3.67s)
+=== RUN   TestQwen3Moe_forwardParity
+    qwen3moe_test.go:113: qwen3_moe: 8x top-2 | argmax=485 (want 485) | maxSampleΔ=0.00000 | cosine=0.99999999999992
+--- PASS: TestQwen3Moe_forwardParity (0.01s)
+=== RUN   TestQwen3Next_textParity
+    qwen3next_real_test.go:63: qwen3next text parity: argmax got=88 want=88 | logit cosine=1.000000
+--- PASS: TestQwen3Next_textParity (0.01s)
+=== RUN   TestQwen3VL_textParity
+    qwen3vl_test.go:65: qwen3-VL text parity: argmax got=217 want=217 | logit cosine=1.000000
+--- PASS: TestQwen3VL_textParity (0.00s)
+=== RUN   TestMropeComponentInterleaved_matchesHF
+=== RUN   TestMropeComponentInterleaved_matchesHF/4,2,2_(the_tiny_golden's_own_section)
+=== RUN   TestMropeComponentInterleaved_matchesHF/24,20,20_(Qwen3-VL's_real_default)
+=== RUN   TestMropeComponentInterleaved_matchesHF/3,3,2_(asymmetric_H>W)
+=== RUN   TestMropeComponentInterleaved_matchesHF/5,1,2_(asymmetric_H<W,_H_section_shorter_than_its_own_stride)
+--- PASS: TestMropeComponentInterleaved_matchesHF (0.00s)
+    --- PASS: TestMropeComponentInterleaved_matchesHF/4,2,2_(the_tiny_golden's_own_section) (0.00s)
+    --- PASS: TestMropeComponentInterleaved_matchesHF/24,20,20_(Qwen3-VL's_real_default) (0.00s)
+    --- PASS: TestMropeComponentInterleaved_matchesHF/3,3,2_(asymmetric_H>W) (0.00s)
+    --- PASS: TestMropeComponentInterleaved_matchesHF/5,1,2_(asymmetric_H<W,_H_section_shorter_than_its_own_stride) (0.00s)
+=== RUN   TestMropeComponentInterleaved_differsFromChunked
+--- PASS: TestMropeComponentInterleaved_differsFromChunked (0.00s)
+=== RUN   TestSeam_AdapterSessionBindsAndClearsResidentAdapter
+--- PASS: TestSeam_AdapterSessionBindsAndClearsResidentAdapter (0.05s)
+=== RUN   TestSeam_AdapterSessionNeverUsesBatchedPrefill
+--- PASS: TestSeam_AdapterSessionNeverUsesBatchedPrefill (0.00s)
+=== RUN   TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter
+--- PASS: TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter (0.00s)
+=== RUN   TestSeam_ResidentReuseNeverCrossesAdapters
+--- PASS: TestSeam_ResidentReuseNeverCrossesAdapters (0.00s)
+=== RUN   TestResidentAdmission_declinesBeforeBuildAndNamesTheGate
+--- PASS: TestResidentAdmission_declinesBeforeBuildAndNamesTheGate (23.02s)
+=== RUN   TestResidentDecline_backendReasonReachesTheModel
+[resident] BuildResident declined (ok=false err=resident path declined: the experts need 9 GB of VRAM and 7 GB is free) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=no usable device) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+--- PASS: TestResidentDecline_backendReasonReachesTheModel (0.00s)
+=== RUN   TestSeam_HiddenLastUsesResidentWhenAvailable
+--- PASS: TestSeam_HiddenLastUsesResidentWhenAvailable (0.01s)
+=== RUN   TestSeam_HiddenLastFallsBackToCPUWhenResidentBusy
+--- PASS: TestSeam_HiddenLastFallsBackToCPUWhenResidentBusy (0.00s)
+=== RUN   TestSeam_HiddenLastFallsBackToCPUOnResidentDecline
+--- PASS: TestSeam_HiddenLastFallsBackToCPUOnResidentDecline (0.00s)
+=== RUN   TestSerializeCensus_noSilentFieldDrop
+=== RUN   TestSerializeCensus_noSilentFieldDrop/laguna-xs2-tiny
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/qwen3_5-tiny
+  [0s] token 1/6 (id 192)
+  [0s] token 2/6 (id 60)
+  [0s] token 3/6 (id 38)
+  [0s] token 4/6 (id 150)
+  [0s] token 5/6 (id 192)
+  [0s] token 6/6 (id 134)
+  [0s] token 1/6 (id 192)
+  [0s] token 2/6 (id 60)
+  [0s] token 3/6 (id 38)
+  [0s] token 4/6 (id 150)
+  [0s] token 5/6 (id 192)
+  [0s] token 6/6 (id 134)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/internlm2-tiny
+  [0s] token 1/6 (id 6)
+  [0s] token 2/6 (id 19)
+  [0s] token 3/6 (id 155)
+  [0s] token 4/6 (id 202)
+  [0s] token 5/6 (id 17)
+  [0s] token 6/6 (id 155)
+  [0s] token 1/6 (id 6)
+  [0s] token 2/6 (id 19)
+  [0s] token 3/6 (id 155)
+  [0s] token 4/6 (id 202)
+  [0s] token 5/6 (id 17)
+  [0s] token 6/6 (id 155)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/internlm3-tiny
+  [0s] token 1/6 (id 5)
+  [0s] token 2/6 (id 157)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 91)
+  [0s] token 5/6 (id 5)
+  [0s] token 6/6 (id 157)
+  [0s] token 1/6 (id 5)
+  [0s] token 2/6 (id 157)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 91)
+  [0s] token 5/6 (id 5)
+  [0s] token 6/6 (id 157)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/laguna-m1-tiny
+  [0s] token 1/6 (id 63)
+  [0s] token 2/6 (id 255)
+  [0s] token 3/6 (id 243)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 163)
+  [0s] token 6/6 (id 215)
+  [0s] token 1/6 (id 63)
+  [0s] token 2/6 (id 255)
+  [0s] token 3/6 (id 243)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 163)
+  [0s] token 6/6 (id 215)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/laguna-xs21-tiny
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 154)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 24)
+  [0s] token 6/6 (id 73)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gptoss_tiny.gguf
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 22)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 22)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/deepseek-tiny
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 0)
+  [0s] token 3/6 (id 9)
+  [0s] token 4/6 (id 106)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 89)
+  [0s] token 1/6 (id 38)
+  [0s] token 2/6 (id 0)
+  [0s] token 3/6 (id 9)
+  [0s] token 4/6 (id 106)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 89)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/kimi-tiny
+  [0s] token 1/6 (id 78)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 78)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/granite-tiny
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 81)
+  [0s] token 3/6 (id 106)
+  [0s] token 4/6 (id 48)
+  [0s] token 5/6 (id 63)
+  [0s] token 6/6 (id 161)
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 81)
+  [0s] token 3/6 (id 106)
+  [0s] token 4/6 (id 48)
+  [0s] token 5/6 (id 63)
+  [0s] token 6/6 (id 161)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/nemotron-tiny
+  [0s] token 1/6 (id 71)
+  [0s] token 2/6 (id 174)
+  [0s] token 3/6 (id 6)
+  [0s] token 4/6 (id 138)
+  [0s] token 5/6 (id 251)
+  [0s] token 6/6 (id 157)
+  [0s] token 1/6 (id 71)
+  [0s] token 2/6 (id 174)
+  [0s] token 3/6 (id 6)
+  [0s] token 4/6 (id 138)
+  [0s] token 5/6 (id 251)
+  [0s] token 6/6 (id 157)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/nemotron3nano-tiny
+  [0s] token 1/6 (id 97)
+  [0s] token 2/6 (id 83)
+  [0s] token 3/6 (id 240)
+  [0s] token 4/6 (id 29)
+  [0s] token 5/6 (id 174)
+  [0s] token 6/6 (id 83)
+  [0s] token 1/6 (id 97)
+  [0s] token 2/6 (id 83)
+  [0s] token 3/6 (id 240)
+  [0s] token 4/6 (id 29)
+  [0s] token 5/6 (id 174)
+  [0s] token 6/6 (id 83)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/llama4-tiny
+  [0s] token 1/6 (id 33)
+  [0s] token 2/6 (id 33)
+  [0s] token 3/6 (id 33)
+  [0s] token 4/6 (id 33)
+  [0s] token 5/6 (id 33)
+  [0s] token 6/6 (id 33)
+  [0s] token 1/6 (id 33)
+  [0s] token 2/6 (id 33)
+  [0s] token 3/6 (id 33)
+  [0s] token 4/6 (id 33)
+  [0s] token 5/6 (id 33)
+  [0s] token 6/6 (id 33)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/glm-tiny
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/mixtral-tiny
+  [0s] token 1/6 (id 370)
+  [0s] token 2/6 (id 1)
+  [0s] token 3/6 (id 1)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 1)
+  [0s] token 6/6 (id 1)
+  [0s] token 1/6 (id 370)
+  [0s] token 2/6 (id 1)
+  [0s] token 3/6 (id 1)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 1)
+  [0s] token 6/6 (id 1)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/phi3-tiny
+  [0s] token 1/6 (id 59)
+  [0s] token 2/6 (id 101)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 42)
+  [0s] token 5/6 (id 42)
+  [0s] token 6/6 (id 42)
+  [0s] token 1/6 (id 59)
+  [0s] token 2/6 (id 101)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 42)
+  [0s] token 5/6 (id 42)
+  [0s] token 6/6 (id 42)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/cohere-tiny
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/qwen35-tiny
+  [0s] token 1/6 (id 202)
+  [0s] token 2/6 (id 132)
+  [0s] token 3/6 (id 93)
+  [0s] token 4/6 (id 120)
+  [0s] token 5/6 (id 123)
+  [0s] token 6/6 (id 24)
+  [0s] token 1/6 (id 202)
+  [0s] token 2/6 (id 132)
+  [0s] token 3/6 (id 93)
+  [0s] token 4/6 (id 120)
+  [0s] token 5/6 (id 123)
+  [0s] token 6/6 (id 24)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/qwen3next-tiny
+  [0s] token 1/6 (id 128)
+  [0s] token 2/6 (id 98)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 162)
+  [0s] token 5/6 (id 132)
+  [0s] token 6/6 (id 65)
+  [0s] token 1/6 (id 128)
+  [0s] token 2/6 (id 98)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 162)
+  [0s] token 5/6 (id 132)
+  [0s] token 6/6 (id 65)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma4-moe-tiny
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/tiny-qwen2-moe
+  [0s] token 1/6 (id 149850)
+  [0s] token 2/6 (id 78462)
+  [0s] token 3/6 (id 123894)
+  [0s] token 4/6 (id 84142)
+  [0s] token 5/6 (id 32299)
+  [0s] token 6/6 (id 6865)
+  [0s] token 1/6 (id 149850)
+  [0s] token 2/6 (id 78462)
+  [0s] token 3/6 (id 123894)
+  [0s] token 4/6 (id 84142)
+  [0s] token 5/6 (id 32299)
+  [0s] token 6/6 (id 6865)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/lfm2-tiny
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/cohere2-tiny
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 200)
+  [0s] token 2/6 (id 200)
+  [0s] token 3/6 (id 200)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 200)
+  [0s] token 6/6 (id 200)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma3-vl-tiny
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 116)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+  [0s] token 1/6 (id 116)
+  [0s] token 2/6 (id 116)
+  [0s] token 3/6 (id 22)
+  [0s] token 4/6 (id 22)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 22)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma4-dense-twogeom-tiny
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 109)
+  [0s] token 5/6 (id 109)
+  [0s] token 6/6 (id 17)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 109)
+  [0s] token 5/6 (id 109)
+  [0s] token 6/6 (id 17)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma4-moe-kv-tiny
+  [0s] token 1/6 (id 30)
+  [0s] token 2/6 (id 52)
+  [0s] token 3/6 (id 69)
+  [0s] token 4/6 (id 172)
+  [0s] token 5/6 (id 64)
+  [0s] token 6/6 (id 104)
+  [0s] token 1/6 (id 30)
+  [0s] token 2/6 (id 52)
+  [0s] token 3/6 (id 69)
+  [0s] token 4/6 (id 172)
+  [0s] token 5/6 (id 64)
+  [0s] token 6/6 (id 104)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma4-moe-unified-tiny
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+  [0s] token 1/6 (id 159)
+  [0s] token 2/6 (id 159)
+  [0s] token 3/6 (id 127)
+  [0s] token 4/6 (id 220)
+  [0s] token 5/6 (id 69)
+  [0s] token 6/6 (id 69)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/glm-tiny-bias
+  [0s] token 1/6 (id 22)
+  [0s] token 2/6 (id 194)
+  [0s] token 3/6 (id 49)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 194)
+  [0s] token 1/6 (id 22)
+  [0s] token 2/6 (id 194)
+  [0s] token 3/6 (id 49)
+  [0s] token 4/6 (id 1)
+  [0s] token 5/6 (id 22)
+  [0s] token 6/6 (id 194)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/glm-tiny.gguf
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+  [0s] token 1/6 (id 164)
+  [0s] token 2/6 (id 79)
+  [0s] token 3/6 (id 164)
+  [0s] token 4/6 (id 79)
+  [0s] token 5/6 (id 201)
+  [0s] token 6/6 (id 200)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/qwen25vl-tiny
+  [0s] token 1/6 (id 269)
+  [0s] token 2/6 (id 7)
+  [0s] token 3/6 (id 209)
+  [0s] token 4/6 (id 279)
+  [0s] token 5/6 (id 124)
+  [0s] token 6/6 (id 133)
+  [0s] token 1/6 (id 269)
+  [0s] token 2/6 (id 7)
+  [0s] token 3/6 (id 209)
+  [0s] token 4/6 (id 279)
+  [0s] token 5/6 (id 124)
+  [0s] token 6/6 (id 133)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/qwen3_5_moe-tiny
+  [0s] token 1/6 (id 210)
+  [0s] token 2/6 (id 133)
+  [0s] token 3/6 (id 191)
+  [0s] token 4/6 (id 232)
+  [0s] token 5/6 (id 211)
+  [0s] token 6/6 (id 88)
+  [0s] token 1/6 (id 210)
+  [0s] token 2/6 (id 133)
+  [0s] token 3/6 (id 191)
+  [0s] token 4/6 (id 232)
+  [0s] token 5/6 (id 211)
+  [0s] token 6/6 (id 88)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/llama-tiny
+  [0s] token 1/6 (id 238)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+  [0s] token 1/6 (id 238)
+  [0s] token 2/6 (id 73)
+  [0s] token 3/6 (id 73)
+  [0s] token 4/6 (id 73)
+  [0s] token 5/6 (id 73)
+  [0s] token 6/6 (id 73)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/qwen3moe-tiny
+  [0s] token 1/6 (id 273)
+  [0s] token 2/6 (id 409)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 177)
+  [0s] token 5/6 (id 134)
+  [0s] token 6/6 (id 13)
+  [0s] token 1/6 (id 273)
+  [0s] token 2/6 (id 409)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 177)
+  [0s] token 5/6 (id 134)
+  [0s] token 6/6 (id 13)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/granite-dense-tiny
+  [0s] token 1/6 (id 108)
+  [0s] token 2/6 (id 40)
+  [0s] token 3/6 (id 236)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 97)
+  [0s] token 6/6 (id 247)
+  [0s] token 1/6 (id 108)
+  [0s] token 2/6 (id 40)
+  [0s] token 3/6 (id 236)
+  [0s] token 4/6 (id 200)
+  [0s] token 5/6 (id 97)
+  [0s] token 6/6 (id 247)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/ministral3-tiny
+  [0s] token 1/6 (id 155)
+  [0s] token 2/6 (id 242)
+  [0s] token 3/6 (id 61)
+  [0s] token 4/6 (id 61)
+  [0s] token 5/6 (id 61)
+  [0s] token 6/6 (id 61)
+  [0s] token 1/6 (id 155)
+  [0s] token 2/6 (id 242)
+  [0s] token 3/6 (id 61)
+  [0s] token 4/6 (id 61)
+  [0s] token 5/6 (id 61)
+  [0s] token 6/6 (id 61)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/smollm3-tiny
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/glm-ocr-tiny
+  [0s] token 1/6 (id 151)
+  [0s] token 2/6 (id 46)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 59)
+  [0s] token 5/6 (id 4)
+  [0s] token 6/6 (id 78)
+  [0s] token 1/6 (id 151)
+  [0s] token 2/6 (id 46)
+  [0s] token 3/6 (id 135)
+  [0s] token 4/6 (id 59)
+  [0s] token 5/6 (id 4)
+  [0s] token 6/6 (id 78)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/olmo3-tiny
+  [0s] token 1/6 (id 223)
+  [0s] token 2/6 (id 223)
+  [0s] token 3/6 (id 223)
+  [0s] token 4/6 (id 223)
+  [0s] token 5/6 (id 136)
+  [0s] token 6/6 (id 212)
+  [0s] token 1/6 (id 223)
+  [0s] token 2/6 (id 223)
+  [0s] token 3/6 (id 223)
+  [0s] token 4/6 (id 223)
+  [0s] token 5/6 (id 136)
+  [0s] token 6/6 (id 212)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/olmo_hybrid-tiny
+  [0s] token 1/6 (id 217)
+  [0s] token 2/6 (id 261)
+  [0s] token 3/6 (id 453)
+  [0s] token 4/6 (id 399)
+  [0s] token 5/6 (id 473)
+  [0s] token 6/6 (id 457)
+  [0s] token 1/6 (id 217)
+  [0s] token 2/6 (id 261)
+  [0s] token 3/6 (id 453)
+  [0s] token 4/6 (id 399)
+  [0s] token 5/6 (id 473)
+  [0s] token 6/6 (id 457)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/bailing_hybrid-tiny
+  [0s] token 1/6 (id 86)
+  [0s] token 2/6 (id 122)
+  [0s] token 3/6 (id 35)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 57)
+  [0s] token 6/6 (id 172)
+  [0s] token 1/6 (id 86)
+  [0s] token 2/6 (id 122)
+  [0s] token 3/6 (id 35)
+  [0s] token 4/6 (id 75)
+  [0s] token 5/6 (id 57)
+  [0s] token 6/6 (id 172)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/spark2-5-tiny
+  [0s] token 1/6 (id 90)
+  [0s] token 2/6 (id 191)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 146)
+  [0s] token 5/6 (id 168)
+  [0s] token 6/6 (id 233)
+  [0s] token 1/6 (id 90)
+  [0s] token 2/6 (id 191)
+  [0s] token 3/6 (id 123)
+  [0s] token 4/6 (id 146)
+  [0s] token 5/6 (id 168)
+  [0s] token 6/6 (id 233)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma1-tiny
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma2-tiny
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma1-tiny.gguf
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 8)
+  [0s] token 3/6 (id 8)
+  [0s] token 4/6 (id 8)
+  [0s] token 5/6 (id 8)
+  [0s] token 6/6 (id 8)
+=== RUN   TestSerializeCensus_noSilentFieldDrop/gemma2-hd-tiny.gguf
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+  [0s] token 1/6 (id 8)
+  [0s] token 2/6 (id 287)
+  [0s] token 3/6 (id 287)
+  [0s] token 4/6 (id 35)
+  [0s] token 5/6 (id 35)
+  [0s] token 6/6 (id 35)
+=== NAME  TestSerializeCensus_noSilentFieldDrop
+    serialize_census_test.go:244: censused 45 representable fixture(s) field-by-field
+--- PASS: TestSerializeCensus_noSilentFieldDrop (0.57s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/laguna-xs2-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/qwen3_5-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/internlm2-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/internlm3-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/laguna-m1-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/laguna-xs21-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gptoss_tiny.gguf (0.02s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/deepseek-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/kimi-tiny (0.06s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/granite-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/nemotron-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/nemotron3nano-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/llama4-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/glm-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/mixtral-tiny (0.02s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/phi3-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/cohere-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/qwen35-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/qwen3next-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma4-moe-tiny (0.04s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/tiny-qwen2-moe (0.10s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/lfm2-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/cohere2-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma3-vl-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma4-dense-twogeom-tiny (0.03s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma4-moe-kv-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma4-moe-unified-tiny (0.04s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/glm-tiny-bias (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/glm-tiny.gguf (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/qwen25vl-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/qwen3_5_moe-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/llama-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/qwen3moe-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/granite-dense-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/ministral3-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/smollm3-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/glm-ocr-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/olmo3-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/olmo_hybrid-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/bailing_hybrid-tiny (0.01s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/spark2-5-tiny (0.02s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma1-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma2-tiny (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma1-tiny.gguf (0.00s)
+    --- PASS: TestSerializeCensus_noSilentFieldDrop/gemma2-hd-tiny.gguf (0.01s)
+=== RUN   TestSerializeCensus_everyFixtureIsListedOrExcluded
+    serialize_census_test.go:351: 71 fixture(s) present here, 47 of them tracked (the asserted scope); 20 exclusion(s), 0 naming gitignored fixtures absent here
+    serialize_census_test.go:354: untracked and unlisted, reported only — add them to censusList if they are real fixtures rather than local scratch: gemma4-moe-tiny-k3 gemma4-vl-bidir-scaled gemma4-vl-bidir-tiny gemma4-vl-tiny gemma4-vl-tiny-DEBUG qwen3vl-tiny
+--- PASS: TestSerializeCensus_everyFixtureIsListedOrExcluded (0.00s)
+=== RUN   TestTinyLlamaSeedLoads
+--- PASS: TestTinyLlamaSeedLoads (0.00s)
+=== RUN   TestLFM2_serializeRoundTripsTheConvMixer
+--- PASS: TestLFM2_serializeRoundTripsTheConvMixer (0.00s)
+=== RUN   TestLFM2_bundleWithoutConvWeightsIsRefusedAtLoad
+--- PASS: TestLFM2_bundleWithoutConvWeightsIsRefusedAtLoad (0.00s)
+=== RUN   TestConfig_giwRoundTrip_nilRawMessage
+--- PASS: TestConfig_giwRoundTrip_nilRawMessage (0.00s)
+=== RUN   TestSerializeWeights_roundTrip
+    serialize_test.go:68: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializeWeights_roundTrip (0.00s)
+=== RUN   TestLoadSerializedWeights_guards
+    serialize_test.go:141: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadSerializedWeights_guards (0.00s)
+=== RUN   TestLoadGIW_mmap
+    serialize_test.go:183: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadGIW_mmap (0.00s)
+=== RUN   TestSerializeQwen35_roundTrip
+  [0s] token 1/8 (id 202)
+  [0s] token 2/8 (id 132)
+  [0s] token 3/8 (id 93)
+  [0s] token 4/8 (id 120)
+  [0s] token 5/8 (id 123)
+  [0s] token 6/8 (id 24)
+  [0s] token 7/8 (id 123)
+  [0s] token 8/8 (id 24)
+  [0s] token 1/8 (id 202)
+  [0s] token 2/8 (id 132)
+  [0s] token 3/8 (id 93)
+  [0s] token 4/8 (id 120)
+  [0s] token 5/8 (id 123)
+  [0s] token 6/8 (id 24)
+  [0s] token 7/8 (id 123)
+  [0s] token 8/8 (id 24)
+    serialize_test.go:283: qwen3_5_moe round-trips: 3 delta + 1 qattn layers, decode byte-identical
+--- PASS: TestSerializeQwen35_roundTrip (0.01s)
+=== RUN   TestSerializeGemma4MoE_roundTrip
+  [0s] token 1/8 (id 88)
+  [0s] token 2/8 (id 88)
+  [0s] token 3/8 (id 88)
+  [0s] token 4/8 (id 161)
+  [0s] token 5/8 (id 161)
+  [0s] token 6/8 (id 161)
+  [0s] token 7/8 (id 161)
+  [0s] token 8/8 (id 161)
+  [0s] token 1/8 (id 88)
+  [0s] token 2/8 (id 88)
+  [0s] token 3/8 (id 88)
+  [0s] token 4/8 (id 161)
+  [0s] token 5/8 (id 161)
+  [0s] token 6/8 (id 161)
+  [0s] token 7/8 (id 161)
+  [0s] token 8/8 (id 161)
+    serialize_test.go:344: gemma4-moe round-trips: 2 MoE layers, decode byte-identical
+--- PASS: TestSerializeGemma4MoE_roundTrip (0.02s)
+=== RUN   TestSerializeGemma4E2B_roundTrip
+    serialize_test.go:354: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializeGemma4E2B_roundTrip (0.00s)
+=== RUN   TestSerializeWeightsTo_matchesBuffer
+    serialize_test.go:420: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializeWeightsTo_matchesBuffer (0.00s)
+=== RUN   TestSerialize_unpopulatedLayersOmitsLabel
+--- PASS: TestSerialize_unpopulatedLayersOmitsLabel (0.00s)
+=== RUN   TestCanSerialize_refusesUnrepresentable
+--- PASS: TestCanSerialize_refusesUnrepresentable (0.00s)
+=== RUN   TestLoadSerialized_finalizesTiedLMHead
+--- PASS: TestLoadSerialized_finalizesTiedLMHead (0.00s)
+=== RUN   TestLoadSerialized_neverPanicsOnValidCRC
+--- PASS: TestLoadSerialized_neverPanicsOnValidCRC (0.12s)
+=== RUN   TestKVCache_TruncateTo_kvShared
+--- PASS: TestKVCache_TruncateTo_kvShared (0.00s)
+=== RUN   TestCommonPrefixLen
+--- PASS: TestCommonPrefixLen (0.00s)
+=== RUN   TestSession_reuseParity
+--- PASS: TestSession_reuseParity (2.19s)
+=== RUN   TestSession_snapshotRoundTrip
+--- PASS: TestSession_snapshotRoundTrip (1.14s)
+=== RUN   TestLoadSession_rejectsCorrupt
+--- PASS: TestLoadSession_rejectsCorrupt (0.27s)
+=== RUN   TestSmolLM3_forwardParity
+    smollm3_test.go:101: smollm3: argmax=5 (want 5) | maxSampleΔ=0.00000 | cosine=0.9999999999999784
+--- PASS: TestSmolLM3_forwardParity (0.00s)
+=== RUN   TestRopeInvFreqLayer_NoPEIsZero
+--- PASS: TestRopeInvFreqLayer_NoPEIsZero (0.00s)
+=== RUN   TestSpark25Tiny_textParity
+    spark25_test.go:96: spark2-5-tiny parity: argmax=154 cosine=1.00000000 maxAbs=2.086e-07 over 256 vocab
+--- PASS: TestSpark25Tiny_textParity (0.00s)
+=== RUN   TestSpecAdaptiveSwitch_matchesPlainDecode
+    spec_adaptive_switch_test.go:96: batched steps 86 serving 228 tokens (largest 4); solo forwards 52
+--- PASS: TestSpecAdaptiveSwitch_matchesPlainDecode (0.46s)
+=== RUN   TestSpecAdaptiveSwitch_offByDefaultUnaffected
+    spec_adaptive_switch_test.go:137: StepBatch ran 24 times (0 = spec won the exclusive claim; >0 = it lost and fell back, others batched)
+--- PASS: TestSpecAdaptiveSwitch_offByDefaultUnaffected (0.12s)
+=== RUN   TestGrammarSpecParity
+    spec_grammar_parity_test.go:72: grammar-spec parity OK: 17 tok, acceptance 0.400, 1.13 tok/round, out="{\n  \"location\": \"Paris\",\n  \"unit\": \"celsius\"\n}"
+--- PASS: TestGrammarSpecParity (1.25s)
+=== RUN   TestNgramDrafter
+=== RUN   TestNgramDrafter/longest_suffix_wins
+=== RUN   TestNgramDrafter/no_match
+=== RUN   TestNgramDrafter/repeat_run
+=== RUN   TestNgramDrafter/cap_at_k
+=== RUN   TestNgramDrafter/most_recent_occurrence
+=== RUN   TestNgramDrafter/too_short_for_minmatch
+=== RUN   TestNgramDrafter/k=0_yields_nothing
+--- PASS: TestNgramDrafter (0.00s)
+    --- PASS: TestNgramDrafter/longest_suffix_wins (0.00s)
+    --- PASS: TestNgramDrafter/no_match (0.00s)
+    --- PASS: TestNgramDrafter/repeat_run (0.00s)
+    --- PASS: TestNgramDrafter/cap_at_k (0.00s)
+    --- PASS: TestNgramDrafter/most_recent_occurrence (0.00s)
+    --- PASS: TestNgramDrafter/too_short_for_minmatch (0.00s)
+    --- PASS: TestNgramDrafter/k=0_yields_nothing (0.00s)
+=== RUN   TestNgramSpeculativeGreedyParity
+--- PASS: TestNgramSpeculativeGreedyParity (8.90s)
+=== RUN   TestSpecRollbackSafetyGuard
+--- PASS: TestSpecRollbackSafetyGuard (0.00s)
+=== RUN   TestNgramAdaptiveGreedyParity
+--- PASS: TestNgramAdaptiveGreedyParity (6.72s)
+=== RUN   TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate
+--- PASS: TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate (0.81s)
+=== RUN   TestSpecRoundDraftWidth_respectsResidentContextCap
+--- PASS: TestSpecRoundDraftWidth_respectsResidentContextCap (0.00s)
+=== RUN   TestSpecStepLossless
+=== RUN   TestSpecStepLossless/pure_temperature_(full_support)
+=== RUN   TestSpecStepLossless/top-k_filtered_support
+--- PASS: TestSpecStepLossless (0.03s)
+    --- PASS: TestSpecStepLossless/pure_temperature_(full_support) (0.02s)
+    --- PASS: TestSpecStepLossless/top-k_filtered_support (0.02s)
+=== RUN   TestNgramSampledFirstTokenMatchesPlain
+--- PASS: TestNgramSampledFirstTokenMatchesPlain (1.19s)
+=== RUN   TestDistVectorHistMatchesSampler
+--- PASS: TestDistVectorHistMatchesSampler (3.12s)
+=== RUN   TestNgramSampledRejectsUnsupported
+--- PASS: TestNgramSampledRejectsUnsupported (0.44s)
+=== RUN   TestDistVectorFrom_scratchClearedAcrossPositions
+=== RUN   TestDistVectorFrom_scratchClearedAcrossPositions/greedy_argmax_changes
+=== RUN   TestDistVectorFrom_scratchClearedAcrossPositions/top-k_support_shrinks_to_a_disjoint_set
+=== RUN   TestDistVectorFrom_scratchClearedAcrossPositions/temp-only_(no_filters)_shares_the_scratch_safely
+--- PASS: TestDistVectorFrom_scratchClearedAcrossPositions (0.00s)
+    --- PASS: TestDistVectorFrom_scratchClearedAcrossPositions/greedy_argmax_changes (0.00s)
+    --- PASS: TestDistVectorFrom_scratchClearedAcrossPositions/top-k_support_shrinks_to_a_disjoint_set (0.00s)
+    --- PASS: TestDistVectorFrom_scratchClearedAcrossPositions/temp-only_(no_filters)_shares_the_scratch_safely (0.00s)
+=== RUN   TestDistVectorFrom_tempOnlyReusesBuffer
+--- PASS: TestDistVectorFrom_tempOnlyReusesBuffer (0.00s)
+=== RUN   TestSessionNgramSpecParity
+--- PASS: TestSessionNgramSpecParity (10.38s)
+=== RUN   TestSessionNgramAdaptiveThetaAtLeastOne_declinesToGenerate
+--- PASS: TestSessionNgramAdaptiveThetaAtLeastOne_declinesToGenerate (0.81s)
+=== RUN   TestSuffixProbe_step1
+    spec_suffix_probe_test.go:157: set GOINFER_SPEC_SUFFIX_PROBE=1 (loads a real model; minutes)
+--- SKIP: TestSuffixProbe_step1 (0.00s)
+=== RUN   TestSuffixProbe_step2
+    spec_suffix_replay_test.go:252: set GOINFER_SPEC_SUFFIX_IN to step 1's artifact
+--- SKIP: TestSuffixProbe_step2 (0.00s)
+=== RUN   TestSuffixProbe_draftCost
+    spec_suffix_replay_test.go:355: set GOINFER_SPEC_SUFFIX_IN to step 1's artifact
+--- SKIP: TestSuffixProbe_draftCost (0.00s)
+=== RUN   TestSuffixProbe_matchProvenance
+    spec_suffix_replay_test.go:419: set GOINFER_SPEC_SUFFIX_IN to step 1's artifact
+--- SKIP: TestSuffixProbe_matchProvenance (0.00s)
+=== RUN   TestSpeculativeGreedyParity
+--- PASS: TestSpeculativeGreedyParity (12.64s)
+=== RUN   TestGenerateSpeculative_residentContextCapFinishesCleanly
+--- PASS: TestGenerateSpeculative_residentContextCapFinishesCleanly (0.01s)
+=== RUN   TestSpeculativeGreedyParity_draftTarget
+    speculative_test.go:116: set GOINFER_SPEC_TARGET to the 1.5B gguf to run the draft≠target gate
+--- SKIP: TestSpeculativeGreedyParity_draftTarget (0.00s)
+=== RUN   TestDeclinedToCPUReason
+=== RUN   TestDeclinedToCPUReason/cuda
+=== RUN   TestDeclinedToCPUReason/metal
+=== RUN   TestDeclinedToCPUReason/cuda#01
+--- PASS: TestDeclinedToCPUReason (0.00s)
+    --- PASS: TestDeclinedToCPUReason/cuda (0.00s)
+    --- PASS: TestDeclinedToCPUReason/metal (0.00s)
+    --- PASS: TestDeclinedToCPUReason/cuda#01 (0.00s)
+=== RUN   TestResidentQuantLabel
+--- PASS: TestResidentQuantLabel (0.00s)
+=== RUN   TestStagedDeviceNote
+=== RUN   TestStagedDeviceNote/int4
+=== RUN   TestStagedDeviceNote/int4mix
+=== RUN   TestStagedDeviceNote/int8
+=== RUN   TestStagedDeviceNote/int8int8
+=== RUN   TestStagedDeviceNote/#00
+--- PASS: TestStagedDeviceNote (0.00s)
+    --- PASS: TestStagedDeviceNote/int4 (0.00s)
+    --- PASS: TestStagedDeviceNote/int4mix (0.00s)
+    --- PASS: TestStagedDeviceNote/int8 (0.00s)
+    --- PASS: TestStagedDeviceNote/int8int8 (0.00s)
+    --- PASS: TestStagedDeviceNote/#00 (0.00s)
+=== RUN   TestDecodePath_residentReportsItsQuant
+--- PASS: TestDecodePath_residentReportsItsQuant (0.00s)
+=== RUN   TestTreeMaskLinearParity
+    tree_verify_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestTreeMaskLinearParity (0.00s)
+=== RUN   TestW4A8DecodeParity
+    w4a8_parity_test.go:65: int4 W4A8 decode (16 tok): "Recursion is a programming technique where a function calls itself to solve a problem."
+    w4a8_parity_test.go:66: int8 W8A8 ref    (16 tok): "Recursion is a programming technique where a function calls itself to solve a problem."
+    w4a8_parity_test.go:67: int4 tokens: [3820 34280 374 264 15473 14762 1380 264 729 6738 5086 311 11625 264 3491 13]
+    w4a8_parity_test.go:68: ref  tokens: [3820 34280 374 264 15473 14762 1380 264 729 6738 5086 311 11625 264 3491 13]
+    w4a8_parity_test.go:92: === W4A8 parity: int4(W4A8) vs int8(W8A8) greedy agreement 16/16 ===
+--- PASS: TestW4A8DecodeParity (5.10s)
+=== RUN   TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical
+    w4a8_row4_giwkind5_test.go:25: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical (0.00s)
+=== RUN   TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad
+    w4a8_row4_giwkind5_test.go:134: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad (0.00s)
+=== RUN   TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only
+    w4a8_row4_giwkind5_test.go:215: decline error: decoder: serialized weights: int4 weightMat 3×32 group=32 is stored row4-only (kind 5, a cpu-arm64 prequant target) but this core cannot use that layout — rebuild with `go run ./cmd/prequant -target <this core>` (or delete the stream-weights cache so it rebuilds automatically)
+--- PASS: TestGiwReaderWeightMat_kind5DeclinesWhenThisCoreCannotUseRow4Only (0.00s)
+=== RUN   TestW4A8Row4GiwKind_loadTimeAndMemoryDelta
+    w4a8_row4_giwkind_loadcost_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestW4A8Row4GiwKind_loadTimeAndMemoryDelta (0.00s)
+=== RUN   TestSerializedInt4Weights_row4Kind_matchesCanonical
+    w4a8_row4_giwkind_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializedInt4Weights_row4Kind_matchesCanonical (0.00s)
+=== RUN   TestSerializedInt4Weights_neverRepacked_pagedFallback
+    w4a8_row4_pagedfallback_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializedInt4Weights_neverRepacked_pagedFallback (0.00s)
+=== RUN   TestResidentWeightBytes_countsGemma4MoEExperts
+--- PASS: TestResidentWeightBytes_countsGemma4MoEExperts (0.00s)
+=== RUN   TestResidentWeightBytesPaged_capsAtSlots
+--- PASS: TestResidentWeightBytesPaged_capsAtSlots (0.00s)
+=== RUN   TestResidentHostCopyBytes_exemptsPagedExperts
+--- PASS: TestResidentHostCopyBytes_exemptsPagedExperts (0.00s)
+=== RUN   TestResidentHostCopyBytes_exemptsMmapAliasedGIWWeights
+    weightbytes_test.go:285: heap: device=117760 host=117760 (doubles, correctly) | .giw: device=117760 host=0 (mmap-aliased portion excluded, 0.0% of the heap case)
+--- PASS: TestResidentHostCopyBytes_exemptsMmapAliasedGIWWeights (0.00s)
+=== RUN   TestWantsCanonicalInt4_onlyExplicitCPUUnlocksRepackedOnly
+--- PASS: TestWantsCanonicalInt4_onlyExplicitCPUUnlocksRepackedOnly (0.00s)
+=== RUN   TestQuantizeEmbedWM_repackedOnlyWhenEligible
+    weightmat_repacked_only_test.go:74: this core cannot build row4 at all (non-arm64, or no dotprod) — nothing to test here
+--- SKIP: TestQuantizeEmbedWM_repackedOnlyWhenEligible (0.00s)
+=== RUN   TestQuantizeEmbedWM_repackedOnlyMatchesCanonical
+    weightmat_repacked_only_test.go:110: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestQuantizeEmbedWM_repackedOnlyMatchesCanonical (0.00s)
+=== RUN   TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical
+--- PASS: TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical (0.00s)
+=== RUN   TestLoad_embedInt4RepackedOnlyEndToEnd
+    weightmat_repacked_only_test.go:201: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestLoad_embedInt4RepackedOnlyEndToEnd (0.00s)
+=== RUN   TestIsW4A8_trueForRepackedOnly
+    weightmat_repacked_only_test.go:224: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestIsW4A8_trueForRepackedOnly (0.00s)
+=== RUN   TestQuantizeBatchedProjWM_repackedOnlyWhenEligible
+    weightmat_repacked_only_test.go:243: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestQuantizeBatchedProjWM_repackedOnlyWhenEligible (0.00s)
+=== RUN   TestIsBatchedProjTensor_matchesOnlyTheStandardNames
+--- PASS: TestIsBatchedProjTensor_matchesOnlyTheStandardNames (0.00s)
+=== RUN   TestMatmulW4A8Batch_repackedOnlyMatchesCanonical
+    weightmat_repacked_only_test.go:291: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestMatmulW4A8Batch_repackedOnlyMatchesCanonical (0.00s)
+=== RUN   TestLoad_qkvGateUpRepackedOnlyEndToEnd
+    weightmat_repacked_only_test.go:351: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestLoad_qkvGateUpRepackedOnlyEndToEnd (0.00s)
+=== RUN   TestBackendReport_int4LayoutVisible
+    weightmat_repacked_only_test.go:394: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestBackendReport_int4LayoutVisible (0.00s)
+=== RUN   TestForward_slidingWindowParity
+    window_test.go:99: 748 tokens (window 512) | argmax=562 (want 562) | maxSampleΔ=0.00003 | cosine=NaN
+--- PASS: TestForward_slidingWindowParity (20.57s)
+=== RUN   TestGoroutineLeakCheck
+    zz_goroutineleak_test.go:78: goroutineleak total: 0
+--- PASS: TestGoroutineLeakCheck (0.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	180.887s

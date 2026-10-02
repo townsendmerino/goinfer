@@ -1,0 +1,49 @@
+=== RUN   TestCohereRealResidentParityCUDA
+=== RUN   TestCohereRealResidentParityCUDA/aya-expanse-8b
+    cohere_real_resident_test.go:67: [   0.0s] loading CUDA resident (int4, context 512)
+    cohere_real_resident_test.go:67: [  26.9s] loading CPU model (int4)
+    cohere_real_resident_test.go:67: [  44.4s] golden prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:174: GOLDEN PROMPT (6 tokens) decode, resident vs CPU: worst cosine 0.998727 (pos 2) worst relL2 0.0516
+    cohere_real_resident_test.go:175:   last token vs HF f32 golden: resident cosine 0.997293 | CPU int4 cosine 0.997058 | argmax resident 5641 CPU 5641 golden 5641
+    cohere_real_resident_test.go:182: GOLDEN PROMPT batched prefill last token, resident vs CPU: cosine 0.999101 relL2 0.0426
+    cohere_real_resident_test.go:67: [  45.8s] 48-token prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:188: 48-TOKEN PROMPT decode, resident vs CPU: worst cosine 0.940916 (pos 7) worst relL2 0.4023
+    cohere_real_resident_test.go:165: 48-token decode vs CPU: cosine 0.940916 (want >= 0.995) relL2 0.4023 (want <= 0.15)
+    cohere_real_resident_test.go:191: 48-TOKEN PROMPT batched prefill last token, resident vs CPU: cosine 0.997022 relL2 0.0781
+    cohere_real_resident_test.go:67: [  57.8s] greedy continuation, resident vs CPU
+    cohere_real_resident_test.go:231: GREEDY CONTINUATION (8 tokens): resident == CPU 4/8 | resident == golden 4/8 | CPU == golden 8/8
+    cohere_real_resident_test.go:232:   golden   [5641 21 2332 1801 6090 1709 1690 6427]
+          CPU      [5641 21 2332 1801 6090 1709 1690 6427]
+          resident [5641 21 2332 1801 1671 5079 1875 1801]
+    cohere_real_resident_test.go:234: resident continuation differs from the CPU int4's (4/8 match): resident [5641 21 2332 1801 1671 5079 1875 1801] vs CPU [5641 21 2332 1801 6090 1709 1690 6427]
+    cohere_real_resident_test.go:67: [  61.3s] control: NeoX rope kernels forced into the same resident, 48-token prompt
+    cohere_real_resident_test.go:242: NEOX CONTROL, 48-token decode, resident vs CPU: worst cosine -0.041113 (pos 34) worst relL2 1.4745 (2026-10-01 reference: -0.075 R7B / -0.041 Aya)
+    cohere_real_resident_test.go:67: [  62.1s] done
+=== RUN   TestCohereRealResidentParityCUDA/command-r7b
+    cohere_real_resident_test.go:67: [   0.0s] loading CUDA resident (int4, context 512)
+    cohere_real_resident_test.go:67: [  30.6s] loading CPU model (int4)
+    cohere_real_resident_test.go:67: [  41.7s] golden prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:174: GOLDEN PROMPT (6 tokens) decode, resident vs CPU: worst cosine 0.987022 (pos 3) worst relL2 0.1844
+    cohere_real_resident_test.go:175:   last token vs HF f32 golden: resident cosine 0.976092 | CPU int4 cosine 0.966724 | argmax resident 5641 CPU 5641 golden 5641
+    cohere_real_resident_test.go:165: golden prompt decode vs CPU: cosine 0.987022 (want >= 0.995) relL2 0.1844 (want <= 0.15)
+    cohere_real_resident_test.go:182: GOLDEN PROMPT batched prefill last token, resident vs CPU: cosine 0.994122 relL2 0.1084
+    cohere_real_resident_test.go:165: golden prompt batched prefill vs CPU: cosine 0.994122 (want >= 0.995) relL2 0.1084 (want <= 0.15)
+    cohere_real_resident_test.go:67: [  43.0s] 48-token prompt: sequential decode, resident vs CPU every position
+    cohere_real_resident_test.go:188: 48-TOKEN PROMPT decode, resident vs CPU: worst cosine 0.987022 (pos 3) worst relL2 0.1844
+    cohere_real_resident_test.go:165: 48-token decode vs CPU: cosine 0.987022 (want >= 0.995) relL2 0.1844 (want <= 0.15)
+    cohere_real_resident_test.go:191: 48-TOKEN PROMPT batched prefill last token, resident vs CPU: cosine 0.993572 relL2 0.1137
+    cohere_real_resident_test.go:165: 48-token batched prefill vs CPU: cosine 0.993572 (want >= 0.995) relL2 0.1137 (want <= 0.15)
+    cohere_real_resident_test.go:67: [  53.5s] greedy continuation, resident vs CPU
+    cohere_real_resident_test.go:231: GREEDY CONTINUATION (8 tokens): resident == CPU 8/8 | resident == golden 2/8 | CPU == golden 2/8
+    cohere_real_resident_test.go:232:   golden   [5641 19 1671 5079 4376 1794 2517 3015]
+          CPU      [5641 21 1896 5079 1801 6090 1812 1690]
+          resident [5641 21 1896 5079 1801 6090 1812 1690]
+    cohere_real_resident_test.go:67: [  56.5s] control: NeoX rope kernels forced into the same resident, 48-token prompt
+    cohere_real_resident_test.go:242: NEOX CONTROL, 48-token decode, resident vs CPU: worst cosine -0.075327 (pos 46) worst relL2 1.5687 (2026-10-01 reference: -0.075 R7B / -0.041 Aya)
+    cohere_real_resident_test.go:67: [  57.2s] done
+--- FAIL: TestCohereRealResidentParityCUDA (119.90s)
+    --- FAIL: TestCohereRealResidentParityCUDA/aya-expanse-8b (62.40s)
+    --- FAIL: TestCohereRealResidentParityCUDA/command-r7b (57.50s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	120.899s
+FAIL

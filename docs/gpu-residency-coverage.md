@@ -74,7 +74,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   deliberate "show the off-by-default state" choice `hardware-matrix.md`'s own footnote makes
   for Nemotron-H's int4-vs-int8 policy, just not footnoted for Granite the same way. Both
   Granite-4.0-H and Nemotron-H need `FeatSSM`, which only WebGPU declares
-  (`decoder/features.go:702`); with the flag set, the same arch-level gate that admits
+  (`decoder/features.go:731`); with the flag set, the same arch-level gate that admits
   Nemotron-H's Mamba-2 engine on WebGPU should admit Granite-4.0-H's too — not independently
   verified here beyond the arch gate itself, flagged rather than asserted. Not a code finding:
   the generator is working as designed, showing the real default state.
@@ -83,10 +83,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 
 - **MLA family** — DeepSeek-V2, DeepSeek-V3, Kimi K2: resident on WebGPU, CPU on CUDA and Metal.
   Both decline on the same missing feature, `FeatMLA`, declared only for webgpu
-  (`decoder/features.go:702`). Named reuse path already scoped:
+  (`decoder/features.go:731`). Named reuse path already scoped:
   [docs/completed/task-mla-cuda-residency.md](completed/task-mla-cuda-residency.md).
 - **Nemotron-H** — resident on WebGPU (default-on, int4), CPU on CUDA and Metal. Declines there
-  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:702`, webgpu
+  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:731`, webgpu
   only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
   (`gpu/mamba2.go`), so this is a port, not a new design.
 - **Gemma 4 dense** — resident on CUDA, Metal, and (as of 2026-09-17) WebGPU too: WebGPU's
@@ -94,10 +94,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   `cuda/resident.go`'s `cudaLayer.hd/nKV` and `metal/model.go`'s `residLayer.geom`), K=V
   (`attention_k_eq_v`, a new dedicated `vNorm` WGSL kernel) and the per-layer output scalar (a
   new `scaleVec` kernel) are all now populated/implemented — closing the gap
-  `residentPerLayerGeomBackends` (`decoder/features.go:468`) previously described.
+  `residentPerLayerGeomBackends` (`decoder/features.go:488`) previously described.
   **Gemma 4 MoE (26B-A4B, the parallel dense+MoE FFN) remains resident on CUDA and Metal only,
   CPU on WebGPU** — a separate, still-open gap gated by `residentGemma4MoEOK`
-  (`decoder/features.go:486`), not `residentPerLayerGeomBackends`; WebGPU implements the dense
+  (`decoder/features.go:506`), not `residentPerLayerGeomBackends`; WebGPU implements the dense
   per-layer attention geometry but not the joint dense‖MoE FFN bridge.
   <br>**Carve-out (N-04, `docs/audit-metal-2026-09-12.md`): the E2B/E4B E-models are CPU-only on
   EVERY backend, including CUDA and Metal** — the "resident on CUDA and Metal" above describes
@@ -115,28 +115,28 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   pairwise kernels (`cuda/rope_pairwise.cu`) and declares `FeatPairwiseRoPE`; Metal and WebGPU do not, so
   Metal now declines these families to the CPU path with a reason naming the feature. The record is
   `docs/measurements/cuda-pairwise-rope-2026-10-01.md`. Original text, for the feature list it describes: resident on CUDA and Metal, CPU on WebGPU. Missing
-  `FeatLayerNorm` (declared `decoder/features.go:686` for cuda, `decoder/features.go:781` for
+  `FeatLayerNorm` (declared `decoder/features.go:706` for cuda, `decoder/features.go:810` for
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
 - **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
-  declared `decoder/features.go:669` for cuda, `decoder/features.go:791` for metal) and
+  declared `decoder/features.go:689` for cuda, `decoder/features.go:820` for metal) and
   `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
-  `decoder/features.go:674` for cuda, `decoder/features.go:791` for metal), neither declared on
+  `decoder/features.go:694` for cuda, `decoder/features.go:820` for metal), neither declared on
   webgpu.
 - **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
-  `decoder/features.go:655` for cuda, `decoder/features.go:791` for metal, absent from webgpu) —
+  `decoder/features.go:675` for cuda, `decoder/features.go:820` for metal, absent from webgpu) —
   some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
-  `decoder/features.go:663` for cuda, `decoder/features.go:791` for metal, absent from webgpu) —
+  `decoder/features.go:683` for cuda, `decoder/features.go:820` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the
   backends that have it.
 - **GPT-2** — resident on Metal ONLY, CPU on both WebGPU and CUDA (not just WebGPU — the one
   family here where the gap isn't purely "WebGPU is behind"). Needs `FeatLayerNorm`,
   `FeatNonGatedMLP`, `FeatLearnedPos`, `FeatOutBias`. Metal declares all four
-  (`decoder/features.go:781-745`). CUDA declares `FeatLayerNorm` (`decoder/features.go:686`,
-  added for Command-R) and `FeatOutBias` (`decoder/features.go:674`, added for gpt-oss) but not
+  (`decoder/features.go:810-774`). CUDA declares `FeatLayerNorm` (`decoder/features.go:706`,
+  added for Command-R) and `FeatOutBias` (`decoder/features.go:694`, added for gpt-oss) but not
   `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
 - **Qwen2.5-VL / Qwen3-VL on Metal support full multimodal resident decode via `decoder.ResidentMRoPE`
   and `UploadKV`.** Metal resident implements `ForwardMRoPE` (`metal/backend.go`, `metal/model.go`)
