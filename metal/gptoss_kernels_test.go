@@ -5,9 +5,8 @@
 // rope mscale precedent), and the clamped-SwiGLU expert + custom router (promoted into
 // moe.go's moeKernels as swiglu_quant_gptoss/route_gptoss). All three tests here compile the
 // REAL shared library (allKernels[+moeKernels]), not an isolated copy, so they gate what
-// actually ships. FeatAttnSink is still not declared for Metal — the kernels/promotion are done,
-// but nothing is wired into model.go's per-layer resident dispatch yet (own-forward bridging,
-// docs/queue-correctness.md G7/G10).
+// actually ships. FeatAttnSink is now declared for Metal and the resident runs all three end to end
+// (TestGptOssResidentParity); this file was written before that wiring (D-D01, audit-metal-2026-09-30.md).
 package metal
 
 import (

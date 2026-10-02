@@ -733,29 +733,30 @@ func (a *metalResident) PrefillPath() (bool, string) {
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
 func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	// One pass, so one check: this backend ingests the whole prompt in a single command buffer and
-	// has no inner loop to interrupt. Checking at entry is therefore the ONLY granularity available
-	// here, and it is honest about that rather than pretending finer. A Metal prefill that wants
-	// mid-pass cancellation needs the chunking cuda has (prefillChunked), which is its own change.
+	// One pass, so one check: this backend ingests the prompt in a single command buffer and has no
+	// inner loop to interrupt, so checking at entry is the only granularity there is. The decoder's
+	// chunked prefill (serve -prefill-chunk) cuts a prompt only while another conversation is
+	// decoding, so a lone long prompt is still one pass that cannot be cancelled midway; that needs
+	// chunking inside PrefillLast, as cuda's prefillChunked does (A-D02, audit-metal-2026-09-30.md).
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// DEFAULT ON above metalFastPrefillFloor (64 tokens since R3; 256 under M-02 before that) since §3.2 gate passed 2026-09-09
-	// (S cells K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
+	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 64
+	// tokens since R3 (2026-09-20, cells K=64 and 128), 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill
+	// opts out.
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
-	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet. Sequential path there;
-	// fast path only where the gate cleared (K=256 itself passed §3.2 on Metal — see the floor's
-	// own doc comment).
+	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet, so the sequential path runs there; the
+	// lowest cells that passed are K=64 and 128 (the floor's own doc comment).
 	promptLen := startPos + len(embeddings)
 	if floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")); floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
 	}
 	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of
 	// L.guW/L.dW with per-layer rope/window, per-head QK-norm, and Gemma's sandwich norms, and
-	// (G8 MoE half) a generically-shaped gated-SwiGLU MoE FFN — run row by row off the batched
-	// residual, reusing the unchanged per-token decode MoE dispatch chain (metal/moe.go) — but
+	// (G8 MoE half) a generically-shaped gated-SwiGLU MoE FFN — expert-major by default, the
+	// per-token decode MoE chain row by row with GOINFER_MOE_EXPERT_MAJOR=0 (prefill.go) — but
 	// NOT per-layer-varying attention geometry (dense Gemma 4's local/global head_dim split;
 	// prefillOK's own per-layer-geometry guard, metal/model.go) or Gemma 4's enable_moe_block
 	// variant (residLayer.g4moe, a third FFN shape this path never reads; explicitly excluded
@@ -825,9 +826,13 @@ func firstNonFinite(v []float32) int {
 // returns the LAST position's hidden state after the model's final norm — the resident twin of
 // PrefillLast, but for embedding requests (G4, docs/tasks/task-gpu-paths-2026-09.md) instead of
 // generation: it never runs the LM head. This runs the SAME per-token sequential kernels decode
-// uses — one forwardHiddenNoHead call per position — which is bit-identical to the CPU reference
-// by construction, at the cost of one command-buffer submit per token (≈K × 13-18ms) instead of a
-// single batched pass (≈1.8s for K=512).
+// uses — one forwardHiddenNoHead call per position. It does not match the CPU reference bit for
+// bit: the decode kernels round differently and forwardHiddenNoHead returns the int8-dequantized
+// activation. Measured against the CPU: cosine about 0.9991-0.9993 on gpt2
+// (hiddenlast_resident_parity_test.go, bar 0.998), and 0.99985 int4 against int4 on qwen3_5-tiny
+// with its adapter merged, 0.99998 without (prompthidden_resident_parity_test.go; F-D03,
+// audit-metal-2026-09-30.md). The cost is one
+// command-buffer submit per token (≈K × 13-18ms) instead of a single batched pass (≈1.8s for K=512).
 //
 // N-25 (audit-metal-2026-09-12.md): unlike when this doc comment was first written, Metal's
 // batched (f16-MMA) PrefillLast is NOT declined by default for generation anymore —

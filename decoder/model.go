@@ -376,8 +376,10 @@ type Options struct {
 	Knobs *Knobs
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
 	// mode, storing it at int4 too — halving the single largest resident tensor on a
-	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
-	// default off keeps the bit-exact int8 pin. GGUF load path only.
+	// big-vocab small model. Lossy (~2.3 pts top-1, mostly on rare tokens). Off in a zero
+	// Options, which keeps the bit-exact int8 pin; the CLIs turn it on by default since
+	// 2026-09-28 (internal/loadflags, the owner decision in task-never-swap-2026-09.md;
+	// E-D01, audit-metal-2026-09-30.md). GGUF load path only.
 	EmbedInt4 bool
 	// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the
 	// backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the
@@ -589,6 +591,9 @@ func Load(dir string, opts Options) (*Model, error) {
 		// path never priced before. guardGIWFit refuses or auto-pins exactly like the .gguf
 		// path's guardFit does, against a flat margin over live available memory rather than
 		// fitMemFraction's 70%-of-available (sized for a load that commits its weights too).
+		// Not everything else a .giw load allocates is file-backed: the paged MoE scale cache and
+		// the rest of the heap (about 1.95 GB on the 26B MoE) are anonymous, and nothing here
+		// prices them (C-D01 and C-P01 in audit-metal-2026-09-30.md).
 		if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {
 			_ = mmap.Unmap(data)
 			closeBackend(be)

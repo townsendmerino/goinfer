@@ -215,3 +215,25 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   (`wantsCanonicalInt4`), so int4 needs no re-quantization; the T0.3 comment that said otherwise is corrected. Main's
   own `prefill_criticals_test.go` has the same dependency and is the flip's to fix. Each guard's mutation still fails
   its test under int4 (1, 2 and 1 failures).
+- 2026-10-01: **T0.5, the code-comment half.**
+  - A-D02: `PrefillLast`'s cancellation, default-on and floor comments, and the floor values in `prefill_ttft_test.go`
+    and `prefill_gate_test.go` (the floor is 64 since R3).
+  - B-D02: the attention block is 8 dispatches at attention_fa depths (the combine).
+  - C-D01: item 1, the `.giw` guard comment now says the paged scale cache and the rest of the heap are anonymous and
+    unpriced; item 3, `attnFACoreCount = 14` is right (this Mac's M1 Pro has 14 GPU cores by `system_profiler`; the
+    audit read 16), and its comment now says it sets only the legacy kernel's split (E-D01); item 5, `ForwardArgmax` is
+    called by tests and gates only.
+  - D-D01 7–10: MoE prefill is expert-major by default, with the row loop behind `GOINFER_MOE_EXPERT_MAJOR=0`
+    (`metal/model.go`, `metal/backend.go`, the MoE parity test); `FeatAttnSink` is declared and wired; the DeltaNet
+    unroll comment cites `4090dc45`'s measurement instead of calling itself a candidate.
+  - E-D01: `--spec`'s help names Metal as well as the CPU; `EmbedInt4`'s comment gives both defaults (off in a zero
+    `Options`, on in the CLIs since 2026-09-28).
+  - F-D02: `alias.go`'s header says what the S6 record says (the footprint gate read NOT MET, the memory-hog arm ran
+    on the 7B only, M26 decode was not resolvable); the banner no longer says a v15 bundle carries no f16 scales, and
+    its test follows. F-D02's code options (bind v15 scales directly, a v15 non-metal fixture assertion) are not done.
+  - F-D03: `HiddenLast` matches decode's kernels, not the CPU bit for bit; the comment gives the measured cosines.
+  - Citations: 13 pointed into rewritten comments or had already drifted on main (A-D02's table row cited the
+    `PrefillLast` signature, a `ctx.Err` check and a brace; the C-09 `recordExecErr` site was not that line). They are
+    fixed by content, and five index rows were re-keyed to the new text.
+  - The parity manifest went stale for 38 families (`decoder/model.go`'s comments); 39 goldens green, `deps_hash`
+    refreshed.

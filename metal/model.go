@@ -92,9 +92,11 @@ var preciseMathCompile bool
 // sandwich norms and (1+w) RMS offset, the embed-scale/final-logit-softcap pair (both applied
 // OUTSIDE this file — embedResident scales the input embeddings before PrefillLast ever runs,
 // and PrefillLast's own final step applies softcap — so declaring them here is a pure capability
-// statement, no kernel change), and MoE (G8's second half: the FFN half runs ROW BY ROW off the
-// batched residual through the UNCHANGED per-token decode MoE dispatch chain — see
-// PrefillLast's own L.moe != nil branch — while the attention half still batches normally).
+// statement, no kernel change), and MoE (G8's second half, while the attention half batches
+// normally: by default the FFN half runs expert-major — one batched router GEMM and top-k over all
+// rows, host grouping, then each active expert over its rows — and GOINFER_MOE_EXPERT_MAJOR=0 keeps
+// the original row-by-row loop through the per-token decode MoE chain; PrefillLast's L.moe != nil
+// branch. A paged MoE declines batched prefill altogether; D-D01, audit-metal-2026-09-30.md).
 // FeatMoEGatedShared (Qwen2-MoE's sigmoid-gated shared expert) comes along for free: it's the
 // SAME encodeMoESharedExpert dispatch decode already uses, gated/ungated branch and all.
 var prefillFeatures = map[decoder.ResidentFeature]bool{
@@ -2152,9 +2154,9 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 		return uint32(argmaxF32(r.forwardLogits(pos)))
 	}
 	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as the
-	// paged MoE forwards (metal/moe.go, gemma4_moe.go), this one a genuine production entry
-	// point (the fast-greedy path), not test-only. Currently a no-op like the paged case (no
-	// family combining ForwardArgmax's dispatch with FeatAttnTemp today).
+	// paged MoE forwards (metal/moe.go, gemma4_moe.go). Only tests and gates call this today (N-10
+	// above; this comment used to call it a production entry point, C-D01 in audit-metal-2026-09-30.md).
+	// Currently a no-op like the paged case (no family combining this dispatch with FeatAttnTemp today).
 	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
@@ -2596,7 +2598,10 @@ func (r *resident) canUseF16Lane(l int) bool {
 }
 
 // attnFACoreCount is the M1 Pro's GPU core count attention_fa's split count targets ("kvHead x S
-// >= 2x the core count", R2's own registered rule) — hardcoded, not device-queried: aikit's Device
+// >= 2x the core count", R2's own registered rule): 14 on the M1 Pro R2 was tuned on, which is this
+// repo's Mac (system_profiler, 2026-10-01; C-D01 in audit-metal-2026-09-30.md read it as 16). It sets
+// only the legacy kernel's split: the block kernel, which serves G = 6 and 7, uses attnFABlkSplit
+// (E-D01); changing it changes that split and so the legacy kernel's bits. It is hardcoded, not device-queried: aikit's Device
 // has no core-count accessor, and this kernel is default-on on every chip via metalAttnFAEnabled()
 // (2026-09-21) despite being tuned and measured on the M1 Pro alone; a wider port (other Apple
 // GPU core counts) would need this read from the device, not assumed.
@@ -2730,9 +2735,10 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	// --- attention block (7 dispatches in the baseline dense case — norm, fused QKV+bias, merged
-	// Q+K RoPE, KV store, attention, o-proj input quant, fused o-proj+residual; N-10
-	// audit-metal-2026-09-12.md: an earlier "11 vs 19" count here predates further fusion and no
-	// longer matches; qGate/qkNorm/kEqV/sandwich/LoRA each add their own extra dispatches above) ---
+	// Q+K RoPE, KV store, attention, o-proj input quant, fused o-proj+residual — and 8 at
+	// attention_fa depths, whose combine is a second attention dispatch (B-D02,
+	// audit-metal-2026-09-30.md); N-10 audit-metal-2026-09-12.md: an earlier "11 vs 19" count here
+	// predates further fusion; qGate/qkNorm/kEqV/sandwich/LoRA each add their own extra dispatches) ---
 	// postOnly (Olmo 3/Olmo Hybrid, G5): no pre-norm at all — quantize the RAW residual
 	// (quant_vec, the same symmetric int8 quantizer ctx-before-o-proj already uses below)
 	// instead. encodeAttention is never called for a DeltaNet layer (encodeLayer routes those to
