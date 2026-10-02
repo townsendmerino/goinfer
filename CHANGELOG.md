@@ -543,6 +543,12 @@ any surface may still change.
   positions or fewer; an explicit `-ctx` is unchanged. `goinfer fit` plans Metal at the context Metal allocates (4096
   unpinned, `-ctx` up to 32768, a decline above it). The refusal below the 2048-token floor now states the floor's
   memory need, not the whole window's.
+- **Metal: three checks that fall back instead of computing a wrong answer** (`docs/audit-metal-2026-09-30.md`, F-C03,
+  D-C01, A-C02). A NaN or infinite logit from batched prefill now declines it, and the prompt re-runs sequentially.
+  The split-K decode attention kernel holds 8 query heads per KV head; a model with more (Llama 3.1 405B has 16) now
+  stays on the standard kernel. And gpt-oss is kept off batched prefill by an explicit check: no prefill kernel
+  implements its attention sink or its clamped, biased SwiGLU, and until now only the prefill feature list kept it out.
+  Each changes the path only where the old one gave a wrong answer.
 - **Changes output. Phi-3 (and Phi-4, by model type; unmeasured) gave junk under every quantized precision.** Its
   projection inputs carry outliers that one int8 scale per row cannot hold (cosine ~0 by position 16). A default Phi-3
   load now uses `--quant q4k` on the CPU and CUDA (1.31x int8int8 + per-32 on the CPU; 1.26x / 1.17x at depth 128 / 2048
