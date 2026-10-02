@@ -164,7 +164,9 @@ goinfer-serve -web -model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 It is embedded in the binary, uses no external assets, is off by default, and starts fine with no
 model at all. The HTTP surface (OpenAI, Anthropic, multi-model, vision, embeddings, admin) is in
 [docs/server.md](docs/server.md). Pointing a real agent (Claude Code, opencode) at it:
-[docs/integrations/](docs/integrations). `serve check` and the `tools:` line of
+[docs/integrations/](docs/integrations). A coding agent's first request is about 11,000 tokens, more than the default GPU context
+(8192 on CUDA, 4096 on Metal), so start the server for an agent with `-ctx 16384` as those recipes do; a longer prompt gets a 400
+that names `-ctx`. `serve check` and the `tools:` line of
 `goinfer-chat models` report which checkpoints hold up under a real agent's tool schema.
 
 `POST /v1/systemone` answers TypeSafe's decisions wire shape, so clients such as jevx work against

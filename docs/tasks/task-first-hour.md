@@ -1395,6 +1395,19 @@ release's `scripts/check_asset_vcs.sh dist/*` on the downloaded assets is the pr
 put the remedy in the 400's message and in the README's agent line. **Gate:** a harness-scale `serve check` row run at
 the default context (`docs/tasks/task-harness-reliability-2026-10.md`, gates 1 and 2).
 
+**Partly fixed 2026-10-01 (the half that does not need a decision).** The 400 used to say "the model's context window is 8192", which
+reads as the model's own limit, so a client compacts and retries instead of the operator raising `-ctx`. When the window that rejected the
+prompt is the **server's GPU context** (smaller than the model's own), `serve` and the `goinfer-chat --batch` runner now say so and name the
+way out: `...; this is the server's GPU context (-ctx), not the model's limit (32768 tokens): restart goinfer-serve with -ctx 11138 or more
+(up to 32768) to accept it`. When the model's own window is the limit, `-ctx` cannot help and the message is unchanged (a test through
+`prepare`, the caller, checks both; two mutants of the condition turn it red). The README's agent paragraph now says an agent's first request is
+about 11,000 tokens, above the default (8192 CUDA, 4096 Metal), and to start the server with `-ctx 16384` as the recipes do.
+
+**Still open, the owner's decision:** raising serve's *default* when the fit admits it. Not done, because it changes what a plain
+`goinfer-serve` asks of VRAM on every card (the fit planner's candidate in `cuda/resident.go`, Metal's own 4096) and the numbers that were
+measured at 8192; it needs a measurement of what 16384 costs the cards in use, not a guess. **Gate still open:** the harness-scale
+`serve check` row at the default context. This item is not closed.
+
 ### R20 — a CUDA resident decline that names no reason a user can act on
 
 **Found** (scenario D). `gemma-4-26b-a4b` q4_0 with `--backend cuda` and no `-moe-cache-experts` printed

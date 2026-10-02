@@ -559,13 +559,14 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 	if err != nil {
 		return lineErr(500, "api_error", "encode: "+err.Error())
 	}
-	window := s.model.Config().MaxPositions
+	modelWindow := s.model.Config().MaxPositions
+	window := modelWindow
 	if rc := s.model.ResidentContextCap(); rc > 0 && (window <= 0 || rc < window) {
 		window = rc
 	}
 	if window > 0 {
 		if len(ids) >= window {
-			return lineErr(400, "invalid_request_error", fmt.Sprintf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", len(ids), window))
+			return lineErr(400, "invalid_request_error", batchContextMessage(len(ids), window, modelWindow))
 		}
 		maxTok = min(maxTok, window-len(ids))
 	}
@@ -723,4 +724,14 @@ func (s *session) batchTemplate(mode chat.ThinkMode, explicitMode bool, lineEffo
 		tm = tm.WithThinking(chat.ThinkOff)
 	}
 	return tm
+}
+
+// batchContextMessage is the 400's text for a prompt that fills the window. When the window is the GPU context (-ctx, smaller than the
+// model's own) it says so and names the way out (R19): a coding agent's first request is ~11k tokens, against a default of 8192.
+func batchContextMessage(promptLen, window, modelWindow int) string {
+	msg := fmt.Sprintf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, window)
+	if modelWindow > window {
+		msg += fmt.Sprintf("; this is the GPU context (-ctx), not the model's limit (%d tokens): rerun with -ctx %d or more (up to %d)", modelWindow, promptLen+1, modelWindow)
+	}
+	return msg
 }

@@ -17,6 +17,11 @@ any surface may still change.
 
 ### Changed
 
+- **A prompt too long for the GPU context now says what to change (`serve`, `goinfer-chat --batch`).** The 400 for a prompt that fills the
+  resident KV capacity said only "the model's context window is 8192", which reads as the model's own limit; opencode answered an 11,137-token
+  first request with 34 compaction retries. When the GPU context (`-ctx`, default 8192 on CUDA, 4096 on Metal) is smaller than the model's
+  window, the message now says so and gives a `-ctx` to use. The default itself is unchanged (the README's agent line now says to use
+  `-ctx 16384`). `docs/tasks/task-first-hour.md` R19.
 - **Release binaries no longer read `-dirty` (takes effect at the next tag).** `goinfer-serve --version` printed `vX.Y.Z (<rev>-dirty)`
   from the release assets because the build edited `cuda/go.mod`/`metal/go.mod` in the checkout (`go mod edit -replace`) and, for the
   embedded assets, wrote the model licence into an untracked `licenses/`. Either marks the tree modified in the VCS stamp. The submodules

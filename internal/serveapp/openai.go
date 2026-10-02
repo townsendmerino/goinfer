@@ -1069,6 +1069,15 @@ func (lm *loadedModel) contextWindow(residentPath bool) int {
 	return ctx
 }
 
+// modelContextWindow is the model's own window, with no resident cap applied — what -ctx can raise the GPU context up to. Next to
+// contextWindow so the limits are derived in one place (prepare reads neither MaxPositions nor ResidentContextCap itself).
+func (lm *loadedModel) modelContextWindow() int {
+	if lm.model == nil {
+		return 0
+	}
+	return lm.model.Config().MaxPositions
+}
+
 // residentPath reports whether a text-completion request against lm will actually run the
 // stateless GPU-resident decode path, for contextWindow/prepare's residentPath argument (M-01,
 // docs/audit-2026-09-10.md). NOT `lm.adapter == ""`: an adapter model's FIRST turn
@@ -1174,7 +1183,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// itself exceeds the context is C-20's concern; here we only bound the max_tokens contribution.)
 	if lm.model != nil {
 		ctx := lm.contextWindow(residentPath)
-		if err := contextLengthError(len(promptIDs), ctx); err != nil {
+		if err := contextLengthErrorFor(len(promptIDs), ctx, lm.modelContextWindow()); err != nil {
 			return genRequest{}, err
 		}
 		gr.maxTokens = clampMaxTokens(gr.maxTokens, len(promptIDs), ctx)
@@ -1253,6 +1262,20 @@ func contextLengthError(promptLen, ctx int) error {
 		return fmt.Errorf("prompt is %d tokens but the model's context window is %d (context_length_exceeded)", promptLen, ctx)
 	}
 	return nil
+}
+
+// contextLengthErrorFor is contextLengthError plus the remedy, for the case where the window that rejected the prompt is the
+// server's resident KV capacity and not the model's own (ctx < modelWindow): a coding agent's first request is ~11k tokens
+// (R19, docs/tasks/task-first-hour.md), the default resident capacity is 8192 on CUDA and 4096 on Metal, and the 400 used to
+// say only "context window is 8192" — which reads as the model's limit, so the client (opencode) compacted 34 times instead of
+// the operator raising -ctx. When the model's own window is the limit, -ctx cannot help and the message is unchanged.
+func contextLengthErrorFor(promptLen, ctx, modelWindow int) error {
+	err := contextLengthError(promptLen, ctx)
+	if err == nil || modelWindow <= ctx {
+		return err
+	}
+	return fmt.Errorf("%w; this is the server's GPU context (-ctx), not the model's limit (%d tokens): restart goinfer-serve with -ctx %d or more (up to %d) to accept it",
+		err, modelWindow, promptLen+1, modelWindow)
 }
 
 // seedOrRandom returns the request's seed, or a fresh random seed when absent (M-03). OpenAI's contract

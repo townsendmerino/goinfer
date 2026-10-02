@@ -154,3 +154,37 @@ func TestServe_prepareEnforcesResidentCapForAdapter(t *testing.T) {
 		t.Errorf("a prompt past the resident cap (%d) but under MaxPositions (%d) was not rejected as context_length_exceeded: %v", capPos+1, maxPos, err)
 	}
 }
+
+// TestServe_contextLengthRemedy (R19) goes through prepare, the caller. A prompt that the SERVER's resident KV capacity rejects
+// (smaller than the model's window) must say that it is the server's -ctx and name the way out; a prompt that exceeds the MODEL's own
+// window must not suggest a flag that cannot help.
+func TestServe_contextLengthRemedy(t *testing.T) {
+	lm, rf := residentServed(t)
+	maxPos := lm.model.Config().MaxPositions
+	capPos := 4
+	if maxPos <= capPos+1 {
+		t.Skipf("tiny fixture's MaxPositions (%d) is not larger than the test cap (%d)", maxPos, capPos)
+	}
+	rf.capPos = capPos
+	one := 1
+	sm := sampling{MaxTokens: &one}
+
+	_, err := lm.prepare(sm, make([]int, capPos+1), true)
+	if err == nil || !strings.Contains(err.Error(), "context_length_exceeded") {
+		t.Fatalf("a prompt past the resident cap was not rejected: %v", err)
+	}
+	for _, want := range []string{"-ctx", fmt.Sprintf("%d", capPos+2), fmt.Sprintf("up to %d", maxPos), "not the model's limit"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("resident-cap 400 lacks %q: %v", want, err)
+		}
+	}
+
+	// The model's own window is the limit here (not the resident path), so -ctx cannot help and is not suggested.
+	_, err = lm.prepare(sm, make([]int, maxPos+1), false)
+	if err == nil || !strings.Contains(err.Error(), "context_length_exceeded") {
+		t.Fatalf("a prompt past the model's own window was not rejected: %v", err)
+	}
+	if strings.Contains(err.Error(), "-ctx") {
+		t.Errorf("the model's own window is the limit, yet the 400 suggests -ctx: %v", err)
+	}
+}
