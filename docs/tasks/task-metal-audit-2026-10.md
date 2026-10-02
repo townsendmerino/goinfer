@@ -187,3 +187,24 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   `TestSpecVerify_forwardNMatchesForward` and `TestMC3Verify_sameSlotRowsBitIdentical`, which need `GOINFER_METAL_MC3=1`
   and a real checkpoint. `cmd/gate` never sets that variable, so `gate gpu` skips them: F-G02's gap, and the reason for
   the two-slot fixture next.
+- 2026-10-01: **E-G01 and F-G02 done: the identity fixture.** `metal/mc3_fixture_test.go` writes a qwen2 with
+  Qwen2.5-1.5B's attention geometry (12 query heads of 128 over 2 KV heads, so attention_fa's G=6 block kernel and the
+  steel prefill kernel engage) and small everything else (hidden 256, 2 layers, vocabulary 20480 so the tests' token
+  ids stay valid), loaded at int4; `TestMC3Fixture_isTheBatchedPath` pins that it builds the batched step, steel and
+  the block kernel. With `GOINFER_METAL_MC3` unset, `mc3Resident` and the new `mc3PrefillResident` return it, so seven
+  identity checks run by default (16 s together); the timings call `mc3RealResident` and still need the variable.
+  `TestMC5_prefillChunkInvariance` and `TestSpecVerify_forwardNMatchesForward` left `goinfer_testhooks`: their only use
+  of it was `ResidentForwardForTest`, and the backend wraps a resident exactly as the struct literal does.
+  - Default suite: 209 pass / 51 skip → 223 pass / 41 skip, 142 s.
+  - Mutations on the fixture: a one-ulp change to `mc3_bt`'s group scale fails both step checks (518,252 logits); the
+    steel causal limit +1 fails chunk invariance; `ForwardBatch` attending one key short fails spec verify. Two
+    attempts showed nothing and are not evidence either way: re-associating `mc3_bt`'s partial sums (no bits moved,
+    so presumably the same machine code), and any batched-kernel change for spec verify, whose `ForwardN` runs
+    `ForwardBatch`'s per-token kernels, not the step kernels.
+  - Found on the way: chunk invariance at sizes aligned to the 32-row tiles cannot see a tile-edge bug. With the steel
+    causal limit moved one key, C = 64, 128, 256 and 384 all still matched bit for bit, and only the control failed.
+    The test now adds 100 and 77 (off the tiles, as a reuse turn's start is) and 512 (serve's default); on the shipped
+    kernel all are bit-identical, on the fixture and on the 1.5B.
+  - The 1.5B re-run on the steel build: 0 of 14,336,000 K/V elements and 0 of 151,936 logits differ at all seven
+    sizes; appended to `docs/measurements/chunked-prefill-2026-09-27.md` with its log. `TestMC3Step_bitIdentical` and
+    `TestSpecVerify_forwardNMatchesForward` also pass on the 1.5B through the restructured helpers.

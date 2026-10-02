@@ -1,4 +1,4 @@
-//go:build darwin && goinfer_testhooks
+//go:build darwin
 
 package metal
 
@@ -7,11 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestSpecVerify_forwardNMatchesForward asks whether n-gram speculation can be lossless on a Metal resident. With
@@ -21,33 +17,12 @@ import (
 //
 // The same 300-token prefix is prefilled into two KV slots. Then 8 tokens run as 8 sequential Forward calls in slot 0,
 // and as one ForwardN of 8 rows in slot 1, and again as ForwardN of 1 row. Logits and K/V at positions 300..307 are
-// compared bit for bit, per layer.
+// compared bit for bit, per layer. It runs by default on the generated fixture (mc3_fixture_test.go; E-G01 and F-G02,
+// docs/audit-metal-2026-09-30.md), and on the real checkpoint with:
 //
-//	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestSpecVerify_forwardNMatchesForward$' -v ./metal/
+//	GOINFER_METAL_MC3=1 go test -count=1 -run '^TestSpecVerify_forwardNMatchesForward$' -v ./metal/
 func TestSpecVerify_forwardNMatchesForward(t *testing.T) {
-	if os.Getenv("GOINFER_METAL_MC3") != "1" {
-		t.Skip("set GOINFER_METAL_MC3=1 (loads a real checkpoint)")
-	}
-	home, _ := os.UserHomeDir()
-	path := os.Getenv("GOINFER_METAL_MC3_MODEL")
-	if path == "" {
-		path = filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
-	}
-	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
-		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no checkpoint at %s: %v", path, err)
-	}
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2})
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	defer m.Close()
-	a, ok := m.ResidentForwardForTest().(*metalResident)
-	if !ok || len(a.r.kvSlotBufs) < 2 || !a.r.kvContig || a.r.kvF32 {
-		t.Skip("needs a Metal resident with 2 contiguous f16 KV slots")
-	}
+	a := mc3PrefillResident(t, 2, 1024)
 	r := a.r
 	const P, N = 300, 8
 	seed := uint32(24680)

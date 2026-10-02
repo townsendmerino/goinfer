@@ -43,6 +43,29 @@ The control reruns the chunked prefill with one token changed, at position 700. 
 3,746,400 elements differ from it on. The comparison sees a difference and places it.
 Log: [`mc5-chunk-invariance.log`](chunked-prefill-2026-09-27/mc5-chunk-invariance.log).
 
+**2026-10-01 addendum: the steel build** (F-G02, `docs/audit-metal-2026-09-30.md`). The table above is from the
+fused-kernel build. Since R19 (2026-09-27) production's head-dim-128 prefill attention is `attention_prefill_steel`. The
+same model and prompt on the steel build, with three more chunk sizes: 512 (serve's default) and 100 and 77, which
+start chunks off the kernel's 32-row tiles:
+
+| C | KV elements differing (of 14,336,000) | logits differing (of 151,936) |
+|---:|---:|---:|
+| 64 | **0** | **0** |
+| 128 | **0** | **0** |
+| 256 | **0** | **0** |
+| 384 (ragged tail) | **0** | **0** |
+| 512 (ragged tail) | **0** | **0** |
+| 100 (off the tiles) | **0** | **0** |
+| 77 (off the tiles) | **0** | **0** |
+
+The control: nothing differs before position 700, and 3,747,365 elements differ from it on.
+Log: [`mc5-chunk-invariance-steel-2026-10-01.log`](chunked-prefill-2026-09-27/mc5-chunk-invariance-steel-2026-10-01.log).
+
+The test now lives in `metal/mc5_chunk_invariance_test.go` and runs by default on a generated fixture
+(`metal/mc3_fixture_test.go`). The off-tile sizes are there because the aligned ones cannot see a bug at a tile edge:
+with the kernel's causal limit moved by one key, every aligned size still matched bit for bit on the fixture, while 100
+and 77 differed from the first chunk boundary on.
+
 So a chunked reply is the unchunked reply. Chunking can therefore switch on only under load (while another generation
 decodes), and a lone request keeps today's path exactly.
 

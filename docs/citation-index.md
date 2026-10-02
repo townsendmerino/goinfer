@@ -463,10 +463,10 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/lora.go:200` | goinfer | `anchor: func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {` |
 | `docs/audit-metal-2026-09-30.md|metal/lora_bind_leak_test.go:20` | goinfer | `func TestSetAdapter_partialBindErrorReleasesBuffers(t *testing.T) {` |
 | `docs/audit-metal-2026-09-30.md|metal/lora_resident_parity_test.go:114` | goinfer | `if cos < 0.95 {` |
-| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_test.go:117` | goinfer | `// position 700) must differ, and only from that position on.` |
-| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_test.go:217` | goinfer | `func TestMC5_passCost(t *testing.T) {` |
-| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_test.go:25` | goinfer | `func TestMC5_prefillChunkInvariance(t *testing.T) {` |
-| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_test.go:77` | goinfer | `for _, C := range []int{64, 128, 256, 384} {` |
+| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_invariance_test.go:58` | goinfer | `for _, C := range []int{64, 128, 256, 384, 512, 100, 77} {` |
+| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_invariance_test.go:98` | goinfer | `// position 700) must differ, and only from that position on.` |
+| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_test.go:22` | goinfer | `func TestMC5_chunkCost(t *testing.T) {` |
+| `docs/audit-metal-2026-09-30.md|metal/mc5_chunk_test.go:86` | goinfer | `func TestMC5_passCost(t *testing.T) {` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:100` | goinfer | `var prefillFeatures = map[decoder.ResidentFeature]bool{` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:111` | goinfer | `decoder.FeatPerLayerRoPE:      true,` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:1198` | goinfer | `if L.geom.hd == 128 && attnFAGroupOK(r.nH, L.geom.nKV) {` |

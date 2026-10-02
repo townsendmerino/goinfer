@@ -45,7 +45,8 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
   reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
   F-G01 (a default test of the steel prefill attention kernel against a float64 reference), A-G01 (the
   fast-prefill floor), C-G01 (the load/Close leak test reads the device's own allocation total), D-G02 (the
-  gated softmax layer's two kernels checked against the CPU), and F-G04 (answered: where the verify gate went).
+  gated softmax layer's two kernels checked against the CPU), F-G04 (answered: where the verify gate went), and
+  E-G01 and F-G02 (the MC3 identity checks run by default on a generated fixture).
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
@@ -375,7 +376,7 @@ trip counts, which is what MLX does.
 Bit-identity. Each output still accumulates K in the same ordered 8-wide chunks into an f32 `simdgroup_float8x8`
 (`metal/prefill.go:39-43`); BM/BN change which threadgroup owns an element, not its reduction order. R16 itself changed the simdgroup tile
 and measured bit-identical to the retired kernel (metal-prefill-gemm-s2-2026-09-25.md:136,207). Chunk invariance is therefore
-kept, but `TestMC5_prefillChunkInvariance` uses C in {64,128,256,384} (`metal/mc5_chunk_test.go:77`); it must add C in {16,32,48} so the
+kept, but `TestMC5_prefillChunkInvariance` uses C in {64,128,256,384} (`metal/mc5_chunk_invariance_test.go:58`; 100 and 77 were added on 2026-10-01, F-G02); it must add C in {16,32,48} so the
 test crosses the selector.
 
 Band [proj]: C <= 32: -15..-40 ms of 96-105 ms (occupancy penalty <= 18.5 ms plus roughly half the MMA work of the 62-70 ms GEMM,
@@ -455,7 +456,7 @@ MLX analog. For qL <= 8 and qL x gqa <= 32 MLX uses `sdpa_vector` (shares one K/
 2-pass key-split form for long keys (`scaled_dot_product_attention.cpp:951,1001`); for qL > 8 it uses the same steel kernel with
 grid (NQ, H, B) (`:642`), so MLX has the same occupancy shape at 9-64 rows and offers no ready fix.
 
-Probe (no code): rerun `TestMC5_passCost` (exists, `metal/mc5_chunk_test.go:217-253`, `GOINFER_METAL_MC3=1`) on the current build, adding
+Probe (no code): rerun `TestMC5_passCost` (exists, `metal/mc5_chunk_test.go:86-122`, `GOINFER_METAL_MC3=1`) on the current build, adding
 startPos 8000 and C = 32/48. Read delta = (startPos 2048) - (startPos 64) at C=32. <= 10 ms: close, the premise is gone. >= 25 ms:
 build a BQ=16 steel variant (2 simdgroups per threadgroup, 24 threadgroups at M<=32; bit-identical to the BQ=32 kernel when
 `window == 0`, because every row's key-block grid is aligned at 0 and rows are independent; with `window > 0` the block grid
@@ -565,7 +566,7 @@ snapshot (the test `metal/r3_startpos_speed_test.go` is). The quoted result (bat
 - G-08's closure test (`metal/prefill_startpos_test.go:32-98`) uses `genTinyWeights` with hd = 16 (`metal/moe_model_test.go:23-26`), so it runs
   the fused kernel, not steel. The only default-kernel evidence at startPos > 0 is `TestMC5_prefillChunkInvariance` (`GOINFER_METAL_MC3=1`,
   `goinfer_testhooks`, one non-windowed checkpoint), which compares chunked against whole bit for bit and carries a control arm
-  (`metal/mc5_chunk_test.go:117-144`); it proves consistency with the startPos-0 result, which the pooled gate does grade
+  (`metal/mc5_chunk_invariance_test.go:98-126`); it proves consistency with the startPos-0 result, which the pooled gate does grade
   (`metal/prefill_gate_ref_test.go:533`, startPos 0 only).
 - The floor decision has no test: grep of `metalFastPrefillFloorFor` and "prompt too short" in `*_test.go` finds comments only; many
   tests set `GOINFER_METAL_FAST_PREFILL_FLOOR=0` to avoid it. Nothing asserts that `startPos + M < 64` declines, that
@@ -643,7 +644,7 @@ MLX answers to the brief's questions.
 
 Verified correct, no finding.
 - Floor semantics: `promptLen = startPos + len(embs)` (`metal/backend.go:751`); a reuse turn above 64 total takes the batched pass at any suffix >= 8.
-- Chunk invariance and its control arm (`metal/mc5_chunk_test.go:117-144`): the perturbed-token control sees differences only from position 700.
+- Chunk invariance and its control arm (`metal/mc5_chunk_invariance_test.go:98-126`): the perturbed-token control sees differences only from position 700.
 - Chunk tail rule (`decoder/model.go:1642-1646`): the final pass has 8..C+7 tokens, so `residentPrefillSeed`'s 8-token rule is never hit by a cut.
 - A cancelled prefill returns instead of falling to the sequential loop (`decoder/model.go:1561-1568`).
 - `PrefillLast` recovers its per-call allocation panics into an error (`metal/backend.go:786-795`), and `startPos < 0` is rejected.
@@ -2295,6 +2296,20 @@ Coverage gaps even when run: chunk-invariance at B>4 on distinct slots, C=512, u
 cosine on a tiny model (metal/kv_i8_test.go:327) and the kernel gate cos >= 0.9999, maxAbs <= 1e-3 (:197).
 Probe: read the CI config; run `go test ./metal` on a Mac without the env and count skips.
 
+**Status, 2026-10-01.** The probe: CI's metal job builds, vets (plain and tagged) and runs one device-free test, so no
+Metal identity gate runs in CI, and `cmd/gate` never sets `GOINFER_METAL_MC3`. A plain `go test ./metal/` gave 209 pass
+and 51 skip. Fixed for the identity subset: with the variable unset, a generated fixture (`metal/mc3_fixture_test.go`:
+Qwen2.5-1.5B's attention geometry, everything else small, int4) now backs `TestMC3Step_bitIdentical`, `_bitIdenticalDeep`,
+`_rowsPathBitIdentical`, `_drawsMatchForwardSample`, `TestMC3Verify_sameSlotRowsBitIdentical`,
+`TestMC5_prefillChunkInvariance` and `TestSpecVerify_forwardNMatchesForward`; the last two are no longer behind
+`goinfer_testhooks`. With the variable set they run on the real checkpoint as before. The suite now gives 223 pass and
+41 skip, in 142 s. On the fixture, a one-ulp change to the batched GEMV's group scale fails both step checks, the steel
+kernel's causal limit moved one key fails chunk invariance, and `ForwardBatch` attending one key short fails spec
+verify. Still opt-in: the timings, the GEMM probes (0.5–1 GB of buffers), `TestMC3SimdSumTree` (the same check runs at
+every batched-step build), and the concurrent and multi-turn tests, which generate on a real checkpoint with its
+tokenizer. Of the gaps above, C=512 and chunk starts off the 32-row tiles are now covered; B > 4 on distinct slots and
+the 7B are not.
+
 #### E-C01 [C, Minor, latent] Solo-path logits alias
 
 `metalResident.Forward` returns the shared `r.logitsHost` (metal/backend.go:544-546, "reused across calls"), filled by `finalizeLogits` (metal/model.go:1867-1881,
@@ -2416,7 +2431,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 | F-C01 | Critical (non-default option: `--kv i8`) | `PrefillLast` never checks `r.kvI8`; `kv_store_f16` writes half K/V into int8-sized KV buffers (wrong KV for every prompt token, OOB device write once position >= ctxCap/2) | `metal/backend.go:735-793`, `metal/model.go:959-961`, `:1145-1163`, `metal/prefill.go:592-599,1077`; decode/UploadKV/batch do check `kvI8` (`metal/backend.go:969`, `metal/batch.go:310`) | MLX has one KV dtype per cache; no analog | correctness | llama-tiny, `KVPrecision:"i8"`, PrefillLast(16 embs, floor 0) vs 16x Forward |
 | F-C02 | Critical (non-default option: ctx > 4096 and head dim > 128, or `GOINFER_METAL_FUSED_ATTENTION=0`) | exact `attention_prefill` stores scores at `sc[s]` with absolute `s` into `threadgroup float sc[4096]`; nothing bounds `startPos+M` by 4096 on that path | `metal/prefill.go:279,286,298`, `:313` (comment admits it), `:1041-1085`, `metal/backend.go:773`, `metal/model.go:27-28,43-61` | `sdpa_vector.h:56-58,91-130`: online softmax, no key-length-proportional threadgroup buffer | correctness | hd=256 fixture, ctxCap 8192, M=5000 vs sequential Forward |
 | F-G01 | Major | the production hd=128 prefill kernel has no default-runnable assertion; coverage is one pooled gate at `startPos=0` plus log-only A/B | `metal/prefill_attn_r19_test.go:25-144` (only `hb(...)` logging), `metal/prefill_decomp_test.go:44-45` (env gate), `metal/prefill_gate_ref_test.go:512`, `metal/prefill_startpos_test.go:40,49-50` + `metal/moe_model_test.go:25` (hd=16) | `steel_attention.h:11-16,282-299,365-412` | gate | float64-reference test as `metal/attn_fa_blk_test.go:147` does for R17 |
-| F-G02 | Major | MC3 step, chunked prefill and spec-verify gates are env-gated on a real checkpoint; the chunk-invariance record predates the steel gate | `metal/mc5_chunk_test.go:25-27,153-155,217-219`; 61 `GOINFER_METAL_MC3` occurrences in 8 test files; `chunked-prefill-2026-09-27.md:15-16,64,130` vs `metal-prefill-attn-2026-09-27.md:14,91` | none | gate | re-run `TestMC5_prefillChunkInvariance` on the wired build |
+| F-G02 | Major | MC3 step, chunked prefill and spec-verify gates are env-gated on a real checkpoint; the chunk-invariance record predates the steel gate | `metal/mc5_chunk_test.go:22-24,86-88`; 61 `GOINFER_METAL_MC3` occurrences in 8 test files; `chunked-prefill-2026-09-27.md:15-16,64,130` vs `metal-prefill-attn-2026-09-27.md:14,91` | none | gate | re-run `TestMC5_prefillChunkInvariance` on the wired build |
 | F-G03 | Major | `TestMetalCtxCapWithinKernelBound` asserts two constants; its comment claims it keeps the ceiling a fact (**fixed 2026-10-01**, the test removed) | `metal/resident_cap_test.go`; `metal/model.go:27-28` | none | gate | replace with a prefill run at nKeys = 4097 on hd=256 |
 | F-C03 | Minor (latent) | `attention_fa` has `ATTN_FA_MAXG 8` arrays and no G <= 8 guard on the Go side; the comment says only hd=128 is enforced | `metal/kernels.go:1153,1177,1180,1216`; `metal/model.go:1198-1202,1427-1437`, `:2555-2571` | `steel` has no G array; n/a | correctness | list registry archs with hd=128 and nH/nKV > 8 |
 | F-D01 | Minor | `benchmarks.md` Metal prefill row, §B3 banner and §B3 bullets contradict R19, R18b and the headline decode row | `docs/benchmarks.md:43,47,1028-1031,1080-1081` vs `metal-prefill-attn-2026-09-27.md:122,126` | none | doc | edit |
@@ -2467,11 +2482,16 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-G02. MC3 / chunked-prefill / spec-verify gates are env-gated, and the chunk-invariance record predates steel (Major)
 
-- **What.** `TestMC5_prefillChunkInvariance`, `TestMC5_chunkCost`, `TestMC5_passCost` skip unless `GOINFER_METAL_MC3=1` (`metal/mc5_chunk_test.go:25-27,153-155,217-219`) and a checkpoint at `GOINFER_METAL_MC3_MODEL`. The same variable gates 61 occurrences across 8 files (`mc3_step_test.go`, `mc3_concurrent_test.go`, `spec_multiturn_test.go`, `spec_verify_identity_test.go`, `gemm_smallm_mc3_test.go`, `simdsum_tree_mc3_test.go`, `mc5_chunk_test.go`, `gemm_mma8_mc3_test.go`). All of `mc5_chunk_test.go` also needs `goinfer_testhooks`.
+- **What.** `TestMC5_prefillChunkInvariance`, `TestMC5_chunkCost`, `TestMC5_passCost` skip unless `GOINFER_METAL_MC3=1` (`metal/mc5_chunk_test.go:22-24,86-88`) and a checkpoint at `GOINFER_METAL_MC3_MODEL`. The same variable gates 61 occurrences across 8 files (`mc3_step_test.go`, `mc3_concurrent_test.go`, `spec_multiturn_test.go`, `spec_verify_identity_test.go`, `gemm_smallm_mc3_test.go`, `simdsum_tree_mc3_test.go`, `mc5_chunk_test.go`, `gemm_mma8_mc3_test.go`). All of `mc5_chunk_test.go` also needs `goinfer_testhooks`.
 - **Ordering.** The chunk-invariance table (0 of 14,336,000 KV elements and 0 of 151,936 logits differ, `chunked-prefill-2026-09-27.md:15-16,35-40`) was produced in the 04:43-05:03 PDT runs (`:64,130`); the steel kernel's gate run is 18:29-19:01 PDT and its wiring is recorded afterwards (`metal-prefill-attn-2026-09-27.md:91,115-122`). The shipped default is `serve -prefill-chunk 512` (`chunked-prefill-2026-09-27.md:10`). So the record's headline "Metal prefill is chunk-invariant" describes the fused-kernel build.
 - **Reading.** Steel keeps all online-softmax state per row and walks absolute-aligned 16-key blocks; a row whose block is fully masked takes the `mNew > -INFINITY` branch and changes nothing (`metal/prefill.go:555-559`), so per-row results should not depend on how rows are grouped into 32-row tiles. That is an argument from the kernel's structure, not a measurement.
 - **Why this is not already closed.** The R19 record's owed list (`:124-127`) does not include re-running chunk invariance; the chunked-prefill record has no later annotation (`grep` for "steel|R19" in it returns nothing).
 - **Fix.** Make the invariance test run by default on a generated hd=128 random-weight fixture (it needs random weights and two KV slots, not a real checkpoint), then re-run on the 1.5B once and append the result to the record.
+- **Status, 2026-10-01.** Done. The invariance test runs by default on the fixture (E-G01's status names the rest of the
+  subset), adds C = 512, 100 and 77, and was re-run on the 1.5B on the steel build: 0 of 14,336,000 K/V elements and 0 of
+  151,936 logits differ at every size, and the record has a dated addendum. The aligned sizes alone could not see a bug at
+  a tile edge: with the steel kernel's causal limit moved one key, all four still matched bit for bit, and only the
+  control failed.
 - **Fidelity implication.** None.
 
 #### F-G03. The context-ceiling "fact" test asserts constants (Major by the brief's gate rule)

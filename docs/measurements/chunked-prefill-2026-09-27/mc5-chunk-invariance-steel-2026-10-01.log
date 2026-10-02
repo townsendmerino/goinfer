@@ -1,0 +1,18 @@
+# TestMC5_prefillChunkInvariance on the steel build (F-G02, docs/audit-metal-2026-09-30.md)
+# 2026-10-01 19:54:26 PDT, Apple M1 Pro, 26.6.2, go go1.27.0
+# tree: metal-audit worktree at 0d058611 + the uncommitted fixture/test changes; prefill kernels as on main 517c15c6
+# model: ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, int4, 2 KV slots, ctx 2048
+# GOINFER_METAL_MC3=1 go test -count=1 -run '^TestMC5_prefillChunkInvariance$' -v ./metal/
+=== RUN   TestMC5_prefillChunkInvariance
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.109, 0.249); 0 = always the fragment
+[mc5-chunk] C=64: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=128: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=256: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=384: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=512: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=100: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=77: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] control (token 700 changed): 0 KV elements differ before position 700, 3747365 from it on
+--- PASS: TestMC5_prefillChunkInvariance (17.98s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	18.368s

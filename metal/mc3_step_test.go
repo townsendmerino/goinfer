@@ -16,9 +16,26 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// mc3Resident loads the S1 checkpoint with `slots` resident KV slots at a ctx-token resident context, for the plain dense
-// W4A8 decode path S1 covers.
+// mc3Resident is the resident the MC3 identity checks run on, with `slots` resident KV slots at a ctx-token resident
+// context: the S1 checkpoint under GOINFER_METAL_MC3=1 (mc3RealResident), and otherwise the generated fixture
+// (mc3_fixture_test.go), so the checks run by default (E-G01, docs/audit-metal-2026-09-30.md). A timing calls
+// mc3RealResident instead: on the fixture it would time nothing real.
 func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
+	t.Helper()
+	if os.Getenv("GOINFER_METAL_MC3") == "1" {
+		return mc3RealResident(t, slots, ctx)
+	}
+	m, r := mc3FixtureResident(t, slots, ctx)
+	if got := len(r.kvSlotBufs); got < slots || r.batch == nil {
+		t.Fatalf("the MC3 fixture built %d KV slots (%d requested) and batched step %v (batchIneligible: %q)", got, slots, r.batch != nil, r.batchIneligible())
+	}
+	return m, r
+}
+
+// mc3LoadCheckpoint loads the checkpoint the MC3 checks run on under GOINFER_METAL_MC3=1 (GOINFER_METAL_MC3_MODEL, else the
+// 1.5B in ~/models) with `slots` resident KV slots at a ctx-token resident context, and builds its resident. It skips
+// without the variable or the file.
+func mc3LoadCheckpoint(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	t.Helper()
 	if os.Getenv("GOINFER_METAL_MC3") != "1" {
 		t.Skip("set GOINFER_METAL_MC3=1 (loads a real checkpoint)")
@@ -40,26 +57,8 @@ func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	}
 	r, err := buildResident(m)
 	if err != nil {
+		m.Close()
 		t.Fatalf("build resident: %v", err)
-	}
-	if r.moe != nil || r.g4moe != nil || r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm ||
-		r.decodeLaneW4F16 || r.nonGatedMLP || r.outBias || r.loraLayers != nil || r.qkNorm || r.learnedPos {
-		r.Close()
-		t.Skip("MC3 S1 covers the plain dense W4A8 decode path only")
-	}
-	for _, L := range r.layers {
-		if L.qGate || L.delta != nil || L.geom == nil || L.geom.kEqV {
-			r.Close()
-			t.Skip("MC3 S1 covers the plain dense W4A8 decode path only")
-		}
-	}
-	if got := len(r.kvSlotBufs); got < slots {
-		r.Close()
-		t.Fatalf("resident allocated %d KV slots, %d requested (the fit clamp)", got, slots)
-	}
-	if r.batch == nil {
-		r.Close()
-		t.Fatalf("resident built no batched step (batchIneligible: %q)", r.batchIneligible())
 	}
 	// Close both and hand the heap back before the next load: the fit guard prices live memory, and a second load in the
 	// same process otherwise sees the first model's host weights still held and (correctly) refuses.
@@ -68,6 +67,28 @@ func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 		m.Close()
 		debug.FreeOSMemory()
 	})
+	return m, r
+}
+
+// mc3RealResident is mc3LoadCheckpoint for the plain dense W4A8 decode path S1 covers.
+func mc3RealResident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
+	t.Helper()
+	m, r := mc3LoadCheckpoint(t, slots, ctx)
+	if r.moe != nil || r.g4moe != nil || r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm ||
+		r.decodeLaneW4F16 || r.nonGatedMLP || r.outBias || r.loraLayers != nil || r.qkNorm || r.learnedPos {
+		t.Skip("MC3 S1 covers the plain dense W4A8 decode path only")
+	}
+	for _, L := range r.layers {
+		if L.qGate || L.delta != nil || L.geom == nil || L.geom.kEqV {
+			t.Skip("MC3 S1 covers the plain dense W4A8 decode path only")
+		}
+	}
+	if got := len(r.kvSlotBufs); got < slots {
+		t.Fatalf("resident allocated %d KV slots, %d requested (the fit clamp)", got, slots)
+	}
+	if r.batch == nil {
+		t.Fatalf("resident built no batched step (batchIneligible: %q)", r.batchIneligible())
+	}
 	return m, r
 }
 
@@ -199,7 +220,7 @@ func TestMC3Step_rowsPathBitIdentical(t *testing.T) {
 //	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_DEPTHS=128,512] go test -count=1 -run '^TestMC3Step_throughput$' -v ./metal/
 func TestMC3Step_throughput(t *testing.T) {
 	const maxB = 8
-	_, r := mc3Resident(t, maxB+1, 1024)
+	_, r := mc3RealResident(t, maxB+1, 1024)
 	depths := []int{128, 512}
 	if v := os.Getenv("GOINFER_METAL_MC3_DEPTHS"); v != "" {
 		depths = nil
@@ -347,7 +368,7 @@ func TestMC3Step_drawsMatchForwardSample(t *testing.T) {
 //
 //	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_DEPTHS=128,512] go test -count=1 -run '^TestMC3StepBreakdown$' -v ./metal/
 func TestMC3StepBreakdown(t *testing.T) {
-	_, r := mc3Resident(t, 9, 1024)
+	_, r := mc3RealResident(t, 9, 1024)
 	b := r.batch
 	lib, err := r.d.CompileLibrary("kernel void mc3_noop() {}", MSL3_1)
 	if err != nil {
@@ -440,7 +461,7 @@ func TestMC3StepBreakdown(t *testing.T) {
 //	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_MODEL=…] go test -tags goinfer_testhooks -count=1 -run '^TestMC3StepWallVsGPU$' -v ./metal/
 func TestMC3StepWallVsGPU(t *testing.T) {
 	const maxB, D, steps = 8, 128, 20
-	_, r := mc3Resident(t, maxB+1, 1024)
+	_, r := mc3RealResident(t, maxB+1, 1024)
 	seed := uint32(97531)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
 	for sl := 0; sl <= maxB; sl++ {
@@ -574,7 +595,7 @@ func TestMC3Verify_sameSlotRowsBitIdentical(t *testing.T) {
 //
 //	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_MODEL=…] go test -tags goinfer_testhooks -count=1 -run '^TestMC3Verify_rowCost$' -v ./metal/
 func TestMC3Verify_rowCost(t *testing.T) {
-	_, r := mc3Resident(t, 2, 4096) // the step needs slot buffers, which a one-slot resident does not keep
+	_, r := mc3RealResident(t, 2, 4096) // the step needs slot buffers, which a one-slot resident does not keep
 	seed := uint32(13131)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
 	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
