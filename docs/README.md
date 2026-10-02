@@ -54,7 +54,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (52: 47 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (56: 50 in `tasks/`, 6 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -130,7 +130,7 @@ asks how many wire dialects the coding-agent harnesses speak and how often a too
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (228)
+## Evidence — `measurements/` (232)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
