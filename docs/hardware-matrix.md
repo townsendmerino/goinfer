@@ -71,6 +71,11 @@ features). Two load-time notes the taxonomy does not encode:
   docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`
   names this specific per-checkpoint gap for a loaded model; this table cannot, since its
   rows are one per architecture, not per checkpoint.
+- **Gemma 4's row is generated from a representative that is not an E-model.** The small E-models
+  (E2B, E4B: per-layer embeddings, cross-layer shared KV, variable FFN width) carry the
+  `gemma4-e-model` feature, which no backend declares, so they run on the CPU on every backend (a
+  CUDA run prints `cuda does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are
+  resident as the row says. `DecodePath()` names the gap for a loaded model.
 - **Command-R, Command-R7B (Aya) and GLM-OCR are CUDA-only for a stated reason.** Their rotary
   embedding is GPT-J PAIRWISE (dims 2d, 2d+1); the generic rope kernels on Metal and WebGPU are the
   NeoX half-split (d, d+half), so those backends do not declare `pairwise-rope` / `pairwise-mrope`

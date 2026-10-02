@@ -600,7 +600,7 @@ var siteDocs = map[string]siteDoc{
 	"gpt2":             {"GPT-2 and GPT-NeoX. Old and small, kept as a reference.", []string{"chat"}},
 	"gemma":            {"Google's first Gemma, 2B and 7B, and CodeGemma.", []string{"chat", "code"}},
 	"gemma2":           {"Google's Gemma 2, 2B to 27B.", []string{"chat"}},
-	"gemma3":           {"Google's Gemma 3, from 270M to 27B.", []string{"chat"}},
+	"gemma3":           {"Google's Gemma 3, from 270M to 27B. The 4B and larger read images (verified on the 4B).", []string{"chat", "vision"}},
 	"gemma4":           {"Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.", []string{"chat", "vision"}},
 	"granite":          {"IBM's Granite 4.2 dense, 3B to 30B.", []string{"chat"}},
 	"internlm2":        {"Shanghai AI Lab's InternLM2.", []string{"chat"}},

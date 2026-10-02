@@ -251,10 +251,10 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 // the base ResidentForward GenerateVL uses): decode past an image block needs the
 // rope-angle position (pos+mropeDelta) and the KV-cache/attention position (pos) to
 // differ, which only ResidentMRoPE's ForwardMRoPE can express — see that interface's
-// doc comment. A resident backend without it (e.g. Metal, which also lacks UploadKV)
-// falls back to the CPU decode loop exactly as if no resident were configured at all
-// — including for image-reuse (P9a): the fast path below is gated on ResidentMRoPE
-// support too, for the identical reason.
+// doc comment. A resident backend without it falls back to the CPU decode loop
+// exactly as if no resident were configured at all — including for image-reuse
+// (P9a): the fast path below is gated on ResidentMRoPE support too, for the
+// identical reason.
 func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
