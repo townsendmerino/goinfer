@@ -1,0 +1,23 @@
+# T1.6 (E-P09, docs/audit-metal-2026-09-30.md): KV-slot footprint probe, 2026-10-01 20:27:36 PDT, Apple M1 Pro, macOS 26.6.2
+# tree: metal-audit at fb216070 + metal/kv_slots_footprint_probe_test.go; model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, int4, ctx 4096; each arm its own process
+# arm arm0_slots1
+[kv-footprint] 1 slot(s) (0 built, 112 MB KV each): after build footprint 2805 MB, IOAccelerator 927 MB, device allocated 1050 MB; after one token footprint 2919 MB, IOAccelerator 1041 MB
+[kv-footprint]   categories of 16 MB or more after build: untagged (VM_ALLOCATE) 1868, IOAccelerator (graphics) 927
+[kv-footprint]   after one token: untagged (VM_ALLOCATE) 1868, IOAccelerator (graphics) 1040
+--- PASS: TestMC3_kvSlotFootprintProbe (2.66s)
+    --- PASS: TestMC3_kvSlotFootprintProbe/arm0_slots1 (2.66s)
+ok  	github.com/townsendmerino/goinfer/metal	3.119s
+# arm arm1_slots4
+[kv-footprint] 4 slot(s) (4 built, 112 MB KV each): after build footprint 2809 MB, IOAccelerator 929 MB, device allocated 1392 MB; after one token footprint 3258 MB, IOAccelerator 1378 MB
+[kv-footprint]   categories of 16 MB or more after build: untagged (VM_ALLOCATE) 1869, IOAccelerator (graphics) 929
+[kv-footprint]   after one token: untagged (VM_ALLOCATE) 1869, IOAccelerator (graphics) 1378
+--- PASS: TestMC3_kvSlotFootprintProbe (2.76s)
+    --- PASS: TestMC3_kvSlotFootprintProbe/arm1_slots4 (2.76s)
+ok  	github.com/townsendmerino/goinfer/metal	3.095s
+# arm arm2_slots1
+[kv-footprint] 1 slot(s) (0 built, 112 MB KV each): after build footprint 2811 MB, IOAccelerator 927 MB, device allocated 1050 MB; after one token footprint 2926 MB, IOAccelerator 1041 MB
+[kv-footprint]   categories of 16 MB or more after build: untagged (VM_ALLOCATE) 1874, IOAccelerator (graphics) 927
+[kv-footprint]   after one token: untagged (VM_ALLOCATE) 1874, IOAccelerator (graphics) 1040
+--- PASS: TestMC3_kvSlotFootprintProbe (2.63s)
+    --- PASS: TestMC3_kvSlotFootprintProbe/arm2_slots1 (2.63s)
+ok  	github.com/townsendmerino/goinfer/metal	2.939s

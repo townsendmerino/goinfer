@@ -258,3 +258,16 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   (0 logits differ over 4 sequences × 12 steps); with the batched check left on the constant, 149,563 logits differ.
   Production's path is unchanged (the override is zero). The legacy-against-blk timing arms are night work (Phase 2).
   Three citations of `gemvRowsFor`'s guard had pointed at `attnPlanFor` since before the branch; re-pointed.
+- 2026-10-01: **Phase 1 item 6.**
+  - T1.10's byte comparison: `TestMC3Step_promptInRowsBitIdentical` (default-run on the fixture; with
+    `GOINFER_METAL_MC3=1`, the 1.5B) feeds K = 8/16/32/64 tokens to the batched step in 8-row pieces from position 0;
+    every K/V element and every row's logits match the sequential loop on both. A one-ulp change to `mc3_bt`'s scale
+    fails it. The timing half is night work.
+  - T1.6 on the 1.5B (`TestMC3_kvSlotFootprintProbe`, a probe, each arm in its own process: in one process the fit
+    guard refused the third load, correctly, because the first two had not handed back their memory). Untouched KV
+    pages do not count at allocation (4 slots and 1 slot: footprint 2809 vs 2805/2811 MB); after one token every slot
+    does (IOAccelerator +449 MB at 4 slots, +114 at 1). The 3 extra default slots cost ~335 MB on the 1.5B from the
+    first token, ~705 MB on the 7B by the same bytes. Recorded under E-P09; lowering the default is the owner's call.
+    Log: `docs/measurements/metal-audit-2026-10/t16-kv-slot-footprint-2026-10-01.log`.
+  - T1.12 not done: it needs a real MoE's routing, and the only MoEs on this Mac's local disk are M26 and M35
+    (owner-gated). It joins the M26 night items.

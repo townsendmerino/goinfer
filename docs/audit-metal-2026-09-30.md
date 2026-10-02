@@ -2174,6 +2174,11 @@ Why this is not already closed: red-october.md:274 and :392 treat 8-255-token pr
 proposed fix is lowering the floor behind a new fidelity cell (metal/backend.go:601-607); the step kernels shipped after (2026-09-26/27)
 and no record routes prompts through them. A-P02 hands this alternative to area E.
 
+**Status, 2026-10-01.** T1.10's byte comparison holds: `TestMC3Step_promptInRowsBitIdentical` feeds K = 8, 16, 32 and 64
+tokens to the batched step in 8-row pieces from position 0, and every K/V element and every row's logits match the
+sequential loop, on the default-run fixture and on the 1.5B (0 of 9,723,904 logits at K = 64). The timing half of T1.10
+is night work.
+
 #### E-P02 [P,B, Minor; Major if the probe lands] M-adjacent threadgroup layout for the 7B at B=2
 
 metal/batch.go:604-615 and 634-639: at B<=`rowsQKV`/`rowsGU` the qkv and gate|up matmuls run production's GEMV once per row, each
@@ -2337,6 +2342,15 @@ compiler's precise mode defaults contraction to off is not settleable statically
 count to the memory guard's budget and prints a banner when it does (metal/backend.go:377-404); MC1's clamp path was never exercised
 (concurrency-mc1:58 [rec]). Whether untouched pages of a freshly allocated shared buffer count against resident memory is not settleable
 statically; if Metal zero-fills them they do. Probe: resident set after load on the 7B with `--kv-sessions 1` and 4.
+
+**Status, 2026-10-01.** Measured by T1.6's probe (`TestMC3_kvSlotFootprintProbe`) on the 1.5B rather than the 7B, since
+the mechanism does not depend on the model and the 7B leaves little headroom on this Mac. Each arm in its own process,
+ctx 4096, 112 MB of KV per slot: right after the build, 4 slots and 1 slot cost the same (footprint 2809 MB against
+2805 and 2811, IOAccelerator 929 against 927), so untouched pages do not count at allocation. After one token they
+all do: IOAccelerator rises by 449 MB with 4 slots and by 114 MB with 1, though only slot 0 was written, consistent with
+a command buffer making each layer's one KV allocation resident. The 3 extra slots therefore cost about 335 MB from the
+first token on; on the 7B, about 705 MB by the same bytes. Log: `docs/measurements/metal-audit-2026-10/t16-kv-slot-footprint-2026-10-01.log`.
+Whether to lower the default slot count is the owner's call (the fix above).
 
 #### E-P10 [P, Minor, opt-in] `kv_store_i8`
 

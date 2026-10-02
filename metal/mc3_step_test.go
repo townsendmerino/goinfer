@@ -589,6 +589,71 @@ func TestMC3Verify_sameSlotRowsBitIdentical(t *testing.T) {
 	t.Logf("%d differing values over %d cases", total, len(cases))
 }
 
+// TestMC3Step_promptInRowsBitIdentical is T1.10's byte comparison (E-P01's premise, docs/audit-metal-2026-09-30.md):
+// a fresh prompt fed to the batched step in 8-row pieces from position 0, as a prompt below the prefill floor could be,
+// writes the same K/V bytes and gives the same logits, every row, as production's sequential single-token loop.
+func TestMC3Step_promptInRowsBitIdentical(t *testing.T) {
+	_, r := mc3Resident(t, 2, 1024)
+	seed := uint32(10101)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	kv := func(slot, n int) [][]uint16 { // per layer: K rows then V rows, positions 0..n-1
+		if err := r.useKVSlot(slot); err != nil {
+			t.Fatal(err)
+		}
+		var out [][]uint16
+		for l := range r.layers {
+			d := r.layers[l].geom.kvDim
+			o := r.kvHostOff(l, 2)
+			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+		}
+		return out
+	}
+	for _, K := range []int{8, 16, 32, 64} {
+		embs := make([][]float32, K)
+		for i := range embs {
+			embs[i] = mc3Emb(r, rnd())
+		}
+		if err := r.useKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		var ref [][]float32
+		for i, e := range embs {
+			ref = append(ref, append([]float32(nil), r.ForwardEmb(e, i)...))
+		}
+		refKV := kv(0, K)
+		var got [][]float32
+		for c := 0; c < K; c += 8 {
+			var seqs []batchSeq
+			for i := c; i < min(c+8, K); i++ {
+				seqs = append(seqs, batchSeq{slot: 1, pos: i, emb: embs[i]})
+			}
+			for _, row := range mc3Step(t, r, seqs) {
+				got = append(got, append([]float32(nil), row...))
+			}
+		}
+		gotKV := kv(1, K)
+		lg, kd := 0, 0
+		for i := range got {
+			for j := range got[i] {
+				if math.Float32bits(got[i][j]) != math.Float32bits(ref[i][j]) {
+					lg++
+				}
+			}
+		}
+		for i := range refKV {
+			for j := range refKV[i] {
+				if refKV[i][j] != gotKV[i][j] {
+					kd++
+				}
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[mc3-prompt] K = %d in 8-row steps from position 0: %d of %d logits differ, %d K/V elements differ\n", K, lg, K*r.V, kd)
+		if len(got) != K || lg != 0 || kd != 0 {
+			t.Errorf("K = %d: %d rows back, %d logits and %d K/V elements differ from the sequential loop", K, len(got), lg, kd)
+		}
+	}
+}
+
 // TestMC3Verify_rowCost is the second gate: what each extra verified row costs on the step kernels. GPU time of one
 // step of M = 1, 2, 4, 8 consecutive rows on one slot, against a production token, at depths 128, 512 and 2048;
 // median of 7, arms interleaved. Extra-row cost = (T(M)/T(token) - 1) / (M - 1).
