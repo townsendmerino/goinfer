@@ -768,8 +768,8 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}
 	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
-	// UMA that silently corrupts adjacent buffers (audit R-27). Unreachable today (the decoder always
-	// passes 0) but cheap to guard.
+	// UMA that silently corrupts adjacent buffers (audit R-27). The decoder never passes one (it passes 0,
+	// a reused prefix's length, or a chunk's offset; F-G01), but the guard is cheap.
 	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
 		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
 	}

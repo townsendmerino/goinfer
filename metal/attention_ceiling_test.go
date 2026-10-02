@@ -24,6 +24,7 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	defer d.ReleaseObjects()
 	lib, err := d.CompileLibrary(allKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -121,7 +122,8 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 				if err := e.Err(); err != nil {
 					t.Fatalf("%s: dispatch: %v", name, err)
 				}
-				got := out.Floats()[:nH*hd]
+				got := append([]float32(nil), out.Floats()[:nH*hd]...)
+				d.ReleaseAll() // this case's buffers; the next case allocates its own
 				want := attnRef64(qv, kf, vf, sinks, c.sink, nH, nKV, hd, winStart, c.nKeys, float64(scale))
 				firstTile := attnRef64(qv, kf, vf, sinks, c.sink, nH, nKV, hd, winStart, min(c.nKeys, winStart+attnScoreTileBound), float64(scale))
 				if e := maxAbsDiff(got, want); !(e <= tol) {

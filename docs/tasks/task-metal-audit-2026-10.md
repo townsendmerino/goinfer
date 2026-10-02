@@ -141,3 +141,18 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     (neither file is hashed), so no refresh. Default metal suite: 208 pass, 51 skip, 125 s.
   - The citation re-point found 25 citations that the earlier rounds' `--update` had moved onto a neighbouring
     citation's line, with the lint green. All are fixed against their originals on main, checked by line content.
+- 2026-10-01: **Phase 1 item 4 begun; F-G01 done.** `TestAttentionPrefillSteelMatchesFloat64` (default-run, no tag)
+  runs the shipped `attention_prefill_steel` as `PrefillLast` launches it, over the audit's grid: M in {1, 7, 31, 33,
+  100}, startPos in {0, 5, 16, 1000}, window in {0, 64}, nH/nKV in {12/2, 14/2, 32/8}, each with uniform and peaked
+  (Q × 8) scores, against a float64 reference over the same f16 Q, K and V. 240 cases in about 3 s:
+  - Worst row-head cosine 0.9999999, worst max abs 4.1e-4, no NaN (the output starts as f16 NaN, so an unwritten
+    element fails). The bars: cosine 0.9999 (the audit's) and max abs 1e-3 (the audit's 0.05, tightened to 2.5× what
+    the kernel measures).
+  - Built-in check that it can fail: in the 210 cases whose first query row sees at most 64 keys, one more key per row
+    moves the float64 answer by at least 0.039, past the bar.
+  - Mutations of the kernel: causal limit +1 key fails 234 of 240 cases, −1 fails 239; no online-softmax rescale fails
+    187 (94 peaked, 93 uniform); window start +1 fails 48, all window cases whose rows run past the window.
+  - Also: the `metal/backend.go` comment that said the decoder always passes startPos 0 (it passes a reused prefix's
+    length and each chunk's offset); a pointer in `prefill_startpos_test.go`, whose head-dim-16 fixture runs the fused
+    kernel; a dated note under the 2026-09-12 audit's G-08 closure; and the F-G03 test now releases each case's
+    buffers (about 300 MB by its buffer sizes, held until the process ended).

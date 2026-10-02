@@ -1235,6 +1235,10 @@ re-baked by the code it checks (G-04).
   exact code path (startPos/uMReal masking) this finding flagged as uncovered — and compares
   final logits. K=48, from=24: argmax match, cosine 0.999941. No defect found; the gap is closed,
   not a bug fixed.
+- **2026-10-01: the closure no longer covers head dim 128.** Since R19 (2026-09-27) production runs
+  `attention_prefill_steel` there, and this test's fixture (head dim 16) dispatches the fused kernel.
+  Steel at `startPos > 0` is now checked by `TestAttentionPrefillSteelMatchesFloat64` (F-G01 in
+  `docs/audit-metal-2026-09-30.md`).
 
 #### G-09 · P-15's MoE-prefill measurement is written, never run, and refuses the paged shape that actually runs on the Mac
 - **Where:** `metal/moe_prefill_measure_test.go:14-27,52-56` (`GOINFER_MOE_PREFILL_CKPT`; declines a

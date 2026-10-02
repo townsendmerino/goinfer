@@ -624,8 +624,8 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/prefill_moe_parity_test.go:22` | goinfer | `// Same structure and bar as TestPrefillParity/TestPrefillParityGemma: argmax match, cos` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_moe_parity_test.go:7` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_nan_test.go:19` | goinfer | `func TestPrefillNoNaN(t *testing.T) {` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_startpos_test.go:29` | goinfer | `func TestPrefillLast_startPosGreaterThanZero(t *testing.T) {` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_startpos_test.go:37` | goinfer | `const K, from = 48, 24 // from > 0, and from < K so PrefillLast actually has work to do` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_startpos_test.go:32` | goinfer | `func TestPrefillLast_startPosGreaterThanZero(t *testing.T) {` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_startpos_test.go:40` | goinfer | `const K, from = 48, 24 // from > 0, and from < K so PrefillLast actually has work to do` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_ttft_test.go:42` | goinfer | `// Since the §3.2 gate (2026-09-09), PrefillLast itself enforces metalFastPrefillFloor (` |
 | `docs/audit-metal-2026-09-30.md|metal/prompthidden_resident_parity_test.go:17` | goinfer | `// prompt lengths, the second after the first, so a DeltaNet state left over from one ca` |
 | `docs/audit-metal-2026-09-30.md|metal/residency_probe_test.go:11` | goinfer | `// TestZZ_residencyProbe isolates the per-submit RESIDENCY cost that dominates the paged` |
