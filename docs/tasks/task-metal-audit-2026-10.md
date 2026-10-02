@@ -226,6 +226,27 @@ real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2
 
 ## Phase 3 — builds, in this order
 
+### A-P01: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+
+Built and bit-identical on the branch: `gemm_w4f16_tile<TM, TN>` (prefill.go), R16's GEMM with the tile as template
+parameters, and `gemmTile`, which picks 32 tokens at ≤ 32 rows and 32 features at N ≤ 2048 and ≤ 64 rows, else
+production's 64 × 64 `gemm_w4f16_store`. Kernel gate: 55,074,816 outputs across the 1.5B's and 7B's GEMM shapes, 8–72
+rows, three epilogues and four tiles, equal to `gemm_w4f16_store` (the template at 64 × 64 included); reversing the
+8-wide K chunks fails all 588 combinations. `TestMC5_prefillChunkInvariance` gained C = 16, 32, 48 after a 64-token
+first chunk, so its chunks cross the selector: bit-identical on the fixture and the 1.5B (0 of 14,336,000 K/V, 0 of
+151,936 logits), and red under a tile row-offset mutation. `TestPrefillRefIdentity` was not run: its prompts are 256
+tokens and up, which the selector leaves on the 64 × 64 kernel. A one-rep smoke of the probes, run only to check them,
+read 1.43× on the C = 32 pass and 1.69× on the gate/up GEMM at M = 32; one rep is not a result.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-ap01-grade.sh` on the night queue, from the untagged test binary `metal-e8c1e13a.test`: `TestGemmTile_bitIdentical`, then on the 1.5B and the 7B `TestAuditAP01_gemmSmallM` (each GEMM alone, shipped against the selector's tile, M = 16, 32, 48, 64, GPU time) and `TestAuditAP01_passCost` (`PrefillLast` at startPos 64 and 2048, C = 16, 32, 48, 64, under `gemmTilePolicy` shipped / bm32 / bn32 / both, wall time), 7 reps, interleaved. One KV slot, so no pass is taken by E-P01's step. Estimate about 5 minutes; queued at 15. |
+| Precondition | `TestGemmTile_bitIdentical` passes. Any differing output kills. |
+| Kill line for the 32-token rule | The audit's: gate/up at M = 32 under 1.15× shipped (`RESULT gate/up` on the 1.5B) drops the 32-token rule. |
+| Graded | Pass wall, shipped ÷ policy, at startPos 64, C = 32 on the **1.5B**, paired per rep, median of 7 (`RESULT … both`). |
+| Rule | **The default (both rules) ships if it reads ≥ 1.15× and the 32-token rule survives its kill line.** Otherwise the best single rule still standing ships if it reads ≥ 1.15× (the selector is narrowed to it). Otherwise **killed**: the selector returns the 64 × 64 kernel and the template goes. |
+| Reported | The 7B, startPos 2048, C = 16, 48 and 64, and each GEMM's ratio. A shipping policy that reads below 0.98× at any reported cell goes to the owner before the merge (a threshold to move, not a rule to keep). |
+
 ### B-P04: built, pending its grade (pre-registered 2026-10-02, before any graded run)
 
 Built and bit-identical on the branch (`22819cc8`): the SA rows kernels' lane-balanced twins (`sa_rows_acc_k512`),
