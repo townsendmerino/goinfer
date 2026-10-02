@@ -19,7 +19,7 @@ Draft only (`reviewed:` empty). Body about 810 words. The site build passes with
 | Every expert executes on the GPU, "bit-identical to fully-resident", off by default, declines to CPU without it | `internal/loadflags/loadflags.go` `moeCacheExpertsHelp` |
 | DMA overlap: second queue, dense branch and hit experts run under the copy; 1.271x paired median, 30.36 to 38.66 pooled, bit-identical; off under graphs; prefill untouched | `moe-streaming-decode-overlap-ceiling-2026-09-22.md` "Result 2" and "What this does not cover"; `cuda/backend.go` line 1865 |
 | Serve command: `-model bench=<path> -backend cuda -moe-cache-experts -ctx 2048` | `scripts/bench_peer.py` (the Popen at ~line 1080, `GOINFER_MOE_PATH["M26"]`, `moe_args`, `CTX_PIN`) |
-| Flags `-moe-cache-experts`, `-moe-cache-slots`, `-ctx`, `-require-backend`; in chat too | `loadflags.go` (lines 63-66), `internal/serveapp/main.go:398`, `CHANGELOG.md` line 57 |
+| Flags `-moe-cache-experts`, `-moe-cache-slots`, `-ctx`, `-require-backend`; in chat too | `loadflags.go` (lines 63-66), `internal/serveapp/main.go:402`, `CHANGELOG.md` line 57 |
 | Halving ctx 4096 to 2048 gave 30 to 40 slots | `benchmarks.md` B4.1 table |
 | Metal: three attempts (N=64, 32, 8) on 16 GB M1 Pro, swap spirals, killed; no served rate | `metal-moe-autopager-m26-2026-09-20.md` (result paragraph, "Out of scope") |
 | Metal later: 5.98 / 6.19 / 6.07 / 6.04 tok/s, N=8, ctx 512, 32 tokens, n=2 per arm, "not a registered bench" | `m26-alias-fork-collapse-2026-09-24.md` section 1 (cell) and 7a (table) |

@@ -2075,10 +2075,10 @@ projection with its band and basis.
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
 | E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:541-543; metal/model.go:1858-1872; decoder/model.go:2100-2107 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
 | E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:793-798 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
-| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | metal/model.go:23; internal/serveapp/main.go:405; metal/backend.go:377-404; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
+| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | metal/model.go:23; internal/serveapp/main.go:409; metal/backend.go:377-404; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
 | E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:862-884; metal/model.go:2788-2793; metal/batch.go:310 | n/a | ~1% [cnt, unmeasured] | micro-bench |
 | E-N01 | Minor | 112 `pack` dispatches per step could be fused into their producers | metal/batch.go:608,641,645 | n/a | <=0.9% [cnt] | none worth running first |
-| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:427; decoder/model.go:377-381 | n/a | n/a | edit text |
+| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:431; decoder/model.go:377-381 | n/a | n/a | edit text |
 
 ### (c) Full entries
 
@@ -2291,7 +2291,7 @@ compiler's precise mode defaults contraction to off is not settleable statically
 
 #### E-P09 [P, Minor; possibly Major on the 7B] Default KV slots
 
-`--kv-sessions` defaults to 4 (internal/serveapp/main.go:405), the resident context to 4096 (metal/model.go:23). A slot is ~117 MB on the 1.5B
+`--kv-sessions` defaults to 4 (internal/serveapp/main.go:409), the resident context to 4096 (metal/model.go:23). A slot is ~117 MB on the 1.5B
 (concurrency-mc1:24 [rec]); on the 7B it is 28 x 4096 x 512 x 2 x 2 B = 235 MB [cnt], so three extra slots are ~705 MB. `metalKVSlots` clamps the
 count to the memory guard's budget and prints a banner when it does (metal/backend.go:377-404); MC1's clamp path was never exercised
 (concurrency-mc1:58 [rec]). Whether untouched pages of a freshly allocated shared buffer count against resident memory is not settleable
@@ -2310,7 +2310,7 @@ the producing rows kernel is bit-identical. At ~1.3 us each (S3) that is ~0.15 m
 
 #### E-D01 [D, Minor] Stale text
 
-`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:427); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
+`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:431); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
 traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:377-381) against the owner decision recorded at
 task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:2594) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
 (metal/model.go:2672-2682); area B owns that.
