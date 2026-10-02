@@ -182,6 +182,22 @@ guard's number does not change; what changes is that the number is now true.
 - Estimate: 17 processes at about 45 s each (about 11 s to build, 129 tokens at about 0.1 s, 15 s settle): about 13
   minutes; queued at 20.
 
+**Amendment, 2026-10-02, before any timed run (owner: "why not start with p-reading scales and weights together?").**
+`2838b7de` copied the scales out of the mapping, which on a cold expert takes a page fault per 16 KB in series, and on
+this path the bound is fault count (the WILLNEED record in `metal/gemma4_moe.go`); pread exists to avoid exactly that.
+So the first build was the one most likely to fail this A/B. `494eb05a` preads every expert's scales with its nibbles
+when they lie in the mapping (both pagers; an older file still copies from the WeightMat), tested as above with every
+pread stage reading its scales too, and with an offset mutation in each pager failing its test. The A/B becomes three
+arms, each its own binary:
+
+- **old** `f56b40ec` (the cache), **copy** `2838b7de` (scales copied from the mapping), **pread** `494eb05a`.
+- One discarded warm-up (old), then 8 rounds of the three in a rotating order (old/copy/pread, copy/pread/old,
+  pread/old/copy, ...), 15 s between processes. Everything else as above.
+- The rule above applies to **pread ÷ old**, the build that ships. **copy ÷ old** is reported, not graded: it says
+  what the pread step is worth.
+- Estimate: 25 processes at about 45 s, about 19 minutes; re-queued at 30. Dry-run end to end on the tiny Gemma 4 MoE
+  (24 rounds' processes completed and the summary graded; its numbers say nothing, as before).
+
 ## Phase 3 — builds, in this order
 
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
@@ -396,7 +412,8 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-02: **Batch A and the M26 job graded** (results under Phase 2): T1.1 parked; T1.2 candidate floor 1024; T1.3
   C-B01 stands; T1.4 confirmed; T1.10 E-P01 proceeds for K ≤ 32; T1.8 parked; T1.9a M-11 reopened; T1.9b ungraded (the
   resident guard declined 64 slots) and re-queued alone, first in a night (owner).
-- 2026-10-02: **C-P01 built** (`2838b7de`) on the owner's word, with its A/B pre-registered and queued after T1.9b.
+- 2026-10-02: **C-P01 built** (`2838b7de`, then the scale pread `494eb05a`) on the owner's word, with its A/B
+  pre-registered, amended to three arms before any timed run, and queued after T1.9b.
   The A/B's run script was dry-run end to end on the tiny Gemma 4 MoE (3 slots, 100 tokens): every process completed
   and the summary graded, with tok/s and heap numbers that say nothing (the fixture loads from safetensors, so there is
   no mapping to save).
