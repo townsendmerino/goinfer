@@ -176,6 +176,14 @@
      "goinfer": "51b704c6",
      "aikit": "v1.53.0",
      "gate": "ci run 37140125254: root-darwin (go test -tags goinfer_testhooks ./... on the root module)"
+    },
+    {
+     "machine": "GitHub ubuntu-24.04-arm runner: ARM Neoverse-N2, 4 CPUs, DotProd (asimddp) yes",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "e86588e7 (PR #6 head, tested merged with main 4f632cd2)",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37143040097: root-linux-arm64 (go test -tags goinfer_testhooks ./..., 30 packages ok, decoder with the forward goldens 156 s)"
     }
    ],
    "notes": ""
@@ -572,9 +580,9 @@
    "files": [
     ".github/workflows/release.yml"
    ],
-   "our_machines": "never run",
+   "our_machines": "GitHub windows-latest (x86-64) in CI since H1.1: the suite RUNS there but does not pass (see notes)",
    "last_executed": [],
-   "notes": "H1.1 adds a windows-latest CI job."
+   "notes": "H1.1's first run, ci run 37143040097 (PR #6, 2026-10-03), is RED, so there is no green record. 22 packages pass; 8 fail. The decoder test package does not build (decoder/a3_fanout_test.go calls syscall.Getrusage with no build tag), so the forward goldens never ran. Other failures are test portability: CRLF checkouts change byte counts and regexes, error-text checks expect unix wording, and os.UserCacheDir ignores the tests' HOME/XDG_CACHE_HOME on Windows, so pull's cache tests share state. One is a documented product gap: no host-RAM probe on Windows (decoder/hostram_other.go returns unknown), so `fit` reports no placement. windows-arm64 is not covered: windows-latest is x86-64. See the task doc's H1.1 record."
   },
   {
    "id": "linux-arm64",
@@ -585,9 +593,18 @@
    "files": [
     ".github/workflows/release.yml"
    ],
-   "our_machines": "never in CI; the README publishes no Pi figure",
-   "last_executed": [],
-   "notes": "H1.1 adds a GitHub arm64 Linux job."
+   "our_machines": "GitHub's arm64 Linux runner (Neoverse-N2) in CI since H1.1; no Pi, Graviton or Ampere run",
+   "last_executed": [
+    {
+     "machine": "GitHub ubuntu-24.04-arm runner: ARM Neoverse-N2, 4 CPUs, DotProd (asimddp) yes",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "e86588e7 (PR #6 head, tested merged with main 4f632cd2)",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37143040097: root-linux-arm64 (go test -tags goinfer_testhooks ./..., 30 packages ok, decoder with the forward goldens 156 s)"
+    }
+   ],
+   "notes": "The first green run of the root CPU suite on linux/arm64 (H1.1). The release's linux-arm64 binary itself is not executed; this is the test suite on the same GOOS/GOARCH."
   },
   {
    "id": "metal-macos-versions",
