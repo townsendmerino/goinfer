@@ -1,0 +1,24 @@
+[cb01    5.1s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (tied head false): greedy, 9 reps of 256 tokens per arm
+[cb01   66.9s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01   66.9s] C-B01 METRIC chain/off greedy qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: median 1.0845 (min 1.0317, max 1.1510), 9 of 9 pairs above 1; decode off 84.4, chain 91.2 tok/s (medians)
+--- PASS: TestCB01ChainAB (66.97s)
+[cb01    4.1s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (tied head false): sampled T=1, 9 reps of 256 tokens per arm
+[cb01   65.9s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01   65.9s] C-B01 METRIC chain/off sampled T=1 qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: median 1.0659 (min 1.0602, max 1.0784), 9 of 9 pairs above 1; decode off 85.0, chain 90.6 tok/s (medians)
+--- PASS: TestCB01ChainAB (65.96s)
+[cb01    1.2s] loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (tied head false): greedy, 9 reps of 256 tokens per arm
+[cb01   30.3s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01   30.3s] C-B01 METRIC chain/off greedy qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: median 1.0630 (min 1.0165, max 1.0652), 9 of 9 pairs above 1; decode off 180.4, chain 190.5 tok/s (medians)
+--- PASS: TestCB01ChainAB (30.34s)
+[cb01    0.9s] loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (tied head false): sampled T=1, 9 reps of 256 tokens per arm
+[cb01   29.4s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01   29.4s] C-B01 METRIC chain/off sampled T=1 qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: median 1.1604 (min 1.1384, max 1.2065), 9 of 9 pairs above 1; decode off 177.9, chain 205.9 tok/s (medians)
+--- PASS: TestCB01ChainAB (29.44s)
+[cb01    1.0s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (tied head false): greedy, 9 reps of 256 tokens per arm
+[cb01  200.0s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01  200.0s] C-B01 METRIC chain/off greedy qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: median 1.0103 (min 1.0084, max 1.0128), 9 of 9 pairs above 1; decode off 27.3, chain 27.6 tok/s (medians)
+--- PASS: TestCB01ChainAB (199.99s)
+[cb01    0.4s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (tied head false): sampled T=1, 9 reps of 256 tokens per arm
+[cb01  198.1s] identity: 10 reps x 256 tokens, chain = full-logits path in every rep
+[cb01  198.1s] C-B01 METRIC chain/off sampled T=1 qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: median 1.0218 (min 1.0158, max 1.0281), 9 of 9 pairs above 1; decode off 27.1, chain 27.7 tok/s (medians)
+--- PASS: TestCB01ChainAB (198.15s)

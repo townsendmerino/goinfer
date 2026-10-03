@@ -1,0 +1,19 @@
+rev:      e8c1e13a
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-e8c1e13a.test (sha256 76861c1270cff4b7)
+started:  2026-10-02 18:25:04 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     2.88 2.63 2.51
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+--- PASS: TestGemmTile_bitIdentical (1.02s)
+[a-p01-gemm    3.3s] RESULT gate/up (N 17920, K 1536) M=32: shipped 1.313 ms, m32n64 0.813 ms: 1.615x (pairs 1.6 1.6 1.6 1.6 1.6 1.6 1.6)
+--- PASS: TestAuditAP01_gemmSmallM (14.83s)
+[a-p01   24.8s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: pass wall shipped / bm32 at startPos 64, C=32 = 1.487x (pairs 1.5 1.5 1.5 1.5 1.5 1.5 1.5)
+[a-p01   24.8s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: pass wall shipped / bn32 at startPos 64, C=32 = 1.152x (pairs 1.2 1.2 1.2 1.2 1.1 1.2 1.2)
+[a-p01   24.8s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: pass wall shipped / both at startPos 64, C=32 = 1.804x (pairs 1.8 1.8 1.8 1.8 1.8 1.8 1.8)
+--- PASS: TestAuditAP01_passCost (27.37s)
+[a-p01-gemm    8.0s] RESULT gate/up (N 37888, K 3584) M=32: shipped 6.014 ms, m32n64 3.720 ms: 1.617x (pairs 1.6 1.6 1.6 1.6 1.6 1.6 1.6)
+--- PASS: TestAuditAP01_gemmSmallM (14.66s)
+[a-p01   93.3s] RESULT qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: pass wall shipped / bm32 at startPos 64, C=32 = 1.552x (pairs 1.6 1.6 1.6 1.6 1.5 1.6 1.5)
+[a-p01   93.3s] RESULT qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: pass wall shipped / bn32 at startPos 64, C=32 = 1.000x (pairs 1.0 1.0 1.0 1.0 1.0 1.0 1.0)
+[a-p01   93.3s] RESULT qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: pass wall shipped / both at startPos 64, C=32 = 1.553x (pairs 1.5 1.6 1.5 1.6 1.6 1.5 1.6)
+--- PASS: TestAuditAP01_passCost (93.75s)

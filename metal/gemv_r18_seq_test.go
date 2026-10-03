@@ -163,34 +163,6 @@ func TestR18InSequence(t *testing.T) {
 	prod := arm{name: "production", qkv: r.pSABiasRows, o: r.pSAResidRows, gu: r.pSARows, down: r.pGemvResidStaged, rows: r.gemvRows}
 	shippedPipes := [4]Pipeline{r.pSABias, r.pSAResid, r.pSA, r.pGemvResid}
 	arms := []arm{{name: "shipped"}, prod}
-	// B-P04: where production took the lane-balanced SA rows kernels (r.saK512), "pre-bp04" is the same rows per
-	// simdgroup on the kernels they replaced, so production/arm below is the balanced kernels' in-sequence work over the
-	// previous production's (docs/tasks/task-metal-audit-2026-10.md, Phase 3 item 4).
-	if r.saK512 {
-		var pre arm
-		func() {
-			runtime.LockOSThread()
-			defer runtime.UnlockOSThread()
-			lib, err := r.d.CompileLibrary(allKernels, MSL3_1)
-			if err != nil {
-				t.Fatalf("compile: %v", err)
-			}
-			get := func(base string, R int) Pipeline {
-				if R == 0 {
-					return Pipeline{}
-				}
-				p, err := r.d.NewComputePipeline(lib, fmt.Sprintf("%s%d", base, R))
-				if err != nil {
-					t.Fatalf("pipeline %s%d: %v", base, R, err)
-				}
-				return p
-			}
-			pre = arm{name: "pre-bp04", qkv: get("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv),
-				o: get("gemv_w4a8_sa_resid_rows", r.gemvRows.o), gu: get("gemv_w4a8_sa_rows", r.gemvRows.gu),
-				down: r.pGemvResidStaged, rows: r.gemvRows}
-		}()
-		arms = append(arms, pre)
-	}
 	for _, c := range candSpecs {
 		d := func(i int) int { return int(c[i] - '0') }
 		a := arm{name: c, qkv: pipes["r18_sa_bias_"+c[0:1]+c[1:2]], o: pipes["r18_sa_resid_"+c[0:1]+c[2:3]],
@@ -390,15 +362,6 @@ func TestR18InSequence(t *testing.T) {
 				sort.Float64s(pr)
 				hb("  %-8s METRIC production/arm = %.3fx (per-rep sorted %v); full token %+.3f ms vs production", a.name,
 					pr[len(pr)/2], fmtRatios(pr), median(rs[ai].full)-median(rs[1].full))
-				if a.name == "pre-bp04" {
-					inv := make([]float64, reps)
-					for i := range inv {
-						inv[i] = rs[ai].work[i] / rs[1].work[i]
-					}
-					sort.Float64s(inv)
-					hb("  B-P04 METRIC pre-bp04/production = %.3fx (per-rep sorted %v): the lane-balanced kernels' in-sequence work win",
-						inv[len(inv)/2], fmtRatios(inv))
-				}
 			}
 		}
 	}

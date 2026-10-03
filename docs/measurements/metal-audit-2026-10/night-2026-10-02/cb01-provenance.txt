@@ -1,0 +1,13 @@
+rev:      d566889b
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-tagged-d566889b.test (sha256 18e8399639af3859)
+started:  2026-10-02 19:04:59 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     1.56 1.69 1.91
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+== 1.5b — 19:04:59
+== 1.5b-t1 — 19:06:06
+== 0.5b — 19:07:12
+== 0.5b-t1 — 19:07:42
+== 7b — 19:08:12
+== 7b-t1 — 19:11:32
+finished: 2026-10-02 19:14:50 PDT

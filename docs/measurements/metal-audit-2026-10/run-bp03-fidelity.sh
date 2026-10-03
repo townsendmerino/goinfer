@@ -26,9 +26,16 @@ mkdir -p "$LOG"
 for f in "$G15" "$G7" "$HOME/goinfer-logs/prefill-ref-b/S-K1024-p9.bin" "$HOME/goinfer-logs/prefill-ref-b/D7-K1024-p9.bin"; do
   [ -f "$f" ] || { echo "missing $f"; exit 1; }
 done
-cd "$BASE"
+# The gates read their prose seeds relative to the package directory (../testdata/...), so the binary runs from a
+# checkout's metal/. The first night's run (2026-10-02) ran from $BASE and every arm failed on the missing seed, which
+# the old `rc` echo hid; the job now exits non-zero when any arm does.
+RUNDIR=$HOME/tmcode/goinfer-metal-audit/metal
+[ -f "$RUNDIR/../testdata/prefill-gate-prose-b/task-attention-decode-cost.md" ] || { echo "missing the prose seeds under $RUNDIR/../testdata"; exit 1; }
+cd "$RUNDIR"
+FAILED=0
 {
   echo "rev:      $REV"
+  echo "testdata: $RUNDIR/../testdata at $(git -C "$RUNDIR" rev-parse --short=8 HEAD)"
   echo "binary:   $BIN (sha256 $(shasum -a 256 "$BIN" | cut -c1-16))"
   echo "started:  $(date '+%F %T %Z')"
   echo "machine:  $(sysctl -n machdep.cpu.brand_string), $(( $(sysctl -n hw.memsize) / 1073741824 )) GB, macOS $(sw_vers -productVersion)"
@@ -39,7 +46,9 @@ run() { # <log name> <test regexp> ENV=VALUE...
   shift 2
   echo "== $name — $(date '+%T')" | tee -a "$LOG/provenance.txt"
   env GOINFER_PREFILL_GATE_PROMPTS=b "$@" "$BIN" -test.v -test.count=1 -test.timeout 60m -test.run "$re" > "$LOG/$name.log" 2>&1
-  echo "$name rc=$?" | tee -a "$LOG/provenance.txt"
+  local rc=$?
+  echo "$name rc=$rc" | tee -a "$LOG/provenance.txt"
+  [ $rc -eq 0 ] || FAILED=1
 }
 
 P1="GOINFER_METAL_R17=1 GOINFER_METAL_R17_ACC_ARMS=bp03 GOINFER_METAL_R17_PROMPTS=10 GOINFER_METAL_R17_DEPTHS=1024,1280,1535"
@@ -55,3 +64,4 @@ run p2-7b '^TestR17_decodeFidelityGate$' $P2 GOINFER_METAL_R17_CAND=attention_fa
   for f in p2-1.5b p2-1.5b-null p2-7b; do echo "-- $f"; grep -E 'SUSPECTED|verdict|KL ratio|critA|critB|ceiling' "$LOG/$f.log" | tail -8; done
 } | tee "$LOG/results.txt"
 echo "finished: $(date '+%F %T %Z')" | tee -a "$LOG/provenance.txt"
+[ $FAILED -eq 0 ] || { echo "an arm failed: see $LOG"; exit 1; }

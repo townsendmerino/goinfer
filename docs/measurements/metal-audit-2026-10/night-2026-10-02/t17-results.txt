@@ -1,0 +1,14 @@
+[t1.7   98.0s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf step from 2048 keys: +0.208 ms, 2.53x the median 128-key step (+0.082 ms)
+[t1.7] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf METRIC jump at 2048 / median step 2.526
+[t1.7   98.0s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf step from 4096 keys: +0.206 ms, 2.50x the median 128-key step (+0.082 ms)
+[t1.7] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf METRIC jump at 4096 / median step 2.498
+[t1.7   98.0s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: attention per key min 0.553 us at 5888 keys, max 0.944 us at 2432 keys, max/min 1.707 -> B-P08 stands (max/min per-key cost >= 1.15)
+[t1.7] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf METRIC max/min 1.7068
+--- PASS: TestAuditT17_attnStaircase (103.18s)
+[t1.7  314.1s] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw step from 2048 keys: +0.779 ms, 4.81x the median 128-key step (+0.162 ms)
+[t1.7] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw METRIC jump at 2048 / median step 4.813
+[t1.7  314.1s] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw step from 4096 keys: +0.737 ms, 4.55x the median 128-key step (+0.162 ms)
+[t1.7] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw METRIC jump at 4096 / median step 4.552
+[t1.7  314.1s] RESULT qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: attention per key min 1.627 us at 6144 keys, max 2.732 us at 2432 keys, max/min 1.679 -> B-P08 stands (max/min per-key cost >= 1.15)
+[t1.7] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw METRIC max/min 1.6787
+--- PASS: TestAuditT17_attnStaircase (315.16s)

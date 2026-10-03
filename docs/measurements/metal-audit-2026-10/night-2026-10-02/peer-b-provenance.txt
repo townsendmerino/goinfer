@@ -1,0 +1,2 @@
+started: 2026-10-02 20:32:05 PDT; goinfer serve /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/serve-metal-main-71812d57 (sha256 93f0b3b91d402536); ollama Warning: client version is 0.32.5; mlx-lm 0.31.3
+finished: 2026-10-02 20:58:16 PDT, bench_peer exit 0

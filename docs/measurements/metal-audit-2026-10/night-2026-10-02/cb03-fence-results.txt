@@ -1,0 +1,8 @@
+--- PASS: TestFenceProbe_compileMSL32 (0.14s)
+    metal_fence_probe_test.go:532: fence saving vs A: p50 88.5 µs (A 190.3 − B 101.8); B0 vs A -87.7 µs (diagnostic); event C vs A: p50 -25.1 µs; earlier event probe recorded ~260 µs/boundary in a real forward
+    metal_fence_probe_test.go:542: DECISION: REPORT — p50 saving 88.5 µs ≥ 25 µs; goinfer decides whether to build it into paged MoE
+--- PASS: TestFenceProbe_wakeLatency (4.10s)
+PASS
+fence saving vs A: p50 88.5 µs (A 190.3 − B 101.8); B0 vs A -87.7 µs (diagnostic); event C vs A: p50 -25.1 µs; earlier event probe recorded ~260 µs/boundary in a real forward
+DECISION: REPORT — p50 saving 88.5 µs ≥ 25 µs; goinfer decides whether to build it into paged MoE
+--- PASS: TestFenceProbe_wakeLatency (4.10s)

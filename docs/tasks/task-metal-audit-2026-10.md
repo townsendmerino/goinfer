@@ -279,7 +279,7 @@ today, so it is graded under the owner's 2026-09-25 bar for reordering-only deco
 | Controls | The `exact-null` candidate on the same cell (its verdict reported; a P2 fail of it is a false fail of the amended form, flagged). The 7B's P2 against its D7-K1024 references, reported, not graded: they are int8-weight CPU runs, so their level is not the S cells'. |
 | Rule | **P1 passes on both models ∧ P2 PASSES (1.5B): the floor moves to 1024**, by day, with the snapshot golden that straddles it re-baked in the same commit (G-04) and the floor comments updated. **P2 PARKED**: to the owner. **Otherwise**: the floor stays at 1536, and B-P03 is recorded as failing fidelity at 1024. |
 
-### A-P01: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+### A-P01: SHIPPED, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run)
 
 Built and bit-identical on the branch: `gemm_w4f16_tile<TM, TN>` (prefill.go), R16's GEMM with the tile as template
 parameters, and `gemmTile`, which picks 32 tokens at ≤ 32 rows and 32 features at N ≤ 2048 and ≤ 64 rows, else
@@ -300,7 +300,7 @@ read 1.43× on the C = 32 pass and 1.69× on the gate/up GEMM at M = 32; one rep
 | Rule | **The default (both rules) ships if it reads ≥ 1.15× and the 32-token rule survives its kill line.** Otherwise the best single rule still standing ships if it reads ≥ 1.15× (the selector is narrowed to it). Otherwise **killed**: the selector returns the 64 × 64 kernel and the template goes. |
 | Reported | The 7B, startPos 2048, C = 16, 48 and 64, and each GEMM's ratio. A shipping policy that reads below 0.98× at any reported cell goes to the owner before the merge (a threshold to move, not a rule to keep). |
 
-### B-P04: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+### B-P04: KILLED and reverted, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run)
 
 Built and bit-identical on the branch (`22819cc8`): the SA rows kernels' lane-balanced twins (`sa_rows_acc_k512`),
 taken where K % 512 == 0 (qkv, o and gate|up on the 1.5B and 7B; the 0.5B keeps the shipped kernels). Kernel gate 4608
@@ -316,7 +316,7 @@ result, but it says the audit's +3–7% projection may not hold.
 | Rule | **≥ 1.02: ships** (stays the default on the branch). **Below 1.02: killed** (the audit's kill line, the owner's "park only a couple of percent" bar): the production selection and the twins are reverted, and the record keeps the numbers. |
 | Reported | The 7B and depth 2048. If it ships on the 1.5B but the 7B reads below 1.00 at either depth, that goes to the owner (the selection could be made per model), before the merge. |
 
-### C-B01: built, pending its grade (pre-registered 2026-10-02, before any graded run; amended the same day, before any graded run)
+### C-B01: SHIPPED, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run; amended the same day, before any graded run)
 
 Built and bit-identical on the branch: the greedy chain (`metal/greedy_chain.go`, `61f21226`), widened to untied heads
 in the commit after it. Each chained command buffer starts with `embed_gather_i8`, which writes the previous buffer's
@@ -358,7 +358,7 @@ Identity, by day, tied and untied fixtures both:
 | Rule | **≥ 1.02: ships**, and the chain stays the default on the branch. **Below 1.02: killed**, by the owner's "park only a couple of percent" bar, since the chain adds a goroutine path to the decode loop and a resident table: the decoder's `useChain` and the resident's chain are reverted, and the record keeps the numbers. |
 | Reported | The 0.5B and the 7B, each with its pairs-above-1 count. T1.3's gap predicts a larger share on the 0.5B (0.58 ms of a ~5.7 ms token, against 0.66 of ~13.4). If the 1.5B is killed but the 0.5B reads ≥ 1.02, that goes to the owner before the revert. A 7B below 1.00 also goes to the owner, since the selection could be made per model. |
 
-### C-P02: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+### C-P02: SHIPPED, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run)
 
 Built and bit-identical on the branch: the sampled chain, C-B01's chain for temperature-only sampling. The decode
 loop's device draw (`ForwardSample`) ran one synchronous command buffer per token, outside the encode-ahead executor
@@ -401,7 +401,7 @@ shows and an argmax does not. `TestCB01ChainAB` now discards one cold generation
 | Rule | **≥ 1.02: ships. Below 1.02: killed**, and the sampled chain alone is reverted (`ResidentSampleChain` and its branch). C-B01's grade decides the greedy chain separately. |
 | Reported | The 0.5B and the 7B, as for C-B01. The audit's band for the missing encode-ahead alone was up to 3.6–4.2% on the 0.5B. The chain also removes the host round trip, which C-B01's T1.3 measured. |
 
-### E-P06: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+### E-P06: built, pending its grade (pre-registered 2026-10-02, before any graded run; the first night's run failed its idle gate, re-queued)
 
 Built and lossless on the branch. `--spec ngram`'s depth controller prices a step-kernel verify by a cost curve, and
 every Metal model reported one constant, `stepVerifyCost`: the 7B at depth 2048. Now a model loaded for speculation
@@ -438,7 +438,7 @@ the 7B at 2048, so part of it was depth, which this does not take. The 0.5B's cu
 | Rule | **≥ 1.02 on chat, with copy on the 1.5B ≥ 0.98: ships.** Otherwise killed: `SpecNgram`'s calibration and the measured curve are reverted, and the record keeps the numbers. |
 | Reported | The 0.5B (the largest curve change) and the 7B (whose curve should sit near the constant it was measured from: a check on the method), each against plain as well. |
 
-### E-P03: built, pending its grade (pre-registered 2026-10-02, before any graded run)
+### E-P03: KILLED and reverted, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run)
 
 Built and bit-identical on the branch. The MC3 batched step ran its four fragment projections (qkv, o, gate|up, down)
 at FB = 2 on every model, where S0 recorded FB = 4 best for the 7B's gate|up and down.
@@ -470,17 +470,65 @@ gate runs at night before it ships.
    floor; the above-floor half is held** (log, 2026-10-02).
 2. **Decode attention, one campaign on one harness:** B-P03 (T1.2's candidate floor is 1024; re-bakes the snapshot golden that
    straddles the floor), B-P02, then B-P01. All gated.
-3. **Small-M prefill:** A-P01 (bit-identical), then A-P02 (gated). Then Metal int8 slice 2 on the same tile selector.
-4. **Decode GEMV residue:** B-P04 (bit-identical; T1.4 confirmed its idle tail), B-P06, and B-P05 only after O4, with the MC3 down kernel moved in
+3. **Small-M prefill:** A-P01 (bit-identical; **shipped** 2026-10-03, 1.804× on the 1.5B's C = 32 pass), then A-P02 (gated). Then Metal int8 slice 2 on the same tile selector.
+4. **Decode GEMV residue:** B-P04 (**killed** 2026-10-03: 0.955×, the balanced kernels do more work than the idle tail costs), B-P06, and B-P05 only after O4, with the MC3 down kernel moved in
    the same change.
-5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. T1.3: a 0.58–0.66 ms GPU-idle gap
+5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02, D-P04, D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
-7. **The batched step:** E-P03, E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
+7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 until T1.7.
+
+### The night of 2026-10-02: results (graded 2026-10-03)
+
+Raw results, provenance and the peer JSON: `docs/measurements/metal-audit-2026-10/night-2026-10-02/`. Every graded line
+below is read against its pre-registration above, unchanged.
+
+| Item | Graded reading | Verdict |
+|---|---|---|
+| **C-B01** greedy chain | 1.5B chain/off **1.085×** (1.032–1.151), 9 of 9 pairs above 1; identity held in every rep. Reported: 0.5B 1.063× (9/9), 7B 1.010× (9/9) | **ships** (≥ 1.02) |
+| **C-P02** sampled chain, T = 1 | 1.5B **1.066×** (1.060–1.078), 9/9; every token device-drawn on both arms. Reported: 0.5B 1.160×, 7B 1.022× | **ships** |
+| **A-P01** small-M prefill tiles | 1.5B pass wall shipped ÷ both rules at startPos 64, C = 32 **1.804×** (pairs 1.8 × 7); bm32 alone 1.487×, bn32 alone 1.152×; `TestGemmTile_bitIdentical` passed. Reported: 7B both 1.553× (bn32 1.000×) | **ships** (the default, both rules) |
+| **B-P04** lane-balanced SA rows | 1.5B depth 128 pre-bp04 ÷ production **0.955×** (0.903–0.962): the balanced kernels do more in-sequence work. 7B 0.911–0.917× | **killed**, reverted |
+| **E-P03** FB = 4 fragments | The 7B's calibration chose FB = 2 everywhere (gate\|up 1.158 against 1.165 ms, down 0.594 against 0.584: under the 3% bar), so the arms were one build; readings 0.999–1.001 on both models | **killed** on the record of what it picked, reverted |
+| **T1.7** (B-P08) | Per-key max/min 1.707 (1.5B), 1.679 (7B). Boundary step ÷ median step: 1.5B 2.53 at 2048 and 2.50 at 4096; 7B 4.81 and 4.55 | 1.5B **parked** (2–3×); 7B: **B-P08 stands** |
+| **C-B03** fence (aikit probe) | p50 saving 88.5 µs per boundary (190.3 against 101.8) | **REPORT**: goinfer decides whether paged MoE takes it |
+
+**T1.11 and T1.14** (records, not gates). One same-session `bench_peer.py` sweep on Metal: main as shipped (`71812d57`),
+Ollama 0.32.5, mlx-lm 0.31.3, greedy, 3 runs per cell, the instant idle gate, no thermal warning. Decode tok/s and
+goinfer's ratios:
+
+| Cell | goinfer | Ollama | mlx-lm | ÷ Ollama | ÷ mlx-lm |
+|---|---:|---:|---:|---:|---:|
+| 0.5B d128 | 166.6 | 145.8 | — | 1.143 | — |
+| 0.5B d2048 | 110.0 | 136.8 | — | **0.804** | — |
+| 0.5B d3900 | 72.6 | 127.9 | — | **0.568** | — |
+| 1.5B d128 | 90.5 | 85.1 | 108.6 | 1.063 | **0.833** |
+| 1.5B d2048 | 82.2 | 73.7 † | 97.3 | 1.115 † | 0.845 |
+| 1.5B d3900 | 77.6 | 75.6 | 86.8 | 1.026 | 0.894 |
+| 7B d128 | 30.3 | 25.0 | 36.6 | 1.212 | **0.828** |
+| 7B d2048 | 26.4 | 24.1 | 32.0 | 1.095 | 0.825 |
+| 7B d3900 | 25.0 | 23.3 | 33.9 | 1.073 | 0.737 |
+
+- † Ollama's 1.5B at 2048 spread 15.3% across its 3 runs, so that cell's ratio is not quoted. Every other cell spread
+  4.5% or less.
+- **T1.11 (B-D01):** the 0.5B trails Ollama at depth (0.80× and 0.57×; it does not reach the block attention kernel,
+  B-P01). The benchmarks row already scopes "AHEAD" to the six 1.5B and 7B cells (T0.5), and now carries these cells.
+- **T1.14:** at depth 128, goinfer ÷ mlx-lm is **0.833× on the 1.5B and 0.828× on the 7B**, same session. These replace
+  the cross-session 0.82× and 0.75×: the 1.5B's gap was right, and the 7B's was overstated by 8 points. mlx-lm runs its own
+  4-bit conversion, not q4_k_m, and every mlx ratio carries that caveat.
+
+**Not graded, re-queued:**
+- **E-P06:** its served harness's own idle gate waits for load ≤ 1.0, which this Mac never reached with VS Code open
+  (1.1–3.6 over 30 minutes). It is re-queued on `bench_peer`'s instant gate (busy ≤ 10%), the darwin default since TE1.
+- **B-P03:** all five arms failed in seconds. The script runs the test binary from `~/goinfer-bench`, and the gate's
+  prose seed is read from a path relative to `metal/` (`../testdata/...`). The script's `|| true` hid each arm's exit
+  code, so the runner saw success. The script now runs from the worktree's `metal/` and exits non-zero on any arm that fails.
+- **T1.9b:** the memory guard declined the 64-slot M26 build again (7.72 GB needed, 7.02 GB budget). It stays ungraded
+  until the owner picks a smaller cell.
 
 ## Owner decisions
 
@@ -748,3 +796,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   `flags.md`) and the CHANGELOG say so, including that batching 4 clients on Metal now takes `-kv-sessions 4`.
 - 2026-10-02: **E-P03 built, bit-identical, queued for its grade** (owner: "do e-p03 now"). FB = 4 is instantiated beside
   2, and `calibrateFB` picks per projection at build. On the 1.5B it keeps FB = 2, as S0 found. The 7B decides tonight.
+- 2026-10-03: **the night of 2026-10-02 graded** (results above). C-B01, C-P02 and A-P01 ship. B-P04 and E-P03 are killed
+  and their code reverted; the records keep the numbers. T1.7 stands on the 7B and is parked on the 1.5B. T1.11 and T1.14
+  are recorded. E-P06 and B-P03 are fixed and re-queued, and T1.9b waits for the owner.

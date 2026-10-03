@@ -227,8 +227,6 @@ type resident struct {
 	// kernels (then flush the executor, stopExec).
 	gemvRows                                             struct{ qkv, o, gu, down int }
 	pSABiasRows, pSAResidRows, pSARows, pGemvResidStaged Pipeline
-	// saK512 records that the qkv and gate|up rows kernels are B-P04's lane-balanced twins (K % 512 == 0); tests read it.
-	saK512 bool
 	// attnFABlkSplit > 0: pAttnFA is the R17 block kernel (attention_fa_blk_g<G>), which runs at this fixed split
 	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
 	// buildResident.
@@ -722,11 +720,6 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 // docs/tasks/task-metal-int8-2026-10.md pass, and the gate tests set it; it is not an option or an environment
 // variable. When the gates pass it becomes the default and this variable goes.
 var nativeInt8 = false
-
-// saK512Off, when true, builds the shipped SA rows kernels even where K % 512 == 0, instead of B-P04's lane-balanced
-// twins. FALSE in production: set only by tests, before a resident is built (the pipelines are chosen at build), to
-// compare the two in one process.
-var saK512Off = false
 
 // w8Eligible reports whether m runs on the native int8 path (r.w8): every dense body projection is int8-kind
 // (int8int8, or weight-only int8, which CUDA and WebGPU also run against int8 activations) with K a multiple of 4,
@@ -1444,27 +1437,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			}
 			return pipe(fmt.Sprintf("%s%d", base, R))
 		}
-		// B-P04: an SA rows kernel whose K is a multiple of 512 takes the lane-balanced twin (sa_rows_acc_k512,
-		// bit-identical; TestSARowsK512_bitIdentical). qkv and gate|up read K = H; o reads K = nH*hd per layer.
-		oK512 := true
-		for _, L := range r.layers {
-			if L.geom != nil && (nH*L.geom.hd)%512 != 0 {
-				oK512 = false
-			}
-		}
-		saRowsPipe := func(base string, R int, k512 bool) Pipeline {
-			if R == 0 {
-				return Pipeline{}
-			}
-			if k512 && !saK512Off {
-				return pipe(fmt.Sprintf("%s_k512_%d", base, R))
-			}
-			return pipe(fmt.Sprintf("%s%d", base, R))
-		}
-		r.pSABiasRows = saRowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv, H%512 == 0)
-		r.pSAResidRows = saRowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o, oK512)
-		r.pSARows = saRowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu, H%512 == 0)
-		r.saK512 = r.gemvRows.qkv > 0 && H%512 == 0 && !saK512Off
+		r.pSABiasRows = rowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv)
+		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
+		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
 		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
 	}
 	if r.w8 {

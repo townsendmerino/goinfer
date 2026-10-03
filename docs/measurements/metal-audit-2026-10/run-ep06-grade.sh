@@ -37,9 +37,25 @@ ts() { date '+%H:%M:%S'; }
   echo "load:     $(sysctl -n vm.loadavg)"
   echo "therm:    $(pmset -g therm 2>/dev/null | tr '\n' ' ')"
 } | tee "$V/provenance.txt"
-gate() { waited=0; while :; do l1=$(sysctl -n vm.loadavg | awk '{print $2}'); if awk -v l="$l1" 'BEGIN{exit !(l <= 1.0)}'; then return 0; fi
-  [ "$waited" -ge 1800 ] && { echo "$(ts) NOT IDLE after 1800s (load1=$l1) — stopping" | tee -a "$V/provenance.txt"; exit 1; }
-  [ $((waited % 60)) -eq 0 ] && echo "$(ts) waiting for idle: load1=$l1 (${waited}s)"; sleep 10; waited=$((waited + 10)); done; }
+# The idle gate is bench_peer.py's instant gate (the darwin default since TE1): the CPU under BENCH_MAX_BUSY percent busy
+# over 3 s and no foreign timed workload, waiting up to 30 min. The first night's run (2026-10-02) waited for a load
+# average <= 1.0, which this Mac never reaches with VS Code open, and failed after 30 min without a cell.
+gate() { python3 - "$R/scripts" <<'PY' || { echo "$(ts) NOT IDLE after 1800s — stopping" | tee -a "$V/provenance.txt"; exit 1; }
+import sys, time
+sys.path.insert(0, sys.argv[1])
+import bench_peer as b
+t0 = time.time()
+while True:
+    busy, active = b.instant_idle_sample()
+    if busy <= b.BUSY_CAP and not active:
+        sys.exit(0)
+    if time.time() - t0 > 1800:
+        sys.exit(1)
+    if int(time.time() - t0) % 60 < 4:
+        print(f"waiting for idle: busy {busy:.1f}% (cap {b.BUSY_CAP:.0f}%), foreign {active}", flush=True)
+    time.sleep(1)
+PY
+}
 bin() { case $1 in specold) echo "$OLD";; *) echo "$NEW";; esac; }
 args() { case $1 in plain) echo "";; *) echo "--serve-args=-spec=ngram";; esac; }
 copy() { gate; echo "$(ts) copy $2 ${3}_$4"

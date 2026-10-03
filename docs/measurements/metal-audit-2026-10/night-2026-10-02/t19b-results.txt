@@ -1,0 +1,6 @@
+=== END      2026-10-02 06:48:42 PDT  rc=0
+swap:     total = 2048.00M  used = 969.56M  free = 1078.44M  (encrypted)
+t1.9b-64slots rc=1; swap now total = 2048.00M  used = 969.56M  free = 1078.44M  (encrypted)
+t1.9b-64slots: the resident guard declined again (ungraded)
+[resident] BuildResident declined (ok=false err=resident path declined: the resident build needs 7.72 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 7.02 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal wires the pages it touches, so loading this would page to swap exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_
+=== END      2026-10-02 18:06:14 PDT  rc=0
