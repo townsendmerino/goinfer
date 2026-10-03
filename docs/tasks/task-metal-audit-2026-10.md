@@ -807,3 +807,8 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   are recorded. E-P06 and B-P03 are fixed and re-queued, and T1.9b waits for the owner.
 - 2026-10-03: **T1.9b graded on an owner-forced run** (guard bypassed, by day, under the kill-watch): swap +1.60 GB
   within a second of the build, killed before the first token. R11(c)'s "lower default" stands at 64 slots.
+- 2026-10-03: **the branch goes to main** (owner: "put what we can on main"). Main gets everything graded or test-only.
+  The one ungraded build, E-P06, ships switched off (`verifyCostCalibrate = false`, pinned by
+  `TestVerifyCost_offUntilGraded`), so `--spec ngram` keeps pricing the verify by `stepVerifyCost` until tonight's
+  grade, which runs pinned binaries and is unaffected. If it passes, the switch goes; if it is killed, the code goes.
+  The audit continues on main from here.

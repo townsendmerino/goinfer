@@ -391,7 +391,7 @@ func (r *resident) buildBatch() {
 	}
 	r.batch = b
 	r.calibrateRows()
-	if r.specNgram {
+	if r.specNgram && verifyCostCalibrate {
 		r.calibrateVerifyCost() // E-P06: this model's own verify cost curve (verify_cost.go)
 	}
 }

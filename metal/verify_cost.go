@@ -9,6 +9,11 @@ import (
 	"sort"
 )
 
+// verifyCostCalibrate turns E-P06's load-time measurement on. FALSE until its served grade passes
+// (docs/tasks/task-metal-audit-2026-10.md, "E-P06: built, pending its grade"): main carries the build with --spec
+// ngram still pricing the verify by stepVerifyCost, as before E-P06. Tests set it to exercise the measurement.
+var verifyCostCalibrate = false
+
 // verifyCostDepth is the depth calibrateVerifyCost measures the verify at: the dearest depth stepVerifyCost was taken
 // at, so a model's own curve stays as conservative in depth as the constant it replaces and differs only by model.
 const verifyCostDepth = 2048

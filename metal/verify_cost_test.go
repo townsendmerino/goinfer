@@ -43,6 +43,8 @@ func TestVerifyCost_measuredAtLoadLossless(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	verifyCostCalibrate = true
+	defer func() { verifyCostCalibrate = false }()
 	path := writeMC3Fixture(t, 4096)
 	prompt := make([]int, 48)
 	for i := range prompt {
@@ -140,4 +142,27 @@ func (d *oracleDrafter) Draft(ctx []int, k int) []int {
 		d.buf = append(d.buf, id)
 	}
 	return d.buf
+}
+
+// TestVerifyCost_offUntilGraded pins E-P06's production state while its grade is pending: a load with
+// Options.SpecNgram measures nothing and reports stepVerifyCost, exactly as before E-P06.
+func TestVerifyCost_offUntilGraded(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	if verifyCostCalibrate {
+		t.Fatal("verifyCostCalibrate is on in production before E-P06's grade passed")
+	}
+	m, err := decoder.Load(writeMC3Fixture(t, 4096), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, SpecNgram: true})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("no metal resident: %s", m.ResidentDecline())
+	}
+	if a.r.verifyCost != nil || !slices.Equal(a.VerifyCost(), stepVerifyCost) {
+		t.Fatalf("a SpecNgram load measured %v / reports %v; want the shipped stepVerifyCost while the grade is pending", a.r.verifyCost, a.VerifyCost())
+	}
 }
