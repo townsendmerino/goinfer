@@ -131,6 +131,11 @@ func (r *tensorReader) get(name string, shape ...int) []float32 {
 		r.err = fmt.Errorf("clef: tensor %q: %w", name, err)
 		return nil
 	}
+	// An F32 read is a zero-copy view into the file's mapping, and LoadHead closes the file when it returns; a bf16 or f16 read has already been widened into a
+	// new slice. Copy the view so the head owns its weights whatever the checkpoint's dtype (a head read from an F32 file used to fault on first use).
+	if t.DType == "F32" {
+		data = append([]float32(nil), data...)
+	}
 	r.used[name] = true
 	return data
 }

@@ -2,7 +2,7 @@
 
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
-> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12's encoder half is done (`internal/clef`, 150/150 identical, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its head half waits on the D10 hidden-state goldens; D13 and D14 are unstarted.
+> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12 is built (`internal/clef`: encoder 150/150 identical; head and the whole pipeline match the reference to 1.8e-7 on a tiny end-to-end fixture, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its gate of record on real hidden states waits on the D10 f32 night job; owner decisions made: request text is tokenized literally, and the `clef` route reports `confidence` as the reference does (the top probability); D13 and D14 are unstarted.
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with

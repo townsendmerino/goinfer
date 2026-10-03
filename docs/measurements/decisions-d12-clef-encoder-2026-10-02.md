@@ -51,8 +51,23 @@ The reference tokenizes each fragment with `tokenizer(text, add_special_tokens=F
 
 **Placement of the assets.** `TestHead_matchesReference` and `TestEncode_multiQuestionMatchesReference` read `$CLEF_HEAD_GOLDEN` (else `testdata/decisions/clef/head_golden`) and the weights from `$CLEF_HEAD` (else `~/models/clef-flash`); either missing fails under `GOINFER_HEAVY_TESTS=1` and otherwise skips, and **a skip is not a pass**: on a checkout without them these two tests have run nothing.
 
+## The whole pipeline, end to end (tiny fixture; `internal/clef/model.go`, `pipeline_test.go`)
+
+`clef.Model.Decide(request)` runs the encoder, one backbone pass (`decoder.PromptHiddenAll`) and the head, taking the lm_head rows for the option tokens from the loaded model through the new `decoder.OutputEmbeddingRow` (the separate lm_head when the family has one, the input embedding when it is tied; a quantized load returns the dequantized row of the quantized weight, so the arm's quantization is part of what is measured). `NewModel` refuses a backbone and a head whose widths disagree.
+
+**Gate: probabilities within 1e-4 absolute of the reference (bar written before the first run). Measured: worst difference 1.8e-7** over four requests (noul, choice, score, and three questions at once), against the official `joint_schema_model.py` chained as `ClefModel.forward` chains it, at f32, on the committed tiny qwen3_5 (hidden 64, untied lm_head, random final-norm weight) with a tiny head (width 32, 2 routing layers, 2 decoder layers, 4 heads, seeded random weights in every parameter, because the release's init leaves the scales at 0 and the norms at identity, which would let whole paths drop out unseen). `scripts/pin_clef_e2e_tiny.py` writes the fixture (247 KB of head weights, committed with a `.gitignore` exception) and asserts the probabilities are not near-uniform. The encoder's ids and spans are also compared exactly on the same requests. The stand-in tokenizer (4-byte chunks, one id each) gates the prompt TEXT; the real tokenizer is gated by `TestEncode_realTokenizer`. Unlike the head test on the real weights, this one runs on every checkout, CI included, and a missing fixture fails instead of skipping.
+
+**Able to fail.** Three end-to-end mistakes, each applied alone and each turning it red: taking the lm_head rows from the input embedding (the tied-head assumption), an off-by-one in the span offset, and pooling the global vector from the first position instead of the last. Sources restored byte for byte after each.
+
+**It found a real bug the isolated gates could not.** `LoadHead` closed the checkpoint's memory map after loading, and `TensorF32` returns a zero-copy view into that map for an F32 tensor. The real head is bf16 (always widened into a new slice), so the head test never saw it; the tiny head is F32 and the process faulted on first use, after first producing uniform output from the unmapped memory. `LoadHead` now copies F32 tensors so the head owns its weights whatever the checkpoint's dtype.
+
+## Owner decisions recorded here
+
+- **Request text is tokenized literally** (2026-10-02; above).
+- **The `clef` route reports `confidence` as the reference does: the top probability** (2026-10-03). This route only: `/v1/systemone` on the other routes keeps its margin over uniform, `(n*p - 1)/(n - 1)`, because TypeSafe's demo uses that form. The response says which one it is. For a `score` question the reference's `confidence` is also the top probability and its `score` is the expected level; for `choice` the argmax is taken over the REQUEST's criteria order, first maximum winning (`systemone_answer`, read in full in the D10 record). D13 wires this.
+
 ## Not done in this item
 
-- The head's gate of record on real hidden states (needs the `d10-clef-f32` night job, then extracting the lm_head rows and committing the goldens gzipped).
+- The head's gate of record on real hidden states (needs the `d10-clef-f32` night job, then extracting the lm_head rows and committing the goldens gzipped). The tiny pipeline fixture does not replace it: it proves the wiring, not the numerical regime of a trained 9B backbone.
 - Speed: the head runs the reference's structure with a row-parallel f32 GEMM and a scalar attention; D14 owns making it fast, and nothing here is a performance claim.
-- Wiring into `/v1/decisions` (D13).
+- Wiring into `/v1/systemone` and `/v1/decisions` (D13), including the response shaping above.
