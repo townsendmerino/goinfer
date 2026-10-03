@@ -153,6 +153,11 @@ any surface may still change.
   CUDA implements it as one more tail of its existing batched pass (no new kernel; every row takes the exact kernels). On the tiny Qwen3.5 fixtures the per-row cosine against the CPU is at least 0.99996 (dense)
   and the MoE mean 0.9996 with the last row at 0.99999. **One exploratory run of three records on the real Clef-flash at int4 (RTX 2070 SUPER) took 3.2 ms per token against 54 to 68 on the CPU. That path is not graded; on those records it agreed with the CPU within about 0.005 in P(true) when both stored the embedding table the same way, and `--embed-int4` (on by default with `-quant int4`) moved P(true) by up to 0.04 on either device.** Metal and WebGPU do not implement it yet and take the CPU path.
   `docs/measurements/decisions-d11-resident-hidden-2026-10-03.md`.
+- **Metal implements `decoder.ResidentResidualAll` too, per token** (`metalResident.ResidualAll`). It runs `HiddenLast`'s sequential trunk, one submit per position, and copies
+  the pre-norm residual from `r.x`, never the int8 output of Metal's fused final norm. On the tiny Qwen3.5 fixtures the per-row cosine against the CPU is at least 0.99996
+  (dense; MoE mean 0.9994 to 0.99996 with its last row 0.99994+), and skipping the host final norm fails the gate. On the real 0.8B (exploratory) it matches the existing
+  `HiddenLast` path's agreement with the CPU. The 9B Clef-flash does not fit resident on a 16 GB Mac, so no real Clef check ran on Metal. See
+  `docs/measurements/decisions-d11-resident-hidden-2026-10-03.md`.
 - **A decision request's questions share the prefill of what their prompts have in common (D8, CPU path).** On the hybrid Qwen3.5 family each question used to prefill its whole prompt
   again (D7 measured five questions costing five times one). `/v1/systemone` now sends a request's questions to the model in one call: the prefix the prompts share is prefilled once,
   into a cache that is then deep-copied (KV rows and the Gated DeltaNet state, which can be copied but not rewound) for each question's own suffix. Where the template puts the

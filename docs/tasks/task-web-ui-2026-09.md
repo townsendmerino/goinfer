@@ -24,7 +24,7 @@ The page is **a small embedded directory** — `//go:embed webui` (`internal/ser
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:753`), and it is a client of the same `/v1` routes any other client
+(`internal/serveapp/webui.go:761`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
 Two tabs (`internal/serveapp/webui/index.html:13`):
@@ -188,9 +188,9 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:125`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:760`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:761`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:534`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/serveapp/webui.go:547`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -758,7 +758,7 @@ checks that the list is laid out below its heading at full width (found by W15's
      via `demo:0.5b`, untouched by this work): live HuggingFace search-as-you-type over the same
      `#repo` box (`internal/serveapp/webui/index.html:98`), typing 4+ characters lists real matching
      GGUF repos to pick from, covering the whole hub rather than a handful of pinned names. Server:
-     `pull.Search` (`pull/pull.go:333`, GGUF-only for now via a `kind`→HF-`filter` table built to grow),
+     `pull.Search` (`pull/pull.go:335`, GGUF-only for now via a `kind`→HF-`filter` table built to grow),
      `POST /web/models/search`. Client: `internal/serveapp/webui/ui/app.js:1920` (`SEARCH_MIN_CHARS`),
      debounced, cancels a stale in-flight request via both `AbortController` and a sequence guard
      (two independent mechanisms — gated in `scripts/webui_app_gate.mjs` phase 42, including the
@@ -766,7 +766,7 @@ checks that the list is laid out below its heading at full width (found by W15's
      search is substring, not fuzzy — "quen" does not find "Qwen", only completes a correctly-typed
      prefix.
   2. **The quant/backend a model loads at is invisible and unchangeable from the page.** `-quant`
-     and `-backend` (`internal/serveapp/main.go:396`, `:502`) are server-startup flags with "no
+     and `-backend` (`internal/serveapp/main.go:397`, `:502`) are server-startup flags with "no
      per-request override" (W5's own decision, §2). That was the right call for *requests*; it is
      what made *this* incident invisible — the page had no way to show what quant was about to be
      used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
@@ -1125,8 +1125,8 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 **No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
-client. `handleWebUnload` (`internal/serveapp/webui.go:727`) is `sameOrigin(auth(...))` behind
-`-web` — W5's exact gate stack (`internal/serveapp/main.go:760`) — with `s.models[req.Name]` under
+client. `handleWebUnload` (`internal/serveapp/webui.go:735`) is `sameOrigin(auth(...))` behind
+`-web` — W5's exact gate stack (`internal/serveapp/main.go:761`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
 (`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both
@@ -1155,7 +1155,7 @@ than claiming to observe it: *"A request already in flight elsewhere will finish
 route to it until it is loaded again."* When *this* page's own reply is the one running on that
 model (`generating.model === name`), the wording says so specifically instead.
 
-**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:690`)
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:698`)
 checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
 unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
 never need that type's unexported fields — and, if something is resident, appends *"Unload

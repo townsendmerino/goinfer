@@ -610,8 +610,8 @@ names that are served.
   - **A state that does not fit is cut to its first tokens** (the reference's rule, default 16,384 tokens in all) and
     `goinfer.state_tokens_truncated` counts what was cut. A schema that alone does not fit is a 422.
   - **Precision:** it loads at `int8int8` unless `quant=` or `--quant` says otherwise. **No grading of the real Clef-flash weights
-    exists yet** (D13's fidelity run is queued behind the reference fixture), no speed is claimed (D14), and the backbone runs on the CPU except on a CUDA-resident model, where it runs on the
-    device (3.2 ms per token against about 54 to 68 on the CPU in one exploratory run of three records). **That path is ungraded.** On those records it tracked the CPU within about 0.005 in P(true) when both stored the embedding table the same way; `--embed-int4` (on by default with `-quant int4`, which stores the token-embedding/LM-head table at int4 instead of the int8 pin) moved P(true) by up to 0.04 on either device, so an int4 Clef answer depends on that flag.
+    exists yet** (D13's fidelity run is queued behind the reference fixture), no speed is claimed (D14), and the backbone runs on the CPU except on a CUDA- or Metal-resident model, where it runs on the
+    device. On CUDA that measured 3.2 ms per token against about 54 to 68 on the CPU, in one exploratory run of three records. Metal runs it per token, as `HiddenLast` does, and a 16 GB Mac cannot hold the 9B Clef-flash resident, so there it stays on the CPU. **That path is ungraded.** On those records it tracked the CPU within about 0.005 in P(true) when both stored the embedding table the same way; `--embed-int4` (on by default with `-quant int4`, which stores the token-embedding/LM-head table at int4 instead of the int8 pin) moved P(true) by up to 0.04 on either device, so an int4 Clef answer depends on that flag.
     pipeline against the official reference to 1.8e-7 on a tiny model (`measurements/decisions-d12-clef-encoder-2026-10-02.md`).
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates

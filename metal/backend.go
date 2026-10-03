@@ -912,6 +912,57 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	return out, nil
 }
 
+var _ decoder.ResidentResidualAll = (*metalResident)(nil)
+
+// ResidualAll (decoder.ResidentResidualAll) ingests a whole sequence starting at startPos and returns EVERY position's
+// residual stream after the last layer and BEFORE the final norm, each row a fresh f32 slice. The decoder applies the
+// final norm on the host in f32 (decoder/prompt_hidden_all.go residualAllResident), so the rows never pass through the
+// int8 the head path reads: Metal fuses the final norm into the trunk (encodeTrunkWith: layers, then encodeNorm into
+// r.aq/r.aSc), and r.aq/r.aSc is that int8 vector, which is exactly what this exists to avoid.
+//
+// Where the pre-norm residual lives: every layer writes its residual into r.x (encodeLayerWith passes r.x as the
+// residual buffer), and the final norm reads r.x through rmsnorm_quant / layernorm_quant, whose x is
+// `device const float*`. So once the trunk has run, r.x holds the last layer's output untouched by the norm, and
+// this copies it out per token.
+//
+// The same per-token sequential kernels HiddenLast uses: one forwardHiddenNoHead (one command-buffer submit) per
+// position, so it costs what HiddenLast costs (≈ K × 13-18 ms) plus an H-float copy per row. A batched version
+// (PrefillLast's dispatch graph collecting the residual block) is the speed lever and its own parity-gated job. Guards
+// mirror HiddenLast's exactly; the rows are returned only once every token has succeeded.
+func (a *metalResident) ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) ([][]float32, error) {
+	if len(embeddings) == 0 {
+		return nil, fmt.Errorf("metal: ResidualAll called with no embeddings")
+	}
+	// The trunk encoder has no paged branch (see HiddenLast): on a paged MoE it would read zero-value expert buffers
+	// and return finite garbage. Decline, and the decoder falls back to the CPU.
+	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
+		return nil, fmt.Errorf("metal: ResidualAll not implemented for paged MoE (no headless paged forward); use the CPU path")
+	}
+	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+		return nil, e
+	}
+	if startPos == 0 {
+		a.Reset() // fresh sequence: the same DeltaNet-state reset Forward(pos==0) does
+	}
+	out := make([][]float32, 0, len(embeddings))
+	for i, emb := range embeddings {
+		if len(emb) != a.hidden {
+			return nil, fmt.Errorf("metal: embedding[%d] len %d != hidden %d", i, len(emb), a.hidden)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if _, err := a.r.forwardHiddenNoHead(emb, startPos+i, false); err != nil {
+			return nil, err
+		}
+		if err := a.r.takeExecErr(); err != nil {
+			return nil, err // C-09: a command buffer aborted; never return a stale residual
+		}
+		out = append(out, append([]float32(nil), a.r.x.Floats()[:a.r.H]...))
+	}
+	return out, nil
+}
+
 // ForwardN runs a batch of embeddings at consecutive positions (prefill/verify).
 // It sequences all N token forward steps inside a SINGLE Metal command buffer
 // and single compute encoder (one commit, one wait), returning all N logits vectors.
