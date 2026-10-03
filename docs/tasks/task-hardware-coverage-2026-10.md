@@ -108,6 +108,34 @@ test-only package that CI's `test-rest` job runs.
 1. **Free CI runners we don't use yet.** A `windows-latest` job (build plus CPU tests). A Linux arm64 job on
    GitHub's arm64 runners, which are free for public repositories. Both run the CPU suite and the forward
    goldens. The Windows binaries go from never run to run on every push.
+
+   **Done in part 2026-10-03** (`root-windows` and `root-linux-arm64` in `ci.yml`; first run is ci run 37143040097, draft
+   PR #6):
+   - **linux/arm64: GREEN.** It ran on an ARM Neoverse-N2 with 4 CPUs and DotProd. All 30 packages pass, the decoder
+     suite with the forward goldens in 156 s. This is recorded in the census as `ci-pool` (`linux-arm64`, and a Linux
+     record for `cpu-arm64-dotprod`).
+   - **Windows: RED. Stopped here, as instructed:** nothing is skipped, and the job stays red. This is the first time
+     goinfer's suite has run on Windows. 22 packages pass and 8 fail:
+     - **The decoder test package does not build.** `decoder/a3_fanout_test.go` calls `syscall.Getrusage` /
+       `RUSAGE_SELF` with no build tag. So none of the decoder suite, the forward goldens included, has run on Windows
+       yet. Whatever is behind it is unknown until this is fixed.
+     - **CRLF checkouts.** The runner's git converts line endings: `testdata/gate_ledger.json` re-encodes 35810 →
+       35032 bytes (one byte per line), `scripts/refresh_parity_hashes.sh`'s `GOLDEN_RE` isn't found,
+       `docs/use-from-go.md` reads as having 0 Go blocks, and `pull/capability-matrix.json` "drifts" from the doc. This
+       hits cmd/gate, examples/structured and pull. A `.gitattributes` (`eol=lf`) or a checkout setting fixes the
+       class.
+     - **Error-text assertions written against unix wording.** Windows says "The system cannot find the file
+       specified": `internal/chatapp` TestPlanBatch and TestLoadImageInput.
+     - **Test isolation.** `os.UserCacheDir` ignores the tests' `HOME`/`XDG_CACHE_HOME` on Windows (it reads
+       `%LocalAppData%`), so `pull`'s checkpoint tests share one real cache dir and see each other's results ("a
+       transfer cut midway reported success"). Not touched: `pull/` is out of scope here.
+     - **A test premise.** prequant's TestSidecar_interruptedWriteDoesNotPoisonTheCache depends on mtime ordering
+       that Windows doesn't give it. `internal/serveapp` TestBanner_contextIsTheEnforcedWindow panics inside the test
+       (in `internal/serveapp/banner_test.go` itself, a slice of [:-1]), not in production code.
+     - **One documented product gap:** there is no host-RAM probe on Windows. `decoder/hostram_other.go` answers
+       "unknown", the fit guard proceeds (task-fit-to-hardware.md §8), and `goinfer-chat fit` reports no placement. The
+       `internal/fitcmd` tests assume a probe.
+     - `windows-arm64` is not covered: `windows-latest` is x86-64.
 2. **Intel SDE as a scheduled job** (weekly, like `race-weekly`, or on nobara). Run the CPU parity suite and
    tiny goldens under `sde64 -icx` (AVX-512 VNNI) and `-spr` (Sapphire Rapids). SDE is slow, so goldens only.
    Precedent: `0616cdc0`'s confirmation run.
