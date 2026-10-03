@@ -1472,7 +1472,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
-		case g == 6 || g == 7:
+		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		}
@@ -2689,6 +2689,12 @@ func attnFAHeadDimOK(hd, nH, nKV int) bool {
 	}
 	return hd == 64 && nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
 }
+
+// attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
+// 8; B-P02). FALSE until its grade passes (docs/tasks/task-metal-audit-2026-10.md, "B-P02"): those models keep the
+// legacy attention_fa, so their decode is unchanged. The kernel agrees with g7 head for head; the grade is its speed
+// on a G = 2 model. Tests and the grade's binary set it before a resident is built.
+var attnFABlkAnyG = false
 
 // attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). FALSE until its
 // pre-registered grade passes (docs/tasks/task-metal-audit-2026-10.md, "B-P01"): the twin is not bit-identical to the

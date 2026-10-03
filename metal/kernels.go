@@ -1399,6 +1399,14 @@ typedef decltype(attention_fa_blk<6>) attention_fa_blk_t;
 template [[host_name("attention_fa_blk_g6")]] kernel attention_fa_blk_t attention_fa_blk<6>;
 template [[host_name("attention_fa_blk_g7")]] kernel attention_fa_blk_t attention_fa_blk<7>;
 // ---- attention_fa_blk end ----
+// B-P02: the same kernel at the other dense group sizes. Per head the arithmetic is G-independent (every per-head
+// statement touches head g's state alone; G is a loop bound), so each agrees with g7 head for head, bit for bit
+// (TestAttnFABlk_anyGMatchesG7); their speed is graded per model before attnFABlkAnyG turns them on.
+template [[host_name("attention_fa_blk_g2")]] kernel attention_fa_blk_t attention_fa_blk<2>;
+template [[host_name("attention_fa_blk_g3")]] kernel attention_fa_blk_t attention_fa_blk<3>;
+template [[host_name("attention_fa_blk_g4")]] kernel attention_fa_blk_t attention_fa_blk<4>;
+template [[host_name("attention_fa_blk_g5")]] kernel attention_fa_blk_t attention_fa_blk<5>;
+template [[host_name("attention_fa_blk_g8")]] kernel attention_fa_blk_t attention_fa_blk<8>;
 
 // attention_fa_blk64 (B-P01, docs/audit-metal-2026-09-30.md): attention_fa_blk at head dim 64, the 0.5B's (Qwen2.5-0.5B,
 // G = 7). The block kernel's shape exactly, with 2 dims per lane where hd = 128 has 4: half2 K/V loads (128 B per key

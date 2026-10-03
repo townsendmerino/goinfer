@@ -242,7 +242,7 @@ Full entries are in Part II. "Bits" is the bit-identity class of the proposed ch
    floor. The batched step's per-row attention floor (E-P05) reads the same constant.
 6. **`attnFACoreCount = 14` is live more often than the reports say.** C-D01(3) and E-D01 call it stale against the
    16-core target and, in E's words, dead on the shipped path. That holds for G=6,7 (the fixed split of 16 overrides it,
-   `metal/model.go:2776-2779`). `attnFASplitFor` still sizes the split from it (`want = ceil(2*14/nKV)`) for every other
+   `metal/model.go:2782-2785`). `attnFASplitFor` still sizes the split from it (`want = ceil(2*14/nKV)`) for every other
    group size, which is exactly the population B-P02 is about; settle the constant in B-P02's probe.
 7. **C-C01 and F-C02 compound.** The auto-pin that C-C01 describes (a guard that trims on a tight machine hands Metal a
    context of 12–30k positions) is what makes F-C02's `sc[4096]` overrun reachable on an unpinned load. Fix the planner
@@ -263,7 +263,7 @@ Full entries are in Part II. "Bits" is the bit-identity class of the proposed ch
     `threadgroup float sc[4096]` at `metal/prefill.go:361`, `sc[s]` written with the absolute key index at `:286` and `:298`; the
     dispatch falls to that kernel when `!useFusedAttn` (hd above 128, hd not a multiple of 8, or the env knob off,
     `:1041-1085`), and `ctxCap` reaches 32768 for an explicit `-ctx` or a guard-pinned load (`metal/model.go:21-61`). *B-P01:*
-    `canUseAttnFA` returns false unless `g.hd == 128` (`metal/model.go:2769`). *C-P01:* `gScaleCache`/`dScaleCache` are built
+    `canUseAttnFA` returns false unless `g.hd == 128` (`metal/model.go:2775`). *C-P01:* `gScaleCache`/`dScaleCache` are built
     from `int4DirectBytes` and kept for the model's life (`metal/gemma4_moe.go`'s paged branch at `844700f8`; removed 2026-10-02). *E-P01:* `PrefillLast` declines when
     `startPos+len < floor` (`metal/backend.go:770-779`) and `PrefillLastNArgmax` already steps same-slot positions in 8-row
     pieces (`metal/batch.go:775-806`). None of this was run on a device.
@@ -715,18 +715,18 @@ relative to the goinfer repository root unless they start with `mlx/` (MLX, unde
 
 | ID | Sev | Claim | Evidence | MLX analog | Band (projection unless stated) | Probe |
 |---|---|---|---|---|---|---|
-| B-P01 | Major | hd=64 decode attention has no fa/blk path; on the 0.5B it is 61% of the 3900-key token and still on the per-query-head kernel | `metal/model.go:2768`; `metal/kernels.go:1176,1297`; decomp `:35`; R17 doc `:85`; `docs/benchmarks.md:47` | `sdpa_vector` is templated on D: `mlx/kernels/sdpa_vector.h:15,45`, instantiated 64/96/128/192/256 at `mlx/kernels/scaled_dot_product_attention.metal:59-66` | 0.5B token 1.3-1.85x at 2048-3900 keys; 0 at 128 | hd-templated blk (2 dims per lane), in-sequence attention at 2048/3900 on the 0.5B |
+| B-P01 | Major | hd=64 decode attention has no fa/blk path; on the 0.5B it is 61% of the 3900-key token and still on the per-query-head kernel | `metal/model.go:2774`; `metal/kernels.go:1176,1297`; decomp `:35`; R17 doc `:85`; `docs/benchmarks.md:47` | `sdpa_vector` is templated on D: `mlx/kernels/sdpa_vector.h:15,45`, instantiated 64/96/128/192/256 at `mlx/kernels/scaled_dot_product_attention.metal:59-66` | 0.5B token 1.3-1.85x at 2048-3900 keys; 0 at 128 | hd-templated blk (2 dims per lane), in-sequence attention at 2048/3900 on the 0.5B |
 | B-P02 | Major | `attention_fa_blk` is instantiated for G=6,7 only; every other hd=128 GQA shape (for example 32 heads over 8 KV heads, G=4) stays on `attention_fa`, which R17 measured 2.3-3.5x slower | `metal/model.go:1466-1478`; `metal/kernels.go:1397-1400`; R17 doc `:463-466,74-76` | `sdpa_vector_2pass_1` takes G at runtime (`mlx/kernels/sdpa_vector.h:220`, `group_dims(32, gqa_factor, ...)`, `mlx/scaled_dot_product_attention.cpp:817`) | 1.15-1.4x end to end at 2048+ keys on ungraded G (the R17 end-to-end figure at the graded shapes, `benchmarks.md:47`) | instantiate g4/g5/g8, per-head equality test vs g7, in-sequence attention at 2048/3900 |
-| B-P03 | Major | REVISIT: `attnFADepthFloor`=1536 was measured on `attention_fa` (R2), not on the block kernel that now runs above it; legacy attention at 1024-1535 keys costs about 3.3-5.0 ms against about 1.8 ms for blk | `metal/model.go:2663-2671,2728,2763`; R17 doc `:465`; `red-october.md:2195-2196`; `metal-depth-r2-2026-09-18.md:55-58`; decomp `:35` | MLX has no floor for its vector kernel; the 2-pass switch is at N>=1024 on arch 's'/'d' (`mlx/scaled_dot_product_attention.cpp:1565`) | 5-20% of the 1.5B token at 1024-1535 keys; 0 elsewhere | floor override hook next to `attnFASplitOverride`; interleaved in-sequence sweep 256..1535 |
+| B-P03 | Major | REVISIT: `attnFADepthFloor`=1536 was measured on `attention_fa` (R2), not on the block kernel that now runs above it; legacy attention at 1024-1535 keys costs about 3.3-5.0 ms against about 1.8 ms for blk | `metal/model.go:2663-2671,2734,2769`; R17 doc `:465`; `red-october.md:2195-2196`; `metal-depth-r2-2026-09-18.md:55-58`; decomp `:35` | MLX has no floor for its vector kernel; the 2-pass switch is at N>=1024 on arch 's'/'d' (`mlx/scaled_dot_product_attention.cpp:1565`) | 5-20% of the 1.5B token at 1024-1535 keys; 0 elsewhere | floor override hook next to `attnFASplitOverride`; interleaved in-sequence sweep 256..1535 |
 | B-P04 | Major | [P,B] SA-family lanes own a whole 32-weight group, so K=1536 takes 2 trips with the second half-idle (1.5 trips of work) and K=3584 takes 4 for 3.5; MLX's 16-weights-per-lane mapping fills all lanes. A bit-identical form exists: exact integer exchange plus an owner-lane float chain | `metal/kernels.go:561,576,578`; R18b doc `:21`; S0 `:48,53`; R18b doc `:61-66` | `mlx/kernels/quantized.h:774` (block_size = 16 x 32 = 512), `mlx/quantized.cpp:488` (fast needs K%512==0) | 1.5B token 3-7% (gate/up 132 -> 150-165 GB/s); 7B 1-3% | synthetic K sweep at fixed bytes, then lane-balanced prototype in `gemv_r18_test.go` |
 | B-P05 | Major | REVISIT of M-10: R18b excluded the down projection; it stays on the coal body (per-word float chain, one scale load per word) and is the slowest int4 GEMV, about 84 GB/s (1.5B) and 111 GB/s (7B) against 132 and 166 for gate/up | `metal/kernels.go:622-648`; `metal/model.go:2590-2592,1430`; `red-october.md:2373`; R18 doc `:123-130`; S0 `:49,54`; audit M-10 `:533-564` | `qmv_fast_impl` has one inner loop for every projection (`mlx/kernels/quantized.h:756-821`) | 1.5B 0-9%, 7B 0-10% (needs the fidelity gate; breaks decode/verify order agreement unless E moves the MC3 down kernel too) | existing `gemv_w4a8_sa_resid_rows4` dispatched at the down shape in `TestR18InSequence` |
-| B-P06 | Minor | [P,B] every R18/R18b dispatch is 256 threads (8 simdgroups) with a K x 2 B staging prologue and barrier; R18's record names TG size as an untested next suspect; MLX runs 64-thread TGs with no TG memory | `metal/model.go:2565,2586,2847,2956`; R18 doc `:170-175`; `metal/kernels.go:556-557` | `mlx/quantized.cpp:495` (`group_dims(bk, 2, 1)`), `mlx/kernels/quantized.h:769-770` | 0-6% of the 1.5B token (gate/up only); likely <= 3% | TG {64,128,256,512} x R {2,4} at gate/up shapes, then in sequence |
+| B-P06 | Minor | [P,B] every R18/R18b dispatch is 256 threads (8 simdgroups) with a K x 2 B staging prologue and barrier; R18's record names TG size as an untested next suspect; MLX runs 64-thread TGs with no TG memory | `metal/model.go:2565,2586,2853,2962`; R18 doc `:170-175`; `metal/kernels.go:556-557` | `mlx/quantized.cpp:495` (`group_dims(bk, 2, 1)`), `mlx/kernels/quantized.h:769-770` | 0-6% of the 1.5B token (gate/up only); likely <= 3% | TG {64,128,256,512} x R {2,4} at gate/up shapes, then in sequence |
 | B-P07 | Minor | blk's QK stage does 32 independent `simd_sum`s per head per block; a reduce-scatter in the measured simd_sum tree order gives bit-identical scores for about 2.6x fewer cross-lane ops | `metal/kernels.go:1324-1329`; MC3 record `concurrency-mc3-s0-2026-09-26.md:74,108`; `metal/batch.go:255-256` | none (MLX does one `simd_sum` per key per head: `mlx/kernels/sdpa_vector.h:278`) | 0-4.6% of the 1.5B token at 3900 keys, 0-3.6% on the 7B | bit-equality test vs shipped blk on 65,536 random vectors, then in-sequence |
 | B-P08 | Minor | blk at fixed S=16 costs one trip per 2048 keys: the busiest simdgroup runs ceil(ceil(n/16)/128) trips, so cost steps at 2049, 4097 and so on; the two graded depths (2048, 3900) are the balanced points | `metal/kernels.go:1302,1319`; R17 doc `:76` (1.770 vs 2.537 ms), `:80-83` | `mlx/scaled_dot_product_attention.cpp:776-806` (blocks by arch/N) | step of about 0.77 ms (1.5B, 5.5% of token) or 2.2 ms (7B, 4.8%) at each 2048-key boundary; mean about half | depth sweep, in-sequence, 1536..6144 in 128-key steps |
 | B-P09 | Minor | `rmsnorm_quant` makes 3 device passes and 12 TG barriers per dispatch; the last 5 tree levels are inside one simdgroup | `metal/kernels.go:24-64`; decomp `:41` | `mlx/kernels/rms_norm.metal:13-80` (x in registers, one load pass, 3 barriers) | 0.3-2% of the 1.5B token | register-cache variant with the same pinned tree, byte-equal vs shipped |
 | B-N01 | Minor | Metal cannot load an `-embed-int4` bundle: `int8Buf` errors on a non-int8 head; there is no int4 head kernel on Metal | `metal/model.go:1323-1330,504-510`; `decoder/weightmat.go:96-106`; `docs/giw-bundles.md:24` | mlx-lm 4-bit checkpoints carry a 4-bit head (not in library source; see f) | 4.4% (7B) to 6% (1.5B) of the token if supported; lossy opt-in, not proposed as a default | none now; see entry |
 | B-D01 | Minor | `benchmarks.md:47` says "AHEAD of Ollama in every cell" after R18b; the six graded cells are 1.5B and 7B only, and the 0.5B depth cells (0.75x at 2048, 0.58x at 3900) have not been re-measured since | `docs/benchmarks.md:47`; R18b doc `:104-113` | n/a | n/a | re-run cell g at 0.5B |
-| B-D02 | Minor | `model.go` attention-block comment counts 7 dispatches; at fa depths there are 8 (the combine is a separate dispatch) | `metal/model.go:2817-2821`; `metal/model.go:2663-2700` | n/a | n/a | edit comment |
+| B-D02 | Minor | `model.go` attention-block comment counts 7 dispatches; at fa depths there are 8 (the combine is a separate dispatch) | `metal/model.go:2823-2827`; `metal/model.go:2663-2706` | n/a | n/a | edit comment |
 
 ---
 
@@ -739,7 +739,7 @@ relative to the goinfer repository root unless they start with `mlx/` (MLX, unde
 against 3.80e-7 on the 0.5B), and a one-rep smoke read attention 3.2× / 3.8× faster at 2048 / 3900 keys. The grade,
 its rule and the new 0.5B reference cell (Q05) are in the task doc ("B-P01: built, pending its grade").
 
-**Claim.** `canUseAttnFA` declines unless `g.hd == 128` (`metal/model.go:2768`; the comment above it says the
+**Claim.** `canUseAttnFA` declines unless `g.hd == 128` (`metal/model.go:2774`; the comment above it says the
 kernel's cooperative-load tiling is fixed to 32 lanes x half4). Both `attention_fa` (`metal/kernels.go:1176`) and
 `attention_fa_blk` (`metal/kernels.go:1297`) hard-code `hd = 128u`. A hd=64 model runs the legacy per-query-head
 `attention` kernel at every depth.
@@ -782,6 +782,11 @@ or fidelity gate failure.
 
 #### B-P02 [P, Major] The block kernel is instantiated for two group sizes only
 
+**Status, 2026-10-03: built on main, off by default, pending its night grade.** `attention_fa_blk` is instantiated at
+G = 2, 3, 4, 5 and 8, and agrees with g7 head for head, bit for bit (`TestAttnFABlk_anyGMatchesG7`), so the new sizes
+take the graded kernel's fidelity. A one-rep smoke on internlm2-1_8b (G = 2) read attention 2.37× / 2.30× faster at
+2048 / 3900 keys. Grade and rule: the task doc, "B-P02: built, pending its grade".
+
 **Claim.** `buildResident` selects `attention_fa_blk_g6` or `_g7` only when `nH / nKV` is 6 or 7
 (`metal/model.go:1466-1478`); `metal/kernels.go:1397-1400` instantiates only those two. Any other dense hd=128 GQA shape (for
 example 32 query heads over 8 KV heads, G=4; 40 over 8, G=5; 16 over 2, G=8) runs `attention_fa` with the core-count
@@ -822,7 +827,7 @@ with the target head counts at 2048 and 3900 keys, S=16 and S in {8, 24, 32}.
 beating the shipped kernel", measured by a since-deleted `TestAttentionFA_speedProbe` with S sized to 28: 0.98x at 1024
 keys, 1.07x at 1536, 1.26x at 3900.
 
-**Why it no longer holds.** `attnFADepthFloor` gates `attnPlanFor` (`metal/model.go:2742`) and `canUseAttnFA` (`:2570`), so it
+**Why it no longer holds.** `attnFADepthFloor` gates `attnPlanFor` (`metal/model.go:2748`) and `canUseAttnFA` (`:2570`), so it
 now gates `attention_fa_blk`, which is 2.3-3.5x faster than `attention_fa` in sequence (R17 doc `:74-76`: 1.770 vs 4.874
 ms at 2048, 2.537 vs 8.574 at 3900 on the 1.5B). R17's own precondition says a candidate that engages below the floor
 "has to earn it there too" (`red-october.md:2195-2196`), and R17's wiring section records "the depth floor (1536) ...
@@ -1121,7 +1126,7 @@ cell" or add the 0.5B cells.
 
 #### B-D02 [D, Minor] Dispatch-count comment omits the combine
 
-`metal/model.go:2817-2821` (the N-10 fix) counts 7 attention-block dispatches in "the baseline dense case". At fa depths
+`metal/model.go:2823-2827` (the N-10 fix) counts 7 attention-block dispatches in "the baseline dense case". At fa depths
 the combine kernel is an eighth. Per layer: 7 + 4 (norm+quant, gate|up, swiglu+quant, down+residual) = 11, 12 with the
 combine; per token 28 x 12 + final norm + head = about 338 above the floor, 28 x 11 + 2 = 310 below it (the 310 in the
 Sep 12 M-16 entry is the below-floor count). One-line comment fix.
@@ -1137,7 +1142,7 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
 | M-16 (hazard tracking / serial encoder) | NEGATIVE-CLOSED | Untracked 99.6-101.5% of tracked in a 310-dispatch probe (audit `:906-918`; the probe is in aikit, not in this snapshot). Decode graph is nearly a chain (12 dispatches per layer, few independent siblings after QKV and gate|up fusion), so MLX's concurrent dispatch type has little to overlap here. |
 | N-03 (§B3 depth curve measures a path serve never takes) | CLOSED-VERIFIED (superseded) | Superseded 2026-09-18 by `bench_peer.py` over the real server (audit `:1274-1280`); decode rows now come from the served path (`benchmarks.md:47`). |
 | N-09 (softcap in greedy decode) | CLOSED-VERIFIED | `finalizeLogits` is called after every logits readback and applies the softcap host-side: `metal/model.go:1815,1814-1821`. |
-| N-10 (stale dispatch counts) | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2817-2821` omits the fa combine (B-D02). The 310 figure is correct below the floor. |
+| N-10 (stale dispatch counts) | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2823-2827` omits the fa combine (B-D02). The 310 figure is correct below the floor. |
 | N-13 (snapshot golden names `attention_f32`) | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-79` explains the removal (N-28). `attention_f32` is built only under `r.kvF32`, which is hard-wired false. |
 | N-17 (kernels with no production pipeline) | CLOSED-VERIFIED | The six listed kernels have no non-test pipeline reference at HEAD (grep of `"gemv_w4a8_bias"`, `_sa_amax`, `_sa_bk`, `_sa_qv`, `"gemv_w8a8"`, `"rope2_kv"`: tests only); header at `metal/kernels.go:5-17`. `gemv_w4a8_sa_amax` is still the one with no reference at all, kept by decision. |
 | N-30 (swiglu_quant double evaluation, rope2_kv) | NEGATIVE-CLOSED | Recorded as a trade needing a device scratch buffer (audit `:1509-1520`); `rope2_kv` unwired (0.6%, `metal/kernels.go:5-17`). The stale "K<=1536" comment now corrects itself at `metal/kernels.go:399`. Not re-proposed. |
@@ -1149,9 +1154,9 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
 ### (e) Checked and found correct
 
 - **Fusion state against MLX.** goinfer decode per layer, with the dispatch each fusion removes: norm+quant in one kernel
-  (`rmsnorm_quant`, `metal/kernels.go:24`); QKV in one GEMV with bias (`metal/model.go:2851-2852`); Q and K RoPE in one dispatch
+  (`rmsnorm_quant`, `metal/kernels.go:24`); QKV in one GEMV with bias (`metal/model.go:2857-2858`); Q and K RoPE in one dispatch
   (`rope2`, `metal/kernels.go:853`); gate|up in one GEMV (`metal/model.go:2563-2565`); swiglu+quant in one kernel
-  (`metal/kernels.go:1818-1858`); residual in the o and down epilogues (`gemv_w4a8_sa_resid_rows`, `gemv_w4a8_resid_staged`).
+  (`metal/kernels.go:1826-1866`); residual in the o and down epilogues (`gemv_w4a8_sa_resid_rows`, `gemv_w4a8_resid_staged`).
   12 dispatches per layer at fa depths, 11 below. MLX's quantized kernels have no prologue or epilogue fusion
   (`mlx/kernels/quantized.h:756-821` writes y only), no norm-into-GEMV, no residual-into-GEMV, no swiglu-into-down, no
   rope-into-attention; MLX's per-layer graph is bias add, rope, cache update and residual add as separate ops. MLX has no
@@ -1193,10 +1198,10 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
   helpers for the blocked prefill path); the 2-pass decode form is in `sdpa_vector.h`.
 - **R17 plan consistency.** `attnPlan` carries `fa`, `nSplit`, `f16Lane`; `attnPlanFor` and `canUseAttnFA` read the same floor
   and `attnFASplitFor`, so a pre-encoded buffer that disagrees with the current key count is re-encoded
-  (`metal/model.go:2724-2746,2748-2788`; R17 doc `:333-358` records the original defect and the fix).
+  (`metal/model.go:2730-2752,2754-2794`; R17 doc `:333-358` records the original defect and the fix).
 - **blk tail and empty blocks.** For the last 32-key block (`nb < 32`), `s[g]` stays -inf outside `nb`, `p` is 0 there,
   `alpha` is guarded for `m == -inf`, and the 4-simdgroup merge guards `-inf` (`metal/kernels.go:1332-1347,1363-1376`). With S=16 and
-  nKeys >= 1536 no split is empty (`nKeys/32` cap, `metal/model.go:2775-2793`).
+  nKeys >= 1536 no split is empty (`nKeys/32` cap, `metal/model.go:2781-2799`).
 - **LM head.** `gemv_w8a8_coal` at 32-thread TGs, one row per TG (`metal/model.go:1811`): 161 GB/s (1.5B) and 163 (7B) against a
   178-182 ceiling (S0 `:50,55`), byte-minimal for int8. Nothing to gain at fixed bytes.
 - **rope.** goinfer `rope2` computes `cos/sin(pos * invf[dd])` per pair (`metal/kernels.go:863`), the same shape as MLX `rope_single`
@@ -1462,7 +1467,7 @@ task doc ("C-P02: built, pending its grade").
 
 #### Direct answers: launch overhead per token, goinfer versus MLX
 
-**Count.** Dense Qwen2, 28 layers: 11 dispatches per layer [C] (attention half 7: norm, qkv GEMV with bias, rope, kv store, attention, o-proj with residual, plus the f32-to-f16 conversion on the f16 lane; FFN half 4: norm, fused gate|up GEMV, SwiGLU, down with residual; metal/model.go:2807-2959 and 2357-2445), plus 2 at the head: 11 x 28 + 2 = 310 dispatches/token (338 when `attention_fa` adds partial+combine, i.e. +1 dispatch x 28 layers at depth >= 1536: 310 + 28 = 338). `Encoder.Dispatch` makes three purego calls (setComputePipelineState on change, one batched setBuffers, dispatchThreads; aikit metal.go:819-842); every adjacent pair of dispatches has different pipelines, so the pipeline set is not skipped; 4 of 11 per layer are `DispatchTG` with one more call (setThreadgroupMemoryLength): 11 x 3 + 4 = 37 per layer. 37 x 28 + 2 x 3 = 1,042 transitions per token, plus about 10 command-buffer-level calls (create, encoder, end, commit, wait, status, and four timestamp reads in `ReadTimes`, N-31). The Sep 12 audit counted "~1,030" (audit-metal-2026-09-12.md:1612). [C]
+**Count.** Dense Qwen2, 28 layers: 11 dispatches per layer [C] (attention half 7: norm, qkv GEMV with bias, rope, kv store, attention, o-proj with residual, plus the f32-to-f16 conversion on the f16 lane; FFN half 4: norm, fused gate|up GEMV, SwiGLU, down with residual; metal/model.go:2813-2965 and 2357-2445), plus 2 at the head: 11 x 28 + 2 = 310 dispatches/token (338 when `attention_fa` adds partial+combine, i.e. +1 dispatch x 28 layers at depth >= 1536: 310 + 28 = 338). `Encoder.Dispatch` makes three purego calls (setComputePipelineState on change, one batched setBuffers, dispatchThreads; aikit metal.go:819-842); every adjacent pair of dispatches has different pipelines, so the pipeline set is not skipped; 4 of 11 per layer are `DispatchTG` with one more call (setThreadgroupMemoryLength): 11 x 3 + 4 = 37 per layer. 37 x 28 + 2 x 3 = 1,042 transitions per token, plus about 10 command-buffer-level calls (create, encoder, end, commit, wait, status, and four timestamp reads in `ReadTimes`, N-31). The Sep 12 audit counted "~1,030" (audit-metal-2026-09-12.md:1612). [C]
 
 **Cost per transition.** Recorded host encode ~0.9 ms (metal/model.go:436-438) / 1,042 = 0.86 us each [D]. The aikit comment records that the two trims already shipped removed only ~0.5 ms of a ~2.4 ms/token overhead and that "the rest is GPU-side per-Dispatch latency, not Go-side msgSend" (aikit metal.go:686-689). Today's GPU floor with every pipeline no-op'd is 0.86 ms on the 1.5B = 2.8 us/dispatch [D]. After encode-ahead the visible host side is 0.45 ms [R].
 
@@ -1484,7 +1489,7 @@ task doc ("C-P02: built, pending its grade").
 
 **What goinfer has.** One serial encoder; every buffer hazard-tracked. M-16 tested untracked buffers on the serial encoder and found 99.6-101.5% of baseline (aikit hazard_tracking_probe_test.go; audit M-16 closed NEGATIVE, :1779), as expected: a serial encoder already orders every dispatch.
 
-**Independent branches in a dense layer: none.** The 11 dispatches per layer form one read-after-write chain: norm (writes the normed activation) feeds the qkv GEMV (writes `r.qkv`), rope2 rotates Q and K in place in `r.qkv`, kv_store reads K/V from `r.qkv` (one kernel for both K and V), attention reads `r.qkv` and the cache kv_store just wrote, the o-proj consumes the context, then the FFN chain norm to gate|up to SwiGLU to down+residual. q/k/v are already one fused GEMV and gate/up one fused GEMV (metal/model.go:2807-2959, 2410-2445), so the pairs a concurrent encoder would overlap have already been merged. The remaining theoretical pair is kv_store's V half against rope2, merged in one kernel. With a barrier at every dispatch a concurrent encoder gains about 0 on this path [P], band 0 to +0.3%, basis: the M-16 result on the serial encoder plus a chain with no unbarriered pair. The one family with independent branches is Gemma-4's parallel dense||MoE FFN (metal/model.go:2508-2596 comment); that is area D's.
+**Independent branches in a dense layer: none.** The 11 dispatches per layer form one read-after-write chain: norm (writes the normed activation) feeds the qkv GEMV (writes `r.qkv`), rope2 rotates Q and K in place in `r.qkv`, kv_store reads K/V from `r.qkv` (one kernel for both K and V), attention reads `r.qkv` and the cache kv_store just wrote, the o-proj consumes the context, then the FFN chain norm to gate|up to SwiGLU to down+residual. q/k/v are already one fused GEMV and gate/up one fused GEMV (metal/model.go:2813-2965, 2410-2445), so the pairs a concurrent encoder would overlap have already been merged. The remaining theoretical pair is kv_store's V half against rope2, merged in one kernel. With a barrier at every dispatch a concurrent encoder gains about 0 on this path [P], band 0 to +0.3%, basis: the M-16 result on the serial encoder plus a chain with no unbarriered pair. The one family with independent branches is Gemma-4's parallel dense||MoE FFN (metal/model.go:2508-2596 comment); that is area D's.
 
 **Bit-identity.** Concurrent dispatch of independent kernels is bit-identical (no reduction is reordered inside a kernel).
 
@@ -1612,7 +1617,7 @@ moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N
 | D-P03 | Minor (REVISIT) | 3k expert dispatches per layer vs one batched dispatch; "<1%" premise is paged-only | `metal/moe.go:738-758`; Sep 12 `:1662` | `quantized.h:2087-2209`, `quantized.cpp:1376-1424` | 20 fewer dispatches/layer at k=8 (cnt) | `gemv_w4a8_moe_bench_test.go` with z=k |
 | D-C01 | Minor | Expert-major branch hard-wires plain SwiGLU and no biases: wrong for gpt-oss if the feature map ever admits it | `metal/prefill.go:1256-1257,1317-1318`; `metal/model.go:102-118` | none | none today | add FeatAttnSink to a decline test |
 | D-D01 | Minor | Ten stale statements (docs and comments) | listed in the entry | none | none | none |
-| D-G02 | Minor | `delta_qsplit` / `delta_attn_gate` have no direct test or mutation | `metal/model.go:2851,2924`; `metal/deltanet_test.go:297-301` | none | none | add the two kernels to the chain gate |
+| D-G02 | Minor | `delta_qsplit` / `delta_attn_gate` have no direct test or mutation | `metal/model.go:2857,2930`; `metal/deltanet_test.go:297-301` | none | none | add the two kernels to the chain gate |
 | D-N01 | Minor | `touch()` allocates; PROF_SPLIT `os.Getenv` per token | `metal/expertpool.go:430`; `metal/gemma4_moe.go:533` | none | <0.1% (cnt) | none |
 
 ### (c) Full entries
@@ -2008,12 +2013,12 @@ The fix is a decline test on `isGptOss` inside the expert-major branch, so a fut
 8. `metal/prefill_moe_parity_test.go:7-24`: same row-by-row description of the path under test.
 9. `metal/gptoss_kernels_test.go:8-9`: "FeatAttnSink is still not declared for Metal".
 10. `metal/deltanet_test.go:297-301`: "delta_qsplit/delta_attn_gate ... neither has Go-side wiring yet", wired at
-    `metal/model.go:2851,2924`. Also `metal/deltanet_kernels.go:144-146`: the `CANDIDATE` comment sits in shipped code and states
+    `metal/model.go:2857,2930`. Also `metal/deltanet_kernels.go:144-146`: the `CANDIDATE` comment sits in shipped code and states
     a test whose result is not in the snapshot.
 
 #### D-G02 [G] Minor: two DeltaNet kernels with no direct gate
 
-`delta_qsplit` and `delta_attn_gate` (`metal/deltanet_kernels.go:235-246`) are wired (`metal/model.go:2851,2924`) but not in the chain
+`delta_qsplit` and `delta_attn_gate` (`metal/deltanet_kernels.go:235-246`) are wired (`metal/model.go:2857,2930`) but not in the chain
 gate (`metal/deltanet_test.go:297-301`) and have no mutation. `qwen35_resident_parity_test.go` covers them end to end only,
 which cannot localize a wrong q/gate split.
 
@@ -2150,7 +2155,7 @@ projection with its band and basis.
 | E-P04 | Minor (Major if top_p clients count as default) | No Metal device top-K/top-p/min-p; filtered requests host-select over 152k logits | red-october.md:90; benchmarks.md:1104; decoder/model.go:1967-1976 | none fused (sort.cpp only) | ~13% of a 1.5B token [cnt] | filtered sampled cell on the Mac |
 | E-P05 | Minor | Rows at attention_fa depth run 2 serial dispatches each; the depth-related cost per extra row is 0.085 tokens at 2048 and the batched step has no timing above depth 1536 | metal/batch.go:621-637; metal-spec-step-verify:35-41; concurrency-mc3-s3:63 | sdpa_vector_2pass: all q rows of a kv-head in one TG (sdpa_vector.h:180+; scaled_dot_product_attention.cpp:772,817) | 5-12% of an 8-row step at depth 2048 [proj]; ceiling 21-25% [cnt] | `TestMC3StepBreakdown` at 2048/4096, B=8 |
 | E-P06 | Minor | One 7B@2048 verify cost curve for every model; the 1.5B at depth 128 costs 12/23/51% less at 2/4/8 rows, so the controller declines paying drafts | metal/batch.go:749-752; spec_adaptive.go; spec-step-verify:35-41 | none | 0-5% of 1.5B chat tok/s [proj] | calibrate the curve at load, like `calibrateRows` |
-| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:311-312; metal/kernels.go:1969-1984; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
+| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:311-312; metal/kernels.go:1977-1992; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
 | E-P08 | Minor | Greedy rows in a batched step copy 607,744 B each and argmax on the host | metal/batch.go:691-709; metal/model.go:1914-1928 | none | <=2.9% at B=8, <=1.4% at B=4 [cnt] | REVISIT of "fused argmax" |
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
 | E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:557-559; metal/model.go:1914-1928; decoder/model.go:2162-2169 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
@@ -2162,13 +2167,13 @@ projection with its band and basis.
 | E-P04 | Minor (Major if top_p clients count as default) | No Metal device top-K/top-p/min-p; filtered requests host-select over 152k logits | red-october.md:90; benchmarks.md:1104; decoder/model.go:1967-1976 | none fused (sort.cpp only) | ~13% of a 1.5B token [cnt] | filtered sampled cell on the Mac |
 | E-P05 | Minor | Rows at attention_fa depth run 2 serial dispatches each; the depth-related cost per extra row is 0.085 tokens at 2048 and the batched step has no timing above depth 1536 | metal/batch.go:621-637; metal-spec-step-verify:35-41; concurrency-mc3-s3:63 | sdpa_vector_2pass: all q rows of a kv-head in one TG (sdpa_vector.h:180+; scaled_dot_product_attention.cpp:772,817) | 5-12% of an 8-row step at depth 2048 [proj]; ceiling 21-25% [cnt] | `TestMC3StepBreakdown` at 2048/4096, B=8 |
 | E-P06 | Minor | One 7B@2048 verify cost curve for every model; the 1.5B at depth 128 costs 12/23/51% less at 2/4/8 rows, so the controller declines paying drafts | metal/batch.go:749-752; spec_adaptive.go; spec-step-verify:35-41 | none | 0-5% of 1.5B chat tok/s [proj] | calibrate the curve at load, like `calibrateRows` |
-| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:311-312; metal/kernels.go:1969-1984; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
+| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:311-312; metal/kernels.go:1977-1992; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
 | E-P08 | Minor | Greedy rows in a batched step copy 607,744 B each and argmax on the host | metal/batch.go:691-709; metal/model.go:1914-1928 | none | <=2.9% at B=8, <=1.4% at B=4 [cnt] | REVISIT of "fused argmax" |
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
 | E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:557-559; metal/model.go:1914-1928; decoder/model.go:2162-2169 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
 | E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:830-835 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
 | E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | decoder/fitplan.go:184; internal/serveapp/main.go:429; metal/backend.go:377-417; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
-| E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:874-896; metal/model.go:2893-2898; metal/batch.go:311 | n/a | ~1% [cnt, unmeasured] | micro-bench |
+| E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:874-896; metal/model.go:2899-2904; metal/batch.go:311 | n/a | ~1% [cnt, unmeasured] | micro-bench |
 | E-N01 | Minor | 112 `pack` dispatches per step could be fused into their producers | metal/batch.go:612,645,649 | n/a | <=0.9% [cnt] | none worth running first |
 | E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:451; decoder/model.go:383-389 | n/a | n/a | edit text |
 
@@ -2327,7 +2332,7 @@ stripe (sdpa_vector.h:180+, 326 [mlx]); its q_len<=8 limit matches the step's 8 
 masks, so goinfer's `nKeys_rows` is the more general design.
 Lever. Derive `mc3_attention_fa_rows` and `mc3_attention_fa_combine_rows` with the `edit` method (row index from the TG position,
 `slotOff`, `nKeys_rows`, partial buffer indexed by row): one dispatch pair per layer, 256 TGs at B=8, bit-identical to the per-row
-kernels (same body, same split S=16, which is fixed above the floor because the nKeys/32 cap never binds, metal/model.go:2776-2786).
+kernels (same body, same split S=16, which is fixed above the floor because the nKeys/32 cap never binds, metal/model.go:2782-2792).
 For same-slot verify rows, the rows could additionally share the K/V stripe as in MLX's 2-pass (that part changes the reduction
 shape and needs its own identity check; it is not required for the first change).
 Band [proj]: 5-12% of an 8-row step at depth 2048; ceiling 21-25% (7 x (0.235 - 0.157)/2.65 = 21% on the 7B, 7 x (0.193 - 0.108)/2.35 =
@@ -2361,7 +2366,7 @@ Band [proj]: 0-5% of 1.5B chat tok/s (chat measured 1.068x, copy 2.082x). Lossle
 `batchIneligible` returns "a family variant the batched step does not reproduce" for `r.qkNorm` (metal/batch.go:311-312). Qwen3 dense is a
 supported family (benchmarks.md:508 lists qwen3-1.7b). It gets no batched step, no step-kernel verify (n-gram verify stays at the old
 0.71-0.96 per extra row, spec-vs-batching-metal-2026-09-27) and no E-P01 route. The missing piece is small: `qk_norm`
-(metal/kernels.go:1969-1984) is one TG per head on the fused qkv buffer, so a rows form is `qkv_rows + mc3_row*rowStride` by the same
+(metal/kernels.go:1977-1992) is one TG per head on the fused qkv buffer, so a rows form is `qkv_rows + mc3_row*rowStride` by the same
 `edit` method, one more dispatch per layer between the qkv matmul and `rope_rows`. Band: coverage, not a speed figure; the recorded Qwen2.5 gains it would
 forgo are 1.785x 4-client aggregate on the 7B (concurrency-mc3-7b-w7:74 [rec]) and a 1.998x aggregate at B=4, depth 128 (same record, :105-112).
 Probe: derive the kernel and run the same-slot and distinct-slot identity tests on qwen3-1.7b.
@@ -2457,7 +2462,7 @@ graded MC3 numbers at 4 clients were measured with 4 slots, which now takes `-kv
 
 #### E-P10 [P, Minor, opt-in] `kv_store_i8`
 
-`e.Dispatch(r.pKvI8, g.nKV, 1, ...)` (metal/model.go:2897-2898) launches nKV one-thread threadgroups, each running the serial loop at metal/kernels.go:874-896.
+`e.Dispatch(r.pKvI8, g.nKV, 1, ...)` (metal/model.go:2903-2904) launches nKV one-thread threadgroups, each running the serial loop at metal/kernels.go:874-896.
 28 dispatches x (a few us) ~ 0.15 ms of ~13.5 ms ~ 1% [cnt, unmeasured]. `--kv i8` is one slot, no FA, no batching (metal/batch.go:311;
 metal/model.go:1274-1286, `allocSlots` stays 1 for int8 KV), so it forfeits MC1, MC3 and the step-kernel verify. Noted so the cost of the flag is on the page; no change proposed.
 
@@ -2471,13 +2476,13 @@ the producing rows kernel is bit-identical. At ~1.3 us each (S3) that is ~0.15 m
 `--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:451); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
 traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:383-389) against the owner decision recorded at
 task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:2654) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
-(metal/model.go:2776-2786); area B owns that.
+(metal/model.go:2782-2792); area B owns that.
 
 ### (d) Carry-forward
 
 | ID | Status | Evidence |
 |---|---|---|
-| M-08 (`lora_delta` one threadgroup) | CLOSED-VERIFIED (code); still unmeasured on a Mac | metal/kernels.go:1930-1969 now launches ceil(Out/256) threadgroups, each recomputing the per-rank tree reduction (redundant, kept fused by decision, audit:1756-1757); metal/lora.go:200-229; lora_delta_multitg_test.go. No Mac adapter-decode record in docs/measurements. |
+| M-08 (`lora_delta` one threadgroup) | CLOSED-VERIFIED (code); still unmeasured on a Mac | metal/kernels.go:1938-1977 now launches ceil(Out/256) threadgroups, each recomputing the per-rank tree reduction (redundant, kept fused by decision, audit:1756-1757); metal/lora.go:200-229; lora_delta_multitg_test.go. No Mac adapter-decode record in docs/measurements. |
 | C-03 (adapter dims unchecked) | CLOSED-VERIFIED | decoder/lora.go:171-202 `validateComputeTimeDims`, called at ~377-384 before the resident bind |
 | C-04 (SetAdapter error path leaks) | CLOSED-VERIFIED | lora.go:~166-209: stopExec first, deferred `releaseLoRALayers` on partial failure; lora_bind_leak_test.go |
 | N-26 (ForwardN per-token sync) | CLOSED-VERIFIED | decoder/residency.go:62-68; metal/backend.go:909-916, ForwardBatch layer-major since a1640a6a; the R12 kill is recorded |
@@ -2567,7 +2572,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 - **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:523,233`; plumbed from `internal/serveapp/main.go:185`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:912`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1273-1277`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:751-819`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:992-994`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1210`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:674-681`).
 - **Failure.** Every prompt of at least 64 tokens (floor, `metal/backend.go:779`) with a suffix of at least 8 tokens (`decoder/model.go:1572`, `residentPrefillSeed`) takes this path by default. The K/V rows land as f16 bit patterns in an int8-typed cache and the scale buffers are never written, so decode's `attention_i8` reads wrong K/V for the whole prompt. Once `pos*kvDim*2` bytes exceeds the buffer (position >= paddedCtxCap/2, i.e. a prompt over about 2048 tokens at the 4096 default) the write runs past the end of the MTLBuffer; `checkCap`'s own comment (`metal/backend.go:516-522`) says such writes corrupt adjacent buffers on unified memory.
-- **Why it is plausible nobody saw it.** The int8-KV tests drive only sequential `Forward` and `UploadKV`: `metal/kv_i8_test.go:255-330` steps 5 tokens through `Forward`; `metal/uploadkv_parity_test.go:235` covers `UploadKV`. No test calls `PrefillLast` with `kvI8` set (`grep` for `KVPrecision` in `metal/*_test.go` returns only `metal/kv_i8_test.go:270` and `metal/residentkv_alloc_test.go:38,78`). The other batched paths exclude `kvI8` explicitly (`metal/batch.go:311,492`, `metal/model.go:2757`); prefill is the one that does not.
+- **Why it is plausible nobody saw it.** The int8-KV tests drive only sequential `Forward` and `UploadKV`: `metal/kv_i8_test.go:255-330` steps 5 tokens through `Forward`; `metal/uploadkv_parity_test.go:235` covers `UploadKV`. No test calls `PrefillLast` with `kvI8` set (`grep` for `KVPrecision` in `metal/*_test.go` returns only `metal/kv_i8_test.go:270` and `metal/residentkv_alloc_test.go:38,78`). The other batched paths exclude `kvI8` explicitly (`metal/batch.go:311,492`, `metal/model.go:2763`); prefill is the one that does not.
 - **Why this is not already closed.** I checked `docs/audit-metal-2026-09-12.md` (no entry mentions kvI8 and prefill together; C-01 is about the fused kernel's tail read), `metal/backend.go:496-501` (`fastPrefill` keys on `exact` and two env knobs only), and `decoder/model.go:1561-1594` (no KV-precision condition on the `Prefiller` call).
 - **Fix and fidelity.** Return an error from `PrefillLast` when `a.r.kvI8` (the caller then falls back to the sequential loop, `warnPrefillDeclined`). This changes no numerics: the sequential path is the one `--kv i8` already uses today in effect (and the one the tests cover). Writing an int8 prefill store kernel is a larger change that would need its own gate.
 - **Probe.** `decoder.Load("testdata/llama-tiny", {Quant:"int4", KVPrecision:"i8", ResidentContext:64})`, `buildResident`, `setResidentKnob(..."GOINFER_METAL_FAST_PREFILL_FLOOR","0")`, `PrefillLast(16 embeddings, 0)` against 16 sequential `Forward` calls. Kill criterion: logits cosine >= 0.99 and the call returning an error both count as the guard working.
@@ -2579,7 +2584,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 - **When the exact kernel runs.** `useFusedAttn` needs `GOINFER_METAL_FUSED_ATTENTION` on and `hd%8==0 && hd<=128` (`metal/prefill.go:1034`); `useSteelAttn` needs `hd==128` (`:920`); otherwise `pAttn` (`:1083-1085`). So: every head-dim-256 family admitted to prefill (Gemma 1/CodeGemma after 08926838a, Gemma 3 after M-06, decided by `prefillFeatures` at `metal/model.go:102-118`), and any model with `GOINFER_METAL_FUSED_ATTENTION=0`.
 - **When nKeys can exceed 4096.** `PrefillLast` bounds only `startPos+len <= ctxCap` (`metal/backend.go:799`). `ctxCap` is 4096 for an unpinned load but up to 32768 for an explicit `-ctx`, or for an unpinned load the fit guard auto-pins (`decoder/model.go:709-716` writes the guard's shrunk context into `opts.ResidentContext`; `resolveMetalCtxCap`, `metal/model.go:43-61`, then honours anything up to 32768). The repo records the guard picking values in that range: 5689 positions (`c3-metal-consumer-window-v0.18.0.md:140`) and 12109-29666 (old audit N-41, `audit-metal-2026-09-12.md:1597`), measured under memory pressure on the Mac. A prompt (or a prefix-reuse turn at `startPos` plus suffix) over 4096 tokens then reaches the exact kernel on a Gemma-class model.
 - **Failure.** Out-of-range threadgroup writes and reads: wrong attention rows or undefined behaviour; no error is raised.
-- **Why this is not already closed.** `docs/audit-metal-2026-09-12.md` C-01 (:924-947) concerns the fused kernel's tail read and is closed by padding the allocation; no entry covers the exact kernel's score array. The comment at `metal/model.go:27-28` ("allowing deep context up to metalCtxCapMax without threadgroup memory overflow") is true of the decode kernels (`metal/kernels.go:981,1036-1050,1538,1559,1653,1697` are tiled) and false of this one. `metal/resident_cap_test.go` (F-G03) does not touch it. `metal/attn_shape_test.go:55-77` covers decode `attention` to nKeys 32768, not prefill.
+- **Why this is not already closed.** `docs/audit-metal-2026-09-12.md` C-01 (:924-947) concerns the fused kernel's tail read and is closed by padding the allocation; no entry covers the exact kernel's score array. The comment at `metal/model.go:27-28` ("allowing deep context up to metalCtxCapMax without threadgroup memory overflow") is true of the decode kernels (`metal/kernels.go:981,1036-1050,1546,1567,1661,1705` are tiled) and false of this one. `metal/resident_cap_test.go` (F-G03) does not touch it. `metal/attn_shape_test.go:55-77` covers decode `attention` to nKeys 32768, not prefill.
 - **Fix and fidelity.** Decline to the sequential path when `!useFusedAttn` and `startPos+M > attnScoreTileBound` (one condition beside `metal/backend.go:799`); sequential decode attention is tiled and is the bit-identity reference, so nothing changes numerically. Tiling the exact kernel would change its reduction order only beyond 4096 keys, where nothing exists to be identical to.
 - **MLX analog.** `sdpa_vector.h:56-58` allocates `outputs[BN*BD]`, `max_scores[BN]`, `sum_exp_scores[BN]` (32x32 plus 2x32 floats) regardless of key count and runs an online softmax (`:91-130`).
 - **Probe.** An hd=256, 2-layer synthetic fixture with `ResidentContext: 8192`, `PrefillLast` of 5000 embeddings (floor knob 0) against sequential `Forward`; plus a variant with `GOINFER_METAL_FUSED_ATTENTION=0` on an hd=64 fixture. Kill: cosine >= 0.999 on both.
@@ -2619,7 +2624,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-C03. `attention_fa` has no group-size guard (Minor, latent)
 
-- `metal/kernels.go:1165` defines `ATTN_FA_MAXG 8` and sizes per-thread arrays with it (`:1088,1091,1127`); the kernel comment says the hd=128 requirement is "enforced by the Go dispatch site (canUseAttnFA), NOT in-kernel" (`:1038-1039`) and nothing on the Go side enforces G <= 8: `canUseAttnFA` (`metal/model.go:2753-2769`) tests hd==128, nKV>0, depth, and family flags; the R17 selection (`:1333-1339`) picks `attention_fa_blk_g6/g7` for G = 6, 7 and leaves every other G on `attention_fa`. A dense hd=128 layer with nH/nKV > 8 would index past the arrays at depth >= 1536. No checkpoint that fits a 16 GB Mac that I know of has such a layer (GLM-4.5-class has 96 heads / 8 KV heads at hd=128, so G=12, with a dense first layer, but is far over the memory budget); I did not enumerate the registry.
+- `metal/kernels.go:1165` defines `ATTN_FA_MAXG 8` and sizes per-thread arrays with it (`:1088,1091,1127`); the kernel comment says the hd=128 requirement is "enforced by the Go dispatch site (canUseAttnFA), NOT in-kernel" (`:1038-1039`) and nothing on the Go side enforces G <= 8: `canUseAttnFA` (`metal/model.go:2759-2775`) tests hd==128, nKV>0, depth, and family flags; the R17 selection (`:1333-1339`) picks `attention_fa_blk_g6/g7` for G = 6, 7 and leaves every other G on `attention_fa`. A dense hd=128 layer with nH/nKV > 8 would index past the arrays at depth >= 1536. No checkpoint that fits a 16 GB Mac that I know of has such a layer (GLM-4.5-class has 96 heads / 8 KV heads at hd=128, so G=12, with a dense first layer, but is far over the memory budget); I did not enumerate the registry.
 - **Fix.** `canUseAttnFA` and `canUseAttnFAAt` return false when `nH/nKV > 8`; one comparison. No numeric change.
 
 #### F-D01. `benchmarks.md` Metal rows disagree with each other and with the records (Minor)
@@ -2744,7 +2749,7 @@ Status uses the five values from the brief. "Record only" means the cited target
 - **PrefillLast hygiene.** Panics from compile and the per-call allocations are recovered into an error (`metal/backend.go:810-819`); `startPos < 0` and cap are checked (`:741`).
 - **Gemma.** `TestGemma1ResidentParityMetal` uses `Fatalf` when the fixture does not go resident rather than `Skip` and gates at cosine 0.999 on 16 positions (`metal/gemma1_resident_parity_test.go:18-55`); `TestGemma2DeclinesResidentMetal` asserts the decline reason names the attention softcap (`:59-72`), which is the kind of assertion CLAUDE.md asks for. `capability-matrix.md` has no Metal column; its `GPU-resident` column (lines 113-114) is consistent with these two tests.
 - **Decode attention depth.** `metal/attn_shape_test.go:37-91` compares the shipped decode kernel with a CPU reference at hd 128/256/512, windows, and nKeys 4096, 8192, 16384, 32768, by default.
-- **Executor race.** `attnPlan` is compared per job and re-encoded on mismatch (`metal/model.go:2724-2746`).
+- **Executor race.** `attnPlan` is compared per job and re-encoded on mismatch (`metal/model.go:2730-2752`).
 
 ### (f) Questions I could not settle statically
 
@@ -2945,7 +2950,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | M-05 | PARTIAL | Non-paged generic MoE has expert-major batched prefill, default ON (`metal/prefill.go:1233-1371`); paged MoE, Gemma-4 MoE and DeltaNet still run as M decode tokens (`metal/model.go:992-994`): D-P01, D-B01, D-B02, D-G01. |
 | M-06 | PARTIAL | `FeatPerLayerRoPE` declared (`metal/model.go:113`); Gemma 3 reaches the batched GEMM; hd=256 attention stays on the exact scalar kernel: A-B03, and its `sc[4096]` limit F-C02. |
 | M-07 | PARTIAL | Row4-skip half CLOSED-VERIFIED (`decoder/weights.go:720-724,769-775,805-808,1208-1213,1522-1526`); the host-release half was declined as permanent. S6's NoCopy alias, default ON, removes the dense heap term (1.5B 90 against 1,013 MB, 7B 105 against 4,134 MB at token 32, rec `s6-alias-2026-09-24.md:188-189`). Residue: C-P01 (paged scale cache), F-D02 (v15 non-metal bundles). |
-| M-08 | CLOSED-VERIFIED (code); unmeasured on a Mac | `metal/kernels.go:1930-1969` launches ceil(Out/256) threadgroups; `lora_delta_multitg_test.go` (E). No Mac adapter-decode record exists. |
+| M-08 | CLOSED-VERIFIED (code); unmeasured on a Mac | `metal/kernels.go:1938-1977` launches ceil(Out/256) threadgroups; `lora_delta_multitg_test.go` (E). No Mac adapter-decode record exists. |
 | M-09 | NEGATIVE-CLOSED | Probe `attn_kread_staged_probe_test.go`: 0.43× at 2048 keys (B). Loose ends: the maxAbs 1.7e38 mismatch was never root-caused, and the premise no longer describes the block kernel that serves hd=128, G=6,7, ≥1536 keys; it still describes the legacy kernel (<1536 keys, hd=64, kvI8, windows, sinks). |
 | M-10 | NEGATIVE-CLOSED, premise stale | Measured 2–6% slower on pre-R18 SA arithmetic at R=1 (B). The SA family is now 1.38×/1.46× faster at depth 128 and coal down is staged at R=4: REVISIT filed as B-P05. |
 | M-11 | PARTIAL + REVISIT | Contiguous pool and `slotIdx` shipped (`metal/moe.go:760-800`, `metal/expertpool.go:213-216`). The ~14 ms boundary premise is stale (61 × 14 ms = 854 ms against a recorded 128–167 ms token); the shared-event half was never re-run: D-P02, C-B03. |
@@ -2983,7 +2988,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | N-07 | CLOSED-VERIFIED (record only) | `docs/completed/` not in snapshot; `grep` finds no `bvk*` code, consistent with the NO-GO. |
 | N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:863-870` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
 | N-09 | CLOSED-VERIFIED | `finalizeLogits` runs after every logits readback and applies the softcap host-side: `metal/model.go:1815,1814-1821` (B). |
-| N-10 | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2817-2821` omits the fa combine dispatch (B-D02). The 310 figure is right below the floor. |
+| N-10 | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2823-2827` omits the fa combine dispatch (B-D02). The 310 figure is right below the floor. |
 | N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:375` cites `metal/moe.go:375-376`. |
 | N-12 | CLOSED-VERIFIED | `prefill-gate-l1-ref-b-2026-09-09.md:14`. |
 | N-13 | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-77,146`. |

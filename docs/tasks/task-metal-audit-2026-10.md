@@ -579,6 +579,32 @@ By day:
 | Rule | **Ships** (`attnFABlk64On` becomes true) if P1 holds, P2's critA, critB and ceiling hold, the KL ratio is ≤ 1.05, and the speed ratio is ≥ 1.5 at either depth. A KL ratio of 1.05–1.10 parks it. **Killed** (the twin and its switch removed) if P1 fails, P2 fails outright, or the speed ratio is below 1.5 at both depths (the audit's kill line). K = 2048 and the exact-null control are reported beside the decision. A null KL ratio outside 0.95–1.05 says the cell's own spread is wider than the bar, and that goes to the owner before shipping. |
 | Reported | The S = 8, 24 and 32 arms, and the token ratio at both depths. |
 
+### B-P02: built, pending its grade (pre-registered 2026-10-03, before any graded run)
+
+Built on main, **off by default** (`attnFABlkAnyG = false`): the hd = 128 block decode-attention kernel instantiated at
+G = 2, 3, 4, 5 and 8, beside the graded 6 and 7. A dense hd = 128 model of another group size ran the legacy
+`attention_fa` at its core-count split. internlm2-1_8b and Qwen3-0.6B (16 query heads over 8 KV heads, G = 2) both
+reach `attention_fa` today and take the legacy kernel.
+
+**Fidelity is inherited, not re-gated.** `TestAttnFABlk_anyGMatchesG7` runs every new size against the graded g7 on
+the same K/V and leading query heads (777 keys, 16 splits). Every per-head partial agrees bit for bit: 0 of 43,680
+values differ. Comparing each head with g7's next head fails all of them, so the check can fail. The per-head
+arithmetic is therefore the graded kernel's; only G, the loop bound, changes. This departs from the audit's "run
+R17's gate once per new G". No CPU reference exists for a G ≠ 6/7 model here, and bit-exact per-head identity with
+the gated kernel is stronger evidence than a KL ratio with its ±5% rounding-order spread. The owner can ask for the
+per-G gate instead.
+
+By day: a one-rep `TestBP02AttnAB` smoke (exploratory) on internlm2 read legacy ÷ block attention 2.37× at 2048 keys
+and 2.30× at 3900, and the token 1.24× and 1.37×.
+
+| | |
+|---|---|
+| Instrument | `TestBP02AttnAB` by `docs/measurements/metal-audit-2026-10/run-bp02-grade.sh` on the night queue: internlm2-1_8b, and Qwen3-0.6B reported, at int4, 2048 and 3900 keys, 5 reps of 8 tokens per arm (legacy `attention_fa`, the block kernel at S = 16, no-op), interleaved and rotated, the no-op arm subtracted per rep. Estimate about 10 minutes; queued at 20. |
+| Precondition | Both models load with the block kernel selected at G = 2, and the test passes. |
+| Graded | `B-P02 METRIC legacy/blk` on **internlm2** at 2048 and 3900. |
+| Rule | **≥ 1.5 at either depth, with at least 4 of 5 reps above 1: ships** (`attnFABlkAnyG` becomes true). Below 1.5 at both depths: **killed**, the instantiations and the switch removed (R17's and B-P01's kill line). |
+| Reported | Qwen3-0.6B, and the token ratio. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -858,3 +884,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-03: **B-P01 built, off by default, queued for its grade** (owner: "B-P01 first"). The hd = 64 block attention
   kernel for the 0.5B. It is more accurate than the kernel it replaces, and a one-rep smoke read it 3.2–3.8× faster
   at attention. The 0.5B's CPU reference cell Q05 is built tonight as the grade's first step.
+- 2026-10-03: **B-P02 built, off by default, queued for its grade** (owner: "then B-P02"). The block kernel at
+  G = 2–8 agrees bit for bit with the graded g7 head for head, so its fidelity is inherited. Its speed is graded
+  tonight on internlm2 (G = 2): a one-rep smoke read 2.3–2.4× at attention.
