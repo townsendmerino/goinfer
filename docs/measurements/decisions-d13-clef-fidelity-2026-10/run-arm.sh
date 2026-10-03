@@ -12,7 +12,7 @@ B=${B:-$HOME/goinfer-bench/decisions-d13}
 REPO=${REPO:-$HOME/mycode/goinfer}
 ARM=${ARM:?int4, int8int8 or f32}
 EVERY=${EVERY:-1}
-BIN=$B/clef-fidelity.test; BIN_SHA=${BIN_SHA:?the registered sha256 of $BIN}
+BIN=${BIN:-$B/clef-fidelity.test}; BIN_SHA=${BIN_SHA:?the registered sha256 of $BIN}
 MODEL=${MODEL:-$HOME/models/clef-flash}         # a directory, or (ARM=q4k) the GGUF file
 HEAD=${HEAD:-$MODEL}                              # where joint_head.safetensors is; ARM=q4k sets it to the checkpoint, a GGUF has no head
 GGUF_SHA=${GGUF_SHA:-}                            # if set, MODEL must be a file with this sha256
