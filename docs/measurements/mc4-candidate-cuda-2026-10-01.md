@@ -366,3 +366,36 @@ workspace checkout (`a143d8d`, which adds a Metal-only bind-count check), not a 
   **chat gate 3 is expected to FAIL again**, and the decision rule then reads **parked with the numbers**; copy at 4 clients and the staggered cell are not projected. The rule's copy-only-miss clause (ambiguous, goes to the owner) applies unchanged if every chat gate and identity pass and only the copy or staggered gates miss.
 - Estimate 30 min (the first rerun took 19). Queued on nobara's night queue as `mc4-candidate-cuda-rerun2`; the owner starts the queue.
 
+
+## RERUN 2 RESULT (graded 2026-10-03; run 2026-10-02 17:55–18:16 PDT on nobara-pc, 21 min)
+
+Graded by the unchanged `gates.py` over `raw-rerun2/` (the grader's full output is [`grade-rerun2.txt`](mc4-candidate-cuda-2026-10-01/grade-rerun2.txt)). Binary `serve-cuda-644d8008` (sha256 `365425d9...`), run by `run-rerun2.sh` from the night queue as registered.
+
+**Gate 1, identity: PASS, 0 differing replies in every cell.** Candidate 0, spec-exclusive 0, batch-against-batch 0 in all seven cells (copy 1.5B at 1 and 4 clients, chat 1.5B at 1 and 4, staggered copy, copy 7B at 1 and 4): 720 replies compared, 0 HTTP errors. The registered prediction held, including its two stated bases: the batch-against-batch variation at 4 clients on copy that failed the first rerun is gone, and the chat cells (a continuation reuse of 64 or more tokens, unchanged by the fix) did not differ. The short-lead reuse decline (`644d8008`) fixed the identity miss; the root cause and the fix are in the sections above and are not re-argued here.
+
+**The speed gates, as registered** (candidate `c` over batch `b`, paired, median of 3; spec-exclusive `s` shown for reference):
+
+| gate | cell | c/b aggregate (the 3 pairs) | bar | result |
+|---|---|---|---|---|
+| 2 | copy 1.5B, 1 client | 2.127 (2.133, 2.123, 2.127) | ≥ 1.25 | PASS (not hard) |
+| 2 | **chat 1.5B, 1 client** | 1.262 (1.262, 1.252, 1.267) | ≥ 0.97 | PASS |
+| 3 | copy 1.5B, 4 clients | 1.236 (1.236, 1.209, 1.249) | ≥ 0.97 | PASS |
+| 3 | **chat 1.5B, 4 clients** | **0.858** (0.879, 0.858, 0.848) | ≥ 0.97 | **FAIL (hard)** |
+| 4 | staggered copy 1.5B | 1.432 (1.452, 1.432, 1.402), p99 c/b **1.800** | ≥ 1.0; p99 ≤ 1.1 | aggregate PASS, **p99 FAIL** |
+
+Reported only (the 7B, copy): 2.080 alone, 1.166 at 4 clients.
+
+**Verdict by the registered decision rule: a chat hard gate fails, so the candidate is PARKED with the numbers.** Gate 3 on chat is a hard gate and it fails on its own; the copy-only-miss clause (ambiguous, to the owner) does not apply, because that clause requires every chat gate to pass. The staggered p99 miss would not have decided it alone.
+
+**What the registration predicted and what happened.**
+- Identity passes: confirmed.
+- Chat gate 3 fails again: confirmed, at 0.858 against the first rerun's 0.850 (identity had failed there, so that figure was labelled an observation and not graded). The three pairs sit within about 3 points of each other, and the whole interval (0.848 to 0.879) is below the bar by 9 to 12 points. The fix did not touch the decode path, and the number did not move.
+- **One projection in this record was wrong, and it is corrected here.** The "Projections" section above expected copy at 4 clients to MISS gate 3 (about 0.78×, from the 2026-09-29 exploratory smoke, which was one unpaired run per arm). The graded, paired result is **1.236, a PASS**. The smoke's single unpaired figures did not transfer to the paired design, which is what the registration's "paired, median of 3" exists for. The copy result against *spec-exclusive* is still a loss (below).
+
+**What the numbers say about the design, without overreading them.**
+- The candidate is doing the two things it was built for: alone it speculates (copy 2.13×, chat 1.26× over batch), and its chat result under load (0.858) is above spec-exclusive's (0.795), so `c/s` is 1.081 there.
+- It does not clear batching on chat under load, which is the bar it exists to clear: 0.858 against 0.97. Its p99 is also worse than batch's in every multi-client cell (c/b 1.383 copy at 4 clients, 1.316 chat at 4 clients, 1.800 staggered, 1.420 the 7B at 4 clients), so the aggregate loss under load is not bought back as lower tail latency. Spec-exclusive's p99 is better than batch's on copy (0.655, 0.694 staggered, 0.736 the 7B) and worse on chat (1.415).
+- On copy at 4 clients the candidate is slower than plain `--spec ngram` (spec-exclusive): `c/s` 0.802, staggered 0.834, the 7B 0.911. This is the same finding the first run recorded, now on a build whose identity passes. The caveat already in `docs/flags.md` for `--spec-adaptive` ("slower than plain `--spec ngram` under copy-heavy load") is therefore confirmed by a graded run, not just a smoke.
+- Not measured and not claimed: any reason chat under load loses 14 points. The sections above name concurrent admission as the mechanism for copy; whether it is also the chat cost is untested here.
+
+**What this changes.** Nothing ships and nothing is removed: `--spec-adaptive` stays opt-in and off by default, now with a graded run behind "not recommended under load". `docs/flags.md` and the parked task doc carry the figures. Whether to spend more on the design (the registration's options were chat-shaped traffic only, or leaving it parked) is the owner's call; the data favours parked, since the one workload it was built for is the one it fails.
