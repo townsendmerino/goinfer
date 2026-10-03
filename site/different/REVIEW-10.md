@@ -6,23 +6,23 @@ Body ~730 words. Build passes (`-drafts`). `figures: []` on purpose: no measured
 
 | Claim | Source |
 |---|---|
-| `POST /v1/jobs` returns id + `pending` (202); GET, `/events`, DELETE routes exist | `internal/serveapp/main.go:700-703`; `jobs_http.go` |
+| `POST /v1/jobs` returns id + `pending` (202); GET, `/events`, DELETE routes exist | `internal/serveapp/main.go:703-706`; `jobs_http.go` |
 | Job runs on a background context, not the request; disconnect does not cancel it | `jobs_run.go` `runJob` (bgCtx); `jobs_http_test.go` (comment "only DELETE /v1/jobs/{id} cancels a job") |
 | Events replay from the start, then live; reconnect = new reader | `jobeventlog.go` doc comment; `handleJobEvents` |
 | Stream closes with finish_reason + usage chunk, or error event; queue position on GET | task doc J3 "Additions 2026-09-15"; `jobs_run.go` `jobTerminalEvents`; `handleGetJob` |
 | Job holds the model loaded so admin unload cannot free it | `jobs_run.go` `runJob` comment; task doc J3 |
-| `-job-dir`: JSONL journal `jobs.jsonl`, 0700/0600, last line per id, running becomes `interrupted` | `jobjournal.go`; flag text `internal/serveapp/main.go:391` |
+| `-job-dir`: JSONL journal `jobs.jsonl`, 0700/0600, last line per id, running becomes `interrupted` | `jobjournal.go`; flag text `internal/serveapp/main.go:392` |
 | Journal has prompt token ids, not text; result is NOT journaled | `job.go` (`PromptIDs` json tag; `result` unexported, comment "not journaled") |
 | After restart: GET gives state, no result; `/events` gives 410 | `handleGetJob` (result only if non-nil); `handleJobEvents` (410 branch) |
-| Without `-job-dir`, all in memory; files and batch records are in memory only | `job.go`, `files.go`, `batches.go` (no journal); `internal/serveapp/main.go:958-966` |
-| Cap 256 each for jobs, files, batches; only terminal jobs evicted | `internal/serveapp/main.go:958-969`; `job.go` `evictLocked` |
+| Without `-job-dir`, all in memory; files and batch records are in memory only | `job.go`, `files.go`, `batches.go` (no journal); `internal/serveapp/main.go:961-969` |
+| Cap 256 each for jobs, files, batches; only terminal jobs evicted | `internal/serveapp/main.go:961-972`; `job.go` `evictLocked` |
 | Text chat only; images/tools refused; batch endpoint must be `/v1/chat/completions` | `jobs_http.go`; `internal/serveapp/batches_http.go:84-86`; task doc J3/J4 "Not built" |
 | `completion_window` accepted, not enforced | task doc J4 "Not built" |
 | One generation per model at a time | `docs/releases/v0.19.0.md` ("One generation at a time per model") |
 | Shipped in v0.19.0 | `CHANGELOG.md` [v0.19.0] 2026-09-18; `docs/releases/v0.19.0.md`; `gh release view v0.19.0` (published 2026-09-19T02:08Z) |
 | Web Batch tab and reload re-attach use these routes | `CHANGELOG.md` (inside [v0.19.0]) |
 | `goinfer-chat -batch` not built | task doc status line ("J5/J7/J9 unstarted") and J5 section; grep of `internal/chatapp/*.go` finds no `-batch` flag or resume code |
-| `-max-queue` default 8, queue cap = 1+8, 0 = unbounded, 429 + Retry-After when full | `internal/serveapp/main.go:429,962`; `jobs_http.go` |
+| `-max-queue` default 8, queue cap = 1+8, 0 = unbounded, 429 + Retry-After when full | `internal/serveapp/main.go:432,962`; `jobs_http.go` |
 | Tests listed exist and assert what the table says | `jobs_http_test.go`, `job_test.go` (read the bodies) |
 
 ## Conflicts
