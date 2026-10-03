@@ -22,7 +22,8 @@ import (
 //
 //	CLEF_FIDELITY_ARM    f32 | int8int8 | int4   (the quant the backbone loads at; the head is always f32)
 //	CLEF_FIDELITY_OUT    the jsonl to append to (rows already there are skipped)
-//	CLEF_MODEL_DIR       the Clef-flash directory (default ~/models/clef-flash). NEVER /srv/models or /Volumes: a run off the archive reads a 5400 rpm disk
+//	CLEF_MODEL_DIR       the Clef-flash directory (default ~/models/clef-flash), or a GGUF file of its backbone (the q4k arm). NEVER /srv/models or /Volumes: a run off the archive reads a 5400 rpm disk
+//	CLEF_HEAD_DIR        the directory holding joint_head.safetensors and joint_head_config.json (default: CLEF_MODEL_DIR, which must then be that directory; a GGUF has no head, so the q4k arm sets it)
 //	CLEF_FIDELITY_EVERY  take every Nth record (default 1), CLEF_FIDELITY_LIMIT stop after N new rows (default all)
 //	CLEF_FIDELITY_WALL   wall-clock deadline in minutes (default 170), so a hang fails loudly
 //
@@ -37,6 +38,13 @@ func TestFidelityArm_run(t *testing.T) {
 	dir := os.Getenv("CLEF_MODEL_DIR")
 	if dir == "" {
 		dir = filepath.Join(home, "models", "clef-flash")
+	}
+	headDir := os.Getenv("CLEF_HEAD_DIR")
+	if headDir == "" {
+		headDir = dir
+	}
+	if strings.HasPrefix(headDir, "/srv/models") || strings.HasPrefix(headDir, "/Volumes/") {
+		t.Fatalf("CLEF_HEAD_DIR %s is the archive, not the bench set", headDir)
 	}
 	if strings.HasPrefix(dir, "/srv/models") || strings.HasPrefix(dir, "/Volumes/") {
 		t.Fatalf("CLEF_MODEL_DIR %s is the archive, not the bench set (CLAUDE.md, \"Models: stored in the archive, benchmarked from local disk\")", dir)
@@ -91,7 +99,7 @@ func TestFidelityArm_run(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer res.Model.Close()
-	head, err := LoadHead(dir)
+	head, err := LoadHead(headDir)
 	if err != nil {
 		t.Fatal(err)
 	}

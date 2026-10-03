@@ -27,6 +27,14 @@ What it leaves out, deliberately named: (a) **the head's own cost**, unmeasured,
 
 **Bands** (the projected ratio x 0.80 to x 1.10, the lower edge wider for the head): a cell whose 95% interval overlaps its band is "as projected"; otherwise it is OFF PROJECTION and the record names the wrong input from the measured requests (usage tokens divided by time) before the number is quoted, as D7 had to.
 
+## 2a. Amendment (2026-10-03, after the projection above and before any Mac run): D8 changes what the JEV arm costs
+
+`decisions-d8-shared-state-2026-10-03.md` (on `main`) makes the CPU decision path prefill what a request's questions share ONCE. The Mac's 9B does not run resident, so **the JEV arm on the Mac now runs with sharing on**, and section 2's "JEV 5q = five prefills" no longer holds there. JEV's bare-v1 template puts `[kind]` before the state, so only same-kind questions share: D7's five questions (noul, score, choice, noul, choice) form three groups, measured on the real weights as 3 prefills for 5 prompts (52.7 s against 80.0 s at K=256, exploratory). Clef's cost is unchanged.
+
+Revised projection for the JEV arm at 5 questions (about 3K + 170 tokens; the structure is the same at every K): **JEV/Clef = 1.12 (K=256), 2.03 (K=1,024), 2.67 (K=4,096)** in place of 1.89, 3.37 and 4.44. The 1-question ratios (0.74, 0.91, 0.97) and Clef's 5q/1q growth are unchanged; **JEV's 5q/1q growth falls from 5.0 to about 2.9 at K=256, 3.0 at 1,024 and 3.0 at 4,096** (3 prefills for 1). Bands are the revised projection x 0.80 to x 1.10, as before.
+
+What this means for the measurement: the question is no longer "Clef against an unshared JEV" but "Clef against JEV as it is served now". **The serve binary must be built from a revision that contains D8 (`main` after it lands), and its sha256 recorded; a binary from before it measures the old JEV arm and must say so.** The unshared JEV arm is what `decisions-d7-2026-09-28.md` section 5 already measured on CUDA. The registered D8 rule (Clef's own 5q/1q <= 2.0) is about the Clef route and is unaffected.
+
 ## 3. Design
 
 - **Machine and path:** the Mac, `-backend cpu` (the 9B does not run resident on the Mac, `decisions-d7-2026-09-28.md` section 2), both models at `int8int8` (the decision-model default). The harness checks the server's `decode path:` line and voids the run on a resident path.

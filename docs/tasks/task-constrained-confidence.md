@@ -814,6 +814,11 @@ GDN state at a position, copied rather than rewound): the "state checkpoints" tr
 [`../completed/qwen3_5_moe.md`](../completed/qwen3_5_moe.md) already defers, which would also unlock
 prefix reuse and spec decode on every hybrid family.
 
+**BUILT 2026-10-03 for the CPU path** ([`decisions-d8-shared-state-2026-10-03.md`](../measurements/decisions-d8-shared-state-2026-10-03.md)): a request's questions share the
+prefill of what their prompts have in common, resumed from a deep-copied cache (KV plus Gated DeltaNet state). Bit-identical to the unshared answer on the real Clef-flash backbone
+at int8int8; exploratory 1.52x (head template, same-kind questions only) and 2.87x (chat template) at K = 256. **Not done: the GPU-resident path** (copying the device's recurrent
+state, per backend), which is where D7 measured, and a mixed-kind head request still costs three prefills, not one (bare-v1 puts `[kind]` before the state).
+
 **Trigger:** D7 shows state prefill ≥ 70% of a multi-question request's time on a realistic
 workload. **MET 2026-10-02: 0.909 at K = 1024** ([`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md) §5), so D8 is warranted by its own criterion. It is still unscheduled, and it is not a Route C dependency (one backbone pass scores every Clef question, D13). The template puts the question after the state so it is at least a clean
 suffix, and the cost is documented.
@@ -964,8 +969,9 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
 - **Expect what D6b found for JEV:** quantized arms keep calibration and miss the top-1 bar. The decision-model
   default quant is the owner's call that D6b already left open. Make it once, for both heads.
 - **Compare the trained routes on one fixture.** Clef-flash and JEV-9B are both 9B on `qwen3_5`, so run them on
-  the same items: top-1 against gold where it exists, ECE, and agreement. If Clef-flash is at least level on both,
-  JEV's route is kept but not extended.
+  the same items: top-1 against gold where it exists, ECE, and agreement. **Owner decision 2026-10-03: both routes are
+  kept and extended equally, so this comparison is informational and no rule hangs on it** (it was "if Clef-flash is at
+  least level on both, JEV's route is kept but not extended").
 - **Then Clef 27B on the Linux box's CPU,** at f32 against a smaller reference set. Report its speed as measured,
   with the machine named.
 

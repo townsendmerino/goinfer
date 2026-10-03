@@ -13,13 +13,23 @@ REPO=${REPO:-$HOME/mycode/goinfer}
 ARM=${ARM:?int4, int8int8 or f32}
 EVERY=${EVERY:-1}
 BIN=$B/clef-fidelity.test; BIN_SHA=${BIN_SHA:?the registered sha256 of $BIN}
-MODEL=$HOME/models/clef-flash
+MODEL=${MODEL:-$HOME/models/clef-flash}         # a directory, or (ARM=q4k) the GGUF file
+HEAD=${HEAD:-$MODEL}                              # where joint_head.safetensors is; ARM=q4k sets it to the checkpoint, a GGUF has no head
+GGUF_SHA=${GGUF_SHA:-}                            # if set, MODEL must be a file with this sha256
 REF=${REF:-$HOME/goinfer-bench/decisions-d10/out/probs_f32.jsonl}
 OUT=$B/out/probs_goinfer_$ARM.jsonl
 die() { echo "$(date +%T) REFUSED: $*"; exit 1; }
 sum() { sha256sum "$1" | cut -d' ' -f1; }
 case "$MODEL" in /srv/models/*|/Volumes/*) die "model $MODEL is on the archive, not the bench set";; esac
-[ -s "$MODEL/joint_head.safetensors" ] || die "no local Clef-flash at $MODEL (rsync it from /srv/models/clef-flash first)"
+case "$HEAD" in /srv/models/*|/Volumes/*) die "head dir $HEAD is on the archive, not the bench set";; esac
+[ -s "$HEAD/joint_head.safetensors" ] || die "no joint head at $HEAD (rsync Clef-flash from /srv/models/clef-flash first)"
+if [ -n "$GGUF_SHA" ]; then
+  [ -f "$MODEL" ] || die "GGUF_SHA is set but $MODEL is not a file"
+  [ "$(sum "$MODEL")" = "$GGUF_SHA" ] || die "the GGUF's sha256 differs from the registered one"
+else
+  [ -d "$MODEL" ] || die "$MODEL is not a directory"
+  [ -s "$MODEL/joint_head.safetensors" ] || die "no local Clef-flash at $MODEL"
+fi
 [ -x "$BIN" ] || die "no binary $BIN"
 [ "$(sum "$BIN")" = "$BIN_SHA" ] || die "binary sha256 differs from the registered one"
 [ "$(sum "$REPO/testdata/decisions/clef/records.jsonl")" = 5942ccb997012d69c37945ef8cf3a2dd1974f62009ef14d9a668f5d4c49f9b7c ] || die "records.jsonl differs from the registered one"
@@ -29,7 +39,7 @@ mkdir -p "$B/out"
 n0=0; [ ! -f "$OUT" ] || n0=$(wc -l < "$OUT")
 echo "$(date +%T) == D13 arm $ARM start (every $EVERY); rows already written: $n0; load $(cut -d' ' -f1-3 /proc/loadavg); free $(free -g | awk '/Mem/{print $7}') GB"
 cd "$REPO/internal/clef" || die "no $REPO/internal/clef"
-CLEF_FIDELITY_ARM="$ARM" CLEF_FIDELITY_OUT="$OUT" CLEF_FIDELITY_EVERY="$EVERY" CLEF_MODEL_DIR="$MODEL" CLEF_FIDELITY_WALL=${WALL:-170} \
+CLEF_FIDELITY_ARM="$ARM" CLEF_FIDELITY_OUT="$OUT" CLEF_FIDELITY_EVERY="$EVERY" CLEF_MODEL_DIR="$MODEL" CLEF_HEAD_DIR="$HEAD" CLEF_FIDELITY_WALL=${WALL:-170} \
   "$BIN" -test.run 'TestFidelityArm_run$' -test.v -test.timeout "${TIMEOUT:-3h}"
 rc=$?
 n=0; [ ! -f "$OUT" ] || n=$(wc -l < "$OUT")

@@ -19,6 +19,7 @@ Rule (registered before any graded run):
   f32       PASS if KL <= 0.01 and top-1 >= 0.98
   int8int8  PASS if KL <= 0.03 and top-1 >= 0.98     } the band D6b graded JEV on
   int4      PASS if KL <= 0.03 and top-1 >= 0.98     }
+  q4k       PASS if KL <= 0.03 and top-1 >= 0.98 (amendment 2026-10-03: a third-party Q4_K_M GGUF of the backbone, graded on int4's band, all 150 records)
   AMBIGUOUS (reported, never a pass, goes to the owner): KL within 2x the band, or top-1 in [0.95, 0.98), with the other criterion passing; anything past that FAILS.
   calibration: an arm FAILS CALIBRATION if the bootstrap 95% interval of (arm ECE - reference ECE) lies wholly above 0; an interval that reaches 0 is UNRESOLVED, not failed.
   If the f32 arm does not PASS, the port is suspect before any quantization finding is read.
@@ -30,7 +31,7 @@ import argparse, json, math, os, random, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TD = os.path.join(HERE, "..", "..", "..", "testdata", "decisions")
-BANDS = {"f32": 0.01, "int8int8": 0.03, "int4": 0.03}
+BANDS = {"f32": 0.01, "int8int8": 0.03, "int4": 0.03, "q4k": 0.03}   # q4k (added by the 2026-10-03 amendment): int4's band
 TOP1, TOP1_AMBIG = 0.98, 0.95
 
 
@@ -168,7 +169,7 @@ def main():
         print(f"  top-1 vs gold: Clef {acc(cl, g):.3f}, JEV {acc(jv, g):.3f}; Clef - JEV {da:+.3f}, 95% paired bootstrap [{dlo:+.3f}, {dhi:+.3f}]")
         print(f"  ECE: Clef {ece(list(cl.values())):.4f}, JEV {ece(list(jv.values())):.4f}; Clef - JEV {de:+.4f}, 95% paired bootstrap [{elo:+.4f}, {ehi:+.4f}]")
         level = da >= 0 and de <= 0
-        print(f"  'at least level on both' (point estimates: accuracy Clef >= JEV and ECE Clef <= JEV): {'YES' if level else 'NO'}"
+        print(f"  INFORMATIONAL (the owner keeps and extends both routes equally, 2026-10-03; no rule hangs on it). Point estimates, accuracy Clef >= JEV and ECE Clef <= JEV: {'YES' if level else 'NO'}"
               f"{' -- both intervals reach 0, so this is a point-estimate reading and unresolved' if dlo <= 0 <= dhi and elo <= 0 <= ehi else ''}")
 
     print("\nVERDICTS")
