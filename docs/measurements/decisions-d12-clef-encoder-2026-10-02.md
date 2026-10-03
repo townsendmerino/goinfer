@@ -68,6 +68,13 @@ The reference tokenizes each fragment with `tokenizer(text, add_special_tokens=F
 
 ## Not done in this item
 
-- The head's gate of record on real hidden states (needs the `d10-clef-f32` night job, then extracting the lm_head rows and committing the goldens gzipped). The tiny pipeline fixture does not replace it: it proves the wiring, not the numerical regime of a trained 9B backbone.
+- **The head's gate of record on real hidden states: tooling built 2026-10-03, not yet run.** It needs the `d10-clef-f32` night job (it saves the real backbone `last_hidden_state`, f32, for the three shortest records). Then, from the repo root:
+
+      python3 scripts/build_clef_head_golden.py          # D10's outputs and ~/models/clef-flash in, ~/goinfer-bench/decisions-d12-head-gate out
+      CLEF_HEAD_GOLDEN=~/goinfer-bench/decisions-d12-head-gate CLEF_HEAD=~/models/clef-flash GOINFER_HEAVY_TESTS=1 go test -count=1 -v -run TestHead_matchesReference ./internal/clef/
+
+  `scripts/build_clef_head_golden.py` reads the lm_head rows the options use straight from the shards and writes the golden in the test's format. **Its self-check** re-runs the official `JointSchemaHead` on the stored hidden states and the extracted rows and requires D10's recorded logits back (hard failure above 1e-2, warning above 1e-4), which proves that each hidden file belongs to its record and that the extracted rows are the ones the reference used. The bar is the registered one, 1e-5 absolute in probability, given the reference's own hidden states.
+
+  **Tested today on a stand-in** (the real head weights and the real lm_head rows, loaded by a different route than the extractor's, with SYNTHETIC hidden states): the self-check read max |diff| 0, the Go gate passed with a worst probability difference of 1.41e-7, and the extractor refused (exit 1, |diff| 3.76) a copy in which two same-length hidden files had been swapped. That shows the chain works, not that the head is right on a trained backbone's hidden states: only the real run says that. Whether to commit the gzipped goldens (about 9 MB of hidden states) is decided after seeing them; the manifest records the sha256 of every input and output either way. The tiny pipeline fixture does not replace it: it proves the wiring, not the numerical regime of a trained 9B backbone.
 - Speed: the head runs the reference's structure with a row-parallel f32 GEMM and a scalar attention; D14 owns making it fast, and nothing here is a performance claim.
 - Wiring into `/v1/systemone` and `/v1/decisions` (D13), including the response shaping above.
