@@ -16,7 +16,7 @@
   {
    "name": "model",
    "group": "Choosing models",
-   "summary": "What to serve: a `.gguf` or `.giw` file, a model directory, or a reference fetched on first use (`hf:owner/repo:quant`, `demo:<tier>`). Repeatable; `name=path` serves several models from one process, with optional per-model overrides after the path.",
+   "summary": "What to serve: a `.gguf` or `.giw` file, a model directory, or a reference fetched on first use (`hf:owner/repo:quant`, `hf:owner/repo:safetensors` for a safetensors checkpoint, `demo:<tier>`). Repeatable; `name=path` serves several models from one process, with optional per-model overrides after the path.",
    "type": "[name=]path-or-ref (repeatable)",
    "see": "docs/server.md"
   },

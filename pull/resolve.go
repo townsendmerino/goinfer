@@ -60,8 +60,11 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 	if err != nil {
 		return "", err
 	}
+	if ref.Checkpoint {
+		return resolveCheckpoint(ctx, ref, progress)
+	}
 	if ref.File == "" && ref.Quant == "" {
-		return "", fmt.Errorf("%s: name a quant or a file, e.g. hf:%s:q4_k_m", spec, ref.Repo)
+		return "", fmt.Errorf("%s: name a quant or a file, e.g. hf:%s:q4_k_m (or hf:%s:%s for a safetensors checkpoint)", spec, ref.Repo, ref.Repo, CheckpointSelector)
 	}
 	// V-16 (docs/review-2026-09-04.md): checked BEFORE any network call. See resolveOffline.
 	if path, ok := resolveOffline(ref); ok {
@@ -83,6 +86,31 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 		return "", err
 	}
 	return Download(ctx, ref.Repo, f, dir, progress)
+}
+
+// resolveCheckpoint is Resolve for "hf:owner/repo:safetensors": the cached directory when a complete, verified
+// checkpoint is already there (offline, from its marker), else CheckAccess, PlanCheckpoint and DownloadCheckpoint into
+// CacheDir(repo). Returns the directory decoder.Load opens.
+func resolveCheckpoint(ctx context.Context, ref Ref, progress func(done, total int64)) (string, error) {
+	dir, err := CacheDir(ref.Repo)
+	if err != nil {
+		return "", err
+	}
+	if path, ok := CachedCheckpoint(dir); ok {
+		return path, nil
+	}
+	if err := CheckAccess(ctx, ref.Repo); err != nil {
+		return "", err
+	}
+	p, err := PlanCheckpoint(ctx, ref.Repo)
+	if err != nil {
+		return "", err
+	}
+	var prog func(done, total int64, file string)
+	if progress != nil {
+		prog = func(done, total int64, _ string) { progress(done, total) }
+	}
+	return DownloadCheckpoint(ctx, p, dir, prog)
 }
 
 // ResolveVerbose is Resolve with a progress line on stderr, for the command-line front ends.

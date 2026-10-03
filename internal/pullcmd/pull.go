@@ -20,11 +20,13 @@ import (
 )
 
 // pullUsage is printed for `pull -h` and on a malformed reference.
-const pullUsage = `%[1]s pull — fetch a GGUF checkpoint from HuggingFace
+const pullUsage = `%[1]s pull — fetch a checkpoint from HuggingFace (a GGUF file, or a safetensors checkpoint)
 
-  pull <owner/repo>              list the .gguf files in a repo
+  pull <owner/repo>              list the .gguf files in a repo (or, with none, its safetensors checkpoint)
   pull <owner/repo>:<quant>      fetch that quant       (e.g. :q4_k_m — case-insensitive)
   pull <owner/repo>:<file.gguf>  fetch that exact file
+  pull <owner/repo>:safetensors  fetch the repo's safetensors checkpoint: config, tokenizer and every weight shard,
+                                 as a directory --model loads (nothing lands until the whole set has verified)
   pull <ref> -embed [os/arch...] fetch, then bake the model INTO a single static binary
   pull demo:<tier>               fetch a model goinfer itself vets and pins (see below)
 
@@ -146,6 +148,13 @@ func Run(args []string) int {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
 	}
+	if ref.Checkpoint {
+		if *embed {
+			fmt.Fprintln(os.Stderr, "goinfer-chat pull: -embed bakes one GGUF file; a safetensors checkpoint is a directory (pull a :<quant> of a GGUF repo to embed)")
+			return 2
+		}
+		return pullCheckpoint(ctx, ref, *outDir)
+	}
 	files, err := pull.List(ctx, ref.Repo)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
@@ -154,6 +163,17 @@ func Run(args []string) int {
 
 	// No selector ⇒ this is a listing request, not a failed fetch. Printing to stdout and
 	// exiting 0 makes `pull <repo>` a usable discovery step rather than an error to decode.
+	if ref.File == "" && ref.Quant == "" && len(files) == 0 {
+		// No GGUF at all: the repo may be a safetensors checkpoint, so list that plan instead of "0 GGUF files".
+		p, perr := pull.PlanCheckpoint(ctx, ref.Repo)
+		if perr != nil {
+			fmt.Printf("%s has no .gguf files, and no safetensors checkpoint this build can load: %v\n", ref.Repo, perr)
+			return 0
+		}
+		printPlan(p)
+		fmt.Printf("\nfetch it with:  %s pull %s:%s\n", self(), ref.Repo, pull.CheckpointSelector)
+		return 0
+	}
 	if ref.File == "" && ref.Quant == "" {
 		fmt.Printf("%s — %d GGUF file(s):\n", ref.Repo, len(files))
 		for _, f := range files {
@@ -238,6 +258,68 @@ func Run(args []string) int {
 		return 0
 	}
 	return runEmbed(path, ref, *embedName, *embedGGUF, targets)
+}
+
+// printPlan prints a safetensors checkpoint plan: the family it loads as, every file, and the size note (before any
+// transfer, the doc's rule 4).
+func printPlan(p pull.Plan) {
+	fmt.Printf("%s — safetensors checkpoint, model_type %s (loads as %s):\n", p.Repo, p.ModelType, p.Family)
+	for _, f := range p.Files {
+		fmt.Print(listingLine(f))
+	}
+	fmt.Printf("  %s\n", p.SizeNote())
+}
+
+// pullCheckpoint fetches a repo's safetensors checkpoint (pull <owner/repo>:safetensors) as one verified set.
+func pullCheckpoint(ctx context.Context, ref pull.Ref, outDir string) int {
+	p, err := pull.PlanCheckpoint(ctx, ref.Repo)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
+		return 1
+	}
+	dir := outDir
+	if dir == "" {
+		if dir, err = pull.CacheDir(ref.Repo); err != nil {
+			fmt.Fprintf(os.Stderr, "goinfer-chat pull: locating cache dir: %v\n", err)
+			return 1
+		}
+	}
+	printPlan(p)
+	fmt.Printf("  -> %s\n", dir)
+	start := time.Now()
+	tty := isTerminal(os.Stderr)
+	interval := 5 * time.Second
+	if tty {
+		interval = time.Second
+	}
+	var lastPrint time.Time
+	path, err := pull.DownloadCheckpoint(ctx, p, dir, func(done, total int64, file string) {
+		el := time.Since(start).Seconds()
+		if el <= 0 || time.Since(lastPrint) < interval {
+			return
+		}
+		lastPrint = time.Now()
+		line := fmt.Sprintf("  %s / %s  %s/s  %s", pull.HumanBytes(done), pull.HumanBytes(total), pull.HumanBytes(int64(float64(done)/el)), file)
+		if tty {
+			fmt.Fprintf(os.Stderr, "\r%-96s", line)
+		} else {
+			fmt.Fprintln(os.Stderr, line)
+		}
+	})
+	if tty {
+		fmt.Fprintln(os.Stderr)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			fmt.Fprintln(os.Stderr, "goinfer-chat pull: cancelled (the files already verified are kept; re-run to resume)")
+			return 130
+		}
+		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
+		return 1
+	}
+	fmt.Printf("done in %s — every weight file sha256 verified; nothing was published until the whole set was\n%s\n", time.Since(start).Round(time.Second), path)
+	fmt.Printf("\nrun it:\n  %s --model %s\n", self(), path)
+	return 0
 }
 
 // runEmbed bakes the freshly-pulled model into a standalone binary by driving

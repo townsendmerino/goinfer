@@ -144,7 +144,9 @@ goinfer-chat  --model demo:0.5b
 ```
 
 Interrupted transfers resume. Downloads land in your user cache dir and print the exact `--model`
-command to run them. Access is anonymous only; a gated repo is detected and named before the
+command to run them. A family that ships no GGUF (safetensors only) is fetched whole with
+`:safetensors` — `pull HuggingFaceTB/SmolLM3-3B:safetensors`, or `--model hf:…:safetensors` — as one verified set
+of config, tokenizer and weight shards; nothing lands until every file has checked out. Access is anonymous only; a gated repo is detected and named before the
 transfer starts. A plain path still means a plain path — only the `hf:` and `demo:` prefixes are
 special.
 

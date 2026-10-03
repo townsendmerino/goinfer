@@ -120,7 +120,7 @@ type chatFlags struct {
 // set, so it checks the real list rather than a copy of it (serveOnlyInvocation reads it the same way).
 func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c := &chatFlags{load: loadflags.Register(fs, loadflags.Chat)}
-	c.model = fs.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
+	c.model = fs.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant>, hf:<owner>/<repo>:safetensors or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
 	c.system = fs.String("system", defaultSystem, "system prompt that steers the model")
 	c.maxTok = fs.Int("max", 512, "max tokens per reply")
 	c.temp = fs.Float64("temp", 0.7, "sampling temperature (0 = greedy)")

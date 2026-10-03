@@ -1,11 +1,14 @@
 # Task: fetch any checkpoint goinfer can load — beyond one GGUF file (P1–P9) — 2026-09
 
-> **Status: SCOPED 2026-09-17, unstarted.** Filed after the owner asked for the complete solution:
-> every supported model reachable from the page, multi-file checkpoints downloadable, and loadable
-> once down.
+> **Status: IN PROGRESS 2026-10-03.** §2 decided (option (c), owner 2026-10-03). P1, P2, P3 and P5 are
+> built in `pull` and reachable from the CLI and `--model`; P9's library gates pass. P6 (the web UI),
+> P4 (split GGUF), P7's vision test, P8's cache view and the server docs remain. See "Progress" below.
 >
-> **The gap in one number: 12 of the 36 families in `docs/capability-matrix.json` have no GGUF
-> loader at all.** `pull` searches, lists and fetches GGUF only, so those twelve are invisible to
+> Filed after the owner asked for the complete solution: every supported model reachable from the
+> page, multi-file checkpoints downloadable, and loadable once down.
+>
+> **The gap in one number: 14 of the 40 families in `docs/capability-matrix.json` have no GGUF
+> loader at all** (12 of 36 when this was scoped; `glm_ocr` and `spark2_5` have joined since). `pull` searches, lists and fetches GGUF only, so those twelve are invisible to
 > the web UI and to `--model hf:…` — not deprioritised, *unreachable*. Both vision-language
 > families are among them.
 >
@@ -155,6 +158,59 @@ see what the cache holds — which W32's "what is resident" view is the natural 
   absent); an unsupported architecture is declined **before** the first byte; and the size warning
   fires on a bf16 repo. The mid-set kill is the one that matters most — it is the guarantee
   today's `.part`-then-rename gives per file, and the set must not lose it.
+
+## Progress
+
+**§2: option (c), owner 2026-10-03.** Anonymous only for now. A gated original is declined by `CheckAccess`
+before the tree or any file is read, and the HF token becomes its own item.
+
+**Built 2026-10-03 (`pull/checkpoint.go`; the CLI in `internal/pullcmd`; `Resolve` in `pull/resolve.go`):**
+- **The selector `:safetensors`** names a repo's safetensors checkpoint (`pull owner/repo:safetensors`,
+  `--model hf:owner/repo:safetensors`). No GGUF quant has that name, so it cannot shadow a quant selector. A bare
+  `pull owner/repo` still lists the repo, and when it has no GGUF files it lists the checkpoint plan instead of
+  "0 GGUF files".
+- **P1:** `searchKinds` gains `safetensors`. The web UI's kind selector is P6's part.
+- **P2, `PlanCheckpoint`:** reads the tree, `config.json` and the shard index. It plans `config.json`, the
+  tokenizer, chat-template, generation and processor files present, and either `model.safetensors` or the index
+  plus every shard it names. It leaves out READMEs, legacy `.bin` files and GGUFs. It refuses:
+  - a repo without a config or safetensors weights;
+  - an index naming a file the repo lacks;
+  - an unsafe path, since a tree listing is remote input.
+- **P5:** `config.json`'s `model_type` is looked up in the embedded capability matrix, and a type with no
+  safetensors loader is refused after reading `config.json` and before any weight file. `Plan.SizeNote` states the
+  download size and, for a bf16/f16/f32 original, that a GGUF q4 would be about a quarter of it (§3 rule 4).
+- **P3, `DownloadCheckpoint`:** builds the set in `<dest>.partial`, each file through `Download`, so each gets its
+  own `.part`, digest check and resume. Once every file has verified it writes a marker naming the set, then makes
+  one rename to `<dest>`. A complete `<dest>` is a no-op, and a re-run resumes in the staging directory, skipping
+  verified files. A `<dest>` that exists without a matching marker is refused, not overwritten.
+- **Offline:** `Resolve` returns a complete cached checkpoint from its marker with no network. This is P8's
+  detection half.
+
+**P9's gates, `pull/checkpoint_test.go`, against a fake HuggingFace:**
+- `llama-tiny` split into two shards with an index goes plan, fetch, `decoder.Load`, one token, and a second
+  `Resolve` makes no request.
+- A transfer cut inside shard 2 publishes nothing at the final path, keeps the staging directory, and the re-run
+  does not re-fetch shard 1.
+- An unknown `model_type` is refused with only `config.json` read.
+- A gated repo is refused with no file read.
+- The bf16 size note fires.
+- Bad indexes and paths, and a foreign directory at the destination, are refused.
+- Mutations fail the right gates: building the set at the destination fails the round-trip and the interrupted
+  gate, and wiping the staging directory at start fails the resume.
+
+**By day against real HuggingFace:**
+- `pull HuggingFaceTB/SmolLM3-3B` lists 9 files, 5.7 GiB, with the bf16 note.
+- `google/gemma-3-4b-it` is refused as gated.
+- A GGUF repo's listing is unchanged.
+- `pull HuggingFaceTB/SmolLM2-135M-Instruct:safetensors` fetched 8 files (259.8 MiB) in 13 s with no staging left
+  behind, and `serve --model <dir> --backend cpu` answered an 8-token chat request from it.
+
+**Remaining:**
+- **P6:** the web UI loads a directory, the page renders a plan, and P1's kind selector.
+- **P4:** split GGUF, whose decision is still open.
+- **P7:** the test that a pulled VL repo enables image turns.
+- **P8:** a view of what the cache holds.
+- **P9's docs:** `docs/server.md`. The `--model` help, `docs/flags.md` and the README name `:safetensors` already.
 
 ## 5. Not in scope, stated
 

@@ -61,7 +61,7 @@ func TestSearch_privateHitsAreDropped(t *testing.T) {
 func TestSearch_unknownKindNeverMakesARequest(t *testing.T) {
 	called := false
 	withMockHF(t, func(w http.ResponseWriter, r *http.Request) { called = true })
-	_, err := Search(context.Background(), "x", "safetensors", 0)
+	_, err := Search(context.Background(), "x", "onnx", 0) // safetensors became a known kind with P1
 	if err == nil {
 		t.Fatal("Search with an unknown kind returned no error")
 	}

@@ -23,7 +23,7 @@ What to serve. `--model` is the one flag most invocations need.
 
 | Flag | Type | Default | What it does |
 |---|---|---|---|
-| `--model` | `[name=]path-or-ref (repeatable)` | — | What to serve: a `.gguf` or `.giw` file, a model directory, or a reference fetched on first use (`hf:owner/repo:quant`, `demo:<tier>`). Repeatable; `name=path` serves several models from one process, with optional per-model overrides after the path. [More](server.md). |
+| `--model` | `[name=]path-or-ref (repeatable)` | — | What to serve: a `.gguf` or `.giw` file, a model directory, or a reference fetched on first use (`hf:owner/repo:quant`, `hf:owner/repo:safetensors` for a safetensors checkpoint, `demo:<tier>`). Repeatable; `name=path` serves several models from one process, with optional per-model overrides after the path. [More](server.md). |
 | `--served-model-name` | `string` | — | The id `/v1/models` reports for a single unnamed `--model` (default: the file or directory name). |
 | `--lora` | `string` | — | A PEFT LoRA adapter directory, merged into a safetensors base at load. *Also in `goinfer-chat`.* |
 | `--adapter` | `serveName=baseName=dir (repeatable)` | — | A compute-time LoRA adapter that shares a base model's resident weights. Repeatable. Needs a dense safetensors base; not compatible with `--stream-weights`. |

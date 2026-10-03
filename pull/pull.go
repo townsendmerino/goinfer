@@ -74,6 +74,9 @@ type Ref struct {
 	// without a List call to ask HuggingFace how big the file is. 0 for a user-supplied ref,
 	// which pins nothing by construction (same reasoning as Pin).
 	Bytes int64
+	// Checkpoint is set by the selector ":safetensors": the repo's safetensors checkpoint, fetched as a set
+	// (PlanCheckpoint, DownloadCheckpoint) into a directory decoder.Load opens.
+	Checkpoint bool
 }
 
 //go:embed curated.json
@@ -118,7 +121,8 @@ func CuratedNames() []string {
 	return names
 }
 
-// ParseRef accepts "owner/repo", "owner/repo:file.gguf" or "owner/repo:quant".
+// ParseRef accepts "owner/repo", "owner/repo:file.gguf", "owner/repo:quant" or "owner/repo:safetensors" (the repo's
+// safetensors checkpoint, Ref.Checkpoint).
 func ParseRef(s string) (Ref, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -136,7 +140,7 @@ func ParseRef(s string) (Ref, error) {
 		return Ref{Repo: t.Repo, File: t.File, Pin: t.SHA256, Bytes: t.Bytes}, nil
 	}
 	if !validRepo(repo) {
-		return Ref{}, fmt.Errorf("%q: want owner/repo[:quant|:file.gguf] (e.g. Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m)", s)
+		return Ref{}, fmt.Errorf("%q: want owner/repo[:quant|:file.gguf|:safetensors] (e.g. Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m)", s)
 	}
 	r := Ref{Repo: repo}
 	if hasSel {
@@ -145,6 +149,8 @@ func ParseRef(s string) (Ref, error) {
 		}
 		if strings.HasSuffix(strings.ToLower(sel), ".gguf") {
 			r.File = sel
+		} else if strings.EqualFold(sel, CheckpointSelector) {
+			r.Checkpoint = true
 		} else {
 			r.Quant = sel
 		}
@@ -291,13 +297,12 @@ func List(ctx context.Context, repo string) ([]File, error) {
 
 // searchKinds maps a caller's requested KIND of pull target to the HF `filter=` query parameter
 // that narrows search results to it, and is the one place that needs to change to widen search to
-// a new kind. "gguf" is the only one this build's pull flow actually loads today (ParseRef/List/
-// Select are all GGUF-specific); a caller asking for anything else gets an explicit error rather
-// than a filter this package cannot really honour. Deliberately a table, not a switch inlined into
-// Search itself: the day a second kind (e.g. safetensors) is real, it is one more entry here, not
-// a second copy of the request/parse/sort logic below.
+// a new kind: "gguf" (one file, Select) and "safetensors" (a whole checkpoint, PlanCheckpoint). A
+// caller asking for anything else gets an explicit error rather than a filter this package cannot
+// really honour.
 var searchKinds = map[string]string{
-	"gguf": "gguf",
+	"gguf":        "gguf",
+	"safetensors": "safetensors", // P1 (docs/tasks/task-checkpoint-fetch-2026-09.md): a transformers checkpoint, fetched as a set (checkpoint.go)
 }
 
 // SearchResult is one repo suggestion — enough for a caller to show a name and let a person pick
@@ -328,7 +333,7 @@ type searchHit struct {
 func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {
 	filter, ok := searchKinds[kind]
 	if !ok {
-		return nil, fmt.Errorf("search: unknown kind %q (known: gguf)", kind)
+		return nil, fmt.Errorf("search: unknown kind %q (known: gguf, safetensors)", kind)
 	}
 	if q == "" {
 		return nil, nil
