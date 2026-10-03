@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -185,18 +186,35 @@ func TestPromptHiddenAll_batchedMatchesSequential(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				worst := 0.0
+				rels := make([]float64, len(want))
 				for pos := range want {
 					var ne, nb float64
 					for j := range want[pos] {
 						d := float64(got[pos][j]) - float64(want[pos][j])
 						ne, nb = ne+d*d, nb+float64(want[pos][j])*float64(want[pos][j])
 					}
-					worst = math.Max(worst, math.Sqrt(ne/nb))
+					rels[pos] = math.Sqrt(ne / nb)
 				}
-				t.Logf("%d tokens: worst per-position relative L2, batched vs per-token %.3g", n, worst)
-				if worst > 1e-6 {
-					t.Errorf("%d tokens: worst relative L2 %.3g > 1e-6", n, worst)
+				// f32: every position within 1e-6. int4: the activations are quantized to int8, so a few-ulp difference between the batched and
+				// per-token kernels can tip ONE activation code and move one position by about 1e-3 (measured on the Mac's arm64 CI runner, 2026-10-02:
+				// 1 of 64 positions at 1.75e-3, position 47, the 16 after it back at <=1e-7, so it is a flip and not carried state; the same fixture
+				// unquantized has none above 1.2e-7). A real batched-path bug elevates many positions, so the int4 bar is a flip ALLOWANCE (at most 1
+				// position or 2% above 1e-6, each under 1e-2, the median still within 1e-6), not a looser per-position number.
+				over, worst, med := 0, 0.0, medianOf(rels)
+				for pos, r := range rels {
+					worst = math.Max(worst, r)
+					if r > 1e-6 {
+						over++
+						t.Logf("%d tokens: position %d relative L2 %.3g", n, pos, r)
+					}
+				}
+				allow := 0
+				if tc.quant != "" {
+					allow = max(1, len(rels)/50)
+				}
+				t.Logf("%d tokens: per-position relative L2, batched vs per-token: median %.3g, worst %.3g, %d over 1e-6 (allowed %d)", n, med, worst, over, allow)
+				if over > allow || med > 1e-6 || (over > 0 && worst > 1e-2) {
+					t.Errorf("%d tokens: %d positions over 1e-6 (allowed %d), median %.3g, worst %.3g", n, over, allow, med, worst)
 				}
 			}
 		})
@@ -243,4 +261,10 @@ func TestPromptHiddenAll_rowsDoNotAlias(t *testing.T) {
 			t.Fatalf("editing row 0 changed row 1 at %d", j)
 		}
 	}
+}
+
+func medianOf(v []float64) float64 {
+	c := append([]float64(nil), v...)
+	sort.Float64s(c)
+	return c[len(c)/2]
 }
