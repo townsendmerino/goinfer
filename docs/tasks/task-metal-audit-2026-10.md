@@ -527,8 +527,14 @@ goinfer's ratios:
 - **B-P03:** all five arms failed in seconds. The script runs the test binary from `~/goinfer-bench`, and the gate's
   prose seed is read from a path relative to `metal/` (`../testdata/...`). The script's `|| true` hid each arm's exit
   code, so the runner saw success. The script now runs from the worktree's `metal/` and exits non-zero on any arm that fails.
-- **T1.9b:** the memory guard declined the 64-slot M26 build again (7.72 GB needed, 7.02 GB budget). It stays ungraded
-  until the owner picks a smaller cell.
+- **T1.9b:** the memory guard declined the 64-slot M26 build again (7.72 GB needed, 7.02 GB budget).
+  **Graded 2026-10-03 on a forced run: R11(c) stands at 64 slots.** The owner chose a single run by day with the guard
+  bypassed (`GOINFER_NO_RESIDENT_MEM_GUARD=1`), on the same binary (`f56b40ec`) and the same kill-watch (+1 GB, or two
+  80 MB ticks). The build finished in 11.3 s. One second later swap jumped +1.60 GB in a single 1 s sample
+  (780 → 2382 MB), RSS fell from 6.4 to 0.6 GB as it was paged out, and the kill-watch killed the process at t+12 s,
+  before the first token. The pre-registered row: "the kill-watch fires: R11(c) stands". Deviations: by day, with
+  VS Code open, and the guard bypassed. The guard's refusal was the right call. Logs:
+  `docs/measurements/metal-audit-2026-10/t19b-forced-2026-10-03/`.
 
 ## Owner decisions
 
@@ -799,3 +805,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-03: **the night of 2026-10-02 graded** (results above). C-B01, C-P02 and A-P01 ship. B-P04 and E-P03 are killed
   and their code reverted; the records keep the numbers. T1.7 stands on the 7B and is parked on the 1.5B. T1.11 and T1.14
   are recorded. E-P06 and B-P03 are fixed and re-queued, and T1.9b waits for the owner.
+- 2026-10-03: **T1.9b graded on an owner-forced run** (guard bypassed, by day, under the kill-watch): swap +1.60 GB
+  within a second of the build, killed before the first token. R11(c)'s "lower default" stands at 64 slots.
