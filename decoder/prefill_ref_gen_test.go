@@ -59,7 +59,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestPrefillGateReference -v -timeout 4h
 func TestPrefillGateReference(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads two real checkpoints on CPU, S and D7)")
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU: S and D7, or the cells GOINFER_CPU_REF_MODELS names)")
 	}
 	if testing.Short() {
 		t.Skip("long-running reference build: skipped in -short")
@@ -100,9 +100,23 @@ func TestPrefillGateReference(t *testing.T) {
 	}{
 		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", refKs([]int{256, 512, 1024, 3900})},
 		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), refKs([]int{256, 512, 1024})},
+		// Q05, the 0.5B (head dim 64): references for B-P01's fidelity gate (docs/tasks/task-metal-audit-2026-10.md), f32
+		// like S. Built only when GOINFER_CPU_REF_MODELS names it, so the standing S/D7 run is unchanged.
+		{"Q05", "GOINFER_CPU_MODEL_Q05", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "", refKs([]int{2048, 3900})},
+	}
+	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
+	want := map[string]bool{"S": true, "D7": true}
+	if v := strings.TrimSpace(os.Getenv("GOINFER_CPU_REF_MODELS")); v != "" {
+		want = map[string]bool{}
+		for _, f := range strings.Split(v, ",") {
+			want[strings.TrimSpace(f)] = true
+		}
 	}
 
 	for _, mc := range models {
+		if !want[mc.name] {
+			continue
+		}
 		t.Run(mc.name, func(t *testing.T) {
 			path := os.Getenv(mc.pathEnv)
 			if path == "" {

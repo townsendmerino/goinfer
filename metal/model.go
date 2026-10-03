@@ -196,7 +196,7 @@ type resident struct {
 	// metalAttnFAEnabled(); GOINFER_METAL_ATTN_FA=0 opts out) — see that function's own doc
 	// comment for the gate/speed/verify-oracle history. Pipelines always built; dispatch is
 	// conditional (canUseAttnFA), same "one binary carries both arms" shape as R1's f16 lane
-	// above. hd==128-only, dense-GQA-only (no window/sinks/f32-KV) — see attention_fa's own doc
+	// above. hd==128 (or hd==64 through B-P01's block twin, attnFAHeadDimOK), dense-GQA-only (no window/sinks/f32-KV) — see attention_fa's own doc
 	// comment in kernels.go for why, and §2.2/R2's own speed-probe record for why S must be sized
 	// for real occupancy (S=1 is UNIFORMLY worse than the shipped kernel at every depth measured,
 	// not just below some crossover — a correction to this brief's own original "S=1 below a
@@ -231,7 +231,10 @@ type resident struct {
 	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
 	// buildResident.
 	attnFABlkSplit int
-	curNKeys       int // CPU-side twin of uNKeys' value, set by setPos
+	// attnFALayer is the first layer attention_fa can run (the one attnFANKV was taken from); its head dim picks the
+	// block kernel's hd = 128 form or B-P01's hd = 64 twin.
+	attnFALayer int
+	curNKeys    int // CPU-side twin of uNKeys' value, set by setPos
 	// encNKeys, when > 0, is the key count of the command buffer being ENCODED: the pipelined executor sets it
 	// around each encode, because it encodes before the job's setPos (and ahead, for the predicted next job).
 	// 0 = the buffer runs at the position setPos last set — every synchronous path sets the position, then
@@ -1225,7 +1228,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if r.nH*L.geom.hd > maxNHhd {
 				maxNHhd = r.nH * L.geom.hd
 			}
-			if L.geom.hd == 128 && attnFAGroupOK(r.nH, L.geom.nKV) {
+			if attnFAHeadDimOK(L.geom.hd, r.nH, L.geom.nKV) && attnFAGroupOK(r.nH, L.geom.nKV) {
 				g := r.nH / L.geom.nKV
 				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
 					maxAttnFAPartialElems = e
@@ -1237,7 +1240,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				// during encode-ahead — see uAttnFAG/uAttnFANSplit's own field comment
 				// for why that was a real race, not just untidy.
 				if r.attnFANKV == 0 {
-					r.attnFANKV = L.geom.nKV
+					r.attnFANKV, r.attnFALayer = L.geom.nKV, l
 				}
 			}
 			lw2 := uint32(0) // 0 = full causal; only local layers carry the window
@@ -1457,7 +1460,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(maxNHhd), byteBuf(d, maxNHhd), d.NewBufferLen(1)
 	// R2: attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional —
 	// see canUseAttnFA/attnFASplitFor), so it is sized once here, not per-token. Zero-size (no
-	// hd==128 layer) on a model this kernel can never engage for — canUseAttnFA's own hd guard
+	// layer attnFAHeadDimOK admits) on a model this kernel can never engage for — canUseAttnFA's own hd guard
 	// then always declines, so the zero buffer is never dispatched into.
 	r.attnFAMaxSplit = 32
 	// R17: for the GQA group sizes it was graded at (G = 6, Qwen2.5-1.5B; G = 7, Qwen2.5-7B), attention_fa's first
@@ -1465,8 +1468,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// and combine). Every other group size keeps attention_fa and its core-count rule — the block kernel is
 	// instantiated, measured and fidelity-gated only for these two.
 	if r.attnFANKV > 0 {
-		switch g := r.nH / r.attnFANKV; g {
-		case 6, 7:
+		switch g := r.nH / r.attnFANKV; {
+		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		case g == 6 || g == 7:
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		}
@@ -2674,6 +2680,22 @@ const attnFAMaxG = 8
 // attnFAGroupOK reports whether a layer with nH query heads over nKV KV heads fits attention_fa's arrays.
 func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
 
+// attnFAHeadDimOK reports whether attention_fa can run a layer of head dim hd: 128 (attention_fa and the block kernel),
+// or 64 where the block kernel's hd = 64 twin is instantiated for the group size, G = 7 (B-P01). attention_fa itself
+// is hd = 128 only, so an hd = 64 layer must never reach it without the twin.
+func attnFAHeadDimOK(hd, nH, nKV int) bool {
+	if hd == 128 {
+		return true
+	}
+	return hd == 64 && nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
+}
+
+// attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). FALSE until its
+// pre-registered grade passes (docs/tasks/task-metal-audit-2026-10.md, "B-P01"): the twin is not bit-identical to the
+// per-query-head kernel, so a default 0.5B load decodes exactly as before. The grade's binary and tests set it, before
+// a resident is built.
+var attnFABlk64On = false
+
 // planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
 // it encodes, otherwise the position setPos last set.
 // fanSplitBuf is the attention_fa split-count uniform the command buffer being encoded binds: the greedy chain's own
@@ -2743,7 +2765,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
+	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV) && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
 }
 
 // attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),

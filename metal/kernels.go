@@ -1399,6 +1399,124 @@ typedef decltype(attention_fa_blk<6>) attention_fa_blk_t;
 template [[host_name("attention_fa_blk_g6")]] kernel attention_fa_blk_t attention_fa_blk<6>;
 template [[host_name("attention_fa_blk_g7")]] kernel attention_fa_blk_t attention_fa_blk<7>;
 // ---- attention_fa_blk end ----
+
+// attention_fa_blk64 (B-P01, docs/audit-metal-2026-09-30.md): attention_fa_blk at head dim 64, the 0.5B's (Qwen2.5-0.5B,
+// G = 7). The block kernel's shape exactly, with 2 dims per lane where hd = 128 has 4: half2 K/V loads (128 B per key
+// row per simdgroup), float2 q and accumulators, and a 4*G-float threadgroup row per lane in place of 6*G. Same
+// signature, grid, split rule (attnFABlkSplit) and partial layout G*(hd+2), so attention_fa_combine merges it
+// unchanged. Not bit-identical to the per-query-head kernel it replaces (the block softmax reassociates, as at hd = 128);
+// fidelity-gated. Instantiated only for the group size graded.
+template <uint G>
+kernel void attention_fa_blk64(
+    device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],
+    device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],
+    constant uint& nKV[[buffer(4)]], constant uint& Gu[[buffer(5)]],
+    constant uint& nKeys[[buffer(6)]], constant float& scale[[buffer(7)]],
+    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],
+    threadgroup float* shm[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    (void)Gu;
+    const uint hd = 64u;
+    const uint kvDim = nKV * hd;
+    const uint kvh = tgid / nSplit, split = tgid % nSplit;
+    const uint winStart = (window > 0u && nKeys > window) ? nKeys - window : 0u;
+    const uint nWin = nKeys - winStart;
+    const uint chunkLen = (nWin + nSplit - 1u) / nSplit;
+    const uint chunkStart = winStart + split * chunkLen;
+    const uint chunkEnd = min(chunkStart + chunkLen, nKeys);
+
+    device const float* qr = q + kvh * G * hd;
+    device const half*  kb = kc + kvh * hd + lane*2u;
+    device const half*  vb = vc + kvh * hd + lane*2u;
+
+    float2 qs[G];
+    float m[G], l[G];
+    float2 acc[G];
+    ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+        qs[g] = *((device const float2*)(qr + g*hd + lane*2u)) * scale;
+        m[g] = -INFINITY; l[g] = 0.0f; acc[g] = float2(0.0f);
+    }
+
+    for (uint b0 = chunkStart + sgid*32u; b0 < chunkEnd; b0 += 128u) {
+        const uint nb = min(32u, chunkEnd - b0);
+        float s[G];
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
+        if (nb == 32u) {
+            ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
+                float2 k2 = float2(*((device const half2*)(kb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+                    float d = simd_sum(dot(qs[g], k2));
+                    s[g] = (lane == j) ? d : s[g];
+                }
+            }
+        } else {
+            for (uint j = 0; j < nb; j++) {
+                float2 k2 = float2(*((device const half2*)(kb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+                    float d = simd_sum(dot(qs[g], k2));
+                    s[g] = (lane == j) ? d : s[g];
+                }
+            }
+        }
+        float p[G];
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+            float mb = simd_max(s[g]);
+            float mn = max(m[g], mb);
+            float alpha = (m[g] == -INFINITY) ? 0.0f : exp(m[g] - mn);
+            p[g] = (s[g] == -INFINITY) ? 0.0f : exp(s[g] - mn);
+            l[g] = l[g]*alpha + simd_sum(p[g]);
+            acc[g] *= alpha;
+            m[g] = mn;
+        }
+        if (nb == 32u) {
+            ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
+                float2 v2 = float2(*((device const half2*)(vb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v2;
+            }
+        } else {
+            for (uint j = 0; j < nb; j++) {
+                float2 v2 = float2(*((device const half2*)(vb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v2;
+            }
+        }
+    }
+
+    const uint stride = 4u*G;
+    threadgroup float* row = shm + tid*stride;
+    ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+        row[g] = m[g]; row[G+g] = l[g];
+        row[2u*G + g*2u+0u] = acc[g].x; row[2u*G + g*2u+1u] = acc[g].y;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sgid == 0u) {
+        float fm[G], fl[G]; float2 fa[G];
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) { fm[g] = -INFINITY; fl[g] = 0.0f; fa[g] = float2(0.0f); }
+        for (uint sg = 0; sg < 4u; sg++) {
+            threadgroup float* r = shm + (sg*32u + lane)*stride;
+            ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+                float m2 = r[g], l2 = r[G+g];
+                float mn = max(fm[g], m2);
+                float a1 = (fm[g] == -INFINITY) ? 0.0f : exp(fm[g] - mn);
+                float a2 = (m2 == -INFINITY) ? 0.0f : exp(m2 - mn);
+                fl[g] = fl[g]*a1 + l2*a2;
+                fa[g] = fa[g]*a1 + float2(r[2u*G+g*2u+0u], r[2u*G+g*2u+1u])*a2;
+                fm[g] = mn;
+            }
+        }
+        const uint pStride = G * (hd + 2u);
+        device float* pout = partial + (kvh*nSplit + split) * pStride;
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+            device float* og = pout + g*(hd+2u);
+            og[0] = fm[g]; og[1] = fl[g];
+            og[2u+lane*2u+0u] = fa[g].x; og[2u+lane*2u+1u] = fa[g].y;
+        }
+    }
+}
+
+typedef decltype(attention_fa_blk64<7>) attention_fa_blk64_t;
+template [[host_name("attention_fa_blk64_g7")]] kernel attention_fa_blk64_t attention_fa_blk64<7>;
 // attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same
 // math (the f16 version already accumulated in f32); only the cache element type changes.
 kernel void attention_f32(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],

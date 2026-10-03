@@ -1244,8 +1244,15 @@ func TestR17KernelAccuracy(t *testing.T) {
 				}
 				L := &r.layers[l]
 				g := L.geom
-				if g == nil || g.hd != 128 || L.window != 0 {
+				if g == nil || !attnFAHeadDimOK(g.hd, r.nH, g.nKV) || L.window != 0 {
 					continue
+				}
+				if g.hd != 128 { // B-P01's hd = 64 twin: only the exact and production arms are hd-general
+					for _, a := range arms {
+						if a.fa && a.p != current {
+							t.Fatalf("arm %q is an hd = 128 kernel; at hd %d use GOINFER_METAL_R17_ACC_ARMS=bp03 (exact and production)", a.name, g.hd)
+						}
+					}
 				}
 				nHhd := r.nH * g.hd
 				G := r.nH / g.nKV

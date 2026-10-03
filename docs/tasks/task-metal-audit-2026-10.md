@@ -549,6 +549,36 @@ own run. The merge (`c6f8100e`) changes what last night's T1.14 cells measured (
 | Consistency check | The new ÷ old cells must agree in direction with the graded in-process A/Bs. At depth 128 greedy that means ≥ 1.00 on all three models, and at T = 1 the same (C-P02: 1.5B 1.066×, 0.5B 1.160×, 7B 1.022×). A cell that reads below 1.00 beyond its own spread is investigated before any row is updated. The served number is end to end, so its size may differ from the in-process ratio, but its sign may not. |
 | Not read here | A-P01 (prefill passes; `bench_peer` times decode only), C-P01 and E-P09 (memory). |
 
+### B-P01: built, pending its grade (pre-registered 2026-10-03, before any graded run)
+
+Built on main, **off by default** (`attnFABlk64On = false`): `attention_fa_blk64`, the block decode-attention kernel
+at head dim 64 (Qwen2.5-0.5B, G = 7).
+- **The kernel:** the hd = 128 block kernel's shape exactly, with 2 dims per lane in place of 4 (`half2` K/V loads,
+  `float2` q and accumulators). It has the same grid, split rule (16) and partial layout, so `attention_fa_combine`
+  merges it unchanged.
+- **Reach:** `attnFAHeadDimOK` admits an hd = 64 layer only where the twin exists for its group size, so an hd = 64
+  layer can never reach the hd = 128 `attention_fa`. The graded hd = 128 kernel's text is untouched.
+- **Fidelity:** not bit-identical to the per-query-head kernel it replaces; the block softmax reassociates, as at
+  hd = 128. So it is gated, on the amended decode-attention bar (2026-09-25).
+
+By day:
+- **Accuracy:** `TestR17KernelAccuracy` (arms `bp03`) on the 0.5B, 3 prompts at 1024, 2048 and 3900 keys, 3,024
+  heads. Against float64 the twin's per-head relL2 is a median **1.66e-7** and p99 2.84e-6, the exact kernel's
+  3.80e-7 and 5.59e-6; the twin is closer on 2,653 heads. The harness now admits an hd = 64 layer only under the
+  hd-general arms (exact and production).
+- **Speed, one rep, exploratory:** `TestBP01AttnAB` read legacy ÷ block attention 3.21× at 2048 keys and 3.84× at
+  3900 (S = 16), and the token 1.59× and 1.96×.
+- **The reference cell:** `TestPrefillGateReference` gains the 0.5B as cell **Q05** (f32, like S), built only when
+  `GOINFER_CPU_REF_MODELS` names it. A K = 64 smoke built all 10 prompts in 17 s; those files were removed.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-bp01-grade.sh` on the night queue, from pinned tagged binaries, run from the checkout's package directories. (1) Build the Q05 references at K = 2048 and 3900, set B, on the CPU. (2) The fidelity gate (`TestR17_decodeFidelityGate`, `GOINFER_METAL_BLK64=1`) on the 0.5B against Q05 at K = 3900 and K = 2048, with candidate `attention_fa` (production: the twin) and, at 3900, the `exact-null` control. (3) P1: `TestR17KernelAccuracy`, arms `bp03`, 10 prompts at 2048 and 3900. (4) Speed: `TestBP01AttnAB`, 5 reps of 8 tokens per arm at 2048 and 3900, arms interleaved and rotated, the no-op arm subtracted per rep. Estimate about 45–60 minutes, most of it the references; queued at 75. |
+| Precondition | Every step's test passes (the job exits non-zero on any failure). The reference files exist for all 10 prompts at both depths. |
+| Graded | **P1:** the twin's median and p99 per-head relL2 vs float64 at most the exact kernel's. **P2 at K = 3900:** critA, critB and the 1.1× ceiling as printed, and the KL ratio candidate ÷ exact. **Speed:** `B-P01 METRIC legacy/blk S=16` at 2048 and 3900. |
+| Rule | **Ships** (`attnFABlk64On` becomes true) if P1 holds, P2's critA, critB and ceiling hold, the KL ratio is ≤ 1.05, and the speed ratio is ≥ 1.5 at either depth. A KL ratio of 1.05–1.10 parks it. **Killed** (the twin and its switch removed) if P1 fails, P2 fails outright, or the speed ratio is below 1.5 at both depths (the audit's kill line). K = 2048 and the exact-null control are reported beside the decision. A null KL ratio outside 0.95–1.05 says the cell's own spread is wider than the bar, and that goes to the owner before shipping. |
+| Reported | The S = 8, 24 and 32 arms, and the token ratio at both depths. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -825,3 +855,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   `TestVerifyCost_offUntilGraded`), so `--spec ngram` keeps pricing the verify by `stepVerifyCost` until tonight's
   grade, which runs pinned binaries and is unaffected. If it passes, the switch goes; if it is killed, the code goes.
   The audit continues on main from here.
+- 2026-10-03: **B-P01 built, off by default, queued for its grade** (owner: "B-P01 first"). The hd = 64 block attention
+  kernel for the 0.5B. It is more accurate than the kernel it replaces, and a one-rep smoke read it 3.2–3.8× faster
+  at attention. The 0.5B's CPU reference cell Q05 is built tonight as the grade's first step.
