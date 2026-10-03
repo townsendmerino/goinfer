@@ -148,6 +148,12 @@ any surface may still change.
 
 ### Added
 
+- **A CUDA-resident model now answers the Clef route's all-positions hidden state on the device (D11's follow-up).** `decoder.ResidentResidualAll` is a new optional resident hook: the batched prefill returns
+  every row's residual stream after the last layer and before the final norm, and `PromptHiddenAll` applies the final norm on the host in f32, so the rows are not the int8-requantized vector `HiddenLast` returns.
+  CUDA implements it as one more tail of its existing batched pass (no new kernel; every row takes the exact kernels). On the tiny Qwen3.5 fixtures the per-row cosine against the CPU is at least 0.99996 (dense)
+  and the MoE mean 0.9996 with the last row at 0.99999. **One exploratory run of three records on the real Clef-flash at int4 (RTX 2070 SUPER) took 3.2 ms per token against 54 to 68 on the CPU, and its first answer sat
+  0.045 from the CPU int4's: that path is not graded, and D6b left a GPU-int4 gap for JEV open.** Metal and WebGPU do not implement it yet and take the CPU path.
+  `docs/measurements/decisions-d11-resident-hidden-2026-10-03.md`.
 - **A decision request's questions share the prefill of what their prompts have in common (D8, CPU path).** On the hybrid Qwen3.5 family each question used to prefill its whole prompt
   again (D7 measured five questions costing five times one). `/v1/systemone` now sends a request's questions to the model in one call: the prefix the prompts share is prefilled once,
   into a cache that is then deep-copied (KV rows and the Gated DeltaNet state, which can be copied but not rewound) for each question's own suffix. Where the template puts the
@@ -161,7 +167,7 @@ any surface may still change.
   this route (the label route keeps its margin over uniform), probabilities are rounded to four decimals as the reference rounds them, and a state longer than the context is cut
   to its first tokens with `goinfer.state_tokens_truncated` saying how many. Text in the request is tokenized literally, so a `<|im_start|>` in a customer's message cannot become
   a control token (the reference would). The record encoder and head (`internal/clef`) match the official `joint_schema_model.py` to 1.8e-7 on a tiny end-to-end fixture and
-  the encoder matches it on 150/150 recorded items; **nothing has yet run on the real Clef-flash weights**, and the backbone runs on the CPU. Images are refused until P8a. A Clef
+  the encoder matches it on 150/150 recorded items; **the real Clef-flash weights have run only as smokes (D13's graded fidelity run is queued)**, and the backbone runs on the CPU, or on the device on a CUDA-resident model (below; ungraded). Images are refused until P8a. A Clef
   model loads at `int8int8` unless `quant=` says otherwise (the decision-model default). `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`,
   `docs/tasks/task-constrained-confidence.md` D12 and D13.
 

@@ -609,8 +609,8 @@ names that are served.
   - **A state that does not fit is cut to its first tokens** (the reference's rule, default 16,384 tokens in all) and
     `goinfer.state_tokens_truncated` counts what was cut. A schema that alone does not fit is a 422.
   - **Precision:** it loads at `int8int8` unless `quant=` or `--quant` says otherwise. **No grading of the real Clef-flash weights
-    exists yet** (D13's fidelity run is queued behind the reference fixture), the backbone runs on the CPU, and no speed is
-    claimed (D14). What is checked is the wiring: the encoder against the official one on 150/150 recorded items, and the whole
+    exists yet** (D13's fidelity run is queued behind the reference fixture), no speed is claimed (D14), and the backbone runs on the CPU except on a CUDA-resident model, where it runs on the
+    device (3.2 ms per token against about 54 to 68 on the CPU in one exploratory run of three records; **that path is ungraded and its first answers sat up to 0.045 from the CPU int4's**, the same kind of GPU-int4 gap D6b left open for JEV). What is checked is the wiring: the encoder against the official one on 150/150 recorded items, and the whole
     pipeline against the official reference to 1.8e-7 on a tiny model (`measurements/decisions-d12-clef-encoder-2026-10-02.md`).
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates

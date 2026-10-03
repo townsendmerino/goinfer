@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -315,4 +316,109 @@ func TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel(t *testing.T) {
 	if m.OutputEmbeddingRow(0, row[:hs-1]) == nil {
 		t.Error("a short destination was accepted")
 	}
+}
+
+// stubResidualAll is a resident that implements only ResidentResidualAll (the embedded interface is nil: PromptHiddenAll must call nothing else on it).
+type stubResidualAll struct {
+	ResidentForward
+	rows  [][]float32
+	err   error
+	calls int
+	embs  int
+}
+
+func (s *stubResidualAll) ResidualAll(_ context.Context, embeddings [][]float32, startPos int) ([][]float32, error) {
+	s.calls++
+	s.embs = len(embeddings)
+	if startPos != 0 {
+		return nil, fmt.Errorf("startPos %d, want 0", startPos)
+	}
+	return s.rows, s.err
+}
+
+// A resident that offers ResidualAll answers PromptHiddenAll: its pre-norm rows come back with the decoder's own f32 final norm applied on the host; a decline or a
+// malformed answer falls back to the CPU rows; a cancellation returns. (The device kernels' numerics are the backend modules' tests'; this pins the decoder's side.)
+func TestPromptHiddenAll_residentRowsGetTheHostFinalNorm(t *testing.T) {
+	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
+	a := m.w.arch
+	ids := []int{3, 9, 27, 81, 5}
+	cpu, err := m.PromptHiddenAll(context.Background(), ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := make([][]float32, len(ids))
+	for i := range raw {
+		raw[i] = make([]float32, a.HiddenDim)
+		for j := range raw[i] {
+			raw[i][j] = float32((i*7+j*3)%11-5) * 0.37
+		}
+	}
+	want := make([][]float32, len(raw))
+	for i, r := range raw {
+		want[i] = append([]float32(nil), r...)
+		normalize(a, want[i], m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+	}
+
+	stub := &stubResidualAll{rows: cloneRows(raw)}
+	m.resident = stub
+	defer func() { m.resident = nil }()
+	got, err := m.PromptHiddenAll(context.Background(), ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stub.calls != 1 || stub.embs != len(ids) {
+		t.Fatalf("the resident was called %d times with %d embeddings, want once with %d", stub.calls, stub.embs, len(ids))
+	}
+	for i := range want {
+		for j := range want[i] {
+			if got[i][j] != want[i][j] {
+				t.Fatalf("row %d differs from the host final norm of the resident's row at %d (%v vs %v)", i, j, got[i][j], want[i][j])
+			}
+		}
+	}
+	if m.resBusy != 0 {
+		t.Error("the resident claim was not released")
+	}
+
+	// A decline (an error that is not the caller's cancellation), and a wrong row count, both fall back to the CPU's rows.
+	for name, s := range map[string]*stubResidualAll{
+		"decline":         {err: fmt.Errorf("device out of memory")},
+		"wrong row count": {rows: cloneRows(raw)[:3]},
+		"wrong width":     {rows: [][]float32{raw[0][:5], raw[1], raw[2], raw[3], raw[4]}},
+	} {
+		m.resident = s
+		got, err := m.PromptHiddenAll(context.Background(), ids)
+		if err != nil {
+			t.Fatalf("%s: %v (it should have fallen back to the CPU)", name, err)
+		}
+		for i := range cpu {
+			for j := range cpu[i] {
+				if got[i][j] != cpu[i][j] {
+					t.Fatalf("%s: row %d differs from the CPU path at %d", name, i, j)
+				}
+			}
+		}
+		if s.calls != 1 {
+			t.Errorf("%s: the resident was called %d times", name, s.calls)
+		}
+		if m.resBusy != 0 {
+			t.Errorf("%s: the resident claim was not released", name)
+		}
+	}
+
+	// A cancelled context returns instead of falling back.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m.resident = &stubResidualAll{err: ctx.Err()}
+	if _, err := m.PromptHiddenAll(ctx, ids); err == nil {
+		t.Error("a cancelled context fell back to the CPU instead of returning")
+	}
+}
+
+func cloneRows(r [][]float32) [][]float32 {
+	out := make([][]float32, len(r))
+	for i := range r {
+		out[i] = append([]float32(nil), r[i]...)
+	}
+	return out
 }

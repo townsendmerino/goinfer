@@ -981,7 +981,7 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   per question.
 - **Measure:** latency for 1 and 5 questions about one state, Clef-flash against JEV-9B, on the Mac CPU, quiet box,
   paired. This is the number that says whether Clef makes D8 unnecessary for TypeSafe-shaped requests.
-- **Resident:** once D11's follow-up exists, the same cells on CUDA and Metal, each with its own pre-registered band.
+- **Resident:** D11's follow-up now exists for CUDA ([`decisions-d11-resident-hidden-2026-10-03.md`](../measurements/decisions-d11-resident-hidden-2026-10-03.md): the all-positions residual comes back from the device; one exploratory run of three records measured 3.2 ms per token at int4, with fidelity ungraded), so the CUDA cells can be registered; Metal and WebGPU do not implement the seam yet. Each cell gets its own pre-registered band.
 - **Docs (D9's list):** the route, the per-arm fidelity figures, the measured latency with its machine, and the
   §2 caveat. A site decision-model tag goes on Clef-flash only after D13's fidelity gate passes.
 

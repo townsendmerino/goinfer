@@ -265,6 +265,52 @@ func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, s
 	return r.prefillChunked(ctx, embeddings, startPos, tailHiddenLast, nil)
 }
 
+// ResidualAll (decoder.ResidentResidualAll) returns every row's residual stream after the last layer and before the final norm: HiddenLast's twin for a head that reads
+// every position (D11's follow-up; the Clef joint head). The passes are the same chunked ones prefillChunked runs, except that every chunk keeps its rows instead of
+// discarding them, and all of them take the exact kernels (every tail but an ordinary single-row prefill does; a DeltaNet model always does). The rows are the f32 residual
+// the pass already downloads, so nothing here is quantized and the decoder's own f32 final norm finishes the job.
+func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) ([][]float32, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
+	chunk := prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK"))
+	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
+		chunk = learned
+	}
+	if e := r.prefillStaticDecline(); e != nil {
+		return nil, e
+	}
+	if M <= chunk || len(r.capBTaps) > 0 {
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailResidualAll, 0, 0, nil, nil)
+		return outs, err
+	}
+	r.chunkOrdinary, r.chunkPromptLen = false, startPos+M
+	defer func() { r.chunkOrdinary, r.chunkPromptLen = false, 0 }()
+	all := make([][]float32, 0, M)
+	for i := 0; i < M; {
+		if e := ctx.Err(); e != nil {
+			return nil, e
+		}
+		n := min(chunk, M-i)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tailResidualAll, 0, 0, nil, nil)
+		if err != nil {
+			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
+				chunk = max(chunk/2, prefillMinChunk)
+				r.prefillChunkCap.Store(int64(chunk))
+				continue // same i: the failed pass committed nothing
+			}
+			return nil, err
+		}
+		all = append(all, outs...)
+		i += n
+	}
+	return all, nil
+}
+
 // prefillChunked runs the prompt through the batched path in passes of at most
 // prefillChunkRows() rows, returning the LAST row's tail output — logits (tailLastLogits,
 // PrefillLast/PrefillMRoPELast) or the post-final-norm hidden state (tailHiddenLast,
@@ -749,6 +795,8 @@ const (
 	// vector instead of running the LM head GEMV at all — an embedder never
 	// needs logits, and the head is the single most expensive matmul in a
 	// forward. Never batched across rows, like tailLastLogits.
+	tailResidualAll // return EVERY row's residual stream after the last layer, BEFORE the final norm (ResidualAll, D11's follow-up): the f32 [M, hidden] block the
+	// batched pass already downloads for its tails. No norm, no quantization, no head: the decoder applies the final norm on the host in f32.
 )
 
 // mropePosWindow returns the [startPos, startPos+M) slice of the WHOLE-PROMPT, ABSOLUTE-indexed
@@ -1375,6 +1423,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		if e := gpu.Download(xB, xhost); e != nil {
 			return e
 		}
+		if tail == tailResidualAll {
+			outs = make([][]float32, M)
+			for m := range outs {
+				outs[m] = append([]float32(nil), xhost[m*hidden:(m+1)*hidden]...)
+			}
+			return r.launchErr
+		}
 		if tail == tailAllArgmax {
 			return r.batchedHeadArgmax(xB, aqB, aScB, M, &ids)
 		}
@@ -1469,7 +1524,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	// SKIPPED for tailHiddenLast: outs holds a HIDDEN STATE there, not logits, and Gemma's softcap
 	// is a logit-only transform — applying it here would silently corrupt every G4 embedding on a
 	// softcapped family.
-	if tail == tailHiddenLast {
+	if tail == tailHiddenLast || tail == tailResidualAll {
 		return outs, ids, nil
 	}
 	for _, out := range outs {

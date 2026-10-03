@@ -268,6 +268,19 @@ type ResidentHiddenLast interface {
 	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
 }
 
+// ResidentResidualAll is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions startPos..startPos+len-1 and return the residual stream of EVERY
+// row after the last layer and BEFORE the final norm, [len][hidden] f32, each row a fresh slice the caller owns. It is the resident twin of what
+// Model.PromptHiddenAll computes on the CPU (D11's follow-up, docs/tasks/task-constrained-confidence.md Route C: the Clef joint head reads every position's final-norm hidden
+// state), and it deliberately stops BEFORE the norm: the decoder applies the final norm on the host, in f32, exactly as its CPU path does. ResidentHiddenLast cannot serve
+// this: it returns the post-norm vector of the LAST row only, and on CUDA that vector has been through the int8 activation quantization the LM head reads, which a head that
+// consumes the hidden state itself should not inherit.
+//
+// startPos is 0 for the callers today (a fresh sequence, no prefix reuse). A backend whose batched forward is not what its decode computes must take the exact path here, as
+// ResidentHiddenLast's contract says; a decline (an OOM, a cap, a family the backend does not cover) falls back to the CPU, a cancellation returns.
+type ResidentResidualAll interface {
+	ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) (residuals [][]float32, err error)
+}
+
 // ResidentAdapterProj is one projection's low-rank compute-time LoRA delta (G3,
 // docs/tasks/task-gpu-paths-2026-09.md) — the exported twin of the package-private loraDelta, since a
 // resident backend lives in another module and cannot see unexported fields. Same layout and

@@ -67,7 +67,7 @@ Prerequisite on nobara's side: none outstanding. D13's fidelity run is independe
 
 ## 6. Not in scope
 
-The resident (CUDA and Metal) cells wait for D11's follow-up (a resident all-positions hidden state); the Clef route runs its backbone on the CPU today. Clef 27B is not measured here.
+The resident cells: **CUDA is now possible** (D11's follow-up, `decisions-d11-resident-hidden-2026-10-03.md`; one exploratory run of three records measured 3.2 ms per token on nobara's 2070 SUPER, ungraded for fidelity) and is not part of this Mac draft; **Metal does not implement the seam yet**, so the Mac runs the Clef route's backbone on the CPU, which is what this draft measures. Clef 27B is not measured here.
 
 ## 7. Result
 

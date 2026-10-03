@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 // PromptHiddenAll returns the final-norm hidden state at EVERY position of prompt: HF's last_hidden_state[0, :] (which is
@@ -10,9 +11,10 @@ import (
 // docs/tasks/task-constrained-confidence.md, Route C: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md); D2's
 // PromptHidden returns only the last row.
 //
-// CPU ONLY, and it says so rather than falling back silently: unlike PromptHidden it never asks a resident backend, because no resident
-// executor exposes every position's hidden state yet (that is D11's own follow-up, a speed lever and not needed for correctness). It takes
-// the same CPU paths PromptHidden takes, in the same order, so the last row is the row PromptHidden returns on a model with no resident:
+// A resident backend that implements ResidentResidualAll answers first (CUDA does; D11's follow-up): the whole prompt runs on the device, the residual stream of
+// every row comes back, and the final norm is applied HERE on the host in f32, so the rows are not the int8-requantized vectors ResidentHiddenLast returns. Its numerics are
+// the device kernels', not the CPU reference's (the backend modules bound the difference); a decline falls through to the CPU exactly as if there were no resident, and a
+// cancellation returns. Otherwise it takes the same CPU paths PromptHidden takes, in the same order, so the last row is the row PromptHidden returns on a model with no resident:
 //   - a family on the generic batched path (canBatchN): runLayersFromEmbedN, whose last step applies the final norm to each row;
 //   - Qwen3.5 (qwen35BatchN): runLayersQwen35N, which returns the post-final-norm rows;
 //   - everything else, and K == 1: one runLayers per token in a fresh cache, then the final norm on a copy of each row (h aliases the
@@ -32,6 +34,16 @@ func (m *Model) PromptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 		return nil, err
 	}
 	a := m.w.arch
+	if rr, ok := m.resident.(ResidentResidualAll); ok && m.tryClaimResident() {
+		rows, err := m.residualAllResident(ctx, rr, prompt)
+		atomic.StoreInt32(&m.resBusy, 0)
+		if err == nil {
+			return rows, nil
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
+	}
 	if m.canBatchN(len(prompt)) {
 		cache := m.NewCache(len(prompt))
 		hN, err := m.runLayersFromEmbedN(ctx, m.embedN(prompt), cache, false) // never fast: exact HF parity is the point
@@ -49,6 +61,31 @@ func (m *Model) PromptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 		return splitRows(hN, len(prompt), a.HiddenDim), nil
 	}
 	return m.promptHiddenAllSequential(ctx, prompt)
+}
+
+// residualAllResident is PromptHiddenAll's resident path: embed on the host (the embedding the plain resident forward uses), hand the sequence to the backend, and apply the
+// final norm to each returned residual row in f32. The caller holds the resident claim.
+func (m *Model) residualAllResident(ctx context.Context, rr ResidentResidualAll, ids []int) ([][]float32, error) {
+	a := m.w.arch
+	m.residentForgetIDs()
+	embs := make([][]float32, len(ids))
+	for i, id := range ids {
+		embs[i] = m.embedResident(id)
+	}
+	rows, err := rr.ResidualAll(ctx, embs, 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) != len(ids) {
+		return nil, fmt.Errorf("decoder: the resident returned %d residual rows for %d tokens", len(rows), len(ids))
+	}
+	for i, row := range rows {
+		if len(row) != a.HiddenDim {
+			return nil, fmt.Errorf("decoder: resident residual row %d is %d wide, want %d", i, len(row), a.HiddenDim)
+		}
+		normalize(a, row, m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
+	}
+	return rows, nil
 }
 
 // promptHiddenAllSequential is PromptHiddenAll's per-token path (the one PromptHidden's fallback is), callable directly so a test can

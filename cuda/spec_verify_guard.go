@@ -16,6 +16,9 @@ import (
 // test or vet run someone has to remember.
 var _ decoder.DecodeVerifyDiverger = (*cudaResident)(nil)
 
+// ResidualAll (prefill.go) is the resident seam PromptHiddenAll uses for the Clef joint head (D11's follow-up).
+var _ decoder.ResidentResidualAll = (*cudaResident)(nil)
+
 // DecodeVerifyDivergence reports whether this resident's M=1 decode and its batched verify can
 // currently produce different logits for the same position, and why. decoder.Model consults it
 // (decoder.SpecDecodeConflict) before any speculative loop that verifies on this resident, because

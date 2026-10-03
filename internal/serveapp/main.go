@@ -1429,7 +1429,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		fmt.Fprintf(os.Stderr, "  %s\n", line)
 	}
 	if lm.clef != nil {
-		fmt.Fprintf(os.Stderr, "  decisions: route C (clef), joint head %d-wide, backbone on the CPU (PromptHiddenAll), POST /v1/systemone\n", clefHead.Cfg.Width)
+		fmt.Fprintf(os.Stderr, "  decisions: route C (clef), joint head %d-wide (CPU, f32), backbone through PromptHiddenAll: on the device when the model is resident on a backend that implements it (CUDA), the CPU otherwise, POST /v1/systemone\n", clefHead.Cfg.Width)
 	}
 	if h := lm.head; h != nil {
 		how := "weights merged"
