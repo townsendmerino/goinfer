@@ -175,7 +175,7 @@ func TestClefFidelityCUDA_run(t *testing.T) {
 		}
 		a := out.Answers[0]
 		row, _ := json.Marshal(map[string]any{"id": r.ID, "arm": "cuda-" + arm, "n_tokens": out.InputTokens, "option_ids": a.Options, "probs": a.Probs,
-			"seconds": time.Since(start).Seconds(), "state_truncated": out.StateTruncated, "decode_path": path})
+			"seconds": time.Since(start).Seconds(), "state_truncated": out.StateTruncated, "embed_int4": embedInt4, "decode_path": path})
 		if _, err := f.Write(append(row, '\n')); err != nil {
 			t.Fatal(err)
 		}
