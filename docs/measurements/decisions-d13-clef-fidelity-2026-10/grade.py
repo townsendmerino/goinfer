@@ -19,6 +19,9 @@ Rule (registered before any graded run):
   f32       PASS if KL <= 0.01 and top-1 >= 0.98
   int8int8  PASS if KL <= 0.03 and top-1 >= 0.98     } the band D6b graded JEV on
   int4      PASS if KL <= 0.03 and top-1 >= 0.98     }
+  cuda-int4, cuda-int4-pin  (the second is the diagnostic arm with the embedding table at the int8 pin, amendment 5c)
+            PASS if KL <= 0.03 and top-1 >= 0.98 (amendment 5b, 2026-10-03: the backbone resident on the CUDA device, int4); VOID unless the mean request time is under 20 ms per input token (the
+            device measured ~3, the CPU 54-68), so a CPU fallback cannot pass as a GPU result. Its verdict is its own and does not change the CPU arms'.
   q4k       PASS if KL <= 0.03 and top-1 >= 0.98 (amendment 2026-10-03: a third-party Q4_K_M GGUF of the backbone, graded on int4's band, all 150 records)
   AMBIGUOUS (reported, never a pass, goes to the owner): KL within 2x the band, or top-1 in [0.95, 0.98), with the other criterion passing; anything past that FAILS.
   calibration: an arm FAILS CALIBRATION if the bootstrap 95% interval of (arm ECE - reference ECE) lies wholly above 0; an interval that reaches 0 is UNRESOLVED, not failed.
@@ -31,8 +34,9 @@ import argparse, json, math, os, random, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TD = os.path.join(HERE, "..", "..", "..", "testdata", "decisions")
-BANDS = {"f32": 0.01, "int8int8": 0.03, "int4": 0.03, "q4k": 0.03}   # q4k (added by the 2026-10-03 amendment): int4's band
+BANDS = {"f32": 0.01, "int8int8": 0.03, "int4": 0.03, "q4k": 0.03, "cuda-int4": 0.03, "cuda-int4-pin": 0.03}   # q4k (added by the 2026-10-03 amendment): int4's band
 TOP1, TOP1_AMBIG = 0.98, 0.95
+GPU_MS_PER_TOKEN = 20.0   # cuda-int4 validity (D6b's amendment 2): the device measured ~3 ms per token, the CPU 54-68; above this it did not run resident
 
 
 def load(p):
@@ -127,6 +131,13 @@ def main():
         if bad and not a.exploratory:
             print(f"  INVALID: {len(bad)} rows missing, malformed, or with a different option list or prompt length, e.g. {bad[:3]}"); verdicts[name] = "INVALID"; continue
         ids = [i for i in ids if i not in bad]
+        if name.startswith("cuda"):
+            ms = 1000 * sum(rows[i]["seconds"] for i in ids) / sum(rows[i]["n_tokens"] for i in ids)
+            print(f"  {ms:.1f} ms per input token (validity: under {GPU_MS_PER_TOKEN:.0f}, i.e. it ran on the device)")
+            if ms > GPU_MS_PER_TOKEN:
+                print("  INVALID: this arm did not run resident; it measured a CPU fallback")
+                verdicts[name] = "INVALID (not resident)"
+                continue
         m, kls, agree = metrics(rows, ids, name)
         per = {}
         for i in ids:

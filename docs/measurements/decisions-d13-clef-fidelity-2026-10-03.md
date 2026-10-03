@@ -59,6 +59,25 @@ The owner asked for the q4k arm the task doc names, so a third-party GGUF was fe
 - **Prediction, written now:** KL inside the band, top-1 below 0.98 (JEV's int4 read 0.940 and its CPU int4 KL 0.0298). The load is smoked (2026-10-03, exploratory): the GGUF loaded through `modelload`, the head read its quantized lm_head rows, token counts equalled the encoder dump (589 and 238), the probabilities summed to 1, and P(true) sat within 0.03 of the other arms' on both records. That says the plumbing works, not how close the arm is.
 - **Cost:** 44,823 tokens at about 68 ms per token (the smoke's, exploratory) is about 51 minutes; queued at 65, resumable.
 
+## 5b. Amendment (2026-10-03, before any graded run): the CUDA-resident arm
+
+D11's follow-up (`decisions-d11-resident-hidden-2026-10-03.md`) lets a CUDA-resident model answer the Clef route's all-positions hidden state on the device. It needs its own graded arm: the device kernels are not the CPU's, and a few exploratory records are not a grade.
+
+- **Arm `cuda-int4`:** goinfer's Clef pipeline with the backbone loaded `-backend cuda -quant int4` through `modelload` (the serve path), resident on the 8 GB RTX 2070 SUPER; the head is the checkpoint's f32 head on the CPU; the lm_head rows are the quantized model's. Run by `cuda/clef_fidelity_test.go` (a harness in the cuda module, which may import the root's internal packages where the root module may not import cuda), full-precision rows in the same format as the CPU arms. int8int8 does not fit the card (9.5 GB), so int4 is the only device arm.
+- **Set:** all 150 records. **Rule:** int4's band (KL <= 0.03 and top-1 >= 0.98; ambiguous KL <= 0.06 and top-1 >= 0.95), against the same f32 reference rows, graded as `cuda-int4=PATH`.
+- **Validity (D6b's amendment 2):** the run is VOID unless the model's decode path reads `cuda-resident` (the harness fails otherwise) AND the mean request time is under 20 ms per input token (the device measured about 3, the CPU 54 to 68), so a CPU fallback cannot pass as a GPU result. Its verdict is its own and does not change the CPU arms'.
+- **Prediction, written now (revised the same day, before any graded run; see 5c for why):** the device agrees with the CPU when both are configured alike, so `cuda-int4-pin` should land near the CPU int4 arm run with the pin, and `cuda-int4` near the CPU int4 arm run as served. Both int4 arms are predicted inside the KL band and below 0.98 top-1, as JEV's CPU int4 was (KL 0.0298, top-1 0.940), graded FAIL or AMBIGUOUS on top-1. D6b's CUDA-resident JEV int4 read KL 0.038 and top-1 0.907 (worse than its CPU int4); that is the case this arm could repeat, and the three exploratory records, once the table setting is matched, do not suggest it will (the device sat within 0.005 of the CPU in P(true)).
+- **Cost:** 44,823 tokens at about 3.2 ms per token (exploratory) is about 2.5 minutes plus a load of about a minute; queued at 20 minutes. It needs the GPU and about 6 GB of its memory and nothing else at the same time.
+
+## 5c. Amendment (2026-10-03, before any graded run): the int4 arms and `--embed-int4`
+
+**Found while smoking the GPU arm.** `--embed-int4` is ON by default in serve and the CLIs (`internal/loadflags`; off only on Metal) and applies only with `-quant int4`: it stores the token-embedding/LM-head table at int4 instead of the int8 pin. The Clef head reads LM-head rows, so the flag changes int4 answers. The harness as first written never set it, so its int4 arms would have run with the pin while serve runs with the table at int4. On three records the flag moved P(true) by up to 0.04 (0.9186 with the pin, 0.8765 as served, on the GPU). The f32, int8int8 and q4k arms are unaffected.
+
+- **Policy:** the graded int4 arms run **as served** (table at int4, the harness default; `CLEF_FIDELITY_EMBED_INT4=0` selects the pin). This is also what D6b's JEV int4 arms ran, since they used the CLI default. The f32, int8int8 and q4k arms do not change.
+- **The CPU `int4` arm queued earlier ran the old harness (pin).** It is re-queued with a rebuilt binary so it runs as served. Its exploratory smoke numbers in section 6 (P(true) 0.9217, 0.9424) were the pin and are not that arm's.
+- **Diagnostic arm `cuda-int4-pin`:** the CUDA arm with the pin, graded as `cuda-int4-pin=PATH` on int4's band, same validity rule. It exists to separate the device from the flag: `cuda-int4` against `cuda-int4-pin` is the flag's effect on the device, `cuda-int4-pin` against a CPU int4 arm is the device's. It costs about 5 minutes. No CPU pin arm is run (an hour for a diagnostic); the CPU pin is represented by the two exploratory records only.
+- **What this changes in the record:** an earlier note read a 0.045 gap between the device and the CPU as a possible GPU-int4 discrepancy like D6b's. It was this flag (see `decisions-d11-resident-hidden-2026-10-03.md`, corrected).
+
 ## 6. Cost, from an exploratory smoke (by day, one run, 2 records, labelled exploratory and never quoted as a result)
 
 2026-10-03, nobara, 2 records (827 tokens), CPU: int4 loaded in 19 s and ran at about 68 ms per token; int8int8 loaded in 14 s and ran at about 54 ms per token. Both rows had token counts equal to the encoder dump (589 and 238), probabilities summing to 1, and the same top option as gold; the two arms differed by 0.01 to 0.025 in P(true). So the first run on the real weights exercised the whole serve load path, the real tokenizer, the 32-layer backbone and the real head without error. f32 was not smoked (36 GB of RAM by day).
@@ -69,8 +88,10 @@ The owner asked for the q4k arm the task doc names, so a third-party GGUF was fe
 | `d13-clef-int8int8` | 44,823 | 45 min | 54 ms per token + load |
 | `d13-clef-int4` | 44,823 | 60 min | 68 ms per token + load |
 | `d13-clef-q4k` | 44,823 | 65 min | 68 ms per token + load (smoke on the GGUF) |
+| `d13-clef-cuda-int4` | 44,823 | 20 min | 3.2 ms per token + load (exploratory, 3 records) |
+| `d13-clef-cuda-int4-pin` | 44,823 | 20 min | as above |
 
-Queued after the two D10 jobs (55 + 65 min), about 5 h 15 min of estimates in all; the q4k arm (section 5a) adds about 1 h 05 min. The runner does not start a job whose estimate would end after 06:30. Each job is resumable (rows already written are skipped), so a timeout loses nothing.
+Queued after the two D10 jobs (55 + 65 min), about 5 h 15 min of estimates in all; the q4k arm (section 5a) adds about 1 h 05 min and the CUDA arms (5b, 5c) about 40 min. The runner does not start a job whose estimate would end after 06:30. Each job is resumable (rows already written are skipped), so a timeout loses nothing.
 
 ## 7. Result
 

@@ -17,7 +17,8 @@ MODEL=${MODEL:-$HOME/models/clef-flash}         # a directory, or (ARM=q4k) the 
 HEAD=${HEAD:-$MODEL}                              # where joint_head.safetensors is; ARM=q4k sets it to the checkpoint, a GGUF has no head
 GGUF_SHA=${GGUF_SHA:-}                            # if set, MODEL must be a file with this sha256
 REF=${REF:-$HOME/goinfer-bench/decisions-d10/out/probs_f32.jsonl}
-OUT=$B/out/probs_goinfer_$ARM.jsonl
+OUTTAG=${OUTTAG:-$ARM}                              # cuda-int4 for the GPU arm, so it does not write the CPU int4 arm's file
+OUT=$B/out/probs_goinfer_$OUTTAG.jsonl
 die() { echo "$(date +%T) REFUSED: $*"; exit 1; }
 sum() { sha256sum "$1" | cut -d' ' -f1; }
 case "$MODEL" in /srv/models/*|/Volumes/*) die "model $MODEL is on the archive, not the bench set";; esac
@@ -38,9 +39,11 @@ nref=$(wc -l < "$REF"); [ "$nref" -eq 150 ] || die "reference has $nref rows, wa
 mkdir -p "$B/out"
 n0=0; [ ! -f "$OUT" ] || n0=$(wc -l < "$OUT")
 echo "$(date +%T) == D13 arm $ARM start (every $EVERY); rows already written: $n0; load $(cut -d' ' -f1-3 /proc/loadavg); free $(free -g | awk '/Mem/{print $7}') GB"
-cd "$REPO/internal/clef" || die "no $REPO/internal/clef"
+WORKDIR=${WORKDIR:-internal/clef}                # cuda/ for the GPU arm: its test binary reads ../testdata relative to its own package directory
+TESTNAME=${TESTNAME:-TestFidelityArm_run}
+cd "$REPO/$WORKDIR" || die "no $REPO/$WORKDIR"
 CLEF_FIDELITY_ARM="$ARM" CLEF_FIDELITY_OUT="$OUT" CLEF_FIDELITY_EVERY="$EVERY" CLEF_MODEL_DIR="$MODEL" CLEF_HEAD_DIR="$HEAD" CLEF_FIDELITY_WALL=${WALL:-170} \
-  "$BIN" -test.run 'TestFidelityArm_run$' -test.v -test.timeout "${TIMEOUT:-3h}"
+  "$BIN" -test.run "$TESTNAME\$" -test.v -test.timeout "${TIMEOUT:-3h}"
 rc=$?
 n=0; [ ! -f "$OUT" ] || n=$(wc -l < "$OUT")
 want=$(( (150 + EVERY - 1) / EVERY ))

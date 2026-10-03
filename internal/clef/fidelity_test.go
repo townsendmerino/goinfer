@@ -24,6 +24,7 @@ import (
 //	CLEF_FIDELITY_OUT    the jsonl to append to (rows already there are skipped)
 //	CLEF_MODEL_DIR       the Clef-flash directory (default ~/models/clef-flash), or a GGUF file of its backbone (the q4k arm). NEVER /srv/models or /Volumes: a run off the archive reads a 5400 rpm disk
 //	CLEF_HEAD_DIR        the directory holding joint_head.safetensors and joint_head_config.json (default: CLEF_MODEL_DIR, which must then be that directory; a GGUF has no head, so the q4k arm sets it)
+//	CLEF_FIDELITY_EMBED_INT4  "0" stores the int4 arm's embedding/LM-head table at the int8 pin; anything else (the default) is the served setting, int4
 //	CLEF_FIDELITY_EVERY  take every Nth record (default 1), CLEF_FIDELITY_LIMIT stop after N new rows (default all)
 //	CLEF_FIDELITY_WALL   wall-clock deadline in minutes (default 170), so a hang fails loudly
 //
@@ -87,13 +88,17 @@ func TestFidelityArm_run(t *testing.T) {
 		}
 	}
 
+	// --embed-int4 is ON by default in serve and the CLIs (internal/loadflags) and applies only with -quant int4: it stores the token-embedding/LM-head table at int4 instead of the int8 pin.
+	// The Clef head reads LM-head rows, so the flag changes the int4 arms' answers; the arms are graded as SERVED (on) unless CLEF_FIDELITY_EMBED_INT4=0 asks for the int8 pin, which the
+	// record then names. It is ignored for every other arm.
+	embedInt4 := arm == "int4" && os.Getenv("CLEF_FIDELITY_EMBED_INT4") != "0"
 	t0 := time.Now()
 	logf := func(f string, a ...any) {
 		fmt.Fprintf(os.Stderr, "[%s +%s] %s\n", time.Now().Format("15:04:05"), time.Since(t0).Round(time.Second), fmt.Sprintf(f, a...))
 	}
 	logf("arm %s: loading %s through modelload (the path serve uses)", arm, dir)
 	res, err := modelload.Load(ctx, modelload.Request{
-		Spec: dir, Opts: decoder.Options{Backend: "cpu", Quant: arm}, ExplicitQuant: arm, GuardAdvice: "use a smaller quant",
+		Spec: dir, Opts: decoder.Options{Backend: "cpu", Quant: arm, EmbedInt4: embedInt4}, ExplicitQuant: arm, GuardAdvice: "use a smaller quant",
 	})
 	if err != nil {
 		t.Fatalf("load: %v", err)
