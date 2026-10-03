@@ -54,6 +54,9 @@ type Question struct {
 type Encoded struct {
 	InputIDs  []int
 	Questions []Question
+	// StateTruncated is how many of the state's tokens were cut to fit maxLength (0 when it fit). The reference cuts silently; a decision made from a state whose
+	// tail was dropped is worth telling the caller about.
+	StateTruncated int
 }
 
 // Encode builds the model input for a request body {"state": ..., "questions": {id: {type, instructions?, criteria?}, ...}}. The
@@ -183,7 +186,9 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 	if fixed > maxLength {
 		return nil, fmt.Errorf("clef: the schema requires %d tokens before the state; the maximum is %d", fixed, maxLength)
 	}
+	truncated := 0
 	if room := maxLength - fixed; len(state) > room {
+		truncated = len(state) - room
 		state = state[:room]
 	}
 	shift := len(prefix) + len(state)
@@ -197,7 +202,7 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 	}
 	ids := make([]int, 0, fixed+len(state))
 	ids = append(append(append(append(ids, prefix...), state...), schema...), suffix...)
-	return &Encoded{InputIDs: ids, Questions: questions}, nil
+	return &Encoded{InputIDs: ids, Questions: questions, StateTruncated: truncated}, nil
 }
 
 // appendTokens tokenizes a schema fragment literally: every schema fragment is a template filled with request text.

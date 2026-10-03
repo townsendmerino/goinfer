@@ -55,6 +55,12 @@ func (s *server) handleSystemOne(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
+	// A Clef entry (Route C) reads the request as the reference's encoder does, from the raw body, so it never goes through the label route's per-question
+	// translation (which would impose that route's limits and change the prompt text).
+	if s.isClefModel(req.Model) {
+		s.withModel(w, req.Model, func(lm *loadedModel) { s.serveClef(w, r, lm, body, req.Questions) })
+		return
+	}
 	state := jsonText(req.State)
 	if strings.TrimSpace(state) == "" {
 		writeErr(w, http.StatusUnprocessableEntity, "state is required")

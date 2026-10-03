@@ -46,6 +46,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
@@ -177,7 +178,7 @@ func (s modelSpec) explicitQuant(cfg config) string {
 func (s modelSpec) options(cfg config) decoder.Options {
 	o := cfg.load.Options()
 	o.Quant = orStr(s.quant, o.Quant)
-	if s.head != nil { // a decision head loads at the decision models' default unless a quant was chosen (D6b)
+	if s.head != nil || isClefDir(s.path) { // a decision head (JEV or Clef) loads at the decision models' default unless a quant was chosen (D6b)
 		o.Quant = decide.HeadQuant(s.explicitQuant(cfg), s.quant != nil || cfg.load.QuantSet)
 	}
 	o.LoRA = orStr(s.lora, o.LoRA)
@@ -411,6 +412,8 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		"head=DIR attaches a trained decision head (autotrust's JEV layout): POST /v1/systemone on that model\n"+
 		"answers with it (Route B), and an unmerged head's adapter is merged into the model at load. The model loads\n"+
 		"at "+decoder.DecisionHeadQuant+" unless quant= or -quant chooses otherwise (the default for decision models, D6b).\n"+
+		"A model directory that carries joint_head.safetensors is a Clef decision model (Route C): POST /v1/systemone on it\n"+
+		"answers with its joint head, one backbone pass for every question, and it loads at the same default.\n"+
 		"(Paths may not contain commas.)")
 	fs.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
 	sf.showVersion = fs.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
@@ -1286,6 +1289,17 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	if err != nil {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
+	// A model directory that carries joint_head.safetensors is a Clef decision model (Route C): its backbone is a plain qwen3_5 with the adapters merged, and
+	// the head is loaded and checked here so a bad one stops startup, not the first request.
+	var clefHead *clef.Head
+	if isClefDir(spec.path) {
+		if spec.head != nil {
+			return nil, fmt.Errorf("--model %q carries joint_head.safetensors (a Clef model) and also head=%s (a JEV head): an entry is one or the other", spec.path, *spec.head)
+		}
+		if clefHead, err = clef.LoadHead(spec.path); err != nil {
+			return nil, fmt.Errorf("--model %q: %w", spec.path, err)
+		}
+	}
 	if err := opts.Validate(); err != nil {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
@@ -1367,6 +1381,14 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			return nil, fmt.Errorf("--spec ngram: %w", err)
 		}
 	}
+	if clefHead != nil {
+		if tk == nil {
+			return nil, fmt.Errorf("--model %q is a Clef model but has no tokenizer.json: its record encoder tokenizes the schema fragment by fragment", spec.path)
+		}
+		if lm.clef, err = clef.NewModel(model, clefHead, clef.TokenizerFunc(tk), 0); err != nil {
+			return nil, fmt.Errorf("--model %q: %w", spec.path, err)
+		}
+	}
 	if cfg.maxQueue > 0 {
 		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 	}
@@ -1392,6 +1414,9 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	bannerCfg.load.Ctx = opts.ResidentContext // the -ctx this model actually asked for (a per-model ctx= wins)
 	for _, line := range modelBanner(lm, bannerCfg) {
 		fmt.Fprintf(os.Stderr, "  %s\n", line)
+	}
+	if lm.clef != nil {
+		fmt.Fprintf(os.Stderr, "  decisions: route C (clef), joint head %d-wide, backbone on the CPU (PromptHiddenAll), POST /v1/systemone\n", clefHead.Cfg.Width)
 	}
 	if h := lm.head; h != nil {
 		how := "weights merged"

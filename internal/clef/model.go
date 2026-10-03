@@ -40,13 +40,23 @@ type Answer struct {
 type Result struct {
 	Answers     []Answer
 	InputTokens int
+	// StateTruncated is the number of state tokens cut to fit the context (see Encoded).
+	StateTruncated int
 }
 
-// Decide encodes the request, runs the backbone once over the whole sequence, and scores every question with the head.
+// RequestError is an error in the request itself (malformed, an unsupported question, a schema that does not fit), as opposed to a failure of the model: a
+// server answers it with a 4xx and the rest with a 5xx.
+type RequestError struct{ Err error }
+
+func (e *RequestError) Error() string { return e.Err.Error() }
+func (e *RequestError) Unwrap() error { return e.Err }
+
+// Decide encodes the request, runs the backbone once over the whole sequence, and scores every question with the head. A problem with the request itself is a
+// *RequestError.
 func (m *Model) Decide(ctx context.Context, request []byte) (*Result, error) {
 	enc, err := Encode(request, m.tokenize, m.maxLength)
 	if err != nil {
-		return nil, err
+		return nil, &RequestError{err}
 	}
 	hidden, err := m.backbone.PromptHiddenAll(ctx, enc.InputIDs)
 	if err != nil {
@@ -59,7 +69,7 @@ func (m *Model) Decide(ctx context.Context, request []byte) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{InputTokens: len(enc.InputIDs)}
+	res := &Result{InputTokens: len(enc.InputIDs), StateTruncated: enc.StateTruncated}
 	for i, q := range enc.Questions {
 		res.Answers = append(res.Answers, Answer{ID: q.ID, Type: q.Type, Options: q.OptionIDs, Probs: Softmax(logits[i])})
 	}
