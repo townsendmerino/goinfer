@@ -14,7 +14,7 @@ ARM=${ARM:?int4, int8int8 or f32}
 EVERY=${EVERY:-1}
 BIN=$B/clef-fidelity.test; BIN_SHA=${BIN_SHA:?the registered sha256 of $BIN}
 MODEL=$HOME/models/clef-flash
-REF=$HOME/goinfer-bench/decisions-d10/out/probs_f32.jsonl
+REF=${REF:-$HOME/goinfer-bench/decisions-d10/out/probs_f32.jsonl}
 OUT=$B/out/probs_goinfer_$ARM.jsonl
 die() { echo "$(date +%T) REFUSED: $*"; exit 1; }
 sum() { sha256sum "$1" | cut -d' ' -f1; }
