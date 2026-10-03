@@ -799,7 +799,25 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   its "old" bundle with today's `prequant` and `GIWTargetNone`, and the writer emits weights format v15 for every target (checked on `testdata/llama-tiny`: both the non-metal and the
   metal-target bundle read v15), so what the test called "a v12 file" is a v15 non-metal bundle. It now reads each bundle's weights-format version from its header (the `GINFW` blob at
   byte 64 behind the `GINFB` v3 bundle header) and asserts both are at least v15, its labels say "non-metal bundle", and its comment says why. The other F-D02 option, binding v15 scales
-  directly instead of converting them, is not done.
+  directly instead of converting them, is not built: the non-metal case is rare (below).
+  - **The other alias tests, same run:**
+    - `TestWeightAlias_fixturesByteIdentical`, `_closeCycles` and `_onByDefault` pass.
+    - The fixture sweep skips 18 fixtures for structural reasons: 14 families with no Metal resident, two vision-only towers the decoder does
+      not load as a model, and `tiny-qwen2-moe`, which has no `config.json`.
+    - `TestWeightAlias_logitsByteIdentical` skips without `GOINFER_HEAVY_TESTS` and a real `.giw`. Run with both on the 0.5B's
+      `.int4.metal.giw`, it passes: 48 tensors, 170.6 MB of nibbles not copied.
+  - **The audit's open question (its "what I could not read" item 8) is answered: the non-metal v15 case is rare.**
+    - **A Mac user's normal path writes the metal layout.** `serve` and `chat` turn a `.gguf` into a sidecar through
+      `prequant.EnsureCachedGIW`. Its target is `decoder.GIWTargetForBackend(opts.Backend)`, and `-backend auto` is resolved to `metal`
+      (`loadflags.resolveAuto`, inside `Options()`) before the sidecar is chosen. So the sidecar is `<base>.<quant>.metal.giw`, kind 7 with
+      fused groups. The Mac's own `~/models` sidecars are named that way.
+    - **The non-metal layout reaches Metal only off that path:**
+      - a bare `prequant` with no `-target`, which resolves to `cpu-arm64` on a Mac;
+      - an explicit non-metal `-target`;
+      - a `.giw` built on another box and passed to `--model` directly.
+      A cpu-target sidecar is never reused by a Metal load, because the cache key carries the target.
+    - So binding v15 scales directly is a rare-path nicety and was not built (F-D02 step 3 stops here, by its own condition). F-D02 is closed
+      for the common path.
   - `docs/benchmarks.md`: B-D01 (R18b's "AHEAD in every cell" is all six 1.5B and 7B cells; the 0.5B's latest
     reading at depth is still 0.75× / 0.58×), F-D01 (callouts on the §B3 banner and its 2026-08 verdict, and N-40: the
     LM head is int8), D-D01 4 and 5 (M35 and M26 have run here since "off-limits on any path"; gpt-oss is resident on

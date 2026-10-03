@@ -2648,6 +2648,14 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-D02. `alias.go` overstates S6's gates; the v15 scale case is not covered (Minor)
 
+**Status, 2026-10-03: done for the common path.**
+- **The header and banner:** fixed in T0.5.
+- **The v15 non-metal fixture assertion:** `TestWeightAlias_olderBundleTakesCopyPath` passes on the Mac and logs `non-metal bundle (format v15)`.
+- **Item 8 of the list below is answered:** a Mac user's normal path writes the metal layout. `-backend auto` resolves to `metal` before
+  `prequant.EnsureCachedGIW` picks the sidecar's target, so the sidecar is `.metal.giw`, kind 7 with fused groups. The unaliased v15 scales
+  arise only from a bare `prequant` (`cpu-arm64` on a Mac), an explicit non-metal target, or a `.giw` built elsewhere.
+- **Binding v15 scales directly** is therefore a rare-path nicety and is not built. The record is in the task doc's 2026-10-03 F-D02 line.
+
 - `metal/alias.go:37-40`: aliasing is on by default "since 2026-09-24, when every gate in S6's registered rule had passed (... footprint met, the memory-hog arm, Close ordering ...)". The record says: gate 1 "NOT MET" at first (`s6-alias-2026-09-24.md:131`), later "the dense term gone condition is met" with the process total "~60 MB over" read literally (`:191-194`); the hog arm ran on the 7B only and "M26 under a hog [was] deliberately not run" (`:147-148,161,284`); M26 decode was "not resolvable at this n" (`:271-273`); and the default flip is recorded as "on the owner's decision after the gates above" (`:245`). "Every gate had passed" is not what the record says.
 - **v15.** Since v15, kinds 3/4/5 store binary16 scales (`decoder/serialize.go:94,1099-1116,1254-1268`; reader `:1737-1742,1809-1821`), so a non-metal-target bundle carries f16 scales. `Int4ScalesF16` is populated only from `recordF16` at kind 7 and the fused-group case (`decoder/serialize.go:1895,1970`; `decoder/model.go:177-187`), so those scales are widened and converted again into a new buffer (`metal/alias.go:267-285`), and the banner says "carries no f16 scales (written before weights format v14, or not with -target metal)" (`:298-301`), which is wrong for a v15 non-metal bundle. The rebuild advice is still right. The record's size of the copied term is "1/8 of the nibble bytes, ~390 MB on the 7B" (`s6-alias-2026-09-24.md:141-143`). `TestWeightAlias_olderBundleTakesCopyPath` pins a v12 file (`:225-228`), not this case.
 - **Fix.** Reword the header; either bind v15 scale arrays directly (their addresses are in the mapping) or fix the banner text; add a v15 non-metal fixture assertion.
