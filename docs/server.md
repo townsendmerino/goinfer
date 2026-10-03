@@ -84,8 +84,11 @@ array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish
     the capture needs.
   - The answer itself is unchanged: the same request without the flag returns the same content.
 - **Where it is refused (400):** without `response_format` `json_schema` (the schema is what says each field's
-  kind), and on routes that would drop it: tools, images, `/v1/jobs`, batches, `/v1/responses` and
-  `/v1/messages`.
+  kind), and on routes that would drop it: tools, `/v1/jobs`, batches, `/v1/responses` and `/v1/messages`.
+  *Updated 2026-10-02 (GLM-OCR O5): an image request on `/v1/chat/completions` is no longer refused. The vision chat
+  route always honoured `response_format` (the grammar masks every decode step there too); it now also writes
+  `goinfer_confidence` back, in both the buffered reply and the stream's trailing event. Measured on GLM-OCR in
+  `docs/measurements/glm-ocr-o5-2026-10/`.*
 - **In Go:** `constrain.NewMasker(…).CaptureConfidence(constrain.ConfidenceOptions{})`, then
   `masker.FieldConfidence(generatedIDs)` after the generation.
 
@@ -136,7 +139,7 @@ and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a fu
 returns 429 + Retry-After (no continuous batching).
 
 **`--max-concurrent N` (default 4) lets one CPU model run N generations at once** (Experimental; MC3c of
-`docs/tasks/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
+`docs/tasks/parked/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
 serialization). Each generation runs on its own session KV, so each
 conversation's output is byte-identical to serving it alone, and admission stays FIFO. N is capped by `--kv-sessions`
 (each running generation holds a session). A weight-streaming or vision model always runs one.
@@ -159,7 +162,7 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 2026-09-27). From 2026-09-28 to 2026-09-30 the `--embed-int4` default kept a default Metal load off the resident, so it did
 not batch; `--embed-int4` now defaults off on Metal (`quantization.md`). Under the same flag, each running generation holds its own resident KV slot (`--kv-sessions` sets the
 count, 4 by default; 2 on Metal unless `--kv-sessions` is given, so pass `--kv-sessions 4` to batch 4 clients there). Their decode tokens run together in one step on the GPU, every logit bit-identical to serving
-that conversation alone.
+that conversation alone. *(Established per decode step and on 4x3-turn tests. End to end on CUDA with the default fast prefill, a long prompt's reply at a near-tied token can differ from the same prompt served alone, because rows it reused from the KV cache may have been computed by the exact kernels (a short earlier request) while the rest run on the fast ones; under concurrent load which rows it reuses was a race. Since 2026-10-02 a reuse under 64 tokens is declined on such a prompt, which removed every difference in the schedules tested; a longer reuse whose rows were computed by a different kernel class can still differ. `GOINFER_CUDA_FAST_PREFILL=0` removes it entirely. `cuda-backend.md` "Tensor-core fast prefill"; `measurements/mc4-candidate-cuda-2026-10-01.md`, ROOT CAUSE.)*
 - On CUDA (RTX 2070 SUPER, W7, 4 clients): qwen2.5-coder-1.5b reads 1.38× the one-at-a-time build, with p99 per turn
   from 2.68 s to 2.02 s. qwen2.5-7b-instruct reads 1.83×, with p99 from 7.2 s to 4.1 s. A lone request is unchanged.
   - Greedy and sampled requests both batch.
@@ -337,28 +340,98 @@ Compatible, not full-spec (llama.cpp's bar): `thinking` / `cache_control` /
 (≥32k).
 
 **Vision (image→text), pure Go.** With a vision-capable checkpoint loaded behind
-`--vision <dir>` (auto-discovered when `--model` is a VL dir — Gemma 3's SigLIP
-projector, Qwen2.5-VL's own ViT, or Gemma 4's vision tower are each detected and
-routed to their own loader; `internal/serveapp/main.go`'s `loadVisionTower`), `cmd/serve`
-accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
-`image` blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an
-SSRF guard, returns 400). An image runs through the matching pure-Go vision tower
-(SigLIP encoder + projector for Gemma 3, HF-parity-gated) into the decoder's
-embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
-dropped/pasted image too. Caveat (Gemma 3's SigLIP path specifically): the tower's
-prefill is CPU-heavy — measured ~31.3 s/image at 896² (`docs/benchmarks.md` §A "Vision
-tower CPU prefill"), correct but slow. `-vision-quant int8` (default `f32`) is already
-shipped, not a future plan — `docs/completed/task-cpu-vision-prefill.md` is closed, and
-its own finding was that int8 only speeds this compute-bound prefill on AVX512-VNNI
-hardware; on plain AVX2 it measured a wash, which is why f32 stays the default.
-`--backend webgpu`/`--backend cuda` force the int8 tower regardless of `-vision-quant`
-(needed for the resident GPU matmul weights); CUDA's resident tower measured 26.1 s
-against the same 41.3 s CPU baseline (1.58×, M-18).
+`--vision <dir>` (auto-discovered when `--model` is a VL directory: `internal/serveapp/main.go`'s
+`loadVisionTower` detects Gemma 3's SigLIP projector, Qwen2.5-VL's own ViT, Gemma 4's vision
+tower, a Qwen3.5+ checkpoint and a GLM-OCR checkpoint, and routes each to its own loader),
+`cmd/serve` accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
+`image` blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an SSRF guard,
+returns 400), one image per generation (serve keeps the newest image in a conversation and replaces earlier ones with a visible note and an `X-Goinfer-Images-Omitted` header; several images in the latest message are a 400). An image runs through the matching pure-Go vision tower into the
+decoder's embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
+dropped/pasted image too, for Gemma 3 only. Qwen3-VL is its text decoder only (no tower), and a
+`mistral3` checkpoint's tower is ignored: an image on either is a 400 "this model has no vision tower".
+
+*Rewritten 2026-10-02 from an audit of the tree and a run on the CUDA box (`docs/measurements/multimodal-audit-2026-10-02.md`; the previous text of this paragraph said "SigLIP
+path, CPU-heavy, 31.3 s" and "`--backend webgpu`/`--backend cuda` force the int8 tower", both true only of Gemma 3 on some backends). **Every Metal statement below is read from code; no Mac
+was available.** Per family:*
+
+| family | the vision tower | the decoder after the image |
+|---|---|---|
+| **Gemma 3** (SigLIP) | CPU, f32. **On `--backend cuda` a resident CUDA tower (goinfer's own), on `--backend webgpu` a resident WebGPU tower**, both int8; Metal: CPU | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
+| **Gemma 4 E2B, E4B** | CPU, f32 unless `-vision-quant int8` | **CPU for the whole model on every backend** (no backend implements the E-model features) |
+| **Gemma 4 26B-A4B, 31B** | CPU, f32 unless `-vision-quant int8` | CPU bidirectional prefill, then resident decode through the bridge (26B-A4B run on CUDA; 31B unverified; Metal and WebGPU unverified) |
+| **Qwen2.5-VL** | CPU, f32 unless `-vision-quant int8`: aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
+| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image | **CPU prefill and CPU decode on every backend** (a recurrent family refuses every resident branch), so a repeated image re-runs the tower |
+| **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
+
+**The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. `--backend cuda` and `--backend webgpu` (including `--backend auto` when it
+resolves to CUDA) **also** give Gemma 3 an int8 tower whatever `-vision-quant` says, because only its resident tower has a GPU path and that path needs int8 weights. **Every other tower
+(Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`:** until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which was not faster and was
+not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`), and GLM-OCR's int8 form is not gated
+on the real checkpoint. The f32 tower holds more host memory. `EnableResident` is called in one place only (the Gemma 3 tower on cuda/webgpu); if it fails, serve warns and runs that tower on
+the CPU rather than refusing to start. `-vision-quant int8` (default `f32`) is a CPU option: `docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound
+prefill only on AVX512-VNNI hardware and measures a wash on plain AVX2, which is why f32 is the default.
+
+**Speed, each figure with its record.** CPU SigLIP tower ~31.3 s/image at 896² (recorded 2026-09-08, `docs/benchmarks.md` §A "Vision tower CPU prefill", not re-measured). CUDA Gemma 3 tower
+**4.1 s/image** (recorded 2026-09-21: 26.0 s with the exact attention kernel, 6.4x with the fused one that is the default since the owner's override; `GOINFER_CUDA_VISION_ATTN=exact`
+restores the 26 s kernel; `docs/measurements/vision-tower-mma-2026-09-21.md`); a cold Gemma 3 image request took 4.9 s end to end on the 2070 SUPER on 2026-10-02 (exploratory). The WebGPU tower
+is recorded at ~9x over the CPU (2026-06-11, before the 2026-08-25 re-anchor; not re-measured), and its cold request took 27.4 s end to end on 2026-10-02 (exploratory). On an 8 GB card
+`--backend webgpu` needs `--ctx 4096 --kv-sessions 1` or more so that the tower fits beside the decoder's KV: at the default the load aborts at startup ("Not enough memory left"). A CPU
+tower costs what the CPU costs: tens of seconds per Gemma 3 image; on 2026-10-02 a 336x336 image took 7 s on Qwen3.5-0.8B and 25 s on Gemma 4 E2B (the whole model on the CPU) on this box,
+one sample each (exploratory). Nothing was timed on Metal.
+
+**Release binaries.** The Linux `goinfer-serve` is built `CGO_ENABLED=0` with CUDA, so **a downloaded Linux binary on an NVIDIA box gets the resident Gemma 3 tower and resident decode after an image
+for Gemma 3, Qwen2.5-VL and GLM-OCR (and Gemma 4 26B-A4B)** with no C toolchain. The macOS binaries carry Metal (no vision tower: the tower runs on the CPU) and the Windows binaries are CPU. WebGPU, the one cgo build,
+is in no release binary.
+
+**GLM-OCR** (a 0.9B document model; `model_type` `glm_ocr`) is auto-discovered from its checkpoint directory and uses aikit's own tower (`vision.GlmOcrVisionEncoder`, aikit v1.52.0), loaded on the
+first image. An image is at most 6,144 image tokens (about 4.8 megapixels) and there is no smaller default cap yet; one that does not fit the resolved context is refused with
+`image_too_large_for_context` before the tower runs. The CPU tower costs about 44 s for a 1,656-token page on this class of machine (exploratory, one rendered invoice). Structured extraction with
+`response_format` is described below; the measured accuracy is in `docs/measurements/glm-ocr-o5-2026-10/`.
 
 ```bash
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it
 # then POST an image_url data: URI to /v1/chat/completions, or an image block to /v1/messages
 ```
+
+**Images with `response_format` json_schema; structured extraction from a document (GLM-OCR, 2026-10-02, O5).** The
+vision chat route constrains decoding to the request's `response_format` exactly as the text route does, on every vision
+family: the grammar masks each decode step, so the reply is JSON that has the schema's shape. On a **GLM-OCR** checkpoint
+(`zai-org/GLM-OCR`; auto-discovered like the other towers) the request is also told *what to extract*, because that model
+is prompted for extraction with a JSON **template**, not a JSON Schema: the card's instruction
+`请按下列JSON格式输出图中信息:` followed by an object of blank values. Serve builds that template from the request's own
+schema (`constrain.TemplateFromSchema`, one source with the grammar) and uses it as the prompt, with this rule:
+
+| the request's text part | what the model is sent |
+|---|---|
+| absent, empty or whitespace | the instruction and the schema's template |
+| exactly `Text Recognition:`, `Table Recognition:` or `Formula Recognition:` | the instruction and the schema's template (the task prompt would contradict the grammar) |
+| anything else | **the user's text, unchanged** (their own extraction prompt, a question); the grammar still constrains the reply |
+
+The template convention: properties in the schema's order, every property shown (optional ones too), nested objects
+nested, `""` for a string, `0` for a number or integer, `false` for a boolean, one example element for an array (so a list of
+line items shows what one looks like). **Type the amounts as numbers.** The model answers a numeric column with a bare
+number whatever the template shows for a string field, and a string grammar forbids a bare number: the only legal tokens
+left are whitespace, so on `"quantity": ""` the measured reply was whitespace until `max_tokens`, with no error
+(`docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt`). With `integer` and `number` fields the
+same page extracted cleanly. An invalid schema is a 400; `json_object` has no shape to build a template from and is left
+alone. The reply is `finish_reason: "length"` and unparseable if `max_tokens` ends it first, since the grammar guarantees a valid
+*prefix*; an invoice with many lines needs a generous `max_tokens` (the example reply is about 420 tokens for six lines).
+
+```bash
+python3 - <<'PY'
+import base64, json, urllib.request
+png = base64.b64encode(open("testdata/glm_ocr/invoice.png", "rb").read()).decode()
+schema = json.load(open("testdata/glm_ocr/invoice.schema.json"))
+body = {"model": "glm", "temperature": 0, "max_tokens": 1500, "goinfer_confidence": True,
+        "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + png}}]}],
+        "response_format": {"type": "json_schema", "json_schema": {"name": "invoice", "schema": schema}}}
+r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8080/v1/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"}))
+print(json.load(r)["choices"][0]["message"]["content"])
+PY
+```
+
+The same flow in the terminal: `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json`
+(one image, one answer, then exit). In Go: [`examples/invoice`](../examples/invoice/main.go).
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache of a
 warm session **whose entire token history is a prefix of the new prompt** —
@@ -391,7 +464,7 @@ ordinary cold prefill uses, so it inherits that path's own exactness knob, not
 (`GOINFER_METAL_FAST_PREFILL=0`/`GOINFER_CUDA_FAST_PREFILL=0`). **WebGPU** — no
 fast/exact split exists on this backend, so there is nothing to opt out of.
 
-**On Metal, CUDA and WebGPU, several conversations stay resident** (MC1 of `docs/tasks/task-concurrency-2026-09.md`:
+**On Metal, CUDA and WebGPU, several conversations stay resident** (MC1 of `docs/tasks/parked/task-concurrency-2026-09.md`:
 Metal 2026-09-26, CUDA and WebGPU 2026-09-27). `--kv-sessions N` also asks the resident for N GPU KV slots, one
 conversation each. Each generation binds the slot that already holds its prompt's prefix; a new conversation
 takes an empty slot, else the least recently used one. A slot that shares only a chat template's lead with the
@@ -495,11 +568,14 @@ names that are served.
     Serve the base model as another entry if you need both.
     - A `.giw` built with `prequant -lora DIR` carries the adapter already, so no merge happens at load.
     - `head=` checks the bundle's `.lora.json` sidecar and refuses a bundle built without that exact adapter.
+  - **Precision: a model with `head=` loads at `int8int8` unless `quant=` or `--quant` says otherwise** (the owner's D6b decision, 2026-10-02). Against the transformers f32 reference on 150 items it agrees on 92.7% of top answers (mean KL 0.009; every one of its 11 disagreements is a near-tie, reference margin 0.10 or less)
+    and is no worse calibrated; it does **not** meet the registered 98% top-1 bar, and nothing here says it does. f32 is exact (`quant=f32`, about 36 GB for JEV-9B, so it fits a large-RAM box and no GPU). That grading is of the CPU path: **int8int8 on a CUDA or Metal resident has not been graded**
+    (`measurements/decisions-d6b-2026-09/results.md`).
   - **It runs on the GPU when the model is resident** (CUDA or Metal), through the same headless forward embeddings
     use, and falls back to the CPU otherwise.
     - On nobara's RTX 2070 SUPER, JEV-9B at int4 measured about 3 ms per prompt token, against about 65 ms on its
       CPU (exploratory, five items).
-    - The GPU's int4 kernels are not the CPU's, so the two answers differ slightly.
+    - The GPU's int4 kernels are not the CPU's, so the two answers differ: slightly on most items, and on one of the 150 by a lot (a 0.956 option read as 0.362 on CUDA int4, unexplained). Until that is explained, do not rely on decisions from a CUDA-resident int4 model (D6b).
   - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates
@@ -598,6 +674,9 @@ to ignore.**
     several is replayed as several call messages.
   - The reasoning budget can end the analysis before the model has chosen to call a tool; with a tool-using agent, give it room
     (`-reasoning-budget unlimited`, or a larger `max_tokens`).
+  - **Run live with a real Claude Code** (2026-10-01, `docs/measurements/claude-code-gptoss-2026-10-01/`): a `Read` tool loop completed through `/v1/messages` — thinking, tool call,
+    result, answer. One finding: the model's first call named the tool `read`, not `Read`; Claude Code's own error ("tool names are case-sensitive: call Read instead") was enough for it to retry. A
+    harness that does not say so would stop there. One run, one tool; not a measurement.
 
 **Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each
 input line is `{"custom_id": "a1", "method": "POST", "url": "/v1/chat/completions", "body": {chat request}}`; `custom_id` is

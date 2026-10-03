@@ -298,6 +298,47 @@ func Phi3Orig() *Template {
 	}}
 }
 
+// GlmOCR — zai-org/GLM-OCR's template (the GLM-4.1V family's `[gMASK]<sop>` shape): "[gMASK]<sop>", an optional
+// "<|system|>\n{system}", then per turn "<|user|>\n{content}" or "<|assistant|>\n<think></think>\n{content}" (a prior
+// assistant turn; the template writes an EMPTY think block there when the turn carries no reasoning, and this renderer
+// carries none), and the generation prompt "<|assistant|>\n". No end-of-turn marker: the next role marker closes a turn,
+// and a reply ends at <|endoftext|> or the next <|user|> (the checkpoint's eos_token_id is [59246, 59253], hence the stops).
+//
+// Verified byte-for-byte against HF's apply_chat_template on the checkpoint at revision 2e85a628
+// (testdata/chat_goldens/glm_ocr.json, text turns), and for the image shape by the O3 gate
+// (multimodal.GlmOcrImageBlock + the golden's input_ids). NOT rendered: tools (`<|observation|>` turns and the
+// `<tool_call>` XML), `enable_thinking`'s `<think></think>` generation-prompt suffix and `/nothink` — the OCR model is
+// prompted with a task string, not a conversation, and none of those is a path it is used on. Detect matches only this
+// checkpoint's template (the image markers are in the fingerprint), so GLM-4.5's text template, which shares the
+// `[gMASK]<sop>` opening and is rendered differently, is not captured by it.
+func GlmOCR() *Template {
+	return &Template{name: "glm_ocr", stops: []string{"<|endoftext|>", "<|user|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		b.sp("[gMASK]")
+		b.sp("<sop>")
+		if system != "" {
+			b.sp("<|system|>")
+			b.ct("\n" + system)
+		}
+		for _, t := range turns {
+			switch t.Role {
+			case "assistant":
+				b.sp("<|assistant|>")
+				b.ct("\n")
+				b.sp("<think>")
+				b.sp("</think>")
+				b.ct("\n" + strings.TrimSpace(t.Content)) // the template writes '\n' + content.strip() when it is non-blank
+			default:
+				b.sp("<|user|>")
+				b.ct("\n" + t.Content)
+			}
+		}
+		b.sp("<|assistant|>")
+		b.ct("\n")
+		return b.segs
+	}}
+}
+
 // Mellum2 (JetBrains Mellum2) renders ChatML — its chat template is ChatML
 // byte-for-byte (<|im_start|>/<|im_end|> turns, stop <|im_end|>, Hermes
 // <tool_call> tools), verified vs HF apply_chat_template

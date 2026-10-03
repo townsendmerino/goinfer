@@ -1,0 +1,17 @@
+date:     2026-10-02 10:05:00 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+chat:     goinfer-chat-darwin-arm64 v0.20.0 (890ca565f982-dirty); sha256 678d6a22c97e7e5e
+serve:    goinfer-serve-darwin-arm64 v0.20.0 (890ca565f982-dirty); sha256 31cb4c0be2424cbf
+model:    qwen2.5-coder-0.5b-instruct-q4_k_m.gguf sha256 1d9614638d18024d
+model:    qwen2.5-coder-1.5b-instruct-q4_k_m.gguf sha256 cc324af070c2ecbf
+model:    gemma4-26b-int4-v14st.metal.giw sha256 b514bf5fe9cd2633
+== ch10: goinfer-serve --version
+== ch4/ch5: fit on the 1.5B at int4 and int8int8
+== ch6/ch7: fit on the 26B MoE
+== ch9: the 1.5B drafted by the 0.5B, greedy, CPU
+== serve the 0.5B on CPU for ch1, ch3 and ch11
+== ch1: count_tokens
+== ch3: next-token probabilities, greedy
+== ch11: goinfer-serve check
+check rc=1
+finished: 2026-10-02 10:06:26 PDT

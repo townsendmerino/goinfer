@@ -715,13 +715,27 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// through the batcher instead of a direct resident call.
 				logitsN, err = targetVerifyBatch(cur, base)
 			} else {
-				if idsVerify != nil {
-					if ids, err = idsVerify(seqBuf, base); err != nil || len(ids) != len(seqBuf) {
-						idsVerify, ids = nil, nil // fall back, permanently, to the full-logits path below
+				verifyRound := func() {
+					if idsVerify != nil {
+						if ids, err = idsVerify(seqBuf, base); err != nil || len(ids) != len(seqBuf) {
+							idsVerify, ids = nil, nil // fall back, permanently, to the full-logits path below
+						}
+					}
+					if ids == nil {
+						logitsN, err = targetVerify(seqBuf, base)
 					}
 				}
-				if ids == nil {
-					logitsN, err = targetVerify(seqBuf, base)
+				if adaptive {
+					// resBusy (claimExclusive above) keeps MC3's HOLDERS off the resident, but it is not the flag another
+					// generation's own exclusive sections wait on: the slot pick, the prefill and the commit all run under
+					// the batcher's busy flag (exclusive / prefillExclusive) and never read resBusy. Verifying here without
+					// busy let that generation's residentBind-then-prefill interleave with this round's residentBind-then-
+					// ForwardN, and each wrote the other's slot (first token already wrong, then garbage, from two
+					// generations on; MC4 graded run 2026-10-01, docs/measurements/mc4-candidate-cuda-2026-10-01.md). The
+					// round therefore takes busy too, as the design said it would ("each round runs in exclusive").
+					target.batcher.exclusive(verifyRound)
+				} else {
+					verifyRound()
 				}
 			}
 			if holdingExclusive {

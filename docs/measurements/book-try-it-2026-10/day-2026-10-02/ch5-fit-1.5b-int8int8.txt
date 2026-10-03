@@ -1,0 +1,7 @@
+decoder: context capped at 2334 (model allows 32768) so that KV fits: weights 1.7 GB + KV 0.1 GB of budget 2.8 GB — pass -ctx to choose, or -stream-weights to lift
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf @ int8int8, ctx=8192
+
+cpu     RESIDENT
+        dense 1.66 GB + KV@8192 0.44 GB fits 4.07 GB free
+metal   DECLINE
+        context 8192 does not fit even at the 4096-position floor: dense 1.66 GB + host copy 1.66 GB + KV 0.22 GB exceeds 3.11 GB free

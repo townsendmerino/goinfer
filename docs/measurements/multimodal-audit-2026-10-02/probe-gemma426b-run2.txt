@@ -1,0 +1,8 @@
+# Console output of the SECOND 26B-A4B probe (10:2x PDT), transcribed from the session: the run's stdout went
+# through a grep that was not tee'd, so this is a copy of the three lines it printed, not a captured file.
+# The server log of this run is probe-gemma426b-run2-server.log. Run 1's own console output is probe-gemma426b-run1.txt
+# (its server log was overwritten by run 2's).
+[gemma426b] up=True after 63.1s
+RAW {"choices": [{"finish_reason": "stop", "index": 0, "message": {"content": "The image contains a yellow circle, a red square, and a blue background.", "role": "assistant"}}], "created": 1790961648, "id": "chatcmpl-6397b2d96879e7474373d7c2fd7a6a3a", "model": "gemma4-26b-int4.giw", "object": "chat.completion", "usage": {"prompt_tokens": 283, "completion_tokens": 16, "total_tokens": 299, "prefill_reused_tokens": 0}}
+req0: 68.5s finish=stop usage={'prompt_tokens': 283, 'completion_tokens': 16, 'total_tokens': 299, 'prefill_reused_tokens': 0} reply='The image contains a yellow circle, a red square, and a blue background.'
+req1: ERROR HTTP Error 503: Service Unavailable   (the swap guard was tripped again; it refuses NEW requests only)

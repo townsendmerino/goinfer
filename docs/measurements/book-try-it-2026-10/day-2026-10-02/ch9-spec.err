@@ -1,0 +1,6 @@
+loading + quantizing…
+loaded 28-layer model (hidden 1536, vocab 151936) in 5ms [backend=cpu [int4 layout: row4-only (down, embed, gate/up, lm_head, qkv)] decode=cpu (int4) [int4 layout: row4-only (down, embed, gate/up, lm_head, qkv)]]
+chat template: chatml
+loading draft model…
+speculative decoding on (draft=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, K=4) — greedy only
+[2m[64 tok, 26.2 tok/s][0m[2m [spec: 95% accepted, 4.6 tok/pass][0m

@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -67,8 +68,22 @@ func testCohereFamilyResidentSmoke(t *testing.T, ckpt string, wantSlidingWindow 
 
 	rf := mRes.ResidentForwardForTest()
 	if rf == nil {
-		t.Fatalf("%s did not go resident (BuildResident refused) — decode path %q; decline: %s",
-			ckpt, mRes.DecodePath(), mRes.ResidentDecline())
+		// CORRECTION 2026-10-01 (written on the CUDA box, NOT run on a Mac): Cohere/Cohere2 rotate
+		// GPT-J PAIRWISE (dims 2d, 2d+1) and Metal's `rope` kernel is NeoX half-split, so
+		// FeatPairwiseRoPE is declared by CUDA only and Metal now DECLINES these families to the CPU path.
+		// This smoke test could not see why that matters: it checks admission + no NaN, and a wrong
+		// rotation is exact at position 0 and fluent-looking after (the CUDA resident ran real
+		// Command-R7B / Aya wrong that way, worst per-position cosine -0.075 / -0.041). Until Metal has
+		// pairwise rope kernels, a decline naming the feature is the PASS; when it declares the
+		// feature this test falls through to the original admission + no-NaN smoke below, and the
+		// session that ports the kernels must add a peaked-attention resident-vs-CPU gate beside it
+		// (cuda/pairwise_rope_resident_parity_test.go is the template).
+		if why := mRes.ResidentDecline(); !strings.Contains(why, string(decoder.FeatPairwiseRoPE)) {
+			t.Fatalf("%s did not go resident and the decline does not name %q (decode path %q; decline: %s)",
+				ckpt, decoder.FeatPairwiseRoPE, mRes.DecodePath(), why)
+		}
+		t.Logf("declined as intended until Metal has pairwise rope kernels: %s", mRes.ResidentDecline())
+		return
 	}
 	t.Logf("resident decode path: %s", mRes.DecodePath())
 

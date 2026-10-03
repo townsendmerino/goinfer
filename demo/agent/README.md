@@ -123,9 +123,12 @@ GOWORK=off go run ./cmd/agent-web \
 `--vision` is auto-discovered when `--model` is a VL checkpoint dir. An image turn
 skips the ken search (the image is the context) and answers it through goinfer's
 pure-Go vision path (SigLIP encoder + projector → the decoder's embed-by-vector
-seam). **Heads-up:** the SigLIP prefill is CPU-heavy — expect a minute or two per
-image (the UI shows "analyzing image…"); a faster int8 tower is the planned
-follow-on (`docs/completed/task-cpu-vision-prefill.md`).
+seam). **Heads-up:** the SigLIP prefill is CPU-heavy — the CPU tower measured ~31.3 s per image
+(2026-09-08, `docs/benchmarks.md` §A; the UI shows "analyzing image…"). The int8 tower this paragraph used to
+call "the planned follow-on" shipped and is a wash on AVX2 (`docs/completed/task-cpu-vision-prefill.md`).
+`--vision-backend webgpu` (a `-tags gpu` cgo build) runs the tower on the GPU; **the agent has no CUDA tower**
+(`serve` does: `goinfer-serve --backend cuda` runs the Gemma 3 tower resident, ~4 s per image). Images in
+the agent are Gemma 3 only; `serve` reads five families (`docs/multimodal.md`).
 
 ## Demo script
 

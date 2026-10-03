@@ -136,7 +136,7 @@ A model page carries what the repo knows and ollama.com's equivalent pages do no
 - measured throughput, with the machine and date named
 - the exact `goinfer-chat pull` line, copyable
 - **"Coming from Ollama?"** (added 2026-09-30) at the bottom of the Models page: Ollama's 60 most-pulled models with what
-  goinfer does with each, from a dated snapshot (now `docs/measurements/ollama-coverage-2026-09-30b.md`, re-read
+  goinfer does with each, from a dated snapshot (now `docs/measurements/ollama-coverage-2026-10-02.md` as of 2026-10-02, after GLM-OCR support landed; `docs/measurements/ollama-coverage-2026-09-30b.md` before it, re-read
   after Gemma 1 / CodeGemma / Gemma 2 landed; each not-supported row names the `model_type` it needs, and the build fails
   when the matrix gains one). The rows are
   `site/data/ollama.json`, and each row's status is derived from the capability matrix at build. `CheckOllama` fails the

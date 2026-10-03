@@ -1,0 +1,261 @@
+=== RUN   TestFieldConfidence
+--- PASS: TestFieldConfidence (0.00s)
+=== RUN   TestFieldConfidence_temperature
+--- PASS: TestFieldConfidence_temperature (0.00s)
+=== RUN   TestFieldConfidence_offAndRefusals
+--- PASS: TestFieldConfidence_offAndRefusals (0.00s)
+=== RUN   TestFieldConfidence_skipsFreeStrings
+--- PASS: TestFieldConfidence_skipsFreeStrings (0.00s)
+=== RUN   TestMasker_emptySurfaceAndPaddedVocab
+--- PASS: TestMasker_emptySurfaceAndPaddedVocab (0.00s)
+=== RUN   TestMasker_masksToGrammar
+--- PASS: TestMasker_masksToGrammar (0.00s)
+=== RUN   TestMasker_eosGating
+--- PASS: TestMasker_eosGating (0.00s)
+=== RUN   TestMasker_stopWhenComplete
+--- PASS: TestMasker_stopWhenComplete (0.00s)
+=== RUN   TestConstrainedDecode_alwaysValidJSON
+    constrain_test.go:201: 2999/3000 trials produced a complete, valid JSON document under random logits
+--- PASS: TestConstrainedDecode_alwaysValidJSON (0.11s)
+=== RUN   TestMasker_stopWhenComplete_scalarsMayStillExtend
+=== RUN   TestMasker_stopWhenComplete_scalarsMayStillExtend/integer
+=== RUN   TestMasker_stopWhenComplete_scalarsMayStillExtend/enum_with_a_shared_prefix
+=== RUN   TestMasker_stopWhenComplete_scalarsMayStillExtend/object_still_stops
+--- PASS: TestMasker_stopWhenComplete_scalarsMayStillExtend (0.00s)
+    --- PASS: TestMasker_stopWhenComplete_scalarsMayStillExtend/integer (0.00s)
+    --- PASS: TestMasker_stopWhenComplete_scalarsMayStillExtend/enum_with_a_shared_prefix (0.00s)
+    --- PASS: TestMasker_stopWhenComplete_scalarsMayStillExtend/object_still_stops (0.00s)
+=== RUN   TestForcedRun
+--- PASS: TestForcedRun (0.00s)
+=== RUN   TestForcedBytesRun
+--- PASS: TestForcedBytesRun (0.00s)
+=== RUN   TestJSON_completeValues
+--- PASS: TestJSON_completeValues (0.00s)
+=== RUN   TestJSON_validPrefixesNotComplete
+--- PASS: TestJSON_validPrefixesNotComplete (0.00s)
+=== RUN   TestJSON_invalidPrefixes
+--- PASS: TestJSON_invalidPrefixes (0.00s)
+=== RUN   TestJSON_byteByByte
+--- PASS: TestJSON_byteByByte (0.00s)
+=== RUN   TestLazyMasker_neverMasksWithoutTrigger
+--- PASS: TestLazyMasker_neverMasksWithoutTrigger (0.00s)
+=== RUN   TestLazyMasker_armsOnTrigger_andConstrains
+=== RUN   TestLazyMasker_armsOnTrigger_andConstrains/whole_token
+=== RUN   TestLazyMasker_armsOnTrigger_andConstrains/split_across_tokens
+--- PASS: TestLazyMasker_armsOnTrigger_andConstrains (0.00s)
+    --- PASS: TestLazyMasker_armsOnTrigger_andConstrains/whole_token (0.00s)
+    --- PASS: TestLazyMasker_armsOnTrigger_andConstrains/split_across_tokens (0.00s)
+=== RUN   TestLazyMasker_toleratesSpaceAfterOpener
+--- PASS: TestLazyMasker_toleratesSpaceAfterOpener (0.00s)
+=== RUN   TestLazyMasker_failsOpenOnProseMention
+--- PASS: TestLazyMasker_failsOpenOnProseMention (0.00s)
+=== RUN   TestLazyMasker_disarmsAfterCall_andRearms
+--- PASS: TestLazyMasker_disarmsAfterCall_andRearms (0.00s)
+=== RUN   TestLazyMasker_gateMatchesProcess
+--- PASS: TestLazyMasker_gateMatchesProcess (0.00s)
+=== RUN   TestCallKeyLazyMasker_neverMasksNonCalls
+=== RUN   TestCallKeyLazyMasker_neverMasksNonCalls/prose
+=== RUN   TestCallKeyLazyMasker_neverMasksNonCalls/json,_other_key
+=== RUN   TestCallKeyLazyMasker_neverMasksNonCalls/leading_ws_+_prose
+--- PASS: TestCallKeyLazyMasker_neverMasksNonCalls (0.00s)
+    --- PASS: TestCallKeyLazyMasker_neverMasksNonCalls/prose (0.00s)
+    --- PASS: TestCallKeyLazyMasker_neverMasksNonCalls/json,_other_key (0.00s)
+    --- PASS: TestCallKeyLazyMasker_neverMasksNonCalls/leading_ws_+_prose (0.00s)
+=== RUN   TestCallKeyLazyMasker_armsOnNameKey
+=== RUN   TestCallKeyLazyMasker_armsOnNameKey/plain
+=== RUN   TestCallKeyLazyMasker_armsOnNameKey/leading_ws
+=== RUN   TestCallKeyLazyMasker_armsOnNameKey/python_tag
+=== RUN   TestCallKeyLazyMasker_armsOnNameKey/split_tokens
+--- PASS: TestCallKeyLazyMasker_armsOnNameKey (0.00s)
+    --- PASS: TestCallKeyLazyMasker_armsOnNameKey/plain (0.00s)
+    --- PASS: TestCallKeyLazyMasker_armsOnNameKey/leading_ws (0.00s)
+    --- PASS: TestCallKeyLazyMasker_armsOnNameKey/python_tag (0.00s)
+    --- PASS: TestCallKeyLazyMasker_armsOnNameKey/split_tokens (0.00s)
+=== RUN   TestCallKeyLazyMasker_failsOpenOnImpossibleName
+--- PASS: TestCallKeyLazyMasker_failsOpenOnImpossibleName (0.00s)
+=== RUN   TestMatchCallKey
+--- PASS: TestMatchCallKey (0.00s)
+=== RUN   TestPlainString_exact
+--- PASS: TestPlainString_exact (0.00s)
+=== RUN   TestToolGrammar_plainStringExact
+--- PASS: TestToolGrammar_plainStringExact (0.00s)
+=== RUN   TestPlainString_classification
+--- PASS: TestPlainString_classification (0.00s)
+=== RUN   TestPlainString_endToEnd
+--- PASS: TestPlainString_endToEnd (0.00s)
+=== RUN   TestSchema_M27_hardening
+--- PASS: TestSchema_M27_hardening (0.00s)
+=== RUN   TestSchemaFromStruct_recursive
+--- PASS: TestSchemaFromStruct_recursive (0.00s)
+=== RUN   TestSchema_propertyValidates
+--- PASS: TestSchema_propertyValidates (0.23s)
+=== RUN   TestGrammarFromStruct_roundTrip
+--- PASS: TestGrammarFromStruct_roundTrip (0.17s)
+=== RUN   TestGrammarFromStruct_byteSliceAndFixedArray
+--- PASS: TestGrammarFromStruct_byteSliceAndFixedArray (0.00s)
+=== RUN   TestSchema_unsupported
+--- PASS: TestSchema_unsupported (0.00s)
+=== RUN   TestSchema_rejectsUnsatisfiable
+--- PASS: TestSchema_rejectsUnsatisfiable (0.00s)
+=== RUN   TestSchema_rejectsInvalid
+--- PASS: TestSchema_rejectsInvalid (0.00s)
+=== RUN   TestEncodeLiteral_doesNotHTMLEscape
+--- PASS: TestEncodeLiteral_doesNotHTMLEscape (0.00s)
+=== RUN   TestSchemaGrammar_htmlUnsafeEnumIsReachable
+--- PASS: TestSchemaGrammar_htmlUnsafeEnumIsReachable (0.00s)
+=== RUN   TestSchemaGrammar_largeIntegerEnumKeepsItsDigits
+--- PASS: TestSchemaGrammar_largeIntegerEnumKeepsItsDigits (0.00s)
+=== RUN   TestToolCallGrammar_noArgumentSchemas
+=== RUN   TestToolCallGrammar_noArgumentSchemas/already_closed
+=== RUN   TestToolCallGrammar_noArgumentSchemas/explicit_empty_properties
+=== RUN   TestToolCallGrammar_noArgumentSchemas/absent_properties
+--- PASS: TestToolCallGrammar_noArgumentSchemas (0.00s)
+    --- PASS: TestToolCallGrammar_noArgumentSchemas/already_closed (0.00s)
+    --- PASS: TestToolCallGrammar_noArgumentSchemas/explicit_empty_properties (0.00s)
+    --- PASS: TestToolCallGrammar_noArgumentSchemas/absent_properties (0.00s)
+=== RUN   TestSchemaFromStruct_embeddedFieldsArePromoted
+--- PASS: TestSchemaFromStruct_embeddedFieldsArePromoted (0.00s)
+=== RUN   TestSchemaFromStruct_namedEmbeddedIsNotPromoted
+--- PASS: TestSchemaFromStruct_namedEmbeddedIsNotPromoted (0.00s)
+=== RUN   TestSchemaFromStruct_unexportedEmbedIsStillPromoted
+--- PASS: TestSchemaFromStruct_unexportedEmbedIsStillPromoted (0.00s)
+=== RUN   TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo
+--- PASS: TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo (0.00s)
+=== RUN   TestSchemaFromStruct_selfUnmarshalingTypes
+=== RUN   TestSchemaFromStruct_selfUnmarshalingTypes/time.Time_maps_to_string
+=== RUN   TestSchemaFromStruct_selfUnmarshalingTypes/a_struct_with_no_exported_fields_is_refused
+--- PASS: TestSchemaFromStruct_selfUnmarshalingTypes (0.00s)
+    --- PASS: TestSchemaFromStruct_selfUnmarshalingTypes/time.Time_maps_to_string (0.00s)
+    --- PASS: TestSchemaFromStruct_selfUnmarshalingTypes/a_struct_with_no_exported_fields_is_refused (0.00s)
+=== RUN   TestSchemaFromStruct_unsignedRejectsNegative
+--- PASS: TestSchemaFromStruct_unsignedRejectsNegative (0.00s)
+=== RUN   TestSchema_depthIsBounded
+--- PASS: TestSchema_depthIsBounded (0.63s)
+=== RUN   TestToolCallGrammar_depthIsBounded
+--- PASS: TestToolCallGrammar_depthIsBounded (0.54s)
+=== RUN   TestTemplateFromSchema_cardExampleByteExact
+--- PASS: TestTemplateFromSchema_cardExampleByteExact (0.00s)
+=== RUN   TestTemplateFromSchema_convention
+=== RUN   TestTemplateFromSchema_convention/string
+=== RUN   TestTemplateFromSchema_convention/integer
+=== RUN   TestTemplateFromSchema_convention/number
+=== RUN   TestTemplateFromSchema_convention/boolean
+=== RUN   TestTemplateFromSchema_convention/null
+=== RUN   TestTemplateFromSchema_convention/string_list
+=== RUN   TestTemplateFromSchema_convention/nullable_string_takes_the_non-null_type
+=== RUN   TestTemplateFromSchema_convention/string_enum
+=== RUN   TestTemplateFromSchema_convention/numeric_enum
+=== RUN   TestTemplateFromSchema_convention/const
+=== RUN   TestTemplateFromSchema_convention/numeric_const
+=== RUN   TestTemplateFromSchema_convention/type_inferred_from_properties
+=== RUN   TestTemplateFromSchema_convention/empty_closed_object
+=== RUN   TestTemplateFromSchema_convention/array_of_objects_shows_one_element
+=== RUN   TestTemplateFromSchema_convention/object_with_every_kind
+--- PASS: TestTemplateFromSchema_convention (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/string (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/integer (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/number (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/boolean (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/null (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/string_list (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/nullable_string_takes_the_non-null_type (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/string_enum (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/numeric_enum (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/const (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/numeric_const (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/type_inferred_from_properties (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/empty_closed_object (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/array_of_objects_shows_one_element (0.00s)
+    --- PASS: TestTemplateFromSchema_convention/object_with_every_kind (0.00s)
+=== RUN   TestTemplateFromSchema_keywordNamedFields
+--- PASS: TestTemplateFromSchema_keywordNamedFields (0.00s)
+=== RUN   TestTemplateFromSchema_errors
+--- PASS: TestTemplateFromSchema_errors (0.00s)
+=== RUN   TestTemplateFromStruct
+--- PASS: TestTemplateFromStruct (0.00s)
+=== RUN   TestTemplateFromStruct_agreesWithSchemaAndDecodes
+--- PASS: TestTemplateFromStruct_agreesWithSchemaAndDecodes (0.00s)
+=== RUN   TestTemplateFromStruct_refusesWhatTheGrammarRefuses
+--- PASS: TestTemplateFromStruct_refusesWhatTheGrammarRefuses (0.00s)
+=== RUN   TestToolGrammar_property
+=== RUN   TestToolGrammar_property/chatml
+=== RUN   TestToolGrammar_property/llama3
+=== RUN   TestToolGrammar_property/mistral
+--- PASS: TestToolGrammar_property (0.20s)
+    --- PASS: TestToolGrammar_property/chatml (0.07s)
+    --- PASS: TestToolGrammar_property/llama3 (0.06s)
+    --- PASS: TestToolGrammar_property/mistral (0.07s)
+=== RUN   TestToolCallsGrammar_acceptsExactlyTheUnionOfSingleToolGrammars
+--- PASS: TestToolCallsGrammar_acceptsExactlyTheUnionOfSingleToolGrammars (0.01s)
+=== RUN   TestToolCallsGrammar_collapsesAtTheName
+--- PASS: TestToolCallsGrammar_collapsesAtTheName (0.00s)
+=== RUN   TestToolCallsGrammar_cloneIsIndependent
+--- PASS: TestToolCallsGrammar_cloneIsIndependent (0.00s)
+=== RUN   TestToolCallsGrammar_errors
+--- PASS: TestToolCallsGrammar_errors (0.00s)
+=== RUN   TestToolCallsGrammar_otherFamilies
+--- PASS: TestToolCallsGrammar_otherFamilies (0.00s)
+=== RUN   TestToolCallsGrammar_masker
+--- PASS: TestToolCallsGrammar_masker (0.00s)
+=== RUN   TestConfidenceCost_C1
+    confidence_cost_test.go:23: needs a real tokenizer for a real vocab: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestConfidenceCost_C1 (0.00s)
+=== RUN   TestMaskCost_P20
+    maskcost_test.go:35: needs a real tokenizer for a real vocab: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestMaskCost_P20 (0.00s)
+=== RUN   FuzzJSONSchema
+=== RUN   FuzzJSONSchema/seed#0
+=== RUN   FuzzJSONSchema/seed#1
+=== RUN   FuzzJSONSchema/seed#2
+=== RUN   FuzzJSONSchema/seed#3
+=== RUN   FuzzJSONSchema/seed#4
+=== RUN   FuzzJSONSchema/seed#5
+=== RUN   FuzzJSONSchema/seed#6
+=== RUN   FuzzJSONSchema/seed#7
+=== RUN   FuzzJSONSchema/seed#8
+=== RUN   FuzzJSONSchema/seed#9
+=== RUN   FuzzJSONSchema/seed#10
+=== RUN   FuzzJSONSchema/634655073c4887d6
+=== RUN   FuzzJSONSchema/80c61cb13f666f2f
+=== RUN   FuzzJSONSchema/9c1be985f66eb4fc
+=== RUN   FuzzJSONSchema/enum_float_literal_precision
+=== RUN   FuzzJSONSchema/repro_trailing_garbage
+--- PASS: FuzzJSONSchema (0.03s)
+    --- PASS: FuzzJSONSchema/seed#0 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#1 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#2 (0.03s)
+    --- PASS: FuzzJSONSchema/seed#3 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#4 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#5 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#6 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#7 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#8 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#9 (0.00s)
+    --- PASS: FuzzJSONSchema/seed#10 (0.00s)
+    --- PASS: FuzzJSONSchema/634655073c4887d6 (0.00s)
+    --- PASS: FuzzJSONSchema/80c61cb13f666f2f (0.00s)
+    --- PASS: FuzzJSONSchema/9c1be985f66eb4fc (0.00s)
+    --- PASS: FuzzJSONSchema/enum_float_literal_precision (0.00s)
+    --- PASS: FuzzJSONSchema/repro_trailing_garbage (0.00s)
+=== RUN   FuzzSchemaGrammarBytes
+=== RUN   FuzzSchemaGrammarBytes/seed#0
+=== RUN   FuzzSchemaGrammarBytes/seed#1
+=== RUN   FuzzSchemaGrammarBytes/seed#2
+--- PASS: FuzzSchemaGrammarBytes (0.00s)
+    --- PASS: FuzzSchemaGrammarBytes/seed#0 (0.00s)
+    --- PASS: FuzzSchemaGrammarBytes/seed#1 (0.00s)
+    --- PASS: FuzzSchemaGrammarBytes/seed#2 (0.00s)
+=== RUN   FuzzToolCallsGrammar
+=== RUN   FuzzToolCallsGrammar/seed#0
+=== RUN   FuzzToolCallsGrammar/seed#1
+=== RUN   FuzzToolCallsGrammar/seed#2
+=== RUN   FuzzToolCallsGrammar/seed#3
+--- PASS: FuzzToolCallsGrammar (0.00s)
+    --- PASS: FuzzToolCallsGrammar/seed#0 (0.00s)
+    --- PASS: FuzzToolCallsGrammar/seed#1 (0.00s)
+    --- PASS: FuzzToolCallsGrammar/seed#2 (0.00s)
+    --- PASS: FuzzToolCallsGrammar/seed#3 (0.00s)
+=== RUN   ExampleSchemaFromStruct
+--- PASS: ExampleSchemaFromStruct (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/constrain	1.968s

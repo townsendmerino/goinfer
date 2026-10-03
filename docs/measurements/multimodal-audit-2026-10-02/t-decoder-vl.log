@@ -1,0 +1,123 @@
+=== RUN   TestGemma3VL_textParity
+    gemma3_vl_test.go:56: gemma3-VL text parity: argmax got=246 want=246 | logit cosine=1.000000
+--- PASS: TestGemma3VL_textParity (0.00s)
+=== RUN   TestGemma3VL_imageParity
+    gemma3_vl_test.go:121: gemma3-VL image parity: argmax got=179 want=179 | logit cosine=0.994641
+--- PASS: TestGemma3VL_imageParity (0.00s)
+=== RUN   TestGemma4VLBidir_textParity
+    gemma4_vl_bidir_test.go:71: sequential: argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:89: batched:    argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:101: sequential vs batched: logit cosine=1.00000000
+--- PASS: TestGemma4VLBidir_textParity (0.01s)
+=== RUN   TestGemma4VLBidir_imageParity
+    gemma4_vl_bidir_test.go:173: bidirectional: argmax got=142 want=142 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:192: causal-only:   argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:201: bidirectional vs causal-only: logit cosine=0.953037 (must be well below 1.0 — fixture must be non-vacuous)
+--- PASS: TestGemma4VLBidir_imageParity (0.01s)
+=== RUN   TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional
+--- PASS: TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional (0.00s)
+=== RUN   TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped
+--- PASS: TestGenerateGemma4VL_residentContextCapPublishesBudgetClamped (0.00s)
+=== RUN   TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU
+--- PASS: TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU (0.01s)
+=== RUN   TestGenerateGemma4VL_sequentialPathNeverTouchesResident
+--- PASS: TestGenerateGemma4VL_sequentialPathNeverTouchesResident (0.01s)
+=== RUN   TestGemma4VL_textParity
+    gemma4_vl_test.go:69: gemma4-VL text parity: argmax got=8 want=8 | logit cosine=1.000000
+--- PASS: TestGemma4VL_textParity (0.01s)
+=== RUN   TestGemma4VL_imageParity
+    gemma4_vl_test.go:134: gemma4-VL image parity: argmax got=207 want=207 | logit cosine=1.000000
+--- PASS: TestGemma4VL_imageParity (0.01s)
+=== RUN   TestGenerateVL_residentDecodeEngagesAndUploadsKV
+--- PASS: TestGenerateVL_residentDecodeEngagesAndUploadsKV (0.00s)
+=== RUN   TestGenerateVL_residentContextCapPublishesBudgetClamped
+--- PASS: TestGenerateVL_residentContextCapPublishesBudgetClamped (0.00s)
+=== RUN   TestGenerateVL_residentBusyDeclinesToCPU
+--- PASS: TestGenerateVL_residentBusyDeclinesToCPU (0.00s)
+=== RUN   TestGenerateVL_residentConcurrencyRace
+--- PASS: TestGenerateVL_residentConcurrencyRace (0.00s)
+=== RUN   TestGenerateQwenVL_residentDecodeUsesForwardMRoPE
+--- PASS: TestGenerateQwenVL_residentDecodeUsesForwardMRoPE (0.01s)
+=== RUN   TestGenerateQwenVL_residentContextCapPublishesBudgetClamped
+--- PASS: TestGenerateQwenVL_residentContextCapPublishesBudgetClamped (0.01s)
+=== RUN   TestGenerateQwenVL_declinesResidentWithoutMRoPE
+--- PASS: TestGenerateQwenVL_declinesResidentWithoutMRoPE (0.01s)
+=== RUN   TestGenerateVL_imageReuseFastPath_sameImageSkipsTower
+--- PASS: TestGenerateVL_imageReuseFastPath_sameImageSkipsTower (0.00s)
+=== RUN   TestGenerateVL_imageReuseFastPath_declinesPastResidentCap
+--- PASS: TestGenerateVL_imageReuseFastPath_declinesPastResidentCap (0.00s)
+=== RUN   TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower
+--- PASS: TestGenerateVL_imageReuseFastPath_differentImageDoesNotSkipTower (0.00s)
+=== RUN   TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE
+--- PASS: TestGenerateQwenVL_imageReuseFastPath_sameImageUsesForwardMRoPE (0.01s)
+=== RUN   TestGenerateQwenVL_imageReuseFastPath_declinesPastResidentCap
+--- PASS: TestGenerateQwenVL_imageReuseFastPath_declinesPastResidentCap (0.01s)
+=== RUN   TestGenerateVL_streams
+    generate_vl_test.go:74: GenerateVL streamed 5 tokens (first=179 == argmax 179)
+--- PASS: TestGenerateVL_streams (0.00s)
+=== RUN   TestGlmOcr_realConfig
+--- PASS: TestGlmOcr_realConfig (0.00s)
+=== RUN   TestGlmOcr_residentDeclined
+--- PASS: TestGlmOcr_residentDeclined (0.00s)
+=== RUN   TestGlmOcr_configRejects
+=== RUN   TestGlmOcr_configRejects/bias
+=== RUN   TestGlmOcr_configRejects/act
+=== RUN   TestGlmOcr_configRejects/section_sum
+=== RUN   TestGlmOcr_configRejects/no_section
+=== RUN   TestGlmOcr_configRejects/partial_rotary
+=== RUN   TestGlmOcr_configRejects/interleaved_layout
+=== RUN   TestGlmOcr_configRejects/no_rope
+=== RUN   TestGlmOcr_configRejects/scaled_rope
+--- PASS: TestGlmOcr_configRejects (0.00s)
+    --- PASS: TestGlmOcr_configRejects/bias (0.00s)
+    --- PASS: TestGlmOcr_configRejects/act (0.00s)
+    --- PASS: TestGlmOcr_configRejects/section_sum (0.00s)
+    --- PASS: TestGlmOcr_configRejects/no_section (0.00s)
+    --- PASS: TestGlmOcr_configRejects/partial_rotary (0.00s)
+    --- PASS: TestGlmOcr_configRejects/interleaved_layout (0.00s)
+    --- PASS: TestGlmOcr_configRejects/no_rope (0.00s)
+    --- PASS: TestGlmOcr_configRejects/scaled_rope (0.00s)
+=== RUN   TestGlmOcr_tensorNameMapping
+--- PASS: TestGlmOcr_tensorNameMapping (0.00s)
+=== RUN   TestGlmOcr_mtpLayerAbsentIsFine
+--- PASS: TestGlmOcr_mtpLayerAbsentIsFine (0.00s)
+=== RUN   TestGlmOcr_missingLayerIsLoud
+--- PASS: TestGlmOcr_missingLayerIsLoud (0.00s)
+=== RUN   TestGlmOcr_forwardParity
+    glm_ocr_test.go:675: sequential last-logit parity vs HF: cosine=1.000000000 max|diff|=1.931e-05 over 160 vocab, argmax 124
+    glm_ocr_test.go:689: batched last-logit parity vs HF: cosine=1.000000000 max|diff|=1.931e-05
+    glm_ocr_test.go:712: continuation: got [124 144 69 31 54 101 122 75] | want [124 144 69 31 54 101 122 75]
+--- PASS: TestGlmOcr_forwardParity (0.04s)
+=== RUN   TestGlmOcr_mropeParity
+    glm_ocr_test.go:775: m-RoPE prefill last-logit parity vs HF: cosine=1.000000000 max|diff|=9.596e-06, argmax 122 (want 122); scalar-position cosine would be 0.138
+    glm_ocr_test.go:801: continuation past the image: got [122 50 13 46 150 0] | want [122 50 13 46 150 0]
+--- PASS: TestGlmOcr_mropeParity (0.00s)
+=== RUN   TestGlmOcr_generateQwenVL_cpuOnly
+--- PASS: TestGlmOcr_generateQwenVL_cpuOnly (0.01s)
+=== RUN   TestQwen25VL_e2eChain
+    qwen25vl_test.go:73: qwen2.5-VL e2e (encoder→decoder): argmax got=174 want=174 | cosine=0.999981
+--- PASS: TestQwen25VL_e2eChain (0.02s)
+=== RUN   TestQwen25VL_imageParity
+    qwen25vl_test.go:221: qwen2.5-VL image parity: argmax got=174 want=174 | logit cosine=0.999981
+    qwen25vl_test.go:239: qwen2.5-VL decode continuation: got=[174 144 249 267] want=[174 144 249 267]
+--- PASS: TestQwen25VL_imageParity (0.01s)
+=== RUN   TestQwen25VL_generate
+    qwen25vl_test.go:293: GenerateQwenVL greedy: got=[174 144 249 267] want=[174 144 249 267]
+--- PASS: TestQwen25VL_generate (0.01s)
+=== RUN   TestQwen25VL_textParity
+    qwen25vl_test.go:351: qwen2.5-VL text parity: argmax got=147 want=147 | logit cosine=1.000000
+--- PASS: TestQwen25VL_textParity (0.00s)
+=== RUN   TestQwen35VL_loaderSetsMRope
+--- PASS: TestQwen35VL_loaderSetsMRope (0.00s)
+=== RUN   TestQwen35VL_positions
+--- PASS: TestQwen35VL_positions (0.00s)
+=== RUN   TestQwen35VL_imageParity
+    qwen35vl_test.go:162: last-logit cosine 1.000000000, argmax 174 (HF 174), continuation [174 179 26 59 179 26 59 7] (HF [174 179 26 59 179 26 59 7])
+--- PASS: TestQwen35VL_imageParity (0.01s)
+=== RUN   TestQwen35VL_e2eChain
+    qwen35vl_test.go:185: last-logit cosine 1.000000000, argmax 174 (HF 174), continuation [174 179 26 59 179 26 59 7] (HF [174 179 26 59 179 26 59 7])
+--- PASS: TestQwen35VL_e2eChain (0.01s)
+=== RUN   TestGenerateQwenVL_recurrentTakesNoResidentBranch
+--- PASS: TestGenerateQwenVL_recurrentTakesNoResidentBranch (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.229s

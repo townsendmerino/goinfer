@@ -54,6 +54,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **GLM-4.5/4.6** — Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)
 
+> **GLM-OCR** — Zhipu GLM-OCR (0.9B document OCR): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; its own vision tower (aikit, CPU) feeds merged rows through the Qwen-shaped image path
+
 > **GPT-2** — GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)
 
 > **Gemma** — Google Gemma 1 (2B/7B) and CodeGemma: pre-norm, (1+w) RMSNorm, GeGLU, tied head
@@ -111,6 +113,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Command-R | `cohere` | dense | none | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| GLM-OCR | `glm_ocr`, `glm_ocr_text` | dense | none | no | m-RoPE | RMSNorm, sandwich | SwiGLU | no | safetensors | text (+ vision tower, CPU) | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma | `gemma` | dense | none | no | full | RMSNorm, pre-norm | GeGLU | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Gemma 2 | `gemma2` | dense | interleave | no | full | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | full-oracle 100.0%/1.00000 |

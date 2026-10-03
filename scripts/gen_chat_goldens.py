@@ -28,6 +28,9 @@ FAMILIES = {
     "mistral": "mistralai/Mistral-7B-Instruct-v0.3",
     "phi3": "microsoft/Phi-3-mini-4k-instruct",
     "phi3_orig": "microsoft/Phi-3-mini-4k-instruct",
+    # A LOCAL checkpoint directory (GLM-OCR, O3): zai-org/GLM-OCR at revision 2e85a62840ccac27daa451df36c736c4636b8628, pulled to
+    # ~/models/glm-ocr. Tokenizer + chat_template.jinja only; no weights are read.
+    "glm_ocr": os.path.expanduser("~/models/glm-ocr"),
 }
 
 # A family whose template is not its repo's current one: rendered by the same tokenizer through
@@ -68,7 +71,7 @@ for fam, repo in FAMILIES.items():
     if ONLY and fam not in ONLY:
         continue
     rev = REVISIONS.get(repo)
-    if rev is None:
+    if rev is None and not os.path.isdir(repo):
         print(f"WARNING {fam} ({repo}): unpinned revision — goldens may drift; set REVISIONS[{repo!r}] to a commit SHA")
     try:
         tok = AutoTokenizer.from_pretrained(repo, revision=rev)

@@ -1,0 +1,13 @@
+[13:24:24] b done in 45s
+[13:24:48] s done in 23s
+[13:25:11] c done in 23s
+[13:25:34] cny done in 23s
+
+=== s vs b ===
+  s: 30/30 identical to batch
+
+=== c vs b ===
+  c: 30/30 identical to batch
+
+=== cny vs b ===
+  cny: 30/30 identical to batch

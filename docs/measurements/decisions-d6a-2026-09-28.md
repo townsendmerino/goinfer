@@ -148,5 +148,23 @@ Every prompt's token count matches goinfer's.
   bias term (a prior correction, fitted on the calibration split) would change the argmax. Whether it beats the trained head's 0.98
   on noul is a separate question, and it is not run here.
 
-**Owed, by night:** the 150 items at `--quant q4k` on the CPU (about 4 hours), to split the 8-point gap between the Q4_K file and
+**Owed, by night (registered 2026-10-02, below; the estimate is 2.25 hours, not 4):** the 150 items at `--quant q4k` on the CPU, to split the 8-point gap between the Q4_K file and
 goinfer's re-quantization. It matters for D1's Route A quality on 4-bit models, not for D6a's decision.
+
+## The owed q4k measurement, registered 2026-10-02 before it ran
+
+**Question.** The gap between the transformers f32 Route A reference (0.559 OOD-weighted top-1 on the 150 fixture items) and goinfer's Q4_K_M int4 on CUDA (0.481) is about 8 points. How much of it is the Q4_K FILE's own 4-bit loss, and how much is goinfer's
+re-quantization of that file to its int4 layout? `--quant q4k` computes the file's native 4-bit blocks without re-quantizing them, so it sits between the two. **A record, not a gate:** nothing here changes D6a's verdict (BUILD D2-D4 holds whatever the numeric gap is, as above).
+
+**What runs.** `run-d6a-q4k.sh`: the pinned `goinfer-chat` `goinfer-chat-cuda-a4e16c43` (sha256 `c9974a122c8755fca901f53b2deec0fdb8b7fe85f8ec1f666c938b2105d4ee5d`), `decide --backend cpu --quant q4k --template bare-v1 --ctx 4096`, the 150 items
+(`testdata/decisions/items.jsonl`, sha256 `2a5f37e57d51a0b0139b70381c98ce19053aff0a8f0935f50a9452f1382da7fc`, pinned by copy), Qwen3.5-9B Q4_K_M from `~/models`, raw label scoring (no head, no calibration), as the int4 arm's `results/b0cmp-goinfer-bare.jsonl` was
+produced. The CUDA resident declines this combination ("per-32 activations: the Gated DeltaNet path is not implemented"), so it runs on the CPU. A first attempt on 2026-09-30 produced 6 rows in 10 minutes and was stopped (kept aside as `*.PARTIAL-6rows-2026-09-30.*`; not mixed in).
+**Estimate: 2.25 hours** = 27,861 prompt tokens x the first attempt's 290 ms per token (rows 1-6 averaged 341 tokens against 186 for all 150, which is why the earlier "4 hours" was an over-estimate); queued at 150 minutes.
+
+**What is read (primary, paired, per item).** Per-item argmax agreement with the transformers f32 reference and mean total-variation distance, overall and per kind, for the q4k arm beside the int4 arm already on record (`b0dist.py`): int4 CUDA reads agreement **0.600** overall (noul 0.765, choice 0.520, score 0.510), TV **0.146**.
+**Secondary:** top-1 against gold, OOD-weighted as in the table above (per-kind noul 9,767 / choice 3,219 / score 72), for q4k against 0.481 and 0.559.
+**How to read it.** If q4k's agreement with the reference is clearly above int4's, a large part of the gap is goinfer's re-quantization; if it is about equal, the file's own 4-bit loss accounts for it. With 51 / 50 / 49 items per kind, a per-kind difference smaller than about 10 points is inside sampling noise, so the claim is stated only to that resolution, and the gold-top-1 split
+(dominated by noul at n = 51) is quoted with its interval, not as a point.
+
+**Confound, stated before the run.** q4k runs on the CPU and the int4 arm on CUDA, so the comparison also changes the backend. The control is Route A at CPU int4 over the same items (about another 2.25 hours); it is NOT queued, and a split that the CPU/CUDA difference could explain is reported as unresolved.
+

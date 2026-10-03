@@ -1,0 +1,5 @@
+staged 2026-10-02T08:22:11-07:00 from goinfer commit 1aa61eb3 (working tree == HEAD for these paths except scripts/o5_eval_invoices.py, copied from the tree)
+3870d47a4cffbf6eca07d481ffe8e0f179494a102c89b16af40d9e9b7efc01b4  /home/francis/goinfer-logs/glm-ocr-o5/serve-cpu
+16d99d1fe13647526174f0f540f37ba53ffbd852c30ca9e77bc4ae19182d32ba  /home/francis/goinfer-logs/glm-ocr-o5/scripts/o5_eval_invoices.py
+dd952a34960279084aae9dfbfc3579ffbd1421daf3bf835b7820a422c17422e0  /home/francis/goinfer-logs/glm-ocr-o5/testdata/glm_ocr/invoice.schema.json
+4f40b56cb0f18c00aa2823f10f6cbfe45a5c9ec9ffe9bfa30bc6e8597200b235  /home/francis/goinfer-logs/glm-ocr-o5/testdata/glm_ocr/invoices/labels.json

@@ -1679,6 +1679,7 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .resident-note{flex-basis:100%;order:3}
 
 /* W10: sampling controls */
+#schema{font-family:var(--mono);font-size:12.5px;min-height:96px}
 .sampling-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:8px 0 10px}
 .sampling-grid input{width:100%;box-sizing:border-box}
 details.sampling textarea{min-height:48px}

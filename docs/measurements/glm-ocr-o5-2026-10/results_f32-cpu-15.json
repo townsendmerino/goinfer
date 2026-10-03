@@ -1,0 +1,3317 @@
+{
+ "tag": "f32-cpu",
+ "url": "http://127.0.0.1:18082",
+ "results": [
+  {
+   "file": "inv01.png",
+   "seconds": 74.7,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1434,
+    "completion_tokens": 283,
+    "total_tokens": 1717,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"A-01778\",\n    \"date\": \"2026-10-24\",\n    \"due_date\": \"2026-11-24\",\n    \"vendor\": \"Harbor Light Supply Co.\",\n    \"bill_to\": \"Thistle & Rowan Ltd\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Binding spine strips\",\n            \"quantity\": 6,\n            \"unit_price\": 920.48,\n            \"amount\": 5522.88\n        },\n        {\n            \"description\": \"Hardwood flooring, per m2\",\n            \"quantity\": 5,\n            \"unit_price\": 125.27,\n            \"amount\": 626.35\n        },\n        {\n            \"description\": \"Design review\",\n            \"quantity\": 24,\n            \"unit_price\": 655.85,\n            \"amount\": 15740.4\n        }\n    ],\n    \"subtotal\": 21889.63,\n    \"tax\": 1860.62,\n    \"total\": 23750.25\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "A-01778",
+     "A-01778",
+     true
+    ],
+    [
+     "date",
+     "10/24/2026",
+     "2026-10-24",
+     false
+    ],
+    [
+     "due_date",
+     "11/24/2026",
+     "2026-11-24",
+     false
+    ],
+    [
+     "vendor",
+     "Harbor Light Supply Co.",
+     "Harbor Light Supply Co.",
+     true
+    ],
+    [
+     "bill_to",
+     "Thistle & Rowan Ltd",
+     "Thistle & Rowan Ltd",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     21889.63,
+     21889.63,
+     true
+    ],
+    [
+     "tax",
+     1860.62,
+     1860.62,
+     true
+    ],
+    [
+     "total",
+     23750.25,
+     23750.25,
+     true
+    ],
+    [
+     "line_item_count",
+     3,
+     3,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Binding spine strips",
+     "Binding spine strips",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     920.48,
+     920.48,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     5522.88,
+     5522.88,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Hardwood flooring, per m2",
+     "Hardwood flooring, per m2",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     125.27,
+     125.27,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     626.35,
+     626.35,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Design review",
+     "Design review",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     24,
+     24,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     655.85,
+     655.85,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     15740.4,
+     15740.4,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9967923033158395,
+     "distribution": {
+      "false": 0.9967923033158395,
+      "true": 0.0032076966841605593
+     },
+     "undecided": 2.2060745864155423e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9993638093394726,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999903352901,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 24,
+     "confidence": 0.9999999983540562,
+     "free_tokens": 2,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv02.png",
+   "seconds": 112.8,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1832,
+    "completion_tokens": 432,
+    "total_tokens": 2264,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"06824\",\n    \"date\": \"03/13/2026\",\n    \"due_date\": \"04/13/2026\",\n    \"vendor\": \"Brightwater Logistics Ltd\",\n    \"bill_to\": \"Orchid Bay Hospitality\",\n    \"currency\": \"£\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"A4 paper, 80gsm (ream)\",\n            \"quantity\": 1,\n            \"unit_price\": 914.36,\n            \"amount\": 914.36\n        },\n        {\n            \"description\": \"Thermal label roll 100mm\",\n            \"quantity\": 1,\n            \"unit_price\": 190.36,\n            \"amount\": 190.36\n        },\n        {\n            \"description\": \"Site survey, per hour\",\n            \"quantity\": 12,\n            \"unit_price\": 597.69,\n            \"amount\": 7172.28\n        },\n        {\n            \"description\": \"Pallet wrap\",\n            \"quantity\": 6,\n            \"unit_price\": 343.91,\n            \"amount\": 2063.46\n        },\n        {\n            \"description\": \"Binding spine strips\",\n            \"quantity\": 5,\n            \"unit_price\": 636.02,\n            \"amount\": 3180.1\n        },\n        {\n            \"description\": \"Shipping and handling\",\n            \"quantity\": 12,\n            \"unit_price\": 316.17,\n            \"amount\": 3794.04\n        }\n    ],\n    \"subtotal\": 17314.6,\n    \"tax\": 1731.46,\n    \"total\": 19046.06\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "06824",
+     "06824",
+     true
+    ],
+    [
+     "date",
+     "03/13/2026",
+     "03/13/2026",
+     true
+    ],
+    [
+     "due_date",
+     "04/13/2026",
+     "04/13/2026",
+     true
+    ],
+    [
+     "vendor",
+     "Brightwater Logistics Ltd",
+     "Brightwater Logistics Ltd",
+     true
+    ],
+    [
+     "bill_to",
+     "Orchid Bay Hospitality",
+     "Orchid Bay Hospitality",
+     true
+    ],
+    [
+     "currency",
+     "GBP",
+     "£",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     17314.6,
+     17314.6,
+     true
+    ],
+    [
+     "tax",
+     1731.46,
+     1731.46,
+     true
+    ],
+    [
+     "total",
+     19046.06,
+     19046.06,
+     true
+    ],
+    [
+     "line_item_count",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "A4 paper, 80gsm (ream)",
+     "A4 paper, 80gsm (ream)",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     914.36,
+     914.36,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     914.36,
+     914.36,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Thermal label roll 100mm",
+     "Thermal label roll 100mm",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     190.36,
+     190.36,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     190.36,
+     190.36,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Site survey, per hour",
+     "Site survey, per hour",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     12,
+     12,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     597.69,
+     597.69,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     7172.28,
+     7172.28,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Pallet wrap",
+     "Pallet wrap",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     343.91,
+     343.91,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     2063.46,
+     2063.46,
+     true
+    ],
+    [
+     "line_items[4].description",
+     "Binding spine strips",
+     "Binding spine strips",
+     true
+    ],
+    [
+     "line_items[4].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[4].unit_price",
+     636.02,
+     636.02,
+     true
+    ],
+    [
+     "line_items[4].amount",
+     3180.1,
+     3180.1,
+     true
+    ],
+    [
+     "line_items[5].description",
+     "Shipping and handling",
+     "Shipping and handling",
+     true
+    ],
+    [
+     "line_items[5].quantity",
+     12,
+     12,
+     true
+    ],
+    [
+     "line_items[5].unit_price",
+     316.17,
+     316.17,
+     true
+    ],
+    [
+     "line_items[5].amount",
+     3794.04,
+     3794.04,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.854597666507565,
+     "distribution": {
+      "false": 0.854597666507565,
+      "true": 0.145402333492435
+     },
+     "undecided": 4.1954673748553544e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9969024671986529,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999986204884,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 12,
+     "confidence": 0.9999999987734256,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999956748837,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[4].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999931142938,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[5].quantity",
+     "kind": "integer",
+     "value": 12,
+     "confidence": 0.9999999975671301,
+     "free_tokens": 2,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv03.png",
+   "seconds": 83.5,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1670,
+    "completion_tokens": 278,
+    "total_tokens": 1948,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"84380\",\n    \"date\": \"08/27/2026\",\n    \"due_date\": \"09/27/2026\",\n    \"vendor\": \"Cedar & Pine Joinery\",\n    \"bill_to\": \"Vega Robotics Inc.\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Laminated menu cards\",\n            \"quantity\": 12,\n            \"unit_price\": 713.05,\n            \"amount\": 8556.6\n        },\n        {\n            \"description\": \"Ink cartridge, cyan\",\n            \"quantity\": 3,\n            \"unit_price\": 46.14,\n            \"amount\": 138.42\n        },\n        {\n            \"description\": \"Design review\",\n            \"quantity\": 3,\n            \"unit_price\": 352.34,\n            \"amount\": 1057.02\n        }\n    ],\n    \"subtotal\": 9752.04,\n    \"tax\": 828.92,\n    \"total\": 10580.96\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "84380",
+     "84380",
+     true
+    ],
+    [
+     "date",
+     "08/27/2026",
+     "08/27/2026",
+     true
+    ],
+    [
+     "due_date",
+     "09/27/2026",
+     "09/27/2026",
+     true
+    ],
+    [
+     "vendor",
+     "Cedar & Pine Joinery",
+     "Cedar & Pine Joinery",
+     true
+    ],
+    [
+     "bill_to",
+     "Vega Robotics Inc.",
+     "Vega Robotics Inc.",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     9752.04,
+     9752.04,
+     true
+    ],
+    [
+     "tax",
+     828.92,
+     828.92,
+     true
+    ],
+    [
+     "total",
+     10580.96,
+     10580.96,
+     true
+    ],
+    [
+     "line_item_count",
+     3,
+     3,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Laminated menu cards",
+     "Laminated menu cards",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     12,
+     12,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     713.05,
+     713.05,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     8556.6,
+     8556.6,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Ink cartridge, cyan",
+     "Ink cartridge, cyan",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     3,
+     3,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     46.14,
+     46.14,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     138.42,
+     138.42,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Design review",
+     "Design review",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     3,
+     3,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     352.34,
+     352.34,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     1057.02,
+     1057.02,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9967384965797528,
+     "distribution": {
+      "false": 0.9967384965797528,
+      "true": 0.0032615034202471585
+     },
+     "undecided": 2.180196144437953e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 12,
+     "confidence": 0.9966771713181737,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 3,
+     "confidence": 0.9999999268955007,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 3,
+     "confidence": 0.9999999923092346,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv04.png",
+   "seconds": 77.6,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1670,
+    "completion_tokens": 233,
+    "total_tokens": 1903,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"A-51943\",\n    \"date\": \"2026-07-04\",\n    \"due_date\": \"2026-08-04\",\n    \"vendor\": \"Kestrel Analytics GmbH\",\n    \"bill_to\": \"Redcliff Estates\",\n    \"currency\": \"£\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Hardwood flooring, per m2\",\n            \"quantity\": 2,\n            \"unit_price\": 330.13,\n            \"amount\": 660.26\n        },\n        {\n            \"description\": \"Ink cartridge, cyan\",\n            \"quantity\": 1,\n            \"unit_price\": 671.59,\n            \"amount\": 671.59\n        }\n    ],\n    \"subtotal\": 1331.85,\n    \"tax\": 0.0,\n    \"total\": 1331.85\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "A-51943",
+     "A-51943",
+     true
+    ],
+    [
+     "date",
+     "2026-07-04",
+     "2026-07-04",
+     true
+    ],
+    [
+     "due_date",
+     "2026-08-04",
+     "2026-08-04",
+     true
+    ],
+    [
+     "vendor",
+     "Kestrel Analytics GmbH",
+     "Kestrel Analytics GmbH",
+     true
+    ],
+    [
+     "bill_to",
+     "Redcliff Estates",
+     "Redcliff Estates",
+     true
+    ],
+    [
+     "currency",
+     "GBP",
+     "£",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     1331.85,
+     1331.85,
+     true
+    ],
+    [
+     "tax",
+     0.0,
+     0.0,
+     true
+    ],
+    [
+     "total",
+     1331.85,
+     1331.85,
+     true
+    ],
+    [
+     "line_item_count",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Hardwood flooring, per m2",
+     "Hardwood flooring, per m2",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     330.13,
+     330.13,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     660.26,
+     660.26,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Ink cartridge, cyan",
+     "Ink cartridge, cyan",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     671.59,
+     671.59,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     671.59,
+     671.59,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9978252040734327,
+     "distribution": {
+      "false": 0.9978252040734327,
+      "true": 0.002174795926567363
+     },
+     "undecided": 1.935027389589708e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 2,
+     "confidence": 0.9986791246176443,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999988214014,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv05.png",
+   "seconds": 91.1,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1448,
+    "completion_tokens": 419,
+    "total_tokens": 1867,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"53347\",\n    \"date\": \"01/09/2026\",\n    \"due_date\": \"02/09/2026\",\n    \"vendor\": \"Northgate Office Products\",\n    \"bill_to\": \"Oakline Hotels plc\",\n    \"currency\": \"£\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Pallet wrap\",\n            \"quantity\": 6,\n            \"unit_price\": 342.72,\n            \"amount\": 2056.32\n        },\n        {\n            \"description\": \"Hardwood flooring, per m2\",\n            \"quantity\": 6,\n            \"unit_price\": 635.39,\n            \"amount\": 3812.34\n        },\n        {\n            \"description\": \"Shipping and handling\",\n            \"quantity\": 6,\n            \"unit_price\": 660.67,\n            \"amount\": 3964.02\n        },\n        {\n            \"description\": \"Laminated menu cards\",\n            \"quantity\": 5,\n            \"unit_price\": 511.2,\n            \"amount\": 2556.0\n        },\n        {\n            \"description\": \"Courier fee\",\n            \"quantity\": 24,\n            \"unit_price\": 28.24,\n            \"amount\": 677.76\n        },\n        {\n            \"description\": \"Binding spine strips\",\n            \"quantity\": 10,\n            \"unit_price\": 938.74,\n            \"amount\": 9387.4\n        }\n    ],\n    \"subtotal\": 22453.84,\n    \"tax\": 1122.69,\n    \"total\": 23576.53\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "53347",
+     "53347",
+     true
+    ],
+    [
+     "date",
+     "01/09/2026",
+     "01/09/2026",
+     true
+    ],
+    [
+     "due_date",
+     "02/09/2026",
+     "02/09/2026",
+     true
+    ],
+    [
+     "vendor",
+     "Northgate Office Products",
+     "Northgate Office Products",
+     true
+    ],
+    [
+     "bill_to",
+     "Oakline Hotels plc",
+     "Oakline Hotels plc",
+     true
+    ],
+    [
+     "currency",
+     "GBP",
+     "£",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     22453.84,
+     22453.84,
+     true
+    ],
+    [
+     "tax",
+     1122.69,
+     1122.69,
+     true
+    ],
+    [
+     "total",
+     23576.53,
+     23576.53,
+     true
+    ],
+    [
+     "line_item_count",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Pallet wrap",
+     "Pallet wrap",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     342.72,
+     342.72,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     2056.32,
+     2056.32,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Hardwood flooring, per m2",
+     "Hardwood flooring, per m2",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     635.39,
+     635.39,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     3812.34,
+     3812.34,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Shipping and handling",
+     "Shipping and handling",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     660.67,
+     660.67,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     3964.02,
+     3964.02,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Laminated menu cards",
+     "Laminated menu cards",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     511.2,
+     511.2,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     2556.0,
+     2556.0,
+     true
+    ],
+    [
+     "line_items[4].description",
+     "Courier fee",
+     "Courier fee",
+     true
+    ],
+    [
+     "line_items[4].quantity",
+     24,
+     24,
+     true
+    ],
+    [
+     "line_items[4].unit_price",
+     28.24,
+     28.24,
+     true
+    ],
+    [
+     "line_items[4].amount",
+     677.76,
+     677.76,
+     true
+    ],
+    [
+     "line_items[5].description",
+     "Binding spine strips",
+     "Binding spine strips",
+     true
+    ],
+    [
+     "line_items[5].quantity",
+     10,
+     10,
+     true
+    ],
+    [
+     "line_items[5].unit_price",
+     938.74,
+     938.74,
+     true
+    ],
+    [
+     "line_items[5].amount",
+     9387.4,
+     9387.4,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.789633324629657,
+     "distribution": {
+      "false": 0.789633324629657,
+      "true": 0.21036667537034298
+     },
+     "undecided": 5.347785222564269e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9972783371117225,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999975149265,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999990755484,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999955469718,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[4].quantity",
+     "kind": "integer",
+     "value": 24,
+     "confidence": 0.9999999912386315,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[5].quantity",
+     "kind": "integer",
+     "value": 10,
+     "confidence": 0.9999999975666114,
+     "free_tokens": 2,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv06.png",
+   "seconds": 77.5,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1670,
+    "completion_tokens": 234,
+    "total_tokens": 1904,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"A-51440\",\n    \"date\": \"2026-05-25\",\n    \"due_date\": \"2026-06-25\",\n    \"vendor\": \"Alder Street Bakery\",\n    \"bill_to\": \"Lumen Photography\",\n    \"currency\": \"£\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Pallet wrap\",\n            \"quantity\": 2,\n            \"unit_price\": 735.74,\n            \"amount\": 1471.48\n        },\n        {\n            \"description\": \"Steel angle 40x40x3m\",\n            \"quantity\": 40,\n            \"unit_price\": 17.32,\n            \"amount\": 692.8\n        }\n    ],\n    \"subtotal\": 2164.28,\n    \"tax\": 216.43,\n    \"total\": 2380.71\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "A-51440",
+     "A-51440",
+     true
+    ],
+    [
+     "date",
+     "2026-05-25",
+     "2026-05-25",
+     true
+    ],
+    [
+     "due_date",
+     "2026-06-25",
+     "2026-06-25",
+     true
+    ],
+    [
+     "vendor",
+     "Alder Street Bakery",
+     "Alder Street Bakery",
+     true
+    ],
+    [
+     "bill_to",
+     "Lumen Photography",
+     "Lumen Photography",
+     true
+    ],
+    [
+     "currency",
+     "GBP",
+     "£",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     2164.28,
+     2164.28,
+     true
+    ],
+    [
+     "tax",
+     216.43,
+     216.43,
+     true
+    ],
+    [
+     "total",
+     2380.71,
+     2380.71,
+     true
+    ],
+    [
+     "line_item_count",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Pallet wrap",
+     "Pallet wrap",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     735.74,
+     735.74,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     1471.48,
+     1471.48,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Steel angle 40x40x3m",
+     "Steel angle 40x40x3m",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     40,
+     40,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     17.32,
+     17.32,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     692.8,
+     692.8,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.996862319050143,
+     "distribution": {
+      "false": 0.996862319050143,
+      "true": 0.0031376809498569907
+     },
+     "undecided": 2.3172355598646636e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 2,
+     "confidence": 0.9997868886209131,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 40,
+     "confidence": 0.999999937145825,
+     "free_tokens": 2,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv07.png",
+   "seconds": 98.9,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1832,
+    "completion_tokens": 330,
+    "total_tokens": 2162,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"2026/7972\",\n    \"date\": \"2026-10-09\",\n    \"due_date\": \"2026-11-09\",\n    \"vendor\": \"Meridian Cloud Services Inc.\",\n    \"bill_to\": \"Northwind Printing LLC\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Steel angle 40x40x3m\",\n            \"quantity\": 8,\n            \"unit_price\": 874.85,\n            \"amount\": 6998.8\n        },\n        {\n            \"description\": \"Design review\",\n            \"quantity\": 1,\n            \"unit_price\": 104.91,\n            \"amount\": 104.91\n        },\n        {\n            \"description\": \"Pallet wrap\",\n            \"quantity\": 2,\n            \"unit_price\": 460.58,\n            \"amount\": 921.16\n        },\n        {\n            \"description\": \"Laminated menu cards\",\n            \"quantity\": 5,\n            \"unit_price\": 872.13,\n            \"amount\": 4360.65\n        }\n    ],\n    \"subtotal\": 12385.52,\n    \"tax\": 619.28,\n    \"total\": 13004.8\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "2026/7972",
+     "2026/7972",
+     true
+    ],
+    [
+     "date",
+     "10/09/2026",
+     "2026-10-09",
+     false
+    ],
+    [
+     "due_date",
+     "11/09/2026",
+     "2026-11-09",
+     false
+    ],
+    [
+     "vendor",
+     "Meridian Cloud Services Inc.",
+     "Meridian Cloud Services Inc.",
+     true
+    ],
+    [
+     "bill_to",
+     "Northwind Printing LLC",
+     "Northwind Printing LLC",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     12385.52,
+     12385.52,
+     true
+    ],
+    [
+     "tax",
+     619.28,
+     619.28,
+     true
+    ],
+    [
+     "total",
+     13004.8,
+     13004.8,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Steel angle 40x40x3m",
+     "Steel angle 40x40x3m",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     8,
+     8,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     874.85,
+     874.85,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     6998.8,
+     6998.8,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Design review",
+     "Design review",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     104.91,
+     104.91,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     104.91,
+     104.91,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Pallet wrap",
+     "Pallet wrap",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     460.58,
+     460.58,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     921.16,
+     921.16,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Laminated menu cards",
+     "Laminated menu cards",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     872.13,
+     872.13,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     4360.65,
+     4360.65,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.996926395336468,
+     "distribution": {
+      "false": 0.996926395336468,
+      "true": 0.0030736046635319162
+     },
+     "undecided": 2.5553591984796614e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 8,
+     "confidence": 0.9651653368096109,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999992936353,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 2,
+     "confidence": 0.9999999995055262,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999944066857,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv08.png",
+   "seconds": 78.8,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1448,
+    "completion_tokens": 324,
+    "total_tokens": 1772,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"66845\",\n    \"date\": \"2026-11-08\",\n    \"due_date\": \"2026-11-09\",\n    \"vendor\": \"Tamarack Surveying LLC\",\n    \"bill_to\": \"Sable Marine Services\",\n    \"currency\": \"USD\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Steel angle 40x40x3m\",\n            \"quantity\": 4,\n            \"unit_price\": 784.46,\n            \"amount\": 3137.84\n        },\n        {\n            \"description\": \"Laminated menu cards\",\n            \"quantity\": 1,\n            \"unit_price\": 393.45,\n            \"amount\": 393.45\n        },\n        {\n            \"description\": \"Binding spine strips\",\n            \"quantity\": 1,\n            \"unit_price\": 72.44,\n            \"amount\": 72.44\n        },\n        {\n            \"description\": \"Courier fee\",\n            \"quantity\": 1,\n            \"unit_price\": 534.71,\n            \"amount\": 534.71\n        }\n    ],\n    \"subtotal\": 4138.44,\n    \"tax\": 206.92,\n    \"total\": 4345.36\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "66845",
+     "66845",
+     true
+    ],
+    [
+     "date",
+     "08/11/2026",
+     "2026-11-08",
+     false
+    ],
+    [
+     "due_date",
+     "09/11/2026",
+     "2026-11-09",
+     false
+    ],
+    [
+     "vendor",
+     "Tamarack Surveying LLC",
+     "Tamarack Surveying LLC",
+     true
+    ],
+    [
+     "bill_to",
+     "Sable Marine Services",
+     "Sable Marine Services",
+     true
+    ],
+    [
+     "currency",
+     "USD",
+     "USD",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     4138.44,
+     4138.44,
+     true
+    ],
+    [
+     "tax",
+     206.92,
+     206.92,
+     true
+    ],
+    [
+     "total",
+     4345.36,
+     4345.36,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Steel angle 40x40x3m",
+     "Steel angle 40x40x3m",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     784.46,
+     784.46,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     3137.84,
+     3137.84,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Laminated menu cards",
+     "Laminated menu cards",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     393.45,
+     393.45,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     393.45,
+     393.45,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Binding spine strips",
+     "Binding spine strips",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     72.44,
+     72.44,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     72.44,
+     72.44,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Courier fee",
+     "Courier fee",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     534.71,
+     534.71,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     534.71,
+     534.71,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.748814275854789,
+     "distribution": {
+      "false": 0.748814275854789,
+      "true": 0.25118572414521073
+     },
+     "undecided": 4.880180299321158e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 4,
+     "confidence": 0.9828510052761507,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999987931503,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999997061195,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999995339479,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv09.png",
+   "seconds": 79.9,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1434,
+    "completion_tokens": 337,
+    "total_tokens": 1771,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"2026/6996\",\n    \"date\": \"12/24/2026\",\n    \"due_date\": \"01/24/2027\",\n    \"vendor\": \"Quill & Ledger Stationers\",\n    \"bill_to\": \"Copperfield Motors\",\n    \"currency\": \"£\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Courier fee\",\n            \"quantity\": 8,\n            \"unit_price\": 402.75,\n            \"amount\": 3222.0\n        },\n        {\n            \"description\": \"Thermal label roll 100mm\",\n            \"quantity\": 10,\n            \"unit_price\": 377.27,\n            \"amount\": 3772.7\n        },\n        {\n            \"description\": \"Cotton napkins, set of 12\",\n            \"quantity\": 1,\n            \"unit_price\": 787.51,\n            \"amount\": 787.51\n        },\n        {\n            \"description\": \"Cloud hosting, monthly\",\n            \"quantity\": 5,\n            \"unit_price\": 21.79,\n            \"amount\": 108.95\n        }\n    ],\n    \"subtotal\": 7891.16,\n    \"tax\": 670.75,\n    \"total\": 8561.91\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "2026/6996",
+     "2026/6996",
+     true
+    ],
+    [
+     "date",
+     "12/24/2026",
+     "12/24/2026",
+     true
+    ],
+    [
+     "due_date",
+     "01/24/2027",
+     "01/24/2027",
+     true
+    ],
+    [
+     "vendor",
+     "Quill & Ledger Stationers",
+     "Quill & Ledger Stationers",
+     true
+    ],
+    [
+     "bill_to",
+     "Copperfield Motors",
+     "Copperfield Motors",
+     true
+    ],
+    [
+     "currency",
+     "GBP",
+     "£",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     7891.16,
+     7891.16,
+     true
+    ],
+    [
+     "tax",
+     670.75,
+     670.75,
+     true
+    ],
+    [
+     "total",
+     8561.91,
+     8561.91,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Courier fee",
+     "Courier fee",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     8,
+     8,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     402.75,
+     402.75,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     3222.0,
+     3222.0,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Thermal label roll 100mm",
+     "Thermal label roll 100mm",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     10,
+     10,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     377.27,
+     377.27,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     3772.7,
+     3772.7,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Cotton napkins, set of 12",
+     "Cotton napkins, set of 12",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     787.51,
+     787.51,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     787.51,
+     787.51,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Cloud hosting, monthly",
+     "Cloud hosting, monthly",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     21.79,
+     21.79,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     108.95,
+     108.95,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9970502943758366,
+     "distribution": {
+      "false": 0.9970502943758366,
+      "true": 0.0029497056241632423
+     },
+     "undecided": 2.3990976786248248e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 8,
+     "confidence": 0.9972845573232781,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 10,
+     "confidence": 0.9999999474967836,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999994319495,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999909241097,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv10.png",
+   "seconds": 99.1,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1832,
+    "completion_tokens": 333,
+    "total_tokens": 2165,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"2026/7228\",\n    \"date\": \"2026-09-04\",\n    \"due_date\": \"2026-10-04\",\n    \"vendor\": \"Summit Peak Outfitters\",\n    \"bill_to\": \"Pioneer Ridge School District\",\n    \"currency\": \"$\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Cotton napkins, set of 12\",\n            \"quantity\": 6,\n            \"unit_price\": 860.68,\n            \"amount\": 5164.08\n        },\n        {\n            \"description\": \"Ink cartridge, black\",\n            \"quantity\": 1,\n            \"unit_price\": 496.72,\n            \"amount\": 496.72\n        },\n        {\n            \"description\": \"Pastry box, assorted\",\n            \"quantity\": 10,\n            \"unit_price\": 858.0,\n            \"amount\": 8580.0\n        },\n        {\n            \"description\": \"Oak shelf bracket\",\n            \"quantity\": 5,\n            \"unit_price\": 476.0,\n            \"amount\": 2380.0\n        }\n    ],\n    \"subtotal\": 16620.8,\n    \"tax\": 0.0,\n    \"total\": 16620.8\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "2026/7228",
+     "2026/7228",
+     true
+    ],
+    [
+     "date",
+     "4 Sep 2026",
+     "2026-09-04",
+     false
+    ],
+    [
+     "due_date",
+     "4 Oct 2026",
+     "2026-10-04",
+     false
+    ],
+    [
+     "vendor",
+     "Summit Peak Outfitters",
+     "Summit Peak Outfitters",
+     true
+    ],
+    [
+     "bill_to",
+     "Pioneer Ridge School District",
+     "Pioneer Ridge School District",
+     true
+    ],
+    [
+     "currency",
+     "USD",
+     "$",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     16620.8,
+     16620.8,
+     true
+    ],
+    [
+     "tax",
+     0.0,
+     0.0,
+     true
+    ],
+    [
+     "total",
+     16620.8,
+     16620.8,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Cotton napkins, set of 12",
+     "Cotton napkins, set of 12",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     860.68,
+     860.68,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     5164.08,
+     5164.08,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Ink cartridge, black",
+     "Ink cartridge, black",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     496.72,
+     496.72,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     496.72,
+     496.72,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Pastry box, assorted",
+     "Pastry box, assorted",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     10,
+     10,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     858.0,
+     858.0,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     8580.0,
+     8580.0,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Oak shelf bracket",
+     "Oak shelf bracket",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     476.0,
+     476.0,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     2380.0,
+     2380.0,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9975853816514759,
+     "distribution": {
+      "false": 0.9975853816514759,
+      "true": 0.002414618348524103
+     },
+     "undecided": 1.894643465012191e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9926213254794514,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999995734186,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 10,
+     "confidence": 0.999999998934058,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999910687194,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv11.png",
+   "seconds": 66.2,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1448,
+    "completion_tokens": 227,
+    "total_tokens": 1675,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"19378\",\n    \"date\": \"08/06/2026\",\n    \"due_date\": \"09/06/2026\",\n    \"vendor\": \"Lantern Row Printing\",\n    \"bill_to\": \"Juniper Legal LLP\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Design review\",\n            \"quantity\": 5,\n            \"unit_price\": 632.81,\n            \"amount\": 3164.05\n        },\n        {\n            \"description\": \"Shipping and handling\",\n            \"quantity\": 40,\n            \"unit_price\": 737.04,\n            \"amount\": 29481.6\n        }\n    ],\n    \"subtotal\": 32645.65,\n    \"tax\": 0.0,\n    \"total\": 32645.65\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "19378",
+     "19378",
+     true
+    ],
+    [
+     "date",
+     "08/06/2026",
+     "08/06/2026",
+     true
+    ],
+    [
+     "due_date",
+     "09/06/2026",
+     "09/06/2026",
+     true
+    ],
+    [
+     "vendor",
+     "Lantern Row Printing",
+     "Lantern Row Printing",
+     true
+    ],
+    [
+     "bill_to",
+     "Juniper Legal LLP",
+     "Juniper Legal LLP",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     32645.65,
+     32645.65,
+     true
+    ],
+    [
+     "tax",
+     0.0,
+     0.0,
+     true
+    ],
+    [
+     "total",
+     32645.65,
+     32645.65,
+     true
+    ],
+    [
+     "line_item_count",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Design review",
+     "Design review",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     632.81,
+     632.81,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     3164.05,
+     3164.05,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Shipping and handling",
+     "Shipping and handling",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     40,
+     40,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     737.04,
+     737.04,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     29481.6,
+     29481.6,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.8386093779760786,
+     "distribution": {
+      "false": 0.8386093779760786,
+      "true": 0.1613906220239214
+     },
+     "undecided": 3.115986405952753e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9985402730583409,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 40,
+     "confidence": 0.9999999504304012,
+     "free_tokens": 2,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv12.png",
+   "seconds": 67.2,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1434,
+    "completion_tokens": 238,
+    "total_tokens": 1672,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"A-03619\",\n    \"date\": \"2026-06-23\",\n    \"due_date\": \"2026-07-23\",\n    \"vendor\": \"Foxglove Garden Centre\",\n    \"bill_to\": \"Granite State Credit Union\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Dental hygiene kit\",\n            \"quantity\": 40,\n            \"unit_price\": 562.1,\n            \"amount\": 22484.0\n        },\n        {\n            \"description\": \"Thermal label roll 100mm\",\n            \"quantity\": 5,\n            \"unit_price\": 784.64,\n            \"amount\": 3923.2\n        }\n    ],\n    \"subtotal\": 26407.2,\n    \"tax\": 5281.44,\n    \"total\": 31688.64\n}",
+   "rows": [
+    [
+     "invoice_number",
+     "A-03619",
+     "A-03619",
+     true
+    ],
+    [
+     "date",
+     "06/23/2026",
+     "2026-06-23",
+     false
+    ],
+    [
+     "due_date",
+     "07/23/2026",
+     "2026-07-23",
+     false
+    ],
+    [
+     "vendor",
+     "Foxglove Garden Centre",
+     "Foxglove Garden Centre",
+     true
+    ],
+    [
+     "bill_to",
+     "Granite State Credit Union",
+     "Granite State Credit Union",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     26407.2,
+     26407.2,
+     true
+    ],
+    [
+     "tax",
+     5281.44,
+     5281.44,
+     true
+    ],
+    [
+     "total",
+     31688.64,
+     31688.64,
+     true
+    ],
+    [
+     "line_item_count",
+     2,
+     2,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Dental hygiene kit",
+     "Dental hygiene kit",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     40,
+     40,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     562.1,
+     562.1,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     22484.0,
+     22484.0,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Thermal label roll 100mm",
+     "Thermal label roll 100mm",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     784.64,
+     784.64,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     3923.2,
+     3923.2,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9962394718633538,
+     "distribution": {
+      "false": 0.9962394718633538,
+      "true": 0.0037605281366461293
+     },
+     "undecided": 1.7868677135101519e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 40,
+     "confidence": 0.9994783487191421,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999780066633,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv13.png",
+   "seconds": 80.6,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1448,
+    "completion_tokens": 338,
+    "total_tokens": 1786,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"2026/4190\",\n    \"date\": \"02/05/2026\",\n    \"due_date\": \"03/05/2026\",\n    \"vendor\": \"Ironbridge Fabrication\",\n    \"bill_to\": \"Willow Creek Farms\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Oak shelf bracket\",\n            \"quantity\": 1,\n            \"unit_price\": 756.89,\n            \"amount\": 756.89\n        },\n        {\n            \"description\": \"Cotton napkins, set of 12\",\n            \"quantity\": 10,\n            \"unit_price\": 635.32,\n            \"amount\": 6353.2\n        },\n        {\n            \"description\": \"Site survey, per hour\",\n            \"quantity\": 8,\n            \"unit_price\": 816.94,\n            \"amount\": 6535.52\n        },\n        {\n            \"description\": \"A4 paper, 80gsm (ream)\",\n            \"quantity\": 6,\n            \"unit_price\": 2.61,\n            \"amount\": 15.66\n        }\n    ],\n    \"subtotal\": 13661.27,\n    \"tax\": 1366.13,\n    \"total\": 15027.4\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "2026/4190",
+     "2026/4190",
+     true
+    ],
+    [
+     "date",
+     "02/05/2026",
+     "02/05/2026",
+     true
+    ],
+    [
+     "due_date",
+     "03/05/2026",
+     "03/05/2026",
+     true
+    ],
+    [
+     "vendor",
+     "Ironbridge Fabrication",
+     "Ironbridge Fabrication",
+     true
+    ],
+    [
+     "bill_to",
+     "Willow Creek Farms",
+     "Willow Creek Farms",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     13661.27,
+     13661.27,
+     true
+    ],
+    [
+     "tax",
+     1366.13,
+     1366.13,
+     true
+    ],
+    [
+     "total",
+     15027.4,
+     15027.4,
+     true
+    ],
+    [
+     "line_item_count",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Oak shelf bracket",
+     "Oak shelf bracket",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     756.89,
+     756.89,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     756.89,
+     756.89,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Cotton napkins, set of 12",
+     "Cotton napkins, set of 12",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     10,
+     10,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     635.32,
+     635.32,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     6353.2,
+     6353.2,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Site survey, per hour",
+     "Site survey, per hour",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     8,
+     8,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     816.94,
+     816.94,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     6535.52,
+     6535.52,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "A4 paper, 80gsm (ream)",
+     "A4 paper, 80gsm (ream)",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     2.61,
+     2.61,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     15.66,
+     15.66,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9974738682731616,
+     "distribution": {
+      "false": 0.9974738682731616,
+      "true": 0.0025261317268383374
+     },
+     "undecided": 2.1114996324607087e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9991045182116245,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 10,
+     "confidence": 0.9999999952681975,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 8,
+     "confidence": 0.9999999988963069,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999962051334,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv14.png",
+   "seconds": 91.6,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1448,
+    "completion_tokens": 423,
+    "total_tokens": 1871,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"40804\",\n    \"date\": \"2026-08-01\",\n    \"due_date\": \"2026-09-13\",\n    \"vendor\": \"Marlow Dental Group\",\n    \"bill_to\": \"Bluebird Pediatrics\",\n    \"currency\": \"$\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Cotton napkins, set of 12\",\n            \"quantity\": 4,\n            \"unit_price\": 675.64,\n            \"amount\": 2702.56\n        },\n        {\n            \"description\": \"Ink cartridge, cyan\",\n            \"quantity\": 5,\n            \"unit_price\": 769.93,\n            \"amount\": 3849.65\n        },\n        {\n            \"description\": \"Courier fee\",\n            \"quantity\": 1,\n            \"unit_price\": 107.0,\n            \"amount\": 107.0\n        },\n        {\n            \"description\": \"Hardwood flooring, per m2\",\n            \"quantity\": 6,\n            \"unit_price\": 34.84,\n            \"amount\": 209.04\n        },\n        {\n            \"description\": \"Ink cartridge, black\",\n            \"quantity\": 6,\n            \"unit_price\": 931.94,\n            \"amount\": 5591.64\n        },\n        {\n            \"description\": \"Data export licence\",\n            \"quantity\": 3,\n            \"unit_price\": 43.88,\n            \"amount\": 131.64\n        }\n    ],\n    \"subtotal\": 12591.53,\n    \"tax\": 1259.15,\n    \"total\": 13850.68\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "40804",
+     "40804",
+     true
+    ],
+    [
+     "date",
+     "1 Aug 2026",
+     "2026-08-01",
+     false
+    ],
+    [
+     "due_date",
+     "1 Sep 2026",
+     "2026-09-13",
+     false
+    ],
+    [
+     "vendor",
+     "Marlow Dental Group",
+     "Marlow Dental Group",
+     true
+    ],
+    [
+     "bill_to",
+     "Bluebird Pediatrics",
+     "Bluebird Pediatrics",
+     true
+    ],
+    [
+     "currency",
+     "USD",
+     "$",
+     true
+    ],
+    [
+     "paid",
+     true,
+     false,
+     false
+    ],
+    [
+     "subtotal",
+     12591.53,
+     12591.53,
+     true
+    ],
+    [
+     "tax",
+     1259.15,
+     1259.15,
+     true
+    ],
+    [
+     "total",
+     13850.68,
+     13850.68,
+     true
+    ],
+    [
+     "line_item_count",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Cotton napkins, set of 12",
+     "Cotton napkins, set of 12",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     4,
+     4,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     675.64,
+     675.64,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     2702.56,
+     2702.56,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Ink cartridge, cyan",
+     "Ink cartridge, cyan",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     5,
+     5,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     769.93,
+     769.93,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     3849.65,
+     3849.65,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Courier fee",
+     "Courier fee",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     107.0,
+     107.0,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     107.0,
+     107.0,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Hardwood flooring, per m2",
+     "Hardwood flooring, per m2",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     34.84,
+     34.84,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     209.04,
+     209.04,
+     true
+    ],
+    [
+     "line_items[4].description",
+     "Ink cartridge, black",
+     "Ink cartridge, black",
+     true
+    ],
+    [
+     "line_items[4].quantity",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[4].unit_price",
+     931.94,
+     931.94,
+     true
+    ],
+    [
+     "line_items[4].amount",
+     5591.64,
+     5591.64,
+     true
+    ],
+    [
+     "line_items[5].description",
+     "Data export licence",
+     "Data export licence",
+     true
+    ],
+    [
+     "line_items[5].quantity",
+     3,
+     3,
+     true
+    ],
+    [
+     "line_items[5].unit_price",
+     43.88,
+     43.88,
+     true
+    ],
+    [
+     "line_items[5].amount",
+     131.64,
+     131.64,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.5675365994678487,
+     "distribution": {
+      "false": 0.5675365994678487,
+      "true": 0.43246340053215115
+     },
+     "undecided": 7.04075871227154e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 4,
+     "confidence": 0.9998016696160935,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 5,
+     "confidence": 0.9999999783643576,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999991818385,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999964916242,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[4].quantity",
+     "kind": "integer",
+     "value": 6,
+     "confidence": 0.9999999969653359,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[5].quantity",
+     "kind": "integer",
+     "value": 3,
+     "confidence": 0.9999999954969852,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  },
+  {
+   "file": "inv15.png",
+   "seconds": 111.1,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 1832,
+    "completion_tokens": 422,
+    "total_tokens": 2254,
+    "prefill_reused_tokens": 0
+   },
+   "parsed": true,
+   "parse_error": null,
+   "content": "{\n    \"invoice_number\": \"A-94574\",\n    \"date\": \"2026-03-27\",\n    \"due_date\": \"2026-04-27\",\n    \"vendor\": \"Paloma Linens Co.\",\n    \"bill_to\": \"Atlas Freight Partners\",\n    \"currency\": \"€\",\n    \"paid\": false,\n    \"line_items\": [\n        {\n            \"description\": \"Ink cartridge, cyan\",\n            \"quantity\": 40,\n            \"unit_price\": 544.95,\n            \"amount\": 21798.0\n        },\n        {\n            \"description\": \"Support retainer\",\n            \"quantity\": 10,\n            \"unit_price\": 242.53,\n            \"amount\": 2425.3\n        },\n        {\n            \"description\": \"Ink cartridge, black\",\n            \"quantity\": 1,\n            \"unit_price\": 797.4,\n            \"amount\": 797.4\n        },\n        {\n            \"description\": \"Laminated menu cards\",\n            \"quantity\": 40,\n            \"unit_price\": 948.15,\n            \"amount\": 37926.0\n        },\n        {\n            \"description\": \"Cloud hosting, monthly\",\n            \"quantity\": 1,\n            \"unit_price\": 305.13,\n            \"amount\": 305.13\n        },\n        {\n            \"description\": \"Site survey, per hour\",\n            \"quantity\": 1,\n            \"unit_price\": 649.69,\n            \"amount\": 649.69\n        }\n    ],\n    \"subtotal\": 63901.52,\n    \"tax\": 3195.08,\n    \"total\": 67096.6\n}\n",
+   "rows": [
+    [
+     "invoice_number",
+     "A-94574",
+     "A-94574",
+     true
+    ],
+    [
+     "date",
+     "27 Mar 2026",
+     "2026-03-27",
+     false
+    ],
+    [
+     "due_date",
+     "27 Apr 2026",
+     "2026-04-27",
+     false
+    ],
+    [
+     "vendor",
+     "Paloma Linens Co.",
+     "Paloma Linens Co.",
+     true
+    ],
+    [
+     "bill_to",
+     "Atlas Freight Partners",
+     "Atlas Freight Partners",
+     true
+    ],
+    [
+     "currency",
+     "EUR",
+     "€",
+     true
+    ],
+    [
+     "paid",
+     false,
+     false,
+     true
+    ],
+    [
+     "subtotal",
+     63901.52,
+     63901.52,
+     true
+    ],
+    [
+     "tax",
+     3195.08,
+     3195.08,
+     true
+    ],
+    [
+     "total",
+     67096.6,
+     67096.6,
+     true
+    ],
+    [
+     "line_item_count",
+     6,
+     6,
+     true
+    ],
+    [
+     "line_items[0].description",
+     "Ink cartridge, cyan",
+     "Ink cartridge, cyan",
+     true
+    ],
+    [
+     "line_items[0].quantity",
+     40,
+     40,
+     true
+    ],
+    [
+     "line_items[0].unit_price",
+     544.95,
+     544.95,
+     true
+    ],
+    [
+     "line_items[0].amount",
+     21798.0,
+     21798.0,
+     true
+    ],
+    [
+     "line_items[1].description",
+     "Support retainer",
+     "Support retainer",
+     true
+    ],
+    [
+     "line_items[1].quantity",
+     10,
+     10,
+     true
+    ],
+    [
+     "line_items[1].unit_price",
+     242.53,
+     242.53,
+     true
+    ],
+    [
+     "line_items[1].amount",
+     2425.3,
+     2425.3,
+     true
+    ],
+    [
+     "line_items[2].description",
+     "Ink cartridge, black",
+     "Ink cartridge, black",
+     true
+    ],
+    [
+     "line_items[2].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[2].unit_price",
+     797.4,
+     797.4,
+     true
+    ],
+    [
+     "line_items[2].amount",
+     797.4,
+     797.4,
+     true
+    ],
+    [
+     "line_items[3].description",
+     "Laminated menu cards",
+     "Laminated menu cards",
+     true
+    ],
+    [
+     "line_items[3].quantity",
+     40,
+     40,
+     true
+    ],
+    [
+     "line_items[3].unit_price",
+     948.15,
+     948.15,
+     true
+    ],
+    [
+     "line_items[3].amount",
+     37926.0,
+     37926.0,
+     true
+    ],
+    [
+     "line_items[4].description",
+     "Cloud hosting, monthly",
+     "Cloud hosting, monthly",
+     true
+    ],
+    [
+     "line_items[4].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[4].unit_price",
+     305.13,
+     305.13,
+     true
+    ],
+    [
+     "line_items[4].amount",
+     305.13,
+     305.13,
+     true
+    ],
+    [
+     "line_items[5].description",
+     "Site survey, per hour",
+     "Site survey, per hour",
+     true
+    ],
+    [
+     "line_items[5].quantity",
+     1,
+     1,
+     true
+    ],
+    [
+     "line_items[5].unit_price",
+     649.69,
+     649.69,
+     true
+    ],
+    [
+     "line_items[5].amount",
+     649.69,
+     649.69,
+     true
+    ]
+   ],
+   "confidence": [
+    {
+     "path": "paid",
+     "kind": "boolean",
+     "value": false,
+     "confidence": 0.9960116204419168,
+     "distribution": {
+      "false": 0.9960116204419168,
+      "true": 0.003988379558083196
+     },
+     "undecided": 1.912383315634856e-09,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[0].quantity",
+     "kind": "integer",
+     "value": 40,
+     "confidence": 0.9998971603157039,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[1].quantity",
+     "kind": "integer",
+     "value": 10,
+     "confidence": 0.9999999899342242,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[2].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999996344684,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[3].quantity",
+     "kind": "integer",
+     "value": 40,
+     "confidence": 0.9999999942840105,
+     "free_tokens": 2,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[4].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999997451425,
+     "free_tokens": 1,
+     "calibrated": false
+    },
+    {
+     "path": "line_items[5].quantity",
+     "kind": "integer",
+     "value": 1,
+     "confidence": 0.9999999998761595,
+     "free_tokens": 1,
+     "calibrated": false
+    }
+   ]
+  }
+ ]
+}

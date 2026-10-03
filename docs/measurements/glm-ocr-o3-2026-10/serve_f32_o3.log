@@ -1,0 +1,21 @@
+=== RUN   TestServe_glmOcrImage_O3
+loaded "glm": 16-layer model (vocab 59392) in 1.044s [chat: glm_ocr]
+  decode path: cpu (native)
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 131072 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 131072-token cap needs 16.0 GB KV (weights 2.5 GB, budget 36.4 GB, 20.4 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (2 conversations kept prefilled)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+GLM-OCR vision for "glm": tower (f32, CPU) loads on first image (merge 2, image id 59280, pixel budget 6272..4816896 px = at most 6144 image tokens) from /home/francis/models/glm-ocr
+=== RUN   TestServe_glmOcrImage_O3/invoice
+    glm_ocr_vision_real_test.go:115: prompt ids identical to HF's: 1668 ids (1656 image tokens), grid [1 92 72], prompt "Text Recognition:"
+=== RUN   TestServe_glmOcrImage_O3/table
+    glm_ocr_vision_real_test.go:115: prompt ids identical to HF's: 1388 ids (1376 image tokens), grid [1 64 86], prompt "Table Recognition:"
+=== RUN   TestServe_glmOcrImage_O3/formula
+    glm_ocr_vision_real_test.go:115: prompt ids identical to HF's: 1561 ids (1548 image tokens), grid [1 86 72], prompt "Formula Recognition:"
+--- PASS: TestServe_glmOcrImage_O3 (165.28s)
+    --- PASS: TestServe_glmOcrImage_O3/invoice (61.52s)
+    --- PASS: TestServe_glmOcrImage_O3/table (47.25s)
+    --- PASS: TestServe_glmOcrImage_O3/formula (55.36s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	165.336s

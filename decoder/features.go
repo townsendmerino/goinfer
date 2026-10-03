@@ -132,6 +132,35 @@ const (
 	// not the HF modeling file's opaque Triton-kernel call. A genuinely different recurrence, so
 	// its own feature rather than a FeatDeltaNet variant; no resident backend implements it.
 	FeatKDA ResidentFeature = "kda"
+	// FeatPairwiseRoPE: GPT-J pairwise rotation (dims 2d, 2d+1) in the scalar decode/prefill rope —
+	// Cohere/Command-R, Cohere2/Command-R7B, Aya (cohere), and GLM-OCR's text rows. Every GENERIC
+	// resident rope kernel is the NeoX half-split rotation of pairs (d, d+half): cuda/glue.cu `rope`,
+	// gemv_fwd.cu rope_kv, prefill_batched.cu rope_kv_batched, and metal/kernels.go `rope`. A resident
+	// runner on those kernels is exact at position 0 (rotation is the identity there) and wrong at
+	// every later one: no error, fluent-looking logits. MEASURED 2026-10-01 on the CUDA resident
+	// (RTX 2070 SUPER, int4, resident vs CPU at the same quant, 48-token prompt): real Command-R7B
+	// worst per-position cosine -0.075 and Aya-expanse-8B -0.041; Aya's greedy continuation matched
+	// the HF golden 1/8 against the CPU's 8/8. Before this feature existed, cuda and metal declared
+	// cohere/cohere2 anyway (their committed gates used flat 0.02-std fixtures, where a wrong rotation
+	// is invisible: cohere-tiny at 0.25-std weights reads cosine 0.06 with the NeoX kernels against
+	// 0.9997 at 0.02). MLA (DeepSeek/Kimi) is NOT this feature: it carries its own interleave flag
+	// into mla.cu and is gated by FeatMLA.
+	//
+	// Declared by CUDA only (cuda/rope_pairwise.cu: rope_kv_pw, rope_kv_batched_pw,
+	// rope_kv_mrope_batched_pw, gated by TestPairwiseRoPEResidentParityCUDA and the real-checkpoint
+	// Aya/R7B gate). Metal and WebGPU do not declare it, so cohere/cohere2/glm_ocr DECLINE there to
+	// the CPU path until pairwise kernels exist (docs/measurements/cuda-pairwise-rope-2026-10-01.md
+	// says what to port): a decline that names the cause beats a resident that returns garbage.
+	FeatPairwiseRoPE ResidentFeature = "pairwise-rope"
+	// FeatPairwiseMRoPE (GLM-OCR): pairwise rotation on a family that ALSO carries m-RoPE sections
+	// (ropeInterleave with MRopeSection set), so the image-block prefill rotates each frequency by its
+	// own (t,h,w) component through the pairwise pairs: the m-RoPE image-prefill kernels (cuda
+	// rope_kv_mrope_batched) are NeoX too. glm_ocr needs this IN ADDITION to FeatPairwiseRoPE (its
+	// text rows and decode go through the scalar kernel). First measured 2026-10-01 with admission
+	// bypassed: glm-ocr-tiny resident vs CPU (int8int8, 48-token prompt) worst cosine -0.34, against
+	// a NeoX llama control at 1.000000. CUDA declares it from rope_kv_mrope_batched_pw
+	// (cuda/rope_pairwise.cu), gated by TestGlmOcrResidentParityCUDA; Metal and WebGPU do not.
+	FeatPairwiseMRoPE ResidentFeature = "pairwise-mrope"
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -216,6 +245,11 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
 	add(a.qwen35 != nil, FeatDeltaNet)
 	add(a.kda != nil, FeatKDA)
+	// Pairwise rotation (Cohere/Cohere2/Aya/GLM-OCR) and, on top of it, pairwise m-RoPE sections
+	// (GLM-OCR). pairwiseRoPE is the one predicate the resident accessor reads too, so the feature
+	// and the kernel selection cannot drift.
+	add(a.pairwiseRoPE(), FeatPairwiseRoPE)
+	add(a.pairwiseRoPE() && len(a.MRopeSection) > 0, FeatPairwiseMRoPE)
 	add(a.lfm2 != nil, FeatShortConv)
 	add(a.gptoss != nil, FeatAttnSink)
 	// Laguna's attention output gate AND its per-layer query-head count. Both live on
@@ -234,6 +268,14 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.gemma4 != nil && (a.gemma4.HiddenSizePerLayerInput > 0 || a.gemma4.SharedKVLayers > 0 || len(a.gemma4.FFNPerLayer) > 0), FeatGemma4EModel)
 	slices.Sort(f)
 	return f
+}
+
+// pairwiseRoPE reports whether the generic (non-MLA) scalar rope is GPT-J pairwise (dims 2d, 2d+1)
+// rather than NeoX half-split. MLA carries its own interleave on mlaParams and is gated by FeatMLA;
+// qwen35 passes interleave=false to ropeAt whatever ropeInterleave says (forward_qwen35.go), so it is
+// excluded to match what the CPU path actually runs.
+func (a *Architecture) pairwiseRoPE() bool {
+	return a.ropeInterleave && a.mla == nil && a.qwen35 == nil
 }
 
 // ropeUniform reports whether every layer shares one inv-freq table and mscale. False ⇒ the
@@ -665,6 +707,15 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatParallelBlock: true,
 		FeatLogitScale:    true,
 		FeatMLA:           true, // C4a-d latent-KV attention (DeepSeek, Kimi)
+		// 2026-10-01: GPT-J PAIRWISE rotation, via cuda/rope_pairwise.cu (rope_kv_pw,
+		// rope_kv_batched_pw, rope_kv_mrope_batched_pw), bound in place of the NeoX rope pipelines
+		// when Model.PairwiseRoPEResident(). Cohere/Cohere2/Aya were ADMITTED here before this on the
+		// NeoX kernels and ran wrong from position 1 (real R7B/Aya at int4, worst cosine -0.075/
+		// -0.041); the declaration is now backed by a peaked-attention gate that goes red on the NeoX
+		// kernels (TestPairwiseRoPEResidentParityCUDA), the glm_ocr gate (TestGlmOcrResidentParityCUDA)
+		// and the real-checkpoint gate (TestCohereRealResidentParityCUDA, heavy).
+		FeatPairwiseRoPE:  true,
+		FeatPairwiseMRoPE: true,
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

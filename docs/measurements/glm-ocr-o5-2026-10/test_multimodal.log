@@ -1,0 +1,54 @@
+=== RUN   TestGemma3ImageBlock
+--- PASS: TestGemma3ImageBlock (0.00s)
+=== RUN   TestGemma3PromptBlock
+--- PASS: TestGemma3PromptBlock (0.00s)
+=== RUN   TestFindImageRun
+--- PASS: TestFindImageRun (0.00s)
+=== RUN   TestLoadGlmOcrPreprocessConfig_halvesPixelBounds
+    glm_ocr_test.go:101: unhalved bounds would give the wrong grid on 4 of 6 HF-measured sizes
+--- PASS: TestLoadGlmOcrPreprocessConfig_halvesPixelBounds (0.00s)
+=== RUN   TestLoadGlmOcrPreprocessConfig_realFile
+--- PASS: TestLoadGlmOcrPreprocessConfig_realFile (0.00s)
+=== RUN   TestLoadGlmOcrPreprocessConfig_refusesMissingFile
+--- PASS: TestLoadGlmOcrPreprocessConfig_refusesMissingFile (0.00s)
+=== RUN   TestGlmOcrImageBlock
+--- PASS: TestGlmOcrImageBlock (0.00s)
+=== RUN   TestGlmOcrExtractionInstruction_isTheCards
+--- PASS: TestGlmOcrExtractionInstruction_isTheCards (0.00s)
+=== RUN   TestGlmOcrExtractionText_rule
+--- PASS: TestGlmOcrExtractionText_rule (0.00s)
+=== RUN   TestLoadProjector_normWLength_C23
+--- PASS: TestLoadProjector_normWLength_C23 (0.00s)
+=== RUN   TestProjector_parity
+    projector_test.go:45: projector vs HF golden: cosine=1.00000000, max abs diff=5.960e-08 (shape [1 4 64], 4 image tokens)
+--- PASS: TestProjector_parity (0.00s)
+=== RUN   TestQwen3Preprocess_bitExact
+    qwen3_preprocess_test.go:77: fused: 36864/36864 bit-identical; unfused differs in 15512 values
+--- PASS: TestQwen3Preprocess_bitExact (0.02s)
+=== RUN   TestLoadQwen3PreprocessConfig
+--- PASS: TestLoadQwen3PreprocessConfig (0.00s)
+=== RUN   TestLoadQwen3PreprocessConfig_real08B
+--- PASS: TestLoadQwen3PreprocessConfig_real08B (0.00s)
+=== RUN   TestQwenVisionEncoder_crosscheck
+    qwen_encoder_test.go:63: qwen ViT cross-check: merged cosine=1.000000 maxAbs=6.147e-08 (len got=384 want=384)
+--- PASS: TestQwenVisionEncoder_crosscheck (0.02s)
+=== RUN   TestQwenPreprocess_inputPixelLimit_M15
+--- PASS: TestQwenPreprocess_inputPixelLimit_M15 (3.17s)
+=== RUN   TestQwenPreprocess_rejectsBeforeDecode
+--- PASS: TestQwenPreprocess_rejectsBeforeDecode (0.00s)
+=== RUN   TestQwenPreprocess_exact
+    qwen_preprocess_test.go:65: qwen preprocess exact: 28224 values, maxAbs diff 0
+--- PASS: TestQwenPreprocess_exact (0.01s)
+=== RUN   TestQwenPreprocess_resize
+    qwen_preprocess_test.go:119: qwen preprocess resize (bicubic): cosine 1.000000, maxAbs 0
+--- PASS: TestQwenPreprocess_resize (0.02s)
+=== RUN   TestQwenExtractRGB_fastPathsMatchGeneric
+=== RUN   TestQwenExtractRGB_fastPathsMatchGeneric/YCbCr
+=== RUN   TestQwenExtractRGB_fastPathsMatchGeneric/RGBA
+=== RUN   TestQwenExtractRGB_fastPathsMatchGeneric/NRGBA-with-alpha
+--- PASS: TestQwenExtractRGB_fastPathsMatchGeneric (0.00s)
+    --- PASS: TestQwenExtractRGB_fastPathsMatchGeneric/YCbCr (0.00s)
+    --- PASS: TestQwenExtractRGB_fastPathsMatchGeneric/RGBA (0.00s)
+    --- PASS: TestQwenExtractRGB_fastPathsMatchGeneric/NRGBA-with-alpha (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/multimodal	3.247s

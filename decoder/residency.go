@@ -409,6 +409,15 @@ type ResidentCapped interface {
 	ContextCap() int
 }
 
+// ResidentFastPrefill is the optional capability of a resident whose batched prefill switches to NON-EXACT kernels once a prompt is long enough (CUDA's attn_fused and
+// gemm_w4a8_mma, from 512 prompt tokens). FastPrefillFloor is that prompt length, or 0 when the fast kernels are off. It exists for prefix reuse: rows a SHORT earlier
+// request computed on the exact kernels differ numerically from the same rows on the fast ones, so a long prompt that reuses even a few of them and prefills the rest
+// fast has a mixed KV and different logits than a cold prefill (docs/measurements/mc4-candidate-cuda-2026-10-01.md, ROOT CAUSE). residentAcquireSlot reads this to
+// decline such a reuse. A resident whose prefill is exact at every length need not implement it.
+type ResidentFastPrefill interface {
+	FastPrefillFloor() int
+}
+
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The cuda, metal and webgpu backends implement it.
 // withResidency applies residentAdmission's gates BEFORE calling it; the backend's own build can
@@ -1046,6 +1055,14 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 // to compute its own cumulative section boundaries; every other resident capability is family-
 // agnostic and has no equivalent accessor.
 func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
+
+// PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE (adjacent dims
+// 2d, 2d+1 share frequency d: Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR) rather than the
+// NeoX half-split (d, d+half) every other family uses — the same predicate FeatPairwiseRoPE derives
+// from. A resident backend binds its pairwise rope kernels when this is true; running the half-split
+// kernels on such a model is exact at position 0 and wrong from position 1 (see FeatPairwiseRoPE).
+// False for MLA (DeepSeek/Kimi: mla.cu carries its own interleave, MLAResidentParams).
+func (m *Model) PairwiseRoPEResident() bool { return m.w.arch.pairwiseRoPE() }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {

@@ -1,0 +1,29 @@
+=== RUN   TestGlmOcrCUDAResidentRealImage
+    glm_ocr_real_image_test.go:93: CUDA resident: cuda-resident (int4) (cap 4096)
+=== RUN   TestGlmOcrCUDAResidentRealImage/invoice
+[glm-ocr cuda] invoice: tower 47s
+[glm-ocr cuda] invoice: CPU prefill 9s
+    glm_ocr_real_image_test.go:156: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.998299, argmax resident 1330 CPU 1330 HF 1330; cosine to HF f32: CPU 0.980200 resident 0.981324
+[glm-ocr cuda] invoice: resident generate 0s
+[glm-ocr cuda] invoice: cpu generate 11s
+    glm_ocr_real_image_test.go:196: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence 4, CPU int4 vs HF f32 first divergence 4
+=== RUN   TestGlmOcrCUDAResidentRealImage/table
+[glm-ocr cuda] table: tower 32s
+[glm-ocr cuda] table: CPU prefill 7s
+    glm_ocr_real_image_test.go:156: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.997943, argmax resident 41681 CPU 41681 HF 41681; cosine to HF f32: CPU 0.976377 resident 0.976510
+[glm-ocr cuda] table: resident generate 0s
+[glm-ocr cuda] table: cpu generate 9s
+    glm_ocr_real_image_test.go:196: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence -1, CPU int4 vs HF f32 first divergence -1
+=== RUN   TestGlmOcrCUDAResidentRealImage/formula
+[glm-ocr cuda] formula: tower 39s
+[glm-ocr cuda] formula: CPU prefill 8s
+    glm_ocr_real_image_test.go:156: prefill last-token logits, CUDA resident vs CPU (int4 both): cosine 0.997229, argmax resident 13628 CPU 13628 HF 13628; cosine to HF f32: CPU 0.972764 resident 0.973745
+[glm-ocr cuda] formula: resident generate 0s
+[glm-ocr cuda] formula: cpu generate 10s
+    glm_ocr_real_image_test.go:196: greedy 64 tokens: resident vs CPU identical=true (first divergence -1); resident vs HF f32 first divergence 54, CPU int4 vs HF f32 first divergence 54
+--- PASS: TestGlmOcrCUDAResidentRealImage (180.23s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/invoice (68.12s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/table (49.43s)
+    --- PASS: TestGlmOcrCUDAResidentRealImage/formula (58.44s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	180.324s

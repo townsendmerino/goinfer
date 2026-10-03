@@ -1,0 +1,210 @@
+{
+ "copy/b": {
+  "0.0": {
+   "text": "```go\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"math\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"regexp\"\n\t\"slices\"\n\t\"strconv\"\n\t\"strings\"\n\t\"sync\"\n\t\"sync/atomic\"\n\t\"time\"\n\t\"unsafe\"\n\n\t\"github.com/townsendmerino/aikit/linalg\"\n\t\"github.com/townsendmerino/aikit/mmap\"\n\t\"github.com/townsendmerino/goinfer/internal/giw\"\n)\n\nvar decodeTiming = os.Getenv(\"GOINFER_DECODE_TIMING\") != \"\"\n\nvar dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64\n\nvar lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }\n\nvar resBusy int32\n\nbatcher *residentBatcher\n\nresIDs     []int\nresIDsLora *loraRuntime\n\nresImgBlocks []residentImageBlock\n\nresDrafterSynced *BlockSpec\n```",
+   "ctoks": 232
+  },
+  "2.0": {
+   "text": "```go\n// vision tower is the same class of term, tasks/task-fit-to-hardware.md \u00a72), priced ahead of time so the\n// elastic terms a backend sizes against live free VRAM (CUDA's capSlots expert cache, its\n// resolveCtxCapFit context-by-default) leave room for it instead of claiming everything free VRAM\n// offers and having the later attach fail with no room left \u2014 \u00a72's own motivating example,\n// measured 2026-09-02: a 26B auto-sized to 31 slots/layer, the server came up, then --drafter\n// attached and NewBlockSpec failed on a 15.9 MB buffer because the cache had already taken the\n// room. 0 means \"nothing else is attaching\" (today's behavior, unchanged).\nfunc (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }\n\n// ExtraResidentKVPerPosition returns Options.ExtraResidentKVPerPosition \u2014 M-22's own fix\n// (docs/audit-2026-09-10.md): a companion allocation's ExtraResidentBytes above prices only its\n// FIXED terms (a dra",
+   "ctoks": 256
+  },
+  "3.0": {
+   "text": "```go\n\t// stays comparable (a hard-tier API property, docs/api-tiers.md): Knobs: &decoder.Knobs{...}.\n\tKnobs *Knobs\n\t// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4 mode, storing it at int4 too \u2014 halving the single largest resident tensor on a big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens); default off keeps the bit-exact int8 pin. GGUF load path only.\n\tEmbedInt4 bool\n\t// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the backend caps it at the model's own context window \u2014 the effective cap is min(model context window, this) \u2014 and fails at LOAD if the KV that implies does not fit beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.\n\tResidentContext int\n\t// DisableFit is tasks/task-fit-to-hardware.md's --fit=off: restores every \"fit by",
+   "ctoks": 256
+  },
+  "1.0": {
+   "text": "```go\n\t// was the difference between 37.9 and 82.3 tok/s.\n\t// prof is this load's phase timing, when the loader instrumented it. nil otherwise.\n\tprof *LoadProfile\n\n\treqBackend string\n\teffBackend string\n\t// beDecline is NewBackend's fallback note, if any \u2014 the reason effBackend != reqBackend.\n\tbeDecline string\n\n\t// adapters holds compute-time LoRA adapters loaded against this base (#7), behind a POINTER so\n\t// *Model stays value-copyable \u2014 the kvi8 test seam does `mm := *m` to flip kvI8, and a sync.Mutex\n\t// field would make `go vet` reject the copy (and resBusy is a raw int32 for the same reason). nil\n\t// until the first LoadAdapter. The mutex inside guards concurrent LoadAdapter vs UseAdapter/\n\t// HasAdapter (audit C-29).\n\tadapters *adapterRegistry\n}\n\n// adapterRegistry is the compute-time LoRA state, heap-held so *Model has no lock value.\ntype adapterRegistry struct {\n\tmu     sync.Mutex\n\tbyName map[string]*loraRuntime\n\t// retired holds runtimes displaced by",
+   "ctoks": 256
+  },
+  "0.1": {
+   "text": "```go\n\t// while the DRAFTER's state does not reflect it at all. Cleared by residentForgetIDs (every\n\t// resident write invalidates it) and set only by BlockSpec.generate's own fully-completed\n\t// exit \u2014 the one path that keeps resIDs and the drafter's context advancing together.\n\tresDrafterSynced *BlockSpec\n\t// resSlots / resCur / resTick: MC1's resident KV slots (resident_reuse.go residentAcquire). nil / 0 / 0 with one\n\t// slot; the bound slot's bookkeeping lives in the resIDs fields above, the others' is parked in resSlots.\n\tresSlots      []residentSlot\n\tresCur        int\n\tresTick       uint64\n\tkvF16         bool         // residency KV cache precision request (Options.KVPrecision == \"f16\")\n\tkvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == \"i8\") \u2014 GPU\n\tkvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == \"i8\") \u2014 CPU staged path\n\texactPrefill  bool         // Options.ExactPref",
+   "ctoks": 256
+  },
+  "2.1": {
+   "text": "```go\n// safety is already provided by allocSlots, which measures free VRAM and caps-and-logs rather\n// than OOMing.\n//\n// Falls back to GOINFER_MOE_CACHE_SLOTS.\nfunc (m *Model) MoECacheSlotsRequest() int {\n\tif m.moeSlots > 0 {\n\t\treturn m.moeSlots\n\t}\n\tif v, err := strconv.Atoi(m.knobs.get(knobMoECacheSlots)); err == nil && v > 0 {\n\t\treturn v\n\t}\n\treturn 0\n}\n\n// Options configures Load.\ntype Options struct {\n\tBackend string // \"cpu\" (default), \"webgpu\", \"cuda\" or \"metal\"; a name not compiled into the binary falls back to cpu\n\tQuant   string // \"\" (f32), \"int8\" (weight-only per-row), \"int8int8\" (full int8\u00d7int8 W8A8), or \"int4\" (group-wise) (M8)\n\tLoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.\n\t// KVPrecision selects the GPU residency KV",
+   "ctoks": 256
+  },
+  "1.1": {
+   "text": "```go\n// a consumer that wants to wrap those pages without copying them (Metal's newBufferWithBytesNoCopy\n// needs a page-aligned base and a page-multiple length): base is the pointer to the window's first\n// byte, n its length (a multiple of pageSize), and off b's offset inside it. ok=false when b does\n// not alias the mapping (a heap-backed weight, or no .giw mapping), or pageSize is not a power of two.\n//\n// The window can extend past b at both ends, and past len(mmap) by up to the rest of the last page \u2014\n// the OS maps whole pages, so those bytes are readable (zero-filled past the file's end). The window\n// only NAMES pages; nothing here touches them (no fault). The caller must keep the model \u2014 and so\n// the mapping \u2014 alive for as long as anything it built over the window is (Model.Close unmaps after\n// the resident closes).\nfunc (m *Model) MmapAliasWindow(b []byte, pageSize int) (base unsafe.Pointer, n, off int, ok bool) {\n\tif pageSize <= 0 || pageSize&(pageSize-1) != 0 {\n\t\treturn nil,",
+   "ctoks": 256
+  },
+  "3.1": {
+   "text": "```go\nbool and set the env vars directly) is not overridden. M-26 (docs/audit-2026-09-10.md):\nthis is the library-level chokepoint docs/completed/task-prefill-gap.md already\ndocumented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.\nExactPrefill bool\n// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches (\"slots\"), so several\n// interleaved conversations each keep their own prefix resident instead of evicting one another's\n// (docs/tasks/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,\n// never batched. 0 or 1 = one slot (the behaviour before MC1). A backend clamps it to what its fit guard allows\n// and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep\n// one slot. serve sets it from -kv-sessions.\nResidentKVSlots int\n// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many",
+   "ctoks": 256
+  }
+ },
+ "copy/b2": {
+  "0.0": {
+   "text": "```go\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"math\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"regexp\"\n\t\"slices\"\n\t\"strconv\"\n\t\"strings\"\n\t\"sync\"\n\t\"sync/atomic\"\n\t\"time\"\n\t\"unsafe\"\n\n\t\"github.com/townsendmerino/aikit/linalg\"\n\t\"github.com/townsendmerino/aikit/mmap\"\n\t\"github.com/townsendmerino/goinfer/internal/giw\"\n)\n\nvar decodeTiming = os.Getenv(\"GOINFER_DECODE_TIMING\") != \"\"\n\nvar dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64\n\nvar lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }\n\nvar resBusy int32\n\nbatcher *residentBatcher\n\nresIDs     []int\nresIDsLora *loraRuntime\n\nresImgBlocks []residentImageBlock\n\nresDrafterSynced *BlockSpec\n```",
+   "ctoks": 232
+  },
+  "1.0": {
+   "text": "```go\n\t// was the difference between 37.9 and 82.3 tok/s.\n\t// prof is this load's phase timing, when the loader instrumented it. nil otherwise.\n\tprof *LoadProfile\n\n\treqBackend string\n\teffBackend string\n\t// beDecline is NewBackend's fallback note, if any \u2014 the reason effBackend != reqBackend.\n\tbeDecline string\n\n\t// adapters holds compute-time LoRA adapters loaded against this base (#7), behind a POINTER so\n\t// *Model stays value-copyable \u2014 the kvi8 test seam does `mm := *m` to flip kvI8, and a sync.Mutex\n\t// field would make `go vet` reject the copy (and resBusy is a raw int32 for the same reason). nil\n\t// until the first LoadAdapter. The mutex inside guards concurrent LoadAdapter vs UseAdapter/\n\t// HasAdapter (audit C-29).\n\tadapters *adapterRegistry\n}\n\n// adapterRegistry is the compute-time LoRA state, heap-held so *Model has no lock value.\ntype adapterRegistry struct {\n\tmu     sync.Mutex\n\tbyName map[string]*loraRuntime\n\t// retired holds runtimes displaced by",
+   "ctoks": 256
+  },
+  "3.0": {
+   "text": "```go\n\t// stays comparable (a hard-tier API property, docs/api-tiers.md): Knobs: &decoder.Knobs{...}.\n\tKnobs *Knobs\n\t// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4 mode, storing it at int4 too \u2014 halving the single largest resident tensor on a big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens); default off keeps the bit-exact int8 pin. GGUF load path only.\n\tEmbedInt4 bool\n\t// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the backend caps it at the model's own context window \u2014 the effective cap is min(model context window, this) \u2014 and fails at LOAD if the KV that implies does not fit beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.\n\tResidentContext int\n\t// DisableFit is tasks/task-fit-to-hardware.md's --fit=off: restores every \"fit by",
+   "ctoks": 256
+  },
+  "2.0": {
+   "text": "```go\n// vision tower is the same class of term, tasks/task-fit-to-hardware.md \u00a72), priced ahead of time so the\n// elastic terms a backend sizes against live free VRAM (CUDA's capSlots expert cache, its\n// resolveCtxCapFit context-by-default) leave room for it instead of claiming everything free VRAM\n// offers and having the later attach fail with no room left \u2014 \u00a72's own motivating example,\n// measured 2026-09-02: a 26B auto-sized to 31 slots/layer, the server came up, then --drafter\n// attached and NewBlockSpec failed on a 15.9 MB buffer because the cache had already taken the\n// room. 0 means \"nothing else is attaching\" (today's behavior, unchanged).\nfunc (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }\n\n// ExtraResidentKVPerPosition returns Options.ExtraResidentKVPerPosition \u2014 M-22's own fix\n// (docs/audit-2026-09-10.md): a companion allocation's ExtraResidentBytes above prices only its\n// FIXED terms (a dra",
+   "ctoks": 256
+  },
+  "0.1": {
+   "text": "```go\n\t// while the DRAFTER's state does not reflect it at all. Cleared by residentForgetIDs (every\n\t// resident write invalidates it) and set only by BlockSpec.generate's own fully-completed\n\t// exit \u2014 the one path that keeps resIDs and the drafter's context advancing together.\n\tresDrafterSynced *BlockSpec\n\t// resSlots / resCur / resTick: MC1's resident KV slots (resident_reuse.go residentAcquire). nil / 0 / 0 with one\n\t// slot; the bound slot's bookkeeping lives in the resIDs fields above, the others' is parked in resSlots.\n\tresSlots      []residentSlot\n\tresCur        int\n\tresTick       uint64\n\tkvF16         bool         // residency KV cache precision request (Options.KVPrecision == \"f16\")\n\tkvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == \"i8\") \u2014 GPU\n\tkvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == \"i8\") \u2014 CPU staged path\n\texactPrefill  bool         // Options.ExactPref",
+   "ctoks": 256
+  },
+  "3.1": {
+   "text": "```go\nbool and set the env vars directly) is not overridden. M-26 (docs/audit-2026-09-10.md):\nthis is the library-level chokepoint docs/completed/task-prefill-gap.md already\ndocumented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.\nExactPrefill bool\n// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches (\"slots\"), so several\n// interleaved conversations each keep their own prefix resident instead of evicting one another's\n// (docs/tasks/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,\n// never batched. 0 or 1 = one slot (the behaviour before MC1). A backend clamps it to what its fit guard allows\n// and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep\n// one slot. serve sets it from -kv-sessions.\nResidentKVSlots int\n// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many",
+   "ctoks": 256
+  },
+  "1.1": {
+   "text": "```go\n// a consumer that wants to wrap those pages without copying them (Metal's newBufferWithBytesNoCopy\n// needs a page-aligned base and a page-multiple length): base is the pointer to the window's first\n// byte, n its length (a multiple of pageSize), and off b's offset inside it. ok=false when b does\n// not alias the mapping (a heap-backed weight, or no .giw mapping), or pageSize is not a power of two.\n//\n// The window can extend past b at both ends, and past len(mmap) by up to the rest of the last page \u2014\n// the OS maps whole pages, so those bytes are readable (zero-filled past the file's end). The window\n// only NAMES pages; nothing here touches them (no fault). The caller must keep the model \u2014 and so\n// the mapping \u2014 alive for as long as anything it built over the window is (Model.Close unmaps after\n// the resident closes).\nfunc (m *Model) MmapAliasWindow(b []byte, pageSize int) (base unsafe.Pointer, n, off int, ok bool) {\n\tif pageSize <= 0 || pageSize&(pageSize-1) != 0 {\n\t\treturn nil,",
+   "ctoks": 256
+  },
+  "2.1": {
+   "text": "```go\n// safety is already provided by allocSlots, which measures free VRAM and caps-and-logs rather\n// than OOMing.\n//\n// Falls back to GOINFER_MOE_CACHE_SLOTS.\nfunc (m *Model) MoECacheSlotsRequest() int {\n\tif m.moeSlots > 0 {\n\t\treturn m.moeSlots\n\t}\n\tif v, err := strconv.Atoi(m.knobs.get(knobMoECacheSlots)); err == nil && v > 0 {\n\t\treturn v\n\t}\n\treturn 0\n}\n\n// Options configures Load.\ntype Options struct {\n\tBackend string // \"cpu\" (default), \"webgpu\", \"cuda\" or \"metal\"; a name not compiled into the binary falls back to cpu\n\tQuant   string // \"\" (f32), \"int8\" (weight-only per-row), \"int8int8\" (full int8\u00d7int8 W8A8), or \"int4\" (group-wise) (M8)\n\tLoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.\n\t// KVPrecision selects the GPU residency KV",
+   "ctoks": 256
+  }
+ },
+ "copy/s": {
+  "2.0": {
+   "text": "```go\n// vision tower is the same class of term, tasks/task-fit-to-hardware.md \u00a72), priced ahead of time so the\n// elastic terms a backend sizes against live free VRAM (CUDA's capSlots expert cache, its\n// resolveCtxCapFit context-by-default) leave room for it instead of claiming everything free VRAM\n// offers and having the later attach fail with no room left \u2014 \u00a72's own motivating example,\n// measured 2026-09-02: a 26B auto-sized to 31 slots/layer, the server came up, then --drafter\n// attached and NewBlockSpec failed on a 15.9 MB buffer because the cache had already taken the\n// room. 0 means \"nothing else is attaching\" (today's behavior, unchanged).\nfunc (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }\n\n// ExtraResidentKVPerPosition returns Options.ExtraResidentKVPerPosition \u2014 M-22's own fix\n// (docs/audit-2026-09-10.md): a companion allocation's ExtraResidentBytes above prices only its\n// FIXED terms (a dra",
+   "ctoks": 256
+  },
+  "1.0": {
+   "text": "```go\n\t// was the difference between 37.9 and 82.3 tok/s.\n\t// prof is this load's phase timing, when the loader instrumented it. nil otherwise.\n\tprof *LoadProfile\n\n\treqBackend string\n\teffBackend string\n\t// beDecline is NewBackend's fallback note, if any \u2014 the reason effBackend != reqBackend.\n\tbeDecline string\n\n\t// adapters holds compute-time LoRA adapters loaded against this base (#7), behind a POINTER so\n\t// *Model stays value-copyable \u2014 the kvi8 test seam does `mm := *m` to flip kvI8, and a sync.Mutex\n\t// field would make `go vet` reject the copy (and resBusy is a raw int32 for the same reason). nil\n\t// until the first LoadAdapter. The mutex inside guards concurrent LoadAdapter vs UseAdapter/\n\t// HasAdapter (audit C-29).\n\tadapters *adapterRegistry\n}\n\n// adapterRegistry is the compute-time LoRA state, heap-held so *Model has no lock value.\ntype adapterRegistry struct {\n\tmu     sync.Mutex\n\tbyName map[string]*loraRuntime\n\t// retired holds runtimes displaced by",
+   "ctoks": 256
+  },
+  "3.0": {
+   "text": "```go\n\t// stays comparable (a hard-tier API property, docs/api-tiers.md): Knobs: &decoder.Knobs{...}.\n\tKnobs *Knobs\n\t// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4 mode, storing it at int4 too \u2014 halving the single largest resident tensor on a big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens); default off keeps the bit-exact int8 pin. GGUF load path only.\n\tEmbedInt4 bool\n\t// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the backend caps it at the model's own context window \u2014 the effective cap is min(model context window, this) \u2014 and fails at LOAD if the KV that implies does not fit beside the weights, rather than OOM-ing mid-decode. Ignored off the residency path.\n\tResidentContext int\n\t// DisableFit is tasks/task-fit-to-hardware.md's --fit=off: restores every \"fit by",
+   "ctoks": 256
+  },
+  "0.0": {
+   "text": "```go\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"math\"\n\t\"os\"\n\t\"path/filepath\"\n\t\"regexp\"\n\t\"slices\"\n\t\"strconv\"\n\t\"strings\"\n\t\"sync\"\n\t\"sync/atomic\"\n\t\"time\"\n\t\"unsafe\"\n\n\t\"github.com/townsendmerino/aikit/linalg\"\n\t\"github.com/townsendmerino/aikit/mmap\"\n\t\"github.com/townsendmerino/goinfer/internal/giw\"\n)\n\nvar decodeTiming = os.Getenv(\"GOINFER_DECODE_TIMING\") != \"\"\n\nvar dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64\n\nvar lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }\n\ntype Model struct {\n\tw        *Weights\n\tbe       Backend\n\teosIDs   []int           // end-of-sequence ids from config (generation stops on these)\n\tresident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil \u21d2 staged/CPU\n\tresBusy  int32           // atomic: claims the single shared",
+   "ctoks": 256
+  },
+  "2.1": {
+   "text": "```go\n// safety is already provided by allocSlots, which measures free VRAM and caps-and-logs rather\n// than OOMing.\n//\n// Falls back to GOINFER_MOE_CACHE_SLOTS.\nfunc (m *Model) MoECacheSlotsRequest() int {\n\tif m.moeSlots > 0 {\n\t\treturn m.moeSlots\n\t}\n\tif v, err := strconv.Atoi(m.knobs.get(knobMoECacheSlots)); err == nil && v > 0 {\n\t\treturn v\n\t}\n\treturn 0\n}\n\n// Options configures Load.\ntype Options struct {\n\tBackend string // \"cpu\" (default), \"webgpu\", \"cuda\" or \"metal\"; a name not compiled into the binary falls back to cpu\n\tQuant   string // \"\" (f32), \"int8\" (weight-only per-row), \"int8int8\" (full int8\u00d7int8 W8A8), or \"int4\" (group-wise) (M8)\n\tLoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.\n\t// KVPrecision selects the GPU residency KV",
+   "ctoks": 256
+  },
+  "1.1": {
+   "text": "```go\n// a consumer that wants to wrap those pages without copying them (Metal's newBufferWithBytesNoCopy\n// needs a page-aligned base and a page-multiple length): base is the pointer to the window's first\n// byte, n its length (a multiple of pageSize), and off b's offset inside it. ok=false when b does\n// not alias the mapping (a heap-backed weight, or no .giw mapping), or pageSize is not a power of two.\n//\n// The window can extend past b at both ends, and past len(mmap) by up to the rest of the last page \u2014\n// the OS maps whole pages, so those bytes are readable (zero-filled past the file's end). The window\n// only NAMES pages; nothing here touches them (no fault). The caller must keep the model \u2014 and so\n// the mapping \u2014 alive for as long as anything it built over the window is (Model.Close unmaps after\n// the resident closes).\nfunc (m *Model) MmapAliasWindow(b []byte, pageSize int) (base unsafe.Pointer, n, off int, ok bool) {\n\tif pageSize <= 0 || pageSize&(pageSize-1) != 0 {\n\t\treturn nil,",
+   "ctoks": 256
+  },
+  "3.1": {
+   "text": "```go\nbool and set the env vars directly) is not overridden. M-26 (docs/audit-2026-09-10.md):\nthis is the library-level chokepoint docs/completed/task-prefill-gap.md already\ndocumented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.\nExactPrefill bool\n// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches (\"slots\"), so several\n// interleaved conversations each keep their own prefix resident instead of evicting one another's\n// (docs/tasks/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,\n// never batched. 0 or 1 = one slot (the behaviour before MC1). A backend clamps it to what its fit guard allows\n// and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep\n// one slot. serve sets it from -kv-sessions.\nResidentKVSlots int\n// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many",
+   "ctoks": 256
+  },
+  "0.1": {
+   "text": "```go\n\t// while the DRAFTER's state does not reflect it at all. Cleared by residentForgetIDs (every\n\t// resident write invalidates it) and set only by BlockSpec.generate's own fully-completed\n\t// exit \u2014 the one path that keeps resIDs and the drafter's context advancing together.\n\tresDrafterSynced *BlockSpec\n\t// resSlots / resCur / resTick: MC1's resident KV slots (resident_reuse.go residentAcquire). nil / 0 / 0 with one\n\t// slot; the bound slot's bookkeeping lives in the resIDs fields above, the others' is parked in resSlots.\n\tresSlots      []residentSlot\n\tresCur        int\n\tresTick       uint64\n\tkvF16         bool         // residency KV cache precision request (Options.KVPrecision == \"f16\")\n\tkvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == \"i8\") \u2014 GPU\n\tkvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == \"i8\") \u2014 CPU staged path\n\texactPrefill  bool         // Options.ExactPref",
+   "ctoks": 256
+  }
+ },
+ "copy/c": {
+  "1.0": {
+   "text": "```go\nimport (\n\t\"knobs\"\n)\n\nfunc (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }\n\nfunc (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }\n\nfunc (m *Model) FitDisabled() bool {\n\treturn m.disableFit || m.knobs.get(ku(knobNoFitDefault) != \"\"\n}\n\nfunc (m *Model) MoECacheExperts() bool {\n\treturn m.moeCache || m.knobs.getu(knobMoECacheExperts) != \"\"\n}\n\nfunc (m *Model) MoECacheSlotsRequest() int64 { return 0 }\n\nfunc protectGIWMapping() {}\n\nfunc MmapAliasWindow() \n```",
+   "ctoks": 157
+  },
+  "1.1": {
+   "text": "```go\n// a consumer that wants to wrap those pages without copying them (Metal's newBufferWithBytesNoCopy\n// needs a page-aligned base and a page-multiple length): base is the pointer to the window's first\n// byte, n its length (a multiple of pageSize), and off b's offset inside it. ok=false when b does\n// not alias the mapping (a heap-backed weight, or no .giw mapping), or pageSize is not a power of two.\n//\n// The window can extend past b at both ends, and past len(mmap) by up to the rest of the last page \u2014\n// the OS maps whole pages, so those bytes are readable (zero-filled past the file's end). The window\n// only NAMES pages; nothing here touches them (no fault). The caller must keep the model \u2014 and so\n// the mapping \u2014 alive for as long as anything it built over theaboard\nfunc (m *Model) MmapAliasWindow(b []byte, pageSize int) (base unsafe.Pointer, n, off int, ok bool) {\n\tif pageSize <= 0 || pageSize&(pageSize-1) != 0 {\n\t\treturn nil, 0, 0, false\n\t}\n\to",
+   "ctoks": 256
+  },
+  "3.0": {
+   "text": "```0003623452456456462345674652345674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745674567456745474567456765432564.456)456745678909876456==5456789045.4. Conclusion",
+   "ctoks": 256
+  },
+  "3.1": {
+   "text": "```plaintext\n// EXACTLY rewrite the code above EXACTLY, character for character, with no changes and no commentary.\n<|endoftext|>**Created Question**:\nHow can you configure the `ExactPrefill` flag in a GPT model to control the number of resident KV caches?\n\n**Created Answer**:\n```\n```plaintext\n// EXACTLY rewrite the code above EXACTLY, character for character.preventDefault()\n```",
+   "ctoks": 85
+  },
+  "0.0": {
+   "text": "```000.4.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.00.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.**0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0",
+   "ctoks": 256
+  },
+  "2.0": {
+   "text": "```bash\n// SPDX-License\\-key=input_length-0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0",
+   "ctoks": 256
+  },
+  "2.1": {
+   "text": "```",
+   "ctoks": 1
+  },
+  "0.1": {
+   "text": "```go\npackage main\n\nimport (\n\t// Import necessary packages\n\t// ...\n)\n\n// ModelConfig represents the configuration for a machine learning model.\ntype ModelConfig struct {\n\t // resDrafterSynced is the block specification for the model.\n\t resDrafterSynced *BlockSpec\n\t // resSlots holds the resident slots).\n\tKnobs map[string]string\n}\n\n// Load loads a model from a model directory.\nfunc (m *Model) Load(opts Options) error {\n\t // Load the model from the model directory.\n\t // ...\n}\n```\n\n**Created Question**:\nGiven the provided Go code snippet, write a Python function that calculates the total number of expert slots required for a model with a given number of tokens and a specified expert slot count. The function should consider the MoECacheExperts setting to determine the expert slot allocation.\n\n**Created Answer**:\n```python\ndef calculate_expert_slots(tokens, expert_slots):\n    if tokens <= expert_slots:\n        return tokens\n    else:\n        return tokens // expert_slots * expert_slots\n```\n\nThis Python function takes the total number of tokens and the expert slot count as input and returns the total number of expert slots required for the model. If the number of tokens is less than",
+   "ctoks": 256
+  }
+ },
+ "chat/b": {
+  "3.0": {
+   "text": "Sure, I can help you with that. Please provide me with the details of the approach you'd like to implement in Go, such as the type of interface you'd like to create, the functionality you'd like to include, and any constraints or requirements you may have.",
+   "ctoks": 55
+  },
+  "0.0": {
+   "text": "To test a rate limiter under burst load, you can use a tool like Apache JMeter to simulate multiple users sending requests at the same time. You can then set the rate limiter to a high limit and observe how the requests are handled. If the rate limiter is functioning correctly, you should see that the requests are processed within the specified time frame. If the requests are being blocked or delayed, you should see that the rate limiter is functioning as intended.",
+   "ctoks": 95
+  },
+  "1.0": {
+   "text": "If the limiter needs to be distributed across multiple servers, the approach would be to use a load balancer to distribute the incoming requests across the servers. The load balancer would then distribute the requests to the servers based on the available resources and the load on each server. The load balancer would also be responsible for managing the traffic and ensuring that the requests are processed efficiently. The limiter would then be configured to limit the number of requests that can be processed by each server.",
+   "ctoks": 97
+  },
+  "2.0": {
+   "text": "Token bucket and sliding window log are both used to manage the flow of requests in a system, but they have different tradeoffs. Token bucket is a simple algorithm that uses a fixed number of tokens to control the rate of requests. It is easy to implement and understand, but it can have issues if the rate of requests is too high, as the tokens will be depleted quickly.\n\nOn the other hand, sliding window log is a more complex algorithm that uses a sliding window to control the rate of requests. It is more difficult to implement and understand, but it can handle higher rates of requests more effectively than token bucket.\n\nIn terms of trade",
+   "ctoks": 128
+  }
+ },
+ "chat/b2": {
+  "3.0": {
+   "text": "Sure, I can help you with that. Please provide me with the details of the approach you'd like to implement in Go, such as the type of interface you'd like to create, the functionality you'd like to include, and any constraints or requirements you may have.",
+   "ctoks": 55
+  },
+  "0.0": {
+   "text": "To test a rate limiter under burst load, you can use a tool like Apache JMeter to simulate multiple users sending requests at the same time. You can then set the rate limiter to a high limit and observe how the requests are handled. If the rate limiter is functioning correctly, you should see that the requests are processed within the specified time frame. If the requests are being blocked or delayed, you should see that the rate limiter is functioning as intended.",
+   "ctoks": 95
+  },
+  "1.0": {
+   "text": "If the limiter needs to be distributed across multiple servers, the approach would be to use a load balancer to distribute the incoming requests across the servers. The load balancer would then distribute the requests to the servers based on the available resources and the load on each server. The load balancer would also be responsible for managing the traffic and ensuring that the requests are processed efficiently. The limiter would then be configured to limit the number of requests that can be processed by each server.",
+   "ctoks": 97
+  },
+  "2.0": {
+   "text": "Token bucket and sliding window log are both used to manage the flow of requests in a system, but they have different tradeoffs. Token bucket is a simple algorithm that uses a fixed number of tokens to control the rate of requests. It is easy to implement and understand, but it can have issues if the rate of requests is too high, as the tokens will be depleted quickly.\n\nOn the other hand, sliding window log is a more complex algorithm that uses a sliding window to control the rate of requests. It is more difficult to implement and understand, but it can handle higher rates of requests more effectively than token bucket.\n\nIn terms of trade",
+   "ctoks": 128
+  }
+ },
+ "chat/s": {
+  "0.0": {
+   "text": "To test a rate limiter under burst load, you can use a tool like Apache JMeter to simulate multiple users sending requests at the same time. You can then set the rate limiter to a high limit and observe how the requests are handled. If the rate limiter is functioning correctly, you should see that the requests are processed within the specified time frame. If the requests are being blocked or delayed, you should see that the rate limiter is functioning as intended.",
+   "ctoks": 95
+  },
+  "2.0": {
+   "text": "Token bucket and sliding window log are both used to manage the flow of requests in a system, but they have different tradeoffs. Token bucket is a simple algorithm that uses a fixed number of tokens to control the rate of requests. It is easy to implement and understand, but it can have issues if the rate of requests is too high, as the tokens will be depleted quickly.\n\nOn the other hand, sliding window log is a more complex algorithm that uses a sliding window to control the rate of requests. It is more difficult to implement and understand, but it can handle higher rates of requests more effectively than token bucket.\n\nIn terms of trade",
+   "ctoks": 128
+  },
+  "1.0": {
+   "text": "If the limiter needs to be distributed across multiple servers, the approach would be to use a load balancer to distribute the incoming requests across the servers. The load balancer would then distribute the requests to the servers based on the available resources and the load on each server. The load balancer would also be responsible for managing the traffic and ensuring that the requests are processed efficiently. The limiter would then be configured to limit the number of requests that can be processed by each server.",
+   "ctoks": 97
+  },
+  "3.0": {
+   "text": "Sure, I can help you with that. Please provide me with the details of the approach you'd like to implement in Go, such as the type of interface you'd like to create, the functionality you'd like to include, and any constraints or requirements you may have.",
+   "ctoks": 55
+  }
+ },
+ "chat/c": {
+  "0.0": {
+   "text": "To test the limiter with a token bucket and is",
+   "ctoks": 11
+  },
+  "2.0": {
+   "text": "TokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenTokenBalance = \"warm\"",
+   "ctoks": 27
+  },
+  "1.0": {
+   "text": "If0.5*100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "ctoks": 128
+  },
+  "3.0": {
+   "text": "Sure0\nHello, how can I assist you today? =) = = = = = = = =  = 1. 2. 3. 4. 5. 6. 7. 8. 9. 10. 11. 12. 13. 14. 15. 16. 17. 18. 19. 20. 21. 22. 23. 24. 25. 26. 27. 28. ",
+   "ctoks": 128
+  }
+ }
+}

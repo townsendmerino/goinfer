@@ -1,0 +1,23 @@
+=== RUN   TestGlmOcrResidentParityCUDA
+    glm_ocr_resident_test.go:170: PAIRWISE kernels: text decode 48 pos worst cos -0.336856 relL2 1.6951 | text batched prefill cos -0.044642 relL2 1.4015 | image m-RoPE prefill cos -0.228977 relL2 1.8116 | decode past image (5 steps, ropePos=pos+mropeDelta) worst cos 0.302069 relL2 1.1024
+    glm_ocr_resident_test.go:179: decode past image diverges from the CPU: worst cosine 0.302069 (want >= 0.995), relL2 1.1024 (want <= 0.10)
+    glm_ocr_resident_test.go:179: text decode diverges from the CPU: worst cosine -0.336856 (want >= 0.995), relL2 1.6951 (want <= 0.10)
+    glm_ocr_resident_test.go:179: text batched prefill diverges from the CPU: worst cosine -0.044642 (want >= 0.995), relL2 1.4015 (want <= 0.10)
+    glm_ocr_resident_test.go:179: image m-RoPE prefill diverges from the CPU: worst cosine -0.228977 (want >= 0.995), relL2 1.8116 (want <= 0.10)
+    glm_ocr_resident_test.go:170: NeoX control   : text decode 48 pos worst cos -0.336856 relL2 1.6951 | text batched prefill cos -0.044642 relL2 1.4015 | image m-RoPE prefill cos -0.228977 relL2 1.8116 | decode past image (5 steps, ropePos=pos+mropeDelta) worst cos 0.302069 relL2 1.1024
+--- FAIL: TestGlmOcrResidentParityCUDA (1.31s)
+=== RUN   TestPairwiseRoPEResidentParityCUDA
+=== RUN   TestPairwiseRoPEResidentParityCUDA/cohere-tiny
+    pairwise_rope_resident_parity_test.go:237: PAIRWISE kernels: decode 40 pos worst cos 0.458060 relL2 1.1084 | batched prefill last cos 0.774228 relL2 0.6850 | decode after prefill [32,40) worst cos 0.538769 relL2 0.9524
+    pairwise_rope_resident_parity_test.go:240: resident diverges from CPU (bars: cosine >= 0.995, relL2 <= 0.15): {decodeCos:0.45805955156117323 decodeRel:1.1083519007668732 prefillCos:0.7742279000644698 prefillRel:0.6849580698012041 mixedCos:0.5387691994713006 mixedRel:0.9523687182442367}
+    pairwise_rope_resident_parity_test.go:247: NeoX control:      decode worst cos 0.458060 relL2 1.1084 | batched prefill last cos 0.774228 relL2 0.6850 | decode after prefill worst cos 0.538769 relL2 0.9524
+=== RUN   TestPairwiseRoPEResidentParityCUDA/cohere2-tiny
+    pairwise_rope_resident_parity_test.go:237: PAIRWISE kernels: decode 40 pos worst cos 0.317211 relL2 1.1327 | batched prefill last cos 0.917020 relL2 0.4053 | decode after prefill [32,40) worst cos 0.761637 relL2 0.6535
+    pairwise_rope_resident_parity_test.go:240: resident diverges from CPU (bars: cosine >= 0.995, relL2 <= 0.15): {decodeCos:0.31721115279684897 decodeRel:1.1326783169411554 prefillCos:0.9170199071240361 prefillRel:0.40527970340550035 mixedCos:0.7616368596126603 mixedRel:0.6534988283617497}
+    pairwise_rope_resident_parity_test.go:247: NeoX control:      decode worst cos 0.317211 relL2 1.1327 | batched prefill last cos 0.917020 relL2 0.4053 | decode after prefill worst cos 0.761637 relL2 0.6535
+--- FAIL: TestPairwiseRoPEResidentParityCUDA (1.89s)
+    --- FAIL: TestPairwiseRoPEResidentParityCUDA/cohere-tiny (1.05s)
+    --- FAIL: TestPairwiseRoPEResidentParityCUDA/cohere2-tiny (0.84s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	3.278s
+FAIL

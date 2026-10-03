@@ -1,0 +1,3 @@
+goinfer-serve-darwin-arm64 v0.20.0 (890ca565f982-dirty)
+backends: cpu metal
+go: go1.27.0 darwin/arm64

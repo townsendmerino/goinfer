@@ -1,6 +1,7 @@
 package site
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -51,7 +52,9 @@ func TestCheckOllama_refuses(t *testing.T) {
 			in.Claims.Facts = nil
 		}},
 		{"a headline with another share", "does not carry the S share", func(in *Inputs) {
-			in.Ollama.Headline = strings.Replace(in.Ollama.Headline, "92.4%", "93.0%", 1)
+			// the first percentage in the headline is the supported share, whatever the current snapshot says: a refresh
+			// must not break this case by changing the number (it hard-coded 92.4% until the 2026-10-02 snapshot)
+			in.Ollama.Headline = regexp.MustCompile(`\d+\.\d%`).ReplaceAllString(in.Ollama.Headline, "99.9%")
 		}},
 		{"a row dropped", "rows, ollama.json", func(in *Inputs) { in.Ollama.Rows = in.Ollama.Rows[:59] }},
 		// The case that slipped through before needs existed: support landing for a row that names no family.

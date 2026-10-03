@@ -1,0 +1,13 @@
+  ok    a model is loaded and selected
+  ok    the model is a vision model: Attach image is offered
+  ok    the invoice is attached
+  ok    the summary says a schema is on
+  ok    no sampling error
+  ok    the reply finished (48 s)
+  ok    the reply is shown as a JSON code block
+  ok    the reply parses as JSON
+  ok    the reply has exactly the schema's keys, in order
+  ok    the reply read the invoice: number, six line items, total
+  ok    the reply is stored as structured
+  ok    reply text: { "invoice_number": "INV-2026-0417", "date": "2026-09-18", "due_date": "2026-10-18", "vendor": "Harbor Light Supply Co.", "bill_to": "Northwind Printing LLC", "currency": "USD", "paid": false, "line_items": [ { "description": "Thermal label roll 100mm", "quantity": 12, "unit_price": 18.4, "amount": 
+webui schema real smoke: 12 passed, 0 failed

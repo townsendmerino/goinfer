@@ -1,0 +1,13 @@
+[gemma426b] up=True after 72.0s
+models: {"data": [{"context_window": 4096, "created": 1790961522, "decisions": {"calibrated": false, "endpoint": "/v1/systemone", "kinds": ["noul", "choice", "score"], "route": "label", "template": "chat-v1"}, "decode_path": "cuda-resident (int4)", "id": "gemma4-26b-int4.giw", "object": "model", "owned_by":
+req0: 31.4s usage={'prompt_tokens': 283, 'completion_tokens': 0, 'total_tokens': 283, 'prefill_reused_tokens': 0} reply=''
+req1: ERROR <urlopen error [Errno 111] Connection refused>
+--- key log lines
+   loaded "gemma4-26b-int4.giw": 30-layer model (vocab 262144) in 1m8.242s [chat: gemma4, thinking: unmanaged]
+     decode path: cuda-resident (int4)
+     context: 4096 tokens (backend default; model maximum 262144 — raise with --ctx) · KV f32
+     session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory 
+   loaded Gemma 4 vision tower for "gemma4-26b-int4.giw" (max 280 soft tokens/image, soft-token id 258880) from /home/francis/models/gemma-4-26b-a4b-it
+   "gemma4-26b-int4.giw" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+   warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+   request body cap: 48.0 MiB (text) / 80.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]

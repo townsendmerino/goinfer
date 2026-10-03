@@ -1319,9 +1319,9 @@ re-baked by the code it checks (G-04).
   2026-09-13** (the two `metal/model.go` comments; `metal-verdict.md` is `docs/completed/` — an
   archived record left as-is per that directory's own convention).
 - N-11 `metal/cmd/serve/main.go` said "Dense residency only … int8": MoE is resident; int8 is the
-  re-quantised case. `decoder/features.go:375` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
+  re-quantised case. `decoder/features.go:417` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
   2026-09-13** — `metal/cmd/serve/main.go:5-10` now names both corrections inline; the
-  `decoder/features.go:375` citation repointed to `metal/moe.go:384-376`.
+  `decoder/features.go:417` citation repointed to `metal/moe.go:384-376`.
 - N-12 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:14` names `qwen2.5-1.5b-instruct`;
   test default and L2 record say `qwen2.5-coder-1.5b-instruct` — methodology wants the exact file.
   **FIXED 2026-09-13.**
@@ -1578,10 +1578,10 @@ re-baked by the code it checks (G-04).
   warm-cache for the same reason.
 - N-38 `metal/prefill_ttft_test.go:80` — the first `PrefillLast` (P=256) includes the one-time compile;
   the L2 record's P=256 row carries it in both arms.
-- N-39 `internal/serveapp/openai.go:1475-1294` — comment says adapter requests "drop to the staged
+- N-39 `internal/serveapp/openai.go:1484-1303` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1475-1301,735-739,826-829`) to say what  `decoder/model.go:1781`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
+  adapter routing (`internal/serveapp/openai.go:1484-1310,735-739,826-829`) to say what  `decoder/model.go:1781`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
   the same session (`prefillFrom>0`, continuing off the reused warm prefix) still drops to CPU,

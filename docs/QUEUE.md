@@ -212,7 +212,7 @@ is done and `docs/integrations/claude-code.md` is published with measured number
 - **Open-WebUI and Continue recipes** are unwritten, because §3.5's rule is that a recipe with no
   number is not published and neither has one.
 
-**Resident prefix reuse holds several conversations on every GPU backend now** (`tasks/task-concurrency-2026-09.md`):
+**Resident prefix reuse holds several conversations on every GPU backend now** (`tasks/parked/task-concurrency-2026-09.md`):
 - **MC1's KV slots** keep 4 conversations resident on Metal (2026-09-26), CUDA and WebGPU (2026-09-27). On discrete
   WebGPU GPUs they are clamp-only.
 - **MC3** runs them concurrently on Metal and CUDA.
@@ -555,7 +555,7 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3659`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3660`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
 > back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
@@ -1250,7 +1250,7 @@ so the instrument was built and never wired. Raw `docs/measurements/g31-cprime-r
 
 | | 30 slots (48 req) | 16 slots | ratio |
 |---|---|---|---|
-| **stall** (the `Sync` at `cuda/resident.go:1458`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
+| **stall** (the `Sync` at `cuda/resident.go:1459`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
 | **host** (slot bookkeeping) | 107 ms (2.7%) | 108 ms (2.0%) | 1.01 |
 | **dma** (expert transfers) | 1.808 s (**45.1%**) | 3.227 s (**59.9%**) | **1.785** |
 | misses | 5229 | 9316 | **1.782** |

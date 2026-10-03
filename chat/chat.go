@@ -173,6 +173,10 @@ func Detect(meta Meta) (*Template, error) {
 			return Gemma3(), nil
 		case strings.Contains(t, "<|start_header_id|>"):
 			return Llama3(), nil
+		// GLM-OCR: "[gMASK]<sop>" with the <|user|>/<|assistant|> roles and its image markers. The image markers are
+		// part of the fingerprint on purpose (see GlmOCR): GLM-4.5's text template opens the same way and is not this one.
+		case strings.Contains(t, "[gMASK]<sop>") && strings.Contains(t, "<|begin_of_image|>") && strings.Contains(t, "<|user|>"):
+			return GlmOCR(), nil
 		// Mellum2 IS ChatML; its distinctive normalize_content macro lets Detect
 		// name it "mellum2" (banner/serve) before the generic <|im_start|> branch.
 		case strings.Contains(t, "normalize_content") && strings.Contains(t, "<|im_start|>"):

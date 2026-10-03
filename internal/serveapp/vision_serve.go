@@ -72,47 +72,10 @@ func encodeVisionSegments(lm *loadedModel, tm *chat.Template, system string, tur
 	return lm.tk.EncodeSegments(segs, false)
 }
 
-// spliceImageBlock re-tags the image block as its own Special segment, splitting the content
-// segment that contains it.
-//
-// The block does NOT start its segment: the template renders the role prefix and the message body
-// into one non-special span, so a Gemma-4 user turn arrives as "user\n<start_of_image>…<end_of_image>\nhello".
-// The first cut of this looked for the block as a PREFIX, found it nowhere, and would have refused
-// every vision request — caught by the test, which is why the test drives this function rather than
-// re-implementing its logic beside it.
+// spliceImageBlock is multimodal.SpliceImageBlock (moved there in O5 so goinfer-chat and the examples share it; the
+// reasoning, including V-19's last-occurrence rule, lives with it).
 func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
-	// V-19 (docs/review-2026-09-04.md): search from the END and splice the LAST occurrence, not
-	// the first. The block is always appended to the CURRENT (last) user turn, which renders
-	// last; an EARLIER turn that happens to contain the same literal text — a user asking what
-	// the sentinel means, say, as ordinary words — must not be mistaken for it. Splicing the
-	// wrong occurrence reopens the exact special-token-forging class M-22 closed, just for this
-	// sentinel instead of a role marker: the real image tokens stay unspliced plain text (and
-	// fail downstream with a misleading "template mismatch"), while unrelated earlier text gets
-	// tagged Special and parsed as sentinels it was never meant to be.
-	segIdx := -1
-	for i, seg := range slices.Backward(segs) {
-		if !seg.Special && strings.Contains(seg.Text, block) {
-			segIdx = i
-			break
-		}
-	}
-	if segIdx < 0 {
-		return nil, fmt.Errorf("vision: the image block was not found in the rendered prompt " +
-			"(template changed?); refusing to encode its sentinels as ordinary text")
-	}
-	sg := segs[segIdx]
-	i := strings.LastIndex(sg.Text, block) // last occurrence within the segment too, same reason
-	out := make([]tokenizer.Segment, 0, len(segs)+2)
-	out = append(out, segs[:segIdx]...)
-	if before := sg.Text[:i]; before != "" {
-		out = append(out, tokenizer.Segment{Text: before}) // the template's role prefix
-	}
-	out = append(out, tokenizer.Segment{Text: block, Special: true})
-	if after := sg.Text[i+len(block):]; after != "" {
-		out = append(out, tokenizer.Segment{Text: after}) // the user's own words
-	}
-	out = append(out, segs[segIdx+1:]...)
-	return out, nil
+	return multimodal.SpliceImageBlock(segs, block)
 }
 
 // tm is the per-request template (think.go): the model's own, switched to the request's thinking mode.
@@ -123,6 +86,9 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 	idx := lastUserTurn(turns)
 	if idx < 0 {
 		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
+	}
+	if lm.glm != nil {
+		return lm.glmOcrVisionPrompt(tm, system, turns, idx, img)
 	}
 	if lm.qwenEnc != nil || lm.qwen3 != nil {
 		return lm.qwenVisionPrompt(tm, system, turns, idx, img)
@@ -164,9 +130,16 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen}, nil
 }
 
-// qwenForward runs whichever Qwen tower this model carries: the Qwen2.5-VL ViT (eager) or the
-// Qwen3.5+ tower (loaded on first use).
+// qwenForward runs whichever tower this model carries on the shared Qwen-shaped route: the Qwen2.5-VL ViT (eager), the
+// Qwen3.5+ tower or the GLM-OCR tower (both loaded on first use). glmOcrVisionPrompt (glm_ocr_vision.go) calls it too.
 func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error) {
+	if lm.glm != nil {
+		enc, err := lm.glm.encoder()
+		if err != nil {
+			return nil, err
+		}
+		return enc.Forward(pv, [][3]int{grid})
+	}
 	if lm.qwen3 != nil {
 		enc, err := lm.qwen3.encoder()
 		if err != nil {
@@ -211,6 +184,51 @@ func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns 
 	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
+	}
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
+}
+
+// glmOcrVisionPrompt is the GLM-OCR image path: smart-resize preprocess (halved pixel bounds) -> the tower (the merged rows
+// replace the <|image|> run) -> the prompt with the image block prepended to the last user turn. The grid drives m-RoPE in
+// GenerateQwenVL, exactly as for Qwen.
+//
+// The image LEADS the user turn and the task prompt follows it with no separator (the checkpoint's own template:
+// `<|begin_of_image|><|image|>x N<|end_of_image|>Text Recognition:`); a request with no text part gets plain text
+// recognition rather than an image with nothing to do. The task is chosen by the user's own text ("Text Recognition:",
+// "Formula Recognition:", "Table Recognition:", multimodal.GlmOcrPrompt*).
+func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+	pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
+	if err != nil {
+		return visionInput{}, err
+	}
+	imgHash := multimodal.HashImageBytes(img.data)
+	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
+	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
+		return visionInput{}, err
+	}
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		feats, err := lm.qwenForward(pv, grid)
+		if err != nil {
+			return nil, fmt.Errorf("glm-ocr vision encoder: %w", err)
+		}
+		if len(feats) != n*hiddenDim {
+			return nil, fmt.Errorf("glm-ocr encoder emitted %d features, want %d", len(feats), n*hiddenDim)
+		}
+		return feats, nil
+	}
+	if strings.TrimSpace(turns[idx].Content) == "" {
+		turns[idx].Content = multimodal.GlmOcrDefaultPrompt
+	}
+	block := multimodal.GlmOcrImageBlock(n)
+	turns[idx].Content = block + turns[idx].Content
+	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
+	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
+	if imgLen != n {
+		return visionInput{}, fmt.Errorf("image placeholder run = %d image tokens, want %d (template mismatch)", imgLen, n)
 	}
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
 }
@@ -281,6 +299,11 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	system, turns := messagesToTurns(req.Messages)
+	// O5: an image plus response_format json_schema on GLM-OCR is an extraction request; its prompt is the schema's JSON template.
+	if err := lm.glmOcrExtractionTurn(req.sampling.ResponseFormat, turns); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ts, terr := s.resolveThink(req.think())
 	if terr != nil {
 		writeErr(w, http.StatusBadRequest, terr.Error())
@@ -295,6 +318,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.sampling.confidenceOK = true // written back below (the same two sites as the text route)
 	gr, err := lm.prepare(req.sampling, vi.ids, false)
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
@@ -324,7 +348,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -334,6 +358,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		if gr.conf != nil {
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+		}
 		if cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
@@ -344,7 +371,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	}
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, lps, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -357,7 +384,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	if rb.Len() > 0 {
 		vmsg["reasoning_content"] = rb.String()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	vresp := map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{
 			"index":         0,
@@ -365,7 +392,14 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 			"finish_reason": finish,
 		}},
 		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
-	})
+	}
+	if req.Logprobs {
+		vresp["choices"].([]any)[0].(map[string]any)["logprobs"] = lm.logprobs(lps)
+	}
+	if gr.conf != nil {
+		vresp["goinfer_confidence"] = gr.conf.payload()
+	}
+	writeJSON(w, http.StatusOK, vresp)
 }
 
 // serveVisionMessages handles an Anthropic /v1/messages request carrying an image
@@ -444,7 +478,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		s.routeThink(lm, &gr, tm, turns, ts, th.push)
 		if th.want {
 			streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
-				finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
+				finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
 				return finish, nComp, stopSeq, cancelReason, gerr
 			})
 			return
@@ -456,7 +490,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		// N-24 (docs/audit-2026-09-10.md): the ping above is one-shot, not a keep-alive — an
 		// image prefill on CPU can take minutes with nothing sent until the first token.
 		stopBeat := sseHeartbeat(ss)
-		finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+		finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
@@ -475,7 +509,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	}
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return

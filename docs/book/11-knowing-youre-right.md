@@ -357,6 +357,20 @@ them forward.
 That traceability is the actual product. An inference engine that is fast and cannot prove
 that it is fast is indistinguishable from an inference engine that is wrong.
 
+
+## Try it
+
+With the 0.5B served as in the [README](./README.md), let the server's own check drive it the way a client would:
+
+```sh
+goinfer-serve check -long-prompt 0
+```
+
+On the 0.5B you should see `2 of 8 checks FAILED`. The tools row fails because the model asks for the tool again
+instead of answering, and the stop-sequence row fails because the reply never reached the stop sequence, so it proves
+nothing about it. Each row says why, which is this chapter's point: a check that cannot pass says so instead of
+printing "ok". Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapter 11).
+
 ---
 
 *Sources: `CLAUDE.md` (measurement discipline, tests), `docs/benchmarks.md` (provenance rule,

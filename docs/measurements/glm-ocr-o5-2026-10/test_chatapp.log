@@ -1,0 +1,111 @@
+=== RUN   TestPlanBatch
+--- PASS: TestPlanBatch (0.00s)
+=== RUN   TestRunBatchLines_splitsSuccessAndFailure
+--- PASS: TestRunBatchLines_splitsSuccessAndFailure (0.00s)
+=== RUN   TestRunBatchLines_interruptAndResume
+--- PASS: TestRunBatchLines_interruptAndResume (0.00s)
+=== RUN   TestProgressLine
+--- PASS: TestProgressLine (0.00s)
+=== RUN   TestBatchLine_refusesWhatItCannotDo
+--- PASS: TestBatchLine_refusesWhatItCannotDo (0.00s)
+=== RUN   TestNewBatchDefaults
+--- PASS: TestNewBatchDefaults (0.00s)
+=== RUN   TestStopAt
+--- PASS: TestStopAt (0.00s)
+=== RUN   TestContentText
+--- PASS: TestContentText (0.00s)
+=== RUN   TestBatchTemplate_reasoningEffort
+--- PASS: TestBatchTemplate_reasoningEffort (0.00s)
+=== RUN   TestEffort_replAndBuildPrompt
+(reasoning effort: high)
+(bad effort "sideways" — want low, medium or high)
+(reasoning effort: high — /effort low|medium|high; gpt-oss only)
+--- PASS: TestEffort_replAndBuildPrompt (0.00s)
+=== RUN   TestBatchContextMessage
+--- PASS: TestBatchContextMessage (0.00s)
+=== RUN   TestFitFlag_realBinaryAcceptsOff
+--- PASS: TestFitFlag_realBinaryAcceptsOff (0.94s)
+=== RUN   TestExactPrefillFlag_realBinaryParses
+--- PASS: TestExactPrefillFlag_realBinaryParses (0.96s)
+=== RUN   TestFlags_imageParses
+--- PASS: TestFlags_imageParses (0.00s)
+=== RUN   TestCheckImageFlags
+--- PASS: TestCheckImageFlags (0.00s)
+=== RUN   TestLoadImageInput
+--- PASS: TestLoadImageInput (0.02s)
+=== RUN   TestImageTurns
+--- PASS: TestImageTurns (0.00s)
+=== RUN   TestImagePrompt_modelReadsTheTemplate
+--- PASS: TestImagePrompt_modelReadsTheTemplate (0.16s)
+=== RUN   TestChatImage_demoEndToEnd
+    image_test.go:231: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a 2.7 GB model, runs the CPU tower)
+--- SKIP: TestChatImage_demoEndToEnd (0.00s)
+=== RUN   TestLoadFlags_realBinaryParses
+--- PASS: TestLoadFlags_realBinaryParses (1.03s)
+=== RUN   TestRepl_plainWhenScripted
+--- PASS: TestRepl_plainWhenScripted (0.00s)
+=== RUN   TestReplyPrinter_plainSeparatesReasoningFromTheAnswer
+--- PASS: TestReplyPrinter_plainSeparatesReasoningFromTheAnswer (0.00s)
+=== RUN   TestOneShot
+no answer
+--- PASS: TestOneShot (0.00s)
+=== RUN   TestPromptFlagRegistered
+--- PASS: TestPromptFlagRegistered (0.00s)
+=== RUN   TestServeOnlyInvocation
+=== RUN   TestServeOnlyInvocation/the_subcommand_the_tester_typed
+=== RUN   TestServeOnlyInvocation/the_flag_the_README's_example_used
+=== RUN   TestServeOnlyInvocation/double_dash
+=== RUN   TestServeOnlyInvocation/flag_with_an_=_value
+=== RUN   TestServeOnlyInvocation/serve-only_flag_after_a_shared_one
+=== RUN   TestServeOnlyInvocation/a_model-loading_flag_chat_now_shares
+=== RUN   TestServeOnlyInvocation/and_one_that_takes_a_value,_with_its_value
+=== RUN   TestServeOnlyInvocation/plain_chat
+=== RUN   TestServeOnlyInvocation/shared_flags_only
+=== RUN   TestServeOnlyInvocation/chat's_own_pull
+=== RUN   TestServeOnlyInvocation/no_args
+=== RUN   TestServeOnlyInvocation/a_path_that_merely_contains_the_word_serve
+=== RUN   TestServeOnlyInvocation/a_flag_VALUE_that_happens_to_equal_a_serveOnly_word
+=== RUN   TestServeOnlyInvocation/same,_with_a_serve-only_flag_genuinely_after_it
+=== RUN   TestServeOnlyInvocation/a_genuine_serve-only_flag_is_still_caught_when_NOT_preceded_by_a_value-taking_flag
+--- PASS: TestServeOnlyInvocation (0.00s)
+    --- PASS: TestServeOnlyInvocation/the_subcommand_the_tester_typed (0.00s)
+    --- PASS: TestServeOnlyInvocation/the_flag_the_README's_example_used (0.00s)
+    --- PASS: TestServeOnlyInvocation/double_dash (0.00s)
+    --- PASS: TestServeOnlyInvocation/flag_with_an_=_value (0.00s)
+    --- PASS: TestServeOnlyInvocation/serve-only_flag_after_a_shared_one (0.00s)
+    --- PASS: TestServeOnlyInvocation/a_model-loading_flag_chat_now_shares (0.00s)
+    --- PASS: TestServeOnlyInvocation/and_one_that_takes_a_value,_with_its_value (0.00s)
+    --- PASS: TestServeOnlyInvocation/plain_chat (0.00s)
+    --- PASS: TestServeOnlyInvocation/shared_flags_only (0.00s)
+    --- PASS: TestServeOnlyInvocation/chat's_own_pull (0.00s)
+    --- PASS: TestServeOnlyInvocation/no_args (0.00s)
+    --- PASS: TestServeOnlyInvocation/a_path_that_merely_contains_the_word_serve (0.00s)
+    --- PASS: TestServeOnlyInvocation/a_flag_VALUE_that_happens_to_equal_a_serveOnly_word (0.00s)
+    --- PASS: TestServeOnlyInvocation/same,_with_a_serve-only_flag_genuinely_after_it (0.00s)
+    --- PASS: TestServeOnlyInvocation/a_genuine_serve-only_flag_is_still_caught_when_NOT_preceded_by_a_value-taking_flag (0.00s)
+=== RUN   TestServeOnlyInvocation_neverClaimsAChatFlag
+--- PASS: TestServeOnlyInvocation_neverClaimsAChatFlag (0.00s)
+=== RUN   TestStreamGen_matchesWholeSequenceDecode
+--- PASS: TestStreamGen_matchesWholeSequenceDecode (0.00s)
+=== RUN   TestStreamGen_emptyChannelReturnsEmpty
+--- PASS: TestStreamGen_emptyChannelReturnsEmpty (0.00s)
+=== RUN   TestStreamReply_separatesReasoningFromTheAnswer
+--- PASS: TestStreamReply_separatesReasoningFromTheAnswer (0.00s)
+=== RUN   TestBuildPrompt_thinkingModes
+--- PASS: TestBuildPrompt_thinkingModes (0.00s)
+=== RUN   TestApplyBudget_whereItInstalls
+--- PASS: TestApplyBudget_whereItInstalls (0.00s)
+=== RUN   TestJSONMasker_reusesCachedTokenBytes
+--- PASS: TestJSONMasker_reusesCachedTokenBytes (0.00s)
+=== RUN   TestJSONMasker_holdsBackTemplateStopIDs
+--- PASS: TestJSONMasker_holdsBackTemplateStopIDs (0.00s)
+=== RUN   TestJSONMasker_warnsOnUnreachableSchemaCompileFailure
+--- PASS: TestJSONMasker_warnsOnUnreachableSchemaCompileFailure (0.00s)
+=== RUN   TestIsVersionArg_recognizesAllForms
+--- PASS: TestIsVersionArg_recognizesAllForms (0.00s)
+=== RUN   TestChatVersionFlag_answersWithoutAModel
+--- PASS: TestChatVersionFlag_answersWithoutAModel (0.91s)
+=== RUN   TestChatUnknownPositional_namesTheSubcommands
+--- PASS: TestChatUnknownPositional_namesTheSubcommands (0.96s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/chatapp	4.994s

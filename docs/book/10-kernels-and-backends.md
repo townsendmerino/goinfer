@@ -74,7 +74,8 @@ access pattern rather than for readability. On a memory-bound workload, layout i
 more than instruction selection.
 
 **Parallelism.** Go's actual advantage. Prefill splits across goroutines with no special
-machinery, and Chapter 8's 3.28× from six workers is goroutine parallelism working. Getting the
+machinery, and the six-worker prefill that shipped in [v0.15.0](https://github.com/townsendmerino/goinfer/blob/main/docs/releases/v0.15.0-release-notes.md) (3.28× at 3,020 tokens) is goroutine
+parallelism working. Getting the
 same parallelism in C means a thread pool you wrote or a dependency you took.
 
 ### Layout, concretely
@@ -282,6 +283,19 @@ model on a machine you do not control, without an installer, on whatever archite
 has, the trade may be the only option that works.
 
 Chapter 11 is about how you know any of these numbers are real.
+
+
+## Try it
+
+Ask the binary what it can run on:
+
+```sh
+goinfer-serve --version
+```
+
+The darwin-arm64 release prints `backends: cpu metal`: the CPU path and the Metal backend, both in one cgo-free binary.
+Each release asset prints the backends compiled into it. Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md),
+chapter 10).
 
 ---
 

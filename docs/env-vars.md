@@ -143,7 +143,7 @@ mmap elsewhere (`decoder.MoEPagerDefault`). serve no longer sets it),
 `GOINFER_CUDA_ATTN_FUSED_TILE` (CUDA: overrides the attn_fused kernel's tile-size selection —
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
-`GOINFER_SPEC_ADAPTIVE_NEVER_YIELD` (MC4 "spec inside a batch" premise, `docs/tasks/task-concurrency-2026-09.md`:
+`GOINFER_SPEC_ADAPTIVE_NEVER_YIELD` (MC4 "spec inside a batch" premise, `docs/tasks/parked/task-concurrency-2026-09.md`:
 set to force a `-spec-adaptive` generation to wait for exclusive resident access every round instead of ever
 yielding to MC3's batch, reproducing today's plain `-spec ngram` one-at-a-time behavior even with
 `-spec-adaptive` on. A measurement bisect, not a shipped policy — no effect without `-spec-adaptive`),

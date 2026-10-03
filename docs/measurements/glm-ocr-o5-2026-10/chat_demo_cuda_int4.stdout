@@ -1,0 +1,51 @@
+{
+    "invoice_number": "INV-2026-0417",
+    "date": "2026-09-18",
+    "due_date": "2026-10-18",
+    "vendor": "Harbor Light Supply Co.",
+    "bill_to": "Northwind Printing LLC",
+    "currency": "USD",
+    "paid": false,
+    "line_items": [
+        {
+            "description": "Thermal label roll 100mm",
+            "quantity": 12,
+            "unit_price": 18.4,
+            "amount": 220.8
+        },
+        {
+            "description": "Ink cartridge, cyan",
+            "quantity": 6,
+            "unit_price": 42.15,
+            "amount": 252.9
+        },
+        {
+            "description": "Ink cartridge, black",
+            "quantity": 6,
+            "unit_price": 39.95,
+            "amount": 239.7
+        },
+        {
+            "description": "A4 paper, 80gsm (ream)",
+            "quantity": 40,
+            "unit_price": 5.25,
+            "amount": 210.0
+        },
+        {
+            "description": "Binding spine strips",
+            "quantity": 8,
+            "unit_price": 11.6,
+            "amount": 92.8
+        },
+        {
+            "description": "Shipping and handling",
+            "quantity": 1,
+            "unit_price": 35.0,
+            "amount": 35.0
+        }
+    ],
+    "subtotal": 1051.2,
+    "tax": 89.35,
+    "total": 1140.55
+}
+

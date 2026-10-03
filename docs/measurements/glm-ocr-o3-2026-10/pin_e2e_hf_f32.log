@@ -1,0 +1,28 @@
+loading /home/francis/models/glm-ocr (f32, eager attention)...
+loaded in 3s; transformers loaded model GlmOcrForConditionalGeneration
+[invoice:'Text Recognition:'] 1000x1300, grid [[1, 92, 72]], 6624 patches, 1668 prompt tokens (1656 image); generating 64 greedy tokens
+[invoice:'Text Recognition:'] still running, 30s elapsed
+[invoice:'Text Recognition:'] still running, 60s elapsed
+[invoice:'Text Recognition:'] done in 77s: stopped_at=None min-gap=1.7459
+INVOICE
+
+Invoice No: INV-2026-0417
+Date: 2026-09-18
+Due: 2026-10-18
+
+From: Harbor Light Supply Co.
+88 Quay Street
+Port
+-> /home/francis/mycode/goinfer/testdata/glm_ocr/golden_invoice.json.gz
+[table:'Table Recognition:'] 1200x900, grid [[1, 64, 86]], 5504 patches, 1388 prompt tokens (1376 image); generating 64 greedy tokens
+[table:'Table Recognition:'] still running, 30s elapsed
+[table:'Table Recognition:'] done in 56s: stopped_at=None min-gap=4.2310
+<table class="table table-bordered"><thead><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total</th></tr></thead><tbody><tr><td>North</
+-> /home/francis/mycode/goinfer/testdata/glm_ocr/golden_table.json.gz
+[formula:'Formula Recognition:'] 1000x1200, grid [[1, 86, 72]], 6192 patches, 1561 prompt tokens (1548 image); generating 64 greedy tokens
+[formula:'Formula Recognition:'] still running, 30s elapsed
+[formula:'Formula Recognition:'] still running, 60s elapsed
+[formula:'Formula Recognition:'] done in 66s: stopped_at=None min-gap=0.6320
+$$
+\begin{array}{l} \int_ {- \infty} ^ {\infty} e ^ {- x ^ {2}} d x = \sqrt {\pi} (1) \\ \mathrm {M o r e g e n e r l y , f o r a > 0 t h
+-> /home/francis/mycode/goinfer/testdata/glm_ocr/golden_formula.json.gz

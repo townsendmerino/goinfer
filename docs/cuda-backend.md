@@ -153,6 +153,11 @@ category **4.52×**, end-to-end prefill **3.91×** at K=3900 (5.451 s → 1.393 
 K=512. Against Ollama v0.32.5 the overhead-free marginal gap at depth goes **12.1× → 3.16×** (1.5B)
 and **14.5× → 1.89×** (0.5B).
 
+**A reply can depend on the provenance of reused KV rows (measured 2026-10-02).** The fused kernels are start-offset-invariant (`TestPrefillStartOffset`: a prompt split across two prefill calls is bit-identical to one call when both run the fast
+kernels). What differs is a prompt whose reused prefix was computed by the EXACT kernels (a short earlier request, below the floor, left rows in the slot) and whose remaining rows then run fast: a 3-token reuse of such rows shifted the first logits by 0.18 to 0.36 nat and flipped
+a near-tied token (`measurements/mc4-candidate-cuda-2026-10-01.md`, ROOT CAUSE). Slot-level prefix reuse exists when several generations are in flight, so under concurrent load which request reuses which slot's rows is a race. `GOINFER_CUDA_FAST_PREFILL=0` (exact kernels) removes it:
+every arm and schedule tested was then identical to the sequential reply. Since 2026-10-02 the decoder also declines a reuse of fewer than 64 tokens when the prompt will run the fast kernels (`decoder.declineShortLeadReuse`, via the `ResidentFastPrefill` capability this resident implements), which removes the short-lead case with fast prefill on; a longer reuse whose rows came from the exact kernels or the decode kernels is still a mix.
+
 **Why there is a 512-token floor, and why it is not a round number.** These kernels are not
 bit-identical — L2 uses f16 K/V with an online-rescaled softmax, L3 re-associates the cross-group
 float sum — so they went through `completed/task-prefill-gap.md` §3's fidelity gate: both arms scored against
@@ -221,8 +226,12 @@ Everything off that path routes to the existing staged/CPU path automatically �
 crash:
 
 - **No NVIDIA driver / dlopen fails** → declines, falls back to CPU, one-line stderr note.
-- **MLA / Mamba / hybrid / vision** → declines; runs staged. (A MoE with a shared expert no
-  longer belongs on this list — see above.)
+- **A family or checkpoint the resident path does not implement** → declines; runs staged or on the
+  CPU (`docs/hardware-matrix.md` is the current list: Mamba-2 hybrids such as Nemotron-H and Granite-4.0-H,
+  Gemma 4 E2B/E4B, and others). *Corrected 2026-10-02: this bullet used to read "MLA / Mamba / hybrid / vision".
+  MLA and the DeltaNet hybrids are resident now, as the list above says, and a vision checkpoint is not a decline:
+  its text decoder goes resident, and an image turn rides the `UploadKV` bridge — see `docs/multimodal.md`.
+  A MoE with a shared expert no longer belongs on this list either — see above.*
 - **Backend not built in** (`--backend cuda` on a binary without `-tags cuda`) → falls back
   to CPU with a note telling you to rebuild with `-tags cuda`.
 

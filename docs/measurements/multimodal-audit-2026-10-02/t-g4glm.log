@@ -1,0 +1,19 @@
+=== RUN   TestGemma4VLResident_bidirParity
+    gemma4_vl_resident_parity_test.go:127: CUDA-resident vs CPU-int4 (both W4A8), bidirectional-block prefill -> decode: 6/1536 bit-identical (0.391%); of the 1530 differing — ULP distance median 5718648, p99 26435384, max 31176072; max relative gap 2
+    gemma4_vl_resident_parity_test.go:127: CUDA-resident vs CPU-int4 (both W4A8), bidirectional-block prefill -> decode: of 6 bit-identical, 0 are the ARGMAX (0 of 6 positions) and 6 are elsewhere — e.g. pos0/logit0=0, pos1/logit0=0, pos2/logit0=0, pos3/logit0=0
+    gemma4_vl_resident_parity_test.go:147:   decode step  0  CUDA-vs-CPUint4 0.866917 | CPUint4-vs-f32 0.719528  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  1  CUDA-vs-CPUint4 0.897398 | CPUint4-vs-f32 0.734166  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  2  CUDA-vs-CPUint4 0.820268 | CPUint4-vs-f32 0.720813  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  3  CUDA-vs-CPUint4 0.875344 | CPUint4-vs-f32 0.690634  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  4  CUDA-vs-CPUint4 0.781774 | CPUint4-vs-f32 0.617150  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  5  CUDA-vs-CPUint4 0.812807 | CPUint4-vs-f32 0.670450  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:151: bidirectional-prefill resident bridge (256-local/512-global, K=V): pos0(decode-step-0)=0.866917 exact-argmax 6/6 | mean CUDA-vs-CPUint4=0.842418  CPUint4-vs-f32=0.692124 (min floor 0.6171)
+--- PASS: TestGemma4VLResident_bidirParity (1.69s)
+=== RUN   TestGlmOcrResidentParityCUDA
+    glm_ocr_resident_test.go:170: PAIRWISE kernels: text decode 48 pos worst cos 0.999772 relL2 0.0216 | text batched prefill cos 0.999959 relL2 0.0092 | image m-RoPE prefill cos 1.000000 relL2 0.0000 | decode past image (5 steps, ropePos=pos+mropeDelta) worst cos 1.000000 relL2 0.0000
+    glm_ocr_resident_test.go:170: NeoX control   : text decode 48 pos worst cos -0.336856 relL2 1.6951 | text batched prefill cos -0.044642 relL2 1.4015 | image m-RoPE prefill cos -0.228977 relL2 1.8116 | decode past image (5 steps, ropePos=pos+mropeDelta) worst cos 0.302069 relL2 1.1024
+--- PASS: TestGlmOcrResidentParityCUDA (0.36s)
+=== RUN   TestGlmOcrResidentAdmissionCUDA
+--- PASS: TestGlmOcrResidentAdmissionCUDA (0.25s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	2.350s

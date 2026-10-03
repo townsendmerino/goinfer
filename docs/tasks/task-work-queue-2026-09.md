@@ -90,11 +90,11 @@ reported rather than reddening the lint.
 Not rebuilt below; this is the floor J1–J9 build on.
 
 - **One decode worker per model.** `tryEnter` claims a queue slot and then takes its turn
-  (`internal/serveapp/openai.go:298`), and that turn is what serialises decode. The cap is
+  (`internal/serveapp/openai.go:302`), and that turn is what serialises decode. The cap is
   literally `1 running + --max-queue` (`internal/serveapp/openai.go:97`).
 - **The wait is not fair and not context-aware by itself.** `sync.Mutex.Lock()` has no context, so
   a second check exists purely so a halt can cut a waiter loose
-  (`internal/serveapp/openai.go:298`). Waiters are woken in whatever order the mutex chooses: a
+  (`internal/serveapp/openai.go:302`). Waiters are woken in whatever order the mutex chooses: a
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
@@ -104,7 +104,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   template render — and is deliberately distinct from the per-model 429
   (`internal/serveapp/helpers.go:85`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1409`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/serveapp/openai.go:1418`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
@@ -114,7 +114,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   (`internal/serveapp/embeddings.go:34`) — the only bulk surface in the product, and the shape J4
   generalises.
 - **No batch CLI.** `goinfer-chat` takes one `--model` and one conversation
-  (`internal/chatapp/main.go:147`); there is no file-in/file-out mode.
+  (`internal/chatapp/main.go:151`); there is no file-in/file-out mode.
 - **From K1/K2/K5, already shipped:** a generation registry with cancel-by-id, global halt with
   in-flight cancellation, and an admin unix socket. J2 and J3 are the durable layer those three
   already assume exists and currently do without.
@@ -143,7 +143,7 @@ Replace the bare mutex wait with an explicit queue the server can reason about.
 
 - A per-model FIFO of waiting requests with a real `context.Context` per waiter, so a cancelled or
   halted waiter leaves immediately and the second halt check in
-  `internal/serveapp/openai.go:298` stops being load-bearing.
+  `internal/serveapp/openai.go:302` stops being load-bearing.
 - **Context-aware**, in both senses: the admission record carries the request's prompt-token count
   and its session/prefix key, so J6 and J7 have something to schedule on. J1 itself keeps strict
   FIFO — it establishes the structure and changes no order.
@@ -472,7 +472,7 @@ would plausibly turn a clean 1.024× into 1.3×, so not chased further).
 
 ## J8 — N decode workers per model: kill or earn
 
-**Folded 2026-09-26 into [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
+**Folded 2026-09-26 into [`task-concurrency-2026-09.md`](parked/task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
 N-independent-workers cell is measured there, in the same session as batched decode, so the two answers land side by
 side. Its band below is kept. It is not built as a feature either way. **Measured 2026-09-26 (Mac CPU,
 `concurrency-mc2-2026-09-26.md`):** 4 workers reach 2.00–2.48× aggregate, clearing the 1.25× half. **The p99 half, measured
@@ -529,7 +529,7 @@ check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct 
 429) · `internal/loadflags/loadflags.go:70`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:621` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
-surface) · `internal/chatapp/main.go:147` (the CLI J5 extends) ·
+surface) · `internal/chatapp/main.go:151` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §3.3 ·
 [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27–W31 · `docs/api-tiers.md` (what `serve` promises)

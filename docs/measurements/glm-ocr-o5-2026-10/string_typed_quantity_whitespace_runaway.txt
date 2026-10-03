@@ -1,0 +1,18 @@
+GLM-OCR O5 finding, 2026-10-02: a STRING-typed numeric column makes the grammar loop on whitespace until max_tokens.
+Schema: testdata/glm_ocr/invoice.schema.json with quantity, unit_price, amount, subtotal, tax and total changed from number/integer to string (template shows "" for them).
+Request: testdata/glm_ocr/invoice.png, no text part, temperature 0, max_tokens 300, serve-cuda int4 (commit 1aa61eb3). The reply below ends at "quantity":; everything after it is whitespace (the python prints repr of the last 80 chars):
+
+seconds 46.7 usage {'prompt_tokens': 1766, 'completion_tokens': 300, 'total_tokens': 2066, 'prefill_reused_tokens': 0} finish length
+{
+    "invoice_number": "INV-2026-0417",
+    "date": "2026-09-18",
+    "due_date": "2026-10-18",
+    "vendor": "Harbor Light Supply Co.",
+    "bill_to": "Northwind Printing LLC",
+    "currency": "USD",
+    "paid": false,
+    "line_items": [
+        {
+            "description": "Thermal label roll 100mm",
+            "quantity":
+LEN 510 TAIL '                                                                                '

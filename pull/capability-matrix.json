@@ -268,6 +268,32 @@
     "parity": "experimental: tiny-oracle 100.0%/1.00000"
   },
   {
+    "name": "glm_ocr",
+    "model_types": [
+      "glm_ocr",
+      "glm_ocr_text"
+    ],
+    "display_name": "GLM-OCR",
+    "description": "Zhipu GLM-OCR (0.9B document OCR): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; its own vision tower (aikit, CPU) feeds merged rows through the Qwen-shaped image path",
+    "summary": "Zhipu's GLM-OCR document model. Reads an image of a page: text, a table or a formula out, or, given a schema, JSON that matches it (goinfer-chat --image invoice.png --schema invoice.schema.json). Verified on the real checkpoint, token-identical to transformers at f32. Images up to 6,144 image tokens, about 4.8 megapixels: no smaller default cap yet.",
+    "tasks": [
+      "chat",
+      "vision"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "m-RoPE",
+    "norm": "RMSNorm, sandwich",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ vision tower, CPU)",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "gpt2",
     "model_types": [
       "gpt2"
@@ -348,9 +374,10 @@
     ],
     "display_name": "Gemma 3",
     "description": "Google Gemma 3 dense (270M/1B/4B/12B/27B)",
-    "summary": "Google's Gemma 3, from 270M to 27B.",
+    "summary": "Google's Gemma 3, from 270M to 27B. The 4B and larger read images (verified on the 4B).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",

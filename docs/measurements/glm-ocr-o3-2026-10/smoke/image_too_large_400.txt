@@ -1,0 +1,4 @@
+serve-cpu (int4) on a COPY of the checkpoint whose text_config.max_position_embeddings is 1024 (symlinked weights, patched config.json);
+POST /v1/chat/completions, the 1,656-image-token invoice. HTTP 400, before the tower ran:
+
+{"error":{"message":"image_too_large_for_context: this image is 1656 image tokens (a 72x92-patch grid) but the context window is 1024 tokens; send a smaller image (the model's own ceiling is 6144 tokens, 4.8 MP) or raise the context","type":"invalid_request_error"}}

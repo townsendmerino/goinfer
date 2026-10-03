@@ -1,0 +1,18 @@
+--- section 21: '```go\nvar prefillDecline'
+  tok 0: '```'          gap top1-top2 = 4.457   [('```', -0.041), (' ```', -4.498), ('``', -4.757)]
+  tok 1: 'go'           gap top1-top2 = 8.08   [('go', -0.002), ('Go', -8.082), ('java', -8.332)]
+  tok 2: '\n'           gap top1-top2 = 0.015   [('\n', -0.71), ('\n\n', -0.725), ('\n\n\n', -4.233)]
+  tok 3: 'var'          gap top1-top2 = 0.115   [('var', -0.726), ('//', -0.841), ('package', -3.225)]
+  tok 4: ' pre'         gap top1-top2 = 7.033   [(' pre', -0.003), (' pref', -7.036), (' _', -7.527)]
+  tok 5: 'fill'         gap top1-top2 = 9.864   [('fill', -0.0), ('pref', -9.864), (' refill', -11.601)]
+  tok 6: 'Decl'         gap top1-top2 = 10.224   [('Decl', -0.0), (' Decl', -10.224), ('_decl', -10.791)]
+  tok 7: 'ine'          gap top1-top2 = 10.425   [('ine', -0.0), ('ines', -10.425), ('ive', -10.528)]
+--- section 0: '```go\nimport (\n\t"context"\n'
+  tok 0: '```'          gap top1-top2 = 4.594   [('```', -0.027), (' ```', -4.621), ('Here', -5.503)]
+  tok 1: 'go'           gap top1-top2 = 8.089   [('go', -0.001), ('Go', -8.09), ('java', -8.569)]
+  tok 2: '\n'           gap top1-top2 = 0.428   [('\n', -0.514), ('\n\n', -0.942), ('\n\n\n', -5.095)]
+  tok 3: 'import'       gap top1-top2 = 1.308   [('import', -0.248), ('package', -1.556), ('//', -5.705)]
+  tok 4: ' (\n'         gap top1-top2 = 4.314   [(' (\n', -0.026), ('(\n', -4.34), (' "', -4.669)]
+  tok 5: '\t'           gap top1-top2 = 3.363   [('\t', -0.052), ('   ', -3.415), ('       ', -5.394)]
+  tok 6: '"context'     gap top1-top2 = 7.903   [('"context', -0.001), ('"', -7.904), ('"bytes', -8.621)]
+  tok 7: '"\n'          gap top1-top2 = 8.854   [('"\n', -0.0), ('"', -8.854), ('"\n\n', -10.524)]

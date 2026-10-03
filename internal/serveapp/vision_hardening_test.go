@@ -245,4 +245,5 @@ func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 	}
 	check("qwenVisionPrompt", "multimodal.QwenImageBlock(n)")
 	check("gemma4VisionPrompt", "multimodal.Gemma4ImageBlock(n)")
+	check("glmOcrVisionPrompt", "multimodal.GlmOcrImageBlock(n)") // GLM-OCR: image first, the task prompt directly after
 }

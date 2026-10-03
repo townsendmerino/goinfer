@@ -181,8 +181,13 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		// (audit-2026-09-10 G-13(b)). Both figures are this census's first reading of them.
 		"route_gptoss":          4608, // gptoss_act.ptx; larger than moe_route, so backend.go forces it too
 		"rope_kv_mrope_batched": 32,   // rope_mrope_prefill.ptx
-		"mla_q_rope":            32,   // mla.ptx (FeatMLA)
-		"mla_latent_store":      32,   // mla.ptx (FeatMLA)
+		// rope_pairwise.ptx: the GPT-J pairwise twins; the same 28 B cosf/sinf slow-path scratch
+		// (argument reduction) as their NeoX counterparts above.
+		"rope_kv_pw":               32,
+		"rope_kv_batched_pw":       32,
+		"rope_kv_mrope_batched_pw": 32,
+		"mla_q_rope":               32, // mla.ptx (FeatMLA)
+		"mla_latent_store":         32, // mla.ptx (FeatMLA)
 		// deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
 		// scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
 		// registers (launch_bounds(128, 1) measured the same 96 B). 3.8 MiB at full occupancy, against the 1.23 s →

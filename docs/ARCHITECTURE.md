@@ -287,15 +287,22 @@ because they did not pay, and their records stay:
 
 Vision in, text out, and on serve only (`--vision`).
 
-- **Towers** live in `aikit/vision`: SigLIP for Gemma 3, Gemma 4's own ViT, and the
-  dynamic-resolution ViT for Qwen2.5-VL.
+- **Towers** live in `aikit/vision`: SigLIP for Gemma 3, Gemma 4's own ViT, the
+  dynamic-resolution ViT for Qwen2.5-VL, the Qwen3.5+ tower, and GLM-OCR's own tower.
 - **`multimodal`** holds the goinfer side: projectors, image-token blocks, preprocessing, and image
   hashing.
 - **Splicing.** The image's embeddings go into the prompt at its placeholder tokens (`GenerateVL`,
   `GenerateQwenVL` with m-RoPE positions, `GenerateGemma4VL`). The text decoder is unchanged.
-- **Qwen3-VL** loads as a text-only decoder.
-- **Where towers run.** The SigLIP tower runs resident on WebGPU and CUDA (`vision.RegisterResident`).
-  The other towers run on the CPU, and the text decode after them stays resident.
+- **Qwen3-VL** loads as a text-only decoder, and a `mistral3` checkpoint's tower is ignored.
+- **Where towers run.** Only the SigLIP tower runs resident, on WebGPU and CUDA (`vision.RegisterResident`);
+  Metal runs no tower. The other towers run on the CPU on every backend. aikit has resident modules for the
+  Qwen2.5-VL tower (`gpu/qwencuda`, `gpu/qwenmetal`) and for SigLIP (`gpu/visioncuda`, `gpu/visionmetal`);
+  goinfer imports none of them.
+- **Where the decode runs after the image.** Resident for Gemma 3, Qwen2.5-VL and Gemma 4 26B/31B (the CPU's
+  image-block prefill is uploaded with `UploadKV`; CUDA also prefills the image resident), and for GLM-OCR on CUDA.
+  **Not resident:** Qwen3.5+ (a recurrent family refuses every resident branch), Gemma 4 E2B/E4B, and GLM-OCR off CUDA.
+  The per-family, per-backend table, with what was run and what was only read, is in
+  [`multimodal.md`](multimodal.md)'s status block and `docs/measurements/multimodal-audit-2026-10-02.md`.
 - **Hashing.** Each image is hashed (FNV-64a of its bytes), so resident prefix reuse survives an
   image turn.
 
@@ -750,7 +757,7 @@ user on consumer hardware.
     disk snapshots. Snapshots refuse recurrent and MLA caches.
   - **A resident model** skips the sessions and takes the stateless path, because its KV lives on
     the device. The resident cache's own prefix reuse (§3) serves the most recent conversation — on Metal, CUDA and
-    WebGPU, one per GPU KV slot (`--kv-sessions`, MC1 of `docs/tasks/task-concurrency-2026-09.md`), bound per generation by
+    WebGPU, one per GPU KV slot (`--kv-sessions`, MC1 of `docs/tasks/parked/task-concurrency-2026-09.md`), bound per generation by
     `residentAcquire`.
   - **A compute-time adapter** routes a request through the session path whatever the backend.
 - **One generation core.** `/v1/chat/completions`, `/v1/responses` and `/v1/messages` differ only in

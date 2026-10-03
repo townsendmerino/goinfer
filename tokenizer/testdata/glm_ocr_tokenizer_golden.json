@@ -1,0 +1,2292 @@
+{
+"tokenizer": "zai-org/GLM-OCR tokenizer.json (revision 2e85a62840ccac27daa451df36c736c4636b8628)",
+"transformers": "5.12.0",
+"added": [
+{
+"content": "<|endoftext|>",
+"id": 59246
+},
+{
+"content": "[MASK]",
+"id": 59247
+},
+{
+"content": "[gMASK]",
+"id": 59248
+},
+{
+"content": "[sMASK]",
+"id": 59249
+},
+{
+"content": "<sop>",
+"id": 59250
+},
+{
+"content": "<eop>",
+"id": 59251
+},
+{
+"content": "<|system|>",
+"id": 59252
+},
+{
+"content": "<|user|>",
+"id": 59253
+},
+{
+"content": "<|assistant|>",
+"id": 59254
+},
+{
+"content": "<|observation|>",
+"id": 59255
+},
+{
+"content": "<|begin_of_image|>",
+"id": 59256
+},
+{
+"content": "<|end_of_image|>",
+"id": 59257
+},
+{
+"content": "<|begin_of_video|>",
+"id": 59258
+},
+{
+"content": "<|end_of_video|>",
+"id": 59259
+},
+{
+"content": "<|begin_of_audio|>",
+"id": 59260
+},
+{
+"content": "<|end_of_audio|>",
+"id": 59261
+},
+{
+"content": "<|begin_of_transcription|>",
+"id": 59262
+},
+{
+"content": "<|end_of_transcription|>",
+"id": 59263
+},
+{
+"content": "<|code_prefix|>",
+"id": 59264
+},
+{
+"content": "<|code_middle|>",
+"id": 59265
+},
+{
+"content": "<|code_suffix|>",
+"id": 59266
+},
+{
+"content": "<think>",
+"id": 59267
+},
+{
+"content": "</think>",
+"id": 59268
+},
+{
+"content": "<tool_call>",
+"id": 59269
+},
+{
+"content": "</tool_call>",
+"id": 59270
+},
+{
+"content": "<tool_response>",
+"id": 59271
+},
+{
+"content": "</tool_response>",
+"id": 59272
+},
+{
+"content": "<arg_key>",
+"id": 59273
+},
+{
+"content": "</arg_key>",
+"id": 59274
+},
+{
+"content": "<arg_value>",
+"id": 59275
+},
+{
+"content": "</arg_value>",
+"id": 59276
+},
+{
+"content": "/nothink",
+"id": 59277
+},
+{
+"content": "<|begin_of_box|>",
+"id": 59278
+},
+{
+"content": "<|end_of_box|>",
+"id": 59279
+},
+{
+"content": "<|image|>",
+"id": 59280
+},
+{
+"content": "<|video|>",
+"id": 59281
+}
+],
+"cases": [
+{
+"text": "",
+"ids": []
+},
+{
+"text": "Hello, world!",
+"ids": [
+22519,
+44,
+2901,
+33
+]
+},
+{
+"text": "1",
+"ids": [
+49
+]
+},
+{
+"text": "12",
+"ids": [
+49,
+50
+]
+},
+{
+"text": "123",
+"ids": [
+49,
+50,
+51
+]
+},
+{
+"text": "1234",
+"ids": [
+49,
+50,
+51,
+52
+]
+},
+{
+"text": "12345",
+"ids": [
+49,
+50,
+51,
+52,
+53
+]
+},
+{
+"text": "123456",
+"ids": [
+49,
+50,
+51,
+52,
+53,
+54
+]
+},
+{
+"text": "1234567",
+"ids": [
+49,
+50,
+51,
+52,
+53,
+54,
+55
+]
+},
+{
+"text": "Invoice No. 20240131-0042, total $1,234,567.89 (12.5%)",
+"ids": [
+928,
+26268,
+4355,
+46,
+32,
+50,
+48,
+50,
+52,
+48,
+49,
+51,
+49,
+45,
+48,
+48,
+52,
+50,
+44,
+4902,
+773,
+49,
+44,
+50,
+51,
+52,
+44,
+53,
+54,
+55,
+46,
+56,
+57,
+386,
+49,
+50,
+46,
+53,
+11611
+]
+},
+{
+"text": "x=1;y=22;z=333;w=4444;v=55555",
+"ids": [
+120,
+61,
+49,
+59,
+121,
+61,
+50,
+50,
+59,
+122,
+61,
+51,
+51,
+51,
+59,
+119,
+61,
+52,
+52,
+52,
+52,
+59,
+118,
+61,
+53,
+53,
+53,
+53,
+53
+]
+},
+{
+"text": "a\nb",
+"ids": [
+97,
+10,
+98
+]
+},
+{
+"text": "a\n\nb",
+"ids": [
+97,
+378,
+98
+]
+},
+{
+"text": "a\r\nb",
+"ids": [
+97,
+594,
+98
+]
+},
+{
+"text": "\n",
+"ids": [
+10
+]
+},
+{
+"text": "\n\n\n",
+"ids": [
+5387
+]
+},
+{
+"text": " \n ",
+"ids": [
+1369,
+32
+]
+},
+{
+"text": "line1\nline2\n",
+"ids": [
+1620,
+49,
+10,
+1620,
+50,
+10
+]
+},
+{
+"text": " leading",
+"ids": [
+9449
+]
+},
+{
+"text": "trailing ",
+"ids": [
+16211,
+11548,
+32
+]
+},
+{
+"text": "  two leading",
+"ids": [
+32,
+2107,
+9449
+]
+},
+{
+"text": "two trailing  ",
+"ids": [
+36611,
+1404,
+11548,
+256
+]
+},
+{
+"text": "a  b   c",
+"ids": [
+97,
+32,
+298,
+256,
+272
+]
+},
+{
+"text": " ",
+"ids": [
+32
+]
+},
+{
+"text": "  ",
+"ids": [
+256
+]
+},
+{
+"text": "\t",
+"ids": [
+9
+]
+},
+{
+"text": "a\tb",
+"ids": [
+97,
+7740
+]
+},
+{
+"text": "don't I'll we've she'd they're it's THEY'RE I'M",
+"ids": [
+27054,
+2376,
+392,
+9842,
+703,
+11158,
+2344,
+11229,
+1150,
+6243,
+524,
+1106,
+8088,
+89,
+39,
+1575,
+392,
+39,
+77
+]
+},
+{
+"text": "中文文本识别",
+"ids": [
+16982,
+11868,
+13625
+]
+},
+{
+"text": "请按下列JSON格式输出图中信息:",
+"ids": [
+2517,
+2360,
+14252,
+11786,
+12156,
+8855,
+38107,
+2265,
+58
+]
+},
+{
+"text": "日本語のテキスト、数字123と英語mixed",
+"ids": [
+5057,
+23150,
+1336,
+9314,
+11417,
+13550,
+396,
+6766,
+49,
+50,
+51,
+2278,
+2706,
+23150,
+109,
+6116
+]
+},
+{
+"text": "한국어 텍스트",
+"ids": [
+9527,
+27625,
+18789,
+6039,
+133,
+141,
+16636,
+23219
+]
+},
+{
+"text": "Text Recognition:",
+"ids": [
+3649,
+7404,
+49600,
+58
+]
+},
+{
+"text": "Formula Recognition:",
+"ids": [
+4000,
+6062,
+7404,
+49600,
+58
+]
+},
+{
+"text": "Table Recognition:",
+"ids": [
+5964,
+7404,
+49600,
+58
+]
+},
+{
+"text": "$$\\int_0^1 x^2 dx = \\frac{1}{3}$$",
+"ids": [
+13628,
+92,
+721,
+95,
+48,
+94,
+49,
+1673,
+94,
+50,
+36990,
+377,
+1659,
+11972,
+123,
+49,
+9102,
+51,
+37672
+]
+},
+{
+"text": "| a | b |\n|---|---|\n| 1 | 2 |",
+"ids": [
+124,
+261,
+1067,
+298,
+7038,
+124,
+5161,
+124,
+5161,
+3628,
+124,
+32,
+49,
+1067,
+32,
+50,
+1067
+]
+},
+{
+"text": "{\"name\": \"\", \"amount\": \"\", \"date\": \"\"}",
+"ids": [
+10975,
+1289,
+1568,
+22096,
+425,
+21795,
+1568,
+22096,
+425,
+2187,
+1568,
+6344,
+125
+]
+},
+{
+"text": "<html><body>x</body></html>",
+"ids": [
+30280,
+2582,
+5502,
+62,
+120,
+736,
+5502,
+2631,
+2860,
+62
+]
+},
+{
+"text": "<unk> <pad> </s> <s>",
+"ids": [
+60,
+4702,
+62,
+513,
+18927,
+62,
+1269,
+115,
+62,
+513,
+115,
+62
+]
+},
+{
+"text": "emoji 😀 and éè café",
+"ids": [
+12355,
+5857,
+38564,
+128,
+332,
+1810,
+2042,
+45581
+]
+},
+{
+"text": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. ",
+"ids": [
+1026,
+6123,
+24257,
+292,
+1828,
+612,
+21798,
+1403,
+283,
+37821,
+8942,
+46,
+678,
+6123,
+24257,
+292,
+1828,
+612,
+21798,
+1403,
+283,
+37821,
+8942,
+46,
+678,
+6123,
+24257,
+292,
+1828,
+612,
+21798,
+1403,
+283,
+37821,
+8942,
+46,
+32
+]
+},
+{
+"text": "[gMASK]<sop><|user|>\n<|begin_of_image|><|image|><|image|><|image|><|image|><|image|><|end_of_image|>Text Recognition:<|assistant|>\n",
+"ids": [
+59248,
+59250,
+59253,
+10,
+59256,
+59280,
+59280,
+59280,
+59280,
+59280,
+59257,
+3649,
+7404,
+49600,
+58,
+59254,
+10
+]
+},
+{
+"text": "[gMASK]<sop><|user|>\n<|begin_of_image|><|image|><|end_of_image|>Text Recognition:<|assistant|>\n<think></think>\n",
+"ids": [
+59248,
+59250,
+59253,
+10,
+59256,
+59280,
+59257,
+3649,
+7404,
+49600,
+58,
+59254,
+10,
+59267,
+59268,
+10
+]
+},
+{
+"text": "<|user|>\nhi<|assistant|>\n<think>reasoning 123</think>\nanswer<|endoftext|>",
+"ids": [
+59253,
+10,
+9724,
+59254,
+10,
+59267,
+40139,
+302,
+32,
+49,
+50,
+51,
+59268,
+10,
+30705,
+59246
+]
+},
+{
+"text": "<tool_call>f<arg_key>k</arg_key><arg_value>v</arg_value></tool_call><tool_response>r</tool_response>",
+"ids": [
+59269,
+102,
+59273,
+107,
+59274,
+59275,
+118,
+59276,
+59270,
+59271,
+114,
+59272
+]
+},
+{
+"text": "<|begin_of_box|>1234<|end_of_box|><|begin_of_video|><|video|><|end_of_video|>",
+"ids": [
+59278,
+49,
+50,
+51,
+52,
+59279,
+59258,
+59281,
+59259
+]
+},
+{
+"text": "<|endoftext|>",
+"ids": [
+59246
+]
+},
+{
+"text": "a<|endoftext|>b",
+"ids": [
+97,
+59246,
+98
+]
+},
+{
+"text": " <|endoftext|> ",
+"ids": [
+32,
+59246,
+32
+]
+},
+{
+"text": "<|endoftext|><|endoftext|>",
+"ids": [
+59246,
+59246
+]
+},
+{
+"text": "12<|endoftext|>345\n<|endoftext|>",
+"ids": [
+49,
+50,
+59246,
+51,
+52,
+53,
+10,
+59246
+]
+},
+{
+"text": "[MASK]",
+"ids": [
+59247
+]
+},
+{
+"text": "a[MASK]b",
+"ids": [
+97,
+59247,
+98
+]
+},
+{
+"text": " [MASK] ",
+"ids": [
+32,
+59247,
+32
+]
+},
+{
+"text": "[MASK][MASK]",
+"ids": [
+59247,
+59247
+]
+},
+{
+"text": "12[MASK]345\n[MASK]",
+"ids": [
+49,
+50,
+59247,
+51,
+52,
+53,
+10,
+59247
+]
+},
+{
+"text": "[gMASK]",
+"ids": [
+59248
+]
+},
+{
+"text": "a[gMASK]b",
+"ids": [
+97,
+59248,
+98
+]
+},
+{
+"text": " [gMASK] ",
+"ids": [
+32,
+59248,
+32
+]
+},
+{
+"text": "[gMASK][gMASK]",
+"ids": [
+59248,
+59248
+]
+},
+{
+"text": "12[gMASK]345\n[gMASK]",
+"ids": [
+49,
+50,
+59248,
+51,
+52,
+53,
+10,
+59248
+]
+},
+{
+"text": "[sMASK]",
+"ids": [
+59249
+]
+},
+{
+"text": "a[sMASK]b",
+"ids": [
+97,
+59249,
+98
+]
+},
+{
+"text": " [sMASK] ",
+"ids": [
+32,
+59249,
+32
+]
+},
+{
+"text": "[sMASK][sMASK]",
+"ids": [
+59249,
+59249
+]
+},
+{
+"text": "12[sMASK]345\n[sMASK]",
+"ids": [
+49,
+50,
+59249,
+51,
+52,
+53,
+10,
+59249
+]
+},
+{
+"text": "<sop>",
+"ids": [
+59250
+]
+},
+{
+"text": "a<sop>b",
+"ids": [
+97,
+59250,
+98
+]
+},
+{
+"text": " <sop> ",
+"ids": [
+32,
+59250,
+32
+]
+},
+{
+"text": "<sop><sop>",
+"ids": [
+59250,
+59250
+]
+},
+{
+"text": "12<sop>345\n<sop>",
+"ids": [
+49,
+50,
+59250,
+51,
+52,
+53,
+10,
+59250
+]
+},
+{
+"text": "<eop>",
+"ids": [
+59251
+]
+},
+{
+"text": "a<eop>b",
+"ids": [
+97,
+59251,
+98
+]
+},
+{
+"text": " <eop> ",
+"ids": [
+32,
+59251,
+32
+]
+},
+{
+"text": "<eop><eop>",
+"ids": [
+59251,
+59251
+]
+},
+{
+"text": "12<eop>345\n<eop>",
+"ids": [
+49,
+50,
+59251,
+51,
+52,
+53,
+10,
+59251
+]
+},
+{
+"text": "<|system|>",
+"ids": [
+59252
+]
+},
+{
+"text": "a<|system|>b",
+"ids": [
+97,
+59252,
+98
+]
+},
+{
+"text": " <|system|> ",
+"ids": [
+32,
+59252,
+32
+]
+},
+{
+"text": "<|system|><|system|>",
+"ids": [
+59252,
+59252
+]
+},
+{
+"text": "12<|system|>345\n<|system|>",
+"ids": [
+49,
+50,
+59252,
+51,
+52,
+53,
+10,
+59252
+]
+},
+{
+"text": "<|user|>",
+"ids": [
+59253
+]
+},
+{
+"text": "a<|user|>b",
+"ids": [
+97,
+59253,
+98
+]
+},
+{
+"text": " <|user|> ",
+"ids": [
+32,
+59253,
+32
+]
+},
+{
+"text": "<|user|><|user|>",
+"ids": [
+59253,
+59253
+]
+},
+{
+"text": "12<|user|>345\n<|user|>",
+"ids": [
+49,
+50,
+59253,
+51,
+52,
+53,
+10,
+59253
+]
+},
+{
+"text": "<|assistant|>",
+"ids": [
+59254
+]
+},
+{
+"text": "a<|assistant|>b",
+"ids": [
+97,
+59254,
+98
+]
+},
+{
+"text": " <|assistant|> ",
+"ids": [
+32,
+59254,
+32
+]
+},
+{
+"text": "<|assistant|><|assistant|>",
+"ids": [
+59254,
+59254
+]
+},
+{
+"text": "12<|assistant|>345\n<|assistant|>",
+"ids": [
+49,
+50,
+59254,
+51,
+52,
+53,
+10,
+59254
+]
+},
+{
+"text": "<|observation|>",
+"ids": [
+59255
+]
+},
+{
+"text": "a<|observation|>b",
+"ids": [
+97,
+59255,
+98
+]
+},
+{
+"text": " <|observation|> ",
+"ids": [
+32,
+59255,
+32
+]
+},
+{
+"text": "<|observation|><|observation|>",
+"ids": [
+59255,
+59255
+]
+},
+{
+"text": "12<|observation|>345\n<|observation|>",
+"ids": [
+49,
+50,
+59255,
+51,
+52,
+53,
+10,
+59255
+]
+},
+{
+"text": "<|begin_of_image|>",
+"ids": [
+59256
+]
+},
+{
+"text": "a<|begin_of_image|>b",
+"ids": [
+97,
+59256,
+98
+]
+},
+{
+"text": " <|begin_of_image|> ",
+"ids": [
+32,
+59256,
+32
+]
+},
+{
+"text": "<|begin_of_image|><|begin_of_image|>",
+"ids": [
+59256,
+59256
+]
+},
+{
+"text": "12<|begin_of_image|>345\n<|begin_of_image|>",
+"ids": [
+49,
+50,
+59256,
+51,
+52,
+53,
+10,
+59256
+]
+},
+{
+"text": "<|end_of_image|>",
+"ids": [
+59257
+]
+},
+{
+"text": "a<|end_of_image|>b",
+"ids": [
+97,
+59257,
+98
+]
+},
+{
+"text": " <|end_of_image|> ",
+"ids": [
+32,
+59257,
+32
+]
+},
+{
+"text": "<|end_of_image|><|end_of_image|>",
+"ids": [
+59257,
+59257
+]
+},
+{
+"text": "12<|end_of_image|>345\n<|end_of_image|>",
+"ids": [
+49,
+50,
+59257,
+51,
+52,
+53,
+10,
+59257
+]
+},
+{
+"text": "<|begin_of_video|>",
+"ids": [
+59258
+]
+},
+{
+"text": "a<|begin_of_video|>b",
+"ids": [
+97,
+59258,
+98
+]
+},
+{
+"text": " <|begin_of_video|> ",
+"ids": [
+32,
+59258,
+32
+]
+},
+{
+"text": "<|begin_of_video|><|begin_of_video|>",
+"ids": [
+59258,
+59258
+]
+},
+{
+"text": "12<|begin_of_video|>345\n<|begin_of_video|>",
+"ids": [
+49,
+50,
+59258,
+51,
+52,
+53,
+10,
+59258
+]
+},
+{
+"text": "<|end_of_video|>",
+"ids": [
+59259
+]
+},
+{
+"text": "a<|end_of_video|>b",
+"ids": [
+97,
+59259,
+98
+]
+},
+{
+"text": " <|end_of_video|> ",
+"ids": [
+32,
+59259,
+32
+]
+},
+{
+"text": "<|end_of_video|><|end_of_video|>",
+"ids": [
+59259,
+59259
+]
+},
+{
+"text": "12<|end_of_video|>345\n<|end_of_video|>",
+"ids": [
+49,
+50,
+59259,
+51,
+52,
+53,
+10,
+59259
+]
+},
+{
+"text": "<|begin_of_audio|>",
+"ids": [
+59260
+]
+},
+{
+"text": "a<|begin_of_audio|>b",
+"ids": [
+97,
+59260,
+98
+]
+},
+{
+"text": " <|begin_of_audio|> ",
+"ids": [
+32,
+59260,
+32
+]
+},
+{
+"text": "<|begin_of_audio|><|begin_of_audio|>",
+"ids": [
+59260,
+59260
+]
+},
+{
+"text": "12<|begin_of_audio|>345\n<|begin_of_audio|>",
+"ids": [
+49,
+50,
+59260,
+51,
+52,
+53,
+10,
+59260
+]
+},
+{
+"text": "<|end_of_audio|>",
+"ids": [
+59261
+]
+},
+{
+"text": "a<|end_of_audio|>b",
+"ids": [
+97,
+59261,
+98
+]
+},
+{
+"text": " <|end_of_audio|> ",
+"ids": [
+32,
+59261,
+32
+]
+},
+{
+"text": "<|end_of_audio|><|end_of_audio|>",
+"ids": [
+59261,
+59261
+]
+},
+{
+"text": "12<|end_of_audio|>345\n<|end_of_audio|>",
+"ids": [
+49,
+50,
+59261,
+51,
+52,
+53,
+10,
+59261
+]
+},
+{
+"text": "<|begin_of_transcription|>",
+"ids": [
+59262
+]
+},
+{
+"text": "a<|begin_of_transcription|>b",
+"ids": [
+97,
+59262,
+98
+]
+},
+{
+"text": " <|begin_of_transcription|> ",
+"ids": [
+32,
+59262,
+32
+]
+},
+{
+"text": "<|begin_of_transcription|><|begin_of_transcription|>",
+"ids": [
+59262,
+59262
+]
+},
+{
+"text": "12<|begin_of_transcription|>345\n<|begin_of_transcription|>",
+"ids": [
+49,
+50,
+59262,
+51,
+52,
+53,
+10,
+59262
+]
+},
+{
+"text": "<|end_of_transcription|>",
+"ids": [
+59263
+]
+},
+{
+"text": "a<|end_of_transcription|>b",
+"ids": [
+97,
+59263,
+98
+]
+},
+{
+"text": " <|end_of_transcription|> ",
+"ids": [
+32,
+59263,
+32
+]
+},
+{
+"text": "<|end_of_transcription|><|end_of_transcription|>",
+"ids": [
+59263,
+59263
+]
+},
+{
+"text": "12<|end_of_transcription|>345\n<|end_of_transcription|>",
+"ids": [
+49,
+50,
+59263,
+51,
+52,
+53,
+10,
+59263
+]
+},
+{
+"text": "<|code_prefix|>",
+"ids": [
+59264
+]
+},
+{
+"text": "a<|code_prefix|>b",
+"ids": [
+97,
+59264,
+98
+]
+},
+{
+"text": " <|code_prefix|> ",
+"ids": [
+32,
+59264,
+32
+]
+},
+{
+"text": "<|code_prefix|><|code_prefix|>",
+"ids": [
+59264,
+59264
+]
+},
+{
+"text": "12<|code_prefix|>345\n<|code_prefix|>",
+"ids": [
+49,
+50,
+59264,
+51,
+52,
+53,
+10,
+59264
+]
+},
+{
+"text": "<|code_middle|>",
+"ids": [
+59265
+]
+},
+{
+"text": "a<|code_middle|>b",
+"ids": [
+97,
+59265,
+98
+]
+},
+{
+"text": " <|code_middle|> ",
+"ids": [
+32,
+59265,
+32
+]
+},
+{
+"text": "<|code_middle|><|code_middle|>",
+"ids": [
+59265,
+59265
+]
+},
+{
+"text": "12<|code_middle|>345\n<|code_middle|>",
+"ids": [
+49,
+50,
+59265,
+51,
+52,
+53,
+10,
+59265
+]
+},
+{
+"text": "<|code_suffix|>",
+"ids": [
+59266
+]
+},
+{
+"text": "a<|code_suffix|>b",
+"ids": [
+97,
+59266,
+98
+]
+},
+{
+"text": " <|code_suffix|> ",
+"ids": [
+32,
+59266,
+32
+]
+},
+{
+"text": "<|code_suffix|><|code_suffix|>",
+"ids": [
+59266,
+59266
+]
+},
+{
+"text": "12<|code_suffix|>345\n<|code_suffix|>",
+"ids": [
+49,
+50,
+59266,
+51,
+52,
+53,
+10,
+59266
+]
+},
+{
+"text": "<think>",
+"ids": [
+59267
+]
+},
+{
+"text": "a<think>b",
+"ids": [
+97,
+59267,
+98
+]
+},
+{
+"text": " <think> ",
+"ids": [
+32,
+59267,
+32
+]
+},
+{
+"text": "<think><think>",
+"ids": [
+59267,
+59267
+]
+},
+{
+"text": "12<think>345\n<think>",
+"ids": [
+49,
+50,
+59267,
+51,
+52,
+53,
+10,
+59267
+]
+},
+{
+"text": "</think>",
+"ids": [
+59268
+]
+},
+{
+"text": "a</think>b",
+"ids": [
+97,
+59268,
+98
+]
+},
+{
+"text": " </think> ",
+"ids": [
+32,
+59268,
+32
+]
+},
+{
+"text": "</think></think>",
+"ids": [
+59268,
+59268
+]
+},
+{
+"text": "12</think>345\n</think>",
+"ids": [
+49,
+50,
+59268,
+51,
+52,
+53,
+10,
+59268
+]
+},
+{
+"text": "<tool_call>",
+"ids": [
+59269
+]
+},
+{
+"text": "a<tool_call>b",
+"ids": [
+97,
+59269,
+98
+]
+},
+{
+"text": " <tool_call> ",
+"ids": [
+32,
+59269,
+32
+]
+},
+{
+"text": "<tool_call><tool_call>",
+"ids": [
+59269,
+59269
+]
+},
+{
+"text": "12<tool_call>345\n<tool_call>",
+"ids": [
+49,
+50,
+59269,
+51,
+52,
+53,
+10,
+59269
+]
+},
+{
+"text": "</tool_call>",
+"ids": [
+59270
+]
+},
+{
+"text": "a</tool_call>b",
+"ids": [
+97,
+59270,
+98
+]
+},
+{
+"text": " </tool_call> ",
+"ids": [
+32,
+59270,
+32
+]
+},
+{
+"text": "</tool_call></tool_call>",
+"ids": [
+59270,
+59270
+]
+},
+{
+"text": "12</tool_call>345\n</tool_call>",
+"ids": [
+49,
+50,
+59270,
+51,
+52,
+53,
+10,
+59270
+]
+},
+{
+"text": "<tool_response>",
+"ids": [
+59271
+]
+},
+{
+"text": "a<tool_response>b",
+"ids": [
+97,
+59271,
+98
+]
+},
+{
+"text": " <tool_response> ",
+"ids": [
+32,
+59271,
+32
+]
+},
+{
+"text": "<tool_response><tool_response>",
+"ids": [
+59271,
+59271
+]
+},
+{
+"text": "12<tool_response>345\n<tool_response>",
+"ids": [
+49,
+50,
+59271,
+51,
+52,
+53,
+10,
+59271
+]
+},
+{
+"text": "</tool_response>",
+"ids": [
+59272
+]
+},
+{
+"text": "a</tool_response>b",
+"ids": [
+97,
+59272,
+98
+]
+},
+{
+"text": " </tool_response> ",
+"ids": [
+32,
+59272,
+32
+]
+},
+{
+"text": "</tool_response></tool_response>",
+"ids": [
+59272,
+59272
+]
+},
+{
+"text": "12</tool_response>345\n</tool_response>",
+"ids": [
+49,
+50,
+59272,
+51,
+52,
+53,
+10,
+59272
+]
+},
+{
+"text": "<arg_key>",
+"ids": [
+59273
+]
+},
+{
+"text": "a<arg_key>b",
+"ids": [
+97,
+59273,
+98
+]
+},
+{
+"text": " <arg_key> ",
+"ids": [
+32,
+59273,
+32
+]
+},
+{
+"text": "<arg_key><arg_key>",
+"ids": [
+59273,
+59273
+]
+},
+{
+"text": "12<arg_key>345\n<arg_key>",
+"ids": [
+49,
+50,
+59273,
+51,
+52,
+53,
+10,
+59273
+]
+},
+{
+"text": "</arg_key>",
+"ids": [
+59274
+]
+},
+{
+"text": "a</arg_key>b",
+"ids": [
+97,
+59274,
+98
+]
+},
+{
+"text": " </arg_key> ",
+"ids": [
+32,
+59274,
+32
+]
+},
+{
+"text": "</arg_key></arg_key>",
+"ids": [
+59274,
+59274
+]
+},
+{
+"text": "12</arg_key>345\n</arg_key>",
+"ids": [
+49,
+50,
+59274,
+51,
+52,
+53,
+10,
+59274
+]
+},
+{
+"text": "<arg_value>",
+"ids": [
+59275
+]
+},
+{
+"text": "a<arg_value>b",
+"ids": [
+97,
+59275,
+98
+]
+},
+{
+"text": " <arg_value> ",
+"ids": [
+32,
+59275,
+32
+]
+},
+{
+"text": "<arg_value><arg_value>",
+"ids": [
+59275,
+59275
+]
+},
+{
+"text": "12<arg_value>345\n<arg_value>",
+"ids": [
+49,
+50,
+59275,
+51,
+52,
+53,
+10,
+59275
+]
+},
+{
+"text": "</arg_value>",
+"ids": [
+59276
+]
+},
+{
+"text": "a</arg_value>b",
+"ids": [
+97,
+59276,
+98
+]
+},
+{
+"text": " </arg_value> ",
+"ids": [
+32,
+59276,
+32
+]
+},
+{
+"text": "</arg_value></arg_value>",
+"ids": [
+59276,
+59276
+]
+},
+{
+"text": "12</arg_value>345\n</arg_value>",
+"ids": [
+49,
+50,
+59276,
+51,
+52,
+53,
+10,
+59276
+]
+},
+{
+"text": "/nothink",
+"ids": [
+59277
+]
+},
+{
+"text": "a/nothinkb",
+"ids": [
+97,
+59277,
+98
+]
+},
+{
+"text": " /nothink ",
+"ids": [
+32,
+59277,
+32
+]
+},
+{
+"text": "/nothink/nothink",
+"ids": [
+59277,
+59277
+]
+},
+{
+"text": "12/nothink345\n/nothink",
+"ids": [
+49,
+50,
+59277,
+51,
+52,
+53,
+10,
+59277
+]
+},
+{
+"text": "<|begin_of_box|>",
+"ids": [
+59278
+]
+},
+{
+"text": "a<|begin_of_box|>b",
+"ids": [
+97,
+59278,
+98
+]
+},
+{
+"text": " <|begin_of_box|> ",
+"ids": [
+32,
+59278,
+32
+]
+},
+{
+"text": "<|begin_of_box|><|begin_of_box|>",
+"ids": [
+59278,
+59278
+]
+},
+{
+"text": "12<|begin_of_box|>345\n<|begin_of_box|>",
+"ids": [
+49,
+50,
+59278,
+51,
+52,
+53,
+10,
+59278
+]
+},
+{
+"text": "<|end_of_box|>",
+"ids": [
+59279
+]
+},
+{
+"text": "a<|end_of_box|>b",
+"ids": [
+97,
+59279,
+98
+]
+},
+{
+"text": " <|end_of_box|> ",
+"ids": [
+32,
+59279,
+32
+]
+},
+{
+"text": "<|end_of_box|><|end_of_box|>",
+"ids": [
+59279,
+59279
+]
+},
+{
+"text": "12<|end_of_box|>345\n<|end_of_box|>",
+"ids": [
+49,
+50,
+59279,
+51,
+52,
+53,
+10,
+59279
+]
+},
+{
+"text": "<|image|>",
+"ids": [
+59280
+]
+},
+{
+"text": "a<|image|>b",
+"ids": [
+97,
+59280,
+98
+]
+},
+{
+"text": " <|image|> ",
+"ids": [
+32,
+59280,
+32
+]
+},
+{
+"text": "<|image|><|image|>",
+"ids": [
+59280,
+59280
+]
+},
+{
+"text": "12<|image|>345\n<|image|>",
+"ids": [
+49,
+50,
+59280,
+51,
+52,
+53,
+10,
+59280
+]
+},
+{
+"text": "<|video|>",
+"ids": [
+59281
+]
+},
+{
+"text": "a<|video|>b",
+"ids": [
+97,
+59281,
+98
+]
+},
+{
+"text": " <|video|> ",
+"ids": [
+32,
+59281,
+32
+]
+},
+{
+"text": "<|video|><|video|>",
+"ids": [
+59281,
+59281
+]
+},
+{
+"text": "12<|video|>345\n<|video|>",
+"ids": [
+49,
+50,
+59281,
+51,
+52,
+53,
+10,
+59281
+]
+}
+]
+}

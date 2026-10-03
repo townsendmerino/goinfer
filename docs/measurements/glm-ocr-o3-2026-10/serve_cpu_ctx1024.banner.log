@@ -1,0 +1,14 @@
+loaded "glm": 16-layer model (vocab 59392) in 1.006s [chat: glm_ocr]
+  decode path: cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 1024 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 1024-token cap needs 0.1 GB KV (weights 0.4 GB, budget 37.0 GB, 36.8 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+GLM-OCR vision for "glm": tower (f32, CPU) loads on first image (merge 2, image id 59280, pixel budget 6272..4816896 px = at most 6144 image tokens) from /tmp/claude-1000/-home-francis-mycode-goinfer/8cb247f8-a43d-46b5-8a98-1abefe2d63b4/scratchpad/glm-small-ctx
+"glm" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18081 [chat:[glm]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.

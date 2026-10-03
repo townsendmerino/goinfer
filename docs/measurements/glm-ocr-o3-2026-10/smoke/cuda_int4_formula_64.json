@@ -1,0 +1,14 @@
+{
+ "name": "formula",
+ "prompt": "Formula Recognition:",
+ "finish": "length",
+ "usage": {
+  "prompt_tokens": 1561,
+  "completion_tokens": 64,
+  "total_tokens": 1625,
+  "prefill_reused_tokens": 0
+ },
+ "seconds_exploratory": 39.6,
+ "content": "$$\n\\begin{array}{l} \\int_ {- \\infty} ^ {\\infty} e ^ {- x ^ {2}} d x = \\sqrt {\\pi} (1) \\\\ \\mathrm {M o r e g e n e r l y, f o r a > 0 t h",
+ "reasoning": null
+}

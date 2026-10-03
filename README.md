@@ -6,7 +6,7 @@ cross-compile it like anything else. No Python, no llama.cpp, no C toolchain, no
 - **Output your types guarantee** — constrain generation to a Go struct or a JSON Schema; an
   invalid token is unreachable, not retried.
 - **One static binary** — and, if you want, the model baked into it.
-- **39 model families**, each behind a HuggingFace logit-parity gate.
+- **40 model families**, each behind a HuggingFace logit-parity gate.
 - **CPU, CUDA and Metal**, cgo-free; **WebGPU** as an opt-in cgo build.
 
 Also ships as a ready-made server (`goinfer-serve`: OpenAI and Anthropic APIs, web UI) and a
@@ -63,6 +63,13 @@ integer field, the model's probability over what the schema allowed at the decid
 routing ("ask a person below 0.7"). It is not the probability that the value is right, and it is
 not calibrated — see [docs/server.md](docs/server.md) and
 [examples/confidence](examples/confidence/main.go).
+
+**A scanned invoice in, a Go struct out.** GLM-OCR (a 0.9B document model) reads the image; the struct is both the
+prompt (`constrain.TemplateFromStruct`, the JSON template the model is trained to fill) and the guarantee
+(`constrain.GrammarFromStruct`). One line: `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema
+invoice.schema.json`; in Go: [examples/invoice](examples/invoice/main.go); over HTTP, an `image_url` part plus
+`response_format` `json_schema` ([docs/server.md](docs/server.md)). Field accuracy on rendered test invoices, not real scans:
+[docs/measurements/glm-ocr-o5-2026-10/](docs/measurements/glm-ocr-o5-2026-10/).
 
 ## Use it as a library
 
@@ -310,7 +317,7 @@ in-process. Longer form: [docs/positioning.md](docs/positioning.md).
 
 ## What it runs
 
-- **39 model families** — Gemma 1/2/3/4 (and CodeGemma), Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
+- **40 model families** — Gemma 1/2/3/4 (and CodeGemma), Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
   GLM, Kimi, Granite, Nemotron, Mellum and more; one page each at
   [goinfer.dev/models](https://goinfer.dev/models/), generated from the `decoder` registry
   ([capability-matrix.md](docs/capability-matrix.md)).

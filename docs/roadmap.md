@@ -79,7 +79,7 @@ promoting are separate decisions with separate gates (see the last section).
 ## Decided and parked — each with its trigger
 
 - **Continuous batching / paged attention** — not this engine's weight class; unchanged since
-  v0.2 (MC5 of `tasks/task-concurrency-2026-09.md`, parked with a trigger). Its small cousin got its kill-or-earn
+  v0.2 (MC5 of `tasks/parked/task-concurrency-2026-09.md`, parked with a trigger). Its small cousin got its kill-or-earn
   measurement (MC2 earned) and shipped in 2026-09:
   - N CPU decode workers (MC3c), then batched CPU decode behind them (MC3c step 2: 2.19× the workers at 4 clients
     on the 7B);

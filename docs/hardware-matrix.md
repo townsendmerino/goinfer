@@ -11,11 +11,12 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 
 | Family | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
-| Command-R | ✅ | CPU | ✅ resident | ✅ resident |
-| Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
+| Command-R | ✅ | CPU | ✅ resident | CPU |
+| Command-R7B | ✅ | CPU | ✅ resident | CPU |
 | DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | CPU |
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| GLM-OCR | ✅ | CPU | ✅ resident | CPU |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 2 | ✅ | CPU | CPU | CPU |
@@ -70,3 +71,17 @@ features). Two load-time notes the taxonomy does not encode:
   docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`
   names this specific per-checkpoint gap for a loaded model; this table cannot, since its
   rows are one per architecture, not per checkpoint.
+- **Gemma 4's row is generated from a representative that is not an E-model.** The small E-models
+  (E2B, E4B: per-layer embeddings, cross-layer shared KV, variable FFN width) carry the
+  `gemma4-e-model` feature, which no backend declares, so they run on the CPU on every backend (a
+  CUDA run prints `cuda does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are
+  resident as the row says. `DecodePath()` names the gap for a loaded model.
+- **Command-R, Command-R7B (Aya) and GLM-OCR are CUDA-only for a stated reason.** Their rotary
+  embedding is GPT-J PAIRWISE (dims 2d, 2d+1); the generic rope kernels on Metal and WebGPU are the
+  NeoX half-split (d, d+half), so those backends do not declare `pairwise-rope` / `pairwise-mrope`
+  and the families run on the CPU there. Running them on the NeoX kernels is exact at position 0 and
+  wrong from position 1 with no error (measured 2026-10-01 on the CUDA resident before its pairwise
+  kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst per-position cosine -0.075 /
+  -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu`. A Metal or WebGPU row returns once that
+  backend has pairwise rope kernels and a resident-vs-CPU gate on peaked attention
+  (docs/measurements/cuda-pairwise-rope-2026-10-01.md).

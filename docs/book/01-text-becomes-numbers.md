@@ -178,6 +178,19 @@ made in this chapter.
 
 Chapter 2 follows a single forward pass from those integer IDs to those *V* scores.
 
+
+## Try it
+
+Serve the smallest model (set up as in the [README](./README.md)), then ask it to count the tokens in one sentence:
+
+```sh
+curl -s localhost:8080/v1/messages/count_tokens -H 'content-type: application/json' -d '{"messages":[{"role":"user","content":"The quick brown fox jumps over the lazy dog."}]}'
+```
+
+You should see `{"input_tokens":18}`: the sentence's tokens plus the chat template's wrapper around one user turn.
+Try a sentence of your own, or the same sentence in another language, and compare the count with its length in bytes.
+Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapter 1).
+
 ---
 
 *Sources: `tokenizer/` (`bytelevel.go`, `sentencepiece.go`, `added.go`, `gguf.go`),

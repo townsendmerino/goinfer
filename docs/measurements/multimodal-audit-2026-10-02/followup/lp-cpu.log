@@ -1,0 +1,25 @@
+loaded "qwen2.5-vl-3b": 36-layer model (vocab 151936) in 7.836s [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 128000 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 4096-token cap needs 0.3 GB KV (weights 1.6 GB, budget 34.8 GB, 34.5 GB left for a request's own prefill)
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+loaded Qwen2.5-VL vision tower for "qwen2.5-vl-3b" (merge 2, image-pad id 151655) from /home/francis/models/qwen2.5-vl-3b
+"qwen2.5-vl-3b" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18127 [chat:[qwen2.5-vl-3b]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 62.5 MiB (text) / 94.5 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 14.60 GB swap-used
+LPDUMP reused=0 0 id=37476 tok="square" lp=-1.1438 top=[{37476 -1.143814964669589} {33271 -1.6760014728482997} {55316 -2.442248268502597} {21095 -2.629103584664706} {25857 -2.6320561603483}]
+LPDUMP reused=0 1 id=11 tok="," lp=-0.0711 top=[{11 -0.07108601501382872} {323 -4.223435487059727} {2518 -4.243481721190586} {13753 -5.204081620482579} {151645 -5.525343980101719}]
+LPDUMP reused=0 2 id=13753 tok=" yellow" lp=-0.8383 top=[{13753 -0.838299207453288} {2518 -0.9598736093087569} {6303 -2.5233616159005536} {22756 -3.5156940743966474} {12671 -3.5281032846017255}]
+LPDUMP reused=0 3 id=11 tok="," lp=-0.1299 top=[{11 -0.12990243822963} {12671 -2.4528108397188877} {323 -4.859308795041153} {151645 -4.977303103512833} {12756 -5.647944048947403}]
+LPDUMP reused=0 4 id=2518 tok=" red" lp=-0.0243 top=[{2518 -0.024311130971174953} {6303 -4.221113270253402} {323 -6.034174030751449} {4158 -6.854858463734847} {18575 -7.372118061513167}]
+LPDUMP reused=0 5 id=11 tok="," lp=-0.1370 top=[{11 -0.13697818670462023} {151645 -2.1319103613872374} {13 -5.477273978330596} {26 -6.356842078306182} {323 -7.832363165952667}]
+LPDUMP reused=0 6 id=6303 tok=" blue" lp=-0.0702 top=[{6303 -0.07015712335947714} {12671 -3.694480014594829} {3691 -5.144969058784282} {6319 -5.502337528022563} {22756 -5.791024280341899}]
+
+shutting down…

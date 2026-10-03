@@ -86,18 +86,18 @@ func TestGemma3ImgPrefillResidentReal_gate(t *testing.T) {
 		t.Fatalf("projector Forward: %v", err)
 	}
 
-	mc, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 1024}) // pinned: unpinned, the 16k-position KV does not fit beside the weights on an 8 GB card, the resident declines and the gate skips
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
 	rf := mc.ResidentForwardForTest()
 	if rf == nil {
-		t.Skip("gemma3 not resident-eligible on this build")
+		t.Fatalf("gemma3 did not take the resident path with a 1024-position context (decode path: %s): the gate has nothing to test, which is a failure, not a skip", mc.DecodePath())
 	}
 	rip, ok := rf.(decoder.ResidentImagePrefill)
 	if !ok {
-		t.Skip("attn_img_batched did not load on this build — ResidentImagePrefill unavailable")
+		t.Fatal("attn_img_batched did not load on this build — ResidentImagePrefill unavailable: the gate has nothing to test, which is a failure, not a skip")
 	}
 
 	// --- Half 1: primitive-level logits comparison ---

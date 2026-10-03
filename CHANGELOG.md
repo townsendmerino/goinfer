@@ -132,6 +132,39 @@ any surface may still change.
   (`docs/measurements/decisions-d6b-2026-09/results.md`). `int8int8` fits where f32 does not: JEV-9B at f32 is about
   36 GB. The capability matrix records the default.
 
+### Added
+
+- **`decoder.Model.PromptHiddenAll(ctx, prompt)`** returns the final-norm hidden state at every prompt position (K rows), the input a decision head that reads all positions consumes (Route C, Cloudflare's Clef). CPU only. Matches HF's
+  `last_hidden_state` at f32 on the tiny Qwen3.5 checkpoints, per position, to relative L2 4e-7.
+
+### Fixed
+
+- **Two decoder test fixtures that had never been committed.** `decoder/testdata/qwen3_5-tiny-normw/model.safetensors` (the tiny checkpoint with a random final-norm weight) and `decoder/testdata/qwen3_5_moe-tiny/model.safetensors` were missing from the repository (the `*.safetensors` ignore rule), so
+  `TestPromptHidden_matchesHF` skipped the one subtest that can see a missing or doubled final norm, and every MoE subtest, on every fresh checkout. Both are committed, and the new all-positions test fails instead of skipping when a fixture is absent.
+- **On CUDA a reply no longer depends on a leftover KV slot's short prefix.** A long prompt (512 tokens or more, which prefills on the fast kernels) that reused even a 3-token chat header from a slot a SHORT earlier request had left behind
+  got a KV that was part exact-kernel and part fast-kernel, and a near-tied token could flip: under four-way simultaneous load every arm differed from the sequential reply in 1 to 3 replies of 30, which is also why the MC4 identity gate failed. A prefix reuse of fewer than 64 tokens is now declined
+  when the prompt will run the fast kernels (the prompt is prefilled whole); a reuse of 64 or more is unchanged. With the change those schedules reproduce the sequential reply in every arm. Not fixed: a longer reuse whose rows were computed by a different kernel class (a chat that began as a short turn and grew; generated tokens'
+  rows) can still differ from a cold prefill. The fused prefill kernels themselves are start-offset-invariant (`TestPrefillStartOffset`). `docs/measurements/mc4-candidate-cuda-2026-10-01.md`, ROOT CAUSE and FIX.
+- **A resident GPU vision tower that cannot be attached no longer stops serve from starting.** With `--backend webgpu` or `cuda`, Gemma 3's tower asks for a resident encoder; when the
+  upload failed (on an 8 GB card the decoder's KV took the VRAM) serve exited and threw away the model it had loaded. It now warns, runs the tower on the CPU, and the startup line says
+  `encoder int8` without `-resident`. Found by the multimodal audit (`docs/measurements/multimodal-audit-2026-10-02.md` item 1).
+- **The Qwen2.5-VL, Qwen3.5+ and Gemma 4 towers are no longer forced to int8 under `--backend cuda|webgpu`.** They are CPU-only, so the rule bought no speed, and against each tower's own f32
+  the int8 output was far off (relative L2 0.21, 0.14 and 0.31 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). They load f32 unless `-vision-quant int8`, as GLM-OCR
+  already did. Gemma 3 keeps int8 under those backends because its resident tower needs it. The f32 tower holds more host memory.
+- **`--help` said `--backend` defaults to `cpu`;** it is `auto`. The capability matrix lists `vision` for Gemma 3 and the hardware matrix explains that Gemma 4's E-models run on the CPU on every
+  backend. Two CUDA Gemma 3 real-checkpoint gates that skipped silently on an 8 GB card now pin a context and run.
+- **An image request with `logprobs: true` now returns them.** The vision route accepted the flag and answered 200 with no `logprobs` field, because `driveVL` discarded the per-token
+  logprobs. The buffered reply carries `choices[0].logprobs` (one entry per completion token, with `top_logprobs`), and a streamed image request with `logprobs` is a 400, as on the text
+  route. Found while explaining why WebGPU Qwen2.5-VL gives different text on a cold and a prefix-reused turn at temperature 0 (a CPU-prefill versus GPU-last-token arithmetic gap, not a
+  defect; CUDA is identical). `docs/measurements/multimodal-audit-2026-10-02.md` items 8 and 10.
+- **A schema that types a numeric column as `string` no longer loops on whitespace until `max_tokens`.** The grammars allowed unlimited
+  whitespace at every structural boundary, so when the model wanted a bare number where the schema said `string` the mask left whitespace as
+  the best legal token and generation padded spaces forever, silently. Whitespace between tokens is now bounded at 64 bytes, and at 1 between a
+  `:` and its value (`constrain`; no API change; formatting only, no value the schema allows becomes unreachable). On a GLM-OCR invoice with
+  every amount typed `string` the reply went from no output to six correct line items in 445 tokens; correctly typed schemas are byte-identical.
+  `docs/measurements/constrain-whitespace-bound-2026-10-02.md`.
+
+
 ## [v0.20.0] — 2026-10-01
 
 ### Highlights

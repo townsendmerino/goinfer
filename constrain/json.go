@@ -52,10 +52,12 @@ type jsonGrammar struct {
 	isKey bool   // the string being read is an object key
 	lit   string // jsLiteral: bytes still to match
 	num   int    // jsNumber sub-state; jsStringU hex-digits-remaining
+	ws    int    // consecutive structural whitespace bytes just committed (maxStructuralWS); any other byte resets it
 
 	// snapshot buffers reused by TryBytes (no per-trial allocation).
 	sStack       []byte
 	sState, sNum int
+	sWS          int
 	sIsKey       bool
 	sLit         string
 }
@@ -66,6 +68,7 @@ func JSON() Grammar { return &jsonGrammar{} }
 func (g *jsonGrammar) Reset() {
 	g.stack = g.stack[:0]
 	g.state, g.isKey, g.lit, g.num = jsValue, false, "", 0
+	g.ws = 0
 }
 
 // Clone returns an independent copy at the current state (value state + a deep copy
@@ -120,25 +123,36 @@ func (g *jsonGrammar) Commit(bs []byte) {
 func (g *jsonGrammar) snapshot() {
 	g.sStack = append(g.sStack[:0], g.stack...)
 	g.sState, g.sIsKey, g.sLit, g.sNum = g.state, g.isKey, g.lit, g.num
+	g.sWS = g.ws
 }
 
 func (g *jsonGrammar) restore() {
 	g.stack = append(g.stack[:0], g.sStack...)
 	g.state, g.isKey, g.lit, g.num = g.sState, g.sIsKey, g.sLit, g.sNum
+	g.ws = g.sWS
+}
+
+// wsStep accepts one structural whitespace byte unless it would be the (maxStructuralWS+1)th in a row.
+func (g *jsonGrammar) wsStep() bool {
+	g.ws++
+	return g.ws <= maxStructuralWS
 }
 
 // step advances over one byte, returning false if it is not a legal next byte.
 func (g *jsonGrammar) step(b byte) bool {
+	if !isWS(b) {
+		g.ws = 0
+	}
 	for {
 		switch g.state {
 		case jsValue:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			return g.beginValue(b)
 		case jsArrValueOrClose:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ']' {
 				g.pop()
@@ -148,7 +162,7 @@ func (g *jsonGrammar) step(b byte) bool {
 			return g.beginValue(b)
 		case jsObjKeyOrClose:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == '}' {
 				g.pop()
@@ -162,7 +176,7 @@ func (g *jsonGrammar) step(b byte) bool {
 			return false
 		case jsObjKey:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == '"' {
 				g.state, g.isKey = jsString, true
@@ -171,7 +185,7 @@ func (g *jsonGrammar) step(b byte) bool {
 			return false
 		case jsColon:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ':' {
 				g.state = jsValue
@@ -180,7 +194,7 @@ func (g *jsonGrammar) step(b byte) bool {
 			return false
 		case jsObjNext:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ',' {
 				g.state = jsObjKey
@@ -194,7 +208,7 @@ func (g *jsonGrammar) step(b byte) bool {
 			return false
 		case jsArrNext:
 			if isWS(b) {
-				return true
+				return g.wsStep()
 			}
 			if b == ',' {
 				g.state = jsValue
@@ -207,7 +221,7 @@ func (g *jsonGrammar) step(b byte) bool {
 			}
 			return false
 		case jsEnd:
-			return isWS(b)
+			return isWS(b) && g.wsStep()
 		case jsString:
 			switch {
 			case b == '"':
@@ -388,6 +402,27 @@ func (g *jsonGrammar) pop() {
 		g.stack = g.stack[:len(g.stack)-1]
 	}
 }
+
+// maxStructuralWS bounds how many whitespace bytes a grammar accepts in a row BETWEEN JSON tokens (after a
+// '{', ',' or '[', before a ':' or '}', or after the document is complete). Without a bound, whitespace is legal
+// at every structural boundary, so when the model's preferred token is illegal there (it wants a bare number where
+// the schema says "string"; a string needs '"' first) the mask leaves whitespace as the top legal token and
+// generation pads whitespace until max_tokens, silently, with no error (found 2026-10-02 on a GLM-OCR extraction
+// with string-typed amounts; docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt).
+//
+// 64 is generous for formatting (llama.cpp's JSON grammar allows one newline plus 20 spaces) and still ends a
+// runaway in a few tokens. It limits only FORMATTING: no value the schema allows becomes unreachable. String
+// content is not structural, so a string's own spaces never count toward it.
+const maxStructuralWS = 64
+
+// maxValueWS is the tighter bound on whitespace between a ':' and the value it introduces (the schema grammar's
+// fsValue state, which is only ever the document root or an object member's value). That is the position where the
+// runaway happens, and a long pad there is also what makes the forced token's CONTEXT unnatural: measured on the
+// same GLM-OCR invoice with every numeric field typed string (CUDA int4, 2026-10-02), a 64-byte pad after
+// "quantity": finished but filled the numbers with junk ("", "The"; 1,546 tokens), 4 gave junk and an extra line
+// item (964 tokens), and 1, the canonical `": "`, gave six line items and correct amounts (445 tokens). Real
+// output has zero or one space there, so one is the whole bound.
+const maxValueWS = 1
 
 func isWS(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }
 func isHex(b byte) bool {

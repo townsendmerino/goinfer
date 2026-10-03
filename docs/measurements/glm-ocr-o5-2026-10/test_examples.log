@@ -1,0 +1,33 @@
+=== RUN   TestConfidenceExample
+    main_test.go:52: {
+          "category": "billing",
+          "urgent": true,
+          "orders": 1
+        }
+        category   "billing"    confidence 0.38  map[billing:0.37849760296741053 other:0.1754368240828942 shipping:0.06890747631034709 technical:0.37715809663934824]
+        urgent     true         confidence 0.66  map[false:0.3408433670074816 true:0.6591566329925183]
+        orders     1            confidence 1.00
+--- PASS: TestConfidenceExample (9.44s)
+PASS
+ok  	github.com/townsendmerino/goinfer/examples/confidence	9.454s
+=== RUN   TestEmbedExample_outputIsNotARepeatedToken
+    main_test.go:73: output (19 chars): Hello, how are you?
+--- PASS: TestEmbedExample_outputIsNotARepeatedToken (4.92s)
+=== RUN   TestBuildPrompt_rendersOnlyOneLeadingBOS
+--- PASS: TestBuildPrompt_rendersOnlyOneLeadingBOS (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/examples/embed	4.932s
+=== RUN   TestInvoiceSchemaFileIsTheStructsSchema
+--- PASS: TestInvoiceSchemaFileIsTheStructsSchema (0.00s)
+=== RUN   TestInvoiceExample
+    main_test.go:70: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a 2.7 GB model, runs the CPU tower)
+--- SKIP: TestInvoiceExample (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/examples/invoice	0.010s
+=== RUN   TestStructuredExample
+    main_test.go:49: {Name:Ann Lee Age:34 Langs:[Go Rust] Email:}
+--- PASS: TestStructuredExample (6.09s)
+=== RUN   TestUseFromGoDoc_codeIsFromExamples
+--- PASS: TestUseFromGoDoc_codeIsFromExamples (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/examples/structured	6.106s

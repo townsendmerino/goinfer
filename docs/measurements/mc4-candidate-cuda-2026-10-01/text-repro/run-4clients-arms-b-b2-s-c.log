@@ -1,0 +1,31 @@
+[05:52:01] copy b done in 11s
+[05:52:12] copy b2 done in 11s
+[05:52:20] copy s done in 8s
+[05:52:31] copy c done in 11s
+
+=== copy: compare to batch (b) ===
+  b2: 8/8 identical to batch
+  s client 0 req 0: first diff at char 540 of 693 (b ctoks 232, s ctoks 256); b: ...' qkv, core, o float64 }\n\nvar resBusy int32\n\nbatcher *re'  s: ...' qkv, core, o float64 }\n\ntype Model struct {\n\tw        '
+  s: 7/8 identical to batch
+  c client 0 req 0: first diff at char 3 of 693 (b ctoks 232, c ctoks 256); b: ...'```go\nimport (\n\t"context"\n\t"encod'  c: ...'```000.4.0.0.0.0.0.0.0.0.0.0.0.0.'
+  c client 0 req 1: first diff at char 6 of 958 (b ctoks 256, c ctoks 256); b: ..."```go\n\t// while the DRAFTER's state "  c: ...'```go\npackage main\n\nimport (\n\t// Imp'
+  c client 1 req 0: first diff at char 6 of 973 (b ctoks 256, c ctoks 157); b: ...'```go\n\t// was the difference between'  c: ...'```go\nimport (\n\t"knobs"\n)\n\nfunc (m *'
+  c client 1 req 1: first diff at char 779 of 1005 (b ctoks 256, c ctoks 256); b: ...'nything it built over the window is (Model.Close unmaps'  c: ...'nything it built over theaboard\nfunc (m *Model) MmapAli'
+  c client 2 req 0: first diff at char 3 of 937 (b ctoks 256, c ctoks 256); b: ...'```go\n// vision tower is the same'  c: ...'```bash\n// SPDX-License\\-key=inpu'
+  c client 2 req 1: first diff at char 3 of 843 (b ctoks 256, c ctoks 1); b: ...'```go\n// safety is already provid'  c: ...'```'
+  c client 3 req 0: first diff at char 3 of 966 (b ctoks 256, c ctoks 256); b: ...'```go\n\t// stays comparable (a har'  c: ...'```000362345245645646234567465234'
+  c client 3 req 1: first diff at char 3 of 994 (b ctoks 256, c ctoks 85); b: ...'```go\nbool and set the env vars d'  c: ...'```plaintext\n// EXACTLY rewrite t'
+  c: 0/8 identical to batch
+[05:52:35] chat b done in 4s
+[05:52:39] chat b2 done in 4s
+[05:52:44] chat s done in 5s
+[05:52:49] chat c done in 4s
+
+=== chat: compare to batch (b) ===
+  b2: 4/4 identical to batch
+  s: 4/4 identical to batch
+  c client 0 req 0: first diff at char 8 of 469 (b ctoks 95, c ctoks 11); b: ...'To test a rate limiter under burst loa'  c: ...'To test the limiter with a token bucke'
+  c client 1 req 0: first diff at char 2 of 528 (b ctoks 97, c ctoks 128); b: ...'If the limiter needs to be distr'  c: ...'If0.5*10000000000000000000000000'
+  c client 2 req 0: first diff at char 5 of 646 (b ctoks 128, c ctoks 27); b: ...'Token bucket and sliding window log'  c: ...'TokenTokenTokenTokenTokenTokenToken'
+  c client 3 req 0: first diff at char 4 of 256 (b ctoks 55, c ctoks 128); b: ...'Sure, I can help you with that. Pl'  c: ...'Sure0\nHello, how can I assist you '
+  c: 0/4 identical to batch

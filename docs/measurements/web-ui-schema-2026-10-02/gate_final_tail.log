@@ -1,0 +1,3 @@
+  ok    fit: with no fit_backend from the server, there is no Fit column and no note — nothing guessed
+  ok    render: nothing marked hidden is on screen (21 hidden elements)
+webui app gate: 585 passed, 0 failed

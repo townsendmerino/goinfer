@@ -592,6 +592,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		}
 		return buildPhi3Weights(cfg, arch, st, quant, skipRow4) // split fused qkv_proj + gate_up_proj → generic forward
 	}
+	if arch.Name == "glm_ocr" {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the glm_ocr (fused gate_up) layout")
+		}
+		return buildGlmOcrWeights(cfg, arch, st, quant, skipRow4) // split fused gate_up_proj; the MTP layer is never requested
+	}
 	if arch.Name == "internlm2" {
 		return buildInternLM2Weights(cfg, arch, st, quant, skipRow4) // renamed tensors + GROUPED fused wqkv
 	}
@@ -2166,6 +2172,44 @@ var internlm2TensorSchema = tensorSchema{
 // buildPhi3Weights into the standard fields, after which the generic llama forward runs.
 var phi3TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 
+// glmOcrTensorSchema names GLM-OCR's per-layer tensors by ROLE, but is only a marker for the generic
+// loader: the fused mlp.gate_up_proj is split by buildGlmOcrWeights, which reads these suffixes so the
+// mapping lives in one place and decoder/glm_ocr_test.go pins it.
+//
+// THE NORM NAMES ARE NOT GEMMA'S, and both are [HiddenDim] plain-weight RMSNorms, so a copy of
+// Gemma's map loads without error and computes something else. By position in the block (verified
+// against GlmOcrTextDecoderLayer.forward, and the checkpoint's own tensor list):
+//
+//	input_layernorm           -> PreAttnNorm   (before attention)
+//	post_self_attn_layernorm  -> PostAttnNorm  (on the attention OUTPUT, before the residual add)
+//	post_attention_layernorm  -> PreMLPNorm    (before the MLP — Gemma's same-named tensor is the post-attention one)
+//	post_mlp_layernorm        -> PostMLPNorm   (on the MLP OUTPUT, before the residual add)
+//
+// Embedding, final norm and head live under model.language_model. / the top level (glmOcrEmbed,
+// glmOcrFinalNorm, glmOcrLMHead). GateProj/UpProj are empty on purpose: both come from GateUpProj.
+var glmOcrTensorSchema = tensorSchema{
+	Embed:        glmOcrEmbed,
+	LMHead:       glmOcrLMHead,
+	FinalNorm:    glmOcrFinalNorm,
+	QProj:        "self_attn.q_proj.weight",
+	KProj:        "self_attn.k_proj.weight",
+	VProj:        "self_attn.v_proj.weight",
+	OProj:        "self_attn.o_proj.weight",
+	PreAttnNorm:  "input_layernorm.weight",
+	PostAttnNorm: "post_self_attn_layernorm.weight",
+	PreMLPNorm:   "post_attention_layernorm.weight",
+	PostMLPNorm:  "post_mlp_layernorm.weight",
+	DownProj:     "mlp.down_proj.weight",
+}
+
+const (
+	glmOcrPrefix    = "model.language_model."
+	glmOcrEmbed     = glmOcrPrefix + "embed_tokens.weight"
+	glmOcrFinalNorm = glmOcrPrefix + "norm.weight"
+	glmOcrLMHead    = "lm_head.weight"
+	glmOcrGateUp    = "mlp.gate_up_proj.weight" // fused [2*inter, hidden]: rows [0,inter) gate, [inter,2*inter) up
+)
+
 // spark25TensorSchema is a marker — Spark-X2.5's fused q_k_v_proj is split by
 // buildSpark25Weights into the standard fields, after which the generic forward runs. Note the
 // non-standard embedding tensor name (model.embedding.weight, not model.embed_tokens.weight —
@@ -2645,6 +2689,95 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		l.GateProj = q(linalg.WrapF32(gu[0:inter*hidden], inter, hidden))
 		l.UpProj = q(linalg.WrapF32(gu[inter*hidden:2*inter*hidden], inter, hidden))
 		if l.DownProj, e = loadMat(st, p+"mlp.down_proj.weight", hidden, inter); e != nil {
+			return e
+		}
+		l.DownProj = q(l.DownProj)
+		return nil
+	}
+	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
+		return nil, err
+	}
+	return w, nil
+}
+
+// buildGlmOcrWeights loads the GLM-OCR text decoder (model_type glm_ocr / glm_ocr_text; the vision
+// wrapper's checkpoint holds it under model.language_model.* with a top-level lm_head.weight). It is
+// the llama skeleton with FOUR norms per layer (Sandwich4; glmOcrTensorSchema carries the names,
+// which are not Gemma's), separate bias-free q/k/v/o at an explicit head_dim, and ONE fused tensor:
+// mlp.gate_up_proj is [2*inter, hidden] with the GATE rows first (HF: chunk(2); up * silu(gate)).
+//
+// The multi-token-prediction layer sits at layers.<NumLayers> (eh_proj, enorm, hnorm, its own
+// embed_tokens, shared_head, plus a full block): 218 M parameters inference never uses, and HF's
+// _keys_to_ignore_on_load_unexpected drops it too. Nothing here requests a layer index >=
+// NumLayers, so it is skipped by construction; the vision tower (model.visual.*) is never requested
+// either. The head is untied on the real checkpoint but finalized from lm_head.weight presence, like
+// phi3, so a tied re-save would still load.
+func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+	s := &glmOcrTensorSchema
+	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
+	hd := arch.HeadDim
+	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	var err error
+	q := func(m linalg.WeightMat) linalg.WeightMat {
+		if skipRow4 {
+			return quantizeWMSkipRow4(m, quant)
+		}
+		return quantizeWM(m, quant)
+	}
+	if w.Embed, err = loadMat(st, s.Embed, vocab, hidden); err != nil {
+		return nil, err
+	}
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	if w.FinalNorm, err = st.TensorF32(s.FinalNorm, hidden); err != nil {
+		return nil, err
+	}
+	arch.TiedLMHead = true
+	if head, herr := loadMat(st, s.LMHead, vocab, hidden); herr == nil {
+		w.LMHead = quantizeWM(head, quant.embedding())
+		arch.TiedLMHead = false
+	}
+
+	loadLayer := func(i int) error {
+		l := &w.Layers[i]
+		p := fmt.Sprintf("%slayers.%d.", glmOcrPrefix, i)
+		var e error
+		if l.PreAttnNorm, e = st.TensorF32(p+s.PreAttnNorm, hidden); e != nil {
+			return e
+		}
+		if l.PostAttnNorm, e = st.TensorF32(p+s.PostAttnNorm, hidden); e != nil {
+			return e
+		}
+		if l.PreMLPNorm, e = st.TensorF32(p+s.PreMLPNorm, hidden); e != nil {
+			return e
+		}
+		if l.PostMLPNorm, e = st.TensorF32(p+s.PostMLPNorm, hidden); e != nil {
+			return e
+		}
+		if l.QProj, e = loadMat(st, p+s.QProj, qDim, hidden); e != nil {
+			return e
+		}
+		l.QProj = q(l.QProj)
+		if l.KProj, e = loadMat(st, p+s.KProj, kvDim, hidden); e != nil {
+			return e
+		}
+		l.KProj = q(l.KProj)
+		if l.VProj, e = loadMat(st, p+s.VProj, kvDim, hidden); e != nil {
+			return e
+		}
+		l.VProj = q(l.VProj)
+		if l.OProj, e = loadMat(st, p+s.OProj, hidden, qDim); e != nil {
+			return e
+		}
+		l.OProj = q(l.OProj)
+		// Fused gate_up_proj [2*inter, hidden] -> gate ‖ up by output rows, GATE FIRST.
+		gu, gerr := st.TensorF32(p+glmOcrGateUp, 2*inter, hidden)
+		if gerr != nil {
+			return gerr
+		}
+		l.GateProj = q(linalg.WrapF32(gu[0:inter*hidden], inter, hidden))
+		l.UpProj = q(linalg.WrapF32(gu[inter*hidden:2*inter*hidden], inter, hidden))
+		if l.DownProj, e = loadMat(st, p+s.DownProj, hidden, inter); e != nil {
 			return e
 		}
 		l.DownProj = q(l.DownProj)

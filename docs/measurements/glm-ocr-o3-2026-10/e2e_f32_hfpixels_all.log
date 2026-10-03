@@ -1,0 +1,26 @@
+=== RUN   TestGlmOcrE2E_f32_hfPixels
+=== RUN   TestGlmOcrE2E_f32_hfPixels/invoice
+[glm-ocr e2e] loaded f32 decoder + tower in 2s
+[glm-ocr e2e] hf-pixels tower: still running, 30s
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] tower 45s for 6624 patches -> 1656 image tokens
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] last-prompt-token logits vs HF: cosine 1.000000000, max|diff| 2.43e-05 at id 29461 (HF logit -3.0453, range 43.09), argmax goinfer 1330 HF 1330
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] generate 19s (prefill + 64 decode steps)
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] TOKEN-IDENTICAL: 64/64 tokens equal HF's (HF stopped at <nil>)
+=== RUN   TestGlmOcrE2E_f32_hfPixels/table
+[glm-ocr e2e] hf-pixels tower: still running, 30s
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] tower 35s for 5504 patches -> 1376 image tokens
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] last-prompt-token logits vs HF: cosine 1.000000000, max|diff| 1.88e-05 at id 43941 (HF logit -3.7489, range 44.00), argmax goinfer 41681 HF 41681
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] generate 15s (prefill + 64 decode steps)
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] TOKEN-IDENTICAL: 64/64 tokens equal HF's (HF stopped at <nil>)
+=== RUN   TestGlmOcrE2E_f32_hfPixels/formula
+[glm-ocr e2e] hf-pixels tower: still running, 30s
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] tower 40s for 6192 patches -> 1548 image tokens
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] last-prompt-token logits vs HF: cosine 1.000000000, max|diff| 5.79e-05 at id 59253 (HF logit 0.2949, range 46.97), argmax goinfer 13628 HF 13628
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] generate 16s (prefill + 64 decode steps)
+    glm_ocr_e2e_real_test.go:359: [hf-pixels] TOKEN-IDENTICAL: 64/64 tokens equal HF's (HF stopped at <nil>)
+--- PASS: TestGlmOcrE2E_f32_hfPixels (193.83s)
+    --- PASS: TestGlmOcrE2E_f32_hfPixels/invoice (73.82s)
+    --- PASS: TestGlmOcrE2E_f32_hfPixels/table (56.26s)
+    --- PASS: TestGlmOcrE2E_f32_hfPixels/formula (63.75s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	193.864s

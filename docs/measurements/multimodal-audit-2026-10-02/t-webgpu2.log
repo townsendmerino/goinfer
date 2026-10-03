@@ -1,0 +1,26 @@
+=== RUN   TestForwardMRoPE_constantShiftInvariance
+=== RUN   TestForwardMRoPE_constantShiftInvariance/positive
+    forwardmrope_parity_test.go:81: delta=17: cosine(ordinary, constant-shifted) = 1.00000000 maxAbs=0
+=== RUN   TestForwardMRoPE_constantShiftInvariance/negative
+    forwardmrope_parity_test.go:81: delta=-13: cosine(ordinary, constant-shifted) = 1.00000000 maxAbs=0
+--- PASS: TestForwardMRoPE_constantShiftInvariance (10.21s)
+    --- PASS: TestForwardMRoPE_constantShiftInvariance/positive (5.41s)
+    --- PASS: TestForwardMRoPE_constantShiftInvariance/negative (4.51s)
+=== RUN   TestForwardMRoPE_equalArgsMatchesForward
+--- PASS: TestForwardMRoPE_equalArgsMatchesForward (4.51s)
+=== RUN   TestUploadKV_matchesSequentialForward
+=== RUN   TestUploadKV_matchesSequentialForward/base0_unwrapped
+    uploadkv_parity_test.go:135: decode step 0: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:135: decode step 1: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:135: decode step 2: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:135: decode step 3: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+=== RUN   TestUploadKV_matchesSequentialForward/baseN_ringWrapped
+    uploadkv_parity_test.go:135: decode step 0: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:135: decode step 1: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:135: decode step 2: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:135: decode step 3: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+--- PASS: TestUploadKV_matchesSequentialForward (2.72s)
+    --- PASS: TestUploadKV_matchesSequentialForward/base0_unwrapped (1.48s)
+    --- PASS: TestUploadKV_matchesSequentialForward/baseN_ringWrapped (1.08s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	17.510s

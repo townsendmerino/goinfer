@@ -1,0 +1,13 @@
+== gofmt -l .
+== gofmt -l cuda
+== gofmt -l gpu
+== gofmt -l metal
+== gofmt -l demo/agent
+== go vet ./... (root, untagged)
+exit=0
+== go vet -tags realckpt ./...
+exit=0
+== go vet -tags 'cuda goinfer_testhooks' ./cuda/
+exit=0
+== go vet -tags 'gpu goinfer_testhooks' ./gpu/
+exit=0

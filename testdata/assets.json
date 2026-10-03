@@ -551,7 +551,7 @@
       "members": ["config.json"],
       "members_any": ["model.safetensors.index.json", "model.safetensors"],
       "candidates": ["$MODELS/aya-expanse-8b"],
-      "used_by": ["TestCohereAyaReal_gate"],
+      "used_by": ["TestCohereAyaReal_gate", "TestCohereRealResidentParityCUDA"],
       "note": "CohereLabs Aya-Expanse-8B (CohereForCausalLM), 4 bf16 shards / ~16 GB. Loaded with Options{} so the gate is a TIGHT f32 cosine against the HF golden. No tokenizer member: the gate replays prompt_ids out of testdata/cohere_aya_golden.json.gz rather than re-tokenizing, which is the pinning rule every oracle here follows."
     },
     {
@@ -560,7 +560,7 @@
       "members": ["config.json"],
       "members_any": ["model.safetensors.index.json", "model.safetensors"],
       "candidates": ["$MODELS/command-r7b"],
-      "used_by": ["TestCohere2R7bReal_gate"],
+      "used_by": ["TestCohere2R7bReal_gate", "TestCohereRealResidentParityCUDA"],
       "note": "CohereLabs Command-R7B (Cohere2ForCausalLM), 4 bf16 shards / ~16 GB. A SEPARATE arch from cohere, not a size variant \u2014 interleaved sliding/full attention and no per-layer QK norm \u2014 which is why both families carry their own required gate. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
     },
     {
@@ -716,6 +716,22 @@
       "candidates": ["$MODELS/qwen35vl_g2_9b"],
       "used_by": ["TestQwen35VLReal_G2_9B"],
       "note": "P8a G2 goldens for the 9B, same images as GOINFER_QWEN35VL_G2, HF f32 references from THIS checkpoint (scripts/pin_qwen35_vl_real.py)."
+    },
+    {
+      "env": "GOINFER_GLM_OCR",
+      "kind": "dir",
+      "members": ["config.json", "preprocessor_config.json", "tokenizer.json", "chat_template.jinja", "model.safetensors"],
+      "candidates": ["$MODELS/glm-ocr"],
+      "used_by": ["TestGlmOcrE2E_f32", "TestGlmOcrE2E_f32_hfPixels", "TestServe_glmOcrImage_O3", "TestGlmOcrCUDAContextFit", "TestGlmOcrCUDAResidentRealImage", "TestGlmOcrCUDAResidentFullBudget"],
+      "note": "zai-org/GLM-OCR (GlmOcrForConditionalGeneration, bf16, 2.65 GB incl. the 218 M-parameter MTP layer the loader skips), revision 2e85a62840ccac27daa451df36c736c4636b8628. members names preprocessor_config.json because the loader reads size.* from it and HALVES it (multimodal.LoadGlmOcrPreprocessConfig). O3's gate: goinfer f32 vs transformers 5.12.0 f32, greedy 64 tokens, three procedurally rendered documents (testdata/glm_ocr; NOT real scans)."
+    },
+    {
+      "env": "GOINFER_GLM_OCR_E2E",
+      "kind": "dir",
+      "members": ["invoice.pv.f32", "table.pv.f32", "formula.pv.f32"],
+      "candidates": ["$MODELS/glm-ocr-e2e"],
+      "used_by": ["TestGlmOcrE2E_f32", "TestGlmOcrE2E_f32_hfPixels"],
+      "note": "HF's OWN pixel_values for the three O3 documents (raw little-endian f32, [n_patches,1176], 26-31 MB each), dumped by scripts/pin_glm_ocr_e2e.py. NOT committed. TestGlmOcrE2E_f32_hfPixels feeds them to goinfer's tower to tell a preprocessing divergence from a model-path one; TestGlmOcrE2E_f32 uses them (when present) only to REPORT the pixel difference. The goldens themselves are committed: testdata/glm_ocr/golden_*.json.gz."
     }
   ]
 }

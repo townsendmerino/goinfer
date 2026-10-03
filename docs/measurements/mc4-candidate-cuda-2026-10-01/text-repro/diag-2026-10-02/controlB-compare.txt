@@ -1,0 +1,19 @@
+[13:26:10] b done in 36s
+[13:26:33] s done in 23s
+[13:27:01] c done in 28s
+[13:27:23] cny done in 23s
+
+=== s vs b ===
+  client 0 req 0 (index 0): first diff at char 540 of 850 (ctoks b 256, s 232; started b 0.0s, s 0.0s); b: ...' qkv, core, o float64 }\n\ntype Model struct {\n\tw        '  s: ...' qkv, core, o float64 }\n\nvar resBusy int32\n\nbatcher *re'
+  client 2 req 0 (index 21): first diff at char 6 of 967 (ctoks b 256, s 256; started b 0.0s, s 0.0s); b: ...'```go\nvar prefillDeclineSeen = map[s'  s: ...'```go\n\n// prefillDeclineSeen is the '
+  s: 28/30 identical to batch
+
+=== c vs b ===
+  client 0 req 0 (index 0): first diff at char 540 of 850 (ctoks b 256, c 232; started b 0.0s, c 0.0s); b: ...' qkv, core, o float64 }\n\ntype Model struct {\n\tw        '  c: ...' qkv, core, o float64 }\n\nvar resBusy int32\n\nbatcher *re'
+  client 0 req 9 (index 9): first diff at char 85 of 877 (ctoks b 256, c 256; started b 28.8s, c 11.19s); b: ...' read-only so the aliased\n\t// int8/int4 weights are pag'  c: ...' read-only so the aliased int8/int4 weights are pageabl'
+  c: 28/30 identical to batch
+
+=== cny vs b ===
+  client 0 req 0 (index 0): first diff at char 540 of 850 (ctoks b 256, cny 232; started b 0.0s, cny 0.0s); b: ...' qkv, core, o float64 }\n\ntype Model struct {\n\tw        '  cny: ...' qkv, core, o float64 }\n\nvar resBusy int32\n\nbatcher *re'
+  client 2 req 0 (index 21): first diff at char 6 of 967 (ctoks b 256, cny 256; started b 0.0s, cny 0.0s); b: ...'```go\nvar prefillDeclineSeen = map[s'  cny: ...'```go\n\n// prefillDeclineSeen is the '
+  cny: 28/30 identical to batch

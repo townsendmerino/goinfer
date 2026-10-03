@@ -1,0 +1,14 @@
+{
+ "name": "invoice",
+ "prompt": "Text Recognition:",
+ "finish": "stop",
+ "usage": {
+  "prompt_tokens": 1668,
+  "completion_tokens": 321,
+  "total_tokens": 1989,
+  "prefill_reused_tokens": 0
+ },
+ "seconds_exploratory": 44.9,
+ "content": "INVOICE\n\nDate: 2026-09-18\nDue: 2026-10-18\n\nFrom:\nHarbor Light Supply Co.\n88 Quay Street\nPortland, OR 97209\n\nBill To:\nNorthwind Printing LLC\n1204 Alder Avenue, Suite 5\nSeattle, WA 98101\n\nNo Description Qty Unit Price Amount\n1 Thermal label roll 100mm 12 18.40 220.80\n2 Ink cartridge, cyan 6 42.15 252.90\n3 Ink cartridge, black 6 39.95 239.70\n4 A4 paper, 80gsm (ream) 40 5.25 210.00\n5 Binding spine strips 8 11.60 92.80\n6 Shipping and handling 1 35.00 35.00\n\nSubtotal 1051.20\nTax (8.5%) 89.35\nTotal Due 1140.55\n\nPayment terms: net 30 days.\nPlease quote the invoice number on your bank transfer.\nAccount: 4471 0093 2216  Bank: First Harbor Credit Union",
+ "reasoning": null
+}

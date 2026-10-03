@@ -5,7 +5,7 @@
 >
 > **Correction, 2026-09-29 (doc-review pass; nothing below this block edited).** Track A CPU shipped
 > in full (speed-gate re-run 3, all four cells SHIP; aikit v1.48.0, `cad1973b` "Merge PR #1"). CUDA
-> **decode** shipped the same way (`residentGateReasonAct`, `decoder/features.go:340`, bypasses the
+> **decode** shipped the same way (`residentGateReasonAct`, `decoder/features.go:382`, bypasses the
 > hazard guard only for `actSafe && backend == "cuda"`); Phi-3/Phi-4 now default to `--quant q4k` on
 > both CPU and CUDA (`59bc0933`, `1cee4b09`), which sidesteps Track B's int4-weight problem entirely
 > by keeping Q4_K tensors native instead of re-quantizing them. **Still not built, and owned by no

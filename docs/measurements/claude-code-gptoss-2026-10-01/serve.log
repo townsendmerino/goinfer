@@ -1,0 +1,23 @@
+[cuda] C′ cache: 32 slots/layer would need 10.8 GB VRAM but only 3.2 GB free — capping to 8 (2.7 GB)
+loaded "gptoss": 24-layer model (vocab 201088) in 48.377s [chat: harmony, reasoning: analysis channel split from the answer (gpt-oss always reasons; -thinking cannot turn it off)]
+  decode path: cuda-resident (int4mix)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 32768 tokens (--ctx; model maximum 131072) · KV f32
+  fit: 32768-token cap needs 1.5 GB KV (weights 11.0 GB, budget 28.0 GB, 26.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+"gptoss" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8100 [chat:[gptoss]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 64.0 MiB (text) / 96.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 13.64 GB swap-used
+request: POST /v1/messages model=gptoss status=200 prompt_tokens=3075 completion_tokens=1 ttft=105313ms total=105346ms
+request: POST /v1/messages model=gptoss status=200 prompt_tokens=81 completion_tokens=63 ttft=780ms total=4217ms
+request: POST /v1/messages model=gptoss status=200 prompt_tokens=318 completion_tokens=246 ttft=11152ms total=23062ms
+request: POST /v1/messages model=gptoss status=200 prompt_tokens=600 completion_tokens=65 ttft=2468ms total=5403ms
+request: POST /v1/messages model=gptoss status=200 prompt_tokens=706 completion_tokens=22 ttft=2612ms total=3679ms
+
+shutting down…

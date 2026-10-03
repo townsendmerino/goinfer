@@ -1,0 +1,96 @@
+=== RUN   TestServe_glmOcrExtraction_O5
+loaded "glm": 16-layer model (vocab 59392) in 994ms [chat: glm_ocr]
+  decode path: cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 131072 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 131072-token cap needs 16.0 GB KV (weights 0.4 GB, budget 36.9 GB, 20.9 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (2 conversations kept prefilled)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+GLM-OCR vision for "glm": tower (f32, CPU) loads on first image (merge 2, image id 59280, pixel budget 6272..4816896 px = at most 6144 image tokens) from /home/francis/models/glm-ocr
+    glm_ocr_extract_real_test.go:143: (a) prompt: 1778 ids = the independently built extraction prompt (image run 1656)
+    glm_ocr_extract_real_test.go:151: reply (416 completion tokens, finish stop):
+        {
+            "invoice_number": "INV-2026-0417",
+            "date": "2026-09-18",
+            "due_date": "2026-10-18",
+            "vendor": "Harbor Light Supply Co.",
+            "bill_to": "Northwind Printing LLC",
+            "currency": "USD",
+            "paid": false,
+            "line_items": [
+                {
+                    "description": "Thermal label roll 100mm",
+                    "quantity": 12,
+                    "unit_price": 18.4,
+                    "amount": 220.8
+                },
+                {
+                    "description": "Ink cartridge, cyan",
+                    "quantity": 6,
+                    "unit_price": 42.15,
+                    "amount": 252.9
+                },
+                {
+                    "description": "Ink cartridge, black",
+                    "quantity": 6,
+                    "unit_price": 39.95,
+                    "amount": 239.7
+                },
+                {
+                    "description": "A4 paper, 80gsm (ream)",
+                    "quantity": 40,
+                    "unit_price": 5.25,
+                    "amount": 210.0
+                },
+                {
+                    "description": "Binding spine strips",
+                    "quantity": 8,
+                    "unit_price": 11.6,
+                    "amount": 92.8
+                },
+                {
+                    "description": "Shipping and handling",
+                    "quantity": 1,
+                    "unit_price": 35.0,
+                    "amount": 35.0
+                }
+            ],
+            "subtotal": 1051.2,
+            "tax": 89.35,
+            "total": 1140.55
+        }
+    glm_ocr_extract_real_test.go:213: (e) capped reply:
+        {
+            "bill_to": "Northwind Printing LLC",
+            "currency": "GBP",
+            "date": "2026-09-18",
+            "due_date": "2026-10-18",
+            "invoice_number": "INV-2026-0417",
+            "line_items": [
+                {
+                    "amount": 220.8,
+                    "description": "Thermal label roll 100mm",
+                    "quantity": 12,
+                    "unit_price": 18.4
+                },
+                {
+                    "amount": 252.9,
+                    "description": "Ink cartridge, cyan",
+                    "quantity": 6,
+                    "unit_price": 42.15
+                },
+                {
+                    "amount": 239.7,
+                    "description": "Ink cartridge, black",
+                    "quantity": 6,
+                    "unit_price": 39.95
+                }
+            ],
+            "paid": false,
+            "subtotal": 1051.2,
+            "tax": 89.35,
+            "total": 1140.55
+           ,"vendor": "Harbor Light Supply Co."}
+--- PASS: TestServe_glmOcrExtraction_O5 (195.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	195.040s

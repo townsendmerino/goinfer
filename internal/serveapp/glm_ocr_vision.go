@@ -1,0 +1,156 @@
+package serveapp
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/multimodal"
+)
+
+// GLM-OCR image serving (O3, docs/tasks/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one —
+// preprocess -> tower -> GenerateQwenVL with m-RoPE, the merged tower rows replacing the <|image|> run — with these
+// differences, all of which live here or in the loadedModel.glm branches of vision_serve.go:
+//   - the tower is aikit's GlmOcrVisionEncoder, loaded on first use (like qwen3Tower);
+//   - the preprocessing config halves the file's pixel bounds (multimodal.LoadGlmOcrPreprocessConfig);
+//   - the image block and the template are GLM's, image first (multimodal.GlmOcrImageBlock, chat.GlmOCR);
+//   - NO per-image token cap here, unlike Qwen3.5's qwen3MaxImageTokens: the processor's own ceiling is 6,144 tokens
+//     (4.82 MP) and the serve-side default is O4's decision (the owner picks it), so serve accepts what the processor
+//     does and an image that does not fit the context is refused by name (imageFitsContext), never truncated.
+//
+// The tower stays f32 unless -vision-quant int8 is given: serve's usual "a GPU backend implies an int8 tower" rule is for
+// the resident GPU encoders, and the GLM tower is CPU-only (and its int8 form is not gated on the real checkpoint).
+
+// glmOcrTower is a GLM-OCR vision tower that loads on first use; safe for concurrent callers, a failed load is
+// remembered rather than retried on every request.
+type glmOcrTower struct {
+	dir   string
+	quant bool
+	once  sync.Once
+	enc   *vision.GlmOcrVisionEncoder
+	err   error
+}
+
+func (g *glmOcrTower) encoder() (*vision.GlmOcrVisionEncoder, error) {
+	g.once.Do(func() {
+		g.enc, g.err = vision.LoadGlmOcrVisionEncoder(g.dir, g.quant)
+		if g.err != nil {
+			g.err = fmt.Errorf("load glm-ocr vision tower (%s): %w", g.dir, g.err)
+		}
+	})
+	return g.enc, g.err
+}
+
+// isGlmOcrVisionDir reports whether dir is a GLM-OCR checkpoint that carries a usable vision tower: model_type glm_ocr, a
+// non-empty vision_config, and a preprocessor config LoadGlmOcrPreprocessConfig accepts. AUTO-discovery only: a stripped
+// text-only copy is simply not a vision model, not an error.
+func isGlmOcrVisionDir(dir string) bool {
+	if visionModelType(dir) != "glm_ocr" {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return false
+	}
+	var c struct {
+		Vision *struct {
+			Depth int `json:"depth"`
+		} `json:"vision_config"`
+	}
+	if json.Unmarshal(raw, &c) != nil || c.Vision == nil || c.Vision.Depth <= 0 {
+		return false
+	}
+	_, err = multimodal.LoadGlmOcrPreprocessConfig(dir)
+	return err == nil
+}
+
+// setupGlmOcrVision does everything about a GLM-OCR tower that can be decided without the weights: validates the
+// directory, reads the (halved) preprocessor config, and returns the not-yet-loaded tower. Split from
+// loadGlmOcrVisionTower so the config and the laziness are testable without a tokenizer.
+func setupGlmOcrVision(dir string, int8Tower bool) (*glmOcrTower, multimodal.QwenPreprocessConfig, error) {
+	if !isGlmOcrVisionDir(dir) {
+		return nil, multimodal.QwenPreprocessConfig{}, fmt.Errorf("%s is not a GLM-OCR checkpoint with a usable vision tower (needs model_type glm_ocr, a vision_config, and a preprocessor_config.json with size.shortest_edge/longest_edge)", dir)
+	}
+	pp, err := multimodal.LoadGlmOcrPreprocessConfig(dir)
+	if err != nil {
+		return nil, pp, fmt.Errorf("glm-ocr preprocessor config (%s): %w", dir, err)
+	}
+	return &glmOcrTower{dir: dir, quant: int8Tower}, pp, nil
+}
+
+// loadGlmOcrVisionTower attaches a GLM-OCR tower to the single loaded model. Everything checkable without the tower's
+// weights is checked here, at startup; the weights load on first image.
+func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool) error {
+	tower, pp, err := setupGlmOcrVision(dir, int8Tower)
+	if err != nil {
+		return err
+	}
+	for _, lm := range s.models {
+		lm.glm = tower
+		lm.qwenPP = pp
+		lm.qwenMerge = pp.MergeSize
+		lm.qwenImgTok = -1
+		if id, ok := lm.tk.TokenID(multimodal.GlmOcrImagePad); ok {
+			lm.qwenImgTok = id
+		}
+		if lm.qwenImgTok < 0 {
+			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.GlmOcrImagePad)
+		}
+		q := "f32"
+		if int8Tower {
+			q = "int8"
+		}
+		fmt.Fprintf(os.Stderr, "GLM-OCR vision for %q: tower (%s, CPU) loads on first image (merge %d, image id %d, pixel budget %d..%d px = at most %d image tokens) from %s\n",
+			lm.name, q, lm.qwenMerge, lm.qwenImgTok, pp.MinPixels, pp.MaxPixels, pp.MaxPixels/(pp.PatchSize*pp.PatchSize*pp.MergeSize*pp.MergeSize), dir)
+	}
+	return nil
+}
+
+// imageFitsContext refuses, by name, an image whose token run (plus the text around it) cannot fit the context this
+// request will run in, BEFORE the tower runs (it is minutes on a CPU). Without it the same request would fail later and
+// less specifically in prepare ("prompt is N tokens but the model's context window is C"), after the image was resized;
+// the point here is the remedy, and that an image is never silently truncated to fit.
+func (lm *loadedModel) imageFitsContext(n int, grid [3]int) error {
+	if lm.model == nil {
+		return nil
+	}
+	ctx := lm.contextWindow(false)
+	// The 24 covers the template's own tokens and a one-line task prompt; prepare's exact check still runs afterwards.
+	if ctx > 0 && n+24 >= ctx {
+		return fmt.Errorf("image_too_large_for_context: this image is %d image tokens (a %dx%d-patch grid) but the context window is %d tokens; "+
+			"send a smaller image (the model's own ceiling is %d tokens, 4.8 MP) or raise the context", n, grid[2], grid[1], ctx,
+			lm.qwenPP.MaxPixels/(lm.qwenPP.PatchSize*lm.qwenPP.PatchSize*lm.qwenMerge*lm.qwenMerge))
+	}
+	return nil
+}
+
+// glmOcrExtractionTurn is O5 (docs/tasks/task-glm-ocr-2026-10.md): a GLM-OCR image request that carries response_format
+// json_schema is an EXTRACTION request. The model's extraction prompt is a JSON template (an object of empty values), not a
+// schema, so the template is built from the request's own schema (constrain.TemplateFromSchema: the same document the
+// grammar is compiled from, so the two cannot disagree) and becomes the last user turn's text, with the card's instruction in
+// front of it. The grammar itself is installed by prepare, exactly as on the text route (the vision route has always passed
+// the request's sampling, response_format included, through prepare and driveVL).
+//
+// The rule (multimodal.GlmOcrExtractionText): the template prompt REPLACES the user's text only when that text is empty or a
+// bare task prompt ("Text Recognition:", "Table Recognition:", "Formula Recognition:"); any other text is the user's own prompt
+// and is sent unchanged, still under the grammar. json_object (no schema) has no template to build and is left alone.
+func (lm *loadedModel) glmOcrExtractionTurn(rf *respFormat, turns []chat.Turn) error {
+	if lm.glm == nil || rf == nil || rf.Type != "json_schema" || rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
+		return nil
+	}
+	idx := lastUserTurn(turns)
+	if idx < 0 {
+		return nil
+	}
+	tmpl, err := constrain.TemplateFromSchema(rf.JSONSchema.Schema)
+	if err != nil {
+		return fmt.Errorf("response_format json_schema: cannot build the extraction template: %w", err)
+	}
+	turns[idx].Content, _ = multimodal.GlmOcrExtractionText(turns[idx].Content, tmpl)
+	return nil
+}

@@ -1,0 +1,14 @@
+{
+ "name": "formula",
+ "prompt": "Formula Recognition:",
+ "finish": "stop",
+ "usage": {
+  "prompt_tokens": 1561,
+  "completion_tokens": 246,
+  "total_tokens": 1807,
+  "prefill_reused_tokens": 0
+ },
+ "seconds_exploratory": 40.2,
+ "content": "$$\n\\begin{array}{l} \\int_ {- \\infty} ^ {\\infty} e ^ {- x ^ {2}} d x = \\sqrt {\\pi} (1) \\\\ \\mathrm {M o r e g e n e r l y, f o r a > 0 t h e s a m e r a g u n e t g i v e s t h e f o l o w i n g r e s u l t , w hICH de f i n e s t h e n o r m a l d e n s i t y .} \\\\ f (x) = \\frac {1}{\\sigma \\sqrt {2 \\pi}} \\exp \\left(\\frac {- (x - \\mu) ^ {2}}{2 \\sigma^ {2}}\\right) (2) \\\\ \\mathrm {H e r e} \\mu \\mathrm {i s t h e m e a n a n d} \\sigma^ {2} \\mathrm {t h e v a r i a n c e o f t h e d i s t r i b u t i o n}. \\\\ \\end{array}\n$$",
+ "reasoning": null
+}

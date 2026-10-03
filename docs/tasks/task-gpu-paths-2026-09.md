@@ -89,9 +89,9 @@ one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no l
 speed on a GPU box.
 
 **Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
-CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1609–1077`
+CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1618–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
-(`internal/serveapp/openai.go:1090–663`).
+(`internal/serveapp/openai.go:1099–663`).
 **Effect.** On the Mac or a CUDA box, a Gemma 3 image request runs the *text* decode at CPU speed
 even though `gemma3` text is resident on both backends. `-tags gpu` moves only the SigLIP tower
 (`docs/multimodal.md`); the cgo-free release binaries move nothing.
@@ -113,10 +113,10 @@ record it there as P6a and do it with the tower move rather than after.
 
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
-**Where.** `internal/serveapp/openai.go:1502`: `if lm.model.ResidentActive() && lm.adapter == ""` —
+**Where.** `internal/serveapp/openai.go:1511`: `if lm.model.ResidentActive() && lm.adapter == ""` —
 adapter models take the session path below it, and `decoder/model.go:1609` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `internal/serveapp/openai.go:1479` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
+commit == nil`). The comment at `internal/serveapp/openai.go:1488` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
 low-rank delta applied to the activations (`Session.UseAdapter` → cache's `lora`), so the resident
@@ -149,7 +149,7 @@ after (it drives the shared positional KV).
 
 ### G5 — families CPU-only on CUDA and Metal for one or two small features
 
-**Where.** `decoder/features.go:448–541` (the three backend tables) against
+**Where.** `decoder/features.go:490–541` (the three backend tables) against
 `decoder/features.go:131–221` (`residentFeatures`). Everything below declines to the staged path,
 which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole model's speed.
 
@@ -161,7 +161,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Olmo Hybrid | the two above + `FeatNoPE` | same | its Gated-DeltaNet half is already declared on both backends |
 | Command-R / R7B | `FeatLayerNorm`, `FeatParallelBlock`, `FeatLogitScale` | `FeatParallelBlock`, `FeatLogitScale` | parallel attn‖MLP from one normed input, summed; logits scale is a host-side multiply; Metal already has the LayerNorm (generalized for Cohere, `features.go` note) |
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
-| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:529`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
+| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:571`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
 | LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:332` declines it before features are consulted |
 | Llama 4 | own forward, not bridged | same | `decoder/residency.go:330` |
@@ -265,7 +265,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   serializes each model's generations (`internal/serveapp/openai.go:71` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1502`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
+- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1511`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter was measured negative and its code removed 2026-09-24 (record: `docs/completed/task-laguna.md`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
 

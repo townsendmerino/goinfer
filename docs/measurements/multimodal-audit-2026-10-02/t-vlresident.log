@@ -1,0 +1,18 @@
+=== RUN   TestGemma3ImgPrefillResidentReal_gate
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: default resident context 16168 positions does not fit (4.50 GB of KV, 4.57 GB free) — staged path) — continuing on the CPU/staged path
+    gemma3_img_prefill_resident_real_test.go:96: gemma3 not resident-eligible on this build
+--- SKIP: TestGemma3ImgPrefillResidentReal_gate (33.46s)
+=== RUN   TestGemma3ResidentReal_gate
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: default resident context 16168 positions does not fit (4.50 GB of KV, 4.57 GB free) — staged path) — continuing on the CPU/staged path
+    gemma3_resident_real_test.go:90: gemma3 not resident-eligible on this build
+--- SKIP: TestGemma3ResidentReal_gate (33.01s)
+=== RUN   TestQwen25VLMRoPEPrefillResidentReal_gate
+    qwen25vl_mrope_prefill_resident_real_test.go:108: real image, resident m-RoPE prefill vs CPU prefill: CPU argmax=264 resident argmax=264 | cosine=0.998644
+    qwen25vl_mrope_prefill_resident_real_test.go:142: GenerateQwenVL streamed 4 tokens via the resident m-RoPE prefill fast path (ImgPrefillResident=true), first=264
+--- PASS: TestQwen25VLMRoPEPrefillResidentReal_gate (11.50s)
+=== RUN   TestQwen25VLResidentReal_gate
+    qwen25vl_resident_real_test.go:113: mropeDelta = -3 (nonzero confirms this prompt actually exercises the m-RoPE decode split)
+    qwen25vl_resident_real_test.go:146: real image, one decode step past the image block: CPU argmax=1697 hybrid argmax=1697 | cosine=1.000000
+--- PASS: TestQwen25VLResidentReal_gate (11.85s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	89.904s

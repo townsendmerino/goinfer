@@ -1,0 +1,10 @@
+webgpu up True 12.0s
+webgpu A cold   ('square, red, yellow, blue', 0, 'stop')
+webgpu A rep1   ('square, red, circle, yellow, blue', 165, 'stop')
+webgpu A rep2   ('square, red, circle, yellow, blue', 165, 'stop')
+webgpu T evict  ('Hello! How can I assist you today?', 3, 'stop')
+webgpu A cold2  ('square, red, yellow, blue', 0, 'stop')
+webgpu A rep3   ('square, red, circle, yellow, blue', 165, 'stop')
+webgpu T evict  ('Hello! How can I assist you today?', 3, 'stop')
+webgpu A cold3  ('square, red, yellow, blue', 0, 'stop')
+webgpu A rep4   ('square, red, circle, yellow, blue', 165, 'stop')

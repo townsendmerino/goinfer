@@ -340,6 +340,26 @@ func TestFactsOf_carriesTheResidentDecline(t *testing.T) {
 	}
 }
 
+// A plain CPU load is not a decline: the CPU was the choice. decoder sets ResidentDecline for it too ("backend does not implement residency (… the CPU backend)"), so
+// the banner must not report that as a GPU load that fell through — found when a real gpt-oss CPU run printed "this model declined one".
+func TestFactsOf_aPlainCPULoadDeclinedNothing(t *testing.T) {
+	_, lm := tinyServed(t) // decoder.Load with Backend "cpu"
+	if lm.model.ResidentDecline() == "" {
+		t.Skip("decoder no longer records a decline for a CPU load, so this guard has nothing to guard against")
+	}
+	f := factsOf(lm)
+	if f.residentDecline != "" {
+		t.Errorf("factsOf reports a decline for a plain CPU load: %q", f.residentDecline)
+	}
+	got := bannerLine(modelBanner(lm, config{}), "context:")
+	if strings.Contains(got, "declined") {
+		t.Errorf("the banner of a plain CPU load claims a decline: %q", got)
+	}
+	if !strings.Contains(got, "the CPU path has no --ctx cap") {
+		t.Errorf("the banner of a plain CPU load lost the ceiling note: %q", got)
+	}
+}
+
 type decliningBackend struct{ decoder.Backend }
 
 func (b *decliningBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
