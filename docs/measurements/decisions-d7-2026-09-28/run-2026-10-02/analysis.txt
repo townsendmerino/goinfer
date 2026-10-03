@@ -1,0 +1,31 @@
+128 rows from 1 run(s); smoke=[False]; invalid or failed: 0 []
+
+ratio = arm time / decision time (single) or decision x5 / schema x5 (five); geometric mean over states, 95% t-interval; band = projected, widened +/-10%
+cell            n   ratio      95% interval    band (x0.9..x1.1)  verdict
+schema K=256    8    1.24      [1.21, 1.27]           1.00..1.22  as projected
+tool K=256      8    2.03      [2.00, 2.07]           1.69..2.20  as projected
+five K=256      8    1.76      [1.72, 1.80]           2.88..3.74  OFF PROJECTION: name the wrong input before quoting
+schema K=1024   8    1.07      [1.05, 1.08]           0.93..1.13  as projected
+tool K=1024     8    1.31      [1.30, 1.33]           1.10..1.38  as projected
+five K=1024     8    3.21      [3.16, 3.26]           3.96..4.95  OFF PROJECTION: name the wrong input before quoting
+schema K=4096   8    1.01      [1.01, 1.02]           0.91..1.11  as projected
+tool K=4096     8    1.07      [1.07, 1.08]           0.95..1.17  as projected
+five K=4096     8    4.47      [4.43, 4.51]           4.32..5.39  as projected
+
+D8 trigger: state-prefill share of a five-question decision request at K=1024 = 1 - 1.46 s / 16.01 s = 0.909; fires if >= 0.70: FIRES
+  K=   32 decision5  n=8 mean    1.46 s  input tokens ~466
+  K=  256 decision   n=8 mean    0.92 s  input tokens ~317
+  K=  256 decision5  n=8 mean    4.62 s  input tokens ~1584
+  K=  256 schema     n=8 mean    1.14 s  input tokens ~302
+  K=  256 schema5    n=8 mean    2.62 s  input tokens ~424
+  K=  256 tool       n=8 mean    1.88 s  input tokens ~441
+  K= 1024 decision   n=8 mean    3.21 s  input tokens ~1076
+  K= 1024 decision5  n=8 mean   16.01 s  input tokens ~5378
+  K= 1024 schema     n=8 mean    3.42 s  input tokens ~1061
+  K= 1024 schema5    n=8 mean    4.99 s  input tokens ~1183
+  K= 1024 tool       n=8 mean    4.20 s  input tokens ~1200
+  K= 4096 decision   n=8 mean   15.62 s  input tokens ~4141
+  K= 4096 decision5  n=8 mean   78.14 s  input tokens ~20704
+  K= 4096 schema     n=8 mean   15.79 s  input tokens ~4126
+  K= 4096 schema5    n=8 mean   17.48 s  input tokens ~4248
+  K= 4096 tool       n=8 mean   16.74 s  input tokens ~4265

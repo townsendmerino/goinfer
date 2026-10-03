@@ -545,9 +545,14 @@ names that are served.
   `bare-v1` (JEV's own, no chat template). One prefill per question; each question re-prefills the state.
 - **Many questions about one state cost one full prefill each.** On the hybrid families (Qwen3.5 and the other
   Gated-DeltaNet models) no prefix is reused between questions today. A request's cost therefore grows with its
-  question count, and one schema-constrained generation that answers every field in a single pass can be the faster
-  shape for a fixed set of questions. The comparison is D7 in `tasks/task-constrained-confidence.md`; its projection
-  is recorded in `measurements/decisions-d7-2026-09-28.md`, and nothing is measured yet.
+  question count: measured on Qwen3.5-9B Q4_K_M (CUDA resident int4, batch 1, 2026-10-02), five questions cost five
+  times one, and take 1.76x (95% interval 1.72 to 1.80), 3.21x (3.16 to 3.26) and 4.47x (4.43 to 4.51) as long as
+  one schema-constrained generation that answers all five fields, at 256, 1,024 and 4,096 state tokens (4.6, 16.0 and
+  78.1 s against 2.6, 5.0 and 17.5 s). For a single question a decision is about as fast as a schema-constrained
+  answer (1.24x, 1.07x and 1.01x faster at those sizes), so for a fixed set of questions on this family the
+  one-pass schema request is the cheaper shape. The measurement is
+  [`measurements/decisions-d7-2026-09-28.md`](measurements/decisions-d7-2026-09-28.md) section 5; the work that would
+  remove the repeated prefill is D8 in `tasks/task-constrained-confidence.md`, whose trigger this measurement met.
 - **Refused:** a question that breaks a rule is a 422 before any prefill. A compute-time adapter entry cannot answer,
   since label scoring would read the base model. `/v1/models` lists each entry's `decisions` support.
 - **With a trained decision head (Route B):** `--model jev=~/models/JEV-9B,head=~/models/JEV-9B`. `head=` takes a
