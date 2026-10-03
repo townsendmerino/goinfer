@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,10 +123,7 @@ func TestOmitAnthropicHistoryImages(t *testing.T) {
 // Through handleChat on a text-only model (the only vision-less path CI can run): the header names how many earlier images were left out, and a request
 // with one image, or none, carries no header.
 func TestHandleChat_announcesOmittedHistoryImages(t *testing.T) {
-	p := filepath.Join("..", "..", "testdata", "tiny-qwen2-moe")
-	if _, err := os.Stat(p); err != nil {
-		t.Skipf("no committed tiny checkpoint at %s", p)
-	}
+	p := tinyChatCheckpoint(t) // built from committed files, so this runs in CI (testdata/tiny-qwen2-moe was never committed: it skipped there)
 	srv, err := newServer(config{models: modelFlag{{name: "tiny", path: p}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}})
 	if err != nil {
 		t.Fatal(err)

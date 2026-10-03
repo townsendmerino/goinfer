@@ -20,8 +20,7 @@ import (
 
 // tinyCheckpointFiles is testdata/llama-tiny as a checkpoint set, with the file list a plan would carry: the weights
 // with their sha256 (HF's LFS oid), the small files by size only. The fixture commits no tokenizer and serve's loader
-// requires one, so the set gains a byte-level tokenizer.json whose vocabulary (printable ASCII) sits inside the tiny
-// model's 256 ids.
+// requires one, so the set gains tinyChatTokenizer's tokenizer.json, whose vocabulary sits inside the tiny model's 256 ids.
 func tinyCheckpointFiles(t *testing.T) (content map[string][]byte, files []pull.File) {
 	t.Helper()
 	content = map[string][]byte{}
@@ -33,18 +32,7 @@ func tinyCheckpointFiles(t *testing.T) (content map[string][]byte, files []pull.
 		}
 		content[name] = b
 	}
-	vocab := map[string]int{"Ġ": 0, "Ċ": 1}
-	for c := '!'; c <= '~'; c++ {
-		vocab[string(c)] = len(vocab)
-	}
-	tok, err := json.Marshal(map[string]any{
-		"model":   map[string]any{"type": "BPE", "vocab": vocab, "merges": []string{}},
-		"decoder": map[string]any{"type": "ByteLevel"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	content["tokenizer.json"] = tok
+	content["tokenizer.json"] = tinyChatTokenizer(t)
 	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors", "tokenizer.json"} {
 		b := content[name]
 		f := pull.File{Path: name, Size: int64(len(b))}
