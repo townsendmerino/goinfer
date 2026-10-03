@@ -200,8 +200,14 @@ echo "Write a Go function that reverses a string." | goinfer-chat --model hf:Qwe
 
 The last line reads `[spec: 95% accepted, 4.6 tok/pass]` on an Apple Silicon CPU: four tokens proposed per pass, and
 on average 4.6 of a possible 5 kept, the drafted ones plus the one the target adds. Code this predictable is the
-drafter's best case; try a question with no single right answer and watch both numbers fall. The `tok/s` on the same
-line is your machine's. Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapter 9).
+drafter's best case; try a question with no single right answer and watch both numbers fall. Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapter 9).
+
+Now the `tok/s` on the same line. Run the command again without `--draft` and compare: on an M1 Pro CPU the drafted
+run read 46.7 tok/s and the plain one 51.3 tok/s (medians of three), so drafting was **slower**, 0.91× plain, even
+at 95% acceptance. On a CPU the 0.5B's own passes are not cheap next to the 1.5B's, and for a 64-token reply what they
+cost outweighs the verify passes they save. That is the do-nothing arm this chapter keeps returning to: acceptance is
+not speed, and the only way to know is to time the plain run beside it. Your machine's numbers will differ
+([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), timed figures).
 
 ---
 

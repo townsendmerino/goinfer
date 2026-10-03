@@ -300,6 +300,72 @@
         "path": "docs/measurements/book-try-it-2026-10.md",
         "heading": "Chapter 11: the server's self-check (2026-10-02)"
       }
+    },
+    {
+      "id": "ch2-decode-cpu",
+      "chapter": "docs/book/02-one-forward-pass.md",
+      "figure": "62.6 tok/s",
+      "what": "check's streamed-chat decode, the 1.5B on the CPU, median of three",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)"
+      }
+    },
+    {
+      "id": "ch2-decode-metal",
+      "chapter": "docs/book/02-one-forward-pass.md",
+      "figure": "94.4 tok/s",
+      "what": "check's streamed-chat decode, the 1.5B on Metal, median of three",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)"
+      }
+    },
+    {
+      "id": "ch8-ttft-cpu",
+      "chapter": "docs/book/08-prefill-versus-decode.md",
+      "figure": "10.98 s",
+      "what": "check's long-prompt time to first token, the 1.5B on the CPU, median of three",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)"
+      }
+    },
+    {
+      "id": "ch8-ttft-metal",
+      "chapter": "docs/book/08-prefill-versus-decode.md",
+      "figure": "2.07 s",
+      "what": "check's long-prompt time to first token, the 1.5B on Metal, median of three",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)"
+      }
+    },
+    {
+      "id": "ch9-drafted",
+      "chapter": "docs/book/09-guessing-ahead.md",
+      "figure": "46.7 tok/s",
+      "what": "the 1.5B drafted by the 0.5B, greedy, CPU, 64 tokens, median of three",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)"
+      }
+    },
+    {
+      "id": "ch9-plain",
+      "chapter": "docs/book/09-guessing-ahead.md",
+      "figure": "51.3 tok/s",
+      "what": "the plain 1.5B, same command, median of three",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)"
+      }
     }
   ]
 }

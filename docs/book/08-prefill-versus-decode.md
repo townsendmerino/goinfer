@@ -245,6 +245,20 @@ constraint.
 
 ---
 
+## Try it
+
+The same check puts the two regimes side by side. Serve the 1.5B as in chapter 2's "Try it" and run `goinfer-serve
+check`: its last row sends a prompt of about 2,000 words and times the first token, which is prefill.
+
+On an M1 Pro, time to first token was 10.98 s on the CPU and 2.07 s with `--backend metal` (medians of three). Decode
+on the same two backends read 62.6 tok/s and 94.4 tok/s: Metal is 1.5× faster at decode and 5.3× faster at prefill.
+That is this chapter's split in two numbers. Decode reads every weight once per token and is bound by memory
+bandwidth, which on Apple Silicon the CPU and GPU share (the GPU just draws more of it); prefill multiplies the
+weights by thousands of rows at once and is bound by arithmetic, where the GPU has far more to give. Your machine's numbers will differ. Measured on 2026-10-02 with the v0.20.0
+release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), timed figures).
+
+---
+
 *Sources: [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill baselines), `docs/benchmarks.md`
 (peer prefill ratio), [`docs/measurements/mellum2-moe-prefill-split-RESULT.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/mellum2-moe-prefill-split-RESULT.md) (attention share,
 the slice-versus-model correction, and the 3.11×/1.52× figures), [`docs/ollama-chase.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/ollama-chase.md)

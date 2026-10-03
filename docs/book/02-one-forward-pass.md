@@ -186,6 +186,24 @@ generating tokens runs around 39–41 per second, while processing a 3,020-token
 
 ---
 
+## Try it
+
+Serve the 1.5B and let the server's own check time one token at a time, first on the CPU and then on Metal if you
+have Apple Silicon:
+
+```sh
+goinfer-serve --model hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m --backend cpu
+goinfer-serve check
+```
+
+The "chat, streamed" row prints the decode rate: every token in it is one forward pass, the whole stack from IDs to
+scores. On an M1 Pro it read 62.6 tok/s on the CPU and 94.4 tok/s with `--backend metal` (medians of three), so a
+forward pass of the 1.5B costs about 16 ms on the CPU and 11 ms on the GPU. The same check ends `1 of 9 checks
+FAILED`: the tools row, where this small model asks for the tool again instead of answering (chapter 11 reads that
+line). Your machine's numbers will differ. Measured on 2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), timed figures).
+
+---
+
 *Sources: `decoder/model.go` (`forward`, `runLayers`, `logitsFromHidden`),
 [`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) §Step 2, [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) (decode-only, greedy, depth 128,
 quiet box), [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill).*
