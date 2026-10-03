@@ -1,0 +1,13 @@
+goinfer check → http://127.0.0.1:18183
+
+models list ...............  ok    1 model · cpu (int4) [int4 layout: row4-only (down, embed, gate/up, lm_head, qkv)]
+chat, streamed ............  ok    TTFT 0.10s · 62.6 tok/s · usage present
+tools, OpenAI .............  FAIL  turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)
+tools, harness-scale ......  skip  model did not call the tool under a harness-scale (12-tool) schema — model answered without calling the tool (finish_reason="stop") — too small for tool use, or its template has no tool section
+structured output .........  ok    {"type":"integer"} → 366
+stop sequences ............  ok    not leaked · finish_reason="stop"
+count_tokens ..............  ok    23 tokens, matches usage
+vision ....................  skip  no vision tower loaded (start the server with --vision <dir> to check this row)
+long prompt (~2000 words) .  ok    TTFT 11.11s · 39.4 tok/s · usage present
+
+1 of 9 checks FAILED

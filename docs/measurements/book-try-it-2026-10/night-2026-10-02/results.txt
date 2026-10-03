@@ -1,0 +1,30 @@
+-- check cpu 1
+chat, streamed ............  ok    TTFT 1.18s · 70.9 tok/s · usage present
+long prompt (~2000 words) .  ok    TTFT 10.96s · 38.9 tok/s · usage present
+1 of 9 checks FAILED
+-- check cpu 2
+chat, streamed ............  ok    TTFT 0.10s · 62.6 tok/s · usage present
+long prompt (~2000 words) .  ok    TTFT 11.11s · 39.4 tok/s · usage present
+1 of 9 checks FAILED
+-- check cpu 3
+chat, streamed ............  ok    TTFT 0.09s · 62.4 tok/s · usage present
+long prompt (~2000 words) .  ok    TTFT 10.98s · 39.4 tok/s · usage present
+1 of 9 checks FAILED
+-- check metal 1
+chat, streamed ............  ok    TTFT 1.84s · 93.4 tok/s · usage present
+long prompt (~2000 words) .  ok    TTFT 2.08s · usage present
+1 of 9 checks FAILED
+-- check metal 2
+chat, streamed ............  ok    TTFT 0.12s · 94.4 tok/s · usage present
+long prompt (~2000 words) .  ok    TTFT 2.07s · usage present
+1 of 9 checks FAILED
+-- check metal 3
+chat, streamed ............  ok    TTFT 0.12s · 94.8 tok/s · usage present
+long prompt (~2000 words) .  ok    TTFT 2.07s · usage present
+1 of 9 checks FAILED
+-- ch9 plain 1: [64 tok, 51.7 tok/s]
+-- ch9 draft 1: [64 tok, 46.8 tok/s] [spec: 95% accepted, 4.6 tok/pass]
+-- ch9 plain 2: [64 tok, 51.1 tok/s]
+-- ch9 draft 2: [64 tok, 46.7 tok/s] [spec: 95% accepted, 4.6 tok/pass]
+-- ch9 plain 3: [64 tok, 51.3 tok/s]
+-- ch9 draft 3: [64 tok, 46.6 tok/s] [spec: 95% accepted, 4.6 tok/pass]

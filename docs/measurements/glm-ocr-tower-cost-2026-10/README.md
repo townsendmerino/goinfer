@@ -24,8 +24,11 @@ three points:
 
 The whole sweep runs 3 times back to back, one fresh process per point: 9 processes, 9 times.
 
-- **Idle gate:** before each process, the 1-min load average must be at most 1.0, waiting up to 10 min. Otherwise the
-  job stops with `NOT IDLE`.
+- **Idle gate:** before each process, `bench_peer.py`'s instant gate: the CPU at most 10% busy over 3 s and no foreign
+  timed workload, waiting up to 10 min. Otherwise the job stops with `NOT IDLE`.
+- **Amendment, 2026-10-03, before any point ran:** the gate was a 1-min load average of at most 1.0. On the first night
+  this Mac sat at 1.7–2.4 with VS Code open and the CPU near idle, and the job stopped `NOT IDLE` before its first point.
+  The instant gate is the harness's darwin default since TE1 attempt 5. Nothing else changes.
 - **Load record:** the test's own load readout reads `/proc/loadavg` and prints `n/a` on macOS. The script's
   `sysctl vm.loadavg` lines before and after each process are the load record.
 - **The stop:** if the first repeat's 4.8 MP point takes over 30 min, the job stops after it and the record holds one

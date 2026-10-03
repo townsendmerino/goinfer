@@ -52,15 +52,28 @@ fi
   echo "path:      f32 reference (LoadGlmOcrVisionEncoder quant=false), CPU, random pixel_values (rand seed 1)"
 } | tee "$LOG/provenance.txt"
 
-load1() { sysctl -n vm.loadavg | awk '{print $2}'; }
-gate() { # the idle gate: 1-min load <= 1.0, waiting up to 10 min
-  local waited=0
-  while awk -v l="$(load1)" 'BEGIN{exit !(l > 1.0)}'; do
-    if [ $waited -ge 600 ]; then echo "NOT IDLE: load $(load1) after 10 min ($1)" | tee -a "$LOG/provenance.txt"; return 1; fi
-    sleep 15; waited=$((waited + 15))
-  done
-  [ $waited -gt 0 ] && echo "gate: waited ${waited}s for load <= 1.0 ($1)" | tee -a "$LOG/provenance.txt"
-  return 0
+# The idle gate is bench_peer.py's instant gate (the darwin default since TE1): the CPU under 10% busy over 3 s and no
+# foreign timed workload, waiting up to 10 min. The first night (2026-10-02) used a 1-min load average <= 1.0, which this
+# Mac does not reach with VS Code open, and stopped NOT IDLE before the first point (README.md, amendment).
+REPO=$(cd "$(dirname "$0")/../../.." && pwd)
+gate() {
+  python3 - "$REPO/scripts" "$1" <<'PY' | tee -a "$LOG/provenance.txt"
+import sys, time
+sys.path.insert(0, sys.argv[1])
+import bench_peer as b
+t0 = time.time()
+while True:
+    busy, active = b.instant_idle_sample()
+    if busy <= b.BUSY_CAP and not active:
+        if time.time() - t0 > 5:
+            print(f"gate: waited {time.time() - t0:.0f}s for busy <= {b.BUSY_CAP:.0f}% ({sys.argv[2]})")
+        sys.exit(0)
+    if time.time() - t0 > 600:
+        print(f"NOT IDLE: busy {busy:.1f}%, foreign {active} after 10 min ({sys.argv[2]})")
+        sys.exit(1)
+    time.sleep(1)
+PY
+  return "${PIPESTATUS[0]}"
 }
 
 : > "$LOG/times.tsv"

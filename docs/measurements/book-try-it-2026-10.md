@@ -92,3 +92,32 @@ function that reverses a string." on stdin, on 2026-10-02: the closing line read
 The 0.5B is the smallest model the catalogue lists, and the check names what failed and why. Not reconciled here:
 `goinfer-chat models` lists the 0.5B's tools as "minimal schema: ok; harness-scale (12 tools): skip — too small
 (measured 2026-09-07, nobara-pc)", while this run passed harness-scale and failed the OpenAI tools row.
+
+## Timed figures: chapters 2, 8 and 9 (night run, 2026-10-02)
+
+`book-try-it-2026-10/run-night.sh` on the night queue, 18:37–18:39 PDT: the same released `v0.20.0` binaries and
+checkpoints as the day run, on the same machine. No thermal warning was recorded. Every command's raw output is in
+`book-try-it-2026-10/night-2026-10-02/`. A chapter quotes the median of three.
+
+**The run had no idle gate of its own.** The runner's settle wait gave up at a load average of 2.0, with the owner's
+editor open. That bears on the CPU rows most. Each row's three runs agree within 1% after the first, and the record
+gives all three.
+
+| Figure | Run 1 | Run 2 | Run 3 | **Median** |
+|---|---:|---:|---:|---:|
+| ch2/ch8, 1.5B on the CPU: `check`'s "chat, streamed" decode | 70.9 | 62.6 | 62.4 | **62.6 tok/s** |
+| ch2/ch8, 1.5B on the CPU: 2,000-word prompt, time to first token | 10.96 | 11.11 | 10.98 | **10.98 s** |
+| ch2/ch8, 1.5B on Metal: "chat, streamed" decode | 93.4 | 94.4 | 94.8 | **94.4 tok/s** |
+| ch2/ch8, 1.5B on Metal: 2,000-word prompt, time to first token | 2.08 | 2.07 | 2.07 | **2.07 s** |
+| ch9, 1.5B plain, CPU, greedy, 64 tokens | 51.7 | 51.1 | 51.3 | **51.3 tok/s** |
+| ch9, 1.5B drafted by the 0.5B, same | 46.8 | 46.7 | 46.6 | **46.7 tok/s** |
+
+- **ch9: drafting is slower here, 0.91× plain,** at 95% acceptance and 4.6 tokens per pass (the day run's figures
+  again). On the CPU the 0.5B's draft passes cost more than the verify saves on a 64-token reply. The chapter must say
+  that, not that drafting speeds this up.
+- The CPU decode's first run (70.9) is above the other two. It is kept, and the median sits with the two that agree.
+- **`check` on the 1.5B reads `1 of 9 checks FAILED`, every run, on both backends.** The failing row is `tools, OpenAI`:
+  "turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)", the same row the 0.5B
+  failed in chapter 11. The 1.5B passes `stop sequences`, which the 0.5B did not. A chapter that shows `check` must
+  show this line.
+

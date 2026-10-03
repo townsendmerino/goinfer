@@ -1,0 +1,16 @@
+date:     2026-10-02 18:37:51 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     2.00 2.18 2.27
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+chat:     goinfer-chat-darwin-arm64 v0.20.0 (890ca565f982-dirty); sha256 678d6a22c97e7e5e
+serve:    goinfer-serve-darwin-arm64 v0.20.0 (890ca565f982-dirty); sha256 31cb4c0be2424cbf
+== check, 1.5B on cpu — 18:37:51
+check cpu run 1 rc=1
+check cpu run 2 rc=1
+check cpu run 3 rc=1
+== check, 1.5B on metal — 18:38:58
+check metal run 1 rc=1
+check metal run 2 rc=1
+check metal run 3 rc=1
+== ch9: drafted vs plain, CPU — 18:39:27
+finished: 2026-10-02 18:39:43 PDT
