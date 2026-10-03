@@ -10,7 +10,7 @@
 #     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-db04-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/db04/.
 set -uo pipefail
-REV=c03f288e
+REV=b37b8158
 BASE=$HOME/goinfer-bench/metal-audit-2026-10
 BIN=$BASE/metal-tagged-$REV.test
 REPO=$HOME/tmcode/goinfer
