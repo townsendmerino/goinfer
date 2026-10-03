@@ -96,15 +96,17 @@
     <ul id="resident-list"></ul>
   </div>
   <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded">
-    <label for="repo">HuggingFace GGUF repo</label>
+    <label for="repo">HuggingFace repo</label>
     <div class="row">
       <input id="repo" class="ambient amb-surface-concave amb-rounded" placeholder="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="repo-suggest">
+      <div class="fit"><select id="repo-kind" aria-label="What to fetch"><option value="gguf">GGUF file</option><option value="safetensors">safetensors checkpoint</option></select></div>
       <div class="fit"><button class="ambient amb-surface-convex amb-elevation-1 amb-rounded go" id="list">List files</button></div>
     </div>
     <ul id="repo-suggest" class="repo-suggest" role="listbox" aria-label="Matching repos" hidden></ul>
     <p class="note" id="repo-suggest-note" hidden></p>
     <p class="note" style="margin:10px 0 0">Anonymous only. Gated repos are detected before
-    the download starts — a community GGUF re-upload is usually ungated.</p>
+    the download starts — a community GGUF re-upload is usually ungated. A repo with no GGUF is
+    offered as its safetensors checkpoint: the whole set, published only once every file has checked out.</p>
   </div>
   <div class="card ambient amb-surface amb-chamfer amb-elevation-1 amb-rounded" id="files-card" hidden>
     <div id="files"></div>

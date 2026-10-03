@@ -1956,9 +1956,8 @@ async function* sse(resp) {
   }
 }
 
-// --- repo search-as-you-type (HF search, GGUF only for now — /web/models/search's own "kind"
-// field already carries a value, so widening this to another kind later is a client change plus
-// one table entry in pull.go, never a new route or request shape) -------------------------------
+// --- repo search-as-you-type (HF search, narrowed by the kind selector beside the box: GGUF
+// files, or safetensors checkpoints — /web/models/search's "kind" field, pull.go's searchKinds) ----
 const SEARCH_MIN_CHARS = 4;
 const SEARCH_DEBOUNCE_MS = 300;
 let searchTimer = null;
@@ -1983,7 +1982,7 @@ function renderSuggestions(repos) {
     ul.hidden = true;
     $("repo").setAttribute("aria-expanded", "false");
     $("repo-suggest-note").hidden = false;
-    $("repo-suggest-note").textContent = "No matching GGUF repos on HuggingFace.";
+    $("repo-suggest-note").textContent = "No matching " + ($("repo-kind").value === "safetensors" ? "safetensors" : "GGUF") + " repos on HuggingFace.";
     return;
   }
   $("repo-suggest-note").hidden = true;
@@ -2012,7 +2011,7 @@ async function searchRepos(query) {
   searchAC = ac;
   const mySeq = ++searchSeq;
   try {
-    const r = await fetch("/web/models/search", {method: "POST", headers: headers(), body: JSON.stringify({query, kind: "gguf"}), signal: ac.signal});
+    const r = await fetch("/web/models/search", {method: "POST", headers: headers(), body: JSON.stringify({query, kind: $("repo-kind").value}), signal: ac.signal});
     if (mySeq !== searchSeq) return;   // superseded while this was in flight
     const j = await r.json();
     if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
@@ -2041,6 +2040,8 @@ $("repo").addEventListener("input", () => {
   searchTimer = setTimeout(() => searchRepos(q), SEARCH_DEBOUNCE_MS);
 });
 $("repo").addEventListener("keydown", e => { if (e.key === "Escape") hideSuggestions(); });
+// A new kind re-runs the search for what is already typed, rather than leaving the other kind's suggestions up.
+$("repo-kind").addEventListener("change", () => $("repo").dispatchEvent(new Event("input")));
 // Delayed so a click on a suggestion (which blurs the input first) still registers before the
 // list disappears out from under it.
 $("repo").addEventListener("blur", () => setTimeout(hideSuggestions, 150));
@@ -2054,10 +2055,11 @@ $("list").onclick = async () => {
   $("files-card").hidden = false;
   $("files").textContent = "listing…";
   try {
-    const r = await fetch("/web/models/list", {method: "POST", headers: headers(), body: JSON.stringify({repo})});
+    const checkpoint = $("repo-kind").value === "safetensors";
+    const r = await fetch("/web/models/list", {method: "POST", headers: headers(), body: JSON.stringify({repo, checkpoint})});
     const j = await r.json();
     if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
-    renderFiles(repo, j.files || [], j.fit_backend, j.free_human);
+    renderFiles(repo, j.files || [], j.fit_backend, j.free_human, {plan: j.checkpoint, error: j.checkpoint_error, asked: checkpoint});
   } catch (e) {
     $("files").textContent = "";
     const p = document.createElement("p"); p.className = "err"; p.textContent = String(e.message || e);
@@ -2074,9 +2076,22 @@ $("list").onclick = async () => {
 const FIT_LABEL = {fits: "Fits", tight: "Tight", wont_fit: "Won't fit"};
 const FIT_CLASS = {fits: "ok", tight: "warn", wont_fit: "err"};
 
-function renderFiles(repo, files, fitBackend, freeHuman) {
+function renderFiles(repo, files, fitBackend, freeHuman, ckpt) {
   const host = $("files"); host.textContent = "";
-  if (!files.length) { host.textContent = "no .gguf files in this repo"; return; }
+  if (!files.length) {
+    // The server plans the repo's safetensors checkpoint whenever it lists no GGUF (task-checkpoint-fetch P6): offer
+    // it, or say why it can't be pulled — a plan declines an unsupported family before any weight byte moves.
+    if (ckpt && ckpt.plan) { renderCheckpoint(host, repo, ckpt.plan); return; }
+    const p = document.createElement("p");
+    if (ckpt && ckpt.error) {
+      p.className = "err";
+      p.textContent = (ckpt.asked ? "" : "No .gguf files in this repo. ") + "Its safetensors checkpoint can't be pulled: " + ckpt.error;
+    } else {
+      p.textContent = "no .gguf files in this repo";
+    }
+    host.appendChild(p);
+    return;
+  }
   // fitBackend is only sent when the server could actually read free memory for its own active
   // backend (internal/serveapp/webui.go's freeBytesForActiveBackend) — e.g. webgpu has no live
   // probe. Absent it, the table renders exactly as before: no Fit column, nothing guessed.
@@ -2121,14 +2136,43 @@ function renderFiles(repo, files, fitBackend, freeHuman) {
   host.appendChild(t);
 }
 
+// renderCheckpoint offers a repo's whole safetensors checkpoint: the plan's own size line (with its full-precision
+// warning), the family that will load it, and one Pull for the set. No fit tag, deliberately: the plan's bytes are the
+// full-precision original, which goinfer quantizes at load, so a size-against-free-memory read would say "won't fit"
+// for models that fit. The load's own fit guard is the answer there.
+function renderCheckpoint(host, repo, c) {
+  const note = document.createElement("p");
+  note.className = "note";
+  note.textContent = "No GGUF here; its safetensors checkpoint: " + c.note + ". Loads as " + c.family +
+    " (model_type " + c.model_type + ").";
+  host.appendChild(note);
+  const t = document.createElement("table");
+  const head = document.createElement("tr");
+  for (const h of ["Checkpoint", "Size", ""]) { const th = document.createElement("th"); th.textContent = h; head.appendChild(th); }
+  t.appendChild(head);
+  const tr = document.createElement("tr");
+  const a = document.createElement("td"); a.className = "f"; a.textContent = c.files + " files";
+  const b = document.createElement("td"); b.className = "n"; b.textContent = c.human;
+  const td = document.createElement("td"); td.className = "n";
+  const btn = document.createElement("button"); btn.className = "ambient amb-surface-convex amb-elevation-1 amb-rounded go"; btn.textContent = "Pull";
+  btn.onclick = () => pull(repo, null);
+  td.appendChild(btn);
+  tr.appendChild(a); tr.appendChild(b); tr.appendChild(td);
+  t.appendChild(tr);
+  host.appendChild(t);
+}
+
+// pull fetches one GGUF file, or with file null the repo's whole safetensors checkpoint. Both stream the same events;
+// a checkpoint's progress also names the file in flight, and its done reports how many files carried a sha256.
 async function pull(repo, file) {
   $("pull-card").hidden = false;
-  $("pull-what").textContent = repo + " · " + file;
+  $("pull-what").textContent = repo + " · " + (file || "safetensors checkpoint");
   $("bar").style.width = "0%";
   const st = $("pull-status"); st.className = "note"; st.textContent = "starting…";
   document.querySelectorAll("#files button").forEach(b => b.disabled = true);
   try {
-    const r = await fetch("/web/models/pull", {method: "POST", headers: headers(), body: JSON.stringify({repo, file})});
+    const body = file ? {repo, file} : {repo, checkpoint: true};
+    const r = await fetch("/web/models/pull", {method: "POST", headers: headers(), body: JSON.stringify(body)});
     if (!r.ok) {
       let m = "HTTP " + r.status;
       try { const j = await r.json(); if (j.error && j.error.message) m = j.error.message; } catch {}
@@ -2137,16 +2181,21 @@ async function pull(repo, file) {
     for await (const ev of sse(r)) {
       const j = JSON.parse(ev.data);
       if (ev.event === "start") {
-        st.textContent = j.human + (j.sha256 ? " · sha256 " + j.sha256.slice(0, 16) + "…" : " · no sha256 published");
+        if (j.checkpoint) st.textContent = j.human + " · " + j.checkpoint.files + " files";
+        else st.textContent = j.human + (j.sha256 ? " · sha256 " + j.sha256.slice(0, 16) + "…" : " · no sha256 published");
       } else if (ev.event === "progress") {
         if (j.total > 0) $("bar").style.width = (100 * j.done / j.total).toFixed(1) + "%";
-        st.textContent = j.human + " · " + j.rate + (j.eta ? " · eta " + j.eta : "");
+        st.textContent = j.human + " · " + j.rate + (j.eta ? " · eta " + j.eta : "") + (j.file ? " · " + j.file : "");
       } else if (ev.event === "done") {
         $("bar").style.width = "100%";
         st.className = "note ok";
         st.textContent = "";
-        st.appendChild(document.createTextNode(
-          (j.verified ? "sha256 verified" : "no sha256 published — NOT verified") + " · " + j.elapsed + " · "));
+        // A checkpoint's weights carry HF's sha256; its small config and tokenizer files have none and are checked by
+        // size. Say so, rather than calling the whole set verified.
+        const verified = j.checkpoint
+          ? "sha256 verified for " + j.sha256_files + " of " + j.files + " files (the rest are small files HF publishes no sha256 for; checked by size)"
+          : (j.verified ? "sha256 verified" : "no sha256 published — NOT verified");
+        st.appendChild(document.createTextNode(verified + " · " + j.elapsed + " · "));
         const code = document.createElement("code"); code.textContent = j.path;
         st.appendChild(code);
         // The file is on disk, but the server has not loaded it. Say so rather than letting the
@@ -2167,7 +2216,7 @@ async function pull(repo, file) {
 // --- load (W5) --------------------------------------------------------------
 // The pull flow used to end on "restart the server with --model <path>". Now it ends on a button that
 // asks the server to load the file it just downloaded. The server confines that route to regular .gguf
-// files inside its own pull cache, so the page can load what it pulled and nothing else.
+// files and complete pulled checkpoints inside its own pull cache, so the page can load what it pulled and nothing else.
 function offerLoad(host, path) {
   const row = document.createElement("div");
   row.className = "load-row";
@@ -2183,7 +2232,8 @@ function offerLoad(host, path) {
   host.appendChild(row);
 }
 
-// servedName is the name the server gives a loaded file: its base name without the extension.
+// servedName is the name the server gives a loaded model (webServedName): a file's base name without ".gguf", or a
+// checkpoint directory's own name, which is the repo's.
 const servedName = path => path.split(/[\\/]/).pop().replace(/\.gguf$/i, "");
 
 async function loadPulled(path, btn, msg) {

@@ -257,7 +257,7 @@
   {
    "name": "web",
    "group": "Network and security",
-   "summary": "Serve a local browser UI at `/` to chat and to pull GGUF checkpoints from Hugging Face. Off by default: its pull route starts multi-gigabyte downloads."
+   "summary": "Serve a local browser UI at `/` to chat, and to pull and load GGUF files or whole safetensors checkpoints from Hugging Face. Off by default: its pull route starts multi-gigabyte downloads."
   },
   {
    "name": "allow-admin",

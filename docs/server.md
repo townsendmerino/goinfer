@@ -40,6 +40,18 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > table. `int8int8` is still the higher-accuracy AND (on this platform) lower-RAM choice if either
 > matters more than speed.
 
+**Where a model comes from.** `--model` takes a `.gguf` or `.giw` file, a checkpoint directory
+(`config.json`, the tokenizer and safetensors weights), or a HuggingFace reference. `hf:<owner>/<repo>:<quant>`
+fetches one GGUF file. `hf:<owner>/<repo>:safetensors` fetches the repo's whole safetensors checkpoint, which is the
+form a family with no GGUF loader ships in. The plan is decided before any weight byte moves: an unsupported
+`model_type` or a missing shard is refused, and a full-precision original is flagged as costing about four times its
+GGUF q4. The set is assembled beside the cache directory and published by one rename once every file has checked out.
+An interrupted fetch therefore never leaves a loadable-looking directory, the next run resumes it, and a complete one
+resolves offline. Anonymous only: a gated repo is refused before any file is read. With `-web`, the Models tab does the
+same. A repo with no GGUF lists its checkpoint plan, Pull fetches the set, and Load loads the directory under the
+repo's name. The page loads only what the pull flow published: a `.gguf` file, or a checkpoint directory whose marker
+and files verify.
+
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every
 other route**, so a liveness probe must send the API key when one is configured (N-36). Each `/v1/models`

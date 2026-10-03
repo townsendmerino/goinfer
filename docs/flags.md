@@ -109,7 +109,7 @@ Where the server listens and who may talk to it.
 | `--api-key` | `string` | — | Shared secret every request must send as `Authorization: Bearer <key>` or `x-api-key`. Falls back to `$GOINFER_API_KEY`. Required to bind anywhere but loopback, and with `--allow-admin`. |
 | `--tls-cert` | `string` | — | PEM certificate file. With `--tls-key`, serves HTTPS instead of plaintext HTTP. |
 | `--tls-key` | `string` | — | PEM private key file, paired with `--tls-cert`. |
-| `--web` | `bool` | `false` | Serve a local browser UI at `/` to chat and to pull GGUF checkpoints from Hugging Face. Off by default: its pull route starts multi-gigabyte downloads. |
+| `--web` | `bool` | `false` | Serve a local browser UI at `/` to chat, and to pull and load GGUF files or whole safetensors checkpoints from Hugging Face. Off by default: its pull route starts multi-gigabyte downloads. |
 | `--allow-admin` | `bool` | `false` | Enable `/admin/*` on the TCP listener: model load and unload, cancel, halt, resume. A deliberate opt-in that requires `--api-key`. Ignored when `--admin-socket` is set. [More](server.md). |
 
 ## Admin and halt

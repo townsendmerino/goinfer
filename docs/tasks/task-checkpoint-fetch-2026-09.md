@@ -1,8 +1,8 @@
 # Task: fetch any checkpoint goinfer can load — beyond one GGUF file (P1–P9) — 2026-09
 
 > **Status: IN PROGRESS 2026-10-03.** §2 decided (option (c), owner 2026-10-03). P1, P2, P3 and P5 are
-> built in `pull` and reachable from the CLI and `--model`; P9's library gates pass. P6 (the web UI),
-> P4 (split GGUF), P7's vision test, P8's cache view and the server docs remain. See "Progress" below.
+> built in `pull` and reachable from the CLI, `--model` and the web UI (P6); P9's gates pass and the server
+> docs name the checkpoint path. P4 (split GGUF), P7 and P8's cache view remain. See "Progress" below.
 >
 > Filed after the owner asked for the complete solution: every supported model reachable from the
 > page, multi-file checkpoints downloadable, and loadable once down.
@@ -205,12 +205,44 @@ before the tree or any file is read, and the HF token becomes its own item.
 - `pull HuggingFaceTB/SmolLM2-135M-Instruct:safetensors` fetched 8 files (259.8 MiB) in 13 s with no staging left
   behind, and `serve --model <dir> --backend cpu` answered an 8-token chat request from it.
 
+**P6, built 2026-10-03 (`internal/serveapp/webui.go`, the page's `app.js`):**
+- **List:** a repo that lists no GGUF, or one asked for as a checkpoint by the kind selector, gets its checkpoint
+  plan in the list response. The plan carries its size line and the family that loads it. A plan that declines puts
+  its reason where the offer would be. A GGUF repo lists exactly as before and makes no plan request.
+  - The plan has **no fit tag**. Its bytes are the full-precision original, which goinfer quantizes at load, so a
+    size-against-free-memory read would say "won't fit" for models that fit. The load's fit guard answers that
+    instead.
+- **Pull:** `{repo, checkpoint: true}` streams the set through `DownloadCheckpoint`. Progress is over the whole set
+  and names the file in flight. `done` says how many files carried a sha256: HF publishes one only for the LFS
+  weights, so the small config and tokenizer files are checked by size, and the page says so rather than calling
+  the set verified.
+- **Load:** `webLoadPath` accepts a directory under the cache root only when `CachedCheckpoint` verifies it. It
+  refuses a directory with no marker, a `.partial` staging directory (by name, too, for the instant it carries
+  the marker before the rename) and one whose weights no longer verify. The served name is the directory's, which is
+  the repo's. `filepath.Ext` would have cut `Qwen2.5-0.5B-Instruct` to `Qwen2.5-0`, so only `.gguf` is cut.
+- **The fit guard's decline** reaches the page for a directory in the same shape as for a file: an error event
+  carrying the guard's message, status 400.
+- **The kind selector** (GGUF file / safetensors checkpoint) narrows the search and the list.
+- **Gates** (`internal/serveapp/webui_checkpoint_test.go`):
+  - list → pull → load with the real loader, then one decoded token;
+  - the GGUF-repo and declined-plan listings;
+  - the directory confinement cases;
+  - the directory fit decline.
+  The HF calls are package seams, like `webLoadDecoder`. Mutations caught: dropping the staging refusal, and naming
+  by `filepath.Ext`.
+- **Live by day:**
+  - The page's routes ran on a scratch `serve -web`, with HOME in the scratchpad so the real cache was untouched.
+  - The SmolLM2-135M-Instruct plan listed 8 files, 259.8 MiB, with the bf16 note.
+  - The pull took 15 s and left no staging directory.
+  - The load came up under `SmolLM2-135M-Instruct`, and a chat answered.
+  - The gated repo was refused, the GGUF repo was unchanged, and a `safetensors` search returned SmolLM3-3B first.
+
 **Remaining:**
-- **P6:** the web UI loads a directory, the page renders a plan, and P1's kind selector.
 - **P4:** split GGUF, whose decision is still open.
-- **P7:** the test that a pulled VL repo enables image turns.
+- **P7:** a pulled VL repo enabling image turns. Found 2026-10-03: vision auto-discovery stats the raw `--model`
+  string, so `--model hf:…:safetensors` finds no tower. Only a plain directory path does. A page-loaded checkpoint is
+  text-only by design, because the tower is attached once, at startup.
 - **P8:** a view of what the cache holds.
-- **P9's docs:** `docs/server.md`. The `--model` help, `docs/flags.md` and the README name `:safetensors` already.
 
 ## 5. Not in scope, stated
 

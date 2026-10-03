@@ -162,6 +162,28 @@ type webPullReq struct {
 	Repo  string `json:"repo"`
 	Quant string `json:"quant"`
 	File  string `json:"file"`
+	// Checkpoint names the repo's whole safetensors checkpoint (pull's ":safetensors" selector) rather than one GGUF
+	// file: the shape a family with no GGUF loader is published in (task-checkpoint-fetch-2026-09.md P6).
+	Checkpoint bool `json:"checkpoint"`
+}
+
+// The HuggingFace calls the list and pull routes make, as seams: the tests stand in a repo without the network, the
+// way webLoadDecoder stands in a load.
+var (
+	webCheckAccess     = pull.CheckAccess
+	webListFiles       = pull.List
+	webPlanCheckpoint  = pull.PlanCheckpoint
+	webFetchCheckpoint = pull.DownloadCheckpoint
+)
+
+// checkpointJSON is a checkpoint plan as the page shows it before the transfer: what it costs, and which family will
+// load it. No fit tag: the plan's bytes are the full-precision original, which goinfer quantizes at load, so a
+// size-against-free-memory read would refuse models that fit.
+func checkpointJSON(p pull.Plan) map[string]any {
+	return map[string]any{
+		"files": len(p.Files), "size": p.Bytes, "human": pull.HumanBytes(p.Bytes),
+		"model_type": p.ModelType, "family": p.Family, "dtype": p.Dtype, "note": p.SizeNote(),
+	}
 }
 
 // freeBytesForActiveBackend reports free memory for the server's own currently-configured
@@ -220,14 +242,19 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {
+	if req.Checkpoint {
+		ref.Checkpoint = true
+	}
+	if err := webCheckAccess(ctx, ref.Repo); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	files, err := pull.List(ctx, ref.Repo)
-	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
+	var files []pull.File
+	if !ref.Checkpoint {
+		if files, err = webListFiles(ctx, ref.Repo); err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
 	}
 	free, freeOK := s.freeBytesForActiveBackend()
 	out := make([]map[string]any, 0, len(files))
@@ -239,6 +266,16 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 		out = append(out, row)
 	}
 	resp := map[string]any{"repo": ref.Repo, "files": out}
+	// A repo with no GGUF (or one asked for as a checkpoint) is offered as its safetensors checkpoint, the way the CLI's
+	// bare `pull owner/repo` does. A plan that declines (no config, an unsupported model_type, a missing shard) says why
+	// in place of the offer, before any weight byte has moved.
+	if len(files) == 0 {
+		if p, err := webPlanCheckpoint(ctx, ref.Repo); err != nil {
+			resp["checkpoint_error"] = err.Error()
+		} else {
+			resp["checkpoint"] = checkpointJSON(p)
+		}
+	}
 	if freeOK {
 		backend := s.cfg.load.Backend
 		if backend == "" {
@@ -320,6 +357,8 @@ func webPullRef(req webPullReq) (pull.Ref, error) {
 		return pull.Ref{Repo: base.Repo, File: req.File}, nil
 	case req.Quant != "":
 		return pull.Ref{Repo: base.Repo, Quant: req.Quant}, nil
+	case req.Checkpoint:
+		return pull.Ref{Repo: base.Repo, Checkpoint: true}, nil
 	default:
 		return base, nil
 	}
@@ -341,8 +380,8 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if ref.File == "" && ref.Quant == "" {
-		writeErr(w, http.StatusBadRequest, "name a quant or a file to pull")
+	if ref.File == "" && ref.Quant == "" && !ref.Checkpoint {
+		writeErr(w, http.StatusBadRequest, "name a quant, a file or the checkpoint to pull")
 		return
 	}
 	if !s.pulls.acquire() {
@@ -370,11 +409,15 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	send := sseJSONSender(w, flusher, cancel)
-	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {
+	if err := webCheckAccess(ctx, ref.Repo); err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	files, err := pull.List(ctx, ref.Repo)
+	if ref.Checkpoint {
+		webPullCheckpoint(ctx, ref.Repo, send)
+		return
+	}
+	files, err := webListFiles(ctx, ref.Repo)
 	if err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
@@ -393,18 +436,7 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	path, err := pull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
-		el := time.Since(start).Seconds()
-		var rate float64
-		if el > 0 {
-			rate = float64(done) / el
-		}
-		p := map[string]any{"done": done, "total": total, "human": pull.HumanBytes(done), "rate": pull.HumanBytes(int64(rate)) + "/s"}
-		// ETA only once the sample is long enough to mean something. A confidently wrong
-		// estimate is worse than none: it gets planned around.
-		if total > 0 && rate > 0 && el > 3 {
-			p["eta"] = time.Duration(float64(total-done) / rate * float64(time.Second)).Round(time.Second).String()
-		}
-		send("progress", p)
+		send("progress", pullProgress(start, done, total))
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -420,6 +452,65 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// pullProgress is one progress event's payload: bytes so far, the rate, and an ETA once the sample means something.
+func pullProgress(start time.Time, done, total int64) map[string]any {
+	el := time.Since(start).Seconds()
+	var rate float64
+	if el > 0 {
+		rate = float64(done) / el
+	}
+	p := map[string]any{"done": done, "total": total, "human": pull.HumanBytes(done), "rate": pull.HumanBytes(int64(rate)) + "/s"}
+	// ETA only once the sample is long enough to mean something. A confidently wrong
+	// estimate is worse than none: it gets planned around.
+	if total > 0 && rate > 0 && el > 3 {
+		p["eta"] = time.Duration(float64(total-done) / rate * float64(time.Second)).Round(time.Second).String()
+	}
+	return p
+}
+
+// webPullCheckpoint is handleWebPull for a whole safetensors checkpoint: plan it (declining an unsupported family before
+// any weight byte), then fetch the set into the repo's cache directory through pull.DownloadCheckpoint, which publishes
+// the directory only once every file has verified. Progress is over the whole set and names the file in flight. A
+// cancelled pull keeps the staging directory, so the next pull of the same repo resumes it.
+func webPullCheckpoint(ctx context.Context, repo string, send func(string, any)) {
+	p, err := webPlanCheckpoint(ctx, repo)
+	if err != nil {
+		send("error", map[string]string{"message": err.Error()})
+		return
+	}
+	dir, err := pull.CacheDir(repo)
+	if err != nil {
+		send("error", map[string]string{"message": err.Error()})
+		return
+	}
+	digests := 0
+	for _, f := range p.Files {
+		if f.SHA256 != "" {
+			digests++
+		}
+	}
+	send("start", map[string]any{"checkpoint": checkpointJSON(p), "size": p.Bytes, "human": pull.HumanBytes(p.Bytes), "dir": dir})
+	start := time.Now()
+	path, err := webFetchCheckpoint(ctx, p, dir, func(done, total int64, file string) {
+		ev := pullProgress(start, done, total)
+		ev["file"] = file
+		send("progress", ev)
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		send("error", map[string]string{"message": err.Error()})
+		return
+	}
+	// HuggingFace publishes a sha256 only for its LFS files (the weights); the small git files beside them (config,
+	// tokenizer) are checked by size. Say which, rather than calling the whole set verified.
+	send("done", map[string]any{
+		"path": path, "elapsed": time.Since(start).Round(time.Second).String(),
+		"checkpoint": true, "files": len(p.Files), "sha256_files": digests,
+	})
+}
+
 type webLoadReq struct {
 	Path string `json:"path"`
 }
@@ -429,7 +520,10 @@ type webLoadReq struct {
 // THIS IS THE WHOLE POLICY OF THE LOAD ROUTE (docs/tasks/task-web-ui-2026-09.md W5). The admin load
 // takes any caller-named path and is gated behind -allow-admin for exactly that reason; the web UI
 // is not widened into it. Instead the page can load only what the pull flow can put on disk: a
-// regular .gguf file under pull.CacheRoot(). Both p and the root are symlink-resolved BEFORE the
+// regular .gguf file under pull.CacheRoot(), or a directory there that is a complete checkpoint the
+// pull flow published (its marker present and every file it names verified: pull.CachedCheckpoint).
+// A checkpoint still being assembled lives in "<dir>.partial" with no marker, so it is refused the
+// way a ".part" file is. Both p and the root are symlink-resolved BEFORE the
 // containment check, so neither a "../" in the request nor a symlink planted inside the cache can
 // point the loader at a file outside it, and the resolved path — not the requested one — is what
 // gets loaded. The suffix is checked on the resolved name too, which also refuses an in-progress
@@ -460,14 +554,34 @@ func webLoadPath(p string) (string, error) {
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("the web UI loads only models pulled into %s; start the server with --model, or use -allow-admin, for anything else", root)
 	}
+	if fi, err := os.Stat(resolved); err == nil && fi.IsDir() {
+		// A staging directory carries its marker for the instant between pull writing it and the rename: refused by
+		// name, so the load is of the published directory only.
+		if _, ok := pull.CachedCheckpoint(resolved); !ok || strings.HasSuffix(resolved, ".partial") {
+			return "", errors.New("a directory loads from the web UI only when it is a complete checkpoint the pull flow put there")
+		}
+		return resolved, nil
+	}
 	if !strings.EqualFold(filepath.Ext(resolved), ".gguf") {
-		return "", errors.New("only a pulled .gguf file can be loaded from the web UI")
+		return "", errors.New("only a pulled .gguf file or checkpoint can be loaded from the web UI")
 	}
 	fi, err := os.Stat(resolved)
 	if err != nil || !fi.Mode().IsRegular() {
 		return "", fmt.Errorf("not a regular file: %s", p)
 	}
 	return resolved, nil
+}
+
+// webServedName is the name a web-loaded model is served under: a GGUF file's base name without ".gguf", or a
+// checkpoint directory's own name, which is the repo's (pull.CacheDir). Only ".gguf" is cut: a directory named
+// "Qwen2.5-0.5B-Instruct" has no extension, and filepath.Ext would take ".5B-Instruct" for one. The page's
+// servedName does the same.
+func webServedName(file string) string {
+	name := filepath.Base(file)
+	if strings.EqualFold(filepath.Ext(name), ".gguf") {
+		name = name[:len(name)-len(".gguf")]
+	}
+	return name
 }
 
 // handleWebLoad loads a model the pull flow downloaded and makes it routable, streaming SSE:
@@ -490,7 +604,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+	name := webServedName(file)
 	s.regMu.RLock()
 	_, dup := s.models[name]
 	s.regMu.RUnlock()
