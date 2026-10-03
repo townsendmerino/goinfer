@@ -97,6 +97,10 @@ var censusList = []string{
 	// decoder run for the pairwise-rope change): the pairwise rotation flag (ropeInterleave) and the m-RoPE
 	// sections are the per-Architecture fields a GIW round trip could drop.
 	"../testdata/glm-ocr-tiny",
+	// mistral-tiny-window (2026-10-02): the exclusion said "config-only, Load cannot open it", which was a symptom, not a fact: the weights existed
+	// locally and were gitignored (*.safetensors), so on a fresh checkout Load had nothing to open. They are committed now. SlidingWindow is the
+	// per-Architecture field a GIW round trip could drop.
+	"../testdata/mistral-tiny-window",
 	// olmo3-tiny (2026-09-06, batch 2 G2): NormPostOnly (no pre-norm) and QKNormWhole (whole-vector
 	// QK-norm, not per-head) are per-Architecture scalars affecting layer STRUCTURE, not per-layer
 	// state -- added anyway per the census's own default.
@@ -139,7 +143,6 @@ var censusExcluded = map[string]string{
 	"mellum-mellum2-slice": "4.0 GB — a real-weight 4-layer slice. Measured: still running after 90s while all 29 listed fixtures together take 0.27s. mellum's per-layer fields are the generic set.",
 	"siglip-tiny":          "a vision encoder, not a decoder — Load refuses it, so there are no LayerWeights to census.",
 	"gemma4-vision-tiny":   "a vision encoder (Gemma4VisionModel), not a decoder — same as siglip-tiny: no LayerWeights to census.",
-	"mistral-tiny-window":  "config-only fixture (no model.safetensors); it exists to pin sliding-window CONFIG parsing, and Load cannot open it.",
 	"llama-attnfa-tiny":    "plain llama arch, same per-layer field set llama-tiny already covers (GQA, SwiGLU, RMSNorm) — it differs only in geometry (hidden_size 512, head_dim 128, vs llama-tiny's 64/16), chosen to clear Metal's canUseAttnFA hd==128 dispatch guard. Its job is metal/snapshot_golden_test.go's attention_fa coverage, not this census.",
 	"qwen35vl-tiny":        "a Qwen3_5ForConditionalGeneration fixture (P8a): a 4-layer qwen3_5_text decoder (3 linear_attention + 1 full_attention, hidden 64) plus a `visual.*` vision tower. The decoder half has exactly the per-layer field set qwen3_5-tiny already covers (Gated DeltaNet + gated attention), and the tower is an encoder — no LayerWeights to census, same as siglip-tiny and gemma4-vision-tiny. Its job is the P8a image-seam and tower tests, not this census.",
 	"gemma2-hd-tiny":       "gemma2-tiny with query_pre_attn_scalar == head_dim, the rule a GGUF can express (its .gguf copy is on the list); the same per-layer fields as gemma2-tiny, which is on the list.",

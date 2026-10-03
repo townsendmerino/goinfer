@@ -325,3 +325,8 @@ decoder/testdata/mellum-*-slice/
 site/_site/
 
 site/data/release.json
+# EXCEPTION: testdata/mistral-tiny-window (1.9 MB, deterministic: scripts/pin_mistral_tiny_window.py) is the sliding-window fixture (window 16, 48-token golden). Its config
+# files were tracked and its model.safetensors was not, so on a fresh checkout the CUDA and WebGPU window tests, `gate identity`'s mistral asset and
+# decoder.TestMistralTinyWindow_matchesHF had nothing to load.
+!testdata/mistral-tiny-window/
+!testdata/mistral-tiny-window/model.safetensors
