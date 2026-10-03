@@ -727,6 +727,63 @@ jobs:
         # package that tripped it) -- generous now without the detector, but a hang still fails.
         run: go test -timeout 25m -tags goinfer_testhooks ./...
 
+  # H1.1 (docs/tasks/task-hardware-coverage-2026-10.md): two runners we did not use, so two shipped
+  # targets go from never run to run on every push. Windows: the release ships windows-amd64, and
+  # nothing had ever executed it. Linux arm64 (GitHub's free arm64 runner for public repos): the
+  # release ships linux-arm64, and the arm64 kernels had only run on macOS. Both run what root-darwin
+  # runs, the root module's CPU suite with the forward goldens, no -race (C4's reason). Each prints
+  # the CPU it landed on first: the census (docs/hardware-coverage.json) records where a path ran,
+  # and the x86 jobs' logs never said, which is why no green ci-pool AVX-512 record exists.
+  root-windows:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: cpu (for the hardware census)
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors | Format-List
+          go version; go env GOARCH
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test -timeout 30m -tags goinfer_testhooks ./...
+
+  root-linux-arm64:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-arm64-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-arm64-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-arm64-
+      - name: cpu (for the hardware census)
+        # asimddp in the flags is DotProd: it says which side of aikit's hasDotProd branches ran.
+        run: |
+          lscpu | grep -E 'Model name|Vendor ID|^CPU\(s\)|Flags' || true
+          if grep -qw asimddp /proc/cpuinfo; then echo "DotProd: yes"; else echo "DotProd: NO"; fi
+          go version; go env GOARCH
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test -timeout 30m -tags goinfer_testhooks ./...
+
   # GPU submodule on darwin/arm64 — the resident Metal decode path. Same
   # ephemeral-workspace stitch as the Linux gpu job, but no apt deps: Metal is a
   # system framework on macOS (linked via Xcode CLT, present on the runner).
