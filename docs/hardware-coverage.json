@@ -1,0 +1,615 @@
+{
+ "_about": "H0's hardware census (docs/tasks/task-hardware-coverage-2026-10.md): one entry per hardware-selected gate. internal/hwcensus/census_test.go fails when a hardware predicate in goinfer, aikit or aikit/gpu (at the pinned versions) has no entry here, or an entry names one the source no longer has. last_executed [] means no record: never executed, or (see notes) executed with no committed record to cite. A record names the machine, the date, how it ran (native, emulated, ci-pool, forced), both commits and the gate.",
+ "inventory_at": "goinfer 90b7190b / aikit 4a5a7b2 (the task doc's section 1); predicates re-derived at goinfer e91cba3d / aikit v1.53.0, aikit/gpu v0.33.3",
+ "entries": [
+  {
+   "id": "cpu-avx512-vnni",
+   "gate": "AVX-512 VNNI / VNNI+VL int8 and W4A8 kernels",
+   "kind": "cpu-feature",
+   "predicates": [
+    "cpu:hasAVX512VNNI",
+    "cpu:hasAVX512VNNIVL"
+   ],
+   "selected_when": "an x86 CPU with AVX-512 VNNI (+VL): Zen 4/5, Intel Ice Lake and later",
+   "files": [
+    "aikit/linalg/dot_i8_avx512vnni_amd64.go",
+    "aikit/linalg/dot_w4a8_avx512vnni_amd64.go",
+    "aikit/linalg/quant_i8_amd64.go",
+    "aikit/linalg/quant_w4a8_tile_amd64.go",
+    "aikit/linalg/weightmat_splithalf_amd64.go",
+    "aikit/linalg/matmul_w4a8_splithalf_tile_amd64.go"
+   ],
+   "our_machines": "never: the 3700X is Zen 2",
+   "last_executed": [
+    {
+     "machine": "nobara-pc under Intel SDE 10.13.1 (sde64 -icx, Ice Lake AVX-512 VNNI+VL)",
+     "date": "2026-09-24",
+     "how": "emulated",
+     "goinfer": "0616cdc0",
+     "aikit": "v1.47.1 (2b817be)",
+     "gate": "aikit TestAVX512VNNI* and TestMatmulBTW4A8_MConsistent; goinfer TestInt4_forwardParity, 15 fixtures (aikit CHANGELOG [1.47.1])"
+    }
+   ],
+   "notes": "GitHub's ubuntu-24.04 pool mixes CPU models, so some CI runs land on AVX-512 VNNI hardware (that is how the v1.47.0 bug surfaced, on a failing run); goinfer's CI does not log the CPU, so no green ci-pool run can be named. H1.2 makes the SDE run a schedule."
+  },
+  {
+   "id": "cpu-avx2",
+   "gate": "AVX2 SIMD kernels (the x86 fast path)",
+   "kind": "cpu-feature",
+   "predicates": [
+    "cpu:hasAVX2"
+   ],
+   "selected_when": "any x86 CPU with AVX2 (Haswell and later, Zen and later)",
+   "files": [
+    "aikit/linalg/*_amd64.go (the hasAVX2 branches: dot_amd64.go defines it)"
+   ],
+   "our_machines": "nobara's 3700X; every GitHub x86 runner",
+   "last_executed": [
+    {
+     "machine": "GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: test-decoder-a..d, test-decoder-tail, test-rest (the CPU suite and the forward goldens)"
+    },
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "327016d6",
+     "aikit": "v1.52.0",
+     "gate": "D14 machinery smoke (exploratory): serve -backend cpu at int8int8 on JEV-9B and Clef-flash, 4 of 4 requests valid; decisions-d14-clef-speed-2026-10-03.md section 5"
+    }
+   ],
+   "notes": ""
+  },
+  {
+   "id": "cpu-amd64-no-avx2",
+   "gate": "amd64 without AVX2: the pure-Go fallbacks behind every hasAVX2 branch",
+   "kind": "cpu-feature",
+   "predicates": [],
+   "selected_when": "pre-2013 x86, and some VMs that hide AVX2",
+   "files": [
+    "aikit/linalg/*_amd64.go (the !hasAVX2 side)"
+   ],
+   "our_machines": "never on hardware",
+   "last_executed": [],
+   "notes": "The pure-Go reference functions run in tests, but the DISPATCH that falls back to them on an amd64 host never has. H1.3 forces it."
+  },
+  {
+   "id": "cpu-f16c",
+   "gate": "F16C half-precision conversion (binary16 int4 group scales)",
+   "kind": "cpu-feature",
+   "predicates": [
+    "cpu:hasF16C"
+   ],
+   "selected_when": "x86 with F16C (every AVX2 CPU in practice)",
+   "files": [
+    "aikit/linalg/f16scale_amd64.go"
+   ],
+   "our_machines": "nobara's 3700X; GitHub x86 runners",
+   "last_executed": [
+    {
+     "machine": "GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: test-decoder-a..d, test-decoder-tail, test-rest (the CPU suite and the forward goldens)"
+    },
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "327016d6",
+     "aikit": "v1.52.0",
+     "gate": "D14 machinery smoke (exploratory): serve -backend cpu at int8int8 on JEV-9B and Clef-flash, 4 of 4 requests valid; decisions-d14-clef-speed-2026-10-03.md section 5"
+    }
+   ],
+   "notes": ""
+  },
+  {
+   "id": "cpu-q4k-avx2",
+   "gate": "Q4_K native dot (AVX2 + F16C)",
+   "kind": "cpu-feature",
+   "predicates": [
+    "cpu:hasQ4KAVX2"
+   ],
+   "selected_when": "x86 with AVX2 and F16C",
+   "files": [
+    "aikit/linalg/q4k_dot_amd64.go"
+   ],
+   "our_machines": "nobara's 3700X; GitHub x86 runners",
+   "last_executed": [
+    {
+     "machine": "GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: test-decoder-a..d, test-decoder-tail, test-rest (the CPU suite and the forward goldens)"
+    }
+   ],
+   "notes": "decoder/q4k_test.go runs in CI's decoder shards."
+  },
+  {
+   "id": "cpu-popcnt",
+   "gate": "POPCNT Hamming distance",
+   "kind": "cpu-feature",
+   "predicates": [
+    "cpu:hasPOPCNT"
+   ],
+   "selected_when": "x86 with POPCNT",
+   "files": [
+    "aikit/linalg/hamming_amd64.go"
+   ],
+   "our_machines": "nobara's 3700X",
+   "last_executed": [],
+   "notes": "aikit's ANN Hamming scan only: goinfer does not call it, so no goinfer gate executes it. aikit's own CI does."
+  },
+  {
+   "id": "cpu-arm64-dotprod",
+   "gate": "arm64 DotProd (SDOT) int8 kernels",
+   "kind": "cpu-feature",
+   "predicates": [
+    "cpu:hasDotProd"
+   ],
+   "selected_when": "arm64 with the DotProd extension: Apple M-series, Pi 5, Graviton 2+",
+   "files": [
+    "aikit/linalg/*_arm64.go (the hasDotProd branches: quant_i8_arm64.go defines it)"
+   ],
+   "our_machines": "the M1 Pro; GitHub's macOS runners",
+   "last_executed": [
+    {
+     "machine": "Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0)",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "8124b921",
+     "aikit": "v1.53.0",
+     "gate": "scripts/refresh_parity_hashes.sh: 40 forward goldens passed, 0 failed, on arm64"
+    },
+    {
+     "machine": "GitHub macos-latest runner (arm64)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: root-darwin (go test -tags goinfer_testhooks ./... on the root module)"
+    }
+   ],
+   "notes": ""
+  },
+  {
+   "id": "cpu-arm64-no-dotprod",
+   "gate": "arm64 without DotProd: the NEON-only and pure-Go fallbacks",
+   "kind": "cpu-feature",
+   "predicates": [],
+   "selected_when": "Raspberry Pi 4 class (Cortex-A72) and older ARM",
+   "files": [
+    "aikit/linalg/*_arm64.go (the !hasDotProd side)"
+   ],
+   "our_machines": "never (M1 has DotProd)",
+   "last_executed": [],
+   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it."
+  },
+  {
+   "id": "cuda-sm-shape",
+   "gate": "CUDA launch sizing from the device shape (wave-sized fused-projection grids; aikit/gpu SMCount)",
+   "kind": "cuda-device",
+   "predicates": [
+    "cuda:DeviceAttributeMultiprocessorCount",
+    "cuda:DeviceAttributeMaxThreadsPerMultiprocessor",
+    "cuda:DeviceAttributeMaxSharedMemoryPerMultiprocessor"
+   ],
+   "selected_when": "read on every CUDA-resident build (cuda/backend.go readSMShape); a card with more SMs or shared memory sizes different grids",
+   "files": [
+    "goinfer/cuda/fused_qkv_rows.go",
+    "aikit/gpu/cuda.go"
+   ],
+   "our_machines": "only 40 SMs (the 2070 SUPER)",
+   "last_executed": [
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "f88c0523",
+     "aikit": "v1.52.0",
+     "gate": "cuda: TestPromptHiddenAllResidentCUDA and its _chunked twin (-tags 'cuda goinfer_testhooks'); docs/measurements/decisions-d11-resident-hidden-2026-10-03.md"
+    }
+   ],
+   "notes": "Executed with 40 SMs only: a grid sized for any other count has never run. H1.5 forces the attributes."
+  },
+  {
+   "id": "cuda-compute-mode",
+   "gate": "CUDA graphs tenancy check (device compute mode)",
+   "kind": "cuda-device",
+   "predicates": [
+    "cuda:DeviceAttributeComputeMode"
+   ],
+   "selected_when": "when CUDA graphs are being considered for a resident (cuda/graphs_safe.go)",
+   "files": [
+    "goinfer/cuda/graphs_safe.go"
+   ],
+   "our_machines": "nobara (default compute mode)",
+   "last_executed": [],
+   "notes": "No committed record of a run that reached it was located; not 'never' with certainty, but nothing to cite."
+  },
+  {
+   "id": "cuda-uva",
+   "gate": "CUDA unified addressing check for mapped host buffers",
+   "kind": "cuda-device",
+   "predicates": [
+    "cuda:DeviceAttributeUnifiedAddressing"
+   ],
+   "selected_when": "before a zero-copy mapped host buffer (aikit/gpu NewMappedHostBuffer / RegisterMappedHostBuffer)",
+   "files": [
+    "aikit/gpu/cuda.go"
+   ],
+   "our_machines": "nobara",
+   "last_executed": [],
+   "notes": "Every 64-bit CUDA GPU has it; reached by goinfer's paths that map host memory. No committed record located."
+  },
+  {
+   "id": "cuda-non-turing",
+   "gate": "CUDA on any architecture but Turing (PTX JIT to another SASS)",
+   "kind": "platform",
+   "predicates": [],
+   "selected_when": "every NVIDIA card newer than the 2070: all PTX is .target sm_75, JIT-compiled forward by the driver",
+   "files": [
+    "goinfer/cuda/*.go (the PTX kernels)"
+   ],
+   "our_machines": "never",
+   "last_executed": [],
+   "notes": "H4's rented sweep is the route."
+  },
+  {
+   "id": "cuda-old-driver",
+   "gate": "PTX ISA 8.8 on a driver older than 595",
+   "kind": "driver-os",
+   "predicates": [],
+   "selected_when": "a driver too old for ISA 8.8 may fail to load the kernels",
+   "files": [
+    "goinfer/cuda/*.go (the PTX kernels)"
+   ],
+   "our_machines": "never: driver 595.91.07 only",
+   "last_executed": [],
+   "notes": ""
+  },
+  {
+   "id": "cuda-free-vram",
+   "gate": "CUDA free-VRAM probes: the fit guard's and the resident KV pricing",
+   "kind": "memory-probe",
+   "predicates": [
+    "mem:probe:cuda@goinfer/cuda/backend.go",
+    "mem:MemInfo@goinfer/cuda/backend.go",
+    "mem:MemInfo@goinfer/cuda/resident.go"
+   ],
+   "selected_when": "every CUDA plan and resident build; residency, slot count and context follow from what is free",
+   "files": [
+    "goinfer/cuda/backend.go",
+    "goinfer/cuda/resident.go"
+   ],
+   "our_machines": "an 8 GB card only",
+   "last_executed": [
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "f88c0523",
+     "aikit": "v1.52.0",
+     "gate": "cuda: TestPromptHiddenAllResidentCUDA and its _chunked twin (-tags 'cuda goinfer_testhooks'); docs/measurements/decisions-d11-resident-hidden-2026-10-03.md"
+    }
+   ],
+   "notes": "Executed against 8 GB only; the configurations a larger card selects are cuda-vram-above-8gb."
+  },
+  {
+   "id": "cuda-vram-above-8gb",
+   "gate": "CUDA configurations selected only with more than 8 GB of VRAM",
+   "kind": "size",
+   "predicates": [],
+   "selected_when": "e.g. a 7B at 32k context with four slots on a 24 GB card; any model resident only above 8 GB",
+   "files": [
+    "decoder/fitplan.go",
+    "goinfer/cuda/resident.go"
+   ],
+   "our_machines": "never",
+   "last_executed": [],
+   "notes": "H1.5 drives these with a small model and forced probes."
+  },
+  {
+   "id": "metal-threadgroup-memory",
+   "gate": "Metal threadgroup-memory limit (kernel tile and staging sizing)",
+   "kind": "metal-device",
+   "predicates": [
+    "metal:maxThreadgroupMemoryLength"
+   ],
+   "selected_when": "read at every Metal resident build (metal/model.go buildResident); a GPU with a different limit stages differently",
+   "files": [
+    "aikit/gpu/metal.go",
+    "goinfer/metal/model.go"
+   ],
+   "our_machines": "the M1 Pro only",
+   "last_executed": [
+    {
+     "machine": "Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0)",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "metal: TestPromptHiddenAllResidentMetal and TestPromptHiddenResidentMetal (-tags goinfer_testhooks), resident Qwen3.5 tiny fixtures"
+    }
+   ],
+   "notes": ""
+  },
+  {
+   "id": "metal-unused-queries",
+   "gate": "Metal device queries aikit/gpu exposes and goinfer does not call",
+   "kind": "metal-device",
+   "predicates": [
+    "metal:currentAllocatedSize",
+    "metal:threadExecutionWidth"
+   ],
+   "selected_when": "not reached from goinfer (aikit/gpu Device.CurrentAllocatedSize, Pipeline.ThreadExecutionWidth)",
+   "files": [
+    "aikit/gpu/metal.go"
+   ],
+   "our_machines": "n/a",
+   "last_executed": [],
+   "notes": "Listed so a goinfer call to either is a census change, not a silent one."
+  },
+  {
+   "id": "metal-newer-gpus",
+   "gate": "Metal on M2/M3/M4 GPU families",
+   "kind": "platform",
+   "predicates": [],
+   "selected_when": "every newer Mac: MSL is compiled at load by the OS, with no family query in metal/, so the same kernels meet different codegen",
+   "files": [
+    "goinfer/metal/*.go"
+   ],
+   "our_machines": "never (M1 Pro)",
+   "last_executed": [],
+   "notes": "H2 (Metal self-test) and H4/H5."
+  },
+  {
+   "id": "metal-memory",
+   "gate": "Metal memory ceiling and guards (hw.memsize)",
+   "kind": "memory-probe",
+   "predicates": [
+    "mem:probe:metal@goinfer/metal/backend.go",
+    "mem:hw.memsize@goinfer/metal/backend.go",
+    "mem:hw.memsize@goinfer/metal/greedy_chain.go"
+   ],
+   "selected_when": "every Metal plan and resident build: metalMemoryCeiling, fitsResidentBudget, the MoE slot budget, the chain embedding table's guard",
+   "files": [
+    "goinfer/metal/backend.go",
+    "goinfer/metal/greedy_chain.go"
+   ],
+   "our_machines": "16 GB only",
+   "last_executed": [
+    {
+     "machine": "Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0)",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "metal: TestPromptHiddenAllResidentMetal and TestPromptHiddenResidentMetal (-tags goinfer_testhooks), resident Qwen3.5 tiny fixtures"
+    }
+   ],
+   "notes": "Executed at 16 GB only; what more memory selects is metal-unified-memory-above-16gib."
+  },
+  {
+   "id": "metal-unified-memory-above-16gib",
+   "gate": "Configurations selected only with more than 16 GiB of unified memory",
+   "kind": "size",
+   "predicates": [],
+   "selected_when": "e.g. the 35B MoE fully resident on Metal (no pager), MC1 slot counts and unpinned context above 16 GiB, any model resident only above 16 GiB",
+   "files": [
+    "decoder/fitplan.go",
+    "decoder/fitguard.go",
+    "goinfer/metal/backend.go"
+   ],
+   "our_machines": "never",
+   "last_executed": [],
+   "notes": "H1.5 forces the probes; H5 is the machine."
+  },
+  {
+   "id": "host-ram-darwin",
+   "gate": "Host RAM probe on macOS (hw.memsize)",
+   "kind": "memory-probe",
+   "predicates": [
+    "mem:hw.memsize@goinfer/decoder/hostram_darwin.go"
+   ],
+   "selected_when": "the CPU fit guard and Plan on darwin",
+   "files": [
+    "goinfer/decoder/hostram_darwin.go"
+   ],
+   "our_machines": "the 16 GB Mac",
+   "last_executed": [
+    {
+     "machine": "Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0)",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "8124b921",
+     "aikit": "v1.53.0",
+     "gate": "scripts/refresh_parity_hashes.sh: 40 forward goldens passed, 0 failed, on arm64"
+    },
+    {
+     "machine": "GitHub macos-latest runner (arm64)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: root-darwin (go test -tags goinfer_testhooks ./... on the root module)"
+    }
+   ],
+   "notes": ""
+  },
+  {
+   "id": "host-ram-linux",
+   "gate": "Host RAM probe on Linux (/proc/meminfo, also read by memwatch_linux)",
+   "kind": "memory-probe",
+   "predicates": [
+    "mem:/proc/meminfo@goinfer/decoder/hostram_linux.go"
+   ],
+   "selected_when": "the CPU fit guard, Plan and the Linux swap watch",
+   "files": [
+    "goinfer/decoder/hostram_linux.go",
+    "goinfer/decoder/memwatch_linux.go"
+   ],
+   "our_machines": "nobara (62 GB); GitHub runners",
+   "last_executed": [
+    {
+     "machine": "GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: test-decoder-a..d, test-decoder-tail, test-rest (the CPU suite and the forward goldens)"
+    },
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "327016d6",
+     "aikit": "v1.52.0",
+     "gate": "D14 machinery smoke (exploratory): serve -backend cpu at int8int8 on JEV-9B and Clef-flash, 4 of 4 requests valid; decisions-d14-clef-speed-2026-10-03.md section 5"
+    }
+   ],
+   "notes": ""
+  },
+  {
+   "id": "swap-watch-darwin",
+   "gate": "Swap watch on macOS (vm.swapusage)",
+   "kind": "memory-probe",
+   "predicates": [
+    "mem:vm.swapusage@goinfer/decoder/memwatch_darwin.go"
+   ],
+   "selected_when": "serve's swap guard and the load-time watch on darwin",
+   "files": [
+    "goinfer/decoder/memwatch_darwin.go"
+   ],
+   "our_machines": "the Mac",
+   "last_executed": [
+    {
+     "machine": "GitHub macos-latest runner (arm64)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: root-darwin (go test -tags goinfer_testhooks ./... on the root module)"
+    }
+   ],
+   "notes": "decoder/memwatch_darwin_test.go runs in root-darwin."
+  },
+  {
+   "id": "pager-budget",
+   "gate": "The pager's RAM budget (aikit mmap.AutoBudget, from /proc/meminfo on Linux)",
+   "kind": "memory-probe",
+   "predicates": [
+    "mem:/proc/meminfo@aikit/mmap/align.go"
+   ],
+   "selected_when": "layer and MoE expert paging (decoder/layerpaging.go, decoder/moepaging.go); 0 elsewhere, so a fixed budget",
+   "files": [
+    "aikit/mmap/align.go",
+    "goinfer/decoder/layerpaging.go",
+    "goinfer/decoder/moepaging.go"
+   ],
+   "our_machines": "nobara (62 GB); GitHub runners",
+   "last_executed": [
+    {
+     "machine": "GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model)",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37140125254: test-decoder-a..d, test-decoder-tail, test-rest (the CPU suite and the forward goldens)"
+    }
+   ],
+   "notes": "decoder's paging tests run in CI on Linux."
+  },
+  {
+   "id": "webgpu-vendors",
+   "gate": "WebGPU on AMD, Intel, and Windows DX12",
+   "kind": "platform",
+   "predicates": [],
+   "selected_when": "wgpu-native picks Vulkan, DX12 or Metal per platform and vendor",
+   "files": [
+    "goinfer/gpu/*.go"
+   ],
+   "our_machines": "NVIDIA over Vulkan (nobara) and Metal (the Mac) only",
+   "last_executed": [],
+   "notes": "The NVIDIA/Vulkan path is webgpu-nvidia-vulkan; AMD, Intel and DX12 have never run."
+  },
+  {
+   "id": "webgpu-nvidia-vulkan",
+   "gate": "WebGPU over Vulkan on NVIDIA",
+   "kind": "driver-os",
+   "predicates": [],
+   "selected_when": "Linux with an NVIDIA GPU",
+   "files": [
+    "goinfer/gpu/*.go"
+   ],
+   "our_machines": "nobara",
+   "last_executed": [
+    {
+     "machine": "nobara-pc: RTX 2070 SUPER over Vulkan (wgpu-native, ADAPTER_PROBE backend=vulkan software=false), driver 595.91.07",
+     "date": "2026-09-28",
+     "how": "native",
+     "goinfer": "8c9b647f",
+     "aikit": "v1.50.2",
+     "gate": "gpu: the full WebGPU suite, docs/measurements/mc1-webgpu-nobara-2026-09-28/full-gpu-suite.log (8c9b647f is the commit that records it)"
+    }
+   ],
+   "notes": "WebGPU also ran on the Mac over Metal for MC1 (3926f927); no suite log was committed for it."
+  },
+  {
+   "id": "windows-binaries",
+   "gate": "Windows binaries (windows-amd64, windows-arm64)",
+   "kind": "platform",
+   "predicates": [],
+   "selected_when": "every Windows user: the release ships both assets",
+   "files": [
+    ".github/workflows/release.yml"
+   ],
+   "our_machines": "never run",
+   "last_executed": [],
+   "notes": "H1.1 adds a windows-latest CI job."
+  },
+  {
+   "id": "linux-arm64",
+   "gate": "linux/arm64 binaries (Graviton, Ampere, Raspberry Pi)",
+   "kind": "platform",
+   "predicates": [],
+   "selected_when": "every arm64 Linux user: the release ships the asset",
+   "files": [
+    ".github/workflows/release.yml"
+   ],
+   "our_machines": "never in CI; the README publishes no Pi figure",
+   "last_executed": [],
+   "notes": "H1.1 adds a GitHub arm64 Linux job."
+  },
+  {
+   "id": "metal-macos-versions",
+   "gate": "Metal shaders compiled by other macOS versions",
+   "kind": "driver-os",
+   "predicates": [],
+   "selected_when": "every macOS release compiles MSL itself; bit-identity holds within a machine and OS, not across (positioning.md)",
+   "files": [
+    "goinfer/metal/*.go"
+   ],
+   "our_machines": "one macOS version on the M1 Pro",
+   "last_executed": [
+    {
+     "machine": "Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0)",
+     "date": "2026-10-03",
+     "how": "native",
+     "goinfer": "51b704c6",
+     "aikit": "v1.53.0",
+     "gate": "metal: TestPromptHiddenAllResidentMetal and TestPromptHiddenResidentMetal (-tags goinfer_testhooks), resident Qwen3.5 tiny fixtures"
+    }
+   ],
+   "notes": "Executed on one OS version only."
+  }
+ ]
+}
