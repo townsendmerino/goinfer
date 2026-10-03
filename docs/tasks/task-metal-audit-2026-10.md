@@ -536,6 +536,19 @@ goinfer's ratios:
   VS Code open, and the guard bypassed. The guard's refusal was the right call. Logs:
   `docs/measurements/metal-audit-2026-10/t19b-forced-2026-10-03/`.
 
+### Post-merge peer read: pre-registration (written 2026-10-03, before it runs)
+
+TE5(a): the levers were graded new ÷ old with no peer arm, and the peer ratio is read once, after they ship, as its
+own run. The merge (`c6f8100e`) changes what last night's T1.14 cells measured (C-B01 and C-P02 shipped), so
+`docs/benchmarks.md`'s Metal decode row describes a build main no longer runs.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-peer-post-merge.sh` on the night queue. One same-session `bench_peer.py` sweep on Metal: goinfer at `c6f8100e`, goinfer_old at `71812d57` (last night's T1.14 build), mlx-lm 0.31.3 and Ollama 0.32.5. Greedy at depth 128, 2048 and 3900, and `temp1.0_notrunc` at depth 128; the 0.5B, 1.5B and 7B; 3 runs per cell, the instant idle gate. Estimate about 45 minutes; queued at 60. |
+| Reading | A record, not a gate. Per cell: goinfer ÷ goinfer_old, goinfer ÷ Ollama and goinfer ÷ mlx-lm, with each run's spread. These replace T1.14's cells in the benchmarks row. |
+| Consistency check | The new ÷ old cells must agree in direction with the graded in-process A/Bs. At depth 128 greedy that means ≥ 1.00 on all three models, and at T = 1 the same (C-P02: 1.5B 1.066×, 0.5B 1.160×, 7B 1.022×). A cell that reads below 1.00 beyond its own spread is investigated before any row is updated. The served number is end to end, so its size may differ from the in-process ratio, but its sign may not. |
+| Not read here | A-P01 (prefill passes; `bench_peer` times decode only), C-P01 and E-P09 (memory). |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
