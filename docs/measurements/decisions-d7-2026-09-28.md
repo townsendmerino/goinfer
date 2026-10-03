@@ -159,3 +159,46 @@ A tool call also puts the tool's definition into the prompt. Measured with `chat
 - **Analysis** as registered: per-state paired ratio, geometric mean over the 8 states with a t-interval (df 7) on the log ratios, against the section 3 band widened by 10 percent ("as projected" if the interval overlaps it, otherwise "off projection"), and D8's trigger share at K=1024.
 - **Smoke, EXPLORATORY and not quotable** (2 states at K=256, 1 pair each, run by day while the box was otherwise idle): all five arms answered validly; it found one harness bug (the score question's `criteria` must be an ordered array, not an object; fixed before freezing). It also hints that requests are slower than section 3 projected and that the schema x5 reply writes about 49 tokens, not the projected 23 to 26; that is what the registered run measures, and it is used here only to revise the estimate.
 - **Estimate revised to 60 minutes** (from 35): the projection-based figure plus the smoke's observation that K=256 requests ran about 1.4 times the projected time. Queued as `d7-decisions-speed` on nobara's night queue; the owner starts the queue.
+
+## 5. RESULT (run 2026-10-02 20:15–20:43 PDT on nobara-pc; read 2026-10-03)
+
+Run as registered and frozen (section 4, and "Harness built, smoke-tested and queued"): night job `d7-decisions-speed`, pinned `serve-cuda-644d8008` (sha256 `365425d9...`), `prompts.json` sha256 `2d56d87f...`, Qwen3.5-9B Q4_K_M from `~/models`, `-backend cuda -ctx 8192`. **Decode path `cuda-resident (int4)`, no context decline, so the run is valid** (a CPU fallback would have voided it). 128 requests, 0 invalid or failed. The server serves this family one generation at a time (batch 1, as registered). The records are in [`decisions-d7-2026-09-28/run-2026-10-02/`](decisions-d7-2026-09-28/run-2026-10-02/): `raw.jsonl`, `analysis.txt` (the harness's own analysis, quoted below), `servers.log`, and `refit.txt` from [`refit.py`](decisions-d7-2026-09-28/refit.py).
+
+**Disclosed:** the box's 5- and 15-minute load averages at the start were 6.3 and 9.0, because the 1 h 56 min CPU job `d6a-q4k-150` had ended two minutes earlier. The harness's own idle gate (load1 <= 1.0, per request block) held throughout (max load1 in any row 1.00). I cannot say the earlier load left no trace in the page cache or swap (that job logged 12.67 GB of swap in use), so the absolute times carry that caveat. The ratios are paired per state and the headline structural finding below (five decisions = five times one, to 0.1%) does not depend on it.
+
+### The ratios (geometric mean over 8 states, 95% t-interval, against section 3's band widened by 10%)
+
+| cell | ratio | 95% interval | band | verdict |
+|---|---|---|---|---|
+| schema / decision, K=256 | 1.24 | 1.21 to 1.27 | 1.00 to 1.22 | as projected |
+| tool / decision, K=256 | 2.03 | 2.00 to 2.07 | 1.69 to 2.20 | as projected |
+| decision x5 / schema x5, K=256 | **1.76** | 1.72 to 1.80 | 2.88 to 3.74 | **OFF PROJECTION** |
+| schema / decision, K=1024 | 1.07 | 1.05 to 1.08 | 0.93 to 1.13 | as projected |
+| tool / decision, K=1024 | 1.31 | 1.30 to 1.33 | 1.10 to 1.38 | as projected |
+| decision x5 / schema x5, K=1024 | **3.21** | 3.16 to 3.26 | 3.96 to 4.95 | **OFF PROJECTION** |
+| schema / decision, K=4096 | 1.01 | 1.01 to 1.02 | 0.91 to 1.11 | as projected |
+| tool / decision, K=4096 | 1.07 | 1.07 to 1.08 | 0.95 to 1.17 | as projected |
+| decision x5 / schema x5, K=4096 | 4.47 | 4.43 to 4.51 | 4.32 to 5.39 | as projected |
+
+**D8's trigger FIRES, and it is the measurement that decides it, not the projection.** The state-prefill share of a five-question decision request at K=1024 is 1 - 1.46 s / 16.01 s = **0.909** against the registered threshold of 0.70 (the projection said about 0.80). So D8 (shared state across questions) is warranted by its own pre-registered criterion.
+
+### Naming the wrong input behind the two OFF PROJECTION cells (section 4.4's requirement, done before any of these numbers is quoted)
+
+From the measured requests (`refit.txt`):
+
+1. **The structural premise was right, to the measurement's resolution.** Five decisions cost exactly five times one: 4.62 s against 5 x 0.92 = 4.62 s at K=256, 16.01 against 16.03 at K=1024, 78.14 against 78.09 at K=4096. On this family each question pays a full prefill; nothing is reused. The decision side of the five-question ratio is therefore not what was wrong.
+2. **The constrained one-pass side was wrong, in three inputs, all pointing the same way:**
+   - **Its prompt is longer than the state alone.** The projection costed the one-pass answer as the state's prefill plus decode. The measured one-pass prompt carries all five questions' text: 424 input tokens at K=256 (state 256), 1,183 at K=1024 (state 1,015), 4,248 at K=4096 (state 4,080).
+   - **Its answer is longer than counted.** The projection counted 23 to 26 output tokens for five fields. The measured answer is **about 50 tokens** (49 to 51 at every K), and the single-field schema answer is 9 tokens where the projection counted 5. I have not investigated why (whitespace in the generated JSON, or how usage counts a stop token, are the candidates); the measured counts are what the arm produced and billed.
+   - **Constrained decode costs more per token than assumed.** The projection used the unconstrained 16.5 ms per token. After subtracting prefill at the decision arms' fitted rate, the constrained arms read **27.4 to 28.8 ms per generated token** (schema 28.8, tool 27.5, five-field 27.4), about 1.7 times the assumed figure.
+   Together these put the measured one-pass answer at 2.62 s (K=256), 4.99 s (K=1024) and 17.48 s (K=4096), against projected 1.09 to 1.17, 3.32 to 3.40 and 12.2 to 12.3. The one-pass arm is slower than projected at every K, so the ratio of five decisions to it is smaller than projected at every K.
+3. **A second input was off at K=4096, and it hides the first there.** The prefill rate falls from 336 to 343 tokens per second at K=256 and 1,024 (the projection's 345) to **265 at K=4096** (decision arm 15.62 s against the projected 11.9 to 13.8 s). That is about 13% slower than even the quadratic-attention projection, and it inflates the decision side at 4,096. The K=4096 five-question cell lands inside its band because the two errors cancel (a slower one-pass answer and a slower prefill), not because the projection was right there.
+
+**What this does NOT establish:** the cause of the 27 ms per constrained token (the grammar-mask path against the resident decode path is the obvious suspect and was not isolated), the cause of the output-length difference, and whether the 265 tokens per second at 4,096 is attention or memory. None is needed for the trigger, which stands on the measured times.
+
+### What is quotable (section 4.5): measured ratios, with the machine, date and interval
+
+All on nobara-pc (RTX 2070 SUPER, Ryzen 7 3700X), CUDA resident int4, Qwen3.5-9B Q4_K_M, batch 1, 2026-10-02, greedy, 8 states per cell:
+- **One question.** A decision is about as fast as a schema-constrained answer to the same question, faster by 1.24x (1.21 to 1.27) at a 256-token state, 1.07x (1.05 to 1.08) at 1,024 and 1.01x (1.01 to 1.02) at 4,096. Against a tool call it is faster by 2.03x, 1.31x and 1.07x.
+- **Five questions about one state.** Five decisions cost five times one (no prefix is reused on this family) and take 1.76x (1.72 to 1.80), 3.21x (3.16 to 3.26) and 4.47x (4.43 to 4.51) as long as one schema-constrained pass that answers all five fields, at 256, 1,024 and 4,096 state tokens. In seconds: 4.6, 16.0 and 78.1 for five decisions against 2.6, 5.0 and 17.5.
+- **Not quotable:** section 3's projection. Where it was wrong (the two cells above) it is superseded by this section.

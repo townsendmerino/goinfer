@@ -96,7 +96,7 @@ Lossless drafting: output is identical to plain decoding, only the speed changes
 | Flag | Type | Default | What it does |
 |---|---|---|---|
 | `--spec` | `ngram` | — | Lossless n-gram (prompt-lookup) speculative decoding. Wins on copy-heavy traffic such as code edits, RAG and agent loops. Serves one generation at a time unless `--spec-adaptive` is also set. [More](spec/02-cache-ngram.md). |
-| `--spec-adaptive` | `bool` | `false` | Experimental. With `--spec ngram`, keeps concurrent generations: one speculates only while it is alone and joins batched decode when others arrive. Needs a resident whose decode can batch. Early measurements found it slower than plain `--spec ngram` under copy-heavy load, so it is not recommended there. |
+| `--spec-adaptive` | `bool` | `false` | Experimental. With `--spec ngram`, keeps concurrent generations: one speculates only while it is alone and joins batched decode when others arrive. Needs a resident whose decode can batch. Graded on CUDA: faster than batching alone, but under load slower than batching on chat (0.86x) and slower than plain `--spec ngram` on copy (0.80x), so not recommended there (`docs/measurements/mc4-candidate-cuda-2026-10-01.md`). |
 | `--drafter` | `string` | — | A pretrained block-drafter directory (DFlash) paired with `--model`: it proposes a block of tokens per round and the target verifies them in one pass. Lossless; greedy requests only; needs a resident GPU backend. [More](spec/08-dspark-dflash.md). |
 
 ## Network and security

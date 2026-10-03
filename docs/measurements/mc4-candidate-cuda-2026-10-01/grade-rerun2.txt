@@ -1,0 +1,29 @@
+== gate 1: identity (every reply equals batch's; HARD for the candidate)
+  copy 1.5B clients=1: 18 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+  copy 1.5B clients=4: 72 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+  chat 1.5B clients=1: 54 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+  chat 1.5B clients=4: 216 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+  staggered copy 1.5B clients=S: 270 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+  copy 7B (reported) clients=1: 18 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+  copy 7B (reported) clients=4: 72 replies compared; differing: candidate 0, spec-excl 0, batch-vs-batch 0; http errors 0
+
+== candidate (c) / batch (b), paired, median of 3   [spec-excl (s) / batch shown for reference]
+== gate 2: alone (1 client)
+  copy 1.5B, 1 client: c/b agg 2.127 (pairs 2.133 2.123 2.127); p99 c/b 0.510; s/b agg 2.112, p99 0.512; c/s agg 1.006   [bar >= 1.25: PASS (not hard)]
+  chat 1.5B, 1 client: c/b agg 1.262 (pairs 1.262 1.252 1.267); p99 c/b 0.857; s/b agg 1.259, p99 0.865; c/s agg 1.001   [bar >= 0.97: PASS]
+== gate 3: under load (4 clients; must not give up batching; HARD on both)
+  copy 1.5B, 4 clients: c/b agg 1.236 (pairs 1.236 1.209 1.249); p99 c/b 1.383; s/b agg 1.541, p99 0.655; c/s agg 0.802   [bar >= 0.97: PASS]
+  chat 1.5B, 4 clients: c/b agg 0.858 (pairs 0.879 0.858 0.848); p99 c/b 1.316; s/b agg 0.795, p99 1.415; c/s agg 1.081   [bar >= 0.97: FAIL]
+== gate 4: staggered (clients join every 2 s, rounds 12/9/6/3)
+  staggered copy 1.5B: c/b agg 1.432 (pairs 1.452 1.432 1.402); p99 c/b 1.800; s/b agg 1.710, p99 0.694; c/s agg 0.834   [bar >= 1.0: PASS (not hard)]   [p99 bar <= 1.1: FAIL]
+== reported only: the 7B, copy
+  copy 7B, 1 client: c/b agg 2.080 (pairs 2.080 2.077 2.080); p99 c/b 0.483; s/b agg 2.078, p99 0.484; c/s agg 1.000
+  copy 7B, 4 clients: c/b agg 1.166 (pairs 1.178 1.166 1.160); p99 c/b 1.420; s/b agg 1.279, p99 0.736; c/s agg 0.911
+
+== reading (the rule is in the pre-registration; this only applies it)
+  identity: PASS
+  gate 2 copy: PASS
+  gate 2 chat: PASS
+  gate 3 copy: PASS
+  gate 3 chat: FAIL
+  gate 4 stag: FAIL

@@ -1,0 +1,15 @@
+prefill rate (decision arms generate nothing): input tokens / time
+  decision  K=256: 343 tok/s  K=1024: 336 tok/s  K=4096: 265 tok/s
+  decision5 K=32: 320 tok/s  K=256: 343 tok/s  K=1024: 336 tok/s  K=4096: 265 tok/s
+five decisions against five times one decision (is the premise 'each question pays a full prefill' right?)
+  K=256: 5 x single 4.62 s, measured decision x5 4.62 s
+  K=1024: 5 x single 16.03 s, measured decision x5 16.01 s
+  K=4096: 5 x single 78.09 s, measured decision x5 78.14 s
+constrained arms: time after prefill (at the decision arms' fitted rate), per generated token; the projection assumed 16.5 ms
+  schema   output tokens mean 9.0; 28.8 ms per generated token
+  tool     output tokens mean 19.6; 27.5 ms per generated token
+  schema5  output tokens mean 50.0; 27.4 ms per generated token
+one-pass five-field arm: prompt length and output length against the projection (state tokens only; 23-26 output tokens)
+  K=256: schema5 input 424 tokens (state 256), output 50.0 tokens, 2.62 s
+  K=1024: schema5 input 1183 tokens (state 1015), output 50.8 tokens, 4.99 s
+  K=4096: schema5 input 4248 tokens (state 4080), output 49.1 tokens, 17.48 s

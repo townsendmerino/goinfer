@@ -2,7 +2,7 @@
 
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
-> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12's encoder half is done (`internal/clef`, 150/150 identical, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its head half waits on the D10 hidden-state goldens; D13 and D14 are unstarted.
+> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12 is built (`internal/clef`: encoder 150/150 identical; head and the whole pipeline match the reference to 1.8e-7 on a tiny end-to-end fixture, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its gate of record on real hidden states waits on the D10 f32 night job; owner decisions made: request text is tokenized literally, and the `clef` route reports `confidence` as the reference does (the top probability); D13 and D14 are unstarted.
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with
@@ -14,10 +14,10 @@
 >   to transformers' on the D0 fixture (prompts, token ids, label tokens: 150/150) and the gap numeric (4-bit weights plus goinfer's
 >   re-quantization; 60% argmax agreement with f32). On those same items the reference's own Route A reads 0.559 and the trained head
 >   0.934, so label scoring is about 37 points behind a trained head **in the reference itself**; the decision holds whatever the
->   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap; **registered and queued 2026-10-02 as `d6a-q4k-150` (2.25 h, a record, not a gate)**.
+>   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap; **measured 2026-10-02 (`d6a-q4k-150`, a record, not a gate): q4k on the CPU agrees with the reference on 0.74 of items against int4-on-CUDA's 0.60 (choice 0.80 against 0.52), and reads 0.549 OOD-weighted gold top-1 against 0.559 and 0.481; the CPU/CUDA confound is unresolved, so the split is not attributed (see the D6a record's RESULT section)**.
 > - **D7's projection** is in [`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md). For one
 >   question, a decision beats a schema answer by 1.11× at 256 prompt tokens and by ~1.01× at 4K. For five questions
->   about one state on qwen3_5, decisions are 3–5× slower, so D8's trigger is projected to fire.
+>   about one state on qwen3_5, decisions are 3–5× slower, so D8's trigger is projected to fire. **Measured 2026-10-02: one question 1.24 / 1.07 / 1.01× faster than a schema answer; five questions 1.76 / 3.21 / 4.47× slower than one schema pass (two cells off projection, named in the record); D8's trigger fired at 0.909.**
 > - Previous status, 2026-09-27: C0 and D0 done, D1 and C1 built. C2 done. D5 built (`POST /v1/systemone`,
 >   TypeSafe-compatible).
 > - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
@@ -795,12 +795,16 @@ exists.
   for nobara CUDA on Qwen3.5-9B, the only machine with figures on record.
   - One question: the decision is faster by 1.11 / 1.03 / 1.01× than a schema answer at K = 256 / 1024 / 4096, and
     by 1.9–2.0 / 1.2 / 1.06× than a tool call.
-  - Five questions about one state: decisions are **3.2–4.9× slower**, because each question pays a full prefill on
+  - Five questions about one state: decisions are **3.2–4.9× slower** (projected; the measured 1.76 / 3.21 / 4.47× below supersedes it), because each question pays a full prefill on
     qwen3_5.
   - The Mac cannot run the 9B resident.
   - **Measurement pre-registered, 2026-09-28** (the record's §4): nobara CUDA, batch 1 (qwen3_5 serves one slot),
     8 states per K, paired ratios against the band, and D8's trigger as a state-prefill share ≥ 0.70 at K = 1024.
-    It is about 35 min and not queued; it needs `d7_bench.py` built and smoke-tested first.
+  - **MEASURED 2026-10-02** (record §5; resident int4, no decline, 128 requests, 0 failed). One question: the decision is faster than a schema
+    answer by 1.24 / 1.07 / 1.01× and than a tool call by 2.03 / 1.31 / 1.07× at K = 256 / 1024 / 4096, all inside the band. Five questions
+    about one state: five decisions cost exactly five times one, and take **1.76 / 3.21 / 4.47×** as long as one schema pass; the first two are
+    OFF PROJECTION (the projection undercosted the one-pass answer: its prompt carries all five questions, it emits about 50 tokens not 23–26, and
+    constrained decode costs about 27 ms per token not 16.5; named in the record). **D8's trigger fires on the measurement: share 0.909 ≥ 0.70.**
 
 ### D8 — shared state, many questions (deferred)
 
@@ -811,7 +815,7 @@ GDN state at a position, copied rather than rewound): the "state checkpoints" tr
 prefix reuse and spec decode on every hybrid family.
 
 **Trigger:** D7 shows state prefill ≥ 70% of a multi-question request's time on a realistic
-workload. Until then, the template puts the question after the state so it is at least a clean
+workload. **MET 2026-10-02: 0.909 at K = 1024** ([`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md) §5), so D8 is warranted by its own criterion. It is still unscheduled, and it is not a Route C dependency (one backbone pass scores every Clef question, D13). The template puts the question after the state so it is at least a clean
 suffix, and the cost is documented.
 
 ### D9 — docs for D

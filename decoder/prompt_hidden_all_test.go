@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
+
+	"github.com/townsendmerino/aikit/embed"
 )
 
 // D11's gate (docs/tasks/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must match HF's
@@ -267,4 +269,50 @@ func medianOf(v []float64) float64 {
 	c := append([]float64(nil), v...)
 	sort.Float64s(c)
 	return c[len(c)/2]
+}
+
+// OutputEmbeddingRow returns the SEPARATE lm_head's row on an untied model, not the input embedding's (the tiny Qwen3.5 checkpoint is untied and its two tables
+// differ), and refuses an id outside the vocabulary and a wrong-width destination. Clef's head reads these rows (internal/clef), and the end-to-end test there
+// fails if the table is the wrong one; this pins the accessor itself, against the checkpoint's own tensors.
+func TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel(t *testing.T) {
+	m := loadFixtureModel(t, "qwen3_5-tiny-normw", "")
+	if m.w.arch.TiedLMHead {
+		t.Fatal("the fixture is expected to have a separate lm_head")
+	}
+	st, err := embed.OpenSafetensors(filepath.Join("testdata", "qwen3_5-tiny-normw", "model.safetensors"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	hs := m.HiddenSize()
+	lm, err := st.TensorF32("lm_head.weight", m.w.arch.VocabSize, hs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emb, err := st.TensorF32("model.embed_tokens.weight", m.w.arch.VocabSize, hs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	differ := false
+	row := make([]float32, hs)
+	for _, id := range []int{0, 1, 17, 128, m.w.arch.VocabSize - 1} {
+		if err := m.OutputEmbeddingRow(id, row); err != nil {
+			t.Fatal(err)
+		}
+		for j := range row {
+			if row[j] != lm[id*hs+j] {
+				t.Fatalf("token %d: row differs from the checkpoint's lm_head at %d (%v vs %v)", id, j, row[j], lm[id*hs+j])
+			}
+			differ = differ || lm[id*hs+j] != emb[id*hs+j]
+		}
+	}
+	if !differ {
+		t.Fatal("the lm_head and the embedding are identical on every probed row, so this test cannot tell them apart")
+	}
+	if m.OutputEmbeddingRow(m.w.arch.VocabSize, row) == nil || m.OutputEmbeddingRow(-1, row) == nil {
+		t.Error("an id outside the vocabulary was accepted")
+	}
+	if m.OutputEmbeddingRow(0, row[:hs-1]) == nil {
+		t.Error("a short destination was accepted")
+	}
 }

@@ -18,7 +18,8 @@ for f in model-00001-of-00004 model-00002-of-00004 model-00003-of-00004 model-00
 args=(--dtype "$DTYPE")
 [ -z "${HIDDEN:-}" ] || args+=(--hidden "$HIDDEN")
 case "${PART:-}" in 1|2) args+=(--limit 75);; "") ;; *) echo "PART is 1 or 2"; exit 1;; esac
-OUT=$B/out; n0=$(cat "$OUT/probs_$DTYPE.jsonl" 2>/dev/null | wc -l)
+OUT=$B/out; # A missing results file is the normal first run: cat fails, and under pipefail that failure would kill the script silently (it did, 2026-10-02: rc=1 in 0 s, no output).
+n0=0; [ ! -f "$OUT/probs_$DTYPE.jsonl" ] || n0=$(wc -l < "$OUT/probs_$DTYPE.jsonl")
 [ "${PART:-}" != "2" ] || [ "$n0" -ge 75 ] || { echo "PART=2 needs the 75 rows of PART=1 first (have $n0)"; exit 1; }
 echo "$(date +%T) == D10 fixture $DTYPE start (part ${PART:-all}); rows already written: $n0; load $(cut -d' ' -f1-3 /proc/loadavg); free $(free -g | awk '/Mem/{print $7}') GB"
 D10_OUT="$OUT" CLEF_MODEL=/srv/models/clef-flash "$PY" -u "$SCRIPT" model "${args[@]}"

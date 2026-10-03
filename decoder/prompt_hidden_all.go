@@ -82,3 +82,26 @@ func splitRows(flat []float32, k, hidden int) [][]float32 {
 	}
 	return rows
 }
+
+// OutputEmbeddingRow writes the LM head's row for token id (HiddenDim wide, the raw output-embedding row, not normalised) into dst: the separate lm_head
+// when the family has one, the input embedding when the head is tied. It is what a head that scores tokens by their output embedding consumes (Clef's
+// joint head averages these over each option's tokens, docs/measurements/decisions-d10-clef-2026-10-02.md). The row is read from the weights as LOADED,
+// so a quantized load returns the dequantized row of the quantized weight: the quantization is part of the arm being run, not hidden from it.
+func (m *Model) OutputEmbeddingRow(id int, dst []float32) error {
+	a := m.w.arch
+	if id < 0 || id >= a.VocabSize {
+		return fmt.Errorf("decoder.OutputEmbeddingRow: token id %d outside the vocabulary [0, %d)", id, a.VocabSize)
+	}
+	if len(dst) != a.HiddenDim {
+		return fmt.Errorf("decoder.OutputEmbeddingRow: dst is %d wide, want %d", len(dst), a.HiddenDim)
+	}
+	w := &m.w.LMHead
+	if a.TiedLMHead || w.Rows() == 0 {
+		w = &m.w.Embed
+	}
+	w.Row(id, dst)
+	return nil
+}
+
+// HiddenSize is the model's hidden width (the width PromptHiddenAll rows and OutputEmbeddingRow rows have).
+func (m *Model) HiddenSize() int { return m.w.arch.HiddenDim }
