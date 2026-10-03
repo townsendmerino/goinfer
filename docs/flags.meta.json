@@ -50,7 +50,7 @@
   {
    "name": "embed-model",
    "group": "Choosing models",
-   "summary": "An embedding model directory (CodeRankEmbed layout), served on `/v1/embeddings`."
+   "summary": "An embedding model, served on `/v1/embeddings`: a directory (CodeRankEmbed / NomicBert layout), a decoder-as-embedder `.gguf`, or `hf:<owner>/<repo>:safetensors` (a NomicBert encoder, fetched and checked before its weights) or `hf:<owner>/<repo>:<quant>` (a GGUF)."
   },
   {
    "name": "embed-quant",

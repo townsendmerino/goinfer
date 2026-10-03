@@ -753,7 +753,12 @@ embeddings from one process, or either alone:
 
 ```bash
 go run ./cmd/serve --embed-model ~/models/coderankembed         # /v1/embeddings only
+go run ./cmd/serve --embed-model hf:nomic-ai/CodeRankEmbed:safetensors   # fetched once, then from the cache
 ```
+
+`hf:<owner>/<repo>:safetensors` fetches an encoder checkpoint as one verified set, its sentence-transformers pooling
+config included, and refuses any `model_type` but the NomicBert this encoder loads before downloading the weights. A
+decoder used as an embedder (qwen3-embedding, embeddinggemma) is a GGUF, `hf:<owner>/<repo>:<quant>`.
 
 `input` (string or array), `encoding_format: float|base64`, and `dimensions`
 (truncate + renormalize) follow the OpenAI shape; vectors are L2-normalized. For

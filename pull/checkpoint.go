@@ -35,13 +35,24 @@ type Plan struct {
 }
 
 // checkpointExtras are the non-weight files a checkpoint plan takes when the repo has them: the tokenizer in its several
-// forms, the chat template, generation defaults, and the image/video processor configs a vision-language family needs.
+// forms, the chat template, generation defaults, the image/video processor configs a vision-language family needs, and
+// the sentence-transformers module files an embedding model's pooling is read from (aikit's encoder reads
+// 1_Pooling/config.json; without it, pooling falls back to its default).
 var checkpointExtras = map[string]bool{
 	"config.json": true, "generation_config.json": true,
 	"tokenizer.json": true, "tokenizer_config.json": true, "tokenizer.model": true, "special_tokens_map.json": true,
 	"added_tokens.json": true, "vocab.json": true, "merges.txt": true,
 	"chat_template.jinja": true, "chat_template.json": true,
 	"preprocessor_config.json": true, "processor_config.json": true, "video_preprocessor_config.json": true,
+	"modules.json": true, "config_sentence_transformers.json": true, "sentence_bert_config.json": true, "1_Pooling/config.json": true,
+}
+
+// generativeLoads is PlanCheckpoint's model_type check: a family in the capability matrix with a safetensors loader.
+func generativeLoads(modelType string) (string, error) {
+	if fam, ok := FamilyForModelType(modelType); ok {
+		return fam, nil
+	}
+	return "", fmt.Errorf("model_type %q, which this build cannot load from safetensors (docs/capability-matrix.json)", modelType)
 }
 
 // safeRepoPath reports whether a repo file path is safe to join under a local directory: relative, no ".." or empty
@@ -139,6 +150,14 @@ func FamilyForModelType(mt string) (family string, ok bool) {
 //
 // The caller runs CheckAccess first, as for a GGUF pull.
 func PlanCheckpoint(ctx context.Context, repo string) (Plan, error) {
+	return PlanCheckpointFor(ctx, repo, generativeLoads)
+}
+
+// PlanCheckpointFor is PlanCheckpoint with the caller's model_type check. loads names the family that will load the
+// checkpoint, or returns why it cannot, and a refusal still comes after reading config.json and before any weight file.
+// serve's -embed-model uses it with its encoder's own check, because an embedding encoder is not a generative family in
+// the capability matrix (task-checkpoint-fetch P7).
+func PlanCheckpointFor(ctx context.Context, repo string, loads func(modelType string) (family string, err error)) (Plan, error) {
 	files, err := listTree(ctx, repo)
 	if err != nil {
 		return Plan{}, err
@@ -165,9 +184,9 @@ func PlanCheckpoint(ctx context.Context, repo string) (Plan, error) {
 	if cfg.ModelType == "" {
 		return Plan{}, fmt.Errorf("repo %s's config.json has no model_type, so goinfer cannot tell what it is", repo)
 	}
-	fam, ok := FamilyForModelType(cfg.ModelType)
-	if !ok {
-		return Plan{}, fmt.Errorf("repo %s is model_type %q, which this build cannot load from safetensors (docs/capability-matrix.json); nothing was downloaded", repo, cfg.ModelType)
+	fam, err := loads(cfg.ModelType)
+	if err != nil {
+		return Plan{}, fmt.Errorf("repo %s is %w; nothing was downloaded", repo, err)
 	}
 	p := Plan{Repo: repo, ModelType: cfg.ModelType, Family: fam, Dtype: cfg.TorchDtype}
 	if p.Dtype == "" {

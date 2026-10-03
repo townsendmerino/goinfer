@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -329,5 +330,60 @@ func TestCheckpoint_existingNonCheckpointRefused(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "mine.txt")); string(b) != "x" {
 		t.Fatal("the existing directory's file was touched")
+	}
+}
+
+// TestPlanCheckpointFor_embeddingEncoder is P7's plan half: an embedding encoder's repo (a NomicBert, which no generative
+// family loads) is declined by the generative plan, planned by the caller's own check, and the plan carries the
+// sentence-transformers pooling config its encoder reads (1_Pooling/config.json), which the fetch writes in its folder. A
+// model_type the caller's check refuses is declined with only config.json read.
+func TestPlanCheckpointFor_embeddingEncoder(t *testing.T) {
+	withCacheRoot(t)
+	files := map[string][]byte{
+		"config.json":           []byte(`{"model_type":"nomic_bert","torch_dtype":"float32"}`),
+		"model.safetensors":     []byte("weights"),
+		"tokenizer.json":        []byte(`{}`),
+		"modules.json":          []byte(`[]`),
+		"1_Pooling/config.json": []byte(`{"pooling_mode_cls_token":true}`),
+		"README.md":             []byte("# readme"),
+	}
+	h := &fakeHF{files: files, gated: false}
+	h.serve(t, "o/enc")
+	if _, err := PlanCheckpoint(context.Background(), "o/enc"); err == nil || !strings.Contains(err.Error(), "nomic_bert") {
+		t.Fatalf("the generative plan on a NomicBert: %v, want a decline naming it", err)
+	}
+	encoderLoads := func(mt string) (string, error) {
+		if mt == "nomic_bert" {
+			return "nomic_bert encoder", nil
+		}
+		return "", fmt.Errorf("model_type %q, which the encoder does not load", mt)
+	}
+	p, err := PlanCheckpointFor(context.Background(), "o/enc", encoderLoads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range p.Files {
+		paths = append(paths, f.Path)
+	}
+	if got, want := strings.Join(paths, " "), "1_Pooling/config.json config.json model.safetensors modules.json tokenizer.json"; got != want || p.Family != "nomic_bert encoder" {
+		t.Fatalf("plan %q family %q; want %q", got, p.Family, want)
+	}
+	dir, err := ResolveCheckpointFor(context.Background(), "hf:o/enc:safetensors", encoderLoads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "1_Pooling", "config.json")); err != nil || !strings.Contains(string(b), "cls") {
+		t.Fatalf("the pooling config in the fetched set: %q, %v", b, err)
+	}
+
+	files["config.json"] = []byte(`{"model_type":"llama"}`)
+	h2 := &fakeHF{files: files, gated: false}
+	h2.serve(t, "o/notenc")
+	if _, err := ResolveCheckpointFor(context.Background(), "hf:o/notenc:safetensors", encoderLoads); err == nil || !strings.Contains(err.Error(), "does not load") {
+		t.Fatalf("a model_type the caller refuses: %v, want its refusal", err)
+	}
+	if h2.hits["model.safetensors"] != 0 {
+		t.Fatalf("the refused repo's weights were fetched %d times", h2.hits["model.safetensors"])
 	}
 }

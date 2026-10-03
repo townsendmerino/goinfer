@@ -3,7 +3,7 @@
 > **Status: IN PROGRESS 2026-10-03.** §2 decided (option (c), owner 2026-10-03). P1, P2, P3 and P5 are
 > built in `pull` and reachable from the CLI, `--model` and the web UI (P6); P9's gates pass and the server
 > docs name the checkpoint path. P7's vision half is fixed. P4 (split GGUF) is built: route (b), owner 2026-10-03.
-> P7's embedding half and P8's cache view remain. See "Progress" below.
+> P7's embedding half is built. P8's cache view remains. See "Progress" below.
 >
 > Filed after the owner asked for the complete solution: every supported model reachable from the
 > page, multi-file checkpoints downloadable, and loadable once down.
@@ -288,9 +288,24 @@ Gates. The fixture is `testdata/gguf-split/`: `glm-tiny.gguf` split into 4 shard
 - **Mutations caught:** opening only the first shard, which fails both decoder gates; and dropping a tensor's
   shard section, which fails aikit's.
 
+**P7's embedding half, built 2026-10-03.** `-embed-model` takes an `hf:` reference:
+- **`hf:<repo>:safetensors`** is planned with the encoder's own check. That's `pull.PlanCheckpointFor` with serve's
+  `embedEncoderLoads`, because an embedding encoder is not a generative family in the capability matrix.
+  - aikit's `encoder.Load` loads a NomicBert and checks no `model_type` itself. Anything else is refused after
+    `config.json` and before any weight, rather than failing late or loading a foreign checkpoint's tensors under the
+    wrong architecture.
+  - The plan now also takes sentence-transformers' module files, `modules.json` and `1_Pooling/config.json`. The
+    encoder reads its pooling from them; without them it falls back to its default.
+- **`hf:<repo>:<quant>`** resolves as a GGUF, the decoder-as-embedder.
+- **Gates:** `pull`'s `TestPlanCheckpointFor_embeddingEncoder`, and serve's `TestEmbedModel_hfReferenceIsResolvedFirst`
+  and `TestEmbedEncoderLoads`.
+- **Live by day:** `serve -embed-model hf:nomic-ai/CodeRankEmbed:safetensors` fetched 522 MiB with the CLS pooling
+  config and loaded "CodeRankEmbed". Embeddings came back 768-wide at unit norm, and a restart resolved from the cache
+  in 1 s.
+- **Not done:** the `pull` CLI still plans with the generative check, so `pull nomic-ai/CodeRankEmbed:safetensors`
+  declines it. Serve fetches it itself.
+
 **Remaining:**
-- **P7, embedding models:** `-embed-model` still takes a directory path only. It does not go through `Resolve`, so
-  an `hf:` reference there is not fetched.
 - **P8:** a view of what the cache holds.
 
 ## 5. Not in scope, stated

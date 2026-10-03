@@ -61,7 +61,7 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 		return "", err
 	}
 	if ref.Checkpoint {
-		return resolveCheckpoint(ctx, ref, progress)
+		return resolveCheckpoint(ctx, ref, generativeLoads, progress)
 	}
 	if ref.File == "" && ref.Quant == "" {
 		return "", fmt.Errorf("%s: name a quant or a file, e.g. hf:%s:q4_k_m (or hf:%s:%s for a safetensors checkpoint)", spec, ref.Repo, ref.Repo, CheckpointSelector)
@@ -91,7 +91,7 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 // resolveCheckpoint is Resolve for "hf:owner/repo:safetensors": the cached directory when a complete, verified
 // checkpoint is already there (offline, from its marker), else CheckAccess, PlanCheckpoint and DownloadCheckpoint into
 // CacheDir(repo). Returns the directory decoder.Load opens.
-func resolveCheckpoint(ctx context.Context, ref Ref, progress func(done, total int64)) (string, error) {
+func resolveCheckpoint(ctx context.Context, ref Ref, loads func(string) (string, error), progress func(done, total int64)) (string, error) {
 	dir, err := CacheDir(ref.Repo)
 	if err != nil {
 		return "", err
@@ -102,7 +102,7 @@ func resolveCheckpoint(ctx context.Context, ref Ref, progress func(done, total i
 	if err := CheckAccess(ctx, ref.Repo); err != nil {
 		return "", err
 	}
-	p, err := PlanCheckpoint(ctx, ref.Repo)
+	p, err := PlanCheckpointFor(ctx, ref.Repo, loads)
 	if err != nil {
 		return "", err
 	}
@@ -115,6 +115,35 @@ func resolveCheckpoint(ctx context.Context, ref Ref, progress func(done, total i
 
 // ResolveVerbose is Resolve with a progress line on stderr, for the command-line front ends.
 // Split from Resolve so a library caller gets no surprise output on a stream it does not own.
+// ResolveCheckpointFor resolves an `hf:<owner>/<repo>:safetensors` spec with the caller's model_type check
+// (PlanCheckpointFor), reporting progress on stderr as ResolveVerbose does. A plain path is returned untouched, and so is
+// an hf: spec that names a GGUF quant or file, which goes through ResolveVerbose. A complete cached checkpoint resolves
+// offline from its marker.
+func ResolveCheckpointFor(ctx context.Context, spec string, loads func(modelType string) (family string, err error)) (string, error) {
+	if !IsRef(spec) {
+		return spec, nil
+	}
+	ref, err := ParseRef(strings.TrimPrefix(spec, "hf:"))
+	if err != nil {
+		return "", err
+	}
+	if !ref.Checkpoint {
+		return ResolveVerbose(ctx, spec)
+	}
+	fmt.Fprintf(os.Stderr, "resolving %s\n", spec)
+	path, err := resolveCheckpoint(ctx, ref, loads, func(done, total int64) {
+		if total > 0 {
+			fmt.Fprintf(os.Stderr, "\r  %s / %s (%d%%)   ", HumanBytes(done), HumanBytes(total), 100*done/total)
+		}
+	})
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(os.Stderr, "  %s\n", path)
+	return path, nil
+}
+
 func ResolveVerbose(ctx context.Context, spec string) (string, error) {
 	if !IsRef(spec) {
 		return spec, nil

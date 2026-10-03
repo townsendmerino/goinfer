@@ -451,7 +451,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
 	fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU and Metal backends; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
 	fs.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "MC4 candidate (docs/tasks/task-concurrency-2026-09.md): with -spec ngram on a resident whose decode can batch (MC3), keep MC3's concurrency instead of forcing one generation at a time — a generation speculates only while it is alone, joining MC3's batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Output is unaffected (the same lossless verify either way). No effect without -spec ngram, or on a resident MC3 cannot batch.")
-	fs.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
+	fs.StringVar(&cfg.embedPath, "embed-model", "", "embedding model for /v1/embeddings: a CodeRankEmbed/NomicBert HF dir (config.json + model.safetensors + tokenizer.json), a decoder-as-embedder .gguf, or a HuggingFace reference: hf:<owner>/<repo>:safetensors fetches a NomicBert encoder checkpoint (anything else is refused before the weights), hf:<owner>/<repo>:<quant> a GGUF")
 	fs.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	fs.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
 	return sf
@@ -1005,6 +1005,13 @@ func newServer(cfg config) (*server, error) {
 		return nil, err
 	}
 	if cfg.embedPath != "" {
+		// An hf: reference is fetched (or found in the cache) first: hf:<repo>:safetensors as an encoder checkpoint, checked
+		// against what loadEncoder can load before any weight byte; hf:<repo>:<quant> as a GGUF, the decoder-as-embedder.
+		p, err := resolveEmbedModel(context.Background(), cfg.embedPath)
+		if err != nil {
+			return nil, fmt.Errorf("-embed-model %s: %w", cfg.embedPath, err)
+		}
+		cfg.embedPath = p
 		if err := s.loadEncoder(cfg); err != nil {
 			return nil, err
 		}
@@ -1514,6 +1521,25 @@ func requireAutoBackend(cfg config) error {
 	}
 	return fmt.Errorf("--require-backend: -backend auto would run on the CPU (%s); pass -backend cpu to run strict on the CPU, or name a GPU backend to require it",
 		cfg.load.Auto.Reason)
+}
+
+// embedEncoderLoads is the plan check for an -embed-model safetensors checkpoint (task-checkpoint-fetch P7). loadEncoder's
+// directory path is aikit's encoder.Load, which loads a NomicBert (CodeRankEmbed, nomic-embed-text) and checks no
+// model_type itself, so anything else would fail late, or load a foreign checkpoint's tensors under the wrong
+// architecture. It is refused here instead, after config.json and before any weight. A decoder used as an embedder
+// comes as a GGUF (hf:<repo>:<quant>), which is not a checkpoint plan at all.
+func embedEncoderLoads(modelType string) (string, error) {
+	if modelType == "nomic_bert" {
+		return "nomic_bert encoder", nil
+	}
+	return "", fmt.Errorf("model_type %q, which -embed-model's encoder does not load (it loads nomic_bert: CodeRankEmbed, nomic-embed-text; a decoder used as an embedder comes as a GGUF, hf:<owner>/<repo>:<quant>)", modelType)
+}
+
+// resolveEmbedModel turns -embed-model into a local path: a plain path unchanged, hf:<repo>:safetensors fetched as an
+// encoder checkpoint under embedEncoderLoads, any other hf: reference resolved as a GGUF. A seam, so a test can stand in
+// the fetch.
+var resolveEmbedModel = func(ctx context.Context, spec string) (string, error) {
+	return pull.ResolveCheckpointFor(ctx, spec, embedEncoderLoads)
 }
 
 // loadEncoder loads the embedding model (f32 or int8) plus its tokenizer (used

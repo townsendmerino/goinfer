@@ -29,7 +29,7 @@ What to serve. `--model` is the one flag most invocations need.
 | `--adapter` | `serveName=baseName=dir (repeatable)` | — | A compute-time LoRA adapter that shares a base model's resident weights. Repeatable. Needs a dense safetensors base; not compatible with `--stream-weights`. |
 | `--vision` | `string` | — | Vision tower directory for a multimodal `--model` (found automatically per family); enables image content parts. Defaults to the `--model` directory when it holds a tower. |
 | `--vision-quant` | `f32 \| int8` | `f32` | Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. |
-| `--embed-model` | `string` | — | An embedding model directory (CodeRankEmbed layout), served on `/v1/embeddings`. |
+| `--embed-model` | `string` | — | An embedding model, served on `/v1/embeddings`: a directory (CodeRankEmbed / NomicBert layout), a decoder-as-embedder `.gguf`, or `hf:<owner>/<repo>:safetensors` (a NomicBert encoder, fetched and checked before its weights) or `hf:<owner>/<repo>:<quant>` (a GGUF). |
 | `--embed-quant` | `f32 \| q8` | `f32` | Embedding weight precision. |
 | `--embed-served-model-name` | `string` | — | The id `/v1/models` reports for the embedding model (default: the directory name). |
 
