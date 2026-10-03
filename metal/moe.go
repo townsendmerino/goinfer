@@ -807,14 +807,14 @@ func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer, dst Buffer) 
 	mo := r.moe
 	ml := L.moe
 	if mo.sharedInter > 0 {
-		e.DispatchTG(r.pSA, (2*mo.sharedInter)*32, 256, r.H*2, ml.shGuW, ml.shGuS, r.mq, r.mSc, r.gu, r.uH)
+		r.gemvExt(e, gemvExtKSA, 2*mo.sharedInter, r.H, ml.shGuW, ml.shGuS, r.mq, r.mSc, r.gu, r.uH)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.sharedInter*4), r.dq, r.dSc, mo.uSharedInter, r.uAct)
 		if mo.sharedUngated {
-			e.Dispatch(r.pGemvResid, r.H*32, 32, ml.shDW, ml.shDS, r.dq, r.dSc, dst, mo.uSharedInter) // dst += down
+			r.gemvExt(e, gemvExtKResid, r.H, mo.sharedInter, ml.shDW, ml.shDS, r.dq, r.dSc, dst, mo.uSharedInter) // dst += down
 		} else {
-			e.Dispatch(r.pGemv, r.H*32, 32, ml.shDW, ml.shDS, r.dq, r.dSc, mo.shDown, mo.uSharedInter) // down → scratch
-			e.Dispatch(mo.pRouter, 32, 32, ml.shGateW, r.mq, r.mSc, mo.shGl, r.uH)                     // gate logit (1 row)
-			e.Dispatch(mo.pSharedGate, r.H, 256, dst, mo.shDown, mo.shGl)                              // dst += sigmoid(gl)*down
+			r.gemvExt(e, gemvExtKCoal, r.H, mo.sharedInter, ml.shDW, ml.shDS, r.dq, r.dSc, mo.shDown, mo.uSharedInter) // down → scratch
+			e.Dispatch(mo.pRouter, 32, 32, ml.shGateW, r.mq, r.mSc, mo.shGl, r.uH)                                     // gate logit (1 row)
+			e.Dispatch(mo.pSharedGate, r.H, 256, dst, mo.shDown, mo.shGl)                                              // dst += sigmoid(gl)*down
 		}
 	}
 }

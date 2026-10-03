@@ -130,10 +130,10 @@ func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
 	dp := r.dnet
 	D := L.delta
 	r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
-	e.Dispatch(r.pGemv, dp.convDim*32, 32, D.qkvW, D.qkvS, r.aq, r.aSc, r.dnMixed, r.uH)
+	r.gemvExt(e, gemvExtKCoal, dp.convDim, r.H, D.qkvW, D.qkvS, r.aq, r.aSc, r.dnMixed, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.bW, D.bS, r.dnBt, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.aW, D.aS, r.dnAt, r.uH)
-	e.Dispatch(r.pGemv, dp.valueDim*32, 32, D.zW, D.zS, r.aq, r.aSc, r.dnZOut, r.uH)
+	r.gemvExt(e, gemvExtKCoal, dp.valueDim, r.H, D.zW, D.zS, r.aq, r.aSc, r.dnZOut, r.uH)
 	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, D.win, r.dnConvOut, r.uDnConvDim, r.uDnK)
 	e.Dispatch(r.pDnGates, dp.nv, 64, r.dnBt, r.dnAt, D.dtBias, D.negExpA, r.dnHeadP, r.uDnNv)
 	e.Dispatch(r.pDnNorm, dp.nk*tgReduceAttn, tgReduceAttn, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale)

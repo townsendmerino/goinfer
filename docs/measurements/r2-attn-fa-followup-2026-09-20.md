@@ -233,7 +233,7 @@ does curNKeys crossing ~1603, or ~2203, actually change").
 ## 3. Full kernel and dispatch source audit — clean
 
 Per the user's explicit choice of next step (cheaper than building a new multi-layer harness): read
-`attention_fa` and `attention_fa_combine`'s MSL source (`metal/kernels.go:1166-1271`) and every
+`attention_fa` and `attention_fa_combine`'s MSL source (`metal/kernels.go:1199-1304`) and every
 Go-side site that builds, sizes, or writes into the buffers they use (`metal/model.go`), looking
 specifically for anything keyed on a value that could legitimately differ between the first two
 calls and the third. Nothing was found. Specifically checked and ruled out:
@@ -254,7 +254,7 @@ calls and the third. Nothing was found. Specifically checked and ruled out:
   and `attention_fa_combine`'s read region use the same uniform-derived `nSplit`, so they cannot
   disagree with each other.
 - **`uAttnFAG`/`uAttnFANSplit` aliasing.** Independently allocated (`NewBufferU32(d, 0)` twice at
-  `BuildResident`, metal/model.go:1484) — no shared storage with any other uniform buffer that a
+  `BuildResident`, metal/model.go:1495) — no shared storage with any other uniform buffer that a
   copy-paste field-omission bug could explain.
 - **Threadgroup memory (`shm`) staleness.** All 128 threads unconditionally write their own row
   (`shm + tid*stride`) before the barrier and before any thread reads a different row back — the

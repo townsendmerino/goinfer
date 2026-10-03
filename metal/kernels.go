@@ -648,6 +648,39 @@ kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device co
 }
 template [[host_name("gemv_w4a8_resid_staged2")]] kernel decltype(gemv_w4a8_resid_staged<2>) gemv_w4a8_resid_staged<2>;
 template [[host_name("gemv_w4a8_resid_staged4")]] kernel decltype(gemv_w4a8_resid_staged<4>) gemv_w4a8_resid_staged<4>;
+// gemv_w4a8_coal_staged (D-B04): gemv_w4a8_resid_staged with gemv_w4a8_coal's epilogue (out = s * asc, no residual):
+// the same staged activations, rows per simdgroup, lane-strided words and per-word sum, so bit-identical to
+// gemv_w4a8_coal. For the plain coal projections R18 never reached: DeltaNet's qkv and z, the gated shared expert's down.
+template <uint R>
+kernel void gemv_w4a8_coal_staged(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup char* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    device const uint* aq4 = reinterpret_cast<device const uint*>(aq);
+    threadgroup uint* As4 = reinterpret_cast<threadgroup uint*>(As);
+    for (uint i=tid;i<(K>>2u);i+=tgs) As4[i]=aq4[i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint wpr = K/8u, spr = K/32u;
+    uint row0 = (tgid*(tgs>>5u) + sgid)*R;
+    float acc[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
+    for (uint wi = lane; wi < wpr; wi += 32u) {
+        char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            uint x = bq[(row0+r)*wpr + wi];
+            int gi = (int((x)&0xF)-8)*int(a0.x) + (int((x>>4)&0xF)-8)*int(a0.y)
+                   + (int((x>>8)&0xF)-8)*int(a0.z) + (int((x>>12)&0xF)-8)*int(a0.w)
+                   + (int((x>>16)&0xF)-8)*int(a1.x) + (int((x>>20)&0xF)-8)*int(a1.y)
+                   + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
+            acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] = s*asc[0]; }
+}
+template [[host_name("gemv_w4a8_coal_staged2")]] kernel decltype(gemv_w4a8_coal_staged<2>) gemv_w4a8_coal_staged<2>;
+template [[host_name("gemv_w4a8_coal_staged4")]] kernel decltype(gemv_w4a8_coal_staged<4>) gemv_w4a8_coal_staged<4>;
 // gemv_w4a8_sa_bias_resid: FeatOutBias's kernel — the o-proj GEMV needs BOTH an additive
 // per-row bias AND direct residual accumulation (gemv_w4a8_sa_resid has no bias epilogue,
 // gemv_w4a8_sa_bias overwrites instead of accumulating; neither alone is o-proj's shape for a

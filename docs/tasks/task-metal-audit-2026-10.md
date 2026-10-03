@@ -605,6 +605,41 @@ and 2.30× at 3900, and the token 1.24× and 1.37×.
 | Rule | **≥ 1.5 at either depth, with at least 4 of 5 reps above 1: ships** (`attnFABlkAnyG` becomes true). Below 1.5 at both depths: **killed**, the instantiations and the switch removed (R17's and B-P01's kill line). |
 | Reported | Qwen3-0.6B, and the token ratio. |
 
+### D-B04: built, pending its grade (pre-registered 2026-10-03, before any graded run)
+
+Built on main, **off by default** (`gemvExtOn = false`), bit-identical. R18's rows-per-simdgroup form now reaches the
+int4 GEMV sites it never did, through `gemvExt`:
+- **DeltaNet's qkv and z projections** (24 of the Qwen3.5-9B's 32 layers).
+- **A gated shared expert's gate|up and down.**
+- **An ungated shared expert's down.**
+
+**A correction to the audit:** its "bit-identical by R18's own argument" did not hold for the DeltaNet sites as
+written. They run the coal kernel family, and R18's SA rows kernels sum in a different order. The fix is a new kernel,
+`gemv_w4a8_coal_staged<R>`: R18's staged down kernel with the coal epilogue (no residual), so its sums are the coal
+kernel's.
+
+**Not built:** the routed-expert rows kernel (a new MoE kernel variant), and nothing on this Mac would time it
+resident.
+
+By day:
+- **`TestGemvExt_bitIdentical`** on the tiny Qwen3.5 hybrid (DeltaNet, MoE with a gated shared expert): 0 of 6,144
+  logits differ over 24 teacher-forced positions, with 240 coal-rows and 96 SA-rows dispatches taken. Scaling the new
+  kernel's output by 1 + 1e-7 fails 619.
+- **No coverage for the ungated shared-expert site:** no tiny fixture builds such a resident. It dispatches R18's
+  production down kernel.
+- **On the real 9B:** a one-rep `TestDB04AB` smoke (exploratory) read the token 1.060× faster at depth 128 and 1.084×
+  at 1024. The last token's logits matched across the arms.
+- **A first smoke reported a logits difference. It was the test's design:** DeltaNet's recurrent state is not
+  indexed by position, so the second arm ran on the first's state. The instrument now snapshots and restores it.
+
+| | |
+|---|---|
+| Instrument | `TestDB04AB` by `docs/measurements/metal-audit-2026-10/run-db04-grade.sh` on the night queue: the Qwen3.5-9B `.int4.metal.giw`, depths 128 and 1024 (filled by decode tokens), 7 reps of 16 tokens per arm, alternated, the DeltaNet state restored before each arm. An arm's time is its token GPU-time median. Estimate about 8 minutes; queued at 15. |
+| Precondition | The last token's logits are equal across the arms in every rep (the test fails otherwise), and rows-form dispatches are counted. |
+| Graded | `D-B04 METRIC off/on` at **depth 128**. |
+| Rule | **≥ 1.02 with at least 6 of 7 reps above 1: ships** (`gemvExtOn` becomes true; bit-identical, so the owner's permissive bar, not the audit's 1.05). **Below 1.02: killed**, `gemvExt` and the coal rows kernel removed. |
+| Reported | Depth 1024. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -887,3 +922,6 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-03: **B-P02 built, off by default, queued for its grade** (owner: "then B-P02"). The block kernel at
   G = 2–8 agrees bit for bit with the graded g7 head for head, so its fidelity is inherited. Its speed is graded
   tonight on internlm2 (G = 2): a one-rep smoke read 2.3–2.4× at attention.
+- 2026-10-03: **D-B04 built, bit-identical, off by default, queued for its grade** (owner: "then D-B04"). The audit's
+  DeltaNet sites needed a coal-family rows kernel to stay bit-identical; it is new. A one-rep smoke on the 9B read
+  1.06–1.08× on the token. The routed-expert part is not built.

@@ -206,3 +206,95 @@ func TestBP02AttnAB(t *testing.T) {
 			name, D, auditMedian(ratios), fmtRatios(ratios), auditMedian(times[0])/auditMedian(times[1]))
 	}
 }
+
+// TestDB04AB is D-B04's speed instrument (docs/tasks/task-metal-audit-2026-10.md, "D-B04"): decode on the Qwen3.5-9B
+// hybrid (24 DeltaNet layers) with gemvExtOn against off, one resident, the switch toggled between arms (gemvExt reads
+// it at encode; stopExec drops anything encoded under the other arm). Each rep runs both arms over the same `tokens`
+// positions from depth D, alternated, from the same DeltaNet state (snapshotted after the fill, restored before each
+// arm) and rewriting the same K/V; the last token's logits
+// must be equal across the arms in every rep. An arm's time is its token GPU-time median. Night-only:
+// GOINFER_METAL_DB04=1; GOINFER_AUDIT_MODEL picks another model.
+func TestDB04AB(t *testing.T) {
+	if os.Getenv("GOINFER_METAL_DB04") != "1" {
+		t.Skip("set GOINFER_METAL_DB04=1: D-B04's timed probe (night-only)")
+	}
+	const tokens = 16
+	depths := []int{128, 1024}
+	name, a := auditLoad(t, "Qwen3.5-9B-Q4_K_M.int4.metal.giw", 1, depths[len(depths)-1]+tokens+64, nil)
+	r, t0 := a.r, time.Now()
+	if r.dnet == nil {
+		t.Fatalf("%s has no DeltaNet layers", name)
+	}
+	defer func() { gemvExtOn = false; r.stopExec() }()
+	embs := auditEmbs(r, depths[len(depths)-1]+tokens, 29)
+	reps := auditReps(7)
+	for _, D := range depths {
+		gemvExtOn = false
+		r.stopExec()
+		for p := range D {
+			r.ForwardEmb(embs[p], p) // a decode-path fill: a hybrid's batched prefill is not on this path
+		}
+		var ratios, offT, onT []float64
+		var last [2][]float32
+		// DeltaNet's recurrent state and conv window are not indexed by position: each arm starts from the state the
+		// fill left, restored here (both are host-visible), or the second arm would run on the first arm's state.
+		type dsnap struct{ state, win []float32 }
+		snap := func() []dsnap {
+			var out []dsnap
+			for _, L := range r.layers {
+				if L.delta != nil {
+					out = append(out, dsnap{append([]float32(nil), L.delta.state.Floats()...), append([]float32(nil), L.delta.win.Floats()...)})
+				}
+			}
+			return out
+		}
+		restore := func(sn []dsnap) {
+			i := 0
+			for _, L := range r.layers {
+				if L.delta != nil {
+					copy(L.delta.state.Floats(), sn[i].state)
+					copy(L.delta.win.Floats(), sn[i].win)
+					i++
+				}
+			}
+		}
+		r.stopExec()
+		base := snap()
+		for rep := range reps {
+			var tm [2]float64
+			for k := range 2 {
+				on := (k+rep)%2 == 1
+				gemvExtOn = on
+				r.stopExec()
+				restore(base)
+				var ks []float64
+				var lg []float32
+				for i := range tokens {
+					lg = r.ForwardEmb(embs[D+i], D+i)
+					ks = append(ks, (r.gpuEnd-r.gpuStart)*1e3)
+				}
+				ai := 0
+				if on {
+					ai = 1
+				}
+				tm[ai], last[ai] = auditMedian(ks), append([]float32(nil), lg...)
+			}
+			for i := range last[0] {
+				if last[0][i] != last[1][i] {
+					t.Fatalf("depth %d rep %d: logit %d differs with gemvExtOn (%v against %v)", D, rep, i, last[1][i], last[0][i])
+				}
+			}
+			ratios, offT, onT = append(ratios, tm[0]/tm[1]), append(offT, tm[0]), append(onT, tm[1])
+		}
+		above := 0
+		for _, x := range ratios {
+			if x > 1 {
+				above++
+			}
+		}
+		auditHB("d-b04", t0, "%s depth %d: token %.3f ms off, %.3f ms on (medians of %d reps x %d tokens); rows-form dispatches %v; logits equal in every rep",
+			name, D, auditMedian(offT), auditMedian(onT), reps, tokens, r.gemvExtRows)
+		fmt.Fprintf(os.Stderr, "[d-b04] %s D-B04 METRIC off/on at depth %d: %.4f (%d of %d reps above 1; per-rep %v)\n",
+			name, D, auditMedian(ratios), above, reps, fmtRatios(ratios))
+	}
+}

@@ -227,6 +227,11 @@ type resident struct {
 	// kernels (then flush the executor, stopExec).
 	gemvRows                                             struct{ qkv, o, gu, down int }
 	pSABiasRows, pSAResidRows, pSARows, pGemvResidStaged Pipeline
+	// D-B04: R18's rows form at the int4 GEMV sites R18 never reached (gemvExt): the staged coal kernel, the SA rows
+	// kernel and the staged residual kernel at R = 2 and 4, and the threadgroup memory a staged kernel may take.
+	gemvExtCoal, gemvExtSA, gemvExtResid [5]Pipeline
+	gemvExtTGMax                         int
+	gemvExtRows                          [3]int // rows-form dispatches per kind since the build (tests read it)
 	// attnFABlkSplit > 0: pAttnFA is the R17 block kernel (attention_fa_blk_g<G>), which runs at this fixed split
 	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
 	// buildResident.
@@ -1444,6 +1449,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
 		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
 		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
+		for _, R := range []int{2, 4} {
+			r.gemvExtCoal[R] = pipe(fmt.Sprintf("gemv_w4a8_coal_staged%d", R))
+			r.gemvExtSA[R] = pipe(fmt.Sprintf("gemv_w4a8_sa_rows%d", R))
+			r.gemvExtResid[R] = pipe(fmt.Sprintf("gemv_w4a8_resid_staged%d", R))
+		}
+		r.gemvExtTGMax = d.MaxThreadgroupMemoryLength()
 	}
 	if r.w8 {
 		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
@@ -2688,6 +2699,56 @@ func attnFAHeadDimOK(hd, nH, nKV int) bool {
 		return true
 	}
 	return hd == 64 && nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
+}
+
+// gemvExtOn routes the int4 GEMVs R18 never reached through its rows-per-simdgroup kernels (D-B04): DeltaNet's qkv and
+// z projections, and a shared expert's gate|up and down. Each rows kernel is bit-identical to the one it replaces
+// (same lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). FALSE until its speed grade passes
+// (docs/tasks/task-metal-audit-2026-10.md, "D-B04"). The grade's binary and tests set it before a resident is built.
+var gemvExtOn = false
+
+// gemvExtKind names the shipped kernel family a gemvExt site runs: the plain coal projection, the SA projection, or
+// the coal projection with a residual add.
+type gemvExtKind int
+
+const (
+	gemvExtKCoal gemvExtKind = iota
+	gemvExtKSA
+	gemvExtKResid
+)
+
+// gemvExt encodes one int4 GEMV of `rows` outputs over K inputs at a site R18 never reached: its rows-per-simdgroup
+// twin when gemvExtOn and the shape allows it (rows fill whole threadgroups, K bytes of staged activations fit, an
+// int4 resident), else exactly the dispatch the site always made. args are the shipped kernel's buffers in order.
+func (r *resident) gemvExt(e *Encoder, kind gemvExtKind, rows, K int, args ...Buffer) {
+	R := 0
+	if gemvExtOn && !r.w8 && K%4 == 0 {
+		R = gemvRowsFor(rows, 4)
+	}
+	stage := K
+	if kind == gemvExtKSA {
+		stage = 2 * K // the SA family stages K shorts
+	}
+	if R > 0 && stage > r.gemvExtTGMax {
+		R = 0
+	}
+	if R > 0 {
+		r.gemvExtRows[kind]++
+	}
+	switch {
+	case R > 0 && kind == gemvExtKCoal:
+		e.DispatchTG(r.gemvExtCoal[R], rows*32/R, 256, stage, args...)
+	case R > 0 && kind == gemvExtKSA:
+		e.DispatchTG(r.gemvExtSA[R], rows*32/R, 256, stage, args...)
+	case R > 0 && kind == gemvExtKResid:
+		e.DispatchTG(r.gemvExtResid[R], rows*32/R, 256, stage, args...)
+	case kind == gemvExtKCoal:
+		e.Dispatch(r.pGemv, rows*32, 32, args...)
+	case kind == gemvExtKSA:
+		e.DispatchTG(r.pSA, rows*32, 256, 2*K, args...)
+	default:
+		e.Dispatch(r.pGemvResid, rows*32, 32, args...)
+	}
 }
 
 // attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
