@@ -1,6 +1,6 @@
-# D12 (encoder half) — the Clef record encoder in Go (2026-10-02)
+# D12 — the Clef record encoder and joint head in Go (2026-10-02)
 
-`internal/clef` ports `encode_record` from the checkpoint's own `joint_schema_model.py` (read in full for `docs/measurements/decisions-d10-clef-2026-10-02.md`). The joint head, D12's other half, is not started.
+`internal/clef` ports `encode_record` and `JointSchemaHead` from the checkpoint's own `joint_schema_model.py` (read in full for `docs/measurements/decisions-d10-clef-2026-10-02.md`). The encoder is gated of record (below). The head is gated on a SYNTHETIC golden only; its gate of record waits on the D10 hidden-state fixture (see "The head").
 
 ## Result
 
@@ -37,7 +37,22 @@ The reference tokenizes each fragment with `tokenizer(text, add_special_tokens=F
 - **Gates:** `TestEncode_onlyTheTemplatesParseSpecialTokens` asserts the flag per fragment (hostile text in the state, a question id, an instruction, an option id and a description; exactly two fragments parse specials, and they are the templates). The replay test asserts the same flag on all 150 items. `TestEncode_hostileTextForgesNoControlTokens` runs a request full of six control markers through the real tokenizer: **0 forged control tokens** with the literal split, against **35** from the same request through a parse-everything tokenizer (the reference's behaviour), so the check can fail.
 - **What this does not cover:** the effect on the head's output of the literal text, which the reference never saw, is unmeasured. It is the right text for the model to see (it is what the customer wrote). Structure injection in plain text is also not prevented: a question id or instruction containing `\nEND FIELD\nFIELD 2\nID: x` can still imitate schema structure. The schema is written by the application developer, not the end user, so this is a trust boundary to document in D13, not a tokenizer fix.
 
+## The head (`internal/clef/head.go`)
+
+121.8M parameters, widened from the checkpoint's bf16 to f32 on load (about 487 MB). `LoadHead` refuses a config with a missing or unknown key, a tensor the layout does not name, a missing tensor and a tensor of the wrong shape. `Forward(hidden, ids, questions, lm_head rows)` returns one logit per option per question, in the encoder's option order; `Softmax` gives the probabilities.
+
+**Gate (head isolated, f32): per-option probabilities within 1e-5 absolute of the reference.** Result on the synthetic golden (4 items; a first run, nothing tuned): **worst probability difference 1.23e-7, worst logit difference 9.5e-7**, about 80 times inside the bar.
+
+**What the synthetic golden is, and is not.** It is the reference `JointSchemaHead` (imported unmodified, f32) on seeded random hidden states and seeded random lm_head rows (`scripts/pin_clef_head_synthetic.py`): the shortest noul, choice and score fixture items, plus one 4-question record (noul, choice with 3 options, score with 6, a second choice; 904 tokens) encoded by the OFFICIAL `encode_record`. It isolates the head from the backbone, so the port could be checked before the backbone's hidden states existed. It is not the gate of record, for two reasons: random hidden states do not have the statistics of a trained backbone's (scale, outlier dimensions), so they exercise every code path but not the numerical regime the head runs in, and it is not committed (about 8 MB of incompressible floats). **The gate of record is the same test on the D10 f32 fixture's real `last_hidden_state` for the 3 shortest items** (the queued `d10-clef-f32` job), with the real lm_head rows extracted from the backbone shards. Until that has run, the head is "matches the reference on random inputs", not "gated".
+
+**It also covers the multi-question path**, which the 150 fixture records (one question each) cannot: the 4-question record exercises the decoder's self-attention over the questions, the per-question option split, and the encoder's FIELD numbering, several questions' spans shifted together, and an instruction with a quote and an accented letter. The Go encoder reproduces the official encoder's ids and spans on it (`TestEncode_multiQuestionMatchesReference`).
+
+**Able to fail.** Four porting mistakes, each applied alone to a copy of `head.go` and each turning `TestHead_matchesReference` red: leaving the routing layers' memory un-normalised, normalising the decoder cross-attention's memory (the trap: the reference normalises it in the routing layers and not in the decoder layers), dropping the sigmoid of the residual gate, and ignoring the prior logit scale. The file was restored byte for byte after each.
+
+**Placement of the assets.** `TestHead_matchesReference` and `TestEncode_multiQuestionMatchesReference` read `$CLEF_HEAD_GOLDEN` (else `testdata/decisions/clef/head_golden`) and the weights from `$CLEF_HEAD` (else `~/models/clef-flash`); either missing fails under `GOINFER_HEAVY_TESTS=1` and otherwise skips, and **a skip is not a pass**: on a checkout without them these two tests have run nothing.
+
 ## Not done in this item
 
-- The joint head (D12's second half): needs the hidden-state goldens from the queued `d10-clef-f32` job.
+- The head's gate of record on real hidden states (needs the `d10-clef-f32` night job, then extracting the lm_head rows and committing the goldens gzipped).
+- Speed: the head runs the reference's structure with a row-parallel f32 GEMM and a scalar attention; D14 owns making it fast, and nothing here is a performance claim.
 - Wiring into `/v1/decisions` (D13).
