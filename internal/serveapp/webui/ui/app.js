@@ -45,7 +45,7 @@ function tab(name) {
   }
 }
 $("tab-chat").onclick = () => tab("chat");
-$("tab-models").onclick = () => tab("models");
+$("tab-models").onclick = () => { tab("models"); loadDisk(); };
 $("tab-batch").onclick = () => tab("batch");
 
 // --- models -----------------------------------------------------------------
@@ -196,6 +196,7 @@ async function loadModels(pick) {
     if (models.some(m => m.id === keep)) sel.value = keep;
     showStats();
     renderResidentModels();   // W32
+    loadDisk();               // P8: which on-disk entries are loaded changes with every load and unload
   } catch (e) {
     $("stats").textContent = e.message;
   }
@@ -263,6 +264,54 @@ async function unloadModel(name, li, btn) {
   // loadModels's own "keep the current selection only if it still exists" guard falls through to
   // whatever the rebuilt <select> defaults to — there is nothing sensible to ask it to keep instead.
   await loadModels();
+}
+
+// --- on disk (P8, task-checkpoint-fetch-2026-09.md) ----------------------------------------------
+// What the pull cache holds, from /web/models/cache: a model pulled in an earlier session, or by the CLI, is loadable from
+// here without pulling it again. On disk and loaded are different questions; the Resident card above answers the other.
+// An entry already loaded says under which name; an interrupted pull says to re-run it. Load goes through loadPulled, the
+// same confined route the pull flow's own Load button uses.
+async function loadDisk() {
+  let j;
+  try {
+    const r = await fetch("/web/models/cache", {headers: headers()});
+    if (!r.ok) return;   // web routes off, or an auth problem the Models tab already reports
+    j = await r.json();
+  } catch { return; }
+  const entries = Array.isArray(j.entries) ? j.entries : [];
+  const ul = $("disk-list");
+  ul.textContent = "";
+  $("disk-card").hidden = entries.length === 0;
+  let total = 0;
+  for (const e of entries) {
+    total += e.size || 0;
+    const li = document.createElement("li");
+    li.className = "resident-item";
+    const name = document.createElement("span");
+    name.className = "resident-name";
+    name.textContent = e.repo;
+    const meta = document.createElement("span");
+    meta.className = "note";
+    const what = e.kind === "split" ? "split, " + e.shards + " shards" : e.kind;
+    meta.textContent = [what, e.human, e.sidecars_human ? "+ " + e.sidecars_human + " sidecar" : ""].filter(Boolean).join(" · ");
+    li.append(name, meta);
+    if (e.loaded) {
+      const s = document.createElement("span"); s.className = "note ok"; s.textContent = "loaded as " + e.loaded;
+      li.appendChild(s);
+    } else if (!e.complete) {
+      const s = document.createElement("span"); s.className = "note warn"; s.textContent = "incomplete: pull it again to resume";
+      li.appendChild(s);
+    } else {
+      const msg = document.createElement("span"); msg.className = "note";
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.className = "ambient amb-surface amb-rounded resident-unload";
+      btn.textContent = "Load";
+      btn.onclick = () => loadPulled(e.path, btn, msg);
+      li.append(btn, msg);
+    }
+    ul.appendChild(li);
+  }
+  $("disk-total").textContent = entries.length ? entries.length + " model(s), " + humanGB(total) + " in " + j.root : "";
 }
 
 // --- images (W11) -------------------------------------------------------------------------

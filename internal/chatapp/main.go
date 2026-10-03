@@ -162,6 +162,10 @@ func Main() {
 	// `fit` — tasks/task-fit-to-hardware.md Phase 1's dry run: "does this fit, and how" without
 	// starting a chat session. Same dispatch shape as `pull` above, for the same reason (this
 	// binary IS the only tool the person running it has).
+	// `cache` lists what `pull` has put on disk (task-checkpoint-fetch-2026-09.md P8).
+	if len(os.Args) > 1 && os.Args[1] == "cache" {
+		os.Exit(pullcmd.RunCache(os.Args[2:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "fit" {
 		os.Exit(fitcmd.Run(os.Args[2:]))
 	}
@@ -235,6 +239,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
 
   %[1]s models                          what to download, and what each one costs
   %[1]s pull <name>                     fetch one, sha256-verified
+  %[1]s cache                           what pull has put on disk, and the --model path for each
   %[1]s fit <file.gguf|dir>             will this fit, and how — per backend, before you load it
   %[1]s decide --model <f> in.jsonl     decisions: a distribution over each line's options, one prefill each
   %[1]s --model <f> --batch in.jsonl -o out.jsonl   run a batch file locally; resumable
@@ -266,7 +271,7 @@ All flags:
 	// chat session — no error, no hint that "version" meant anything. Nothing in normal usage
 	// leaves a bare positional (every argument here is a --flag), so anything left is a mistake.
 	if args := flag.Args(); len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, fit <path>, decide, decisions-calibrate, models, --version. Or pass --model <file.gguf|dir>.\n",
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, cache, fit <path>, decide, decisions-calibrate, models, --version. Or pass --model <file.gguf|dir>.\n",
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}

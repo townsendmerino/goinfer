@@ -3,7 +3,7 @@
 > **Status: IN PROGRESS 2026-10-03.** §2 decided (option (c), owner 2026-10-03). P1, P2, P3 and P5 are
 > built in `pull` and reachable from the CLI, `--model` and the web UI (P6); P9's gates pass and the server
 > docs name the checkpoint path. P7's vision half is fixed. P4 (split GGUF) is built: route (b), owner 2026-10-03.
-> P7's embedding half is built. P8's cache view remains. See "Progress" below.
+> P7's embedding half and P8's cache view are built. Every P item is done. See "Progress" below.
 >
 > Filed after the owner asked for the complete solution: every supported model reachable from the
 > page, multi-file checkpoints downloadable, and loadable once down.
@@ -305,8 +305,36 @@ Gates. The fixture is `testdata/gguf-split/`: `glm-tiny.gguf` split into 4 shard
 - **Not done:** the `pull` CLI still plans with the generative check, so `pull nomic-ai/CodeRankEmbed:safetensors`
   declines it. Serve fetches it itself.
 
-**Remaining:**
-- **P8:** a view of what the cache holds.
+**P8, the cache view, built 2026-10-03.** The detection half was already there: a complete checkpoint resolves
+offline from its marker, and a complete GGUF from its size and digest. This adds a way to see what the cache holds.
+- **`pull.CacheEntries`** walks `<cache>/<owner>/<repo>` and returns one entry per model:
+  - a GGUF;
+  - a split set (its first shard, the set's size, its shard count);
+  - a checkpoint directory.
+
+  Each entry carries its size, the bytes of its `.giw` sidecars (the transcoded copy a load runs from), and whether its
+  pull finished. The unfinished cases are a `.part`, a split set missing a shard, a checkpoint still in staging, or a
+  checkpoint whose files no longer match its marker. It reads sizes only, so it stays fast on a large cache; a load
+  still verifies in full. Digest sidecars, verified markers and the checkpoint marker are not listed as models.
+- **`goinfer-chat cache`** prints the list with each model's `--model` path.
+- **The Models tab's "On disk" card** (`GET /web/models/cache`) lists the same entries. An entry that's loaded says
+  under which name, matched through each loaded model's resolved source path. An incomplete one says to re-run its
+  pull. Any other entry gets a Load button, the same confined route as the pull flow's own.
+- **Gates:**
+  - `TestCacheEntries`: every shape above, with sidecar attribution and the non-model files ignored.
+  - `TestCacheEntries_noCache`.
+  - `TestWebCache_listsWhatIsOnDiskAndWhatIsLoaded`: the loaded mark found through a symlinked source. Dropping the
+    symlink resolution fails it.
+- **Live by day:**
+  - `goinfer-chat cache` listed this Mac's real cache: three GGUFs, 6.5 GiB.
+  - A scratch `serve -web` listed the SmolLM2 checkpoint as complete and not loaded, loaded it from the card's path,
+    and then listed it as loaded.
+
+**Remaining:** nothing in P1 to P9.
+- **Out of scope by the doc:** LoRA adapters, GPTQ/AWQ, and uploading or converting.
+- **Its own item, by §2 (c):** the HF token.
+- **Small known limits, recorded above:** a VL checkpoint loaded from the page serves text only; `chat --image` needs a
+  directory; `-embed` refuses a split set; the `pull` CLI does not fetch an encoder checkpoint.
 
 ## 5. Not in scope, stated
 

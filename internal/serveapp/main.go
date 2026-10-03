@@ -780,6 +780,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// load does — the only names it can act on are ones GET /v1/models already publishes — so it
 		// reuses unloadByName directly rather than gating a new admin surface. Same stack as load.
 		mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWebUnload))))
+		// P8 (task-checkpoint-fetch-2026-09.md): what the pull cache holds on disk, for the page's "On disk" card. Read-only,
+		// and it names only paths under the pull cache, the ones the load route above would accept anyway.
+		mux.HandleFunc("GET /web/models/cache", sameOrigin(auth(srv.handleWebCache)))
 	}
 
 	// K5 (docs/tasks/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when

@@ -686,6 +686,57 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleWebCache answers the page's "On disk" card (task-checkpoint-fetch-2026-09.md P8): every model the pull cache
+// holds, with its size, its .giw sidecars, whether its pull finished, and the name it is loaded under, if it is. On disk
+// and loaded are different questions, and this is the one the Resident card does not answer: what a pull put here that
+// nothing has loaded, or loaded since. Sizes only (pull.CacheEntries), so it is fast on a large cache; a load still
+// verifies in full.
+func (s *server) handleWebCache(w http.ResponseWriter, r *http.Request) {
+	if !s.webEnabled(w) {
+		return
+	}
+	root, err := pull.CacheRoot()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	entries, err := pull.CacheEntries()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// A loaded model's resolved source path, symlinks resolved like webLoadPath does, is what it was loaded FROM.
+	real := func(p string) string {
+		if rp, err := filepath.EvalSymlinks(p); err == nil {
+			return rp
+		}
+		return p
+	}
+	loaded := map[string]string{}
+	s.regMu.RLock()
+	for name, lm := range s.models {
+		if lm.source != "" {
+			loaded[real(lm.source)] = name
+		}
+	}
+	s.regMu.RUnlock()
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		row := map[string]any{
+			"repo": e.Repo, "path": e.Path, "kind": e.Kind, "size": e.Bytes, "human": pull.HumanBytes(e.Bytes),
+			"complete": e.Complete, "loaded": loaded[real(e.Path)],
+		}
+		if e.Shards > 0 {
+			row["shards"] = e.Shards
+		}
+		if e.Sidecars > 0 {
+			row["sidecars_human"] = pull.HumanBytes(e.Sidecars)
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"root": root, "entries": out})
+}
+
 type webUnloadReq struct {
 	Name string `json:"name"`
 }
