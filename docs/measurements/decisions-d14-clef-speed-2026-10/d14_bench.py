@@ -167,7 +167,9 @@ def cmd_analyze(a):
             cell.setdefault((r["K"], r["shape"], r["arm"], r["state"]), {})[r["pass"]] = r["t"]
     Ks = sorted({k[0] for k in cell})
     # BANDS: JEV time / Clef time, from the registered projection (docs/measurements/decisions-d14-clef-speed-2026-10-03.md section 2), widened -20% / +10%.
-    PROJ = {("1", 256): 0.74, ("1", 1024): 0.91, ("1", 4096): 0.97, ("5", 256): 1.89, ("5", 1024): 3.37, ("5", 4096): 4.44}
+    # The 5-question values are section 2a's (D8: JEV's same-kind questions share their prefill, 3 prefills for 5), which
+    # replaced section 2's 1.89 / 3.37 / 4.44 before any graded run; the 1-question values are unchanged.
+    PROJ = {("1", 256): 0.74, ("1", 1024): 0.91, ("1", 4096): 0.97, ("5", 256): 1.12, ("5", 1024): 2.03, ("5", 4096): 2.67}
     print("\nratio = JEV time / Clef time, per state (the geometric mean of that state's times over the passes), geometric mean over states, 95% t-interval;")
     print("> 1 means Clef is faster. band = projected x0.80 .. x1.10.")
     print(f"{'cell':12s} {'n':>2s} {'ratio':>7s} {'95% interval':>17s}  {'band':>13s}  {'pass 1':>7s} {'pass 2':>7s}  verdict")

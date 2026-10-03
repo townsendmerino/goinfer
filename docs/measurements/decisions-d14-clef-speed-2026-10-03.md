@@ -35,6 +35,36 @@ Revised projection for the JEV arm at 5 questions (about 3K + 170 tokens; the st
 
 What this means for the measurement: the question is no longer "Clef against an unshared JEV" but "Clef against JEV as it is served now". **The serve binary must be built from a revision that contains D8 (`main` after it lands), and its sha256 recorded; a binary from before it measures the old JEV arm and must say so.** The unshared JEV arm is what `decisions-d7-2026-09-28.md` section 5 already measured on CUDA. The registered D8 rule (Clef's own 5q/1q <= 2.0) is about the Clef route and is unaffected.
 
+## 2b. Amendment (2026-10-03, before any graded run): the machine is nobara's CPU, not the Mac
+
+**The Mac cannot hold the registered arm.** Its smoke voided before the first request. It ran at 09:14 with the
+D8-era serve, acb536b4, sha256 `25a18660be088465b11ff8924fe4bf4ce5b7c093bab0dc74ef02bcfd6121494b`, and the fit guard
+refused JEV-9B at int8int8:
+- it needs about 8.5 GB resident plus 0.5 GB KV, 9.0 GB in all;
+- the budget was 4.5 GB, 70% of the 6.4 GB then available.
+
+Section 3's "about 9.5 GB, so one is resident at a time on a 16 GB machine" assumed a margin the guard does not give.
+Loading the 9B would need about 12.9 GB available, more than this Mac has while its desktop runs. int4 does not help:
+on Apple Silicon it costs about 1.25 bytes per weight, against int8int8's 1.02. A guard bypass was not taken, because
+a run that pages measures the disk rather than the engine. **Owner decision, 2026-10-03: run D14 on nobara's CPU.**
+
+**What changes.** Section 3's machine, models and binary become:
+- **Machine:** nobara-pc, an AMD Ryzen 7 3700X (8 cores, 16 threads) with 62 GB, `-backend cpu`, both models at
+  int8int8. The harness's decode-path check is unchanged and still voids a resident path.
+- **Models:** nobara's `~/models/JEV-9B` and `~/models/clef-flash` on NVMe. Never `/srv/models`, which is the archive
+  disk.
+- **Serve:** built on nobara from 327016d6, which contains D8, with `GOWORK=off` (go.mod's pins, as CI builds it):
+  `~/goinfer-bench/d14/goinfer-serve-327016d6`, sha256
+  `44c9f61509c1e4981eb295fb57f106b3ec48cbc75141601df22e93249475c99a`.
+- **Quiet box:** the harness's Linux per-CPU load gate.
+
+Unchanged: the prompts, the arms, the pass order, the cell rule, section 4's rules, and section 2a's revised
+projection and bands.
+
+**What it means for the result.** It answers the question as asked: Clef against JEV as served now, on a CPU path,
+which is where D8's sharing applies. It is not a Mac number, and it is quoted with nobara's name. The 9B could run
+resident on nobara's GPU. This measures the CPU path on purpose, because that is the path the Mac would have used.
+
 ## 3. Design
 
 - **Machine and path:** the Mac, `-backend cpu` (the 9B does not run resident on the Mac, `decisions-d7-2026-09-28.md` section 2), both models at `int8int8` (the decision-model default). The harness checks the server's `decode path:` line and voids the run on a resident path.
@@ -64,6 +94,34 @@ What this means for the measurement: the question is no longer "Clef against an 
 **A machinery smoke already ran on nobara's CPU (2026-10-03, exploratory, one state, K = 256 and 1,024, one pass, int8int8, `serve` built from `main`; NOT the Mac and not quotable as a speed).** It shows the harness works end to end on both routes with the real models: 8 of 8 requests valid, every JEV answer on route `head` and every Clef answer on route `clef`, input tokens close to the projection's (JEV 291 / 1,478 / 1,038 / 5,213, Clef 404 / 839 / 1,151 / 1,586 against projected 317 / 1,584 / 1,076 / 5,378 and 428 / 836 / 1,187 / 1,595). Its four time ratios (JEV / Clef: 0.72 and 1.69 at K = 256, 0.89 and 2.85 at K = 1,024) sit inside the section 2 bands, on one state. It also hints at what to watch: Clef's time per token was about 51 to 54 ms up to 1,151 tokens and about 62 ms at 1,586, which fits the head costing more as the sequence grows; the Mac measurement will say. The smoke took 19 minutes, not the 6 to 10 I estimated: the K = 1,024 five-question JEV request alone was 282 s. **Size the Mac job from the Mac's own smoke, not from these figures.**
 
 Prerequisite on nobara's side: none outstanding. D13's fidelity run is independent of this one (it grades the answers, not the time).
+
+### Done on nobara instead (amendment 2b), 2026-10-03
+
+1. **Serve:** `~/goinfer-bench/d14/goinfer-serve-327016d6`, built on nobara from 327016d6, which contains D8 (6414584e).
+   It was built with `GOWORK=off` from a clean worktree (`vcs.modified=false`): sha256
+   `44c9f61509c1e4981eb295fb57f106b3ec48cbc75141601df22e93249475c99a`.
+2. **Models:** nobara's `~/models/JEV-9B` and `~/models/clef-flash`, 18 GB each on disk, both on NVMe. The box has
+   62 GB, 54 GB available. One model is resident at a time, as section 3 has it.
+3. **Smoke** (`--smoke`, 09:17–09:25 PDT, exploratory, NOT quotable): 4 of 4 valid, JEV on route `head` and Clef on
+   route `clef`, decode path `cpu (int8int8)`.
+   - JEV took 14.80 s for 1 question (291 input tokens) and 51.00 s for 5 (1,478).
+   - Clef took 20.74 s for 1 question (404) and 44.43 s for 5 (839).
+   - That is about 51 ms per token on both models at this size.
+   - Wall time was 489 s. The requests were 131 s; the two server starts, the warm-ups and the idle gates took the
+     rest. Each load is about 16 s.
+   - The smoke also found a harness defect, fixed before the run: the analyzer's bands still used section 2's
+     5-question projection, not section 2a's.
+4. **Sizing:**
+   - **K = 256:** about 131 s of requests per state, from the smoke.
+   - **K = 1,024:** about 390 s per state, at the smoke's rates rising to the about 62 ms per token nobara's first
+     smoke saw at 1,586 tokens. JEV is about 55 s for 1 question and about 170 s for 5 (3 prefills under D8); Clef is
+     about 65 s and about 100 s.
+   - **The total:** about 17 minutes per state over the two passes, plus about 12 minutes of server starts. N = 6
+     comes to about 116 minutes; N = 8 to about 151 minutes, over 3 hours with any margin.
+   - **K = 4,096 is dropped,** as section 3 allows. One state there is about an hour over the two passes.
+   - **Chosen: N = 6, K = 256 and 1,024, queued at 150 minutes** (about 30% margin over 116).
+5. **Queued** on nobara's night queue as `d14-clef-speed`. It runs from a pinned worktree of the commit that carries
+   this record, with the pinned binary above. It holds the timing lock, as every `night.py` job does.
 
 ## 6. Not in scope
 
