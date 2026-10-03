@@ -50,7 +50,9 @@ An interrupted fetch therefore never leaves a loadable-looking directory, the ne
 resolves offline. Anonymous only: a gated repo is refused before any file is read. With `-web`, the Models tab does the
 same. A repo with no GGUF lists its checkpoint plan, Pull fetches the set, and Load loads the directory under the
 repo's name. The page loads only what the pull flow published: a `.gguf` file, or a checkpoint directory whose marker
-and files verify.
+and files verify. A vision-language checkpoint started with `--model hf:…:safetensors`
+has its tower found in the fetched directory, as a local one would. One loaded from the page serves text only, because
+the tower is attached once, at startup, to the sole `--model`.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every

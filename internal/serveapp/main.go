@@ -1084,7 +1084,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		// Auto-discover: a single --model dir that holds a vision tower — either the
 		// Gemma 3 projector or a Qwen2.5-VL checkpoint (its ViT lives in the same dir).
 		if len(cfg.models) == 1 {
-			cand := cfg.models[0].path
+			cand := s.soleModelSource(cfg)
 			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
 				if visionModelType(cand) == "qwen2_5_vl" {
 					dir = cand
@@ -1206,6 +1206,19 @@ func visionModelType(dir string) string {
 	}
 	_ = json.Unmarshal(raw, &c)
 	return c.ModelType
+}
+
+// soleModelSource is the single --model as loadDecoder resolved it: for an `hf:<repo>:safetensors` reference, the
+// checkpoint directory it fetched, which is where a VL repo's tower lives (task-checkpoint-fetch P7). The typed string
+// names no directory, so stat-ing it found no tower and served the model text-only without a word. Falls back to the
+// typed path for an entry built without a source.
+func (s *server) soleModelSource(cfg config) string {
+	for _, lm := range s.models {
+		if lm.source != "" {
+			return lm.source
+		}
+	}
+	return cfg.models[0].path
 }
 
 // loadQwenVisionTower attaches the Qwen2.5-VL ViT (aikit) to the single loaded
@@ -1352,7 +1365,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
-		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head,
+		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to

@@ -2,7 +2,8 @@
 
 > **Status: IN PROGRESS 2026-10-03.** §2 decided (option (c), owner 2026-10-03). P1, P2, P3 and P5 are
 > built in `pull` and reachable from the CLI, `--model` and the web UI (P6); P9's gates pass and the server
-> docs name the checkpoint path. P4 (split GGUF), P7 and P8's cache view remain. See "Progress" below.
+> docs name the checkpoint path. P7's vision half is fixed. P4 (split GGUF), P7's embedding half and P8's cache view
+> remain. See "Progress" below.
 >
 > Filed after the owner asked for the complete solution: every supported model reachable from the
 > page, multi-file checkpoints downloadable, and loadable once down.
@@ -237,11 +238,18 @@ before the tree or any file is read, and the HF token becomes its own item.
   - The load came up under `SmolLM2-135M-Instruct`, and a chat answered.
   - The gated repo was refused, the GGUF repo was unchanged, and a `safetensors` search returned SmolLM3-3B first.
 
+**P7's vision half, fixed 2026-10-03.** The doc's "pulling a VL repo whole enables image turns" was true only for a
+plain directory path. Vision auto-discovery stat-ed the typed `--model` string, so `--model hf:…:safetensors` found no
+tower and served the model text-only, with nothing said. `loadDecoder` now keeps the resolved source on the loaded
+model, and discovery looks there. `TestLoadVisionTower_discoversInResolvedSource` was red before the fix (nil: no
+tower tried) and is green after (the resolved directory is tried and named).
+- A page-loaded checkpoint is text-only by design, because the tower is attached once, at startup.
+- `goinfer-chat --image` needs a GLM-OCR directory path and refuses an `hf:` reference loudly, before any load.
+
 **Remaining:**
 - **P4:** split GGUF, whose decision is still open.
-- **P7:** a pulled VL repo enabling image turns. Found 2026-10-03: vision auto-discovery stats the raw `--model`
-  string, so `--model hf:…:safetensors` finds no tower. Only a plain directory path does. A page-loaded checkpoint is
-  text-only by design, because the tower is attached once, at startup.
+- **P7, embedding models:** `-embed-model` still takes a directory path only. It does not go through `Resolve`, so
+  an `hf:` reference there is not fetched.
 - **P8:** a view of what the cache holds.
 
 ## 5. Not in scope, stated

@@ -138,7 +138,7 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 
-All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1669-1673`), and the Anthropic `image` block goes through
+All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1670-1674`), and the Anthropic `image` block goes through
 the same `driveVL`; the Anthropic surface was **not run** here.
 
 ## Claims in the docs that were wrong

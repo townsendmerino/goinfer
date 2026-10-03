@@ -55,6 +55,7 @@ type loadedModel struct {
 	vocab        int
 	name         string // served id (reported by /v1/models, matched on the request model field)
 	fp           string // model fingerprint (binds --session-dir snapshots)
+	source       string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
 	adapter      string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
 	spec         bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
 	specAdaptive bool   // --spec-adaptive: MC4 candidate, speculate only while alone, join MC3's batch otherwise
