@@ -148,7 +148,7 @@ Every prompt's token count matches goinfer's.
   bias term (a prior correction, fitted on the calibration split) would change the argmax. Whether it beats the trained head's 0.98
   on noul is a separate question, and it is not run here.
 
-**Owed, by night (registered 2026-10-02, below; the estimate is 2.25 hours, not 4):** the 150 items at `--quant q4k` on the CPU, to split the 8-point gap between the Q4_K file and
+**Measured 2026-10-02 (night job `d6a-q4k-150`; registered below, result in "The owed q4k measurement: RESULT"):** the 150 items at `--quant q4k` on the CPU, to split the 8-point gap between the Q4_K file and
 goinfer's re-quantization. It matters for D1's Route A quality on 4-bit models, not for D6a's decision.
 
 ## The owed q4k measurement, registered 2026-10-02 before it ran
@@ -168,3 +168,23 @@ produced. The CUDA resident declines this combination ("per-32 activations: the 
 
 **Confound, stated before the run.** q4k runs on the CPU and the int4 arm on CUDA, so the comparison also changes the backend. The control is Route A at CPU int4 over the same items (about another 2.25 hours); it is NOT queued, and a split that the CPU/CUDA difference could explain is reported as unresolved.
 
+## The owed q4k measurement: RESULT (run 2026-10-02 18:16–20:13 PDT on nobara-pc, 1 h 56 min; read 2026-10-03)
+
+Run exactly as registered above: the pinned `goinfer-chat-cuda-a4e16c43`, `decide --backend cpu --quant q4k --template bare-v1 --ctx 4096`, the 150 pinned items, Qwen3.5-9B Q4_K_M from `~/models`. 150 rows, 0 failed validation, in 1 h 56 min (the registered estimate was 2.25 h). Rows and stderr are [`results/b0cmp-goinfer-bare-q4k.jsonl`](decisions-d6a-2026-09-28/results/b0cmp-goinfer-bare-q4k.jsonl) and `.stderr.txt`; the comparison is [`q4k_compare.py`](decisions-d6a-2026-09-28/q4k_compare.py) with its output in [`results/q4k_compare.txt`](decisions-d6a-2026-09-28/results/q4k_compare.txt). The stderr records a swap-used baseline of 12.67 GB on the box at the start; this is not a timing measurement, so it does not touch the numbers read here.
+
+**Primary (per-item argmax agreement with the transformers f32 reference, paired on the same 150 items):**
+
+| kind | n | q4k (CPU) agrees | int4 (CUDA) agrees | q4k-only / int4-only discordant | exact sign test | mean TV, q4k vs int4 |
+|---|---|---|---|---|---|---|
+| noul | 51 | 0.804 | 0.765 | 6 / 4 | p = 0.75 | 0.063 vs 0.100 |
+| choice | 50 | **0.800** | **0.520** | 16 / 2 | **p = 0.0013** | 0.084 vs 0.194 |
+| score | 49 | 0.612 | 0.510 | 10 / 5 | p = 0.30 | 0.077 vs 0.144 |
+| all | 150 | **0.740** (Wilson 95% 0.66 to 0.80) | **0.600** | 32 / 11 | **p = 0.0019** | 0.074 vs 0.146 |
+
+**Secondary (top-1 against gold, OOD-weighted noul 9,767 / choice 3,219 / score 72):** transformers f32 **0.559**, goinfer q4k **0.549**, goinfer int4 CUDA **0.481**. q4k is within 1 point of the reference and int4 8 points under it. The weighted figure is dominated by the noul cell (31 of 51 for f32 and for q4k, Wilson 95% 0.47 to 0.73; int4 27 of 51, 0.40 to 0.66), so per the registration it is quoted with that interval: the f32/q4k/int4 gold figures are NOT separable at this sample size, and the claim rests on the agreement result above.
+
+**Reading, by the registered rule.** q4k's agreement with the reference is clearly above int4's (0.74 against 0.60; 32 items where only q4k agrees against 11 where only int4 does), so a large part of the 8-point gap is not the Q4_K file's own 4-bit loss. The effect is carried by the choice kind (0.80 against 0.52, 16 against 2), where it is well beyond the registered 10-point resolution; noul (4 points) and score (10 points, p = 0.30) are inside the noise the registration named.
+
+**What this does NOT show, as registered before the run.** The registration named the confound: q4k runs on the CPU and the int4 arm on CUDA, so the comparison also changes the backend, and "a split that the CPU/CUDA difference could explain is reported as unresolved". It is unresolved. The result is consistent with goinfer's int4 re-quantization costing most of the gap, and equally with something specific to the CUDA int4 path (its activation quantization, which a CPU int4 run would not share). Only the control separates them: Route A at CPU int4 over the same 150 items (about another 2 hours; NOT queued). Until then the defensible statement is "the native-block CPU path reproduces the reference's agreement and gold top-1 to within sampling noise; goinfer's CUDA int4 path does not, mostly on choice questions", and nothing about WHERE in the int4 path the loss enters.
+
+**What it changes.** Nothing in D6a's verdict (BUILD D2-D4 holds, as registered). It bears on D1's Route A on 4-bit models: Route A through the CUDA int4 path reads about 8 gold points under the reference, and the q4k path does not. D13's quantization arms for Clef-flash include q4k and int4, so the same question will be asked again there with the backend held fixed by design.

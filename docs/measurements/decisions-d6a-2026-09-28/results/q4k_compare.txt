@@ -1,0 +1,7 @@
+noul   n= 51 argmax agree q4k 0.804 [0.68,0.89] vs int4 0.765; TV q4k 0.063 vs int4 0.100; discordant q4k-only 6, int4-only 4, sign-test p=0.75
+choice n= 50 argmax agree q4k 0.800 [0.67,0.89] vs int4 0.520; TV q4k 0.084 vs int4 0.194; discordant q4k-only 16, int4-only 2, sign-test p=0.0013
+score  n= 49 argmax agree q4k 0.612 [0.47,0.74] vs int4 0.510; TV q4k 0.077 vs int4 0.144; discordant q4k-only 10, int4-only 5, sign-test p=0.3
+all    n=150 argmax agree q4k 0.740 [0.66,0.80] vs int4 0.600; TV q4k 0.074 vs int4 0.146; discordant q4k-only 32, int4-only 11, sign-test p=0.0019
+transformers f32   top-1 vs gold {noul 0.608, choice 0.420, score 0.102}  OOD-weighted 0.559   noul 31/51 Wilson95 (0.47, 0.73)
+goinfer q4k CPU    top-1 vs gold {noul 0.608, choice 0.380, score 0.204}  OOD-weighted 0.549   noul 31/51 Wilson95 (0.47, 0.73)
+goinfer int4 CUDA  top-1 vs gold {noul 0.529, choice 0.340, score 0.184}  OOD-weighted 0.481   noul 27/51 Wilson95 (0.40, 0.66)

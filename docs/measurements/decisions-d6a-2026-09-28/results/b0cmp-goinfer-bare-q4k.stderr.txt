@@ -1,0 +1,4 @@
+swap guard (load): armed for /home/francis/models/Qwen3.5-9B-Q4_K_M.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 12.67 GB swap-used
+decide: 100 lines, 1h2m56s
+decide: 150 lines in 1h55m52.805s, 0 failed validation

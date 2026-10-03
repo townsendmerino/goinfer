@@ -14,7 +14,7 @@
 >   to transformers' on the D0 fixture (prompts, token ids, label tokens: 150/150) and the gap numeric (4-bit weights plus goinfer's
 >   re-quantization; 60% argmax agreement with f32). On those same items the reference's own Route A reads 0.559 and the trained head
 >   0.934, so label scoring is about 37 points behind a trained head **in the reference itself**; the decision holds whatever the
->   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap; **registered and queued 2026-10-02 as `d6a-q4k-150` (2.25 h, a record, not a gate)**.
+>   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap; **measured 2026-10-02 (`d6a-q4k-150`, a record, not a gate): q4k on the CPU agrees with the reference on 0.74 of items against int4-on-CUDA's 0.60 (choice 0.80 against 0.52), and reads 0.549 OOD-weighted gold top-1 against 0.559 and 0.481; the CPU/CUDA confound is unresolved, so the split is not attributed (see the D6a record's RESULT section)**.
 > - **D7's projection** is in [`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md). For one
 >   question, a decision beats a schema answer by 1.11× at 256 prompt tokens and by ~1.01× at 4K. For five questions
 >   about one state on qwen3_5, decisions are 3–5× slower, so D8's trigger is projected to fire.
