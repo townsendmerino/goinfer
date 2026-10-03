@@ -790,8 +790,12 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   - The parity manifest went stale for 38 families (`decoder/model.go`'s comments); 39 goldens green, `deps_hash`
     refreshed.
 - 2026-10-01: **T0.5 done** (the docs half; the comment half is above), except F-D02's code options.
-- 2026-10-03: **F-D02's fixture assertion added** (written on nobara, compiled for darwin with `GOOS=darwin go vet ./metal/`, **NOT RUN: it needs a Metal device**; run
-  `go test -run TestWeightAlias_olderBundleTakesCopyPath -v ./metal/` on the Mac). The existing older-bundle test already covered the v15 non-metal case without saying so: it builds
+- 2026-10-03: **F-D02's fixture assertion added** (written on nobara) **and RUN on the Mac: PASS in 0.18 s**, at `0dcc0d1d`. The test file is tagged `darwin && goinfer_testhooks`, so the
+  command is `go test -tags goinfer_testhooks -count=1 -run TestWeightAlias_olderBundleTakesCopyPath -v ./metal/`; without the tag it prints `ok ... [no tests to run]`. (The first
+  version of this note gave the command without the tag and said the test was compiled for darwin on the strength of `GOOS=darwin go vet ./metal/`, which also leaves the file out;
+  `go vet -tags goinfer_testhooks` on that target is the check that compiles it, and it is clean.) The Mac's log: `non-metal bundle (format v15): llama-tiny.int4.giw` takes the copy path
+  with the "scales are not in the layout Metal binds ... converted at load" note, and `metal-target bundle (format v15): llama-tiny.int4.metal.giw` aliases, so the writer's format has not
+  moved and the test needed no relabelling. The existing older-bundle test already covered the v15 non-metal case without saying so: it builds
   its "old" bundle with today's `prequant` and `GIWTargetNone`, and the writer emits weights format v15 for every target (checked on `testdata/llama-tiny`: both the non-metal and the
   metal-target bundle read v15), so what the test called "a v12 file" is a v15 non-metal bundle. It now reads each bundle's weights-format version from its header (the `GINFW` blob at
   byte 64 behind the `GINFB` v3 bundle header) and asserts both are at least v15, its labels say "non-metal bundle", and its comment says why. The other F-D02 option, binding v15 scales
