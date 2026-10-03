@@ -114,10 +114,7 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	qg := matvecWM(m.be, &a.qProj, n)
 	q := make([]float32, nH*hd)
 	gate := make([]float32, nH*hd)
-	for hh := range nH {
-		copy(q[hh*hd:hh*hd+hd], qg[hh*2*hd:hh*2*hd+hd])
-		copy(gate[hh*hd:hh*hd+hd], qg[hh*2*hd+hd:hh*2*hd+2*hd])
-	}
+	splitQGate(qg, q, gate, nH, hd)
 	k := matvecWM(m.be, &a.kProj, n)
 	v := matvecWM(m.be, &a.vProj, n)
 
@@ -138,8 +135,23 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full attention*/, arch)
 
 	// Output gate, then o_proj.
+	qGateContext(ctx, gate)
+	return matvecWM(m.be, &a.oProj, ctx)
+}
+
+// splitQGate splits one position's double-width q_proj output into q and gate. The layout is [query ‖ gate] PER HEAD,
+// interleaved, not two concatenated blocks. Metal's delta_qsplit mirrors it (metal/qgate_kernels_test.go).
+func splitQGate(qg, q, gate []float32, nH, hd int) {
+	for hh := range nH {
+		copy(q[hh*hd:hh*hd+hd], qg[hh*2*hd:hh*2*hd+hd])
+		copy(gate[hh*hd:hh*hd+hd], qg[hh*2*hd+hd:hh*2*hd+2*hd])
+	}
+}
+
+// qGateContext is the output gate: ctx *= sigmoid(gate), elementwise and in place, before o_proj. Metal's
+// delta_attn_gate mirrors it.
+func qGateContext(ctx, gate []float32) {
 	for i := range ctx {
 		ctx[i] *= sigmoidf(gate[i])
 	}
-	return matvecWM(m.be, &a.oProj, ctx)
 }

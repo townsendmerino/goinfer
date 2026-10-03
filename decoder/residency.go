@@ -155,6 +155,35 @@ type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
 
+// ResidentGreedyChain is an optional capability on a ResidentForward (C-B01, docs/audit-metal-2026-09-30.md): greedy
+// decode with the token chained on the device. The resident picks each token's argmax on-device and gathers its
+// embedding as the next forward's input itself, so it can queue the next forward before the host has seen the token;
+// the host reads 4 bytes per token. GreedyChainStart opens a chain whose first input is token id at position pos;
+// each GreedyChainNext returns the argmax of the forward at the chain's next position (pos, pos+1, ...), which is also
+// that forward's successor's input; GreedyChainStop closes it, waiting out any forward queued past the last token
+// taken. Between Start and Stop the caller makes no other call on the resident. The decode loop uses it under the
+// same conditions as ResidentGreedy, and only where its own embedding lookup is a plain table row (embedIsTableRow),
+// with no MC3 concurrency, adapter or processor; the tokens are those of the full-logits path.
+type ResidentGreedyChain interface {
+	GreedyChainAvailable() bool
+	GreedyChainStart(id, pos int) error
+	GreedyChainNext() (int, error)
+	GreedyChainStop()
+}
+
+// ResidentSampleChain is ResidentGreedyChain's temperature-only sibling (C-P02): the chained forward ends with the
+// resident's own Gumbel-max draw (ResidentSample's ForwardSample) instead of the argmax. SampleChainStart opens it with
+// the draw of the forward at pos; the resident draws each later forward with the next one, which is how
+// Sampler.NextDraw advances. Each SampleChainNext passes the caller's own draw for the forward it returns, and the
+// resident refuses one that is not the draw it used. GreedyChainStop closes it. The decode loop uses it where it would
+// call ForwardSample, with no MC3, adapter or processor and a plain table-row embedding; the tokens are ForwardSample's.
+type ResidentSampleChain interface {
+	ResidentGreedyChain
+	SampleChainAvailable() bool
+	SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error
+	SampleChainNext(seed, draw uint64) (int, error)
+}
+
 // TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
 // docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
 // order decoder.topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
@@ -1399,6 +1428,18 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 // the call (batch prefill assembly), where a shared buffer would corrupt every entry but the
 // last. The per-token decode loop wants embedResidentInto instead (P-08, audit-2026-09-10).
 func (m *Model) embedResident(id int) []float32 { return m.embedResidentInto(id, nil) }
+
+// embedIsTableRow reports whether embedResidentInto is exactly m.w.Embed.Row: no embedding multiplier of either kind is
+// applied. A resident that gathers the next token's embedding itself (ResidentGreedyChain) is exact only then.
+func (m *Model) embedIsTableRow() bool {
+	if sc := m.w.arch.EmbedScale; sc != 0 && sc != 1 {
+		return false
+	}
+	if g := m.w.arch.granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
+		return false
+	}
+	return true
+}
 
 // embedResidentInto is embedResident with a caller-owned destination: dst is reused when its
 // capacity already fits (grown once otherwise, the same discipline as decodeScratch's buffers),

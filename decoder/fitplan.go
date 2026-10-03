@@ -177,6 +177,14 @@ func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 	}
 }
 
+// MetalCtxDefault and MetalCtxCeiling are the Metal backend's resident KV capacity: what an unpinned load allocates,
+// and the most an explicit -ctx may ask for. metal/model.go takes its constants from these, so Plan("metal") plans
+// exactly what Metal allocates, as WebGPUCtxCeiling does for webgpu (C-C01, docs/audit-metal-2026-09-30.md).
+const (
+	MetalCtxDefault = 4096
+	MetalCtxCeiling = 32768
+)
+
 // Plan is tasks/task-fit-to-hardware.md §2's pure function ("no behaviour change yet [Phase 1] — the
 // plan is printed beside today's decision"): given this model, a candidate backend, how many
 // bytes are free on it, and what the caller asked for, decide a placement — resident,
@@ -223,6 +231,14 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	// eligibility checks, same combination), so Plan never promises a KV precision BuildResident
 	// will not actually honour.
 	var ctxCeiling int
+	if backend == "metal" {
+		// An unpinned Metal load allocates MetalCtxDefault positions however much memory there is; only an explicit -ctx
+		// reaches past it, up to MetalCtxCeiling, above which Metal refuses (C-C01).
+		ctxCeiling = MetalCtxCeiling
+		if !req.CtxPinned {
+			ctxCeiling = MetalCtxDefault
+		}
+	}
 	if backend == "webgpu" {
 		ctxCeiling = WebGPUCtxCeiling(req.KVF16, req.KVI8)
 		if req.KVF16 || req.KVI8 {
@@ -304,6 +320,9 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 
 	if !ctxOK {
 		if ctxCeiling > 0 && req.Ctx > ctxCeiling {
+			if backend == "metal" {
+				return p.decline(backend, "context %d exceeds metal's %d-position ceiling — pass a smaller -ctx", req.Ctx, ctxCeiling)
+			}
 			return p.decline(backend, "context %d exceeds webgpu's fixed %d-position ceiling at this KV precision (M-32) — pass a smaller -ctx or drop --kv-f16/--kv-i8",
 				req.Ctx, ctxCeiling)
 		}

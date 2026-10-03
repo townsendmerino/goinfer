@@ -71,6 +71,21 @@ func (m *Model) ForwardForTest(id int, cache *KVCache) ([]float32, error) {
 // Generate / GenerateSpeculative, not this.
 func (m *Model) ResidentForwardForTest() ResidentForward { return m.resident }
 
+// SplitQGateForTest and QGateContextForTest are the CPU's attn_output_gate split and output gate
+// (decoder/forward_qwen35.go), so the resident kernels that mirror them can be checked against the code the CPU runs.
+func SplitQGateForTest(qg []float32, nH, hd int) (q, gate []float32) {
+	q, gate = make([]float32, nH*hd), make([]float32, nH*hd)
+	splitQGate(qg, q, gate, nH, hd)
+	return q, gate
+}
+
+// QGateContextForTest applies the output gate to ctx in place (see SplitQGateForTest).
+func QGateContextForTest(ctx, gate []float32) { qGateContext(ctx, gate) }
+
+// AutoPinResidentContextForTest makes the model's resident context request ctx with the caller not having chosen it,
+// the state the load-time fit guard's auto-pin leaves (R13), which only a load under memory pressure produces.
+func (m *Model) AutoPinResidentContextForTest(ctx int) { m.resCtxReq, m.resCtxPinned = ctx, false }
+
 // ResidentImagePrefillForTest wraps residentImagePrefill (decoder/generate_vl_resident.go) — the
 // exact primitive GenerateVL's resident image-prefill fast path calls internally — so a
 // real-checkpoint gate (cuda/) can compare its logits directly against PrefillLogitsVLForTest's

@@ -15,10 +15,11 @@ import (
 var moePrefillPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88, 21, 64, 9, 150}
 
 // TestPrefillParityMoE is G8's second gate (docs/tasks/task-gpu-paths-2026-09.md): the batched f16 MMA
-// prefill path, extended this row to run a MoE layer's FFN row by row off the batched residual
-// (reusing the unchanged per-token decode MoE dispatch chain — encodeMoERoute/encodeMoEExperts/
-// encodeMoESharedExpert — the same "batch attention, loop the FFN" shape CUDA's own batched
-// prefill already uses for MoE), must match the sequential Forward loop's last-token logits.
+// prefill path's MoE FFN must match the sequential Forward loop's last-token logits. G8 first ran
+// that FFN row by row off the batched residual, through the per-token decode MoE dispatch chain
+// (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert); the default is now expert-major (all
+// rows routed at once, then each active expert over its rows), and GOINFER_MOE_EXPERT_MAJOR=0
+// restores the row loop (D-D01, audit-metal-2026-09-30.md).
 // Same structure and bar as TestPrefillParity/TestPrefillParityGemma: argmax match, cosine >=
 // 0.95 (prefill's f16 activations vs decode's int8 mean a high-but-not-exact cosine is expected).
 //

@@ -1,0 +1,7 @@
+=== RUN   TestAuditT14_saRows4PerByte
+[t1.4    0.8s] K=1536 N=17376 (15.0 MB, 18 copies): 7035.3 ns per MB of weights (median of 7)
+[t1.4    0.8s] K=2048 N=13024 (15.0 MB, 18 copies): 6050.7 ns per MB of weights (median of 7)
+[t1.4    0.8s] K=3072 N=8672 (15.0 MB, 18 copies): 6247.6 ns per MB of weights (median of 7)
+[t1.4    0.8s] RESULT time per byte K=1536 / K=2048 = 1.163; control K=3072 / K=2048 = 1.033 -> CONFIRMS the idle tail
+--- PASS: TestAuditT14_saRows4PerByte (1.13s)
+PASS

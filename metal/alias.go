@@ -34,10 +34,12 @@ import (
 // maps a .giw MAP_SHARED on darwin (decoder/giwmap_darwin.go): the GPU reads the file's own page-cache pages
 // (+132 COW faults, background), wired only while a command buffer uses them, and a fork is cheap.
 //
-// ON BY DEFAULT since 2026-09-24, when every gate in S6's registered rule had passed (logits byte-identical
-// on the 1.5B/7B and all 23 resident fixtures, decode within 3% at depth 128 and 2048, footprint met, the
-// memory-hog arm, Close ordering — docs/measurements/s6-alias-2026-09-24.md). GOINFER_METAL_ALIAS=0 turns it
-// off: this type is then nil and int4Buf is byte-for-byte the copy path.
+// ON BY DEFAULT since 2026-09-24, on the owner's decision after S6's gates (docs/measurements/s6-alias-2026-09-24.md):
+// logits byte-identical on the 1.5B/7B and all 23 resident fixtures, decode within 3% at depth 128 and 2048, and
+// Close ordering. Not every gate read as passed: the footprint gate read NOT MET, and when its dense-term condition
+// was later met the process was still about 60 MB over the bar read literally; the memory-hog arm ran on the 7B
+// only, not the M26; and M26 decode was not resolvable at the record's n (F-D02, audit-metal-2026-09-30.md). GOINFER_METAL_ALIAS=0 turns it off: this type is
+// then nil and int4Buf is byte-for-byte the copy path.
 type weightAlias struct {
 	m    *decoder.Model
 	page int
@@ -284,7 +286,9 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 
 // summary is the banner line S6 asks for: the number a user would otherwise never see — how much of the
 // weights is served from the file and how much the build still copied into anonymous memory — plus, for a
-// file that carries no f16 scales, what to do about it.
+// file whose int4 scales are not in the layout Metal binds, what to do about it. Since weights format v15 every
+// bundle stores binary16 scales, but only a -target metal bundle (kind 7, and fused groups) lays them out to be bound,
+// so a v15 file for another target is converted too (F-D02, audit-metal-2026-09-30.md).
 func (a *weightAlias) summary() string {
 	if a == nil {
 		return ""
@@ -296,8 +300,9 @@ func (a *weightAlias) summary() string {
 		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), float64(a.int8Bytes)/(1<<20), a.int8Tensors,
 		float64(a.scaleBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent, a.f16Converted)
 	if a.f16Converted > 0 && a.scaleBytes == 0 {
-		line += fmt.Sprintf("[metal] note: %s carries no f16 scales (written before weights format v14, or not with -target metal), "+
-			"so they were converted at load — rebuild it with prequant -target metal to alias them too\n", filepath.Base(a.m.GiwPath()))
+		line += fmt.Sprintf("[metal] note: %s's int4 scales are not in the layout Metal binds (a file written before weights format "+
+			"v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too\n",
+			filepath.Base(a.m.GiwPath()))
 	}
 	return line
 }

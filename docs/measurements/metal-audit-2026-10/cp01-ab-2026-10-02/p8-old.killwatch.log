@@ -1,0 +1,26 @@
+07:08:42 killwatch: baseline swap-used 486.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 17762
+07:08:42 t+0s swap_used=486.25MB delta=+0MB tick=0MB rss=7328KB free_disk=13G
+07:08:43 t+1s swap_used=486.25MB delta=+0MB tick=0MB rss=726368KB free_disk=13G
+07:08:44 t+2s swap_used=486.25MB delta=+0MB tick=0MB rss=1439552KB free_disk=13G
+07:08:45 t+3s swap_used=486.25MB delta=+0MB tick=0MB rss=2157056KB free_disk=13G
+07:08:46 t+4s swap_used=486.25MB delta=+0MB tick=0MB rss=3376736KB free_disk=13G
+07:08:47 t+5s swap_used=486.25MB delta=+0MB tick=0MB rss=2680144KB free_disk=13G
+07:08:48 t+6s swap_used=486.25MB delta=+0MB tick=0MB rss=2955280KB free_disk=13G
+07:08:49 t+7s swap_used=486.25MB delta=+0MB tick=0MB rss=3637632KB free_disk=13G
+07:08:50 t+8s swap_used=486.25MB delta=+0MB tick=0MB rss=4822096KB free_disk=13G
+07:08:51 t+9s swap_used=486.25MB delta=+0MB tick=0MB rss=5230944KB free_disk=13G
+07:08:52 t+10s swap_used=486.25MB delta=+0MB tick=0MB rss=4426512KB free_disk=13G
+07:08:53 t+11s swap_used=486.25MB delta=+0MB tick=0MB rss=2876368KB free_disk=13G
+07:08:54 t+12s swap_used=486.25MB delta=+0MB tick=0MB rss=2292480KB free_disk=13G
+07:08:55 t+13s swap_used=486.25MB delta=+0MB tick=0MB rss=2222480KB free_disk=13G
+07:08:56 t+14s swap_used=486.25MB delta=+0MB tick=0MB rss=2174400KB free_disk=13G
+07:08:58 t+16s swap_used=486.25MB delta=+0MB tick=0MB rss=2122496KB free_disk=13G
+07:08:59 t+17s swap_used=486.25MB delta=+0MB tick=0MB rss=2028416KB free_disk=13G
+07:09:00 t+18s swap_used=486.25MB delta=+0MB tick=0MB rss=1917184KB free_disk=13G
+07:09:01 t+19s swap_used=486.25MB delta=+0MB tick=0MB rss=1936480KB free_disk=13G
+07:09:02 t+20s swap_used=486.25MB delta=+0MB tick=0MB rss=1914512KB free_disk=13G
+07:09:03 t+21s swap_used=486.25MB delta=+0MB tick=0MB rss=1928848KB free_disk=13G
+07:09:04 t+22s swap_used=486.25MB delta=+0MB tick=0MB rss=1958064KB free_disk=13G
+07:09:05 t+23s swap_used=486.25MB delta=+0MB tick=0MB rss=1946400KB free_disk=13G
+07:09:06 t+24s swap_used=486.25MB delta=+0MB tick=0MB rss=1945568KB free_disk=13G
+07:09:07 killwatch: pid 17762 exited on its own, stopping watch

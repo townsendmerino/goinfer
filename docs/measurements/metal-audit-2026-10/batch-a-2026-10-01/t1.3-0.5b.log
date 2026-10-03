@@ -1,0 +1,4 @@
+=== RUN   TestAuditT13_kernelGap
+[t1.3    1.1s] RESULT qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: GPUStart(t+1) - GPUEnd(t) over 199 gaps: median 0.583 ms (p10 0.572, p90 0.650, max 0.999) -> C-B01 stands (median >= 0.15 ms); scheduling-window gap kernStart(t+1) - kernEnd(t), for reference: median 5.297 ms
+--- PASS: TestAuditT13_kernelGap (2.35s)
+PASS

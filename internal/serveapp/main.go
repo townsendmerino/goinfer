@@ -191,8 +191,10 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	// slots, so interleaved conversations keep their own prefix resident. The backend clamps it to its memory guard;
 	// the banner reports what it allocated.
 	o.ResidentKVSlots = cfg.kvSessions
-	o.ResidentPrefillChunk = cfg.prefillChunk // MC3 chunked prefill (docs/tasks/task-concurrency-2026-09.md); 0 = off
-	o.CPUBatchDecode = cfg.cpuBatch           // MC3c step 2: batched CPU decode (-cpu-batch)
+	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // E-P09: Metal keeps 2 slots unless -kv-sessions was given
+	o.ResidentPrefillChunk = cfg.prefillChunk     // MC3 chunked prefill (docs/tasks/task-concurrency-2026-09.md); 0 = off
+	o.CPUBatchDecode = cfg.cpuBatch               // MC3c step 2: batched CPU decode (-cpu-batch)
+	o.SpecNgram = cfg.spec == "ngram"             // E-P06: a resident measures its verify cost curve at load
 	return o
 }
 
@@ -311,6 +313,7 @@ type config struct {
 	kvQuant         string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
 	name            string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions      int
+	kvSessionsSet   bool          // -kv-sessions was given on the command line (flag.Visit after Parse)
 	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
 	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
 	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
@@ -358,6 +361,16 @@ type config struct {
 
 // serveFlags is what the serve flags parse into: the config every model shares, the four listener flags that
 // are not part of it, --version, and the model-loading flags goinfer-chat shares (loadflags).
+// markGivenFlags records, after fs is parsed, which of cfg's flags the command line gave rather than defaulted: today
+// -kv-sessions, whose default 4 Metal lowers to 2 GPU KV slots (E-P09) while a given count is kept.
+func markGivenFlags(fs *flag.FlagSet, cfg *config) {
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "kv-sessions" {
+			cfg.kvSessionsSet = true
+		}
+	})
+}
+
 type serveFlags struct {
 	cfg                           config
 	addr, apiKey, tlsCert, tlsKey *string
@@ -410,7 +423,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		"low-rank deltas — request the fine-tune via the OpenAI `model` field. Base must be a safetensors\n"+
 		"--model (dense, gated MLP; not MoE/gemma4/qwen3.5). Incompatible with --stream-weights.")
 	fs.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
-	fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables); on Metal, CUDA and WebGPU, also how many GPU KV slots a resident model keeps (clamped by its memory guard)")
+	fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables); on Metal, CUDA and WebGPU, also how many GPU KV slots a resident model keeps (clamped by its memory guard). Metal keeps 2 GPU slots unless this flag is given: on unified memory each slot's KV is resident from the first token, about 112 MB per slot on the 1.5B and 235 MB on the 7B at the default context")
 	fs.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	fs.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	fs.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
@@ -432,7 +445,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	fs.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
 	fs.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
-	fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
+	fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU and Metal backends; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
 	fs.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "MC4 candidate (docs/tasks/task-concurrency-2026-09.md): with -spec ngram on a resident whose decode can batch (MC3), keep MC3's concurrency instead of forcing one generation at a time — a generation speculates only while it is alone, joining MC3's batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Output is unaffected (the same lossless verify either way). No effect without -spec ngram, or on a resident MC3 cannot batch.")
 	fs.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	fs.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
@@ -519,6 +532,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	}
 	sf := registerFlags(flag.CommandLine)
 	flag.Parse()
+	markGivenFlags(flag.CommandLine, &sf.cfg)
 	cfg, addr, apiKey, tlsCert, tlsKey, showVersion, lf := sf.cfg, sf.addr, sf.apiKey, sf.tlsCert, sf.tlsKey, sf.showVersion, sf.lf
 	if *showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))

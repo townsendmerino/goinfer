@@ -137,6 +137,88 @@ kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uin
             gemm_epilogue(myc, acc[t*4 + f], m0 + (th*4 + t)*8u, n0 + (fh*4 + f)*8u, M, N, C, bias, mode, lane);
 }
 
+// A-P01 (docs/audit-metal-2026-09-30.md): gemm_w4f16_store's tile as template parameters, TM tokens × TN features per
+// threadgroup, for the small-M passes where a 64 × 64 tile leaves cores idle (o, down and qkv run 24-32 threadgroups on
+// the 1.5B) and, at M <= 32, runs MMAs for rows that are not there. Same 128 threads, same 2 × 2 simdgroups, each owning
+// (TM/2) × (TN/2) outputs; the same 32-k slabs staged once into threadgroup memory; the same dequant, MMA chain and
+// epilogue. Each output still accumulates K in ordered 8-wide chunks through simdgroup_multiply_accumulate from the
+// same operand values, so only which threadgroup owns it changes: bit-identical to gemm_w4f16_store, which stays as
+// the 64 × 64 kernel (gemm_w4f16_m64n64 is this template at that tile, kept for the test that checks the template
+// against it). Smaller tiles stage fewer rows per slab: TN = 32 gives each thread one 8-k word of one weight row instead
+// of two, TM = 32 one 8-k block of one activation row.
+template <ushort TM, ushort TN>
+kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
+    device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
+    constant uint& M[[buffer(4)]], constant uint& N[[buffer(5)]], constant uint& K[[buffer(6)]],
+    device const float* bias[[buffer(7)]], constant uint& mode[[buffer(8)]],
+    uint2 tgp[[threadgroup_position_in_grid]], ushort tid[[thread_index_in_threadgroup]],
+    ushort sg[[simdgroup_index_in_threadgroup]], ushort lane[[thread_index_in_simdgroup]]) {
+    constexpr ushort TT = TM/16, TF = TN/16;     // 8-blocks of tokens / features per simdgroup
+    constexpr ushort WT = 128/TN, WPT = 4/WT;    // threads per weight row, 8-k words each
+    constexpr ushort AT = 128/TM, BPT = 4/AT;    // threads per activation row, 8-k blocks each
+    threadgroup half sa[(TN/8)*4*72];            // weights:     [feature block][k block] of 8x8 [k][feature], padded
+    threadgroup half sb[(TM/8)*4*64];            // activations: [token block][k block] of 8x8 [token][k]
+    threadgroup float cs[4*64];                  // per-simdgroup epilogue scratch
+
+    const uint n0 = tgp.x*uint(TN), m0 = tgp.y*uint(TM);
+    const uint wpr = K/8u, gpr = K/32u;
+    const ushort fh = sg & 1, th = sg >> 1;
+    simdgroup_float8x8 acc[TT*TF];
+    for (ushort i = 0; i < TT*TF; i++) acc[i] = make_filled_simdgroup_matrix<float,8,8>(0.0f);
+
+    const ushort fr = tid / WT, kq = tid % WT;   // weight row, its k quarter/half
+    const ushort fb = fr >> 3, nl = fr & 7;
+    const uint ncol = n0 + fr;
+    const bool wok = ncol < N;
+    const ushort tr = tid / AT, kq2 = tid % AT;  // token row, its k quarter/half
+    const ushort tb = tr >> 3, rl = tr & 7;
+    const uint mrow = m0 + tr;
+    const bool aok = mrow < M;
+
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float sc = wok ? float(WS[ncol*gpr + k0/32u]) : 0.0f;
+        for (ushort w = 0; w < WPT; w++) {
+            const ushort kb = kq*WPT + w;
+            const uint word = wok ? W[ncol*wpr + k0/8u + kb] : 0u;
+            threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
+            for (ushort kl = 0; kl < 8; kl++) {
+                *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
+                p += 8;
+            }
+        }
+        for (ushort j = 0; j < BPT; j++) {
+            const ushort kb = kq2*BPT + j;
+            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            if (aok) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
+                d4[0] = s4[0]; d4[1] = s4[1];
+            } else {
+                d4[0] = half4(0.0h); d4[1] = half4(0.0h);
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (ushort ik = 0; ik < 4; ik++) {
+            simdgroup_half8x8 a[TT], b[TF];
+            for (ushort t = 0; t < TT; t++) simdgroup_load(a[t], sb + ((th*TT + t)*4 + ik)*64, 8);
+            for (ushort f = 0; f < TF; f++) simdgroup_load(b[f], sa + ((fh*TF + f)*4 + ik)*72, 8);
+            for (ushort t = 0; t < TT; t++)
+                for (ushort f = 0; f < TF; f++)
+                    simdgroup_multiply_accumulate(acc[t*TF + f], a[t], b[f], acc[t*TF + f]);
+        }
+    }
+
+    threadgroup float* myc = cs + sg*64;
+    for (ushort t = 0; t < TT; t++)
+        for (ushort f = 0; f < TF; f++)
+            gemm_epilogue(myc, acc[t*TF + f], m0 + (th*TT + t)*8u, n0 + (fh*TF + f)*8u, M, N, C, bias, mode, lane);
+}
+template [[host_name("gemm_w4f16_m64n64")]] kernel decltype(gemm_w4f16_tile<64, 64>) gemm_w4f16_tile<64, 64>;
+template [[host_name("gemm_w4f16_m32n64")]] kernel decltype(gemm_w4f16_tile<32, 64>) gemm_w4f16_tile<32, 64>;
+template [[host_name("gemm_w4f16_m64n32")]] kernel decltype(gemm_w4f16_tile<64, 32>) gemm_w4f16_tile<64, 32>;
+template [[host_name("gemm_w4f16_m32n32")]] kernel decltype(gemm_w4f16_tile<32, 32>) gemm_w4f16_tile<32, 32>;
+
 // rmsnorm_quant_f16: RMSNorm a single f16 row and fused-quantize it to int8 + f32 scale — the
 // f16-input twin of the decode path's rmsnorm_quant. Prefill's LM head is the SAME int8-pinned,
 // logit-critical head the decode path uses (weights int8, not int4), so the last token's
@@ -784,11 +866,43 @@ kernel void shared_gate_add_f16(
 // baseline arm of R19's §3.2 gate and of the decomposition harness's A/B.
 var prefillSteelAttnOff bool
 
+// gemmTilePolicy picks which of A-P01's rules gemmTile applies: "" both (the default), "shipped" neither (every GEMM
+// on gemm_w4f16_store's 64 × 64 tile), "bm32" only the 32-token rule, "bn32" only the 32-feature rule. Test-only: the
+// arms of A-P01's grade (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
+var gemmTilePolicy = ""
+
+// gemmTile is A-P01's tile selector for a rows × N prefill GEMM (docs/audit-metal-2026-09-30.md): 32 tokens when the
+// pass has at most 32 rows, so no MMA runs for a 64-row tile's missing half; 32 features when N <= 2048 and rows <= 64,
+// so the narrow GEMMs (o, down and qkv on the 1.5B: 24-32 threadgroups at 64) fill more cores. Otherwise the 64 × 64
+// kernel. Every choice is bit-identical (gemm_w4f16_tile's comment, TestGemmTile_bitIdentical).
+func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
+	tm, tn := 64, 64
+	if gemmTilePolicy != "shipped" {
+		if gemmTilePolicy != "bn32" && rows <= 32 {
+			tm = 32
+		}
+		if gemmTilePolicy != "bm32" && N <= 2048 && rows <= 64 {
+			tn = 32
+		}
+	}
+	switch {
+	case tm == 32 && tn == 32:
+		return pf.pGemmM32N32, 32, 32
+	case tm == 32:
+		return pf.pGemmM32N64, 32, 64
+	case tn == 32:
+		return pf.pGemmM64N32, 64, 32
+	}
+	return pf.pGemmStore, 64, 64
+}
+
 // prefillState holds the lazily-compiled prefill pipelines (opt-in; decode-only builds skip it).
 type prefillState struct {
 	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
+	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
 	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
@@ -844,6 +958,7 @@ func (r *resident) ensurePrefill() {
 	}
 	r.pf = &prefillState{
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
+		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
@@ -1043,10 +1158,12 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		return b
 	}
 
-	// gemm: one gemm_w4f16_store dispatch over rows×N — a 2-D grid of (ceil(N/64), ceil(rows/64))
-	// threadgroups of 128 threads, each owning a 64-feature × 64-token tile (R16, prefill.go's kernel).
+	// gemm: one GEMM dispatch over rows×N — a 2-D grid of (ceil(N/TN), ceil(rows/TM)) threadgroups of 128 threads, each
+	// owning a TN-feature × TM-token tile: gemm_w4f16_store's 64 × 64 (R16), or for a small pass a smaller tile of the
+	// same arithmetic (A-P01, gemmTile).
 	gemm := func(e *Encoder, rows, N int, bufs ...Buffer) {
-		e.Dispatch2D(pf.pGemmStore, (N+63)/64, (rows+63)/64, 128, 1, bufs...)
+		p, tm, tn := pf.gemmTile(rows, N)
+		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
 	}
 	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
 	// prefill.go's own #define, matched here). Real M (unpadded): the tail row-tile's out-of-range

@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:497 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:696` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:718` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -73,7 +73,7 @@ nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 **The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:138`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:611`) declined via its
+and therefore repacked-only, `int4Concat` (`metal/model.go:645`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -150,7 +150,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
-- **Item 4: no code change needed.** `internal/serveapp/main.go:499`,
+- **Item 4: no code change needed.** `internal/serveapp/main.go:512`,
   `internal/chatapp` (both binaries now register it through `internal/loadflags/loadflags.go:62`), and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty (since R17, 2026-10-01, it is `"auto"`, which is `cpu` on a binary with no GPU backend). The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.

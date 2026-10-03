@@ -315,6 +315,7 @@ All flags:
 		fmt.Fprintln(os.Stderr, l)
 	}
 	opts := cf.load.Options()
+	opts.SpecNgram = *cf.spec == "ngram" // E-P06: a resident measures its verify cost curve at load (the value is checked below)
 	if err := opts.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(2)

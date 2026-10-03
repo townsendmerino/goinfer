@@ -1,0 +1,25 @@
+07:05:37 killwatch: baseline swap-used 486.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 12895
+07:05:37 t+0s swap_used=486.25MB delta=+0MB tick=0MB rss=6784KB free_disk=13G
+07:05:38 t+1s swap_used=486.25MB delta=+0MB tick=0MB rss=714192KB free_disk=13G
+07:05:39 t+2s swap_used=486.25MB delta=+0MB tick=0MB rss=1428848KB free_disk=13G
+07:05:40 t+3s swap_used=486.25MB delta=+0MB tick=0MB rss=2148208KB free_disk=13G
+07:05:41 t+4s swap_used=486.25MB delta=+0MB tick=0MB rss=2850848KB free_disk=13G
+07:05:42 t+5s swap_used=486.25MB delta=+0MB tick=0MB rss=2282448KB free_disk=13G
+07:05:44 t+7s swap_used=486.25MB delta=+0MB tick=0MB rss=3399072KB free_disk=13G
+07:05:45 t+8s swap_used=486.25MB delta=+0MB tick=0MB rss=4724368KB free_disk=13G
+07:05:46 t+9s swap_used=486.25MB delta=+0MB tick=0MB rss=6100432KB free_disk=13G
+07:05:47 t+10s swap_used=486.25MB delta=+0MB tick=0MB rss=4440464KB free_disk=13G
+07:05:48 t+11s swap_used=486.25MB delta=+0MB tick=0MB rss=2733472KB free_disk=13G
+07:05:49 t+12s swap_used=486.25MB delta=+0MB tick=0MB rss=2176704KB free_disk=13G
+07:05:50 t+13s swap_used=486.25MB delta=+0MB tick=0MB rss=2084704KB free_disk=13G
+07:05:51 t+14s swap_used=486.25MB delta=+0MB tick=0MB rss=2035328KB free_disk=13G
+07:05:52 t+15s swap_used=486.25MB delta=+0MB tick=0MB rss=1896672KB free_disk=13G
+07:05:53 t+16s swap_used=486.25MB delta=+0MB tick=0MB rss=1897888KB free_disk=13G
+07:05:54 t+17s swap_used=486.25MB delta=+0MB tick=0MB rss=1877264KB free_disk=13G
+07:05:55 t+18s swap_used=486.25MB delta=+0MB tick=0MB rss=1805840KB free_disk=13G
+07:05:56 t+19s swap_used=486.25MB delta=+0MB tick=0MB rss=1758960KB free_disk=13G
+07:05:57 t+20s swap_used=486.25MB delta=+0MB tick=0MB rss=1766208KB free_disk=13G
+07:05:58 t+21s swap_used=486.25MB delta=+0MB tick=0MB rss=1746416KB free_disk=13G
+07:05:59 t+22s swap_used=486.25MB delta=+0MB tick=0MB rss=1766080KB free_disk=13G
+07:06:00 t+23s swap_used=486.25MB delta=+0MB tick=0MB rss=1728640KB free_disk=13G
+07:06:01 killwatch: pid 12895 exited on its own, stopping watch

@@ -26,6 +26,9 @@ import (
 // then diverges: one continues the reference way (Forward, one token at a time) through [from,K);
 // the other takes the SAME suffix through PrefillLast(embs[from:], from) — the exact code path
 // G-08 flags as uncovered. Compares the two residents' final logits at position K-1.
+//
+// The fixture's head dim is 16, so PrefillLast runs attention_prefill_fused here. At head dim 128 production runs
+// attention_prefill_steel, which TestAttentionPrefillSteelMatchesFloat64 checks at startPos > 0 (F-G01).
 func TestPrefillLast_startPosGreaterThanZero(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

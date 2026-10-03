@@ -37,22 +37,6 @@ func TestMetalResidentCheckCap(t *testing.T) {
 	}
 }
 
-// TestMetalCtxCapWithinKernelBound pins the invariant that keeps the resident context ceiling a
-// FACT: checkCap bounds nKeys to ctxCap() <= metalCtxCapMax (32768). The attention kernel operates
-// with a static threadgroup score tile buffer `threadgroup float sc[4096]` (attnScoreTileBound).
-// Deep context (>4096) is handled via online softmax tiling in multiples of attnScoreTileBound.
-// This test asserts metalCtxCapDefault <= attnScoreTileBound and metalCtxCapMax is a multiple of attnScoreTileBound.
-func TestMetalCtxCapWithinKernelBound(t *testing.T) {
-	if metalCtxCapDefault > attnScoreTileBound {
-		t.Fatalf("metalCtxCapDefault=%d exceeds attention kernel tile bound %d",
-			metalCtxCapDefault, attnScoreTileBound)
-	}
-	if metalCtxCapMax%attnScoreTileBound != 0 {
-		t.Fatalf("metalCtxCapMax=%d is not a multiple of attention tile bound %d",
-			metalCtxCapMax, attnScoreTileBound)
-	}
-}
-
 // TestResolveMetalCtxCap is G6's own gate for the real, pre-existing gap found scoping it
 // (docs/tasks/task-gpu-paths-2026-09.md): Metal never read decoder.Model.ResidentContextRequest() at
 // all, so an explicit -ctx was silently ignored, always using metalCtxCapDefault. Uses

@@ -97,10 +97,7 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 			for i := range K {
 				pos := startPos + i
 				qgi, qi, gi := row(qg, i, 2*qDim), row(q, i, qDim), row(gate, i, qDim)
-				for hh := range nH { // q_proj emits [query ‖ gate] per head
-					copy(qi[hh*hd:hh*hd+hd], qgi[hh*2*hd:hh*2*hd+hd])
-					copy(gi[hh*hd:hh*hd+hd], qgi[hh*2*hd+hd:hh*2*hd+2*hd])
-				}
+				splitQGate(qgi, qi, gi, nH, hd) // q_proj emits [query ‖ gate] per head
 				ki, vi := row(k, i, kvDim), row(v, i, kvDim)
 				rmsNorm(qi, a.qNorm, nH, hd, eps, arch.RMSAddOne)
 				rmsNorm(ki, a.kNorm, nKV, hd, eps, arch.RMSAddOne)
@@ -114,9 +111,7 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 			} else {
 				attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, true, arch, true, attnPool)
 			}
-			for i := range ctx {
-				ctx[i] *= sigmoidf(gate[i])
-			}
+			qGateContext(ctx, gate)
 			matmul(be, &a.oProj, ctx, mix, K)
 		}
 		addResidual(h, mix)

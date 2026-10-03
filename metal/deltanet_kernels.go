@@ -141,9 +141,9 @@ kernel void delta_rule(device const float* qn[[buffer(0)]], device const float* 
     device const float* k = kn + headK*hk;
     device const float* q = qn + headK*hk;
 
-    // CANDIDATE: manual 8-wide unroll (grounded in the measured trend: scalar ~409.8k -> 2-wide
-    // ~220k -> 4-wide ~128k ns/dispatch; testing whether the win keeps compounding or plateaus/
-    // regresses on register pressure). Same strictly sequential kd=0,1,...,7,... accumulation
+    // Manual 8-wide unroll, shipped in 4090dc45: scalar ~409.8k -> 2-wide ~220k -> 4-wide ~128k ->
+    // 8-wide ~108.9k ns/dispatch (~3.76x the scalar loop; the commit records the measurement).
+    // Same strictly sequential kd=0,1,...,7,... accumulation
     // order as the scalar loop (no reassociation) -- just written in groups of 8, bit-identical; a
     // scalar tail handles a non-multiple-of-8 hk defensively even though every released family's hk
     // (128) is a clean multiple.

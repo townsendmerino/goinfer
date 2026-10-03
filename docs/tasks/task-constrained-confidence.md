@@ -122,7 +122,7 @@ is.
 
 **Decisions.**
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
-  (`decoder/model.go:1304`) returns logits plus captured residuals. `qwen3_5` dense shares
+  (`decoder/model.go:1326`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
   (`decoder/arch.go:954`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
   contract (`decoder/capture.go:14`) is the residual *after* layer l, before the final norm, so D2
@@ -626,7 +626,7 @@ schema was never published (D0).
 
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:668`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:682`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -1031,13 +1031,13 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:1304` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
+`Process`) · `decoder/model.go:1326` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:701`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:668` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:682` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·

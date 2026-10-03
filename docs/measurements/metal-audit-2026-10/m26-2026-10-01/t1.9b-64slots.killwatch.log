@@ -1,0 +1,7 @@
+01:34:59 killwatch: baseline swap-used 494.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 59602
+01:34:59 t+0s swap_used=494.25MB delta=+0MB tick=0MB rss=6672KB free_disk=13G
+01:35:00 t+2s swap_used=494.25MB delta=+0MB tick=0MB rss=738576KB free_disk=13G
+01:35:02 t+3s swap_used=494.25MB delta=+0MB tick=0MB rss=1466304KB free_disk=13G
+01:35:03 t+4s swap_used=494.25MB delta=+0MB tick=0MB rss=2835712KB free_disk=13G
+01:35:04 t+5s swap_used=494.25MB delta=+0MB tick=0MB rss=3543504KB free_disk=13G
+01:35:05 killwatch: pid 59602 exited on its own, stopping watch

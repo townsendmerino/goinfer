@@ -17,6 +17,25 @@ any surface may still change.
 
 ### Changed
 
+- **Faster greedy and sampled decode on Metal: the next token's forward is queued on the GPU before the host sees this one.**
+  Each command buffer ends with the pick (the argmax, or the device's temperature-only draw) and the next starts by
+  gathering that token's embedding on the GPU, so the 0.58-0.66 ms per-token gap between buffers is gone. Graded
+  in-process: the 1.5B decodes 1.085x greedy and 1.066x at T=1, the 0.5B 1.063x / 1.160x, the 7B 1.010x / 1.022x.
+  Every token is identical to before. An untied LM head (all the Qwen2.5 GGUFs) puts the int8 embedding table on the
+  GPU on first use (136 MB on the 0.5B, 233 MB on the 1.5B, 545 MB on the 7B), priced against the memory guard; if it
+  does not fit, decode keeps the old path. Audit C-B01 / C-P02 (`docs/audit-metal-2026-09-30.md`).
+- **Short prompts and follow-up turns prefill faster on Metal.** A batched prefill pass of under 64 rows takes a 32-row
+  and/or 32-column GEMM tile instead of the 64x64 one: a 32-token pass is 1.80x faster on the 1.5B and 1.55x on the 7B,
+  bit-identical. A prompt below the fast-prefill floor now runs as decode rows on the batched step kernels instead of
+  one token at a time, also bit-identical. Audit A-P01 / E-P01.
+- **Changes resource use. Gemma 4 26B on Metal no longer holds a 1.36 GB heap cache of expert scales.** The MoE pagers
+  read each expert's scales from the file with its weights instead (heap -1451 MB, decode 1.061x the old build). Audit
+  C-P01.
+- **Changes resource use. Metal keeps 2 resident KV slots by default (was 4); `--kv-sessions N` still asks for N.** On unified memory every slot's KV is resident
+  from the first token (measured: 4 slots cost 335 MB more than 1 on the 1.5B after one token, though only one was written), so the default's other 2 slots
+  cost about 224 MB on the 1.5B and 470 MB on the 7B. Two slots keep MC3's batched decode for two concurrent clients and a second conversation's prefix; a
+  third and fourth client wait for a slot. The CPU path's session count and CUDA's and WebGPU's slots are unchanged. Audit E-P09
+  (`docs/audit-metal-2026-09-30.md`).
 - **The startup `context:` and `fit:` lines say when a figure is a CPU-path ceiling.** After a CUDA decline the CPU path printed `context: 262144 tokens` and `fit: ... 10.4 GB KV`
   next to a `fit` that had priced the GPU plan at 8192, which read as a contradiction. On the CPU path `-ctx` caps nothing and KV is allocated per request, so those figures are a
   ceiling, not memory held; the lines now say that, and after a decline that a GPU-resident load would have capped it. No limit changed. `docs/tasks/task-first-hour.md` R20.
@@ -134,6 +153,10 @@ any surface may still change.
 
 ### Fixed
 
+- **Metal, concurrent generations: a generation with a slow `LogitProcessor` could sample from another generation's
+  logits.** Under batched decode a token served alone, and the prompt's first token, handed the generation the
+  resident's shared logits buffer, which another generation could overwrite before it was read. Both are copied now.
+  Audit E-C01.
 - **Two decoder test fixtures that had never been committed.** `decoder/testdata/qwen3_5-tiny-normw/model.safetensors` (the tiny checkpoint with a random final-norm weight) and `decoder/testdata/qwen3_5_moe-tiny/model.safetensors` were missing from the repository (the `*.safetensors` ignore rule), so
   `TestPromptHidden_matchesHF` skipped the one subtest that can see a missing or doubled final norm, and every MoE subtest, on every fresh checkout. Both are committed, and the new all-positions test fails instead of skipping when a fixture is absent.
 - **On CUDA a reply no longer depends on a leftover KV slot's short prefix.** A long prompt (512 tokens or more, which prefills on the fast kernels) that reused even a 3-token chat header from a slot a SHORT earlier request had left behind
@@ -608,6 +631,20 @@ any surface may still change.
   buffer. And the exact prefill attention kernel, used when the fused one cannot run (head dim above 128, or
   `GOINFER_METAL_FUSED_ATTENTION=0`), holds 4096 scores and ran past them on a longer context. Both now decline batched
   prefill and take the sequential path, and say why.
+- **Metal: a machine short of memory could get a larger resident KV cache than a roomy one, or none at all**
+  (`docs/audit-metal-2026-09-30.md`, C-C01). When the load-time fit guard trimmed an unpinned context to what memory
+  allowed, Metal read the trimmed value as a request. A trim above 4096 allocated KV for that many positions instead of
+  the 4096 default, and one above 32768 (a long-window model with memory for most of its window) was refused, which
+  moved the whole forward to the CPU. Metal now treats the guard's value as a ceiling, so an unpinned load gets 4096
+  positions or fewer; an explicit `-ctx` is unchanged. `goinfer fit` plans Metal at the context Metal allocates (4096
+  unpinned, `-ctx` up to 32768, a decline above it). The refusal below the 2048-token floor now states the floor's
+  memory need, not the whole window's.
+- **Metal: three checks that fall back instead of computing a wrong answer** (`docs/audit-metal-2026-09-30.md`, F-C03,
+  D-C01, A-C02). A NaN or infinite logit from batched prefill now declines it, and the prompt re-runs sequentially.
+  The split-K decode attention kernel holds 8 query heads per KV head; a model with more (Llama 3.1 405B has 16) now
+  stays on the standard kernel. And gpt-oss is kept off batched prefill by an explicit check: no prefill kernel
+  implements its attention sink or its clamped, biased SwiGLU, and until now only the prefill feature list kept it out.
+  Each changes the path only where the old one gave a wrong answer.
 - **Changes output. Phi-3 (and Phi-4, by model type; unmeasured) gave junk under every quantized precision.** Its
   projection inputs carry outliers that one int8 scale per row cannot hold (cosine ~0 by position 16). A default Phi-3
   load now uses `--quant q4k` on the CPU and CUDA (1.31x int8int8 + per-32 on the CPU; 1.26x / 1.17x at depth 128 / 2048

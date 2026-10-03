@@ -46,14 +46,18 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 	if testing.Short() {
 		t.Skip("loads a real model repeatedly")
 	}
-	if _, err := CreateSystemDefaultDevice(); err != nil {
+	// probe reads the device's own allocation total, which counts every Device handle's buffers on the one physical GPU.
+	probe, err := CreateSystemDefaultDevice()
+	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	defer probe.ReleaseObjects()
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
 	}
 
+	var alive uint64 // CurrentAllocatedSize with the warm cycle's resident built
 	cycle := func() {
 		m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
 		if err != nil {
@@ -64,13 +68,18 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 			t.Fatalf("BuildResident: %v", err)
 		}
 		r.Forward(1, 0) // touch it so the buffers are real, not lazily unfaulted
+		if alive == 0 {
+			alive = probe.CurrentAllocatedSize()
+		}
 		r.Close()
 		runtime.GC() // drop the Go-heap half so what remains is the objc side
 	}
 
+	idle := probe.CurrentAllocatedSize()
 	cycle() // warm: first load pays one-time costs (library compile, pipelines)
 	runtime.GC()
-	base := rssMB(t)
+	base, sizeBase := rssMB(t), probe.CurrentAllocatedSize()
+	resident := int64(alive) - int64(idle) // one resident's buffers: what each cycle would leak
 	const cycles = 4
 	peak := base
 	for i := range cycles {
@@ -79,14 +88,23 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 		if got > peak {
 			peak = got
 		}
-		t.Logf("cycle %d: rss %d MB (%+d vs base %d)", i+1, got, got-base, base)
+		t.Logf("cycle %d: rss %d MB (%+d vs base %d); CurrentAllocatedSize %d bytes (base %d)", i+1, got, got-base, base,
+			probe.CurrentAllocatedSize(), sizeBase)
 	}
-	end := rssMB(t)
-	t.Logf("trajectory: base %d MB → peak %d MB → end %d MB (growth %+d MB over %d cycles)",
-		base, peak, end, end-base, cycles)
+	end, sizeEnd := rssMB(t), probe.CurrentAllocatedSize()
+	t.Logf("trajectory: base %d MB → peak %d MB → end %d MB (growth %+d MB over %d cycles); CurrentAllocatedSize %d → %d bytes, one resident %d",
+		base, peak, end, end-base, cycles, sizeBase, sizeEnd, resident)
+	// The device-reported gate (C-G01, docs/audit-metal-2026-09-30.md): on UMA a leaked MTLBuffer need not show in RSS
+	// (macOS compresses idle pages out), so RSS alone can pass a real leak. MTLDevice's own total counts every buffer
+	// still allocated on the GPU, whichever Device handle made it. Measured 2026-10-01: back to the same byte count after
+	// every cycle. The slack is far below one resident's buffers.
+	if sizeEnd > sizeBase+16<<20 {
+		t.Errorf("LEAK (device-reported): CurrentAllocatedSize %d → %d bytes over %d load/Close cycles (%+d; one resident is %d)",
+			sizeBase, sizeEnd, cycles, int64(sizeEnd)-int64(sizeBase), resident)
+	}
 
-	// Each cycle allocates ~0.7 GB of Metal buffers (int8 weights re-quantized to int4 + KV).
-	// If Close frees, growth across 4 cycles stays near zero; if it leaks, it is GBs.
+	// Each cycle allocates ~0.4 GB of Metal buffers (int8 weights re-quantized to int4 + KV; 401 MB by
+	// CurrentAllocatedSize, 2026-10-01). If Close frees, growth across 4 cycles stays near zero; if it leaks, it is GBs.
 	if grow := end - base; grow > 400 {
 		t.Errorf("LEAK: rss grew %+d MB over %d load/Close cycles — Close() is not freeing "+
 			"(a staircase, not a sawtooth)", grow, cycles)

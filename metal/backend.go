@@ -376,6 +376,11 @@ func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m)
 // (GOINFER_NO_RESIDENT_MEM_GUARD) allocates the request as asked; an unreadable RAM size allocates one.
 func metalKVSlots(m *decoder.Model) int {
 	n := m.ResidentKVSlotsRequest()
+	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
+		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)\n",
+			metalDefaultKVSlots, n)
+		n = metalDefaultKVSlots // E-P09: the caller's default, not the operator's count
+	}
 	if n <= 1 {
 		return 1
 	}
@@ -393,6 +398,14 @@ func metalKVSlots(m *decoder.Model) int {
 	}
 	return got
 }
+
+// metalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default
+// (decoder.Options.ResidentKVSlotsDefault: serve without -kv-sessions), E-P09 of docs/audit-metal-2026-09-30.md. Each
+// slot's KV is resident from the first token on (T1.6: 4 slots cost 335 MB more than 1 on the 1.5B after one token,
+// though only slot 0 was written), so the default 4 cost about 224 MB on the 1.5B and 470 MB on the 7B over 2. Two
+// keep MC3's batched step (it needs 2 slots) and a second conversation's prefix; a third and fourth concurrent client
+// lose their own slot and their batching. -kv-sessions N still asks for N.
+const metalDefaultKVSlots = 2
 
 // kvSlotsWithin is metalKVSlots' arithmetic: the largest slot count up to want whose resident build — base bytes for
 // the first slot (weights, host copy, one KV) plus perSlot for each further one — fits budget, and never below 1 (the
@@ -464,6 +477,9 @@ type metalResident struct {
 	r      *resident
 	hidden int
 	exact  bool // the model was loaded with Options.ExactPrefill: fast prefill off for THIS resident
+	// poisonPrefillLogitsForTest makes PrefillLast write a NaN into its logits before the finite check, so a test can
+	// show the check declines. False in production; only tests set it.
+	poisonPrefillLogitsForTest bool
 	// quant is the precision ResidentQuant reports: the model's own quant when it runs int8 weights natively (r.w8),
 	// "" otherwise, which leaves the decoder's label (an int8 model on the int4 path is re-quantized, and says so).
 	quant string
@@ -485,11 +501,11 @@ func (a *metalResident) fastPrefill() bool {
 }
 
 // ctxCap is this resident's resolved KV capacity — a.r.ctxCap when a real *resident exists, else
-// metalCtxCapMax. The fallback matters for TestMetalResidentCheckCap/TestMetalCtxCapWithinKernelBound
-// (metal/resident_cap_test.go), which deliberately construct a zero-value &metalResident{} (r ==
-// nil) to test checkCap/ContextCap as pure logic with no Metal device — those tests predate G6's
-// per-build ctxCap and are meant to keep working unmodified against "the historical constant"
-// semantics, so a nil/zero r reads as "no explicit request was ever resolved here", not as 0.
+// metalCtxCapDefault. The fallback matters for TestMetalResidentCheckCap (metal/resident_cap_test.go),
+// which deliberately constructs a zero-value &metalResident{} (r == nil) to test checkCap/ContextCap as
+// pure logic with no Metal device — that test predates G6's per-build ctxCap and is meant to keep
+// working unmodified against "the historical constant" semantics, so a nil/zero r reads as "no
+// explicit request was ever resolved here", not as 0.
 func (a *metalResident) ctxCap() int {
 	if a.r == nil || a.r.ctxCap == 0 {
 		return metalCtxCapDefault
@@ -710,6 +726,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if a.r.w8 {
 		return false, "sequential — the f16 MMA prefill kernels read int4 weights, and this model runs its int8 weights natively (docs/tasks/task-metal-int8-2026-10.md, slice 2)"
 	}
+	if a.r.attnSink {
+		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
+	}
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
@@ -717,6 +736,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
+		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", floor)
+	}
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
 	}
@@ -727,29 +749,39 @@ func (a *metalResident) PrefillPath() (bool, string) {
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
 func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	// One pass, so one check: this backend ingests the whole prompt in a single command buffer and
-	// has no inner loop to interrupt. Checking at entry is therefore the ONLY granularity available
-	// here, and it is honest about that rather than pretending finer. A Metal prefill that wants
-	// mid-pass cancellation needs the chunking cuda has (prefillChunked), which is its own change.
+	// One pass, so one check: this backend ingests the prompt in a single command buffer and has no
+	// inner loop to interrupt, so checking at entry is the only granularity there is. The decoder's
+	// chunked prefill (serve -prefill-chunk) cuts a prompt only while another conversation is
+	// decoding, so a lone long prompt is still one pass that cannot be cancelled midway; that needs
+	// chunking inside PrefillLast, as cuda's prefillChunked does (A-D02, audit-metal-2026-09-30.md).
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// DEFAULT ON above metalFastPrefillFloor (64 tokens since R3; 256 under M-02 before that) since §3.2 gate passed 2026-09-09
-	// (S cells K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
+	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 64
+	// tokens since R3 (2026-09-20, cells K=64 and 128), 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill
+	// opts out.
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
-	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet. Sequential path there;
-	// fast path only where the gate cleared (K=256 itself passed §3.2 on Metal — see the floor's
-	// own doc comment).
+	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet, so the batched pass declines there; the
+	// lowest cells that passed are K=64 and 128 (the floor's own doc comment). E-P01: a resident with the step kernels
+	// runs a prompt below the floor as decode rows on those kernels instead of declining to the sequential loop: the
+	// same bits, at about a quarter of its time (promptStepOK).
 	promptLen := startPos + len(embeddings)
-	if floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")); floor > 0 && promptLen < floor {
+	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+	if a.promptStepOK(len(embeddings), startPos, floor) {
+		if e := a.checkCap(startPos, len(embeddings)); e != nil {
+			return nil, e
+		}
+		return a.prefillByStep(ctx, embeddings, startPos)
+	}
+	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
 	}
 	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of
 	// L.guW/L.dW with per-layer rope/window, per-head QK-norm, and Gemma's sandwich norms, and
-	// (G8 MoE half) a generically-shaped gated-SwiGLU MoE FFN — run row by row off the batched
-	// residual, reusing the unchanged per-token decode MoE dispatch chain (metal/moe.go) — but
+	// (G8 MoE half) a generically-shaped gated-SwiGLU MoE FFN — expert-major by default, the
+	// per-token decode MoE chain row by row with GOINFER_MOE_EXPERT_MAJOR=0 (prefill.go) — but
 	// NOT per-layer-varying attention geometry (dense Gemma 4's local/global head_dim split;
 	// prefillOK's own per-layer-geometry guard, metal/model.go) or Gemma 4's enable_moe_block
 	// variant (residLayer.g4moe, a third FFN shape this path never reads; explicitly excluded
@@ -762,8 +794,8 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}
 	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
-	// UMA that silently corrupts adjacent buffers (audit R-27). Unreachable today (the decoder always
-	// passes 0) but cheap to guard.
+	// UMA that silently corrupts adjacent buffers (audit R-27). The decoder never passes one (it passes 0,
+	// a reused prefix's length, or a chunk's offset; F-G01), but the guard is cheap.
 	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
 		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
 	}
@@ -792,16 +824,40 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // C-09
 	}
+	if a.poisonPrefillLogitsForTest {
+		logits[0] = float32(math.NaN())
+	}
+	// A-C02 (docs/audit-metal-2026-09-30.md): the batched pass carries f16 activations, which a checkpoint the
+	// graded models never exercised could overflow; the sequential decode kernels carry f32. A non-finite logit
+	// declines, so the decoder re-runs the prompt sequentially, which rewrites every K/V row this pass wrote. The
+	// scan is about 0.05 ms at a 152k vocabulary.
+	if i := firstNonFinite(logits); i >= 0 {
+		return nil, fmt.Errorf("metal: batched prefill produced a non-finite logit (%v at %d); using sequential path", logits[i], i)
+	}
 	return logits, nil
+}
+
+// firstNonFinite is the index of the first NaN or ±Inf in v, or -1.
+func firstNonFinite(v []float32) int {
+	for i, x := range v {
+		if math.Float32bits(x)&0x7f800000 == 0x7f800000 {
+			return i
+		}
+	}
+	return -1
 }
 
 // HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and
 // returns the LAST position's hidden state after the model's final norm — the resident twin of
 // PrefillLast, but for embedding requests (G4, docs/tasks/task-gpu-paths-2026-09.md) instead of
 // generation: it never runs the LM head. This runs the SAME per-token sequential kernels decode
-// uses — one forwardHiddenNoHead call per position — which is bit-identical to the CPU reference
-// by construction, at the cost of one command-buffer submit per token (≈K × 13-18ms) instead of a
-// single batched pass (≈1.8s for K=512).
+// uses — one forwardHiddenNoHead call per position. It does not match the CPU reference bit for
+// bit: the decode kernels round differently and forwardHiddenNoHead returns the int8-dequantized
+// activation. Measured against the CPU: cosine about 0.9991-0.9993 on gpt2
+// (hiddenlast_resident_parity_test.go, bar 0.998), and 0.99985 int4 against int4 on qwen3_5-tiny
+// with its adapter merged, 0.99998 without (prompthidden_resident_parity_test.go; F-D03,
+// audit-metal-2026-09-30.md). The cost is one
+// command-buffer submit per token (≈K × 13-18ms) instead of a single batched pass (≈1.8s for K=512).
 //
 // N-25 (audit-metal-2026-09-12.md): unlike when this doc comment was first written, Metal's
 // batched (f16-MMA) PrefillLast is NOT declined by default for generation anymore —
@@ -1008,6 +1064,52 @@ func (a *metalResident) TruncateTo(pos int) {}
 // Generate on the same resident without this would continue decaying stale state from the PRIOR
 // sequence (audit C-01's CUDA analogue). See resetDeltaNet (deltanet.go).
 func (a *metalResident) Reset() { a.r.resetDeltaNet() }
+
+var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
+
+// GreedyChainAvailable (decoder.ResidentGreedyChain, C-B01): the greedy chain is exact on this resident
+// (greedyChainWhyNot, greedy_chain.go) and its gather table is on the device, or fits there now (chainEmbedTable).
+func (a *metalResident) GreedyChainAvailable() bool {
+	if a.r.greedyChainWhyNot() != "" {
+		return false
+	}
+	_, _, why := a.r.chainEmbedTable()
+	return why == ""
+}
+
+// GreedyChainStart opens the chain at token id, position pos.
+func (a *metalResident) GreedyChainStart(id, pos int) error {
+	if e := a.checkCap(pos, 1); e != nil {
+		return e
+	}
+	return a.r.chainStart(id, pos)
+}
+
+// GreedyChainNext returns the next greedy token.
+func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() }
+
+// GreedyChainStop closes the chain.
+func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
+
+var _ decoder.ResidentSampleChain = (*metalResident)(nil)
+
+// SampleChainAvailable (decoder.ResidentSampleChain, C-P02): the chain is available and so is the device draw.
+func (a *metalResident) SampleChainAvailable() bool {
+	return a.r.SampleAvailable() && a.GreedyChainAvailable()
+}
+
+// SampleChainStart opens a sampled chain at token id, position pos, drawing that forward with (seed, draw).
+func (a *metalResident) SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error {
+	if e := a.checkCap(pos, 1); e != nil {
+		return e
+	}
+	return a.r.chainStartSampled(id, pos, temperature, seed, draw)
+}
+
+// SampleChainNext returns the next sampled token; (seed, draw) is the caller's draw for it.
+func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
+	return a.r.chainNextSampled(seed, draw)
+}
 
 // Close stops the pipelined executor (waiting for it) and frees every MTLBuffer this resident
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a

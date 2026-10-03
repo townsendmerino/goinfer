@@ -275,7 +275,7 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	if a.copyB == 0 {
 		t.Errorf("v12 file reports 0 bytes copied, but its fused groups and scales took the copy path")
 	}
-	if !strings.Contains(oldOn.summary, "carries no f16 scales") || !strings.Contains(oldOn.summary, "-target metal") {
+	if !strings.Contains(oldOn.summary, "not in the layout Metal binds") || !strings.Contains(oldOn.summary, "-target metal") {
 		t.Errorf("v12 file: banner has no note saying why less was aliased and how to fix it:\n%s", oldOn.summary)
 	}
 

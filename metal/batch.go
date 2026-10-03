@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -390,6 +391,9 @@ func (r *resident) buildBatch() {
 	}
 	r.batch = b
 	r.calibrateRows()
+	if r.specNgram && verifyCostCalibrate {
+		r.calibrateVerifyCost() // E-P06: this model's own verify cost curve (verify_cost.go)
+	}
 }
 
 // batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
@@ -496,7 +500,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && g.nKV > 0 && nKeys >= attnFADepthFloor
+	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && nKeys >= r.attnFAFloor()
 }
 
 // forwardMulti runs one decode token for each of seqs — 1..batchMaxSeqs sequences, each on its own resident KV slot at
@@ -752,10 +756,13 @@ var (
 )
 
 // VerifyCost (decoder.VerifyCostReporter): the argmax-only verify's cost curve when this resident can run it on the
-// step kernels, nil otherwise.
+// step kernels, nil otherwise: the model's own when it was measured at load (Options.SpecNgram), else stepVerifyCost.
 func (a *metalResident) VerifyCost() []float64 {
 	if a.r == nil || a.r.batch == nil || len(a.r.kvSlotBufs) == 0 || a.r.finalSoftcap > 0 || (a.r.logitScale != 0 && a.r.logitScale != 1) {
 		return nil
+	}
+	if a.r.verifyCost != nil {
+		return a.r.verifyCost // this model's own, measured at load (calibrateVerifyCost, E-P06)
 	}
 	return stepVerifyCost
 }
@@ -796,4 +803,81 @@ func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int)
 		from += n
 	}
 	return ids, nil
+}
+
+// promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor).
+// T1.10 measured the step at 0.40× / 0.80× / 1.56× the pass at K = 16 / 32 / 64 on the 1.5B and the 7B
+// (docs/tasks/task-metal-audit-2026-10.md, Batch A), so it stops at the last K measured faster.
+const promptStepMaxAboveFloor = 32
+
+// promptStepAboveFloor turns on E-P01's above-floor half: a suffix of up to promptStepMaxAboveFloor tokens on a prompt
+// that reaches the floor also runs on the step. OFF, and test-only, until the owner decides: unlike the below-floor half
+// it changes numerics. The pass computes a suffix's K/V from f16 activations and the step from decode's int8 ones, so
+// a reuse turn would no longer equal a cold prefill of the same prompt (TestPromptStepAboveFloor_reuseVsCold measures
+// by how much), and a chunked prefill's short tail would differ from the whole pass unless the decoder keeps tails
+// longer than promptStepMaxAboveFloor.
+var promptStepAboveFloor = false
+
+// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos (E-P01, audit-metal-2026-09-30):
+// the resident runs the step-kernel verify (VerifyCost: the batched step exists, and no logit transform separates its
+// rows from Forward's), and the prompt ends below the fast-prefill floor, where the batched pass declines and the
+// decoder would run the sequential loop. The step's rows are that loop's bits, so this route changes no output.
+//
+// Above the floor the step is faster than the pass up to K = 32 too, but there it would replace the pass's numerics with
+// decode's: promptStepAboveFloor, off. A short suffix there is also a chunked prefill's tail, and on the step it differed
+// from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's C = 81 case: 20480 of 20480 logits).
+func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
+	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
+		return false
+	}
+	if floor > 0 && startPos+n < floor {
+		return true
+	}
+	return promptStepAboveFloor && n <= promptStepMaxAboveFloor
+}
+
+// prefillByStep is PrefillLast on the step kernels (E-P01): the prompt's positions run as consecutive rows of the bound
+// slot's sequence, batchMaxSeqs at a time, exactly as PrefillLastNArgmax runs a verify, and the last row's logits come
+// back. forwardMulti is bit-identical to production decode for such rows (TestMC3Verify_sameSlotRowsBitIdentical,
+// TestMC3Step_promptInRowsBitIdentical), so this is the sequential path's numerics at about a quarter of its time
+// (T1.10: 0.22× on the 1.5B, 0.25× on the 7B). Pieces before the last read only their argmax, which skips the
+// per-row logits copy; a one-row last piece runs production's own Forward. Cancellation is checked between pieces.
+func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error) {
+	r := a.r
+	defer func() {
+		if p := recover(); p != nil {
+			logits, err = nil, fmt.Errorf("metal: step prefill aborted: %v", p)
+		}
+	}()
+	for from := 0; from < len(embeddings); {
+		if e := ctx.Err(); e != nil {
+			return nil, e
+		}
+		n := min(batchMaxSeqs, len(embeddings)-from)
+		last := from+n == len(embeddings)
+		if n == 1 {
+			lg, err := a.Forward(embeddings[from], startPos+from)
+			if err != nil {
+				return nil, err
+			}
+			logits = lg
+		} else {
+			seqs := make([]batchSeq, n)
+			for i := range n {
+				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
+			}
+			rows, _, err := r.forwardMultiInto(seqs, !last)
+			if err != nil {
+				return nil, err
+			}
+			if last {
+				logits = rows[n-1]
+			}
+		}
+		from += n
+	}
+	if err := r.takeExecErr(); err != nil {
+		return nil, err
+	}
+	return logits, nil
 }

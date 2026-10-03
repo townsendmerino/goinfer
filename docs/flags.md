@@ -83,7 +83,7 @@ Keeping conversations warm between requests, and across restarts.
 
 | Flag | Type | Default | What it does |
 |---|---|---|---|
-| `--kv-sessions` | `int` | `4` | Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard. |
+| `--kv-sessions` | `int` | `4` | Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard. Metal keeps 2 slots unless this flag is given (each slot's KV is resident from the first token on unified memory). |
 | `--session-dir` | `string` | — | Directory that persists and restores KV sessions across restarts. |
 | `--kv-idle-demote` | `duration` | `0s` | Demote a warm session's KV to `--session-dir` once it has been idle this long (for example `10m`); it faults back in on the next matching request. 0 = off. |
 | `--kv-demoted-max` | `int` | `64` | Maximum demoted (on-disk) sessions to keep; older ones are dropped. Only with `--kv-idle-demote`. |

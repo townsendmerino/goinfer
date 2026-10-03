@@ -1,0 +1,16 @@
+metal: batched step fragments at FB (FB=2 / FB=4 per layer): qkv 2 (0.153 / 0.165 ms) o 2 (0.124 / 0.130 ms) gate|up 2 (1.158 / 1.165 ms) down 2 (0.594 / 0.584 ms)
+[ep03    0.0s] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: calibrated FB qkv 2, o 2, gate|up 2, down 2
+[ep03    0.0s] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: calibration chose FB = 2 everywhere; the arms are the same build
+[ep03] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw E-P03 METRIC fb2/calibrated B=4 depth 128: median 1.0004 (5 of 9 reps above 1)
+[ep03] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw E-P03 METRIC fb2/calibrated B=8 depth 128: median 0.9991 (2 of 9 reps above 1)
+[ep03] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw E-P03 METRIC fb2/calibrated B=4 depth 2048: median 0.9995 (2 of 9 reps above 1)
+[ep03] qwen2.5-7b-instruct-q4_k_m.int4.metal.giw E-P03 METRIC fb2/calibrated B=8 depth 2048: median 1.0005 (5 of 9 reps above 1)
+--- PASS: TestEP03StepAB (744.20s)
+metal: batched step fragments at FB (FB=2 / FB=4 per layer): qkv 2 (0.037 / 0.044 ms) o 2 (0.033 / 0.037 ms) gate|up 2 (0.251 / 0.275 ms) down 2 (0.136 / 0.163 ms)
+[ep03    0.0s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: calibrated FB qkv 2, o 2, gate|up 2, down 2
+[ep03    0.0s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: calibration chose FB = 2 everywhere; the arms are the same build
+[ep03] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf E-P03 METRIC fb2/calibrated B=4 depth 128: median 0.9991 (2 of 9 reps above 1)
+[ep03] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf E-P03 METRIC fb2/calibrated B=8 depth 128: median 1.0010 (6 of 9 reps above 1)
+[ep03] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf E-P03 METRIC fb2/calibrated B=4 depth 2048: median 0.9999 (3 of 9 reps above 1)
+[ep03] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf E-P03 METRIC fb2/calibrated B=8 depth 2048: median 0.9999 (4 of 9 reps above 1)
+--- PASS: TestEP03StepAB (250.72s)

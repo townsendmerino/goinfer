@@ -1162,6 +1162,19 @@ func TestR17KernelAccuracy(t *testing.T) {
 		{name: "exact-vchunk C=256", p: r17PatchKernel(t, r, "attention", "attention_vc256", r17VSumEdit(t, 256))},
 	} // GOINFER_METAL_R17_ACC_ARMS=decision keeps only the arms the pre-registered decision grades
 	// (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md): the exact kernel and the two candidates.
+	// GOINFER_METAL_R17_ACC_ARMS=bp03 keeps the exact kernel and production's attention_fa (the block kernel since
+	// R17): B-P03's P1, at depths below the 1536 floor (docs/tasks/task-metal-audit-2026-10.md).
+	switch os.Getenv("GOINFER_METAL_R17_ACC_ARMS") {
+	case "bp03":
+		keep := map[string]bool{"exact (shipped attention)": true, "production (r.pAttnFA)": true}
+		var kept []arm
+		for _, a := range arms {
+			if keep[a.name] {
+				kept = append(kept, a)
+			}
+		}
+		arms = kept
+	}
 	if os.Getenv("GOINFER_METAL_R17_ACC_ARMS") == "decision" {
 		keep := map[string]bool{"exact (shipped attention)": true, "attention_fa S=prod": true, "prototype S=16": true}
 		var kept []arm

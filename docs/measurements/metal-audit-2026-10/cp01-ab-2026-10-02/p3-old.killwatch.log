@@ -1,0 +1,25 @@
+06:58:42 killwatch: baseline swap-used 486.25MB; kill at +1024MB, tick rule 80MB x2 (0=off), poll 1s, pid 1814
+06:58:42 t+0s swap_used=486.25MB delta=+0MB tick=0MB rss=6800KB free_disk=13G
+06:58:43 t+1s swap_used=486.25MB delta=+0MB tick=0MB rss=711136KB free_disk=13G
+06:58:44 t+2s swap_used=486.25MB delta=+0MB tick=0MB rss=1428192KB free_disk=13G
+06:58:45 t+3s swap_used=486.25MB delta=+0MB tick=0MB rss=2150976KB free_disk=13G
+06:58:47 t+5s swap_used=486.25MB delta=+0MB tick=0MB rss=2856752KB free_disk=13G
+06:58:48 t+6s swap_used=486.25MB delta=+0MB tick=0MB rss=2285072KB free_disk=13G
+06:58:49 t+7s swap_used=486.25MB delta=+0MB tick=0MB rss=3310304KB free_disk=13G
+06:58:50 t+8s swap_used=486.25MB delta=+0MB tick=0MB rss=4090752KB free_disk=13G
+06:58:51 t+9s swap_used=486.25MB delta=+0MB tick=0MB rss=5660736KB free_disk=13G
+06:58:52 t+10s swap_used=486.25MB delta=+0MB tick=0MB rss=4706496KB free_disk=13G
+06:58:53 t+11s swap_used=486.25MB delta=+0MB tick=0MB rss=3164304KB free_disk=13G
+06:58:54 t+12s swap_used=486.25MB delta=+0MB tick=0MB rss=2338656KB free_disk=13G
+06:58:55 t+13s swap_used=486.25MB delta=+0MB tick=0MB rss=2072192KB free_disk=13G
+06:58:56 t+14s swap_used=486.25MB delta=+0MB tick=0MB rss=1958352KB free_disk=13G
+06:58:57 t+15s swap_used=486.25MB delta=+0MB tick=0MB rss=1883344KB free_disk=13G
+06:58:58 t+16s swap_used=486.25MB delta=+0MB tick=0MB rss=1928160KB free_disk=13G
+06:58:59 t+17s swap_used=486.25MB delta=+0MB tick=0MB rss=1970576KB free_disk=13G
+06:59:00 t+18s swap_used=486.25MB delta=+0MB tick=0MB rss=1981312KB free_disk=13G
+06:59:01 t+19s swap_used=486.25MB delta=+0MB tick=0MB rss=1995552KB free_disk=13G
+06:59:02 t+20s swap_used=486.25MB delta=+0MB tick=0MB rss=1960864KB free_disk=13G
+06:59:03 t+21s swap_used=486.25MB delta=+0MB tick=0MB rss=1722720KB free_disk=13G
+06:59:05 t+23s swap_used=486.25MB delta=+0MB tick=0MB rss=1689280KB free_disk=13G
+06:59:06 t+24s swap_used=486.25MB delta=+0MB tick=0MB rss=1624656KB free_disk=13G
+06:59:07 killwatch: pid 1814 exited on its own, stopping watch

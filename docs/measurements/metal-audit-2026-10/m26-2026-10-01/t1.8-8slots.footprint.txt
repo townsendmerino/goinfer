@@ -1,0 +1,39 @@
+======================================================================
+metal-tagged-f56b40ec.test [58411]: 64-bit    Footprint: 4262510192 B (16384 bytes per page)
+======================================================================
+
+      Dirty         Clean   Reclaimable    Regions    Category
+        ---           ---           ---        ---    ---
+3193094144 B           0 B     6406144 B       1249    untagged (VM_ALLOCATE)
+1049427968 B           0 B           0 B        293    IOAccelerator (graphics)
+ 10944112 B           0 B           0 B          1    page table
+  5373952 B           0 B           0 B          8    MALLOC_SMALL
+   786432 B       81920 B           0 B        341    __DATA_CONST
+   567789 B       65536 B           0 B        300    __DATA
+   475136 B           0 B           0 B         48    stack
+   464343 B           0 B           0 B        285    __DATA_DIRTY
+   344064 B           0 B           0 B          8    MALLOC metadata
+   262144 B           0 B           0 B          6    IOAccelerator
+   229376 B           0 B           0 B          1    MALLOC_TINY
+   131188 B           0 B           0 B        849    unused dyld shared cache area
+   114688 B           0 B           0 B        342    __AUTH_CONST
+    65536 B           0 B           0 B          4    IOKit
+    65536 B           0 B           0 B          1    libdispatch
+    65480 B           0 B           0 B          2    __TPRO_CONST
+    32768 B           0 B           0 B          1    Activity Tracing
+    16384 B           0 B           0 B        151    __AUTH
+    16384 B           0 B           0 B          1    Owned physical footprint (unmapped) (graphics)
+    16384 B           0 B           0 B          1    os_alloc_once
+    16384 B           0 B           0 B          1    tag 22
+        0 B  2177417216 B           0 B          9    mapped file
+        0 B     6684672 B           0 B        350    __TEXT
+        0 B      245760 B           0 B          4    __LINKEDIT
+        0 B           0 B           0 B          1    __CTF
+        0 B           0 B           0 B          1    __FONT_DATA
+        ---           ---           ---        ---    ---
+4262510192 B  2184495104 B     6406144 B       4260    TOTAL
+
+Auxiliary data:
+    phys_footprint: 4262542960 B
+    phys_footprint_peak: 5421399520 B
+

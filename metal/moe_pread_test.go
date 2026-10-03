@@ -35,7 +35,7 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 	}
 
 	// run drives ntok tokens and returns the logits plus the total pread count across paged layers.
-	run := func(t *testing.T, slotsEnv, preadEnv string) ([][]float32, int) {
+	run := func(t *testing.T, slotsEnv, preadEnv string) ([][]float32, int, int64) {
 		if slotsEnv == "" {
 			os.Unsetenv("GOINFER_METAL_MOE_SLOTS")
 		} else {
@@ -66,7 +66,7 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 			}
 			out[i] = append([]float32(nil), lr...)
 		}
-		preads := 0
+		preads, scalePreads := 0, int64(0)
 		mr, ok := rf.(*metalResident) // the adapter wrapping *resident (backend.go)
 		if !ok {
 			t.Fatalf("resident forward is %T, not *metal.metalResident — cannot read pool counters", rf)
@@ -74,12 +74,13 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 		for l := range mr.r.layers {
 			if ml := mr.r.layers[l].moe; ml != nil && ml.pool != nil {
 				preads += ml.pool.preads
+				scalePreads += ml.pool.scalePreads.Load()
 			}
 		}
-		return out, preads
+		return out, preads, scalePreads
 	}
 
-	base, _ := run(t, "", "") // non-paged: all 4 experts stacked resident
+	base, _, _ := run(t, "", "") // non-paged: all 4 experts stacked resident
 	eq := func(t *testing.T, got [][]float32, label string) {
 		t.Helper()
 		for i := range base {
@@ -96,7 +97,7 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 	}
 	for _, slots := range []string{"2", "3"} {
 		t.Run("slots="+slots+"/bytecopy", func(t *testing.T) {
-			got, preads := run(t, slots, "0")
+			got, preads, _ := run(t, slots, "0")
 			if preads != 0 {
 				t.Fatalf("GOINFER_MOE_PREAD=0 still took the pread path (%d preads)", preads)
 			}
@@ -104,14 +105,17 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 			t.Logf("slots=%s byte-copy: %d tokens exact vs non-paged", slots, len(base))
 		})
 		t.Run("slots="+slots+"/pread", func(t *testing.T) {
-			got, preads := run(t, slots, "")
+			got, preads, scalePreads := run(t, slots, "")
 			if preads == 0 {
 				t.Fatal("pread path never ran (0 preads) — stagePread was not wired, so this test " +
 					"compared the byte-copy path against itself and proved nothing about pread")
 			}
+			if scalePreads != int64(preads) {
+				t.Fatalf("%d of %d pread stages read their scales from the file: a v15 .giw holds every expert's (C-P01)", scalePreads, preads)
+			}
 			eq(t, got, "pread")
-			t.Logf("slots=%s pread: %d tokens exact vs non-paged, %d expert stages served by pread",
-				slots, len(base), preads)
+			t.Logf("slots=%s pread: %d tokens exact vs non-paged, %d expert stages served by pread, %d with their scales",
+				slots, len(base), preads, scalePreads)
 		})
 	}
 }

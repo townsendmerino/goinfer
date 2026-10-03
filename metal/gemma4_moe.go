@@ -284,23 +284,14 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		}
 		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
 		down := b.ExpertsDown
-		// N-20 (audit-metal-2026-09-12.md): f16 scales are a pure function of the (immutable)
-		// checkpoint weights — derive each expert's once here instead of re-converting from a heap
-		// f32 copy on every page-in (see int4DirectBytesOnly's doc comment).
-		gScaleCache := make([][]uint16, len(experts))
-		dScaleCache := make([][]uint16, len(down))
-		for ei := range experts {
-			_, gs, _ := int4DirectBytes(experts[ei])
-			gScaleCache[ei] = gs
-		}
-		for ei := range down {
-			_, ds, _ := int4DirectBytes(down[ei])
-			dScaleCache[ei] = ds
-		}
+		// C-P01 (audit-metal-2026-09-30.md): each expert's f16 scales are read from its own WeightMat
+		// (Int4ScalesF16), which a v14 metal or v15 .giw aliases from the mapping. This used to be a
+		// build-time heap cache (N-20, which replaced a per-page-in f32→f16 conversion), holding the
+		// same bits again: 1361 MB on the 26B, measured 2026-10-02 (T1.8).
 		stage := func(ei int) ([]byte, []uint16, []byte, []uint16) {
 			gw, _ := int4DirectBytesOnly(experts[ei]) // nibble bytes aliased from mmap; no reconstruction/alloc
 			dw, _ := int4DirectBytesOnly(down[ei])
-			return gw, gScaleCache[ei], dw, dScaleCache[ei]
+			return gw, experts[ei].Int4ScalesF16(), dw, down[ei].Int4ScalesF16()
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
 		// MADV_WILLNEED over the routed experts' nibble spans before staging (was GOINFER_MOE_WILLNEED=1;
@@ -319,14 +310,17 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		// absorbs displaced cost silently. See [[optimize-sub-bucket-total-is-the-gate]].
 		// pread staging (GOINFER_MOE_PREAD=1): resolve each expert's nibble file offset within the .giw
 		// mmap (pure pointer arithmetic, no page touch), then stage by pread'ing straight into the slot's
-		// UMA words — zero mmap faults, one big sequential read per expert. Scales stay f32→f16 from the
-		// heap-resident q4s (giwReader.f32 COPIES them, so they never fault the mmap). Falls back to the
+		// UMA words — zero mmap faults, one big sequential read per expert. The f16 scales are pread the same way
+		// when every expert's lie in the mapping (a v14 metal or v15 .giw, C-P01), and copied from the WeightMat
+		// otherwise (an older file's scales are converted onto the heap at load). Falls back to the
 		// byte-copy path if the fd is absent or ANY expert's nibbles aren't .giw-mmap-backed (e.g. a
 		// requantized HF load) — the offsets must all resolve for pread to be correct.
 		if g.giwFile != nil {
 			guOff := make([]int64, len(experts))
 			dOff := make([]int64, len(down))
-			resolved := true
+			gsOff := make([]int64, len(experts))
+			dsOff := make([]int64, len(down))
+			resolved, scalesInFile := true, true
 			for ei := range experts {
 				gq, _, _, ok1 := experts[ei].Int4F16()
 				dq, _, _, ok2 := down[ei].Int4F16()
@@ -341,6 +335,10 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 					break
 				}
 				guOff[ei], dOff[ei] = go1, do1
+				gso, okgs := scaleFileOffset(m, experts[ei].Int4ScalesF16())
+				dso, okds := scaleFileOffset(m, down[ei].Int4ScalesF16())
+				scalesInFile = scalesInFile && okgs && okds
+				gsOff[ei], dsOff[ei] = gso, dso
 			}
 			if resolved {
 				fd := int(g.giwFile.Fd())
@@ -356,21 +354,38 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 					// (expertSlot's doc comment), which would silently pread every expert into slot
 					// 0. preadIntoPoolSlot addresses the pool's base buffer by slot NUMBER instead.
 					var wg sync.WaitGroup
-					var errGU, errD error
+					var errGU, errD, errGS, errDS error
 					wg.Add(2)
 					go func() { defer wg.Done(); errGU = preadIntoPoolSlot(fd, pool.guW, s.slot, pool.nGuW, guOff[ei]) }()
 					go func() { defer wg.Done(); errD = preadIntoPoolSlot(fd, pool.dW, s.slot, pool.nDW, dOff[ei]) }()
+					if scalesInFile { // C-P01: the scales are four more disjoint destinations' worth of the same argument
+						wg.Add(2)
+						go func() {
+							defer wg.Done()
+							errGS = preadScalesIntoPoolSlot(fd, pool.guS, s.slot, pool.nGuS, 0, gsOff[ei], 2*pool.nGuS)
+						}()
+						go func() {
+							defer wg.Done()
+							errDS = preadScalesIntoPoolSlot(fd, pool.dS, s.slot, pool.nDS, 0, dsOff[ei], 2*pool.nDS)
+						}()
+					}
 					wg.Wait()
-					if errGU != nil {
-						panic(fmt.Sprintf("metal gemma4 MoE pread gate|up expert %d: %v", ei, errGU))
+					for _, e := range []struct {
+						what string
+						err  error
+					}{{"gate|up", errGU}, {"down", errD}, {"gate|up scales", errGS}, {"down scales", errDS}} {
+						if e.err != nil {
+							panic(fmt.Sprintf("metal gemma4 MoE pread %s expert %d: %v", e.what, ei, e.err))
+						}
 					}
-					if errD != nil {
-						panic(fmt.Sprintf("metal gemma4 MoE pread down expert %d: %v", ei, errD))
+					if scalesInFile {
+						pool.scalePreads.Add(1)
+						return
 					}
-					// N-20: scales come from the build-time cache, not a fresh f32→f16 reconversion.
+					// An older file: the scales are the WeightMat's heap copy, converted at load.
 					// copyU16sToBuf, not copy(s.guS.U16s(), ...) — same offset-view caveat as above.
-					copyU16sToBuf(s.guS, gScaleCache[ei])
-					copyU16sToBuf(s.dS, dScaleCache[ei])
+					copyU16sToBuf(s.guS, experts[ei].Int4ScalesF16())
+					copyU16sToBuf(s.dS, down[ei].Int4ScalesF16())
 				}
 			}
 		}

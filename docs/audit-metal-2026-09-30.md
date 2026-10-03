@@ -39,7 +39,22 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 
 - `de1c7f17` (2026-09-30) **fixed both Criticals.** A-C01 ≡ F-C01 (`-kv i8` prefill) and F-C02 (the exact prefill
   attention past 4096 keys) now decline batched prefill and name the reason, with device tests that fail when the guards
-  are removed. No Critical is open. F-G03's test and the ceiling comment in `metal/model.go`, both part of T0.2, remain.
+  are removed. No Critical is open.
+- Since 2026-10-01 the program in `docs/tasks/task-metal-audit-2026-10.md` fixes findings on a branch; the Track 0
+  status column below says which. So far: F-G03 (the decode attention kernels tested past 4096 keys against a float64
+  reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
+  F-G01 (a default test of the steel prefill attention kernel against a float64 reference), A-G01 (the
+  fast-prefill floor), C-G01 (the load/Close leak test reads the device's own allocation total), D-G02 (the
+  gated softmax layer's two kernels checked against the CPU), F-G04 (answered: where the verify gate went),
+  E-G01 and F-G02 (the MC3 identity checks run by default on a generated fixture), and T0.5 (the stale comments and
+  doc lines; two of its findings did not hold, see the Track 0 row).
+- 2026-10-02, on the branch: **C-P01 done.** The night probe (T1.8) measured the scale cache at 1361.2 MB of 3004.6 MB
+  of Go heap on M26 (0.453, parked by its rule); the owner promoted it on the absolute size. Both pagers now stage each
+  expert's f16 scales from its WeightMat (the mapping), and the pread stage reads them from the file with the nibbles;
+  the cache and `int4DirectBytes` are gone. Bit-identical by an exhaustive binary16 round-trip test. A three-arm A/B
+  on M26 (old cache, copy, pread), with this row's own kill line (decode worse than −3%) as its ship bar, shipped the
+  pread build: decode 1.061× the old cache's, 8 of 8 rounds faster, and the Go heap at token 32 3004.6 → 1553.2 MB.
+  Records are in the program doc.
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
@@ -67,8 +82,9 @@ Ollama's served 4.23 s (rec `metal-prefill-attn-2026-09-27.md:122,125-126`, itse
 cell exists; the served cell measured 2026-09-30 reads LEVEL, 0.983, see the status note above); after R17, R18 and
 R18b decode is ahead of Ollama in the six graded cells, 1.5B and 7B at depth 128, 2048 and 3900 (rec
 `docs/benchmarks.md:47`). Against mlx-lm 0.31.3, in a cross-session comparison on a different quantisation scheme, so a
-direction and not a ratio to quote (T1.14 would give one), the same depth-128 cells read 0.82× (1.5B, 89.3 against
-109.1 tok/s) and 0.75× (7B, 29.4 against 39.1) (rec `r12-mlx-row-2026-09-18.md:17-22`; B (f)9). Since Sep 12, 144
+direction and not a ratio to quote, the same depth-128 cells read 0.82× (1.5B, 89.3 against
+109.1 tok/s) and 0.75× (7B, 29.4 against 39.1) (rec `r12-mlx-row-2026-09-18.md:17-22`; B (f)9). **T1.14 (2026-10-02,
+same session, main): 0.833× (1.5B) and 0.828× (7B)**; the 7B's cross-session 0.75× overstated the gap. Since Sep 12, 144
 commits have touched `metal/`, which went from 14 non-test files, 6,796 lines and 69 kernels to 18 non-test files, 11,154 lines and 93 kernels
 (plus 200 test files, 36,879 lines; cnt over the snapshot).
 
@@ -100,7 +116,7 @@ probe and the kill line for each):
    the token round-trips through the host between kernels (C-B01, the one structural runtime technique MLX has and
    goinfer lacks). Summing the upper ends of the bands, which overlap and one of which needs a fidelity gate, gives
    a 5–21% cut in token time on the 1.5B at depth 128 and 2–14% on the 7B. Matching mlx-lm there would take cuts of 18%
-   (0.82×) and 25% (0.75×), so these items do not close the gap alone; about 5.6% of the 7B token is head bytes from a
+   (0.82×) and 25% (0.75×) (T1.14 since: 0.833× and 0.828× same session, so about 17% on both), so these items do not close the gap alone; about 5.6% of the 7B token is head bytes from a
    chosen int8 pin (B (a)3).
 5. *Memory.* The paged-expert f16 scale cache is a second, anonymous copy of scales the v15 `.giw` already aliases:
    about 1.43 GB of the M26's 2,967 MB footprint (C-P01, cnt).
@@ -195,7 +211,7 @@ Full entries are in Part II. "Bits" is the bit-identity class of the proposed ch
 | D-G01 | Major (gate) | Expert-major prefill ships default ON on a dense-model gate; the MoE tests are a tiny-fixture cosine bar | n/a | n/a | Real-MoE paged-off fixture, per-layer cosine, router-flip count, mutation set |
 | F-G01 | Major (gate) | The production hd=128 prefill kernel (R19 steel) has no default-runnable assertion | n/a | n/a | Float64-reference test in the shape of `metal/attn_fa_blk_test.go:147` |
 | F-G02 | Major (gate) | MC3, chunked-prefill and spec-verify gates are env-gated on a real checkpoint; the chunk-invariance record predates steel | n/a | n/a | Re-run `TestMC5_prefillChunkInvariance` on the wired build; add a default-run fixture |
-| F-G03 | Major (gate) | `TestMetalCtxCapWithinKernelBound` asserts two constants and is documented as what keeps the ceiling "a FACT" | n/a | n/a | Replace with a prefill run at nKeys = 4097 on hd=256 |
+| F-G03 | Major (gate) | `TestMetalCtxCapWithinKernelBound` asserts two constants and is documented as what keeps the ceiling "a FACT" | n/a | n/a | **Fixed 2026-10-01:** `TestAttentionKernelsPastTileBound` runs the three decode attention kernels past 4096 keys against a float64 reference; the prefill half is `TestPrefill_exactAttentionDeclinesPast4096Keys` |
 
 ---
 
@@ -226,7 +242,7 @@ Full entries are in Part II. "Bits" is the bit-identity class of the proposed ch
    floor. The batched step's per-row attention floor (E-P05) reads the same constant.
 6. **`attnFACoreCount = 14` is live more often than the reports say.** C-D01(3) and E-D01 call it stale against the
    16-core target and, in E's words, dead on the shipped path. That holds for G=6,7 (the fixed split of 16 overrides it,
-   `metal/model.go:2672-2675`). `attnFASplitFor` still sizes the split from it (`want = ceil(2*14/nKV)`) for every other
+   `metal/model.go:2754-2757`). `attnFASplitFor` still sizes the split from it (`want = ceil(2*14/nKV)`) for every other
    group size, which is exactly the population B-P02 is about; settle the constant in B-P02's probe.
 7. **C-C01 and F-C02 compound.** The auto-pin that C-C01 describes (a guard that trims on a tight machine hands Metal a
    context of 12–30k positions) is what makes F-C02's `sc[4096]` overrun reachable on an unpinned load. Fix the planner
@@ -240,17 +256,17 @@ Full entries are in Part II. "Bits" is the bit-identity class of the proposed ch
    not expose `computeCommandEncoderWithDispatchType:`. The multi-row kernel reaches the same occupancy without it.
 10. **Stale text clusters in `docs/benchmarks.md`.** A-D01, B-D01, F-D01 and D-D01 all point at lines `:43`, `:47`,
     `:1026-1031`, `:1080-1081`, `:1976-1985` and `:2260-2262`: one pass over that file closes the stale-claim findings A-D01, B-D01, F-D01 and D-D01 items 4 and 5 (§10, T0.5).
-11. **What was re-read at consolidation.** *A-C01/F-C01:* `prefillOK` (`metal/model.go:951-952`) has no `kvI8` term, `prefill.go` and
-    `PrefillLast` never mention it, `kv_store_f16` writes `device half*` at `pos*kvDim + i` (`metal/prefill.go:592-599`), and the
-    allocation under `r.kvI8` is `paddedCtxCap*kvDim*1` bytes plus separate scale buffers (`metal/model.go:1231-1249`), so
+11. **What was re-read at consolidation.** *A-C01/F-C01:* `prefillOK` (`metal/model.go:989-991`) has no `kvI8` term, `prefill.go` and
+    `PrefillLast` never mention it, `kv_store_f16` writes `device half*` at `pos*kvDim + i` (`metal/prefill.go:674-681`), and the
+    allocation under `r.kvI8` is `paddedCtxCap*kvDim*1` bytes plus separate scale buffers (`metal/model.go:1270-1288`), so
     positions at or past ctxCap/2 write beyond the buffer and every earlier position is the wrong layout. *F-C02:*
-    `threadgroup float sc[4096]` at `metal/prefill.go:279`, `sc[s]` written with the absolute key index at `:286` and `:298`; the
+    `threadgroup float sc[4096]` at `metal/prefill.go:361`, `sc[s]` written with the absolute key index at `:286` and `:298`; the
     dispatch falls to that kernel when `!useFusedAttn` (hd above 128, hd not a multiple of 8, or the env knob off,
-    `:1041-1085`), and `ctxCap` reaches 32768 for an explicit `-ctx` or a guard-pinned load (`metal/model.go:21-53`). *B-P01:*
-    `canUseAttnFA` returns false unless `g.hd == 128` (`metal/model.go:2665`). *C-P01:* `gScaleCache`/`dScaleCache` are built
-    from `int4DirectBytes` and kept for the model's life (`metal/gemma4_moe.go:289-299`). *E-P01:* `PrefillLast` declines when
-    `startPos+len < floor` (`metal/backend.go:745-747`) and `PrefillLastNArgmax` already steps same-slot positions in 8-row
-    pieces (`metal/batch.go:768-799`). None of this was run on a device.
+    `:1041-1085`), and `ctxCap` reaches 32768 for an explicit `-ctx` or a guard-pinned load (`metal/model.go:21-61`). *B-P01:*
+    `canUseAttnFA` returns false unless `g.hd == 128` (`metal/model.go:2747`). *C-P01:* `gScaleCache`/`dScaleCache` are built
+    from `int4DirectBytes` and kept for the model's life (`metal/gemma4_moe.go`'s paged branch at `844700f8`; removed 2026-10-02). *E-P01:* `PrefillLast` declines when
+    `startPos+len < floor` (`metal/backend.go:770-779`) and `PrefillLastNArgmax` already steps same-slot positions in 8-row
+    pieces (`metal/batch.go:775-806`). None of this was run on a device.
 
 ---
 
@@ -279,33 +295,33 @@ Number provenance tags: [rec] a figure the repo recorded (doc:line), [cnt] count
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| A-C01 | Critical (non-default `-kv i8`) | Batched prefill writes f16 K/V into int8-allocated KV and attention reads it as f16 | metal/prefill.go:848,1077; metal/model.go:871,1225-1229; metal/backend.go:713-766; decoder/model.go:1559-1566 | none | n/a | decline test + one-line guard |
-| A-P01 | Major | <=64-row passes run o/down/qkv at 24-32 threadgroups and a 64-row MMA tile for <=32 real rows | metal/prefill.go:1048-1049; chunked-prefill-2026-09-27.md:102-105; concurrency-mc3-s0-2026-09-26.md:34-39 | quantized.cpp:1087-1090,1152-1176; matmul.cpp:166-170 | C<=32: -15..-40 ms of 96-105; C 33-64: -5..-18 ms [proj] | small-M GEMM arms + TestMC5_passCost |
-| A-P02 | Major | Floor 64 is a gate floor; fresh 10-63-token prompts stay sequential; K=32 batched was 2.51x faster, ungated | metal/backend.go:606,737-739; metal-prefill-floor-2026-09-20.md:49-55,73-75 | quantized.cpp:89-130 | K=32 TTFT ~305 -> ~120 ms [rec]; K=16 ~1.6x [proj] | pooled-gate cells K=16/32/48 |
-| A-P03 | Major if confirmed | Small-M prefill attention at depth is probably occupancy/latency-bound; the table that says so predates R19 | chunked-prefill-2026-09-27.md:102-105; metal/prefill.go:1096; metal-prefill-attn-2026-09-27.md:91-117 | scaled_dot_product_attention.cpp:642,951,1001 | 0 or -15..-30 ms/pass at depth 2048 [proj] | rerun TestMC5_passCost post-R19 |
-| A-P04 | Major (owner call on exactness) | `HiddenLast` is K synchronous command buffers | metal/backend.go:811-851; metal/model.go:1724-1743 | none | pipelined 1.05-1.5x; batched ~10x at K=512 | K=256 embeddings wall, byte compare |
+| A-C01 | Critical (non-default `-kv i8`) | Batched prefill writes f16 K/V into int8-allocated KV and attention reads it as f16 | metal/prefill.go:963,1194; metal/model.go:909,1264-1268; metal/backend.go:732-798; decoder/model.go:1581-1588 | none | n/a | decline test + one-line guard |
+| A-P01 | Major | <=64-row passes run o/down/qkv at 24-32 threadgroups and a 64-row MMA tile for <=32 real rows | metal/prefill.go:1164-1167; chunked-prefill-2026-09-27.md:102-105; concurrency-mc3-s0-2026-09-26.md:34-39 | quantized.cpp:1087-1090,1152-1176; matmul.cpp:166-170 | C<=32: -15..-40 ms of 96-105; C 33-64: -5..-18 ms [proj] | small-M GEMM arms + TestMC5_passCost |
+| A-P02 | Major | Floor 64 is a gate floor; fresh 10-63-token prompts stay sequential; K=32 batched was 2.51x faster, ungated | metal/backend.go:622,760-763; metal-prefill-floor-2026-09-20.md:49-55,73-75 | quantized.cpp:89-130 | K=32 TTFT ~305 -> ~120 ms [rec]; K=16 ~1.6x [proj] | pooled-gate cells K=16/32/48 |
+| A-P03 | Major if confirmed | Small-M prefill attention at depth is probably occupancy/latency-bound; the table that says so predates R19 | chunked-prefill-2026-09-27.md:102-105; metal/prefill.go:1213; metal-prefill-attn-2026-09-27.md:91-117 | scaled_dot_product_attention.cpp:642,951,1001 | 0 or -15..-30 ms/pass at depth 2048 [proj] | rerun TestMC5_passCost post-R19 |
+| A-P04 | Major (owner call on exactness) | `HiddenLast` is K synchronous command buffers | metal/backend.go:867-907; metal/model.go:1774-1793 | none | pipelined 1.05-1.5x; batched ~10x at K=512 | K=256 embeddings wall, byte compare |
 | A-B01 | Minor | MLX split-K (`qmm_splitk`, ~512 TGs) would fix o/down occupancy but reorders the reduction and, keyed on M, breaks chunk invariance | quantized.cpp:1152-1176,1890-1900 | same | not recommended before A-P01 | only if BN=32 under-delivers |
 | A-B02 | Minor | Epilogue goes through threadgroup scratch with 2 barriers per accumulator; MLX stores from fragments | metal/prefill.go:60-74,134-137; metal-prefill-gemm-s2-2026-09-25.md:69-70 | mma.h:540,577 | 2-5% of GEMM [proj] | A/B epilogue on `s2` harness |
-| A-B03 | Minor (unmeasured) | hd=256 (Gemma 3 <=12B) prefill attention stays on the scalar exact kernel | metal/prefill.go:919-920; audit M-06 closure | scaled_dot_product_attention.cpp:515-516 (bd256, wn=2) | unknown | decomp run on gemma3-1b at K=2048 |
-| A-P05 | Minor | Decoder switches to PrefillLast at suffix>=8; whole-pass break-even is ~9-10 tokens today | decoder/model.go:1559; counted below | quantized.cpp:89-130 (6/10/14 on M1 Pro) | <=20 ms on 8-9 token turns | revisit after A-P01 |
+| A-B03 | Minor (unmeasured) | hd=256 (Gemma 3 <=12B) prefill attention stays on the scalar exact kernel | metal/prefill.go:1034-1035; audit M-06 closure | scaled_dot_product_attention.cpp:515-516 (bd256, wn=2) | unknown | decomp run on gemma3-1b at K=2048 |
+| A-P05 | Minor | Decoder switches to PrefillLast at suffix>=8; whole-pass break-even is ~9-10 tokens today | decoder/model.go:1581; counted below | quantized.cpp:89-130 (6/10/14 on M1 Pro) | <=20 ms on 8-9 token turns | revisit after A-P01 |
 | A-D01 | Minor | benchmarks.md:43 K=3900 row and its "attention untouched" clause are stale after R19 | benchmarks.md:43; red-october.md:433 | | | one served TTFT cell |
-| A-D02 | Minor | Stale comments: "256 under M-02", "decoder always passes 0", "needs the chunking cuda has", test comment "(512)" | metal/backend.go:745-748,729,734-736,754; metal/prefill_ttft_test.go:42 | | | |
+| A-D02 | Minor | Stale comments: "256 under M-02", "decoder always passes 0", "needs the chunking cuda has", test comment "(512)" | metal/backend.go:752-756,760-762,766-769,796-797; metal/prefill_ttft_test.go:42 | | | |
 | A-D03 | Minor | r3-startpos-speed-2026-09-21.md is cited and absent; its 4.01x/4.13x predate R16 | red-october.md:859-868 | | | |
 | A-G01 | Minor | `attention_prefill_steel` has no direct test; floor logic has no test; G-08's closure covers the fused kernel only | tests listed in entry | | | |
-| A-C02 | Minor | No finite check on PrefillLast logits (f16 residual) | metal/backend.go:767-802; decoder/model.go:1559-1571 | | guard ~0.05 ms | |
-| A-N01 | Minor | Per-call scratch and lazy compile (N-15, N-16) stay open; fixed per-pass cost is ~18 ms | metal/prefill.go:811,906,932-960 | | <=3 ms/pass [proj] | |
+| A-C02 | Minor | No finite check on PrefillLast logits (f16 residual) | metal/backend.go:751-838; decoder/model.go:1581-1593 | | guard ~0.05 ms | |
+| A-N01 | Minor | Per-call scratch and lazy compile (N-15, N-16) stay open; fixed per-pass cost is ~18 ms | metal/prefill.go:925,1021,1047-1075 | | <=3 ms/pass [proj] | |
 
 ### (c) Full entries
 
 #### A-C01 · Critical (only with `-kv i8`, a non-default flag): batched prefill is not guarded against the int8 KV layout (the same defect as F-C01, found independently)
 
-- Where: `metal/model.go:871` (`r.kvI8 = m.KVCacheI8()`), `:1144-1148` (with int8 KV, `kvBytes = paddedCtxCap*kvDim*1` and the
-  per-position scale buffers `ks/vs`), `:1162-1163` (`kc/vc = byteBuf(kvBytes*allocSlots)`). `metal/prefill.go:848` binds
+- Where: `metal/model.go:909` (`r.kvI8 = m.KVCacheI8()`), `:1144-1148` (with int8 KV, `kvBytes = paddedCtxCap*kvDim*1` and the
+  per-position scale buffers `ks/vs`), `:1162-1163` (`kc/vc = byteBuf(kvBytes*allocSlots)`). `metal/prefill.go:963` binds
   `pKv = kv_store_f16`, `:1077` dispatches it on `r.kc[l]`, and `:1078-1084` run attention kernels whose KV arguments are
-  `device const half*`. `prefillOK` (`metal/model.go:951`) lists features, per-layer geometry, Gemma-4 MoE, paged MoE and DeltaNet;
-  `metal/backend.go:713-766` adds enable, floor and cap checks. Nothing mentions `kvI8` (grep of `kvI8` in `metal/prefill.go` and the
-  `PrefillLast` guards returns only `UploadKV` at `metal/backend.go:943,967`). `decoder/model.go:1559-1566` calls `PrefillLast` for any
-  suffix >= 8 and `decoder/residency.go:1217-1218` and `metal/residentkv_alloc_test.go:77` show Metal reports and runs `"i8"`.
+  `device const half*`. `prefillOK` (`metal/model.go:989`) lists features, per-layer geometry, Gemma-4 MoE, paged MoE and DeltaNet;
+  `metal/backend.go:732-798` adds enable, floor and cap checks. Nothing mentions `kvI8` (grep of `kvI8` in `metal/prefill.go` and the
+  `PrefillLast` guards returns only `UploadKV` at `metal/backend.go:999,1023`). `decoder/model.go:1581-1588` calls `PrefillLast` for any
+  suffix >= 8 and `decoder/residency.go:1246-1247` and `metal/residentkv_alloc_test.go:77` show Metal reports and runs `"i8"`.
 - Failure (derived, not run): any prompt that reaches `PrefillLast` (>= 64 tokens, no adapter) on a Metal resident loaded with
   `-kv i8`. The scatter writes 2 bytes/element into a 1 byte/element buffer: positions >= ctxCap/2 write past the allocation
   (1.5B, kvDim 256, ctx 4096: a 3900-token prompt writes ~2.0 MB into a ~1.05 MB buffer; UMA does not fault, it corrupts a
@@ -313,7 +329,7 @@ Number provenance tags: [rec] a figure the repo recorded (doc:line), [cnt] count
   Output is wrong, silently.
 - Why tests do not see it: `TestMetalBuildResident_KVI8` (`metal/kv_i8_test.go:269-330`) runs `Forward` for 5 tokens at ctx 64; the
   floor would decline a 64-token prompt anyway. `TestUploadKV_matchesSequentialForward_KVI8` covers `UploadKV` only.
-- Fix: `&& !r.kvI8` in the `prefillOK` expression (`metal/model.go:951`), so `PrefillPath()` also reports sequential. Add a test that
+- Fix: `&& !r.kvI8` in the `prefillOK` expression (`metal/model.go:989`), so `PrefillPath()` also reports sequential. Add a test that
   builds an i8 resident and asserts `PrefillLast(embs[>=64], 0)` returns the decline error, run with the floor knob at 0.
 - Bit-identity: not applicable (declines to the existing sequential path).
 - Why not already closed: Sep 12 audit M-01..M-06/C-01 closures and R3/R4/R16/R19 (red-october.md) never mention int8 KV and
@@ -322,7 +338,11 @@ Number provenance tags: [rec] a figure the repo recorded (doc:line), [cnt] count
 
 #### A-P01 · Major: small-M passes pay a 64-row tile and run the o/down/qkv GEMMs at 24-32 threadgroups
 
-What goinfer does. `gemm()` (`metal/prefill.go:1048-1049`) dispatches `(ceil(N/64), ceil(Mpad/64))` threadgroups of 128 threads, each a
+**Status, 2026-10-03 (branch `metal-audit`): shipped.** Graded pass wall shipped ÷ selector at startPos 64, C = 32:
+**1.804×** on the 1.5B with both rules (bm32 alone 1.487×, bn32 alone 1.152×), 1.553× on the 7B (where bn32 adds
+nothing). `TestGemmTile_bitIdentical` passed first. The GEMM alone: gate|up M = 32 1.61–1.62× on both models.
+
+What goinfer does. `gemm()` (`metal/prefill.go:1164-1167`) dispatches `(ceil(N/64), ceil(Mpad/64))` threadgroups of 128 threads, each a
 64-feature x 64-token tile, 4 simdgroups of 32x32, 16 accumulators (`metal/prefill.go:76-138`). Rows past M are staged as zeros and their
 MMAs still run (`:36-38`, `:118-125`).
 
@@ -369,7 +389,7 @@ trip counts, which is what MLX does.
 Bit-identity. Each output still accumulates K in the same ordered 8-wide chunks into an f32 `simdgroup_float8x8`
 (`metal/prefill.go:39-43`); BM/BN change which threadgroup owns an element, not its reduction order. R16 itself changed the simdgroup tile
 and measured bit-identical to the retired kernel (metal-prefill-gemm-s2-2026-09-25.md:136,207). Chunk invariance is therefore
-kept, but `TestMC5_prefillChunkInvariance` uses C in {64,128,256,384} (`metal/mc5_chunk_test.go:77`); it must add C in {16,32,48} so the
+kept, but `TestMC5_prefillChunkInvariance` uses C in {64,128,256,384} (`metal/mc5_chunk_invariance_test.go:65`; 100 and 77 were added on 2026-10-01, F-G02, 81 on 2026-10-02 for E-P01, and 16/32/48 the same day for A-P01); it must add C in {16,32,48} so the
 test crosses the selector.
 
 Band [proj]: C <= 32: -15..-40 ms of 96-105 ms (occupancy penalty <= 18.5 ms plus roughly half the MMA work of the 62-70 ms GEMM,
@@ -392,21 +412,21 @@ skipping only. The Sep 12 §7 list does not contain a small-M prefill tile.
 
 #### A-P02 · Major: the floor is a gate floor; fresh prompts of 10-63 tokens still run sequentially
 
-Where: `metal/backend.go:606` (`metalFastPrefillFloor = 64`), `:722-724` (floor on `startPos + len(embeddings)`), decoder threshold
-`decoder/model.go:1559` (suffix >= 8).
+Where: `metal/backend.go:622` (`metalFastPrefillFloor = 64`), `:722-724` (floor on `startPos + len(embeddings)`), decoder threshold
+`decoder/model.go:1581` (suffix >= 8).
 
 What the floor means. R3 gated K=64 and K=128 only; its registered candidates were {64,128}
 (metal-prefill-floor-2026-09-20.md:73-75), and K=32 is "informative only: no fidelity cell was gated there" (:55). The same table:
 K=32 batched 263.4 tok/s vs sequential 104.9 (2.51x), K=64 3.83x, K=128 4.66x (:49-51). So 32 tokens cost ~305 ms sequential and
-~121 ms batched [rec]. `metal/backend.go:598-604` says going below 64 "needs one more passing decision cell"; no record in
+~121 ms batched [rec]. `metal/backend.go:614-620` says going below 64 "needs one more passing decision cell"; no record in
 docs/measurements ran one (`GATE_DECISION_KS` appears only in the floor record, and K=32 only as "informative only"), and the harness already takes the variable
 (`metal/prefill_gate_ref_test.go:77-92`, default cells 256/512/1024 plus 3900 at `:132-133`).
 
 Costs the sequential path pays that the batched path avoids [cnt]: the weights (~0.9-1.0 GB for the 1.5B at int4) are streamed once
 per token rather than once per pass; 10.46 ms GPU per token (R18b figure, concurrency-mc3-s0 §5) so 32 tokens = 335 ms; under
-MC3 the whole sequential prefill sits inside `prefillExclusive` (`decoder/model.go:1672`), so other decoders stall 3-4x
-longer than a ~100-120 ms batched pass would. Costs it does not pay: no LM head on non-final tokens (M-01 closed, `metal/backend.go:577-593`),
-and encode-ahead overlap (`metal/model.go:1858-1873`).
+MC3 the whole sequential prefill sits inside `prefillExclusive` (`decoder/model.go:1694`), so other decoders stall 3-4x
+longer than a ~100-120 ms batched pass would. Costs it does not pay: no LM head on non-final tokens (M-01 closed, `metal/backend.go:593-609`),
+and encode-ahead overlap (`metal/model.go:1908-1923`).
 
 What share of real chat turns lands there. The repo has no prompt-length distribution; I cannot give a share. What is countable:
 the Qwen2.5 chat template with its default system prompt is roughly 30 tokens before the user text (hand count of the template,
@@ -424,7 +444,7 @@ Fidelity: not bit-identical (f16 activations vs the sequential W4A8 path); it ne
 that needs no §3.2 gate, routing sub-floor prompts through MC3's bit-identical 8-row step (S0's `mc3_mma_bt`), is area E's call.
 Kill: pooled gate fails at K=32, or served K=32 gain < 1.5x.
 
-Why not already closed: the floor record (:55,:73-75) and the code comment (`metal/backend.go:598-604`) leave it as "one more cell";
+Why not already closed: the floor record (:55,:73-75) and the code comment (`metal/backend.go:614-620`) leave it as "one more cell";
 `red-october.md:859-868` closed the startPos axis at >= 64-token turns only.
 
 #### A-P03 · Major if confirmed: small-M attention at depth, and a stale table
@@ -432,12 +452,12 @@ Why not already closed: the floor record (:55,:73-75) and the code comment (`met
 Evidence. Pass-cost at startPos 2048 (chunked-prefill-2026-09-27.md:102-105): C=16 180.4, 64 265.1, 128 318.4, 256 599.7 ms; minus
 the startPos-64 row: +84.6, +160.3, +164.2, +309.7 ms. The table was taken no later than ~05:00 PDT on 2026-09-27 (the revised
 candidate it led to was registered at b69c73ad and timed 04:58-05:03 PDT); R19's set-A gate ran 2026-09-27 18:29-19:01 PDT and the wiring
-followed (metal-prefill-attn-2026-09-27.md:91-117), so the table measured `attention_prefill_fused`, whose grid is nH x ceil(M/8) simdgroups, 4 per threadgroup (`metal/prefill.go:1054-1057`): 24
+followed (metal-prefill-attn-2026-09-27.md:91-117), so the table measured `attention_prefill_fused`, whose grid is nH x ceil(M/8) simdgroups, 4 per threadgroup (`metal/prefill.go:1171-1174`): 24
 simdgroups = 6 threadgroups at M=16.
 
-Current kernel. `attention_prefill_steel` runs `nH * ceil(M/32)` threadgroups (`metal/prefill.go:1096`, `:463`): 12 at M <= 32, 24 at
+Current kernel. `attention_prefill_steel` runs `nH * ceil(M/32)` threadgroups (`metal/prefill.go:1213`, `:463`): 12 at M <= 32, 24 at
 M <= 64, on 16 cores. Each threadgroup sweeps (startPos+M)/16 key blocks serially, with two barriers per block and a synchronous
-device->threadgroup stage of K and V (`metal/prefill.go:511-577`), no prefetch. With one threadgroup per core there is nothing to hide
+device->threadgroup stage of K and V (`metal/prefill.go:593-659`), no prefetch. With one threadgroup per core there is nothing to hide
 that latency.
 
 Counted: R19's saturated rate. 618 ms attention at K=3900 over 28 layers = 12 heads x 122 q-blocks x ~122 average key blocks x 28
@@ -449,11 +469,11 @@ MLX analog. For qL <= 8 and qL x gqa <= 32 MLX uses `sdpa_vector` (shares one K/
 2-pass key-split form for long keys (`scaled_dot_product_attention.cpp:951,1001`); for qL > 8 it uses the same steel kernel with
 grid (NQ, H, B) (`:642`), so MLX has the same occupancy shape at 9-64 rows and offers no ready fix.
 
-Probe (no code): rerun `TestMC5_passCost` (exists, `metal/mc5_chunk_test.go:217-253`, `GOINFER_METAL_MC3=1`) on the current build, adding
+Probe (no code): rerun `TestMC5_passCost` (exists, `metal/mc5_chunk_test.go:86-122`, `GOINFER_METAL_MC3=1`) on the current build, adding
 startPos 8000 and C = 32/48. Read delta = (startPos 2048) - (startPos 64) at C=32. <= 10 ms: close, the premise is gone. >= 25 ms:
 build a BQ=16 steel variant (2 simdgroups per threadgroup, 24 threadgroups at M<=32; bit-identical to the BQ=32 kernel when
 `window == 0`, because every row's key-block grid is aligned at 0 and rows are independent; with `window > 0` the block grid
-follows the threadgroup's first row (`metal/prefill.go:486-490`), so windowed layers would change bits) or a key-split pass with a
+follows the threadgroup's first row (`metal/prefill.go:568-572`), so windowed layers would change bits) or a key-split pass with a
 combine (reorders the softmax: pooled §3.2 gate).
 This revisits the Sep 12 §7 closure of "split-KV / dedup attention variants": that closure concerns decode attention (one query
 row); the premise here is a different kernel at M = 9-64.
@@ -464,8 +484,8 @@ M = K.
 
 #### A-P04 · Major (owner call on embedding exactness): `HiddenLast` is K synchronous command buffers
 
-Where: `metal/backend.go:811-851` (loop calling `forwardHiddenNoHead` per token), `metal/model.go:1724-1743` (`e.End()` per token, so each token
-is a commit-and-wait), against `ForwardEmbNoLogitsPipe` (`metal/model.go:1858-1873`, encode-ahead) that `ForwardNoLogits` uses for the
+Where: `metal/backend.go:867-907` (loop calling `forwardHiddenNoHead` per token), `metal/model.go:1774-1793` (`e.End()` per token, so each token
+is a commit-and-wait), against `ForwardEmbNoLogitsPipe` (`metal/model.go:1908-1923`, encode-ahead) that `ForwardNoLogits` uses for the
 same trunk (red-october.md:868-881 records that the noHead pipeline shipped for KV-only prefill).
 Recorded: Sep 12 N-25, PARTIALLY CLOSED 2026-09-13: doc rewritten, batched implementation "left as follow-up"; ~13-18 ms/token,
 7-9 s at 512 tokens (pre-R18), batched trunk ~1.8 s then (pre-R16/R19; served K=512 is 613 ms after R16, benchmarks.md:43).
@@ -480,7 +500,7 @@ Two options.
 2. Batched trunk (`PrefillLast` minus the last two dispatches): ~10x at K=512 [proj from records: ~5-9 s -> ~0.6 s], needs an owner
    decision to give up exact embeddings and a cosine gate against today's `HiddenLast` as oracle.
 
-Why not already closed: N-25 closure text and the `HiddenLast` doc comment (`metal/backend.go:807-815`) both defer it; no later record
+Why not already closed: N-25 closure text and the `HiddenLast` doc comment (`metal/backend.go:863-871`) both defer it; no later record
 touches it (grep of `HiddenLast` in red-october.md and measurements finds only the CUDA and MC1 lines above).
 
 #### A-B01 · Minor: MLX split-K for the o/down shapes
@@ -508,7 +528,7 @@ K=1536 (qkv, o, gate/up) and 280 slabs for down: 2-5% of those GEMMs, < 1% of do
 
 #### A-B03 · Minor, unmeasured: hd=256 prefill attention (Gemma 3 up to 12B)
 
-`useFusedAttn` requires `hd <= 128` and `useSteelAttn` `hd == 128` (`metal/prefill.go:919-920`); Gemma 3 1B/4B/12B (hd 256) therefore run
+`useFusedAttn` requires `hd <= 128` and `useSteelAttn` `hd == 128` (`metal/prefill.go:1034-1035`); Gemma 3 1B/4B/12B (hd 256) therefore run
 `attention_prefill` (one threadgroup per row and head, scalar). The Sep 12 M-06 closure says the same ("hd=256 fused variant not
 attempted"). Recorded ratios at hd=128, K=3900: fused 4.23x over exact (prefill-l2-metal-fused-attn-2026-09-09 title), steel 7.20x
 over fused (R19), so roughly 30x between the exact kernel and steel at that head dim; nothing is recorded for Gemma 3 prefill
@@ -521,7 +541,7 @@ Probe: the decomp harness on gemma3-1b at K=2048: attention share of the full re
 
 #### A-P05 · Minor: where the decoder's >= 8 threshold sits
 
-`decoder/model.go:1559` sends suffix >= 8 to `PrefillLast`. Whole-pass break-even [cnt]: pass floor 96-105 ms (C <= 64, startPos 64)
+`decoder/model.go:1581` sends suffix >= 8 to `PrefillLast`. Whole-pass break-even [cnt]: pass floor 96-105 ms (C <= 64, startPos 64)
 over 10.46 ms/token = 9.2-10.0 tokens. At M=8-9 on a deep prefix the batched pass is ~12-20 ms slower than sequential, and at
 startPos 2048 the pre-R19 numbers (C=16: 180 ms vs 16 tokens x ~11-12 ms) show no advantage until about C=16. MLX's equivalent
 crossover on M1 Pro is shape-keyed, 6/10/14 (`quantized.cpp:89-130`); S0 measured the GEMM-only crossover at M ~ 13-16
@@ -537,11 +557,11 @@ and lists "served TTFT vs Ollama" as owed. If the in-process delta (3.85 s) carr
 Sep 18-20 tables) predate R16 as well and are not re-measured.
 
 #### A-D02 · Minor: stale comments
-- `metal/backend.go:745-748`: "A Metal prefill that wants mid-pass cancellation needs the chunking cuda has"; chunked prefill shipped
-  (`decoder/model.go:1633-1678`, default 512) but only while another generation is decoding, so a lone long prompt is still one
+- `metal/backend.go:770-780`: "A Metal prefill that wants mid-pass cancellation needs the chunking cuda has"; chunked prefill shipped
+  (`decoder/model.go:1655-1706`, default 512) but only while another generation is decoding, so a lone long prompt is still one
   uncancellable command buffer (the comment's conclusion holds, its reason is stale).
 - `:714` "256 under M-02 before that" and `:719-721` "K=256 itself passed": the floor is 64 and the gated cells are 64/128.
-- `:739` "Unreachable today (the decoder always passes 0)": `residentPrefillSeed` passes `from` (`decoder/model.go:1559`), the
+- `:739` "Unreachable today (the decoder always passes 0)": `residentPrefillSeed` passes `from` (`decoder/model.go:1581`), the
   agent-loop reuse shape.
 - `metal/prefill_ttft_test.go:42` "(512)"; `metal/prefill_gate_test.go:71-75` "(K=256 ... 256 under M-02)".
 
@@ -552,47 +572,53 @@ snapshot (the test `metal/r3_startpos_speed_test.go` is). The quoted result (bat
 
 #### A-G01 · Minor: gates that cannot see the default kernel
 - `attention_prefill_steel` has no unit test. `attention_prefill_fused_test.go` covers GQA, ragged M, window and startPos but at
-  hd 16-128 against the fused kernel; the steel window path (`jStart`, `myWin`, `sStart`, `metal/prefill.go:484-495`), ragged tail
+  hd 16-128 against the fused kernel; the steel window path (`jStart`, `myWin`, `sStart`, `metal/prefill.go:566-577`), ragged tail
   (`active`, `myRow >= M`) and startPos > 0 have only: `TestPrefillParity` (startPos 0, K=140, cosine >= 0.95 and argmax, heavy and
   Qwen2.5-1.5B only), `TestPrefillNoNaN` (finite), the decomp harness comparing it with the fused kernel (`prefill_attn_r19_test.go`,
   `goinfer_testhooks`), and the opt-in MC5 chunk test.
-- G-08's closure test (`metal/prefill_startpos_test.go:29-95`) uses `genTinyWeights` with hd = 16 (`metal/moe_model_test.go:23-26`), so it runs
+- G-08's closure test (`metal/prefill_startpos_test.go:32-98`) uses `genTinyWeights` with hd = 16 (`metal/moe_model_test.go:23-26`), so it runs
   the fused kernel, not steel. The only default-kernel evidence at startPos > 0 is `TestMC5_prefillChunkInvariance` (`GOINFER_METAL_MC3=1`,
   `goinfer_testhooks`, one non-windowed checkpoint), which compares chunked against whole bit for bit and carries a control arm
-  (`metal/mc5_chunk_test.go:117-144`); it proves consistency with the startPos-0 result, which the pooled gate does grade
+  (`metal/mc5_chunk_invariance_test.go:109-137`); it proves consistency with the startPos-0 result, which the pooled gate does grade
   (`metal/prefill_gate_ref_test.go:533`, startPos 0 only).
 - The floor decision has no test: grep of `metalFastPrefillFloorFor` and "prompt too short" in `*_test.go` finds comments only; many
   tests set `GOINFER_METAL_FAST_PREFILL_FLOOR=0` to avoid it. Nothing asserts that `startPos + M < 64` declines, that
   `startPos=1000, M=8` admits, or that the knob parses.
 - Fix: a synthetic hd=128 case in `attention_prefill_fused_test.go`'s table run against `attention_prefill` (exact) with window, ragged
   M and startPos; a pure-logic test for the floor predicate.
+- Status, 2026-10-01: done. The kernel half is F-G01's `TestAttentionPrefillSteelMatchesFloat64`, which runs steel with
+  window, ragged M and startPos against float64 rather than against the exact kernel. `TestPrefillFloor` (default-run)
+  checks the parser and the decision through `PrefillLast` on the tiny resident: 63 positions decline and 64 admit,
+  cached positions count (56 + 7 declines, 56 + 8 and 1000 + 8 admit), the knob raises the floor or turns it off, and
+  `PrefillPath` names it. Dropping `startPos` from the predicate, `<` for `<=`, and accepting negative knob values each
+  fail it.
 
 #### A-C02 · Minor: no runtime finite check on batched-prefill logits
-The residual stream is f16 (`xF` etc., `metal/prefill.go:951-956`); a family whose residual exceeds 65504 gives Inf and NaN logits.
-`TestPrefillNoNaN` covers one checkpoint (`metal/prefill_nan_test.go:19-53`); neither `metalResident.PrefillLast` (`metal/backend.go:767-802`)
-nor `residentPrefillSeed` (`decoder/model.go:1559-1571`) inspects the 152k logits. A host scan costs ~0.05 ms [cnt: 152k floats];
+The residual stream is f16 (`xF` etc., `metal/prefill.go:1066-1071`); a family whose residual exceeds 65504 gives Inf and NaN logits.
+`TestPrefillNoNaN` covers one checkpoint (`metal/prefill_nan_test.go:19-53`); neither `metalResident.PrefillLast` (`metal/backend.go:751-838`)
+nor `residentPrefillSeed` (`decoder/model.go:1581-1593`) inspects the 152k logits. A host scan costs ~0.05 ms [cnt: 152k floats];
 on NaN, return a decline error so the sequential path re-runs the prompt. Which families overflow is unmeasured here.
 
 #### A-N01 · Minor: per-call scratch and lazy compile
-N-15 (26 per-call buffers from `make`d slices) is unchanged at HEAD (`metal/prefill.go:951-979`). Sizes [cnt]: ~2.5 MB at M=32 (guF
+N-15 (26 per-call buffers from `make`d slices) is unchanged at HEAD (`metal/prefill.go:1066-1094`). Sizes [cnt]: ~2.5 MB at M=32 (guF
 32x2x8960x2 B = 1.1 MB, dqF 0.57 MB, qkv 0.13 MB, x/norm 0.2 MB), ~15 MB at a 512-token chunk (chunked-prefill:111-113 [rec]). The fit in
 A-P01 puts all fixed per-pass cost at F ~ 18 ms, so removing the allocation is worth <= 3 ms of a short pass [proj]; the owner closed the
 per-pass cut (mc3-prefill-attr:73) and N-15's own zero-pad-row invariant caveat (audit §6, N-15 entry) still needs a per-kernel
-trace. N-16: `ensurePrefill` (`metal/prefill.go:811`) is called only from `PrefillLast` (`:906`), so the first >= 64-token request after
+trace. N-16: `ensurePrefill` (`metal/prefill.go:925`) is called only from `PrefillLast` (`:906`), so the first >= 64-token request after
 start pays the library compile (now more kernels, with steel); it is unmeasured.
 
 ### (d) Carry-forward (Sep 12 audit, area A)
 
 | ID | Status | Evidence |
 |---|---|---|
-| M-01 | CLOSED-VERIFIED | `ForwardNoLogits` `metal/backend.go:577-593`, pipelined `metal/model.go:1858-1873`, used at `decoder/model.go:1592`; byte-identical tests `metal/kvonly_prefill_test.go:19-75` (tiny fixture). Residual: `HiddenLast` stays synchronous (A-P04) |
-| M-02 | CLOSED-VERIFIED, superseded | floor 512 -> 256 -> 64, `metal/backend.go:595-606`; the remaining question is A-P02 |
+| M-01 | CLOSED-VERIFIED | `ForwardNoLogits` `metal/backend.go:593-609`, pipelined `metal/model.go:1908-1923`, used at `decoder/model.go:1614`; byte-identical tests `metal/kvonly_prefill_test.go:19-75` (tiny fixture). Residual: `HiddenLast` stays synchronous (A-P04) |
+| M-02 | CLOSED-VERIFIED, superseded | floor 512 -> 256 -> 64, `metal/backend.go:611-622`; the remaining question is A-P02 |
 | M-03 | CLOSED-VERIFIED, superseded by R16 | `metal/prefill.go:76-138`; R16 3.22x recorded (gemm-s2) |
-| M-04 | PARTIAL | O-in-registers and wider key tile superseded by R19 (`metal/prefill.go:449-588`). The Fix's third item, packing a GQA group's 6 heads into one threadgroup so K/V load once per group, is not done; MLX does not do it either (`steel_attention.h:97` re-stages per head), R19 record names it "an option neither peer takes" |
-| M-05 | PARTIAL | non-paged MoE has an expert-major batched path (`metal/prefill.go:993-1149`, knob `GOINFER_MOE_EXPERT_MAJOR`); paged MoE and DeltaNet still decline (`metal/model.go:951`) and run sequentially. Area D owns detail |
-| M-06 | PARTIAL | `FeatPerLayerRoPE` declared (`metal/model.go:103`); Gemma 3 reaches the batched GEMM; hd=256 attention stays on the exact kernel (`metal/prefill.go:919`), now A-B03 |
-| C-01 | CLOSED-VERIFIED | `metal/model.go:1232-1239` pads each layer's per-slot allocation to 8 rows, MC3 slots keep their own padded region (`:1152-1163`); steel guards `j < jEnd` (`metal/prefill.go:518`) so only the fused kernel over-reads, into padding |
-| C-02 (HiddenLast part) | CLOSED-VERIFIED | paged MoE declines at `metal/backend.go:831` |
+| M-04 | PARTIAL | O-in-registers and wider key tile superseded by R19 (`metal/prefill.go:531-670`). The Fix's third item, packing a GQA group's 6 heads into one threadgroup so K/V load once per group, is not done; MLX does not do it either (`steel_attention.h:97` re-stages per head), R19 record names it "an option neither peer takes" |
+| M-05 | PARTIAL | non-paged MoE has an expert-major batched path (`metal/prefill.go:1108-1266`, knob `GOINFER_MOE_EXPERT_MAJOR`); paged MoE and DeltaNet still decline (`metal/model.go:989`) and run sequentially. Area D owns detail |
+| M-06 | PARTIAL | `FeatPerLayerRoPE` declared (`metal/model.go:113`); Gemma 3 reaches the batched GEMM; hd=256 attention stays on the exact kernel (`metal/prefill.go:1034`), now A-B03 |
+| C-01 | CLOSED-VERIFIED | `metal/model.go:1271-1278` pads each layer's per-slot allocation to 8 rows, MC3 slots keep their own padded region (`:1152-1163`); steel guards `j < jEnd` (`metal/prefill.go:600`) so only the fused kernel over-reads, into padding |
+| C-02 (HiddenLast part) | CLOSED-VERIFIED | paged MoE declines at `metal/backend.go:887` |
 | G-01 | CLOSED-VERIFIED | `metal/moe_model_test.go:281-330` rewritten for the admit side, floor knob at 0 |
 | G-03 | CLOSED-VERIFIED | `prefill_gemma_test.go` asserts `r.sandwich` and `r.prefillOK` before comparing; bar is cosine >= 0.95 on a 12-token tiny fixture (a smoke bar) |
 | G-07 | CLOSED-VERIFIED | `metal/prefill_gate_test.go:63-75` sets the floor to 0; superseded-form note at `:44-49`; comment text stale (A-D02) |
@@ -601,7 +627,7 @@ start pays the library compile (now more kernels, with steel); it is unmeasured.
 | N-16 | OPEN | A-N01 |
 | N-17 | CLOSED-VERIFIED | only `gemm_w4f16_store` remains in `prefill.go`; the retired R16 predecessor lives in `metal/prefill_gemm_s2_test.go:396` |
 | N-18 | CLOSED (by R19) | steel keeps O in registers, no `pTile` reload |
-| N-19 | CLOSED by measurement | `rope_f16` still computes `cos/sin` per (row, head, pair) (`metal/prefill.go:233`), but rope q+k, both norms and kv store total 3.19 ms at K=512 (0.2%) and 18.7 ms at K=3900 with the LM head (0.1%) (metal-prefill-decomp-2026-09-25.md:66,81) |
+| N-19 | CLOSED by measurement | `rope_f16` still computes `cos/sin` per (row, head, pair) (`metal/prefill.go:315`), but rope q+k, both norms and kv store total 3.19 ms at K=512 (0.2%) and 18.7 ms at K=3900 with the LM head (0.1%) (metal-prefill-decomp-2026-09-25.md:66,81) |
 | N-25 | PARTIAL | A-P04 |
 
 ### (e) Checked and found correct, and the MLX answers
@@ -630,12 +656,12 @@ MLX answers to the brief's questions.
   instantiates 64/72/80/96/128/192 with wn=1 and 256 with wn=2), sinks, array masks, lse.
 
 Verified correct, no finding.
-- Floor semantics: `promptLen = startPos + len(embs)` (`metal/backend.go:745`); a reuse turn above 64 total takes the batched pass at any suffix >= 8.
-- Chunk invariance and its control arm (`metal/mc5_chunk_test.go:117-144`): the perturbed-token control sees differences only from position 700.
-- Chunk tail rule (`decoder/model.go:1642-1646`): the final pass has 8..C+7 tokens, so `residentPrefillSeed`'s 8-token rule is never hit by a cut.
-- A cancelled prefill returns instead of falling to the sequential loop (`decoder/model.go:1561-1568`).
-- `PrefillLast` recovers its per-call allocation panics into an error (`metal/backend.go:780-789`), and `startPos < 0` is rejected.
-- Steel's tail handling: a simdgroup wholly past M loads no Q, meets every barrier (`metal/prefill.go:497-503`, `:527`).
+- Floor semantics: `promptLen = startPos + len(embs)` (`metal/backend.go:770`); a reuse turn above 64 total takes the batched pass at any suffix >= 8.
+- Chunk invariance and its control arm (`metal/mc5_chunk_invariance_test.go:109-137`): the perturbed-token control sees differences only from position 700.
+- Chunk tail rule (`decoder/model.go:1664-1668`): the final pass has 8..C+7 tokens, so `residentPrefillSeed`'s 8-token rule is never hit by a cut.
+- A cancelled prefill returns instead of falling to the sequential loop (`decoder/model.go:1583-1590`).
+- `PrefillLast` recovers its per-call allocation panics into an error (`metal/backend.go:812-821`), and `startPos < 0` is rejected.
+- Steel's tail handling: a simdgroup wholly past M loads no Q, meets every barrier (`metal/prefill.go:579-585`, `:527`).
 - MLX's NAX and `*_nax*` paths are out of reach on M1 Pro and are not findings.
 
 ### (f) Questions I could not settle statically
@@ -646,7 +672,7 @@ Verified correct, no finding.
 3. Whether the BN=32 kernel's lower MMA:load ratio costs more than the occupancy it buys (needs the device).
 4. The prompt-length distribution of real first turns, and so the share under the floor (A-P02). Not recorded anywhere I could find.
 5. Whether chunk invariance holds for a windowed hd=128 model: the steel key-block grid starts at the threadgroup's first row's window
-   start (`metal/prefill.go:486-490`), which depends on chunk alignment; MC5 ran only on a non-windowed checkpoint. No shipped hd=128
+   start (`metal/prefill.go:568-572`), which depends on chunk alignment; MC5 ran only on a non-windowed checkpoint. No shipped hd=128
    windowed family was identified.
 6. Whether any checkpoint outside Qwen2.5-1.5B/7B overflows the f16 residual (A-C02). The pooled gate has graded only those two,
    at startPos 0, K in {256,512,1024,3900}; every other prefillOK family is default-on on the strength of the f16-numerics argument.
@@ -672,7 +698,7 @@ relative to the goinfer repository root unless they start with `mlx/` (MLX, unde
    (B-P01, B-P02, B-P03). The 1536 floor was measured on the kernel R17 replaced.
 2. MLX's quantized GEMV form does not attack the "per-weight issue work" term beyond what R18b took. Counted: about 3.8-3.9
    ALU ops per weight in both `sa_rows_acc` and MLX `qdot`, and goinfer issues 1.7-3.3x fewer load instructions per weight.
-3. The remaining gap to MLX at depth 128 (0.82x on the 1.5B, 0.75x on the 7B, cross-session) is rate plus about 5.6% of the
+3. The remaining gap to MLX at depth 128 (0.82x on the 1.5B, 0.75x on the 7B, cross-session; T1.14 same-session: 0.833x and 0.828x) is rate plus about 5.6% of the
    7B token in head bytes (a recorded int8 pin). Candidates inside goinfer: the SA lane mapping's idle tail at K=1536/3584,
    with a bit-identical fix (B-P04); the down projection left on the coal kernel, a REVISIT of M-10 (B-P05); TG geometry (B-P06).
 4. Fusion: goinfer already fuses more than MLX (12 dispatches per layer, 11 below the floor). Nothing to borrow.
@@ -689,18 +715,18 @@ relative to the goinfer repository root unless they start with `mlx/` (MLX, unde
 
 | ID | Sev | Claim | Evidence | MLX analog | Band (projection unless stated) | Probe |
 |---|---|---|---|---|---|---|
-| B-P01 | Major | hd=64 decode attention has no fa/blk path; on the 0.5B it is 61% of the 3900-key token and still on the per-query-head kernel | `metal/model.go:2664`; `metal/kernels.go:1163,1284`; decomp `:35`; R17 doc `:85`; `docs/benchmarks.md:47` | `sdpa_vector` is templated on D: `mlx/kernels/sdpa_vector.h:15,45`, instantiated 64/96/128/192/256 at `mlx/kernels/scaled_dot_product_attention.metal:59-66` | 0.5B token 1.3-1.85x at 2048-3900 keys; 0 at 128 | hd-templated blk (2 dims per lane), in-sequence attention at 2048/3900 on the 0.5B |
-| B-P02 | Major | `attention_fa_blk` is instantiated for G=6,7 only; every other hd=128 GQA shape (for example 32 heads over 8 KV heads, G=4) stays on `attention_fa`, which R17 measured 2.3-3.5x slower | `metal/model.go:1423-1432`; `metal/kernels.go:1384-1387`; R17 doc `:463-466,74-76` | `sdpa_vector_2pass_1` takes G at runtime (`mlx/kernels/sdpa_vector.h:220`, `group_dims(32, gqa_factor, ...)`, `mlx/scaled_dot_product_attention.cpp:817`) | 1.15-1.4x end to end at 2048+ keys on ungraded G (the R17 end-to-end figure at the graded shapes, `benchmarks.md:47`) | instantiate g4/g5/g8, per-head equality test vs g7, in-sequence attention at 2048/3900 |
-| B-P03 | Major | REVISIT: `attnFADepthFloor`=1536 was measured on `attention_fa` (R2), not on the block kernel that now runs above it; legacy attention at 1024-1535 keys costs about 3.3-5.0 ms against about 1.8 ms for blk | `metal/model.go:2603-2611,2633,2659`; R17 doc `:465`; `red-october.md:2195-2196`; `metal-depth-r2-2026-09-18.md:55-58`; decomp `:35` | MLX has no floor for its vector kernel; the 2-pass switch is at N>=1024 on arch 's'/'d' (`mlx/scaled_dot_product_attention.cpp:1565`) | 5-20% of the 1.5B token at 1024-1535 keys; 0 elsewhere | floor override hook next to `attnFASplitOverride`; interleaved in-sequence sweep 256..1535 |
+| B-P01 | Major | hd=64 decode attention has no fa/blk path; on the 0.5B it is 61% of the 3900-key token and still on the per-query-head kernel | `metal/model.go:2746`; `metal/kernels.go:1176,1297`; decomp `:35`; R17 doc `:85`; `docs/benchmarks.md:47` | `sdpa_vector` is templated on D: `mlx/kernels/sdpa_vector.h:15,45`, instantiated 64/96/128/192/256 at `mlx/kernels/scaled_dot_product_attention.metal:59-66` | 0.5B token 1.3-1.85x at 2048-3900 keys; 0 at 128 | hd-templated blk (2 dims per lane), in-sequence attention at 2048/3900 on the 0.5B |
+| B-P02 | Major | `attention_fa_blk` is instantiated for G=6,7 only; every other hd=128 GQA shape (for example 32 heads over 8 KV heads, G=4) stays on `attention_fa`, which R17 measured 2.3-3.5x slower | `metal/model.go:1463-1472`; `metal/kernels.go:1397-1400`; R17 doc `:463-466,74-76` | `sdpa_vector_2pass_1` takes G at runtime (`mlx/kernels/sdpa_vector.h:220`, `group_dims(32, gqa_factor, ...)`, `mlx/scaled_dot_product_attention.cpp:817`) | 1.15-1.4x end to end at 2048+ keys on ungraded G (the R17 end-to-end figure at the graded shapes, `benchmarks.md:47`) | instantiate g4/g5/g8, per-head equality test vs g7, in-sequence attention at 2048/3900 |
+| B-P03 | Major | REVISIT: `attnFADepthFloor`=1536 was measured on `attention_fa` (R2), not on the block kernel that now runs above it; legacy attention at 1024-1535 keys costs about 3.3-5.0 ms against about 1.8 ms for blk | `metal/model.go:2657-2665,2706,2741`; R17 doc `:465`; `red-october.md:2195-2196`; `metal-depth-r2-2026-09-18.md:55-58`; decomp `:35` | MLX has no floor for its vector kernel; the 2-pass switch is at N>=1024 on arch 's'/'d' (`mlx/scaled_dot_product_attention.cpp:1565`) | 5-20% of the 1.5B token at 1024-1535 keys; 0 elsewhere | floor override hook next to `attnFASplitOverride`; interleaved in-sequence sweep 256..1535 |
 | B-P04 | Major | [P,B] SA-family lanes own a whole 32-weight group, so K=1536 takes 2 trips with the second half-idle (1.5 trips of work) and K=3584 takes 4 for 3.5; MLX's 16-weights-per-lane mapping fills all lanes. A bit-identical form exists: exact integer exchange plus an owner-lane float chain | `metal/kernels.go:561,576,578`; R18b doc `:21`; S0 `:48,53`; R18b doc `:61-66` | `mlx/kernels/quantized.h:774` (block_size = 16 x 32 = 512), `mlx/quantized.cpp:488` (fast needs K%512==0) | 1.5B token 3-7% (gate/up 132 -> 150-165 GB/s); 7B 1-3% | synthetic K sweep at fixed bytes, then lane-balanced prototype in `gemv_r18_test.go` |
-| B-P05 | Major | REVISIT of M-10: R18b excluded the down projection; it stays on the coal body (per-word float chain, one scale load per word) and is the slowest int4 GEMV, about 84 GB/s (1.5B) and 111 GB/s (7B) against 132 and 166 for gate/up | `metal/kernels.go:622-648`; `metal/model.go:2533-2535,1387`; `red-october.md:2373`; R18 doc `:123-130`; S0 `:49,54`; audit M-10 `:533-564` | `qmv_fast_impl` has one inner loop for every projection (`mlx/kernels/quantized.h:756-821`) | 1.5B 0-9%, 7B 0-10% (needs the fidelity gate; breaks decode/verify order agreement unless E moves the MC3 down kernel too) | existing `gemv_w4a8_sa_resid_rows4` dispatched at the down shape in `TestR18InSequence` |
-| B-P06 | Minor | [P,B] every R18/R18b dispatch is 256 threads (8 simdgroups) with a K x 2 B staging prologue and barrier; R18's record names TG size as an untested next suspect; MLX runs 64-thread TGs with no TG memory | `metal/model.go:2508,2529,2742,2851`; R18 doc `:170-175`; `metal/kernels.go:556-557` | `mlx/quantized.cpp:495` (`group_dims(bk, 2, 1)`), `mlx/kernels/quantized.h:769-770` | 0-6% of the 1.5B token (gate/up only); likely <= 3% | TG {64,128,256,512} x R {2,4} at gate/up shapes, then in sequence |
-| B-P07 | Minor | blk's QK stage does 32 independent `simd_sum`s per head per block; a reduce-scatter in the measured simd_sum tree order gives bit-identical scores for about 2.6x fewer cross-lane ops | `metal/kernels.go:1311-1316`; MC3 record `concurrency-mc3-s0-2026-09-26.md:74,108`; `metal/batch.go:254-255` | none (MLX does one `simd_sum` per key per head: `mlx/kernels/sdpa_vector.h:278`) | 0-4.6% of the 1.5B token at 3900 keys, 0-3.6% on the 7B | bit-equality test vs shipped blk on 65,536 random vectors, then in-sequence |
-| B-P08 | Minor | blk at fixed S=16 costs one trip per 2048 keys: the busiest simdgroup runs ceil(ceil(n/16)/128) trips, so cost steps at 2049, 4097 and so on; the two graded depths (2048, 3900) are the balanced points | `metal/kernels.go:1289,1306`; R17 doc `:76` (1.770 vs 2.537 ms), `:80-83` | `mlx/scaled_dot_product_attention.cpp:776-806` (blocks by arch/N) | step of about 0.77 ms (1.5B, 5.5% of token) or 2.2 ms (7B, 4.8%) at each 2048-key boundary; mean about half | depth sweep, in-sequence, 1536..6144 in 128-key steps |
+| B-P05 | Major | REVISIT of M-10: R18b excluded the down projection; it stays on the coal body (per-word float chain, one scale load per word) and is the slowest int4 GEMV, about 84 GB/s (1.5B) and 111 GB/s (7B) against 132 and 166 for gate/up | `metal/kernels.go:622-648`; `metal/model.go:2584-2586,1427`; `red-october.md:2373`; R18 doc `:123-130`; S0 `:49,54`; audit M-10 `:533-564` | `qmv_fast_impl` has one inner loop for every projection (`mlx/kernels/quantized.h:756-821`) | 1.5B 0-9%, 7B 0-10% (needs the fidelity gate; breaks decode/verify order agreement unless E moves the MC3 down kernel too) | existing `gemv_w4a8_sa_resid_rows4` dispatched at the down shape in `TestR18InSequence` |
+| B-P06 | Minor | [P,B] every R18/R18b dispatch is 256 threads (8 simdgroups) with a K x 2 B staging prologue and barrier; R18's record names TG size as an untested next suspect; MLX runs 64-thread TGs with no TG memory | `metal/model.go:2559,2580,2825,2934`; R18 doc `:170-175`; `metal/kernels.go:556-557` | `mlx/quantized.cpp:495` (`group_dims(bk, 2, 1)`), `mlx/kernels/quantized.h:769-770` | 0-6% of the 1.5B token (gate/up only); likely <= 3% | TG {64,128,256,512} x R {2,4} at gate/up shapes, then in sequence |
+| B-P07 | Minor | blk's QK stage does 32 independent `simd_sum`s per head per block; a reduce-scatter in the measured simd_sum tree order gives bit-identical scores for about 2.6x fewer cross-lane ops | `metal/kernels.go:1324-1329`; MC3 record `concurrency-mc3-s0-2026-09-26.md:74,108`; `metal/batch.go:255-256` | none (MLX does one `simd_sum` per key per head: `mlx/kernels/sdpa_vector.h:278`) | 0-4.6% of the 1.5B token at 3900 keys, 0-3.6% on the 7B | bit-equality test vs shipped blk on 65,536 random vectors, then in-sequence |
+| B-P08 | Minor | blk at fixed S=16 costs one trip per 2048 keys: the busiest simdgroup runs ceil(ceil(n/16)/128) trips, so cost steps at 2049, 4097 and so on; the two graded depths (2048, 3900) are the balanced points | `metal/kernels.go:1302,1319`; R17 doc `:76` (1.770 vs 2.537 ms), `:80-83` | `mlx/scaled_dot_product_attention.cpp:776-806` (blocks by arch/N) | step of about 0.77 ms (1.5B, 5.5% of token) or 2.2 ms (7B, 4.8%) at each 2048-key boundary; mean about half | depth sweep, in-sequence, 1536..6144 in 128-key steps |
 | B-P09 | Minor | `rmsnorm_quant` makes 3 device passes and 12 TG barriers per dispatch; the last 5 tree levels are inside one simdgroup | `metal/kernels.go:24-64`; decomp `:41` | `mlx/kernels/rms_norm.metal:13-80` (x in registers, one load pass, 3 barriers) | 0.3-2% of the 1.5B token | register-cache variant with the same pinned tree, byte-equal vs shipped |
-| B-N01 | Minor | Metal cannot load an `-embed-int4` bundle: `int8Buf` errors on a non-int8 head; there is no int4 head kernel on Metal | `metal/model.go:1281-1287,450-456`; `decoder/weightmat.go:96-106`; `docs/giw-bundles.md:24` | mlx-lm 4-bit checkpoints carry a 4-bit head (not in library source; see f) | 4.4% (7B) to 6% (1.5B) of the token if supported; lossy opt-in, not proposed as a default | none now; see entry |
+| B-N01 | Minor | Metal cannot load an `-embed-int4` bundle: `int8Buf` errors on a non-int8 head; there is no int4 head kernel on Metal | `metal/model.go:1320-1327,501-507`; `decoder/weightmat.go:96-106`; `docs/giw-bundles.md:24` | mlx-lm 4-bit checkpoints carry a 4-bit head (not in library source; see f) | 4.4% (7B) to 6% (1.5B) of the token if supported; lossy opt-in, not proposed as a default | none now; see entry |
 | B-D01 | Minor | `benchmarks.md:47` says "AHEAD of Ollama in every cell" after R18b; the six graded cells are 1.5B and 7B only, and the 0.5B depth cells (0.75x at 2048, 0.58x at 3900) have not been re-measured since | `docs/benchmarks.md:47`; R18b doc `:104-113` | n/a | n/a | re-run cell g at 0.5B |
-| B-D02 | Minor | `model.go` attention-block comment counts 7 dispatches; at fa depths there are 8 (the combine is a separate dispatch) | `metal/model.go:2713-2716`; `metal/model.go:2603-2614` | n/a | n/a | edit comment |
+| B-D02 | Minor | `model.go` attention-block comment counts 7 dispatches; at fa depths there are 8 (the combine is a separate dispatch) | `metal/model.go:2795-2799`; `metal/model.go:2657-2678` | n/a | n/a | edit comment |
 
 ---
 
@@ -708,9 +734,9 @@ relative to the goinfer repository root unless they start with `mlx/` (MLX, unde
 
 #### B-P01 [P, Major] hd=64 never reaches the flash-decode kernels (0.5B and any hd=64 model)
 
-**Claim.** `canUseAttnFA` declines unless `g.hd == 128` (`metal/model.go:2664`; the comment above it says the
-kernel's cooperative-load tiling is fixed to 32 lanes x half4). Both `attention_fa` (`metal/kernels.go:1163`) and
-`attention_fa_blk` (`metal/kernels.go:1284`) hard-code `hd = 128u`. A hd=64 model runs the legacy per-query-head
+**Claim.** `canUseAttnFA` declines unless `g.hd == 128` (`metal/model.go:2746`; the comment above it says the
+kernel's cooperative-load tiling is fixed to 32 lanes x half4). Both `attention_fa` (`metal/kernels.go:1176`) and
+`attention_fa_blk` (`metal/kernels.go:1297`) hard-code `hd = 128u`. A hd=64 model runs the legacy per-query-head
 `attention` kernel at every depth.
 
 **Weight of the term (record).** Qwen2.5-0.5B, 1 attention number per depth, `metal-decode-decomp-2026-09-25.md:35`:
@@ -733,7 +759,7 @@ generality, not the kernel body.
 extension would cover hd=96 (phi3-mini, 3 dims per lane, MHA so G=1) and hd=256 (Gemma, windows, out of scope here).
 
 **Band (projection).** Basis: attention is 7.61 ms of 12.40 at 3900 on the 0.5B. R17 measured blk 2.3-3.5x over
-`attention_fa` in sequence (R17 doc `:74-76`) and `attention_fa` 1.26x over legacy at 3900 (metal/model.go:2603-2611 comment),
+`attention_fa` in sequence (R17 doc `:74-76`) and `attention_fa` 1.26x over legacy at 3900 (metal/model.go:2657-2665 comment),
 so 2.9-4.4x over legacy at hd=128. Take 2x as the low case and 4x as the high case on the 0.5B: attention 7.61 ->
 3.8 / 1.9 ms, token 12.40 -> 8.6 / 6.7 ms = 1.44-1.85x at 3900. At 2048: 4.09 -> 2.0 / 1.0 ms, token 8.87 -> 6.8 / 5.8 =
 1.3-1.5x. Overall band 1.3-1.85x at 2048-3900, none at 128. A projection, not a measurement.
@@ -752,12 +778,12 @@ or fidelity gate failure.
 #### B-P02 [P, Major] The block kernel is instantiated for two group sizes only
 
 **Claim.** `buildResident` selects `attention_fa_blk_g6` or `_g7` only when `nH / nKV` is 6 or 7
-(`metal/model.go:1423-1432`); `metal/kernels.go:1384-1387` instantiates only those two. Any other dense hd=128 GQA shape (for
+(`metal/model.go:1463-1472`); `metal/kernels.go:1397-1400` instantiates only those two. Any other dense hd=128 GQA shape (for
 example 32 query heads over 8 KV heads, G=4; 40 over 8, G=5; 16 over 2, G=8) runs `attention_fa` with the core-count
 split rule, the kernel R17 measured 2.3-3.5x slower per token-attention.
 
 **Why this is not already closed.** The restriction is stated as a scope choice in the comment at
-`metal/model.go:1423-1426` ("instantiated, measured and fidelity-gated only for these two") and in
+`metal/model.go:1463-1466` ("instantiated, measured and fidelity-gated only for these two") and in
 `metal-decode-attn-r17-2026-09-25.md:463-466`. I found no later record that extends it or kills it.
 
 **MLX analog.** `sdpa_vector_2pass_1` reads G from the threadgroup's y extent (`mlx/kernels/sdpa_vector.h:220`:
@@ -765,7 +791,7 @@ split rule, the kernel R17 measured 2.3-3.5x slower per token-attention.
 (`mlx/scaled_dot_product_attention.cpp:817`); any G works. MLX does not share K/V loads across the G simdgroups, so
 goinfer's form (one K load, G dots) is cheaper per key; only the generality is borrowed.
 
-**Delta.** In `attention_fa_blk<G>` every per-head statement (`metal/kernels.go:1297-1303`, `1224-1228`, `1238-1246`) touches
+**Delta.** In `attention_fa_blk<G>` every per-head statement (`metal/kernels.go:1310-1316`, `1224-1228`, `1238-1246`) touches
 only head g's state; G is a loop bound. The arithmetic per head is the same instruction sequence at any G, so a g4/g5/g8
 instantiation should agree with g7 head for head. Register pressure grows with G (acc[G], qs[G] float4 plus m, l, s, p:
 about 12G registers of live state: 84 at G=7, 96 at G=8, before addressing), so g8 may spill; a g8 that does two 4-head passes is the fallback.
@@ -787,11 +813,11 @@ with the target head counts at 2048 and 3900 keys, S=16 and S in {8, 24, 32}.
 
 #### B-P03 [P, Major] REVISIT: the 1536-key floor was measured on the kernel it no longer gates
 
-**Premise.** `metal/model.go:2603-2611`: the floor is "where attention_fa (at a properly-sized split count) starts
+**Premise.** `metal/model.go:2657-2665`: the floor is "where attention_fa (at a properly-sized split count) starts
 beating the shipped kernel", measured by a since-deleted `TestAttentionFA_speedProbe` with S sized to 28: 0.98x at 1024
 keys, 1.07x at 1536, 1.26x at 3900.
 
-**Why it no longer holds.** `attnFADepthFloor` gates `attnPlanFor` (`metal/model.go:2638`) and `canUseAttnFA` (`:2570`), so it
+**Why it no longer holds.** `attnFADepthFloor` gates `attnPlanFor` (`metal/model.go:2720`) and `canUseAttnFA` (`:2570`), so it
 now gates `attention_fa_blk`, which is 2.3-3.5x faster than `attention_fa` in sequence (R17 doc `:74-76`: 1.770 vs 4.874
 ms at 2048, 2.537 vs 8.574 at 3900 on the 1.5B). R17's own precondition says a candidate that engages below the floor
 "has to earn it there too" (`red-october.md:2195-2196`), and R17's wiring section records "the depth floor (1536) ...
@@ -836,6 +862,10 @@ at the first depth where blk/legacy >= 1.10 and re-run the fidelity gate there.
 ---
 
 #### B-P04 [P, B, Major] SA-family lane mapping leaves the last trip half-idle at K=1536 and K=3584
+
+**Status, 2026-10-03 (branch `metal-audit`): killed and reverted.** Graded on `TestR18InSequence`: pre-bp04 ÷
+production **0.955×** on the 1.5B at depth 128 (0.911–0.917× on the 7B), against the pre-registered 1.02 ship line. The
+idle tail T1.4 measured is real, but closing it with lane-pair splitting and shuffles costs more than it saves.
 
 **Counted (code shape).** `sa_rows_acc` loops `for (uint g=lane; g<G; g+=32u)` with `G = K>>5u`
 (`metal/kernels.go:558,561`); a lane owns whole 32-weight groups, 32 lanes cover 1024 weights per trip. The SA family
@@ -906,7 +936,7 @@ shape) has not been repeated against the current pair.
 The coal body costs: one 4-byte weight load plus one 2-byte scale load per 8 weights per row (0.25 load instructions per
 weight against SA's 0.0625), and one f32 FMA per 8 weights against one per 32
 (`metal/kernels.go:622-648`, `W4A8_BODY` `:253-266`; M-10 `:545-547`). Dispatch is `H*32/R` threads at TG 256
-(`metal/model.go:2533-2535`): 48 threadgroups on the 1.5B, 112 on the 7B, a single wave.
+(`metal/model.go:2584-2586`): 48 threadgroups on the 1.5B, 112 on the 7B, a single wave.
 
 **MLX analog.** One inner loop for every projection: `qmv_fast_impl`, `mlx/kernels/quantized.h:756-821`. (For Qwen2.5-1.5B
 the down K=8960 is not a multiple of 512, so MLX itself takes the slower `qmv` with a tail there, `mlx/quantized.cpp:488`.)
@@ -924,7 +954,7 @@ down to the SA body changes bits (M-10 `:545-547` said so) and breaks decode/ver
 rows. The 7B cannot stage K x 2 B as half (18944 x 2 = 37,888 B exceeds the 32 KiB threadgroup budget), so the 7B needs
 int8 staging or a two-chunk K loop.
 
-**Probe.** In `TestR18InSequence`, dispatch the existing production `gemv_w4a8_sa_resid_rows4` (`metal/model.go:1401`,
+**Probe.** In `TestR18InSequence`, dispatch the existing production `gemv_w4a8_sa_resid_rows4` (`metal/model.go:1441`,
 the o-proj kernel with the residual epilogue) at the 1.5B down shape (N=1536, K=8960, 17.9 KB staging fits) against
 `gemv_w4a8_resid_staged4`, same dispatch site, interleaved, 7 reps. Check byte difference (expected non-zero, size it
 with the teacher-forced gate). **Kill:** below 1.03x in-sequence down work on the 1.5B.
@@ -933,9 +963,9 @@ with the teacher-forced gate). **Kill:** below 1.03x in-sequence down work on th
 
 #### B-P06 [P, B, Minor] Threadgroup geometry of the rows kernels is untested
 
-**Counted.** Every R18/R18b dispatch is `DispatchTG(..., 256, ...)` (`metal/model.go:2508` gate/up, `:2440` down, `:2653`
+**Counted.** Every R18/R18b dispatch is `DispatchTG(..., 256, ...)` (`metal/model.go:2559` gate/up, `:2440` down, `:2653`
 qkv, `:2762` o): 8 simdgroups per threadgroup, `row0 = (tgid*8 + sgid)*R` (`metal/kernels.go:559`), and `gemvRowsFor` tiles rows by
-8R (`metal/model.go:2638-2645`). Staging costs one K x 2 B write plus a barrier before any weight load is issued
+8R (`metal/model.go:2600-2607`). Staging costs one K x 2 B write plus a barrier before any weight load is issued
 (`metal/kernels.go:556-557`). Grid sizes at R=4: 1.5B gate/up 560 TGs, qkv 64, down 48; 7B qkv 144, down 112.
 
 **Record.** R18 lists the open items itself: "Occupancy and latency hiding are therefore the natural next suspect, but
@@ -966,7 +996,7 @@ standalone first, then in sequence. **Kill:** below 1.03x in sequence on the 1.5
 #### B-P07 [P, Minor] blk's QK stage: 32 simd_sums per head per block
 
 **Counted.** Per 32-key block per simdgroup, `for j<32 { for g<G { s[g] = (lane==j) ? simd_sum(dot(qs[g],k4)) : s[g] } }`
-(`metal/kernels.go:1311-1316`): 32 x G simd_sums. If `simd_sum` lowers to 5 shuffle+add steps (the tree is the xor
+(`metal/kernels.go:1324-1329`): 32 x G simd_sums. If `simd_sum` lowers to 5 shuffle+add steps (the tree is the xor
 butterfly 1,2,4,8,16, MC3 record `:74`; the lowering is not recorded) that is 320 cross-lane ops per head per block.
 A reduce-scatter that halves the key set at each xor level (levels 1,2,4,8,16 in that order) costs 16+8+4+2+1 = 31
 shuffles + 31 adds + about 62 selects = 124 ops, 2.6x fewer. Per key at G=7: about 70 of about 157 ops per key per
@@ -1001,14 +1031,18 @@ one, and the hash updated in the same change.
 
 #### B-P08 [P, Minor] blk's fixed split gives a cost staircase in depth
 
-**Counted.** Per threadgroup, simdgroup `s` takes blocks `chunkStart + s*32 + 128*i` (`metal/kernels.go:1306`), with
-`chunkLen = ceil(nWin / nSplit)` (`:1201`) and nSplit = 16 (`metal/model.go:2601`). The busiest simdgroup (sg0) runs
+**Status, 2026-10-03: stands on the 7B, parked on the 1.5B (T1.7).** Attention per key max/min 1.68–1.71× on both;
+the step across a trip boundary is 4.6–4.8× the median 128-key step on the 7B and 2.5× on the 1.5B (the pre-registered
+staircase reading, beside the per-key one). Record: the task doc, "The night of 2026-10-02: results".
+
+**Counted.** Per threadgroup, simdgroup `s` takes blocks `chunkStart + s*32 + 128*i` (`metal/kernels.go:1319`), with
+`chunkLen = ceil(nWin / nSplit)` (`:1201`) and nSplit = 16 (`metal/model.go:2655`). The busiest simdgroup (sg0) runs
 `ceil(chunkLen / 128)` trips, which is 1 for n <= 2048, 2 for 2049-4096, 3 for 4097-6144. Both graded depths are
 balanced points: 2048 (chunk 128 = 4 blocks, 1 per simdgroup), 3900 (chunk 244 = 7.6 blocks, 2 per simdgroup).
 
 **Record.** The R17 table has two points, 1.770 ms (2048) and 2.537 ms (3900) on the 1.5B, 4.898 and 7.072 on the 7B
 (`metal-decode-attn-r17-2026-09-25.md:76`), and says the response to S is not monotone so "a production rule would need
-its own sweep" (`:81-83`; `metal/model.go:2601-2606` comment). Non-monotonicity fits the trip count: S=24 at 3900 gives
+its own sweep" (`:81-83`; `metal/model.go:2655-2660` comment). Non-monotonicity fits the trip count: S=24 at 3900 gives
 chunk 163 = 5.1 blocks over 4 simdgroups = 2 trips for 1.3 trips of work; S=32 at 2048 gives chunk 64 = 2 blocks, 2
 simdgroups idle (2.497 vs 1.770 ms).
 
@@ -1051,7 +1085,7 @@ norm+quant category (decomp method). **Kill:** below 1.01x full token on the 1.5
 #### B-N01 [N, Minor] Metal cannot honour `-embed-int4`
 
 **Claim.** The Metal head load requires int8: `int8BufA` falls to `int8Buf`, which returns "weight kind ... is not int8"
-for anything else (`metal/model.go:1281-1287`, `:444-450`). `decoder/weightmat.go:96-106` offers an opt-in int4 head
+for anything else (`metal/model.go:1320-1327`, `:444-450`). `decoder/weightmat.go:96-106` offers an opt-in int4 head
 (`EmbedInt4`, "Lossy and opt-in — a 1.5B Q4_K_M spike measured ~2.3 pts top-1"), and `docs/giw-bundles.md:24` documents
 `-embed-int4`. On Metal such a bundle fails at residency build (what happens next is area C's).
 
@@ -1070,6 +1104,10 @@ gate with the teacher-forced top-1 check that produced the 2.3-point figure.
 
 #### B-D01 [D, Minor] "AHEAD of Ollama in every cell" covers six cells
 
+**Status, 2026-10-03: the 0.5B cells measured (T1.11).** Same session on main: goinfer ÷ Ollama **0.804×** at 2048 and
+**0.568×** at 3900 (1.143× at 128). The row's claim was already scoped to the six 1.5B and 7B cells (T0.5); it now
+carries these 0.5B cells.
+
 `docs/benchmarks.md:47` ends the Metal decode row with "goinfer is AHEAD of Ollama in every cell" after R18b, then lists the
 1.5B and 7B at 128/2048/3900. The R18b e2e table has only those six cells (`metal-decode-gemv-r18b-2026-09-26.md:104-113`).
 The same row's pre-registered 0.5B cells read 0.75x (2048) and 0.58x (3900) and have no later number, because the 0.5B
@@ -1078,7 +1116,7 @@ cell" or add the 0.5B cells.
 
 #### B-D02 [D, Minor] Dispatch-count comment omits the combine
 
-`metal/model.go:2713-2716` (the N-10 fix) counts 7 attention-block dispatches in "the baseline dense case". At fa depths
+`metal/model.go:2795-2799` (the N-10 fix) counts 7 attention-block dispatches in "the baseline dense case". At fa depths
 the combine kernel is an eighth. Per layer: 7 + 4 (norm+quant, gate|up, swiglu+quant, down+residual) = 11, 12 with the
 combine; per token 28 x 12 + final norm + head = about 338 above the floor, 28 x 11 + 2 = 310 below it (the 310 in the
 Sep 12 M-16 entry is the below-floor count). One-line comment fix.
@@ -1089,12 +1127,12 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
 
 | ID | Status | Evidence |
 |---|---|---|
-| M-09 (decode attention K read, staged corner) | NEGATIVE-CLOSED | Probe `metal/attn_kread_staged_probe_test.go` exists; staged 39.6 ms vs shipped 17.0 ms (0.43x) at 2048 keys (audit `:514-521`). Two loose ends: its maxAbs 1.7e38 correctness mismatch was never root-caused (`:519-531`), and the premise (a 32-lane 512 B-strided K gather) no longer describes the production decode attention at hd=128, G=6/7, >=1536 keys: blk loads each K row coalesced, 32 lanes x half4 = 256 B (`metal/kernels.go:1311-1314`). It still describes the legacy kernel, which serves <1536 keys, hd=64, kvI8, windows and sinks (B-P01, B-P03). |
-| M-10 (down projection unstaged) | NEGATIVE-CLOSED, premise stale | Reverted `model.go` change measured 2-6% slower at the time (audit `:553-564`); coal down is now staged at R=4 (`metal/model.go:2533-2535`), the int4 GEMV work is 1.38-1.46x faster at depth 128 than when M-10 measured it (R18b doc `:89`). REVISIT filed as B-P05. |
+| M-09 (decode attention K read, staged corner) | NEGATIVE-CLOSED | Probe `metal/attn_kread_staged_probe_test.go` exists; staged 39.6 ms vs shipped 17.0 ms (0.43x) at 2048 keys (audit `:514-521`). Two loose ends: its maxAbs 1.7e38 correctness mismatch was never root-caused (`:519-531`), and the premise (a 32-lane 512 B-strided K gather) no longer describes the production decode attention at hd=128, G=6/7, >=1536 keys: blk loads each K row coalesced, 32 lanes x half4 = 256 B (`metal/kernels.go:1324-1327`). It still describes the legacy kernel, which serves <1536 keys, hd=64, kvI8, windows and sinks (B-P01, B-P03). |
+| M-10 (down projection unstaged) | NEGATIVE-CLOSED, premise stale | Reverted `model.go` change measured 2-6% slower at the time (audit `:553-564`); coal down is now staged at R=4 (`metal/model.go:2584-2586`), the int4 GEMV work is 1.38-1.46x faster at depth 128 than when M-10 measured it (R18b doc `:89`). REVISIT filed as B-P05. |
 | M-16 (hazard tracking / serial encoder) | NEGATIVE-CLOSED | Untracked 99.6-101.5% of tracked in a 310-dispatch probe (audit `:906-918`; the probe is in aikit, not in this snapshot). Decode graph is nearly a chain (12 dispatches per layer, few independent siblings after QKV and gate|up fusion), so MLX's concurrent dispatch type has little to overlap here. |
 | N-03 (§B3 depth curve measures a path serve never takes) | CLOSED-VERIFIED (superseded) | Superseded 2026-09-18 by `bench_peer.py` over the real server (audit `:1274-1280`); decode rows now come from the served path (`benchmarks.md:47`). |
-| N-09 (softcap in greedy decode) | CLOSED-VERIFIED | `finalizeLogits` is called after every logits readback and applies the softcap host-side: `metal/model.go:1759,1758-1765`. |
-| N-10 (stale dispatch counts) | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2713-2716` omits the fa combine (B-D02). The 310 figure is correct below the floor. |
+| N-09 (softcap in greedy decode) | CLOSED-VERIFIED | `finalizeLogits` is called after every logits readback and applies the softcap host-side: `metal/model.go:1809,1808-1815`. |
+| N-10 (stale dispatch counts) | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2795-2799` omits the fa combine (B-D02). The 310 figure is correct below the floor. |
 | N-13 (snapshot golden names `attention_f32`) | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-79` explains the removal (N-28). `attention_f32` is built only under `r.kvF32`, which is hard-wired false. |
 | N-17 (kernels with no production pipeline) | CLOSED-VERIFIED | The six listed kernels have no non-test pipeline reference at HEAD (grep of `"gemv_w4a8_bias"`, `_sa_amax`, `_sa_bk`, `_sa_qv`, `"gemv_w8a8"`, `"rope2_kv"`: tests only); header at `metal/kernels.go:5-17`. `gemv_w4a8_sa_amax` is still the one with no reference at all, kept by decision. |
 | N-30 (swiglu_quant double evaluation, rope2_kv) | NEGATIVE-CLOSED | Recorded as a trade needing a device scratch buffer (audit `:1509-1520`); `rope2_kv` unwired (0.6%, `metal/kernels.go:5-17`). The stale "K<=1536" comment now corrects itself at `metal/kernels.go:399`. Not re-proposed. |
@@ -1106,9 +1144,9 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
 ### (e) Checked and found correct
 
 - **Fusion state against MLX.** goinfer decode per layer, with the dispatch each fusion removes: norm+quant in one kernel
-  (`rmsnorm_quant`, `metal/kernels.go:24`); QKV in one GEMV with bias (`metal/model.go:2746-2747`); Q and K RoPE in one dispatch
-  (`rope2`, `metal/kernels.go:841`); gate|up in one GEMV (`metal/model.go:2506-2508`); swiglu+quant in one kernel
-  (`metal/kernels.go:1687-1727`); residual in the o and down epilogues (`gemv_w4a8_sa_resid_rows`, `gemv_w4a8_resid_staged`).
+  (`rmsnorm_quant`, `metal/kernels.go:24`); QKV in one GEMV with bias (`metal/model.go:2829-2830`); Q and K RoPE in one dispatch
+  (`rope2`, `metal/kernels.go:853`); gate|up in one GEMV (`metal/model.go:2557-2559`); swiglu+quant in one kernel
+  (`metal/kernels.go:1700-1740`); residual in the o and down epilogues (`gemv_w4a8_sa_resid_rows`, `gemv_w4a8_resid_staged`).
   12 dispatches per layer at fa depths, 11 below. MLX's quantized kernels have no prologue or epilogue fusion
   (`mlx/kernels/quantized.h:756-821` writes y only), no norm-into-GEMV, no residual-into-GEMV, no swiglu-into-down, no
   rope-into-attention; MLX's per-layer graph is bias add, rope, cache update and residual add as separate ops. MLX has no
@@ -1150,16 +1188,16 @@ Sep 12 M-16 entry is the below-floor count). One-line comment fix.
   helpers for the blocked prefill path); the 2-pass decode form is in `sdpa_vector.h`.
 - **R17 plan consistency.** `attnPlan` carries `fa`, `nSplit`, `f16Lane`; `attnPlanFor` and `canUseAttnFA` read the same floor
   and `attnFASplitFor`, so a pre-encoded buffer that disagrees with the current key count is re-encoded
-  (`metal/model.go:2629-2642,2644-2684`; R17 doc `:333-358` records the original defect and the fix).
+  (`metal/model.go:2702-2724,2726-2766`; R17 doc `:333-358` records the original defect and the fix).
 - **blk tail and empty blocks.** For the last 32-key block (`nb < 32`), `s[g]` stays -inf outside `nb`, `p` is 0 there,
-  `alpha` is guarded for `m == -inf`, and the 4-simdgroup merge guards `-inf` (`metal/kernels.go:1319-1334,1350-1363`). With S=16 and
-  nKeys >= 1536 no split is empty (`nKeys/32` cap, `metal/model.go:2671-2689`).
-- **LM head.** `gemv_w8a8_coal` at 32-thread TGs, one row per TG (`metal/model.go:1755`): 161 GB/s (1.5B) and 163 (7B) against a
+  `alpha` is guarded for `m == -inf`, and the 4-simdgroup merge guards `-inf` (`metal/kernels.go:1332-1347,1363-1376`). With S=16 and
+  nKeys >= 1536 no split is empty (`nKeys/32` cap, `metal/model.go:2753-2771`).
+- **LM head.** `gemv_w8a8_coal` at 32-thread TGs, one row per TG (`metal/model.go:1805`): 161 GB/s (1.5B) and 163 (7B) against a
   178-182 ceiling (S0 `:50,55`), byte-minimal for int8. Nothing to gain at fixed bytes.
-- **rope.** goinfer `rope2` computes `cos/sin(pos * invf[dd])` per pair (`metal/kernels.go:851`), the same shape as MLX `rope_single`
+- **rope.** goinfer `rope2` computes `cos/sin(pos * invf[dd])` per pair (`metal/kernels.go:863`), the same shape as MLX `rope_single`
   (`mlx/kernels/rope.metal:24-26`, `fast::cos/sin`); no table in either.
-- **Wiring guards.** `gemvRowsFor` falls back to the shipped kernel where rows do not tile (`metal/model.go:2638-2645`), the down
-  rows kernel only where K staging fits (`metal/model.go:1392`), and the SA rows kernels' no-guard tail hazard (audit C-10) is
+- **Wiring guards.** `gemvRowsFor` falls back to the shipped kernel where rows do not tile (`metal/model.go:2600-2607`), the down
+  rows kernel only where K staging fits (`metal/model.go:1432`), and the SA rows kernels' no-guard tail hazard (audit C-10) is
   covered by `bad8` width checks (`model.go:~1238-1262`).
 - **`*_nax*` files** in MLX (M5 only) were not read as findings.
 
@@ -1223,17 +1261,17 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| C-P01 | Major | Paged-expert f16 scale cache holds ~1.43 GB of anonymous heap that duplicates scales the v15 .giw aliases; guard does not price it | metal/gemma4_moe.go:289-299,316-322,360-361; metal/moe.go:491-504; metal/model.go:504-532; s6-alias-2026-09-24.md:262-270 | none (MLX has no paging) | -1.43 GB of 2,967 MB (-48%) [C]; decode -6% to 0% [P] | heap profile + footprint A/B on M26 v15; kill if reduction < 1.0 GB or decode worse than -3% |
-| C-C01 | Major (conditional) | Decoder guards price f32 KV and have no Metal ceiling; auto-pin inflates Metal KV vs the 4096 default or exceeds 32768 and forces CPU fallback | decoder/fitguard.go:367-424,742-757; decoder/model.go:589-596; metal/model.go:23-51; decoder/fitplan.go:225-227; decoder/residency.go:1094-1113; audit N-41 (:1588-1603) | resident.cpp / allocator.cpp budget by memory limit, not by kernel ceiling | KV 3-7x default at pin [R]; CPU fallback = whole-forward loss | unit test with injected hostRAMAvailable and a 131072-window config; kill if guardGIWFit never returns > 32768 |
-| C-B01 | Minor (Major only at top of band on 0.5B) | No on-device token feedback: every token pays wake + 608 KB copy + host argmax + embed row + commit between kernels | metal/model.go:1993-2058,2119-2147; decoder/model.go:2169-2192 | eval.cpp:29-69 async_eval; device.cpp:511-513 | 0.30-0.45 ms/token [P]: 2.2-3.4% (1.5B), 0.7-1.1% (7B), 5.3-7.9% (0.5B, assumes the 1.5B gap) | log kernStart(t+1)-kernEnd(t) (aikit metal.go:808-814); kill if gap < 0.15 ms |
-| C-P02 | Minor | ForwardSample / ForwardArgmax are synchronous Begin/End and bypass encode-ahead | metal/gumbel_sample.go:45-71; metal/model.go:2124-2152 | eval.cpp:29-69 | up to 3.6-4.2% (0.5B), ~2.8% (1.5B), ~0.9% (7B) [P] | add sample mode to execJob, A/B at T=1.0 |
-| C-B02 | Minor, REVISIT | Residency verdict: MLX sets are requests under memory pressure and default to 0; goinfer's recorded bisect says pinning costs in proportion to set size; the premise was measured on paged MoE, not dense | resident.h:15-26; resident.cpp:221-237; allocator.cpp:100-105,254-262; metal/model.go:1494-1560; s6-alias-2026-09-24.md:197-198 | resident.cpp | 7B alias cost -1.4% [R]; recovery or regression unknown | per-encoder set on dense 7B, interleaved A/B n>=12; kill if no recovery of the 1.4% or +0.5 ms/token |
+| C-P01 | Major | Paged-expert f16 scale cache holds ~1.43 GB of anonymous heap that duplicates scales the v15 .giw aliases; guard does not price it | the paged branches of metal/gemma4_moe.go and metal/moe.go and `int4DirectBytes` in metal/model.go, at `844700f8` (removed 2026-10-02); s6-alias-2026-09-24.md:262-270 | none (MLX has no paging) | -1.43 GB of 2,967 MB (-48%) [C]; decode -6% to 0% [P] | heap profile + footprint A/B on M26 v15; kill if reduction < 1.0 GB or decode worse than -3% |
+| C-C01 | Major (conditional) | Decoder guards price f32 KV and have no Metal ceiling; auto-pin inflates Metal KV vs the 4096 default or exceeds 32768 and forces CPU fallback | decoder/fitguard.go:367-424,742-757; decoder/model.go:608-618; metal/model.go:21-59; decoder/fitplan.go:233-243; decoder/residency.go:1123-1142; audit N-41 (:1588-1603) | resident.cpp / allocator.cpp budget by memory limit, not by kernel ceiling | KV 3-7x default at pin [R]; CPU fallback = whole-forward loss | unit test with injected hostRAMAvailable and a 131072-window config; kill if guardGIWFit never returns > 32768 |
+| C-B01 | Minor (Major only at top of band on 0.5B) | No on-device token feedback: every token pays wake + 608 KB copy + host argmax + embed row + commit between kernels | metal/model.go:2044-2109,2170-2200; decoder/model.go:2231-2288 | eval.cpp:29-69 async_eval; device.cpp:511-513 | 0.30-0.45 ms/token [P]: 2.2-3.4% (1.5B), 0.7-1.1% (7B), 5.3-7.9% (0.5B, assumes the 1.5B gap) | log kernStart(t+1)-kernEnd(t) (aikit metal.go:808-814); kill if gap < 0.15 ms |
+| C-P02 | Minor | ForwardSample / ForwardArgmax are synchronous Begin/End and bypass encode-ahead | metal/gumbel_sample.go:45-71; metal/model.go:2175-2203 | eval.cpp:29-69 | up to 3.6-4.2% (0.5B), ~2.8% (1.5B), ~0.9% (7B) [P] | add sample mode to execJob, A/B at T=1.0 |
+| C-B02 | Minor, REVISIT | Residency verdict: MLX sets are requests under memory pressure and default to 0; goinfer's recorded bisect says pinning costs in proportion to set size; the premise was measured on paged MoE, not dense | resident.h:15-26; resident.cpp:221-237; allocator.cpp:100-105,254-262; metal/model.go:1534-1600; s6-alias-2026-09-24.md:197-198 | resident.cpp | 7B alias cost -1.4% [R]; recovery or regression unknown | per-encoder set on dense 7B, interleaved A/B n>=12; kill if no recovery of the 1.4% or +0.5 ms/token |
 | C-B03 | Minor, REVISIT | MLX's spin fence (fast-synch) is not what the recorded shared-event test measured | fence.cpp:11-24,34-50; kernels/fence.metal; utils.h:220-222; metal/pagecost_sharedevent_test.go:47-64 | event.cpp is MTLSharedEvent | upper bound only: 7.8 ms/token = 5.4% of M26 at 30 boundaries [D]; no saving figure recorded | empty-CB round trip: commit+wait vs commit+spin, n>=1000; kill if saving < 25 us/boundary |
-| C-N02 | Minor | Whole-prompt prefill is one command buffer: no cancel point, scratch O(M), watchdog behaviour unrecorded | metal/backend.go:729-763; metal/prefill.go:950-1030 | device.cpp:604-622 (40-50 ops/CB) | not an effect finding | cross-ref area A |
+| C-N02 | Minor | Whole-prompt prefill is one command buffer: no cancel point, scratch O(M), watchdog behaviour unrecorded | metal/backend.go:751-795; metal/prefill.go:1065-1145 | device.cpp:604-622 (40-50 ops/CB) | not an effect finding | cross-ref area A |
 | C-G01 | Minor (G) | TestMetal_CloseFreesMemory gates on RSS only, which UMA GPU buffers do not move | metal/close_leak_test.go; sibling tests 144-282 use CurrentAllocatedSize | none | n/a | make the RSS test also assert CurrentAllocatedSize |
 | C-D01 | Minor (D) | Stale comments/specs: guardGIWFit "file-backed" comment, S6 "never swap" wording vs v15, attnFACoreCount=14 vs 16-core target, N-20 premise, ForwardArgmax contradictory comments, runtime-selftest spec unimplemented | listed in entry | none | n/a | read-only |
-| C-N01 | Minor | Encoder.Dispatch binds through a fixed [16] scratch with no length check; widest call binds 15 | aikit metal.go:676-700,819-842; metal/batch.go:629-631 | none | n/a | add a len guard |
-| C-N03 | Minor | PrefillLast allocates 26 fresh buffers per call from zero-filled Go slices (34.3 MB at 1.5B, M=512 [C]) | metal/prefill.go:950-1030 | allocator.cpp BufferCache | recorded host overhead indistinguishable from zero (metal-prefill-decomp-2026-09-25.md:49-50); at most 0.5% [P] | not worth a probe unless short-prompt TTFT becomes a target |
+| C-N01 | Minor | Encoder.Dispatch binds through a fixed [16] scratch with no length check; widest call binds 15 | aikit metal.go:676-700,819-842; metal/batch.go:633-635 | none | n/a | add a len guard |
+| C-N03 | Minor | PrefillLast allocates 26 fresh buffers per call from zero-filled Go slices (34.3 MB at 1.5B, M=512 [C]) | metal/prefill.go:1065-1145 | allocator.cpp BufferCache | recorded host overhead indistinguishable from zero (metal-prefill-decomp-2026-09-25.md:49-50); at most 0.5% [P] | not worth a probe unless short-prompt TTFT becomes a target |
 
 ---
 
@@ -1244,10 +1282,10 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 **Claim.** `buildGemma4MoELayer` and `buildMoELayer` precompute every expert's gate|up and down f16 scales into heap `[]uint16` slices (`gScaleCache`, `dScaleCache`) and keep them for the life of the model. On a v15 .giw those scales already exist in the mmap as WeightMat storage (decoder/serialize.go:88, giwVersion 15; `Int4F16()` returns them as views). The cache is a second copy, anonymous, therefore the only kind of memory in the load path that can swap.
 
 **Evidence.**
-- Cache build: metal/gemma4_moe.go:289-299 (`int4DirectBytes(experts[ei])` into `gScaleCache[ei]`, same for down). `int4DirectBytes` (metal/model.go:504-513) goes through `decoder.Int4F32(w)` then `parallelF32ToF16` into a fresh `make([]uint16, ...)`. The bytes half already uses the aliased path (`int4DirectBytesOnly`, metal/model.go:522-529, via `w.Int4F16()`), so the scales are the only duplicated half.
-- Consumption: the stage closure returns `gScaleCache[ei]` (metal/gemma4_moe.go:300-304) and the slot fill copies it with `copyU16sToBuf` (metal/gemma4_moe.go:360-361). metal/moe.go:491-504 has the same cache for the generic paged MoE.
-- The pread path's own comment says scales "stay f32 to f16 from the heap-resident q4s ... so they never fault the mmap" (metal/gemma4_moe.go:316-322). That is the v13 premise (f32 scales on heap); under v15 the heap f32 copy is gone and the cache is the only heap holder.
-- Size, counted: ~186K scales per expert (the comment at metal/model.go:530-533 says "~186K scales" per expert) x 2 B x 30 layers x 128 experts = 185,856 x 2 x 30 x 128 = 1,427,374,080 B = 1.43 GB [C]. The Sep 12 audit N-20 recorded the f32 form of the same heap as "~2.85 GB on the 26B, 2x the bytes the GPU consumes" (audit-metal-2026-09-12.md:1384-1386), which is 1.43 GB at f16 [R]; the layer count and expert count are the M26 configuration, not re-read here (section (f)).
+- Cache build (at `844700f8`; all removed 2026-10-02): metal/gemma4_moe.go's paged branch (`int4DirectBytes(experts[ei])` into `gScaleCache[ei]`, same for down). `int4DirectBytes` (metal/model.go) goes through `decoder.Int4F32(w)` then `parallelF32ToF16` into a fresh `make([]uint16, ...)`. The bytes half already uses the aliased path (`int4DirectBytesOnly`, metal/model.go:556-562, via `w.Int4F16()`), so the scales are the only duplicated half.
+- Consumption (at `844700f8`): the stage closure returns `gScaleCache[ei]` and the pread slot fill copies it with `copyU16sToBuf`, both in metal/gemma4_moe.go's paged branch; metal/moe.go's paged branch has the same cache for the generic paged MoE.
+- The pread path's own comment said scales "stay f32 to f16 from the heap-resident q4s ... so they never fault the mmap" (metal/gemma4_moe.go at `844700f8`; corrected 2026-10-02). That is the v13 premise (f32 scales on heap); under v15 the heap f32 copy is gone and the cache is the only heap holder.
+- Size, counted: ~186K scales per expert (the comment at metal/model.go:564-567 says "~186K scales" per expert) x 2 B x 30 layers x 128 experts = 185,856 x 2 x 30 x 128 = 1,427,374,080 B = 1.43 GB [C]. The Sep 12 audit N-20 recorded the f32 form of the same heap as "~2.85 GB on the 26B, 2x the bytes the GPU consumes" (audit-metal-2026-09-12.md:1384-1386), which is 1.43 GB at f16 [R]; the layer count and expert count are the M26 configuration, not re-read here (section (f)).
 - Observed: the M26 untagged host heap is 1,948 MB in every arm, aliased or copied (s6-alias-2026-09-24.md:264) and S6 says it does not touch it (:269-270). The cache accounts for 1.43 of those 1,948 MB by count; the other ~0.5 GB is unattributed here.
 - The fit guard does not price it: decoder/residentneed.go ResidentNeedBytes adds weights, the Metal host copy and KV, with mmap-aliased bytes subtracted (decoder/weightbytes.go:184-192); no term for a paged-expert scale cache.
 
@@ -1267,20 +1305,22 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 #### C-C01 [C, memory] Decoder fit guards ignore Metal's ceiling and KV precision (Major, conditional on a load the guard trims)
 
-**Claim.** `guardGIWFit` (and `guardFit` for GGUF) size an unpinned context as the largest that fits free memory, up to the model's own window, priced at f32 KV unless `Options.KVPrecision == "f16"` (decoder/fitguard.go:367-424, 394-395, 742-757). Metal's real KV is f16 (metal/model.go:1229-1234, metal/backend.go:300-336) and its resident cap is a separate 32768 ceiling (metal/model.go:23-51). `Plan("metal")` has no ceiling term; only webgpu does (decoder/fitplan.go:225-227,259,290-291,306-309). The pinned value is passed as `opts.ResidentContext` (decoder/model.go:589-596) and `resolveMetalCtxCap` reads it as an explicit request (metal/model.go:38-51). Two consequences:
+**Claim.** `guardGIWFit` (and `guardFit` for GGUF) size an unpinned context as the largest that fits free memory, up to the model's own window, priced at f32 KV unless `Options.KVPrecision == "f16"` (decoder/fitguard.go:367-424, 394-395, 742-757). Metal's real KV is f16 (metal/model.go:1268-1273, metal/backend.go:300-336) and its resident cap is a separate 32768 ceiling (metal/model.go:21-59). `Plan("metal")` has no ceiling term; only webgpu does (decoder/fitplan.go:233-243,275,306-307,322-328). The pinned value is passed as `opts.ResidentContext` (decoder/model.go:608-618) and `resolveMetalCtxCap` reads it as an explicit request (metal/model.go:43-59). Two consequences:
 
-1. Inflation. A guard that trims on a tight machine hands Metal a pin of 12-30k positions. Without the trim the backend default is 4096 (metal/model.go:23). So the machine with less free memory allocates more KV. N-41 recorded the pins that did this: 12,109-29,666 positions on a machine with about 5 GB free, "3-7x over the ceiling" (audit-metal-2026-09-12.md:1595-1599). With the ceiling now 32768, none of those pins would be refused today; they would be allocated, which is the inflation case. KV bytes are linear in context, so the Metal KV at those pins is 3-7x the 4096-default KV [D].
-2. Refusal. `resolveMetalCtxCap` returns an error above 32768 (metal/model.go:38-51). For a model whose window exceeds 32768, the guard's pin is the largest context that fits, which is above 32768 whenever the budget is large enough to hold 32768 f32-priced positions but not the whole window. Metal then refuses, BuildResident returns an error, and decoder/residency.go:1094-1113 prints one stderr line and continues on the CPU/staged path: the whole forward moves to CPU. A roomier machine thus gets CPU while a tighter one gets a large GPU KV. The refusal band for a model with per-position f32 KV cost k bytes and window W is budget in (32768 x k + 256 MiB, W x k + 256 MiB) (`prefillAttnScratchBudget` is 256 MiB, decoder/scratch.go:232) [C]. I did not read a config in the repo with W above 32768 and have no recorded run in that band.
+1. Inflation. A guard that trims on a tight machine hands Metal a pin of 12-30k positions. Without the trim the backend default is 4096 (decoder/fitplan.go:184). So the machine with less free memory allocates more KV. N-41 recorded the pins that did this: 12,109-29,666 positions on a machine with about 5 GB free, "3-7x over the ceiling" (audit-metal-2026-09-12.md:1595-1599). With the ceiling now 32768, none of those pins would be refused today; they would be allocated, which is the inflation case. KV bytes are linear in context, so the Metal KV at those pins is 3-7x the 4096-default KV [D].
+2. Refusal. `resolveMetalCtxCap` returns an error above 32768 (metal/model.go:43-59). For a model whose window exceeds 32768, the guard's pin is the largest context that fits, which is above 32768 whenever the budget is large enough to hold 32768 f32-priced positions but not the whole window. Metal then refuses, BuildResident returns an error, and decoder/residency.go:1123-1142 prints one stderr line and continues on the CPU/staged path: the whole forward moves to CPU. A roomier machine thus gets CPU while a tighter one gets a large GPU KV. The refusal band for a model with per-position f32 KV cost k bytes and window W is budget in (32768 x k + 256 MiB, W x k + 256 MiB) (`prefillAttnScratchBudget` is 256 MiB, decoder/scratch.go:232) [C]. I did not read a config in the repo with W above 32768 and have no recorded run in that band.
 
-**Why this is not already closed.** N-41's own text says "Fix (not attempted, out of scope for this pass)" (audit-metal-2026-09-12.md:1603-1607); the later cap raise (metalCtxCapDefault stays 4096, metalCtxCapMax 4096 to 32768, metal/model.go:19-32) moved the number the three failing tests tripped over but not the unawareness; `Plan("metal")` still has no ceiling (decoder/fitplan.go:225-227). `decoder/residency.go:1094-1113` makes the symptom a stderr line rather than a failure, so no test sees it.
+**Why this is not already closed.** N-41's own text says "Fix (not attempted, out of scope for this pass)" (audit-metal-2026-09-12.md:1603-1607); the later cap raise (metalCtxCapDefault stays 4096, metalCtxCapMax 4096 to 32768, metal/model.go:19-34) moved the number the three failing tests tripped over but not the unawareness; `Plan("metal")` still has no ceiling (decoder/fitplan.go:233-243). `decoder/residency.go:1123-1142` makes the symptom a stderr line rather than a failure, so no test sees it.
 
 **MLX analog.** MLX has no kernel context ceiling to reconcile; its limits are memory-driven (allocator.cpp:63-65 block and gc limits). Not a borrowable technique; the fix is local.
 
-**Fix.** Give `Plan("metal")` and the two guards a backend ceiling (the webgpu ceiling's shape, decoder/fitplan.go:169), price Metal KV as f16 via `Model.ResidentKVBytes("metal", ...)` (which the Metal guard already uses, metal/backend.go:330-336) and make an auto-pin (unpinned flag, decoder/model.go:241-244) a ceiling that Metal clamps to rather than refuses.
+**Fix.** Give `Plan("metal")` and the two guards a backend ceiling (the webgpu ceiling's shape, decoder/fitplan.go:169), price Metal KV as f16 via `Model.ResidentKVBytes("metal", ...)` (which the Metal guard already uses, metal/backend.go:330-336) and make an auto-pin (unpinned flag, decoder/model.go:243-246) a ceiling that Metal clamps to rather than refuses.
 
 **Projection.** Memory: for the inflation case KV rises from the 4096-default to the pin; bytes scale linearly [D]. Perf: the refusal case loses the whole GPU forward (not a percentage figure; I have no recorded CPU-versus-Metal decode ratio for these models and do not invent one).
 
 **Bit-identity.** Not applicable to a guard change; the clamp changes capacity only.
+
+**Status, 2026-10-01.** Fixed by T0.4 (§10, Track 0) on the Metal side: an auto-pin is now a ceiling Metal clamps to, and `Plan("metal")` has the ceiling. The guards' f32 pricing was kept on purpose; the Track 0 row says why and what it costs.
 
 **Probe.** Unit test, no device: build a Config with MaxPositions 131072, inject `hostRAMAvailable` at several values, record `guardGIWFit`'s return, then call `resolveMetalCtxCap` with it. **Kill:** if no injected value yields a pin above 32768, the refusal half is not reachable (the inflation half stands on N-41's recorded pins). Companion probe for inflation: whether untouched KV pages count at allocation (section (f)), which decides whether the inflation costs footprint at load or only as the context fills.
 
@@ -1288,9 +1328,12 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 #### C-B01 [B, P] On-device token feedback (async chain) (Minor on 1.5B/7B)
 
+**Status, 2026-10-03: shipped on the branch.** Graded chain ÷ off **1.085×** on the 1.5B (9 of 9 pairs above 1); 0.5B
+1.063×, 7B 1.010×. Record: `docs/tasks/task-metal-audit-2026-10.md`, "The night of 2026-10-02: results".
+
 **What MLX does.** `async_eval` encodes graph n+1 on the host while graph n runs and commits with a completion handler; there is no host wait between graphs (eval.cpp:29-69). The commit policy is per-chip ops and MB per buffer (device.cpp:511-513, 604-622: 'p' 20/40, 'g' 40/40, 's' 50/50, 'd' 50/50, default 40/40; env MLX_MAX_OPS_PER_BUFFER, MLX_MAX_MB_PER_BUFFER). That the next token's id is an array inside the graph is a property of mlx-lm, which is not in the snapshot, so I cite only the mechanism MLX provides (async commit without a wait), not the decode loop.
 
-**What goinfer does.** `execLoop` (metal/model.go:1993-2058) commits token t, pre-encodes t+1's buffers while t runs, waits, copies 608 KB of logits, applies softcap, acks (a channel), and only then can the host argmax the logits and load the next embedding row. Greedy on Metal is that path: Metal has no `ResidentGreedy` (N-10 in the comment at metal/model.go:2118-2123; decoder/model.go:1899-1901 `hasGreedy` is false), recorded as host argmax of ~30 us on UMA. `ForwardArgmax` exists but is test/spec-only and synchronous (metal/model.go:2124-2152). The id therefore always round-trips through the host before the next token's first kernel can start, and that gap is exactly what encode-ahead leaves: 0.45 ms (1.5B), 0.50 ms (7B) [R] concurrency-mc3-s4-2026-09-27.md:35-36.
+**What goinfer does.** `execLoop` (metal/model.go:2044-2109) commits token t, pre-encodes t+1's buffers while t runs, waits, copies 608 KB of logits, applies softcap, acks (a channel), and only then can the host argmax the logits and load the next embedding row. Greedy on Metal is that path: Metal has no `ResidentGreedy` (N-10 in the comment at metal/model.go:2169-2174; decoder/model.go:1927-1929 `hasGreedy` is false), recorded as host argmax of ~30 us on UMA. `ForwardArgmax` exists but is test/spec-only and synchronous (metal/model.go:2175-2203). The id therefore always round-trips through the host before the next token's first kernel can start, and that gap is exactly what encode-ahead leaves: 0.45 ms (1.5B), 0.50 ms (7B) [R] concurrency-mc3-s4-2026-09-27.md:35-36.
 
 **Delta.** Chain the token on device for the greedy/device-picked modes: reuse the fused `gemv_w8a8_amax` + `argmax_finish` head (already used by `ForwardArgmax`), add a gather kernel that writes the next embedding row (with the arch embed scale, `loadEmbedRow`, G-02) from the device-resident table into the input buffer, and commit CB(t+1) behind CB(t) on the same queue (queue order, no event). The host then reads only the 4-byte token for stop checks. One speculative forward past an EOS or stop string is wasted per sequence; the KV slot it writes is overwritten later.
 
@@ -1298,17 +1341,38 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 **Park-line context.** The recorded MC3 batched-step executor was parked at about 4% (1.5B) and 1.3% (7B) (concurrency-mc3-s4-2026-09-27.md:38-40); this is the same bucket from the single-sequence side with a smaller scope, and a similar size on the 1.5B.
 
-**Why not already closed.** I grepped docs and code for token feedback, on-device embedding gather and speculative commit and found only `pCopyVec` (metal/model.go:237, a batched copy), a qwen35 test comment about greedy self-feeding, and a host embedding-gather note (decoder/weightbytes.go:132); nothing records this as tried or rejected. N-27 (declined) concerns the logits copy alone, a ~30-60 us piece of this gap (audit-metal-2026-09-12.md:1466-1470).
+**Why not already closed.** I grepped docs and code for token feedback, on-device embedding gather and speculative commit and found only `pCopyVec` (metal/model.go:288, a batched copy), a qwen35 test comment about greedy self-feeding, and a host embedding-gather note (decoder/weightbytes.go:132); nothing records this as tried or rejected. N-27 (declined) concerns the logits copy alone, a ~30-60 us piece of this gap (audit-metal-2026-09-12.md:1466-1470).
 
 **Bit-identity.** Identical: same kernels in the same order; only where the token id travels changes. The gather must reproduce `loadEmbedRow` exactly, including the arch scale and any learned position add (`addLearnedPos`). Tied-embedding and device-picked modes only; non-greedy modes that need full logits (penalties, processors, logprobs) keep the host path.
 
 **Probe.** Read `kernStart(t+1) - kernEnd(t)` from the existing timestamps (`ReadTimes`, aikit metal.go:808-814) across 200 tokens on 1.5B and 0.5B to get the real GPU-idle gap; that number replaces the band. **Kill:** median gap under 0.15 ms.
 
+**Status, 2026-10-02 (branch `metal-audit`): built, bit-identical, pending its night grade.** T1.3 measured the gap at
+0.583 ms (0.5B) and 0.663 ms (1.5B), so the finding stood.
+
+The build is `metal/greedy_chain.go`:
+- The embedding is gathered on the device (`embed_gather_i8`), from the LM-head table for a tied head. For an untied
+  one it comes from a device copy of the int8 embedding table, made on first use and priced against the memory guard.
+  The bench Qwen GGUFs are all untied.
+- No embedding scale or learned position: the chain declines those.
+- The fused argmax head ends each buffer, and token t+1's buffer is committed before the host waits for t. On the identity
+tests, 0 tokens and 0 K/V elements differ across 80 tokens, and 150 tokens through `Generate`, a reused prefix
+included, are all served by the chain. The grade and its rule are in the task doc ("C-B01: built, pending its grade").
+
 ---
 
 #### C-P02 [P] Device-sampled decode bypasses encode-ahead (Minor)
 
-**Claim.** `ForwardSample` (metal/gumbel_sample.go:45-71) and `ForwardArgmax` (metal/model.go:2124-2152) each do `Begin ... End` on their own encoder, synchronously, and never enter `execLoop`. The decode loop routes temperature-only sampling above 0.2 through `ForwardSample` (decoder/model.go:1938-1942, 2157-2174); T at or below 0.2 goes to the optimistic-forward overlap (decoder/spec_optfwd.go:30-31, optFwdMaxTemp 0.2); top-k/top-p have no Metal device path (no `TopKAvailable`/`ForwardTopK` in metal/*.go) and use the pipelined full-logits `Forward`. So at the serve default temperature 1.0 [R] audit-metal-2026-09-12.md:1487-1489 (N-28), the shipped device sampler gets the synchronous path while greedy gets the pipelined one.
+**Status, 2026-10-03: shipped on the branch.** The sampled chain at T = 1: **1.066×** on the 1.5B (9/9), 1.160× on
+the 0.5B (above the projected 3.6–4.2% because the host round trip went too), 1.022× on the 7B.
+
+**Status, 2026-10-02 (branch `metal-audit`): built as the sampled chain, bit-identical, pending its night grade.**
+Rather than adding a sample mode to `execJob`, the C-B01 chain was given `ForwardSample`'s draw: each buffer ends with
+the full LM-head row and the two gumbel dispatches, and the next one is committed before the host waits. That closes
+the missing encode-ahead and the host round trip together. The tests, the −1 recovery and the grade's rule are in the
+task doc ("C-P02: built, pending its grade").
+
+**Claim.** `ForwardSample` (metal/gumbel_sample.go:45-71) and `ForwardArgmax` (metal/model.go:2175-2203) each do `Begin ... End` on their own encoder, synchronously, and never enter `execLoop`. The decode loop routes temperature-only sampling above 0.2 through `ForwardSample` (decoder/model.go:1985-1989, 2157-2174); T at or below 0.2 goes to the optimistic-forward overlap (decoder/spec_optfwd.go:30-31, optFwdMaxTemp 0.2); top-k/top-p have no Metal device path (no `TopKAvailable`/`ForwardTopK` in metal/*.go) and use the pipelined full-logits `Forward`. So at the serve default temperature 1.0 [R] audit-metal-2026-09-12.md:1487-1489 (N-28), the shipped device sampler gets the synchronous path while greedy gets the pipelined one.
 
 **Recorded numbers.** R7b device draw ran at 0.958-0.964x of greedy on the 0.5B, host draw at 0.799-0.842x (r7b-metal-mac-2026-09-20.md:215-216, 263). Greedy there has encode-ahead; the device sample does not, so a part of the 3.6-4.2% shortfall to greedy is the missing encode-ahead.
 
@@ -1328,13 +1392,13 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 *Does MLX keep weights resident with a residency set?* Only if asked. `set_wired_limit` defaults to 0, "i.e. nothing is wired unless asked for" (resident.h:15-16); the manager spreads allocations over several size-capped sets, each with a standing `requestResidency()`, attached to every command queue (resident.h:18-23; resident.cpp:221-237). It is a request, subject to GPU memory pressure: the cap per set exists because a set can lose residency under GPU memory pressure and only that set must be re-made resident (resident.h:18-22).
 
-*Does goinfer?* Only for the paged-MoE slot pool (metal/model.go:1494-1560, scope "slots"), attached per encoder on phase-2 command buffers (`Encoder.UseResidencySet`, aikit residencyset.go:125; metal/moe.go:868, metal/gemma4_moe.go:579), not on the queue. Dense weights are not in any set; the NoCopy-aliased pages are file-backed and "wired only while a command buffer uses them" (metal/alias.go:31-35).
+*Does goinfer?* Only for the paged-MoE slot pool (metal/model.go:1534-1600, scope "slots"), attached per encoder on phase-2 command buffers (`Encoder.UseResidencySet`, aikit residencyset.go:125; metal/moe.go:895, metal/gemma4_moe.go:594), not on the queue. Dense weights are not in any set; the NoCopy-aliased pages are file-backed and "wired only while a command buffer uses them" (metal/alias.go:31-35).
 
 *Effect on the 16 GB machine under memory pressure.* The swap incidents in the never-swap record were anonymous pages (host copies of weights); S6's alias removed them (1.5B 90 vs 1,013 MB, 7B 105 vs 4,134 MB at token 32 [R] s6-alias-2026-09-24.md:188-189). A residency set over aliased weights would hold reclaimable page-cache pages wired continuously, which makes them non-reclaimable for the rest of the system, the wrong direction under pressure. The recorded memory-hog arm (7B, a 6.1 GiB random hog): alias 0 MB swap versus +56 MB for the copy, decode 21.73 vs 21.81 tok/s (s6-alias-2026-09-24.md:147-159); the arm says the alias already behaves, so a set has no swap benefit to add.
 
 *How does MLX's wired limit work and could goinfer set the equivalent?* `set_wired_limit(limit)` (allocator.cpp:254-262) rejects values above `max_recommended_working_set_size` and calls `MetalAllocator::set_wired_limit` (allocator.cpp:100-105), which resizes the residency-set manager's budget. It is not the `iogpu.wired_limit_mb` sysctl. Goinfer has every binding needed: `NewResidencySet`, `Add`, `Commit`, `RequestResidency`, `Queue.AddResidencySet`, `Encoder.UseResidencySet` (aikit residencyset.go:24-29,98-125) and no wired-limit code of its own (grep over metal/ and decoder/ found none).
 
-*The cost goinfer measured.* Queue-level attach of a ~3 GB set cost +2.07 ms per command buffer, +62 ms/token on paged phase 1 (metal/model.go:1554-1556); pinning more than the slot pool regressed phase 1 in proportion to the pinned size, read/write-agnostic (metal/model.go:1497-1504, 1450); pinned slots took phase-2 idle from 9 to 0.44 ms/CB. That is about 0.7 ms per CB per GB [D]. MLX attaches to every queue but runs 7-8 command buffers per token at goinfer's op count (below); goinfer's dense decode runs 1, but a paged-MoE token submits per layer, which is why the per-encoder attach was needed (M-14 closed).
+*The cost goinfer measured.* Queue-level attach of a ~3 GB set cost +2.07 ms per command buffer, +62 ms/token on paged phase 1 (metal/model.go:1594-1596); pinning more than the slot pool regressed phase 1 in proportion to the pinned size, read/write-agnostic (metal/model.go:1537-1544, 1450); pinned slots took phase-2 idle from 9 to 0.44 ms/CB. That is about 0.7 ms per CB per GB [D]. MLX attaches to every queue but runs 7-8 command buffers per token at goinfer's op count (below); goinfer's dense decode runs 1, but a paged-MoE token submits per layer, which is why the per-encoder attach was needed (M-14 closed).
 
 **REVISIT (stale premise).** The bisect was measured on the paged-MoE path (many small command buffers per token, pread-dirtied slot buffers) on an otherwise loaded 16 GB machine; it was never run on dense decode with NoCopy-aliased weights. The only recorded dense symptom of the alias is the 7B's -1.40/-1.49/-1.19% decode cost, which grew from about -0.3% when the LM head and scales were also aliased (s6-alias-2026-09-24.md:197-198). If that cost is per-command-buffer wiring of aliased pages, a per-encoder set over the aliased weights could remove it; if the cost is set-size overhead as the bisect says, the same set would add about 0.7 ms per GB per token (about 5% of a 1.5B token for 0.9 GB [P], band 0 to +5%, basis: dense extrapolation of the paged figure, unmeasured).
 
@@ -1350,7 +1414,7 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 **What was recorded.** `TestPageCost_sharedEventReal` measured the MTLSharedEvent handshake at ~0.26 ms/boundary against ~0.23 ms for per-layer submit on the dense 1.5B, "recovers ~0%" (metal/pagecost_sharedevent_test.go:47-64). G-05 (audit-metal-2026-09-12.md:1154-1160) flagged that shape as lacking the cost it targets, and the Sep 12 closing list says M-11 and its shared-event re-run on the paged shape are "unchanged, still fully open" (:1760-1766). No re-run exists.
 
-**Premises that moved.** (1) The recorded boundary cost on the paged 26B was ~14-15 ms (M-11); the slot residency set cut phase-2 idle from 9 to 0.44 ms/CB (metal/model.go:1497,1539). The target cost the event design was meant to remove has therefore changed by an order of magnitude. (2) The tested primitive was the event, not the spin fence; a fence changes the wake path (user-space spin versus kernel-mediated `waitUntilCompleted`), which is a different quantity from the event-versus-commit comparison the test made.
+**Premises that moved.** (1) The recorded boundary cost on the paged 26B was ~14-15 ms (M-11); the slot residency set cut phase-2 idle from 9 to 0.44 ms/CB (metal/model.go:1537,1579). The target cost the event design was meant to remove has therefore changed by an order of magnitude. (2) The tested primitive was the event, not the spin fence; a fence changes the wake path (user-space spin versus kernel-mediated `waitUntilCompleted`), which is a different quantity from the event-versus-commit comparison the test made.
 
 **Bound, not a projection.** If a fence made a boundary free: 30 boundaries (one per layer) x 0.26 ms = 7.8 ms/token, 5.4% of the M26 token (mean of the four aliased arms in s6-alias-2026-09-24.md, 6.80/6.56/7.17/7.09 tok/s, i.e. 144.8 ms) [D]; with M-11's 61-81 command-buffer boundaries per token the bound is 14-19 ms. Neither is a saving figure: the saving per boundary is not recorded and the paged path has a real host dependency at each boundary (the host reads the router's choice and preads the experts), so a fence shortens the wake but cannot remove the host step.
 
@@ -1364,36 +1428,38 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 #### C-N02 [N, cross-ref A] Whole-prompt prefill is a single command buffer
 
-`PrefillLast` (metal/backend.go:729-763; metal/prefill.go) encodes the whole padded prompt into one command buffer and waits once. MLX splits work into 40-50 ops per buffer (device.cpp:604-622) and can abort between buffers. Here there is no cancel point between the first and last layer of an M-token prompt, per-request scratch is O(M) (metal/prefill.go:950-1030), and the GPU watchdog behaviour for a long single buffer has no record (section (f)). Chunked prefill exists only under MC3 (area E). Area A owns the effect; I note only the runtime-structure fact. Bit-identity of a split: identical if the split falls between dispatches (no kernel changes).
+`PrefillLast` (metal/backend.go:751-795; metal/prefill.go) encodes the whole padded prompt into one command buffer and waits once. MLX splits work into 40-50 ops per buffer (device.cpp:604-622) and can abort between buffers. Here there is no cancel point between the first and last layer of an M-token prompt, per-request scratch is O(M) (metal/prefill.go:1065-1145), and the GPU watchdog behaviour for a long single buffer has no record (section (f)). Chunked prefill exists only under MC3 (area E). Area A owns the effect; I note only the runtime-structure fact. Bit-identity of a split: identical if the split falls between dispatches (no kernel changes).
 
 #### C-G01 [G] RSS-only free test
 
-`TestMetal_CloseFreesMemory` (metal/close_leak_test.go) asserts on RSS. On UMA a GPU buffer is not necessarily in RSS, so a leak of device buffers does not move the number the test reads; sibling tests (metal/close_leak_test.go:144-282) read `CurrentAllocatedSize` and so can fail. Sep 12 G-06 closed two of its gates; this is the residue. Fix: assert `CurrentAllocatedSize` returns to its pre-load value (or below a stated slack) in the same test.
+`TestMetal_CloseFreesMemory` (metal/close_leak_test.go) asserts on RSS. On UMA a GPU buffer is not necessarily in RSS, so a leak of device buffers does not move the number the test reads; sibling tests (metal/close_leak_test.go:162-300) read `CurrentAllocatedSize` and so can fail. Sep 12 G-06 closed two of its gates; this is the residue. Fix: assert `CurrentAllocatedSize` returns to its pre-load value (or below a stated slack) in the same test.
+
+**Status, 2026-10-01.** Done: the test reads `CurrentAllocatedSize` through its own probe Device and fails if it ends more than 16 MiB above the post-warm-up value. Measured on the 0.5B: 655,360 bytes before and after every cycle, 401 MB with a resident built. With `Close` made to skip `ReleaseAll`, it fails at +1.6 GB (4 × 401 MB); RSS also failed, but saw only +631 MB and +1022 MB of it in two runs.
 
 #### C-D01 [D] Stale comments and specs
 
 1. decoder/model.go (S4 comment before `guardGIWFit`, :571-579) says a .giw's weights are file-backed so no fit check is made at all; since S6 and v15 that is true of the weights but not of the paged scale cache (C-P01) or the ~1.95 GB heap.
 2. The never-swap and S6 wording that the load path "never swaps" holds for aliased dense weights (0 MB swap, s6-alias-2026-09-24.md:147-159) but not for the M26's anonymous heap; the M26 hog arm was deliberately not run (:148).
-3. metal/model.go:2594-2599 `attnFACoreCount = 14` against the 16-core M1 Pro target (area B owns the effect; the constant is a runtime-visible stale value).
+3. metal/model.go:2648-2653 `attnFACoreCount = 14` against the 16-core M1 Pro target (area B owns the effect; the constant is a runtime-visible stale value).
 4. N-20's premise (an f32 heap copy of the scales exists) no longer holds under v15 (C-P01).
-5. `ForwardArgmax` carries two contradictory comments: "NOT actually production's greedy decode path ... exercised only by tests/gates" (metal/model.go:2118-2123) and "a genuine production entry point (the fast-greedy path)" (:2051-2053). The first is right (no `ResidentGreedy`, decoder/model.go:1899).
+5. `ForwardArgmax` carries two contradictory comments: "NOT actually production's greedy decode path ... exercised only by tests/gates" (metal/model.go:2169-2174) and "a genuine production entry point (the fast-greedy path)" (:2051-2053). The first is right (no `ResidentGreedy`, decoder/model.go:1927).
 6. docs/tasks/task-metal-runtime-selftest.md specifies a runtime self-test that is not implemented. (2026-10-01: folded into docs/tasks/task-hardware-coverage-2026-10.md §H2; the original is archived in docs/completed/.)
 
 #### C-N01 [N] Fixed-size binding scratch
 
-`Encoder.Dispatch` and `DispatchTG` fill `idScr [16]` and `offScr [16]` and call one batched `setBuffers:offsets:withRange:` (aikit metal.go:676-700,819-842) with no length check. The widest dispatch in goinfer binds 15 buffers (metal/batch.go:629-631). One more binding on that kernel overruns the array. Add a bounds check or panic with the kernel name at encode time.
+`Encoder.Dispatch` and `DispatchTG` fill `idScr [16]` and `offScr [16]` and call one batched `setBuffers:offsets:withRange:` (aikit metal.go:676-700,819-842) with no length check. The widest dispatch in goinfer binds 15 buffers (metal/batch.go:633-635). One more binding on that kernel overruns the array. Add a bounds check or panic with the kernel name at encode time.
 
 #### C-N03 [N] Per-request prefill scratch
 
-`PrefillLast` allocates 26 buffers per call (dense; 33 with MoE): six f16 activation buffers from `make([]uint16, ...)` (zero-filled Go slices copied into a fresh MTLBuffer by `NewBufferU16s`), `posB`, `moeDst` and eighteen one-word uniforms, released at return (metal/prefill.go:950-1030). Counted at the 1.5B (H=1536, I=8960, qkvDim 2048, qDim 1536), Mpad=512: xF 1,572,864 + normF 1,572,864 + qkvF 2,097,152 + ctxF 1,572,864 + guF 18,350,080 + dqF 9,175,040 = 34,340,864 B = 34.3 MB [C], i.e. 2,096 16 KB pages touched twice (Go heap, then MTLBuffer). MLX's `BufferCache` and 1 MiB small-buffer heap (allocator.h:51-52, allocator.cpp) exist to avoid this. Effect bound: the recorded prefill replica found host-side work "(f16 conversion, buffer allocation, encoding) indistinguishable from zero" against a ~1,580 ms K=512 wall (metal-prefill-decomp-2026-09-25.md:49-50, 94-95), so at most 0.5% [P] (basis: that statement plus the 17% wall spread). Not pursued; a pool is bit-identical.
+`PrefillLast` allocates 26 buffers per call (dense; 33 with MoE): six f16 activation buffers from `make([]uint16, ...)` (zero-filled Go slices copied into a fresh MTLBuffer by `NewBufferU16s`), `posB`, `moeDst` and eighteen one-word uniforms, released at return (metal/prefill.go:1065-1145). Counted at the 1.5B (H=1536, I=8960, qkvDim 2048, qDim 1536), Mpad=512: xF 1,572,864 + normF 1,572,864 + qkvF 2,097,152 + ctxF 1,572,864 + guF 18,350,080 + dqF 9,175,040 = 34,340,864 B = 34.3 MB [C], i.e. 2,096 16 KB pages touched twice (Go heap, then MTLBuffer). MLX's `BufferCache` and 1 MiB small-buffer heap (allocator.h:51-52, allocator.cpp) exist to avoid this. Effect bound: the recorded prefill replica found host-side work "(f16 conversion, buffer allocation, encoding) indistinguishable from zero" against a ~1,580 ms K=512 wall (metal-prefill-decomp-2026-09-25.md:49-50, 94-95), so at most 0.5% [P] (basis: that statement plus the 17% wall spread). Not pursued; a pool is bit-identical.
 
 ---
 
 #### Direct answers: launch overhead per token, goinfer versus MLX
 
-**Count.** Dense Qwen2, 28 layers: 11 dispatches per layer [C] (attention half 7: norm, qkv GEMV with bias, rope, kv store, attention, o-proj with residual, plus the f32-to-f16 conversion on the f16 lane; FFN half 4: norm, fused gate|up GEMV, SwiGLU, down with residual; metal/model.go:2703-2854 and 2357-2445), plus 2 at the head: 11 x 28 + 2 = 310 dispatches/token (338 when `attention_fa` adds partial+combine, i.e. +1 dispatch x 28 layers at depth >= 1536: 310 + 28 = 338). `Encoder.Dispatch` makes three purego calls (setComputePipelineState on change, one batched setBuffers, dispatchThreads; aikit metal.go:819-842); every adjacent pair of dispatches has different pipelines, so the pipeline set is not skipped; 4 of 11 per layer are `DispatchTG` with one more call (setThreadgroupMemoryLength): 11 x 3 + 4 = 37 per layer. 37 x 28 + 2 x 3 = 1,042 transitions per token, plus about 10 command-buffer-level calls (create, encoder, end, commit, wait, status, and four timestamp reads in `ReadTimes`, N-31). The Sep 12 audit counted "~1,030" (audit-metal-2026-09-12.md:1612). [C]
+**Count.** Dense Qwen2, 28 layers: 11 dispatches per layer [C] (attention half 7: norm, qkv GEMV with bias, rope, kv store, attention, o-proj with residual, plus the f32-to-f16 conversion on the f16 lane; FFN half 4: norm, fused gate|up GEMV, SwiGLU, down with residual; metal/model.go:2785-2937 and 2357-2445), plus 2 at the head: 11 x 28 + 2 = 310 dispatches/token (338 when `attention_fa` adds partial+combine, i.e. +1 dispatch x 28 layers at depth >= 1536: 310 + 28 = 338). `Encoder.Dispatch` makes three purego calls (setComputePipelineState on change, one batched setBuffers, dispatchThreads; aikit metal.go:819-842); every adjacent pair of dispatches has different pipelines, so the pipeline set is not skipped; 4 of 11 per layer are `DispatchTG` with one more call (setThreadgroupMemoryLength): 11 x 3 + 4 = 37 per layer. 37 x 28 + 2 x 3 = 1,042 transitions per token, plus about 10 command-buffer-level calls (create, encoder, end, commit, wait, status, and four timestamp reads in `ReadTimes`, N-31). The Sep 12 audit counted "~1,030" (audit-metal-2026-09-12.md:1612). [C]
 
-**Cost per transition.** Recorded host encode ~0.9 ms (metal/model.go:382-384) / 1,042 = 0.86 us each [D]. The aikit comment records that the two trims already shipped removed only ~0.5 ms of a ~2.4 ms/token overhead and that "the rest is GPU-side per-Dispatch latency, not Go-side msgSend" (aikit metal.go:686-689). Today's GPU floor with every pipeline no-op'd is 0.86 ms on the 1.5B = 2.8 us/dispatch [D]. After encode-ahead the visible host side is 0.45 ms [R].
+**Cost per transition.** Recorded host encode ~0.9 ms (metal/model.go:433-435) / 1,042 = 0.86 us each [D]. The aikit comment records that the two trims already shipped removed only ~0.5 ms of a ~2.4 ms/token overhead and that "the rest is GPU-side per-Dispatch latency, not Go-side msgSend" (aikit metal.go:686-689). Today's GPU floor with every pipeline no-op'd is 0.86 ms on the 1.5B = 2.8 us/dispatch [D]. After encode-ahead the visible host side is 0.45 ms [R].
 
 **MLX.** MLX encodes the same kind of per-op calls from C++ with no purego layer (per-call cost not measured here), puts 20-50 ops in a command buffer by chip (device.cpp:604-622) and commits asynchronously (eval.cpp:29-69). At goinfer's 310 dispatches that is 7 command buffers at 50 ops and 8 at 40 ([D]; MLX counts primitives, not dispatches, so the true count differs); which bucket an M1 Pro falls in is not statically known (section (f)). MLX does not wait between graphs; goinfer waits once per token.
 
@@ -1413,7 +1479,7 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 **What goinfer has.** One serial encoder; every buffer hazard-tracked. M-16 tested untracked buffers on the serial encoder and found 99.6-101.5% of baseline (aikit hazard_tracking_probe_test.go; audit M-16 closed NEGATIVE, :1779), as expected: a serial encoder already orders every dispatch.
 
-**Independent branches in a dense layer: none.** The 11 dispatches per layer form one read-after-write chain: norm (writes the normed activation) feeds the qkv GEMV (writes `r.qkv`), rope2 rotates Q and K in place in `r.qkv`, kv_store reads K/V from `r.qkv` (one kernel for both K and V), attention reads `r.qkv` and the cache kv_store just wrote, the o-proj consumes the context, then the FFN chain norm to gate|up to SwiGLU to down+residual. q/k/v are already one fused GEMV and gate/up one fused GEMV (metal/model.go:2703-2854, 2410-2445), so the pairs a concurrent encoder would overlap have already been merged. The remaining theoretical pair is kv_store's V half against rope2, merged in one kernel. With a barrier at every dispatch a concurrent encoder gains about 0 on this path [P], band 0 to +0.3%, basis: the M-16 result on the serial encoder plus a chain with no unbarriered pair. The one family with independent branches is Gemma-4's parallel dense||MoE FFN (metal/model.go:2451-2539 comment); that is area D's.
+**Independent branches in a dense layer: none.** The 11 dispatches per layer form one read-after-write chain: norm (writes the normed activation) feeds the qkv GEMV (writes `r.qkv`), rope2 rotates Q and K in place in `r.qkv`, kv_store reads K/V from `r.qkv` (one kernel for both K and V), attention reads `r.qkv` and the cache kv_store just wrote, the o-proj consumes the context, then the FFN chain norm to gate|up to SwiGLU to down+residual. q/k/v are already one fused GEMV and gate/up one fused GEMV (metal/model.go:2785-2937, 2410-2445), so the pairs a concurrent encoder would overlap have already been merged. The remaining theoretical pair is kv_store's V half against rope2, merged in one kernel. With a barrier at every dispatch a concurrent encoder gains about 0 on this path [P], band 0 to +0.3%, basis: the M-16 result on the serial encoder plus a chain with no unbarriered pair. The one family with independent branches is Gemma-4's parallel dense||MoE FFN (metal/model.go:2502-2590 comment); that is area D's.
 
 **Bit-identity.** Concurrent dispatch of independent kernels is bit-identical (no reduction is reordered inside a kernel).
 
@@ -1421,10 +1487,10 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 | Negative | Recorded premise | Status today | Evidence |
 |---|---|---|---|
-| ICB (red-october.md:466; Sep 12 §5 :1614-1615) | Per-dispatch cost is GPU-side latency, not Go-side msgSend; per-token values (pos, key count, attention plan) vary | HOLDS. Recomputed bound: host encode 0.9 ms hidden to 0.45 ms visible, so an ICB can save at most that 0.45 ms (3.4%, 1.5B); the 0.86 ms floor is GPU-side and was measured with the encoder path unchanged. The attention plan switches at depth 1536 (11 vs 12 dispatches per layer), so one ICB per plan would be needed | metal/model.go:382-384; decomp doc :43; model.go attnFACoreCount region 2495-2507 |
-| Unretained references (MLX uses them, device.cpp:323,559) | Retain/release per binding is small against the risk of a freed buffer | HOLDS. Binding count per token is unchanged (310 dispatches, same as Sep 12); aikit binds with `commandBuffer` (retained refs). Lifetime would be safe (the ledger frees at Close, prefill scratch is released after a waiting `End`), so this is a measured-small-gain close, not a safety close; I did not find a gain figure that would reopen it | aikit metal.go:819-842; metal/prefill.go:983-1030 |
+| ICB (red-october.md:466; Sep 12 §5 :1614-1615) | Per-dispatch cost is GPU-side latency, not Go-side msgSend; per-token values (pos, key count, attention plan) vary | HOLDS. Recomputed bound: host encode 0.9 ms hidden to 0.45 ms visible, so an ICB can save at most that 0.45 ms (3.4%, 1.5B); the 0.86 ms floor is GPU-side and was measured with the encoder path unchanged. The attention plan switches at depth 1536 (11 vs 12 dispatches per layer), so one ICB per plan would be needed | metal/model.go:433-435; decomp doc :43; model.go attnFACoreCount region 2495-2507 |
+| Unretained references (MLX uses them, device.cpp:323,559) | Retain/release per binding is small against the risk of a freed buffer | HOLDS. Binding count per token is unchanged (310 dispatches, same as Sep 12); aikit binds with `commandBuffer` (retained refs). Lifetime would be safe (the ledger frees at Close, prefill scratch is released after a waiting `End`), so this is a measured-small-gain close, not a safety close; I did not find a gain figure that would reopen it | aikit metal.go:819-842; metal/prefill.go:1098-1145 |
 | Megakernel / dispatch-count fusion | A chain of 11 with reduction-order sensitivity | HOLDS. qkv and gate|up are already fused; ceiling for any further count reduction is the 0.86 ms floor (0.67% per 10% of dispatches [P]); fusing across a reduction boundary changes bits | red-october.md:466; decomp doc :43 |
-| Shared event (metal/pagecost_sharedevent_test.go:47-64) | Event handshake ~0.26 vs per-layer submit ~0.23 ms/boundary, measured on a dense 1.5B | STALE in shape. Target cost on the paged shape fell from ~9-15 ms to 0.44 ms/CB idle after the slot residency set; the primitive tested was the event, not MLX's fence; re-run never done (M-11 open). REVISIT as C-B03 with the cheapest probe above | audit :1154-1160, :1760-1766; metal/model.go:1497,1539 |
+| Shared event (metal/pagecost_sharedevent_test.go:47-64) | Event handshake ~0.26 vs per-layer submit ~0.23 ms/boundary, measured on a dense 1.5B | STALE in shape. Target cost on the paged shape fell from ~9-15 ms to 0.44 ms/CB idle after the slot residency set; the primitive tested was the event, not MLX's fence; re-run never done (M-11 open). REVISIT as C-B03 with the cheapest probe above | audit :1154-1160, :1760-1766; metal/model.go:1537,1579 |
 | M-16 untracked hazard tracking | 99.6-101.5% of baseline | HOLDS, limited to the serial encoder; says nothing about a concurrent encoder (which has no unbarriered pair on the dense chain, above) | aikit hazard_tracking_probe_test.go |
 
 ---
@@ -1433,22 +1499,22 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 | ID | Sep 12 claim | Status | Evidence |
 |---|---|---|---|
-| M-01 | `ResidentPrefillKV` missing on Metal: every sequential prompt token ran the full LM head and 608 KB readback | CLOSED-VERIFIED | `ForwardNoLogits` implemented, pipelined with a `noHead` bit on `execJob`; paged-MoE falls back to the head-bearing path by design (metal/backend.go:561-587; metal/model.go:443,1866,1909-1941) |
-| M-07 | Three host copies of every dense int4 projection on a GGUF/safetensors load | CLOSED-VERIFIED for the row4-skip half; host-release half declined as permanent | decoder/weights.go:726-730,769-775,805-808,1208-1213,1522-1526; audit :1753-1756, :396, :432-442 |
-| M-11 | Paged decode pays a ~14 ms command-buffer boundary 61-81x per token | OPEN. The boundary cost fell (9 to 0.44 ms/CB idle, M-14), shared-event re-run not done | audit :1766; metal/model.go:1497,1539 (area D owns it) |
+| M-01 | `ResidentPrefillKV` missing on Metal: every sequential prompt token ran the full LM head and 608 KB readback | CLOSED-VERIFIED | `ForwardNoLogits` implemented, pipelined with a `noHead` bit on `execJob`; paged-MoE falls back to the head-bearing path by design (metal/backend.go:577-603; metal/model.go:494,1916,1959-1991) |
+| M-07 | Three host copies of every dense int4 projection on a GGUF/safetensors load | CLOSED-VERIFIED for the row4-skip half; host-release half declined as permanent | decoder/weights.go:720-724,769-775,805-808,1208-1213,1522-1526; audit :1753-1756, :396, :432-442 |
+| M-11 | Paged decode pays a ~14 ms command-buffer boundary 61-81x per token | OPEN. The boundary cost fell (9 to 0.44 ms/CB idle, M-14), shared-event re-run not done | audit :1766; metal/model.go:1537,1579 (area D owns it) |
 | M-12 | Serial per-expert staging | CLOSED, cross-expert half only (as recorded) | audit :1763-1766 |
 | M-13 | Pager engages only with explicit slots | CLOSED (auto-sized slots) | audit :1760-1762 |
-| M-14 | Residency set rides every command buffer (+62 ms/token) | CLOSED, wiring verified live; saving not re-measured | metal/model.go:1554-1560; metal/moe.go:868; metal/gemma4_moe.go:579; aikit residencyset.go:117-125 (TestEncoder_useResidencySet) |
+| M-14 | Residency set rides every command buffer (+62 ms/token) | CLOSED, wiring verified live; saving not re-measured | metal/model.go:1594-1600; metal/moe.go:895; metal/gemma4_moe.go:594; aikit residencyset.go:117-125 (TestEncoder_useResidencySet) |
 | M-16 | Every buffer hazard-tracked, every encoder serial | NEGATIVE-CLOSED (serial-encoder premise) | aikit hazard_tracking_probe_test.go; audit :1779 |
 | C-05 | `Run1DBatchTG`/`Run1DTG` own an autorelease pool without the OS-thread pin | CLOSED-VERIFIED | aikit metal.go:954-955 and 988-992 (`runtime.LockOSThread`, "Missed here" note) |
 | G-05 | Shared-event verdict measured on a shape without the cost | OPEN (no re-run); see C-B03 | audit :1154-1160 |
-| G-06 | Device-ledger free assertions pass by construction | CLOSED for two gates; residue C-G01 | metal/close_leak_test.go:144-282 |
-| G-10 | C-09 status latch inert on Apple silicon | pointer closed (host pre-checks are the gate; `recordExecErr` sites at metal/gumbel_sample.go:69-71, metal/model.go:2148) | audit :1244 |
-| N-20 | f32 heap scales re-derived per stage | CLOSED, but its replacement is C-P01 and its premise is stale under v15 | metal/model.go:522-529; metal/gemma4_moe.go:289-304 |
+| G-06 | Device-ledger free assertions pass by construction | CLOSED for two gates; residue C-G01 | metal/close_leak_test.go:162-300 |
+| G-10 | C-09 status latch inert on Apple silicon | pointer closed (host pre-checks are the gate; `recordExecErr` sites at metal/gumbel_sample.go:69-71, metal/model.go:2206) | audit :1244 |
+| N-20 | f32 heap scales re-derived per stage | CLOSED, but its replacement is C-P01 and its premise is stale under v15 | metal/model.go:556-562; metal/gemma4_moe.go:291-295 |
 | N-21 | Expert slots zero-initialised | FIXED (`NewBufferLenOf`) | audit :1407-1412 |
 | N-27 | 608 KB logits memcpy on the pipe path | DECLINED, reason still valid (decoder/spec_optfwd.go:202-211) | audit :1466-1480 |
 | N-28 | No CPU-sampler overlap above T=0.2 | PARTLY ADDRESSED by R7b device sampler; executor half remains (C-P02) | r7b-metal-mac-2026-09-20.md:215-216 |
-| N-29 | Load path rebuilt words byte by byte | FIXED (bulk copy in `bytesToU32`) | metal/model.go:488-495 |
+| N-29 | Load path rebuilt words byte by byte | FIXED (bulk copy in `bytesToU32`) | metal/model.go:539-546 |
 | N-31 | Four GPU timestamp reads per production token | PRESENT (counted in the 10 command-buffer-level calls) | aikit metal.go:808-814 |
 | N-34 | metal_copy / upload_batch unused and unfenced | UNCHANGED, still correct on UMA | aikit gpu/metal_copy.go, metal_upload_batch.go |
 | N-36 | KV charged for DeltaNet layers | FIXED | decoder/residentneed.go; memory-accounting-metal-2026-09-25.md:38-46 |
@@ -1462,10 +1528,10 @@ M-08 and C-04 belong to area E and are not carried here.
 
 - Decode structure: one command buffer, one commit, one serial encoder, one wait per token; 310 dispatches and 1,042 transitions counted against the Sep 12 "~1,030".
 - `Encoder.Dispatch`: pipeline set only on change, one batched `setBuffers:offsets:withRange:`, uniforms as 1-word buffers; retained-reference command buffers (aikit metal.go:819-842). Only the missing length check (C-N01).
-- `execLoop` (metal/model.go:1993-2058): OS-thread pinned, one long-lived autorelease pool drained every 64 tokens, `attnPlan` mismatch drops the pre-encoded buffer, `SetAdapter` tears the executor down because the t+1 buffer bakes in LoRA state (C-07), paged MoE bypasses the executor (:1750-1758).
+- `execLoop` (metal/model.go:2044-2109): OS-thread pinned, one long-lived autorelease pool drained every 64 tokens, `attnPlan` mismatch drops the pre-encoded buffer, `SetAdapter` tears the executor down because the t+1 buffer bakes in LoRA state (C-07), paged MoE bypasses the executor (:1750-1758).
 - NoCopy alias: MAP_SHARED read-only mapping, `VM_INHERIT_NONE` (decoder/giwmap_darwin.go, forkinherit_darwin.go); alias.go reasons correctly about COW wiring (:28-36) and the gate requires fused groups, singles, f16 scales and the int8 head each aliased with 0 heap-backed/unaligned/non-adjacent (s6-alias-2026-09-24.md:211-212, 258). Footprints at token 32, aliased vs copied: 1.5B 90 vs 1,013 MB, 7B 105 vs 4,134 MB, M26 2,967 vs 4,485 MB [R] (:188-189, :262).
 - Fit accounting: `ResidentHostCopyBytes` subtracts mmap-aliased bytes (decoder/weightbytes.go:184-192), so the guard does not over-price an aliased .giw (recorded 1.40 GB for the v14 1.5B). The Metal guard is min(70% of hw.memsize, live available) (metal/backend.go:69-117). `TestResidentKVBytes_matchesMetalAllocation` 5/5 exact (memory-accounting-metal-2026-09-25.md:38-41).
-- Residency: scope "slots" per-encoder attach, verified live by aikit's test; the bisect rationale in metal/model.go:1497-1560 is internally consistent with the recorded figures.
+- Residency: scope "slots" per-encoder attach, verified live by aikit's test; the bisect rationale in metal/model.go:1537-1600 is internally consistent with the recorded figures.
 - `ForwardSample`: seed/draw come from the sampler's own stream (`NextDraw`), the infinite-`invT` case degrades to host argmax exactly (metal/gumbel_sample.go:45-71).
 - Optimistic-forward: the logits copy before the overlap (decoder/spec_optfwd.go:202-211) and the 0.2 cap are consistent with the recorded CUDA race and the T ladder.
 - aikit `metal_copy.go`, `metal_upload_batch.go`: host memcpy, unused by goinfer, correct on UMA.
@@ -1506,7 +1572,7 @@ moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N
    with 2L+1 = 61 synchronous command buffers on M26. Recorded TTFT is 16.8-18.7 s for a 96-token prompt
    (5.1-5.7 prompt tok/s, about the decode rate), so a 512-token prompt is about 90-100 s by linear
    extrapolation. Expert-major through the pool is unbuilt and has three more blockers per family (D-P01).
-2. Qwen3.5/3.6/3.8 hybrids have no batched prefill at all (`metal/model.go:952`, `r.dnet == nil`). MLX has a
+2. Qwen3.5/3.6/3.8 hybrids have no batched prefill at all (`metal/model.go:989-991`, `r.dnet == nil`). MLX has a
    T-loop recurrence kernel with one state read and one state write per call, plus a C=8 chunked kernel
    for T>8. The dense batched/sequential ratio recorded on this machine is about 10x (D-B01).
 3. MoE expert-major prefill is default ON on a gate taken on a dense 1.5B, and its own tests are a tiny
@@ -1523,26 +1589,26 @@ moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N
    against a recorded 128-167 ms/token. The paged path after S3-S6 is stable at N=8 (swap flat, 6.0-7.8
    tok/s) but N>8 and M35 on Metal are unrun (D-P02).
 8. Stale text in 10 places, notably red-october §2.6 and R11(c), `benchmarks.md:1976-1985, 2262`, and
-   `metal/gptoss_kernels_test.go:8-10` (D-D01).
+   `metal/gptoss_kernels_test.go:8-9` (D-D01).
 
 ### (b) Findings table (ordered by effect)
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| D-P01 | Major | Paged MoE prefill = M paged decode tokens; no expert-major through the pool | `metal/model.go:951-952`; `m26-alias-fork-collapse-2026-09-24.md:177-180`; `metal/prefill.go:1116-1254` (non-paged only) | gather_qmm_rhs grouping only; MLX has no pager | 3-15x TTFT at M=512 (proj) | `moe_prefill_measure_test.go` on paged M26 at M=64/128/512 |
-| D-B01 | Major | No batched DeltaNet prefill; hybrids prefill as M decode tokens | `metal/model.go:952`; `benchmarks.md:1913-1926`; `metal/deltanet.go:129-149` | `gated_delta_update.h:271-366` seq, `:169-265` chunk | 3-8x TTFT on resident hybrids (proj) | T-loop recurrence kernel + batched conv/gates on `qwen35_resident_parity` fixture |
-| D-G01 | Major | Expert-major prefill ships default ON on a dense gate; MoE tests cannot see its failure modes | `metal/prefill.go:1117`; `metal/backend.go:595-630`; `metal/moe_expert_major_prefill_test.go:32,48,83`; `metal/prefill_moe_parity_test.go:22-23,106` | none (gate) | n/a | real-MoE paged-off fixture, per-layer cosine, router-flip count, mutation set |
-| D-B02 | Major | Host-grouped expert loop: 5 x nE dispatches/layer, per-layer sync, 64-row tile padding; MLX schedules on device with bm=16 | `metal/prefill.go:1145-1150,1191-1213`; header `:36-38` | `quantized.h:2426-2574`, `quantized.cpp:1661-1823,1996`, `utils.h:503-542`, `gather_mm_offsets.metal:8-22` | 5-25% of MoE prefill at 64-128 experts (proj) | count tile waste, then device-side offsets kernel A/B |
-| D-P04 | Major | MoE router top-k runs on one GPU thread; recorded about 10% of a fitting ~5 ms MoE token | `metal/moe.go:45-95,97-120,690-699`; Sep 12 `:1438-1440` | none cheaper (`sort.cpp:346-348`) | 4-9% of a resident MoE token (proj on rec) | GPU timestamps around the (1,1) dispatch |
+| D-P01 | Major | Paged MoE prefill = M paged decode tokens; no expert-major through the pool | `metal/model.go:989-991`; `m26-alias-fork-collapse-2026-09-24.md:177-180`; `metal/prefill.go:1233-1371` (non-paged only) | gather_qmm_rhs grouping only; MLX has no pager | 3-15x TTFT at M=512 (proj) | `moe_prefill_measure_test.go` on paged M26 at M=64/128/512 |
+| D-B01 | Major | No batched DeltaNet prefill; hybrids prefill as M decode tokens | `metal/model.go:989-991`; `benchmarks.md:1913-1926`; `metal/deltanet.go:129-149` | `gated_delta_update.h:271-366` seq, `:169-265` chunk | 3-8x TTFT on resident hybrids (proj) | T-loop recurrence kernel + batched conv/gates on `qwen35_resident_parity` fixture |
+| D-G01 | Major | Expert-major prefill ships default ON on a dense gate; MoE tests cannot see its failure modes | `metal/prefill.go:1234`; `metal/backend.go:611-646`; `metal/moe_expert_major_prefill_test.go:32,48,83`; `metal/prefill_moe_parity_test.go:23-24,107` | none (gate) | n/a | real-MoE paged-off fixture, per-layer cosine, router-flip count, mutation set |
+| D-B02 | Major | Host-grouped expert loop: 5 x nE dispatches/layer, per-layer sync, 64-row tile padding; MLX schedules on device with bm=16 | `metal/prefill.go:1262-1267,1308-1330`; header `:36-38` | `quantized.h:2426-2574`, `quantized.cpp:1661-1823,1996`, `utils.h:503-542`, `gather_mm_offsets.metal:8-22` | 5-25% of MoE prefill at 64-128 experts (proj) | count tile waste, then device-side offsets kernel A/B |
+| D-P04 | Major | MoE router top-k runs on one GPU thread; recorded about 10% of a fitting ~5 ms MoE token | `metal/moe.go:45-95,97-120,717-726`; Sep 12 `:1438-1440` | none cheaper (`sort.cpp:346-348`) | 4-9% of a resident MoE token (proj on rec) | GPU timestamps around the (1,1) dispatch |
 | D-B03 | Major | gpt-oss MXFP4 is requantized to int4 absmax/7; native MXFP4 (E2M1 x E8M0) would keep the checkpoint's values and save 0.6 GB | `decoder/gptoss_safetensors.go:148-192`; aikit `linalg/quant.go:568-640` | `fp_quantized.h:30-38,82-100`, `fp4.h:36-38`, `fp8.h:51-85` | 0.6 GB (cnt); fidelity unquantified | requantization error on the real checkpoint (a CPU-side script) |
-| D-B04 | Minor | R18 rows form not applied to shared experts, DeltaNet projections, routed expert GEMVs | `metal/model.go:1377-1402`; `metal/deltanet.go:133-136` | `gemv.h` (R18 source) | 5-12% on shared-expert-heavy/hybrid decode (proj) | wire shared-expert GEMV through `gemvRowsFor` |
+| D-B04 | Minor | R18 rows form not applied to shared experts, DeltaNet projections, routed expert GEMVs | `metal/model.go:1417-1442`; `metal/deltanet.go:133-136` | `gemv.h` (R18 source) | 5-12% on shared-expert-heavy/hybrid decode (proj) | wire shared-expert GEMV through `gemvRowsFor` |
 | D-P02 | Minor (REVISIT) | M-11 / R11(c) premises are stale for M26 | Sep 12 `:568-590`; `red-october.md:296-305,424` | none | ~0% for the shared-event design (proj) | PROF_SPLIT on aliased v14 M26; N=64 rerun with kill-watch |
 | D-B05 | Minor (REVISIT) | `delta_rule` layout: 4x state traffic per token, thread-per-row, uncoalesced; "at ceiling" is stale | `metal/deltanet_kernels.go:128-206`; Sep 12 `:1663` | `gated_delta_update.h:271-366` | 40-96 us/layer recovered (proj) | micro-benchmark lane-per-Dk variant |
-| D-P03 | Minor (REVISIT) | 3k expert dispatches per layer vs one batched dispatch; "<1%" premise is paged-only | `metal/moe.go:711-731`; Sep 12 `:1662` | `quantized.h:2087-2209`, `quantized.cpp:1376-1424` | 20 fewer dispatches/layer at k=8 (cnt) | `gemv_w4a8_moe_bench_test.go` with z=k |
-| D-C01 | Minor | Expert-major branch hard-wires plain SwiGLU and no biases: wrong for gpt-oss if the feature map ever admits it | `metal/prefill.go:1139-1140,1200-1201`; `metal/model.go:92-108` | none | none today | add FeatAttnSink to a decline test |
+| D-P03 | Minor (REVISIT) | 3k expert dispatches per layer vs one batched dispatch; "<1%" premise is paged-only | `metal/moe.go:738-758`; Sep 12 `:1662` | `quantized.h:2087-2209`, `quantized.cpp:1376-1424` | 20 fewer dispatches/layer at k=8 (cnt) | `gemv_w4a8_moe_bench_test.go` with z=k |
+| D-C01 | Minor | Expert-major branch hard-wires plain SwiGLU and no biases: wrong for gpt-oss if the feature map ever admits it | `metal/prefill.go:1256-1257,1317-1318`; `metal/model.go:102-118` | none | none today | add FeatAttnSink to a decline test |
 | D-D01 | Minor | Ten stale statements (docs and comments) | listed in the entry | none | none | none |
-| D-G02 | Minor | `delta_qsplit` / `delta_attn_gate` have no direct test or mutation | `metal/model.go:2746,2819`; `metal/deltanet_test.go:298-299` | none | none | add the two kernels to the chain gate |
-| D-N01 | Minor | `touch()` allocates; PROF_SPLIT `os.Getenv` per token | `metal/expertpool.go:395`; `metal/gemma4_moe.go:518` | none | <0.1% (cnt) | none |
+| D-G02 | Minor | `delta_qsplit` / `delta_attn_gate` have no direct test or mutation | `metal/model.go:2829,2902`; `metal/deltanet_test.go:297-301` | none | none | add the two kernels to the chain gate |
+| D-N01 | Minor | `touch()` allocates; PROF_SPLIT `os.Getenv` per token | `metal/expertpool.go:430`; `metal/gemma4_moe.go:533` | none | <0.1% (cnt) | none |
 
 ### (c) Full entries
 
@@ -1553,7 +1619,7 @@ prefill declines the batched path and runs M decode tokens. Each token costs 2L+
 buffers and, at N=8, a worst-case 8 x 3.19 MB x 30 layers = 765 MB of expert pread.
 
 **Evidence.**
-- Decline: `metal/model.go:951-952` (`!(r.moe != nil && r.moe.paged)`, `!m.HasGemma4MoEResident()`,
+- Decline: `metal/model.go:989-991` (`!(r.moe != nil && r.moe.paged)`, `!m.HasGemma4MoEResident()`,
   `!m.HasPerLayerGeometry()`, `r.dnet == nil`); pinned by `metal/prefill_moe_paged_decline_test.go`.
 - Recorded TTFT (rec): alias1 18.7 s, copy2 17.3 s, alias3 17.4 s, copy4 16.8 s on a 96-token prompt, 32 decoded
   tokens (`docs/measurements/m26-alias-fork-collapse-2026-09-24.md:31,177-180`). 96/18.7 = 5.1 and
@@ -1568,13 +1634,13 @@ buffers and, at N=8, a worst-case 8 x 3.19 MB x 30 layers = 765 MB of expert pre
   recorded 28-117 distinct experts per layer at 512 rows (`red-october.md:1608`). A recorded cache hit rate for
   Metal N=8 does not exist; the only recorded hit rate is CUDA's 61.3% at 12 slots (`red-october.md:1608`).
 - Pread ceiling used (rec): ~3.7 GB/s at concurrency 1 (`task-never-swap-2026-09.md:741,857`). 12.2 GB / 3.7 GB/s
-  = 3.3 s (cnt). The pager's pread is concurrent per layer (`metal/expertpool.go:335-359`), so this is a conservative
+  = 3.3 s (cnt). The pager's pread is concurrent per layer (`metal/expertpool.go:370-394`), so this is a conservative
   bytes-only floor, not a ceiling on speed.
 
-**Blockers per family (cnt, `metal/model.go:952`).** Paged alone blocks only the generic paged MoE. M26 additionally
+**Blockers per family (cnt, `metal/model.go:989-991`).** Paged alone blocks only the generic paged MoE. M26 additionally
 needs `HasPerLayerGeometry` (5 non-uniform layers, `prefill-moe-m26-2026-09-04.md:20`) and
 `HasGemma4MoEResident` support in `PrefillLast`. M35 needs batched DeltaNet (D-B01). gpt-oss needs
-`FeatAttnSink` in `prefillFeatures` (`metal/model.go:92-108` has none) and correct expert math (D-C01).
+`FeatAttnSink` in `prefillFeatures` (`metal/model.go:102-118` has none) and correct expert math (D-C01).
 
 **MLX analog.** MLX has no expert pager; it relies on unified-memory page faults. The part to borrow is only
 the grouping (D-B02). So this finding is a goinfer design item, not a borrowed technique.
@@ -1601,7 +1667,7 @@ intended behaviour. Nothing schedules the paged build.
 #### D-B01 [B,P] Major: no batched DeltaNet prefill
 
 **Claim.** Qwen3.5/3.6/3.8 and Olmo-Hybrid families prefill as M decode tokens because DeltaNet is excluded
-from `PrefillLast` (`metal/model.go:952`). The record's stated reason ("a DeltaNet layer's conv/matrix state must
+from `PrefillLast` (`metal/model.go:989-991`). The record's stated reason ("a DeltaNet layer's conv/matrix state must
 advance one token at a time", `docs/benchmarks.md:1913-1915`) is a statement about the recurrence only. It
 does not preclude batching the projections, MLP and softmax-attention layers, and running only the
 recurrence as a token loop inside one kernel.
@@ -1644,15 +1710,15 @@ against the existing chain-vs-CPU test at the same threshold. Kill if the batche
 K=512 on the smallest resident Qwen3.5.
 
 **Why this is not already closed.** `benchmarks.md:1899-1926` (CUDA-side, records the guard as a safety decline),
-`red-october.md:313` ("M35 additionally needs a batched Gated-DeltaNet (R11)"), `metal/model.go:952`. No task or
+`red-october.md:313` ("M35 additionally needs a batched Gated-DeltaNet (R11)"), `metal/model.go:989-991`. No task or
 measurement for a Metal batched DeltaNet exists in the snapshot. `ForwardN` also excludes `r.dnet`
 (`benchmarks.md:1920`), so batched verify (area E) is blocked by the same gap.
 
 #### D-G01 [G] Major: expert-major MoE prefill is default ON on a gate that cannot see it
 
 **Claim.** The §3.2 pooled gate that licenses the batched f16 lane ran on the dense S model
-(`metal/backend.go:595-602`, "S model, K=64/128"; Sep 12 `:85` names it a dense 1.5B). The MoE branch inherits the same
-switch. `metal/prefill.go:1117` tests only for `"0"`, so expert-major is ON whenever the lane is.
+(`metal/backend.go:611-618`, "S model, K=64/128"; Sep 12 `:85` names it a dense 1.5B). The MoE branch inherits the same
+switch. `metal/prefill.go:1234` tests only for `"0"`, so expert-major is ON whenever the lane is.
 
 **Evidence.**
 - The MoE tests are `moe_expert_major_prefill_test.go` (fixture `../testdata/mixtral-tiny`, line 32; M in
@@ -1665,14 +1731,14 @@ switch. `metal/prefill.go:1117` tests only for `"0"`, so expert-major is ON when
   snapshot, so I cannot confirm nE/k. At M=64 and top-2 over a handful of experts, an expert gets at most 64 rows,
   so `CePad` never exceeds one 64-row tile (cnt). The multi-tile case (M26 at M=512, mean 32 rows/expert, many experts over
   64) has no test. The untested batched kernels include `moe_route_batch` with sigmoid scoring and
-  group-limited routing, the shared-expert branch (`metal/prefill.go:1231-1252`), `shared_gate_add_f16`, and
+  group-limited routing, the shared-expert branch (`metal/prefill.go:1348-1369`), `shared_gate_add_f16`, and
   `router_gemm_f16` at nE other than the fixture's.
 - Not bit-identical to the sequential path in three counted ways: (i) each expert's weighted output is rounded to
-  f16 and added into the f16 residual (`scatter_add_weighted_f16`, `metal/prefill.go:745-763`: `residual[...] += half(val)`)
+  f16 and added into the f16 residual (`scatter_add_weighted_f16`, `metal/prefill.go:827-845`: `residual[...] += half(val)`)
   up to k times, while decode accumulates into the f32 stream in the wacc GEMV (`metal/moe.go:153-181`); (ii) experts
-  are applied in ascending expert id (`metal/prefill.go:1219-1229` loop over `byExpert`), decode applies slots in rank
-  order j=0..k-1 (`metal/moe.go:711-731`), and float adds do not commute bit-wise; (iii) the router logits come from f16
-  activations through `router_gemm_f16` (lane-strided sum then `simd_sum`, `metal/prefill.go:605-625`), while decode
+  are applied in ascending expert id (`metal/prefill.go:1336-1346` loop over `byExpert`), decode applies slots in rank
+  order j=0..k-1 (`metal/moe.go:738-758`), and float adds do not commute bit-wise; (iii) the router logits come from f16
+  activations through `router_gemm_f16` (lane-strided sum then `simd_sum`, `metal/prefill.go:687-707`), while decode
   uses `gemv_wf32_a8` on int8 activations (`metal/moe.go:30-43`). (iii) can change which experts are selected on a
   near tie, a discrete divergence with no cosine bar to catch it.
 - G-09 (Sep 12 `:1239-1242`): the MoE prefill measurement exists (`metal/moe_prefill_measure_test.go:30`) and has no
@@ -1685,12 +1751,12 @@ differs between the two paths), and one mutation each for: scatter weights, rout
 **Probe / kill.** The three above, on the smallest real MoE that fits resident. Kill (revert default to opt-in) if
 the flip rate exceeds what the f16 dense lane already tolerates, which is itself unrecorded for MoE.
 
-**Why this is not already closed.** `metal/backend.go:595-630` states the gate and its model; `red-october.md:92` says
+**Why this is not already closed.** `metal/backend.go:611-646` states the gate and its model; `red-october.md:92` says
 "landed 2026-09-17, unmeasured"; G-09 is the only record and is open.
 
 #### D-B02 [B,P] Major: device-side expert scheduling instead of host grouping
 
-**What goinfer does (cnt, `metal/prefill.go:1116-1254`).** Per MoE layer per chunk: batched router, route, `e.End()` and
+**What goinfer does (cnt, `metal/prefill.go:1233-1371`).** Per MoE layer per chunk: batched router, route, `e.End()` and
 host readback of `moeIdx`/`moeWgt` (`:1129-1134`), host grouping into `byExpert` (`:1136-1153`), a new encoder,
 then per active expert 5 dispatches: gather rows, GU GEMM, SwiGLU, down GEMM, weighted scatter-add
 (`:1191-1213`). At nE=128 that is up to 640 dispatches per layer, 19,200 per M26 chunk (cnt), and one
@@ -1735,7 +1801,7 @@ rows, since then the padding saving is eaten.
 #### D-P04 [P] Major: MoE router top-k on one GPU thread
 
 **Claim.** `moe_route` and `route_gptoss` early-return unless `tid == 0` and are dispatched as (1,1)
-(`metal/moe.go:50,101,690-699`). The Sep 12 record notes "moe_route on one GPU thread (deliberate, value-independent
+(`metal/moe.go:50,101,717-726`). The Sep 12 record notes "moe_route on one GPU thread (deliberate, value-independent
 dispatch; ~10% of a fitting ~5 ms MoE token)" (`audit-metal-2026-09-12.md:1438-1440`, rec; the doc names no
 measurement for the 10%).
 
@@ -1821,8 +1887,8 @@ not in the snapshot. Severity rests on 0.6 GB (>= 500 MB, cnt) plus an unrecorde
 #### D-B04 [B,P] Minor: R18 rows form not extended
 
 R18 (rows-per-simdgroup, 1.17x/1.32x GEMV, bit-identical, `metal-decode-gemv-r18-2026-09-26.md`) is wired at the four
-dense decode sites only (`metal/model.go:1377-1402`, `gemvRowsFor` at `:2455`). Not wired: the shared expert (dense GEMVs
-inside `encodeMoESharedExpert`, `metal/moe.go:779-791`), the DeltaNet qkv and z projections (`r.pGemv` = `gemv_w4a8_coal`, `metal/model.go:813`, at
+dense decode sites only (`metal/model.go:1417-1442`, `gemvRowsFor` at `:2455`). Not wired: the shared expert (dense GEMVs
+inside `encodeMoESharedExpert`, `metal/moe.go:806-818`), the DeltaNet qkv and z projections (`r.pGemv` = `gemv_w4a8_coal`, `metal/model.go:850`, at
 `metal/deltanet.go:133,136`; the b/a GEMVs use `pGemvW8`, the out-proj `pSAResid`), and the routed expert GEMVs (`gemv_w4a8_moe`, one row per simdgroup, `metal/moe.go:125-152`). The
 shared-expert and DeltaNet sites are a dispatch-site change; the routed GEMVs need a kernel variant. Bit-identical
 by R18's own argument.
@@ -1852,7 +1918,7 @@ mapping, fixed on 2026-09-24 (`m26-alias-fork-collapse-2026-09-24.md:14-18,170-1
 (table `:177-180`, 0 swap delta in 4 of 4 arms). The N=64 and N=32 failures predate that fix and have not been rerun.
 
 **Projection (proj).** The shared-event design saves about 0% of the M26 paged token; I would not build it before the
-split below says otherwise. Probe: `GOINFER_MOE_PROF_SPLIT=1` on aliased v14 M26 (`metal/gemma4_moe.go:513-518`) to get
+split below says otherwise. Probe: `GOINFER_MOE_PROF_SPLIT=1` on aliased v14 M26 (`metal/gemma4_moe.go:528-533`) to get
 the commit/wait/stage split; and an N=64 rerun under the kill-watch. Kill the REVISIT if staging is under 50% of
 the token and commit+wait is over 30%.
 
@@ -1888,7 +1954,7 @@ unrecorded. Probe: micro-benchmark a lane-per-Dk variant at hk=hv=128, nv=32 and
 #### D-P03 [P] Minor (REVISIT): one dispatch over the k selected experts
 
 **What goinfer does.** `encodeMoEExperts` loops j over k and issues GU GEMV, SwiGLU, down-wacc each time
-(`metal/moe.go:711-731`): 3k = 24 dispatches per layer at k=8 (cnt), plus the router and shared expert. The slot is a
+(`metal/moe.go:738-758`): 3k = 24 dispatches per layer at k=8 (cnt), plus the router and shared expert. The slot is a
 uniform index into `rIdx` (`mo.uSlot[j]`).
 
 **What MLX does (mlx).** `gather_qmv` takes an index buffer and runs all (token, slot) pairs in one dispatch over the
@@ -1912,11 +1978,11 @@ under 2% of the layer.
 
 #### D-C01 [C] Minor: latent wrong gpt-oss expert math in the expert-major branch
 
-The expert-major branch dispatches `route_gptoss_batch` for gpt-oss (`metal/prefill.go:1139-1140`), then the plain
+The expert-major branch dispatches `route_gptoss_batch` for gpt-oss (`metal/prefill.go:1256-1257`), then the plain
 `pSw` SwiGLU with `r.uAct` (`:1200-1201`) and down GEMM with `dummyBias`: no clamped interleaved SwiGLU, no per-expert
-gate/up and down biases. Decode uses `swiglu_quant_gptoss` and `gemv_w4a8_moe_wacc_bias` (`metal/moe.go:721-724`). Not
-reachable today: `prefillFeatures` has no `FeatAttnSink` (`metal/model.go:92-108`), so `MissingResidentFeatures` makes
-`prefillOK` false for gpt-oss (`metal/model.go:951`). The route dispatch suggests someone expected it to be reachable.
+gate/up and down biases. Decode uses `swiglu_quant_gptoss` and `gemv_w4a8_moe_wacc_bias` (`metal/moe.go:748-751`). Not
+reachable today: `prefillFeatures` has no `FeatAttnSink` (`metal/model.go:102-118`), so `MissingResidentFeatures` makes
+`prefillOK` false for gpt-oss (`metal/model.go:989`). The route dispatch suggests someone expected it to be reachable.
 The fix is a decline test on `isGptOss` inside the expert-major branch, so a future feature-map edit fails closed.
 
 #### D-D01 [D] Minor: stale statements
@@ -1930,35 +1996,42 @@ The fix is a decline test on `isGptOss` inside the expert-major branch, so a fut
 4. `benchmarks.md:1976-1985`: "M35/M26 off-limits on this box on any path"; `:2017` "M26 on Metal is still off-limits":
    the 2026-09-24 M26 Metal runs exist (`m26-alias-fork-collapse-2026-09-24.md`).
 5. `benchmarks.md:2260-2262` (and `:1964-1966`, which is correct): "no resident Metal backend for gpt-oss" while
-   `metal/model.go:129,276` and `capability-matrix.md:105` say declared and resident.
+   `metal/model.go:139,327` and `capability-matrix.md:105` say declared and resident.
 6. Sep 12 §5 `:1665-1666`: "`NewBufferNoCopy` inapplicable to goinfer's fused/narrowed layouts", superseded by S6
    (723 MB aliased on M26: 60 single tensors + 55 fused groups, `s6-alias-2026-09-24.md:55-56`).
-7. `metal/model.go:86-90`: "the FFN half runs ROW BY ROW", true only for the fallback and the paged path.
-8. `metal/prefill_moe_parity_test.go:7-23`: same row-by-row description of the path under test.
-9. `metal/gptoss_kernels_test.go:8-10`: "FeatAttnSink is still not declared for Metal".
-10. `metal/deltanet_test.go:298-299`: "delta_qsplit/delta_attn_gate ... neither has Go-side wiring yet", wired at
-    `metal/model.go:2746,2819`. Also `metal/deltanet_kernels.go:144-146`: the `CANDIDATE` comment sits in shipped code and states
+7. `metal/model.go:94-100`: "the FFN half runs ROW BY ROW", true only for the fallback and the paged path.
+8. `metal/prefill_moe_parity_test.go:7-24`: same row-by-row description of the path under test.
+9. `metal/gptoss_kernels_test.go:8-9`: "FeatAttnSink is still not declared for Metal".
+10. `metal/deltanet_test.go:297-301`: "delta_qsplit/delta_attn_gate ... neither has Go-side wiring yet", wired at
+    `metal/model.go:2829,2902`. Also `metal/deltanet_kernels.go:144-146`: the `CANDIDATE` comment sits in shipped code and states
     a test whose result is not in the snapshot.
 
 #### D-G02 [G] Minor: two DeltaNet kernels with no direct gate
 
-`delta_qsplit` and `delta_attn_gate` (`metal/deltanet_kernels.go:235-246`) are wired (`metal/model.go:2746,2819`) but not in the chain
-gate (`metal/deltanet_test.go:298-299`) and have no mutation. `qwen35_resident_parity_test.go` covers them end to end only,
+`delta_qsplit` and `delta_attn_gate` (`metal/deltanet_kernels.go:235-246`) are wired (`metal/model.go:2829,2902`) but not in the chain
+gate (`metal/deltanet_test.go:297-301`) and have no mutation. `qwen35_resident_parity_test.go` covers them end to end only,
 which cannot localize a wrong q/gate split.
+
+**Status, 2026-10-01.** Done, beside the chain gate (tag `goinfer_testhooks`): `TestQGateKernels_cpuParity` runs
+`delta_qsplit` then `delta_attn_gate` as `encodeLayer` launches them, over three geometries with gate values out to ±100,
+against the CPU's own split and gate. Those are now `splitQGate` and `qGateContext` in `decoder/forward_qwen35.go`,
+called by both CPU paths and exported as test hooks. The split matches exactly and writes nothing past its length; the
+gate factor is within 2.1e-7 of the CPU's (bar 1e-6). `TestQGateKernels_mutations`: swapped halves, two blocks instead
+of per-head interleaving, no sigmoid, and the sigmoid's sign flipped each fail it.
 
 #### D-N01 [N] Minor
 
-`metal/expertpool.go:395` `touch()` allocates on a path run per expert per layer per token; `metal/gemma4_moe.go:518` reads
+`metal/expertpool.go:430` `touch()` allocates on a path run per expert per layer per token; `metal/gemma4_moe.go:533` reads
 `GOINFER_MOE_PROF_SPLIT` through `os.Getenv` per token. Both are under 0.1% of a 128 ms token (cnt: 30 layers x 8 touches
-x ~100 ns). N-23's dense-layer batching in `metal/gemma4_moe.go:591-597` is moot for M26 (30 layers, all MoE).
+x ~100 ns). N-23's dense-layer batching in `metal/gemma4_moe.go:606-612` is moot for M26 (30 layers, all MoE).
 
 #### Answers to the assigned questions
 
 1. **MLX gather GEMV reads each expert once per (token, slot), with no cross-token dedup.** One dispatch covers all
    pairs (`quantized.h:2087-2209`; `quantized.cpp:1376-1424`). goinfer's `gemv_w4a8_moe` has the same read pattern
-   in k separate dispatches (`metal/moe.go:711-731`): same bytes, more dispatches (D-P03).
+   in k separate dispatches (`metal/moe.go:738-758`): same bytes, more dispatches (D-P03).
 2. **Expert-major batching** is MLX's sorted `gather_qmm_rhs` (D-B02). The Sep 12 record already scoped it (M-05) and
-   goinfer built it for non-paged generic MoE (`metal/prefill.go:1116-1254`, default ON); it left paged, Gemma-4 MoE,
+   goinfer built it for non-paged generic MoE (`metal/prefill.go:1233-1371`, default ON); it left paged, Gemma-4 MoE,
    DeltaNet and gpt-oss families on per-token decode (D-P01).
 3. **DeltaNet cost** is dominated by `delta_rule`'s access shape and by per-token repetition in prefill, not by dispatch
    count or intermediate buffers: 12 dispatches/layer but 2 MB of f32 state traffic and no readback (Sep 12
@@ -1975,19 +2048,19 @@ x ~100 ns). N-23's dense-layer batching in `metal/gemma4_moe.go:591-597` is moot
 
 | ID | Status | Evidence |
 |---|---|---|
-| M-05 (MoE prefill rows; paged/DeltaNet as M decode tokens) | PARTIAL | Non-paged generic MoE built and default ON (`metal/prefill.go:1116-1254`, `:1101`). Paged OPEN (`metal/model.go:952`, D-P01), DeltaNet OPEN (D-B01), Gemma-4 MoE OPEN |
+| M-05 (MoE prefill rows; paged/DeltaNet as M decode tokens) | PARTIAL | Non-paged generic MoE built and default ON (`metal/prefill.go:1233-1371`, `:1101`). Paged OPEN (`metal/model.go:989-991`, D-P01), DeltaNet OPEN (D-B01), Gemma-4 MoE OPEN |
 | M-07 (host copies; my part: paged/giw) | PARTIAL, superseded in part | S6 NoCopy alias default ON; M26 723 MB aliased (`s6-alias-2026-09-24.md:55-56`). Not re-audited here (area C) |
-| M-11 (61-81 command buffers at ~14 ms) | PARTIAL + REVISIT | Contiguous pool + `slotIdx` shipped (`metal/moe.go:733-773`, `metal/expertpool.go:178-181`). Shared-event half open; premise stale (D-P02) |
-| M-12 (concurrent staging) | CLOSED-VERIFIED | Cross-expert goroutines `metal/expertpool.go:335-359`; per-expert spans `metal/moe.go:567-582` (3), `metal/gemma4_moe.go:358-362` (2). Wall-clock win not isolated, but 6.0-7.8 tok/s recorded |
+| M-11 (61-81 command buffers at ~14 ms) | PARTIAL + REVISIT | Contiguous pool + `slotIdx` shipped (`metal/moe.go:760-800`, `metal/expertpool.go:213-216`). Shared-event half open; premise stale (D-P02) |
+| M-12 (concurrent staging) | CLOSED-VERIFIED | Cross-expert goroutines `metal/expertpool.go:370-394`; per-expert spans `metal/moe.go:567-581` (3), `metal/gemma4_moe.go:356-360` (2). Wall-clock win not isolated, but 6.0-7.8 tok/s recorded |
 | M-13 (auto-sized slots) | CLOSED-VERIFIED | `autoMoESlots` `metal/backend.go:214-244`, floor `moeTopK`, ceiling 64 |
-| M-14 (residency set per command buffer) | CLOSED-VERIFIED | `e2.UseResidencySet` `metal/moe.go:868`, `metal/gemma4_moe.go:579`; rationale `metal/model.go:1552-1556` |
-| C-02 (HiddenLast/Forward/ForwardArgmax bind zero stacked buffers on paged) | CLOSED-VERIFIED | `metal/backend.go:574-577,805` decline to the head-bearing/paged path |
+| M-14 (residency set per command buffer) | CLOSED-VERIFIED | `e2.UseResidencySet` `metal/moe.go:895`, `metal/gemma4_moe.go:594`; rationale `metal/model.go:1592-1596` |
+| C-02 (HiddenLast/Forward/ForwardArgmax bind zero stacked buffers on paged) | CLOSED-VERIFIED | `metal/backend.go:590-593,861` decline to the head-bearing/paged path |
 | G-05 (shared-event verdict on a shape without the cost) | OPEN, superseded | No paged re-run; see D-P02 |
 | G-09 (MoE prefill measurement unrun) | OPEN | `metal/moe_prefill_measure_test.go:30` exists, no recorded Metal result; `red-october.md:92` "unmeasured" |
-| N-20 (per-stage scale re-derivation) | CLOSED-VERIFIED | `int4DirectBytesOnly` use at `metal/moe.go:491-504`, `metal/gemma4_moe.go:289-302` |
-| N-21 (zero-init of slots) | CLOSED-VERIFIED | `gpu.NewBufferLenOf` `metal/expertpool.go:178-181` |
+| N-20 (per-stage scale re-derivation) | CLOSED-VERIFIED | `int4DirectBytesOnly` use at `metal/moe.go:494-496`, `metal/gemma4_moe.go:292-293` |
+| N-21 (zero-init of slots) | CLOSED-VERIFIED | `gpu.NewBufferLenOf` `metal/expertpool.go:213-216` |
 | N-22 (merge phase 2 / phase 1) | superseded by M-11 | Same status as M-11 |
-| N-23 (dense layers' own Begin/End) | CLOSED in `moe.go`; OPEN and moot in `gemma4_moe.go` | `metal/gemma4_moe.go:591-597` per-dense-layer buffers; no dense layers in M26. Mixed dense+paged path has no fixture (Sep 12 `:1418-1436`) |
+| N-23 (dense layers' own Begin/End) | CLOSED in `moe.go`; OPEN and moot in `gemma4_moe.go` | `metal/gemma4_moe.go:606-612` per-dense-layer buffers; no dense layers in M26. Mixed dense+paged path has no fixture (Sep 12 `:1418-1436`) |
 | N-24 (f32 router weight; `moe_route` on one thread) | f32 weight NEGATIVE-CLOSED (deliberate, <= 0.4 ms); single-thread route REVISIT | D-P04 |
 | N-36 (KV charged for DeltaNet layers) | CLOSED | `decoder/residentneed.go:61` per Sep 12 `:1562` (read as recorded; not re-derived) |
 | Sep 12 §5 items (paged internals) | CLOSED-VERIFIED | See (e) |
@@ -1998,19 +2071,19 @@ x ~100 ns). N-23's dense-layer batching in `metal/gemma4_moe.go:591-597` is moot
   arrays in `moe_route` (`metal/moe.go:50-95`).
 - Paged equals stacked: the byte-identity trick and the `TestMoEPagingPread_matchesByteCopy` / `TestGemma4Paging_bitExact`
   gates exercise eviction and restaging (Sep 12 `:1657-1661`; tests present in `moe_paging_test.go`).
-- `metal/gptoss_kernels_test.go:627-675` AST guard on per-expert bias indexing is a real discriminator.
+- `metal/gptoss_kernels_test.go:626-674` AST guard on per-expert bias indexing is a real discriminator.
 - `scatter_add_weighted_f16` has no write race within a dispatch: a token appears at most once per expert (distinct
   top-k), and dispatches in one encoder run in order. `CePad` row masking and scratch sizing: rows past `Ce` are zeroed
-  on gather and not scattered (`metal/prefill.go:745-763`, gather at `:1191-1194`).
+  on gather and not scattered (`metal/prefill.go:827-845`, gather at `:1191-1194`).
 - `rowIdxBuf`/`rowWgtBuf` are filled after `e.End()` on the host and read by a later encoder, so the ordering is safe
-  (`metal/prefill.go:1145-1150,1155-1190`).
-- Abort discipline on `e.Err()` after both command buffers (`metal/prefill.go:1147-1150`).
+  (`metal/prefill.go:1262-1267,1272-1307`).
+- Abort discipline on `e.Err()` after both command buffers (`metal/prefill.go:1264-1267`).
 - `moe_route`'s selection is exact and tie-stable (strict `>`, lowest index, `metal/moe.go:83`), and cheaper than MLX's
   sort-based argpartition by shape (not measured).
 - DeltaNet f32 state parity with MLX; `delta_gnorm` normalise-then-gate ordering and the `sqrt(1/(ss+eps))` zero guard are
   documented and tested (`metal/deltanet_kernels.go:15-30`, `TestDeltaNorm_zeroHead`).
-- The `canUseF16Lane` scope excludes MoE and DeltaNet explicitly (`metal/model.go:2569-2572`), so R1's lane cannot leak into them.
-- R18 is not claimed beyond its four sites (`metal/model.go:1377-1402`); I report the unwired sites in D-B04 only.
+- The `canUseF16Lane` scope excludes MoE and DeltaNet explicitly (`metal/model.go:2620-2623`), so R1's lane cannot leak into them.
+- R18 is not claimed beyond its four sites (`metal/model.go:1417-1442`); I report the unwired sites in D-B04 only.
 
 ### (f) Not settleable statically
 
@@ -2023,7 +2096,7 @@ x ~100 ns). N-23's dense-layer batching in `metal/gemma4_moe.go:591-597` is moot
 6. Real gpt-oss requantization error; cost of an E2M1 integer unpack against `UNP8`.
 7. Resident MoE decode time (no recorded figure beyond "~5 ms fitting"): sizes D-P03, D-P04, D-B04.
 8. Whether any registered generic-MoE family also declares `FeatSandwichNorm` or `FeatPostOnlyNorm`: neither the decode MoE
-   chain (`metal/moe.go:658-665`) nor either prefill MoE branch applies the post-MLP norm (`metal/prefill.go:1254-1275` is the dense path
+   chain (`metal/moe.go:685-692`) nor either prefill MoE branch applies the post-MLP norm (`metal/prefill.go:1371-1392` is the dense path
    only).
 9. Chunked WY form cosine against the sequential recurrence over a long context.
 
@@ -2065,22 +2138,34 @@ projection with its band and basis.
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:450-456,1276-1285; decoder/model.go:377-381 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:116) |
-| E-P01 | Major | Prompts below the 64-token floor, and short reuse suffixes, run sequentially or in a >=96 ms batched pass; the bit-identical 8-row step does them at ~2.3 ms/token | metal/backend.go:606,737-739; decoder/model.go:1559-1580; metal/batch.go:768-799; metal-spec-step-verify-2026-09-27.md:35-41 | quantized.cpp:89-130 (qmv to M<14 on M1 Pro) | K=32 TTFT 305 -> ~74 ms [proj]; 7B ~1.06 s -> ~0.28 s [proj] | prefill a 32-token prompt via `forwardMultiInto` pieces; compare bytes and time |
-| E-P02 | Minor (Major if probe lands) | 7B at B=2 runs per-row GEMVs that each stream the whole gate\|up weight; MLX launches the M rows adjacent so they share weight reads | metal/batch.go:604-615,636-641; quantized.cpp:495-496; kernels/quantized.h:787-794 | qmv grid (M, N/bn) | 0-15% of the 7B B=2 step [proj], ceiling 22% | standalone 2-row gate\|up on the 7B shape |
-| E-P03 | Minor (7B) | FB=2 shipped for `mc3_bt`/`mc3_btd`; S0 recorded FB=4 best on the 7B for gate\|up and down, 49 of ~66 ms | metal/batch.go:139,204,365; metal/gemm_mma8_mc3_test.go:223-224; concurrency-mc3-s0:92-103 | none (register-resident fragments) | 0-8% of the 7B B>=3 step [proj] | instantiate fb4, run `TestMC3Step_throughput` on the 7B |
-| E-P04 | Minor (Major if top_p clients count as default) | No Metal device top-K/top-p/min-p; filtered requests host-select over 152k logits | red-october.md:90; benchmarks.md:1104; decoder/model.go:1920-1929 | none fused (sort.cpp only) | ~13% of a 1.5B token [cnt] | filtered sampled cell on the Mac |
-| E-P05 | Minor | Rows at attention_fa depth run 2 serial dispatches each; the depth-related cost per extra row is 0.085 tokens at 2048 and the batched step has no timing above depth 1536 | metal/batch.go:617-633; metal-spec-step-verify:35-41; concurrency-mc3-s3:63 | sdpa_vector_2pass: all q rows of a kv-head in one TG (sdpa_vector.h:180+; scaled_dot_product_attention.cpp:772,817) | 5-12% of an 8-row step at depth 2048 [proj]; ceiling 21-25% [cnt] | `TestMC3StepBreakdown` at 2048/4096, B=8 |
-| E-P06 | Minor | One 7B@2048 verify cost curve for every model; the 1.5B at depth 128 costs 12/23/51% less at 2/4/8 rows, so the controller declines paying drafts | metal/batch.go:745-748; spec_adaptive.go; spec-step-verify:35-41 | none | 0-5% of 1.5B chat tok/s [proj] | calibrate the curve at load, like `calibrateRows` |
-| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:310-311; metal/kernels.go:1838-1853; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
-| E-P08 | Minor | Greedy rows in a batched step copy 607,744 B each and argmax on the host | metal/batch.go:687-705; metal/model.go:1858-1872 | none | <=2.9% at B=8, <=1.4% at B=4 [cnt] | REVISIT of "fused argmax" |
+| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:501-507,1315-1325; decoder/model.go:383-389 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:112) |
+| E-P01 | Major | Prompts below the 64-token floor, and short reuse suffixes, run sequentially or in a >=96 ms batched pass; the bit-identical 8-row step does them at ~2.3 ms/token | metal/backend.go:622,760-763; decoder/model.go:1581-1602; metal/batch.go:775-806; metal-spec-step-verify-2026-09-27.md:35-41 | quantized.cpp:89-130 (qmv to M<14 on M1 Pro) | K=32 TTFT 305 -> ~74 ms [proj]; 7B ~1.06 s -> ~0.28 s [proj] | prefill a 32-token prompt via `forwardMultiInto` pieces; compare bytes and time |
+| E-P02 | Minor (Major if probe lands) | 7B at B=2 runs per-row GEMVs that each stream the whole gate\|up weight; MLX launches the M rows adjacent so they share weight reads | metal/batch.go:608-619,640-645; quantized.cpp:495-496; kernels/quantized.h:787-794 | qmv grid (M, N/bn) | 0-15% of the 7B B=2 step [proj], ceiling 22% | standalone 2-row gate\|up on the 7B shape |
+| E-P03 | Minor (7B) | FB=2 shipped for `mc3_bt`/`mc3_btd`; S0 recorded FB=4 best on the 7B for gate\|up and down, 49 of ~66 ms | metal/batch.go:140,205,366; metal/gemm_mma8_mc3_test.go:223-224; concurrency-mc3-s0:92-103 | none (register-resident fragments) | 0-8% of the 7B B>=3 step [proj] | instantiate fb4, run `TestMC3Step_throughput` on the 7B |
+| E-P04 | Minor (Major if top_p clients count as default) | No Metal device top-K/top-p/min-p; filtered requests host-select over 152k logits | red-october.md:90; benchmarks.md:1104; decoder/model.go:1967-1976 | none fused (sort.cpp only) | ~13% of a 1.5B token [cnt] | filtered sampled cell on the Mac |
+| E-P05 | Minor | Rows at attention_fa depth run 2 serial dispatches each; the depth-related cost per extra row is 0.085 tokens at 2048 and the batched step has no timing above depth 1536 | metal/batch.go:621-637; metal-spec-step-verify:35-41; concurrency-mc3-s3:63 | sdpa_vector_2pass: all q rows of a kv-head in one TG (sdpa_vector.h:180+; scaled_dot_product_attention.cpp:772,817) | 5-12% of an 8-row step at depth 2048 [proj]; ceiling 21-25% [cnt] | `TestMC3StepBreakdown` at 2048/4096, B=8 |
+| E-P06 | Minor | One 7B@2048 verify cost curve for every model; the 1.5B at depth 128 costs 12/23/51% less at 2/4/8 rows, so the controller declines paying drafts | metal/batch.go:749-752; spec_adaptive.go; spec-step-verify:35-41 | none | 0-5% of 1.5B chat tok/s [proj] | calibrate the curve at load, like `calibrateRows` |
+| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:311-312; metal/kernels.go:1851-1866; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
+| E-P08 | Minor | Greedy rows in a batched step copy 607,744 B each and argmax on the host | metal/batch.go:691-709; metal/model.go:1908-1922 | none | <=2.9% at B=8, <=1.4% at B=4 [cnt] | REVISIT of "fused argmax" |
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
-| E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:541-543; metal/model.go:1858-1872; decoder/model.go:2100-2107 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
-| E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:793-798 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
-| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | metal/model.go:23; internal/serveapp/main.go:413; metal/backend.go:377-404; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
-| E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:862-884; metal/model.go:2788-2793; metal/batch.go:310 | n/a | ~1% [cnt, unmeasured] | micro-bench |
-| E-N01 | Minor | 112 `pack` dispatches per step could be fused into their producers | metal/batch.go:608,641,645 | n/a | <=0.9% [cnt] | none worth running first |
-| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:435; decoder/model.go:377-381 | n/a | n/a | edit text |
+| E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:557-559; metal/model.go:1908-1922; decoder/model.go:2162-2169 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
+| E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:827-832 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
+| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:501-507,1315-1325; decoder/model.go:383-389 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:112) |
+| E-P01 | Major | Prompts below the 64-token floor, and short reuse suffixes, run sequentially or in a >=96 ms batched pass; the bit-identical 8-row step does them at ~2.3 ms/token | metal/backend.go:622,760-763; decoder/model.go:1581-1602; metal/batch.go:775-806; metal-spec-step-verify-2026-09-27.md:35-41 | quantized.cpp:89-130 (qmv to M<14 on M1 Pro) | K=32 TTFT 305 -> ~74 ms [proj]; 7B ~1.06 s -> ~0.28 s [proj] | prefill a 32-token prompt via `forwardMultiInto` pieces; compare bytes and time |
+| E-P02 | Minor (Major if probe lands) | 7B at B=2 runs per-row GEMVs that each stream the whole gate\|up weight; MLX launches the M rows adjacent so they share weight reads | metal/batch.go:608-619,640-645; quantized.cpp:495-496; kernels/quantized.h:787-794 | qmv grid (M, N/bn) | 0-15% of the 7B B=2 step [proj], ceiling 22% | standalone 2-row gate\|up on the 7B shape |
+| E-P03 | Minor (7B) | FB=2 shipped for `mc3_bt`/`mc3_btd`; S0 recorded FB=4 best on the 7B for gate\|up and down, 49 of ~66 ms | metal/batch.go:140,205,366; metal/gemm_mma8_mc3_test.go:223-224; concurrency-mc3-s0:92-103 | none (register-resident fragments) | 0-8% of the 7B B>=3 step [proj] | instantiate fb4, run `TestMC3Step_throughput` on the 7B |
+| E-P04 | Minor (Major if top_p clients count as default) | No Metal device top-K/top-p/min-p; filtered requests host-select over 152k logits | red-october.md:90; benchmarks.md:1104; decoder/model.go:1967-1976 | none fused (sort.cpp only) | ~13% of a 1.5B token [cnt] | filtered sampled cell on the Mac |
+| E-P05 | Minor | Rows at attention_fa depth run 2 serial dispatches each; the depth-related cost per extra row is 0.085 tokens at 2048 and the batched step has no timing above depth 1536 | metal/batch.go:621-637; metal-spec-step-verify:35-41; concurrency-mc3-s3:63 | sdpa_vector_2pass: all q rows of a kv-head in one TG (sdpa_vector.h:180+; scaled_dot_product_attention.cpp:772,817) | 5-12% of an 8-row step at depth 2048 [proj]; ceiling 21-25% [cnt] | `TestMC3StepBreakdown` at 2048/4096, B=8 |
+| E-P06 | Minor | One 7B@2048 verify cost curve for every model; the 1.5B at depth 128 costs 12/23/51% less at 2/4/8 rows, so the controller declines paying drafts | metal/batch.go:749-752; spec_adaptive.go; spec-step-verify:35-41 | none | 0-5% of 1.5B chat tok/s [proj] | calibrate the curve at load, like `calibrateRows` |
+| E-P07 | Minor | Qwen3-family dense models (QK-norm) are outside MC3: no batching, no step-kernel verify | metal/batch.go:311-312; metal/kernels.go:1851-1866; benchmarks.md:508 | n/a | MC3 gave the 7B 4-client aggregate 1.785x the old build (concurrency-mc3-7b-w7:74 [rec]); Qwen3 forgoes it | derive `mc3_qk_norm_rows` with the `edit` method |
+| E-P08 | Minor | Greedy rows in a batched step copy 607,744 B each and argmax on the host | metal/batch.go:691-709; metal/model.go:1908-1922 | none | <=2.9% at B=8, <=1.4% at B=4 [cnt] | REVISIT of "fused argmax" |
+| E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
+| E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:557-559; metal/model.go:1908-1922; decoder/model.go:2162-2169 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
+| E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:827-832 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
+| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | decoder/fitplan.go:184; internal/serveapp/main.go:426; metal/backend.go:377-417; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
+| E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:874-896; metal/model.go:2871-2876; metal/batch.go:311 | n/a | ~1% [cnt, unmeasured] | micro-bench |
+| E-N01 | Minor | 112 `pack` dispatches per step could be fused into their producers | metal/batch.go:612,645,649 | n/a | <=0.9% [cnt] | none worth running first |
+| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:448; decoder/model.go:383-389 | n/a | n/a | edit text |
 
 ### (c) Full entries
 
@@ -2091,9 +2176,9 @@ projection with its band and basis.
 line, with a comment recording the same fault (found 2026-09-28, reproduced 2026-09-30 on the 0.5B). An explicit `--embed-int4` on Metal
 is honoured and runs on the CPU as asked. The text below is the reviewer's original reasoning, from before `loadflags` could be read.
 
-Metal requires an int8 LM head: `int8BufA` falls to `int8Buf`, which errors on a non-int8 weight (metal/model.go:450-456),
-and the head load is at metal/model.go:1281-1290. The in-snapshot comment on `Options.EmbedInt4` says "default off keeps the
-bit-exact int8 pin" (decoder/model.go:377-381) and `embeddingWith` agrees (decoder/weightmat.go:95-106). But
+Metal requires an int8 LM head: `int8BufA` falls to `int8Buf`, which errors on a non-int8 weight (metal/model.go:501-507),
+and the head load is at metal/model.go:1320-1330. The in-snapshot comment on `Options.EmbedInt4` says "default off keeps the
+bit-exact int8 pin" (decoder/model.go:383-389) and `embeddingWith` agrees (decoder/weightmat.go:95-106). But
 task-never-swap-2026-09.md:281-283 records an owner decision of 2026-09-28 "to make `--embed-int4` the default", and
 mc3-prefill-attr-2026-09-28.md:27 reads: "Since 9ccf7fb1 the int4-embedding default makes the Metal resident decline to the
 CPU; a cell whose log does not show `decode path: metal-resident` is void." That run passed `-embed-int4=false`
@@ -2105,14 +2190,14 @@ Severity: Major if the default is on and the decline is silent to the user; the 
 
 #### E-P01 [P, Major] The 8-row step is an exact prefill engine for short prompts
 
-What happens today. `residentPrefillSeed` sends a suffix of 8 tokens or more to `PrefillLast` (decoder/model.go:1559-1580).
-`metalResident.PrefillLast` declines when `startPos+len < metalFastPrefillFloor` (64) with an error (metal/backend.go:745-747), the
-decoder warns and runs the sequential loop, with `ForwardNoLogits` on all but the last token (decoder/model.go:1587-1602). area A
+What happens today. `residentPrefillSeed` sends a suffix of 8 tokens or more to `PrefillLast` (decoder/model.go:1581-1602).
+`metalResident.PrefillLast` declines when `startPos+len < metalFastPrefillFloor` (64) with an error (metal/backend.go:770-779), the
+decoder warns and runs the sequential loop, with `ForwardNoLogits` on all but the last token (decoder/model.go:1609-1624). area A
 A-P02 records the cost: K=32 sequential 104.9 tok/s = ~305 ms; batched 263.4 tok/s needs a fidelity gate that was never run at
 K<64. A reuse turn of 8-63 new tokens at startPos>=64 takes the batched pass, whose floor is ~96 ms at C=16
 (chunked-prefill-2026-09-27.md:102-105 [rec via area A]).
 
-What the repo already has. `metalResident.PrefillLastNArgmax` (metal/batch.go:768-799) runs consecutive positions of the bound slot
+What the repo already has. `metalResident.PrefillLastNArgmax` (metal/batch.go:775-806) runs consecutive positions of the bound slot
 through `forwardMultiInto` in pieces of 8. Its identity gate is 0 logits and 0 K/V elements differing from production
 decode in 7 cases on both models (metal-spec-step-verify:21-27 [rec], `TestMC3Verify_sameSlotRowsBitIdentical`). It is shipped
 as the n-gram verify only.
@@ -2134,10 +2219,10 @@ MLX's own crossover agrees that M<=8 should not take a GEMM tile.
 
 Fidelity. Bit-identical to sequential decode by the record above; no §3.2 pooled gate applies. It also fixes a quirk:
 `mc3Prefill` cuts chunks so the final pass has >= `prefillTailMin` tokens because a sub-8 tail "goes down the sequential path,
-whose numerics are not the batched prefill's" (decoder/model.go:1642-1644); a step-route tail would equal the sequential numerics
+whose numerics are not the batched prefill's" (decoder/model.go:1664-1666); a step-route tail would equal the sequential numerics
 as well. `--exact-prefill` users get a ~3.7x faster exact path at every K [proj].
 
-Preconditions: `batchIneligible() == ""` (two or more slots, dense W4A8, no QK-norm, no windows, no adapter; metal/batch.go:300-332),
+Preconditions: `batchIneligible() == ""` (two or more slots, dense W4A8, no QK-norm, no windows, no adapter; metal/batch.go:301-333),
 which holds for the default Qwen2.5-Coder 1.5B and 7B on `--kv-sessions 4`.
 Band [proj]: K=32 fresh prompt TTFT 305 -> 70-85 ms; K=16 167 -> ~40 ms; reuse turns of 20-50 tokens roughly level with today's
 ~96 ms pass on the 1.5B, so gate the route to K<=~40 until measured. Basis: the two recorded ratios above.
@@ -2146,12 +2231,23 @@ logits against the sequential loop (expect 0 differences), then times K=8/16/32/
 `GOINFER_METAL_FAST_PREFILL_FLOOR=0`, and on the 7B. Kill: K=32 TTFT above 0.6x sequential, or slower than the batched pass at
 K>=16 once A-P01 lands.
 Why this is not already closed: red-october.md:274 and :392 treat 8-255-token prompts as "sequential, stays exact" and the only
-proposed fix is lowering the floor behind a new fidelity cell (metal/backend.go:598-604); the step kernels shipped after (2026-09-26/27)
+proposed fix is lowering the floor behind a new fidelity cell (metal/backend.go:614-620); the step kernels shipped after (2026-09-26/27)
 and no record routes prompts through them. A-P02 hands this alternative to area E.
+
+**Status, 2026-10-01.** T1.10's byte comparison holds: `TestMC3Step_promptInRowsBitIdentical` feeds K = 8, 16, 32 and 64
+tokens to the batched step in 8-row pieces from position 0, and every K/V element and every row's logits match the
+sequential loop, on the default-run fixture and on the 1.5B (0 of 9,723,904 logits at K = 64). The timing half of T1.10
+is night work.
+
+**Status, 2026-10-02 (branch `metal-audit`): done below the floor; held above it.** T1.10's timing: step ÷ sequential
+0.22 (1.5B) and 0.25 (7B) at every K; step ÷ pass 0.40 / 0.80 / 1.56 at K = 16 / 32 / 64. `PrefillLast` now routes a
+prompt that ends below the floor through the step (bit-identical, tested through `PrefillLast` on the fixture and the
+1.5B). The above-floor half is held: a short suffix there is also a chunked prefill's tail, and on the step it breaks
+chunk invariance (C = 81, now in the gate). Details in the program doc's log.
 
 #### E-P02 [P,B, Minor; Major if the probe lands] M-adjacent threadgroup layout for the 7B at B=2
 
-metal/batch.go:604-615 and 634-639: at B<=`rowsQKV`/`rowsGU` the qkv and gate|up matmuls run production's GEMV once per row, each
+metal/batch.go:608-619 and 634-639: at B<=`rowsQKV`/`rowsGU` the qkv and gate|up matmuls run production's GEMV once per row, each
 dispatch streaming the whole weight. S4 chose it because the fragment (1.167 ms) loses to two GEMVs (2 x 0.435 = 0.87 ms) on the
 7B gate|up and it is the one saving the S4 record ships (7B B=2 65.29 -> 58.76 ms at depth 128 [rec], S4:14-27). The weight is
 ~68 MB (0.435 ms at ~157 GB/s), so two serial dispatches stream it twice from DRAM unless the SLC (24 MB) catches the second pass,
@@ -2170,13 +2266,23 @@ Derivation: same `extractKernel`/`edit` method as batch_rows.go; tile index = tg
 
 #### E-P03 [P, Minor] FB=2 shipped where S0 recorded FB=4 best on the 7B
 
-metal/batch.go:139 and 204 instantiate `mc3_bt_fb2`, `mc3_btd_fb2`; 246 instantiates `mc3_lm_fb4`; metal/batch.go:365 binds those. S0's table
+**Status, 2026-10-03: killed and reverted.** The build's own calibration chose FB = 2 for every 7B projection
+(gate|up 1.158 against 1.165 ms at FB = 4, down 0.594 against 0.584: under its 3% bar), so S0's FB = 4 advantage did
+not reproduce in the production step. Graded arms were one build, 0.999–1.001×.
+
+**Status, 2026-10-02 (branch `metal-audit`): built, bit-identical, pending its night grade.** FB = 4 is instantiated
+for `mc3_bt` and `mc3_btd`, and `calibrateFB` picks per projection and per model at build. FB = 4 is taken only where the
+rows divide by 32 and it is at least 3% faster. `TestMC3Step_fb4BitIdentical` forces FB = 4 everywhere: 0 logits
+differ. On the 1.5B the calibration keeps FB = 2, as S0 found. The 7B's grade and its rule are in the task doc ("E-P03:
+built, pending its grade").
+
+metal/batch.go:140 and 204 instantiate `mc3_bt_fb2`, `mc3_btd_fb2`; 246 instantiates `mc3_lm_fb4`; metal/batch.go:366 binds those. S0's table
 (concurrency-mc3-s0:92-103 [rec]) lists the best 8-row variant per shape: 1.5B gate/up 0.244 ms (bt fb2), 1.5B down 0.138 (btd fb2),
 7B gate/up 1.167 (bt fb4), 7B down 0.579 (btd fb4), 7B qkv 0.155 and o 0.115 (fb2). The fb2 times for the two 7B shapes are not
 recorded, and FB=4 exists only in test code (metal/gemm_mma8_mc3_test.go:223-224,294-295,343-354). Those two shapes cost
 (1.167 + 0.579) x 28 = 48.9 ms [cnt] of the 7B's ~59-66 ms step. If fb2 is 10-12% slower there, the saving is ~5-6 ms (7-9%).
 Band [proj]: 0-8% of the 7B step at B>=3. FB only changes which rows a simdgroup owns, so bit-identity is unchanged (S0 table is
-the "bit-identical" column). A per-model pick at `buildBatch`, like `calibrateRows` (metal/batch.go:404-452), keeps the 1.5B on fb2.
+the "bit-identical" column). A per-model pick at `buildBatch`, like `calibrateRows` (metal/batch.go:408-456), keeps the 1.5B on fb2.
 Probe: instantiate fb4 for bt/btd, run `TestMC3Step_bitIdentical` and `TestMC3Step_throughput` on the 7B. Kill: <2% on the step.
 Where the fragment's remaining cost sits [cnt]: 1.5B gate|up 0.244 ms against an MMA floor of ~0.085 ms; 7B gate|up 1.167 against
 ~0.417 ms (~35% of MMA peak). The rest is nibble dequant (~32 scalar ALU ops per lane per (group, block): four MMAs per 32-k group
@@ -2188,8 +2294,8 @@ would save about 2 of ~38 ops per (g, b); not worth a probe by itself.
 Temperature-only requests sample on-device (Gumbel, R7b, 0.96-0.974x greedy [rec]). Any filter takes the host path: there is
 no Metal `ResidentTopK`/`ForwardTopK` (grep: only decoder/model.go and residency.go carry the names). red-october.md:90 (Metal
 column) counts "host softmax/select over 152k per token = 1.8 ms of a 13.5 ms token (counted) -> ~10-15%, unmeasured";
-benchmarks.md:1104 says no Mac sampled cell existed except temp-only. optFwd is off under MC3 (metal/model.go:1993), so a batched
-filtered request has no overlap either. decoder/model.go:1920-1929 records the CUDA top-p regression and its fix; Metal has no
+benchmarks.md:1104 says no Mac sampled cell existed except temp-only. optFwd is off under MC3 (metal/model.go:2044), so a batched
+filtered request has no overlap either. decoder/model.go:1967-1976 records the CUDA top-p regression and its fix; Metal has no
 analog. Counted 1.8/13.5 = 13% [cnt]; worse on the 0.5B.
 MLX analog: none fused; mlx-lm top-p uses argsort (sort.cpp). The design to port is goinfer's own CUDA K-best plus host filter
 with the `Full()` fallback that keeps identity with the host draw.
@@ -2199,7 +2305,7 @@ Fidelity: the CUDA design keeps the host draw bit-identical when K covers the ma
 
 #### E-P05 [P,B, Minor] Deep rows in the batched step: per-row FA pairs, no timing above 1536
 
-metal/batch.go:617-633: a row at `attnFADepthFloor` (1536) or deeper runs `attention_fa_blk` plus `attention_fa_combine` as its own two
+metal/batch.go:621-637: a row at `attnFADepthFloor` (1536) or deeper runs `attention_fa_blk` plus `attention_fa_combine` as its own two
 dispatches, in a serial encoder; rows below run `mc3_attention_rows` as one dispatch. At B=8 that is 16 attention dispatches per layer
 against one, 840 dispatches per step against 420 [cnt]. At ~1.3 us per dispatch (S3 [rec]) the dispatch count is only ~0.55 ms
 [cnt]. The larger cost is occupancy: one row's FA grid is nKV x S = 2 x 16 = 32 threadgroups of 128 threads on a 16-core GPU, so
@@ -2216,7 +2322,7 @@ stripe (sdpa_vector.h:180+, 326 [mlx]); its q_len<=8 limit matches the step's 8 
 masks, so goinfer's `nKeys_rows` is the more general design.
 Lever. Derive `mc3_attention_fa_rows` and `mc3_attention_fa_combine_rows` with the `edit` method (row index from the TG position,
 `slotOff`, `nKeys_rows`, partial buffer indexed by row): one dispatch pair per layer, 256 TGs at B=8, bit-identical to the per-row
-kernels (same body, same split S=16, which is fixed above the floor because the nKeys/32 cap never binds, metal/model.go:2672-2682).
+kernels (same body, same split S=16, which is fixed above the floor because the nKeys/32 cap never binds, metal/model.go:2754-2764).
 For same-slot verify rows, the rows could additionally share the K/V stripe as in MLX's 2-pass (that part changes the reduction
 shape and needs its own identity check; it is not required for the first change).
 Band [proj]: 5-12% of an 8-row step at depth 2048; ceiling 21-25% (7 x (0.235 - 0.157)/2.65 = 21% on the 7B, 7 x (0.193 - 0.108)/2.35 =
@@ -2230,7 +2336,13 @@ same occupancy without it.
 
 #### E-P06 [P, Minor] One verify cost curve for every model
 
-`stepVerifyCost = {0, 1, 1.79, 1.95, 2.11, 2.25, 2.38, 2.52, 2.65, 3.65}` is the 7B at depth 2048, the dearest cell (metal/batch.go:745-748).
+**Status, 2026-10-02 (branch `metal-audit`): built, lossless, pending its night grade.** A model loaded with
+`Options.SpecNgram` (`--spec ngram`) measures its own curve at load, at depth 2048 (`calibrateVerifyCost`). Real
+1.5B at that depth: 1.64 / 1.93 / 2.44 at 2 / 4 / 8 rows against the constant's 1.79 / 2.11 / 2.65. That is 8–9% below
+it, not 12–51%: the gap below compared depth 128 against 2048 as well as model against model. The grade and its rule
+are in the task doc ("E-P06: built, pending its grade").
+
+`stepVerifyCost = {0, 1, 1.79, 1.95, 2.11, 2.25, 2.38, 2.52, 2.65, 3.65}` is the 7B at depth 2048, the dearest cell (metal/batch.go:749-752).
 The 1.5B at depth 128 reads 1.59 / 1.71 / 1.76 at 2 / 4 / 8 rows (same comment), so the curve overstates it by 12% / 23% / 51%. The
 controller drafts when E(d)/Cost[d+1] > 1 with E(d) = sum of alpha^i (spec-step-verify:51-58 [rec]); at d=1 that needs alpha > 0.79
 on the shipped curve against 0.59 on the true 1.5B curve, so for alpha between ~0.6 and ~0.8 it declines drafts that would pay
@@ -2241,10 +2353,10 @@ Band [proj]: 0-5% of 1.5B chat tok/s (chat measured 1.068x, copy 2.082x). Lossle
 
 #### E-P07 [P, Minor] Qwen3-family dense models are outside MC3
 
-`batchIneligible` returns "a family variant the batched step does not reproduce" for `r.qkNorm` (metal/batch.go:310-311). Qwen3 dense is a
+`batchIneligible` returns "a family variant the batched step does not reproduce" for `r.qkNorm` (metal/batch.go:311-312). Qwen3 dense is a
 supported family (benchmarks.md:508 lists qwen3-1.7b). It gets no batched step, no step-kernel verify (n-gram verify stays at the old
 0.71-0.96 per extra row, spec-vs-batching-metal-2026-09-27) and no E-P01 route. The missing piece is small: `qk_norm`
-(metal/kernels.go:1838-1853) is one TG per head on the fused qkv buffer, so a rows form is `qkv_rows + mc3_row*rowStride` by the same
+(metal/kernels.go:1851-1866) is one TG per head on the fused qkv buffer, so a rows form is `qkv_rows + mc3_row*rowStride` by the same
 `edit` method, one more dispatch per layer between the qkv matmul and `rope_rows`. Band: coverage, not a speed figure; the recorded Qwen2.5 gains it would
 forgo are 1.785x 4-client aggregate on the 7B (concurrency-mc3-7b-w7:74 [rec]) and a 1.998x aggregate at B=4, depth 128 (same record, :105-112).
 Probe: derive the kernel and run the same-slot and distinct-slot identity tests on qwen3-1.7b.
@@ -2252,11 +2364,11 @@ Probe: derive the kernel and run the same-slot and distinct-slot identity tests 
 #### E-P08 [P, Minor; REVISIT "fused argmax"] Per-row logits copy and host argmax in the batched step
 
 For greedy rows without a device draw, `forwardMultiInto` copies the 607,744 B row (151,936 x 4) and applies softcap/scale on the host
-(metal/batch.go:703-716); `argmaxOnly` rows are argmaxed on the host after the command buffer (metal/batch.go:687-692). S4's non-GPU slope is
+(metal/batch.go:707-720); `argmaxOnly` rows are argmaxed on the host after the command buffer (metal/batch.go:691-696). S4's non-GPU slope is
 ~0.067 ms per row (1.26/1.39/1.66 ms at B=2/4/8 [rec]), so the ceiling is 0.067 x 8 / 18.7 = 2.9% at B=8 and 1.4% at B=4 [cnt].
 The recorded negative ("fused argmax") priced one token with a zero-copy view; it did not price MC3's per-row copied rows. The machinery
 exists (`greedyDraw` and the gumbel two-stage reduction already run per row on `logitsB`; `Temperature=+Inf` takes the argmax path at
-metal/batch.go:654-662). Output is unchanged (first-max ties). Not recommended before E-P01/E-P05; probe: route greedy rows through the existing
+metal/batch.go:658-666). Output is unchanged (first-max ties). Not recommended before E-P01/E-P05; probe: route greedy rows through the existing
 draw path and compare ids and step time.
 
 #### E-G01 [G, Minor; Major if CI does not set the env] The bit-identity contract has no default-run gate
@@ -2265,85 +2377,124 @@ Identity is the contract of this default-on path. The tests that check it (`gemm
 `mc3_concurrent_test.go`, `mc3_step_test.go`, `mc5_chunk_test.go`, `simdsum_tree_mc3_test.go`, `spec_multiturn_test.go`,
 `spec_verify_identity_test.go`) skip unless `GOINFER_METAL_MC3=1` and need a real checkpoint; `spec_verify_curve`, `spec_prefill_regression`,
 the gumbel tests (except the Philox KAT) and `sampled_gumbel_identity` need `GOINFER_HEAVY_TESTS`. What runs by default is the init-time
-`edit` panics (metal/batch_rows.go:51-59), the `mc3_sstree` build-time check (metal/batch.go:456), `forwardn_batch_test`, parts of `kv_slots_test`, and
+`edit` panics (metal/batch_rows.go:51-59), the `mc3_sstree` build-time check (metal/batch.go:460), `forwardn_batch_test`, parts of `kv_slots_test`, and
 the LoRA tests. There is no decoder-level MC3 test in the snapshot, and no CI configuration. If CI does not export the env on a Mac runner, a
 change to a shared kernel can break MC3 identity with no failing test.
 Coverage gaps even when run: chunk-invariance at B>4 on distinct slots, C=512, unaligned startPos, the 7B; the kvI8 end-to-end gate is a 0.99
 cosine on a tiny model (metal/kv_i8_test.go:327) and the kernel gate cos >= 0.9999, maxAbs <= 1e-3 (:197).
 Probe: read the CI config; run `go test ./metal` on a Mac without the env and count skips.
 
+**Status, 2026-10-01.** The probe: CI's metal job builds, vets (plain and tagged) and runs one device-free test, so no
+Metal identity gate runs in CI, and `cmd/gate` never sets `GOINFER_METAL_MC3`. A plain `go test ./metal/` gave 209 pass
+and 51 skip. Fixed for the identity subset: with the variable unset, a generated fixture (`metal/mc3_fixture_test.go`:
+Qwen2.5-1.5B's attention geometry, everything else small, int4) now backs `TestMC3Step_bitIdentical`, `_bitIdenticalDeep`,
+`_rowsPathBitIdentical`, `_drawsMatchForwardSample`, `TestMC3Verify_sameSlotRowsBitIdentical`,
+`TestMC5_prefillChunkInvariance` and `TestSpecVerify_forwardNMatchesForward`; the last two are no longer behind
+`goinfer_testhooks`. With the variable set they run on the real checkpoint as before. The suite now gives 223 pass and
+41 skip, in 142 s. On the fixture, a one-ulp change to the batched GEMV's group scale fails both step checks, the steel
+kernel's causal limit moved one key fails chunk invariance, and `ForwardBatch` attending one key short fails spec
+verify. Still opt-in: the timings, the GEMM probes (0.5–1 GB of buffers), `TestMC3SimdSumTree` (the same check runs at
+every batched-step build), and the concurrent and multi-turn tests, which generate on a real checkpoint with its
+tokenizer. Of the gaps above, C=512 and chunk starts off the 32-row tiles are now covered; B > 4 on distinct slots and
+the 7B are not.
+
 #### E-C01 [C, Minor, latent] Solo-path logits alias
 
-`metalResident.Forward` returns the shared `r.logitsHost` (metal/backend.go:541-543, "reused across calls"), filled by `finalizeLogits` (metal/model.go:1858-1872,
+`metalResident.Forward` returns the shared `r.logitsHost` (metal/backend.go:557-559, "reused across calls"), filled by `finalizeLogits` (metal/model.go:1908-1922,
 a 608 KB copy). In the MC3 solo path the generation consumes it after the resident section ends: `LogitProcessor` and `SampleWithInfo`
-(decoder/model.go:2099-2107). Batched rows are copied (metal/batch.go:703-704) and the top-K path copies (`topKFullBuf`). A second generation's solo step
+(decoder/model.go:2161-2169). Batched rows are copied (metal/batch.go:707-708) and the top-K path copies (`topKFullBuf`). A second generation's solo step
 overwrites `logitsHost` at its own `finalizeLogits`, about one token of GPU time later. It is safe by timing margin only: a slow
 `LogitProcessor` (grammar masks) or a descheduled goroutine could read a torn row. This is the failure the audit's N-27 declined for on CUDA
 (decoder/spec_optfwd.go:202-204). Probe: two concurrent MC3 generations, one with a 30 ms-sleep `LogitProcessor`, compared with the same request alone.
 Fix if confirmed: copy at the seam under MC3 only.
 
+**Status, 2026-10-02 (branch `metal-audit`): confirmed and fixed.** `TestMC3_soloLogitsSurviveAnotherGeneration`
+(default-run, the MC3 fixture on Metal, two generations: A with a 30 ms `LogitProcessor`, B with an 8 ms one) found
+A's greedy tokens changed beside B on 3 of 3 runs before the fix, from the first token. Two seams, not one: the
+prompt's seed, which `mc3Prefill` hands out after its exclusive section, and a solo decode token's logits. Each is now
+copied while the generation still holds the resident (MC3 only; the non-MC3 path has no other writer). With either copy
+removed the test fails 2 of 2 or 3 of 3; with both it passes 3 of 3. Bit-identical: the forward goldens pass (39/24/0).
+
 #### E-C02 [C, Minor, default-off] `fp contract(fast)` restore and `GOINFER_PRECISE_MATH`
 
 `gumbelMSLKernels` is the last block of `allKernels` and is bracketed by `#pragma METAL fp contract(off)` (metal/gumbel.go:49) and
-`#pragma METAL fp contract(fast)` (:164). `mc3RowsKernels` is appended after it (metal/model.go:797) and the whole library is compiled with
-`CompileLibraryPrecise` under `GOINFER_PRECISE_MATH` (metal/model.go:793-796). The rows kernels derive from kernels that compiled before the pragma, under the
+`#pragma METAL fp contract(fast)` (:164). `mc3RowsKernels` is appended after it (metal/model.go:831) and the whole library is compiled with
+`CompileLibraryPrecise` under `GOINFER_PRECISE_MATH` (metal/model.go:827-830). The rows kernels derive from kernels that compiled before the pragma, under the
 build default; after it, contraction is forced to `fast`. Under the default build the two agree. Under precise math they may not, which would break
 the "bodies unchanged, byte for byte" premise of metal/batch_rows.go:10-20 for that mode, and no test runs MC3 under precise math. Whether the Metal
 compiler's precise mode defaults contraction to off is not settleable statically. Probe: `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical`.
 
 #### E-P09 [P, Minor; possibly Major on the 7B] Default KV slots
 
-`--kv-sessions` defaults to 4 (internal/serveapp/main.go:413), the resident context to 4096 (metal/model.go:23). A slot is ~117 MB on the 1.5B
+`--kv-sessions` defaults to 4 (internal/serveapp/main.go:426), the resident context to 4096 (decoder/fitplan.go:184). A slot is ~117 MB on the 1.5B
 (concurrency-mc1:24 [rec]); on the 7B it is 28 x 4096 x 512 x 2 x 2 B = 235 MB [cnt], so three extra slots are ~705 MB. `metalKVSlots` clamps the
-count to the memory guard's budget and prints a banner when it does (metal/backend.go:377-404); MC1's clamp path was never exercised
+count to the memory guard's budget and prints a banner when it does (metal/backend.go:377-417); MC1's clamp path was never exercised
 (concurrency-mc1:58 [rec]). Whether untouched pages of a freshly allocated shared buffer count against resident memory is not settleable
 statically; if Metal zero-fills them they do. Probe: resident set after load on the 7B with `--kv-sessions 1` and 4.
 
+**Status, 2026-10-01.** Measured by T1.6's probe (`TestMC3_kvSlotFootprintProbe`) on the 1.5B rather than the 7B, since
+the mechanism does not depend on the model and the 7B leaves little headroom on this Mac. Each arm in its own process,
+ctx 4096, 112 MB of KV per slot: right after the build, 4 slots and 1 slot cost the same (footprint 2809 MB against
+2805 and 2811, IOAccelerator 929 against 927), so untouched pages do not count at allocation. After one token they
+all do: IOAccelerator rises by 449 MB with 4 slots and by 114 MB with 1, though only slot 0 was written, consistent with
+a command buffer making each layer's one KV allocation resident. The 3 extra slots therefore cost about 335 MB from the
+first token on; on the 7B, about 705 MB by the same bytes. Log: `docs/measurements/metal-audit-2026-10/t16-kv-slot-footprint-2026-10-01.log`.
+Whether to lower the default slot count is the owner's call (the fix above).
+
+**Status, 2026-10-02 (branch `metal-audit`): done, on the owner's go ("a Metal-only default of 2 KV slots").** With
+`-kv-sessions` not given, serve marks the slot count as its default (`decoder.Options.ResidentKVSlotsDefault`) and Metal
+keeps `metalDefaultKVSlots` = 2 (`metalKVSlots`), printing that it did. A given `-kv-sessions N` keeps N, the memory guard
+permitting. The CPU session count, CUDA and WebGPU are unchanged. That saves about 224 MB on the 1.5B and 470 MB on the 7B
+from the first token. Two slots keep MC3's batched step and a second conversation's prefix; a third and fourth concurrent
+client wait for a slot. `TestMetalKVSlots_default` and `TestKVSessions_defaultReachesTheBackend` pin both halves, and
+each fails with its half removed. The banner's slot line names the default instead of blaming the memory guard. The
+graded MC3 numbers at 4 clients were measured with 4 slots, which now takes `-kv-sessions 4`.
+
 #### E-P10 [P, Minor, opt-in] `kv_store_i8`
 
-`e.Dispatch(r.pKvI8, g.nKV, 1, ...)` (metal/model.go:2792-2793) launches nKV one-thread threadgroups, each running the serial loop at metal/kernels.go:862-884.
-28 dispatches x (a few us) ~ 0.15 ms of ~13.5 ms ~ 1% [cnt, unmeasured]. `--kv i8` is one slot, no FA, no batching (metal/batch.go:310;
-metal/model.go:1232-1244, `allocSlots` stays 1 for int8 KV), so it forfeits MC1, MC3 and the step-kernel verify. Noted so the cost of the flag is on the page; no change proposed.
+`e.Dispatch(r.pKvI8, g.nKV, 1, ...)` (metal/model.go:2875-2876) launches nKV one-thread threadgroups, each running the serial loop at metal/kernels.go:874-896.
+28 dispatches x (a few us) ~ 0.15 ms of ~13.5 ms ~ 1% [cnt, unmeasured]. `--kv i8` is one slot, no FA, no batching (metal/batch.go:311;
+metal/model.go:1271-1283, `allocSlots` stays 1 for int8 KV), so it forfeits MC1, MC3 and the step-kernel verify. Noted so the cost of the flag is on the page; no change proposed.
 
 #### E-N01 [N, Minor] Pack dispatches
 
-4 `pack` dispatches per layer (metal/batch.go:608, 639, 643, and the one after the first rms), 112 per step. Each only changes layout, so fusing it into
+4 `pack` dispatches per layer (metal/batch.go:612, 639, 643, and the one after the first rms), 112 per step. Each only changes layout, so fusing it into
 the producing rows kernel is bit-identical. At ~1.3 us each (S3) that is ~0.15 ms = 0.85% of the 17.2 ms step [cnt]. Not worth running first.
 
 #### E-D01 [D, Minor] Stale text
 
-`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:435); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
-traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:377-381) against the owner decision recorded at
-task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:2594) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
-(metal/model.go:2672-2682); area B owns that.
+`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:448); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
+traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:383-389) against the owner decision recorded at
+task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:2648) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
+(metal/model.go:2754-2764); area B owns that.
 
 ### (d) Carry-forward
 
 | ID | Status | Evidence |
 |---|---|---|
-| M-08 (`lora_delta` one threadgroup) | CLOSED-VERIFIED (code); still unmeasured on a Mac | metal/kernels.go:1799-1838 now launches ceil(Out/256) threadgroups, each recomputing the per-rank tree reduction (redundant, kept fused by decision, audit:1756-1757); metal/lora.go:200-229; lora_delta_multitg_test.go. No Mac adapter-decode record in docs/measurements. |
+| M-08 (`lora_delta` one threadgroup) | CLOSED-VERIFIED (code); still unmeasured on a Mac | metal/kernels.go:1812-1851 now launches ceil(Out/256) threadgroups, each recomputing the per-rank tree reduction (redundant, kept fused by decision, audit:1756-1757); metal/lora.go:200-229; lora_delta_multitg_test.go. No Mac adapter-decode record in docs/measurements. |
 | C-03 (adapter dims unchecked) | CLOSED-VERIFIED | decoder/lora.go:171-202 `validateComputeTimeDims`, called at ~377-384 before the resident bind |
 | C-04 (SetAdapter error path leaks) | CLOSED-VERIFIED | lora.go:~166-209: stopExec first, deferred `releaseLoRALayers` on partial failure; lora_bind_leak_test.go |
-| N-26 (ForwardN per-token sync) | CLOSED-VERIFIED | decoder/residency.go:62-68; metal/backend.go:853-860, ForwardBatch layer-major since a1640a6a; the R12 kill is recorded |
-| N-27 (zero-copy logits) | NEGATIVE-CLOSED, unchanged | metal/model.go:1858-1872 still copies; declined for the CUDA DMA-race reason (audit:1466-1480). E-C01 is the one place the same hazard is latent. |
+| N-26 (ForwardN per-token sync) | CLOSED-VERIFIED | decoder/residency.go:62-68; metal/backend.go:909-916, ForwardBatch layer-major since a1640a6a; the R12 kill is recorded |
+| N-27 (zero-copy logits) | NEGATIVE-CLOSED, unchanged | metal/model.go:1908-1922 still copies; declined for the CUDA DMA-race reason (audit:1466-1480). E-C01 is the one place the same hazard is latent. |
 | N-28 (sampler idle gap above T 0.2) | PARTIAL | temperature-only is on-device since R7b (gumbel.go, gumbel_sample.go); filtered sampling is still host-side (E-P04) |
-| N-03 (no ResidentGreedy on Metal) | still holds | `metalResident` has no `ResidentGreedy`/`ForwardArgmax`; `ForwardArgmax` (metal/model.go:2107-2154) is test-only. The n-gram loop uses `PrefillLastNArgmax` instead. |
+| N-03 (no ResidentGreedy on Metal) | still holds | `metalResident` has no `ResidentGreedy`/`ForwardArgmax`; `ForwardArgmax` (metal/model.go:2158-2205) is test-only. The n-gram loop uses `PrefillLastNArgmax` instead. |
 | batched small-M verify | superseded: shipped | step-kernel verify, metal-spec-step-verify-2026-09-27.md; the old Theta ~1.02 premise no longer applies |
 | fused argmax | recorded negative; REVISIT for MC3 rows only | E-P08, ceiling 2.9% at B=8 |
 | M-16 (concurrent dispatch) | NEGATIVE-CLOSED; REVISIT for the batched step | E-P05 |
-| N-10 (ForwardArgmax comment) | still accurate | metal/model.go:2107 |
+| N-10 (ForwardArgmax comment) | still accurate | metal/model.go:2158 |
 
 ### (e) Checked and found correct
 
-- Slot ordering. Per layer, `kv_store_rows` precedes attention in one serial encoder (metal/batch.go:617-633); rows on one slot are accepted only as one
-  sequence's consecutive positions (metal/batch.go:529-538), so each row sees the rows below it as sequential decode does. Two sequences on one slot are refused.
+- Slot ordering. Per layer, `kv_store_rows` precedes attention in one serial encoder (metal/batch.go:621-637); rows on one slot are accepted only as one
+  sequence's consecutive positions (metal/batch.go:533-542), so each row sees the rows below it as sequential decode does. Two sequences on one slot are refused.
 - Stale KV on slot reuse. Attention is bounded by each row's `nKeys` (metal/batch_rows.go:146-149) and the FA rows by their own `uNKeys[m]`, so bytes past the
   position are never read; a reused slot needs no clearing. Spec rollback by a no-op `TruncateTo` is safe for the same reason.
-- Slot addressing. `slotOffB = slot * kvSlotBytes[0] / 2` in f16 elements (metal/batch.go:567); `batchIneligible` requires uniform layers, one f16 allocation
+- Slot addressing. `slotOffB = slot * kvSlotBytes[0] / 2` in f16 elements (metal/batch.go:571); `batchIneligible` requires uniform layers, one f16 allocation
   per layer (`kvContig`), and widths that tile, so the offset cannot overflow uint32 for the slot counts the guard allows.
 - Sampled-token join. The RNG draw is taken before submit (decoder/model.go:~2152-2158), so a batched stream matches the unbatched one; error paths
   forget ids; the batched draws reuse `gumbelBKey/BIdx` serially inside one encoder (batch.go:~652-674), and the executor never races
-  `ForwardSample`/`ForwardArgmax` (`stopExec` at metal/batch.go:550).
+  `ForwardSample`/`ForwardArgmax` (`stopExec` at metal/batch.go:554).
 - Gumbel. Philox4x32-10, 12-term polynomial small-w branch, `precise::log`, two-stage reduction with lowest-index ties; the pragma bracket is correct under the
   default build; recorded 0/15,840 key mismatches and 12,000/12,000 identical tokens [rec]. The contract is statistical-near-exact against the host f64
   reference (<= 1e-4 mismatch, near-ties) and deterministic given logits bits and (seed, draw). `SampleAvailable` declines for softcap, logit scale and paged MoE.
@@ -2365,7 +2516,7 @@ task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:2594)
 6. Whether untouched pages of the extra KV slots count against resident memory (E-P09).
 7. Whether Metal's precise-math mode defaults `fp contract` to off (E-C02).
 8. `simd_sum` tree on M3 and later: `batchSimdSumTreeOK` guards it at build, but only an M3+ run shows it holding.
-9. Stability of `calibrateRows` (metal/batch.go:404-452) run to run; its choice at B=2/3 on the 7B decides how much E-P02 can buy.
+9. Stability of `calibrateRows` (metal/batch.go:408-456) run to run; its choice at B=2/3 on the 7B decides how much E-P02 can buy.
 10. `docs/tasks/task-concurrency-2026-09.md` and its log directories are cited by many records and absent from the snapshot.
 
 
@@ -2390,71 +2541,80 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| F-C01 | Critical (non-default option: `--kv i8`) | `PrefillLast` never checks `r.kvI8`; `kv_store_f16` writes half K/V into int8-sized KV buffers (wrong KV for every prompt token, OOB device write once position >= ctxCap/2) | `metal/backend.go:729-787`, `metal/model.go:951-952`, `:1145-1163`, `metal/prefill.go:592-599,1077`; decode/UploadKV/batch do check `kvI8` (`metal/backend.go:943`, `metal/batch.go:310`) | MLX has one KV dtype per cache; no analog | correctness | llama-tiny, `KVPrecision:"i8"`, PrefillLast(16 embs, floor 0) vs 16x Forward |
-| F-C02 | Critical (non-default option: ctx > 4096 and head dim > 128, or `GOINFER_METAL_FUSED_ATTENTION=0`) | exact `attention_prefill` stores scores at `sc[s]` with absolute `s` into `threadgroup float sc[4096]`; nothing bounds `startPos+M` by 4096 on that path | `metal/prefill.go:279,286,298`, `:313` (comment admits it), `:1041-1085`, `metal/backend.go:767`, `metal/model.go:26-27,38-53` | `sdpa_vector.h:56-58,91-130`: online softmax, no key-length-proportional threadgroup buffer | correctness | hd=256 fixture, ctxCap 8192, M=5000 vs sequential Forward |
-| F-G01 | Major | the production hd=128 prefill kernel has no default-runnable assertion; coverage is one pooled gate at `startPos=0` plus log-only A/B | `metal/prefill_attn_r19_test.go:25-144` (only `hb(...)` logging), `metal/prefill_decomp_test.go:44-45` (env gate), `metal/prefill_gate_ref_test.go:512`, `metal/prefill_startpos_test.go:37,46-47` + `metal/moe_model_test.go:25` (hd=16) | `steel_attention.h:11-16,282-299,365-412` | gate | float64-reference test as `metal/attn_fa_blk_test.go:147` does for R17 |
-| F-G02 | Major | MC3 step, chunked prefill and spec-verify gates are env-gated on a real checkpoint; the chunk-invariance record predates the steel gate | `metal/mc5_chunk_test.go:25-27,153-155,217-219`; 61 `GOINFER_METAL_MC3` occurrences in 8 test files; `chunked-prefill-2026-09-27.md:15-16,64,130` vs `metal-prefill-attn-2026-09-27.md:14,91` | none | gate | re-run `TestMC5_prefillChunkInvariance` on the wired build |
-| F-G03 | Major | `TestMetalCtxCapWithinKernelBound` asserts two constants; its comment claims it keeps the ceiling a fact | `metal/resident_cap_test.go:40-54`; `metal/model.go:26-27` | none | gate | replace with a prefill run at nKeys = 4097 on hd=256 |
-| F-C03 | Minor (latent) | `attention_fa` has `ATTN_FA_MAXG 8` arrays and no G <= 8 guard on the Go side; the comment says only hd=128 is enforced | `metal/kernels.go:1152,1176,1179,1215`; `metal/model.go:1189-1193,1418-1428`, `:2555-2571` | `steel` has no G array; n/a | correctness | list registry archs with hd=128 and nH/nKV > 8 |
+| F-C01 | Critical (non-default option: `--kv i8`) | `PrefillLast` never checks `r.kvI8`; `kv_store_f16` writes half K/V into int8-sized KV buffers (wrong KV for every prompt token, OOB device write once position >= ctxCap/2) | `metal/backend.go:751-819`, `metal/model.go:989-991`, `:1145-1163`, `metal/prefill.go:674-681,1194`; decode/UploadKV/batch do check `kvI8` (`metal/backend.go:999`, `metal/batch.go:311`) | MLX has one KV dtype per cache; no analog | correctness | llama-tiny, `KVPrecision:"i8"`, PrefillLast(16 embs, floor 0) vs 16x Forward |
+| F-C02 | Critical (non-default option: ctx > 4096 and head dim > 128, or `GOINFER_METAL_FUSED_ATTENTION=0`) | exact `attention_prefill` stores scores at `sc[s]` with absolute `s` into `threadgroup float sc[4096]`; nothing bounds `startPos+M` by 4096 on that path | `metal/prefill.go:361,368,380`, `:313` (comment admits it), `:1041-1085`, `metal/backend.go:799`, `metal/model.go:27-28,43-61` | `sdpa_vector.h:56-58,91-130`: online softmax, no key-length-proportional threadgroup buffer | correctness | hd=256 fixture, ctxCap 8192, M=5000 vs sequential Forward |
+| F-G01 | Major | the production hd=128 prefill kernel has no default-runnable assertion; coverage is one pooled gate at `startPos=0` plus log-only A/B | `metal/prefill_attn_r19_test.go:25-144` (only `hb(...)` logging), `metal/prefill_decomp_test.go:44-45` (env gate), `metal/prefill_gate_ref_test.go:512`, `metal/prefill_startpos_test.go:40,49-50` + `metal/moe_model_test.go:25` (hd=16) | `steel_attention.h:11-16,282-299,365-412` | gate | float64-reference test as `metal/attn_fa_blk_test.go:147` does for R17 |
+| F-G02 | Major | MC3 step, chunked prefill and spec-verify gates are env-gated on a real checkpoint; the chunk-invariance record predates the steel gate | `metal/mc5_chunk_test.go:22-24,86-88`; 61 `GOINFER_METAL_MC3` occurrences in 8 test files; `chunked-prefill-2026-09-27.md:15-16,64,130` vs `metal-prefill-attn-2026-09-27.md:14,91` | none | gate | re-run `TestMC5_prefillChunkInvariance` on the wired build |
+| F-G03 | Major | `TestMetalCtxCapWithinKernelBound` asserts two constants; its comment claims it keeps the ceiling a fact (**fixed 2026-10-01**, the test removed) | `metal/resident_cap_test.go`; `metal/model.go:27-28` | none | gate | replace with a prefill run at nKeys = 4097 on hd=256 |
+| F-C03 | Minor (latent) | `attention_fa` has `ATTN_FA_MAXG 8` arrays and no G <= 8 guard on the Go side; the comment says only hd=128 is enforced | `metal/kernels.go:1165,1189,1192,1228`; `metal/model.go:1228-1232,1458-1468`, `:2555-2571` | `steel` has no G array; n/a | correctness | list registry archs with hd=128 and nH/nKV > 8 |
 | F-D01 | Minor | `benchmarks.md` Metal prefill row, §B3 banner and §B3 bullets contradict R19, R18b and the headline decode row | `docs/benchmarks.md:43,47,1028-1031,1080-1081` vs `metal-prefill-attn-2026-09-27.md:122,126` | none | doc | edit |
-| F-D02 | Minor | `alias.go` says every S6 gate passed; the record says otherwise for gate 1 (literal reading) and the hog arm (M26 not run); v15 kinds 3/4/5 carry binary16 scales but are not aliased and the banner says they carry none | `metal/alias.go:37-40,26-28,298-301`; `s6-alias-2026-09-24.md:131,147-161,191-194,284`; `decoder/model.go:171-185`, `decoder/serialize.go:1738-1743,1810-1822,1895,1970` | none | up to ~390 MB copied on the 7B for a non-metal-target bundle (record's own figure, `s6-alias-2026-09-24.md:142`) | edit; add v15-non-metal fixture |
-| F-D03 | Minor | `HiddenLast` doc says "bit-identical to the CPU reference by construction"; its own tests measure 0.9991-0.9993 / 0.99985 | `metal/backend.go:811-814`; `metal/hiddenlast_resident_parity_test.go:12-21`; `metal/prompthidden_resident_parity_test.go:17-22` | none | doc | edit |
+| F-D02 | Minor | `alias.go` says every S6 gate passed; the record says otherwise for gate 1 (literal reading) and the hog arm (M26 not run); v15 kinds 3/4/5 carry binary16 scales but are not aliased and the banner says they carry none | `metal/alias.go:37-40,26-28,302-306`; `s6-alias-2026-09-24.md:131,147-161,191-194,284`; `decoder/model.go:173-187`, `decoder/serialize.go:1738-1743,1810-1822,1895,1970` | none | up to ~390 MB copied on the 7B for a non-metal-target bundle (record's own figure, `s6-alias-2026-09-24.md:142`) | edit; add v15-non-metal fixture |
+| F-D03 | Minor | `HiddenLast` doc says "bit-identical to the CPU reference by construction"; its own tests measure 0.9991-0.9993 / 0.99985 | `metal/backend.go:867-870`; `metal/hiddenlast_resident_parity_test.go:12-21`; `metal/prompthidden_resident_parity_test.go:17-22` | none | doc | edit |
 | F-D04 | Minor | `gpu-residency-coverage.md` says Qwen-VL multimodal resident decode parity is "verified" in two tests that run on text fixtures | `docs/gpu-residency-coverage.md:134-138`; `metal/forwardmrope_parity_test.go:33-53` | none | doc | edit |
 | F-G04 | Minor | `cmd/gate gpu` gives false failures on a fresh checkout (gitignored fixtures); the "decode==verify" gate it cited is not in the tree at HEAD | `c3-metal-consumer-window-v0.18.0.md:123-133,185-238` | none | gate | check where `TestBatchedVerifyKernelParity` went |
 | F-N01 | Minor | `HiddenLast` on a multi-slot resident overwrites the bound slot from position 0 and forgets its ids, evicting that conversation's reuse | `decoder/embed.go:56-65,83-89`, `decoder/resident_reuse.go:391-396` | none | one full re-prefill of the evicted conversation per embeddings request | pick a free slot first |
 | F-N02 | Minor | S6's changing-file safety rests on one comment (temp+rename); MAP_SHARED means an external in-place write changes live weights | `decoder/giwmap_darwin.go:11-25,43` | none | n/a | none statically |
-| F-B01 | Minor | steel rounds P to half before PV; MLX keeps P in f32 and uses a mixed-type MMA | `metal/prefill.go:564-566` vs `steel_attention.h:473-521` | yes (the delta) | fidelity only | gate pooled KL with P in f32 |
+| F-B01 | Minor | steel rounds P to half before PV; MLX keeps P in f32 and uses a mixed-type MMA | `metal/prefill.go:646-648` vs `steel_attention.h:473-521` | yes (the delta) | fidelity only | gate pooled KL with P in f32 |
 
 ### (c) Full entries
 
 #### F-C01. `PrefillLast` writes f16 KV into an int8 KV cache (Critical, non-default option; the same defect as A-C01)
 
-- **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:504,231`; plumbed from `internal/serveapp/main.go:184`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:871`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1231-1235`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:729-787`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:951-952`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1093`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:592-599`).
-- **Failure.** Every prompt of at least 64 tokens (floor, `metal/backend.go:747`) with a suffix of at least 8 tokens (`decoder/model.go:1550`, `residentPrefillSeed`) takes this path by default. The K/V rows land as f16 bit patterns in an int8-typed cache and the scale buffers are never written, so decode's `attention_i8` reads wrong K/V for the whole prompt. Once `pos*kvDim*2` bytes exceeds the buffer (position >= paddedCtxCap/2, i.e. a prompt over about 2048 tokens at the 4096 default) the write runs past the end of the MTLBuffer; `checkCap`'s own comment (`metal/backend.go:500-506`) says such writes corrupt adjacent buffers on unified memory.
-- **Why it is plausible nobody saw it.** The int8-KV tests drive only sequential `Forward` and `UploadKV`: `metal/kv_i8_test.go:255-330` steps 5 tokens through `Forward`; `metal/uploadkv_parity_test.go:235` covers `UploadKV`. No test calls `PrefillLast` with `kvI8` set (`grep` for `KVPrecision` in `metal/*_test.go` returns only `metal/kv_i8_test.go:270` and `metal/residentkv_alloc_test.go:38,78`). The other batched paths exclude `kvI8` explicitly (`metal/batch.go:310,488`, `metal/model.go:2653`); prefill is the one that does not.
-- **Why this is not already closed.** I checked `docs/audit-metal-2026-09-12.md` (no entry mentions kvI8 and prefill together; C-01 is about the fused kernel's tail read), `metal/backend.go:480-485` (`fastPrefill` keys on `exact` and two env knobs only), and `decoder/model.go:1539-1572` (no KV-precision condition on the `Prefiller` call).
+- **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:523,233`; plumbed from `internal/serveapp/main.go:184`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:909`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1270-1274`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:751-819`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:989-991`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1210`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:674-681`).
+- **Failure.** Every prompt of at least 64 tokens (floor, `metal/backend.go:779`) with a suffix of at least 8 tokens (`decoder/model.go:1572`, `residentPrefillSeed`) takes this path by default. The K/V rows land as f16 bit patterns in an int8-typed cache and the scale buffers are never written, so decode's `attention_i8` reads wrong K/V for the whole prompt. Once `pos*kvDim*2` bytes exceeds the buffer (position >= paddedCtxCap/2, i.e. a prompt over about 2048 tokens at the 4096 default) the write runs past the end of the MTLBuffer; `checkCap`'s own comment (`metal/backend.go:516-522`) says such writes corrupt adjacent buffers on unified memory.
+- **Why it is plausible nobody saw it.** The int8-KV tests drive only sequential `Forward` and `UploadKV`: `metal/kv_i8_test.go:255-330` steps 5 tokens through `Forward`; `metal/uploadkv_parity_test.go:235` covers `UploadKV`. No test calls `PrefillLast` with `kvI8` set (`grep` for `KVPrecision` in `metal/*_test.go` returns only `metal/kv_i8_test.go:270` and `metal/residentkv_alloc_test.go:38,78`). The other batched paths exclude `kvI8` explicitly (`metal/batch.go:311,492`, `metal/model.go:2735`); prefill is the one that does not.
+- **Why this is not already closed.** I checked `docs/audit-metal-2026-09-12.md` (no entry mentions kvI8 and prefill together; C-01 is about the fused kernel's tail read), `metal/backend.go:496-501` (`fastPrefill` keys on `exact` and two env knobs only), and `decoder/model.go:1561-1594` (no KV-precision condition on the `Prefiller` call).
 - **Fix and fidelity.** Return an error from `PrefillLast` when `a.r.kvI8` (the caller then falls back to the sequential loop, `warnPrefillDeclined`). This changes no numerics: the sequential path is the one `--kv i8` already uses today in effect (and the one the tests cover). Writing an int8 prefill store kernel is a larger change that would need its own gate.
 - **Probe.** `decoder.Load("testdata/llama-tiny", {Quant:"int4", KVPrecision:"i8", ResidentContext:64})`, `buildResident`, `setResidentKnob(..."GOINFER_METAL_FAST_PREFILL_FLOOR","0")`, `PrefillLast(16 embeddings, 0)` against 16 sequential `Forward` calls. Kill criterion: logits cosine >= 0.99 and the call returning an error both count as the guard working.
 - **Not reproduced** (no device). Confidence: confirmed by reading the allocation, the dispatch and the missing guard; the outcome description is inferred from the index arithmetic.
 
 #### F-C02. Exact `attention_prefill` overflows `sc[4096]` above 4096 keys (Critical, non-default option)
 
-- **What.** The exact kernel (`metal/prefill.go:265-303`) declares `threadgroup float sc[4096]` (`:279`) and stores `sc[s]` for `s` in `[winStart, nKeys)` using the absolute key index (`:286`, `:298`), so any row with `nKeys > 4096` writes past the array, including windowed layers (the window only moves `winStart`). The fused kernel's comment states the overrun outright (`metal/prefill.go:312-313`: "the exact kernel above allocates sc[4096] and would silently overrun a longer context"). The steel and fused kernels are tile-online and do not have the limit.
-- **When the exact kernel runs.** `useFusedAttn` needs `GOINFER_METAL_FUSED_ATTENTION` on and `hd%8==0 && hd<=128` (`metal/prefill.go:919`); `useSteelAttn` needs `hd==128` (`:920`); otherwise `pAttn` (`:1083-1085`). So: every head-dim-256 family admitted to prefill (Gemma 1/CodeGemma after 08926838a, Gemma 3 after M-06, decided by `prefillFeatures` at `metal/model.go:92-108`), and any model with `GOINFER_METAL_FUSED_ATTENTION=0`.
-- **When nKeys can exceed 4096.** `PrefillLast` bounds only `startPos+len <= ctxCap` (`metal/backend.go:767`). `ctxCap` is 4096 for an unpinned load but up to 32768 for an explicit `-ctx`, or for an unpinned load the fit guard auto-pins (`decoder/model.go:687-694` writes the guard's shrunk context into `opts.ResidentContext`; `resolveMetalCtxCap`, `metal/model.go:38-53`, then honours anything up to 32768). The repo records the guard picking values in that range: 5689 positions (`c3-metal-consumer-window-v0.18.0.md:140`) and 12109-29666 (old audit N-41, `audit-metal-2026-09-12.md:1597`), measured under memory pressure on the Mac. A prompt (or a prefix-reuse turn at `startPos` plus suffix) over 4096 tokens then reaches the exact kernel on a Gemma-class model.
+- **What.** The exact kernel (`metal/prefill.go:347-385`) declares `threadgroup float sc[4096]` (`:279`) and stores `sc[s]` for `s` in `[winStart, nKeys)` using the absolute key index (`:286`, `:298`), so any row with `nKeys > 4096` writes past the array, including windowed layers (the window only moves `winStart`). The fused kernel's comment states the overrun outright (`metal/prefill.go:394-395`: "the exact kernel above allocates sc[4096] and would silently overrun a longer context"). The steel and fused kernels are tile-online and do not have the limit.
+- **When the exact kernel runs.** `useFusedAttn` needs `GOINFER_METAL_FUSED_ATTENTION` on and `hd%8==0 && hd<=128` (`metal/prefill.go:1034`); `useSteelAttn` needs `hd==128` (`:920`); otherwise `pAttn` (`:1083-1085`). So: every head-dim-256 family admitted to prefill (Gemma 1/CodeGemma after 08926838a, Gemma 3 after M-06, decided by `prefillFeatures` at `metal/model.go:102-118`), and any model with `GOINFER_METAL_FUSED_ATTENTION=0`.
+- **When nKeys can exceed 4096.** `PrefillLast` bounds only `startPos+len <= ctxCap` (`metal/backend.go:799`). `ctxCap` is 4096 for an unpinned load but up to 32768 for an explicit `-ctx`, or for an unpinned load the fit guard auto-pins (`decoder/model.go:709-716` writes the guard's shrunk context into `opts.ResidentContext`; `resolveMetalCtxCap`, `metal/model.go:43-61`, then honours anything up to 32768). The repo records the guard picking values in that range: 5689 positions (`c3-metal-consumer-window-v0.18.0.md:140`) and 12109-29666 (old audit N-41, `audit-metal-2026-09-12.md:1597`), measured under memory pressure on the Mac. A prompt (or a prefix-reuse turn at `startPos` plus suffix) over 4096 tokens then reaches the exact kernel on a Gemma-class model.
 - **Failure.** Out-of-range threadgroup writes and reads: wrong attention rows or undefined behaviour; no error is raised.
-- **Why this is not already closed.** `docs/audit-metal-2026-09-12.md` C-01 (:924-947) concerns the fused kernel's tail read and is closed by padding the allocation; no entry covers the exact kernel's score array. The comment at `metal/model.go:26-27` ("allowing deep context up to metalCtxCapMax without threadgroup memory overflow") is true of the decode kernels (`metal/kernels.go:968,1023-1037,1407,1428,1522,1566` are tiled) and false of this one. `metal/resident_cap_test.go:40-54` (F-G03) does not touch it. `metal/attn_shape_test.go:55-77` covers decode `attention` to nKeys 32768, not prefill.
-- **Fix and fidelity.** Decline to the sequential path when `!useFusedAttn` and `startPos+M > attnScoreTileBound` (one condition beside `metal/backend.go:767`); sequential decode attention is tiled and is the bit-identity reference, so nothing changes numerically. Tiling the exact kernel would change its reduction order only beyond 4096 keys, where nothing exists to be identical to.
+- **Why this is not already closed.** `docs/audit-metal-2026-09-12.md` C-01 (:924-947) concerns the fused kernel's tail read and is closed by padding the allocation; no entry covers the exact kernel's score array. The comment at `metal/model.go:27-28` ("allowing deep context up to metalCtxCapMax without threadgroup memory overflow") is true of the decode kernels (`metal/kernels.go:981,1036-1050,1420,1441,1535,1579` are tiled) and false of this one. `metal/resident_cap_test.go` (F-G03) does not touch it. `metal/attn_shape_test.go:55-77` covers decode `attention` to nKeys 32768, not prefill.
+- **Fix and fidelity.** Decline to the sequential path when `!useFusedAttn` and `startPos+M > attnScoreTileBound` (one condition beside `metal/backend.go:799`); sequential decode attention is tiled and is the bit-identity reference, so nothing changes numerically. Tiling the exact kernel would change its reduction order only beyond 4096 keys, where nothing exists to be identical to.
 - **MLX analog.** `sdpa_vector.h:56-58` allocates `outputs[BN*BD]`, `max_scores[BN]`, `sum_exp_scores[BN]` (32x32 plus 2x32 floats) regardless of key count and runs an online softmax (`:91-130`).
 - **Probe.** An hd=256, 2-layer synthetic fixture with `ResidentContext: 8192`, `PrefillLast` of 5000 embeddings (floor knob 0) against sequential `Forward`; plus a variant with `GOINFER_METAL_FUSED_ATTENTION=0` on an hd=64 fixture. Kill: cosine >= 0.999 on both.
 
 #### F-G01. `attention_prefill_steel` is ungated by default (Major)
 
 - **What is covered.** `grep` for `attention_prefill_steel|pAttnSteel` across `metal/` finds only production (`prefill.go`), `prefill_attn_r19_test.go`, `prefill_decomp_test.go` and `prefill_gate_ref_test.go`. `runR19Phase` (`metal/prefill_attn_r19_test.go:25-144`) computes relative L2, max diff, cosine and timings, and reports all of them through `hb(...)`; it contains no `t.Fatal`/`t.Error`, and it runs inside `TestMetalPrefillDecomp`, which skips unless `GOINFER_METAL_DECOMP=1` and a real checkpoint exists (`metal/prefill_decomp_test.go:44-45,56`). The fidelity evidence is the §3.2 pooled gate run once, on set A, with S and D7 (`metal-prefill-attn-2026-09-27.md:88-107`): K = 256 / 512 / 1024 plus one K=3900 cell on S.
-- **What that does not see.** (1) `startPos > 0`: the gate calls `PrefillLast(ctx, embs, 0)` (`metal/prefill_gate_ref_test.go:512`, old G-08). The G-08 closure test (`metal/prefill_startpos_test.go:37-95`) runs on `genTinyWeights`, whose head dim is 16 (`metal/moe_model_test.go:25`), so it dispatches the fused kernel; `useSteelAttn` needs `hd==128` (`metal/prefill.go:920`). Under MC3 chunked prefill every chunk after the first runs steel at `startPos` 512, 1024, ...; every prefix-reuse turn does too. (2) Ragged M and K: gate cells are multiples of 32 except the one K=3900 cell (3900 mod 32 = 28, mod 16 = 12) on S. (3) Windows: the kernel's window path (`metal/prefill.go:484,490,495`) is reached at hd=128 only by a sliding-window hd=128 model, which no gate cell uses. (4) GQA groups: S has G=6 (12/2) and D7 G=7 (28/4); other groups at hd=128 (4, 8) are uncovered. (5) The baseline run on the retired fused kernel is "owed" (`metal-prefill-attn-2026-09-27.md:108-109,127`).
-- **The decoder does pass `startPos > 0`.** `residentPrefillSeed` calls `PrefillLast(ctx, embs, from)` with the reused-prefix offset (`decoder/model.go:1559`), and the MC3 chunk loop calls it with `from` advancing by the chunk size (`decoder/model.go:1657`). The comment at `metal/backend.go:778-780` ("Unreachable today (the decoder always passes 0)") is therefore stale, which is a small instance of the CLAUDE.md doc-comment rule.
-- **Reading of the kernel.** My read of `metal/prefill.go:449-588` found no defect (section e). The finding is that nothing would notice one.
+- **What that does not see.** (1) `startPos > 0`: the gate calls `PrefillLast(ctx, embs, 0)` (`metal/prefill_gate_ref_test.go:512`, old G-08). The G-08 closure test (`metal/prefill_startpos_test.go:40-98`) runs on `genTinyWeights`, whose head dim is 16 (`metal/moe_model_test.go:25`), so it dispatches the fused kernel; `useSteelAttn` needs `hd==128` (`metal/prefill.go:1035`). Under MC3 chunked prefill every chunk after the first runs steel at `startPos` 512, 1024, ...; every prefix-reuse turn does too. (2) Ragged M and K: gate cells are multiples of 32 except the one K=3900 cell (3900 mod 32 = 28, mod 16 = 12) on S. (3) Windows: the kernel's window path (`metal/prefill.go:566,572,577`) is reached at hd=128 only by a sliding-window hd=128 model, which no gate cell uses. (4) GQA groups: S has G=6 (12/2) and D7 G=7 (28/4); other groups at hd=128 (4, 8) are uncovered. (5) The baseline run on the retired fused kernel is "owed" (`metal-prefill-attn-2026-09-27.md:108-109,127`).
+- **The decoder does pass `startPos > 0`.** `residentPrefillSeed` calls `PrefillLast(ctx, embs, from)` with the reused-prefix offset (`decoder/model.go:1581`), and the MC3 chunk loop calls it with `from` advancing by the chunk size (`decoder/model.go:1679`). The comment at `metal/backend.go:810-812` ("Unreachable today (the decoder always passes 0)") is therefore stale, which is a small instance of the CLAUDE.md doc-comment rule.
+- **Reading of the kernel.** My read of `metal/prefill.go:531-670` found no defect (section e). The finding is that nothing would notice one.
 - **Why this is not already closed.** `metal-prefill-attn-2026-09-27.md:124-127` lists "Owed" as served TTFT and the fused baseline gate; it does not list a default-runnable correctness test. `metal/prefill_attn_r19_test.go:11-14` calls the remaining harness "the comparison against the retired kernel", which is the log-only phase. CLAUDE.md's rule that a doc comment claiming coverage with no assertion naming the thing is worse than silence applies to the G-08 closure note (`audit-metal-2026-09-12.md:1226-1237`), which says the `startPos` masking is now covered.
 - **Fix.** One default test in the shape of `metal/attn_fa_blk_test.go:147` (float64 reference over the same f16 K/V): hd=128; M in {1, 7, 31, 33, 100}; startPos in {0, 5, 16, 1000}; window in {0, 64}; nH/nKV in {12/2, 14/2, 32/8}; K/V buffer allocated to exactly `startPos+M` rows rounded to 8 (not page-rounded); assert cosine >= 0.9999, max abs below the fused test's 0.05 bar (`metal/attention_prefill_fused_test.go:109-112`) tightened to what the kernel measures, and no NaN. Mutation-check by shifting the causal limit by one.
 - **Fidelity implication.** None (test only).
+- **Status, 2026-10-01.** Done to this spec: `TestAttentionPrefillSteelMatchesFloat64` runs by default, 240 cases (the
+  grid above, with uniform and peaked scores), in about 3 s. Worst row-head cosine 0.9999999, worst max abs 4.1e-4; the
+  bar is 1e-3. A causal limit shifted by one key either way fails 234 and 239 of the 240 cases. The `metal/backend.go`
+  comment is corrected.
 
 #### F-G02. MC3 / chunked-prefill / spec-verify gates are env-gated, and the chunk-invariance record predates steel (Major)
 
-- **What.** `TestMC5_prefillChunkInvariance`, `TestMC5_chunkCost`, `TestMC5_passCost` skip unless `GOINFER_METAL_MC3=1` (`metal/mc5_chunk_test.go:25-27,153-155,217-219`) and a checkpoint at `GOINFER_METAL_MC3_MODEL`. The same variable gates 61 occurrences across 8 files (`mc3_step_test.go`, `mc3_concurrent_test.go`, `spec_multiturn_test.go`, `spec_verify_identity_test.go`, `gemm_smallm_mc3_test.go`, `simdsum_tree_mc3_test.go`, `mc5_chunk_test.go`, `gemm_mma8_mc3_test.go`). All of `mc5_chunk_test.go` also needs `goinfer_testhooks`.
+- **What.** `TestMC5_prefillChunkInvariance`, `TestMC5_chunkCost`, `TestMC5_passCost` skip unless `GOINFER_METAL_MC3=1` (`metal/mc5_chunk_test.go:22-24,86-88`) and a checkpoint at `GOINFER_METAL_MC3_MODEL`. The same variable gates 61 occurrences across 8 files (`mc3_step_test.go`, `mc3_concurrent_test.go`, `spec_multiturn_test.go`, `spec_verify_identity_test.go`, `gemm_smallm_mc3_test.go`, `simdsum_tree_mc3_test.go`, `mc5_chunk_test.go`, `gemm_mma8_mc3_test.go`). All of `mc5_chunk_test.go` also needs `goinfer_testhooks`.
 - **Ordering.** The chunk-invariance table (0 of 14,336,000 KV elements and 0 of 151,936 logits differ, `chunked-prefill-2026-09-27.md:15-16,35-40`) was produced in the 04:43-05:03 PDT runs (`:64,130`); the steel kernel's gate run is 18:29-19:01 PDT and its wiring is recorded afterwards (`metal-prefill-attn-2026-09-27.md:91,115-122`). The shipped default is `serve -prefill-chunk 512` (`chunked-prefill-2026-09-27.md:10`). So the record's headline "Metal prefill is chunk-invariant" describes the fused-kernel build.
-- **Reading.** Steel keeps all online-softmax state per row and walks absolute-aligned 16-key blocks; a row whose block is fully masked takes the `mNew > -INFINITY` branch and changes nothing (`metal/prefill.go:555-559`), so per-row results should not depend on how rows are grouped into 32-row tiles. That is an argument from the kernel's structure, not a measurement.
+- **Reading.** Steel keeps all online-softmax state per row and walks absolute-aligned 16-key blocks; a row whose block is fully masked takes the `mNew > -INFINITY` branch and changes nothing (`metal/prefill.go:637-641`), so per-row results should not depend on how rows are grouped into 32-row tiles. That is an argument from the kernel's structure, not a measurement.
 - **Why this is not already closed.** The R19 record's owed list (`:124-127`) does not include re-running chunk invariance; the chunked-prefill record has no later annotation (`grep` for "steel|R19" in it returns nothing).
 - **Fix.** Make the invariance test run by default on a generated hd=128 random-weight fixture (it needs random weights and two KV slots, not a real checkpoint), then re-run on the 1.5B once and append the result to the record.
+- **Status, 2026-10-01.** Done. The invariance test runs by default on the fixture (E-G01's status names the rest of the
+  subset), adds C = 512, 100 and 77, and was re-run on the 1.5B on the steel build: 0 of 14,336,000 K/V elements and 0 of
+  151,936 logits differ at every size, and the record has a dated addendum. The aligned sizes alone could not see a bug at
+  a tile edge: with the steel kernel's causal limit moved one key, all four still matched bit for bit, and only the
+  control failed.
 - **Fidelity implication.** None.
 
 #### F-G03. The context-ceiling "fact" test asserts constants (Major by the brief's gate rule)
 
-- `metal/resident_cap_test.go:40-54`: the comment says the test "pins the invariant that keeps the resident context ceiling a FACT" about the attention kernel's score tile; the body checks `metalCtxCapDefault <= attnScoreTileBound` and `metalCtxCapMax % attnScoreTileBound == 0`. It cannot detect F-C02, and `metal/model.go:26-27` repeats the claim for "the attention kernel". It runs by default (`//go:build darwin`, no device needed) and so reads as coverage.
+- `metal/resident_cap_test.go`: the comment says the test "pins the invariant that keeps the resident context ceiling a FACT" about the attention kernel's score tile; the body checks `metalCtxCapDefault <= attnScoreTileBound` and `metalCtxCapMax % attnScoreTileBound == 0`. It cannot detect F-C02, and `metal/model.go:27-28` repeats the claim for "the attention kernel". It runs by default (`//go:build darwin`, no device needed) and so reads as coverage.
 - **Fix.** Delete the claim and add the F-C02 prefill probe, or keep the arithmetic check under a name that says what it checks.
 
 #### F-C03. `attention_fa` has no group-size guard (Minor, latent)
 
-- `metal/kernels.go:1152` defines `ATTN_FA_MAXG 8` and sizes per-thread arrays with it (`:1088,1091,1127`); the kernel comment says the hd=128 requirement is "enforced by the Go dispatch site (canUseAttnFA), NOT in-kernel" (`:1038-1039`) and nothing on the Go side enforces G <= 8: `canUseAttnFA` (`metal/model.go:2649-2665`) tests hd==128, nKV>0, depth, and family flags; the R17 selection (`:1333-1339`) picks `attention_fa_blk_g6/g7` for G = 6, 7 and leaves every other G on `attention_fa`. A dense hd=128 layer with nH/nKV > 8 would index past the arrays at depth >= 1536. No checkpoint that fits a 16 GB Mac that I know of has such a layer (GLM-4.5-class has 96 heads / 8 KV heads at hd=128, so G=12, with a dense first layer, but is far over the memory budget); I did not enumerate the registry.
+- `metal/kernels.go:1165` defines `ATTN_FA_MAXG 8` and sizes per-thread arrays with it (`:1088,1091,1127`); the kernel comment says the hd=128 requirement is "enforced by the Go dispatch site (canUseAttnFA), NOT in-kernel" (`:1038-1039`) and nothing on the Go side enforces G <= 8: `canUseAttnFA` (`metal/model.go:2731-2747`) tests hd==128, nKV>0, depth, and family flags; the R17 selection (`:1333-1339`) picks `attention_fa_blk_g6/g7` for G = 6, 7 and leaves every other G on `attention_fa`. A dense hd=128 layer with nH/nKV > 8 would index past the arrays at depth >= 1536. No checkpoint that fits a 16 GB Mac that I know of has such a layer (GLM-4.5-class has 96 heads / 8 KV heads at hd=128, so G=12, with a dense first layer, but is far over the memory budget); I did not enumerate the registry.
 - **Fix.** `canUseAttnFA` and `canUseAttnFAAt` return false when `nH/nKV > 8`; one comparison. No numeric change.
 
 #### F-D01. `benchmarks.md` Metal rows disagree with each other and with the records (Minor)
@@ -2468,24 +2628,31 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 #### F-D02. `alias.go` overstates S6's gates; the v15 scale case is not covered (Minor)
 
 - `metal/alias.go:37-40`: aliasing is on by default "since 2026-09-24, when every gate in S6's registered rule had passed (... footprint met, the memory-hog arm, Close ordering ...)". The record says: gate 1 "NOT MET" at first (`s6-alias-2026-09-24.md:131`), later "the dense term gone condition is met" with the process total "~60 MB over" read literally (`:191-194`); the hog arm ran on the 7B only and "M26 under a hog [was] deliberately not run" (`:147-148,161,284`); M26 decode was "not resolvable at this n" (`:271-273`); and the default flip is recorded as "on the owner's decision after the gates above" (`:245`). "Every gate had passed" is not what the record says.
-- **v15.** Since v15, kinds 3/4/5 store binary16 scales (`decoder/serialize.go:94,1099-1116,1254-1268`; reader `:1737-1742,1809-1821`), so a non-metal-target bundle carries f16 scales. `Int4ScalesF16` is populated only from `recordF16` at kind 7 and the fused-group case (`decoder/serialize.go:1895,1970`; `decoder/model.go:175-185`), so those scales are widened and converted again into a new buffer (`metal/alias.go:265-283`), and the banner says "carries no f16 scales (written before weights format v14, or not with -target metal)" (`:298-301`), which is wrong for a v15 non-metal bundle. The rebuild advice is still right. The record's size of the copied term is "1/8 of the nibble bytes, ~390 MB on the 7B" (`s6-alias-2026-09-24.md:141-143`). `TestWeightAlias_olderBundleTakesCopyPath` pins a v12 file (`:225-228`), not this case.
+- **v15.** Since v15, kinds 3/4/5 store binary16 scales (`decoder/serialize.go:94,1099-1116,1254-1268`; reader `:1737-1742,1809-1821`), so a non-metal-target bundle carries f16 scales. `Int4ScalesF16` is populated only from `recordF16` at kind 7 and the fused-group case (`decoder/serialize.go:1895,1970`; `decoder/model.go:177-187`), so those scales are widened and converted again into a new buffer (`metal/alias.go:267-285`), and the banner says "carries no f16 scales (written before weights format v14, or not with -target metal)" (`:298-301`), which is wrong for a v15 non-metal bundle. The rebuild advice is still right. The record's size of the copied term is "1/8 of the nibble bytes, ~390 MB on the 7B" (`s6-alias-2026-09-24.md:141-143`). `TestWeightAlias_olderBundleTakesCopyPath` pins a v12 file (`:225-228`), not this case.
 - **Fix.** Reword the header; either bind v15 scale arrays directly (their addresses are in the mapping) or fix the banner text; add a v15 non-metal fixture assertion.
 
 #### F-D03. `HiddenLast` "bit-identical by construction" (Minor)
 
-- `metal/backend.go:811-813` says the sequential kernels are "bit-identical to the CPU reference by construction". `metal/hiddenlast_resident_parity_test.go:12-21` records the measured cosine (about 0.9991-0.9993 on gpt2) and sets the bar at 0.998 because the task doc's 0.9999 was not reachable; `metal/prompthidden_resident_parity_test.go:17-22` records 0.99985 for CPU int4 vs Metal int4 on qwen3_5-tiny. The decode kernels are not bit-identical to the CPU's, and `forwardHiddenNoHead` returns the int8-dequantized activation (`metal/model.go:1724-1743`). Replace the sentence with the measured figure.
+- `metal/backend.go:867-869` says the sequential kernels are "bit-identical to the CPU reference by construction". `metal/hiddenlast_resident_parity_test.go:12-21` records the measured cosine (about 0.9991-0.9993 on gpt2) and sets the bar at 0.998 because the task doc's 0.9999 was not reachable; `metal/prompthidden_resident_parity_test.go:17-22` records 0.99985 for CPU int4 vs Metal int4 on qwen3_5-tiny. The decode kernels are not bit-identical to the CPU's, and `forwardHiddenNoHead` returns the int8-dequantized activation (`metal/model.go:1774-1793`). Replace the sentence with the measured figure.
 
 #### F-D04. Qwen-VL "parity verified" (Minor)
 
-- `docs/gpu-residency-coverage.md:134-138` says Metal supports full multimodal resident decode and "Parity verified in `metal/forwardmrope_parity_test.go` and `metal/uploadkv_parity_test.go`". The former tests constant-shift invariance on `llama-tiny` or a Qwen2.5-Coder GGUF (`metal/forwardmrope_parity_test.go:33-53`), not an M-RoPE VL model; both skip when no fixture is found (`:51`). The heading "The gaps, as of 2026-09-12" (`:37`) also now contains 2026-09-17 content (`:92`). N-04's claim that `ForwardMRoPE` did not exist is closed: `metal/backend.go:523`.
+- `docs/gpu-residency-coverage.md:134-138` says Metal supports full multimodal resident decode and "Parity verified in `metal/forwardmrope_parity_test.go` and `metal/uploadkv_parity_test.go`". The former tests constant-shift invariance on `llama-tiny` or a Qwen2.5-Coder GGUF (`metal/forwardmrope_parity_test.go:33-53`), not an M-RoPE VL model; both skip when no fixture is found (`:51`). The heading "The gaps, as of 2026-09-12" (`:37`) also now contains 2026-09-17 content (`:92`). N-04's claim that `ForwardMRoPE` did not exist is closed: `metal/backend.go:539`.
 
 #### F-G04. `cmd/gate gpu` and the vanished verify gate (Minor)
 
 - The v0.18.0 record shows the Metal device gate reporting 9 pass / 2 skip / 11 fail on a fresh worktree until three gitignored fixture directories were copied in (`c3-metal-consumer-window-v0.18.0.md:123-133`), and one memory-state-dependent failure (`TestDenseResidentParity`: "resident context 5689 positions exceeds this backend's hard ceiling of 4096", `:138-141`). Separately it records `TestBatchedVerifyKernelParity`, "the Metal decode==verify bit-identity gate", red since `26f64807` and blocking a release (`:185-238`). At HEAD `grep` finds that test name only in the doc; `bvk*` identifiers are gone from `metal/`. The record does not say it was fixed. Whether MC3's `mc3_step_test.go` (env-gated, F-G02) took over its role is not stated anywhere I read. `cmd/gate` is not in the snapshot.
+- **Status, 2026-10-01: answered.** `b51b846d` (2026-09-24) deleted the test together with the kernels it measured. The five
+  `gemv_w4a8_bvk_*` kernels of the batched-verify experiment (NO-GO, `docs/completed/task-metal-batched-verify-kernel.md`) were
+  never in `allKernels` or any dispatch path, so no production coverage went with them. The verify path that ships is another
+  one: `--spec ngram` verifies with ForwardN on the MC3 step kernels, and its decode-equals-verify gates are
+  `TestSpecVerify_forwardNMatchesForward` (logits and per-layer K/V, bit for bit) and `TestMC3Verify_sameSlotRowsBitIdentical`.
+  In that sense the MC3 tests took over the role. Both skip unless `GOINFER_METAL_MC3=1` and a real checkpoint are given, and
+  `cmd/gate` never sets that variable, so `gate gpu` does not run them; that is F-G02's gap.
 
 #### F-N01. `HiddenLast` evicts the bound slot's conversation (Minor)
 
-- `hiddenLastResident` calls `residentForgetIDs()` then runs from position 0 on whichever slot is bound (`decoder/embed.go:83-89`; `metal/backend.go:831-855`, `Reset` at `startPos==0`). Bookkeeping stays consistent (the bound slot's ids are cleared, parked slots are untouched), so there is no wrong output; but with MC1 slots an embeddings request destroys the live chat's cached prefix instead of using a free slot (`residentAcquireSlot`, `decoder/resident_reuse.go:234-266`, is not called). Cost: one full re-prefill of that conversation. The call also stays a per-token command buffer loop (`metal/backend.go:835-855`; old N-25).
+- `hiddenLastResident` calls `residentForgetIDs()` then runs from position 0 on whichever slot is bound (`decoder/embed.go:83-89`; `metal/backend.go:887-911`, `Reset` at `startPos==0`). Bookkeeping stays consistent (the bound slot's ids are cleared, parked slots are untouched), so there is no wrong output; but with MC1 slots an embeddings request destroys the live chat's cached prefix instead of using a free slot (`residentAcquireSlot`, `decoder/resident_reuse.go:234-266`, is not called). Cost: one full re-prefill of that conversation. The call also stays a per-token command buffer loop (`metal/backend.go:891-911`; old N-25).
 
 #### F-N02. S6 file-change policy is one comment (Minor)
 
@@ -2493,7 +2660,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-B01. P is rounded to half in steel (Minor, MLX analog)
 
-- `metal/prefill.go:560-566` sums the unrounded `p` into `lRow` and feeds `half(p)` to the PV MMA. MLX keeps `Stile` in `AccumType` (float) and runs `MMAFrag_acc_t::mma(Otile, Stile, Vtile, Otile)` (`steel_attention.h:473-521`), so numerator and denominator use the same f32 values. The rounding error is bounded by 2^-11 relative per term, random in sign, and the pooled gate passed with it (`metal-prefill-attn-2026-09-27.md:96-107`). This is the same class as every other non-bit-identical Metal kernel. Probe: rerun set A with P kept in f32 (mixed float x half `simdgroup_multiply_accumulate`); a pooled-KL difference under the gate's noise ends the question. Not proposed as a speed item.
+- `metal/prefill.go:642-648` sums the unrounded `p` into `lRow` and feeds `half(p)` to the PV MMA. MLX keeps `Stile` in `AccumType` (float) and runs `MMAFrag_acc_t::mma(Otile, Stile, Vtile, Otile)` (`steel_attention.h:473-521`), so numerator and denominator use the same f32 values. The rounding error is bounded by 2^-11 relative per term, random in sign, and the pooled gate passed with it (`metal-prefill-attn-2026-09-27.md:96-107`). This is the same class as every other non-bit-identical Metal kernel. Probe: rerun set A with P kept in f32 (mixed float x half `simdgroup_multiply_accumulate`); a pooled-KL difference under the gate's noise ends the question. Not proposed as a speed item.
 
 ### (d) Carry-forward of the Sep 12 entries
 
@@ -2501,8 +2668,8 @@ Status uses the five values from the brief. "Record only" means the cited target
 
 | ID | Status | Evidence at HEAD |
 |---|---|---|
-| C-01 | CLOSED-VERIFIED | `metal/model.go:1223-1237` pads the allocation to 8 rows; `metal/attention_prefill_fused_cachepad_test.go:14,31` asserts `Buffer.Len`. The steel kernel only loads keys `< jEnd` (`metal/prefill.go:518-521`), so it does not rely on the padding. |
-| C-02 | CLOSED-VERIFIED | `metal/backend.go:825-827` declines `HiddenLast` on a paged MoE (also `:569`, `:842`, `:869`); chokepoint panics at `metal/moe.go:661`, `metal/gemma4_moe.go:419`; test `metal/c02_paged_forward_entrypoints_test.go:28`. |
+| C-01 | CLOSED-VERIFIED | `metal/model.go:1262-1276` pads the allocation to 8 rows; `metal/attention_prefill_fused_cachepad_test.go:14,31` asserts `Buffer.Len`. The steel kernel only loads keys `< jEnd` (`metal/prefill.go:600-603`), so it does not rely on the padding. |
+| C-02 | CLOSED-VERIFIED | `metal/backend.go:881-883` declines `HiddenLast` on a paged MoE (also `:569`, `:842`, `:869`); chokepoint panics at `metal/moe.go:688`, `metal/gemma4_moe.go:434`; test `metal/c02_paged_forward_entrypoints_test.go:28`. |
 | C-03 | CLOSED-VERIFIED (code; test record only) | `decoder/lora.go:165-196` `validateComputeTimeDims`, called at `:380`. `decoder/*_test.go` not in snapshot. |
 | C-04 | CLOSED-VERIFIED | `metal/lora.go:173-176,203` (`bound` flag, deferred release); `metal/lora_bind_leak_test.go:20`. |
 | C-05 | CLOSED-VERIFIED | aikit `metal.go:988-992` pins the thread in `Run1DBatchTG`. |
@@ -2512,71 +2679,71 @@ Status uses the five values from the brief. "Record only" means the cited target
 | G-03 | PARTIAL | Record says the fixture now mixes sliding and full layers; the checkpoint is gitignored and the generator absent from the snapshot, so not verifiable here. The kernel a real Gemma 3 reaches at hd=256 (`attention_prefill`, exact) has no hd=256 test at any length (F-C02). |
 | G-04 | PARTIAL | Golden still re-bakes with `GOINFER_UPDATE_GOLDENS` and no argmax/cosine gate (`metal/snapshot_golden_test.go:223-226`); `metal/kernels.go:135,180` still cite `scripts/autoresearch_rmsnorm_results.tsv`, absent. |
 | G-05 | OPEN (REVISIT) | `pagecost_sharedevent_test.go` comment still reads "recovers ~0% ... synchronous Metal MoE paging is not viable" (dense 1.5B, ~0.26 ms/boundary). REVISIT premise: measured on a dense shape where the boundary costs 0.26 ms, not the ~15 ms the paged 26B shows (`metal/residency_probe_test.go:11-12` per the old audit). Cheapest probe: re-run on the paged 26B (area D). |
-| G-06 | CLOSED-VERIFIED | `metal/close_leak_test.go:144-181,222-282` assert `CurrentAllocatedSize`; `metal/alias_fixtures_test.go:142-166` also. |
+| G-06 | CLOSED-VERIFIED | `metal/close_leak_test.go:162-199,240-300` assert `CurrentAllocatedSize`; `metal/alias_fixtures_test.go:142-166` also. |
 | G-07 | CLOSED-VERIFIED | `metal/prefill_gate_test.go:75` sets the floor to 0; `TestMetalPrefillDivergenceRate` is cited only in comments that say it no longer exists (`metal/prefill_gate_test.go:48,186`, `spec_*_test.go`). `docs/measurements/prefill-gate-l1-2026-09-05.md:66` still cites it as a name (a dated record). |
 | G-08 | PARTIAL | `prefill_startpos_test.go` exists and passes for hd=16 (fused). Steel at hd=128 with `startPos>0` is not covered (F-G01). |
-| G-09 | OPEN | `metal/moe_prefill_measure_test.go:33` skips without a checkpoint ("a manual measurement, not a CI gate") and `:54-55` still Fatals on a paged resident. Its comment still says default-ON "above the 512-token floor" (`:17-18`); the floor is 64 (`metal/backend.go:737`). |
+| G-09 | OPEN | `metal/moe_prefill_measure_test.go:33` skips without a checkpoint ("a manual measurement, not a CI gate") and `:54-55` still Fatals on a paged resident. Its comment still says default-ON "above the 512-token floor" (`:17-18`); the floor is 64 (`metal/backend.go:760`). |
 | G-10 | CLOSED-VERIFIED | Pointer resolved by C-06's pre-check (above). |
 | N-01 | CLOSED-VERIFIED | Superseded callouts and labelled figures at `benchmarks.md:575-580,602`. New staleness layer: F-D01. |
 | N-02 | CLOSED-VERIFIED | `benchmarks.md:1068-1070,1083-1087`. |
 | N-03 | CLOSED-VERIFIED | `benchmarks.md:1148`. |
-| N-04 | CLOSED-VERIFIED | `gpu-residency-coverage.md:25-28,102-109,134-138`; `ForwardMRoPE` now exists (`metal/backend.go:523`). New overstatement: F-D04. |
+| N-04 | CLOSED-VERIFIED | `gpu-residency-coverage.md:25-28,102-109,134-138`; `ForwardMRoPE` now exists (`metal/backend.go:539`). New overstatement: F-D04. |
 | N-05 | CLOSED-VERIFIED (record only) | `audit-2026-09-10.md` and `docs/completed/` not in snapshot. |
 | N-06 | CLOSED-VERIFIED (record only) | `task-autoresearch-loop.md` not in snapshot. |
 | N-07 | CLOSED-VERIFIED (record only) | `docs/completed/` not in snapshot; `grep` finds no `bvk*` code, consistent with the NO-GO. |
-| N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:807-814` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
+| N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:863-870` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
 | N-09 | CLOSED-VERIFIED | no "greedy decode skips" text found. |
 | N-10 | CLOSED-VERIFIED | no "11 dispatches vs 19" text found. |
 | N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:417` cites `metal/moe.go:375-376`. |
 | N-12 | CLOSED-VERIFIED | `prefill-gate-l1-ref-b-2026-09-09.md:14`. |
 | N-13 | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-77,146`. |
 | N-14 | PARTIAL | Floor still 0.95 (`metal/lora_resident_parity_test.go:114,203`) against measured 0.9998/0.9988 (`:104-111`); parked on purpose. A dropped projection could still pass. |
-| N-15 | OPEN | `metal/prefill.go:951-959` still `make`s and zero-fills ~15 scratch buffers per call; chunked record notes "about 15 MB allocated and zeroed per pass" (`chunked-prefill-2026-09-27.md:111-113`). Now matters per chunk. |
-| N-16 | OPEN | `ensurePrefill` is still called inside `PrefillLast` (`metal/prefill.go:925`); the N-47 latch is present (`:815-819`). |
+| N-15 | OPEN | `metal/prefill.go:1066-1074` still `make`s and zero-fills ~15 scratch buffers per call; chunked record notes "about 15 MB allocated and zeroed per pass" (`chunked-prefill-2026-09-27.md:111-113`). Now matters per chunk. |
+| N-16 | OPEN | `ensurePrefill` is still called inside `PrefillLast` (`metal/prefill.go:1040`); the N-47 latch is present (`:815-819`). |
 | N-17 | CLOSED-VERIFIED | `gemm_w4f16` gone; `gemv_w4a8_sa_amax` documented in `metal/kernels.go:9-16`. |
 | N-18 | CLOSED-VERIFIED | subsumed: fused kernel no longer the hd=128 path (R19); fused still serves hd < 128 (area A). |
-| N-19 | OPEN | `rope_f16` dispatched separately for Q and K (`metal/prefill.go:1090-1091`), no fusion. |
-| N-20 | CLOSED-VERIFIED | `int4DirectBytesOnly` used in `metal/gemma4_moe.go:301-302`. |
-| N-21 | CLOSED-VERIFIED | `metal/expertpool.go:178-183` uses `gpu.NewBufferLenOf`. |
+| N-19 | OPEN | `rope_f16` dispatched separately for Q and K (`metal/prefill.go:1207-1208`), no fusion. |
+| N-20 | CLOSED-VERIFIED | `int4DirectBytesOnly` used in `metal/gemma4_moe.go:292-293`. |
+| N-21 | CLOSED-VERIFIED | `metal/expertpool.go:213-218` uses `gpu.NewBufferLenOf`. |
 | N-22 | OPEN (area D) | superseded by M-11; not re-read. |
 | N-23 | CLOSED-VERIFIED (record only) | not re-read (area D). |
 | N-24 | NEGATIVE-CLOSED | deliberate design as recorded; not re-read. |
-| N-25 | PARTIAL | Comment rewritten (`metal/backend.go:811-819`); still one command buffer per position (`:803-823`). |
+| N-25 | PARTIAL | Comment rewritten (`metal/backend.go:867-875`); still one command buffer per position (`:803-823`). |
 | N-26 | CLOSED-VERIFIED | `decoder/residency.go:60-69` states Metal's `ForwardBatch` is one command buffer, per-token only for paged MoE. |
 | N-27 | NEGATIVE-CLOSED | Premise unchanged (`spec_optfwd.go` reliance recorded); not re-read. |
 | N-28 | OPEN | Sampler/GPU overlap unchanged by anything I read; not an F item. |
-| N-29 | CLOSED-VERIFIED | `bytesToU32` at `metal/model.go:488`; `int4Concat` pre-sized (`:452-677`). |
+| N-29 | CLOSED-VERIFIED | `bytesToU32` at `metal/model.go:539`; `int4Concat` pre-sized (`:452-677`). |
 | N-30 | PARTIAL | Stale K<=1536 comment corrected at `metal/kernels.go:397-400`; `swiglu_quant` double evaluation stays a recorded negative. |
 | N-31 | OPEN | `WaitDone` still captures timestamps (aikit `metal.go:740-767`); microseconds. |
 | N-32 | PARTIAL | Comment fixed (`metal_vit.go:1149-1150`); the library-wide fast-math-off compile remains (`metal_vit.go:363`). |
-| N-33 | CLOSED-VERIFIED | `metal/expertpool.go:64-75`. |
+| N-33 | CLOSED-VERIFIED | `metal/expertpool.go:66-77`. |
 | N-34 | OPEN | informational; not re-read. |
-| N-35 | CLOSED-VERIFIED | `decoder/model.go:1489-1520` keyed set. |
+| N-35 | CLOSED-VERIFIED | `decoder/model.go:1511-1542` keyed set. |
 | N-36 | CLOSED-VERIFIED | `decoder/residentneed.go:62`. |
 | N-37 | OPEN | micro-bench shape note; unchanged. |
 | N-38 | OPEN | first-call compile note; unchanged (and `ensurePrefill` is still lazy, N-16). |
-| N-39 | PARTIAL | Comment fixed; the underlying gap stays: `decoder/model.go:1753` still requires `prefillFrom == 0` for the resident path with an adapter. |
+| N-39 | PARTIAL | Comment fixed; the underlying gap stays: `decoder/model.go:1781` still requires `prefillFrom == 0` for the resident path with an adapter. |
 | N-40 | OPEN | `benchmarks.md:1026` still "4-bit both sides" with no int8-head qualifier. |
-| N-41 | PARTIAL | The ceiling moved from 4096 to 32768 (`metal/model.go:21-32`) and an unpinned load defaults to 4096 (`:40-42`), so the 5689 case is now accepted. The planner still does not know the ceiling (`decoder/fitplan.go:225-227` has one for WebGPU only): an auto-pinned context above 32768 is refused and the model declines to the CPU path (`metal/model.go:43-48`). Tests work around it by pinning (`metal/prefill_gate_ref_test.go:145-151`, `metal/decode_decomp_test.go:80-83`). |
+| N-41 | PARTIAL | The ceiling moved from 4096 to 32768 (`metal/model.go:21-34`) and an unpinned load defaults to 4096 (`:40-42`), so the 5689 case is now accepted. The planner still does not know the ceiling (`decoder/fitplan.go:233-243` has one for WebGPU only): an auto-pinned context above 32768 is refused and the model declines to the CPU path (`metal/model.go:51-56`). Tests work around it by pinning (`metal/prefill_gate_ref_test.go:145-151`, `metal/decode_decomp_test.go:80-83`). |
 
 ### (e) Checked and found correct
 
-- **R19 steel, `metal/prefill.go:449-588`.** Ragged K: keys `>= jEnd` are staged as zero (`:513-524`) and masked by `js >= myKeys` (`:544-547`); ragged M: `min(myRow, M-1)` clamps (`:483,487,492-494`), store guard `myRow < M` (`:580`), padded Q rows exist because `Mpad = ceil8(M)` and `qkvF` is `Mpad*qkvDim` (`:911,936`). Causal boundary: `edge` is true unless the whole block lies below the simdgroup's first row's key limit (`startPos+r0+1`), a conservative superset (`:542`); the window lower bound is handled in the same predicate and in the block range (`:484,490,495,527`). Fully masked rows: `-INFINITY` with explicit `mNew > -INFINITY` and `s > -INFINITY` guards (`:555-559`), output 0 when `lRow == 0` (`:581`). GQA: `kvh = qh/(nH/nKV)` (`:476`). Barriers are threadgroup-uniform (`jStart`/`jEnd` do not depend on the lane; skips are inside the block, barriers at `:525,577`). Q/K/V positions: scatter runs before attention (`:1077` then `:1080`). Heterogeneous geometry is excluded by `prefillOK` (`metal/model.go:951`), and sinks/qGate/DeltaNet by `prefillFeatures` (`:92-108`, no `FeatAttnSink`).
+- **R19 steel, `metal/prefill.go:531-670`.** Ragged K: keys `>= jEnd` are staged as zero (`:513-524`) and masked by `js >= myKeys` (`:544-547`); ragged M: `min(myRow, M-1)` clamps (`:483,487,492-494`), store guard `myRow < M` (`:580`), padded Q rows exist because `Mpad = ceil8(M)` and `qkvF` is `Mpad*qkvDim` (`:911,936`). Causal boundary: `edge` is true unless the whole block lies below the simdgroup's first row's key limit (`startPos+r0+1`), a conservative superset (`:542`); the window lower bound is handled in the same predicate and in the block range (`:484,490,495,527`). Fully masked rows: `-INFINITY` with explicit `mNew > -INFINITY` and `s > -INFINITY` guards (`:555-559`), output 0 when `lRow == 0` (`:581`). GQA: `kvh = qh/(nH/nKV)` (`:476`). Barriers are threadgroup-uniform (`jStart`/`jEnd` do not depend on the lane; skips are inside the block, barriers at `:525,577`). Q/K/V positions: scatter runs before attention (`:1077` then `:1080`). Heterogeneous geometry is excluded by `prefillOK` (`metal/model.go:989`), and sinks/qGate/DeltaNet by `prefillFeatures` (`:92-108`, no `FeatAttnSink`).
 - **MLX comparison for those guards.** MLX uses function constants `align_Q`/`align_K` (`steel_attention.h:11-12,235,299,365,455,551`) so aligned shapes skip the tail code; goinfer evaluates one `edge` predicate per block at run time and zero-fills instead, which costs a branch and two compares per block, no correctness. MLX masks with `finite_min` (`:368,389,412`), goinfer uses `-INFINITY` with the explicit guards above, so the all-masked-row case is handled rather than relied on. MLX's `kb_lim`/`kb_min_causal` (`:282-292`) correspond to goinfer's `jEnd` and the `sEnd`/`sStart` simdgroup test. MLX supports sinks (`:274-279`); goinfer excludes them from prefill rather than ignoring them.
-- **R17 `attention_fa_blk`, G=6,7.** Selection `metal/model.go:1427-1433`; fixed split 16 and depth floor 1536 (`:2507,2517`); window, sinks, qGate, kvI8, LoRA excluded in `canUseAttnFA` (`:2555-2571`) and in the batched twin (`metal/batch.go:482-498`); `metal/attn_fa_blk_test.go:147` is a default-runnable float64 reference, with `:49` pinning that the graded kernel is the one dispatched and `:196` pinning selection.
-- **R18/R18b.** `gemvRowsFor` tiling guard (`metal/model.go:2638-2645`), per-layer minimum for qkv (`:1297-1307`), down only when `I%4==0` and K bytes fit threadgroup memory (`:1305`), pipelines named by R (`:1308-1317`).
-- **f16 scales.** One conversion (`decoder.F16Bits`, `f32ToF16` calls it, `metal/alias.go:220-221`); writers store exact binary16 (`decoder/serialize.go:1109-1116`); every kernel I read takes `device const half*` scales (`metal/kernels.go:344,358,364`); upload paths (`int4Buf`, `int4Concat`, `int4ConcatA`, expert pool precompute) all go through that function.
-- **S6 alias.** Page-aligned windows over `MmapAliasWindow` (`decoder/model.go:191-200`), 16-byte offset check and decline (`metal/alias.go:207-210,244`), PROT_READ `MAP_SHARED` mapping (`decoder/giwmap_darwin.go:43`), fork exclusion (`decoder/model.go:187-189`), Close ordering and device-size flatness tested (`metal/alias_fixtures_test.go:142-166`, `s6-alias-2026-09-24.md:221-224`), logits byte-identity over 23 fixtures with a mutation check (`:207-213`).
-- **MC1 slots.** `kvContig` single allocation with per-slot padded region (`metal/model.go:1238-1276`); bookkeeping swap in `residentBind` (`decoder/resident_reuse.go:299-318`); recurrent-state families keep one slot (`:212-218`); `pickResidentSlot` avoids truncating another conversation for a shared preamble (`:292-323`).
-- **MC3.** `batchIneligible` (`metal/batch.go:299-332`) excludes kvI8, sandwich, layer norm, qk-norm, windows, MoE and untiled widths; adapters are refused (`metal/batch.go:523`) and held out by the exclusive claim (`decoder/mc3_batch.go:150-157`).
-- **PrefillLast hygiene.** Panics from compile and the per-call allocations are recovered into an error (`metal/backend.go:778-787`); `startPos < 0` and cap are checked (`:741`).
+- **R17 `attention_fa_blk`, G=6,7.** Selection `metal/model.go:1467-1473`; fixed split 16 and depth floor 1536 (`:2507,2517`); window, sinks, qGate, kvI8, LoRA excluded in `canUseAttnFA` (`:2555-2571`) and in the batched twin (`metal/batch.go:486-502`); `metal/attn_fa_blk_test.go:147` is a default-runnable float64 reference, with `:49` pinning that the graded kernel is the one dispatched and `:196` pinning selection.
+- **R18/R18b.** `gemvRowsFor` tiling guard (`metal/model.go:2600-2607`), per-layer minimum for qkv (`:1297-1307`), down only when `I%4==0` and K bytes fit threadgroup memory (`:1305`), pipelines named by R (`:1308-1317`).
+- **f16 scales.** One conversion (`decoder.F16Bits`, `f32ToF16` calls it, `metal/alias.go:222-223`); writers store exact binary16 (`decoder/serialize.go:1109-1116`); every kernel I read takes `device const half*` scales (`metal/kernels.go:344,358,364`); upload paths (`int4Buf`, `int4Concat`, `int4ConcatA`, expert pool precompute) all go through that function.
+- **S6 alias.** Page-aligned windows over `MmapAliasWindow` (`decoder/model.go:193-202`), 16-byte offset check and decline (`metal/alias.go:209-212,246`), PROT_READ `MAP_SHARED` mapping (`decoder/giwmap_darwin.go:43`), fork exclusion (`decoder/model.go:189-191`), Close ordering and device-size flatness tested (`metal/alias_fixtures_test.go:142-166`, `s6-alias-2026-09-24.md:221-224`), logits byte-identity over 23 fixtures with a mutation check (`:207-213`).
+- **MC1 slots.** `kvContig` single allocation with per-slot padded region (`metal/model.go:1277-1315`); bookkeeping swap in `residentBind` (`decoder/resident_reuse.go:271-290`); recurrent-state families keep one slot (`:212-218`); `pickResidentSlot` avoids truncating another conversation for a shared preamble (`:292-323`).
+- **MC3.** `batchIneligible` (`metal/batch.go:300-333`) excludes kvI8, sandwich, layer norm, qk-norm, windows, MoE and untiled widths; adapters are refused (`metal/batch.go:527`) and held out by the exclusive claim (`decoder/mc3_batch.go:150-157`).
+- **PrefillLast hygiene.** Panics from compile and the per-call allocations are recovered into an error (`metal/backend.go:810-819`); `startPos < 0` and cap are checked (`:741`).
 - **Gemma.** `TestGemma1ResidentParityMetal` uses `Fatalf` when the fixture does not go resident rather than `Skip` and gates at cosine 0.999 on 16 positions (`metal/gemma1_resident_parity_test.go:18-55`); `TestGemma2DeclinesResidentMetal` asserts the decline reason names the attention softcap (`:59-72`), which is the kind of assertion CLAUDE.md asks for. `capability-matrix.md` has no Metal column; its `GPU-resident` column (lines 113-114) is consistent with these two tests.
 - **Decode attention depth.** `metal/attn_shape_test.go:37-91` compares the shipped decode kernel with a CPU reference at hd 128/256/512, windows, and nKeys 4096, 8192, 16384, 32768, by default.
-- **Executor race.** `attnPlan` is compared per job and re-encoded on mismatch (`metal/model.go:2629-2642`).
+- **Executor race.** `attnPlan` is compared per job and re-encoded on mismatch (`metal/model.go:2702-2724`).
 
 ### (f) Questions I could not settle statically
 
-1. Whether `--kv i8` really reaches `PrefillLast` in a served Metal run. I found no guard in `backend.go`, `model.go` or `decoder/model.go:1539-1572`; I did not read every wrapper between `serveapp` and the resident. The probe in F-C01 settles it in one run.
+1. Whether `--kv i8` really reaches `PrefillLast` in a served Metal run. I found no guard in `backend.go`, `model.go` or `decoder/model.go:1561-1594`; I did not read every wrapper between `serveapp` and the resident. The probe in F-C01 settles it in one run.
 2. Steel numerics at `startPos > 0`, with windows, and at ragged M/K for hd=128. No evidence either way.
 3. Whether chunked prefill is still bit-identical to whole prefill on the steel build. Argued from structure (F-G02), not measured.
 4. How often the fit guard auto-pins between 4097 and 32768 (F-C02) or above 32768 (N-41) on a 16 GB Mac. It depends on free RAM at load.
@@ -2605,11 +2772,11 @@ pre-registered sweep, a pooled fidelity gate or a multi-hour real-model run. The
 
 | # | Item | What | Status, 2026-10-01 |
 |---|---|---|---|
-| T0.1 | A-C01 ≡ F-C01 | `&& !r.kvI8` in `prefillOK` (`metal/model.go:951-952`), so `PrefillPath()` reports sequential; a test that builds an i8 resident and asserts `PrefillLast(embs[≥64], 0)` returns the decline error with the floor knob at 0. Then reproduce the failure once on the Mac (llama-tiny, `KVPrecision:"i8"`, `PrefillLast` of 16 embeddings against 16 `Forward` calls) to confirm the derivation. [day] | **Done** (`de1c7f17`): the guard and `TestPrefill_declinesInt8KV`. The device reproduction of the wrong K/V is not in the record |
-| T0.2 | F-C02, F-G03 | Decline to the sequential path when `!useFusedAttn && startPos+M > attnScoreTileBound` (beside `metal/backend.go:767`); replace `TestMetalCtxCapWithinKernelBound` with a prefill run at nKeys = 4097 on an hd=256 fixture (and an hd=64 fixture with `GOINFER_METAL_FUSED_ATTENTION=0`); correct the "without threadgroup memory overflow" claim at `metal/model.go:26-27`. [day] | **Partly done** (`de1c7f17`): the decline and `TestPrefill_exactAttentionDeclinesPast4096Keys`. Open: F-G03's replacement test and the `metal/model.go` comment |
-| T0.3 | F-C03, C-N01, D-C01, A-C02 | `canUseAttnFA`/`canUseAttnFAAt` return false when `nH/nKV > 8` (arrays are `ATTN_FA_MAXG 8`); a length check in aikit's `Encoder.Dispatch` binding scratch (`[16]`, widest call binds 15); a gpt-oss decline test inside the expert-major branch so a future feature-map edit fails closed; a host finite-check on `PrefillLast` logits (about 0.05 ms) that returns a decline error so the sequential path re-runs the prompt. [day] | Open |
-| T0.4 | C-C01, N-41 | Give `Plan("metal")` and both fit guards a backend ceiling (the WebGPU shape, `decoder/fitplan.go:225-227,259`), price Metal KV as f16 through `ResidentKVBytes("metal", …)`, and make an auto-pin a ceiling Metal clamps to rather than refuses. First a unit test with injected `hostRAMAvailable` and a 131072-window config. [day] | Open |
-| T0.5 | Docs | One pass over `docs/benchmarks.md` for A-D01, B-D01, F-D01 and D-D01 (`:43`, `:47`, `:1026-1031`, `:1080-1081`, `:1976-1985`, `:2017`, `:2260-2262`: dated callouts, no number invented; "AHEAD in every cell" becomes "every 1.5B and 7B cell" until the 0.5B cells are re-run); `red-october.md` §2.6, R11(c) and the `:91` row (D-D01 1–3); the `alias.go` header and v15 banner text (F-D02); the `HiddenLast` doc sentence (F-D03); `gpu-residency-coverage.md:134-138` (F-D04); the stale comments in A-D02, B-D02, C-D01, D-D01 4–10, E-D01; restore or regenerate `r3-startpos-speed-2026-09-21.md` (A-D03). [day] | **Partly done:** the `docs/benchmarks.md` Metal prefill and decode rows were rewritten from the 2026-09-30 peer sweep (`aff6f5e8`, `8e73aef5`). The other lines and pages were not re-checked |
+| T0.1 | A-C01 ≡ F-C01 | `&& !r.kvI8` in `prefillOK` (`metal/model.go:989-991`), so `PrefillPath()` reports sequential; a test that builds an i8 resident and asserts `PrefillLast(embs[≥64], 0)` returns the decline error with the floor knob at 0. Then reproduce the failure once on the Mac (llama-tiny, `KVPrecision:"i8"`, `PrefillLast` of 16 embeddings against 16 `Forward` calls) to confirm the derivation. [day] | **Done** (`de1c7f17`): the guard and `TestPrefill_declinesInt8KV`. The device reproduction of the wrong K/V is not in the record |
+| T0.2 | F-C02, F-G03 | Decline to the sequential path when `!useFusedAttn && startPos+M > attnScoreTileBound` (beside `metal/backend.go:799`); replace `TestMetalCtxCapWithinKernelBound` with a prefill run at nKeys = 4097 on an hd=256 fixture (and an hd=64 fixture with `GOINFER_METAL_FUSED_ATTENTION=0`); correct the "without threadgroup memory overflow" claim at `metal/model.go:27-28`. [day] | **Done:** the decline and `TestPrefill_exactAttentionDeclinesPast4096Keys` (`de1c7f17`); F-G03's replacement, `TestAttentionKernelsPastTileBound`, and the `metal/model.go` comment (2026-10-01) |
+| T0.3 | F-C03, C-N01, D-C01, A-C02 | `canUseAttnFA`/`canUseAttnFAAt` return false when `nH/nKV > 8` (arrays are `ATTN_FA_MAXG 8`); a length check in aikit's `Encoder.Dispatch` binding scratch (`[16]`, widest call binds 15); a gpt-oss decline test inside the expert-major branch so a future feature-map edit fails closed; a host finite-check on `PrefillLast` logits (about 0.05 ms) that returns a decline error so the sequential path re-runs the prompt. [day] | **Done** except C-N01 (2026-10-01): `attnFAGroupOK` keeps groups over `ATTN_FA_MAXG` off attention_fa; an explicit gpt-oss term in `prefillOK`, tested with every gpt-oss feature admitted to the prefill map; a finite check that declines `PrefillLast`. C-N01 is in aikit and waits for its next release |
+| T0.4 | C-C01, N-41 | Give `Plan("metal")` and both fit guards a backend ceiling (the WebGPU shape, `decoder/fitplan.go:233-243,275`), price Metal KV as f16 through `ResidentKVBytes("metal", …)`, and make an auto-pin a ceiling Metal clamps to rather than refuses. First a unit test with injected `hostRAMAvailable` and a 131072-window config. [day] | **Done** (2026-10-01), the guards excepted: `resolveMetalCtxCap` treats an auto-pin as a ceiling that may lower the 4096 default but never raise it, and `Plan("metal")` has Metal's ceiling (4096 unpinned, 32768 with `-ctx`; `decoder.MetalCtxDefault` and `MetalCtxCeiling`, which `metal/model.go` now takes its constants from). The guards still price the CPU's KV, because they run before the backend decides whether it can host the model, and a model Metal declines runs on the CPU, whose KV grows to the request. The cost: a machine too tight for the 2048-position floor at f32 is refused a load Metal could run at f16. The probe's kill line did not fire: with memory for 40000 f32 positions the guard pinned 40000, which Metal refused before the fix |
+| T0.5 | Docs | One pass over `docs/benchmarks.md` for A-D01, B-D01, F-D01 and D-D01 (`:43`, `:47`, `:1026-1031`, `:1080-1081`, `:1976-1985`, `:2017`, `:2260-2262`: dated callouts, no number invented; "AHEAD in every cell" becomes "every 1.5B and 7B cell" until the 0.5B cells are re-run); `red-october.md` §2.6, R11(c) and the `:91` row (D-D01 1–3); the `alias.go` header and v15 banner text (F-D02); the `HiddenLast` doc sentence (F-D03); `gpu-residency-coverage.md:134-138` (F-D04); the stale comments in A-D02, B-D02, C-D01, D-D01 4–10, E-D01; restore or regenerate `r3-startpos-speed-2026-09-21.md` (A-D03). [day] | **Done** (2026-10-01), except F-D02's code options (binding v15 scales directly, a v15 non-metal fixture assertion). The headline Metal rows were rewritten from the 2026-09-30 peer sweep earlier (`aff6f5e8`, `8e73aef5`); every other line and page listed is now re-checked, with dated callouts and no number invented. Two findings did not hold: A-D03's record exists (`fdd990ba`, the snapshot lacked it), and C-D01 item 3 read this Mac's M1 Pro as 16 GPU cores, where `system_profiler` gives 14, the value `attnFACoreCount` has |
 
 ### Track 1 — probes that decide Majors (little or no code)
 
@@ -2766,81 +2933,81 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 
 | ID | Status | Evidence and where it went |
 |---|---|---|
-| M-01 | CLOSED-VERIFIED | `ForwardNoLogits` `metal/backend.go:577-593`, pipelined with a `noHead` bit on `execJob` (`metal/model.go:1858-1873`), used at `decoder/model.go:1592`; byte-identical tests `metal/kvonly_prefill_test.go:19-75` (A, C). Residual: `HiddenLast` stays synchronous (A-P04). |
-| M-02 | CLOSED-VERIFIED, superseded | Floor 512→256→64 (`metal/backend.go:595-606`); the remaining question is A-P02 (a gate floor, not a speed floor). |
+| M-01 | CLOSED-VERIFIED | `ForwardNoLogits` `metal/backend.go:593-609`, pipelined with a `noHead` bit on `execJob` (`metal/model.go:1908-1923`), used at `decoder/model.go:1614`; byte-identical tests `metal/kvonly_prefill_test.go:19-75` (A, C). Residual: `HiddenLast` stays synchronous (A-P04). |
+| M-02 | CLOSED-VERIFIED, superseded | Floor 512→256→64 (`metal/backend.go:611-622`); the remaining question is A-P02 (a gate floor, not a speed floor). |
 | M-03 | CLOSED-VERIFIED, superseded by R16 | `metal/prefill.go:76-138`; R16 about 3.2× recorded (`metal-prefill-gemm-s2-2026-09-25.md`). Residue: A-P01, A-B02. |
-| M-04 | PARTIAL | O in registers and the wider key tile are superseded by R19 (`metal/prefill.go:449-588`). Packing a GQA group's heads into one threadgroup is not done; MLX does not do it either (`steel_attention.h:97`) and R19's record calls it "an option neither peer takes" (A). Residue: A-P03, F-G01. |
-| M-05 | PARTIAL | Non-paged generic MoE has expert-major batched prefill, default ON (`metal/prefill.go:1116-1254`); paged MoE, Gemma-4 MoE and DeltaNet still run as M decode tokens (`metal/model.go:951-952`): D-P01, D-B01, D-B02, D-G01. |
-| M-06 | PARTIAL | `FeatPerLayerRoPE` declared (`metal/model.go:103`); Gemma 3 reaches the batched GEMM; hd=256 attention stays on the exact scalar kernel: A-B03, and its `sc[4096]` limit F-C02. |
-| M-07 | PARTIAL | Row4-skip half CLOSED-VERIFIED (`decoder/weights.go:726-730,769-775,805-808,1208-1213,1522-1526`); the host-release half was declined as permanent. S6's NoCopy alias, default ON, removes the dense heap term (1.5B 90 against 1,013 MB, 7B 105 against 4,134 MB at token 32, rec `s6-alias-2026-09-24.md:188-189`). Residue: C-P01 (paged scale cache), F-D02 (v15 non-metal bundles). |
-| M-08 | CLOSED-VERIFIED (code); unmeasured on a Mac | `metal/kernels.go:1799-1838` launches ceil(Out/256) threadgroups; `lora_delta_multitg_test.go` (E). No Mac adapter-decode record exists. |
+| M-04 | PARTIAL | O in registers and the wider key tile are superseded by R19 (`metal/prefill.go:531-670`). Packing a GQA group's heads into one threadgroup is not done; MLX does not do it either (`steel_attention.h:97`) and R19's record calls it "an option neither peer takes" (A). Residue: A-P03, F-G01. |
+| M-05 | PARTIAL | Non-paged generic MoE has expert-major batched prefill, default ON (`metal/prefill.go:1233-1371`); paged MoE, Gemma-4 MoE and DeltaNet still run as M decode tokens (`metal/model.go:989-991`): D-P01, D-B01, D-B02, D-G01. |
+| M-06 | PARTIAL | `FeatPerLayerRoPE` declared (`metal/model.go:113`); Gemma 3 reaches the batched GEMM; hd=256 attention stays on the exact scalar kernel: A-B03, and its `sc[4096]` limit F-C02. |
+| M-07 | PARTIAL | Row4-skip half CLOSED-VERIFIED (`decoder/weights.go:720-724,769-775,805-808,1208-1213,1522-1526`); the host-release half was declined as permanent. S6's NoCopy alias, default ON, removes the dense heap term (1.5B 90 against 1,013 MB, 7B 105 against 4,134 MB at token 32, rec `s6-alias-2026-09-24.md:188-189`). Residue: C-P01 (paged scale cache), F-D02 (v15 non-metal bundles). |
+| M-08 | CLOSED-VERIFIED (code); unmeasured on a Mac | `metal/kernels.go:1812-1851` launches ceil(Out/256) threadgroups; `lora_delta_multitg_test.go` (E). No Mac adapter-decode record exists. |
 | M-09 | NEGATIVE-CLOSED | Probe `attn_kread_staged_probe_test.go`: 0.43× at 2048 keys (B). Loose ends: the maxAbs 1.7e38 mismatch was never root-caused, and the premise no longer describes the block kernel that serves hd=128, G=6,7, ≥1536 keys; it still describes the legacy kernel (<1536 keys, hd=64, kvI8, windows, sinks). |
 | M-10 | NEGATIVE-CLOSED, premise stale | Measured 2–6% slower on pre-R18 SA arithmetic at R=1 (B). The SA family is now 1.38×/1.46× faster at depth 128 and coal down is staged at R=4: REVISIT filed as B-P05. |
-| M-11 | PARTIAL + REVISIT | Contiguous pool and `slotIdx` shipped (`metal/moe.go:733-773`, `metal/expertpool.go:178-181`). The ~14 ms boundary premise is stale (61 × 14 ms = 854 ms against a recorded 128–167 ms token); the shared-event half was never re-run: D-P02, C-B03. |
-| M-12 | CLOSED-VERIFIED, cross-expert half only | Cross-expert goroutines `metal/expertpool.go:335-359`; per-expert spans `metal/moe.go:567-582`, `metal/gemma4_moe.go:358-362` (D). The per-expert 3-pread half is not done, as recorded. |
+| M-11 | PARTIAL + REVISIT | Contiguous pool and `slotIdx` shipped (`metal/moe.go:760-800`, `metal/expertpool.go:213-216`). The ~14 ms boundary premise is stale (61 × 14 ms = 854 ms against a recorded 128–167 ms token); the shared-event half was never re-run: D-P02, C-B03. |
+| M-12 | CLOSED-VERIFIED, cross-expert half only | Cross-expert goroutines `metal/expertpool.go:370-394`; per-expert spans `metal/moe.go:567-581`, `metal/gemma4_moe.go:356-360` (D). The per-expert 3-pread half is not done, as recorded. |
 | M-13 | CLOSED-VERIFIED | `autoMoESlots` `metal/backend.go:214-244`, floor `moeTopK`, ceiling 64. |
-| M-14 | CLOSED-VERIFIED (wiring); saving not re-measured | `e2.UseResidencySet` `metal/moe.go:868`, `metal/gemma4_moe.go:579`; aikit `TestEncoder_useResidencySet`; rationale `metal/model.go:1497-1560` (C, D). REVISIT of the dense case: C-B02. |
+| M-14 | CLOSED-VERIFIED (wiring); saving not re-measured | `e2.UseResidencySet` `metal/moe.go:895`, `metal/gemma4_moe.go:594`; aikit `TestEncoder_useResidencySet`; rationale `metal/model.go:1537-1600` (C, D). REVISIT of the dense case: C-B02. |
 | M-15 | OPEN; not re-audited | Outside the six areas. Re-checked only that goinfer imports neither `visioncuda` nor `visionmetal` (`docs/tasks/task-aikit-boundary-2026-09.md:33`, verified 2026-09-24) and that `docs/multimodal.md:186` still says Metal is not started. The Sep 12 reasoning for not wiring aikit's Metal tower is unchanged; `metal_vit.go` in v1.51.0 was not re-read. |
 | M-16 | NEGATIVE-CLOSED (serial-encoder premise) | Untracked 99.6–101.5% of tracked (aikit `hazard_tracking_probe_test.go`). Holds for the dense chain; REVISIT for the batched step only (E-P05). |
-| C-01 | CLOSED-VERIFIED | `metal/model.go:1223-1237` pads the allocation to 8 rows; `metal/attention_prefill_fused_cachepad_test.go:14,31` asserts `Buffer.Len`. The steel kernel only loads keys `< jEnd` (`metal/prefill.go:518-521`), so it does not rely on the padding. |
-| C-02 | CLOSED-VERIFIED | `metal/backend.go:825-827` declines `HiddenLast` on a paged MoE (also `:569`, `:842`, `:869`); chokepoint panics at `metal/moe.go:661`, `metal/gemma4_moe.go:419`; test `metal/c02_paged_forward_entrypoints_test.go:28`. |
+| C-01 | CLOSED-VERIFIED | `metal/model.go:1262-1276` pads the allocation to 8 rows; `metal/attention_prefill_fused_cachepad_test.go:14,31` asserts `Buffer.Len`. The steel kernel only loads keys `< jEnd` (`metal/prefill.go:600-603`), so it does not rely on the padding. |
+| C-02 | CLOSED-VERIFIED | `metal/backend.go:881-883` declines `HiddenLast` on a paged MoE (also `:569`, `:842`, `:869`); chokepoint panics at `metal/moe.go:688`, `metal/gemma4_moe.go:434`; test `metal/c02_paged_forward_entrypoints_test.go:28`. |
 | C-03 | CLOSED-VERIFIED (code; test record only) | `decoder/lora.go:165-196` `validateComputeTimeDims`, called at `:380`. `decoder/*_test.go` not in snapshot. |
 | C-04 | CLOSED-VERIFIED | `metal/lora.go:173-176,203` (`bound` flag, deferred release); `metal/lora_bind_leak_test.go:20`. |
 | C-05 | CLOSED-VERIFIED | aikit `metal.go:988-992` pins the thread in `Run1DBatchTG`. |
 | C-06 | CLOSED-VERIFIED | aikit `visionmetal/encoder.go:115-127,174-181`; `visionmetal/threadgroup_budget_test.go:21-38`. |
-| C-07 | CLOSED-VERIFIED | `SetAdapter` tears the executor down because the pre-encoded t+1 buffer bakes in LoRA state; `execLoop` `metal/model.go:1993-2058` (C). |
-| C-08 | CLOSED-VERIFIED | `prefillOK` excludes a paged generic MoE (`metal/model.go:951-952`, with its C-08 comment); paged entry points decline (`metal/backend.go:574-577,805`) (D, F). |
-| C-09 | CLOSED-VERIFIED (pointer, via G-10) | Host pre-checks are the gate; `recordExecErr` sites `metal/gumbel_sample.go:69-71`, `metal/model.go:2148` (C). |
+| C-07 | CLOSED-VERIFIED | `SetAdapter` tears the executor down because the pre-encoded t+1 buffer bakes in LoRA state; `execLoop` `metal/model.go:2044-2109` (C). |
+| C-08 | CLOSED-VERIFIED | `prefillOK` excludes a paged generic MoE (`metal/model.go:989-991`, with its C-08 comment); paged entry points decline (`metal/backend.go:590-593,861`) (D, F). |
+| C-09 | CLOSED-VERIFIED (pointer, via G-10) | Host pre-checks are the gate; `recordExecErr` sites `metal/gumbel_sample.go:69-71`, `metal/model.go:2206` (C). |
 | C-10 | CLOSED-VERIFIED | The SA rows kernels' no-guard tail hazard is covered by `bad8` width checks, `model.go:~1238-1262` (B). |
 | G-01 | CLOSED-VERIFIED | `metal/moe_model_test.go:326` sets the floor to 0. |
 | G-02 | PARTIAL | Missing-cell Fatalf present (`metal/prefill_gate_ref_test.go:262-271`); the "resident not built -> Skipf" half is still there (`metal/prefill_gate_ref_test.go:160`, "metal resident not built for this model") and was never reproduced, per the record. Unchanged since the record. |
 | G-03 | PARTIAL | Record says the fixture now mixes sliding and full layers; the checkpoint is gitignored and the generator absent from the snapshot, so not verifiable here. The kernel a real Gemma 3 reaches at hd=256 (`attention_prefill`, exact) has no hd=256 test at any length (F-C02). |
 | G-04 | PARTIAL | Golden still re-bakes with `GOINFER_UPDATE_GOLDENS` and no argmax/cosine gate (`metal/snapshot_golden_test.go:223-226`); `metal/kernels.go:135,180` still cite `scripts/autoresearch_rmsnorm_results.tsv`, absent. |
 | G-05 | OPEN (REVISIT) | `pagecost_sharedevent_test.go` still reads "recovers ~0% … not viable", measured on a dense 1.5B where the boundary costs 0.26 ms, not the paged M26's. Cheapest probe: re-run on the paged 26B. C-B03 (MLX's spin fence is a different mechanism), D-P02 (premise stale). |
-| G-06 | CLOSED-VERIFIED for two gates; residue C-G01 | `metal/close_leak_test.go:144-181,222-282` and `metal/alias_fixtures_test.go:142-166` assert `CurrentAllocatedSize`; `TestMetal_CloseFreesMemory` still asserts RSS only. |
+| G-06 | CLOSED-VERIFIED for two gates; residue C-G01 | `metal/close_leak_test.go:162-199,240-300` and `metal/alias_fixtures_test.go:142-166` assert `CurrentAllocatedSize`; `TestMetal_CloseFreesMemory` still asserts RSS only. |
 | G-07 | CLOSED-VERIFIED | `metal/prefill_gate_test.go:75` sets the floor to 0; `TestMetalPrefillDivergenceRate` is cited only in comments that say it no longer exists (`metal/prefill_gate_test.go:48,186`, `spec_*_test.go`). `docs/measurements/prefill-gate-l1-2026-09-05.md:66` still cites it as a name (a dated record). |
 | G-08 | PARTIAL | `prefill_startpos_test.go` exists and passes for hd=16 (the fused kernel). Steel at hd=128 with `startPos>0` is not covered by any default test (F-G01, A-G01). |
-| G-09 | OPEN | `metal/moe_prefill_measure_test.go:33` skips without a checkpoint ("a manual measurement, not a CI gate") and `:54-55` still Fatals on a paged resident. Its comment still says default-ON "above the 512-token floor" (`:17-18`); the floor is 64 (`metal/backend.go:737`). |
-| G-10 | CLOSED-VERIFIED | Pointer resolved by C-06's pre-check (F); host pre-checks are the gate and `recordExecErr` sites exist at `metal/gumbel_sample.go:69-71`, `metal/model.go:2148` (C). |
+| G-09 | OPEN | `metal/moe_prefill_measure_test.go:33` skips without a checkpoint ("a manual measurement, not a CI gate") and `:54-55` still Fatals on a paged resident. Its comment still says default-ON "above the 512-token floor" (`:17-18`); the floor is 64 (`metal/backend.go:760`). |
+| G-10 | CLOSED-VERIFIED | Pointer resolved by C-06's pre-check (F); host pre-checks are the gate and `recordExecErr` sites exist at `metal/gumbel_sample.go:69-71`, `metal/model.go:2206` (C). |
 | N-01 | CLOSED-VERIFIED | Superseded callouts and labelled figures at `benchmarks.md:575-580,602`. New staleness layer: F-D01. |
 | N-02 | CLOSED-VERIFIED | `benchmarks.md:1068-1070,1083-1087`. |
-| N-03 | CLOSED-VERIFIED (labelling), superseded | Superseded 2026-09-18 by `bench_peer.py` over the real server (B); decode rows come from the served path (`benchmarks.md:47`). The underlying fact, no `ResidentGreedy` on Metal (`ForwardArgmax` is test-only, `metal/model.go:2107-2154`), still holds: C-B01. |
-| N-04 | CLOSED-VERIFIED | `gpu-residency-coverage.md:25-28,102-109,134-138`; `ForwardMRoPE` now exists (`metal/backend.go:523`). New overstatement: F-D04. |
+| N-03 | CLOSED-VERIFIED (labelling), superseded | Superseded 2026-09-18 by `bench_peer.py` over the real server (B); decode rows come from the served path (`benchmarks.md:47`). The underlying fact, no `ResidentGreedy` on Metal (`ForwardArgmax` is test-only, `metal/model.go:2158-2205`), still holds: C-B01. |
+| N-04 | CLOSED-VERIFIED | `gpu-residency-coverage.md:25-28,102-109,134-138`; `ForwardMRoPE` now exists (`metal/backend.go:539`). New overstatement: F-D04. |
 | N-05 | CLOSED-VERIFIED (record only) | `audit-2026-09-10.md` and `docs/completed/` not in snapshot. |
 | N-06 | CLOSED-VERIFIED (record only) | `task-autoresearch-loop.md` not in snapshot. |
 | N-07 | CLOSED-VERIFIED (record only) | `docs/completed/` not in snapshot; `grep` finds no `bvk*` code, consistent with the NO-GO. |
-| N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:807-814` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
-| N-09 | CLOSED-VERIFIED | `finalizeLogits` runs after every logits readback and applies the softcap host-side: `metal/model.go:1759,1758-1765` (B). |
-| N-10 | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2713-2716` omits the fa combine dispatch (B-D02). The 310 figure is right below the floor. |
-| N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:417` cites `metal/moe.go:375-376`. |
+| N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:863-870` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
+| N-09 | CLOSED-VERIFIED | `finalizeLogits` runs after every logits readback and applies the softcap host-side: `metal/model.go:1809,1808-1815` (B). |
+| N-10 | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2795-2799` omits the fa combine dispatch (B-D02). The 310 figure is right below the floor. |
+| N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:375` cites `metal/moe.go:375-376`. |
 | N-12 | CLOSED-VERIFIED | `prefill-gate-l1-ref-b-2026-09-09.md:14`. |
 | N-13 | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-77,146`. |
 | N-14 | PARTIAL | Floor still 0.95 (`metal/lora_resident_parity_test.go:114,203`) against measured 0.9998/0.9988 (`:104-111`); parked on purpose. A dropped projection could still pass. |
-| N-15 | OPEN | `metal/prefill.go:951-979` still `make`s and zero-fills about 26 buffers per call; now paid per chunk: A-N01, C-N03. |
-| N-16 | OPEN | `ensurePrefill` is still called inside `PrefillLast` (`metal/prefill.go:925`); the first ≥64-token request pays the library compile: A-N01. |
+| N-15 | OPEN | `metal/prefill.go:1066-1094` still `make`s and zero-fills about 26 buffers per call; now paid per chunk: A-N01, C-N03. |
+| N-16 | OPEN | `ensurePrefill` is still called inside `PrefillLast` (`metal/prefill.go:1040`); the first ≥64-token request pays the library compile: A-N01. |
 | N-17 | CLOSED-VERIFIED | `gemm_w4f16` gone; `gemv_w4a8_sa_amax` documented in `metal/kernels.go:9-16`. |
 | N-18 | CLOSED-VERIFIED | subsumed: fused kernel no longer the hd=128 path (R19); fused still serves hd < 128 (area A). |
-| N-19 | CLOSED by measurement; unfused as observed | A: rope q+k, both norms and kv store total 3.19 ms at K=512 (0.2%) and 18.7 ms at K=3900 with the LM head (0.1%), `metal-prefill-decomp-2026-09-25.md:66,81`; F: `rope_f16` is still dispatched separately for Q and K (`metal/prefill.go:1090-1091`). Not proposed. |
-| N-20 | CLOSED; replaced by C-P01 | The per-stage re-derivation is gone (`int4DirectBytesOnly`, `metal/gemma4_moe.go:301-302`, `metal/moe.go:491-504`); the retained f16 scale cache that replaced it duplicates v15-aliased scales (C-P01), so the finding's premise, an f32 heap copy, is stale under v15. |
-| N-21 | CLOSED-VERIFIED | `metal/expertpool.go:178-183` uses `gpu.NewBufferLenOf`. |
+| N-19 | CLOSED by measurement; unfused as observed | A: rope q+k, both norms and kv store total 3.19 ms at K=512 (0.2%) and 18.7 ms at K=3900 with the LM head (0.1%), `metal-prefill-decomp-2026-09-25.md:66,81`; F: `rope_f16` is still dispatched separately for Q and K (`metal/prefill.go:1207-1208`). Not proposed. |
+| N-20 | CLOSED; replaced by C-P01 | The per-stage re-derivation is gone (`int4DirectBytesOnly`, `metal/gemma4_moe.go:292-293`, `metal/moe.go:494-496`); the retained f16 scale cache that replaced it duplicates v15-aliased scales (C-P01), so the finding's premise, an f32 heap copy, is stale under v15. |
+| N-21 | CLOSED-VERIFIED | `metal/expertpool.go:213-218` uses `gpu.NewBufferLenOf`. |
 | N-22 | Superseded by M-11 | Same status as M-11 (D). |
-| N-23 | CLOSED in `moe.go`; OPEN and moot in `gemma4_moe.go` | `metal/gemma4_moe.go:591-597` keeps per-dense-layer buffers; M26 has no dense layers; the mixed dense+paged path has no fixture (D). |
+| N-23 | CLOSED in `moe.go`; OPEN and moot in `gemma4_moe.go` | `metal/gemma4_moe.go:606-612` keeps per-dense-layer buffers; M26 has no dense layers; the mixed dense+paged path has no fixture (D). |
 | N-24 | f32 router weight NEGATIVE-CLOSED; single-thread route REVISIT | The f32 weight is deliberate (≤0.4 ms); `moe_route` on one GPU thread is D-P04. |
-| N-25 | PARTIAL | Comment rewritten (`metal/backend.go:811-819`); still one command buffer per position (`:803-823`): A-P04, and F-N01 for the slot it overwrites. |
+| N-25 | PARTIAL | Comment rewritten (`metal/backend.go:867-875`); still one command buffer per position (`:803-823`): A-P04, and F-N01 for the slot it overwrites. |
 | N-26 | CLOSED-VERIFIED | `decoder/residency.go:60-69` states Metal's `ForwardBatch` is one command buffer, per-token only for paged MoE. |
-| N-27 | NEGATIVE-CLOSED, unchanged | `metal/model.go:1858-1872` still copies; declined for the CUDA DMA-race reason (C, E). E-C01 is the one place the same hazard is latent. |
+| N-27 | NEGATIVE-CLOSED, unchanged | `metal/model.go:1908-1922` still copies; declined for the CUDA DMA-race reason (C, E). E-C01 is the one place the same hazard is latent. |
 | N-28 | PARTIAL | Temperature-only requests are on-device since R7b (`gumbel.go`, `gumbel_sample.go`); filtered sampling is host-side (E-P04); the device sampler bypasses encode-ahead (C-P02). |
-| N-29 | CLOSED-VERIFIED | `bytesToU32` at `metal/model.go:488`; `int4Concat` pre-sized (`:452-677`). |
+| N-29 | CLOSED-VERIFIED | `bytesToU32` at `metal/model.go:539`; `int4Concat` pre-sized (`:452-677`). |
 | N-30 | PARTIAL; negative stands | Stale K≤1536 comment corrected (`metal/kernels.go:397-400`); `swiglu_quant` double evaluation is a recorded negative needing a device scratch buffer (audit `:1509-1520`); `rope2_kv` stays unwired (0.6%). |
 | N-31 | OPEN (microseconds) | `WaitDone` still reads four GPU timestamps per production token (aikit `metal.go:740-767`); counted in C's ~10 command-buffer-level calls. |
 | N-32 | PARTIAL | Comment fixed (`metal_vit.go:1149-1150`); the library-wide fast-math-off compile remains (`metal_vit.go:363`). |
-| N-33 | CLOSED-VERIFIED | `metal/expertpool.go:64-75`. |
+| N-33 | CLOSED-VERIFIED | `metal/expertpool.go:66-77`. |
 | N-34 | UNCHANGED, still correct on UMA | aikit `metal_copy.go`, `metal_upload_batch.go`: host memcpy, unused by goinfer (C). |
-| N-35 | CLOSED-VERIFIED | `decoder/model.go:1489-1520` keyed set. |
+| N-35 | CLOSED-VERIFIED | `decoder/model.go:1511-1542` keyed set. |
 | N-36 | CLOSED-VERIFIED | `decoder/residentneed.go:62`. |
 | N-37 | OPEN as a caveat, mitigated | `gemv_w4a8_coal_bench_test.go` shape unchanged; R18 and R18b grade in sequence through `TestR18InSequence` and cite the Stage-B lesson (B). |
 | N-38 | OPEN | first-call compile note; unchanged (and `ensurePrefill` is still lazy, N-16). |
-| N-39 | PARTIAL | Comment fixed; the underlying gap stays: `decoder/model.go:1753` still requires `prefillFrom == 0` for the resident path with an adapter. |
+| N-39 | PARTIAL | Comment fixed; the underlying gap stays: `decoder/model.go:1781` still requires `prefillFrom == 0` for the resident path with an adapter. |
 | N-40 | PARTIAL | Code: the head is pinned int8 by decision (`decoder/weightmat.go:78-94`), head kernel at 161–163 GB/s, 90% of ceiling (B). Doc: `benchmarks.md:1026` still says "4-bit both sides" (F). The opt-in int4 head has no Metal kernel: B-N01, O3. |
 | N-41 | PARTIAL, live in a new form | The ceiling moved 4096→32768 and an unpinned load defaults to 4096, so the 5689-position pin is now accepted; the planner still has no Metal ceiling and prices f32 KV: C-C01 (inflation, CPU fallback) and F-C02 (the exact kernel's `sc[4096]`). |
 

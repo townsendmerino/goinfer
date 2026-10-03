@@ -35,20 +35,22 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 		reuseOff   bool // GOINFER_NO_RESIDENT_REUSE
 		kvSessions int
 		wantReuse  bool
-		kvSlots    int // resident KV slots allocated (MC1); 0/1 = one conversation
+		kvSlots    int  // resident KV slots allocated (MC1); 0/1 = one conversation
+		byDefault  bool // -kv-sessions not given (E-P09: Metal keeps 2 then)
 	}{
 		// A resident model reuses the most recent conversation's prefix on the device (resident_reuse.go);
 		// the CPU session LRU does not apply to it, so --kv-sessions does not change the answer.
-		{"resident, sessions configured", true, false, 4, true, 0},
-		{"resident, sessions off", true, false, 0, true, 0},
-		{"resident, resident reuse switched off", true, true, 4, false, 0},
-		{"staged, sessions configured", false, false, 4, true, 0},
-		{"staged, sessions off", false, false, 0, false, 0},
-		{"resident, 4 KV slots", true, false, 4, true, 4},
-		{"resident, 4 asked, guard allowed 2", true, false, 4, true, 2},
+		{"resident, sessions configured", true, false, 4, true, 0, false},
+		{"resident, sessions off", true, false, 0, true, 0, false},
+		{"resident, resident reuse switched off", true, true, 4, false, 0, false},
+		{"staged, sessions configured", false, false, 4, true, 0, false},
+		{"staged, sessions off", false, false, 0, false, 0, false},
+		{"resident, 4 KV slots", true, false, 4, true, 4, false},
+		{"resident, 4 asked, guard allowed 2", true, false, 4, true, 2, false},
+		{"resident, -kv-sessions not given, Metal's default 2", true, false, 4, true, 2, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true, kvSlots: tc.kvSlots}, config{kvSessions: tc.kvSessions})
+			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true, kvSlots: tc.kvSlots}, config{kvSessions: tc.kvSessions, kvSessionsSet: !tc.byDefault})
 			line := bannerLine(lines, "session reuse:")
 			if line == "" {
 				t.Fatal("no session-reuse line in the banner")
@@ -67,8 +69,13 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 				if !strings.Contains(line, fmt.Sprintf("%d conversations", tc.kvSlots)) {
 					t.Errorf("resident with %d KV slots must say so, got %q", tc.kvSlots, line)
 				}
-				if tc.kvSessions > tc.kvSlots && !strings.Contains(line, fmt.Sprintf("allowed %d", tc.kvSlots)) {
+				if tc.kvSessions > tc.kvSlots && !tc.byDefault && !strings.Contains(line, fmt.Sprintf("allowed %d", tc.kvSlots)) {
 					t.Errorf("a clamped slot count must be named, got %q", line)
+				}
+				// Fewer slots than -kv-sessions' default, with the flag not given: the line must not blame the memory guard
+				// alone, and must say how to ask for more.
+				if tc.byDefault && tc.kvSessions > tc.kvSlots && (!strings.Contains(line, "by default") || !strings.Contains(line, fmt.Sprintf("--kv-sessions %d asks", tc.kvSessions))) {
+					t.Errorf("a default slot count must say it is the default and how to ask for more, got %q", line)
 				}
 			}
 			// Off for a reason the user did not type as a flag: the line must name it.

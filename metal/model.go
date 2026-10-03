@@ -20,12 +20,14 @@ import (
 
 // metalCtxCapDefault is the resident KV capacity in positions when nothing asks for more (4096).
 // The staged/CPU path handles longer unless explicitly requested via decoder.Options.ResidentContext.
-const metalCtxCapDefault = 4096
+const metalCtxCapDefault = decoder.MetalCtxDefault
 
-// metalCtxCapMax is the ceiling on resident KV positions for this backend (32768).
-// The attention kernel uses tiled online softmax with a 4096-key threadgroup score buffer
-// (attnScoreTileBound), allowing deep context up to metalCtxCapMax without threadgroup memory overflow.
-const metalCtxCapMax = 32768
+// metalCtxCapMax is the ceiling on resident KV positions for this backend (32768). The decode attention
+// kernels that keep scores in a 4096-key threadgroup buffer (attention, attention_f32 and attention_i8;
+// attnScoreTileBound) tile past it with online softmax, which TestAttentionKernelsPastTileBound checks
+// against a float64 reference. The exact prefill kernel does not tile; PrefillLast declines it past
+// prefillExactAttnMaxKeys.
+const metalCtxCapMax = decoder.MetalCtxCeiling
 
 // attnScoreTileBound is the attention kernel's threadgroup score-buffer tile capacity:
 // `threadgroup float sc[4096]` in kernels.go holds one score per key in the active tile.
@@ -34,11 +36,17 @@ const attnScoreTileBound = 4096
 // resolveMetalCtxCap turns a request into the effective resident KV capacity, mirroring
 // cuda/resident.go's resolveCtxCap[Fit] in SHAPE: an unpinned load (req <= 0) gets metalCtxCapDefault (4096);
 // an explicit request up to metalCtxCapMax (32768) is honored (optionally clamped to the model's window);
-// and a request ABOVE metalCtxCapMax is REFUSED with the numbers.
+// and a request ABOVE metalCtxCapMax is REFUSED with the numbers. A context the load-time fit guard auto-pinned
+// (R13; the caller did not choose it) is a ceiling, not a request: it may lower the default, never raise it.
+// Read as a request it allocated KV several times the default on a tight machine and, above metalCtxCapMax, was
+// refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-09-30.md).
 func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	req := m.ResidentContextRequest()
 	if req <= 0 {
 		return metalCtxCapDefault, nil
+	}
+	if !m.ResidentContextPinned() {
+		req = min(req, metalCtxCapDefault)
 	}
 	if req > metalCtxCapMax {
 		return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "+
@@ -84,9 +92,11 @@ var preciseMathCompile bool
 // sandwich norms and (1+w) RMS offset, the embed-scale/final-logit-softcap pair (both applied
 // OUTSIDE this file — embedResident scales the input embeddings before PrefillLast ever runs,
 // and PrefillLast's own final step applies softcap — so declaring them here is a pure capability
-// statement, no kernel change), and MoE (G8's second half: the FFN half runs ROW BY ROW off the
-// batched residual through the UNCHANGED per-token decode MoE dispatch chain — see
-// PrefillLast's own L.moe != nil branch — while the attention half still batches normally).
+// statement, no kernel change), and MoE (G8's second half, while the attention half batches
+// normally: by default the FFN half runs expert-major — one batched router GEMM and top-k over all
+// rows, host grouping, then each active expert over its rows — and GOINFER_MOE_EXPERT_MAJOR=0 keeps
+// the original row-by-row loop through the per-token decode MoE chain; PrefillLast's L.moe != nil
+// branch. A paged MoE declines batched prefill altogether; D-D01, audit-metal-2026-09-30.md).
 // FeatMoEGatedShared (Qwen2-MoE's sigmoid-gated shared expert) comes along for free: it's the
 // SAME encodeMoESharedExpert dispatch decode already uses, gated/ungated branch and all.
 var prefillFeatures = map[decoder.ResidentFeature]bool{
@@ -201,6 +211,14 @@ type resident struct {
 	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
 	// (the grid's comes from planNKeys) — so the two cannot disagree.
 	attnFASplitOverride int
+	// attnFAFloorOverride, when > 0, replaces attnFADepthFloor as the key count at which attention_fa takes over.
+	// ZERO in production — set only by tests (T1.2 of docs/tasks/task-metal-audit-2026-10.md: legacy-against-blk arms
+	// below the floor). Read through attnFAFloor by attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token
+	// step and the batched step plan alike.
+	attnFAFloorOverride int
+	// promptStepOff, when true, keeps PrefillLast off the step route (E-P01, prefillByStep). FALSE in production — set
+	// only by tests that measure the batched pass or the sequential decline on a resident that could take the route.
+	promptStepOff bool
 	// gemvRows (R18, docs/measurements/metal-decode-gemv-r18-2026-09-26.md): rows per simdgroup for the dense decode
 	// layer's four int4 GEMVs — qkv, o, fused gate/up and down — set by buildResident through gemvRowsFor. When a field
 	// is > 0 that GEMV dispatches its rows kernel (pSABiasRows / pSAResidRows / pSARows / pGemvResidStaged, grid
@@ -219,7 +237,40 @@ type resident struct {
 	// 0 = the buffer runs at the position setPos last set — every synchronous path sets the position, then
 	// encodes. Read through planNKeys by the two encode-time attention decisions (canUseAttnFA's depth gate,
 	// attention_fa's split grid). See execLoop and attnPlan.
-	encNKeys                int
+	encNKeys int
+	// encFANSplit, when set, is the attention_fa split uniform the command buffer being encoded binds instead of
+	// uAttnFANSplit: the greedy chain's per-token set (greedy_chain.go, C-B01). Zero outside its encode.
+	encFANSplit Buffer
+	// The greedy chain (greedy_chain.go, C-B01): its gather pipeline, its goroutine's channels, and its two alternating
+	// uniform sets and token-id buffers.
+	pEmbedGather Pipeline
+	lmTied       bool // lmW/lmS are the embedding table itself (a tied LM head): the chain gathers from them, no copy
+	chainReq     chan chainReq
+	chainResp    chan chainResp
+	chainDone    chan struct{}
+	chainSets    [2]posUniforms
+	chainTok     [2]Buffer
+	chainServed  int // tokens chainNext has returned since the build (tests read it)
+	// The untied head's gather table (C-B01): the int8 embedding table on the device, made the first time a chain is
+	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.
+	// chainEmbBase is the memory guard's price of this build (weights, host copy, every KV slot), which the table is
+	// priced on top of; chainEmbGuardOff is GOINFER_NO_RESIDENT_MEM_GUARD. chainGW/chainGS: the open chain's table.
+	chainEmbMu           sync.Mutex
+	chainEmbTried        bool
+	chainEmbW, chainEmbS Buffer
+	chainEmbWhy          string
+	chainEmbBase         int64
+	chainEmbGuardOff     bool
+	chainGW, chainGS     Buffer
+	// The sampled chain's own gumbel uniforms (C-P02): 1/temperature and the seed for the chain, the draw per uniform set,
+	// and a logits row per set (the -1 recovery takes the argmax of a row the next buffer has not overwritten).
+	chainInvT, chainK0, chainK1   Buffer
+	chainD0, chainD1, chainLogits [2]Buffer
+	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
+	// specNgram is Options.SpecNgram (the caller will speculate), and verifyCost the verify cost curve measured at load
+	// when it is set (calibrateVerifyCost, E-P06); nil keeps stepVerifyCost.
+	specNgram               bool
+	verifyCost              []float64
 	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
@@ -494,31 +545,14 @@ func bytesToU32(b []byte) []uint32 {
 	return w
 }
 
-// int4DirectBytes is int4DirectWords' zero-copy sibling for the paging hot path: it returns the
-// packed nibble bytes ALIASED straight from the mmap (no bytesToU32 reconstruction, no per-stage
-// []uint32 allocation) plus the f16 group scales. The nibble bytes are byte-for-byte the words
-// int4DirectWords would build (little-endian), so a byte-copy into a uint32 slot buffer reproduces
-// them exactly on LE — the paged forward's copy does exactly that (expertpool.copyBytesToU32Buf).
-// Measured: bytesToU32 over the 26B's per-token staged nibbles is ~215 ms/1.9 GB of pure
-// reconstruction + a 1.9 GB/run allocation, both removed here; the words path (int4DirectWords)
-// stays for the one-time non-paged build where the []uint32 shape is wanted.
-func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) {
-	b, q4s, group, ok := decoder.Int4F32(w)
-	if !ok || group != 32 {
-		return nil, nil, false
-	}
-	scales = make([]uint16, len(q4s))
-	parallelF32ToF16(scales, q4s)
-	return b, scales, true
-}
-
-// int4DirectBytesOnly is int4DirectBytes without the f16 scale conversion (N-20,
-// audit-metal-2026-09-12.md): a paged MoE stage function calls int4DirectBytes on EVERY page-in of
-// an expert, but the scales are a pure function of the (immutable) checkpoint weights — re-deriving
-// them from a heap f32 copy every stage was ~2.85 GB/token of transient allocation on the 26B (~4 GB
-// on the 35B), on the exact box whose N=128 slot-pressure cliff was memory pressure. Callers on the
-// paged hot path precompute each expert's f16 scales ONCE at build time (buildMoELayer /
-// buildGemma4MoELayer) and use this for the bytes half of every subsequent stage.
+// int4DirectBytesOnly returns a canonical group-32 int4 WeightMat's packed nibble bytes ALIASED straight from the
+// mmap: no bytesToU32 reconstruction and no per-stage []uint32 allocation (measured on the 26B: ~215 ms and 1.9 GB of
+// reconstruction per run, both removed). They are byte-for-byte the words int4DirectWords builds (little-endian), so a
+// byte-copy into a uint32 slot buffer reproduces them exactly (expertpool.copyBytesToU32Buf). The paged MoE stage
+// functions (buildMoELayer, buildGemma4MoELayer) pair it with the WeightMat's own Int4ScalesF16: re-deriving f16 scales
+// from an f32 copy on every page-in was ~2.85 GB/token of transient allocation on the 26B (N-20,
+// audit-metal-2026-09-12.md), and the build-time cache that replaced it duplicated 1361 MB of scales the mapping
+// already holds (C-P01, audit-metal-2026-09-30.md).
 func int4DirectBytesOnly(w *linalg.WeightMat) (q4 []byte, ok bool) {
 	b, _, group, ok := w.Int4F16()
 	if !ok || group != 32 {
@@ -807,6 +841,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath}
+	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
+	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
+	r.specNgram = m.SpecNgram()
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
 	}
@@ -820,6 +857,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
 	r.pArgFinish = pipe("argmax_finish")
+	r.pEmbedGather = pipe("embed_gather_i8")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
 	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
@@ -949,7 +987,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
 	// whose decode kernels write and read the int8 cache.
 	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8 && !r.w8
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8 && !r.w8 &&
+		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -1186,7 +1225,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if r.nH*L.geom.hd > maxNHhd {
 				maxNHhd = r.nH * L.geom.hd
 			}
-			if L.geom.nKV > 0 && L.geom.hd == 128 {
+			if L.geom.hd == 128 && attnFAGroupOK(r.nH, L.geom.nKV) {
 				g := r.nH / L.geom.nKV
 				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
 					maxAttnFAPartialElems = e
@@ -1281,6 +1320,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	lm := &w.LMHead
 	if lm.Rows() == 0 {
 		lm = &w.Embed // tied
+		r.lmTied = true
 	}
 	// The LM head is LOGIT-CRITICAL and must stay int8. decoder/weightmat.go: "at int4 they flip
 	// the argmax and tank the cosine (the tied head dots every logit against them)" — which is
@@ -1644,10 +1684,20 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 	if len(ropePos) > 0 {
 		rp = ropePos[0]
 	}
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
 	r.curNKeys = pos + 1
-	r.uRopePos.SetU32(uint32(rp))
+	r.writePosUniforms(posUniforms{r.uPos, r.uNKeys, r.uRopePos, r.uQTempScale, r.uAttnFANSplit}, pos, rp)
+}
+
+// posUniforms is one set of the per-token uniforms a decode command buffer binds: setPos writes the resident's own
+// set, and the greedy chain (greedy_chain.go) alternates two of its own so a buffer can be committed while the one
+// before it still reads its set.
+type posUniforms struct{ uPos, uNKeys, uRopePos, uQTempScale, uFANSplit Buffer }
+
+// writePosUniforms writes token pos's values into set u: the one formula for both setPos and the chain.
+func (r *resident) writePosUniforms(u posUniforms, pos, rp int) {
+	u.uPos.SetU32(uint32(pos))
+	u.uNKeys.SetU32(uint32(pos + 1))
+	u.uRopePos.SetU32(uint32(rp))
 	// R2 fix: uAttnFAG/uAttnFANSplit written HERE, not at the per-layer dispatch
 	// site — see their own field comment. Same "safe because it happens before
 	// THIS buffer commits, not during the NEXT buffer's encode-ahead" argument
@@ -1657,13 +1707,13 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 	// divide-by-zero regardless.
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
-		r.uAttnFANSplit.SetU32(uint32(r.attnFASplitFor(r.curNKeys, r.attnFANKV)))
+		u.uFANSplit.SetU32(uint32(r.attnFASplitFor(pos+1, r.attnFANKV)))
 	}
 	scale := float32(1)
 	if r.attnTempBeta != 0 {
 		scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
 	}
-	r.uQTempScale.Floats()[0] = scale
+	u.uQTempScale.Floats()[0] = scale
 }
 
 // Forward runs token `id` at absolute position `pos` and returns logits[V]. The whole
@@ -1973,6 +2023,7 @@ func (r *resident) execLoop() {
 // waiting on an in-flight command buffer, and releasing a buffer it references is a
 // use-after-free. (CUDA hit the mirror-image ordering constraint in d8e81cb.)
 func (r *resident) stopExec() {
+	r.stopChain() // an open greedy chain has command buffers in flight on r.q too (greedy_chain.go)
 	if r.execReq != nil {
 		close(r.execReq)
 		r.execReq = nil
@@ -2143,9 +2194,9 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 		return uint32(argmaxF32(r.forwardLogits(pos)))
 	}
 	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as the
-	// paged MoE forwards (metal/moe.go, gemma4_moe.go), this one a genuine production entry
-	// point (the fast-greedy path), not test-only. Currently a no-op like the paged case (no
-	// family combining ForwardArgmax's dispatch with FeatAttnTemp today).
+	// paged MoE forwards (metal/moe.go, gemma4_moe.go). Only tests and gates call this today (N-10
+	// above; this comment used to call it a production entry point, C-D01 in audit-metal-2026-09-30.md).
+	// Currently a no-op like the paged case (no family combining this dispatch with FeatAttnTemp today).
 	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
@@ -2587,7 +2638,10 @@ func (r *resident) canUseF16Lane(l int) bool {
 }
 
 // attnFACoreCount is the M1 Pro's GPU core count attention_fa's split count targets ("kvHead x S
-// >= 2x the core count", R2's own registered rule) — hardcoded, not device-queried: aikit's Device
+// >= 2x the core count", R2's own registered rule): 14 on the M1 Pro R2 was tuned on, which is this
+// repo's Mac (system_profiler, 2026-10-01; C-D01 in audit-metal-2026-09-30.md read it as 16). It sets
+// only the legacy kernel's split: the block kernel, which serves G = 6 and 7, uses attnFABlkSplit
+// (E-D01); changing it changes that split and so the legacy kernel's bits. It is hardcoded, not device-queried: aikit's Device
 // has no core-count accessor, and this kernel is default-on on every chip via metalAttnFAEnabled()
 // (2026-09-21) despite being tuned and measured on the M1 Pro alone; a wider port (other Apple
 // GPU core counts) would need this read from the device, not assumed.
@@ -2610,8 +2664,27 @@ const attnFABlkSplit = 16
 // speed probe surfaced, recorded here rather than silently overriding the brief's own text.
 const attnFADepthFloor = 1536
 
+// attnFAMaxG is the most query heads per KV head attention_fa holds: its per-thread arrays are sized
+// ATTN_FA_MAXG in kernels.go (TestAttnFAMaxG_matchesKernel ties the two). A wider group would index past
+// them, so attnFAGroupOK keeps such a layer on the shipped kernel (F-C03, docs/audit-metal-2026-09-30.md).
+// The group size comes from the checkpoint, not the family (Llama 3.1 405B has 16), so this is a guard,
+// not a list.
+const attnFAMaxG = 8
+
+// attnFAGroupOK reports whether a layer with nH query heads over nKV KV heads fits attention_fa's arrays.
+func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
+
 // planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
 // it encodes, otherwise the position setPos last set.
+// fanSplitBuf is the attention_fa split-count uniform the command buffer being encoded binds: the greedy chain's own
+// set's while it encodes one of its buffers (encFANSplit), otherwise the resident's, which setPos writes.
+func (r *resident) fanSplitBuf() Buffer {
+	if r.encFANSplit != (Buffer{}) {
+		return r.encFANSplit
+	}
+	return r.uAttnFANSplit
+}
+
 func (r *resident) planNKeys() int {
 	if r.encNKeys > 0 {
 		return r.encNKeys
@@ -2632,10 +2705,19 @@ type attnPlan struct {
 	f16Lane bool
 }
 
+// attnFAFloor is the key count at which attention_fa takes over: attnFADepthFloor unless a test set
+// attnFAFloorOverride.
+func (r *resident) attnFAFloor() int {
+	if r.attnFAFloorOverride > 0 {
+		return r.attnFAFloorOverride
+	}
+	return attnFADepthFloor
+}
+
 // attnPlanFor is the plan a decode command buffer running at nKeys keys needs.
 func (r *resident) attnPlanFor(nKeys int) attnPlan {
 	p := attnPlan{f16Lane: r.decodeLaneW4F16}
-	if r.decodeAttnFA && r.attnFAPartial != (Buffer{}) && r.attnFANKV > 0 && nKeys >= attnFADepthFloor {
+	if r.decodeAttnFA && r.attnFAPartial != (Buffer{}) && r.attnFANKV > 0 && nKeys >= r.attnFAFloor() {
 		p.fa, p.nSplit = true, r.attnFASplitFor(nKeys, r.attnFANKV)
 	}
 	return p
@@ -2661,7 +2743,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && g.nKV > 0 && r.planNKeys() >= attnFADepthFloor
+	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
 }
 
 // attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),
@@ -2711,9 +2793,10 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
 	// --- attention block (7 dispatches in the baseline dense case — norm, fused QKV+bias, merged
-	// Q+K RoPE, KV store, attention, o-proj input quant, fused o-proj+residual; N-10
-	// audit-metal-2026-09-12.md: an earlier "11 vs 19" count here predates further fusion and no
-	// longer matches; qGate/qkNorm/kEqV/sandwich/LoRA each add their own extra dispatches above) ---
+	// Q+K RoPE, KV store, attention, o-proj input quant, fused o-proj+residual — and 8 at
+	// attention_fa depths, whose combine is a second attention dispatch (B-D02,
+	// audit-metal-2026-09-30.md); N-10 audit-metal-2026-09-12.md: an earlier "11 vs 19" count here
+	// predates further fusion; qGate/qkNorm/kEqV/sandwich/LoRA each add their own extra dispatches) ---
 	// postOnly (Olmo 3/Olmo Hybrid, G5): no pre-norm at all — quantize the RAW residual
 	// (quant_vec, the same symmetric int8 quantizer ctx-before-o-proj already uses below)
 	// instead. encodeAttention is never called for a DeltaNet layer (encodeLayer routes those to
@@ -2814,8 +2897,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
-				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
-			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.uAttnFANSplit)
+				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.fanSplitBuf())
+			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.fanSplitBuf())
 		} else {
 			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 		}

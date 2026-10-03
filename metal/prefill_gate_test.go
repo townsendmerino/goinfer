@@ -69,9 +69,9 @@ func TestPrefillGate(t *testing.T) {
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
 	// G-07 (audit-metal-2026-09-12.md): this test's K=256 decision cell used to Fatalf outright —
 	// metalFastPrefillFloor was 512 and nothing here overrode it, so PrefillLast declined before
-	// any comparison ran. M-02 (same audit) lowered the default floor to 256, which happens to
-	// clear K=256 on its own now, but disable the floor explicitly anyway so this test does not
-	// silently break again the next time the floor default moves.
+	// any comparison ran. The floor has since dropped to 256 (M-02) and then 64 (R3), which clears
+	// K=256 on its own, but disable it explicitly anyway so this test does not silently break
+	// again the next time the floor default moves.
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 
 	models := []struct {

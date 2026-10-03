@@ -1,0 +1,4 @@
+=== RUN   TestAuditM26_pagedProbe
+[m26    0.0s] pid 86643, model /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw, 64 slots per layer, 40 tokens, hold ""
+[metal] weights aliased from gemma4-26b-int4-v14st.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1517 MB bound in place, 1 MB copied (anonymous) — 723 MB int4 nibbles (60 single tensors + 55 fused groups = 445 MB) + 704 MB int8 codes (1 matrices) + 90 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[m26   11.3s] built in 11.3 s: 30 paged MoE layers, scale cache 1361.2 MB
