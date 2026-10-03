@@ -236,3 +236,7 @@ type Hidden func(ctx context.Context, ids []int) ([]float32, error)
 
 // ModelHidden returns a Hidden over a loaded model: decoder.Model.PromptHidden (D2).
 func ModelHidden(m *decoder.Model) Hidden { return m.PromptHidden }
+
+// ModelHiddenMany is the many-prompt form of ModelHidden: prompts that share a prefix are prefilled once where the model can (decoder.Model.PromptHiddenMany), and
+// it is PromptHidden per prompt everywhere else, so it is safe to hand to any model.
+func ModelHiddenMany(m *decoder.Model) HiddenMany { return m.PromptHiddenMany }

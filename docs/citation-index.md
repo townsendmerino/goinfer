@@ -323,7 +323,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/alias.go:267` | goinfer | `if sc, ok := a.scales16(d, wms); ok { // v14 metal-target file: the members' f16 scales ` |
 | `docs/audit-metal-2026-09-30.md|metal/alias.go:31` | goinfer | `// no-copy buffer's pages with write intent. Over a MAP_PRIVATE mapping that makes every` |
 | `docs/audit-metal-2026-09-30.md|metal/alias.go:37` | goinfer | `// ON BY DEFAULT since 2026-09-24, on the owner's decision after S6's gates (docs/measur` |
-| `docs/audit-metal-2026-09-30.md|metal/alias_fixtures_test.go:142` | goinfer | `openSize = d.CurrentAllocatedSize()` |
+| `docs/audit-metal-2026-09-30.md|metal/alias_fixtures_test.go:144` | goinfer | `openSize = d.CurrentAllocatedSize()` |
 | `docs/audit-metal-2026-09-30.md|metal/attention_prefill_fused_cachepad_test.go:14` | goinfer | `// TestAttentionPrefillFused_ctxCapNotMultipleOf8 gates C-01 (audit-metal-2026-09-12.md)` |
 | `docs/audit-metal-2026-09-30.md|metal/attention_prefill_fused_test.go:109` | goinfer | `t.Errorf("%s: cosine %.6f below 0.999 (exact vs fused diverge)", c.name, cos)` |
 | `docs/audit-metal-2026-09-30.md|metal/attn_fa_blk_test.go:147` | goinfer | `func TestAttnFABlkMatchesFloat64(t *testing.T) {` |

@@ -546,16 +546,13 @@ names that are served.
     0.92. Label scoring is not a substitute for a trained head.
 - **`--decisions-template`** is `chat-v1` (the default: the model's chat template, for instruct models) or
   `bare-v1` (JEV's own, no chat template). One prefill per question; each question re-prefills the state.
-- **Many questions about one state cost one full prefill each.** On the hybrid families (Qwen3.5 and the other
-  Gated-DeltaNet models) no prefix is reused between questions today. A request's cost therefore grows with its
-  question count: measured on Qwen3.5-9B Q4_K_M (CUDA resident int4, batch 1, 2026-10-02), five questions cost five
-  times one, and take 1.76x (95% interval 1.72 to 1.80), 3.21x (3.16 to 3.26) and 4.47x (4.43 to 4.51) as long as
-  one schema-constrained generation that answers all five fields, at 256, 1,024 and 4,096 state tokens (4.6, 16.0 and
-  78.1 s against 2.6, 5.0 and 17.5 s). For a single question a decision is about as fast as a schema-constrained
-  answer (1.24x, 1.07x and 1.01x faster at those sizes), so for a fixed set of questions on this family the
-  one-pass schema request is the cheaper shape. The measurement is
-  [`measurements/decisions-d7-2026-09-28.md`](measurements/decisions-d7-2026-09-28.md) section 5; the work that would
-  remove the repeated prefill is D8 in `tasks/task-constrained-confidence.md`, whose trigger this measurement met.
+- **Many questions about one state: what they share is prefilled once, where the model can.** On the CPU path of a Qwen3.5-family model (which includes a Mac, where the
+  9B does not run resident) a request's questions go to the model together: the prefix their prompts share is prefilled once and each question resumes from a copy of that
+  cache (`measurements/decisions-d8-shared-state-2026-10-03.md`). Label scoring's chat template puts the state first, so all questions share it; a head's bare-v1 template puts
+  the question's kind first, so only same-kind questions do. On a **GPU-resident** model nothing is shared yet: a request's cost there still grows with its question count,
+  five times one on D7's CUDA run (1.76x, 3.21x and 4.47x as long as one schema-constrained generation that answers all five fields, at 256, 1,024 and 4,096 state tokens;
+  4.6, 16.0 and 78.1 s against 2.6, 5.0 and 17.5 s, `measurements/decisions-d7-2026-09-28.md` section 5). For one question a decision is about as fast as a schema-constrained
+  answer (1.24x, 1.07x and 1.01x faster at those sizes). The Clef route (below) reads the whole record in one pass whatever the device.
 - **Refused:** a question that breaks a rule is a 422 before any prefill. A compute-time adapter entry cannot answer,
   since label scoring would read the base model. `/v1/models` lists each entry's `decisions` support.
 - **With a trained decision head (Route B):** `--model jev=~/models/JEV-9B,head=~/models/JEV-9B`. `head=` takes a

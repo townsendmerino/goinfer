@@ -96,3 +96,13 @@ func ModelPrefill(m *decoder.Model) Prefill {
 		return got, nil
 	}
 }
+
+// ModelPrefillMany is the many-prompt form of ModelPrefill for label scoring (Route A): the next-token logits after each prompt, with the prefix the prompts share
+// prefilled once. It is nil unless the model can share (decoder.Model.CanSharePrefix: the CPU Qwen3.5 path): on any other model, a resident one above all, the
+// ordinary one-prompt prefill is the right path and the caller keeps it.
+func ModelPrefillMany(m *decoder.Model) PrefillMany {
+	if !m.CanSharePrefix() {
+		return nil
+	}
+	return m.PromptLogitsMany
+}

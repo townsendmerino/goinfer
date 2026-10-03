@@ -175,15 +175,22 @@ func (s *server) serveSystemOne(w http.ResponseWriter, r *http.Request, lm *load
 	calibrated := map[string]bool{}
 	dropped := []string{} // questions whose option descriptions a decision head did not read
 	inputTokens := 0
-	for _, it := range items {
-		res, err := d.Decide(r.Context(), it.req)
-		if err != nil {
-			if r.Context().Err() != nil {
-				return // the client left
-			}
-			writeServerErr(w, fmt.Sprintf("question %q: %v", it.name, err))
-			return
+	// All the questions at once: where the model can share work between them (the CPU Qwen3.5 path, D8) the prefix their prompts share is prefilled once and each
+	// question resumes from a copy of that cache; elsewhere DecideMany is one Decide per question, exactly as this loop used to be.
+	reqs := make([]decide.Request, len(items))
+	for i, it := range items {
+		reqs[i] = it.req
+	}
+	results, err := d.DecideMany(r.Context(), reqs)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return // the client left
 		}
+		writeServerErr(w, err.Error())
+		return
+	}
+	for i, it := range items {
+		res := results[i]
 		inputTokens += res.PromptTokens * res.Prefills
 		calibrated[it.req.Kind] = res.Calibrated
 		if res.DescriptionsDropped {
@@ -263,11 +270,11 @@ func (lm *loadedModel) getDecider(cfg config) (*decide.Decider, error) {
 			// Route B: the head's own template and calibration.json. -decisions-template and -decisions-calibration
 			// describe label scoring and do not apply to a head.
 			lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), nil,
-				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(lm.model)})
+				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(lm.model), HiddenMany: decide.ModelHiddenMany(lm.model)})
 			return
 		}
 		lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), decide.ModelPrefill(lm.model),
-			decide.Options{Template: tmpl, Calibration: cal})
+			decide.Options{Template: tmpl, Calibration: cal, PrefillMany: decide.ModelPrefillMany(lm.model)})
 	})
 	return lm.decider, lm.deciderErr
 }

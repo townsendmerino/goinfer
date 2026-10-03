@@ -148,6 +148,14 @@ any surface may still change.
 
 ### Added
 
+- **A decision request's questions share the prefill of what their prompts have in common (D8, CPU path).** On the hybrid Qwen3.5 family each question used to prefill its whole prompt
+  again (D7 measured five questions costing five times one). `/v1/systemone` now sends a request's questions to the model in one call: the prefix the prompts share is prefilled once,
+  into a cache that is then deep-copied (KV rows and the Gated DeltaNet state, which can be copied but not rewound) for each question's own suffix. Where the template puts the
+  state first (label scoring's chat template) all questions share it; JEV's head template puts the question's kind first, so only same-kind questions share (five mixed questions
+  become three prefills). On the real Clef-flash backbone at int8int8 the shared hidden state was bit-identical to the separate one, and one exploratory run by day took 52.7 s
+  against 80.0 s (head template) and 29.1 s against 83.3 s (chat template) for D7's five questions at 256 state tokens. **Applies to the CPU path only**: a GPU-resident model keeps its
+  own prefill, and copying a device's recurrent state is not done. Any other model, and any request asking for several answer orders, is answered one question at a time as before.
+  `docs/measurements/decisions-d8-shared-state-2026-10-03.md`.
 - **Clef decision models on `/v1/systemone` (Route C).** A `--model` directory that carries `joint_head.safetensors` (Cloudflare's Clef-flash or Clef) loads as a decision model:
   one backbone pass over the whole record answers every question, through the model's joint head, in the reference's own response shape. `confidence` is the top probability on
   this route (the label route keeps its margin over uniform), probabilities are rounded to four decimals as the reference rounds them, and a state longer than the context is cut

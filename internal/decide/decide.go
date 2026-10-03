@@ -208,7 +208,18 @@ type Options struct {
 	// replaces the label logits, and the prefill is not used. It requires bare-v1 and a Hidden.
 	Head   *Head
 	Hidden Hidden
+	// HiddenMany and PrefillMany, when set, are the many-prompt forms of Hidden and of the prefill: one call for all of a request's questions, which lets the
+	// model prefill what the prompts share once (DecideMany). nil keeps one call per question. A hook may be given only for a model that can answer them
+	// faster than one call each (decoder.Model.CanSharePrefix); the Route B form is always safe, since it falls back to Hidden itself.
+	HiddenMany  HiddenMany
+	PrefillMany PrefillMany
 }
+
+// HiddenMany is Hidden for several prompts at once, in order.
+type HiddenMany func(ctx context.Context, prompts [][]int) ([][]float32, error)
+
+// PrefillMany is the prefill for several prompts at once, in order.
+type PrefillMany func(ctx context.Context, prompts [][]int) ([][]float32, error)
 
 // Decider scores decisions on one model.
 type Decider struct {
@@ -219,6 +230,9 @@ type Decider struct {
 	template string
 	head     *Head
 	hidden   Hidden
+
+	hiddenMany  HiddenMany
+	prefillMany PrefillMany
 }
 
 // New resolves every verbalizer to a single token and returns a Decider. It fails, naming the offenders, when any
@@ -250,9 +264,9 @@ func New(tok Tokenizer, prefill Prefill, opts Options) (*Decider, error) {
 		if cal != nil && cal.Template != "" && cal.Template != tmpl {
 			return nil, fmt.Errorf("decide: the calibration was fitted under template %q, not %q", cal.Template, tmpl)
 		}
-		return &Decider{tok: tok, cal: cal, template: tmpl, head: opts.Head, hidden: opts.Hidden}, nil
+		return &Decider{tok: tok, cal: cal, template: tmpl, head: opts.Head, hidden: opts.Hidden, hiddenMany: opts.HiddenMany}, nil
 	}
-	d := &Decider{tok: tok, prefill: prefill, label: map[string]int{}, cal: cal, template: tmpl}
+	d := &Decider{tok: tok, prefill: prefill, label: map[string]int{}, cal: cal, template: tmpl, prefillMany: opts.PrefillMany}
 	var bad []string
 	for _, v := range append(append(append([]string(nil), noulOptions...), strings.Split(digits, "")...), strings.Split(letters, "")...) {
 		ids, err := tok.EncodePlain(v)
@@ -303,6 +317,16 @@ func (d *Decider) LabelID(v string) (int, bool) { id, ok := d.label[v]; return i
 
 // Decide answers one request.
 func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
+	return d.decideWith(ctx, r, nil)
+}
+
+// preScored is a request's prompt ids and the model's output for them, computed ahead by DecideMany.
+type preScored struct {
+	ids []int
+	out []float32
+}
+
+func (d *Decider) decideWith(ctx context.Context, r Request, pre *preScored) (Result, error) {
 	if err := d.validate(r); err != nil {
 		return Result{}, err
 	}
@@ -333,7 +357,14 @@ func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
 				descs[i] = r.Descriptions[j]
 			}
 		}
-		logp, promptTokens, err := d.score(ctx, r.Kind, r.State, r.Question, shown, descs, temp)
+		var logp []float64
+		var promptTokens int
+		var err error
+		if pre != nil && orders == 1 {
+			logp, promptTokens, err = d.scoreIDs(ctx, pre.ids, r.Kind, shown, temp, pre.out)
+		} else {
+			logp, promptTokens, err = d.score(ctx, r.Kind, r.State, r.Question, shown, descs, temp)
+		}
 		if err != nil {
 			return Result{}, err
 		}
@@ -364,6 +395,79 @@ func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
 	return res, nil
 }
 
+// DecideMany answers several requests about (usually) one state. Where the model can share work across them it does: every request's prompt is built first and
+// handed to the many-prompt hook (Options.HiddenMany for a Route B head, Options.PrefillMany for label scoring) in ONE call, which prefills the prefix the prompts
+// share once and resumes each question from a copy of that cache (decoder.PromptHiddenMany; D8 of docs/tasks/task-constrained-confidence.md). The answers are the
+// ones Decide gives, up to the numerical difference of splitting one prefill in two (bounded by the decoder's own gate). Without the hook, or for a request that asks
+// for several answer orders (Permute > 1), each request is Decide'd alone, exactly as before. Results are in the order of reqs.
+func (d *Decider) DecideMany(ctx context.Context, reqs []Request) ([]Result, error) {
+	out := make([]Result, len(reqs))
+	many := (d.head != nil && d.hiddenMany != nil) || (d.head == nil && d.prefillMany != nil)
+	if len(reqs) < 2 || !many {
+		for i, r := range reqs {
+			res, err := d.Decide(ctx, r)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = res
+		}
+		return out, nil
+	}
+	for _, r := range reqs {
+		if err := d.validate(r); err != nil {
+			return nil, err
+		}
+	}
+	var idx []int
+	var prompts [][]int
+	pre := make([]*preScored, len(reqs))
+	for i, r := range reqs {
+		if r.Permute > 1 {
+			continue
+		}
+		var descs []string
+		if r.Descriptions != nil {
+			descs = r.Descriptions
+		}
+		ids, err := d.promptIDs(r.Kind, r.State, r.Question, r.Options, descs)
+		if err != nil {
+			return nil, err
+		}
+		pre[i] = &preScored{ids: ids}
+		idx, prompts = append(idx, i), append(prompts, ids)
+	}
+	if len(prompts) >= 2 {
+		var outs [][]float32
+		var err error
+		if d.head != nil {
+			outs, err = d.hiddenMany(ctx, prompts)
+		} else {
+			outs, err = d.prefillMany(ctx, prompts)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(outs) != len(prompts) {
+			return nil, fmt.Errorf("decide: the many-prompt hook returned %d outputs for %d prompts", len(outs), len(prompts))
+		}
+		for k, i := range idx {
+			pre[i].out = outs[k]
+		}
+	} else {
+		for _, i := range idx {
+			pre[i] = nil // a single prompt shares nothing: the ordinary path
+		}
+	}
+	for i, r := range reqs {
+		res, err := d.decideWith(ctx, r, pre[i])
+		if err != nil {
+			return nil, err
+		}
+		out[i] = res
+	}
+	return out, nil
+}
+
 // Scores returns a request's restricted log-probabilities at temperature 1, in the request's option order, with no
 // permutation — the raw material decisions-calibrate fits a temperature on.
 func (d *Decider) Scores(ctx context.Context, r Request) ([]float64, error) {
@@ -375,11 +479,20 @@ func (d *Decider) Scores(ctx context.Context, r Request) ([]float64, error) {
 }
 
 func (d *Decider) score(ctx context.Context, kind, state, question string, shown, descs []string, temp float64) ([]float64, int, error) {
+	ids, err := d.promptIDs(kind, state, question, shown, descs)
+	if err != nil {
+		return nil, 0, err
+	}
+	return d.scoreIDs(ctx, ids, kind, shown, temp, nil)
+}
+
+// promptIDs renders and tokenizes one question's prompt.
+func (d *Decider) promptIDs(kind, state, question string, shown, descs []string) ([]int, error) {
 	var ids []int
 	var err error
 	if d.head != nil { // the head was trained on jev_core's prompts: a long state is cut, and no option is described
 		if state, _, err = truncateState(d.tok, state); err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		descs = nil
 	}
@@ -389,15 +502,24 @@ func (d *Decider) score(ctx context.Context, kind, state, question string, shown
 		ids, err = d.tok.EncodePlain(Render(kind, state, question, shown, descs...))
 	}
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if len(ids) == 0 {
-		return nil, 0, errors.New("decide: empty prompt")
+		return nil, errors.New("decide: empty prompt")
 	}
+	return ids, nil
+}
+
+// scoreIDs reads a rendered prompt's restricted log-probabilities. pre, when non-nil, is the model's output for ids computed in advance by a many-prompt call
+// (a Route B hidden state or a Route A logit vector): the same value the one-prompt call would have produced, so nothing else changes.
+func (d *Decider) scoreIDs(ctx context.Context, ids []int, kind string, shown []string, temp float64, pre []float32) ([]float64, int, error) {
 	if d.head != nil {
-		h, err := d.hidden(ctx, ids)
-		if err != nil {
-			return nil, 0, err
+		h := pre
+		if h == nil {
+			var err error
+			if h, err = d.hidden(ctx, ids); err != nil {
+				return nil, 0, err
+			}
 		}
 		z, err := d.head.logits(h, kind, len(shown))
 		if err != nil {
@@ -409,9 +531,12 @@ func (d *Decider) score(ctx context.Context, kind, state, question string, shown
 		}
 		return confidence.RestrictedLogSoftmax(z, slots, temp), len(ids), nil
 	}
-	logits, err := d.prefill(ctx, ids)
-	if err != nil {
-		return nil, 0, err
+	logits := pre
+	if logits == nil {
+		var err error
+		if logits, err = d.prefill(ctx, ids); err != nil {
+			return nil, 0, err
+		}
 	}
 	vs := verbalizers(kind, len(shown))
 	lids := make([]int, len(vs))
