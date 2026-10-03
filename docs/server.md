@@ -582,6 +582,25 @@ names that are served.
       CPU (exploratory, five items).
     - The GPU's int4 kernels are not the CPU's, so the two answers differ: slightly on most items, and on one of the 150 by a lot (a 0.956 option read as 0.362 on CUDA int4, unexplained). Until that is explained, do not rely on decisions from a CUDA-resident int4 model (D6b).
   - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
+- **With Cloudflare's Clef (Route C):** `--model clef=~/models/clef-flash`. A model directory that carries `joint_head.safetensors`
+  next to its backbone loads as a decision model; no `head=` is given (and giving one is refused). One backbone pass over the whole
+  record answers every question, through the model's joint head, so the cost is one prefill however many questions there are.
+  - **The request** is the same TypeSafe shape, read as the reference's encoder reads it, so a `choice` question's `criteria` is
+    `{"option": description | null}`, a `score`'s is an ordered array, and a `noul`'s can override the two default descriptions.
+    Option descriptions are read by this route (the JEV head ignores them). Images and videos are refused until multimodal P8a.
+  - **The answer** is the reference's: `noul` is P(true); `choice` is the option with the highest probability (the first listed wins a
+    tie) with the probabilities in the order you sent the options; `score` is the expected level. **`confidence` is the top
+    probability**, not the margin over uniform the label route reports (owner decision 2026-10-03), and
+    `goinfer.confidence: "top_probability"` says so. Probabilities are rounded to four decimals, as the reference rounds them.
+  - **Request text is literal.** A `<|im_start|>` or `<|im_end|>` written in a state, an instruction or an option is plain text
+    here. Cloudflare's reference would turn it into a control token (and a customer's message could then forge a turn boundary);
+    the answer is identical to the reference on any input without such text.
+  - **A state that does not fit is cut to its first tokens** (the reference's rule, default 16,384 tokens in all) and
+    `goinfer.state_tokens_truncated` counts what was cut. A schema that alone does not fit is a 422.
+  - **Precision:** it loads at `int8int8` unless `quant=` or `--quant` says otherwise. **No grading of the real Clef-flash weights
+    exists yet** (D13's fidelity run is queued behind the reference fixture), the backbone runs on the CPU, and no speed is
+    claimed (D14). What is checked is the wiring: the encoder against the official one on 150/150 recorded items, and the whole
+    pipeline against the official reference to 1.8e-7 on a tiny model (`measurements/decisions-d12-clef-encoder-2026-10-02.md`).
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates
 disagree about the default — Qwen3 and Qwen3.5-9B think unless told not to, Qwen3.5-0.8B and Gemma 4 do not. serve reads

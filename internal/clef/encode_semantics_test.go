@@ -117,6 +117,9 @@ func TestEncode_truncatesStateAndShiftsSpans(t *testing.T) {
 	if got := decode(cut.InputIDs[cut.Questions[0].QuestionSpan[0]:cut.Questions[0].QuestionSpan[1]]); got != "I" {
 		t.Errorf("after truncation the question span reads %q, want \"I\"", got)
 	}
+	if full.StateTruncated != 0 || cut.StateTruncated != 4000 {
+		t.Errorf("StateTruncated is %d for the full sequence and %d for the cut one, want 0 and 4000", full.StateTruncated, cut.StateTruncated)
+	}
 	if shift := full.Questions[0].QuestionSpan[0] - cut.Questions[0].QuestionSpan[0]; shift != 4000 {
 		t.Errorf("the span moved by %d, want the 4000 tokens cut from the state", shift)
 	}

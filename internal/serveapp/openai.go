@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -64,7 +65,10 @@ type loadedModel struct {
 	sessions  *sessionLRU // prefix-keyed KV reuse across requests
 	// decisions (D5): the decider POST /v1/systemone answers with, built on first use — its label tokens are resolved
 	// once per tokenizer. head is the entry's trained decision head (head=, D4), nil for label scoring.
-	head        *decide.Head
+	head *decide.Head
+	// clef is the entry's Clef decision model (Route C, D13): set when the model directory carries joint_head.safetensors. It answers /v1/systemone
+	// instead of the label decider.
+	clef        *clef.Model
 	deciderOnce sync.Once
 	decider     *decide.Decider
 	deciderErr  error
@@ -733,6 +737,10 @@ func (s *server) decisionsField(name string) map[string]any {
 	s.regMu.RUnlock()
 	if lm == nil || lm.model == nil || lm.adapter != "" {
 		return nil
+	}
+	if lm.clef != nil {
+		return map[string]any{"endpoint": "/v1/systemone", "route": routeClef, "kinds": []string{decide.KindNoul, decide.KindChoice, decide.KindScore},
+			"calibrated": false, "confidence": clefConfidence}
 	}
 	if h := lm.head; h != nil {
 		return map[string]any{"endpoint": "/v1/systemone", "route": decide.RouteHead, "kinds": h.Kinds(), "template": h.Template,

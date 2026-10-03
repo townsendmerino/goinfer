@@ -148,6 +148,15 @@ any surface may still change.
 
 ### Added
 
+- **Clef decision models on `/v1/systemone` (Route C).** A `--model` directory that carries `joint_head.safetensors` (Cloudflare's Clef-flash or Clef) loads as a decision model:
+  one backbone pass over the whole record answers every question, through the model's joint head, in the reference's own response shape. `confidence` is the top probability on
+  this route (the label route keeps its margin over uniform), probabilities are rounded to four decimals as the reference rounds them, and a state longer than the context is cut
+  to its first tokens with `goinfer.state_tokens_truncated` saying how many. Text in the request is tokenized literally, so a `<|im_start|>` in a customer's message cannot become
+  a control token (the reference would). The record encoder and head (`internal/clef`) match the official `joint_schema_model.py` to 1.8e-7 on a tiny end-to-end fixture and
+  the encoder matches it on 150/150 recorded items; **nothing has yet run on the real Clef-flash weights**, and the backbone runs on the CPU. Images are refused until P8a. A Clef
+  model loads at `int8int8` unless `quant=` says otherwise (the decision-model default). `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`,
+  `docs/tasks/task-constrained-confidence.md` D12 and D13.
+
 - **`decoder.Model.PromptHiddenAll(ctx, prompt)`** returns the final-norm hidden state at every prompt position (K rows), the input a decision head that reads all positions consumes (Route C, Cloudflare's Clef). CPU only. Matches HF's
   `last_hidden_state` at f32 on the tiny Qwen3.5 checkpoints, per position, to relative L2 4e-7.
 

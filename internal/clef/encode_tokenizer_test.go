@@ -33,13 +33,8 @@ func clefTokenizer(t *testing.T) *tokenizer.Tokenizer {
 	return nil
 }
 
-// literalTokenizer is the production tokenizer callback: a fragment is parsed for special tokens only when the encoder says so (the two
-// fixed templates), and is otherwise tokenized as plain text (Segment.Special false, the M25 split).
-func literalTokenizer(tk *tokenizer.Tokenizer) Tokenize {
-	return func(text string, parseSpecial bool) ([]int, error) {
-		return tk.EncodeSegments([]tokenizer.Segment{{Text: text, Special: parseSpecial}}, false)
-	}
-}
+// literalTokenizer is the production callback (TokenizerFunc), so the gate runs the code that serves.
+func literalTokenizer(tk *tokenizer.Tokenizer) Tokenize { return TokenizerFunc(tk) }
 
 // The tokenizer half of the gate: with goinfer's own tokenizer in place of the replay, the 150 items' token ids and spans must still be
 // the reference's. Each fragment is tokenized separately, and the two templates parse their chat markers.
