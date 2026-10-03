@@ -32,10 +32,13 @@ const (
 	TypeScore  = 2
 )
 
-// Tokenize turns one text fragment into token ids exactly as the reference's tokenizer(text, add_special_tokens=False).input_ids does:
-// special-token text inside the fragment (including inside a customer's state) becomes the control token. The reference does that and
-// the head was trained on it, so a faithful port must too; see the package doc of the caller for what that means for untrusted state.
-type Tokenize func(text string) ([]int, error)
+// Tokenize turns one text fragment into token ids as the reference's tokenizer(text, add_special_tokens=False).input_ids does, with one
+// deliberate difference. The reference parses special-token text in EVERY fragment, so a customer's "<|im_start|>" inside the state
+// becomes a real control token and can forge a turn boundary. This port does not: parseSpecial is true ONLY for the two fixed templates
+// (the prefix and the suffix, which carry the chat markers), and false for every fragment that holds request text (the state, the
+// instructions, the question ids, the option ids and descriptions), which must be tokenized literally. On input without special-token
+// text the two agree exactly (all 150 recorded items); they differ exactly on the inputs an attacker writes.
+type Tokenize func(text string, parseSpecial bool) ([]int, error)
 
 // Question is one encoded question: where its instruction and each option sit in the sequence, and the option ids in the order the
 // head's logits come in (noul: true, false; choice: alphabetical by key, NOT the order sent; score: "0", "1", ...).
@@ -84,7 +87,7 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 
 	// Same call order as the reference, so a recording tokenizer sees the same sequence: the schema fragments, then the prefix, the
 	// suffix, and the state last.
-	schema, err := tok("\n\nSCHEMA FIELDS:\n")
+	schema, err := tok("\n\nSCHEMA FIELDS:\n", false)
 	if err != nil {
 		return nil, err
 	}
@@ -160,11 +163,11 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 		questions = append(questions, eq)
 	}
 
-	prefix, err := tok(prefixText)
+	prefix, err := tok(prefixText, true)
 	if err != nil {
 		return nil, err
 	}
-	suffix, err := tok(suffixText)
+	suffix, err := tok(suffixText, true)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +175,7 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 	if err != nil {
 		return nil, err
 	}
-	state, err := tok(stateText)
+	state, err := tok(stateText, false)
 	if err != nil {
 		return nil, err
 	}
@@ -197,8 +200,9 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 	return &Encoded{InputIDs: ids, Questions: questions}, nil
 }
 
+// appendTokens tokenizes a schema fragment literally: every schema fragment is a template filled with request text.
 func appendTokens(dst []int, tok Tokenize, text string) ([]int, error) {
-	ids, err := tok(text)
+	ids, err := tok(text, false)
 	if err != nil {
 		return nil, err
 	}

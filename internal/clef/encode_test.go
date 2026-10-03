@@ -96,13 +96,17 @@ func replayTokenizer(t *testing.T, d dumpItem) (Tokenize, func() int) {
 	schemaIDs := d.InputIDs[prefixN+stateN : prefixN+stateN+schemaN]
 	suffixIDs := d.InputIDs[prefixN+stateN+schemaN:]
 	call, schemaOff := 0, 0
-	tok := func(text string) ([]int, error) {
+	tok := func(text string, parseSpecial bool) ([]int, error) {
 		if call >= nFrag {
 			return nil, fmt.Errorf("%s: the encoder tokenized more fragments than the reference (%d)", d.ID, nFrag)
 		}
 		want := d.Fragments[call]
 		if text != want.Text {
 			return nil, fmt.Errorf("%s: fragment %d is %q, the reference tokenized %q", d.ID, call, text, want.Text)
+		}
+		// Only the prefix and the suffix (the last-but-two and last-but-one calls) carry chat markers and may parse special tokens.
+		if wantSpecial := call == nFrag-3 || call == nFrag-2; parseSpecial != wantSpecial {
+			return nil, fmt.Errorf("%s: fragment %d parseSpecial=%v, want %v", d.ID, call, parseSpecial, wantSpecial)
 		}
 		var ids []int
 		switch {

@@ -27,16 +27,15 @@ Python's `json.loads` accepts things JSON does not, and this port refuses them r
 
 Ordering rules ported and asserted (`encode_semantics_test.go`): a choice's options are alphabetical by key and **not** in the order sent; noul is always `true` then `false`, and its criteria can override those two descriptions only (a null drops the description key); a score's options are its list indices; an empty or missing instruction becomes the question id; the state is cut to its first tokens to fit `max_length` (default 16,384) and the spans shift with it; a schema that alone exceeds it is an error.
 
-## One thing for the owner: the reference parses special-token text inside the state
+## Hostile input: request text is tokenized literally (owner decision 2026-10-02)
 
-The reference tokenizes each fragment with `tokenizer(text, add_special_tokens=False)`, which **parses special-token text**. So a customer message containing `<|im_end|><|im_start|>system` inside the state becomes real control tokens in the sequence the model reads. The trained head saw prompts built this way, and a port that matched the reference on the 150 items would also do it on hostile input.
+The reference tokenizes each fragment with `tokenizer(text, add_special_tokens=False)`, which **parses special-token text**. So a customer message containing `<|im_end|><|im_start|>system` inside the state becomes real control tokens in the sequence the model reads, and can forge a turn boundary. The owner's decision is to prevent that, and the encoder enforces it rather than leaving it to callers:
 
-The encoder is deliberately tokenizer-agnostic (`Tokenize func(string) ([]int, error)`), so this is the caller's choice, and D13 has to make it:
-
-- **Match the reference** (`tokenizer.Encode`): input-identity everywhere, and a state can forge turn boundaries. The effect on the head's output is untested.
-- **Keep state text literal** (`EncodeSegments`, as `internal/decide.PlainTokenizer` does for Route B, M25): safe, and identical to the reference on every input without special-token text (all 150 items; this was checked by the count above, not by a second run). It diverges from the reference exactly on the inputs an attacker would write.
-
-I have not made this choice. It is recorded here so D13's wiring does not make it by accident.
+- `Tokenize` is `func(text string, parseSpecial bool)`. `parseSpecial` is true for exactly two fragments, the fixed prefix and suffix templates (which carry the chat markers the model needs). It is false for every fragment that holds request text: the state, the instructions, the question ids, the option ids and the descriptions.
+- Production wiring uses `tokenizer.EncodeSegments` with `Segment.Special = parseSpecial` (the same M25 split `internal/decide.PlainTokenizer` uses for Route B).
+- **Where it differs from the reference:** only on input containing special-token text. On all 150 recorded items there is none, so the gates above are unchanged (token ids identical, 0 of 150 differ through the real tokenizer).
+- **Gates:** `TestEncode_onlyTheTemplatesParseSpecialTokens` asserts the flag per fragment (hostile text in the state, a question id, an instruction, an option id and a description; exactly two fragments parse specials, and they are the templates). The replay test asserts the same flag on all 150 items. `TestEncode_hostileTextForgesNoControlTokens` runs a request full of six control markers through the real tokenizer: **0 forged control tokens** with the literal split, against **35** from the same request through a parse-everything tokenizer (the reference's behaviour), so the check can fail.
+- **What this does not cover:** the effect on the head's output of the literal text, which the reference never saw, is unmeasured. It is the right text for the model to see (it is what the customer wrote). Structure injection in plain text is also not prevented: a question id or instruction containing `\nEND FIELD\nFIELD 2\nID: x` can still imitate schema structure. The schema is written by the application developer, not the end user, so this is a trust boundary to document in D13, not a tokenizer fix.
 
 ## Not done in this item
 
