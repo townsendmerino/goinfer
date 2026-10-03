@@ -243,6 +243,9 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 		need, ok := projectedSidecarBytes(ggufPath, quant)
 		if !ok {
 			need = fi.Size() // header unreadable: the old proxy, better than none
+			if n, ok := decoder.GGUFFileBytes(ggufPath); ok {
+				need = n // a split set's whole size, not its first shard's
+			}
 		}
 		if free, ok := freeDiskBytes(filepath.Dir(cache)); ok && free < need {
 			return "", fmt.Errorf("stream-weights: refusing to transcode %s — projected sidecar size ~%.1f GB exceeds %.1f GB free on this disk (a half-written sidecar on a full disk is worse than refusing up front); free some space and retry, or pass -direct-load to skip the sidecar entirely",
@@ -376,9 +379,23 @@ func cacheLayoutCurrent(cache, quant string) (uint32, bool) {
 // it actually decides: this one answers "has the source changed since the cache was built",
 // which is all an mtime can answer.
 func cacheNewer(cache, src string) bool {
-	cs, err1 := os.Stat(cache)
-	ss, err2 := os.Stat(src)
-	return err1 == nil && err2 == nil && cs.ModTime().After(ss.ModTime())
+	cs, err := os.Stat(cache)
+	if err != nil {
+		return false
+	}
+	// A split GGUF is as new as its newest shard: a re-pulled shard 2 makes the sidecar stale as surely as a new
+	// shard 1 does. A single file is its own one-element set.
+	srcs, err := decoder.GGUFShards(src)
+	if err != nil {
+		return false
+	}
+	for _, p := range srcs {
+		ss, err := os.Stat(p)
+		if err != nil || !cs.ModTime().After(ss.ModTime()) {
+			return false
+		}
+	}
+	return true
 }
 
 func quantLabel(q string) string {

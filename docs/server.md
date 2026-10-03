@@ -42,7 +42,8 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 
 **Where a model comes from.** `--model` takes a `.gguf` or `.giw` file, a checkpoint directory
 (`config.json`, the tokenizer and safetensors weights), or a HuggingFace reference. `hf:<owner>/<repo>:<quant>`
-fetches one GGUF file. `hf:<owner>/<repo>:safetensors` fetches the repo's whole safetensors checkpoint, which is the
+fetches one GGUF file, or every shard of a split quant (`…-00001-of-0000N.gguf`, served under the model's name
+without the shard suffix). `hf:<owner>/<repo>:safetensors` fetches the repo's whole safetensors checkpoint, which is the
 form a family with no GGUF loader ships in. The plan is decided before any weight byte moves: an unsupported
 `model_type` or a missing shard is refused, and a full-precision original is flagged as costing about four times its
 GGUF q4. The set is assembled beside the cache directory and published by one rename once every file has checked out.

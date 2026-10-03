@@ -34,6 +34,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1291,6 +1292,24 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool) error {
 	return nil
 }
 
+// splitShardSuffix is a split GGUF's first-shard suffix, "-00001-of-00004.gguf".
+var splitShardSuffix = regexp.MustCompile(`(?i)-00001-of-\d{5}\.gguf$`)
+
+// servedNameFor is the default served name for a model path: its base name without ".gguf", and for a split GGUF
+// (named by its first shard) without the "-00001-of-NNNNN" too, so a split model is served as the model it is.
+// Only ".gguf" is cut: a checkpoint directory named "Qwen2.5-0.5B-Instruct" has no extension, and filepath.Ext would
+// take ".5B-Instruct" for one.
+func servedNameFor(path string) string {
+	name := filepath.Base(path)
+	if loc := splitShardSuffix.FindStringIndex(name); loc != nil {
+		return name[:loc[0]]
+	}
+	if strings.EqualFold(filepath.Ext(name), ".gguf") {
+		name = name[:len(name)-len(".gguf")]
+	}
+	return name
+}
+
 // loadDecoder loads one generative model + tokenizer, resolves its chat template,
 // and returns it as a *loadedModel. The served name is the spec's name=, else (a
 // single unnamed --model) --served-model-name, else the file/dir basename.
@@ -1361,6 +1380,9 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			name = cfg.name
 		} else {
 			name = strings.TrimSuffix(filepath.Base(spec.path), ".gguf")
+			if loc := splitShardSuffix.FindStringIndex(filepath.Base(spec.path)); loc != nil {
+				name = filepath.Base(spec.path)[:loc[0]] // a split model is served as the model, not as its first shard
+			}
 		}
 	}
 	fp := modelFingerprint(spec.path, model.Quant())

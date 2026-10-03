@@ -1302,13 +1302,13 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
 	prof := &LoadProfile{}
-	if fi, serr := os.Stat(path); serr == nil {
-		prof.setBytes(fi.Size())
+	if n, ok := GGUFFileBytes(path); ok {
+		prof.setBytes(n)
 	}
 	var g *embed.GGUFFile
 	// `map` is the storage-bound phase: open + mmap + header/metadata parse. Separated from
 	// `build` because a slow disk and a slow repack want different remedies.
-	if err := prof.timed("map", func() (e error) { g, e = embed.OpenGGUFMmap(path); return e }); err != nil {
+	if err := prof.timed("map", func() (e error) { g, e = OpenGGUFMmap(path); return e }); err != nil {
 		return nil, err
 	}
 	defer g.Close()
@@ -1365,7 +1365,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if err != nil {
 		return 0, err
 	}
-	g, err := embed.OpenGGUFMmap(path)
+	g, err := OpenGGUFMmap(path)
 	if err != nil {
 		return 0, err
 	}

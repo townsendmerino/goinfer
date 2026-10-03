@@ -175,19 +175,25 @@ func Run(args []string) int {
 		return 0
 	}
 	if ref.File == "" && ref.Quant == "" {
-		fmt.Printf("%s — %d GGUF file(s):\n", ref.Repo, len(files))
-		for _, f := range files {
-			fmt.Print(listingLine(f))
+		rows := pull.Collapse(files)
+		fmt.Printf("%s — %d GGUF file(s):\n", ref.Repo, len(rows))
+		for _, r := range rows {
+			fmt.Print(listingLine(r))
 		}
 		fmt.Printf("\nfetch one with:  %s pull %s:<quant>\n", self(), ref.Repo)
 		return 0
 	}
 
-	f, err := pull.Select(files, ref)
+	set, err := pull.SelectSet(files, ref)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
 	}
+	if len(set) > 1 && *embed {
+		fmt.Fprintln(os.Stderr, "goinfer-chat pull: -embed takes a single-file GGUF; this quant is a split set")
+		return 1
+	}
+	f := set[0]
 
 	dir := *outDir
 	if dir == "" {
@@ -197,8 +203,12 @@ func Run(args []string) int {
 		}
 	}
 
-	fmt.Printf("%s\n  %s  (%s)\n  sha256 %s\n  -> %s\n",
-		ref.Repo, f.Path, pull.HumanBytes(f.Size), shortSHA(f.SHA256), dir)
+	if len(set) > 1 {
+		fmt.Printf("%s\n  %s  (split: %d shards, %s)\n  -> %s\n", ref.Repo, f.Path, len(set), pull.HumanBytes(pull.SetBytes(set)), dir)
+	} else {
+		fmt.Printf("%s\n  %s  (%s)\n  sha256 %s\n  -> %s\n",
+			ref.Repo, f.Path, pull.HumanBytes(f.Size), shortSHA(f.SHA256), dir)
+	}
 	if n := pull.MMProjNote(f.Path); n != "" {
 		fmt.Fprintln(os.Stderr, n)
 	}
@@ -214,7 +224,7 @@ func Run(args []string) int {
 		interval = time.Second
 	}
 	var lastPrint time.Time
-	path, err := pull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
+	path, err := pull.DownloadSet(ctx, ref.Repo, set, dir, func(done, total int64) {
 		el := time.Since(start).Seconds()
 		if el <= 0 || (!tty && time.Since(lastPrint) < interval) {
 			return
@@ -240,7 +250,7 @@ func Run(args []string) int {
 	}
 	if err != nil {
 		if ctx.Err() != nil {
-			fmt.Fprintln(os.Stderr, "goinfer-chat pull: cancelled")
+			fmt.Fprintln(os.Stderr, "goinfer-chat pull: cancelled (the files already verified are kept; re-run to resume)")
 			return 130
 		}
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
@@ -248,7 +258,14 @@ func Run(args []string) int {
 	}
 
 	verified := "sha256 verified"
-	if f.SHA256 == "" {
+	if len(set) > 1 {
+		verified = fmt.Sprintf("sha256 verified, all %d shards", len(set))
+		for _, s := range set {
+			if s.SHA256 == "" {
+				verified = "a shard has no sha256 published by HuggingFace — NOT all verified"
+			}
+		}
+	} else if f.SHA256 == "" {
 		// Small non-LFS files carry no oid. Say so rather than implying a check happened.
 		verified = "no sha256 published by HuggingFace for this file — NOT verified"
 	}
@@ -265,7 +282,7 @@ func Run(args []string) int {
 func printPlan(p pull.Plan) {
 	fmt.Printf("%s — safetensors checkpoint, model_type %s (loads as %s):\n", p.Repo, p.ModelType, p.Family)
 	for _, f := range p.Files {
-		fmt.Print(listingLine(f))
+		fmt.Print(listingLine(pull.Listed{File: f}))
 	}
 	fmt.Printf("  %s\n", p.SizeNote())
 }
@@ -452,8 +469,11 @@ func shortSHA(s string) string {
 }
 
 // listingLine is one row of `pull <repo>`'s file listing; a vision projector is marked, since it sits among the quants and is not one.
-func listingLine(f pull.File) string {
+func listingLine(f pull.Listed) string {
 	line := fmt.Sprintf("  %-52s %10s", f.Path, pull.HumanBytes(f.Size))
+	if f.Shards > 1 {
+		line += fmt.Sprintf("  (split, %d shards)", f.Shards)
+	}
 	if pull.IsMMProj(f.Path) {
 		line += "  (vision projector; goinfer cannot load it yet)"
 	}

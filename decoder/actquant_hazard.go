@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/townsendmerino/aikit/embed"
 )
 
 // ActivationQuantHazard names why a family's output is unusable under int8 ACTIVATION quantization,
@@ -43,7 +41,7 @@ func QuantizesActivations(quant string) bool {
 // (a .giw, an unreadable file); callers treat that as "no known hazard".
 func PeekModelType(path string) string {
 	if strings.HasSuffix(path, ".gguf") {
-		g, err := embed.OpenGGUFMmap(path)
+		g, err := OpenGGUFMmap(path)
 		if err != nil {
 			return ""
 		}

@@ -268,7 +268,9 @@ func CheckAccess(ctx context.Context, repo string) error {
 
 // List returns the repo's .gguf files, largest-name-sorted for stable output.
 func List(ctx context.Context, repo string) ([]File, error) {
-	resp, err := get(ctx, hfAPI+"/"+repo+"/tree/main")
+	// Recursive: a repo that splits its big quants usually files each set in its own folder ("Q8_0/…-00001-of-00002.gguf"),
+	// and a top-level listing never showed them at all.
+	resp, err := get(ctx, hfAPI+"/"+repo+"/tree/main?recursive=true")
 	if err != nil {
 		return nil, fmt.Errorf("listing %s: %w", repo, err)
 	}
@@ -364,35 +366,35 @@ func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, err
 	return out, nil
 }
 
-// Select resolves a Ref against a repo listing.
+// selectFile resolves a Ref against a repo listing, before the split question: the file the ref names, and whether it
+// is a shard of a split GGUF (for a split quant, its first shard).
 //
 // Quant matching is on the FULL suffix "-<quant>.gguf", case-insensitively, and never on a
 // substring. That is not fussiness: real repos ship both Q2_K.gguf and Q2_K_L.gguf, so a
 // substring match on "q2_k" is ambiguous and would silently hand back whichever sorted first.
 // Case-insensitivity is likewise required by the ecosystem, not a nicety — Qwen publishes
 // "…-q4_k_m.gguf" and bartowski publishes "…-Q4_K_M.gguf".
-func Select(files []File, ref Ref) (File, error) {
+func selectFile(files []File, ref Ref) (f File, shard bool, err error) {
 	if len(files) == 0 {
-		return File{}, fmt.Errorf("repo %s has no .gguf files", ref.Repo)
+		return File{}, false, fmt.Errorf("repo %s has no .gguf files", ref.Repo)
 	}
 	var cands []File
 	switch {
 	case ref.File != "":
 		for _, f := range files {
 			if strings.EqualFold(f.Path, ref.File) {
-				// An exact shard name used to slip past the split refusal the quant path has: it
-				// downloaded one piece of a checkpoint no goinfer loader can assemble (there is no
-				// split-GGUF loader), and a cancelled one left a multi-GB .part behind.
+				// An exact shard name selects its whole set, the same as the quant does: one piece of a
+				// split checkpoint loads nothing (a cancelled one once left a multi-GB .part behind).
 				if multiPart.MatchString(f.Path) {
-					return File{}, shardedError(f, files, ref)
+					return f, true, nil
 				}
 				if err := checkPin(f, ref); err != nil {
-					return File{}, err
+					return File{}, false, err
 				}
-				return f, nil
+				return f, false, nil
 			}
 		}
-		return File{}, fmt.Errorf("file %q not found in %s.\n%s", ref.File, ref.Repo, render(files))
+		return File{}, false, fmt.Errorf("file %q not found in %s.\n%s", ref.File, ref.Repo, render(files))
 	case ref.Quant != "":
 		suffix := "-" + strings.ToLower(ref.Quant)
 		for _, f := range files {
@@ -401,23 +403,122 @@ func Select(files []File, ref Ref) (File, error) {
 			}
 		}
 	default:
-		return File{}, fmt.Errorf("%s: pick a quant or a file, e.g. %s:q4_k_m\n%s", ref.Repo, ref.Repo, render(files))
+		return File{}, false, fmt.Errorf("%s: pick a quant or a file, e.g. %s:q4_k_m\n%s", ref.Repo, ref.Repo, render(files))
 	}
 	switch len(cands) {
 	case 0:
-		return File{}, fmt.Errorf("no file matching quant %q in %s.\n%s", ref.Quant, ref.Repo, render(files))
+		return File{}, false, fmt.Errorf("no file matching quant %q in %s.\n%s", ref.Quant, ref.Repo, render(files))
 	case 1:
 		f := cands[0]
-		if multiPart.MatchString(f.Path) {
-			return File{}, shardedError(f, files, ref)
-		}
-		return f, nil
+		return f, multiPart.MatchString(f.Path), nil
 	default:
 		if group, ok := oneSplit(cands); ok {
-			return File{}, shardedError(group[0], files, ref)
+			return group[0], true, nil
 		}
-		return File{}, fmt.Errorf("quant %q is ambiguous in %s — name the file exactly.\n%s", ref.Quant, ref.Repo, render(cands))
+		return File{}, false, fmt.Errorf("quant %q is ambiguous in %s — name the file exactly.\n%s", ref.Quant, ref.Repo, render(cands))
 	}
+}
+
+// Select picks the ONE file a ref names. A split quant is not one file, so Select refuses it with the shard list and the
+// nearest single-file quant; SelectSet, which Resolve and both pull front ends use, fetches the whole set instead.
+func Select(files []File, ref Ref) (File, error) {
+	f, shard, err := selectFile(files, ref)
+	if err != nil {
+		return File{}, err
+	}
+	if shard {
+		return File{}, shardedError(f, files, ref)
+	}
+	return f, nil
+}
+
+// SelectSet picks what a ref names as the files to fetch: one file, or for a split quant (task-checkpoint-fetch P4) every
+// shard of its set in shard order, whichever shard or quant named it. The set must be complete in the listing: a split
+// whose shards do not run 1..N is refused rather than fetched short.
+func SelectSet(files []File, ref Ref) ([]File, error) {
+	f, shard, err := selectFile(files, ref)
+	if err != nil {
+		return nil, err
+	}
+	if !shard {
+		return []File{f}, nil
+	}
+	group := shardGroup(f, files)
+	for i, g := range group {
+		m := shardSuffix.FindStringSubmatch(strings.ToLower(g.Path))
+		if m == nil || m[2] != fmt.Sprintf("%05d", i+1) || m[3] != fmt.Sprintf("%05d", len(group)) {
+			return nil, fmt.Errorf("split GGUF %s in %s is incomplete: the repo lists %d shard(s) of it, not 1..N", f.Path, ref.Repo, len(group))
+		}
+	}
+	return group, nil
+}
+
+// SetBytes is the total size of a set of files.
+func SetBytes(set []File) int64 {
+	var n int64
+	for _, f := range set {
+		n += f.Size
+	}
+	return n
+}
+
+// DownloadSet fetches every file of a set into dir through Download (each resumable and digest-checked) and returns the
+// first file's path: for a split GGUF, the first shard, the name the model loads by. Progress is over the whole set. An
+// interrupted set keeps its verified shards and resumes on the next run; until every shard is there, the loader refuses
+// the model and names the missing shard (decoder.GGUFShards).
+func DownloadSet(ctx context.Context, repo string, set []File, dir string, progress func(done, total int64)) (string, error) {
+	if len(set) == 0 {
+		return "", fmt.Errorf("%s: nothing to download", repo)
+	}
+	total := SetBytes(set)
+	var done int64
+	var first string
+	for i, f := range set {
+		base := done
+		path, err := Download(ctx, repo, f, dir, func(d, _ int64) {
+			if progress != nil {
+				progress(base+d, total)
+			}
+		})
+		if err != nil {
+			if len(set) == 1 {
+				return "", err
+			}
+			return "", fmt.Errorf("%s shard %d of %d: %w (re-run to resume; the shards already verified are kept)", repo, i+1, len(set), err)
+		}
+		if i == 0 {
+			first = path
+		}
+		done += f.Size
+	}
+	return first, nil
+}
+
+// Listed is one row of a repo's GGUF listing: a single file, or a split set shown as its first shard with the set's
+// total size and its shard count.
+type Listed struct {
+	File
+	Shards int // 0 for a single file
+}
+
+// Collapse folds each split set in files into one Listed row (first shard's path, the set's total size), keeping single
+// files as they are, in the listing's order.
+func Collapse(files []File) []Listed {
+	var out []Listed
+	seen := map[string]bool{}
+	for _, f := range files {
+		if !multiPart.MatchString(f.Path) {
+			out = append(out, Listed{File: f})
+			continue
+		}
+		group := shardGroup(f, files)
+		if seen[group[0].Path] {
+			continue
+		}
+		seen[group[0].Path] = true
+		out = append(out, Listed{File: File{Path: group[0].Path, Size: SetBytes(group), SHA256: group[0].SHA256}, Shards: len(group)})
+	}
+	return out
 }
 
 // quantMatchKey is the part of a filename a quant selector is matched against: the extension
@@ -526,7 +627,7 @@ func commonPrefixLen(a, b string) int {
 // workaround) and, when one exists, a single-file quant that would work today.
 func shardedError(f File, files []File, ref Ref) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s is one shard of a split GGUF; pulling split checkpoints is not supported yet.\n", f.Path)
+	fmt.Fprintf(&b, "%s is one shard of a split GGUF, not one file; pull fetches the whole set (SelectSet).\n", f.Path)
 	b.WriteString("shards:\n")
 	for _, g := range shardGroup(f, files) {
 		fmt.Fprintf(&b, "  %-52s %s\n", g.Path, humanBytes(g.Size))

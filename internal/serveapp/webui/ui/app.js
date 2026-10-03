@@ -2111,7 +2111,8 @@ function renderFiles(repo, files, fitBackend, freeHuman, ckpt) {
   t.appendChild(head);
   for (const f of files) {
     const tr = document.createElement("tr");
-    const a = document.createElement("td"); a.className = "f"; a.textContent = f.path;
+    // A split quant is one row (its first shard, the set's size); Pull fetches every shard.
+    const a = document.createElement("td"); a.className = "f"; a.textContent = f.path + (f.shards ? " (split, " + f.shards + " shards)" : "");
     const b = document.createElement("td"); b.className = "n"; b.textContent = f.human;
     tr.appendChild(a); tr.appendChild(b);
     if (showFit) {
@@ -2182,6 +2183,7 @@ async function pull(repo, file) {
       const j = JSON.parse(ev.data);
       if (ev.event === "start") {
         if (j.checkpoint) st.textContent = j.human + " · " + j.checkpoint.files + " files";
+        else if (j.shards) st.textContent = j.human + " · " + j.shards + " shards";
         else st.textContent = j.human + (j.sha256 ? " · sha256 " + j.sha256.slice(0, 16) + "…" : " · no sha256 published");
       } else if (ev.event === "progress") {
         if (j.total > 0) $("bar").style.width = (100 * j.done / j.total).toFixed(1) + "%";
@@ -2232,9 +2234,9 @@ function offerLoad(host, path) {
   host.appendChild(row);
 }
 
-// servedName is the name the server gives a loaded model (webServedName): a file's base name without ".gguf", or a
-// checkpoint directory's own name, which is the repo's.
-const servedName = path => path.split(/[\\/]/).pop().replace(/\.gguf$/i, "");
+// servedName is the name the server gives a loaded model (webServedName): a file's base name without ".gguf" (and a
+// split set's "-00001-of-NNNNN"), or a checkpoint directory's own name, which is the repo's.
+const servedName = path => path.split(/[\\/]/).pop().replace(/-00001-of-\d{5}\.gguf$/i, "").replace(/\.gguf$/i, "");
 
 async function loadPulled(path, btn, msg) {
   btn.disabled = true;

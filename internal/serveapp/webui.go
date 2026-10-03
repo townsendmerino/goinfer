@@ -257,9 +257,13 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	free, freeOK := s.freeBytesForActiveBackend()
-	out := make([]map[string]any, 0, len(files))
-	for _, f := range files {
+	rows := pull.Collapse(files) // a split quant is one row: its first shard, the set's size
+	out := make([]map[string]any, 0, len(rows))
+	for _, f := range rows {
 		row := map[string]any{"path": f.Path, "size": f.Size, "human": pull.HumanBytes(f.Size), "sha256": f.SHA256}
+		if f.Shards > 1 {
+			row["shards"] = f.Shards
+		}
 		if freeOK {
 			row["fit"] = fitEstimate(f.Size, free)
 		}
@@ -422,21 +426,26 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	f, err := pull.Select(files, ref)
+	set, err := pull.SelectSet(files, ref)
 	if err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
+	f := set[0]
 	dir, err := pull.CacheDir(ref.Repo)
 	if err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
-	send("start", map[string]any{"file": f.Path, "size": f.Size, "human": pull.HumanBytes(f.Size), "sha256": f.SHA256, "dir": dir})
+	start := map[string]any{"file": f.Path, "size": pull.SetBytes(set), "human": pull.HumanBytes(pull.SetBytes(set)), "sha256": f.SHA256, "dir": dir}
+	if len(set) > 1 {
+		start["shards"] = len(set)
+	}
+	send("start", start)
 
-	start := time.Now()
-	path, err := pull.Download(ctx, ref.Repo, f, dir, func(done, total int64) {
-		send("progress", pullProgress(start, done, total))
+	t0 := time.Now()
+	path, err := pull.DownloadSet(ctx, ref.Repo, set, dir, func(done, total int64) {
+		send("progress", pullProgress(t0, done, total))
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -445,10 +454,14 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 		send("error", map[string]string{"message": err.Error()})
 		return
 	}
+	verified := true // every file of the set carried a sha256 to check against
+	for _, g := range set {
+		verified = verified && g.SHA256 != ""
+	}
 	send("done", map[string]any{
 		"path":     path,
-		"elapsed":  time.Since(start).Round(time.Second).String(),
-		"verified": f.SHA256 != "",
+		"elapsed":  time.Since(t0).Round(time.Second).String(),
+		"verified": verified,
 	})
 }
 
@@ -572,16 +585,11 @@ func webLoadPath(p string) (string, error) {
 	return resolved, nil
 }
 
-// webServedName is the name a web-loaded model is served under: a GGUF file's base name without ".gguf", or a
-// checkpoint directory's own name, which is the repo's (pull.CacheDir). Only ".gguf" is cut: a directory named
-// "Qwen2.5-0.5B-Instruct" has no extension, and filepath.Ext would take ".5B-Instruct" for one. The page's
-// servedName does the same.
+// webServedName is the name a web-loaded model is served under (servedNameFor): a GGUF file's base name without
+// ".gguf" or a split set's shard suffix, or a checkpoint directory's own name, which is the repo's (pull.CacheDir). The
+// page's servedName does the same.
 func webServedName(file string) string {
-	name := filepath.Base(file)
-	if strings.EqualFold(filepath.Ext(name), ".gguf") {
-		name = name[:len(name)-len(".gguf")]
-	}
-	return name
+	return servedNameFor(file)
 }
 
 // handleWebLoad loads a model the pull flow downloaded and makes it routable, streaming SSE:

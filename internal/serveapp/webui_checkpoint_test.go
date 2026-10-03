@@ -126,6 +126,9 @@ func TestWebLoadPath_checkpointDir(t *testing.T) {
 	if got := webServedName("/c/o/r/model-Q4_K_M.GGUF"); got != "model-Q4_K_M" {
 		t.Errorf("served name of a gguf = %q, want the extension cut", got)
 	}
+	if got := webServedName("/c/o/r/big-Q8_0-00001-of-00003.gguf"); got != "big-Q8_0" {
+		t.Errorf("served name of a split set = %q, want the model's, without the shard suffix", got)
+	}
 }
 
 // fakeCheckpointRepo stands in HuggingFace for one safetensors-only repo: access granted, no GGUF files, a plan of

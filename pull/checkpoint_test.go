@@ -43,7 +43,7 @@ func (h *fakeHF) serve(t *testing.T, repo string) {
 			var out []map[string]any
 			for p, b := range h.files {
 				e := map[string]any{"type": "file", "path": p, "size": len(b)}
-				if strings.HasSuffix(p, ".safetensors") || strings.HasSuffix(p, ".bin") {
+				if strings.HasSuffix(p, ".safetensors") || strings.HasSuffix(p, ".bin") || strings.HasSuffix(p, ".gguf") {
 					s := sha256.Sum256(b)
 					e["lfs"] = map[string]any{"oid": hex.EncodeToString(s[:])}
 				}

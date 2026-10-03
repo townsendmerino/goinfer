@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -603,7 +602,7 @@ func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 // estimateGGUFWeightBreakdown is estimateGGUFWeightBytes plus the share of it that is routed-expert
 // weight (GGUF names carry "_exps"; the small per-expert bias tables are left out).
 func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64) {
-	g, err := embed.OpenGGUFMmap(path)
+	g, err := OpenGGUFMmap(path)
 	if err != nil {
 		return 0, 0 // unknown ⇒ proceed
 	}
@@ -839,11 +838,11 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		// Load call that never reaches fitCheckFor — file-backed, so deliberately unpriced; see
 		// srcFileBytes's doc comment).
 		if !opts.StreamWeights {
-			if fi, serr := os.Stat(path); serr == nil {
-				f.srcFileBytes = fi.Size()
+			if n, ok := GGUFFileBytes(path); ok { // a split set's whole size, not its first shard's
+				f.srcFileBytes = n
 			}
 		}
-		g, err := embed.OpenGGUFMmap(path)
+		g, err := OpenGGUFMmap(path)
 		if err != nil {
 			return f // unknown ⇒ proceed, same as always
 		}

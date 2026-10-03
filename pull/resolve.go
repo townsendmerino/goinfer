@@ -77,7 +77,7 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 	if err != nil {
 		return "", err
 	}
-	f, err := Select(files, ref)
+	set, err := SelectSet(files, ref)
 	if err != nil {
 		return "", err
 	}
@@ -85,7 +85,7 @@ func Resolve(ctx context.Context, spec string, progress func(done, total int64))
 	if err != nil {
 		return "", err
 	}
-	return Download(ctx, ref.Repo, f, dir, progress)
+	return DownloadSet(ctx, ref.Repo, set, dir, progress)
 }
 
 // resolveCheckpoint is Resolve for "hf:owner/repo:safetensors": the cached directory when a complete, verified

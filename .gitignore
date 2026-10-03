@@ -155,6 +155,11 @@ demo/chat/dist/
 # red. Same rationale as mixtral-tiny/cohere-tiny above; see docs/parity-coverage-policy.md,
 # "A gate must be able to run, and able to fail".
 !testdata/glm-tiny.gguf
+# EXCEPTION: testdata/gguf-split/ is glm-tiny.gguf above split into 4 shards by llama.cpp's own llama-gguf-split
+# (0.3.0, build 10621: --split --split-max-tensors 12), 812 KB in all. It is the real tool's shard format, committed so
+# the split-GGUF gates (decoder/gguf_split_test.go) run in CI, which has no llama.cpp to make it.
+!testdata/gguf-split/
+!testdata/gguf-split/*.gguf
 # R8 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): a metadata-only GGUF (no weight
 # tensors — the source truncated at the tensor-data boundary, same shape as a .giw's tokenizer
 # half) carrying granite-4.0-h-tiny's real tokenizer.ggml.pre="dbrx" metadata, so

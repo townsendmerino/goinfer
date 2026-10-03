@@ -2,8 +2,8 @@
 
 > **Status: IN PROGRESS 2026-10-03.** §2 decided (option (c), owner 2026-10-03). P1, P2, P3 and P5 are
 > built in `pull` and reachable from the CLI, `--model` and the web UI (P6); P9's gates pass and the server
-> docs name the checkpoint path. P7's vision half is fixed. P4 (split GGUF), P7's embedding half and P8's cache view
-> remain. See "Progress" below.
+> docs name the checkpoint path. P7's vision half is fixed. P4 (split GGUF) is built: route (b), owner 2026-10-03.
+> P7's embedding half and P8's cache view remain. See "Progress" below.
 >
 > Filed after the owner asked for the complete solution: every supported model reachable from the
 > page, multi-file checkpoints downloadable, and loadable once down.
@@ -246,8 +246,49 @@ tower tried) and is green after (the resolved directory is tried and named).
 - A page-loaded checkpoint is text-only by design, because the tower is attached once, at startup.
 - `goinfer-chat --image` needs a GLM-OCR directory path and refuses an `hf:` reference loudly, before any load.
 
+**P4, split GGUF: route (b), owner 2026-10-03.** The decision rested on three facts:
+- **A split quant is almost always a model over ~50 GB.** Uploaders split mainly to get under HuggingFace's 50 GB
+  per-file limit. In `bartowski/Llama-3.3-70B-Instruct-GGUF`, every single-file quant is 45 GiB or less, and the
+  split ones sit in subfolders that the old top-level listing never showed.
+- **Route (a)'s condition can't be tested.** "Prove the merge equals the upstream single-file build" has no
+  reference: a quant is split because no single-file build of it exists. llama.cpp's own merge doesn't reproduce
+  the file it split either. `llama-gguf-split --merge` of a split 0.5B differs from the original from byte 17, in
+  the header, because it keeps the split keys.
+- **Route (b) touches less than the scoping feared.** No load ever runs a model from GGUF bytes: the transcoder
+  reads them once into a `.giw` sidecar, or `-direct-load` reads them into the heap. So teaching the readers the
+  shard set leaves the code that runs the model unchanged.
+
+Built:
+- **aikit `embed.OpenGGUFSplitMmap`:** maps every shard, takes the first shard's metadata, and unions the tensor
+  directories. Each tensor reads from its own shard's data section. It refuses a missing, misordered or duplicated
+  shard, or a tensor count short of `split.tensors.count`.
+- **`decoder.OpenGGUFMmap`:** every GGUF open site in decoder and prequant goes through it. Given a first shard it
+  opens the set, it names a missing shard, and it refuses a later shard by naming the first.
+  - `GGUFFileBytes` sizes the whole set for the fit guard's mapped-source term and the sidecar disk check. Shard 1
+    alone would undercount on exactly the machine where that is dangerous.
+  - Sidecar freshness checks every shard.
+- **`pull`:**
+  - The listing is recursive, and `Collapse` shows a split set as one row: its first shard, the set's size and its
+    shard count.
+  - `SelectSet` turns a quant, or any shard's exact name, into the whole set in order. It refuses a set the listing
+    holds only part of. `Select` keeps its one-file contract.
+  - `DownloadSet` fetches the set shard by shard, each resumable and digest-checked, and returns the first shard.
+  - `Resolve`, the CLI and the web pull all use the set. A split model is served without its shard suffix.
+
+Gates. The fixture is `testdata/gguf-split/`: `glm-tiny.gguf` split into 4 shards by llama.cpp's own
+`llama-gguf-split` 0.3.0, committed so CI reads the real tool's format.
+- **`.giw` from shards:** the weights transcoded from the shards are byte-identical to those from the single file,
+  at int4 and int8int8.
+- **Direct load:** logits are bit-identical over 4 positions.
+- **Pull:** a subfolder split quant is listed, fetched whole by its quant, and loads and decodes. A transfer cut in
+  shard 3 leaves a set the loader refuses by naming shard 3 of 4. The re-run fetches only shard 3 again.
+- **Refusals:** a later shard, a missing shard, and an incomplete listing.
+- **aikit:** the set reads bit-identically to the single file through `Tensor` and `RowDequantizer`. A bad set is
+  refused four ways, and a read after Close errors.
+- **Mutations caught:** opening only the first shard, which fails both decoder gates; and dropping a tensor's
+  shard section, which fails aikit's.
+
 **Remaining:**
-- **P4:** split GGUF, whose decision is still open.
 - **P7, embedding models:** `-embed-model` still takes a directory path only. It does not go through `Resolve`, so
   an `hf:` reference there is not fetched.
 - **P8:** a view of what the cache holds.
