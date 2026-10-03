@@ -790,6 +790,12 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   - The parity manifest went stale for 38 families (`decoder/model.go`'s comments); 39 goldens green, `deps_hash`
     refreshed.
 - 2026-10-01: **T0.5 done** (the docs half; the comment half is above), except F-D02's code options.
+- 2026-10-03: **F-D02's fixture assertion added** (written on nobara, compiled for darwin with `GOOS=darwin go vet ./metal/`, **NOT RUN: it needs a Metal device**; run
+  `go test -run TestWeightAlias_olderBundleTakesCopyPath -v ./metal/` on the Mac). The existing older-bundle test already covered the v15 non-metal case without saying so: it builds
+  its "old" bundle with today's `prequant` and `GIWTargetNone`, and the writer emits weights format v15 for every target (checked on `testdata/llama-tiny`: both the non-metal and the
+  metal-target bundle read v15), so what the test called "a v12 file" is a v15 non-metal bundle. It now reads each bundle's weights-format version from its header (the `GINFW` blob at
+  byte 64 behind the `GINFB` v3 bundle header) and asserts both are at least v15, its labels say "non-metal bundle", and its comment says why. The other F-D02 option, binding v15 scales
+  directly instead of converting them, is not done.
   - `docs/benchmarks.md`: B-D01 (R18b's "AHEAD in every cell" is all six 1.5B and 7B cells; the 0.5B's latest
     reading at depth is still 0.75× / 0.58×), F-D01 (callouts on the §B3 banner and its 2026-08 verdict, and N-40: the
     LM head is int8), D-D01 4 and 5 (M35 and M26 have run here since "off-limits on any path"; gpt-oss is resident on

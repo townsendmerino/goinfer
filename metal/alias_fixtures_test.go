@@ -4,7 +4,9 @@ package metal
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -235,11 +237,15 @@ func requireSameBits(t *testing.T, got, want [][]float32) {
 	}
 }
 
-// An older bundle — here a v12 file, what every non-metal target still writes and what a metal sidecar
-// was before v13/v14 — must still load with aliasing on: its 16-aligned singles alias, its fused groups
-// and f16 scales take the copy path, the logits stay bit-identical, and the banner says why (no f16
-// scales) and what fixes it. A current metal-target file of the same model carries no such note, and
-// the anonymous figure it reports is the small remainder the format does not cover.
+// A bundle for a target other than Metal must still load with aliasing on: its 16-aligned singles alias, its fused groups
+// and the scales Metal cannot bind in place take the copy path, the logits stay bit-identical, and the banner says why and what
+// fixes it. A current metal-target file of the same model carries no such note, and the anonymous figure it reports is the small
+// remainder the format does not cover.
+//
+// WHICH FORMAT THE "OLD" BUNDLE IS (F-D02, audit-metal-2026-09-30.md): this test used to call it a v12 file. It is built here by
+// today's prequant with GIWTargetNone, and the writer emits weights format v15 for every target, so it is a v15 NON-METAL bundle:
+// its int4 scales are stored as binary16 (v15) but not in the kind-7 / fused-group layout Metal binds, so they are converted into
+// a new buffer. The test now reads the version from each file's header and asserts it, so the label cannot go stale again.
 func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -257,6 +263,14 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 		return p
 	}
 	old, cur := build(decoder.GIWTargetNone, "llama-tiny.int4.giw"), build(decoder.GIWTargetMetal, "llama-tiny.int4.metal.giw")
+	// Both bundles were just written by this build, so both are at least v15 (binary16 scales stored). That is the case F-D02 says the
+	// banner got wrong, and what this test is for; if the writer's version moves, read the new case and relabel, don't loosen this.
+	const wantMinVersion = 15
+	for name, p := range map[string]string{"non-metal": old, "metal": cur} {
+		if v := giwFileVersion(t, p); v < wantMinVersion {
+			t.Fatalf("the %s bundle is weights format v%d, want >= v%d (binary16 scales stored): this test would no longer cover the v15 case", name, v, wantMinVersion)
+		}
+	}
 
 	oldOff, ok := aliasArm(t, old, "0")
 	if !ok {
@@ -265,28 +279,28 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	oldOn, _ := aliasArm(t, old, "1")
 	requireSameBits(t, oldOn.logits, oldOff.logits)
 	a := oldOn.a
-	t.Logf("v12 file: %s", strings.TrimSpace(oldOn.summary))
+	t.Logf("non-metal bundle (format v%d): %s", giwFileVersion(t, old), strings.TrimSpace(oldOn.summary))
 	if a.tensors == 0 {
-		t.Errorf("v12 file aliased no int4 tensor — its singles are 16-aligned and should bind in place")
+		t.Errorf("non-metal bundle aliased no int4 tensor — its singles are 16-aligned and should bind in place")
 	}
 	if a.scaleBytes != 0 || a.f16Converted == 0 {
-		t.Errorf("v12 file: %d f16 scale bytes aliased, %d scale sets converted — want 0 aliased and >0 converted (it has no f16 scales)", a.scaleBytes, a.f16Converted)
+		t.Errorf("non-metal bundle: %d f16 scale bytes aliased, %d scale sets converted — want 0 aliased and >0 converted (its scales are not in the layout Metal binds)", a.scaleBytes, a.f16Converted)
 	}
 	if a.copyB == 0 {
-		t.Errorf("v12 file reports 0 bytes copied, but its fused groups and scales took the copy path")
+		t.Errorf("non-metal bundle reports 0 bytes copied, but its fused groups and scales took the copy path")
 	}
 	if !strings.Contains(oldOn.summary, "not in the layout Metal binds") || !strings.Contains(oldOn.summary, "-target metal") {
-		t.Errorf("v12 file: banner has no note saying why less was aliased and how to fix it:\n%s", oldOn.summary)
+		t.Errorf("non-metal bundle: banner has no note saying why less was aliased and how to fix it:\n%s", oldOn.summary)
 	}
 
 	curOn, _ := aliasArm(t, cur, "1")
-	t.Logf("v14 file: %s", strings.TrimSpace(curOn.summary))
+	t.Logf("metal-target bundle (format v%d): %s", giwFileVersion(t, cur), strings.TrimSpace(curOn.summary))
 	if strings.Contains(curOn.summary, "note:") {
-		t.Errorf("a current metal-target file got the older-bundle note:\n%s", curOn.summary)
+		t.Errorf("a metal-target file got the non-metal-bundle note:\n%s", curOn.summary)
 	}
 	c := curOn.a
 	if bound := c.aliased + c.int8Bytes + c.scaleBytes; c.copyB >= a.copyB || c.copyB*20 > bound {
-		t.Errorf("v14 file still copies %d bytes (v12: %d; bound in place: %d) — want well under 5%% of what it binds", c.copyB, a.copyB, bound)
+		t.Errorf("metal-target bundle still copies %d bytes (non-metal: %d; bound in place: %d) — want well under 5%% of what it binds", c.copyB, a.copyB, bound)
 	}
 }
 
@@ -338,4 +352,25 @@ func firstLine(err error) string {
 		s = s[:i]
 	}
 	return s
+}
+
+// giwFileVersion reads a .giw's WEIGHTS-format version. The file starts with a bundle header (magic "GINFB", version 3), and the weights blob
+// (magic "GINFW", then a little-endian uint32 version: decoder/serialize.go) starts at byte 64 in a v3 bundle. Both magics are checked so a layout
+// change fails here by name instead of reading some other four bytes as a version.
+func giwFileVersion(t *testing.T, path string) uint32 {
+	t.Helper()
+	const bundleMagic, blobMagic, blobOffset = "GINFB", "GINFW", 64
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	b := make([]byte, blobOffset+len(blobMagic)+4)
+	if _, err := io.ReadFull(f, b); err != nil {
+		t.Fatalf("%s: short read of the bundle header: %v", path, err)
+	}
+	if string(b[:len(bundleMagic)]) != bundleMagic || string(b[blobOffset:blobOffset+len(blobMagic)]) != blobMagic {
+		t.Fatalf("%s: not a v3 bundle with its weights blob at byte %d (magics %q and %q)", path, blobOffset, b[:len(bundleMagic)], b[blobOffset:blobOffset+len(blobMagic)])
+	}
+	return binary.LittleEndian.Uint32(b[blobOffset+len(blobMagic):])
 }
