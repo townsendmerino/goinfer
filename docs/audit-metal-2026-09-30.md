@@ -1044,6 +1044,10 @@ one, and the hash updated in the same change.
 **Status, 2026-10-03: stands on the 7B, parked on the 1.5B (T1.7).** Attention per key max/min 1.68–1.71× on both;
 the step across a trip boundary is 4.6–4.8× the median 128-key step on the 7B and 2.5× on the 1.5B (the pre-registered
 staircase reading, beside the per-key one). Record: the task doc, "The night of 2026-10-02: results".
+**PARKED on both models by the owner, 2026-10-03; not planned.** Low value: the projected cost is 0 to 5.5% of a token at a trip boundary and about 2.5% on average, zero at the graded
+depths (2048 and 3900), and the probe found the staircase on the 7B only. It would reopen only if a workload actually sits near a boundary (2049, 4097, ... keys) on the 7B, or if the block
+kernel is being changed for another reason. Any remedy is a block-size or simdgroup-count change inside the threadgroup (S alone does not remove it: R17 `:76`), and goes through the
+set-B fidelity gate and a pre-registered night A/B on the Mac; nothing was changed.
 
 **Counted.** Per threadgroup, simdgroup `s` takes blocks `chunkStart + s*32 + 128*i` (`metal/kernels.go:1352`), with
 `chunkLen = ceil(nWin / nSplit)` (`:1201`) and nSplit = 16 (`metal/model.go:2672`). The busiest simdgroup (sg0) runs

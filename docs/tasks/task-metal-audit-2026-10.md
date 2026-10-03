@@ -480,7 +480,7 @@ gate runs at night before it ships.
 7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
-Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 until T1.7.
+Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 (T1.7 ran: it stands on the 7B, parked on the 1.5B; **the owner parked it on both on 2026-10-03**, low value).
 
 ### The night of 2026-10-02: results (graded 2026-10-03)
 
@@ -494,7 +494,7 @@ below is read against its pre-registration above, unchanged.
 | **A-P01** small-M prefill tiles | 1.5B pass wall shipped ÷ both rules at startPos 64, C = 32 **1.804×** (pairs 1.8 × 7); bm32 alone 1.487×, bn32 alone 1.152×; `TestGemmTile_bitIdentical` passed. Reported: 7B both 1.553× (bn32 1.000×) | **ships** (the default, both rules) |
 | **B-P04** lane-balanced SA rows | 1.5B depth 128 pre-bp04 ÷ production **0.955×** (0.903–0.962): the balanced kernels do more in-sequence work. 7B 0.911–0.917× | **killed**, reverted |
 | **E-P03** FB = 4 fragments | The 7B's calibration chose FB = 2 everywhere (gate\|up 1.158 against 1.165 ms, down 0.594 against 0.584: under the 3% bar), so the arms were one build; readings 0.999–1.001 on both models | **killed** on the record of what it picked, reverted |
-| **T1.7** (B-P08) | Per-key max/min 1.707 (1.5B), 1.679 (7B). Boundary step ÷ median step: 1.5B 2.53 at 2048 and 2.50 at 4096; 7B 4.81 and 4.55 | 1.5B **parked** (2–3×); 7B: **B-P08 stands** |
+| **T1.7** (B-P08) | Per-key max/min 1.707 (1.5B), 1.679 (7B). Boundary step ÷ median step: 1.5B 2.53 at 2048 and 2.50 at 4096; 7B 4.81 and 4.55 | 1.5B **parked** (2–3×); 7B: **B-P08 stands** — then **parked by the owner, 2026-10-03** (low value, not planned) |
 | **C-B03** fence (aikit probe) | p50 saving 88.5 µs per boundary (190.3 against 101.8) | **REPORT**: goinfer decides whether paged MoE takes it |
 
 **T1.11 and T1.14** (records, not gates). One same-session `bench_peer.py` sweep on Metal: main as shipped (`71812d57`),
