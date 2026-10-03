@@ -1,6 +1,6 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status: SCOPED 2026-10-01, unstarted.** H0 is an inventory. H1 and H2 are the work that matters most,
+> **Status: IN PROGRESS 2026-10-03.** H0 is done; H1.1 is next. H1 and H2 are the work that matters most,
 > and both can start the same day. H5 is an owner decision that waits on two release sweeps.
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
@@ -76,6 +76,32 @@ a 24 GB card, any model that fits resident only above 16 GB.
   (`hasAVX*`, `hasDotProd`, `hasF16C`, CUDA `DeviceAttribute*`, the memory probes) and fails when a new one
   appears without an entry. A new hardware-gated branch cannot land unseen.
 - Generate a "never executed" list from the JSON for H6 and for the release checklist.
+
+**Done 2026-10-03.** `docs/hardware-coverage.json` has 29 entries: every §1 row, §1.B's size-selected configurations and
+§1.C's driver/OS ones, and one per derived predicate group. `internal/hwcensus/census_test.go` is the census, a
+test-only package that CI's `test-rest` job runs.
+- **What it scans.** goinfer's whole tree, plus aikit and aikit/gpu at the versions goinfer's go.mod files pin. The
+  CPU flags live in aikit's linalg, and some CUDA and Metal device queries live in aikit/gpu. A pinned module that
+  cannot be found fails the test rather than skipping it.
+- **How it reads source.** It tokenizes each file with `go/scanner`, so comments never count and string literals
+  (objc selectors, sysctl names, /proc paths) do.
+- **The predicates are derived, not listed.** A new one enters the census on its own:
+  - package-level `var has<X>` dispatch flags;
+  - `DeviceAttribute*` reads;
+  - device-capability selectors registered with `RegisterName`;
+  - memory probes, keyed with their file: sysctl, /proc and cgroup names, `MemInfo`/`MemGetInfo`, and every backend's
+    `RegisterMemoryProbe`.
+- **What it checks.** At goinfer `e91cba3d` / aikit v1.53.0 it finds 25 predicates. It fails on any predicate with no
+  entry, and on any entry naming a predicate the source no longer has. It validates every `last_executed` record:
+  machine, ISO date, how, both commits, and the gate.
+- **The never-executed list.** The test logs it: 14 entries today. Some of those are marked in their notes as having
+  run without a committed record (`cuda-compute-mode`, `cuda-uva`), and `cpu-popcnt` is not reached from goinfer at
+  all.
+- **Able to fail.** A fake `var hasAVX10FAKE` in the tree fails it as a missing entry, and a fake `cpu:hasAMX` in an
+  entry fails it as stale. Both were removed. `TestScanSource` pins the scanner on known inputs: a comment, a local
+  `hasX :=`, a var block, a non-selector string.
+- **No CI run names its CPU.** So no green `ci-pool` record exists for AVX-512 VNNI. Its only record is the
+  2026-09-24 SDE run.
 
 ### H1 — reach the paths without owning the hardware (cheap, mostly CI)
 
