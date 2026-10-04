@@ -224,9 +224,17 @@
      "goinfer": "f88c0523",
      "aikit": "v1.52.0",
      "gate": "cuda: TestPromptHiddenAllResidentCUDA and its _chunked twin (-tags 'cuda goinfer_testhooks'); docs/measurements/decisions-d11-resident-hidden-2026-10-03.md"
+    },
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-04",
+     "how": "forced",
+     "goinfer": "7e24b426",
+     "aikit": "v1.53.0",
+     "gate": "cuda: TestForcedSMShapes_decodeIsIdentical (-tags 'cuda goinfer_testhooks'): the 0.5B resident decodes the same 32 greedy tokens under forced shapes of 20, 46, 82, 128 and 170 SMs (gate/up rows-per-warp 16, 5, 3, 2 and 2 against the real card's 8); shown red by halving the rows-per-warp grid"
     }
    ],
-   "notes": "Executed with 40 SMs only: a grid sized for any other count has never run. H1.5 forces the attributes."
+   "notes": "Executed with 40 SMs only: a grid sized for any other count has never run. H1.5 forces the attributes (SetSMShapeForTest): 20 to 170 SMs run end to end on this card, in a decode that must not change. What forcing cannot show: occupancy on a card that really has those SMs, and a shared-memory size the card could not launch."
   },
   {
    "id": "cuda-compute-mode",
@@ -307,9 +315,17 @@
      "goinfer": "f88c0523",
      "aikit": "v1.52.0",
      "gate": "cuda: TestPromptHiddenAllResidentCUDA and its _chunked twin (-tags 'cuda goinfer_testhooks'); docs/measurements/decisions-d11-resident-hidden-2026-10-03.md"
+    },
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-04",
+     "how": "forced",
+     "goinfer": "7e24b426",
+     "aikit": "v1.53.0",
+     "gate": "cuda: TestForcedFreeVRAM_residentDecisions (-tags 'cuda goinfer_testhooks'): the 0.5B told it has 600 MiB, 900 MiB, 1.2 GiB, 1.8 GiB and 3 GiB free builds resident at contexts 4096, 8261 and 16384 and decodes the tokens the unforced run does; shown red by a no-op override"
     }
    ],
-   "notes": "Executed against 8 GB only; the configurations a larger card selects are cuda-vram-above-8gb."
+   "notes": "Executed against 8 GB only; the configurations a larger card selects are cuda-vram-above-8gb. H1.5 forces budgets BELOW the real card (decoder.SetMemoryProbeForTest); budgets above it change only the decision, which Plan's own tests cover, because a resident build would then ask the card for memory it lacks."
   },
   {
    "id": "cuda-vram-above-8gb",

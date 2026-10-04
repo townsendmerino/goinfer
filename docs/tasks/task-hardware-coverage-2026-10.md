@@ -1,7 +1,8 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0 and H1.1 are DONE; H1.2–H1.5 and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no forced-fallback
-> hooks, no self-test, no `check --hardware`, no `scripts/hardware_sweep.sh`, no issue template, no "verified on" column). H1 and H2 are the work that matters most.
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1 and H1.5 (CUDA) are DONE; H1.3 is BUILT in aikit but not pushed, tagged or wired into goinfer's CI, and its first forced run found
+> three failures that are not yet classified (see H1.3); H1.2, H1.4 and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no QEMU job, no self-test, no
+> `check --hardware`, no `scripts/hardware_sweep.sh`, no issue template, no "verified on" column). H1 and H2 are the work that matters most.
 > H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and CUDA and one rented sweep are missing.
 > The census logs **12** never-executed entries (the Windows and arm64 Linux CI records removed two of the 14 first counted).
 >
@@ -166,6 +167,35 @@ test-only package that CI's `test-rest` job runs.
    That reaches the residency decisions, slot counts, context defaults and launch grids on our own hardware.
    A grid sized for 128 SMs runs correctly on 40, so the launch math gets real execution, not just
    compilation. Each forced configuration runs the existing correctness gates; nothing new is asserted.
+
+**H1.3 BUILT in aikit 2026-10-04 (aikit commit `1c07223`, local: not pushed, not tagged; the pinned v1.53.0 does not have it).**
+- **What it is.** Build tags `aikit_noavx512`, `aikit_noavx2`, `aikit_nopopcnt` (amd64) and `aikit_nodotprod` (arm64) make the dispatch flag read false, with the derived flags
+  (`hasQ4KAVX2`, `hasAVX512VNNIVL`) set explicitly; `linalg.ForcedFallbacks()` reports what a build forces; `TestForcedFallbacks_expected` fails when `AIKIT_EXPECT_FORCED`
+  names a different set, so a tag that matches no file cannot pass silently (shown: a mistyped tag fails it). aikit's `ci.yml` gains a three-leg amd64 `forced-fallbacks` job and an
+  `aikit_nodotprod` step on its native arm64 runner (YAML parsed with yaml.v3; the arm64 leg was cross-vetted, not run, here).
+- **Shown to execute the fallbacks:** aikit's `linalg` suite is 800 passed / 12 skipped normally and under `aikit_noavx512` and `aikit_nopopcnt` (this CPU has no AVX-512 to lose, and the Hamming
+  tests give the same results on either path, as they should), and **727 passed / 40 skipped, 25 s against 17 s, under `aikit_noavx2`**; with a fallback made to panic, the normal run
+  stays green and the `aikit_noavx2` and `aikit_nopopcnt` runs fail.
+- **goinfer's side, first forced run** (local `go.work` aikit, `go test -run 'Parity|Forward' ./decoder/`, 93 tests; logs `~/goinfer-bench/h13-forced/`): normal **85 passed, 8 skipped, 0 failed
+  (123 s)**; `aikit_noavx512` identical (113 s); **`aikit_noavx2`: 82 passed, 8 skipped, 3 FAILED:** `TestInt4_forwardParity/gemma4-dense-scaled`, `TestDecodeParityInt4` and
+  `TestLongPromptFast_forwardParity`. All three are token-exact goldens recorded on the default AVX2 path (two are keyed by `GOARCH` because arithmetic paths already differ across arches).
+  What the diagnostics say, and no more:
+  - `TestDecodeParityInt4`: at the drift prefix the two paths' int4 logits have **cosine 0.9982** (max difference 1.08 on a 23.8 span), and the golden's token 750 (19.278) and 474 (19.125)
+    are a 0.15 near-tie that flips; at the prompt end cosine is 0.9990. That is far from the 1.2e-7 aikit records for AVX-512 against AVX2, so **the pure-Go int4 path differs from the AVX2 one by
+    more than float noise; whether that is expected (a different activation-quantization rounding) or a defect is not established.**
+  - `TestLongPromptFast_forwardParity`: with `--cpu-fast-attention` off the two builds generate identical tokens (`[13 715 522 3699 ...]`); with it on (the default above 512 tokens) the AVX2 path gives
+    `[11 714 279 ...]` and the pure-Go path `[304 279 3853 ...]`. The exact logits put token 13 first, 11 second (0.074 below) and 304 FOURTH (0.213 below), four candidates within 0.21, so tokens alone
+    cannot say whether the fast-attention fallback is wrong or only noisier on a flat distribution. **Needs the fast path's own logits on both builds.**
+  - `TestInt4_forwardParity/gemma4-dense-scaled`: not diagnosed.
+- **Not done:** the aikit push and tag (the owner's ritual), the pin bump in goinfer, the goinfer CI job (it must assert `ForcedFallbacks()` through `AIKIT_EXPECT_FORCED`, and needs a decision on these
+  three goldens: excluded under the tags with the stated reason that they pin one arithmetic path, or fixed if a fallback is wrong), and the census `forced` record for `cpu-amd64-no-avx2` (it needs a pushed aikit commit to cite).
+
+**H1.5 DONE for CUDA 2026-10-04 (goinfer `7e24b426`).** `cuda.SetSMShapeForTest` and `decoder.SetMemoryProbeForTest` (`goinfer_testhooks`) tell a real build another card's SM shape or another
+free-VRAM figure. `TestForcedSMShapes_decodeIsIdentical` decodes the 0.5B resident under forced shapes of 20, 46, 82, 128 and 170 SMs (gate/up rows-per-warp 16, 5, 3, 2 and 2, against the real card's 8) and asserts
+the tokens equal the real card's; `TestForcedFreeVRAM_residentDecisions` forces 600 MiB to 3 GiB free and sees resident contexts of 4,096, 8,261 and 16,384. Each asserts it is not vacuous. **Shown red where it
+matters:** halving the rows-per-warp grid leaves the real card's own run green (it takes the original kernel at rows-per-warp 8) and fails all five forced shapes. Recorded in the census as `forced` for `cuda-sm-shape`
+and `cuda-free-vram`. **Not covered:** budgets above the real card (they change only the decision, which Plan's tests cover), Metal's unified-memory budgets (a Mac task), and a shared-memory size or occupancy the
+real card could not give.
 
 Every H1 job records its result into H0's census as `emulated`, `ci-pool` or `forced`.
 
