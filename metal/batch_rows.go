@@ -206,6 +206,44 @@ func deriveRowsKernels() string {
 			"    device float* out = out_rows + mc3_row*outStride;"))
 	b.WriteString("\n")
 
+	// int8 slice 3b (docs/tasks/task-metal-int8-2026-10.md): the native int8 path's projection for B rows of the batched
+	// step, each weight row read ONCE for all B activation rows. One simdgroup per output row keeps B integer
+	// accumulators; W8A8 sums are exact, so any order gives decode's integer, and each row's epilogue is decode's own
+	// statement (W8A8_SA_BODY / W8A8_COAL_BODY: float(acc)*aScale*wScale through simd_broadcast_first, then the site's
+	// bias or residual). mode: 0 store (gate|up), 1 +bias (qkv), 2 += (o, down). Activation row b is K int8s at aq_rows +
+	// b*K with its scale at asc_rows[b]; output row b is ldo floats from out_rows. B <= 8.
+	b.WriteString(`template <uint B>
+kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const float* bsc[[buffer(1)]],
+    device const char* aq_rows[[buffer(2)]], device const float* asc_rows[[buffer(3)]], device float* out_rows[[buffer(4)]],
+    constant uint& K[[buffer(5)]], constant uint& ldo[[buffer(6)]], constant uint& Bu[[buffer(7)]],
+    device const float* bias[[buffer(8)]], constant uint& mode[[buffer(9)]],
+    uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    (void)Bu;
+    device const uint* brow = (device const uint*)(bq + (uint)gid*K);
+    device const uint* a4 = (device const uint*)aq_rows;
+    const uint G = K >> 2u;
+    int acc[B];
+    SA_ROWS_UNROLL for (uint b = 0u; b < B; b++) acc[b] = 0;
+    for (uint g = lid; g < G; g += 32u) {
+        const uint w = brow[g];
+        SA_ROWS_UNROLL for (uint b = 0u; b < B; b++) acc[b] += DOT4I8(a4[b*G + g], w);
+    }
+    SA_ROWS_UNROLL for (uint b = 0u; b < B; b++) {
+        int s = simd_sum(acc[b]);
+        float y = simd_broadcast_first(float(s) * asc_rows[b] * bsc[gid]);
+        if (lid == 0) {
+            device float* out = out_rows + b*ldo;
+            if (mode == 0u) out[gid] = y;
+            else if (mode == 1u) out[gid] = y + bias[gid];
+            else out[gid] += y;
+        }
+    }
+}
+`)
+	for B := 2; B <= 8; B++ {
+		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_w8a8_rows%d\")]] kernel decltype(mc3_gemv_w8a8_rows<%d>) mc3_gemv_w8a8_rows<%d>;\n", B, B, B)
+	}
+
 	// D-P03: decode's k selected experts in one dispatch per stage instead of one per slot. The grid is k slots of
 	// rowsPerExpert/(tgs/32) threadgroups; a threadgroup's slot is its index divided by that, and within the slot it
 	// is the threadgroup production's per-slot dispatch had. Needs rowsPerExpert % (tgs/32) == 0 (encodeMoEExperts

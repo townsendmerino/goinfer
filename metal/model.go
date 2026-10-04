@@ -206,10 +206,12 @@ type resident struct {
 	// E-P05: pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
 	// row's partial region, attnFAPartial's.
 	pAttnFARows, pAttnFACombineRows Pipeline
-	attnFAPartialLen                int
-	decodeAttnFA                    bool
-	attnFAPartial                   Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
-	attnFAMaxSplit                  int
+	// int8 slice 3b: a native int8 resident's batched-step projection, B rows per weight read (batch_rows.go)
+	pW8Rows          [batchMaxSeqs + 1]Pipeline // by B
+	attnFAPartialLen int
+	decodeAttnFA     bool
+	attnFAPartial    Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
+	attnFAMaxSplit   int
 	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
 	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
 	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
@@ -1525,6 +1527,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
 		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
 		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
+		for B := 2; B <= batchMaxSeqs; B++ { // the batched step's projections, B rows per weight read (batch_rows.go)
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)

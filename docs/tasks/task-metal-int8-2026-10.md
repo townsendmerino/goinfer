@@ -186,6 +186,28 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
 
   Every weight is still read once per row. The gain comes from the norms, attention, quantisation and LM head the step
   already shares. A W8 fragment GEMM (one weight read for B rows, as int4's `mc3_bt`) is the next lever, not built.
+- **Slice 3b — each weight row read once for all B rows (built the same day, bit-identical).**
+  - `mc3_gemv_w8a8_rows<B>` (batch_rows.go, compiled into the main library with the decode kernels) gives one
+    simdgroup per output row, holding B integer accumulators over the row's int8 weights. Each row's epilogue is
+    decode's own statement: `float(acc)*aScale*wScale` through `simd_broadcast_first`, then the site's bias or
+    residual.
+  - It replaces the per-row GEMVs at every projection when B ≥ 2 (`mc3W8RowsOn`). The per-row form stays as the test
+    arm.
+  - A first cut with a runtime B loop was slower than per-row at B ≤ 2 (B = 2 aggregate 0.930×). Templating on B put
+    the accumulators in registers.
+  - **Identity:** `TestMC3Step_w8BitIdentical` runs both arms, shallow and deep, 0 differing logits. Feeding every
+    row's dot from row 0's activations fails it.
+  - **Speed (in-process, by day, the 1.5B at int8int8, 7 reps):** aggregate against one-at-a-time production decode:
+
+    | depth | B = 2 | B = 4 | B = 8 |
+    |---|---|---|---|
+    | 128 | **1.402×** (1.398-1.407) | **1.749×** (1.731-1.758) | **2.001×** (1.977-2.010) |
+    | 512 | **1.375×** (1.347-1.381) | **1.729×** (1.699-1.732) | **1.959×** (1.952-1.968) |
+
+    Slice 3's per-row form read 1.147 / 1.247 / 1.301× at depth 128.
+  - Still not built: staging the B activation rows in threadgroup memory (B·K int8 exceeds 32 KB at the 1.5B's K =
+    8960 for B = 8), and an MMA form.
+
 - It ships with the native path: nothing changes while `nativeInt8` is off. The served confirmation (MC3's W7 harness at
   int8int8) runs after the flip.
 
