@@ -1237,6 +1237,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 					row := xF.At(m * H * 2)
 					e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
 					r.encodeMoERoute(e, L)
+					if r.moeCap.idx != (Buffer{}) && m < r.moeCap.rows {
+						r.encodeMoECapture(e, l*r.moeCap.rows+m)
+					}
 					e.Dispatch(pf.pZeroF32, r.H, 256, moeDst)
 					r.encodeMoEExperts(e, L, moeDst)
 					e.Dispatch(pf.pResF32, r.H, 256, row, moeDst)
@@ -1275,6 +1278,12 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			byExpert := make([][]moeSlot, r.moe.nE)
 			idxSlice := moeIdx.U32s()[:M*r.moe.k]
 			wgtSlice := moeWgt.Floats()[:M*r.moe.k]
+			if dg01Mutation != "" {
+				dg01Mutate(idxSlice, wgtSlice, M, r.moe.k)
+			}
+			if r.moeCap.major != nil {
+				r.moeCap.major(l, idxSlice, wgtSlice)
+			}
 			for m := 0; m < M; m++ {
 				for j := 0; j < r.moe.k; j++ {
 					eIdx := int(idxSlice[m*r.moe.k+j])
@@ -1346,7 +1355,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			}
 
 			// 8. Shared expert (if present)
-			if r.moe.sharedInter > 0 {
+			if r.moe.sharedInter > 0 && dg01Mutation != "shared-off" {
 				shI := r.moe.sharedInter
 				u2ShI := getU32(2 * shI)
 				uShI := getU32(shI)
@@ -1408,4 +1417,35 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		softcapParallel(out, r.finalSoftcap)
 	}
 	return out
+}
+
+// dg01Mutation names a deliberate defect in the expert-major MoE prefill, for D-G01's gate to prove it can go red
+// (metal/dg01_moe_gate_test.go). "" in production; set only by that test.
+//   - "topk-renorm": the routing weights renormalised to sum to 1 per token, as a model with norm_topk_prob would
+//     have them (Qwen1.5-MoE does not): the scatter weights wrong.
+//   - "rank-swap": each token's first two experts swapped while their weights stay put, so each weight lands on the
+//     other expert: the route's order wrong.
+//   - "shared-off": the shared expert skipped.
+var dg01Mutation string
+
+func dg01Mutate(idx []uint32, wgt []float32, M, k int) {
+	for m := range M {
+		row, w := idx[m*k:(m+1)*k], wgt[m*k:(m+1)*k]
+		switch dg01Mutation {
+		case "topk-renorm":
+			var sum float32
+			for _, x := range w {
+				sum += x
+			}
+			if sum > 0 {
+				for j := range w {
+					w[j] /= sum
+				}
+			}
+		case "rank-swap":
+			if k >= 2 {
+				row[0], row[1] = row[1], row[0]
+			}
+		}
+	}
 }

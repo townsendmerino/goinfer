@@ -211,6 +211,16 @@ type resident struct {
 	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
 	// (the grid's comes from planNKeys) — so the two cannot disagree.
 	attnFASplitOverride int
+	// moeCap is D-G01's routing capture (metal/dg01_moe_gate_test.go). ZERO in production. With idx and wgt set, decode's
+	// non-paged MoE FFN copies each layer's selected experts and weights into slot l (k words each), and the batched
+	// prefill's row-by-row MoE (GOINFER_MOE_EXPERT_MAJOR=0) copies row m's into slot l*rows+m; the expert-major path,
+	// which reads its routing back to the host anyway, hands it to major. Encoded at encode time, so a test sets it
+	// before the first forward it captures.
+	moeCap struct {
+		idx, wgt Buffer
+		rows     int
+		major    func(l int, idx []uint32, wgt []float32)
+	}
 	// attnFAFloorOverride, when > 0, replaces attnFADepthFloor as the key count at which attention_fa takes over.
 	// ZERO in production — set only by tests (T1.2 of docs/tasks/task-metal-audit-2026-10.md: legacy-against-blk arms
 	// below the floor). Read through attnFAFloor by attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token
@@ -290,6 +300,7 @@ type resident struct {
 	pRmsF32              Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
 	pGemvW8, pGemvW8Amax Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
 	pCopyVec             Pipeline // copy_f32 for on-device embedding copy in batched forward
+	pCopyU32             Pipeline // copy_u32: D-G01's routing capture (moeCap), tests only
 	qkNorm               bool     // arch has QK-norm
 	qkNormWhole          bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
 	sandwich             bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
@@ -872,6 +883,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_rows"), pipe("mc3_attention_rows")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pCopyVec = pipe("copy_f32")
+	r.pCopyU32 = pipe("copy_u32")
 	// R7b Mac half: device Gumbel-max sampler over r.logits (the same buffer pGemvW8 writes for
 	// forwardLogits/ForwardEmbPipe) — see gumbel_sample.go. Always built, sized once for V.
 	r.pGumbel1, r.pGumbel2 = pipe("gumbel_stage1"), pipe("gumbel_stage2")
@@ -2530,6 +2542,9 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		r.encodeGemma4MoEFFN(e, L)
 	} else if L.moe != nil {
 		r.encodeMoEFFNWithX(e, L, x)
+		if r.moeCap.idx != (Buffer{}) {
+			r.encodeMoECapture(e, l)
+		}
 	} else if r.nonGatedMLP {
 		// GPT-2: up→act→down, no gate — a single up-proj (K=hidden, checked against the M-11
 		// threadgroup-memory guard at buildResident time for whichever GPT-2 size loads; not

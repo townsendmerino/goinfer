@@ -913,3 +913,11 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 	r.finalizeLogits()
 	return r.logitsHost
 }
+
+// encodeMoECapture copies this layer's routing (rIdx, rWgt) into slot `slot` of the test capture (resident.moeCap).
+func (r *resident) encodeMoECapture(e *Encoder, slot int) {
+	mo := r.moe
+	off := slot * mo.k * 4
+	e.Dispatch(r.pCopyU32, mo.k, 32, mo.rIdx, r.moeCap.idx.At(off), mo.uK)
+	e.Dispatch(r.pCopyVec, mo.k, 32, mo.rWgt, r.moeCap.wgt.At(off), mo.uK)
+}

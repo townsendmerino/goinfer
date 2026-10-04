@@ -768,6 +768,27 @@ faster.
 | Reported | The 7B's timing; every single-cell fidelity verdict; the per-cell KL table. Not measured: a served TTFT, which this grade does not claim. Unchanged: the decoder's 8-token threshold (A-P05). |
 | What ships | By day, after the grade: the floor constant, the step bound in `promptStepOK`, the routing tests, `PrefillPath`'s banner text, and the docs that quote 64. |
 
+### D-G01: pre-registration (written 2026-10-03, before any graded run; owner: "1 then 2")
+
+**What it gates.** Expert-major MoE prefill (`metal/prefill.go`, the default whenever the batched lane runs) has only
+a tiny-fixture cosine bar. It differs from the sequential path in three counted ways (audit D-G01): f16 scatter-adds,
+experts applied in id order, and a router computed from f16 activations, which can flip a near-tied expert. This gate
+compares it with the f16 lane's own MoE baseline on real weights, and it must catch three planted defects first.
+
+**Fixture.** The first 4 of Qwen1.5-MoE-A2.7B's 24 layers, bytes unchanged (`scripts/slice_checkpoint_layers.py`,
+`~/models/qwen15-moe-a27b-l4slice`, sha256 `7e48d607…`): its real router, 60 experts, top-4 routing and gated shared
+expert. The whole model does not fit this Mac. A slice is a fidelity fixture: no output or speed of it is the model's.
+
+| | |
+|---|---|
+| Instrument | `TestDG01_expertMajorMoEPrefill` (`metal/dg01_moe_gate_test.go`), one KV slot, int4, 10 set-A prompts at M = 64 and 512. Three arms per prompt: **seq** (the sequential decode loop, routing captured per token and layer), **row** (the batched pass with MoE row by row through decode's MoE kernels: the f16 lane's own baseline), **major** (the batched pass, expert-major). Per arm: each layer's routing, the K/V of every position at every layer, and the last position's logits. Night queue. |
+| Precondition | Layer 0's K/V is equal between row and major (no MoE precedes it), and seq's routing capture holds k distinct valid experts per token. Otherwise the instrument is broken and nothing is graded. |
+| Readings, per M, pooled over prompts | **Flips:** (token, layer) pairs whose selected expert set differs from seq's. **K/V:** per layer ≥ 1, relative L2 of the arm's K and V against seq's over all positions. **KL:** mean KL(seq ‖ arm) of the last position's distribution. |
+| Gate | Major passes iff at both M: flips(major) ≤ flips(row) + 2√max(flips(row), 1); K/V(major) ≤ 1.25 × K/V(row) at every layer ≥ 1; KL(major) ≤ 1.25 × KL(row). |
+| Mutations | Each must FAIL the gate, or the gate is not evidence: `topk-renorm` (scatter weights renormalised), `rank-swap` (each token's first two experts swapped with their weights left in place: route order), `shared-off` (shared expert skipped). Run first; a mutation that passes stops the grade. |
+| Rule | **Passes:** expert-major stays the default, and this test is its gate of record. **Fails** (any criterion beyond 1.5× or the flips bound): **killed**, the default goes back to row by row (`GOINFER_MOE_EXPERT_MAJOR` default off) until the defect is found. A ratio in (1.25, 1.5] with the flips bound met: **parked**, to the owner. |
+| Reported | Every per-layer ratio, per M; the flips as fractions; seq's own top-1 agreement with row and major on the last position. Not covered: sigmoid and group-limited routing (no such real MoE fits here), multi-model. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
