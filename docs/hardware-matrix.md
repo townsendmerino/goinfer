@@ -110,6 +110,7 @@ How it ran: **native** is real hardware; **ci-pool** is a GitHub runner whose CP
 | nobara-pc: RTX 2070 SUPER over Vulkan (wgpu-native, ADAPTER_PROBE backend=vulkan software=false), driver 595.91.07 | native | 1 | 2026-09-28 |
 | Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0), wgpu-native Metal backend (adapter Apple M1 Pro, integrated-gpu, dot4I8Packed yes) | native | 1 | 2026-10-04 |
 | GitHub windows-latest runner: AMD EPYC 9V74 (Zen 4), 2 cores / 4 threads, windows/amd64 | ci-pool | 1 | 2026-10-03 |
+| GitHub windows-11-arm runner: Azure Cobalt 100 (Neoverse N2), 4 CPUs, windows/arm64, go1.27.0 | ci-pool | 1 | 2026-10-04 |
 
 **10 of 31 hardware-selected paths have no record of ever executing:**
 
