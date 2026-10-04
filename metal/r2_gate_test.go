@@ -21,7 +21,7 @@ import (
 // arm"). Same construction as metal/r1_gate3_test.go, two substitutions: the toggle is
 // r.decodeAttnFA (attention_fa vs the shipped attention kernel; canUseAttnFA reads the field on
 // every dispatch, pipelines and the partial buffer are always built), and the cell is K=3900 —
-// above attnFADepthFloor (1536), so every one of the 64 teacher-forced continuation positions
+// above attnFADepthFloor (1024), so every one of the 64 teacher-forced continuation positions
 // dispatches attention_fa in the candidate arm. Reference: the S-K3900 CPU f32-weight/
 // f32-activation files decoder/prefill_ref_gen_test.go already built (prompt-final logits + 64
 // teacher-forced decode rows, exact attention). Prefill goes through rf.PrefillLast (the batched

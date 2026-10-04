@@ -196,7 +196,6 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // E-P09: Metal keeps 2 slots unless -kv-sessions was given
 	o.ResidentPrefillChunk = cfg.prefillChunk     // MC3 chunked prefill (docs/tasks/task-concurrency-2026-09.md); 0 = off
 	o.CPUBatchDecode = cfg.cpuBatch               // MC3c step 2: batched CPU decode (-cpu-batch)
-	o.SpecNgram = cfg.spec == "ngram"             // E-P06: a resident measures its verify cost curve at load
 	return o
 }
 

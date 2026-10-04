@@ -391,9 +391,6 @@ func (r *resident) buildBatch() {
 	}
 	r.batch = b
 	r.calibrateRows()
-	if r.specNgram && verifyCostCalibrate {
-		r.calibrateVerifyCost() // E-P06: this model's own verify cost curve (verify_cost.go)
-	}
 }
 
 // batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
@@ -756,13 +753,10 @@ var (
 )
 
 // VerifyCost (decoder.VerifyCostReporter): the argmax-only verify's cost curve when this resident can run it on the
-// step kernels, nil otherwise: the model's own when it was measured at load (Options.SpecNgram), else stepVerifyCost.
+// step kernels, nil otherwise.
 func (a *metalResident) VerifyCost() []float64 {
 	if a.r == nil || a.r.batch == nil || len(a.r.kvSlotBufs) == 0 || a.r.finalSoftcap > 0 || (a.r.logitScale != 0 && a.r.logitScale != 1) {
 		return nil
-	}
-	if a.r.verifyCost != nil {
-		return a.r.verifyCost // this model's own, measured at load (calibrateVerifyCost, E-P06)
 	}
 	return stepVerifyCost
 }

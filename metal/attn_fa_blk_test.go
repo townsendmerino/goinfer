@@ -188,11 +188,12 @@ func TestAttnFABlkMatchesFloat64(t *testing.T) {
 	t.Logf("worst per-head relative L2 error vs float64: %.3g (bound %g)", worst, bound)
 }
 
-// TestAttnFABlkSelection pins which kernel production dispatches as attention_fa's first pass: the legacy
-// attention_fa for a group size the block kernel was not graded at (the committed llama-attnfa-tiny fixture, G=2),
-// and — with GOINFER_HEAVY_TESTS=1 and the checkpoints in ~/models — attention_fa_blk for Qwen2.5-1.5B (G=6) and
-// -7B (G=7), checked by running the resident's own r.pAttnFA on synthetic inputs and requiring output BIT-IDENTICAL to
-// the graded kernel source (r17Kernels) compiled on its own.
+// TestAttnFABlkSelection pins which kernel production dispatches as attention_fa's first pass. On the committed
+// llama-attnfa-tiny fixture (G=2) that is the block kernel exactly when attnFABlkAnyG is on, which it is since B-P02's
+// grade (2026-10-03); the G=2 instantiation sits outside the graded, hash-pinned region, and
+// TestAttnFABlk_anyGMatchesG7 is what pins it head for head against g7. With GOINFER_HEAVY_TESTS=1 and the checkpoints
+// in ~/models, attention_fa_blk for Qwen2.5-1.5B (G=6) and -7B (G=7) is checked by running the resident's own r.pAttnFA
+// on synthetic inputs and requiring output BIT-IDENTICAL to the graded kernel source (r17Kernels) compiled on its own.
 func TestAttnFABlkSelection(t *testing.T) {
 	check := func(t *testing.T, path string, wantBlk bool) {
 		m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: 4096})
@@ -218,8 +219,8 @@ func TestAttnFABlkSelection(t *testing.T) {
 		if got := r.attnFASplitFor(3901, r.attnFANKV); got != wantSplit {
 			t.Fatalf("%s: split count at 3901 keys = %d, want %d", path, got, wantSplit)
 		}
-		if !wantBlk {
-			return
+		if !wantBlk || (G != 6 && G != 7) {
+			return // the graded source instantiates G = 6 and 7 only
 		}
 		lib, err := r.d.CompileLibrary(r17Kernels, MSL3_1)
 		if err != nil {
@@ -239,12 +240,12 @@ func TestAttnFABlkSelection(t *testing.T) {
 			}
 		}
 	}
-	t.Run("G=2 keeps attention_fa", func(t *testing.T) {
+	t.Run("G=2 follows attnFABlkAnyG", func(t *testing.T) {
 		dir := "../testdata/llama-attnfa-tiny"
 		if _, err := os.Stat(dir + "/model.safetensors"); err != nil {
 			t.Skipf("fixture not present: %v", err)
 		}
-		check(t, dir, false)
+		check(t, dir, attnFABlkAnyG)
 	})
 	for _, mm := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw", "qwen2.5-7b-instruct-q4_k_m.int4.metal.giw"} {
 		t.Run(mm, func(t *testing.T) {

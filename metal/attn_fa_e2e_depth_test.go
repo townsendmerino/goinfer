@@ -55,7 +55,7 @@ func TestAttentionFA_endToEndReproductionDepth2200(t *testing.T) {
 		t.Skip("set GOINFER_TEST_MODEL to a real hd=128 GQA checkpoint (e.g. qwen2.5-coder-1.5b)")
 	}
 
-	const prefillLen = 2200 // > attnFADepthFloor (1536), so the decode steps below actually engage it
+	const prefillLen = 2200 // > attnFADepthFloor (1024), so the decode steps below actually engage it
 	const nSteps = 5
 
 	runOne := func(enableFA bool) (H int, logitsPerStep [][]float32) {

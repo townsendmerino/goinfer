@@ -68,9 +68,6 @@ func (m *Model) cpuFastAttention() bool { return !m.exactPrefill && m.knobs.cpuF
 // must take each backend's bit-exact path. Backends consult it next to their own env var.
 func (m *Model) ExactPrefill() bool { return m.exactPrefill }
 
-// SpecNgram reports Options.SpecNgram: the caller will run n-gram speculation on this model.
-func (m *Model) SpecNgram() bool { return m.specNgram }
-
 // fastAttnMinPrompt is the prompt length below which f32 prefill attention is NOT used, even
 // when enabled. Attention is O(K·nKeys), so the win grows with K while the divergence does not:
 // a short prompt gets a different answer and buys almost nothing for it.

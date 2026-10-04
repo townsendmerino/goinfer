@@ -86,7 +86,6 @@ type Model struct {
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
-	specNgram     bool         // Options.SpecNgram: the caller will run n-gram speculation on this model (SpecNgram())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
@@ -430,12 +429,6 @@ type Options struct {
 	// this is the library-level chokepoint docs/completed/task-prefill-gap.md already
 	// documented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.
 	ExactPrefill bool
-	// SpecNgram says the caller will run n-gram speculation on this model (serve's and chat's --spec ngram). A resident
-	// whose argmax-only verify runs on batched step kernels (VerifyCostReporter) then measures its own verify cost curve
-	// while it is built, instead of reporting a constant measured on another model (E-P06, docs/audit-metal-2026-09-30.md).
-	// Lossless either way: the curve sets only how many tokens a round drafts, never which come out. false (the default)
-	// skips the measurement, so a model loaded without speculation pays nothing for it.
-	SpecNgram bool
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several
 	// interleaved conversations each keep their own prefix resident instead of evicting one another's
 	// (docs/tasks/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,
@@ -526,7 +519,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, specNgram: opts.SpecNgram, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto}
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a

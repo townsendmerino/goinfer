@@ -275,12 +275,8 @@ type resident struct {
 	chainInvT, chainK0, chainK1   Buffer
 	chainD0, chainD1, chainLogits [2]Buffer
 	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
-	// specNgram is Options.SpecNgram (the caller will speculate), and verifyCost the verify cost curve measured at load
-	// when it is set (calibrateVerifyCost, E-P06); nil keeps stepVerifyCost.
-	specNgram               bool
-	verifyCost              []float64
-	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
-	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
+	attnFANKV                     int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
+	uAttnFAG, uAttnFANSplit       Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
 	// encoding of the NEXT command buffer while the CURRENT one was still executing on the GPU (the
 	// pipelined executor's own "encode t+1 while t runs" design, execLoop). That is a raw CPU write to
@@ -851,7 +847,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
-	r.specNgram = m.SpecNgram()
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
 	}
@@ -2671,7 +2666,14 @@ const attnFACoreCount = 14
 // (docs/measurements/metal-decode-attn-r17-2026-09-25.md). The nKeys/32 cap never binds above attnFADepthFloor.
 const attnFABlkSplit = 16
 
-// attnFADepthFloor is where attention_fa (at a properly-sized split count) starts beating the
+// attnFADepthFloor is where attention_fa takes over from the shipped kernel. It is 1024 since B-P03
+// (docs/tasks/task-metal-audit-2026-10.md, night of 2026-10-03): T1.2 measured the block kernel at 1.167x the legacy
+// kernel at 1024 keys on the 1.5B and 1.056x on the 7B, and the fidelity gate at the new depths passed. P1 on both
+// models put the block kernel's median and p99 relative L2 against float64 below the exact kernel's at 1024, 1280 and
+// 1535 keys; P2 PASSES on the 1.5B at 1024 (KL ratio 0.9987). Below 1024 the two kernels were level (0.97-1.03x), so
+// the floor stays there. The history below is the original per-query-head kernel's, which set the old 1536 floor.
+//
+// The original floor, 1536: where attention_fa (at a properly-sized split count) started beating the
 // shipped kernel — measured directly (TestAttentionFA_speedProbe, since deleted; tight-interleaved min-of-40,
 // S sized to attnFACoreCount*2): 0.98x at K=1024 (not yet a win), 1.07x at K=1536, climbing to
 // 1.26x at K=3900. S=1 (no split) is NOT a shallow-depth fallback within this kernel — it measured
@@ -2679,7 +2681,7 @@ const attnFABlkSplit = 16
 // floor canUseAttnFA declines entirely and the shipped kernel runs, rather than this kernel at
 // S=1 as R2's own Build text first proposed ("S=1 below a measured crossover") — a correction the
 // speed probe surfaced, recorded here rather than silently overriding the brief's own text.
-const attnFADepthFloor = 1536
+const attnFADepthFloor = 1024
 
 // attnFAMaxG is the most query heads per KV head attention_fa holds: its per-thread arrays are sized
 // ATTN_FA_MAXG in kernels.go (TestAttnFAMaxG_matchesKernel ties the two). A wider group would index past
@@ -2703,9 +2705,10 @@ func attnFAHeadDimOK(hd, nH, nKV int) bool {
 
 // gemvExtOn routes the int4 GEMVs R18 never reached through its rows-per-simdgroup kernels (D-B04): DeltaNet's qkv and
 // z projections, and a shared expert's gate|up and down. Each rows kernel is bit-identical to the one it replaces
-// (same lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). FALSE until its speed grade passes
-// (docs/tasks/task-metal-audit-2026-10.md, "D-B04"). The grade's binary and tests set it before a resident is built.
-var gemvExtOn = false
+// (same lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). ON since its grade passed
+// (docs/tasks/task-metal-audit-2026-10.md, "D-B04", night of 2026-10-03): the 9B decodes 1.064x faster at depth 128 and
+// 1.061x at 1024, 7 of 7 reps above 1, logits equal in every rep, against the pre-registered >= 1.02.
+var gemvExtOn = true
 
 // gemvExtKind names the shipped kernel family a gemvExt site runs: the plain coal projection, the SA projection, or
 // the coal projection with a residual add.
@@ -2752,16 +2755,18 @@ func (r *resident) gemvExt(e *Encoder, kind gemvExtKind, rows, K int, args ...Bu
 }
 
 // attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
-// 8; B-P02). FALSE until its grade passes (docs/tasks/task-metal-audit-2026-10.md, "B-P02"): those models keep the
-// legacy attention_fa, so their decode is unchanged. The kernel agrees with g7 head for head; the grade is its speed
-// on a G = 2 model. Tests and the grade's binary set it before a resident is built.
-var attnFABlkAnyG = false
+// 8; B-P02). ON since its grade passed (docs/tasks/task-metal-audit-2026-10.md, "B-P02", night of 2026-10-03): on the
+// two G = 2 models, legacy / block attention measured 2.37x and 2.32x (internlm2-1.8b) and 2.47x and 2.30x
+// (qwen3-0.6b) at 2048 and 3900 keys, 5 of 5 reps above 1, against the pre-registered >= 1.5. The kernel agrees with
+// g7 head for head (TestAttnFABlk_anyGMatchesG7).
+var attnFABlkAnyG = true
 
-// attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). FALSE until its
-// pre-registered grade passes (docs/tasks/task-metal-audit-2026-10.md, "B-P01"): the twin is not bit-identical to the
-// per-query-head kernel, so a default 0.5B load decodes exactly as before. The grade's binary and tests set it, before
-// a resident is built.
-var attnFABlk64On = false
+// attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). ON since its
+// pre-registered grade passed (docs/tasks/task-metal-audit-2026-10.md, "B-P01", night of 2026-10-03), on the 0.5B:
+// P1, the twin's median and p99 relative L2 against float64 below the exact kernel's; P2 at 3900 keys, critA, critB and
+// the ceiling hold with a KL ratio of 1.0098 (<= 1.05); speed, legacy / block attention 3.17x at 2048 keys and 3.63x
+// at 3900 (>= 1.5). The twin is not bit-identical to the per-query-head kernel, which is why it was graded on fidelity.
+var attnFABlk64On = true
 
 // planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
 // it encodes, otherwise the position setPos last set.
