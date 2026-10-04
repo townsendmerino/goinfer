@@ -678,6 +678,32 @@
     }
    ],
    "notes": "Executed on one OS version only."
+  },
+  {
+   "id": "cuda-hwinfo-report",
+   "gate": "check --hardware's CUDA device facts: name, compute capability, SM count, memory, driver CUDA version (report only: selects no code path)",
+   "kind": "cuda-device",
+   "predicates": [
+    "cuda:DeviceAttributeComputeCapabilityMajor",
+    "cuda:DeviceAttributeComputeCapabilityMinor",
+    "mem:MemInfo@goinfer/cuda/hwinfo.go"
+   ],
+   "selected_when": "only when `check --hardware` runs on a CUDA build; the report says whether the PTX is native (sm_75) or JIT-compiled forward, or older than sm_75 and unsupported",
+   "files": [
+    "goinfer/cuda/hwinfo.go"
+   ],
+   "our_machines": "an RTX 2070 SUPER only",
+   "last_executed": [
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-04",
+     "how": "native",
+     "goinfer": "73cfad03",
+     "aikit": "v1.55.0",
+     "gate": "cuda/cmd/serve check --hardware (-tags cuda): prints the device, compute capability 7.5 (native PTX), 40 multiprocessors, memory and the driver's CUDA 13.2"
+    }
+   ],
+   "notes": "The report is what a bug reporter on another card would paste; no other card has run it, so the 'JIT-compiled forward' and 'older than sm_75' wordings are executed only as unit tests of the string, never against a real newer or older device. H4's rented sweep is the route."
   }
  ]
 }
