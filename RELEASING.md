@@ -84,6 +84,10 @@ survives to a tag unless caught here.
    (`go run ./cmd/gate ledger promote --gate <gate> --value PASS --by <you>`), or move it to
    `neverConfirmed` in `cmd/gate/parity.go` with the reason it will never be confirmed. Between
    releases nothing is enforced, and `release-assets.yml` runs the same check as a backstop.
+7. **Read the never-executed list** (hardware-coverage H6): the "Verified on" section at the end of `docs/hardware-matrix.md`, generated from `docs/hardware-coverage.json`, names every
+   hardware-selected path with no record of ever running. Read it before tagging, and make sure nothing in the release notes, the README or the site claims support for hardware on that list.
+   If this release changed a hardware-selected path, add its record (or its absence) to the census first; the matrix test goes red until the generated section is regenerated
+   (`go test ./decoder -run HardwareMatrix -update`).
 
 ## The two-step tag (post-M-19)
 

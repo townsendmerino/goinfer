@@ -13,6 +13,7 @@ package decoder
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -84,7 +85,7 @@ func hwCell(resident bool) string {
 	return "CPU"
 }
 
-func renderHardwareMD(rows []hwRow) []byte {
+func renderHardwareMD(rows []hwRow, verified string) []byte {
 	var b strings.Builder
 	b.WriteString(hwMatrixHeader + "\n\n")
 	b.WriteString("# goinfer model × hardware matrix\n\n")
@@ -135,6 +136,7 @@ func renderHardwareMD(rows []hwRow) []byte {
 	b.WriteString("  -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu`. A Metal or WebGPU row returns once that\n")
 	b.WriteString("  backend has pairwise rope kernels and a resident-vs-CPU gate on peaked attention\n")
 	b.WriteString("  (docs/measurements/cuda-pairwise-rope-2026-10-01.md).\n")
+	b.WriteString(verified)
 	return []byte(b.String())
 }
 
@@ -146,7 +148,7 @@ func TestHardwareMatrix_fresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build hardware matrix: %v", err)
 	}
-	md := renderHardwareMD(rows)
+	md := renderHardwareMD(rows, mustVerifiedOn(t))
 	if *updateMatrix {
 		if err := os.WriteFile(hwMatrixPath, md, 0o644); err != nil {
 			t.Fatalf("write %s: %v", hwMatrixPath, err)
@@ -189,7 +191,7 @@ func TestHardwareMatrix_breakItFirst(t *testing.T) {
 	if !ResidentEligible(arch, "cuda") {
 		t.Fatal("precondition: cuda should be resident-eligible for mistral before the break")
 	}
-	committed := renderHardwareMD(mustRows(t))
+	committed := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
 
 	delete(impl, FeatSlidingWindow) // BREAK
 	defer func() { impl[FeatSlidingWindow] = true }()
@@ -197,7 +199,7 @@ func TestHardwareMatrix_breakItFirst(t *testing.T) {
 	if ResidentEligible(arch, "cuda") {
 		t.Error("cuda still resident-eligible for mistral after dropping FeatSlidingWindow — predicate is vacuous")
 	}
-	broken := renderHardwareMD(mustRows(t))
+	broken := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
 	if bytes.Equal(broken, committed) {
 		t.Error("regenerated table is UNCHANGED after dropping a declared feature — the freshness gate is vacuous")
 	}
@@ -210,4 +212,117 @@ func mustRows(t *testing.T) []hwRow {
 		t.Fatalf("build hardware matrix: %v", err)
 	}
 	return rows
+}
+
+// Verified on (hardware-coverage H6, docs/tasks/task-hardware-coverage-2026-10.md): the table above is CAPABILITY. This section is what has actually RUN, generated from the H0 census
+// (docs/hardware-coverage.json), so it cannot say more than the census records and goes stale, and red here, the moment a record is added. The census is per hardware-selected code path, not
+// per model family, so the section is a machine table and a never-executed list, not a per-family column; a per-family cell would have to be invented.
+type censusFile struct {
+	Entries []struct {
+		ID           string `json:"id"`
+		Gate         string `json:"gate"`
+		LastExecuted []struct {
+			Machine string `json:"machine"`
+			Date    string `json:"date"`
+			How     string `json:"how"`
+		} `json:"last_executed"`
+	} `json:"entries"`
+}
+
+const censusPath = "../docs/hardware-coverage.json"
+
+func mustVerifiedOn(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(censusPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", censusPath, err)
+	}
+	var c censusFile
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("parse %s: %v", censusPath, err)
+	}
+	return renderVerifiedOn(c)
+}
+
+func renderVerifiedOn(c censusFile) string {
+	type mach struct {
+		hows   map[string]bool
+		ids    map[string]bool
+		latest string
+	}
+	var order []string
+	byMachine := map[string]*mach{}
+	var never []int
+	for i, e := range c.Entries {
+		if len(e.LastExecuted) == 0 {
+			never = append(never, i)
+			continue
+		}
+		for _, r := range e.LastExecuted {
+			m, ok := byMachine[r.Machine]
+			if !ok {
+				m = &mach{hows: map[string]bool{}, ids: map[string]bool{}}
+				byMachine[r.Machine] = m
+				order = append(order, r.Machine)
+			}
+			m.hows[r.How] = true
+			m.ids[e.ID] = true
+			if r.Date > m.latest {
+				m.latest = r.Date
+			}
+		}
+	}
+	var b strings.Builder
+	b.WriteString("\n## Verified on: what has actually run\n\n")
+	b.WriteString("The table above is what each backend IMPLEMENTS. This section is what has actually EXECUTED, generated from the hardware census (`docs/hardware-coverage.json`), which records for each\n")
+	b.WriteString("hardware-selected code path (a CPU feature tier, a GPU architecture, a memory threshold, an OS) where it last ran. It is per path, not per model family, so it does not fill the table above.\n")
+	b.WriteString("Anything not listed here has not run on the machines below, and is guarded only by the startup self-tests (`docs/server.md`), which check the kernels on the machine they run on.\n\n")
+	b.WriteString("How it ran: **native** is real hardware; **ci-pool** is a GitHub runner whose CPU the run does not name; **forced** is a build tag making the code take a narrower path than the machine has;\n")
+	b.WriteString("**emulated** is Intel SDE or QEMU. The census counts paths, so a machine with a high count is not thereby \"verified\" for every model.\n\n")
+	b.WriteString("| Machine | How it ran | Paths with a record | Latest record |\n|---|---|---|---|\n")
+	for _, name := range order {
+		m := byMachine[name]
+		var hows []string
+		for h := range m.hows {
+			hows = append(hows, h)
+		}
+		sort.Strings(hows)
+		b.WriteString(fmt.Sprintf("| %s | %s | %d | %s |\n", strings.ReplaceAll(name, "|", "/"), strings.Join(hows, ", "), len(m.ids), m.latest))
+	}
+	b.WriteString(fmt.Sprintf("\n**%d of %d hardware-selected paths have no record of ever executing:**\n\n", len(never), len(c.Entries)))
+	for _, i := range never {
+		b.WriteString(fmt.Sprintf("- `%s`: %s\n", c.Entries[i].ID, c.Entries[i].Gate))
+	}
+	return b.String()
+}
+
+// TestVerifiedOn_followsTheCensus proves the section is not vacuous: removing one record moves a path to the never-executed list and changes the text, and a path with no records is named.
+func TestVerifiedOn_followsTheCensus(t *testing.T) {
+	var c censusFile
+	raw, err := os.ReadFile(censusPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	full := renderVerifiedOn(c)
+	for _, e := range c.Entries {
+		if len(e.LastExecuted) == 0 && !strings.Contains(full, "`"+e.ID+"`") {
+			t.Errorf("never-executed path %s is not named in the section", e.ID)
+		}
+	}
+	for i := range c.Entries {
+		if len(c.Entries[i].LastExecuted) > 0 {
+			id := c.Entries[i].ID
+			saved := c.Entries[i].LastExecuted
+			c.Entries[i].LastExecuted = nil
+			mutated := renderVerifiedOn(c)
+			c.Entries[i].LastExecuted = saved
+			if mutated == full || !strings.Contains(mutated, "`"+id+"`") {
+				t.Errorf("dropping every record of %s did not move it to the never-executed list", id)
+			}
+			break
+		}
+	}
 }
