@@ -98,7 +98,7 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 - **Added 2026-10-01:** Route C, Cloudflare's Clef and Clef-flash (D10–D14): a joint head over all positions' hidden states on a
   merged `qwen3_5` backbone, one backbone pass for every question.
 
-[`task-glm-ocr-2026-10.md`](tasks/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01) scopes GLM-OCR, a 0.9B
+[`task-glm-ocr-2026-10.md`](completed/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01, closed and archived 2026-10-04) scoped GLM-OCR, a 0.9B
 document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget
 for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 (reading) is done
 2026-10-01 and stops nothing: O1 (decoder) and O2 (tower, from aikit's Qwen3.5+ encoder) are unblocked.
@@ -136,7 +136,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (128)
+## Archive — `completed/` (129)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation

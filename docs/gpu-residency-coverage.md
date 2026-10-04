@@ -119,6 +119,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
+- **GLM-OCR (`glm_ocr`)** — resident on CUDA ONLY (pairwise `rope` / `rope_kv` / `rope_kv_mrope_batched`, `a306d33e`, which also gave the Cohere families their pairwise kernels); Metal declines it to the CPU
+  (`metal does not implement [pairwise-mrope pairwise-rope]`) and WebGPU runs it staged. **The same port as Command-R**: pairwise rope variants on Metal and WebGPU behind a peaked-attention resident-vs-CPU
+  gate, with the steps in `docs/measurements/cuda-pairwise-rope-2026-10-01.md`, "What the Mac session must do for Metal". Non-blocking: the tower is CPU f32 on every backend whatever the decoder does, and the cost
+  of the CPU decode after the image was never measured (the task's own note said to measure it first; it may be cheap enough to leave). GLM-OCR's task record is `docs/completed/task-glm-ocr-2026-10.md`.
 - **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
   declared `decoder/features.go:689` for cuda, `decoder/features.go:820` for metal) and
