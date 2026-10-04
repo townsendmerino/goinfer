@@ -48,17 +48,42 @@ var (
 	gpuProbeCache = map[string]SelfTestResult{}
 )
 
-// probeMeasured lists the backends whose healthy-hardware margins against the bars were measured. A backend not on it is NOT probed (its result is simply absent from the report) rather than probed against
-// bars nobody has seen it clear: Metal's f16 residual stream, or a WebGPU vendor driver, could sit near 0.995 and decline healthy machines. Add a backend here with its measured margins in the task doc.
-var probeMeasured = map[string]bool{"cuda": true}
+// probeMeasured lists the backends whose healthy-hardware margins against the bars were measured, each on ONE device (the task doc has the figures). A backend not on it is NOT probed (its result is
+// simply absent from the report) rather than probed against bars nobody has seen it clear: Metal's f16 residual stream could sit near 0.995 and decline healthy machines. WebGPU is on it from one NVIDIA
+// adapter over Vulkan; AMD, Intel, DX12 and Metal-backed adapters are probed against those bars unmeasured, which is a risk of a false decline, disclosed in the task doc. Add a backend here with its margins.
+var probeMeasured = map[string]bool{"cuda": true, "webgpu": true}
 
 // gpuProbeAfterResident is called by withResidency once a resident is attached. It returns the (cached) result for this model's backend and quant, and whether a probe applies at all.
 func gpuProbeAfterResident(m *Model) (SelfTestResult, bool) {
-	backend := m.be.Name()
+	backend := probeBackendName(m.be)
 	if !probeMeasured[backend] || m.noSelfTest || SelfTestsSkipped() {
 		return SelfTestResult{}, false
 	}
+	if why, skip := probeIneligible(m.be); skip {
+		r := SelfTestResult{Backend: backend, Status: SelfTestSkipped, Note: why}
+		RecordSelfTest(r)
+		return r, true
+	}
 	return probeBackendCached(backend, m.Quant()), true
+}
+
+// probeBackendName is the registry name a Backend was registered under: WebGPU's Backend names itself "webgpu:vulkan" (the API it resolved to), and the probe loads fixtures by registry name.
+func probeBackendName(be Backend) string { return strings.SplitN(be.Name(), ":", 2)[0] }
+
+// selfTestEligibility is implemented by a Backend that knows it should not be probed on the device it resolved to. WebGPU declines on a software adapter (lavapipe, llvmpipe, SwiftShader): its limits
+// and its math are not a GPU's, so the probe's bars, measured on a real adapter, would judge it by the wrong standard, and a CI runner or a headless box would pay the cost for nothing.
+type selfTestEligibility interface {
+	SelfTestEligible() (ok bool, why string)
+}
+
+// probeIneligible reports whether be asked not to be probed, and why.
+func probeIneligible(be Backend) (why string, skip bool) {
+	if e, ok := be.(selfTestEligibility); ok {
+		if yes, w := e.SelfTestEligible(); !yes {
+			return w, true
+		}
+	}
+	return "", false
 }
 
 func probeBackendCached(backend, quant string) SelfTestResult {
@@ -83,6 +108,15 @@ func probeStandalone(backend string) SelfTestResult {
 		r := SelfTestResult{Backend: backend, Status: SelfTestSkipped, Note: "no self-test for this backend yet: its kernels are not checked"}
 		RecordSelfTest(r)
 		return r
+	}
+	if be, err := NewBackend(backend); err == nil {
+		why, skip := probeIneligible(be)
+		_ = be.Close()
+		if skip {
+			r := SelfTestResult{Backend: backend, Status: SelfTestSkipped, Note: why}
+			RecordSelfTest(r)
+			return r
+		}
 	}
 	return probeBackendCached(backend, "int4")
 }

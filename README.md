@@ -313,7 +313,7 @@ Every speed in this README came from one of them and does not carry over to othe
 narrower path, or emulation), and which have never executed at all.
 
 What stands between you and a wrong answer on a machine we have not seen is a check goinfer runs at start: it runs the compute kernels it is about to use against a reference on a small fixed input, and if one disagrees
-it steps down to a slower path, or declines that backend, rather than giving wrong numbers. Today that covers the CPU kernels and CUDA; Metal and WebGPU are not covered yet
+it steps down to a slower path, or declines that backend, rather than giving wrong numbers. Today that covers the CPU kernels, CUDA, and WebGPU on a real GPU (not on a software renderer); Metal is not covered yet
 ([docs/server.md](docs/server.md)). `goinfer-serve check --hardware` prints what it found on your machine and sends nothing anywhere. If something is wrong, paste it into
 [a bug report](https://github.com/townsendmerino/goinfer/issues/new?template=bug.yml); that is the most useful thing you can send.
 

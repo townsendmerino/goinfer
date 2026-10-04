@@ -5,7 +5,6 @@ package gpu
 import (
 	"math"
 	"math/rand/v2"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -51,20 +50,6 @@ func newOrSkip(t *testing.T) *Context {
 // software path (lavapipe → what CI uses); the name match catches the OpenGL
 // software path (llvmpipe reports AdapterTypeUnknown) and other backends.
 func isSoftwareAdapter(c *Context) bool { return softwareAdapterInfo(c.adapter.GetInfo()) }
-
-// softwareAdapterInfo is the pure detection (unit-tested without a GPU).
-func softwareAdapterInfo(info wgpu.AdapterInfo) bool {
-	if info.AdapterType == wgpu.AdapterTypeCPU {
-		return true
-	}
-	name := strings.ToLower(info.Device + " " + info.Description)
-	for _, s := range []string{"llvmpipe", "lavapipe", "softpipe", "swiftshader", "software"} {
-		if strings.Contains(name, s) {
-			return true
-		}
-	}
-	return false
-}
 
 // TestSoftwareAdapterDetection pins the software-adapter heuristic (runs with no
 // GPU). CI's lavapipe reports AdapterType==CPU; the OpenGL software path

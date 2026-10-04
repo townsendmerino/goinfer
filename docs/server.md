@@ -784,8 +784,11 @@ must agree with the CPU's to cosine 0.995 and relative L2 0.10 (the bars the res
 resident is dropped and it continues on the CPU path**, with the reason on its decode path and one `WARN: self-test:` line; nothing crashes. A checkpoint that cannot go resident on that backend at that quant (Phi-3 on CUDA, a
 MoE at int8 on CUDA) is named in the result and counts as unchecked, never as passed. **Cost: about 0.9 s once per process and quant** on an RTX 2070 SUPER (0.6 s of it the 264-position Qwen3.5 fixture), and about 1.8 s
 when `check --hardware` runs it cold, because the device context is then created for it; the first figure is far over the 5 ms the plan hoped for, and `-no-selftest` skips it. On that card the margins are cosine 0.9994
-and relative L2 0.035 (int4), and 0.9999 and 0.017 (int8int8): the report prints the observed worst figures beside the bars. **CUDA is covered; Metal and WebGPU are not built yet** (the Metal and WebGPU lines of the report
-say nothing about their kernels).
+and relative L2 0.035 (int4), and 0.9999 and 0.017 (int8int8): the report prints the observed worst figures beside the bars. **CUDA and WebGPU are covered; Metal is not built yet** (the Metal line of the report says nothing about its kernels). On WebGPU the same four checkpoints take 1.2-1.4 s once per process and quant,
+with margins on an RTX 2070 SUPER over Vulkan of cosine 0.99988 and relative L2 0.0155 (int4), and 0.99929 and 0.0378 (int8int8), all four checkpoints going resident at both quants. **Those bars were measured
+on that one adapter.** AMD, Intel, DirectX 12 and Metal-backed adapters are held to them unmeasured, so a healthy one near the bar could be declined to the CPU path (the WARN line and `/health` say so, and
+`-no-selftest` skips it). A **software adapter** (lavapipe, llvmpipe, SwiftShader) is not probed at all and is reported as skipped with that reason, since its limits and math are not a GPU's. `check --hardware`
+also prints the WebGPU adapter's name, vendor, graphics API, adapter type, limits and whether the integer dot-product builtin compiles; WebGPU does not expose VRAM or the driver version, and the report says so.
 
 `goinfer-serve check --hardware` and `goinfer-chat check --hardware` print the block a hardware bug report needs and exit, with no server involved: the build, OS and kernel, the CPU model and thread count, which CPU kernel tiers the
 CPU supports against which are in use (and any a build tag forced off), host memory, the backends linked into the binary with each one's device facts (the CUDA build prints the device name, compute capability and whether

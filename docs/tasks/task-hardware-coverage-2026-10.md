@@ -1,6 +1,6 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H2 on Metal and WebGPU is not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU, CUDA and WebGPU) and H3 (device facts for CUDA and WebGPU) are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H2 and the device facts on Metal are not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
 > 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
 > H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one sweep on other hardware are missing, and with H4 parked the second can only be met by a different route (see H4).
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
@@ -279,11 +279,23 @@ that backend's parity contract. Specifically:
 - **Break-it-first, on the real GPU** (`cuda/selftest_probe_test.go`): a wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) in the GPU copy's config only, CPU reference true. Both decline (cosine 0.67 / 0.93, relative L2 0.98 / 0.39).
   **The first version of that test passed on a probe that checked nothing for its target:** the fixture it mutated was Phi-3, which the CUDA resident declines by design, so that fixture was silently skipped and the other three
   carried the "pass". Fixed twice over: the result now carries a note naming any fixture that could not be compared, and the fixtures are chosen and tested so each goes resident.
-- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA only; Metal and WebGPU report "no self-test for this backend yet" rather than being judged against bars nobody has seen them clear (Metal's f16
-  residual stream could sit near 0.995). **Open: H2 on Metal (the Mac) and WebGPU.** The probe is backend-generic, so that port is: measure the margins on that backend, add it to `probeMeasured`, and add the config-mutation test.
+- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA and WebGPU; Metal reports "no self-test for this backend yet" rather than being judged against bars nobody has seen it clear (its f16
+  residual stream could sit near 0.995). **Open: H2 on Metal (the Mac)**, which is the same port: measure the margins, add `"metal"` to `probeMeasured`, add the config-mutation test, and edit the "not covered yet"
+  copy (`docs/server.md`, the README, the Download template).
+- **WebGPU, 2026-10-04 (`gpu/selftest_probe_test.go`, nobara's RTX 2070 SUPER over Vulkan via wgpu-native, driver 595.91.07):** all four checkpoints go resident at both quants (unlike CUDA, the MoE fixture too at
+  int8int8). Int4 worst cosine 0.99988, relative L2 0.0155; int8int8 0.99929 and 0.0378, so the closest to a bar is the int8int8 L2 at 2.6x inside and the cosine 0.0043 above its floor. 1.2-1.4 s per quant (CUDA 0.9 s).
+  A wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) on the GPU copy declines it (cosine 0.67 / 0.93, relative L2 0.98 / 0.39), the same figures as CUDA, as they should be for the same input error. **One
+  adapter: AMD, Intel, DirectX 12 and Metal-backed WebGPU adapters are held to bars measured on NVIDIA, which is exactly the "vendor drivers" risk this item listed**, so a healthy one near a bar could be declined to
+  the CPU path (loudly, and `-no-selftest` skips it). That is accepted, and disclosed in `docs/server.md` and the CHANGELOG, because a self-test that skipped the vendors it exists for would not be one.
+  **A software adapter is not probed** (the backend declares itself ineligible, and the result is "skipped" with the reason): CI's lavapipe runs the gpu module's tests and must not pay for, or be judged by,
+  bars measured on a GPU. Lavapipe could not be started on this box (the device request fails under this wgpu version), so that path is tested with a fake backend, not on lavapipe itself.
+  The backend's `Name()` is `webgpu:vulkan`; the hook now keys on the registry name before the colon (a bug found before it shipped: the first version looked up `webgpu:vulkan` and would never have run).
 - **Not built:** the optional per-(version, device, OS build) pass cache, and the per-family decline option (whole backend, as the Metal spec's default said).
 
 ### H3 — a hardware report people can paste
+
+> **Device facts built for CUDA (name, compute capability, SMs, memory, driver) and WebGPU (adapter, vendor, API, adapter type, limits, dot-product support; no VRAM or driver version exists in WebGPU). Not built:
+> Metal's (GPU family and macOS build), which needs the Mac.**
 
 - `goinfer-serve check --hardware` (and the same on `goinfer-chat`) prints one block:
   - OS and build;
