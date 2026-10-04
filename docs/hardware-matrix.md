@@ -102,15 +102,16 @@ How it ran: **native** is real hardware; **ci-pool** is a GitHub runner whose CP
 | nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07 | forced, native | 6 | 2026-10-04 |
 | nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB | forced | 1 | 2026-10-04 |
 | GitHub ubuntu-latest, AMD EPYC 9V74 80-Core (Zen 4: natively has AVX-512 VNNI+VL, which the tag turns off along with AVX2) | forced | 1 | 2026-10-04 |
-| Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0) | native | 5 | 2026-10-03 |
+| Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0) | native | 5 | 2026-10-04 |
 | GitHub macos-latest runner (arm64) | ci-pool | 3 | 2026-10-03 |
 | GitHub ubuntu-24.04-arm runner: ARM Neoverse-N2, 4 CPUs, DotProd (asimddp) yes | ci-pool | 2 | 2026-10-03 |
 | qemu-aarch64-static 10.2.2 user-mode emulation of -cpu cortex-a72 (no DotProd) on nobara-pc | emulated | 1 | 2026-10-04 |
 | GitHub ubuntu-24.04-arm runner: Neoverse-N2 (has DotProd, forced off by aikit_nodotprod) | forced | 1 | 2026-10-04 |
 | nobara-pc: RTX 2070 SUPER over Vulkan (wgpu-native, ADAPTER_PROBE backend=vulkan software=false), driver 595.91.07 | native | 1 | 2026-09-28 |
+| Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0), wgpu-native Metal backend (adapter Apple M1 Pro, integrated-gpu, dot4I8Packed yes) | native | 1 | 2026-10-04 |
 | GitHub windows-latest runner: AMD EPYC 9V74 (Zen 4), 2 cores / 4 threads, windows/amd64 | ci-pool | 1 | 2026-10-03 |
 
-**10 of 30 hardware-selected paths have no record of ever executing:**
+**10 of 31 hardware-selected paths have no record of ever executing:**
 
 - `cpu-popcnt`: POPCNT Hamming distance
 - `cuda-compute-mode`: CUDA graphs tenancy check (device compute mode)

@@ -1,8 +1,8 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU, CUDA and WebGPU) and H3 (device facts for CUDA and WebGPU) are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H2 and the device facts on Metal are not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU, CUDA, WebGPU and Metal) and H3 (device facts for CUDA, WebGPU and Metal) are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
 > 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
-> H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one sweep on other hardware are missing, and with H4 parked the second can only be met by a different route (see H4).
+> H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** one sweep on other hardware is missing (H2 on Metal landed 2026-10-04), and with H4 parked the second can only be met by a different route (see H4).
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
@@ -279,9 +279,21 @@ that backend's parity contract. Specifically:
 - **Break-it-first, on the real GPU** (`cuda/selftest_probe_test.go`): a wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) in the GPU copy's config only, CPU reference true. Both decline (cosine 0.67 / 0.93, relative L2 0.98 / 0.39).
   **The first version of that test passed on a probe that checked nothing for its target:** the fixture it mutated was Phi-3, which the CUDA resident declines by design, so that fixture was silently skipped and the other three
   carried the "pass". Fixed twice over: the result now carries a note naming any fixture that could not be compared, and the fixtures are chosen and tested so each goes resident.
-- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA and WebGPU; Metal reports "no self-test for this backend yet" rather than being judged against bars nobody has seen it clear (its f16
-  residual stream could sit near 0.995). **Open: H2 on Metal (the Mac)**, which is the same port: measure the margins, add `"metal"` to `probeMeasured`, add the config-mutation test, and edit the "not covered yet"
-  copy (`docs/server.md`, the README, the Download template).
+- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA, WebGPU and (since 2026-10-04) Metal; a backend not on it reports "no self-test for this backend yet" rather than being judged against bars
+  nobody has seen it clear.
+- **Metal, 2026-10-04 (`metal/selftest_probe_test.go`, the M1 Pro, 16 GB, macOS 26.6.2 build 25G83; `7b481332`).** Pre-registered rule: add `"metal"` only if worst relative L2 <= 0.05 and worst cosine >= 0.997 on
+  every one of three runs. **Passed, with identical figures in all three:** int4 worst cosine 0.99937, relative L2 0.0358 over all four checkpoints (2.8x inside the L2 bar, 0.0044 above the floor); int8int8 0.99971
+  and 0.0243 over two. About 0.5 s (int4) and 0.2 s (int8int8) per process and quant, 1.4 s cold in `check --hardware`. The f16 residual stream (audit A-C02) did not come near the floor on these checkpoints.
+  - **The trap, measured before the fix:** at int8int8 Metal re-quantizes the two Qwen3.5 hybrids to int4 (no native int8 for DeltaNet, `docs/tasks/task-metal-int8-2026-10.md`), and the probe compared them with the CPU
+    at int8int8: cosine 0.99034, relative L2 0.1401, a decline on a healthy Mac. `residentPrecision` (decoder) now reads the precision the resident computes (`ResidentQuantReporter`, else the int4 that
+    `residentQuantLabel` names), and a fixture computing another precision than the load quant is named "re-quantized to int4 on metal; not probed", not compared. Not against the CPU at int4 either: that quantizes from the
+    original weights, the resident from the int8 ones. Tested through `Load` with a fake (`TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant`); disabling the skip fails it.
+  - **int4mix is not probed:** it is GGUF-only and every checkpoint is safetensors, so none loads (a real int4mix model's probe records "skipped").
+  - **Break-it-first:** a wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) on qwen35vl-tiny's GPU copy declines it (cosine 0.67 / 0.92, relative L2 0.98 / 0.39); the test first asserts qwen35vl-tiny goes resident
+    on Metal and that each decline names it.
+  - **One device:** other Apple GPUs (M2, M3, M4 families) are held to these bars unmeasured.
+  - **WebGPU on the same Mac** (wgpu's Metal backend; the adapter reports graphics API "metal", integrated GPU, dot4I8Packed yes): all four checkpoints at both quants, int4 0.99988 / 0.0155, int8int8 0.99929 / 0.0378,
+    the NVIDIA-over-Vulkan figures to every digit shown, three runs; mutations decline it the same way. A second vendor for WebGPU, one device again.
 - **WebGPU, 2026-10-04 (`gpu/selftest_probe_test.go`, nobara's RTX 2070 SUPER over Vulkan via wgpu-native, driver 595.91.07):** all four checkpoints go resident at both quants (unlike CUDA, the MoE fixture too at
   int8int8). Int4 worst cosine 0.99988, relative L2 0.0155; int8int8 0.99929 and 0.0378, so the closest to a bar is the int8int8 L2 at 2.6x inside and the cosine 0.0043 above its floor. 1.2-1.4 s per quant (CUDA 0.9 s).
   A wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) on the GPU copy declines it (cosine 0.67 / 0.93, relative L2 0.98 / 0.39), the same figures as CUDA, as they should be for the same input error. **One
@@ -300,8 +312,9 @@ that backend's parity contract. Specifically:
 
 ### H3 — a hardware report people can paste
 
-> **Device facts built for CUDA (name, compute capability, SMs, memory, driver) and WebGPU (adapter, vendor, API, adapter type, limits, dot-product support; no VRAM or driver version exists in WebGPU). Not built:
-> Metal's (GPU family and macOS build), which needs the Mac.**
+> **Device facts built for CUDA (name, compute capability, SMs, memory, driver), WebGPU (adapter, vendor, API, adapter type, limits, dot-product support; no VRAM or driver version exists in WebGPU) and Metal
+> (`metal/hwinfo.go`, `c742e5ab`: the GPU's name, unified memory total and available, threadgroup memory, macOS version and build). aikit/gpu exposes no GPU family or recommended working-set size, and the Metal
+> lines say so.** On the M1 Pro: `device: Apple M1 Pro`, `unified memory: 16.0 GiB total, 8.7 GiB available now`, `threadgroup memory: 32 KiB per threadgroup`, `macOS 26.6.2 (build 25G83)`.
 
 - `goinfer-serve check --hardware` (and the same on `goinfer-chat`) prints one block:
   - OS and build;

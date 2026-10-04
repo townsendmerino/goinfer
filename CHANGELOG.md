@@ -15,6 +15,18 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — the startup self-test covers Metal, and `check --hardware` prints the Metal device
+
+The resident self-test now runs for the Metal backend too. On an M1 Pro its worst cosine is 0.99937 and its worst relative L2
+0.0358 at int4 (all four checkpoints), and 0.99971 and 0.0243 at int8int8, against bars of 0.995 and 0.10, in about 0.5 s once per
+process and quant. At int8int8 Metal re-quantizes the two Qwen3.5 hybrid checkpoints to int4, and the self-test names them as
+re-quantized and does not compare them, rather than holding an int4 resident to the CPU's int8int8 and declining a healthy Mac. The
+bars were measured on that one Mac: other Apple GPUs are held to them unmeasured, so a healthy one near a bar could be declined to the
+CPU path (the `WARN` line and `/health` say so, and `-no-selftest` skips it). WebGPU on the same Mac, through its Metal backend, clears
+the same bars by the same margins as the NVIDIA card it was first measured on. `check --hardware` on the Metal build prints the GPU's
+name, unified memory, threadgroup memory and the macOS version and build; Metal does not expose the GPU family through goinfer, and the
+report says so.
+
 ### Added — the startup self-test covers WebGPU, and `check --hardware` prints the WebGPU adapter
 
 The resident self-test (the four tiny checkpoints through the resident path against the CPU path, once per process and quant) now runs for the WebGPU backend, on a real adapter. On an RTX 2070 SUPER over
