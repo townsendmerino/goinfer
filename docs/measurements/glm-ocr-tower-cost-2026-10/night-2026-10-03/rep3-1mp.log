@@ -1,0 +1,6 @@
+=== RUN   TestGlmOcrVisionEncoder_costSweep
+[glm-ocr cost] point 1 MP: grid [1 70 72] = 5040 patches (0.99 MP), start, loadavg n/a
+[glm-ocr cost] point 1 MP: 1260 merged rows, tower wall 28.71s, loadavg before n/a after n/a
+    glm_ocr_encoder_test.go:339: COST point 1 MP (5040 patches): tower wall 28.71s
+--- PASS: TestGlmOcrVisionEncoder_costSweep (30.76s)
+PASS

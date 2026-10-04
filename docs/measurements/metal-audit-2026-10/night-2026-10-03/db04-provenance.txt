@@ -1,0 +1,8 @@
+rev:      b37b8158
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-tagged-b37b8158.test (sha256 a34cbbbf4b9881b4)
+started:  2026-10-03 13:37:01 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     0.91 3.22 3.62
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+9b rc=0
+finished: 2026-10-03 13:38:21 PDT

@@ -1,0 +1,69 @@
+job:       glm-ocr-tower-cost (README.md beside run-cost.sh is the pre-registration)
+started:   2026-10-03 11:33:53 PDT
+machine:   MacBookPro18,3, Apple M1 Pro, 8 cpus, 16 GB, macOS 26.6.2
+go:        go version go1.27.0 darwin/arm64
+aikit:     v1.52.0 = 01928d7af35bfc178bda4673882cd3201d455af4
+binary:    /Users/francistownsend-merino/goinfer-bench/glm-ocr-tower-cost-2026-10/vision-01928d7af35b.test (sha256 a2171edd66a04a34)
+ckpt:      /Users/francistownsend-merino/models/glm-ocr (zai-org/GLM-OCR @ 2e85a62840ccac27daa451df36c736c4636b8628), local disk
+ckpt sha:  model.safetensors a16eb0de98d199293371c560f95f83130d2a2c9612449df16839f08ff9498815
+path:      f32 reference (LoadGlmOcrVisionEncoder quant=false), CPU, random pixel_values (rand seed 1)
+== rep1-1mp 11:34:05
+loadavg before: { 1.36 1.83 2.14 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 11:34:34
+loadavg after:  { 4.42 2.50 2.38 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+== rep1-2mp 11:34:38
+loadavg before: { 4.07 2.46 2.36 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 11:36:11
+loadavg after:  { 10.97 4.88 3.29 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+gate: waited 235s for busy <= 10% (rep1-4.8mp)
+== rep1-4.8mp 11:40:06
+loadavg before: { 2.14 3.36 3.00 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 11:47:14
+loadavg after:  { 23.80 16.03 9.28 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+gate: waited 16s for busy <= 10% (rep2-1mp)
+== rep2-1mp 11:47:31
+loadavg before: { 17.97 15.22 9.15 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 11:48:02
+loadavg after:  { 15.93 14.96 9.26 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+gate: waited 209s for busy <= 10% (rep2-2mp)
+== rep2-2mp 11:51:31
+loadavg before: { 2.64 8.63 7.78 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 11:53:05
+loadavg after:  { 9.80 9.65 8.26 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+== rep2-4.8mp 11:53:08
+loadavg before: { 9.10 9.51 8.22 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 12:00:28
+loadavg after:  { 16.33 15.00 11.55 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+gate: waited 25s for busy <= 10% (rep3-1mp)
+== rep3-1mp 12:00:53
+loadavg before: { 11.52 13.98 11.28 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 12:01:24
+loadavg after:  { 11.81 13.82 11.32 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+gate: waited 12s for busy <= 10% (rep3-2mp)
+== rep3-2mp 12:01:36
+loadavg before: { 10.46 13.46 11.22 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 12:03:09
+loadavg after:  { 14.59 13.91 11.62 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+== rep3-4.8mp 12:03:12
+loadavg before: { 14.59 13.91 11.62 }
+therm before:   Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+exit 0, 12:10:20
+loadavg after:  { 13.01 13.87 12.50 }
+therm after:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+finished: 2026-10-03 12:10:20 PDT

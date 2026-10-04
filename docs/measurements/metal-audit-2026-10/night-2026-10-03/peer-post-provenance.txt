@@ -1,0 +1,2 @@
+started: 2026-10-03 12:47:16 PDT; new c6f8100e (sha256 f0eec73ddd92de93), old 71812d57 (sha256 93f0b3b91d402536); ollama Warning: client version is 0.32.5; mlx-lm 0.31.3
+finished: 2026-10-03 13:24:31 PDT, bench_peer exit 0

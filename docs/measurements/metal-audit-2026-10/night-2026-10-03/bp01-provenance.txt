@@ -1,0 +1,21 @@
+rev:      5103bd40
+binaries: /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/decoder-tagged-5103bd40.test (sha256 c5a55d528958a144), /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-tagged-5103bd40.test (sha256 d57e758bed7acee9)
+testdata: /Users/francistownsend-merino/tmcode/goinfer/testdata at 35d39409
+started:  2026-10-03 13:24:31 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     0.68 1.00 1.18
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+== refs — 13:24:31
+refs rc=0
+Q05 reference files: 20 of 20
+== gate-3900 — 13:31:00
+gate-3900 rc=0
+== gate-3900-null — 13:32:33
+gate-3900-null rc=0
+== gate-2048 — 13:34:10
+gate-2048 rc=0
+== p1 — 13:34:53
+p1 rc=0
+== speed — 13:36:10
+speed rc=0
+finished: 2026-10-03 13:36:20 PDT

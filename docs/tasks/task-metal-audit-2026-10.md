@@ -263,7 +263,7 @@ real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2
 
 ## Phase 3 — builds, in this order
 
-### B-P03: fidelity gate at the 1024 floor (pre-registered 2026-10-02, before any graded run)
+### B-P03: PASSED, the floor moves to 1024, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run)
 
 T1.2 put the candidate floor at 1024 keys (the block kernel 1.167× the legacy kernel on the 1.5B, 1.056× on the 7B;
 768 did not qualify). Moving it puts the reassociating block kernel at 1024–1535 keys, where the exact legacy kernel runs
@@ -401,7 +401,7 @@ shows and an argmax does not. `TestCB01ChainAB` now discards one cold generation
 | Rule | **≥ 1.02: ships. Below 1.02: killed**, and the sampled chain alone is reverted (`ResidentSampleChain` and its branch). C-B01's grade decides the greedy chain separately. |
 | Reported | The 0.5B and the 7B, as for C-B01. The audit's band for the missing encode-ahead alone was up to 3.6–4.2% on the 0.5B. The chain also removes the host round trip, which C-B01's T1.3 measured. |
 
-### E-P06: built, pending its grade (pre-registered 2026-10-02, before any graded run; the first night's run failed its idle gate, re-queued)
+### E-P06: KILLED and removed, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run; the first night's run failed its idle gate, re-queued)
 
 Built and lossless on the branch. `--spec ngram`'s depth controller prices a step-kernel verify by a cost curve, and
 every Metal model reported one constant, `stepVerifyCost`: the 7B at depth 2048. Now a model loaded for speculation
@@ -536,7 +536,7 @@ goinfer's ratios:
   VS Code open, and the guard bypassed. The guard's refusal was the right call. Logs:
   `docs/measurements/metal-audit-2026-10/t19b-forced-2026-10-03/`.
 
-### Post-merge peer read: pre-registration (written 2026-10-03, before it runs)
+### Post-merge peer read: read 2026-10-03, consistency check FAILED and investigated (pre-registered 2026-10-03, before it ran)
 
 TE5(a): the levers were graded new ÷ old with no peer arm, and the peer ratio is read once, after they ship, as its
 own run. The merge (`c6f8100e`) changes what last night's T1.14 cells measured (C-B01 and C-P02 shipped), so
@@ -549,7 +549,7 @@ own run. The merge (`c6f8100e`) changes what last night's T1.14 cells measured (
 | Consistency check | The new ÷ old cells must agree in direction with the graded in-process A/Bs. At depth 128 greedy that means ≥ 1.00 on all three models, and at T = 1 the same (C-P02: 1.5B 1.066×, 0.5B 1.160×, 7B 1.022×). A cell that reads below 1.00 beyond its own spread is investigated before any row is updated. The served number is end to end, so its size may differ from the in-process ratio, but its sign may not. |
 | Not read here | A-P01 (prefill passes; `bench_peer` times decode only), C-P01 and E-P09 (memory). |
 
-### B-P01: built, pending its grade (pre-registered 2026-10-03, before any graded run)
+### B-P01: SHIPPED, graded 2026-10-03 (pre-registered 2026-10-03, before any graded run)
 
 Built on main, **off by default** (`attnFABlk64On = false`): `attention_fa_blk64`, the block decode-attention kernel
 at head dim 64 (Qwen2.5-0.5B, G = 7).
@@ -579,7 +579,7 @@ By day:
 | Rule | **Ships** (`attnFABlk64On` becomes true) if P1 holds, P2's critA, critB and ceiling hold, the KL ratio is ≤ 1.05, and the speed ratio is ≥ 1.5 at either depth. A KL ratio of 1.05–1.10 parks it. **Killed** (the twin and its switch removed) if P1 fails, P2 fails outright, or the speed ratio is below 1.5 at both depths (the audit's kill line). K = 2048 and the exact-null control are reported beside the decision. A null KL ratio outside 0.95–1.05 says the cell's own spread is wider than the bar, and that goes to the owner before shipping. |
 | Reported | The S = 8, 24 and 32 arms, and the token ratio at both depths. |
 
-### B-P02: built, pending its grade (pre-registered 2026-10-03, before any graded run)
+### B-P02: SHIPPED, graded 2026-10-03 (pre-registered 2026-10-03, before any graded run)
 
 Built on main, **off by default** (`attnFABlkAnyG = false`): the hd = 128 block decode-attention kernel instantiated at
 G = 2, 3, 4, 5 and 8, beside the graded 6 and 7. A dense hd = 128 model of another group size ran the legacy
@@ -605,7 +605,7 @@ and 2.30× at 3900, and the token 1.24× and 1.37×.
 | Rule | **≥ 1.5 at either depth, with at least 4 of 5 reps above 1: ships** (`attnFABlkAnyG` becomes true). Below 1.5 at both depths: **killed**, the instantiations and the switch removed (R17's and B-P01's kill line). |
 | Reported | Qwen3-0.6B, and the token ratio. |
 
-### D-B04: built, pending its grade (pre-registered 2026-10-03, before any graded run)
+### D-B04: SHIPPED, graded 2026-10-03 (pre-registered 2026-10-03, before any graded run)
 
 Built on main, **off by default** (`gemvExtOn = false`), bit-identical. R18's rows-per-simdgroup form now reaches the
 int4 GEMV sites it never did, through `gemvExt`:
@@ -639,6 +639,62 @@ By day:
 | Graded | `D-B04 METRIC off/on` at **depth 128**. |
 | Rule | **≥ 1.02 with at least 6 of 7 reps above 1: ships** (`gemvExtOn` becomes true; bit-identical, so the owner's permissive bar, not the audit's 1.05). **Below 1.02: killed**, `gemvExt` and the coal rows kernel removed. |
 | Reported | Depth 1024. |
+
+### The night of 2026-10-03: results (graded 2026-10-03)
+
+Raw results and provenance: `docs/measurements/metal-audit-2026-10/night-2026-10-03/`. The Mac's night queue ran by day
+at the owner's word, 11:28–13:38. Every graded line is read against its pre-registration above, unchanged.
+
+| Item | Graded reading | Verdict |
+|---|---|---|
+| **B-P01** hd = 64 block twin, 0.5B | P1: the twin's median and p99 relative L2 against float64 are 1.66e-7 and 3.01e-6, against the exact kernel's 4.12e-7 and 5.55e-6; capture sanity 480/480. P2 at 3900 keys: critA, critB and the ceiling hold, KL ratio **1.0098**. Speed, legacy ÷ block attention: **3.17×** at 2048 keys, **3.63×** at 3900 (1.52× and 1.92× per token). Reported: the exact-null control PASSES at 3900; the K = 2048 cell holds critA, critB and the ceiling, with KL ratio 1.0113 | **ships** (P1, P2, KL ≤ 1.05, speed ≥ 1.5) |
+| **B-P02** block kernel at G = 2, 3, 4, 5, 8 | Legacy ÷ block attention on the two G = 2 models: internlm2-1.8b **2.37×** and **2.32×** at 2048 and 3900 keys, qwen3-0.6b **2.47×** and **2.30×**; 5 of 5 reps above 1 everywhere (per token 1.24–1.62×) | **ships** (≥ 1.5, ≥ 4 of 5 reps) |
+| **D-B04** staged rows GEMV | 9B off ÷ on: **1.064×** at depth 128 and **1.061×** at 1024, 7 of 7 reps above 1, the last token's logits equal in every rep; 5,376 and 10,752 rows-form dispatches | **ships** (≥ 1.02, ≥ 6 of 7) |
+| **B-P03** floor at 1024 | P1 at 1024, 1280 and 1535 keys: the block kernel's median and p99 against float64 are below the exact kernel's on both models (1.5B 1.68e-7 / 1.83e-6 against 4.27e-7 / 3.68e-6; 7B 2.33e-7 / 1.90e-6 against 5.87e-7 / 5.31e-6), capture sanity 840/840 each. P2 on the 1.5B at K = 1024 **PASSES** (KL ratio 0.9987, identity 10/10). Controls: exact-null passes under the amended form (KL 1.0002); the 7B's P2, reported, holds the amended form (KL 0.9888) | **floor moves to 1024** |
+| **E-P06** verify-cost curve at load | 1.5B chat spec-new ÷ spec-old **1.014×** (bar 1.02); copy 0.998×. Every spec reply equals plain's. Reported: the 0.5B 1.237× copy and 1.084× chat; the 7B 1.000× and 1.006× | **killed** (owner: "killed is good"), code removed |
+
+**E-P06 did run the code it grades** (owner question, 2026-10-03). Speculation was live in both spec arms: 1.5B copy
+decodes about 125 tok/s against plain's 55. Every spec-new server logged its measured curve at load, and the old binary
+never did:
+
+| Model | Measured verify cost, 2 / 4 / 8 rows | Against the constant 1.79 / 2.11 / 2.65 |
+|---|---|---|
+| 0.5B | 1.13 / 1.63 / 2.03 | much cheaper |
+| 1.5B | 1.58–1.61 / 1.81–1.85 / 2.23–2.29 | somewhat cheaper |
+| 7B | 1.76 / 1.99 / 2.35 | about the constant, which was the 7B's |
+
+The gains track the gap: double digits on the 0.5B, under the bar on the 1.5B (whose copy workload drafts at full depth
+either way), none on the 7B. The pre-registration grades the 1.5B, so the kill stands on its rule. The 0.5B's win is
+recorded here, not acted on.
+
+**The post-merge peer read** (records, not gates; `night-2026-10-03/peer-post-cells.txt` has every cell). goinfer
+`c6f8100e` ÷ goinfer_old `71812d57`, depth 128:
+- greedy: 0.5B 1.023×, 1.5B **0.991×**, 7B 1.004×;
+- T = 1: 0.5B 0.999×, 1.5B 0.997×, 7B 0.997×.
+
+The pre-registered consistency check asks for at least 1.00 on all six. C-B01's in-process 1.5B was 1.085×, and C-P02's
+1.066× / 1.160× / 1.022×. **It fails, and was investigated, so no benchmarks row is updated.** The cause is a
+composition gap, not noise:
+- **Serve on Metal always batches.** With more than one KV slot `m.batcher` exists, and `Model.Generate` gives every
+  generation an MC3 place (the `bt.claim` branch in `decoder/model.go`), a lone client included.
+- **The chains require no batcher.** Both the greedy chain (`useChain`) and the sampled chain require `mc3 == nil`.
+- **E-P09 made 2 slots the default** for Metal serve. So on main **neither chain reaches serve.** They run in the
+  single-session CLI and in their own in-process A/Bs, which have no batcher. That is CLAUDE.md's rule about a unit test
+  that supplies its own calling convention.
+
+Goinfer against the peers, from the same sweep:
+- goinfer ÷ Ollama at depth 128 is 1.19× (0.5B), 1.04× (1.5B) and 1.22× (7B).
+- goinfer ÷ mlx-lm is 0.83× (1.5B) and 0.83× (7B). The 0.5B has no MLX checkpoint configured.
+- At depth: the 0.5B falls behind Ollama, 0.80× at 2048 and 0.60× at 3900. The 1.5B and 7B stay level to ahead.
+
+**What it leaves for the owner:** letting a lone MC3 generation (B = 1) take the chain, or the chain into the batched
+step, is a new build with its own gate. Until then the C-B01 and C-P02 numbers describe the CLI and single-slot serve.
+
+**Found while running the metal suite (not tonight's change): `TestPrefillParityMoEGatedShared` fails on main.** Its
+fixture `testdata/tiny-qwen2-moe` is a per-machine download, not committed. The local copy had no config until
+2026-10-03, so the test skipped. Now it runs, and `BuildResident` declines with `W4A8 concat needs K%32==0 (group=32),
+got K=44` (audit M-10). It fails the same on untouched HEAD, so it is pre-existing. The fixture's shared-expert width is
+the cause; the test has never passed on this box.
 
 ## Owner decisions
 
@@ -943,6 +999,14 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   The one ungraded build, E-P06, ships switched off (`verifyCostCalibrate = false`, pinned by
   `TestVerifyCost_offUntilGraded`), so `--spec ngram` keeps pricing the verify by `stepVerifyCost` until tonight's
   grade, which runs pinned binaries and is unaffected. If it passes, the switch goes; if it is killed, the code goes.
+- 2026-10-03: **the night of 2026-10-03 graded** (results above; the queue ran by day at the owner's word):
+  - **Ship:** B-P01, B-P02 and D-B04. `attnFABlk64On`, `attnFABlkAnyG` and `gemvExtOn` are now true.
+  - **B-P03 passes:** `attnFADepthFloor` is 1024. The snapshot golden's straddling checkpoints were re-baked: the
+    mixtral-tiny and gemma4 entries did not move, and llama-attnfa-tiny's moved to 900 / 1022 / 1023 / 1100.
+  - **E-P06 is killed, and its code removed.** The owner asked whether it ran the speculative code; it did, and
+    calibrated.
+  - **The post-merge peer read's consistency check failed.** Investigated: serve's MC3 claim keeps both chains off
+    serve's path. No benchmarks row was updated.
   The audit continues on main from here.
 - 2026-10-03: **B-P01 built, off by default, queued for its grade** (owner: "B-P01 first"). The hd = 64 block attention
   kernel for the 0.5B. It is more accurate than the kernel it replaces, and a one-rep smoke read it 3.2–3.8× faster

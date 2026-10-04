@@ -362,6 +362,9 @@ lead: `TestGlmOcrVisionEncoder_*` all PASS, the real-checkpoint parity (small + 
   The 1 / 2 / 4.8 MP sweep (`TestGlmOcrVisionEncoder_costSweep`, `AIKIT_GLM_OCR_COST=1,2,4.8`, grids [1,70,72], [1,100,102],
   [1,128,192]) is a Mac night job, **queued 2026-10-02** as `glm-ocr-tower-cost` (3 repeats, one process per point;
   pre-registration in `docs/measurements/glm-ocr-tower-cost-2026-10/README.md`). The 4.8 MP point is guessed at 10–20 min.
+  **Measured 2026-10-03** ([`../measurements/glm-ocr-tower-cost-2026-10.md`](../measurements/glm-ocr-tower-cost-2026-10.md)), the
+  M1 Pro CPU, f32 reference, medians of 3: **1 MP 28.77 s, 2 MP 92.26 s, 4.8 MP 427.12 s** (5.7 / 9.0 / 17.4 ms per
+  patch). Per-patch cost triples from 1 to 4.8 MP, so the attention-quadratic term dominates. O4 reads it.
 - **Two small facts:** the merger's inner width 4608 is `out_hidden_size × in_channels` (1536 × 3), which only happens to equal
   the text MLP width; and a Conv3d-as-Conv2d over the temporal-summed kernel is exact mathematically but not bit-equal in f32,
   so the reference path is the plain 1176-wide matmul.

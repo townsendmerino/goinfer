@@ -1,0 +1,31 @@
+===== results.txt
+  copy 15b round 1: plain 55.08, spec-old 124.93, spec-new 124.90 tok/s; new/old 1.000x, new/plain 2.267x
+  copy 15b round 2: plain 54.20, spec-old 125.36, spec-new 125.11 tok/s; new/old 0.998x, new/plain 2.308x
+  copy 15b round 3: plain 55.66, spec-old 125.33, spec-new 124.74 tok/s; new/old 0.995x, new/plain 2.241x
+  copy 15b round 4: plain 56.02, spec-old 125.41, spec-new 124.94 tok/s; new/old 0.996x, new/plain 2.230x
+  copy 15b round 5: plain 56.18, spec-old 125.30, spec-new 125.07 tok/s; new/old 0.998x, new/plain 2.226x
+  copy 15b: new/old median 0.998x (range 0.995-1.000), new/plain median 2.241x; replies equal to plain 20/20
+  chat 15b round 1: plain 77.96, spec-old 82.02, spec-new 83.22 tok/s; new/old 1.015x, new/plain 1.067x
+  chat 15b round 2: plain 78.78, spec-old 81.69, spec-new 83.43 tok/s; new/old 1.021x, new/plain 1.059x
+  chat 15b round 3: plain 78.85, spec-old 82.09, spec-new 83.24 tok/s; new/old 1.014x, new/plain 1.056x
+  chat 15b round 4: plain 78.09, spec-old 82.63, spec-new 83.28 tok/s; new/old 1.008x, new/plain 1.066x
+  chat 15b round 5: plain 78.16, spec-old 82.05, spec-new 83.17 tok/s; new/old 1.014x, new/plain 1.064x
+  chat 15b: new/old median 1.014x (range 1.008-1.021), new/plain median 1.064x; replies equal to plain 60/60
+  copy 05b round 1: plain 107.26, spec-old 182.33, spec-new 226.72 tok/s; new/old 1.243x, new/plain 2.114x
+  copy 05b round 2: plain 109.78, spec-old 182.51, spec-new 224.90 tok/s; new/old 1.232x, new/plain 2.049x
+  copy 05b round 3: plain 110.42, spec-old 182.28, spec-new 225.54 tok/s; new/old 1.237x, new/plain 2.043x
+  copy 05b: new/old median 1.237x (range 1.232-1.243), new/plain median 2.049x; replies equal to plain 12/12
+  chat 05b round 1: plain 157.38, spec-old 170.28, spec-new 187.02 tok/s; new/old 1.098x, new/plain 1.188x
+  chat 05b round 2: plain 157.72, spec-old 169.56, spec-new 183.74 tok/s; new/old 1.084x, new/plain 1.165x
+  chat 05b round 3: plain 157.99, spec-old 167.61, spec-new 173.78 tok/s; new/old 1.037x, new/plain 1.100x
+  chat 05b: new/old median 1.084x (range 1.037-1.098), new/plain median 1.165x; replies equal to plain 36/36
+  copy 7b round 1: plain 16.85, spec-old 33.91, spec-new 33.90 tok/s; new/old 1.000x, new/plain 2.012x
+  copy 7b round 2: plain 16.95, spec-old 33.94, spec-new 33.94 tok/s; new/old 1.000x, new/plain 2.002x
+  copy 7b round 3: plain 16.91, spec-old 33.93, spec-new 33.89 tok/s; new/old 0.999x, new/plain 2.004x
+  copy 7b: new/old median 1.000x (range 0.999-1.000), new/plain median 2.004x; replies equal to plain 12/12
+  chat 7b round 1: plain 24.95, spec-old 25.95, spec-new 26.15 tok/s; new/old 1.008x, new/plain 1.048x
+  chat 7b round 2: plain 24.95, spec-old 25.99, spec-new 25.96 tok/s; new/old 0.999x, new/plain 1.040x
+  chat 7b round 3: plain 25.08, spec-old 25.96, spec-new 26.11 tok/s; new/old 1.006x, new/plain 1.041x
+  chat 7b: new/old median 1.006x (range 0.999-1.008), new/plain median 1.041x; replies equal to plain 36/36
+PRECONDITION every spec reply equals plain's, every model and workload: PASS
+E-P06 METRIC chat 1.5B spec-new/spec-old 1.014x (>= 1.02), copy 1.5B 0.998x (>= 0.98): KILLED

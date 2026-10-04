@@ -1,0 +1,221 @@
+===== gate-2048.log
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate attention_fa(S=0) installed (G=7)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 0.0033
+[r17-gate] set "b" K=2048 prompt  1/10 shipped(agree=92.2% HF=2/64 KL=0.0947) attention_fa(S=0)(agree=92.2% HF=2/64 KL=0.0941) diff(agree=+0.0pt KL=-0.0006) elapsed=4s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 0.3753
+[r17-gate] set "b" K=2048 prompt  2/10 shipped(agree=82.8% HF=6/64 KL=0.2055) attention_fa(S=0)(agree=79.7% HF=9/64 KL=0.2095) diff(agree=-3.1pt KL=+0.0041) elapsed=8s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.6023
+[r17-gate] set "b" K=2048 prompt  3/10 shipped(agree=71.9% HF=8/64 KL=0.4147) attention_fa(S=0)(agree=73.4% HF=6/64 KL=0.4178) diff(agree=+1.6pt KL=+0.0031) elapsed=13s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.2893
+[r17-gate] set "b" K=2048 prompt  4/10 shipped(agree=78.1% HF=9/64 KL=0.4347) attention_fa(S=0)(agree=75.0% HF=11/64 KL=0.4480) diff(agree=-3.1pt KL=+0.0132) elapsed=17s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 0.0622
+[r17-gate] set "b" K=2048 prompt  5/10 shipped(agree=76.6% HF=5/64 KL=0.1408) attention_fa(S=0)(agree=79.7% HF=2/64 KL=0.1385) diff(agree=+3.1pt KL=-0.0023) elapsed=21s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.2387
+[r17-gate] set "b" K=2048 prompt  6/10 shipped(agree=71.9% HF=6/64 KL=0.1735) attention_fa(S=0)(agree=70.3% HF=5/64 KL=0.1753) diff(agree=-1.6pt KL=+0.0017) elapsed=25s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.3379
+[r17-gate] set "b" K=2048 prompt  7/10 shipped(agree=98.4% HF=0/64 KL=0.0522) attention_fa(S=0)(agree=98.4% HF=0/64 KL=0.0504) diff(agree=+0.0pt KL=-0.0018) elapsed=30s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 0.0012
+[r17-gate] set "b" K=2048 prompt  8/10 shipped(agree=96.9% HF=2/64 KL=0.0988) attention_fa(S=0)(agree=95.3% HF=3/64 KL=0.1010) diff(agree=-1.6pt KL=+0.0022) elapsed=34s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.5457
+[r17-gate] set "b" K=2048 prompt  9/10 shipped(agree=76.6% HF=6/64 KL=0.3075) attention_fa(S=0)(agree=76.6% HF=6/64 KL=0.3087) diff(agree=+0.0pt KL=+0.0012) elapsed=38s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0015
+[r17-gate] set "b" K=2048 prompt 10/10 shipped(agree=87.5% HF=4/64 KL=0.1904) attention_fa(S=0)(agree=89.1% HF=3/64 KL=0.1935) diff(agree=+1.6pt KL=+0.0031) elapsed=42s
+=== r17-gate (candidate attention_fa(S=0)), S, set "b", K=2048, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=48 fa=47) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=83.28% faAgree=82.97% d=20 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.2113 faMeanKL=0.2137 faLowerPrompts=3/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:119: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate attention_fa(S=0), set "b", K=2048: critA=true critB=true ceilingOK=true KLratio=1.0113 -> critC(R6)=<=1.05 (pass); strict critC=false (not deciding); identity 10/10 prompts OK — PASSES ===
+--- PASS: TestR17_decodeFidelityGate (43.38s)
+PASS
+===== gate-3900-null.log
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-null(S=0) installed (G=7)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 0.0010
+[r17-gate] set "b" K=3900 prompt  1/10 shipped(agree=79.7% HF=5/64 KL=0.1901) exact-null(S=0)(agree=81.2% HF=3/64 KL=0.1860) diff(agree=+1.6pt KL=-0.0041) elapsed=10s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 0.1972
+[r17-gate] set "b" K=3900 prompt  2/10 shipped(agree=78.1% HF=5/64 KL=0.1452) exact-null(S=0)(agree=81.2% HF=4/64 KL=0.1406) diff(agree=+3.1pt KL=-0.0045) elapsed=19s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.6200
+[r17-gate] set "b" K=3900 prompt  3/10 shipped(agree=85.9% HF=4/64 KL=0.2552) exact-null(S=0)(agree=84.4% HF=4/64 KL=0.2544) diff(agree=-1.6pt KL=-0.0009) elapsed=29s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.3845
+[r17-gate] set "b" K=3900 prompt  4/10 shipped(agree=95.3% HF=1/64 KL=0.1330) exact-null(S=0)(agree=95.3% HF=1/64 KL=0.1359) diff(agree=+0.0pt KL=+0.0029) elapsed=38s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 0.0242
+[r17-gate] set "b" K=3900 prompt  5/10 shipped(agree=92.2% HF=2/64 KL=0.0582) exact-null(S=0)(agree=92.2% HF=2/64 KL=0.0607) diff(agree=+0.0pt KL=+0.0024) elapsed=48s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0954
+[r17-gate] set "b" K=3900 prompt  6/10 shipped(agree=78.1% HF=7/64 KL=0.2292) exact-null(S=0)(agree=76.6% HF=6/64 KL=0.2272) diff(agree=-1.6pt KL=-0.0020) elapsed=57s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.6437
+[r17-gate] set "b" K=3900 prompt  7/10 shipped(agree=87.5% HF=1/64 KL=0.1516) exact-null(S=0)(agree=87.5% HF=1/64 KL=0.1573) diff(agree=+0.0pt KL=+0.0057) elapsed=1m7s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 0.2003
+[r17-gate] set "b" K=3900 prompt  8/10 shipped(agree=87.5% HF=1/64 KL=0.1196) exact-null(S=0)(agree=89.1% HF=1/64 KL=0.1177) diff(agree=+1.6pt KL=-0.0019) elapsed=1m16s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.4204
+[r17-gate] set "b" K=3900 prompt  9/10 shipped(agree=82.8% HF=5/64 KL=0.2058) exact-null(S=0)(agree=81.2% HF=5/64 KL=0.2089) diff(agree=-1.6pt KL=+0.0030) elapsed=1m26s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0220
+[r17-gate] set "b" K=3900 prompt 10/10 shipped(agree=96.9% HF=2/64 KL=0.0871) exact-null(S=0)(agree=96.9% HF=2/64 KL=0.0859) diff(agree=+0.0pt KL=-0.0012) elapsed=1m35s
+=== r17-gate (candidate exact-null(S=0)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=33 fa=29) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=86.41% faAgree=86.56% d=11 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.1575 faMeanKL=0.1575 faLowerPrompts=6/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:119: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate exact-null(S=0), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=0.9997 -> critC(R6)=<=1.05 (pass); strict critC=true (not deciding); identity 10/10 prompts OK — PASSES ===
+--- PASS: TestR17_decodeFidelityGate (96.84s)
+PASS
+===== gate-3900.log
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate attention_fa(S=0) installed (G=7)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 0.0010
+[r17-gate] set "b" K=3900 prompt  1/10 shipped(agree=79.7% HF=5/64 KL=0.1901) attention_fa(S=0)(agree=78.1% HF=5/64 KL=0.1917) diff(agree=-1.6pt KL=+0.0016) elapsed=9s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 0.1972
+[r17-gate] set "b" K=3900 prompt  2/10 shipped(agree=78.1% HF=5/64 KL=0.1452) attention_fa(S=0)(agree=82.8% HF=4/64 KL=0.1443) diff(agree=+4.7pt KL=-0.0009) elapsed=18s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.6200
+[r17-gate] set "b" K=3900 prompt  3/10 shipped(agree=85.9% HF=4/64 KL=0.2552) attention_fa(S=0)(agree=85.9% HF=2/64 KL=0.2582) diff(agree=+0.0pt KL=+0.0030) elapsed=28s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.3845
+[r17-gate] set "b" K=3900 prompt  4/10 shipped(agree=95.3% HF=1/64 KL=0.1330) attention_fa(S=0)(agree=93.8% HF=1/64 KL=0.1395) diff(agree=-1.6pt KL=+0.0065) elapsed=37s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 0.0242
+[r17-gate] set "b" K=3900 prompt  5/10 shipped(agree=92.2% HF=2/64 KL=0.0582) attention_fa(S=0)(agree=92.2% HF=2/64 KL=0.0604) diff(agree=+0.0pt KL=+0.0022) elapsed=46s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0954
+[r17-gate] set "b" K=3900 prompt  6/10 shipped(agree=78.1% HF=7/64 KL=0.2292) attention_fa(S=0)(agree=82.8% HF=4/64 KL=0.2291) diff(agree=+4.7pt KL=-0.0001) elapsed=55s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.6437
+[r17-gate] set "b" K=3900 prompt  7/10 shipped(agree=87.5% HF=1/64 KL=0.1516) attention_fa(S=0)(agree=89.1% HF=2/64 KL=0.1568) diff(agree=+1.6pt KL=+0.0052) elapsed=1m4s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 0.2003
+[r17-gate] set "b" K=3900 prompt  8/10 shipped(agree=87.5% HF=1/64 KL=0.1196) attention_fa(S=0)(agree=87.5% HF=1/64 KL=0.1190) diff(agree=+0.0pt KL=-0.0006) elapsed=1m13s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.4204
+[r17-gate] set "b" K=3900 prompt  9/10 shipped(agree=82.8% HF=5/64 KL=0.2058) attention_fa(S=0)(agree=82.8% HF=5/64 KL=0.2017) diff(agree=+0.0pt KL=-0.0041) elapsed=1m23s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0220
+[r17-gate] set "b" K=3900 prompt 10/10 shipped(agree=96.9% HF=2/64 KL=0.0871) attention_fa(S=0)(agree=96.9% HF=2/64 KL=0.0899) diff(agree=+0.0pt KL=+0.0027) elapsed=1m32s
+=== r17-gate (candidate attention_fa(S=0)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=33 fa=28) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=86.41% faAgree=87.19% d=13 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.1575 faMeanKL=0.1591 faLowerPrompts=4/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:119: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate attention_fa(S=0), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=1.0098 -> critC(R6)=<=1.05 (pass); strict critC=false (not deciding); identity 10/10 prompts OK — PASSES ===
+--- PASS: TestR17_decodeFidelityGate (93.26s)
+PASS
+===== p1.log
+=== RUN   TestR17KernelAccuracy
+[r17-acc] prompt 1/10 depth 2048 done (decode token 17 at pos 2048)
+[r17-acc] prompt 1/10 depth 3900 done (decode token 17 at pos 3900)
+[r17-acc] prompt 2/10 depth 2048 done (decode token 63 at pos 2048)
+[r17-acc] prompt 2/10 depth 3900 done (decode token 4835 at pos 3900)
+[r17-acc] prompt 3/10 depth 2048 done (decode token 931 at pos 2048)
+[r17-acc] prompt 3/10 depth 3900 done (decode token 3084 at pos 3900)
+[r17-acc] prompt 4/10 depth 2048 done (decode token 3593 at pos 2048)
+[r17-acc] prompt 4/10 depth 3900 done (decode token 64789 at pos 3900)
+[r17-acc] prompt 5/10 depth 2048 done (decode token 525 at pos 2048)
+[r17-acc] prompt 5/10 depth 3900 done (decode token 24 at pos 3900)
+[r17-acc] prompt 6/10 depth 2048 done (decode token 5711 at pos 2048)
+[r17-acc] prompt 6/10 depth 3900 done (decode token 382 at pos 3900)
+[r17-acc] prompt 7/10 depth 2048 done (decode token 8315 at pos 2048)
+[r17-acc] prompt 7/10 depth 3900 done (decode token 1598 at pos 3900)
+[r17-acc] prompt 8/10 depth 2048 done (decode token 13 at pos 2048)
+[r17-acc] prompt 8/10 depth 3900 done (decode token 63 at pos 3900)
+[r17-acc] prompt 9/10 depth 2048 done (decode token 6500 at pos 2048)
+[r17-acc] prompt 9/10 depth 3900 done (decode token 1565 at pos 3900)
+[r17-acc] prompt 10/10 depth 2048 done (decode token 220 at pos 2048)
+[r17-acc] prompt 10/10 depth 3900 done (decode token 17 at pos 3900)
+
+=== R17 kernel accuracy vs float64, qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, prompt set "b", depths [2048 3900], 10 prompts × 24 layers × 14 heads; capture sanity 480/480 layers bit-identical ===
+  kernel                     relL2 median         mean          p99          max     max|abs|  closer than exact / ties (of heads)   | moved from exact: median
+  exact (shipped attention)     4.123e-07    7.170e-07    5.550e-06    2.832e-05    1.791e-05  —                                    | 0.000e+00
+  production (r.pAttnFA)        1.661e-07    3.134e-07    3.011e-06    2.355e-05    3.396e-06  5918 / 15 of 6720                    | 4.512e-07
+
+  shared-bias check vs an emulation of the CPU reference's attention (f64 softmax, serial f32 V sum): the emulation's own relL2 vs f64 median 2.105e-07 fused / 2.104e-07 unfused
+  kernel                         cos(err, cpuFused err) cos(err, cpuUnfused err) closer to cpuFused than exact
+  exact (shipped attention)       median +0.034 (  54% >0)  median +0.032          —
+  production (r.pAttnFA)          median +0.003 (  51% >0)  median +0.005          5356 of 6720
+
+  worst head per kernel:
+  exact (shipped attention)  relL2 2.832e-05 at prompt 4 depth 2048 layer 0 head 2 (||ref|| 0.211)
+  production (r.pAttnFA)     relL2 2.355e-05 at prompt 4 depth 2048 layer 0 head 2 (||ref|| 0.211)
+
+  per layer, relL2 median / max over prompts × heads:
+  layer  exact (shipped attention)    
+      0     2.851e-06 /    2.832e-05    
+      1     8.583e-07 /    5.789e-06    
+      2     1.054e-06 /    7.287e-06    
+      3     7.040e-07 /    1.027e-05    
+      4     5.511e-07 /    9.271e-06    
+      5     3.784e-07 /    1.797e-06    
+      6     3.203e-07 /    2.353e-06    
+      7     3.697e-07 /    2.377e-06    
+      8     6.470e-07 /    4.148e-06    
+      9     2.970e-07 /    2.953e-06    
+     10     2.402e-07 /    1.339e-06    
+     11     4.070e-07 /    3.264e-06    
+     12     2.923e-07 /    9.703e-07    
+     13     4.585e-07 /    3.587e-06    
+     14     2.987e-07 /    1.548e-06    
+     15     2.699e-07 /    2.025e-06    
+     16     7.962e-07 /    2.770e-06    
+     17     3.006e-07 /    1.434e-06    
+     18     3.064e-07 /    1.889e-06    
+     19     2.292e-07 /    1.899e-06    
+     20     3.356e-07 /    1.524e-06    
+     21     4.320e-07 /    1.425e-06    
+     22     5.066e-07 /    1.662e-06    
+     23     4.563e-07 /    1.580e-06    
+--- PASS: TestR17KernelAccuracy (76.67s)
+PASS
+===== refs.log
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:86: prompt set "b" (10 files) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b
+=== RUN   TestPrefillGateReference/Q05
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] Q05 K=2048: 0 of 10 prompts already in the reference cache, 10 to compute
+[ref] Q05 K=2048 prompt  4 done (1/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p3.bin elapsed=1m25s
+[ref] Q05 K=2048 prompt  1 done (2/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p0.bin elapsed=1m25s
+[ref] Q05 K=2048 prompt  7 done (3/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p6.bin elapsed=1m26s
+[ref] Q05 K=2048 prompt  5 done (4/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p4.bin elapsed=1m26s
+[ref] Q05 K=2048 prompt  8 done (5/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p7.bin elapsed=1m27s
+[ref] Q05 K=2048 prompt  3 done (6/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p2.bin elapsed=1m27s
+[ref] Q05 K=2048 prompt  6 done (7/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p5.bin elapsed=1m27s
+[ref] Q05 K=2048 prompt  2 done (8/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p1.bin elapsed=1m27s
+[ref] Q05 K=2048 prompt  9 done (9/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p8.bin elapsed=1m50s
+[ref] Q05 K=2048 prompt 10 done (10/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K2048-p9.bin elapsed=1m50s
+[ref] Q05 K=3900: 0 of 10 prompts already in the reference cache, 10 to compute
+[ref] Q05 K=3900 prompt  3 done (1/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p2.bin elapsed=3m38s
+[ref] Q05 K=3900 prompt  1 done (2/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p0.bin elapsed=3m38s
+[ref] Q05 K=3900 prompt  5 done (3/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p4.bin elapsed=3m38s
+[ref] Q05 K=3900 prompt  7 done (4/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p6.bin elapsed=3m38s
+[ref] Q05 K=3900 prompt  2 done (5/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p1.bin elapsed=3m38s
+[ref] Q05 K=3900 prompt  6 done (6/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p5.bin elapsed=3m39s
+[ref] Q05 K=3900 prompt  4 done (7/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p3.bin elapsed=3m39s
+[ref] Q05 K=3900 prompt  8 done (8/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p7.bin elapsed=3m39s
+[ref] Q05 K=3900 prompt  9 done (9/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p8.bin elapsed=4m35s
+[ref] Q05 K=3900 prompt 10 done (10/10 computed) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref-b/Q05-K3900-p9.bin elapsed=4m36s
+--- PASS: TestPrefillGateReference (388.22s)
+    --- PASS: TestPrefillGateReference/Q05 (388.22s)
+PASS
+===== speed.log
+=== RUN   TestBP01AttnAB
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=16 1.373 ms (token 5.676 against 8.642); legacy/blk 3.168
+[b-p01] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf B-P01 METRIC legacy/blk S=16 at 2048 keys: 3.1684 (per-rep [3.187 3.168 3.209 3.084 3.153]); token legacy/blk 1.5227
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=8 1.351 ms (token 5.653 against 8.642); legacy/blk 3.207
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=24 1.739 ms (token 6.045 against 8.642); legacy/blk 2.494
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=32 1.481 ms (token 5.784 against 8.642); legacy/blk 2.931
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=16 2.457 ms (token 7.027 against 13.483); legacy/blk 3.626
+[b-p01] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf B-P01 METRIC legacy/blk S=16 at 3900 keys: 3.6264 (per-rep [3.648 3.618 3.626 3.641 3.625]); token legacy/blk 1.9186
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=8 1.491 ms (token 6.062 against 13.483); legacy/blk 5.973
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=24 2.355 ms (token 6.939 against 13.483); legacy/blk 3.776
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=32 3.010 ms (token 7.591 against 13.483); legacy/blk 2.959
+--- PASS: TestBP01AttnAB (9.51s)
+PASS
+===== results.txt
+-- p1
+=== R17 kernel accuracy vs float64, qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, prompt set "b", depths [2048 3900], 10 prompts × 24 layers × 14 heads; capture sanity 480/480 layers bit-identical ===
+  exact (shipped attention)     4.123e-07    7.170e-07    5.550e-06    2.832e-05    1.791e-05  —                                    | 0.000e+00
+  production (r.pAttnFA)        1.661e-07    3.134e-07    3.011e-06    2.355e-05    3.396e-06  5918 / 15 of 6720                    | 4.512e-07
+-- gate-3900
+=== r17-gate (candidate attention_fa(S=0)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=33 fa=28) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=86.41% faAgree=87.19% d=13 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.1575 faMeanKL=0.1591 faLowerPrompts=4/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:119: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate attention_fa(S=0), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=1.0098 -> critC(R6)=<=1.05 (pass); strict critC=false (not deciding); identity 10/10 prompts OK — PASSES ===
+-- gate-3900-null
+=== r17-gate (candidate exact-null(S=0)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=33 fa=29) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=86.41% faAgree=86.56% d=11 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.1575 faMeanKL=0.1575 faLowerPrompts=6/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:119: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate exact-null(S=0), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=0.9997 -> critC(R6)=<=1.05 (pass); strict critC=true (not deciding); identity 10/10 prompts OK — PASSES ===
+-- gate-2048
+=== r17-gate (candidate attention_fa(S=0)), S, set "b", K=2048, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=48 fa=47) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=83.28% faAgree=82.97% d=20 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.2113 faMeanKL=0.2137 faLowerPrompts=3/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:119: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate attention_fa(S=0), set "b", K=2048: critA=true critB=true ceilingOK=true KLratio=1.0113 -> critC(R6)=<=1.05 (pass); strict critC=false (not deciding); identity 10/10 prompts OK — PASSES ===
+-- speed
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=16 1.373 ms (token 5.676 against 8.642); legacy/blk 3.168
+[b-p01] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf B-P01 METRIC legacy/blk S=16 at 2048 keys: 3.1684 (per-rep [3.187 3.168 3.209 3.084 3.153]); token legacy/blk 1.5227
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=8 1.351 ms (token 5.653 against 8.642); legacy/blk 3.207
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=24 1.739 ms (token 6.045 against 8.642); legacy/blk 2.494
+[b-p01    2.9s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 2048 keys: legacy attention 4.337 ms, blk S=32 1.481 ms (token 5.784 against 8.642); legacy/blk 2.931
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=16 2.457 ms (token 7.027 against 13.483); legacy/blk 3.626
+[b-p01] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf B-P01 METRIC legacy/blk S=16 at 3900 keys: 3.6264 (per-rep [3.648 3.618 3.626 3.641 3.625]); token legacy/blk 1.9186
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=8 1.491 ms (token 6.062 against 13.483); legacy/blk 5.973
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=24 2.355 ms (token 6.939 against 13.483); legacy/blk 3.776
+[b-p01    8.6s] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf 3900 keys: legacy attention 8.907 ms, blk S=32 3.010 ms (token 7.591 against 13.483); legacy/blk 2.959

@@ -1,0 +1,4 @@
+point 1 MP (5040 patches): n=3 median 28.77 s, min 28.71, max 29.00; 5.708 ms/patch; all: 28.77, 29.00, 28.71
+point 2 MP (10200 patches): n=3 median 92.26 s, min 92.02, max 92.78; 9.045 ms/patch; all: 92.26, 92.78, 92.02
+point 4.8 MP (24576 patches): n=3 median 427.12 s, min 426.73, max 438.68; 17.380 ms/patch; all: 426.73, 438.68, 427.12
+ms/patch 4.8 MP / 1 MP = 3.04: the attention-quadratic term dominates (> 2)

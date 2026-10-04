@@ -1,0 +1,16 @@
+rev:      2c5cfe8f
+testdata: /Users/francistownsend-merino/tmcode/goinfer-metal-audit/metal/../testdata at 441d4f44
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-tagged-2c5cfe8f.test (sha256 68103e45cfddc348)
+started:  2026-10-03 12:15:21 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+== p1-1.5b — 12:15:21
+p1-1.5b rc=0
+== p1-7b — 12:16:31
+p1-7b rc=0
+== p2-1.5b — 12:20:41
+p2-1.5b rc=0
+== p2-1.5b-null — 12:21:30
+p2-1.5b-null rc=0
+== p2-7b — 12:22:17
+p2-7b rc=0
+finished: 2026-10-03 12:24:50 PDT

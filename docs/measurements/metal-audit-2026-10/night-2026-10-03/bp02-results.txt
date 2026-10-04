@@ -1,0 +1,29 @@
+===== internlm2-1_8b.log
+=== RUN   TestBP02AttnAB
+[b-p02    0.3s] internlm2-1_8b: G = 2, legacy split 4, block split 16
+[b-p02    4.6s] internlm2-1_8b 2048 keys: legacy attention 4.783 ms, blk 2.014 ms (token 11.629 against 14.398)
+[b-p02] internlm2-1_8b B-P02 METRIC legacy/blk at 2048 keys: 2.3743 (per-rep [2.401 2.367 2.374 2.411 2.348]); token legacy/blk 1.2381
+[b-p02   11.1s] internlm2-1_8b 3900 keys: legacy attention 8.831 ms, blk 3.812 ms (token 13.089 against 18.115)
+[b-p02] internlm2-1_8b B-P02 METRIC legacy/blk at 3900 keys: 2.3186 (per-rep [2.316 2.324 2.319 2.326 2.317]); token legacy/blk 1.3840
+--- PASS: TestBP02AttnAB (33.08s)
+PASS
+===== qwen3-0.6b-bf16.log
+=== RUN   TestBP02AttnAB
+[b-p02    0.0s] qwen3-0.6b-bf16: G = 2, legacy split 4, block split 16
+[b-p02    1.9s] qwen3-0.6b-bf16 2048 keys: legacy attention 5.647 ms, blk 2.281 ms (token 7.294 against 10.648)
+[b-p02] qwen3-0.6b-bf16 B-P02 METRIC legacy/blk at 2048 keys: 2.4720 (per-rep [2.483 2.448 2.472 2.438 2.481]); token legacy/blk 1.4599
+[b-p02    5.3s] qwen3-0.6b-bf16 3900 keys: legacy attention 10.437 ms, blk 4.546 ms (token 9.502 against 15.408)
+[b-p02] qwen3-0.6b-bf16 B-P02 METRIC legacy/blk at 3900 keys: 2.2956 (per-rep [2.295 2.276 2.305 2.296 2.305]); token legacy/blk 1.6215
+--- PASS: TestBP02AttnAB (7.54s)
+PASS
+===== results.txt
+[b-p02    0.3s] internlm2-1_8b: G = 2, legacy split 4, block split 16
+[b-p02    4.6s] internlm2-1_8b 2048 keys: legacy attention 4.783 ms, blk 2.014 ms (token 11.629 against 14.398)
+[b-p02] internlm2-1_8b B-P02 METRIC legacy/blk at 2048 keys: 2.3743 (per-rep [2.401 2.367 2.374 2.411 2.348]); token legacy/blk 1.2381
+[b-p02   11.1s] internlm2-1_8b 3900 keys: legacy attention 8.831 ms, blk 3.812 ms (token 13.089 against 18.115)
+[b-p02] internlm2-1_8b B-P02 METRIC legacy/blk at 3900 keys: 2.3186 (per-rep [2.316 2.324 2.319 2.326 2.317]); token legacy/blk 1.3840
+[b-p02    0.0s] qwen3-0.6b-bf16: G = 2, legacy split 4, block split 16
+[b-p02    1.9s] qwen3-0.6b-bf16 2048 keys: legacy attention 5.647 ms, blk 2.281 ms (token 7.294 against 10.648)
+[b-p02] qwen3-0.6b-bf16 B-P02 METRIC legacy/blk at 2048 keys: 2.4720 (per-rep [2.483 2.448 2.472 2.438 2.481]); token legacy/blk 1.4599
+[b-p02    5.3s] qwen3-0.6b-bf16 3900 keys: legacy attention 10.437 ms, blk 4.546 ms (token 9.502 against 15.408)
+[b-p02] qwen3-0.6b-bf16 B-P02 METRIC legacy/blk at 3900 keys: 2.2956 (per-rep [2.295 2.276 2.305 2.296 2.305]); token legacy/blk 1.6215

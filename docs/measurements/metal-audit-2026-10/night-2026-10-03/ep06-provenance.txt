@@ -1,0 +1,7 @@
+rev new:  2bbd495c (/Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/serve-metal-ep06new-2bbd495c, sha256 e8c8296e0752319e)
+rev old:  e3353def (/Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/serve-metal-ep06old-e3353def, sha256 bcd56210cb148d2b)
+started:  2026-10-03 12:24:51 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     { 0.30 1.28 4.98 }
+therm:    Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded 
+finished: 2026-10-03 12:42:16 PDT

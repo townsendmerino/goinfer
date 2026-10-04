@@ -1,0 +1,14 @@
+===== 9b.log
+=== RUN   TestDB04AB
+[metal] weights aliased from Qwen3.5-9B-Q4_K_M.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4522 MB bound in place, 157 MB copied (anonymous) — 3264 MB int4 nibbles (120 single tensors + 32 fused groups = 1536 MB) + 970 MB int8 codes (1 matrices) + 288 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 8 fused groups not adjacent, 88 scale sets converted
+[d-b04   18.4s] Qwen3.5-9B-Q4_K_M.int4.metal.giw depth 128: token 44.894 ms off, 42.201 ms on (medians of 7 reps x 16 tokens); rows-form dispatches [5376 0 0]; logits equal in every rep
+[d-b04] Qwen3.5-9B-Q4_K_M.int4.metal.giw D-B04 METRIC off/on at depth 128: 1.0640 (7 of 7 reps above 1; per-rep [1.064 1.084 1.064 1.064 1.063 1.063 1.064])
+[d-b04   78.0s] Qwen3.5-9B-Q4_K_M.int4.metal.giw depth 1024: token 46.166 ms off, 43.675 ms on (medians of 7 reps x 16 tokens); rows-form dispatches [10752 0 0]; logits equal in every rep
+[d-b04] Qwen3.5-9B-Q4_K_M.int4.metal.giw D-B04 METRIC off/on at depth 1024: 1.0610 (7 of 7 reps above 1; per-rep [1.061 1.061 1.108 1.051 1.062 1.059 1.056])
+--- PASS: TestDB04AB (80.58s)
+PASS
+===== results.txt
+[d-b04   18.4s] Qwen3.5-9B-Q4_K_M.int4.metal.giw depth 128: token 44.894 ms off, 42.201 ms on (medians of 7 reps x 16 tokens); rows-form dispatches [5376 0 0]; logits equal in every rep
+[d-b04] Qwen3.5-9B-Q4_K_M.int4.metal.giw D-B04 METRIC off/on at depth 128: 1.0640 (7 of 7 reps above 1; per-rep [1.064 1.084 1.064 1.064 1.063 1.063 1.064])
+[d-b04   78.0s] Qwen3.5-9B-Q4_K_M.int4.metal.giw depth 1024: token 46.166 ms off, 43.675 ms on (medians of 7 reps x 16 tokens); rows-form dispatches [10752 0 0]; logits equal in every rep
+[d-b04] Qwen3.5-9B-Q4_K_M.int4.metal.giw D-B04 METRIC off/on at depth 1024: 1.0610 (7 of 7 reps above 1; per-rep [1.061 1.061 1.108 1.051 1.062 1.059 1.056])
