@@ -841,7 +841,7 @@ that production code reads. Each entry is annotated:
 
 `TestEnvVars_docAndCodeAgree` fails on a read the list does not name, and the list only shrinks. A
 new operator choice is an `Options` field, and a new diagnostic is a test hook
-([tasks/task-env-config-2026-09.md](tasks/task-env-config-2026-09.md)). [env-vars.md](env-vars.md)
+([env-vars.md § Policy](env-vars.md); record: [completed/task-env-config-2026-09.md](completed/task-env-config-2026-09.md)). [env-vars.md](env-vars.md)
 documents every variable, and its operator-facing rows are Hard-tier contract.
 
 ## 6. Modules, packages, and where cgo is quarantined
