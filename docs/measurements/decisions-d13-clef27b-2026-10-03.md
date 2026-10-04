@@ -82,3 +82,25 @@ as a peer number.
 The f32 port at 27B (impossible here); anything on the GPU (the 27B fits neither card); multi-question records; gold
 accuracy beyond the 18 gold rows' reading; and how the 27B compares with Clef-flash on the same records, which is
 reported but has no rule.
+
+## 7. Result (graded 2026-10-04 morning, from the night job `d13-clef27b-cpu`, 2026-10-03 22:39–23:32 PDT)
+
+**Run:** nobara-pc (Ryzen 7 3700X, 8 threads, 62 GB), the night queue, the box otherwise idle, the timing lock held by the job. Pinned worktree at `f3b50cda`, harness binary sha256 `ca71f9e8…1437`, `~/models/clef` (never the archive), `~/d0venv` (torch 2.14.0+cpu, transformers 5.16.1). 52 minutes against the 90 queued (the estimate in section 3 was about 55). Grader output `data/grade.txt`, the rows `data/probs_bf16.jsonl` (reference) and `data/probs_goinfer_int8int8.jsonl`, the job log `data/night-job.log`, the environment `data/clef_env_bf16.json`.
+
+**Validity (checked against the registered list, not assumed):** exactly the 30 registered records in both files, in record order; every option list equal to the reference's; every probability finite and each row summing to 1; every token count equal to the encoder dump's (8,659 tokens in all). 0 failures.
+
+| arm | n | mean KL | top-1 vs reference | worst item KL | verdict |
+|---|---|---|---|---|---|
+| Clef 27B, goinfer int8int8 (reference at bf16) | 30 | 0.01209 | 0.8667 (26 of 30) | 0.0784 | **FAIL** on top-1 (KL inside the 0.03 band; below the 0.95 ambiguous floor) |
+
+By kind (KL, top-1): choice 0.00680, 0.800 (n=10); noul 0.00485, 1.000 (n=11); score 0.02683, 0.778 (n=9). Calibration on the 18 gold rows: ECE 0.1869 against the reference's 0.2356, arm − reference −0.0487, 95% paired bootstrap [−0.0925, +0.0312]: **UNRESOLVED** (the interval reaches 0). Top-1 against gold: arm 0.667, reference 0.722.
+
+- **Prediction (section 4), graded as written:** KL inside the 0.03 band and top-1 below 0.98, so FAIL on top-1: **HELD.**
+- **The f32 port check at 27B was impossible here (section 1), so a miss cannot be split into port and quantization at this size.** What supports reading it as quantization: the same `internal/clef` code passed the f32 check on Clef-flash to under 1e-5 KL, the error here has the same shape (concentrated on `score`, none on `noul`), and its size is the Clef-flash int8int8 size.
+- **Reference is bf16, not f32** (section 1): on Clef-flash that substitution read KL 0.00005 and top-1 0.993, so its own error is far below this arm's.
+
+**Speed, reported with no bar (section 5), one pass:** goinfer int8int8 took **1,382 s for the 8,659 tokens: 160 ms per input token, 46.1 s per record**, the longest record (624 tokens) 101 s. That is a request time (prefill of the whole record plus the head), not a decode rate and not a `benchmarks.md` row. It matches the estimate (about 160 ms) and is 2.96 times Clef-flash's 54 ms per token (D13 §6). The reference at bf16 took 1,707 s: 197 ms per token, 56.9 s per record, fixture-generation cost, not a peer number.
+
+**Against Clef-flash on the same 30 records (reported, no rule; `data/flash-same-30-grade.txt`):** Clef-flash int8int8 against its f32 reference reads KL 0.01765 and top-1 0.833 (25 of 30); the 27B reads 0.01209 and 0.867 (26 of 30). That is one record apart, and the references differ in dtype, so it is not a difference. Against gold (18 rows), the reference models read top-1 0.722 (27B, bf16) and 0.778 (Clef-flash, f32), and ECE 0.2356 and 0.2049; against JEV-9B's 0.778 and 0.137 on the same 18 rows, both Clef intervals reach 0 (27B ECE, Clef − JEV +0.0986 [−0.0008, +0.2448]; top-1 −0.056 [−0.222, +0.111]). Eighteen rows resolve nothing about which model is more accurate.
+
+**Not established (section 6, unchanged):** the f32 port at 27B; anything on a GPU; multi-question records at this size; gold accuracy beyond 18 rows. **The owner's 2026-10-03 tag decision names Clef-flash at `int8int8`; it says nothing about the 27B, whose int8int8 arm fails the same bar by the same metric.** Whether the 27B is offered, and how it is described, is not decided here.

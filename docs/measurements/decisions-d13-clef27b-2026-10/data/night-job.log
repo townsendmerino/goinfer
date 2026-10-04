@@ -1,0 +1,90 @@
+=== night job d13-clef27b-cpu
+=== cmd      env REPO=/home/francis/goinfer-bench/decisions-d13-clef27b/wt bash /home/francis/goinfer-bench/decisions-d13-clef27b/wt/docs/measurements/decisions-d13-clef27b-2026-10/run-clef27b.sh
+=== cwd      /home/francis/mycode/goinfer
+=== rev      queued at 2a2092d3, now 2a2092d3
+=== host     nobara-pc
+=== est      90.0 min, timeout 180.0 min
+=== by       Claude (Mac session), D13 Clef 27B on the CPU
+=== doc      docs/measurements/decisions-d13-clef27b-2026-10-03.md
+=== START    2026-10-03 22:39:54 PDT  loadavg 0.15
+2026-10-03 22:39:54 PDT == start; load 0.15 1.33 3.02; free 59 GB; 16 threads
+22:39:54 == 1. the reference, bf16 (f32-GEMM emulation), every 5th record
+Loading weights:   0%|          | 0/1184 [00:00<?, ?it/s]Loading weights:  89%|████████▉ | 1052/1184 [00:00<00:00, 10514.57it/s]Loading weights: 100%|██████████| 1184/1184 [00:00<00:00, 10676.11it/s]
+[22:39:58] loaded bf16 in 1s
+[22:41:31] [1/30] workflow-controls-v1:customer_service:42:114:v0:   589 tok    92.3s  top 'true'
+[22:42:26] [2/30] painting-geometry-v1:7104f5be5935c84e6ae6fa5b:rg   271 tok    54.6s  top 'true'
+[22:43:20] [3/30] painting-geometry-v1:6e153bea0299baf075732481:si   239 tok    53.5s  top 'true'
+[22:44:10] [4/30] snake-v1:b4e2c7f408ff4b7c7968d354:collision_righ   209 tok    50.3s  top 'false'
+[22:44:59] [5/30] v3_7d5ed37868670ce5_n                              194 tok    48.7s  top 'false'
+[22:45:51] [6/30] v3_e6235f1766dd3eb3_n                              194 tok    52.4s  top 'true'
+[22:46:37] [7/30] v3_efae3d840ef5c79b_n                              185 tok    45.6s  top 'false'
+[22:47:24] [8/30] snake-v1:25777fc18ab56bfbf900199e:action           205 tok    47.3s  top 'up'
+[22:49:00] [9/30] painting-geometry-v1:151e1778acac8c7688955281:pa   624 tok    96.3s  top 'cyan: RGB [0, 255, 2'
+[22:49:48] [10/30] tic_tac_toe-v1:O.XX.OO.X:O.XX.OO.X                 201 tok    47.3s  top '4'
+[22:50:35] [11/30] tic_tac_toe-v1:....XOXOX:XOX.XO...                 213 tok    47.0s  top '8'
+[22:51:20] [12/30] v3_11cef89e1281434f_c                              181 tok    45.0s  top 'systematic_error'
+[22:52:04] [13/30] v3_de453f46d512d567_c                              190 tok    44.4s  top 'urgent_care'
+[22:52:49] [14/30] v3_77c4b6e6753ee3a0_c                              183 tok    44.6s  top 'noise'
+[22:53:38] [15/30] v3_94845651b4386013_s                              235 tok    49.7s  top '3'
+[22:54:29] [16/30] v3_0f1acf55d2a6cc4e_s                              241 tok    50.9s  top '1'
+[22:55:18] [17/30] v3_a290597baa1efa54_s                              241 tok    49.3s  top '4'
+[22:56:09] [18/30] v3_c792cf7748a4a412_s                              242 tok    50.5s  top '5'
+[22:56:59] [19/30] v3_082f62d22e8f7df9_s                              238 tok    49.9s  top '3'
+[22:57:50] [20/30] v3_8a40fa1841efe72f_s                              235 tok    51.3s  top '2'
+[22:59:20] [21/30] workflow-controls-v1:invoice_processing:42:150:v   584 tok    89.7s  top 'false'
+[23:00:16] [22/30] painting-geometry-v1:ea83cfdf4854c1e34acc7356:rg   279 tok    55.9s  top 'false'
+[23:01:07] [23/30] snake-v1:3c2483a13c129d19c4190d53:collision_righ   249 tok    51.5s  top 'false'
+[23:02:02] [24/30] painting-geometry-v1:ea83cfdf4854c1e34acc7356:rg   279 tok    54.5s  top 'true'
+[23:03:01] [25/30] painting-geometry-v1:1e21dba4980795f978a1b498:hs   315 tok    59.3s  top 'neutral'
+[23:03:58] [26/30] painting-geometry-v1:298067de4e9cb181cf2f7bec:hs   314 tok    57.1s  top 'red'
+[23:04:45] [27/30] snake-v1:7aff8ef0ce3c40b3324c92be:action           205 tok    47.1s  top 'right'
+[23:05:58] [28/30] reasoning-control-v1:76109:1550:ordinal            457 tok    72.3s  top '3'
+[23:07:08] [29/30] reasoning-control-v1:76109:1960:ordinal            408 tok    70.3s  top '2'
+[23:08:26] [30/30] reasoning-control-v1:76109:1200:ordinal            459 tok    78.5s  top '5'
+[23:08:26] done: 30 new rows in probs_bf16.jsonl
+23:08:29 == 2. goinfer int8int8, every 5th record
+=== RUN   TestFidelityArm_run
+[23:08:29 +0s] arm int8int8: loading /home/francis/models/clef through modelload (the path serve uses)
+decoder: context capped at 134964 (model allows 262144) so that KV fits: weights 25.9 GB + KV 16.5 GB of budget 42.4 GB — pass -ctx to choose, or -stream-weights to lift
+[23:09:20 +52s] loaded: quant "int8int8", 30 records to run (0 already in /home/francis/goinfer-bench/decisions-d13-clef27b/out/probs_goinfer_int8int8.jsonl)
+[23:10:57 +2m29s] heartbeat: 1 records, 589 of 8659 tokens (7%), 252 ms/token so far
+[23:12:18 +3m50s] heartbeat: 3 records, 1099 of 8659 tokens (13%), 209 ms/token so far
+[23:13:22 +4m53s] heartbeat: 5 records, 1502 of 8659 tokens (17%), 195 ms/token so far
+[23:14:22 +5m53s] heartbeat: 7 records, 1881 of 8659 tokens (22%), 188 ms/token so far
+[23:16:35 +8m7s] heartbeat: 9 records, 2710 of 8659 tokens (31%), 180 ms/token so far
+[23:17:41 +9m12s] heartbeat: 11 records, 3124 of 8659 tokens (36%), 177 ms/token so far
+[23:18:40 +10m11s] heartbeat: 13 records, 3495 of 8659 tokens (40%), 175 ms/token so far
+[23:19:46 +11m18s] heartbeat: 15 records, 3913 of 8659 tokens (45%), 173 ms/token so far
+[23:21:02 +12m34s] heartbeat: 17 records, 4395 of 8659 tokens (51%), 172 ms/token so far
+[23:22:18 +13m50s] heartbeat: 19 records, 4875 of 8659 tokens (56%), 170 ms/token so far
+[23:24:30 +16m1s] heartbeat: 21 records, 5694 of 8659 tokens (66%), 169 ms/token so far
+[23:25:53 +17m25s] heartbeat: 23 records, 6222 of 8659 tokens (72%), 168 ms/token so far
+[23:27:28 +18m59s] heartbeat: 25 records, 6816 of 8659 tokens (79%), 167 ms/token so far
+[23:28:18 +19m49s] heartbeat: 26 records, 7130 of 8659 tokens (82%), 167 ms/token so far
+[23:30:03 +21m35s] heartbeat: 28 records, 7792 of 8659 tokens (90%), 166 ms/token so far
+[23:31:08 +22m40s] heartbeat: 29 records, 8200 of 8659 tokens (95%), 166 ms/token so far
+[23:32:22 +23m53s] heartbeat: 30 records, 8659 of 8659 tokens (100%), 166 ms/token so far
+[23:32:22 +23m53s] arm int8int8 done: 30 new rows, 8659 tokens, 1433 s of run (166 ms/token including the load)
+--- PASS: TestFidelityArm_run (1433.33s)
+PASS
+23:32:23 == 3. the grade
+reference: 30 rows; 84 gold rows
+
+## int8int8: 30 rows, registered set 30 (every 5)
+  n=30  mean KL(ref || goinfer) 0.01209   top-1 agreement 0.8667   worst item KL 0.0784
+    choice n= 10  KL 0.00680  top-1 0.8000
+    noul   n= 11  KL 0.00485  top-1 1.0000
+    score  n=  9  KL 0.02683  top-1 0.7778
+  gold rows 18: ECE 0.1869 (reference 0.2356); arm - reference -0.0487, 95% paired bootstrap [-0.0925, +0.0312] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.667 (reference 0.722)
+
+## Clef (reference at probs_bf16.jsonl) against JEV-9B (reference, f32) on the same 18 gold rows
+  top-1 vs gold: Clef 0.722, JEV 0.778; Clef - JEV -0.056, 95% paired bootstrap [-0.222, +0.111]
+  ECE: Clef 0.2356, JEV 0.1370; Clef - JEV +0.0986, 95% paired bootstrap [-0.0008, +0.2448]
+  INFORMATIONAL (the owner keeps and extends both routes equally, 2026-10-03; no rule hangs on it). Point estimates, accuracy Clef >= JEV and ECE Clef <= JEV: NO -- both intervals reach 0, so this is a point-estimate reading and unresolved
+
+VERDICTS
+  int8int8  FAIL (KL 0.01209 vs 0.03, top-1 0.8667 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)
+2026-10-03 23:32:24 PDT == DONE; rows and grade in /home/francis/goinfer-bench/decisions-d13-clef27b/out
+
+=== END      2026-10-03 23:32:24 PDT  rc=0

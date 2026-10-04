@@ -1,0 +1,17 @@
+reference: 30 rows; 84 gold rows
+
+## int8int8: 30 rows, registered set 30 (every 5)
+  n=30  mean KL(ref || goinfer) 0.01765   top-1 agreement 0.8333   worst item KL 0.1065
+    choice n= 10  KL 0.00954  top-1 0.9000
+    noul   n= 11  KL 0.01917  top-1 0.9091
+    score  n=  9  KL 0.02480  top-1 0.6667
+  gold rows 18: ECE 0.1924 (reference 0.2049); arm - reference -0.0124, 95% paired bootstrap [-0.0500, +0.0351] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.722 (reference 0.778)
+
+## Clef (reference at flash_f32_every5.jsonl) against JEV-9B (reference, f32) on the same 18 gold rows
+  top-1 vs gold: Clef 0.778, JEV 0.778; Clef - JEV +0.000, 95% paired bootstrap [-0.167, +0.167]
+  ECE: Clef 0.2049, JEV 0.1370; Clef - JEV +0.0679, 95% paired bootstrap [-0.0409, +0.2396]
+  INFORMATIONAL (the owner keeps and extends both routes equally, 2026-10-03; no rule hangs on it). Point estimates, accuracy Clef >= JEV and ECE Clef <= JEV: NO -- both intervals reach 0, so this is a point-estimate reading and unresolved
+
+VERDICTS
+  int8int8  FAIL (KL 0.01765 vs 0.03, top-1 0.8333 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)
