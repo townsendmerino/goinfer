@@ -1264,8 +1264,9 @@ the owner's word, so the timed cells shared the machine with a desktop: the load
   - critC: pooled KL 0.1147 against 0.1191, fast lower on 24 of 30 prompts, no cell over the ceiling.
 - **Speed (graded cell, the 0.8B at K = 512):** sequential ÷ pass **8.058**, 7 of 7 reps above 1.10. Also 8.387 at
   K = 128 and 5.576 at K = 2048; the 9B 6.824 at K = 128 and 6.712 at K = 512.
-- **The rule says the switch turns on** (`dnetPrefillOn`). That flip is a separate commit, with the default suites run
-  against it.
+- **Shipped: `dnetPrefillOn` is on** (2026-10-04). The default and tagged Metal suites pass with it on, apart from
+  the long-standing `TestPrefillParityMoEGatedShared`; the D-B01 tests now restore the switch instead of forcing it
+  off. CHANGELOG entry under Unreleased.
 
 **E-P07 — speed passes, identity (hard gate 1) FAILS; graded as written, decision to the owner.**
 - **Speed** (W7 on Qwen3-0.6B, 3 pairs): 4-client aggregate new ÷ old 2.026 / 2.069 / 2.041×, median **2.041×** against
@@ -1291,6 +1292,7 @@ the owner's word, so the timed cells shared the machine with a desktop: the load
   - (b) re-run the identity gates with both arms on the exact lane (`--exact-prefill`), where old = new and run-to-run
     identity are properties the system should have, keeping the speed gates as graded.
 - The run-to-run point (2) stands either way, as a finding about served determinism under concurrency.
+- **Owner decision (2026-10-04): (b), re-run.** The amendment is written below before that run.
 
 
 ## Owner decisions

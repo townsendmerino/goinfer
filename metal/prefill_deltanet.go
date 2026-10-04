@@ -14,9 +14,10 @@ package metal
 // The window and state continue from whatever the resident holds, as M decode steps would: the decoder resets them for
 // a fresh sequence (resetDeltaNet) and leaves them for a continuation.
 
-// dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. OFF until D-B01's fidelity and speed grade
-// passes (the task doc's pre-registration); tests set it.
-var dnetPrefillOn = false
+// dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. ON since D-B01's grade (2026-10-04,
+// docs/tasks/task-metal-audit-2026-10.md: fidelity SHIPS on Qwen3.5-0.8B, the pass 8.06x the sequential loop at
+// K = 512); tests turn it off for the sequential arm.
+var dnetPrefillOn = true
 
 // prefillDelta is one PrefillLast call's DeltaNet scratch, shared by every DeltaNet layer (each layer's own window and
 // state live on residLayer.delta).

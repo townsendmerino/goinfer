@@ -153,8 +153,9 @@ func TestPrefillGateVsReference(t *testing.T) {
 		}
 		t.Run(mc.name, func(t *testing.T) {
 			if mc.name == "Q35" { // the batched pass admits a DeltaNet hybrid only with D-B01's switch on (prefillOK, at build)
+				prevDnet := dnetPrefillOn
 				dnetPrefillOn = true
-				t.Cleanup(func() { dnetPrefillOn = false })
+				t.Cleanup(func() { dnetPrefillOn = prevDnet })
 			}
 			path := os.Getenv(mc.pathEnv)
 			if path == "" {

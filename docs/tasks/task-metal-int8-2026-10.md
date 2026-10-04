@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stays off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slices 4 and 5 are open. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -359,3 +359,16 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
     - The native path turns on only when F3′ (0.5B and, if it runs, 1.5B), F2 on the 1.5B and S all pass. F2 is the
       one red, on near-ties only.
     - So native int8 stays off until the owner rules on F2's argmax criterion.
+- 2026-10-04: **owner decision O4: "turn on".** F2's argmax criterion is read as hard flips (argmax disagreements whose
+  top-2 gap is over 3%), the rule CUDA decode is held to against the CPU. Under it the night's F2 on the 1.5B passes:
+  0 hard flips, cosine 0.997749 against int4's 0.997514. With F3′ (0.5B), P2, S and S-auto passed, `nativeInt8` is now
+  `true`.
+  - Before the commit, the default and tagged Metal suites pass with it on, apart from the long-standing
+    `TestPrefillParityMoEGatedShared`; the four tests the trial flip found were fixed beforehand.
+  - The D-B01 tests now restore the switches they set instead of forcing them off.
+  - CHANGELOG entry under Unreleased.
+  - Still open:
+    - slice 4: MoE int8, int4mix, f32 → int8;
+    - slice 5: `-backend auto` picking Metal for int8 models, which S-auto's pass now allows;
+    - the served confirmation of the batched int8 step;
+    - F3′ on the 1.5B, which needs the fit guard to admit its f32 reference.

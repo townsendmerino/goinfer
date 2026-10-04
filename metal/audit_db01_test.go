@@ -30,8 +30,9 @@ func TestAuditDB01_prefillTiming(t *testing.T) {
 			}
 		}
 	}
+	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
-	t.Cleanup(func() { dnetPrefillOn = false })
+	t.Cleanup(func() { dnetPrefillOn = prevDnet })
 	name, a := auditLoad(t, "qwen3.5-0.8b", 1, slices.Max(Ks)+64, &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": "0"})
 	r, t0 := a.r, time.Now()
 	if r.dnet == nil || !r.prefillOK {

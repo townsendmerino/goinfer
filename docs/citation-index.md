@@ -217,8 +217,8 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:441` | goinfer | `#define ATTN_KTILE 32` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:489` | goinfer | `simdgroup_load(kT, kBase + j0*kvDim + kk*8u, kvDim, ulong2(0,0), true);` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:542` | goinfer | `oScr[sgid][idx] = oScr[sgid][idx]*a + sScr[sgid][row*8u+c];` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:273` | goinfer | `for _, K := range decisionKs {` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:550` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:274` | goinfer | `for _, K := range decisionKs {` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:551` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gate_test.go:65` | goinfer | `anchor: func TestPrefillGate(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemm_s2_test.go:412` | goinfer | `#define CPS 4` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemm_s2_test.go:440` | goinfer | `scr[c*64u + kl*8u + nl] = half(float(int((word >> (4u*kl)) & 0xF) - 8) * sc);` |
@@ -611,11 +611,11 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/prefill_attn_r19_test.go:11` | goinfer | `UNKEYABLE` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_attn_r19_test.go:25` | goinfer | `func runR19Phase(t *testing.T, r *resident, M, reps int, hb func(string, ...any), cats [` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_decomp_test.go:44` | goinfer | `if os.Getenv("GOINFER_METAL_DECOMP") != "1" {` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:167` | goinfer | `// AVAILABLE MEMORY, not this backend's fixed kernel-score-buffer ceiling, so on a box` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:189` | goinfer | `t.Skipf("metal resident not built for this model")` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:300` | goinfer | `if deciding && len(decisionCells) != len(decisionKs) {` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:550` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
-| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:571` | goinfer | `fastSeed, err := rf.PrefillLast(ctx, embs, 0)` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:168` | goinfer | `// AVAILABLE MEMORY, not this backend's fixed kernel-score-buffer ceiling, so on a box` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:190` | goinfer | `t.Skipf("metal resident not built for this model")` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:301` | goinfer | `if deciding && len(decisionCells) != len(decisionKs) {` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:551` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
+| `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:572` | goinfer | `fastSeed, err := rf.PrefillLast(ctx, embs, 0)` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_gate_ref_test.go:77` | goinfer | `func metalGateDecisionKs(def []int) []int {` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_gate_test.go:48` | goinfer | `//     TestMetalPrefillDivergenceRate (54%, docs/ollama-chase.md:623); that test no long` |
 | `docs/audit-metal-2026-09-30.md|metal/prefill_gate_test.go:63` | goinfer | `if testing.Short() {` |

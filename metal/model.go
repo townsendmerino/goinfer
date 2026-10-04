@@ -741,10 +741,10 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	return NewBufferUint32s(d, words), NewBufferU16s(d, scales)
 }
 
-// nativeInt8 turns the native int8 path on (w8Eligible). It is off until gates F3 and S of
-// docs/tasks/task-metal-int8-2026-10.md pass, and the gate tests set it; it is not an option or an environment
-// variable. When the gates pass it becomes the default and this variable goes.
-var nativeInt8 = false
+// nativeInt8 turns the native int8 path on (w8Eligible). ON since 2026-10-04: F3′, F2 (read as hard flips, owner
+// decision), P2, S and S-auto passed (docs/tasks/task-metal-int8-2026-10.md). Tests turn it off for the int4
+// re-quant arm; it is not an option or an environment variable.
+var nativeInt8 = true
 
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
 // prices the owner's precise-math decision.
@@ -1042,7 +1042,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// PrefillLast's attention reads the cache as half too. So with -kv i8 every prompt position landed in the wrong
 	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
 	// whose decode kernels write and read the int8 cache.
-	// D-B01: a Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn (off until graded), and only in the shape
+	// D-B01: a Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn (on since its grade, 2026-10-04), and only in the shape
 	// prefill_deltanet.go implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays
 	// sequential.
 	missing := m.MissingResidentFeatures(prefillFeatures)
