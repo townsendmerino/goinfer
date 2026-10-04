@@ -735,9 +735,6 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if a.r.kvI8 {
 		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
 	}
-	if a.r.w8 {
-		return false, "sequential — the f16 MMA prefill kernels read int4 weights, and this model runs its int8 weights natively (docs/tasks/task-metal-int8-2026-10.md, slice 2)"
-	}
 	if a.r.attnSink {
 		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
 	}

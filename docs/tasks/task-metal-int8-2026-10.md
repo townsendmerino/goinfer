@@ -314,3 +314,13 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
   - **Queued for tonight** (Mac, `run-gates2.sh`, binary pinned at the commit that records this): F3′ on the 1.5B if
     the fit guard admits its f32 reference, F2 on the 1.5B with precise math (bar unchanged), and S with its fast-math
     arm.
+- 2026-10-04: **the flip, prepared.** With `nativeInt8 = true` set for a trial run and reverted, the default and tagged
+  Metal suites failed four tests besides the long-standing `TestPrefillParityMoEGatedShared`. Both causes are fixed now,
+  so the flip is the one line plus its CHANGELOG entry:
+  - `TestOlmo3ResidentSmokeMetal` and `TestSmolLM3ResidentSmokeMetal`: `PrefillPath` still reported native int8 as
+    sequential ("the f16 MMA prefill kernels read int4 weights"), stale since slice 2. The branch is removed. It was a
+    report only; the decoder does not gate the pass on it, which is why the TTFT smoke already went through the pass.
+  - `TestMoE_assemblyVsDense` and `TestMoE_declinesPrefill`: they compare an int8int8 MoE, which runs int4 because MoE
+    is excluded from native int8, against a dense int8int8 twin, which would go native. Both now load at int4, the
+    like-for-like the tests assume.
+  - All four pass with the switch on and off.

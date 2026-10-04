@@ -48,7 +48,7 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 	writeMoEIdentical(t, moeDir, w)
 	writeDense(t, denseDir, w)
 
-	moeM, err := decoder.Load(moeDir, decoder.Options{Quant: "int8int8"})
+	moeM, err := decoder.Load(moeDir, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load moe: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 	if moeR.moe == nil {
 		t.Fatal("resident has no MoE state")
 	}
-	denseM, err := decoder.Load(denseDir, decoder.Options{Quant: "int8int8"})
+	denseM, err := decoder.Load(denseDir, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load dense: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestMoE_declinesPrefill(t *testing.T) {
 		}
 	}
 	load := func(dir string) *metalResident {
-		m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8"})
+		m, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
 		if err != nil {
 			t.Fatalf("load %s: %v", dir, err)
 		}
