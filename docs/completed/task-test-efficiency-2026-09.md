@@ -1,6 +1,17 @@
 # Task: the same verdicts for a fraction of the machine time — the test-efficiency campaign (TE0–TE12) — 2026-09
 
-> **Status, 2026-10-04: the campaign's tooling is built and most items are graded; TE11 (the write-up and the re-count) is open and TE10 stays conditional and unbuilt.**
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+>
+> **Where the live rules went at archival:** the run budget, the two-arm rule (TE5(a)), the in-process-first reading (TE5(b)), the timing lock (TE9) and the gate-tier table (TE11) are in
+> [`CLAUDE.md`](../../CLAUDE.md) ("Run budget", "Gate tiers"); validation inherited by identity (TE6(b)) is in `docs/parity-coverage-policy.md`; the pre-registration template, the noise registry's
+> process and the fidelity-protocol template (TE3, TE12) are in `docs/measurements/noise-registry.md` §8–9.
+
+> **Status, 2026-10-04: CLOSED. The tooling is built and graded; TE11 (the write-up and the re-count) is done; TE10 stayed conditional and unbuilt.**
 > Opened 2026-09-28. Owner, 2026-09-28: *"holy shit there are so many huge runs, i think we need a campaign to figure out how to
 > test things much more efficiently."* The same morning's rule (root `CLAUDE.md`, "Run budget: quick by day, long by
 > night"; c9d8ea04, c4e3aec2) moves long runs to the night queue. This campaign makes them shorter and fewer. It is the
@@ -19,7 +30,8 @@
 > - **TE8** `TestPrefillGateReference` resumable (b327153f); `TestMoEExpertMajor_endToEnd` is deliberately not resumed (TE8 below).
 > - **TE9** the timing lock, `scripts/timing_lock.py` (a625aee7). **TE12** `internal/fidelity` (e702bf37).
 >
-> **Open:** **TE11**, updating `CLAUDE.md`'s run-budget section and the pre-registration template to name each gate's tier, instrument, stopping rule and cost, and the TE0 re-count before and after (the run-budget rules of 2026-09-28 and 2026-10-02 are in `CLAUDE.md`; the full TE11 write-up and the re-count are not done). **TE10** stays conditional on TE0 showing parity bookkeeping is still a material cost after TE6, and is unbuilt. TE8's other in-test gates were not re-checked for this header.
+> **TE11 DONE 2026-10-04:** `CLAUDE.md` gained a "Gate tiers" table (tier, instrument, stopping rule, cost basis per check), the pre-registration template in `docs/measurements/noise-registry.md` §8 gained tier, instrument, stopping rule, ambiguous band and cost (and the TE12 fidelity-protocol block moved there), and the TE0 re-count is `docs/measurements/test-efficiency-2026-09.md` §6 (nobara, 5.25 days after against 30 before: waiting down 44%, work that is not waiting flat; one machine, a different workload, an indication and not a verdict).
+> **Never built, by design or by evidence:** TE10 (conditional on parity bookkeeping staying material after TE6; it did not); TE2(a) (server reuse recorded unsafe on the Mac CPU and for MoE); TE4's sequential stopping rules (killed or failed their screens). **Not re-checked:** TE8's other in-test gates, and the per-gate projections (section 3), which no full-stack gate has yet confirmed or failed.
 
 ## BLUF
 

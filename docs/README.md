@@ -109,7 +109,7 @@ or a memory size, ways to reach those paths without owning the machine (CI runne
 fallbacks, faked probes), a runtime self-test on every backend that declines rather than answers wrong
 (it absorbs the Metal self-test spec), a pasteable hardware report, and a rented sweep before each public claim.
 
-[`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28) is the
+[`task-test-efficiency-2026-09.md`](completed/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28, **closed and archived 2026-10-04**; its live rules are in `CLAUDE.md`'s "Run budget" and "Gate tiers") was the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
 and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each
 criterion needs, parity bookkeeping that re-validates every family for a local edit) and the items that cut it — an idle
@@ -136,7 +136,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (127)
+## Archive — `completed/` (128)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
