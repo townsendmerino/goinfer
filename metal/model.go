@@ -2605,7 +2605,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			e.DispatchTG(r.pSAf16, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
 		} else {
 			p, n := saRowsPick(r.pSA, r.pSARows, 2*r.I, r.gemvRows.gu)
-			e.DispatchTG(p, n, rowsTG(2*r.I, r.gemvRows.gu), r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
+			e.DispatchTG(p, n, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
 		}
 		if r.loraLayers != nil {
 			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
@@ -2632,7 +2632,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 		} else {
 			if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup
-				e.DispatchTG(r.pGemvResidStaged, r.H*32/R, rowsTG(r.H, R), r.I, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
+				e.DispatchTG(r.pGemvResidStaged, r.H*32/R, 256, r.I, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
 			} else {
 				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
 			}
@@ -2654,18 +2654,6 @@ func gemvRowsFor(rows, want int) int {
 		}
 	}
 	return 0
-}
-
-// gemvRowsTG is the threadgroup size of the dense decode sites' R18 rows kernels (B-P06's probe arm; 256 is what R18
-// shipped and measured). Test-only. rowsTG returns it for a site of `rows` outputs at R rows per simdgroup when it tiles
-// the rows into whole threadgroups (the kernels' row0 assumes full ones), else 256; with R = 0 (the shipped kernel) 256.
-var gemvRowsTG = 256
-
-func rowsTG(rows, R int) int {
-	if R == 0 || gemvRowsTG == 256 || rows%(gemvRowsTG/32*R) != 0 {
-		return 256
-	}
-	return gemvRowsTG
 }
 
 // saRowsPick returns the SA-family pipeline and grid for `rows` outputs: the R-rows kernel at rows·32/R threads when R
@@ -2974,7 +2962,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		e.DispatchTG(r.pSAf16Bias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.axF16, L.qkvBias, r.qkv, r.uH)
 	} else {
 		p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)
-		e.DispatchTG(p, n, rowsTG(qkvRows, r.gemvRows.qkv), r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e.DispatchTG(p, n, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.loraLayers != nil {
 			// G3: compute-time LoRA — added on top of the base q/k/v projection, into the SAME
 			// r.qkv slots it just wrote, before anything downstream (qk_norm/RoPE) reads them.
@@ -3083,7 +3071,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		e.DispatchTG(r.pSAf16Resid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cxF16, x, g.uNHhd) // o-proj + residual
 	} else {
 		p, n := saRowsPick(r.pSAResid, r.pSAResidRows, r.H, r.gemvRows.o)
-		e.DispatchTG(p, n, rowsTG(r.H, r.gemvRows.o), r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
+		e.DispatchTG(p, n, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
 		if r.loraLayers != nil {
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}

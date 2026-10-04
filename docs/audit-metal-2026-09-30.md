@@ -975,6 +975,8 @@ with the teacher-forced gate). **Kill:** below 1.03x in-sequence down work on th
 
 #### B-P06 [P, B, Minor] Threadgroup geometry of the rows kernels is untested
 
+**Status, 2026-10-04: killed.** In sequence, 256 threads beat 64, 128 and 512 on every rep: the 1.5B ran 0.828 / 0.972 / 0.890× at those sizes and the 7B 0.521 / 0.903 / 0.925×. The device-read variant was not built (docs/tasks/task-metal-audit-2026-10.md, "B-P06: KILLED").
+
 **Counted.** Every R18/R18b dispatch is `DispatchTG(..., 256, ...)` (`metal/model.go:2609` gate/up, `:2440` down, `:2653`
 qkv, `:2762` o): 8 simdgroups per threadgroup, `row0 = (tgid*8 + sgid)*R` (`metal/kernels.go:559`), and `gemvRowsFor` tiles rows by
 8R (`metal/model.go:2650-2657`). Staging costs one K x 2 B write plus a barrier before any weight load is issued
@@ -2367,7 +2369,7 @@ same occupancy without it.
 
 #### E-P06 [P, Minor] One verify cost curve for every model
 
-**Status, 2026-10-02 (branch `metal-audit`): built, lossless, pending its night grade.** A model loaded with
+**Status, 2026-10-03: killed and removed.** Graded at 1.014× on the 1.5B chat (bar 1.02), and the code was removed (docs/tasks/task-metal-audit-2026-10.md, "E-P06: KILLED"). The 2026-10-02 status that follows is history: built, lossless, pending its night grade. A model loaded with
 `Options.SpecNgram` (`--spec ngram`) measures its own curve at load, at depth 2048 (`calibrateVerifyCost`). Real
 1.5B at that depth: 1.64 / 1.93 / 2.44 at 2 / 4 / 8 rows against the constant's 1.79 / 2.11 / 2.65. That is 8–9% below
 it, not 12–51%: the gap below compared depth 128 against 2048 as well as model against model. The grade and its rule

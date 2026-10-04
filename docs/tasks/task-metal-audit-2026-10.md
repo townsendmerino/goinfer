@@ -471,7 +471,7 @@ gate runs at night before it ships.
 2. **Decode attention, one campaign on one harness:** B-P03 (T1.2's candidate floor is 1024; re-bakes the snapshot golden that
    straddles the floor), B-P02, then B-P01. All gated.
 3. **Small-M prefill:** A-P01 (bit-identical; **shipped** 2026-10-03, 1.804× on the 1.5B's C = 32 pass), then A-P02 (gated). Then Metal int8 slice 2 on the same tile selector.
-4. **Decode GEMV residue:** B-P04 (**killed** 2026-10-03: 0.955×, the balanced kernels do more work than the idle tail costs), B-P06, and B-P05 only after O4, with the MC3 down kernel moved in
+4. **Decode GEMV residue:** B-P04 (**killed** 2026-10-03: 0.955×, the balanced kernels do more work than the idle tail costs), B-P06 (**killed** 2026-10-04: 256 threads beats 64, 128 and 512 on the 1.5B and 7B, every rep), and B-P05 only after O4, with the MC3 down kernel moved in
    the same change.
 5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
@@ -1162,6 +1162,27 @@ floor); MoE prefill gains through its per-expert GEMMs, D-B02's tile padding. De
 built; the remaining MoE padding at M = 2048 is 1.23× before this change.
 - Tests: the Metal prefill, MoE, MC3, MC5, chunked, verify and GEMM tests pass (96), apart from the long-standing
   `TestPrefillParityMoEGatedShared`.
+
+### B-P06: KILLED (written 2026-10-04)
+
+**The probe.** `TestBP06_rowsTG`, at `c3e75327`, then removed with its knob:
+- The dense decode sites' R18 rows kernels (qkv, o, gate|up, down) ran at threadgroups of 64, 128, 256 (shipped) and 512
+  threads. The kernels already map rows from `threads_per_threadgroup`, so this changes only the dispatch.
+- Whole decode tokens from the same positions after a 128-token prefill; 4 arms rotated rep by rep, 7 reps of 16
+  tokens; each arm's time is its token GPU-time median.
+- In-process, by day. The logits were bit-equal across every arm and token.
+
+The ratio is 256's token time ÷ the arm's; every rep of every arm was below 1:
+
+| Model | 64 threads | 128 threads | 512 threads |
+|---|---|---|---|
+| 1.5B (10.39 ms token) | 0.828 | 0.972 | 0.890 |
+| 7B `.giw` (32.27 ms token) | 0.521 | 0.903 | 0.925 |
+
+**Verdict: killed.** The kill line was below 1.03× on the 1.5B, and every other size is slower on both models. 256
+stays.
+- **Not built:** the audit's device-read (unstaged) variant at MLX's 64 threads. It is a kernel rewrite, and R18b's
+  first cut lost in sequence for exactly an activation re-read.
 
 ## Owner decisions
 
