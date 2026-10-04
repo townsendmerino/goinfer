@@ -2,7 +2,8 @@
 # Night job: D-B01's grade (docs/tasks/task-metal-audit-2026-10.md, "D-B01: built, off by default; pre-registration"),
 # pre-registered there on 2026-10-03 before any graded run. From tagged test binaries pinned at REV, each run from its
 # package directory (the tests read ../testdata relative to it):
-#   1. preconditions: TestDeltaNetSeqKernels_matchDecodeBitwise and TestDB01_chunkedPrefillMatchesWhole (any red stops it)
+#   1. preconditions: TestDeltaNetSeqKernels_matchDecodeBitwise, TestDB01_chunkedPrefillMatchesWhole and (the 2026-10-04
+#      amendment) TestDB01_prefillFromZeroResetsState (any red stops it)
 #   2. CPU f32 references for Qwen3.5-0.8B (cell Q35), set A, K = 256, 512, 1024
 #   3. the §3.2 pooled fidelity gate on Q35 (a model that does not ship exits non-zero: a verdict, recorded)
 #   4. TestAuditDB01_prefillTiming on the 0.8B (K = 128, 512, 2048, 7 reps), then the 9B (K = 128, 512, 5 reps,
@@ -16,7 +17,7 @@
 #     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-db01-grade.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/db01/; the readings in results.txt.
 set -uo pipefail
-REV=d07e54a8
+REV=f50afe17
 BASE=$HOME/goinfer-bench/metal-audit-2026-10
 DBIN=$BASE/decoder-tagged-$REV.test
 MBIN=$BASE/metal-tagged-$REV.test
@@ -52,7 +53,7 @@ run() { # <log name> <dir> <binary> <test regexp> <rc counts: 1|0> ENV=VALUE...
   return $rc
 }
 
-run preconditions "$REPO/metal" "$MBIN" '^(TestDeltaNetSeqKernels_matchDecodeBitwise|TestDB01_chunkedPrefillMatchesWhole)$' 1 GOINFER_DB01_MODEL="$Q35" \
+run preconditions "$REPO/metal" "$MBIN" '^(TestDeltaNetSeqKernels_matchDecodeBitwise|TestDB01_chunkedPrefillMatchesWhole|TestDB01_prefillFromZeroResetsState)$' 1 GOINFER_DB01_MODEL="$Q35" \
   || { echo "a precondition failed: nothing graded" | tee -a "$LOG/provenance.txt"; exit 1; }
 [ $FAILED -eq 0 ] || { echo "a precondition skipped: nothing graded" | tee -a "$LOG/provenance.txt"; exit 1; }
 
