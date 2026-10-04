@@ -17,6 +17,10 @@ any surface may still change.
 
 ### Changed
 
+- **Metal: short prompts prefill faster through a 16-token GEMM tile.** The batched pass's matrix multiplies take the
+  token tile (64, 32 or the new 16) that pads the prompt to the fewest rows, within measured bounds. A 16-token prompt's
+  pass is 1.56x faster on the 1.5B and 1.73x on the 7B, 40-88-token prompts 1.05-1.11x. MoE prefill's per-expert GEMMs
+  gain too: 1.09x on a 512-token Qwen1.5-MoE pass. The output is bit-identical. Audit D-B02.
 - **Metal: batched prefill no longer builds and copies a zeroed host buffer for each of its scratch buffers.** Metal
   zero-fills new buffers itself. The pass is about 1% faster on the 1.5B (5-14 ms at 512-2048 tokens), and the output is
   bit-identical.

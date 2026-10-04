@@ -476,7 +476,7 @@ gate runs at night before it ships.
 5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
-   at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
+   at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**; the 16-row tile **shipped**: 1.09× on the slice's 512-token pass, 1.56× / 1.73× on the 1.5B's / 7B's 16-token pass), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
@@ -1100,6 +1100,68 @@ Copied ÷ zero-filled, the medians. The slice's 4 layers inflate the scratch's s
 It ships: bit-identical, and it removes redundant host work without adding a mechanism. The Metal prefill, DeltaNet,
 MoE and MC3 tests pass (76), apart from the long-standing `TestPrefillParityMoEGatedShared` (fails at HEAD too: a K = 44
 fixture `int4Concat` refuses).
+
+### D-B02: the 16-row tile, SHIPPED (bit-identical; written 2026-10-04)
+
+**What is built.** `gemm_w4f16_tile` gains a 16-token tile (`gemm_w4f16_m16n32`, `_m16n64`). At TM = 16 the activation
+staging gives each row 4 threads, so threads 64-127 stage nothing; the larger tiles' staging is unchanged, because the
+guard folds at compile time.
+
+**The selector's default rule changed.** A threadgroup costs the same whatever share of its rows is real, so `gemmTile`
+takes a smaller token tile when it pads the pass to strictly fewer rows:
+- 32 tokens, up to 128 rows;
+- 16 tokens, up to 16 rows, or up to 48 rows when N ≤ 8192;
+- a 16-token tile always takes 32 features;
+- otherwise A-P01's feature rule.
+
+A-P01's rule stays as the test arm `"a01"`.
+
+**Identity.** `TestGemmTile_bitIdentical` covers both 16-token tiles against `gemm_w4f16_store`: 98,102,016 outputs, 7
+shapes, 8-72 rows, 3 epilogues, all equal. `TestDB02_tileAB` compares the last row's logits in every rep of every cell
+below, and they are bit-equal throughout.
+
+**Kernel probe** (`TestGemmTile16_probe`, `GOINFER_GEMM16=1`; the raw output is
+`docs/measurements/metal-audit-2026-10/db02-tile16-probe-2026-10-04.log`):
+- 8 shapes (Qwen1.5-MoE experts, 1.5B, 7B) × 14 row counts from 8 to 256.
+- At ≤ 16 rows the 16×32 tile is the fastest in every shape, 1.57-2.06× A-P01's choice.
+- 16-token tiles lose from 96 rows, and on the widest gate|up GEMMs at 40-48 rows.
+
+**Whole pass, in-process.** Fresh prompt, `PrefillLast` wall time, A-P01's rule ÷ the new rule, 7 reps alternated, the
+batched-pass floor at 0. Cells marked "same tile" pick the same tile under both rules, so they are A/A controls.
+
+| Model | Cell | a01 ÷ new | Reps above 1 |
+|---|---|---|---|
+| 1.5B | M = 16 | **1.555** (51.7 → 33.0 ms) | 7/7 |
+| 1.5B | M = 40 | **1.081** | 7/7 |
+| 1.5B | M = 48 | **1.082** | 7/7 |
+| 1.5B | M = 72 | **1.108** | 7/7 |
+| 1.5B | M = 88 | **1.112** | 7/7 |
+| 1.5B | M = 24, 56, 100, 128, 160 (same tile) | 1.000-1.008 | — |
+| 1.5B | M = 512 | 1.009 | 6/7 |
+| 7B | M = 16 | **1.727** (214 → 124 ms) | 7/7 |
+| 7B | M = 40 | **1.051** | 7/7 |
+| 7B | M = 48 | **1.052** | 7/7 |
+| 7B | M = 72 | **1.070** | 7/7 |
+| 7B | M = 24, 100, 512 (same tile) | 0.998-1.003 | — |
+| Qwen1.5-MoE slice | M = 64 | **1.532** | 7/7 |
+| Qwen1.5-MoE slice | M = 512 | **1.090** | 7/7 |
+| Qwen1.5-MoE slice | M = 2048 | **1.013** | 7/7 |
+
+Two rules were tried before this one, recorded so the bounds are not re-derived:
+- **Fewest padded rows, no bounds:** the 1.5B's 100-token pass ran **0.847×** (0 of 7) on all-16-row tiles, and M = 160
+  ran 0.978×.
+- **The 48-row bound without the N condition:** the 7B's 40-token pass ran **0.984×** (0 of 7). Its 37,888-wide
+  gate|up already fills the cores at 64.
+
+Each loss was read in a single run and the rule was then narrowed. The 1.5B and 7B rows in the table are from the final
+rule's runs: M = 24-48 re-run after the last change, and the other cells unaffected by it.
+
+**It ships** under TE5(b): every changed cell resolves in its own direction (7/7), the output is bit-identical, and
+nothing regresses. It is the default in serve. Prompts of 16 tokens on a single-slot resident gain most (the A-P02
+floor); MoE prefill gains through its per-expert GEMMs, D-B02's tile padding. Device-side expert scheduling is not
+built; the remaining MoE padding at M = 2048 is 1.23× before this change.
+- Tests: the Metal prefill, MoE, MC3, MC5, chunked, verify and GEMM tests pass (96), apart from the long-standing
+  `TestPrefillParityMoEGatedShared`.
 
 ## Owner decisions
 
