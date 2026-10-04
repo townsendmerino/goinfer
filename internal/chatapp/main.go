@@ -43,6 +43,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/decidecmd"
 	"github.com/townsendmerino/goinfer/internal/fitcmd"
+	"github.com/townsendmerino/goinfer/internal/hwreport"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/prequant"
@@ -115,6 +116,7 @@ type chatFlags struct {
 	thinking, batch, out, effort, prompt       *string
 	image                                      *string
 	visionMaxPixels                            *int
+	noSelfTest                                 *bool
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -146,6 +148,7 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.prompt = fs.String("p", "", "answer this one prompt and exit: only the answer is printed to stdout, with no banner, colours or prompt label (the reasoning of a thinking model, if shown, goes to stderr). Piped input and redirected output get the same plain output without -p")
 	c.image = fs.String("image", "", "answer about this image file (PNG or JPEG) and exit, like -p: one image, one answer, printed to stdout. GLM-OCR only (--model <the zai-org/GLM-OCR directory>); the image goes through its vision tower on the CPU (about a minute per megapixel). With no -p the task is text recognition; with --schema it is EXTRACTION: the prompt is the schema's JSON template and the reply is constrained to the schema (goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json). Unless given, --temp defaults to 0 and --max to 2048 for an image run, and the REPL's coding system prompt is not sent")
 	c.visionMaxPixels = fs.Int("vision-max-pixels", 0, "with --image: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU vision tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
+	c.noSelfTest = fs.Bool("no-selftest", false, "skip the startup self-tests (a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees); `check --hardware` prints what they found")
 	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	return c
 }
@@ -170,6 +173,10 @@ func Main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fit" {
 		os.Exit(fitcmd.Run(os.Args[2:]))
+	}
+	// `check --hardware` (H3, docs/tasks/task-hardware-coverage-2026-10.md): the block a hardware bug report needs. Chat has no server to drive, so `check` here is only that.
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		os.Exit(hwreport.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
 	// `decide` / `decisions-calibrate` — D1 of docs/tasks/task-constrained-confidence.md: decisions by label-token
 	// scoring (one prefill per line, a distribution over the line's options) and the per-kind temperature fit.
@@ -280,6 +287,9 @@ All flags:
 
 	// --image: check the flags and read + preprocess the image BEFORE loading a model, like --batch below: a bad path or a
 	// non-GLM-OCR directory costs a second, not a load.
+	if *cf.noSelfTest {
+		decoder.SkipSelfTests()
+	}
 	if err := checkImageFlags(*cf.image, *cf.model, *cf.batch); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)

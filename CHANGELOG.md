@@ -195,6 +195,11 @@ any surface may still change.
 
 ### Added
 
+- **Startup self-tests (H2, CPU part) and `check --hardware` (H3).** The first model load of a process runs aikit v1.55.0's `linalg.SelfCheck(true)`: the dispatched CPU kernels against their portable references, held to the agreement
+  aikit's own tests assert (exact, or a relative 1e-5), in about 1.2 ms. A mismatch steps the highest active ISA tier down (AVX-512 VNNI, then AVX2; DotProd on arm64) and prints one `WARN: self-test:` line naming the kernel, the observed
+  and allowed figures and the tier. Results are in `GET /health` under `selftest`; `-no-selftest` (serve and chat) skips it. `goinfer-serve check --hardware` and `goinfer-chat check --hardware` print the block a hardware bug
+  report needs (build, OS, CPU, kernel tiers detected against in use, memory, linked backends with device facts, the self-test results, and with `--fit MODEL` the fit decisions) and send nothing anywhere; a bug-report issue form asks
+  for it. The CUDA build reports the device, its compute capability (and whether the PTX is native or JIT-compiled forward), SMs, memory and driver. **The CUDA backend's self-test (H2) is built:** four tiny committed checkpoints (`decoder/selftestdata`, byte-identical copies of `testdata/` ones, 1.9 MB) run through the resident path against the CPU path once per process and quant, after the real model's resident is built; logits must agree to cosine 0.995 and relative L2 0.10, and on a mismatch that model's resident is dropped and it continues on the CPU path with the reason on its decode path. About 0.9 s on an RTX 2070 SUPER (`-no-selftest` skips it), against the plan's 5 ms. **Metal and WebGPU self-tests are not built yet.** Needs aikit v1.55.0 (`SelfCheck`, `ActiveKernels`).
 - **`-vision-max-pixels N` (serve) and `goinfer-chat --vision-max-pixels N` lower GLM-OCR's image pixel budget.** The default is unchanged, the model's own 4.82 MP ceiling (6,144 image
   tokens), by the owner's decision of 2026-10-04 (O4); the flag only lowers it and never raises it, and a cap below the model's own minimum is refused by name. The reason to lower it is cost: the
   vision tower is CPU f32 on every backend, and measured on an M1 Pro it takes 28.8 s at 1 MP, 92.3 s at 2 MP and 427 s at 4.8 MP (3.04 times the per-patch cost at 4.8 MP against 1 MP),

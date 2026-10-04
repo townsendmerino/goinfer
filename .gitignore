@@ -24,6 +24,12 @@ demo/chat/dist/
 # "A gate must be able to run, and able to fail".
 !testdata/mixtral-tiny/
 !testdata/mixtral-tiny/model.safetensors
+# EXCEPTION: decoder/selftestdata holds copies of three tiny deterministic checkpoints (testdata/phi3-tiny, gemma3-vl-tiny, qwen35-tiny; a test asserts they
+# stay byte-identical) that are EMBEDDED into the binary for the startup GPU self-test (docs/tasks/task-hardware-coverage-2026-10.md, H2). Unlike a test
+# fixture, a missing file here is a build error (go:embed), so an ignored one would fail CI loudly rather than skip silently.
+!decoder/selftestdata/
+!decoder/selftestdata/*/
+!decoder/selftestdata/*/model.safetensors
 # EXCEPTION: cohere-tiny + cohere2-tiny are 656 KB deterministic random-weight
 # checkpoints (scripts/pin_cohere_tiny.py, scripts/pin_cohere2_tiny.py). Committed on
 # purpose so the Cohere / Command-R (v1 + v2) forward-parity gates are real T1s —

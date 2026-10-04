@@ -87,6 +87,7 @@ type Model struct {
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
+	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
@@ -334,9 +335,10 @@ func (m *Model) MoECacheSlotsRequest() int {
 
 // Options configures Load.
 type Options struct {
-	Backend string // "cpu" (default), "webgpu", "cuda", "metal", or "auto" (AutoBackend); a name not compiled in falls back to cpu
-	Quant   string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
-	LoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
+	noSelfTest bool   // set only by the resident self-test's own fixture loads (selftest_gpu.go); unexported so the type stays comparable and the API unchanged
+	Backend    string // "cpu" (default), "webgpu", "cuda", "metal", or "auto" (AutoBackend); a name not compiled in falls back to cpu
+	Quant      string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
+	LoRA       string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
 	// KVPrecision selects the GPU residency KV cache precision: "" / "f32"
 	// (default, bit-exact, 16k context cap), "f16" (lossy, 2× context to 32k), or
 	// "i8" (lossy, 4× vs f32 → ~64k context). Ignored off the residency path. See
@@ -519,7 +521,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto}
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a
@@ -530,6 +532,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 // into the binary falls back to cpu. A model that would not fit this machine's memory is refused with an
 // error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
+	ensureCPUSelfTest() // once per process, before any kernel runs concurrently (H2): a CPU kernel tier that disagrees with its reference is stepped down, not trusted
 	opts = opts.withAutoBackend()
 	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below
 	// BEFORE withResidency, because CUDA reads it while building its resident) and consulted by

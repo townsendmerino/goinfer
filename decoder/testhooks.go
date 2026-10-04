@@ -434,3 +434,17 @@ func SetMemoryProbeForTest(name string, freeBytes int64, ok bool) (restore func(
 		}
 	}
 }
+
+// ProbeBackendForTest runs the resident self-test (selftest_gpu.go) for backend and quant, uncached and unrecorded, and returns its result (hardware-coverage H2).
+func ProbeBackendForTest(backend, quant string) SelfTestResult { return probeBackend(backend, quant) }
+
+// SetProbeGPUConfigMutatorForTest makes the resident self-test hand each fixture's GPU model a config.json rewritten by mutate while the CPU reference keeps the true one, and returns
+// the restore. It is the mutation proof that the probe can go red: a wrong rope base or norm epsilon in the resident path looks exactly like this from the outside.
+func SetProbeGPUConfigMutatorForTest(mutate func(name string, cfg []byte) []byte) (restore func()) {
+	prev := probeGPUConfigMutator
+	probeGPUConfigMutator = mutate
+	return func() { probeGPUConfigMutator = prev }
+}
+
+// ResetSelfTestCachesForTest clears the per-(backend, quant) probe cache and the recorded results, so a test sees a first-use probe.
+func ResetSelfTestCachesForTest() { resetSelfTestCaches() }

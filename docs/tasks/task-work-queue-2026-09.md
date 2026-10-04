@@ -98,7 +98,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:426`); a full queue is a 429 on the OpenAI routes and a 529
+  (`internal/serveapp/main.go:428`); a full queue is a 429 on the OpenAI routes and a 529
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:621`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
@@ -114,7 +114,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   (`internal/serveapp/embeddings.go:34`) — the only bulk surface in the product, and the shape J4
   generalises.
 - **No batch CLI.** `goinfer-chat` takes one `--model` and one conversation
-  (`internal/chatapp/main.go:153`); there is no file-in/file-out mode.
+  (`internal/chatapp/main.go:156`); there is no file-in/file-out mode.
 - **From K1/K2/K5, already shipped:** a generation registry with cancel-by-id, global halt with
   in-flight cancellation, and an admin unix socket. J2 and J3 are the durable layer those three
   already assume exists and currently do without.
@@ -529,7 +529,7 @@ check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct 
 429) · `internal/loadflags/loadflags.go:70`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:621` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
-surface) · `internal/chatapp/main.go:153` (the CLI J5 extends) ·
+surface) · `internal/chatapp/main.go:156` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §3.3 ·
 [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27–W31 · `docs/api-tiers.md` (what `serve` promises)

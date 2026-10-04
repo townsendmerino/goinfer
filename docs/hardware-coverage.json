@@ -30,7 +30,7 @@
      "gate": "aikit TestAVX512VNNI* and TestMatmulBTW4A8_MConsistent; goinfer TestInt4_forwardParity, 15 fixtures (aikit CHANGELOG [1.47.1])"
     }
    ],
-   "notes": "GitHub's ubuntu-24.04 pool mixes CPU models, so some CI runs land on AVX-512 VNNI hardware (that is how the v1.47.0 bug surfaced, on a failing run); goinfer's CI does not log the CPU, so no green ci-pool run can be named. H1.2 makes the SDE run a schedule."
+   "notes": "GitHub's ubuntu-24.04 pool mixes CPU models, so some CI runs land on AVX-512 VNNI hardware (that is how the v1.47.0 bug surfaced, on a failing run); goinfer's CI does not log the CPU, so no green ci-pool run can be named. H1.2 makes the SDE run a schedule. Seen 2026-10-04 (run 37210694021's /proc/cpuinfo): the ubuntu pool does include AVX-512 VNNI+VL machines (an EPYC 9V74, Zen 4), and the noavx512 leg landed on an EPYC 7763 (no AVX-512), where the tag forced nothing. No record is added: no job yet logs which kernel the dispatcher selected, so a native run cannot be told from a forced one without an accessor (H3's `check --hardware` needs the same one)."
   },
   {
    "id": "cpu-avx2",
@@ -82,6 +82,14 @@
      "goinfer": "4ad711d0",
      "aikit": "v1.54.0",
      "gate": "aikit linalg under -tags aikit_noavx2 (727 passed, 40 skipped, against 800 and 12 normally; a fallback made to panic fails the tagged run and not the normal one); goinfer decoder 'Parity|Forward' under -tags aikit_noavx2 (93 tests): the exact attention path is bit-identical to the AVX2 build, and the goldens that pin one path's numerics take the closeness bounds in decoder/forced_fallbacks_test.go; CI job root-forced-fallbacks"
+    },
+    {
+     "machine": "GitHub ubuntu-latest, AMD EPYC 9V74 80-Core (Zen 4: natively has AVX-512 VNNI+VL, which the tag turns off along with AVX2)",
+     "date": "2026-10-04",
+     "how": "forced",
+     "goinfer": "ddccc499",
+     "aikit": "v1.54.0",
+     "gate": "CI job root-forced-fallbacks (noavx2), run 37210694021: the decoder 'Parity|Forward|ForcedFallbacks' tests on the committed tiny fixtures with AIKIT_EXPECT_FORCED=noavx2; TestForcedFallbacks_expected and TestInt4_forwardParity PASS in the log"
     }
    ],
    "notes": "The pure-Go reference functions run in tests, but the DISPATCH that falls back to them on an amd64 host never has. H1.3 forces it (aikit v1.54.0 aikit_noavx2). What forcing cannot show: a CPU that really lacks AVX2 (the AVX2 kernels stay present and runnable here), so a test that calls an AVX2 kernel directly is not caught."

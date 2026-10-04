@@ -1,0 +1,30 @@
+name: Bug report
+description: Something wrong, on any hardware. The hardware report below is what makes a hardware bug reproducible.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. If it is about wrong output, a crash, or a path that is slower than it should be, the hardware report is the one thing that tells us which kernels your machine actually ran.
+        **Nothing is sent anywhere.** The report is printed to your terminal for you to paste, and it carries no hostname, user name, home directory or network address.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: The command you ran, the model, and what you saw. A wrong answer is worth a lot more with the prompt that produced it.
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware report
+      description: |
+        Paste the output of `goinfer-serve check --hardware` (or `goinfer-chat check --hardware`). Add `--fit <your model>` to include what goinfer would decide for it (residency, slots, context).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Flags you passed, a log excerpt, whether it worked on another machine or an earlier release.

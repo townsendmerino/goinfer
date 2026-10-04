@@ -4,6 +4,8 @@ import (
 	"maps"
 	"net/http"
 	"sort"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // GET /health — a goinfer-native operator surface, deliberately NOT an OpenAI-compatible one.
@@ -50,9 +52,27 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		"backend":  s.cfg.load.Backend,
 		"models":   models,
 		"draining": draining,
+		// H2 (docs/tasks/task-hardware-coverage-2026-10.md): each backend's startup self-test, so an operator can see that a kernel tier was stepped down or a backend declined without reading a log.
+		"selftest": selfTestFields(),
 	}
 	for k, v := range haltedFields {
 		resp[k] = v
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// selfTestFields renders decoder.SelfTestResults for /health: one entry per backend that ran a self-test, always an array so a client's shape does not change when one fails.
+func selfTestFields() []map[string]any {
+	out := []map[string]any{}
+	for _, r := range decoder.SelfTestResults() {
+		e := map[string]any{"backend": r.Backend, "status": r.Status, "elapsed_ms": float64(r.Elapsed.Microseconds()) / 1000}
+		if len(r.Mismatches) > 0 {
+			e["mismatches"] = r.Mismatches
+		}
+		if len(r.Disabled) > 0 {
+			e["stepped_down"] = r.Disabled
+		}
+		out = append(out, e)
+	}
+	return out
 }
