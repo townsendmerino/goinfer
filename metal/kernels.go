@@ -611,6 +611,26 @@ template [[host_name("gemv_w4a8_sa_rows2")]] kernel decltype(gemv_w4a8_sa_rows<2
 template [[host_name("gemv_w4a8_sa_rows4")]] kernel decltype(gemv_w4a8_sa_rows<4>) gemv_w4a8_sa_rows<4>;
 template [[host_name("gemv_w4a8_sa_bias_rows2")]] kernel decltype(gemv_w4a8_sa_bias_rows<2>) gemv_w4a8_sa_bias_rows<2>;
 template [[host_name("gemv_w4a8_sa_bias_rows4")]] kernel decltype(gemv_w4a8_sa_bias_rows<4>) gemv_w4a8_sa_bias_rows<4>;
+// E-P02 (docs/audit-metal-2026-09-30.md): gemv_w4a8_sa_rows over B activation rows in ONE dispatch, the B threadgroups
+// that read one weight tile adjacent in launch order (threadgroup tg serves batch row tg % B, tile tg / B), as MLX's
+// grid_dims(M, ...) lays them out, so the second row's threadgroup can find the tile in cache. Each (row, tile) runs
+// sa_rows_acc exactly as gemv_w4a8_sa_rows does for that row alone: bit-identical. Rows are K int8s / one scale / N
+// floats apart, as the batched step lays them out.
+template <uint R>
+kernel void mc3_gemv_w4a8_sa_rows_adj(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq_b[[buffer(2)]], device const float* asc_b[[buffer(3)]], device float* out_b[[buffer(4)]],
+    constant uint& K[[buffer(5)]], constant uint& N[[buffer(6)]], constant uint& B[[buffer(7)]],
+    threadgroup half* Ah [[threadgroup(0)]], uint tg_b[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint b = tg_b % B, tgid = tg_b / B;
+    device const char* aq = aq_b + b*K; device const float* asc = asc_b + b; device float* out = out_b + b*N;
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
+}
+template [[host_name("mc3_gemv_w4a8_sa_rows_adj2")]] kernel decltype(mc3_gemv_w4a8_sa_rows_adj<2>) mc3_gemv_w4a8_sa_rows_adj<2>;
+template [[host_name("mc3_gemv_w4a8_sa_rows_adj4")]] kernel decltype(mc3_gemv_w4a8_sa_rows_adj<4>) mc3_gemv_w4a8_sa_rows_adj<4>;
 template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
 template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
 
