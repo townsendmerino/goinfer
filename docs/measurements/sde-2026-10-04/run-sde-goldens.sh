@@ -6,13 +6,13 @@
 # Runs with nobody watching: pinned pre-built test binaries (the tree may move before tonight), durable logs, no prompts.
 # Not a timed measurement: emulation speed says nothing about speed.
 #
-# Provenance: decoder test binary built at goinfer 536eef43 with aikit from the local checkout (v1.55.0-1-gbe7c35f, one
+# Provenance: decoder test binary built at the goinfer commit named in DBIN with aikit from the local checkout (v1.55.0-1-gbe7c35f, one
 # commit past the v1.55.0 tag); linalg test binary from the same aikit checkout. SDE 10.13.1 (sde-external-10.13.1-2026-07-28).
 set -uo pipefail   # no -e: one CPU model's failure must not stop the others
 
 REPO=${REPO:-$HOME/mycode/goinfer}
 SDE=${SDE:-$HOME/tools/sde/sde64}
-DBIN=${DBIN:-$HOME/goinfer-logs/night/bin/decoder-sde-536eef43.test}
+DBIN=${DBIN:-$HOME/goinfer-logs/night/bin/decoder-sde-vnnigolden.test}
 LBIN=${LBIN:-$HOME/goinfer-logs/night/bin/linalg-sde-v1.55.0.test}
 OUT=${OUT:-$REPO/docs/measurements/sde-2026-10-04}
 # Everything cheap under emulation. The LongPrompt tests take 4+ minutes EACH under SDE and are the same arithmetic the
@@ -47,10 +47,10 @@ for cpu in $CPUS; do
     grep -- '^--- FAIL' "$log" | sed "s/^/    /" >> "$summary"
   done
   echo "$cpu exit codes: linalg=$lrc decoder=$drc" >> "$summary"
-  # Expected on VNNI hosts only (docs/measurements/sde-2026-10-04/README.md): the amd64 int4 greedy golden was captured on the AVX2 path.
-  unexpected=$(grep -h -- '^--- FAIL' "$OUT/decoder-$cpu.log" "$OUT/linalg-$cpu.log" 2>/dev/null | grep -v 'TestDecodeParityInt4' | wc -l)
-  [ "$cpu" = hsw ] && hswfail=$(grep -h -- '^--- FAIL' "$OUT/decoder-$cpu.log" "$OUT/linalg-$cpu.log" | wc -l) && [ "$hswfail" -gt 0 ] && bad=1
-  [ "$unexpected" -gt 0 ] && bad=1
+  # Any failure is unexpected. (TestDecodeParityInt4 has an "amd64-vnni" golden, captured under this same SDE, since 2026-10-04:
+  # docs/measurements/sde-2026-10-04/README.md. A failure of it on icx/spr now means the VNNI path moved.)
+  nfail=$(grep -h -- '^--- FAIL' "$OUT/decoder-$cpu.log" "$OUT/linalg-$cpu.log" 2>/dev/null | wc -l)
+  [ "$nfail" -gt 0 ] && bad=1
   grep -q 'panic: test timed out' "$OUT/decoder-$cpu.log" && bad=1
 done
 echo "overall: $([ $bad = 0 ] && echo 'no unexpected failure' || echo 'UNEXPECTED FAILURE, TIMEOUT, OR MISSING LOG: read the per-CPU logs')" >> "$summary"

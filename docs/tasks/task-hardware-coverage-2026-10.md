@@ -160,8 +160,9 @@ test-only package that CI's `test-rest` job runs.
 
    **Set up 2026-10-04:** SDE 10.13.1 is at `~/tools/sde` (the tarball and its unchecked `.sig` beside it); `docs/measurements/sde-2026-10-04/run-sde-goldens.sh` runs aikit's `linalg` suite and the goinfer goldens under `-hsw` (control),
    `-icx` and `-spr`, and is on tonight's queue (`night.py`, estimate 60 min). **Found by hand first:** aikit's `SelfCheck` and its VNNI tests pass under `-icx` with `avx512vnni+vl` detected and active, but goinfer's amd64 int4 greedy
-   golden (`TestDecodeParityInt4`) drifts at id 22 on any VNNI CPU while passing on AVX2: the two paths differ by relative L2 0.072 on that step's logits, each about equally far from f32. The golden is per architecture, not per
-   ISA, and CI cannot see it (the 0.5B asset is absent there). Details and the owner decision (a VNNI golden or a closeness check) are in that directory's README. Not yet a scheduled job: it is a queued one-off until the owner decides.
+   golden (`TestDecodeParityInt4`) drifted at id 22 on any VNNI CPU while passing on AVX2: the two paths differ by relative L2 0.072 on that step's logits, each about equally far from f32. The golden was per architecture, not
+   per ISA, and CI cannot see it (the 0.5B asset is absent there). **Resolved the same day by the owner's decision:** an `"amd64-vnni"` golden captured under SDE (`-icx` and `-spr` agree), selected from the active kernels; it passes under
+   `-hsw`, `-icx`, `-spr` and natively, and has never been seen on a real VNNI CPU. Details in that directory's README. Not yet a scheduled job: it is a queued one-off.
 3. **Force the fallbacks.** A test-only hook (build tag, in aikit) that makes `hasAVX2` / `hasDotProd` /
    `hasAVX512VNNI*` report false. CI then runs every kernel suite twice, so the pure-Go and narrower-ISA
    paths execute on every push.
