@@ -595,7 +595,7 @@ names that are served.
     - On nobara's RTX 2070 SUPER, JEV-9B at int4 measured about 3 ms per prompt token, against about 65 ms on its
       CPU (exploratory, five items).
     - The GPU's int4 kernels are not the CPU's, so the two answers differ: slightly on most items, and on one of the 150 by a lot (a 0.956 option read as 0.362 on CUDA int4, unexplained). Until that is explained, do not rely on decisions from a CUDA-resident int4 model (D6b).
-  - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
+  - **How closely it tracks the reference** was graded on the CPU in D6b (`measurements/decisions-d6b-2026-09/results.md`): f32 exact; `int8int8`, the default, mean KL 0.0088 and top-1 0.927; `int4` KL 0.0298 and top-1 0.940; calibration no worse in any arm, and the top-1 bar of 0.98 missed by the quantized arms. The GPU `int8int8` is ungraded, and the CUDA int4 discrepancy above is open.
 - **With Cloudflare's Clef (Route C):** `--model clef=~/models/clef-flash`. A model directory that carries `joint_head.safetensors`
   next to its backbone loads as a decision model; no `head=` is given (and giving one is refused). One backbone pass over the whole
   record answers every question, through the model's joint head, so the cost is one prefill however many questions there are.
@@ -611,9 +611,11 @@ names that are served.
     the answer is identical to the reference on any input without such text.
   - **A state that does not fit is cut to its first tokens** (the reference's rule, default 16,384 tokens in all) and
     `goinfer.state_tokens_truncated` counts what was cut. A schema that alone does not fit is a 422.
-  - **Precision:** it loads at `int8int8` unless `quant=` or `--quant` says otherwise. **No grading of the real Clef-flash weights
-    exists yet** (D13's fidelity run is queued behind the reference fixture), no speed is claimed (D14), and the backbone runs on the CPU except on a CUDA- or Metal-resident model, where it runs on the
-    device. On CUDA that measured 3.2 ms per token against about 54 to 68 on the CPU, in one exploratory run of three records. Metal runs it per token, as `HiddenLast` does, and a 16 GB Mac cannot hold the 9B Clef-flash resident, so there it stays on the CPU. **That path is ungraded.** On those records it tracked the CPU within about 0.005 in P(true) when both stored the embedding table the same way; `--embed-int4` (on by default with `-quant int4`, which stores the token-embedding/LM-head table at int4 instead of the int8 pin) moved P(true) by up to 0.04 on either device, so an int4 Clef answer depends on that flag.
+  - **Precision:** it loads at `int8int8` unless `quant=` or `--quant` says otherwise. **It is graded against the reference at f32 on 150
+    records (D13, `measurements/decisions-d13-clef-fidelity-2026-10-03.md`).** goinfer's f32 pipeline agrees with Cloudflare's code to about 1e-7. `int8int8`, the default, reads mean KL 0.0165 and agrees on the top
+    answer for 90.7% of records (it changes the argmax on 14 of 150, mostly near-ties), with calibration not resolvably different from the reference's; that misses the registered 98% bar and the default stands under the rule. **`int4` is worse (KL 0.051, top-1 84.0%, and the same on CUDA) and a Clef
+    model is not served at it: `quant=int4` is refused at load** (owner decision 2026-10-03). Use `int8int8` (default) or `f32`. Speed is D14's (`measurements/decisions-d14-clef-speed-2026-10-03.md`). The backbone runs on the CPU except on a CUDA- or Metal-resident model, where it runs on the
+    device. On CUDA that measured 3.2 ms per token against about 54 to 68 on the CPU (the 150-record CUDA int4 arm). Metal runs it per token, as `HiddenLast` does, and a 16 GB Mac cannot hold the 9B Clef-flash resident, so there it stays on the CPU. **That path is ungraded.** `--embed-int4` only applies at int4, which a Clef model refuses, so it does not reach this route (D13 measured it before the refusal: single answers moved by up to 0.53 in P(true), its mean effect on fidelity unresolved).
     pipeline against the official reference to 1.8e-7 on a tiny model (`measurements/decisions-d12-clef-encoder-2026-10-02.md`).
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates

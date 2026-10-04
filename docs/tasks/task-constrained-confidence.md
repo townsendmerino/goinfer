@@ -1,8 +1,8 @@
-# Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D14) — 2026-09
+# Task: confidence — per-field probabilities on constrained output, and a typed decisions endpoint (built as `POST /v1/systemone`; C0–C2, D0–D14) — 2026-09
 
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
-> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12 is built (`internal/clef`: encoder 150/150 identical; head and the whole pipeline match the reference to 1.8e-7 on a tiny end-to-end fixture, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its gate of record on real hidden states waits on the D10 f32 night job; owner decisions made: request text is tokenized literally, and the `clef` route reports `confidence` as the reference does (the top probability); D13's serve wiring is built (`route: "clef"` on `/v1/systemone`, 2026-10-03; the fidelity arms and the JEV comparison are not run) and D14 is unstarted.
+> needed. One backbone pass scores every question, so D8 does not apply to this route. **Status, 2026-10-03: D10–D14 are done.** D10 is the reference fixture (f32 and bf16 over 150 records). D11 is the resident hidden state (CUDA and Metal). D12 is the encoder (150/150 identical) and head, with the head's gate of record passed on real hidden states (worst probability difference 9.65e-8). D13 is the serve wiring (`route: "clef"` on `/v1/systemone`) and its graded fidelity (`decisions-d13-clef-fidelity-2026-10-03.md` §7: f32 PASS; no quantized arm meets the 98% top-1 bar; `int8int8` stays the default), plus the multi-question check on real weights. D14 is graded (below). Owner decisions: request text is tokenized literally; `confidence` is the top probability on this route; no int4 for Clef; Clef-flash at `int8int8` may carry the decision-model tag (his decision, not a gate pass). Open: the site tag (it waits for a release and a registry entry). Clef 27B on the CPU is graded (int8int8 FAIL on top-1, as for Clef-flash; 160 ms per input token). (Joint versus single is measured: they differ by mean KL 0.0135, see D13's multi-question addendum.)
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with
@@ -624,7 +624,7 @@ schema was never published (D0).
   - Running jevx's own binary against it: its request shape and fail-closed checks are reproduced in the test
     instead of executing third-party code here.
 
-- `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
+- *(Planned shape; superseded 2026-09-28. `/v1/decisions` and `:batch` were never built: autotrust's schema was never published (D0), and the owner picked the TypeSafe shape, `POST /v1/systemone`, which is what exists.)* `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
   (`internal/serveapp/main.go:685`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
@@ -806,7 +806,7 @@ exists.
     OFF PROJECTION (the projection undercosted the one-pass answer: its prompt carries all five questions, it emits about 50 tokens not 23–26, and
     constrained decode costs about 27 ms per token not 16.5; named in the record). **D8's trigger fires on the measurement: share 0.909 ≥ 0.70.**
 
-### D8 — shared state, many questions (deferred)
+### D8 — shared state, many questions (built for the CPU path; GPU-resident deferred)
 
 TypeSafe's shape asks many questions about one state. On `qwen3_5` each question costs a full
 prefill of the state today (§3). The fix is an in-memory recurrent-state checkpoint (conv window +
@@ -893,7 +893,7 @@ publisher maintains, which makes it the more likely thing a goinfer user asks fo
 **Should goinfer support it?** Yes, scoped to text and JSON states first, with Clef-flash as the product target:
 - The endpoint, the fidelity method (D6b) and the backbone family all exist.
 - The new code is a seam, a small head and an encoder.
-- Clef 27B is about 15 GB at int4, so it runs on the Linux box's CPU, not resident on the 16 GB Mac or the 8 GB card.
+- Clef 27B runs on the Linux box's CPU (about 28 GB at int8int8; int4 is refused for Clef, D13), not resident on the 16 GB Mac or the 8 GB card.
   It is a "runs, slowly" target, stated as such.
 - The risk is format churn: a custom Python module at version one. Pin the repo revision, and refuse any
   `joint_head_config.json` key or tensor shape the loader does not know.
@@ -959,8 +959,8 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
 
 #### D13 — wiring and fidelity
 
-- **Loading:** a model directory carrying `joint_head.safetensors` loads as a decision model. `/v1/systemone` and
-  `/v1/decisions` (D5) gain `route: "clef"`, and `/v1/models` advertises it.
+- **Loading:** a model directory carrying `joint_head.safetensors` loads as a decision model. `/v1/systemone` (D5)
+  gains `route: "clef"`, and `/v1/models` advertises it.
 - **Image parts on this route** are refused with a clear error until P8a.
 - **Fidelity, by D6b's method** (Clef-flash against the D10 goldens):
   - arms: f32, int8int8, int4 and q4k;
@@ -972,8 +972,19 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   the same items: top-1 against gold where it exists, ECE, and agreement. **Owner decision 2026-10-03: both routes are
   kept and extended equally, so this comparison is informational and no rule hangs on it** (it was "if Clef-flash is at
   least level on both, JEV's route is kept but not extended").
+- **Graded 2026-10-03** ([`decisions-d13-clef-fidelity-2026-10-03.md`](../measurements/decisions-d13-clef-fidelity-2026-10-03.md) §7), 150 records, six arms:
+  - **f32 PASS** (KL below 1e-5, top-1 1.000): the port is correct.
+  - **int8int8 FAIL on top-1** (KL 0.0165 inside the band, top-1 0.907); **int4 FAIL** (KL 0.051, top-1 0.840), on the CPU and on CUDA (0.044, 0.840); **q4k FAIL on top-1** (KL 0.021, top-1 0.887, bartowski's imatrix GGUF).
+  - **Calibration unresolved in every arm** (each interval reaches 0); none failed it. The bf16 reference against f32 reads KL 0.00005, top-1 0.993.
+  - **The default stays int8int8** under the record's rule (a top-1 miss alone does not reopen it), with the disagreement stated: 14 of 150 argmaxes change.
+  - **Clef against JEV** (84 gold rows, informational): accuracy 0.690 against 0.774 and ECE 0.107 against 0.122, neither difference resolved.
+  - Predictions that failed, recorded as failed: int4 inside the KL band (CPU and CUDA).
+  - **Owner decision 2026-10-03: no int4 for Clef.** `quant=int4` on a Clef model is refused at load (`clefQuantRefusal`, tested through `loadDecoder`); `int8int8` stays the default and `f32` is available.
+  - **Owner decision 2026-10-03: Clef-flash at `int8int8` may carry the decision-model tag, as the owner's decision and NOT as a pass of D13's gate** (int8int8 reads top-1 0.907 against the registered 0.98; the gate as written is failed on that metric and the record says so). The tag's page must show the measured figures (KL 0.0165, 90.7% agreement with the f32 reference, int4 not offered) and the single-question limit below.
+  - **Not built yet:** the tag is a site change, which lands only when a release is cut (task-site-2026-09.md, owner decision 2026-09-29), and Clef-flash is not a registry checkpoint (it is served from a local directory with `--model`). The 150 graded records are single-question; the multi-question path was then checked on real weights (5 records of 5 questions, 2026-10-03, [`decisions-d13-clef-multiquestion-2026-10-03.md`](../measurements/decisions-d13-clef-multiquestion-2026-10-03.md)): goinfer f32 matches the reference to 1.2e-06 and int8int8 reads mean KL 0.0055, both PASS on the pre-registered rule. Joint versus single was then characterized on the reference (no bar): the same five questions asked alone differ from the joint answers by mean KL 0.0135 (max |ΔP| 0.138; top-1 23 of 25, both flips near-ties), about the size of int8int8's own error, so the two modes are not interchangeable and the tag's page must not say they are.
 - **Then Clef 27B on the Linux box's CPU,** at f32 against a smaller reference set. Report its speed as measured,
   with the machine named.
+  **Done 2026-10-03 night** ([`decisions-d13-clef27b-2026-10-03.md`](../measurements/decisions-d13-clef27b-2026-10-03.md) §7), at int8int8 against a bf16 reference (a 27B does not fit at f32 on 62 GB), on 30 records: KL 0.0121, top-1 0.867, **FAIL on top-1** as predicted, calibration unresolved; 160 ms per input token on nobara's CPU (2.96 times Clef-flash's), 46 s per record. No tag decision covers the 27B.
 
 #### D14 — speed, and the multi-question shape
 
@@ -986,7 +997,7 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   projected; five questions, Clef is 1.14x faster at K = 256 and 1.75x at K = 1,024. The D8 rule read 2.01 at K = 256,
   ambiguous by the rule, and **the owner decided: D8 is unnecessary for Clef's five-question shape** (one backbone pass
   already scores every question).
-- **Resident:** D11's follow-up now exists for CUDA ([`decisions-d11-resident-hidden-2026-10-03.md`](../measurements/decisions-d11-resident-hidden-2026-10-03.md): the all-positions residual comes back from the device; one exploratory run of three records measured 3.2 ms per token at int4, with fidelity ungraded), so the CUDA cells can be registered; Metal and WebGPU do not implement the seam yet. Each cell gets its own pre-registered band.
+- **Resident:** D11's follow-up now exists for CUDA ([`decisions-d11-resident-hidden-2026-10-03.md`](../measurements/decisions-d11-resident-hidden-2026-10-03.md): the all-positions residual comes back from the device; the CUDA int4 arm measured 3.2 ms per token and was graded for fidelity in D13: KL 0.044, top-1 0.840), so the CUDA speed cells can be registered; Metal and WebGPU do not implement the seam yet. Each cell gets its own pre-registered band.
 - **Docs (D9's list):** the route, the per-arm fidelity figures, the measured latency with its machine, and the
   §2 caveat. A site decision-model tag goes on Clef-flash only after D13's fidelity gate passes.
 

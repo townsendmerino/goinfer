@@ -63,6 +63,8 @@ D11 gave the Clef joint head its input on the CPU: `Model.PromptHiddenAll` retur
 
 The flag matters beyond this record: any int4 Clef number, CPU or GPU, has to say which table it used. D13's int4 arms run as served (table at int4) and a diagnostic GPU arm runs the pin.
 
+**Graded since (D13, 2026-10-03, 150 records; `decisions-d13-clef-fidelity-2026-10-03.md` §7).** CUDA int4 as served read mean KL 0.0440 and top-1 0.840 against the f32 reference, the CPU int4 as served 0.0512 and 0.840: the device is not worse than the CPU (paired mean KL difference -0.0071, 95% bootstrap [-0.0270, +0.0098], unresolved). The flag on the device (served minus pin) is -0.0011 [-0.0193, +0.0147], also unresolved on average, though it moved single records by up to 0.53 in P(true). The 3.2 ms per token held over all 150 records (decode path `cuda-resident (int4)` on every row).
+
 ## Not done
 
 - **The graded GPU arms are queued, not run** (`d13-clef-cuda-int4` and `d13-clef-cuda-int4-pin`, D13 amendments 5b and 5c): the harness in the cuda module writes full-precision rows, which the root module's harness cannot (it may not link the cuda module). Nothing is said about this path's accuracy until they are graded against the same f32 reference rows as the CPU arms.

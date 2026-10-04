@@ -279,3 +279,29 @@ func TestSystemOne_clefChoiceProbabilitiesInRequestOrder(t *testing.T) {
 		t.Errorf("probabilities are not in request order (red %d, blue %d, amber %d): %s", r, b, a, s)
 	}
 }
+
+// A Clef model is not served at int4 (owner decision 2026-10-03, D13). The refusal is tested through loadDecoder, the one caller that matters: a refusal function
+// that nothing calls would pass its own unit test. It must fire for an explicit quant=int4, name the measured figures, and not fire for the decision-model default
+// (int8int8) or for f32. The tiny directory carries only a head, so a load that gets past the quant check fails later for a different reason, which is what is asserted.
+func TestLoadDecoder_clefRefusesInt4(t *testing.T) {
+	ctx := t.Context()
+	int4, int8, f32 := "int4", "int8int8", "f32"
+	err := func(q *string) string {
+		_, e := loadDecoder(ctx, modelSpec{path: clefTinyDir, quant: q}, config{})
+		if e == nil {
+			t.Fatalf("quant %v: loading a head-only directory cannot succeed", q)
+		}
+		return e.Error()
+	}
+	got := err(&int4)
+	for _, want := range []string{"not served at int4", "0.051", "0.840", "int8int8"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the int4 refusal %q lacks %q", got, want)
+		}
+	}
+	for name, q := range map[string]*string{"default": nil, "int8int8": &int8, "f32": &f32} {
+		if got := err(q); strings.Contains(got, "not served at int4") {
+			t.Errorf("%s was refused as int4: %s", name, got)
+		}
+	}
+}

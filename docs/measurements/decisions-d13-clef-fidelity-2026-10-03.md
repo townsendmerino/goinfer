@@ -2,7 +2,7 @@
 
 The question (D13 of `docs/tasks/task-constrained-confidence.md`, Route C): on the real Clef-flash weights, how closely does goinfer's pipeline (record encoder, one backbone pass, joint head; `internal/clef`) reproduce Cloudflare's own code, at each backbone precision? The method is D6b's (`decisions-d6b-2026-09/`), applied to Clef.
 
-Nothing in this record has a graded result yet. Section 7 is filled in after the run, below a line that says so.
+Section 7 is the graded result (run 2026-10-03, nobara-pc; filled in the same evening from the grader's own output).
 
 ## 1. What runs
 
@@ -95,4 +95,48 @@ Queued after the two D10 jobs (55 + 65 min), about 5 h 15 min of estimates in al
 
 ## 7. Result
 
-*Not yet run.* Filled in after the night run, below this line, with the grader's own output.
+**Run:** the night queue started 2026-10-03 11:18 PDT; all nine jobs ok, finished 18:59 (`night.py morning`). Reference `d10-clef-f32` (31 min), arms f32 54 min, int8int8 40, int4 50, q4k 48, cuda-int4 and cuda-int4-pin 3 each; the bf16 context row 42. nobara-pc, Ryzen 7 3700X (8 threads) and RTX 2070 SUPER, NVIDIA driver 595.91.07, `Cloudflare/clef-flash` rev `17f0b0ad64efb65d273590632833508766b2aae6`, head sha256 `19cdcec8…5ba0`, module sha256 `0e304cf7…c3a3`, torch 2.14.0+cpu, transformers 5.16.1 (the release was tested with torch 2.11 / transformers 5.10.2; recorded in `testdata/decisions/clef/clef_env_f32.json`). Greedy, no sampling; every prompt's token count matched the encoder dump on every arm. Both cuda arms: decode path `cuda-resident (int4)` on all 150 rows, 3.2 ms per input token, so both are valid under 5b's rule. The grader's full output is `decisions-d13-clef-fidelity-2026-10/grade-2026-10-03.txt`; the per-arm rows are in `decisions-d13-clef-fidelity-2026-10/rows/`, the reference rows in `testdata/decisions/clef/probs_f32.jsonl` (sha256 `b0250cb4…5688`) and `probs_bf16.jsonl`.
+
+| arm | mean KL | top-1 vs ref | worst item KL | ECE (ref 0.1070) | arm − ref ECE, 95% bootstrap | verdict |
+|---|---|---|---|---|---|---|
+| f32 | < 1e-5 | 1.0000 | 0.0000 | 0.1070 | [−0.0000, +0.0000] | **PASS** |
+| int8int8 | 0.01653 | 0.9067 | 0.2270 | 0.1244 | +0.0174 [−0.0506, +0.0650] | **FAIL** (top-1; KL inside the band) |
+| int4 (as served) | 0.05115 | 0.8400 | 0.8809 | 0.1376 | +0.0306 [−0.0532, +0.0821] | **FAIL** (KL and top-1) |
+| q4k (bartowski imatrix GGUF) | 0.02067 | 0.8867 | 0.9220 | 0.0916 | −0.0154 [−0.0648, +0.0349] | **FAIL** (top-1; KL inside the band) |
+| cuda-int4 (as served) | 0.04403 | 0.8400 | 0.4277 | 0.1427 | +0.0357 [−0.0512, +0.0799] | **FAIL** (KL and top-1) |
+| cuda-int4-pin (diagnostic) | 0.04512 | 0.8133 | 0.6837 | 0.1243 | +0.0173 [−0.0488, +0.0721] | **FAIL** (KL and top-1) |
+
+No arm reaches the AMBIGUOUS band: the best non-f32 top-1 is 0.907 (band edge 0.95). Calibration is UNRESOLVED in every arm (every interval reaches 0); none FAILS it. Context row, the release's own dtype: the reference at bf16 against the f32 reference reads **KL 0.00005, top-1 0.9933** (1 flip in 150), so the quantized arms' misses are quantization, not numeric noise a correct port would show. By kind (top-1 vs the reference, int8int8 / int4 / q4k): choice 0.920 / 0.900 / 0.920, noul 0.941 / 0.902 / 0.941, **score 0.857 / 0.714 / 0.796**: the `score` questions are the fragile ones.
+
+### What the f32 arm says
+
+KL below 1e-5, top-1 1.0000 on all 150 records, ECE identical to the reference's: **the port is correct.** Rows differ from the reference in the 8th digit (P(true) 0.93546729 against 0.93546724 on the first record), so it is an independent computation, not a copy. This is the premise of every other row in the table.
+
+### Predictions (section 4 and the amendments), graded as written
+
+- **f32 PASS, KL well under 0.001:** HELD.
+- **int8int8 and int4: KL inside the 0.03 band, top-1 below 0.98:** int8int8 HELD (KL 0.0165, top-1 0.907). **int4 FAILED the prediction**: KL 0.0512 is outside the 0.03 band (inside the 0.06 ambiguous KL edge, but top-1 0.84 is under its 0.95 floor); I predicted the same shape as JEV's int4 (KL 0.0298), and the Clef int4 is worse on KL (0.051) and top-1 (0.840 against JEV's 0.940).
+- **Calibration not failed in any arm:** HELD (six arms, all intervals reach 0).
+- **q4k: KL inside the band, top-1 below 0.98:** HELD (0.0207, 0.887).
+- **cuda-int4 / cuda-int4-pin: both inside the KL band, top-1 below 0.98:** FAILED on KL (0.0440 and 0.0451, both over 0.03). The top-1 half held.
+- **"cuda-int4 lands near the CPU int4 as served":** HELD in aggregate (KL 0.0440 against 0.0512, top-1 0.840 against 0.840). The companion claim, `cuda-int4-pin` near a CPU int4 *pin* arm, could not be graded: no CPU pin arm was run (5c).
+- **"The device could repeat D6b's CUDA-int4-worse-than-CPU case":** NOT repeated: the device's KL is lower than the CPU's, not higher.
+- **Clef against JEV:** no prediction was made, and the result is unresolved (below).
+
+### Clef against JEV-9B (informational, no rule attached)
+
+On the same 84 gold rows, both at f32 reference: top-1 against gold **Clef 0.690, JEV 0.774**, Clef − JEV −0.083, 95% paired bootstrap [−0.202, +0.024]; ECE Clef 0.1070, JEV 0.1222, Clef − JEV −0.0153, [−0.0536, +0.1094]. Both intervals reach 0. The point estimates favour JEV on accuracy and Clef on ECE; **neither difference is resolved on 84 rows**, and neither is a statement about which route is better. Under the owner's 2026-10-03 decision (both routes equal) this changes nothing.
+
+### What follows from the rule
+
+- **The default stays `int8int8`, with the disagreement stated.** Section 2: the default is reopened only if int8int8 FAILS calibration or is outside its KL band. Its KL is 0.0165 (inside 0.03) and calibration is unresolved, so a top-1 miss alone leaves it standing, as in D6b. The statement: on the Clef route int8int8 disagrees with the f32 reference's argmax on **14 of 150** records (9.3%); 9 of the 14 are records where the reference's own top-two margin is under 0.1, the largest margin among them is 0.445. (That tie-margin count is a post-hoc diagnostic, not a registered statistic, and is not a pass.) Its KL is about twice JEV's int8int8 (0.0165 against 0.0088).
+- **`int4` is not a quality-neutral option on the Clef route.** It FAILS outright, on both CPU and device, and the device does not rescue it. Whether to keep offering it is the owner's call; the data says it moves 24 of 150 argmaxes.
+- **Post-hoc paired comparisons, labelled as such** (not registered; the paired design is rule 7 of the measurement discipline, and the intervals are 2000-resample bootstraps of per-record differences): CPU int4 against int8int8, mean KL difference **+0.0346, [+0.0174, +0.0552]** (int4 is resolvably worse than int8int8); q4k against CPU int4, **−0.0305, [−0.0467, −0.0163]** (the third-party imatrix 4-bit file is resolvably closer to the reference than goinfer's own int4; this is a statement about that artifact, 5a, not about q4k as a format); device against CPU, both as served, **−0.0071, [−0.0270, +0.0098]** (unresolved); `--embed-int4` on the device (served − pin), **−0.0011, [−0.0193, +0.0147]** (unresolved: on 150 records the flag's effect is not distinguishable from zero, although it moved single records by as much as 0.53 in P(true)). So the earlier worry that the GPU is worse than the CPU at int4 on this route is **not supported**; neither is the claim that it is the same, at this sample.
+
+### Owner decision after the result (2026-10-03)
+
+**Clef is not served at int4.** `quant=int4` on a Clef model is refused at load, with an error naming these figures; `int8int8` stays the default. **The decision-model tag may go on Clef-flash at `int8int8`, as the owner's decision and not as a pass of this record's gate** (the registered top-1 bar of 0.98 is missed, 0.907; the gate stays graded FAIL and no bar is moved). Not yet built: the site changes only at a release, and every real-weights record here has one question. The int4 arms stay in this record as the measurement behind the int4 decision, and the harnesses still run int4 (they load through `modelload`, not through serve's check).
+
+### Not shown by this run
+
+Nothing here grades speed (D14), the Metal backend, the WebGPU backend, the 27B Clef, or a `chat-v1` template. The int8int8 arm is CPU only (it does not fit the card). The f32 row is agreement to about 1e-7 in probability, not a claim of bit-identity.

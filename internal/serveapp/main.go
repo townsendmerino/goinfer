@@ -1337,6 +1337,9 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		if spec.head != nil {
 			return nil, fmt.Errorf("--model %q carries joint_head.safetensors (a Clef model) and also head=%s (a JEV head): an entry is one or the other", spec.path, *spec.head)
 		}
+		if err := clefQuantRefusal(opts.Quant); err != nil {
+			return nil, fmt.Errorf("--model %q: %w", spec.path, err)
+		}
 		if clefHead, err = clef.LoadHead(spec.path); err != nil {
 			return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 		}

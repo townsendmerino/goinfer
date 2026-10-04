@@ -1,0 +1,27 @@
+Loading weights:   0%|          | 0/760 [00:00<?, ?it/s]Loading weights:   0%|          | 1/760 [00:01<19:26,  1.54s/it]Loading weights:   8%|▊         | 62/760 [00:01<00:13, 51.41it/s]Loading weights:  12%|█▏        | 91/760 [00:01<00:10, 65.16it/s]Loading weights:  15%|█▍        | 112/760 [00:02<00:08, 72.64it/s]Loading weights:  17%|█▋        | 129/760 [00:02<00:08, 73.75it/s]Loading weights:  19%|█▉        | 143/760 [00:02<00:07, 79.79it/s]Loading weights:  21%|██        | 156/760 [00:02<00:07, 81.35it/s]Loading weights:  23%|██▎       | 172/760 [00:02<00:06, 91.81it/s]Loading weights:  24%|██▍       | 186/760 [00:02<00:06, 88.60it/s]Loading weights:  26%|██▋       | 200/760 [00:03<00:06, 89.44it/s]Loading weights:  28%|██▊       | 211/760 [00:03<00:06, 89.92it/s]Loading weights:  30%|██▉       | 225/760 [00:03<00:05, 91.91it/s]Loading weights:  31%|███▏      | 239/760 [00:03<00:05, 96.25it/s]Loading weights:  33%|███▎      | 253/760 [00:03<00:05, 98.63it/s]Loading weights:  35%|███▍      | 264/760 [00:03<00:05, 95.42it/s]Loading weights:  37%|███▋      | 278/760 [00:03<00:05, 90.43it/s]Loading weights:  38%|███▊      | 292/760 [00:04<00:04, 96.20it/s]Loading weights:  40%|████      | 306/760 [00:04<00:04, 99.46it/s]Loading weights:  42%|████▏     | 317/760 [00:04<00:04, 99.37it/s]Loading weights:  43%|████▎     | 328/760 [00:04<00:04, 90.55it/s]Loading weights:  45%|████▌     | 344/760 [00:04<00:03, 106.49it/s]Loading weights:  47%|████▋     | 356/760 [00:04<00:05, 74.04it/s] Loading weights:  48%|████▊     | 366/760 [00:05<00:07, 50.07it/s]Loading weights:  50%|█████     | 380/760 [00:05<00:06, 57.26it/s]Loading weights:  51%|█████     | 388/760 [00:05<00:07, 50.77it/s]Loading weights:  52%|█████▏    | 398/760 [00:05<00:07, 46.79it/s]Loading weights:  54%|█████▍    | 411/760 [00:06<00:08, 39.41it/s]Loading weights:  55%|█████▍    | 416/760 [00:06<00:08, 38.94it/s]Loading weights:  55%|█████▌    | 421/760 [00:06<00:12, 26.30it/s]Loading weights:  65%|██████▍   | 492/760 [00:07<00:02, 107.56it/s]Loading weights:  68%|██████▊   | 519/760 [00:07<00:01, 130.14it/s]Loading weights:  72%|███████▏  | 549/760 [00:07<00:01, 156.40it/s]Loading weights:  78%|███████▊  | 591/760 [00:07<00:00, 204.98it/s]Loading weights:  82%|████████▎ | 627/760 [00:07<00:00, 236.07it/s]Loading weights:  87%|████████▋ | 661/760 [00:07<00:00, 258.36it/s]Loading weights:  92%|█████████▏| 699/760 [00:07<00:00, 287.89it/s]Loading weights:  96%|█████████▋| 733/760 [00:07<00:00, 291.67it/s]Loading weights: 100%|██████████| 760/760 [00:07<00:00, 96.82it/s] 
+[22:11:56] loaded f32 in 10s
+[22:12:11] [1/25] mq-K256-s0::noul 404 tok, 1 questions, 14.3s
+[22:12:27] [2/25] mq-K256-s0::score 458 tok, 1 questions, 15.5s
+[22:12:43] [3/25] mq-K256-s0::choice 430 tok, 1 questions, 16.6s
+[22:12:59] [4/25] mq-K256-s0::noul2 404 tok, 1 questions, 15.4s
+[22:13:15] [5/25] mq-K256-s0::choice2 423 tok, 1 questions, 16.6s
+[22:13:30] [6/25] mq-K256-s1::noul 398 tok, 1 questions, 15.1s
+[22:13:49] [7/25] mq-K256-s1::score 452 tok, 1 questions, 18.7s
+[22:14:07] [8/25] mq-K256-s1::choice 424 tok, 1 questions, 18.2s
+[22:14:25] [9/25] mq-K256-s1::noul2 398 tok, 1 questions, 17.9s
+[22:14:43] [10/25] mq-K256-s1::choice2 417 tok, 1 questions, 17.8s
+[22:15:00] [11/25] mq-K256-s2::noul 401 tok, 1 questions, 17.3s
+[22:15:20] [12/25] mq-K256-s2::score 455 tok, 1 questions, 19.2s
+[22:15:38] [13/25] mq-K256-s2::choice 427 tok, 1 questions, 18.6s
+[22:15:54] [14/25] mq-K256-s2::noul2 401 tok, 1 questions, 16.0s
+[22:16:11] [15/25] mq-K256-s2::choice2 420 tok, 1 questions, 17.3s
+[22:16:57] [16/25] mq-K1024-s0::noul 1151 tok, 1 questions, 45.8s
+[22:17:46] [17/25] mq-K1024-s0::score 1205 tok, 1 questions, 49.3s
+[22:18:33] [18/25] mq-K1024-s0::choice 1177 tok, 1 questions, 46.6s
+[22:19:18] [19/25] mq-K1024-s0::noul2 1151 tok, 1 questions, 45.0s
+[22:20:06] [20/25] mq-K1024-s0::choice2 1170 tok, 1 questions, 47.7s
+[22:20:53] [21/25] mq-K1024-s1::noul 1175 tok, 1 questions, 47.4s
+[22:21:41] [22/25] mq-K1024-s1::score 1229 tok, 1 questions, 48.2s
+[22:22:28] [23/25] mq-K1024-s1::choice 1201 tok, 1 questions, 47.1s
+[22:23:12] [24/25] mq-K1024-s1::noul2 1175 tok, 1 questions, 43.5s
+[22:23:58] [25/25] mq-K1024-s1::choice2 1194 tok, 1 questions, 45.9s

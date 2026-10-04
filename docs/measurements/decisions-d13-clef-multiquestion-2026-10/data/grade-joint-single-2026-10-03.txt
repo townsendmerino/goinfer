@@ -1,0 +1,41 @@
+25 questions; mean KL(single||joint) 0.01349, median 0.00564, max 0.05584; max |dP| 0.1379; top-1 agreement 23/25
+
+by position (the question's place in the joint record):
+  1 noul     mean KL 0.00119  max |dP| 0.0090  top-1 5/5
+  2 score    mean KL 0.02688  max |dP| 0.0839  top-1 5/5
+  3 choice   mean KL 0.02079  max |dP| 0.1379  top-1 5/5
+  4 noul2    mean KL 0.00072  max |dP| 0.0169  top-1 5/5
+  5 choice2  mean KL 0.01784  max |dP| 0.1271  top-1 3/5
+
+by K (state length):
+  K= 256 mean KL 0.01405  max |dP| 0.1379  top-1 14/15  (n=15)
+  K=1024 mean KL 0.01264  max |dP| 0.0839  top-1 9/10  (n=10)
+
+per question:
+  mq-K256-s0     noul     KL 0.00024  max|dP| 0.0021  same  (tokens joint 839, single 404)
+  mq-K256-s0     score    KL 0.02368  max|dP| 0.0713  same  (tokens joint 839, single 458)
+  mq-K256-s0     choice   KL 0.00099  max|dP| 0.0101  same  (tokens joint 839, single 430)
+  mq-K256-s0     noul2    KL 0.00006  max|dP| 0.0021  same  (tokens joint 839, single 404)
+  mq-K256-s0     choice2  KL 0.00545  max|dP| 0.0443  same  (tokens joint 839, single 423)
+  mq-K256-s1     noul     KL 0.00037  max|dP| 0.0027  same  (tokens joint 833, single 398)
+  mq-K256-s1     score    KL 0.03428  max|dP| 0.0838  same  (tokens joint 833, single 452)
+  mq-K256-s1     choice   KL 0.05584  max|dP| 0.1379  same  (tokens joint 833, single 424)
+  mq-K256-s1     noul2    KL 0.00081  max|dP| 0.0090  same  (tokens joint 833, single 398)
+  mq-K256-s1     choice2  KL 0.02215  max|dP| 0.0957  FLIP  (tokens joint 833, single 417)
+  mq-K256-s2     noul     KL 0.00000  max|dP| 0.0001  same  (tokens joint 836, single 401)
+  mq-K256-s2     score    KL 0.01872  max|dP| 0.0575  same  (tokens joint 836, single 455)
+  mq-K256-s2     choice   KL 0.00564  max|dP| 0.0402  same  (tokens joint 836, single 427)
+  mq-K256-s2     noul2    KL 0.00245  max|dP| 0.0169  same  (tokens joint 836, single 401)
+  mq-K256-s2     choice2  KL 0.04005  max|dP| 0.1271  same  (tokens joint 836, single 420)
+  mq-K1024-s0    noul     KL 0.00514  max|dP| 0.0090  same  (tokens joint 1586, single 1151)
+  mq-K1024-s0    score    KL 0.02040  max|dP| 0.0625  same  (tokens joint 1586, single 1205)
+  mq-K1024-s0    choice   KL 0.01828  max|dP| 0.0786  same  (tokens joint 1586, single 1177)
+  mq-K1024-s0    noul2    KL 0.00010  max|dP| 0.0028  same  (tokens joint 1586, single 1151)
+  mq-K1024-s0    choice2  KL 0.00639  max|dP| 0.0442  same  (tokens joint 1586, single 1170)
+  mq-K1024-s1    noul     KL 0.00018  max|dP| 0.0019  same  (tokens joint 1610, single 1175)
+  mq-K1024-s1    score    KL 0.03733  max|dP| 0.0839  same  (tokens joint 1610, single 1229)
+  mq-K1024-s1    choice   KL 0.02322  max|dP| 0.0699  same  (tokens joint 1610, single 1201)
+  mq-K1024-s1    noul2    KL 0.00017  max|dP| 0.0035  same  (tokens joint 1610, single 1175)
+  mq-K1024-s1    choice2  KL 0.01517  max|dP| 0.0793  FLIP  (tokens joint 1610, single 1194)
+top-1 flip: mq-K256-s1 choice2: the single run's top-two margin 0.041
+top-1 flip: mq-K1024-s1 choice2: the single run's top-two margin 0.050

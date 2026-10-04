@@ -38,6 +38,16 @@ func isClefDir(path string) bool {
 	return err == nil && !st.IsDir()
 }
 
+// clefQuantRefusal is the error a Clef model gets for a quant it is not offered at, or nil. int4 is refused (owner decision 2026-10-03, after D13): on 150
+// records it read mean KL 0.051 and top-1 0.840 against the f32 reference on the CPU, and 0.044 and 0.840 on CUDA, where the default int8int8 reads 0.0165
+// and 0.907 (decisions-d13-clef-fidelity-2026-10-03.md section 7). Other quants are not refused here: f32 and int8int8 are graded, int4mix is simply not measured.
+func clefQuantRefusal(quant string) error {
+	if quant == "int4" {
+		return fmt.Errorf("a Clef model is not served at int4: D13 measured it at mean KL 0.051 and top-1 agreement 0.840 against the f32 reference (int8int8, the default: 0.0165 and 0.907); use quant=int8int8 or quant=f32")
+	}
+	return nil
+}
+
 // isClefModel reports whether the named entry is a loaded Clef model. It resolves through resolveAndLock like every other route to a model (the guard in
 // liveness_test.go allows no other caller of lookupLocked) and releases at once; withModel takes the lock again for the request and rechecks.
 func (s *server) isClefModel(name string) bool {
