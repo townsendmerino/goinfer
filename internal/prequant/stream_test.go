@@ -414,7 +414,12 @@ func TestSidecar_interruptedWriteDoesNotPoisonTheCache(t *testing.T) {
 	if err := os.WriteFile(cache, []byte("GIW\x00truncated"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The source an hour older than the cache, set rather than left to the write order: Windows' file clock ticks
+	// every ~1-16 ms, so two files written back to back can carry the same mtime.
 	now := time.Now()
+	if err := os.Chtimes(src, now.Add(-time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chtimes(cache, now, now); err != nil {
 		t.Fatal(err)
 	}
