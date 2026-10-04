@@ -85,3 +85,40 @@ features). Two load-time notes the taxonomy does not encode:
   -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu`. A Metal or WebGPU row returns once that
   backend has pairwise rope kernels and a resident-vs-CPU gate on peaked attention
   (docs/measurements/cuda-pairwise-rope-2026-10-01.md).
+
+## Verified on: what has actually run
+
+The table above is what each backend IMPLEMENTS. This section is what has actually EXECUTED, generated from the hardware census (`docs/hardware-coverage.json`), which records for each
+hardware-selected code path (a CPU feature tier, a GPU architecture, a memory threshold, an OS) where it last ran. It is per path, not per model family, so it does not fill the table above.
+Anything not listed here has not run on the machines below, and is guarded only by the startup self-tests (`docs/server.md`), which check the kernels on the machine they run on.
+
+How it ran: **native** is real hardware; **ci-pool** is a GitHub runner whose CPU the run does not name; **forced** is a build tag making the code take a narrower path than the machine has;
+**emulated** is Intel SDE or QEMU. The census counts paths, so a machine with a high count is not thereby "verified" for every model.
+
+| Machine | How it ran | Paths with a record | Latest record |
+|---|---|---|---|
+| nobara-pc under Intel SDE 10.13.1 (sde64 -icx, Ice Lake AVX-512 VNNI+VL) | emulated | 1 | 2026-09-24 |
+| GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model) | ci-pool | 5 | 2026-10-03 |
+| nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07 | forced, native | 6 | 2026-10-04 |
+| nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB | forced | 1 | 2026-10-04 |
+| GitHub ubuntu-latest, AMD EPYC 9V74 80-Core (Zen 4: natively has AVX-512 VNNI+VL, which the tag turns off along with AVX2) | forced | 1 | 2026-10-04 |
+| Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0) | native | 5 | 2026-10-03 |
+| GitHub macos-latest runner (arm64) | ci-pool | 3 | 2026-10-03 |
+| GitHub ubuntu-24.04-arm runner: ARM Neoverse-N2, 4 CPUs, DotProd (asimddp) yes | ci-pool | 2 | 2026-10-03 |
+| qemu-aarch64-static 10.2.2 user-mode emulation of -cpu cortex-a72 (no DotProd) on nobara-pc | emulated | 1 | 2026-10-04 |
+| GitHub ubuntu-24.04-arm runner: Neoverse-N2 (has DotProd, forced off by aikit_nodotprod) | forced | 1 | 2026-10-04 |
+| nobara-pc: RTX 2070 SUPER over Vulkan (wgpu-native, ADAPTER_PROBE backend=vulkan software=false), driver 595.91.07 | native | 1 | 2026-09-28 |
+| GitHub windows-latest runner: AMD EPYC 9V74 (Zen 4), 2 cores / 4 threads, windows/amd64 | ci-pool | 1 | 2026-10-03 |
+
+**10 of 30 hardware-selected paths have no record of ever executing:**
+
+- `cpu-popcnt`: POPCNT Hamming distance
+- `cuda-compute-mode`: CUDA graphs tenancy check (device compute mode)
+- `cuda-uva`: CUDA unified addressing check for mapped host buffers
+- `cuda-non-turing`: CUDA on any architecture but Turing (PTX JIT to another SASS)
+- `cuda-old-driver`: PTX ISA 8.8 on a driver older than 595
+- `cuda-vram-above-8gb`: CUDA configurations selected only with more than 8 GB of VRAM
+- `metal-unused-queries`: Metal device queries aikit/gpu exposes and goinfer does not call
+- `metal-newer-gpus`: Metal on M2/M3/M4 GPU families
+- `metal-unified-memory-above-16gib`: Configurations selected only with more than 16 GiB of unified memory
+- `webgpu-vendors`: WebGPU on AMD, Intel, and Windows DX12

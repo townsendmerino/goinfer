@@ -305,6 +305,18 @@ quant and date in [docs/benchmarks.md](docs/benchmarks.md). To measure on your o
 `scripts/bench_peer.py` — same weights both sides, decode-only, interleaved, server restarted per
 cell.
 
+## What it has been run on
+
+goinfer is built, measured and checked on three machines: a MacBook Pro (M1 Pro, 16 GB, Metal), a desktop with an RTX 2070 SUPER (8 GB, CUDA), and the Ryzen 7 3700X in that same desktop (CPU only).
+Every speed in this README came from one of them and does not carry over to other hardware. Other machines, other GPU generations and other operating systems have mostly not been run by us:
+[the generated hardware matrix](docs/hardware-matrix.md#verified-on-what-has-actually-run) lists which hardware-selected paths have executed, on what, and how (real hardware, a CI runner, a build tag that forces a
+narrower path, or emulation), and which have never executed at all.
+
+What stands between you and a wrong answer on a machine we have not seen is a check goinfer runs at start: it runs the compute kernels it is about to use against a reference on a small fixed input, and if one disagrees
+it steps down to a slower path, or declines that backend, rather than giving wrong numbers. Today that covers the CPU kernels, CUDA, and WebGPU on a real GPU (not on a software renderer); Metal is not covered yet
+([docs/server.md](docs/server.md)). `goinfer-serve check --hardware` prints what it found on your machine and sends nothing anywhere. If something is wrong, paste it into
+[a bug report](https://github.com/townsendmerino/goinfer/issues/new?template=bug.yml); that is the most useful thing you can send.
+
 ## What it is, and isn't
 
 goinfer targets **single-user local inference**: one process, one machine,

@@ -217,3 +217,52 @@ func TestGPUProbe_anUnmeasuredBackendIsNotProbed(t *testing.T) {
 		t.Errorf("standalone probe of an unmeasured backend: %s", r.Summary())
 	}
 }
+
+// A backend that names itself "webgpu:vulkan" is probed under its registry name, and one that declares itself ineligible (a software adapter) is skipped with its reason, keeps its resident, and is never recorded as a pass.
+type ineligibleBackend struct {
+	*fakeNamedResidency
+	why string
+}
+
+func (b *ineligibleBackend) SelfTestEligible() (bool, string) { return false, b.why }
+
+func TestGPUProbe_normalizesTheBackendNameAndHonoursIneligibility(t *testing.T) {
+	t.Cleanup(resetSelfTestCaches)
+	resetSelfTestCaches()
+	if got := probeBackendName(&fakeNamedResidency{name: "webgpu:vulkan"}); got != "webgpu" {
+		t.Errorf("probeBackendName(webgpu:vulkan) = %q, want webgpu", got)
+	}
+	const reg = "fake-soft-gpu"
+	probeMeasured[reg] = true
+	t.Cleanup(func() { delete(probeMeasured, reg) })
+	RegisterBackend(reg, func() (Backend, error) {
+		cpu, err := NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be := &fakeNamedResidency{name: reg + ":software"}
+		be.Backend = cpu
+		return &ineligibleBackend{fakeNamedResidency: be, why: "software adapter: test"}, nil
+	})
+	m, err := Load(tinyFixture(t), Options{Backend: reg, Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if m.resident == nil {
+		t.Error("an ineligible backend's resident was dropped; it should be left alone, unprobed")
+	}
+	var rec *SelfTestResult
+	for _, r := range SelfTestResults() {
+		if r.Backend == reg {
+			r := r
+			rec = &r
+		}
+	}
+	if rec == nil || rec.Status != SelfTestSkipped || !strings.Contains(rec.Note, "software adapter") {
+		t.Errorf("recorded %+v; want skipped with the adapter reason", rec)
+	}
+	if r := probeStandalone(reg); r.Status != SelfTestSkipped || !strings.Contains(r.Note, "software adapter") {
+		t.Errorf("standalone probe of an ineligible backend: %s", r.Summary())
+	}
+}

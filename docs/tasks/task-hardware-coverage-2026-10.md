@@ -1,8 +1,8 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (needs Intel SDE downloaded by the owner), H1.4 as a CI job, H2 on Metal and WebGPU, and H4–H6 are not started** (checked against the tree
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU, CUDA and WebGPU) and H3 (device facts for CUDA and WebGPU) are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H2 and the device facts on Metal are not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
 > 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
-> H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one rented sweep are missing.
+> H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one sweep on other hardware are missing, and with H4 parked the second can only be met by a different route (see H4).
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
@@ -157,6 +157,12 @@ test-only package that CI's `test-rest` job runs.
 2. **Intel SDE as a scheduled job** (weekly, like `race-weekly`, or on nobara). Run the CPU parity suite and
    tiny goldens under `sde64 -icx` (AVX-512 VNNI) and `-spr` (Sapphire Rapids). SDE is slow, so goldens only.
    Precedent: `0616cdc0`'s confirmation run.
+
+   **Set up 2026-10-04:** SDE 10.13.1 is at `~/tools/sde` (the tarball and its unchecked `.sig` beside it); `docs/measurements/sde-2026-10-04/run-sde-goldens.sh` runs aikit's `linalg` suite and the goinfer goldens under `-hsw` (control),
+   `-icx` and `-spr`, and is on tonight's queue (`night.py`, estimate 60 min). **Found by hand first:** aikit's `SelfCheck` and its VNNI tests pass under `-icx` with `avx512vnni+vl` detected and active, but goinfer's amd64 int4 greedy
+   golden (`TestDecodeParityInt4`) drifted at id 22 on any VNNI CPU while passing on AVX2: the two paths differ by relative L2 0.072 on that step's logits, each about equally far from f32. The golden was per architecture, not
+   per ISA, and CI cannot see it (the 0.5B asset is absent there). **Resolved the same day by the owner's decision:** an `"amd64-vnni"` golden captured under SDE (`-icx` and `-spr` agree), selected from the active kernels; it passes under
+   `-hsw`, `-icx`, `-spr` and natively, and has never been seen on a real VNNI CPU. Details in that directory's README. Not yet a scheduled job: it is a queued one-off. **Cadence decision deferred by the owner (2026-10-04) to about 2026-11-04**: the options are an item in the `RELEASING.md` pre-flight and the aikit-bump checklist (queue `sde-goldens` and read its `summary.txt` before tagging; the recommendation, since SDE results only move when kernels or the decoder do), a weekly `night.py add` from a nobara crontab (the queue is still started by hand), or both. A GitHub workflow cannot do it: SDE is a click-through-license download.
 3. **Force the fallbacks.** A test-only hook (build tag, in aikit) that makes `hasAVX2` / `hasDotProd` /
    `hasAVX512VNNI*` report false. CI then runs every kernel suite twice, so the pure-Go and narrower-ISA
    paths execute on every push.
@@ -164,6 +170,11 @@ test-only package that CI's `test-rest` job runs.
 
    **Run by hand 2026-10-04 for aikit's `linalg` suite (not yet a CI job):** `qemu-aarch64-static` 10.2.2 is installed on nobara; per-test processes under `-cpu cortex-a72`: 210 of 212 ok, 1 SIGILL (a real unguarded
    test, fixed in aikit v1.54.0), 1 timeout (a throughput measurement). goinfer's own suites were not run this way (too slow). Recorded in the census as `emulated` for `cpu-arm64-no-dotprod`.
+
+   **As a CI job, 2026-10-04: `root-forced-fallbacks-arm64`** runs goinfer's forward and parity tests on the native arm64 runner under aikit's `aikit_nodotprod` tag (the same technique aikit's own CI uses), with `AIKIT_EXPECT_FORCED=nodotprod`
+   failing a tag that forced nothing. **QEMU was tried for goinfer's decoder suite and is not viable:** cross-compiled with `GOARCH=arm64`, `-cpu cortex-a72` passed 6 tests in 10 minutes (the dflash layer-by-layer test was mid-run) before my
+   own time limit killed it. So the job covers the no-DotProd KERNELS, not an unguarded DotProd instruction elsewhere, which only a real A72 or QEMU finds (aikit's `linalg` run by hand found one, fixed in aikit v1.54.0). A QEMU leg
+   for aikit's `linalg` suite in aikit's own CI would cover that class; it is not built.
 5. **Drive the size-selected paths with small models.** A test hook that overrides the memory probes and the
    CUDA SM / shared-memory attributes: a 0.5B told it has 64 GiB unified memory, or a card with 128 SMs.
    That reaches the residency decisions, slot counts, context defaults and launch grids on our own hardware.
@@ -268,11 +279,29 @@ that backend's parity contract. Specifically:
 - **Break-it-first, on the real GPU** (`cuda/selftest_probe_test.go`): a wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) in the GPU copy's config only, CPU reference true. Both decline (cosine 0.67 / 0.93, relative L2 0.98 / 0.39).
   **The first version of that test passed on a probe that checked nothing for its target:** the fixture it mutated was Phi-3, which the CUDA resident declines by design, so that fixture was silently skipped and the other three
   carried the "pass". Fixed twice over: the result now carries a note naming any fixture that could not be compared, and the fixtures are chosen and tested so each goes resident.
-- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA only; Metal and WebGPU report "no self-test for this backend yet" rather than being judged against bars nobody has seen them clear (Metal's f16
-  residual stream could sit near 0.995). **Open: H2 on Metal (the Mac) and WebGPU.** The probe is backend-generic, so that port is: measure the margins on that backend, add it to `probeMeasured`, and add the config-mutation test.
-- **Not built:** the optional per-(version, device, OS build) pass cache, and the per-family decline option (whole backend, as the Metal spec's default said).
+- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA and WebGPU; Metal reports "no self-test for this backend yet" rather than being judged against bars nobody has seen it clear (its f16
+  residual stream could sit near 0.995). **Open: H2 on Metal (the Mac)**, which is the same port: measure the margins, add `"metal"` to `probeMeasured`, add the config-mutation test, and edit the "not covered yet"
+  copy (`docs/server.md`, the README, the Download template).
+- **WebGPU, 2026-10-04 (`gpu/selftest_probe_test.go`, nobara's RTX 2070 SUPER over Vulkan via wgpu-native, driver 595.91.07):** all four checkpoints go resident at both quants (unlike CUDA, the MoE fixture too at
+  int8int8). Int4 worst cosine 0.99988, relative L2 0.0155; int8int8 0.99929 and 0.0378, so the closest to a bar is the int8int8 L2 at 2.6x inside and the cosine 0.0043 above its floor. 1.2-1.4 s per quant (CUDA 0.9 s).
+  A wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) on the GPU copy declines it (cosine 0.67 / 0.93, relative L2 0.98 / 0.39), the same figures as CUDA, as they should be for the same input error. **One
+  adapter: AMD, Intel, DirectX 12 and Metal-backed WebGPU adapters are held to bars measured on NVIDIA, which is exactly the "vendor drivers" risk this item listed**, so a healthy one near a bar could be declined to
+  the CPU path (loudly, and `-no-selftest` skips it). That is accepted, and disclosed in `docs/server.md` and the CHANGELOG, because a self-test that skipped the vendors it exists for would not be one.
+  **A software adapter is not probed** (the backend declares itself ineligible, and the result is "skipped" with the reason): CI's lavapipe runs the gpu module's tests and must not pay for, or be judged by,
+  bars measured on a GPU. Lavapipe could not be started on this box (the device request fails under this wgpu version), so that path is tested with a fake backend, not on lavapipe itself.
+  The backend's `Name()` is `webgpu:vulkan`; the hook now keys on the registry name before the colon (a bug found before it shipped: the first version looked up `webgpu:vulkan` and would never have run).
+- **Not built:** the per-family decline option (whole backend, as the Metal spec's default said), and the optional pass cache below.
+- **PARKED, 2026-10-04 (owner): the per-(version, device, OS build) pass cache.** Measured cost it would remove: about 0.9 s per quant on CUDA (1.75 s cold), 1.2-1.4 s on WebGPU, once per process, so it only
+  matters to things that start often (`goinfer-chat` launches, a batch CLI in a loop). **Why parked:** it weakens what the check is for. A cached pass survives a driver update that changes the PTX JIT output
+  unless the driver version is in the key; CUDA exposes it, **WebGPU does not**, so a WebGPU cache cannot be keyed on the driver and would hide a driver regression; it also never re-checks an intermittent fault, and
+  adds state to harden (corruption, read-only filesystems, a home directory shared across machines with different GPUs, device identifiers written to disk). **Trigger to reopen:** real complaints about start-up
+  latency, or the probe growing past a few seconds. **If built:** key on goinfer build, device, driver version and OS build; cache passes only, never declines; expire after about 30 days; `check --hardware` always runs
+  fresh; `/health` and the report show "pass (cached, <date>)"; a mutation proof for each key field forcing a re-run. **Cheaper levers first:** the 264-position fixture is about 0.6 s of CUDA's 0.9 s and exists to push attention past 256 keys.
 
 ### H3 — a hardware report people can paste
+
+> **Device facts built for CUDA (name, compute capability, SMs, memory, driver) and WebGPU (adapter, vendor, API, adapter type, limits, dot-product support; no VRAM or driver version exists in WebGPU). Not built:
+> Metal's (GPU family and macOS build), which needs the Mac.**
 
 - `goinfer-serve check --hardware` (and the same on `goinfer-chat`) prints one block:
   - OS and build;
@@ -288,6 +317,10 @@ that backend's parity contract. Specifically:
   the site.
 
 ### H4 — a rented sweep before each release that carries a public claim
+
+> **PARKED, 2026-10-04 (owner): no rented machines.** H5's trigger (two H4 sweeps) cannot fire while this is parked. Open question the owner raised: whether a Claude cloud session could run the sweep. It could not stand in for
+> the GPU and Apple Silicon rows (as far as I know a cloud session is a CPU container with no GPU and no Mac), so it covers at most the x86 AVX-512 row, and only if its CPU is one we can name. Until something supplies the other rows, the public
+> claim stays limited to the machines in the census, which is what H6 says in plain words.
 
 - A script that a fresh rented machine runs from a clean OS (`scripts/hardware_sweep.sh`). It downloads the
   release assets, pulls a fixed small model set, runs the self-tests, `check --hardware`, the forward goldens
@@ -322,9 +355,16 @@ stays rented.
 - The release checklist (`RELEASING.md`) gains one line: the never-executed list from H0, read before
   tagging.
 
+**Done 2026-10-04, with one change of shape.** The census is per hardware-selected PATH, not per model family, so a per-family "verified on" column would have to be invented. What is generated instead is a
+"Verified on: what has actually run" section at the end of `docs/hardware-matrix.md`: a machine table (how it ran: native, ci-pool, forced, emulated; paths with a record; latest record) and the never-executed list,
+produced by `renderVerifiedOn` from `docs/hardware-coverage.json`. `TestHardwareMatrix_fresh` fails when the census moves without a regeneration, and `TestVerifiedOn_followsTheCensus` shows the section follows it. The
+site's Download page has a "What it has been run on" section (the machines from `site/data/machines.json`, the self-test and which backends it covers, `check --hardware`, the bug form) that the site's output check
+requires, and proved red by deleting the bug-report link; the README has the same in its own words; `RELEASING.md` pre-flight item 7 is the checklist line. The copy says Metal and WebGPU are not covered by the
+self-test, which is true today and has to be edited when H2 reaches them (the self-test paragraph in `docs/server.md` is the other place).
+
 ## 3. Order
 
-H0 → (H1.1–H1.3 and H2-Metal, in parallel) → H1.4–H1.5 and H2-CUDA → H3 → H4 before the next public claim →
+(H4 is parked.) H0 → (H1.1–H1.3 and H2-Metal, in parallel) → H1.4–H1.5 and H2-CUDA → H3 → H4 before the next public claim →
 H2-CPU-ISA and H2-WebGPU → H6. H5 waits on its trigger.
 
 **Enough to make a public speed claim:** H0 complete; H2 on Metal and CUDA; no never-executed entry among the
@@ -338,4 +378,4 @@ paths the claim names; one H4 sweep on the claim's hardware classes.
 - **Performance tuning for rented hardware.** Correctness first. A kernel tuned on a card we do not own
   becomes a path nobody can re-measure.
 
-<!-- doc-reviewed: 2026-10-01 -->
+<!-- doc-reviewed: 2026-10-04 -->

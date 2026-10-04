@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — the startup self-test covers WebGPU, and `check --hardware` prints the WebGPU adapter
+
+The resident self-test (the four tiny checkpoints through the resident path against the CPU path, once per process and quant) now runs for the WebGPU backend, on a real adapter. On an RTX 2070 SUPER over
+Vulkan all four checkpoints go resident at int4 and int8int8: worst cosine 0.99988 and relative L2 0.0155 (int4), 0.99929 and 0.0378 (int8int8), in 1.2-1.4 s; a wrong `rms_norm_eps` or `rope_theta` in the
+GPU copy only makes it decline (cosine 0.67 and 0.93). **The bars were measured on that one adapter**; AMD, Intel, DX12 and Metal-backed adapters are held to them unmeasured. A **software adapter** (lavapipe,
+llvmpipe, SwiftShader) is not probed and is reported as skipped with the reason. `goinfer-serve check --hardware` prints the adapter name, vendor, graphics API, adapter type, limits and whether
+`dot4I8Packed` compiles (WebGPU exposes neither VRAM nor the driver version, and the report says so). Metal is not covered yet.
+
 ### Changed
 
 - **Metal: int8 models run as int8 on the GPU.** `-backend metal` with an int8 or int8int8 model (dense Qwen/Llama-style

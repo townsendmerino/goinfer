@@ -34,6 +34,9 @@ func TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams(t *testing.T) {
 				t.Fatalf("%s has no fields — this test would pass having checked nothing", name)
 			}
 			for i := 0; i < typ.NumField(); i++ {
+				if !typ.Field(i).IsExported() {
+					continue // go doc (and pkg.go.dev) elide unexported fields: a reader of the API cannot be shown them
+				}
 				f := typ.Field(i).Name
 				if !strings.Contains(doc, f) {
 					t.Errorf("go doc . %s does not mention field %s:\n%s", name, f, doc)

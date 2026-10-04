@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -94,9 +95,26 @@ func loadInt4Model(tb testing.TB) *Model {
 var parityWantInt4ByArch = map[string][]int{
 	"arm64": {4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 6573, 315, 2038, 429, 3880, 311, 387, 10865, 198, 262, 1494},
 	"amd64": {4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 5878, 369, 279, 5042, 2038, 198, 262, 1494, 271, 8960, 4136},
+	// CAPTURED UNDER INTEL SDE 10.13.1, 2026-10-04 (sde64 -icx and -spr gave the same 24 ids), because no VNNI machine is on hand. The VNNI kernels are
+	// integer arithmetic, which SDE executes exactly, so the list is what a real VNNI CPU computes, not an emulation artefact; a real VNNI host
+	// (GitHub's EPYC 9V74 pool, Ice Lake and newer) is the check on that claim, and the first one to run this test with the asset is owed a look.
+	// It parts from the AVX2 list at id 22 (333, not 8960) where AVX2's top two are 0.078 apart. Evidence and the f32 comparison:
+	// docs/measurements/sde-2026-10-04/README.md.
+	"amd64-vnni": {4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 5878, 369, 279, 5042, 2038, 198, 262, 1494, 271, 333, 1304},
 }
 
-var parityWantInt4 = parityWantInt4ByArch[runtime.GOARCH]
+// int4GoldenKey is the key into parityWantInt4ByArch for THIS host: the architecture, plus "-vnni" on an amd64 host whose dispatcher is
+// using the AVX-512 VNNI W4A8 kernels. Those compute a different quantised result from the AVX2 path (not summation order: relative L2 0.072 on
+// the logits of the step where the two lists part, docs/measurements/sde-2026-10-04/README.md), so the one amd64 list failed on every VNNI CPU
+// and nothing saw it (CI skips this test: the asset is absent on the runners). It reads ACTIVE kernels, not detected ones, so a host whose
+// self-test stepped VNNI down to AVX2 compares against the AVX2 list, which is the path it is then running. Call it AFTER the first Load (the CPU self-test runs there).
+func int4GoldenKey() string {
+	k := linalg.ActiveKernels()
+	if k.Arch == "amd64" && slices.Contains(k.Active, "avx512vnni") {
+		return "amd64-vnni"
+	}
+	return runtime.GOARCH
+}
 
 // TestDecodeParityInt4 greedily continues parityPrompt at int4 and checks the
 // token ids against parityWantInt4. The prompt is prefilled (batched
@@ -120,9 +138,10 @@ func TestDecodeParityInt4(t *testing.T) {
 	if err := gen.Err(); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
+	parityWantInt4 := parityWantInt4ByArch[int4GoldenKey()]
 	if len(parityWantInt4) == 0 {
 		t.Logf("CAPTURE parityWantInt4 = %#v", got)
-		t.Skipf("parityWantInt4 has no %s entry — capture run", runtime.GOARCH)
+		t.Skipf("parityWantInt4 has no %s entry — capture run", int4GoldenKey())
 	}
 	if len(got) != len(parityWantInt4) {
 		t.Fatalf("got %d tokens, want %d: %#v", len(got), len(parityWantInt4), got)

@@ -223,9 +223,25 @@
      "goinfer": "4ad711d0",
      "aikit": "v1.54.0",
      "gate": "aikit linalg arm64 test binary, each of the 212 tests in its own process: 210 ok, 1 SIGILL (TestActGroup_row4KernelMatchesReference called the row4 SDOT kernel directly; now guarded), 1 timeout (TestFMAPeak_empirical, a throughput measurement that does not finish under emulation); plus aikit's CI step -tags aikit_nodotprod on its native arm64 runner (green on 6b137b4)"
+    },
+    {
+     "machine": "GitHub ubuntu-24.04-arm runner: Neoverse-N2 (has DotProd, forced off by aikit_nodotprod)",
+     "date": "2026-10-04",
+     "how": "forced",
+     "goinfer": "9f52ad53",
+     "aikit": "v1.55.0",
+     "gate": "ci job root-forced-fallbacks-arm64 (run 37236789252): go test -tags 'goinfer_testhooks aikit_nodotprod' -run 'Parity|Forward|ForcedFallbacks' ./decoder/, AIKIT_EXPECT_FORCED=nodotprod: 51 passed, 44 skipped (real-checkpoint assets absent on the runner), 0 failed; TestForcedFallbacks_expected passed (a tag that forced nothing would fail it)"
+    },
+    {
+     "machine": "qemu-aarch64-static 10.2.2 user-mode emulation of -cpu cortex-a72 (no DotProd) on nobara-pc",
+     "date": "2026-10-04",
+     "how": "emulated",
+     "goinfer": "37694114",
+     "aikit": "v1.55.0",
+     "gate": "goinfer decoder test binary cross-compiled GOARCH=arm64 with -tags 'goinfer_testhooks aikit_nodotprod': TestForcedFallbacks_expected and TestInt4_forwardParity pass (21 s). The whole decoder suite is not viable this way: 6 tests passed in 10 minutes"
     }
    ],
-   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it. Run 2026-10-04 under QEMU, which executes a core without DotProd for real (a forced tag on DotProd hardware cannot reach a test that calls an SDOT kernel directly); goinfer's own suite has not been run this way, the decoder tests being too slow under emulation."
+   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it. Run 2026-10-04 under QEMU, which executes a core without DotProd for real (a forced tag on DotProd hardware cannot reach a test that calls an SDOT kernel directly); goinfer's decoder suite is far too slow under emulation (6 tests in 10 minutes), so goinfer runs the kernels through the forced-tag CI job instead, which cannot reach an unguarded DotProd instruction outside the dispatched kernels. H1.4 is done as that job; a QEMU leg for aikit's linalg in aikit's CI is the unbuilt remainder."
   },
   {
    "id": "cuda-sm-shape",
@@ -678,6 +694,32 @@
     }
    ],
    "notes": "Executed on one OS version only."
+  },
+  {
+   "id": "cuda-hwinfo-report",
+   "gate": "check --hardware's CUDA device facts: name, compute capability, SM count, memory, driver CUDA version (report only: selects no code path)",
+   "kind": "cuda-device",
+   "predicates": [
+    "cuda:DeviceAttributeComputeCapabilityMajor",
+    "cuda:DeviceAttributeComputeCapabilityMinor",
+    "mem:MemInfo@goinfer/cuda/hwinfo.go"
+   ],
+   "selected_when": "only when `check --hardware` runs on a CUDA build; the report says whether the PTX is native (sm_75) or JIT-compiled forward, or older than sm_75 and unsupported",
+   "files": [
+    "goinfer/cuda/hwinfo.go"
+   ],
+   "our_machines": "an RTX 2070 SUPER only",
+   "last_executed": [
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07",
+     "date": "2026-10-04",
+     "how": "native",
+     "goinfer": "73cfad03",
+     "aikit": "v1.55.0",
+     "gate": "cuda/cmd/serve check --hardware (-tags cuda): prints the device, compute capability 7.5 (native PTX), 40 multiprocessors, memory and the driver's CUDA 13.2"
+    }
+   ],
+   "notes": "The report is what a bug reporter on another card would paste; no other card has run it, so the 'JIT-compiled forward' and 'older than sm_75' wordings are executed only as unit tests of the string, never against a real newer or older device. H4's rented sweep is the route."
   }
  ]
 }
