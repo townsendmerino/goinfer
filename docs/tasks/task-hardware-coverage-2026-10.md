@@ -1,7 +1,6 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1 and H1.5 (CUDA) are DONE; H1.3 is BUILT in aikit but not pushed, tagged or wired into goinfer's CI, and its first forced run found
-> three failures that are not yet classified (see H1.3); H1.2, H1.4 and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no QEMU job, no self-test, no
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1 and H1.5 (CUDA) are DONE; H1.3 is BUILT in aikit but not pushed, tagged or wired into goinfer's CI, and its first forced run's three failures are classified as path-pinned goldens, not defects (see H1.3); H1.2, H1.4 and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no QEMU job, no self-test, no
 > `check --hardware`, no `scripts/hardware_sweep.sh`, no issue template, no "verified on" column). H1 and H2 are the work that matters most.
 > H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and CUDA and one rented sweep are missing.
 > The census logs **12** never-executed entries (the Windows and arm64 Linux CI records removed two of the 14 first counted).
@@ -179,14 +178,20 @@ test-only package that CI's `test-rest` job runs.
 - **goinfer's side, first forced run** (local `go.work` aikit, `go test -run 'Parity|Forward' ./decoder/`, 93 tests; logs `~/goinfer-bench/h13-forced/`): normal **85 passed, 8 skipped, 0 failed
   (123 s)**; `aikit_noavx512` identical (113 s); **`aikit_noavx2`: 82 passed, 8 skipped, 3 FAILED:** `TestInt4_forwardParity/gemma4-dense-scaled`, `TestDecodeParityInt4` and
   `TestLongPromptFast_forwardParity`. All three are token-exact goldens recorded on the default AVX2 path (two are keyed by `GOARCH` because arithmetic paths already differ across arches).
-  What the diagnostics say, and no more:
-  - `TestDecodeParityInt4`: at the drift prefix the two paths' int4 logits have **cosine 0.9982** (max difference 1.08 on a 23.8 span), and the golden's token 750 (19.278) and 474 (19.125)
-    are a 0.15 near-tie that flips; at the prompt end cosine is 0.9990. That is far from the 1.2e-7 aikit records for AVX-512 against AVX2, so **the pure-Go int4 path differs from the AVX2 one by
-    more than float noise; whether that is expected (a different activation-quantization rounding) or a defect is not established.**
-  - `TestLongPromptFast_forwardParity`: with `--cpu-fast-attention` off the two builds generate identical tokens (`[13 715 522 3699 ...]`); with it on (the default above 512 tokens) the AVX2 path gives
-    `[11 714 279 ...]` and the pure-Go path `[304 279 3853 ...]`. The exact logits put token 13 first, 11 second (0.074 below) and 304 FOURTH (0.213 below), four candidates within 0.21, so tokens alone
-    cannot say whether the fast-attention fallback is wrong or only noisier on a flat distribution. **Needs the fast path's own logits on both builds.**
-  - `TestInt4_forwardParity/gemma4-dense-scaled`: not diagnosed.
+  **Classified 2026-10-04 (logit-level diagnostics on the same checkpoint and prompts, both builds; nothing committed): none of the three is a defect in a fallback.** Each pins one arithmetic
+  path's realization, and the pure-Go paths are as close to their references as the AVX2 ones:
+  - **`TestLongPromptFast_forwardParity`** (768 tokens, int8int8): the EXACT attention path is **bit-identical between the two builds** (1-cosine 0, max difference 0). The default f32 fast-attention
+    path (above 512 tokens) diverges from exact by **1-cosine 8.3e-3 (max logit difference 0.87) on the pure-Go build, against 1.6e-2 (1.04) on the AVX2 build**, so the fallback is the closer of the two;
+    the first token flips because the top four exact logits sit within 0.21 (13, 11, 319, 304) and each build's fast path reorders them (AVX2: 11 first; pure Go: 304 first).
+  - **`TestDecodeParityInt4`:** against the int8int8 logits of the same ids, the int4 path is **1-cosine 1.64e-2 on pure Go and 1.75e-2 on AVX2** at the prompt end (7.98e-3 and 8.09e-3 at the drift prefix); the two int4
+    paths differ from each other by 9.6e-4 and 1.8e-3, about a tenth of each one's own distance from the reference. That is quantization-noise level, a different rounding draw, and it flips the 0.15 near-tie
+    in the golden.
+  - **`TestInt4_forwardParity/gemma4-dense-scaled`** compares sample logits at an absolute 0.005; the same file's own comment says a centered cosine of 0.999 "is BELOW the natural cross-arch baseline and fails a
+    correct build", and the pure-Go-versus-AVX2 differences above (1e-3 to 2e-3) are that baseline.
+  - **So the forced-fallback CI job in goinfer** (after the aikit pin bump) **must not run these three as pinned goldens under the tags**, and must say why (they pin the default path's arithmetic); what it
+    should assert on a forced path instead is closeness to a reference, the way `gpt2CosFloor` does, which is a design to do with the wiring, not a skip.
+  - **A side observation, not explained:** the default fast-attention path diverges from exact by 1-cosine 1.6e-2 and up to 1.04 in a logit on this model at 768 tokens on the AVX2 build too; the comment in
+    `decoder/forwardn.go` records 2.4e-3 (1.5B, depth-matched). Different model and depth, so not a contradiction, but the figure is not obviously the one users get.
 - **Not done:** the aikit push and tag (the owner's ritual), the pin bump in goinfer, the goinfer CI job (it must assert `ForcedFallbacks()` through `AIKIT_EXPECT_FORCED`, and needs a decision on these
   three goldens: excluded under the tags with the stated reason that they pin one arithmetic path, or fixed if a fallback is wrong), and the census `forced` record for `cpu-amd64-no-avx2` (it needs a pushed aikit commit to cite).
 
