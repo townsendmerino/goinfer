@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stays off by default; next is a per-layer comparison against the CPU at the same quant (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stays off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -76,6 +76,33 @@ only if the fit guard admits it; this Mac has 16 GB, and no guard is bypassed.
 Once F1–F3 pass it runs int8 natively, the precision asked for, as CUDA does, with the speed disclosed in the CHANGELOG
 (gate S reports it). The int4 re-quant stays only for the models slice 1 does not cover.
 
+**Owner decisions, 2026-10-04** (after the per-layer comparison, Log 2026-10-04): "1, yes, 2, precise".
+- **F3 amended (O2), as F3′ below.** F3 as written compared a backend with an f16 KV cache against a CPU with an f32
+  one, which only bit-identity can pass at this quant.
+- **Precise math for native int8 (O3).** A model headed for the native int8 path compiles its Metal library without
+  fast math (`w8PreciseMath`). Fast math was about 40% of F3's gap. Its decode cost is reported by gate S's new
+  fast-math arm, not gated.
+
+**F3′ — closer to f32, against the CPU at Metal's KV precision (pre-registered 2026-10-04, before any F3′ run).**
+`TestW8Native_F3amended_closerToF32`, by day on the 0.5B, on the night queue on the 1.5B if the fit guard admits its
+f32 reference (it refused it on 2026-10-01: 7.7 GB against 7.6).
+- **Prompts:** the first 8 files of the prefill gate's prose set A, the first 16 tokens of each, then 16 tokens of the
+  CPU f32 model's greedy continuation. Positions 2-31 are scored, 240 in all.
+- **Arms:**
+  - the reference: CPU int8int8 with every K and V rounded to f16 as it is stored;
+  - Metal native int8int8, precise math, the shipped configuration if it passes.
+- **Bar:** the pooled mean KL(f32 ‖ Metal int8int8) is at most 1.10 × the pooled mean KL(f32 ‖ reference). The test
+  fails otherwise.
+- **Reported, not gated:**
+  - positions where Metal is further from f32 (expected to be most of them: any non-identical path adds noise);
+  - per-prompt ratios;
+  - CPU int8int8 at f32 KV, Metal int8 with fast math, and Metal int4.
+
+**F2** keeps its bar and re-runs on the 1.5B with precise math. **S** gains the fast-math arm. **S-auto** still waits
+for slice 2. The native path turns on by default only when F3′ (0.5B and, if it runs, 1.5B), F2 on the 1.5B and S all
+pass.
+
+
 ## Tests to update
 
 - `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) and the R17 auto tests, for the new label.
@@ -124,3 +151,57 @@ Once F1–F3 pass it runs int8 natively, the precision asked for, as CUDA does, 
   - What it means: F1 held every kernel bit-identical to the CPU, so the gap from CPU int8int8 comes from outside the
     W8A8 GEMVs. The next step is a by-day per-layer comparison of Metal int8int8 against CPU int8int8 on the 0.5B
     (no f32 reference needed), to name the first layer and op that diverges.
+- 2026-10-04: **the per-layer comparison, and where F3's gap comes from** (by day, the 0.5B; the fit guard admitted the
+  f32 reference this time, so F3 ran by day and reproduced the night's numbers exactly: CPU int8int8 0.021989, Metal
+  int8int8 0.027917).
+  - **The per-layer comparison** (`TestW8Native_perLayerBisect`; residual stream relative L2 after each layer at the
+    last position of a 32-token prose prompt):
+    - Metal int8 against CPU int8 is 3.3% after layer 0 and 8.8% after the last layer.
+    - Rounding only the CPU's own K and V to f16 moves the CPU's stream by 3.2% after layer 0 and 14.1% after the last.
+      The int8 activation quantization turns any one-ulp difference into rounding crossings, layer after layer.
+    - Metal int8 sits inside that perturbation at every layer from 9 on, and the int4 control pair (which passed F2)
+      shows the same profile, 11.3% at the end.
+    - **No layer and no op stands out, so per-layer distance cannot name a defect here.** F1 already holds every W8A8
+      GEMV bit-identical given the same inputs.
+  - **The KL split** (F3's sequence, reported arms added to `TestW8Native_F3_closerToF32`):
+
+    | arm | KL(f32 ‖ ·), 22 positions | further from f32 than the f16-KV CPU |
+    |---|---|---|
+    | CPU int8int8 (F3's reference, f32 KV) | 0.021989 | — |
+    | CPU int8int8, K/V rounded to f16 (Metal's KV precision) | 0.024045 (1.093× the above) | — |
+    | Metal int8int8, precise math (`GOINFER_W8_F3_PRECISE=1`) | 0.025440 (1.058×) | 20 of 22 |
+    | Metal int8int8, shipped fast math | 0.027917 (1.161×) | 19 of 22 |
+
+    - Of the 1.270× gap, the f16 KV cache is about a third, fast math about 40%, and the remaining quarter is what
+      precise math still leaves.
+    - Any path that is not bit-identical to the CPU lands consistently further from f32 at a quant this sensitive,
+      because independent noise adds. The CPU against itself with f16 KV moves 1.093×, already near F3's 1.10 bar.
+  - **What that means for the gate.** F3 as written is in effect a bit-identity bar against the CPU, which no
+    f16-KV backend can meet. It is not a quality bar.
+  - **Proposed for the owner, not applied** (pre-registered bars change only by owner decision): measure Metal int8
+    against the CPU at Metal's own KV precision, over more than one prompt. Two choices:
+    - (a) keep fast math and take the extra 1.16×;
+    - (b) compile the library with precise math for int8 models, at the decode cost precise math was measured at on
+      2026-08-04 (about 4% at depth 2048, 7% shallow), and re-measure for int8 before deciding.
+
+    Nothing is regraded and the native path stays off.
+- 2026-10-04: **F3′ on the 0.5B: PASSES** (by day, `278bd1f2`, the test committed with its bar before the run).
+  - Pooled mean KL(f32 ‖ ·) over 8 prompts × 30 positions: CPU int8int8 with f16 KV (the reference) 0.098462, Metal
+    native int8int8 with precise math 0.066667, **0.677×** against the 1.10 bar.
+  - Per prompt the ratio is 0.500 0.559 0.643 0.788 0.638 0.963 0.674 0.616; Metal is further from f32 at 51 of 240
+    positions.
+  - Reported: CPU int8int8 at f32 KV 0.086232, Metal int8 with fast math 0.062854 (0.638×), Metal int4 0.660900.
+  - **Is Metal closer than the CPU because of a mismatch?** A by-day check says no.
+    - `TestW8Native_hiddenVsLogits`: the same 8 prompts teacher-forced over 32 prose tokens, 240 positions.
+    - The final residual stream is as far from f32 on both sides: relative L2 0.1337 Metal, 0.1379 CPU.
+    - Logit KL is 0.12205 against 0.13171, 0.93×.
+    - Nothing points to a different quantization in the trunk or the LM head: the two are equally good, with Metal
+      slightly closer.
+    - The one-prompt F3 (1.27×) and the 8-prompt F3′ disagree in direction, which is why F3′ pools prompts. The 0.677×
+      magnitude rests on 8 prompts and a heavy-tailed KL; the direction rests on all 8 prompts and the teacher-forced
+      check.
+  - **Fast against precise** is within the noise here (0.0629 against 0.0667), while on F3's one prompt precise was
+    closer (0.0254 against 0.0279). The precise-math decision stands as the owner made it; gate S prices it tonight.
+  - **Queued for tonight** (Mac, `run-gates2.sh`, binary pinned at the commit that records this): F3′ on the 1.5B if
+    the fit guard admits its f32 reference, F2 on the 1.5B with precise math (bar unchanged), and S with its fast-math
+    arm.

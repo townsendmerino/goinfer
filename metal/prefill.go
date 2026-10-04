@@ -157,7 +157,7 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
     ushort sg[[simdgroup_index_in_threadgroup]], ushort lane[[thread_index_in_simdgroup]]) {
     constexpr ushort TT = TM/16, TF = TN/16;     // 8-blocks of tokens / features per simdgroup
     constexpr ushort WT = 128/TN, WPT = 4/WT;    // threads per weight row, 8-k words each
-    constexpr ushort AT = 128/TM, BPT = 4/AT;    // threads per activation row, 8-k blocks each
+    constexpr ushort AT = TM >= 32 ? 128/TM : 4, BPT = 4/AT; // threads per activation row, 8-k blocks each (TM = 16, D-B02: 4 a row, threads 64-127 stage none)
     threadgroup half sa[(TN/8)*4*72];            // weights:     [feature block][k block] of 8x8 [k][feature], padded
     threadgroup half sb[(TM/8)*4*64];            // activations: [token block][k block] of 8x8 [token][k]
     threadgroup float cs[4*64];                  // per-simdgroup epilogue scratch
@@ -189,7 +189,7 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
                 p += 8;
             }
         }
-        for (ushort j = 0; j < BPT; j++) {
+        for (ushort j = 0; j < BPT && (TM >= 32 || tr < TM); j++) {
             const ushort kb = kq2*BPT + j;
             threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
             if (aok) {
@@ -220,6 +220,8 @@ template [[host_name("gemm_w4f16_m64n64")]] kernel decltype(gemm_w4f16_tile<64, 
 template [[host_name("gemm_w4f16_m32n64")]] kernel decltype(gemm_w4f16_tile<32, 64>) gemm_w4f16_tile<32, 64>;
 template [[host_name("gemm_w4f16_m64n32")]] kernel decltype(gemm_w4f16_tile<64, 32>) gemm_w4f16_tile<64, 32>;
 template [[host_name("gemm_w4f16_m32n32")]] kernel decltype(gemm_w4f16_tile<32, 32>) gemm_w4f16_tile<32, 32>;
+template [[host_name("gemm_w4f16_m16n64")]] kernel decltype(gemm_w4f16_tile<16, 64>) gemm_w4f16_tile<16, 64>;
+template [[host_name("gemm_w4f16_m16n32")]] kernel decltype(gemm_w4f16_tile<16, 32>) gemm_w4f16_tile<16, 32>;
 
 // rmsnorm_quant_f16: RMSNorm a single f16 row and fused-quantize it to int8 + f32 scale — the
 // f16-input twin of the decode path's rmsnorm_quant. Prefill's LM head is the SAME int8-pinned,
@@ -899,18 +901,40 @@ kernel void shared_gate_add_f16(
 // baseline arm of R19's §3.2 gate and of the decomposition harness's A/B.
 var prefillSteelAttnOff bool
 
-// gemmTilePolicy picks which of A-P01's rules gemmTile applies: "" both (the default), "shipped" neither (every GEMM
-// on gemm_w4f16_store's 64 × 64 tile), "bm32" only the 32-token rule, "bn32" only the 32-feature rule. Test-only: the
-// arms of A-P01's grade (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
+// gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
+// "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
+// Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
 var gemmTilePolicy = ""
 
-// gemmTile is A-P01's tile selector for a rows × N prefill GEMM (docs/audit-metal-2026-09-30.md): 32 tokens when the
-// pass has at most 32 rows, so no MMA runs for a 64-row tile's missing half; 32 features when N <= 2048 and rows <= 64,
-// so the narrow GEMMs (o, down and qkv on the 1.5B: 24-32 threadgroups at 64) fill more cores. Otherwise the 64 × 64
-// kernel. Every choice is bit-identical (gemm_w4f16_tile's comment, TestGemmTile_bitIdentical).
+// gemmTile is the tile selector for a rows × N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
+// TestGemmTile_bitIdentical).
+//
+// The default (D-B02, docs/tasks/task-metal-audit-2026-10.md "D-B02: the 16-row tile"): a threadgroup costs the same
+// whatever share of its rows is real, so a smaller token tile is taken when it pads the pass to strictly fewer rows:
+// 32 tokens up to 128 rows, 16 up to 16 rows and, when N <= 8192, up to 48. Past those, more row tiles cost more than
+// the padding they save (TestGemmTile16_probe: 16-token tiles lose from 96 rows, and a 100-token pass ran 0.847x on
+// all-16-row tiles); a gate|up GEMM as wide as the 1.5B's or 7B's already fills the cores at 64 (the 7B's 40-token pass
+// ran 0.984x with it on 16-token tiles). A
+// 16-token tile always takes 32 features; otherwise A-P01's feature rule, 32 when N <= 2048 and rows <= 64, so the
+// narrow GEMMs fill more cores.
+//
+// A-P01's rule ("a01"): 32 tokens when the pass has at most 32 rows, 32 features when N <= 2048 and rows <= 64.
 func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 	tm, tn := 64, 64
-	if gemmTilePolicy != "shipped" {
+	switch gemmTilePolicy {
+	case "":
+		pad := (rows + 63) / 64 * 64
+		if p := (rows + 31) / 32 * 32; p < pad && rows <= 128 {
+			tm, pad = 32, p
+		}
+		if p := (rows + 15) / 16 * 16; p < pad && (rows <= 16 || rows <= 48 && N <= 8192) {
+			tm = 16
+		}
+		if tm == 16 || (N <= 2048 && rows <= 64) {
+			tn = 32
+		}
+	case "shipped":
+	default:
 		if gemmTilePolicy != "bn32" && rows <= 32 {
 			tm = 32
 		}
@@ -919,6 +943,8 @@ func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 		}
 	}
 	switch {
+	case tm == 16 && tn == 32:
+		return pf.pGemmM16N32, 16, 32
 	case tm == 32 && tn == 32:
 		return pf.pGemmM32N32, 32, 32
 	case tm == 32:
@@ -936,6 +962,7 @@ type prefillState struct {
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
+	pGemmM16N32                           Pipeline // D-B02's 16-token tile
 	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
@@ -995,7 +1022,7 @@ func (r *resident) ensurePrefill() {
 	}
 	r.pf = &prefillState{
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
-		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"),
+		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),

@@ -36,7 +36,8 @@ func TestGemmTile_bitIdentical(t *testing.T) {
 	tiles := []struct {
 		name   string
 		tm, tn int
-	}{{"gemm_w4f16_m64n64", 64, 64}, {"gemm_w4f16_m32n64", 32, 64}, {"gemm_w4f16_m64n32", 64, 32}, {"gemm_w4f16_m32n32", 32, 32}}
+	}{{"gemm_w4f16_m64n64", 64, 64}, {"gemm_w4f16_m32n64", 32, 64}, {"gemm_w4f16_m64n32", 64, 32}, {"gemm_w4f16_m32n32", 32, 32},
+		{"gemm_w4f16_m16n64", 16, 64}, {"gemm_w4f16_m16n32", 16, 32}}
 	cq := d.NewCommandQueue()
 	seed := uint32(64032)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
@@ -63,7 +64,7 @@ func TestGemmTile_bitIdentical(t *testing.T) {
 			bias[i] = float32(int(rnd()%2001)-1000) * 1e-3
 		}
 		bB, uN, uK := NewBufferFloats(d, bias), NewBufferU32(d, uint32(N)), NewBufferU32(d, uint32(K))
-		for _, rows := range []int{8, 16, 24, 32, 40, 64, 72} {
+		for _, rows := range []int{8, 16, 24, 32, 40, 48, 64, 72} {
 			av := make([]uint16, rows*K)
 			for i := range av {
 				av[i] = half(float32(int(rnd()%2001)-1000) * 1e-3)
@@ -103,11 +104,11 @@ func TestGemmTile_bitIdentical(t *testing.T) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "[gemm-tile] %d outputs across 7 shapes, 8-72 rows, 3 epilogues, 4 tiles: compared with gemm_w4f16_store\n", checked)
+	fmt.Fprintf(os.Stderr, "[gemm-tile] %d outputs across 7 shapes, 8-72 rows, 3 epilogues, 6 tiles: compared with gemm_w4f16_store\n", checked)
 }
 
-// TestGemmTile_selector pins gemmTile's choices (A-P01): which tile each policy gives the 1.5B's GEMMs at small and
-// large passes, so a selector change is a visible test change.
+// TestGemmTile_selector pins gemmTile's choices (A-P01, then D-B02's padding rule): which tile each policy gives at
+// small and large passes, so a selector change is a visible test change.
 func TestGemmTile_selector(t *testing.T) {
 	pf := &prefillState{}
 	defer func() { gemmTilePolicy = "" }()
@@ -116,8 +117,11 @@ func TestGemmTile_selector(t *testing.T) {
 		rows, N      int
 		wantM, wantN int
 	}{
-		{"", 16, 2048, 32, 32}, {"", 32, 17920, 32, 64}, {"", 40, 1536, 64, 32}, {"", 64, 2048, 64, 32},
-		{"", 72, 1536, 64, 64}, {"", 512, 17920, 64, 64}, {"", 16, 2056, 32, 64},
+		{"", 16, 2048, 16, 32}, {"", 16, 17920, 16, 32}, {"", 40, 17920, 64, 64}, {"", 40, 8192, 16, 32}, {"", 32, 17920, 32, 64}, {"", 40, 1536, 16, 32}, {"", 64, 2048, 64, 32},
+		{"", 72, 1536, 32, 64}, {"", 512, 17920, 64, 64}, {"", 16, 2056, 16, 32}, {"", 96, 4096, 32, 64},
+		{"", 24, 2048, 32, 32}, {"", 160, 17920, 64, 64}, {"", 48, 4096, 16, 32}, {"", 104, 2048, 64, 64}, {"", 192, 1536, 64, 64},
+		{"a01", 16, 2048, 32, 32}, {"a01", 32, 17920, 32, 64}, {"a01", 40, 1536, 64, 32}, {"a01", 64, 2048, 64, 32},
+		{"a01", 72, 1536, 64, 64}, {"a01", 512, 17920, 64, 64}, {"a01", 16, 2056, 32, 64},
 		{"shipped", 16, 2048, 64, 64}, {"bm32", 16, 2048, 32, 64}, {"bn32", 16, 2048, 64, 32},
 	} {
 		gemmTilePolicy = c.policy

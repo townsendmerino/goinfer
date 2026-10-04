@@ -471,13 +471,13 @@ gate runs at night before it ships.
 2. **Decode attention, one campaign on one harness:** B-P03 (T1.2's candidate floor is 1024; re-bakes the snapshot golden that
    straddles the floor), B-P02, then B-P01. All gated.
 3. **Small-M prefill:** A-P01 (bit-identical; **shipped** 2026-10-03, 1.804× on the 1.5B's C = 32 pass), then A-P02 (gated). Then Metal int8 slice 2 on the same tile selector.
-4. **Decode GEMV residue:** B-P04 (**killed** 2026-10-03: 0.955×, the balanced kernels do more work than the idle tail costs), B-P06, and B-P05 only after O4, with the MC3 down kernel moved in
+4. **Decode GEMV residue:** B-P04 (**killed** 2026-10-03: 0.955×, the balanced kernels do more work than the idle tail costs), B-P06 (**killed** 2026-10-04: 256 threads beats 64, 128 and 512 on the 1.5B and 7B, every rep), and B-P05 only after O4, with the MC3 down kernel moved in
    the same change.
 5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
-   at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
-7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
+   at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**; the 16-row tile **shipped**: 1.09× on the slice's 512-token pass, 1.56× / 1.73× on the 1.5B's / 7B's 16-token pass), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
+7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02 (**killed** 2026-10-04: 0.777 ms against its 0.65 ms line, 1.11× on the 7B gate|up at B = 2), E-P05 (**parked** 2026-10-04: bit-identical, 1.016× at 2 rows to 1.06× at 8, off by default), E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 (T1.7 ran: it stands on the 7B, parked on the 1.5B; **the owner parked it on both on 2026-10-03**, low value).
@@ -1100,6 +1100,156 @@ Copied ÷ zero-filled, the medians. The slice's 4 layers inflate the scratch's s
 It ships: bit-identical, and it removes redundant host work without adding a mechanism. The Metal prefill, DeltaNet,
 MoE and MC3 tests pass (76), apart from the long-standing `TestPrefillParityMoEGatedShared` (fails at HEAD too: a K = 44
 fixture `int4Concat` refuses).
+
+### D-B02: the 16-row tile, SHIPPED (bit-identical; written 2026-10-04)
+
+**What is built.** `gemm_w4f16_tile` gains a 16-token tile (`gemm_w4f16_m16n32`, `_m16n64`). At TM = 16 the activation
+staging gives each row 4 threads, so threads 64-127 stage nothing; the larger tiles' staging is unchanged, because the
+guard folds at compile time.
+
+**The selector's default rule changed.** A threadgroup costs the same whatever share of its rows is real, so `gemmTile`
+takes a smaller token tile when it pads the pass to strictly fewer rows:
+- 32 tokens, up to 128 rows;
+- 16 tokens, up to 16 rows, or up to 48 rows when N ≤ 8192;
+- a 16-token tile always takes 32 features;
+- otherwise A-P01's feature rule.
+
+A-P01's rule stays as the test arm `"a01"`.
+
+**Identity.** `TestGemmTile_bitIdentical` covers both 16-token tiles against `gemm_w4f16_store`: 98,102,016 outputs, 7
+shapes, 8-72 rows, 3 epilogues, all equal. `TestDB02_tileAB` compares the last row's logits in every rep of every cell
+below, and they are bit-equal throughout.
+
+**Kernel probe** (`TestGemmTile16_probe`, `GOINFER_GEMM16=1`; the raw output is
+`docs/measurements/metal-audit-2026-10/db02-tile16-probe-2026-10-04.log`):
+- 8 shapes (Qwen1.5-MoE experts, 1.5B, 7B) × 14 row counts from 8 to 256.
+- At ≤ 16 rows the 16×32 tile is the fastest in every shape, 1.57-2.06× A-P01's choice.
+- 16-token tiles lose from 96 rows, and on the widest gate|up GEMMs at 40-48 rows.
+
+**Whole pass, in-process.** Fresh prompt, `PrefillLast` wall time, A-P01's rule ÷ the new rule, 7 reps alternated, the
+batched-pass floor at 0. Cells marked "same tile" pick the same tile under both rules, so they are A/A controls.
+
+| Model | Cell | a01 ÷ new | Reps above 1 |
+|---|---|---|---|
+| 1.5B | M = 16 | **1.555** (51.7 → 33.0 ms) | 7/7 |
+| 1.5B | M = 40 | **1.081** | 7/7 |
+| 1.5B | M = 48 | **1.082** | 7/7 |
+| 1.5B | M = 72 | **1.108** | 7/7 |
+| 1.5B | M = 88 | **1.112** | 7/7 |
+| 1.5B | M = 24, 56, 100, 128, 160 (same tile) | 1.000-1.008 | — |
+| 1.5B | M = 512 | 1.009 | 6/7 |
+| 7B | M = 16 | **1.727** (214 → 124 ms) | 7/7 |
+| 7B | M = 40 | **1.051** | 7/7 |
+| 7B | M = 48 | **1.052** | 7/7 |
+| 7B | M = 72 | **1.070** | 7/7 |
+| 7B | M = 24, 100, 512 (same tile) | 0.998-1.003 | — |
+| Qwen1.5-MoE slice | M = 64 | **1.532** | 7/7 |
+| Qwen1.5-MoE slice | M = 512 | **1.090** | 7/7 |
+| Qwen1.5-MoE slice | M = 2048 | **1.013** | 7/7 |
+
+Two rules were tried before this one, recorded so the bounds are not re-derived:
+- **Fewest padded rows, no bounds:** the 1.5B's 100-token pass ran **0.847×** (0 of 7) on all-16-row tiles, and M = 160
+  ran 0.978×.
+- **The 48-row bound without the N condition:** the 7B's 40-token pass ran **0.984×** (0 of 7). Its 37,888-wide
+  gate|up already fills the cores at 64.
+
+Each loss was read in a single run and the rule was then narrowed. The 1.5B and 7B rows in the table are from the final
+rule's runs: M = 24-48 re-run after the last change, and the other cells unaffected by it.
+
+**It ships** under TE5(b): every changed cell resolves in its own direction (7/7), the output is bit-identical, and
+nothing regresses. It is the default in serve. Prompts of 16 tokens on a single-slot resident gain most (the A-P02
+floor); MoE prefill gains through its per-expert GEMMs, D-B02's tile padding. Device-side expert scheduling is not
+built; the remaining MoE padding at M = 2048 is 1.23× before this change.
+- Tests: the Metal prefill, MoE, MC3, MC5, chunked, verify and GEMM tests pass (96), apart from the long-standing
+  `TestPrefillParityMoEGatedShared`.
+
+### B-P06: KILLED (written 2026-10-04)
+
+**The probe.** `TestBP06_rowsTG`, at `c3e75327`, then removed with its knob:
+- The dense decode sites' R18 rows kernels (qkv, o, gate|up, down) ran at threadgroups of 64, 128, 256 (shipped) and 512
+  threads. The kernels already map rows from `threads_per_threadgroup`, so this changes only the dispatch.
+- Whole decode tokens from the same positions after a 128-token prefill; 4 arms rotated rep by rep, 7 reps of 16
+  tokens; each arm's time is its token GPU-time median.
+- In-process, by day. The logits were bit-equal across every arm and token.
+
+The ratio is 256's token time ÷ the arm's; every rep of every arm was below 1:
+
+| Model | 64 threads | 128 threads | 512 threads |
+|---|---|---|---|
+| 1.5B (10.39 ms token) | 0.828 | 0.972 | 0.890 |
+| 7B `.giw` (32.27 ms token) | 0.521 | 0.903 | 0.925 |
+
+**Verdict: killed.** The kill line was below 1.03× on the 1.5B, and every other size is slower on both models. 256
+stays.
+- **Not built:** the audit's device-read (unstaged) variant at MLX's 64 threads. It is a kernel rewrite, and R18b's
+  first cut lost in sequence for exactly an activation re-read.
+
+### E-P02: KILLED by its kill line (written 2026-10-04)
+
+**The probe.** `TestEP02_adjacentRows`, at `fdbf4740`, then removed:
+- `mc3_gemv_w4a8_sa_rows_adj4` runs the batched step's per-row GEMV over B rows in one dispatch. Each weight tile's B
+  threadgroups are adjacent in launch order (tile tg / B, row tg % B), and each runs `sa_rows_acc` as the per-row
+  dispatch does.
+- Against production below the fragment's calibrated size: B dispatches of `gemv_w4a8_sa_rows4`.
+- 16 reps per command buffer, best of 15, arms alternated; GPU time. Every output float equal, in every cell.
+
+| Shape | B = 2 (per-row → adjacent) | B = 3 | B = 4 |
+|---|---|---|---|
+| 7B gate\|up (N 37,888, K 3,584) | 0.863 → **0.777 ms**, 1.111× | 1.134× | 1.147× |
+| 7B qkv width (N 4,608) | 0.111 → 0.100 ms, 1.110× | 1.153× | 1.178× |
+| 1.5B gate\|up (N 17,920, K 1,536) | 1.009× | 1.019× | 1.035× |
+
+**Verdict: killed.** The audit's line was "B = 2 above ~0.65 ms" on the 7B gate|up, and it reads 0.777. The second
+threadgroup finds part of the tile in cache, not most of it; the DRAM floor is 0.435 ms.
+- What it would buy at B = 2 on the 7B: about 0.086 ms × 28 layers = 2.4 ms of the 58.76 ms step, about 4%. That is in
+  the park zone even without the kill line.
+- The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
+
+### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
+
+**The ceiling probe** (the audit's: a stub that skips rows 1-7's attention). The 1.5B, 8 rows each on its own slot at
+depth 2048: **37.2% of the step** (29.82 → 18.72 ms, 7 reps 0.371-0.374), far over the 5% kill line. The 4096 cell
+did not run: filling 8 slots through `ForwardBatch` took 220 s at 2048, and the test hit its timeout. The A/B below
+fills by the prefill pass instead.
+
+**What is built.** `batch_rows.go` derives rows forms of decode's flash-attention first pass (`attention_fa`,
+`attention_fa_blk<G>` for G = 2-8, `attention_fa_blk64<7>`) and of `attention_fa_combine`. Row j serves batch row
+`rowmap[j]`, with its own q, slot K/V, key count, split count and partial region.
+- The grid is sized for the step's largest split count; a threadgroup past its own row's count returns. Each remaining
+  threadgroup sees the index the row's own dispatch gave it, so each row computes exactly its own pair's bytes.
+- `mc3FARowsOn` runs every deep row of a step through one dispatch pair per layer instead of one pair per row.
+
+**Identity.**
+- `TestMC3Step_faRowsBitIdenticalDeep` (default-run, the MC3 fixture, with the path on): two rows past the floor and two
+  below, 12 steps, every logit equal to production's single-token decode.
+- **Mutation:** every row merging row 0's partials fails `TestMC3Step_bitIdenticalDeep`, with every logit differing.
+- `TestEP05_deepRowsAB` compares the arms' logits every step: bit-equal in every cell below.
+
+**Speed (in-process, by day).** `TestEP05_deepRowsAB`: each slot filled to depth D by the batched prefill pass, steps
+from position D, arms alternated, 7 reps of 12 steps, GPU time per step.
+
+| Model | Rows | Depth | Per-row ÷ multi-row | Reps above 1 |
+|---|---|---|---|---|
+| 1.5B | 8 | 1100 | **1.057** (25.62 → 24.25 ms) | 7/7 |
+| 1.5B | 8 | 2048 | **1.060** (27.40 → 25.86 ms) | 7/7 |
+| 1.5B | 8 | 4096 | 1.015 | 7/7 |
+| 1.5B | 4 | 2048 | 1.026 | 7/7 |
+| 1.5B | 2 | 2048 | 1.016 | 7/7 |
+| 7B `.giw` | 4 | 1100 | 1.029 | 7/7 |
+| 7B `.giw` | 4 | 2048 | 1.029 | 7/7 |
+
+**Why the gain is a sixth of the ceiling.** The stub removed 7 rows' K/V reads, not their dispatches. Each row reads
+its own slot's K/V, and one dispatch cannot share that.
+- What one dispatch does remove is the serial per-row launch and the low occupancy of a 32-threadgroup grid. That is
+  worth 1.5-6%, and least at depth 4096, where the reads dominate.
+- Sharing a K/V stripe is possible only between rows of the same slot (spec verify). That is the audit's second step and
+  changes the reduction shape.
+
+**Verdict: parked**, off by default.
+- Bit-identical and resolved in every cell (7/7), but serve's default is 2 KV slots (E-P09), where it is 1.6%. Low single
+  digits is the owner's park zone, as with D-P03.
+- The case for turning it on is many slots (`-kv-sessions 8`) at depths of 1-2k keys, where it is 6%.
+- The derived kernels and both tests stay.
 
 ## Owner decisions
 

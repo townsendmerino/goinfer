@@ -159,6 +159,53 @@ func deriveRowsKernels() string {
 		"    uint head = mc3_gid % (nH + nKV); device float* qkv = qkv_rows + (mc3_gid / (nH + nKV))*qkvStride;\n    threadgroup float red[128];"))
 	b.WriteString("\n")
 
+	// E-P05: the first pass of decode's flash attention (attention_fa, attention_fa_blk<G>, attention_fa_blk64<G>) for
+	// M rows at attention_fa depth in one dispatch. Row j serves batch row rowmap[j]: its own q (a row of the fused qkv
+	// buffer, qStride floats), its own slot's K/V (slotOff), its key count and split count, and its own region of the
+	// partial buffer (partStride floats). The grid is M rows of nKV*maxS threadgroups; a threadgroup past its row's own
+	// split count returns, and the rest see the threadgroup index the row's own dispatch gave them, so every row's
+	// partials are its own dispatch's. 16 buffers: aikit binds at most 16.
+	for _, fa := range []struct{ name, tmpl string }{{"attention_fa", ""}, {"attention_fa_blk", "template <uint G>\n"}, {"attention_fa_blk64", "template <uint G>\n"}} {
+		b.WriteString(fa.tmpl)
+		b.WriteString(edit(extractKernel(allKernels, fa.name),
+			"kernel void "+fa.name+"(", "kernel void mc3_"+fa.name+"_rows(",
+			"device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],\n    device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],",
+			"device const float* q_rows[[buffer(0)]], device const half* kc_all[[buffer(1)]],\n    device const half* vc_all[[buffer(2)]], device float* partial_rows[[buffer(3)]],",
+			"constant uint& nKeys[[buffer(6)]]", "device const uint* nKeys_rows[[buffer(6)]]",
+			"constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],",
+			"constant uint& window[[buffer(8)]], device const uint* nSplit_rows[[buffer(9)]],\n"+
+				"    constant uint& mc3_M[[buffer(10)]], device const uint* rowmap[[buffer(11)]], device const uint* slotOff[[buffer(12)]],\n"+
+				"    constant uint& qStride[[buffer(13)]], constant uint& partStride[[buffer(14)]], constant uint& maxS[[buffer(15)]],",
+			"uint tgid[[threadgroup_position_in_grid]]", "uint tg_rows[[threadgroup_position_in_grid]]",
+			"uint lane[[thread_index_in_simdgroup]]) {",
+			"uint lane[[thread_index_in_simdgroup]]) {\n"+
+				"    uint mc3_j = tg_rows / (nKV*maxS); if (mc3_j >= mc3_M) return;\n"+
+				"    uint mc3_row = rowmap[mc3_j]; uint nSplit = nSplit_rows[mc3_row]; uint mc3_loc = tg_rows % (nKV*maxS);\n"+
+				"    if (mc3_loc % maxS >= nSplit) return;\n"+
+				"    uint tgid = (mc3_loc / maxS)*nSplit + mc3_loc % maxS; uint nKeys = nKeys_rows[mc3_row];\n"+
+				"    device const float* q = q_rows + mc3_row*qStride; device float* partial = partial_rows + mc3_j*partStride;\n"+
+				"    device const half* kc = kc_all + slotOff[mc3_row]; device const half* vc = vc_all + slotOff[mc3_row];"))
+		b.WriteString("\n")
+	}
+	for g := 2; g <= 8; g++ {
+		fmt.Fprintf(&b, "template [[host_name(\"mc3_attention_fa_blk_rows_g%d\")]] kernel decltype(mc3_attention_fa_blk_rows<%d>) mc3_attention_fa_blk_rows<%d>;\n", g, g, g)
+	}
+	b.WriteString("template [[host_name(\"mc3_attention_fa_blk64_rows_g7\")]] kernel decltype(mc3_attention_fa_blk64_rows<7>) mc3_attention_fa_blk64_rows<7>;\n")
+	// Its combine: row j merges its own partial region into its own row of ctx (outStride floats), over its own splits.
+	b.WriteString(edit(extractKernel(allKernels, "attention_fa_combine"),
+		"kernel void attention_fa_combine(", "kernel void mc3_attention_fa_combine_rows(",
+		"device const float* partial[[buffer(0)]], device float* out[[buffer(1)]],",
+		"device const float* partial_rows[[buffer(0)]], device float* out_rows[[buffer(1)]],",
+		"constant uint& nSplit[[buffer(4)]],",
+		"device const uint* nSplit_rows[[buffer(4)]], constant uint& nH[[buffer(5)]], constant uint& mc3_M[[buffer(6)]],\n"+
+			"    device const uint* rowmap[[buffer(7)]], constant uint& partStride[[buffer(8)]], constant uint& outStride[[buffer(9)]],",
+		"uint qh[[threadgroup_position_in_grid]], uint d[[thread_position_in_threadgroup]]) {",
+		"uint qh_rows[[threadgroup_position_in_grid]], uint d[[thread_position_in_threadgroup]]) {\n"+
+			"    uint mc3_j = qh_rows / nH; if (mc3_j >= mc3_M) return; uint mc3_row = rowmap[mc3_j]; uint qh = qh_rows % nH;\n"+
+			"    uint nSplit = nSplit_rows[mc3_row]; device const float* partial = partial_rows + mc3_j*partStride;\n"+
+			"    device float* out = out_rows + mc3_row*outStride;"))
+	b.WriteString("\n")
+
 	// D-P03: decode's k selected experts in one dispatch per stage instead of one per slot. The grid is k slots of
 	// rowsPerExpert/(tgs/32) threadgroups; a threadgroup's slot is its index divided by that, and within the slot it
 	// is the threadgroup production's per-slot dispatch had. Needs rowsPerExpert % (tgs/32) == 0 (encodeMoEExperts

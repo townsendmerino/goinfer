@@ -17,9 +17,9 @@ import (
 )
 
 // TestW8Native_S_decodeSpeed is gate S of docs/tasks/task-metal-int8-2026-10.md, a night-queue measurement: an
-// in-process, interleaved A/B of decode speed for an int8int8 model in three arms. They are Metal on the native int8
-// path, Metal re-quantized to int4 (what -backend metal ran before), and the CPU (what -backend auto gives an int8
-// model). Each sample loads one arm, prefills a deterministic prompt of the given depth through Generate, and times
+// in-process, interleaved A/B of decode speed for an int8int8 model in four arms. They are Metal on the native int8
+// path (precise math since 2026-10-04), the same with fast math kept (reported: the precise-math decision's price),
+// Metal re-quantized to int4 (what -backend metal ran before), and the CPU (what -backend auto gives an int8 model). Each sample loads one arm, prefills a deterministic prompt of the given depth through Generate, and times
 // the greedy decode steps after the first token, as `fit -measure` does, so prefill is excluded. The arm order rotates
 // every repetition. Samples go to stderr as they finish and, with GOINFER_W8_GATE_OUT set, to that JSONL file.
 // The 7B joins with GOINFER_W8_GATE_7B=1 when the fit guard admits it; nothing bypasses the guard.
@@ -45,7 +45,8 @@ func TestW8Native_S_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_W8_GATE_S_SMOKE") != "" { // a daytime check that the harness runs; its numbers are not a result
 		models, depths, reps = models[:1], []int{128}, 1
 	}
-	arms := []w8Arm{{"metal-int8-native", "metal", true}, {"metal-int8-requant", "metal", false}, {"cpu-int8int8", "cpu", false}}
+	arms := []w8Arm{{"metal-int8-native", "metal", true, false}, {"metal-int8-native-fastmath", "metal", true, true},
+		{"metal-int8-requant", "metal", false, false}, {"cpu-int8int8", "cpu", false, false}}
 
 	var sink *json.Encoder
 	if p := os.Getenv("GOINFER_W8_GATE_OUT"); p != "" {
@@ -99,6 +100,8 @@ func TestW8Native_S_decodeSpeed(t *testing.T) {
 	}
 	for c, byArm := range rates {
 		native := median(byArm["metal-int8-native"])
+		t.Logf("S %s depth %d: native fast math %.1f tok/s, precise/fast %.3f (the precise-math decision's price, reported)",
+			c.model, c.depth, median(byArm["metal-int8-native-fastmath"]), native/median(byArm["metal-int8-native-fastmath"]))
 		t.Logf("S %s depth %d: median tok/s native %.1f, requant %.1f, cpu %.1f; native/requant %.3f, native/cpu %.3f (n = %d/%d/%d)",
 			c.model, c.depth, native, median(byArm["metal-int8-requant"]), median(byArm["cpu-int8int8"]),
 			native/median(byArm["metal-int8-requant"]), native/median(byArm["cpu-int8int8"]),
@@ -109,6 +112,7 @@ func TestW8Native_S_decodeSpeed(t *testing.T) {
 type w8Arm struct {
 	name, backend string
 	native        bool // the Metal native int8 path; false on Metal is the int4 re-quant
+	fastMath      bool // the native path with fast math kept (w8FastMath): reported, prices the precise-math default
 }
 
 // w8Sample is one decode-speed sample; Rate is 0 when the arm could not be measured (Note says why).
@@ -156,9 +160,9 @@ func w8SpeedPrompt(t *testing.T, tk *tokenizer.Tokenizer, depth int) []int {
 // prompt.
 func sampleW8Decode(t *testing.T, path string, a w8Arm, prompt []int, n int) w8Sample {
 	t.Helper()
-	prev := nativeInt8
-	nativeInt8 = a.native
-	defer func() { nativeInt8 = prev }()
+	prev, prevFast := nativeInt8, w8FastMath
+	nativeInt8, w8FastMath = a.native, a.fastMath
+	defer func() { nativeInt8, w8FastMath = prev, prevFast }()
 	m, err := decoder.Load(path, decoder.Options{Backend: a.backend, Quant: "int8int8", ResidentContext: len(prompt) + n + 64})
 	if errors.Is(err, decoder.ErrWontFitResident) {
 		return w8Sample{Note: "the fit guard refused the load: " + err.Error()}

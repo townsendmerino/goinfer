@@ -203,9 +203,13 @@ type resident struct {
 	// not just below some crossover — a correction to this brief's own original "S=1 below a
 	// measured crossover" text).
 	pAttnFA, pAttnFACombine Pipeline
-	decodeAttnFA            bool
-	attnFAPartial           Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
-	attnFAMaxSplit          int
+	// E-P05: pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
+	// row's partial region, attnFAPartial's.
+	pAttnFARows, pAttnFACombineRows Pipeline
+	attnFAPartialLen                int
+	decodeAttnFA                    bool
+	attnFAPartial                   Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
+	attnFAMaxSplit                  int
 	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
 	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
 	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
@@ -740,6 +744,10 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 // variable. When the gates pass it becomes the default and this variable goes.
 var nativeInt8 = false
 
+// w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
+// prices the owner's precise-math decision.
+var w8FastMath = false
+
 // w8Eligible reports whether m runs on the native int8 path (r.w8): every dense body projection is int8-kind
 // (int8int8, or weight-only int8, which CUDA and WebGPU also run against int8 activations) with K a multiple of 4,
 // and the model is one slice 1 of docs/tasks/task-metal-int8-2026-10.md covers: no MoE, no Gemma-4 MoE, no DeltaNet
@@ -749,14 +757,21 @@ func w8Eligible(m *decoder.Model, r *resident) bool {
 	if !nativeInt8 || r.moe != nil || r.g4moe != nil || r.dnet != nil {
 		return false
 	}
+	return w8Weights(m)
+}
+
+// w8Weights is w8Eligible's weight half, which needs only the model: every dense body projection int8-kind with K a
+// multiple of 4. An MoE or DeltaNet layer has empty dense projections and fails it.
+func w8Weights(m *decoder.Model) bool {
 	w := m.Weights()
 	if len(w.Layers) == 0 {
 		return false
 	}
+	nonGated := m.NonGatedMLPResident()
 	for l := range w.Layers {
 		lw := &w.Layers[l]
 		mats := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.UpProj, &lw.DownProj}
-		if !r.nonGatedMLP {
+		if !nonGated {
 			mats = append(mats, &lw.GateProj)
 		}
 		for _, wm := range mats {
@@ -766,6 +781,21 @@ func w8Eligible(m *decoder.Model, r *resident) bool {
 		}
 	}
 	return true
+}
+
+// w8PreciseMath compiles the library of a model headed for the native int8 path without fast math (owner decision,
+// 2026-10-04, docs/tasks/task-metal-int8-2026-10.md): at int8int8 any difference from the CPU is amplified by the
+// activation quantization, and fast math was about 40% of gate F3's gap (KL(f32 ‖ Metal int8) 0.027917 fast, 0.025440
+// precise, against the f16-KV CPU's 0.024045). It is decided before the build from the model alone, so a model that
+// passes w8Weights but is MoE (Gemma 4's parallel dense‖MoE) is excluded here too.
+func w8PreciseMath(m *decoder.Model) bool {
+	if !nativeInt8 || w8FastMath || m.HasGemma4MoEResident() {
+		return false
+	}
+	if _, _, _, _, _, _, _, _, _, _, moe := m.MoEResidentParams(); moe {
+		return false
+	}
+	return w8Weights(m)
 }
 
 // int8Concat row-concatenates same-K int8 WeightMats into ONE int8 buffer and its per-row f32 scales: int4Concat's
@@ -843,7 +873,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// bits robust to an OS-toolchain update at that cost; the snapshot golden otherwise DETECTS such
 	// drift, which is the cheaper path we chose.
 	compile := d.CompileLibrary
-	preciseMath := preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != ""
+	preciseMath := preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != "" || w8PreciseMath(m)
 	if preciseMath {
 		compile = d.CompileLibraryPrecise
 	}
@@ -873,6 +903,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
 	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
+	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
 	r.pArgFinish = pipe("argmax_finish")
 	r.pEmbedGather = pipe("embed_gather_i8")
@@ -1512,14 +1543,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		switch g := r.nH / r.attnFANKV; {
 		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk64_rows_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk_rows_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		}
 	}
 	if maxAttnFAPartialElems > 0 {
-		r.attnFAPartial = d.NewBufferLen(maxAttnFAPartialElems * r.attnFAMaxSplit)
+		r.attnFAPartialLen = maxAttnFAPartialElems * r.attnFAMaxSplit
+		r.attnFAPartial = d.NewBufferLen(r.attnFAPartialLen)
 		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32(d, 0), NewBufferU32(d, 0)
 	}
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)

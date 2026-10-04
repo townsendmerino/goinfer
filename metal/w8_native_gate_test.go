@@ -68,6 +68,7 @@ func TestW8Native_F3_closerToF32(t *testing.T) {
 	const steps = 24
 	ref, toks := cpuLogitsAt(t, path, "", seed, steps, nil)
 	cpu8, _ := cpuLogitsAt(t, path, "int8int8", seed, steps, toks)
+	cpu8h, _ := cpuLogitsAtKV(t, path, "int8int8", seed, steps, toks, true)
 	met8 := metalLogitsAt(t, path, "int8int8", toks, true)
 	met4 := metalLogitsAt(t, path, "int4", toks, false)
 	meanKL := func(arm [][]float32) float64 {
@@ -78,6 +79,24 @@ func TestW8Native_F3_closerToF32(t *testing.T) {
 		return sum / float64(steps-2)
 	}
 	kCPU8, kMet8, kMet4 := meanKL(cpu8), meanKL(met8), meanKL(met4)
+	// Reported, not gated (the bar is the owner's to change): the CPU at int8int8 with Metal's f16 KV precision, the
+	// like-for-like reference TestW8Native_perLayerBisect points to.
+	kCPU8h := meanKL(cpu8h)
+	worse := 0
+	for i := 2; i < steps; i++ {
+		if klLogits(ref[i], met8[i]) > klLogits(ref[i], cpu8h[i]) {
+			worse++
+		}
+	}
+	t.Logf("F3 reported: KL(f32 ‖ CPU int8int8, f16 KV) %.6f; Metal int8int8 is %.3f× it, and further from f32 at %d of %d positions",
+		kCPU8h, kMet8/kCPU8h, worse, steps-2)
+	if os.Getenv("GOINFER_W8_F3_FAST") == "1" { // the same Metal int8int8 arm with fast math kept (w8FastMath)
+		prev := w8FastMath
+		w8FastMath = true
+		met8f := metalLogitsAt(t, path, "int8int8", toks, true)
+		w8FastMath = prev
+		t.Logf("F3 reported: Metal int8int8, fast math: KL(f32 ‖ ·) %.6f, %.3f× the f16-KV CPU's", meanKL(met8f), meanKL(met8f)/kCPU8h)
+	}
 	t.Logf("F3: mean KL(f32 ‖ ·) over %d positions: CPU int8int8 %.6f, Metal int8int8 %.6f (%.3f× the CPU's), Metal int4 %.6f",
 		steps-2, kCPU8, kMet8, kMet8/kCPU8, kMet4)
 	for _, k := range []float64{kCPU8, kMet8, kMet4} {
@@ -120,6 +139,13 @@ func assertNativeInt8(t *testing.T, path, quant string, want bool) {
 // read. With forced nil it reads seed and then its own greedy continuation; otherwise it reads forced.
 func cpuLogitsAt(t *testing.T, path, quant string, seed []int, steps int, forced []int) ([][]float32, []int) {
 	t.Helper()
+	return cpuLogitsAtKV(t, path, quant, seed, steps, forced, false)
+}
+
+// cpuLogitsAtKV is cpuLogitsAt; with f16KV every K and V the CPU stores is rounded to f16 (Metal's KV precision) right
+// after the position that wrote it.
+func cpuLogitsAtKV(t *testing.T, path, quant string, seed []int, steps int, forced []int, f16KV bool) ([][]float32, []int) {
+	t.Helper()
 	m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: 1024})
 	if errors.Is(err, decoder.ErrWontFitResident) { // the machine's memory right now, not the gate's answer
 		t.Skipf("the fit guard refused the CPU %q load on this machine now: %v", quant, err)
@@ -142,6 +168,16 @@ func cpuLogitsAt(t *testing.T, path, quant string, seed []int, steps int, forced
 			t.Fatalf("cpu forward (%q) at %d: %v", quant, i, err)
 		}
 		out[i] = append([]float32(nil), l...)
+		if f16KV {
+			for layer := range nL {
+				k, v, _ := cache.LayerKVForTest(layer)
+				for _, sl := range [][]float32{k[i*nKV*hd : (i+1)*nKV*hd], v[i*nKV*hd : (i+1)*nKV*hd]} {
+					for j, x := range sl {
+						sl[j] = f16ToF32(f32ToF16(x))
+					}
+				}
+			}
+		}
 		if forced == nil {
 			if i+1 < len(seed) {
 				tok = seed[i+1]
