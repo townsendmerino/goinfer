@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -147,6 +148,9 @@ func checkpointSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if st.IsDir() {
+		return checkpointDirSHA256(abs)
+	}
 	stamp := fmt.Sprintf("%s|%d|%d", abs, st.Size(), st.ModTime().UnixNano())
 	dir, err := PrefillRefCacheDirForTest()
 	if err != nil {
@@ -177,6 +181,52 @@ func checkpointSHA256(path string) (string, error) {
 		}
 	}
 	return sum, nil
+}
+
+// checkpointDirSHA256 is checkpointSHA256 for a safetensors checkpoint directory (D-B01's Qwen3.5-0.8B was the first
+// reference cell built from one): every regular file under it, by relative path, each through checkpointSHA256's own
+// cached file hash, folded into one digest in path order. Hidden files and goinfer's own sidecars (*.giw and their
+// *.verified markers, written beside a checkpoint after the fact) are left out: they say nothing about the weights,
+// and counting them would re-key every reference the first time a model is transcoded.
+func checkpointDirSHA256(dir string) (string, error) {
+	var rels []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := d.Name()
+		if p != dir && strings.HasPrefix(name, ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() || !d.Type().IsRegular() || strings.HasSuffix(name, ".giw") || strings.HasSuffix(name, ".verified") {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		rels = append(rels, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(rels) == 0 {
+		return "", fmt.Errorf("%s: no checkpoint files", dir)
+	}
+	sort.Strings(rels)
+	hh := sha256.New()
+	for _, rel := range rels {
+		h, err := checkpointSHA256(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(hh, "%s\x00%s\n", rel, h)
+	}
+	return "dir:" + hex.EncodeToString(hh.Sum(nil)), nil
 }
 
 // PrefillRefKeyForTest builds the key parts for one reference.

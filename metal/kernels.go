@@ -2030,4 +2030,11 @@ kernel void copy_f32(device const float* src [[buffer(0)]], device float* dst [[
     constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i < N) dst[i] = src[i];
 }
+
+// copy_u32 is copy_f32 for integer words: an expert id read as a float is a denormal, which a float copy may flush to
+// zero. Tests only (D-G01's routing capture, resident.moeCap).
+kernel void copy_u32(device const uint* src [[buffer(0)]], device uint* dst [[buffer(1)]],
+    constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
+    if (i < N) dst[i] = src[i];
+}
 ` + moeKernels + gemma4MoeKernels + deltaNetKernels + gumbelMSLKernels

@@ -1563,7 +1563,16 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 		from = 0 // never skip the seed token, whose logits start decode
 	}
 	suffix := prompt[from:]
-	if m.knobs.get(knobBatchedPrefill) != "0" && len(suffix) >= 8 && !hasAdapter {
+	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token, A-P05) -- and, when
+	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
+	// offered whole, so a reused prompt takes the cold run's route and returns its bits.
+	offer := len(suffix) >= 8
+	if !offer && from > 0 && len(prompt) >= 8 {
+		if te, ok := m.resident.(PrefillTailExact); ok && te.PrefillTailExact() {
+			offer = true
+		}
+	}
+	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
 		if pf, ok := m.resident.(Prefiller); ok {
 			embs := make([][]float32, len(suffix))
 			for i, id := range suffix {

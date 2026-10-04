@@ -157,10 +157,10 @@ func TestCPUExactPrefillDisclosesTheDefaultsTrade(t *testing.T) {
 			t.Errorf("--cpu-exact-prefill help does not mention %q — the default's trade must be disclosed in --help:\n%s", must, CPUExactPrefillHelp)
 		}
 	}
-	// --exact-prefill's help quotes each backend's floor; Metal's is 64 (metal/backend.go metalFastPrefillFloor),
-	// which the help used to give as 512 (and the removed --metal-fast-prefill's as 256).
-	if !strings.Contains(ExactPrefillHelp, "above 64 prompt tokens") {
-		t.Errorf("--exact-prefill help does not give Metal's 64-token floor:\n%s", ExactPrefillHelp)
+	// --exact-prefill's help quotes each backend's floor; Metal's is 16 (metal/backend.go metalFastPrefillFloor, A-P02),
+	// which the help used to give as 512 and then 64 (and the removed --metal-fast-prefill's as 256).
+	if !strings.Contains(ExactPrefillHelp, "above 16 prompt tokens") {
+		t.Errorf("--exact-prefill help does not give Metal's 16-token floor:\n%s", ExactPrefillHelp)
 	}
 	for _, gone := range []string{"--cpu-fast-attention", "--metal-fast-prefill"} {
 		if strings.Contains(ExactPrefillHelp, gone) || strings.Contains(CPUExactPrefillHelp, gone) {

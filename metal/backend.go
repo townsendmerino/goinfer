@@ -616,14 +616,26 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 // K=64 and 4.66x at K=128 (bench_peer_prefill.py, three arms interleaved, n=6) — both well past
 // the >=2x ships band, not just the fidelity precondition. K=64 is the smaller of the two
 // registered candidates {64, 128}, so it is the new floor per the brief's own decision rule.
-// Previously lowered to 256 (2026-09-12, audit-metal-2026-09-12.md M-02). Going lower than 64
-// needs one more passing decision cell at the new depth (the harness already parameterises
-// FLOOR via GOINFER_METAL_FAST_PREFILL_FLOOR, 0 = no floor).
-const metalFastPrefillFloor = 64
+// Previously lowered to 256 (2026-09-12, audit-metal-2026-09-12.md M-02).
+//
+// 16 since A-P02 (docs/tasks/task-metal-audit-2026-10.md, graded 2026-10-04 against its pre-registration): the §3.2 pooled
+// gate SHIPS on the 1.5B with K = 16, 32, 48 and 64 pooled, and on each new cell alone, against CPU f32 references built
+// together; the pass beats the sequential loop 3.48x at K = 16 in-process (7 of 7 reps above the 1.5 bar; the 7B 2.52x).
+// GOINFER_METAL_FAST_PREFILL_FLOOR overrides it, 0 = no floor. A resident with the batched step keeps the exact step
+// below metalStepPrefillCeiling instead (promptStepOK).
+const metalFastPrefillFloor = 16
+
+// metalStepPrefillCeiling (A-P02's step bound): a resident with the batched step runs a prompt that ends below this many
+// tokens as exact decode rows on the step (E-P01) rather than the pass. The step is bit-identical to the sequential
+// loop and the pass is not, so it keeps every length where it is not slower: the 1.5B measured step / pass 0.755 at
+// K = 16 (the step faster in 7 of 7 reps) and 1.485 at K = 32 (the pass faster in 7 of 7), the 7B 0.627 and 1.243.
+// Held at 64 for a morning (2026-10-04) on what was read as an MC3 identity defect and was a warm prompt taking a
+// different route from the cold one (fixed: decoder.PrefillTailExact); released to the graded 32 the same day.
+const metalStepPrefillCeiling = 32
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //
-// Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2 gate (TestPrefillGateVsReference)
+// Default ON above metalFastPrefillFloor (16 tokens since A-P02; 64 from R3) since §3.2 gate (TestPrefillGateVsReference)
 // passed 2026-09-20 (S model, K=64/128 pooled and K=64 alone; see docs/measurements/metal-
 // prefill-floor-2026-09-20.md). GOINFER_METAL_FAST_PREFILL=0/false/off or
 // --exact-prefill to opt out.
@@ -711,7 +723,7 @@ func metalFusedAttentionEnabled(v string) bool {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
-// the batched f16-MMA path. Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2
+// the batched f16-MMA path. Default ON above metalFastPrefillFloor (16 tokens since A-P02, 64 from R3) since §3.2
 // gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the enabled
 // state AND arch both allow batching.
 // ResidentQuant (decoder.ResidentQuantReporter) is the precision this resident runs its weights at, when the decoder
@@ -737,7 +749,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
-		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", floor)
+		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", max(floor, metalStepPrefillCeiling))
 	}
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
@@ -757,16 +769,16 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 64
-	// tokens since R3 (2026-09-20, cells K=64 and 128), 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill
-	// opts out.
+	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 16
+	// tokens since A-P02 (cells K=16..64), 64 from R3, 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill opts
+	// out.
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
-	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet, so the batched pass declines there; the
-	// lowest cells that passed are K=64 and 128 (the floor's own doc comment). E-P01: a resident with the step kernels
-	// runs a prompt below the floor as decode rows on those kernels instead of declining to the sequential loop: the
-	// same bits, at about a quarter of its time (promptStepOK).
+	// FLOOR: below metalFastPrefillFloor no decision cell has passed, so the batched pass declines there; the lowest that
+	// passed is K=16 (the floor's own doc comment). E-P01: a resident with the step kernels runs a prompt that ends below
+	// max(floor, metalStepPrefillCeiling) as decode rows on those kernels instead: the sequential loop's bits, faster
+	// than the pass there (promptStepOK).
 	promptLen := startPos + len(embeddings)
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if a.promptStepOK(len(embeddings), startPos, floor) {
@@ -774,6 +786,12 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 			return nil, e
 		}
 		return a.prefillByStep(ctx, embeddings, startPos)
+	}
+	// One token whose whole prompt ends in the step's range (a repeated prompt's 1-token suffix, PrefillTailExact): the
+	// step needs two rows, and the pass would not compute the step's bits, which the cold prompt of this length ran on.
+	// The sequential path's decode does.
+	if len(embeddings) < 2 && a.inStepRange(promptLen, floor) {
+		return nil, fmt.Errorf("metal: a 1-token suffix in the batched step's range runs on the sequential path (the step's bits)")
 	}
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
@@ -803,7 +821,13 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// prefillExactAttnMaxKeys scores; the sequential path's decode kernels tile theirs.
 	if fused, _ := a.r.prefillAttnKernels(); !fused && startPos+len(embeddings) > prefillExactAttnMaxKeys {
 		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
-			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.layers[0].geom.hd)
+			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.prefillGeom().hd)
+	}
+	// A fresh sequence (startPos 0) starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does: the
+	// pass continues whatever conv window and state the resident holds (D-B01), which for a continuation is the point and
+	// for a new prompt would be the previous sequence's. A no-op for every other family.
+	if startPos == 0 {
+		a.Reset()
 	}
 	// ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
 	// time, with no recover of their own (buildResident's is build-scoped). A transient OOM would kill
@@ -1166,3 +1190,16 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
 func (a *metalResident) Close() error { return a.r.Close() }
+
+// PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the
+// cold pass bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the
+// whole prompt's length. Proven for the dense and Gated-DeltaNet passes (TestMC5_prefillChunkInvariance,
+// TestDB01_chunkedPrefillMatchesWhole); not claimed for the MoE passes, whose expert grouping is per pass and unproven
+// at one row.
+func (a *metalResident) PrefillTailExact() bool { return a.r.moe == nil && a.r.g4moe == nil }
+
+// inStepRange: a prompt of promptLen tokens is in the range the batched step takes on this resident (promptStepOK's
+// length test, without its two-row minimum).
+func (a *metalResident) inStepRange(promptLen, floor int) bool {
+	return !a.r.promptStepOff && a.VerifyCost() != nil && floor > 0 && promptLen < max(floor, metalStepPrefillCeiling)
+}

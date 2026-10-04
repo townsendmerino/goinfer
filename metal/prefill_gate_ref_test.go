@@ -128,12 +128,34 @@ func TestPrefillGateVsReference(t *testing.T) {
 	}{
 		{"S", "GOINFER_METAL_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 		{"D7", "GOINFER_METAL_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
+		// Q35, Qwen3.5-0.8B: D-B01's Gated-DeltaNet hybrid, run only when GOINFER_METAL_GATE_MODELS names it.
+		{"Q35", "GOINFER_METAL_MODEL_Q35", "$HOME/models/qwen3.5-0.8b"},
+	}
+	// GOINFER_METAL_GATE_MODELS (comma-separated cell names) picks the models; unset runs S and D7, as before Q35.
+	gateModels := map[string]bool{"S": true, "D7": true}
+	if v := strings.TrimSpace(os.Getenv("GOINFER_METAL_GATE_MODELS")); v != "" {
+		gateModels = map[string]bool{}
+		for _, f := range strings.Split(v, ",") {
+			gateModels[strings.TrimSpace(f)] = true
+		}
 	}
 	decisionKs := metalGateDecisionKs([]int{256, 512, 1024})
 	confirmKsByModel := map[string][]int{"S": {3900}}
+	// GOINFER_METAL_GATE_CONFIRM=0 drops the confirmation cells, which never gate: a run deciding a short-K floor (A-P02)
+	// pools several candidate sets, one invocation each, and K = 3900's cell would cost minutes in every one of them.
+	if os.Getenv("GOINFER_METAL_GATE_CONFIRM") == "0" {
+		confirmKsByModel = map[string][]int{}
+	}
 
 	for _, mc := range models {
+		if !gateModels[mc.name] {
+			continue
+		}
 		t.Run(mc.name, func(t *testing.T) {
+			if mc.name == "Q35" { // the batched pass admits a DeltaNet hybrid only with D-B01's switch on (prefillOK, at build)
+				dnetPrefillOn = true
+				t.Cleanup(func() { dnetPrefillOn = false })
+			}
 			path := os.Getenv(mc.pathEnv)
 			if path == "" {
 				path = os.ExpandEnv(mc.defaultPath)
@@ -164,7 +186,13 @@ func TestPrefillGateVsReference(t *testing.T) {
 			if tokPath == "" {
 				tokPath = path
 			}
-			tk, err := tokenizer.LoadGGUF(tokPath)
+			loadTok := tokenizer.LoadGGUF
+			if st, serr := os.Stat(tokPath); serr == nil && st.IsDir() {
+				loadTok = func(dir string) (*tokenizer.Tokenizer, error) {
+					return tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+				}
+			}
+			tk, err := loadTok(tokPath)
 			if err != nil {
 				t.Fatalf("load tokenizer: %v", err)
 			}

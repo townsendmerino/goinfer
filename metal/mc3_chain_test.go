@@ -80,7 +80,10 @@ func TestMC3Chain_aloneMatchesUnbatchedAndRunsTheChain(t *testing.T) {
 		{"greedy", decoder.SamplingParams{}},
 		{"T=0.8", decoder.SamplingParams{Temperature: 0.8, Seed: 11}},
 	}
-	prompt := mc3ChainPrompt(1, 40)
+	// 12 tokens: below the 16-token fast-prefill floor (A-P02), so the unbatched model (no step) runs the sequential loop
+	// and the MC3 model the step, both exact. At 16 and over the unbatched model takes the f16 pass and the two differ
+	// by design; this test is about the chain, not the prefill route.
+	prompt := mc3ChainPrompt(1, 12)
 	want := map[string][]int{}
 	for _, c := range cases {
 		want[c.name] = mc3ChainRun(t, plain, prompt, 96, c.sp)

@@ -746,6 +746,199 @@ fixture `testdata/tiny-qwen2-moe` is a per-machine download, not committed. The 
 got K=44` (audit M-10). It fails the same on untouched HEAD, so it is pre-existing. The fixture's shared-expert width is
 the cause; the test has never passed on this box.
 
+### A-P02: pre-registration (written 2026-10-03, before any graded run; owner: "1 then 2", A-P02 then D-G01 → D-B01)
+
+**What it decides.** `metalFastPrefillFloor` is 64 because R3 gated K = 64 and 128 and no cell below
+(`docs/measurements/metal-prefill-floor-2026-09-20.md`). Below it, a resident with the batched step runs the prompt as
+exact decode rows (E-P01), and one without it runs the sequential loop. A-P02 asks whether the pass can take prompts of
+16 to 63 tokens. E-P01 already serves the default 2-slot serve on the Qwen2.5 dense models, so A-P02 reaches single-slot
+loads (the CLI) and the families MC3 excludes (QK-norm, windows, sandwich norms, adapters, MoE). For residents with the
+step it also decides where the pass takes over from the step, which T1.10 timed before A-P01 made the C ≤ 32 pass 1.8×
+faster.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-ap02-grade.sh` on the night queue, from tagged test binaries pinned at the commit the script names. (1) The 1.5B's CPU f32 references, set A, at K = 16, 32, 48 and 64, regenerated together (`TestPrefillGateReference`, `GOINFER_CPU_REF_MODELS=S`); the R3 K = 64 files are set aside first. (2) The §3.2 pooled fidelity gate on the 1.5B, set A (`TestPrefillGateVsReference/S`, confirmation cells off), once per pool below and once per single cell. (3) `TestAuditAP02_shortPromptTiming` on the 1.5B and the 7B: a fresh K-token prompt three ways (sequential loop, the step in 8-row pieces, the pass with its floor off), K = 16, 32, 48, 64, 7 reps, arms rotated rep by rep, wall time. Estimate about 20 minutes; queued at 30. |
+| Precondition | All 40 reference files present, and no cell VOID on the reference identity check. Otherwise nothing is graded. |
+| Candidates | F ∈ {16, 32, 48}. |
+| Fidelity | F is fidelity-eligible iff the pool P(F) = {K ∈ {16, 32, 48, 64} : K ≥ F} **SHIPS** (critA ∧ critB ∧ critC). The single cell K = F is reported, not deciding (R3's corroboration). |
+| Speed, residents without the step | F is speed-eligible iff, on the **1.5B**, sequential ÷ pass at K = F has a median ≥ **1.5** over 7 paired reps, with ≥ 6 of 7 reps above 1.5 (the audit's kill line, read in-process). |
+| Rule: the floor | **The floor moves to the smallest F that is both fidelity- and speed-eligible.** None: **killed**, the floor stays 64. **Parked** (to the owner): the smallest fidelity-eligible F reads a speed median in [1.3, 1.5). |
+| Rule: the step bound | A resident with the step keeps the step for prompts below S\*, the smallest K in {16, 32, 48, 64} with K ≥ the new floor at which step ÷ pass on the 1.5B has a median > 1.0 with ≥ 6 of 7 reps above 1 (the pass faster). The step is exact and the pass is not, so the step keeps a prompt unless the pass is measured faster there. If the floor does not move, nothing changes. |
+| Reported | The 7B's timing; every single-cell fidelity verdict; the per-cell KL table. Not measured: a served TTFT, which this grade does not claim. Unchanged: the decoder's 8-token threshold (A-P05). |
+| What ships | By day, after the grade: the floor constant, the step bound in `promptStepOK`, the routing tests, `PrefillPath`'s banner text, and the docs that quote 64. |
+
+### A-P02: SHIPPED in part, graded 2026-10-04 (the floor moves to 16; the step bound is held back)
+
+Run: the Mac's night queue, 2026-10-03 22:45–22:57 PDT, `run-ap02-grade.sh` from the tagged binaries pinned at `f81f3a18`
+(logs `~/goinfer-logs/metal-audit-2026-10/ap02/`). Preconditions held: 40 of 40 reference files, no cell VOID.
+
+| | Reading | Verdict |
+|---|---|---|
+| Fidelity, pooled (1.5B, set A) | {16, 32, 48, 64}: critA 21 / 25 hard flips (exact / fast), critB 92.11% / 92.07%, critC mean KL 0.0433 / 0.0406, fast lower on 27 of 40 prompts. {32, 48, 64} and {48, 64} also SHIP | **F = 16 fidelity-eligible** |
+| Fidelity, single cells | K = 16, 32 and 48 each SHIP (KL 0.0484 / 0.0444, 0.0356 / 0.0327, 0.0428 / 0.0397) | reported |
+| Speed, sequential ÷ pass (1.5B) | K = 16 **3.480** (7 of 7 reps above 1.5); 32 6.83, 48 6.48, 64 8.56 | **F = 16 speed-eligible** |
+| Step bound, step ÷ pass (1.5B) | K = 16 **0.755** (0 of 7 reps above 1: the step faster); K = 32 **1.485** (7 of 7) | **S\* = 32** by the rule |
+| Reported, the 7B | sequential ÷ pass 2.52 / 4.98 / 4.77 / 6.31; step ÷ pass 0.627 / 1.243 / 1.191 / 1.577 at 16 / 32 / 48 / 64 | same crossover |
+
+**Shipped:** `metalFastPrefillFloor` is **16**. A resident without the batched step (a single-slot load such as the CLI, a
+family MC3 excludes) takes the pass from 16 tokens instead of 64; `--exact-prefill`'s help, `TestPrefillFloor` and
+E-P01's routing test follow.
+
+**Held back: the step bound stays at 64**, not the graded 32. Moving it surfaced an OPEN defect: on an MC3 resident, a
+newcomer whose prompt takes the pass makes both generations diverge from their alone runs some tens of tokens later.
+- Seen first as `TestMC3Chain_newcomerJoinsAndBothMatchAlone` and `_stalledConsumerDoesNotStarveANewcomer` going red when
+  their 30–48-token prompts moved from the step to the pass.
+- Reachable on `main` before this change for prompts of 64 tokens or more: the same tests with 100/80 and 90/70-token
+  prompts are red at the old floor, at `0eb53e90` (before the serve chain), and with the chain off. A first differs at
+  token 42 of 160 (B joined at 24), B at 47 of 64.
+- Not the slot (the same prompt through the pass and 60 decode steps on slot 0 and slot 1 match bit for bit), not chunking
+  (the fixture sets no chunk size), not the executor's slot switch (`useKVSlot` stops it).
+- Kept as an opt-in repro, `metal/mc3_pass_identity_repro_test.go` (`GOINFER_MC3_PASS_REPRO=1`, red until fixed).
+- A 32 bound would carry the defect to prompts of 32–63 tokens on serve's default 2-slot Metal resident; at 64 nothing
+  changes for those residents. Lower `metalStepPrefillCeiling` to 32 once the defect is fixed.
+
+**Root-caused and fixed the same morning (owner: "we need to root-cause and fix this"): not an MC3 defect, a warm
+prompt taking a different route from the cold one.**
+- **Below the decoder it never happened.** Driving the resident directly (A prefilled by the pass on slot 0 and decoded
+  alone 24 tokens, B prefilled by the pass on slot 1, then batched steps), every step's logits equal both solo runs'.
+- **The tests compared warm against cold.** Their alone runs ran first on the same model, so the joint run of A reused
+  99 of its 100 prompt positions. On a fresh model (nothing to reuse) A and B both match their alone runs exactly.
+- **The mechanism:** the decoder offered `PrefillLast` only suffixes of 8 tokens or more, so a repeated prompt (a 1-token
+  suffix) ran its last position through decode, while the cold run had computed it inside the f16 pass. Below the
+  floor both are decode bits, which is why short prompts never showed it. It was the B-P03 trap (cold against warm,
+  `TestSpecNgram_copyOnStepVerify`) again, met from the batching side. The "held back" reasoning above rested on reading
+  it as a batching defect, which it was not.
+- **The fix** (`decoder.PrefillTailExact`): a backend whose short continuation reproduces its cold pass declares it, and
+  `residentPrefillSeed` then offers a reused prompt's suffix of any length whenever the whole prompt reaches 8 tokens.
+  The backend routes on the whole prompt's length, so warm and cold take the same route. Metal declares it for the
+  dense and Gated-DeltaNet passes; MoE stays off (its expert grouping at one row is unproven); CUDA and WebGPU are
+  unchanged. A 1-token suffix whose prompt ends in the step's range declines to the sequential loop, which computes
+  the step's bits (the step needs two rows).
+- **Gates:**
+  - `TestPrefillLast_tailContinuationMatchesCold`: a 1, 2, 7 or 8-token pass continuing a cached pass prefix equals the
+    cold pass in every logit; the decode continuation differs in all of them.
+  - `TestGenerate_warmRepeatMatchesCold`: 1 and 2 slots, prompts of 12, 40 and 100 tokens, a warm repeat (n−1 positions
+    reused, asserted) emits the cold run's 96 tokens. With the decoder change reverted it fails exactly the pass cases
+    (1 slot at 40 and 100, 2 slots at 100; at token 35, 60 and 60).
+  - `TestMC3Chain_newcomerJoinsLongPrompts` and `_stalledConsumerLongPrompts`: the former repro, now default-run and
+    green.
+- Forward goldens re-proven for the `decoder/model.go` change (41 passed, 23 skipped, 0 failed) and the parity hashes
+  refreshed; metal suite 237 passed, 1 failed (the pre-existing `TestPrefillParityMoEGatedShared`).
+- **The step bound, released to the graded 32 the same morning:** the reason it was held back is gone. A resident with
+  the batched step takes the pass from 32 tokens and keeps the exact step below; E-P01's routing test follows, and
+  `TestGenerate_warmRepeatMatchesCold`'s 2-slot 40-token case now covers the pass on a 2-slot resident.
+
+`TestMC3Chain_aloneMatchesUnbatchedAndRunsTheChain` now uses a 12-token prompt: at 16 and over its unbatched (single-slot)
+model takes the pass and its MC3 model the step, which differ by design. Metal suite: 232 passed, 1 failed (the pre-existing
+`TestPrefillParityMoEGatedShared`).
+
+### D-G01: pre-registration (written 2026-10-03, before any graded run; owner: "1 then 2")
+
+**What it gates.** Expert-major MoE prefill (`metal/prefill.go`, the default whenever the batched lane runs) has only
+a tiny-fixture cosine bar. It differs from the sequential path in three counted ways (audit D-G01): f16 scatter-adds,
+experts applied in id order, and a router computed from f16 activations, which can flip a near-tied expert. This gate
+compares it with the f16 lane's own MoE baseline on real weights, and it must catch three planted defects first.
+
+**Fixture.** The first 4 of Qwen1.5-MoE-A2.7B's 24 layers, bytes unchanged (`scripts/slice_checkpoint_layers.py`,
+`~/models/qwen15-moe-a27b-l4slice`, sha256 `7e48d607…`): its real router, 60 experts, top-4 routing and gated shared
+expert. The whole model does not fit this Mac. A slice is a fidelity fixture: no output or speed of it is the model's.
+
+| | |
+|---|---|
+| Instrument | `TestDG01_expertMajorMoEPrefill` (`metal/dg01_moe_gate_test.go`), one KV slot, int4, 10 set-A prompts at M = 64 and 512. Three arms per prompt: **seq** (the sequential decode loop, routing captured per token and layer), **row** (the batched pass with MoE row by row through decode's MoE kernels: the f16 lane's own baseline), **major** (the batched pass, expert-major). Per arm: each layer's routing, the K/V of every position at every layer, and the last position's logits. Night queue. |
+| Precondition | Layer 0's K/V is equal between row and major (no MoE precedes it), and seq's routing capture holds k distinct valid experts per token. Otherwise the instrument is broken and nothing is graded. |
+| Readings, per M, pooled over prompts | **Flips:** (token, layer) pairs whose selected expert set differs from seq's. **K/V:** per layer ≥ 1, relative L2 of the arm's K and V against seq's over all positions. **KL:** mean KL(seq ‖ arm) of the last position's distribution. |
+| Gate | Major passes iff at both M: flips(major) ≤ flips(row) + 2√max(flips(row), 1); K/V(major) ≤ 1.25 × K/V(row) at every layer ≥ 1; KL(major) ≤ 1.25 × KL(row). |
+| Mutations | Each must FAIL the gate, or the gate is not evidence: `topk-renorm` (scatter weights renormalised), `rank-swap` (each token's first two experts swapped with their weights left in place: route order), `shared-off` (shared expert skipped). Run first; a mutation that passes stops the grade. |
+| Rule | **Passes:** expert-major stays the default, and this test is its gate of record. **Fails** (any criterion beyond 1.5× or the flips bound): **killed**, the default goes back to row by row (`GOINFER_MOE_EXPERT_MAJOR` default off) until the defect is found. A ratio in (1.25, 1.5] with the flips bound met: **parked**, to the owner. |
+| Reported | Every per-layer ratio, per M; the flips as fractions; seq's own top-1 agreement with row and major on the last position. Not covered: sigmoid and group-limited routing (no such real MoE fits here), multi-model. |
+
+### D-G01: PASSES, graded 2026-10-04 (expert-major MoE prefill stays the default; this is its gate of record)
+
+Run: the Mac's night queue, 2026-10-03 23:01–23:05 PDT, `run-dg01-grade.sh` from the tagged binary pinned at `ec3cafd1`, on
+the Qwen1.5-MoE 4-layer slice (`model.safetensors` sha256 `7e48d607…`), 10 set-A prompts at M = 64 and 512 (logs
+`~/goinfer-logs/metal-audit-2026-10/dg01/`).
+
+**The mutations, run first: all three FAIL**, so the gate is evidence. K/V ratio against the row baseline and KL ratio, at
+M = 64 / 512:
+
+| mutation | K/V, worst layer | KL | flips over the bound |
+|---|---|---|---|
+| `topk-renorm` (scatter weights) | 12.7x / 13.8x | 60.6x / 146.4x | yes / yes |
+| `rank-swap` (route order) | 3.72x / 3.67x | 16.1x / 17.8x | yes / yes |
+| `shared-off` | 16.7x / 18.0x | 90.6x / 149.0x | yes / yes |
+
+**The gate: PASSES at both M.**
+
+| | M = 64 | M = 512 |
+|---|---|---|
+| flips against seq (row / major) | 535 / **507** of 2,560 (20.9% / 19.8%); bound 581 | 4,629 / **4,476** of 20,480 (22.6% / 21.9%); bound 4,765 |
+| K/V relative L2, major ÷ row, layers 1–3 | 1.011 / 1.003 / 0.985 | 1.017 / 1.001 / 0.984 |
+| last-position KL, major ÷ row | 0.931 | **1.217** |
+| top-1 against seq (row / major) | 4 / 5 of 10 | 9 / 10 of 10 |
+
+- **Expert-major is as close to the sequential path as the f16 lane's own MoE baseline:** it flips fewer expert sets and
+  its K/V is level with the row arm's.
+- **The closest reading is M = 512's KL ratio, 1.217 against the 1.25 bar.** It passes, with a margin of under 3%, on
+  ten prompts.
+- **Both arms flip about a fifth of the (token, layer) expert sets against decode.** That is the f16 lane, not expert-major:
+  top-4 of 60 is full of near-ties. It is what the "flips" bound is measured against, not a defect.
+- **Not covered:** sigmoid and group-limited routing (no such MoE fits this Mac), and an accumulation-order change of a
+  few ulps (the gate reads gross defects, as the mutations show).
+
+So `GOINFER_MOE_EXPERT_MAJOR` stays default on, and `TestDG01_expertMajorMoEPrefill` is the gate the MoE prefill builds
+(D-B02, D-P03, D-P01) grade against.
+
+### D-B01: built, off by default; pre-registration (written 2026-10-03, before any graded run; owner: "go on D-B01")
+
+**What is built.** A Gated-DeltaNet hybrid (Qwen3.5) can take the batched prefill pass behind `dnetPrefillOn`
+(`metal/prefill_deltanet.go`), off until this grade.
+- **DeltaNet layers:** the qkv, z and out projections run as prefill GEMMs over all M rows, and in_proj_b/a as a rows
+  kernel, on f16 activations like every batched layer. The mixer runs as one dispatch per stage over the M rows, 13
+  dispatches per layer for the whole prompt against 12 per token sequentially.
+- **The mixer kernels are decode's, copied verbatim** with only row addressing added, and a token loop where the stage is
+  a recurrence. `TestDeltaNetSeqKernels_matchDecodeBitwise` (default-run): every stage, the conv window and the state
+  after the last row equal decode's kernels run M times, bit for bit, at M = 1, 7, 33 from a non-zero state. A one-op
+  reorder in the recurrence turns it red (258 outputs, 16,721 state values).
+- **Gated attention layers:** q_proj's [query ‖ gate] split, K‖V into qkv, ctx × sigmoid(gate) before o_proj; the pass
+  reads its attention geometry from the first attention layer (`prefillGeom`), not layer 0. Head dim 256 runs the exact
+  prefill attention kernel.
+- **Chunked prefill:** `TestDB01_chunkedPrefillMatchesWhole`, 64 + 32 and 40 + 56 against one 96-token pass: 0 of
+  248,320 logits and 0 window/state/K/V words differ. A window that does not carry turns it red.
+- **Against the sequential path** (`TestDB01_prefillAgreesWithSequential`, the 0.8B, a sanity bar, not the grade): logits
+  cosine 0.9957 / 0.9974 at M = 64 / 256, same top-1; per-layer K/V and state 5–10% relative L2 from the second layer
+  on. Against a CPU f32 reference both sit equally far (KL 0.139 / 0.120 at M = 64, 0.122 / 0.122 at 256, pass /
+  sequential): the gap is the activation lane, decode's per-row int8 against the pass's f16. Skipping the attention
+  gate or misrouting the conv window reads cosine below 0.
+- Exploratory, one rep, not a result: about 8× sequential ÷ pass at K = 128 and 512 on the 0.8B.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-db01-grade.sh` on the night queue, from tagged test binaries pinned at the commit it names. (1) The kernel and chunk preconditions. (2) CPU f32 references for Qwen3.5-0.8B, set A, K = 256, 512, 1024 (`TestPrefillGateReference`, cell Q35). (3) The §3.2 pooled fidelity gate on Q35 (`TestPrefillGateVsReference/Q35`, decision cells 256/512/1024). (4) `TestAuditDB01_prefillTiming` on the 0.8B at K = 128, 512, 2048, 7 reps; then the 9B at K = 128, 512, 5 reps, if the fit guard admits it resident. Estimate about 25 minutes; queued at 40. |
+| Precondition | `TestDeltaNetSeqKernels_matchDecodeBitwise` and `TestDB01_chunkedPrefillMatchesWhole` pass at the pinned build, all 30 reference files present, no cell VOID. Otherwise nothing is graded. |
+| Fidelity | The pooled gate **SHIPS** on Q35 (critA ∧ critB ∧ critC). |
+| Graded speed | Sequential ÷ pass on the **0.8B at K = 512**, paired per rep, median of 7. |
+| Rule | **Ships** (`dnetPrefillOn` on) if fidelity ships and speed reads ≥ 1.10 with ≥ 6 of 7 reps above 1.10 (the owner's ship bar, 2026-09-26). **Parked** to the owner at 1.02–1.10. **Killed** below 1.02 or if fidelity fails: the switch stays off. |
+| Thesis (reported, not the ship rule) | The audit projected 3–8× and set a kill line of 2× at K = 512 on the smallest resident Qwen3.5. Reported against that as its own verdict. |
+| Reported | K = 128 and 2048 on the 0.8B; the 9B (or why it did not load); per-cell fidelity. |
+| What ships | `dnetPrefillOn = true`, the `PrefillPath` banner, the CHANGELOG, and the docs that say hybrids prefill sequentially on Metal. |
+
+**Amendment (2026-10-04, before any graded run): the first run graded nothing, and two defects are fixed.**
+- **The night of 2026-10-03 stopped at the reference step** (`run-db01-grade.sh`, binaries at `d07e54a8`): the
+  reference key hashed the checkpoint as one file, and Qwen3.5-0.8B is a safetensors directory ("is a directory").
+  Fixed: a directory hashes file by file (`checkpointDirSHA256`; goinfer's `.giw` sidecars and hidden files are left
+  out), `TestCheckpointSHA256_directory`.
+- **A production defect the gate's plumbing then found** (an exploratory smoke on a K = 8 cell, which is not a registered
+  cell): `metalResident.PrefillLast` from position 0 did not reset the DeltaNet window and state, as `Forward(pos 0)`
+  does. The pass continued the previous sequence's state, so the gate's pass arm, run after its sequential arm, read
+  115 hard flips to 15. With `dnetPrefillOn` on, every fresh prompt in serve would have done the same. Fixed:
+  `PrefillLast` resets at position 0, and `TestDB01_prefillFromZeroResetsState` checks it (0 of 248,320 logits differ;
+  without the reset all of them do). My earlier tests had reset the state by hand, which hid it. The same K = 8 smoke then
+  read 16 hard flips to 15 and agreement 87.8% to 87.7%: plumbing only, not a result.
+- **Unchanged:** the instrument's cells, the rule and the bars. Added to the preconditions:
+  `TestDB01_prefillFromZeroResetsState`. The job re-runs from binaries pinned at the commit that carries these fixes.
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.

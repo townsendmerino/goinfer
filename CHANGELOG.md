@@ -17,6 +17,11 @@ any surface may still change.
 
 ### Changed
 
+- **Metal: prompts of 16 to 63 tokens take the batched prefill pass on a single-slot resident.** The floor below which a
+  prompt runs one token at a time drops from 64 to 16 tokens, which passed the same pooled fidelity gate as before at
+  16, 32 and 48 tokens. The pass takes a 16-token prompt about 3.5x faster than the token loop on the 1.5B (2.5x on the
+  7B). A multi-slot resident (serve's default on Metal) takes the pass from 32 tokens, where it is faster than its exact
+  batched step (1.49x at 32 tokens on the 1.5B), and keeps the step below. Audit A-P02.
 - **Faster greedy and sampled decode on Metal: the next token's forward is queued on the GPU before the host sees this one.**
   Each command buffer ends with the pick (the argmax, or the device's temperature-only draw) and the next starts by
   gathering that token's embedding on the GPU, so the 0.58-0.66 ms per-token gap between buffers is gone. Graded
@@ -202,6 +207,11 @@ any surface may still change.
 
 ### Fixed
 
+- **Metal: a repeated prompt gives the same reply as the first time.** When a prompt was sent again and its cached
+  copy was reused, its last position was recomputed one token at a time, while the first (cold) request had computed it
+  in the batched prefill pass. The two differ in the last bits, so a long enough reply could part some tens of tokens
+  in. A reused prompt now continues on the same prefill route the cold one took. This affected prompts that take the
+  batched pass (64 tokens and up on a multi-slot resident, 16 and up on a single-slot one).
 - **Windows: `fit` and the load-time memory guard read the machine's RAM.** Windows had no host-memory probe, so
   `fit` placed nothing ("no memory probe available") and the guard let every load proceed unchecked. It now reads
   `GlobalMemoryStatusEx` (total and available physical memory), as macOS and Linux read theirs.

@@ -261,7 +261,7 @@ type Prefiller interface {
 // scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
 // whose batched forward is NOT bit-identical to its own sequential one (Metal was, pre-gate —
 // see metal/backend.go's metalFastPrefillEnabled; default-on since 2026-09-09, above
-// metalFastPrefillFloor = 64 tokens since 2026-09-20) must implement this some other way (a
+// metalFastPrefillFloor, 16 tokens since A-P02) must implement this some other way (a
 // per-token sequential forward that stops before the head) rather than reuse a declining
 // Prefiller, or must not implement this interface at all.
 type ResidentHiddenLast interface {
@@ -396,6 +396,19 @@ type ResidentMRoPEPrefill interface {
 // e.g. "batched prefill requires int4 projections (int8int8 at layer 0) — ~9× slower TTFT".
 type PrefillPathReporter interface {
 	PrefillPath() (batched bool, reason string)
+}
+
+// PrefillTailExact is an OPTIONAL Prefiller extension: true when the backend's PrefillLast over a SHORT suffix that
+// continues a prefix it prefilled computes, bit for bit, what one PrefillLast over the whole prompt computes for those
+// positions, and its routing between its prefill lanes depends on the whole prompt's length, not the suffix's. Then a
+// reused prompt (resident_reuse.go) can hand the batched path a suffix of any length and get the cold run's bits.
+//
+// Without it residentPrefillSeed offers only suffixes of 8 tokens or more, so a repeated prompt (a 1-token suffix) ran
+// its last position through decode while the cold run had computed it in the batched pass, which is not bit-identical
+// to decode: on Metal the warm reply differed from the cold one some tens of tokens in (2026-10-04, found as the
+// "MC3 pass identity defect" in docs/tasks/task-metal-audit-2026-10.md's A-P02 result).
+type PrefillTailExact interface {
+	PrefillTailExact() bool
 }
 
 // VerifyPathReporter is an OPTIONAL resident extension: report at LOAD time whether the
