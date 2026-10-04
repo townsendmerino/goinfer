@@ -103,6 +103,51 @@ for slice 2. The native path turns on by default only when F3′ (0.5B and, if i
 pass.
 
 
+**Slice 2 — int8 prefill (built 2026-10-04; its gate P2 pre-registered the same day, before any graded run).**
+
+*What is built.*
+- `gemm_w4f16_tile` takes a third template parameter, `W8`. With it set, the weight staging reads the native int8
+  path's row-major int8 codes and per-row f32 scales, and dequantizes each weight to f16 as `half(q·scale)`. The int4
+  instances are unchanged: `TestGemmTile_bitIdentical` passes over 98,102,016 outputs.
+- `gemm_w8f16_m{64,32,16}n{64,32}` are the W8 tiles; `gemmTile` takes them for a native int8 resident, with the same
+  tile rule as int4. `prefillOK` no longer excludes `r.w8`.
+- The prefill library compiles with precise math when the resident does (O3).
+- The W8F16 form follows the hardware: M1-class GPUs have no int8 simdgroup MMA. The int4 pass's W4F16 shape is used
+  for the same reason.
+
+*Kernel check* (`TestGemmW8Tile_matchesReference`, default-run): every tile against a float64 reference over the same
+f16 inputs and f16-dequantized weights.
+- The bound is one f16 rounding plus f32 accumulation over K products.
+- 7,315,200 outputs pass across six shapes of the 0.5B and 1.5B, 8-72 rows and three epilogues. Every tile equals the
+  64×64 one bit for bit.
+- Swapping the two staged words of an 8-k block fails it (an output off by 5.7 against a 0.003 bound).
+
+*Exploratory, by day* (`TestW8Prefill_passAgainstSequential`: 6 set-A prompts of 256 tokens, the pass's last logits
+against the sequential loop's, after a warm pass):
+
+| model, arm | pass | sequential | KL(seq ‖ pass) | argmax |
+|---|---|---|---|---|
+| 0.5B native int8, precise | 103.2 ms | 1626 ms (15.8×) | 0.0369 | 6/6 |
+| 0.5B native int8, fast math | 101.0 ms | — | 0.0349 | 5/6 |
+| 0.5B int4 (shipped pass) | 102.8 ms | 1415 ms | 0.0433 | 5/6 |
+| 1.5B native int8, precise | 264.9 ms | 3692 ms (13.9×) | 0.0224 | 6/6 |
+| 1.5B int4 (shipped pass) | 263.0 ms | 2992 ms | 0.0165 | 5/6 |
+
+- The pass is compute-bound, so int8's extra bytes and precise math cost nothing there.
+- One exploratory cell of the gate below (1.5B, K = 256, not a decision) read "SHIPS": fast mean KL 0.0043 against
+  exact's 0.0063, with 1 and 0 hard flips.
+
+*Gate P2 — int8 prefill fidelity (night queue).* The §3.2 pooled gate (`TestPrefillGateVsReference`) on the 1.5B,
+prompt set A, decision set K ∈ {256, 512, 1024}, confirmation cells off (`GOINFER_METAL_GATE_QUANT=int8int8`).
+- Both arms run on the native int8 path with precise math: fast is the batched pass, exact is the sequential loop.
+  Both are scored against the CPU f32 references already on disk (set A, `S-K*`).
+- The rule is the one int4's pass shipped under, unchanged: critA, critB and critC pooled over the decision set.
+  Native int8's pass ships iff all three hold.
+- The 7B (`D7`) is left out: the fit guard does not admit it at int8int8 on this Mac.
+- **Not** decided here: S-auto, which also needs first-token latency at a 1,000-token prompt, read from gate S's
+  harness after this.
+
+
 ## Tests to update
 
 - `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) and the R17 auto tests, for the new label.

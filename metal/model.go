@@ -1004,7 +1004,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	// Native int8 (docs/tasks/task-metal-int8-2026-10.md, slice 1): a dense model whose body projections are all int8
 	// runs them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they
-	// are off for it: fast prefill and the f16 lane here, the R18 rows kernels and the MC3 step below.
+	// are off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
+	// them through its W8 tiles (slice 2, gemm_w8f16_*).
 	r.w8 = w8Eligible(m, r)
 	if r.w8 {
 		r.decodeLaneW4F16 = false
@@ -1056,7 +1057,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 	}
 	r.prefillOK = len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.w8 &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 &&
 		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 	r.q = d.NewCommandQueue()
 

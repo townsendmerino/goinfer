@@ -172,7 +172,14 @@ func TestPrefillGateVsReference(t *testing.T) {
 			// written when that was 4096; it has been 32768 since 26f64807, so the fit guard priced a 32k KV — ~1.8 GB on
 			// the 1.5B — and refused loads that fit): the
 			// widest, K=3900 + continuationN(64) teacher-forced steps, tops out at pos 3962.
-			m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: metalCtxCapDefault})
+			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/tasks/task-metal-int8-2026-10.md, slice
+			// 2): an int8int8 load with nativeInt8 on, both arms on its W8 kernels.
+			quant := "int4"
+			if os.Getenv("GOINFER_METAL_GATE_QUANT") == "int8int8" {
+				quant = "int8int8"
+				useNativeInt8(t, true)
+			}
+			m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: quant, ResidentContext: metalCtxCapDefault})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -180,6 +187,9 @@ func TestPrefillGateVsReference(t *testing.T) {
 			rf, ok := m.ResidentForwardForTest().(*metalResident)
 			if !ok {
 				t.Skipf("metal resident not built for this model")
+			}
+			if (quant == "int8int8") != rf.r.w8 || !rf.r.prefillOK {
+				t.Fatalf("%s: native int8 %v, prefillOK %v: not the arm asked for", quant, rf.r.w8, rf.r.prefillOK)
 			}
 			// A .giw bundle carries no tokenizer: <pathEnv>_TOKENIZER names the .gguf it came from (default: the model path).
 			tokPath := os.Getenv(mc.pathEnv + "_TOKENIZER")
