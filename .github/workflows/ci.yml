@@ -789,7 +789,7 @@ jobs:
   # AIKIT_EXPECT_FORCED makes a tag that forced nothing FAIL (TestForcedFallbacks_expected) instead of passing silently. Under a tag, the three goldens that pin ONE path's numerics take a closeness
   # bound instead (decoder/forced_fallbacks_test.go has the measurements, and each is shown red by a mutation). What runs here is the forward and parity tests on the committed tiny fixtures: the
   # real-checkpoint goldens (TestLongPromptFast_forwardParity, TestDecodeParityInt4) skip without their assets on a runner, and a skip is not a pass, so their forced branches were run by hand
-  # (docs/tasks/task-hardware-coverage-2026-10.md). aikit's own CI forces the arm64 DotProd fallback; goinfer's does not yet.
+  # (docs/tasks/task-hardware-coverage-2026-10.md). aikit's own CI forces the arm64 DotProd fallback, and goinfer's does in root-forced-fallbacks-arm64 below.
   root-forced-fallbacks:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
@@ -813,6 +813,35 @@ jobs:
         run: |
           set -o pipefail
           AIKIT_EXPECT_FORCED=${{ matrix.force }} go test -v -timeout 45m -tags 'goinfer_testhooks aikit_${{ matrix.force }}' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced.log | grep -E '^(--- |ok|FAIL|PASS)'
+      - name: the expectation test ran and passed (a skip is not a pass)
+        run: |
+          grep -q -- '--- PASS: TestForcedFallbacks_expected' forced.log
+
+  # H1.4 (docs/tasks/task-hardware-coverage-2026-10.md): the arm64 kernels a core WITHOUT DotProd runs (Cortex-A72, a Raspberry Pi 4; the base SMULL/SADALP path). The runner's Neoverse has DotProd, so without the
+  # tag that path never executes in CI. aikit's aikit_nodotprod tag makes the dispatchers take it, and AIKIT_EXPECT_FORCED makes a tag that forced nothing FAIL instead of passing silently. Same test selection as
+  # the amd64 legs above: the forward and parity tests on the committed tiny fixtures, with the three goldens that pin one path's numerics taking their closeness bound under a tag. What this does NOT show: that
+  # no instruction OUTSIDE the dispatched kernels needs DotProd (an unguarded one raises SIGILL on a real A72). QEMU's -cpu cortex-a72 finds those; goinfer's own decoder suite is far too slow under it (10 minutes
+  # passed 6 tests, 2026-10-04), so that was run by hand for aikit's linalg suite only.
+  root-forced-fallbacks-arm64:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    runs-on: ubuntu-24.04-arm
+    name: forced fallbacks (arm64 nodotprod)
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: cpu (for the hardware census)
+        # asimddp in the flags is DotProd: it says what the tag is forcing the runner off.
+        run: |
+          lscpu | grep -E 'Model name|Vendor ID|^CPU\(s\)' || true
+          if grep -qw asimddp /proc/cpuinfo; then echo "DotProd: yes (forced off by the tag)"; else echo "DotProd: NO (the tag forces nothing here, which is fine)"; fi
+      - name: test (aikit_nodotprod)
+        run: |
+          set -o pipefail
+          AIKIT_EXPECT_FORCED=nodotprod go test -v -timeout 45m -tags 'goinfer_testhooks aikit_nodotprod' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced.log | grep -E '^(--- |ok|FAIL|PASS)'
       - name: the expectation test ran and passed (a skip is not a pass)
         run: |
           grep -q -- '--- PASS: TestForcedFallbacks_expected' forced.log

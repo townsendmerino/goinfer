@@ -1,8 +1,8 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (SDE installed, first run queued for tonight), H1.4 as a CI job, H2 on Metal and WebGPU, and H4–H6 are not started** (checked against the tree
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, first run pending) are set up; H2 on Metal and WebGPU and H6 are not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
 > 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
-> H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one rented sweep are missing.
+> H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one sweep on other hardware are missing, and with H4 parked the second can only be met by a different route (see H4).
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
@@ -170,6 +170,11 @@ test-only package that CI's `test-rest` job runs.
 
    **Run by hand 2026-10-04 for aikit's `linalg` suite (not yet a CI job):** `qemu-aarch64-static` 10.2.2 is installed on nobara; per-test processes under `-cpu cortex-a72`: 210 of 212 ok, 1 SIGILL (a real unguarded
    test, fixed in aikit v1.54.0), 1 timeout (a throughput measurement). goinfer's own suites were not run this way (too slow). Recorded in the census as `emulated` for `cpu-arm64-no-dotprod`.
+
+   **As a CI job, 2026-10-04: `root-forced-fallbacks-arm64`** runs goinfer's forward and parity tests on the native arm64 runner under aikit's `aikit_nodotprod` tag (the same technique aikit's own CI uses), with `AIKIT_EXPECT_FORCED=nodotprod`
+   failing a tag that forced nothing. **QEMU was tried for goinfer's decoder suite and is not viable:** cross-compiled with `GOARCH=arm64`, `-cpu cortex-a72` passed 6 tests in 10 minutes (the dflash layer-by-layer test was mid-run) before my
+   own time limit killed it. So the job covers the no-DotProd KERNELS, not an unguarded DotProd instruction elsewhere, which only a real A72 or QEMU finds (aikit's `linalg` run by hand found one, fixed in aikit v1.54.0). A QEMU leg
+   for aikit's `linalg` suite in aikit's own CI would cover that class; it is not built.
 5. **Drive the size-selected paths with small models.** A test hook that overrides the memory probes and the
    CUDA SM / shared-memory attributes: a 0.5B told it has 64 GiB unified memory, or a card with 128 SMs.
    That reaches the residency decisions, slot counts, context defaults and launch grids on our own hardware.
@@ -295,6 +300,10 @@ that backend's parity contract. Specifically:
 
 ### H4 — a rented sweep before each release that carries a public claim
 
+> **PARKED, 2026-10-04 (owner): no rented machines.** H5's trigger (two H4 sweeps) cannot fire while this is parked. Open question the owner raised: whether a Claude cloud session could run the sweep. It could not stand in for
+> the GPU and Apple Silicon rows (as far as I know a cloud session is a CPU container with no GPU and no Mac), so it covers at most the x86 AVX-512 row, and only if its CPU is one we can name. Until something supplies the other rows, the public
+> claim stays limited to the machines in the census, which is what H6 says in plain words.
+
 - A script that a fresh rented machine runs from a clean OS (`scripts/hardware_sweep.sh`). It downloads the
   release assets, pulls a fixed small model set, runs the self-tests, `check --hardware`, the forward goldens
   and the cold-user protocol, and writes `docs/measurements/hardware-sweep-<tag>.md`.
@@ -330,7 +339,7 @@ stays rented.
 
 ## 3. Order
 
-H0 → (H1.1–H1.3 and H2-Metal, in parallel) → H1.4–H1.5 and H2-CUDA → H3 → H4 before the next public claim →
+(H4 is parked.) H0 → (H1.1–H1.3 and H2-Metal, in parallel) → H1.4–H1.5 and H2-CUDA → H3 → H4 before the next public claim →
 H2-CPU-ISA and H2-WebGPU → H6. H5 waits on its trigger.
 
 **Enough to make a public speed claim:** H0 complete; H2 on Metal and CUDA; no never-executed entry among the
