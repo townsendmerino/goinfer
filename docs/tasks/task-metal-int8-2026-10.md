@@ -148,6 +148,21 @@ prompt set A, decision set K ∈ {256, 512, 1024}, confirmation cells off (`GOIN
   harness after this.
 
 
+**S-auto's first-token half, made measurable (written 2026-10-04, before any graded run).** S-auto's second condition
+is "first-token latency at a 1,000-token prompt is no worse than the CPU's". Before slice 2 nothing measured it, and
+native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFER_W8_GATE_TTFT=1`):
+- The 0.5B and the 1.5B; a 1,000-token prompt (`w8SpeedPrompt`); arms Metal native int8 (precise math), CPU
+  int8int8, and Metal int4 re-quant (reported). Arms rotate every repetition, 7 repetitions, and each sample loads its
+  arm untimed.
+- **Cold** is the first request after the load. **Warm** is a second request whose prompt shares no prefix with the
+  first (the same tokens reversed).
+- **Amendment, written before the run:** S-auto's latency condition is read on **warm**, the serving steady state.
+  Cold, which includes Metal's one-time prefill-library compile, is reported beside it.
+- The condition holds when the median native ÷ CPU ratio is at most 1.0 on both models.
+- A one-sample smoke on the 0.5B checked the harness by day (labelled exploratory, not a result): warm 470 ms against
+  1483 ms, cold 543 ms against 1501 ms.
+
+
 ## Tests to update
 
 - `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) and the R17 auto tests, for the new label.
