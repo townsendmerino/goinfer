@@ -61,7 +61,7 @@ is the same for a backend whatever the family, so it is stated once here:
 | Metal | `goinfer-serve-darwin-arm64` and `-amd64`, built from `metal/cmd/serve` (`release-assets.yml:202-203`) | none |
 | WebGPU | **no release binary** (`release-assets.yml:155`: "`-tags gpu` (WebGPU) is deliberately NOT here: it needs cgo"); self-build `gpu/cmd/serve` with `-tags gpu` and a C toolchain | cgo (B3, verified-run) |
 
-`goinfer-chat` has the same per-platform binaries (`release-assets.yml:79-84`) but its `--image` is **GLM-OCR only** (`internal/chatapp/image.go:107`, tower f32 on the
+`goinfer-chat` has the same per-platform binaries (`release-assets.yml:79-84`) but its `--image` is **GLM-OCR only** (`internal/chatapp/image.go:110`, tower f32 on the
 CPU always). `demo/agent` takes images for **Gemma 3 only**, with the tower on `cpu` or `webgpu` (the `--vision-backend` flag in `demo/agent/cmd/agent-web/main.go`, `demo/agent/agent/agent.go:285-307`): no CUDA tower there.
 
 *Changed 2026-10-02 (item 2 below): the tower-quant cells in the tables describe the rule as audited. Today Qwen2.5-VL, Qwen3.5+ and Gemma 4 load f32 unless `-vision-quant int8`, on every backend.*
@@ -134,7 +134,7 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 
 | family | what happens | verdict |
 |---|---|---|
-| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1094-1113`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
+| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1096-1115`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 

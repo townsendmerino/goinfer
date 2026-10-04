@@ -275,7 +275,7 @@
     ],
     "display_name": "GLM-OCR",
     "description": "Zhipu GLM-OCR (0.9B document OCR): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; its own vision tower (aikit, CPU) feeds merged rows through the Qwen-shaped image path",
-    "summary": "Zhipu's GLM-OCR document model. Reads an image of a page: text, a table or a formula out, or, given a schema, JSON that matches it (goinfer-chat --image invoice.png --schema invoice.schema.json). Verified on the real checkpoint, token-identical to transformers at f32. Images up to 6,144 image tokens, about 4.8 megapixels: no smaller default cap yet.",
+    "summary": "Zhipu's GLM-OCR document model. Reads an image of a page: text, a table or a formula out, or, given a schema, JSON that matches it (goinfer-chat --image invoice.png --schema invoice.schema.json). Verified on the real checkpoint, token-identical to transformers at f32. Images up to 6,144 image tokens, about 4.8 megapixels (the default); --vision-max-pixels lowers the cap, and the CPU vision tower's cost falls with it.",
     "tasks": [
       "chat",
       "vision"

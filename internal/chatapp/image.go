@@ -80,7 +80,7 @@ func isGlmOcrDir(dir string) bool {
 
 // loadImageInput reads and preprocesses the image for the GLM-OCR checkpoint at dir. Everything that can fail cheaply
 // fails here, before the multi-second model load.
-func loadImageInput(dir, imagePath string) (*imageInput, error) {
+func loadImageInput(dir, imagePath string, maxPixels int) (*imageInput, error) {
 	fi, err := os.Stat(dir)
 	if err != nil || !fi.IsDir() || !isGlmOcrDir(dir) {
 		return nil, fmt.Errorf("--image: %q is not a GLM-OCR checkpoint directory (model_type glm_ocr with its vision tower and preprocessor_config.json); goinfer-chat's image input is GLM-OCR only, goinfer-serve handles the other vision families", dir)
@@ -92,6 +92,9 @@ func loadImageInput(dir, imagePath string) (*imageInput, error) {
 	pp, err := multimodal.LoadGlmOcrPreprocessConfig(dir)
 	if err != nil {
 		return nil, fmt.Errorf("--image: %w", err)
+	}
+	if pp, err = multimodal.CapGlmOcrPixels(pp, maxPixels); err != nil {
+		return nil, fmt.Errorf("--vision-max-pixels: %w", err)
 	}
 	pixels, grid, err := multimodal.QwenPreprocess(raw, pp)
 	if err != nil {
@@ -111,7 +114,7 @@ func (im *imageInput) features() ([]float32, error) {
 		im.tower = tw
 	}
 	t0 := time.Now()
-	progress(fmt.Sprintf("reading the image: %d image tokens through the vision tower (CPU, f32; about a minute per megapixel)…", im.nImg))
+	progress(fmt.Sprintf("reading the image: %d image tokens through the vision tower (CPU, f32: on an M1 Pro about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP; --vision-max-pixels lowers the budget)…", im.nImg))
 	feats, err := im.tower.Forward(im.pixels, [][3]int{im.grid})
 	if err == nil {
 		im.towerTime = time.Since(t0)

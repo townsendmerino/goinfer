@@ -166,6 +166,10 @@ any surface may still change.
 
 ### Added
 
+- **`-vision-max-pixels N` (serve) and `goinfer-chat --vision-max-pixels N` lower GLM-OCR's image pixel budget.** The default is unchanged, the model's own 4.82 MP ceiling (6,144 image
+  tokens), by the owner's decision of 2026-10-04 (O4); the flag only lowers it and never raises it, and a cap below the model's own minimum is refused by name. The reason to lower it is cost: the
+  vision tower is CPU f32 on every backend, and measured on an M1 Pro it takes 28.8 s at 1 MP, 92.3 s at 2 MP and 427 s at 4.8 MP (3.04 times the per-patch cost at 4.8 MP against 1 MP),
+  `docs/measurements/glm-ocr-tower-cost-2026-10.md`. No accuracy-against-resolution measurement exists above 1.3 MP (O5's 15 invoices are 1.0-1.3 MP), so the flag carries no recommended value.
 - **A CUDA-resident model now answers the Clef route's all-positions hidden state on the device (D11's follow-up).** `decoder.ResidentResidualAll` is a new optional resident hook: the batched prefill returns
   every row's residual stream after the last layer and before the final norm, and `PromptHiddenAll` applies the final norm on the host in f32, so the rows are not the int8-requantized vector `HiddenLast` returns.
   CUDA implements it as one more tail of its existing batched pass (no new kernel; every row takes the exact kernels). On the tiny Qwen3.5 fixtures the per-row cosine against the CPU is at least 0.99996 (dense)
