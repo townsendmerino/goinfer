@@ -1294,6 +1294,20 @@ the owner's word, so the timed cells shared the machine with a desktop: the load
 - The run-to-run point (2) stands either way, as a finding about served determinism under concurrency.
 - **Owner decision (2026-10-04): (b), re-run.** The amendment is written below before that run.
 
+**E-P07 amendment 2 (written 2026-10-04, before the re-run).** The identity gates re-run with both arms on the exact
+lane.
+- **Instrument:** `docs/measurements/metal-audit-2026-10/run-ep07-w7-exact.sh`, the same pinned binaries, model, cells
+  and order as the first run, with `-exact-prefill` added to both arms' serve arguments. No prompt takes the f16 pass:
+  old prefills sequentially, and new prefills sequentially or through the batched step, which is bit-identical to
+  decode.
+- **Gates:**
+  - (1) identity: every turn's `content_sha` equal across every old and new cell at each client count.
+  - (2) reuse equal.
+  - The precondition is unchanged: 9 one-at-a-time servers and 9 batched.
+- **Rule:** both hold → E-P07 stays on, its speed graded from the first run (2.041×, p99 0.484×, solo guard passed).
+  Either fails → killed and reverted.
+- **Reported:** the exact lane's own speed figures from gates.py, which grade nothing.
+
 
 ## Owner decisions
 
