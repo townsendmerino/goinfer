@@ -616,14 +616,27 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 // K=64 and 4.66x at K=128 (bench_peer_prefill.py, three arms interleaved, n=6) — both well past
 // the >=2x ships band, not just the fidelity precondition. K=64 is the smaller of the two
 // registered candidates {64, 128}, so it is the new floor per the brief's own decision rule.
-// Previously lowered to 256 (2026-09-12, audit-metal-2026-09-12.md M-02). Going lower than 64
-// needs one more passing decision cell at the new depth (the harness already parameterises
-// FLOOR via GOINFER_METAL_FAST_PREFILL_FLOOR, 0 = no floor).
-const metalFastPrefillFloor = 64
+// Previously lowered to 256 (2026-09-12, audit-metal-2026-09-12.md M-02).
+//
+// 16 since A-P02 (docs/tasks/task-metal-audit-2026-10.md, graded 2026-10-04 against its pre-registration): the §3.2 pooled
+// gate SHIPS on the 1.5B with K = 16, 32, 48 and 64 pooled, and on each new cell alone, against CPU f32 references built
+// together; the pass beats the sequential loop 3.48x at K = 16 in-process (7 of 7 reps above the 1.5 bar; the 7B 2.52x).
+// GOINFER_METAL_FAST_PREFILL_FLOOR overrides it, 0 = no floor. A resident with the batched step keeps the exact step
+// below metalStepPrefillCeiling instead (promptStepOK).
+const metalFastPrefillFloor = 16
+
+// metalStepPrefillCeiling (A-P02's step bound): a resident with the batched step runs a prompt that ends below this many
+// tokens as exact decode rows on the step (E-P01) rather than the pass. The grade put the bound at 32 (the 1.5B measured
+// step / pass 0.755 at K = 16, the step faster in 7 of 7 reps, and 1.485 at K = 32, the pass faster in 7 of 7; the 7B 0.627
+// and 1.243), but it stays at 64, today's, HELD BACK (2026-10-04): on an MC3 resident a newcomer whose prompt takes the
+// pass makes both generations diverge from their alone runs some tens of tokens later (the long-prompt forms of
+// TestMC3Chain_newcomerJoinsAndBothMatchAlone and _stalledConsumer..., red at 0eb53e90 too, so not the serve chain), and
+// 32 would reach that for prompts of 32 to 63 tokens. Lower it to 32 once that is fixed (the task doc's A-P02 result).
+const metalStepPrefillCeiling = 64
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //
-// Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2 gate (TestPrefillGateVsReference)
+// Default ON above metalFastPrefillFloor (16 tokens since A-P02; 64 from R3) since §3.2 gate (TestPrefillGateVsReference)
 // passed 2026-09-20 (S model, K=64/128 pooled and K=64 alone; see docs/measurements/metal-
 // prefill-floor-2026-09-20.md). GOINFER_METAL_FAST_PREFILL=0/false/off or
 // --exact-prefill to opt out.
@@ -711,7 +724,7 @@ func metalFusedAttentionEnabled(v string) bool {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
-// the batched f16-MMA path. Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2
+// the batched f16-MMA path. Default ON above metalFastPrefillFloor (16 tokens since A-P02, 64 from R3) since §3.2
 // gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the enabled
 // state AND arch both allow batching.
 // ResidentQuant (decoder.ResidentQuantReporter) is the precision this resident runs its weights at, when the decoder
@@ -737,7 +750,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
-		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", floor)
+		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", max(floor, metalStepPrefillCeiling))
 	}
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
@@ -757,16 +770,16 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 64
-	// tokens since R3 (2026-09-20, cells K=64 and 128), 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill
-	// opts out.
+	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 16
+	// tokens since A-P02 (cells K=16..64), 64 from R3, 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill opts
+	// out.
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
-	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet, so the batched pass declines there; the
-	// lowest cells that passed are K=64 and 128 (the floor's own doc comment). E-P01: a resident with the step kernels
-	// runs a prompt below the floor as decode rows on those kernels instead of declining to the sequential loop: the
-	// same bits, at about a quarter of its time (promptStepOK).
+	// FLOOR: below metalFastPrefillFloor no decision cell has passed, so the batched pass declines there; the lowest that
+	// passed is K=16 (the floor's own doc comment). E-P01: a resident with the step kernels runs a prompt that ends below
+	// max(floor, metalStepPrefillCeiling) as decode rows on those kernels instead: the sequential loop's bits, faster
+	// than the pass there (promptStepOK).
 	promptLen := startPos + len(embeddings)
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if a.promptStepOK(len(embeddings), startPos, floor) {

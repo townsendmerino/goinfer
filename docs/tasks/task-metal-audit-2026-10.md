@@ -768,6 +768,40 @@ faster.
 | Reported | The 7B's timing; every single-cell fidelity verdict; the per-cell KL table. Not measured: a served TTFT, which this grade does not claim. Unchanged: the decoder's 8-token threshold (A-P05). |
 | What ships | By day, after the grade: the floor constant, the step bound in `promptStepOK`, the routing tests, `PrefillPath`'s banner text, and the docs that quote 64. |
 
+### A-P02: SHIPPED in part, graded 2026-10-04 (the floor moves to 16; the step bound is held back)
+
+Run: the Mac's night queue, 2026-10-03 22:45–22:57 PDT, `run-ap02-grade.sh` from the tagged binaries pinned at `f81f3a18`
+(logs `~/goinfer-logs/metal-audit-2026-10/ap02/`). Preconditions held: 40 of 40 reference files, no cell VOID.
+
+| | Reading | Verdict |
+|---|---|---|
+| Fidelity, pooled (1.5B, set A) | {16, 32, 48, 64}: critA 21 / 25 hard flips (exact / fast), critB 92.11% / 92.07%, critC mean KL 0.0433 / 0.0406, fast lower on 27 of 40 prompts. {32, 48, 64} and {48, 64} also SHIP | **F = 16 fidelity-eligible** |
+| Fidelity, single cells | K = 16, 32 and 48 each SHIP (KL 0.0484 / 0.0444, 0.0356 / 0.0327, 0.0428 / 0.0397) | reported |
+| Speed, sequential ÷ pass (1.5B) | K = 16 **3.480** (7 of 7 reps above 1.5); 32 6.83, 48 6.48, 64 8.56 | **F = 16 speed-eligible** |
+| Step bound, step ÷ pass (1.5B) | K = 16 **0.755** (0 of 7 reps above 1: the step faster); K = 32 **1.485** (7 of 7) | **S\* = 32** by the rule |
+| Reported, the 7B | sequential ÷ pass 2.52 / 4.98 / 4.77 / 6.31; step ÷ pass 0.627 / 1.243 / 1.191 / 1.577 at 16 / 32 / 48 / 64 | same crossover |
+
+**Shipped:** `metalFastPrefillFloor` is **16**. A resident without the batched step (a single-slot load such as the CLI, a
+family MC3 excludes) takes the pass from 16 tokens instead of 64; `--exact-prefill`'s help, `TestPrefillFloor` and
+E-P01's routing test follow.
+
+**Held back: the step bound stays at 64**, not the graded 32. Moving it surfaced an OPEN defect: on an MC3 resident, a
+newcomer whose prompt takes the pass makes both generations diverge from their alone runs some tens of tokens later.
+- Seen first as `TestMC3Chain_newcomerJoinsAndBothMatchAlone` and `_stalledConsumerDoesNotStarveANewcomer` going red when
+  their 30–48-token prompts moved from the step to the pass.
+- Reachable on `main` before this change for prompts of 64 tokens or more: the same tests with 100/80 and 90/70-token
+  prompts are red at the old floor, at `0eb53e90` (before the serve chain), and with the chain off. A first differs at
+  token 42 of 160 (B joined at 24), B at 47 of 64.
+- Not the slot (the same prompt through the pass and 60 decode steps on slot 0 and slot 1 match bit for bit), not chunking
+  (the fixture sets no chunk size), not the executor's slot switch (`useKVSlot` stops it).
+- Kept as an opt-in repro, `metal/mc3_pass_identity_repro_test.go` (`GOINFER_MC3_PASS_REPRO=1`, red until fixed).
+- A 32 bound would carry the defect to prompts of 32–63 tokens on serve's default 2-slot Metal resident; at 64 nothing
+  changes for those residents. Lower `metalStepPrefillCeiling` to 32 once the defect is fixed.
+
+`TestMC3Chain_aloneMatchesUnbatchedAndRunsTheChain` now uses a 12-token prompt: at 16 and over its unbatched (single-slot)
+model takes the pass and its MC3 model the step, which differ by design. Metal suite: 232 passed, 1 failed (the pre-existing
+`TestPrefillParityMoEGatedShared`).
+
 ### D-G01: pre-registration (written 2026-10-03, before any graded run; owner: "1 then 2")
 
 **What it gates.** Expert-major MoE prefill (`metal/prefill.go`, the default whenever the batched lane runs) has only

@@ -13,10 +13,10 @@ import (
 // TestPrefillLast_stepRouteBitIdentical is E-P01's gate (docs/audit-metal-2026-09-30.md, Phase 3 item 1 of
 // docs/tasks/task-metal-audit-2026-10.md), run through PrefillLast, the entry point the decoder calls, rather than the
 // step it routes to. On a resident with the batched step (the default-run fixture; the 1.5B under GOINFER_METAL_MC3=1),
-// a prompt below the fast-prefill floor runs as decode rows on the step kernels. Each case prefills on slot 1 and the sequential loop runs on slot 0 from the same
+// a prompt ending below the step bound (the larger of the fast-prefill floor and metalStepPrefillCeiling, A-P02) runs as decode rows on the step kernels. Each case prefills on slot 1 and the sequential loop runs on slot 0 from the same
 // embeddings; every K/V element of every position and every logit of the last row must match bit for bit. The batched
 // f16-MMA pass would not: it is not bit-identical to decode (a mutation forcing it on prompts ending at 72, 81 and 132 keys
-// differed in every logit), so a match also shows the route was taken. Prompts that reach the floor stay on the pass,
+// differed in every logit), so a match also shows the route was taken. Prompts that reach the bound take the pass,
 // whatever their length: a short suffix there is also a chunked prefill's tail (promptStepOK).
 func TestPrefillLast_stepRouteBitIdentical(t *testing.T) {
 	a := mc3PrefillResident(t, 2, 1024)
@@ -25,8 +25,8 @@ func TestPrefillLast_stepRouteBitIdentical(t *testing.T) {
 		t.Fatalf("the resident has no step kernels (batchIneligible: %q)", r.batchIneligible())
 	}
 	floor := metalFastPrefillFloorFor(r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if floor != 64 {
-		t.Fatalf("fast-prefill floor %d; the cases below are laid out for 64", floor)
+	if floor != 16 || metalStepPrefillCeiling != 64 {
+		t.Fatalf("fast-prefill floor %d, step bound %d; the cases below are laid out for 16 and 64 (A-P02, the step bound held back)", floor, metalStepPrefillCeiling)
 	}
 	seed := uint32(24680)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
@@ -46,7 +46,7 @@ func TestPrefillLast_stepRouteBitIdentical(t *testing.T) {
 		start, n int
 		step     bool
 	}{
-		{0, 8, true}, {0, 9, true}, {0, 20, true}, {0, 33, true}, {0, 63, true}, {40, 23, true}, // ends below the floor
+		{0, 8, true}, {0, 9, true}, {0, 15, true}, {0, 20, true}, {0, 33, true}, {0, 63, true}, {40, 23, true}, // ends below the step bound
 		{0, 64, false}, {56, 8, false}, {64, 8, false}, {100, 32, false}, // reaches it: the pass
 	}
 	for _, c := range cases {

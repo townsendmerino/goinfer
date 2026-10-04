@@ -824,7 +824,7 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
 		return false
 	}
-	if floor > 0 && startPos+n < floor {
+	if floor > 0 && startPos+n < max(floor, metalStepPrefillCeiling) { // A-P02: the step keeps prompts where it beats the pass
 		return true
 	}
 	return promptStepAboveFloor && n <= promptStepMaxAboveFloor

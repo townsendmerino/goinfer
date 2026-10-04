@@ -261,7 +261,7 @@ type Prefiller interface {
 // scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
 // whose batched forward is NOT bit-identical to its own sequential one (Metal was, pre-gate —
 // see metal/backend.go's metalFastPrefillEnabled; default-on since 2026-09-09, above
-// metalFastPrefillFloor = 64 tokens since 2026-09-20) must implement this some other way (a
+// metalFastPrefillFloor, 16 tokens since A-P02) must implement this some other way (a
 // per-token sequential forward that stops before the head) rather than reuse a declining
 // Prefiller, or must not implement this interface at all.
 type ResidentHiddenLast interface {

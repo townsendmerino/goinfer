@@ -19,7 +19,7 @@ func TestPrefillFloor(t *testing.T) {
 	for _, c := range []struct {
 		v    string
 		want int
-	}{{"", 64}, {"0", 0}, {"128", 128}, {"-1", 64}, {"x", 64}, {" 32", 64}} {
+	}{{"", 16}, {"0", 0}, {"128", 128}, {"-1", 16}, {"x", 16}, {" 32", 16}} { // 16 since A-P02, 64 before
 		if got := metalFastPrefillFloorFor(c.v); got != c.want {
 			t.Errorf("metalFastPrefillFloorFor(%q) = %d, want %d", c.v, got, c.want)
 		}
@@ -29,15 +29,15 @@ func TestPrefillFloor(t *testing.T) {
 		startPos, M int
 		decline     bool
 	}{
-		{"", 0, 63, true},     // one short of the floor
-		{"", 0, 64, false},    // at it
-		{"", 56, 7, true},     // 63 positions in all: the cached ones count
-		{"", 56, 8, false},    // 64 in all
+		{"", 0, 15, true},     // one short of the floor
+		{"", 0, 16, false},    // at it
+		{"", 8, 7, true},      // 15 positions in all: the cached ones count
+		{"", 8, 8, false},     // 16 in all
 		{"", 1000, 8, false},  // a short suffix after a long cached prefix
 		{"0", 0, 8, false},    // the floor off
 		{"128", 0, 100, true}, // the knob raises it
 		{"128", 0, 128, false},
-		{"x", 0, 63, true}, // a value that does not parse leaves 64
+		{"x", 0, 15, true}, // a value that does not parse leaves 16
 	} {
 		name := fmt.Sprintf("floor knob %q, startPos %d, M %d", c.knob, c.startPos, c.M)
 		a := tinyPrefillResident(t, decoder.Options{Quant: "int4",
