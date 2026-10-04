@@ -23,21 +23,23 @@ any surface may still change.
   in-process: the 1.5B decodes 1.085x greedy and 1.066x at T=1, the 0.5B 1.063x / 1.160x, the 7B 1.010x / 1.022x.
   Every token is identical to before. An untied LM head (all the Qwen2.5 GGUFs) puts the int8 embedding table on the
   GPU on first use (136 MB on the 0.5B, 233 MB on the 1.5B, 545 MB on the 7B), priced against the memory guard; if it
-  does not fit, decode keeps the old path. Audit C-B01 / C-P02 (`docs/audit-metal-2026-09-30.md`). **Not yet in
-  `serve` by default (found 2026-10-03):** with more than one KV slot every generation takes the batched (MC3) path,
-  which the chain does not cover, and Metal serve keeps 2 slots by default. So the gain is the CLI's and single-slot
-  serve's (`--kv-sessions 1`); a served same-session read measured the 1.5B at 0.991x greedy against the build before it.
+  does not fit, decode keeps the old path. Audit C-B01 / C-P02 (`docs/audit-metal-2026-09-30.md`). **In `serve` too,
+  since 2026-10-03:** with more than one KV slot every generation used to take the batched (MC3) path, which the chain
+  did not cover, and Metal serve keeps 2 slots by default, so a served read had measured the 1.5B at 0.991x against the
+  build before it. Now a generation decoding alone on the batcher runs the chain with the GPU held across its tokens,
+  and hands it back the first token another client, its prefill, or a consumer that stops reading (2 ms grace) wants
+  it. Tokens identical to before; the served speed is graded separately.
 - **Faster decode attention on Metal at long context, for more models.** The block attention kernel now also covers
-  64-wide heads (the Qwen2.5 0.5B family), and query groups of 2, 3, 4, 5 and 8 heads per KV head. It also takes over
-  from 1024 keys instead of 1536.
+  64-wide heads (the Qwen2.5 0.5B family), and query groups of 2, 3, 4, 5 and 8 heads per KV head.
   - **64-wide heads, on the 0.5B:** attention 3.17x faster at 2048 keys and 3.63x at 3900; whole tokens 1.52x and
     1.92x.
   - **Two-head groups** (internlm2-1.8b, qwen3-0.6b): attention 2.30-2.47x faster, whole tokens 1.24-1.62x.
-  - **1024 keys:** the block kernel was 1.17x faster there on the 1.5B and 1.06x on the 7B.
 
   It reorders the attention sum, so the tokens are not bit-identical to before. Each part passed the pre-registered
   fidelity gate for reordering-only decode kernels: per-head error against float64 below the old kernel's, and a KL
-  ratio of at most 1.05 against the references. Audit B-P01 / B-P02 / B-P03.
+  ratio of at most 1.05 against the references. Audit B-P01 / B-P02. B-P03, starting it at 1024 keys instead of
+  1536, passed the same gate but was reverted the same day: at 1024 the 1.5B's `--spec ngram` stopped matching plain
+  decode.
 - **DeltaNet and shared-expert int4 GEMVs on Metal take the rows-per-simdgroup kernels.** These are the Qwen3.5 9B's
   gated-DeltaNet qkv and z projections, and a shared expert's gate|up and down. The 9B decodes 1.064x faster at depth
   128 and 1.061x at 1024, bit-identical. Audit D-B04.

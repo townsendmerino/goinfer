@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L931-L1178). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:2073](../decoder/model.go#L1051-L1177)).
+   ([decoder/model.go:2084](../decoder/model.go#L1051-L1177)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one

@@ -263,7 +263,7 @@ real night, first in the queue; re-queued. Log: `docs/measurements/metal-audit-2
 
 ## Phase 3 — builds, in this order
 
-### B-P03: PASSED, the floor moves to 1024, graded 2026-10-03 (pre-registered 2026-10-02, before any graded run)
+### B-P03: PASSED its fidelity grade, then REVERTED 2026-10-03: the floor stays 1536 (pre-registered 2026-10-02, before any graded run)
 
 T1.2 put the candidate floor at 1024 keys (the block kernel 1.167× the legacy kernel on the 1.5B, 1.056× on the 7B;
 768 did not qualify). Moving it puts the reassociating block kernel at 1024–1535 keys, where the exact legacy kernel runs
@@ -650,7 +650,7 @@ at the owner's word, 11:28–13:38. Every graded line is read against its pre-re
 | **B-P01** hd = 64 block twin, 0.5B | P1: the twin's median and p99 relative L2 against float64 are 1.66e-7 and 3.01e-6, against the exact kernel's 4.12e-7 and 5.55e-6; capture sanity 480/480. P2 at 3900 keys: critA, critB and the ceiling hold, KL ratio **1.0098**. Speed, legacy ÷ block attention: **3.17×** at 2048 keys, **3.63×** at 3900 (1.52× and 1.92× per token). Reported: the exact-null control PASSES at 3900; the K = 2048 cell holds critA, critB and the ceiling, with KL ratio 1.0113 | **ships** (P1, P2, KL ≤ 1.05, speed ≥ 1.5) |
 | **B-P02** block kernel at G = 2, 3, 4, 5, 8 | Legacy ÷ block attention on the two G = 2 models: internlm2-1.8b **2.37×** and **2.32×** at 2048 and 3900 keys, qwen3-0.6b **2.47×** and **2.30×**; 5 of 5 reps above 1 everywhere (per token 1.24–1.62×) | **ships** (≥ 1.5, ≥ 4 of 5 reps) |
 | **D-B04** staged rows GEMV | 9B off ÷ on: **1.064×** at depth 128 and **1.061×** at 1024, 7 of 7 reps above 1, the last token's logits equal in every rep; 5,376 and 10,752 rows-form dispatches | **ships** (≥ 1.02, ≥ 6 of 7) |
-| **B-P03** floor at 1024 | P1 at 1024, 1280 and 1535 keys: the block kernel's median and p99 against float64 are below the exact kernel's on both models (1.5B 1.68e-7 / 1.83e-6 against 4.27e-7 / 3.68e-6; 7B 2.33e-7 / 1.90e-6 against 5.87e-7 / 5.31e-6), capture sanity 840/840 each. P2 on the 1.5B at K = 1024 **PASSES** (KL ratio 0.9987, identity 10/10). Controls: exact-null passes under the amended form (KL 1.0002); the 7B's P2, reported, holds the amended form (KL 0.9888) | **floor moves to 1024** |
+| **B-P03** floor at 1024 (**reverted**, see below) | P1 at 1024, 1280 and 1535 keys: the block kernel's median and p99 against float64 are below the exact kernel's on both models (1.5B 1.68e-7 / 1.83e-6 against 4.27e-7 / 3.68e-6; 7B 2.33e-7 / 1.90e-6 against 5.87e-7 / 5.31e-6), capture sanity 840/840 each. P2 on the 1.5B at K = 1024 **PASSES** (KL ratio 0.9987, identity 10/10). Controls: exact-null passes under the amended form (KL 1.0002); the 7B's P2, reported, holds the amended form (KL 0.9888) | **floor moves to 1024** |
 | **E-P06** verify-cost curve at load | 1.5B chat spec-new ÷ spec-old **1.014×** (bar 1.02); copy 0.998×. Every spec reply equals plain's. Reported: the 0.5B 1.237× copy and 1.084× chat; the 7B 1.000× and 1.006× | **killed** (owner: "killed is good"), code removed |
 
 **E-P06 did run the code it grades** (owner question, 2026-10-03). Speculation was live in both spec arms: 1.5B copy
@@ -689,6 +689,40 @@ Goinfer against the peers, from the same sweep:
 
 **What it leaves for the owner:** letting a lone MC3 generation (B = 1) take the chain, or the chain into the batched
 step, is a new build with its own gate. Until then the C-B01 and C-P02 numbers describe the CLI and single-slot serve.
+
+**B-P03 reverted the same day (owner: "revert").** The floor move broke `--spec ngram`'s identity with plain decode on
+the 1.5B: `TestSpecNgram_copyOnStepVerify` (real checkpoint, `GOINFER_METAL_MC3=1`, not in CI) diverges at token 105
+of 192, about 1,077 keys, with the floor at 1024. It passes with the floor at 1100 and at 1536, so the move exposed
+it. The pre-registration graded fidelity against float64 and the references, and nothing in it asked for spec
+identity across the new depths. Narrowed so far:
+- **Not the verify step.** `TestMC3Verify_sameSlotRowsBitIdentical`, at depth 2048 and straddling the floor, has 0
+  differing values against production's logits path at the 1024 floor.
+- **Not the greedy chain.** With it off, the failure is the same.
+- **Not the kernel choice or the shared partial buffer.** The step picks per row; the encoder is serial.
+- **Left:** plain greedy decode's device-argmax path (`ForwardArgmax`) disagrees with the logits path at those depths
+  once the block kernel runs there. That probably applies above 1536 too, on contexts no test has reached. The floor
+  stays 1536 until it is understood.
+
+The snapshot golden is re-baked at the 1536 straddle (1400 / 1534 / 1535 / 1600). The mixtral-tiny and gemma4 entries
+did not move. llama-attnfa-tiny's 1535 entry differs from the pre-move golden because B-P02's block kernel now runs
+for this G = 2 fixture past the floor.
+
+**The chains in serve (owner: "take on the serve-chain fix"), built 2026-10-03.**
+- **What it does:** a generation decoding alone on the MC3 batcher runs the greedy or sampled chain, with the resident
+  held across its tokens (`decoder/mc3_batch.go` `holdSolo`).
+- **When it yields:** the first token anyone else wants the resident. That covers another holder's claim, an
+  exclusive section (a newcomer's prefill), another decoder, or a consumer that does not take a token within 2 ms
+  (`mc3HoldSendGrace`). The chain stops while the resident is still held, then the token takes the batcher as before.
+- **Why yielding is exact:** the chain covers no recurrent model (`greedyChainWhyNot`), so recomputing the position the
+  stopped chain had queued rewrites the same KV.
+- **Gates (`metal/mc3_chain_test.go`, the committed tiny fixture, in every `go test`):**
+  - Alone: 96 of 96 tokens ran held, greedy and at T = 0.8, identical to the unbatched decode.
+  - A newcomer mid-generation: A chained, then batched 64 steps with B, both identical to alone.
+  - A stalled consumer: the newcomer is still served, and the stalled A finishes identically.
+  - Each gate fails under its own mutation: never hold, a hold never released, no send grace.
+- **On the 1.5B:** the real-checkpoint MC3 identity gates (4 conversations × 3 turns, greedy and sampled) and the spec
+  gates pass.
+- **Not yet measured:** the served speed. It needs its own pre-registered night A/B.
 
 **Found while running the metal suite (not tonight's change): `TestPrefillParityMoEGatedShared` fails on main.** Its
 fixture `testdata/tiny-qwen2-moe` is a per-machine download, not committed. The local copy had no config until
