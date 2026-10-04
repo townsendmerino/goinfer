@@ -90,19 +90,12 @@ func TestW8Native_F3_closerToF32(t *testing.T) {
 	}
 	t.Logf("F3 reported: KL(f32 ‖ CPU int8int8, f16 KV) %.6f; Metal int8int8 is %.3f× it, and further from f32 at %d of %d positions",
 		kCPU8h, kMet8/kCPU8h, worse, steps-2)
-	if os.Getenv("GOINFER_W8_F3_PRECISE") == "1" { // the same Metal int8int8 arm with the library compiled without fast math
-		prev := preciseMathCompile
-		preciseMathCompile = true
-		met8p := metalLogitsAt(t, path, "int8int8", toks, true)
-		preciseMathCompile = prev
-		kMet8p, worseP := meanKL(met8p), 0
-		for i := 2; i < steps; i++ {
-			if klLogits(ref[i], met8p[i]) > klLogits(ref[i], cpu8h[i]) {
-				worseP++
-			}
-		}
-		t.Logf("F3 reported: Metal int8int8, precise math: KL(f32 ‖ ·) %.6f, %.3f× the f16-KV CPU's, further from f32 at %d of %d positions",
-			kMet8p, kMet8p/kCPU8h, worseP, steps-2)
+	if os.Getenv("GOINFER_W8_F3_FAST") == "1" { // the same Metal int8int8 arm with fast math kept (w8FastMath)
+		prev := w8FastMath
+		w8FastMath = true
+		met8f := metalLogitsAt(t, path, "int8int8", toks, true)
+		w8FastMath = prev
+		t.Logf("F3 reported: Metal int8int8, fast math: KL(f32 ‖ ·) %.6f, %.3f× the f16-KV CPU's", meanKL(met8f), meanKL(met8f)/kCPU8h)
 	}
 	t.Logf("F3: mean KL(f32 ‖ ·) over %d positions: CPU int8int8 %.6f, Metal int8int8 %.6f (%.3f× the CPU's), Metal int4 %.6f",
 		steps-2, kCPU8, kMet8, kMet8/kCPU8, kMet4)

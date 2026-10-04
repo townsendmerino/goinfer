@@ -76,6 +76,33 @@ only if the fit guard admits it; this Mac has 16 GB, and no guard is bypassed.
 Once F1–F3 pass it runs int8 natively, the precision asked for, as CUDA does, with the speed disclosed in the CHANGELOG
 (gate S reports it). The int4 re-quant stays only for the models slice 1 does not cover.
 
+**Owner decisions, 2026-10-04** (after the per-layer comparison, Log 2026-10-04): "1, yes, 2, precise".
+- **F3 amended (O2), as F3′ below.** F3 as written compared a backend with an f16 KV cache against a CPU with an f32
+  one, which only bit-identity can pass at this quant.
+- **Precise math for native int8 (O3).** A model headed for the native int8 path compiles its Metal library without
+  fast math (`w8PreciseMath`). Fast math was about 40% of F3's gap. Its decode cost is reported by gate S's new
+  fast-math arm, not gated.
+
+**F3′ — closer to f32, against the CPU at Metal's KV precision (pre-registered 2026-10-04, before any F3′ run).**
+`TestW8Native_F3amended_closerToF32`, by day on the 0.5B, on the night queue on the 1.5B if the fit guard admits its
+f32 reference (it refused it on 2026-10-01: 7.7 GB against 7.6).
+- **Prompts:** the first 8 files of the prefill gate's prose set A, the first 16 tokens of each, then 16 tokens of the
+  CPU f32 model's greedy continuation. Positions 2-31 are scored, 240 in all.
+- **Arms:**
+  - the reference: CPU int8int8 with every K and V rounded to f16 as it is stored;
+  - Metal native int8int8, precise math, the shipped configuration if it passes.
+- **Bar:** the pooled mean KL(f32 ‖ Metal int8int8) is at most 1.10 × the pooled mean KL(f32 ‖ reference). The test
+  fails otherwise.
+- **Reported, not gated:**
+  - positions where Metal is further from f32 (expected to be most of them: any non-identical path adds noise);
+  - per-prompt ratios;
+  - CPU int8int8 at f32 KV, Metal int8 with fast math, and Metal int4.
+
+**F2** keeps its bar and re-runs on the 1.5B with precise math. **S** gains the fast-math arm. **S-auto** still waits
+for slice 2. The native path turns on by default only when F3′ (0.5B and, if it runs, 1.5B), F2 on the 1.5B and S all
+pass.
+
+
 ## Tests to update
 
 - `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) and the R17 auto tests, for the new label.

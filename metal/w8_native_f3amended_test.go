@@ -1,0 +1,161 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// TestW8Native_F3amended_closerToF32 is gate F3 as the owner amended it on 2026-10-04 (docs/tasks/task-metal-int8-2026-10.md,
+// "F3′"): Metal's native int8int8 (precise math, the owner's other decision that day) against the CPU's int8int8 at Metal's
+// own KV precision (every K and V rounded to f16 as it is stored), over 8 prompts instead of one. Each prompt is the first
+// 16 tokens of a prefill-gate set-A file, then 16 tokens of the CPU f32 model's greedy continuation; positions 2-31 are
+// scored, 240 in all. Bar: the pooled mean KL(f32 ‖ Metal int8int8) is at most 1.10 × the pooled mean KL(f32 ‖ CPU
+// int8int8, f16 KV). Reported beside it: the CPU int8int8 at f32 KV (F3's old reference), Metal int8 with fast math, and
+// Metal int4. Each model loads once; the CPU ones one at a time.
+func TestW8Native_F3amended_closerToF32(t *testing.T) {
+	path := w8GateModel(t)
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	files := decoder.PrefillGatePromptSetFor("a")
+	const nPrompts, promptLen, steps = 8, 16, 32
+	if len(files) < nPrompts {
+		t.Fatalf("set A has %d files, want %d", len(files), nPrompts)
+	}
+	prompts := make([][]int, nPrompts)
+	for i := range prompts {
+		prompts[i] = decoder.PrefillGateProseIDsForTest(t, tk, files[i], promptLen)[:promptLen]
+	}
+
+	// cpu runs every prompt through one CPU model at quant: from the prompt then its own greedy continuation when forced
+	// is nil, else the forced tokens; with f16KV, K and V are rounded to f16 right after the position that wrote them.
+	cpu := func(quant string, f16KV bool, forced [][]int) (out [][][]float32, toks [][]int) {
+		m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: 1024})
+		if errors.Is(err, decoder.ErrWontFitResident) {
+			t.Skipf("the fit guard refused the CPU %q load on this machine now: %v", quant, err)
+		}
+		if err != nil {
+			t.Fatalf("load (cpu, %q): %v", quant, err)
+		}
+		defer m.Close()
+		_, nL, _, nKV, hd, _, _ := m.Dims()
+		out, toks = make([][][]float32, nPrompts), make([][]int, nPrompts)
+		for p := range nPrompts {
+			cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
+			out[p], toks[p] = make([][]float32, steps), make([]int, steps)
+			tok := prompts[p][0]
+			for i := range steps {
+				if forced != nil {
+					tok = forced[p][i]
+				}
+				toks[p][i] = tok
+				l, err := m.ForwardForTest(tok, cache)
+				if err != nil {
+					t.Fatalf("cpu forward (%q) prompt %d at %d: %v", quant, p, i, err)
+				}
+				out[p][i] = append([]float32(nil), l...)
+				if f16KV {
+					for layer := range nL {
+						k, v, _ := cache.LayerKVForTest(layer)
+						for _, sl := range [][]float32{k[i*nKV*hd : (i+1)*nKV*hd], v[i*nKV*hd : (i+1)*nKV*hd]} {
+							for j, x := range sl {
+								sl[j] = f16ToF32(f32ToF16(x))
+							}
+						}
+					}
+				}
+				if forced == nil {
+					if i+1 < promptLen {
+						tok = prompts[p][i+1]
+					} else {
+						tok = argmaxF(l)
+					}
+				}
+			}
+		}
+		return out, toks
+	}
+	metal := func(quant string, native, fast bool, toks [][]int) [][][]float32 {
+		prevN, prevF := nativeInt8, w8FastMath
+		nativeInt8, w8FastMath = native, fast
+		defer func() { nativeInt8, w8FastMath = prevN, prevF }()
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: quant, ResidentContext: 1024})
+		if err != nil {
+			t.Fatalf("load (metal, %s): %v", quant, err)
+		}
+		defer m.Close()
+		rf := m.ResidentForwardForTest()
+		if rf == nil {
+			skipIfMemoryDeclined(t, m)
+			t.Fatalf("metal resident declined at %s: %s", quant, m.ResidentDecline())
+		}
+		a, ok := rf.(*metalResident)
+		if !ok || a.r.w8 != native || native && a.r.preciseMath == fast {
+			t.Fatalf("%s: native %v precise %v, want native %v precise %v (%s)", quant, ok && a.r.w8, ok && a.r.preciseMath, native, !fast, m.DecodePath())
+		}
+		out := make([][][]float32, nPrompts)
+		for p := range nPrompts {
+			out[p] = make([][]float32, steps)
+			for i, tok := range toks[p] {
+				l, err := rf.Forward(m.EmbedResidentForTest(tok), i)
+				if err != nil {
+					t.Fatalf("metal forward (%s) prompt %d at %d: %v", quant, p, i, err)
+				}
+				out[p][i] = append([]float32(nil), l...)
+			}
+		}
+		return out
+	}
+
+	ref, toks := cpu("", false, nil)
+	cpu8h, _ := cpu("int8int8", true, toks)
+	cpu8, _ := cpu("int8int8", false, toks)
+	met8 := metal("int8int8", true, false, toks)
+	met8fast := metal("int8int8", true, true, toks)
+	met4 := metal("int4", false, false, toks)
+
+	pooled := func(arm [][][]float32) (mean float64, perPrompt []float64) {
+		n := 0
+		for p := range nPrompts {
+			var s float64
+			for i := 2; i < steps; i++ {
+				s += klLogits(ref[p][i], arm[p][i])
+			}
+			perPrompt = append(perPrompt, s/float64(steps-2))
+			mean += s
+			n += steps - 2
+		}
+		return mean / float64(n), perPrompt
+	}
+	kRef, pRef := pooled(cpu8h)
+	kMet, pMet := pooled(met8)
+	kCPU8, _ := pooled(cpu8)
+	kFast, _ := pooled(met8fast)
+	kMet4, _ := pooled(met4)
+	further := 0
+	for p := range nPrompts {
+		for i := 2; i < steps; i++ {
+			if klLogits(ref[p][i], met8[p][i]) > klLogits(ref[p][i], cpu8h[p][i]) {
+				further++
+			}
+		}
+	}
+	per := ""
+	for p := range nPrompts {
+		per += fmt.Sprintf(" %.3f", pMet[p]/pRef[p])
+	}
+	t.Logf("F3′: pooled mean KL(f32 ‖ ·) over %d prompts × %d positions: CPU int8int8 f16 KV %.6f, Metal int8int8 (precise) %.6f = %.3f× (bar 1.10); further from f32 at %d of %d positions; per prompt%s",
+		nPrompts, steps-2, kRef, kMet, kMet/kRef, further, nPrompts*(steps-2), per)
+	t.Logf("F3′ reported: CPU int8int8 f32 KV %.6f, Metal int8int8 fast math %.6f (%.3f× the reference), Metal int4 %.6f",
+		kCPU8, kFast, kFast/kRef, kMet4)
+	if kMet > 1.10*kRef {
+		t.Errorf("F3′ fails: KL(f32 ‖ Metal int8int8) %.6f is above 1.10 × the f16-KV CPU int8int8's %.6f", kMet, kRef)
+	}
+}
