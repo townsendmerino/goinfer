@@ -5,6 +5,8 @@ decoder's self-attention over the questions, the per-question option split) gets
 
   pin_clef_mq.py records            the records  -> OUT/records.jsonl     (states: D7's frozen prompts.json, 3 at K=256 and 2 at K=1024)
   pin_clef_mq.py model --dtype f32  the reference per-question probabilities -> OUT/probs_f32.jsonl   (resumable: ids already written are skipped)
+  pin_clef_mq.py records --single   the same 25 questions, each in a record of its own -> OUT/records_single.jsonl (ids "<record id>::<question>")
+  pin_clef_mq.py model --dtype f32 --single   the reference on those        -> OUT/probs_single_f32.jsonl  (joint versus single, a characterization)
 
 Environment: CLEF_MODEL (default ~/models/clef-flash, the bench set), MQ_OUT (default ~/goinfer-bench/decisions-d13-mq).
 """
@@ -35,11 +37,20 @@ def records():
     return out
 
 
-def cmd_records(_):
+def single_records():
+    """Each question of each five-question record, alone: the same state, the same question object, nothing else."""
+    out = []
+    for r in records():
+        for name, q in r["request"]["questions"].items():
+            out.append({"id": f"{r['id']}::{name}", "request": {"model": r["request"]["model"], "state": r["request"]["state"], "questions": {name: q}}})
+    return out
+
+
+def cmd_records(a):
     os.makedirs(OUT, exist_ok=True)
-    p = os.path.join(OUT, "records.jsonl")
+    p = os.path.join(OUT, "records_single.jsonl" if a.single else "records.jsonl")
     with open(p, "w") as f:
-        for r in records():
+        for r in (single_records() if a.single else records()):
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     print(f"wrote {p} sha256 {d10.sha256_file(p)}")
 
@@ -48,8 +59,8 @@ def cmd_model(a):
     import torch
     jsm, model = d10.load(a.dtype)
     tok = d10.tokenizer()
-    recs = [json.loads(l) for l in open(os.path.join(OUT, "records.jsonl"))]
-    outp = os.path.join(OUT, f"probs_{a.dtype}.jsonl")
+    recs = [json.loads(l) for l in open(os.path.join(OUT, "records_single.jsonl" if a.single else "records.jsonl"))]
+    outp = os.path.join(OUT, f"probs_single_{a.dtype}.jsonl" if a.single else f"probs_{a.dtype}.jsonl")
     done = {json.loads(l)["id"] for l in open(outp)} if os.path.exists(outp) else set()
     json.dump(d10.env_record(a.dtype), open(os.path.join(OUT, f"clef_env_{a.dtype}.json"), "w"), indent=1, sort_keys=True)
     with open(outp, "a") as out:
@@ -73,9 +84,12 @@ def cmd_model(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("records").set_defaults(fn=cmd_records)
+    r = sub.add_parser("records")
+    r.add_argument("--single", action="store_true")
+    r.set_defaults(fn=cmd_records)
     m = sub.add_parser("model")
     m.add_argument("--dtype", choices=("f32",), required=True)
+    m.add_argument("--single", action="store_true")
     m.set_defaults(fn=cmd_model)
     a = ap.parse_args()
     a.fn(a)
