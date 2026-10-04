@@ -425,6 +425,7 @@ func (r *resident) calibrateRows() {
 		b.rowsQKV, b.rowsGU = batchMaxSeqs, batchMaxSeqs
 		return
 	}
+	attnInt8 := r.w8Attn // int4mix: qkv is int8 (never the int4 fragment); gate|up is int4 and calibrates as usual
 	n := min(8, r.nL)
 	b.uM.SetU32(batchMaxSeqs)
 	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
@@ -448,6 +449,9 @@ func (r *resident) calibrateRows() {
 	best := make([]float64, len(arms))
 	for rep := range 10 {
 		for a, enc := range arms {
+			if attnInt8 && a < 2 { // the qkv fragment reads int4 weights and f16 group scales, which int4mix's qkv is not
+				continue
+			}
 			e := r.q.Begin()
 			for l := range n {
 				enc(e, &r.layers[l])
@@ -469,6 +473,9 @@ func (r *resident) calibrateRows() {
 		return k
 	}
 	b.rowsQKV, b.rowsGU = rows(best[0], best[1]), rows(best[2], best[3])
+	if attnInt8 {
+		b.rowsQKV = batchMaxSeqs
+	}
 	fmt.Fprintf(os.Stderr, "metal: batched step: qkv as per-row GEMVs at B <= %d (GEMV %.3f ms, fragment %.3f ms), gate|up at B <= %d (%.3f, %.3f); 0 = always the fragment\n",
 		b.rowsQKV, best[1]*1e3, best[0]*1e3, b.rowsGU, best[3]*1e3, best[2]*1e3)
 }
@@ -604,6 +611,9 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	// and scale in, its output row out), which is production's arithmetic by definition.
 	rowsQKV, rowsGU := B <= b.rowsQKV, B <= b.rowsGU
 	w8Rows := r.w8 && mc3W8RowsOn && B >= 2 // int8 slice 3b: one weight read for all B rows
+	// int4mix (slice 4): the attention projections are int8 on r.w8Attn too, its FFN int4 on the step's int4 kernels
+	w8AttnRows := (r.w8 || r.w8Attn) && mc3W8RowsOn && B >= 2
+	w8Attn := r.w8 || r.w8Attn
 	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
 	pg, ng := saRowsPick(r.pSA, r.pSARows, 2*I, r.gemvRows.gu)
 	// Each row's attention plan, once per step: batchIneligible admits only uniform layers without a window, so a row's
@@ -633,7 +643,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		// the per-row kernels run as one dispatch over all B rows (S3; batch_rows.go): norm+quant, RoPE, ctx quant,
 		// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
-		if w8Rows {
+		if w8AttnRows {
 			e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
 		} else if rowsQKV {
 			for m := range B {
@@ -675,9 +685,9 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, b.uCount[nPlain], b.rowmapB, b.slotOffB)
 		}
 		e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
-		if w8Rows {
+		if w8AttnRows {
 			e.Dispatch(r.pW8Rows[B], H*32, 32, L.oW, L.oS, b.cqB, b.cScB, b.xB, g.uNHhd, r.uH, b.uCount[B], b.noBias, b.uMode[2])
-		} else if r.w8 { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
+		} else if w8Attn { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
 			for m := range B {
 				e.DispatchTG(r.pSAResid, H*32, 256, nHhd*2, L.oW, L.oS, b.cqB.At(m*nHhd), b.cScB.At(4*m), f32(b.xB, m, H), g.uNHhd)
 			}

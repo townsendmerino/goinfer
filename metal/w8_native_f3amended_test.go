@@ -25,6 +25,15 @@ import (
 // Metal int4. Each model loads once; the CPU ones one at a time.
 func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	path := w8GateModel(t)
+	// GOINFER_W8_F3_QUANT=int4mix runs the same gate for int4mix (M3, slice 4): every int8int8 arm below at int4mix,
+	// the native arm with nativeInt4Mix on, and the int4 arm replaced by int4mix's re-quant.
+	q8 := "int8int8"
+	if os.Getenv("GOINFER_W8_F3_QUANT") == "int4mix" {
+		q8 = "int4mix"
+		prevMix := nativeInt4Mix
+		nativeInt4Mix = true
+		t.Cleanup(func() { nativeInt4Mix = prevMix })
+	}
 	tk, err := tokenizer.LoadGGUF(path)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
@@ -102,8 +111,8 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 			t.Fatalf("metal resident declined at %s: %s", quant, m.ResidentDecline())
 		}
 		a, ok := rf.(*metalResident)
-		if !ok || a.r.w8 != native || native && a.r.preciseMath == fast {
-			t.Fatalf("%s: native %v precise %v, want native %v precise %v (%s)", quant, ok && a.r.w8, ok && a.r.preciseMath, native, !fast, m.DecodePath())
+		if !ok || (a.r.w8 || a.r.w8Attn) != native || native && a.r.preciseMath == fast {
+			t.Fatalf("%s: native %v precise %v, want native %v precise %v (%s)", quant, ok && (a.r.w8 || a.r.w8Attn), ok && a.r.preciseMath, native, !fast, m.DecodePath())
 		}
 		out := make([][][]float32, nPrompts)
 		for p := range nPrompts {
@@ -128,11 +137,19 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	} else {
 		ref, toks = cpu("", false, nil)
 	}
-	cpu8h, _ := cpu("int8int8", true, toks)
-	cpu8, _ := cpu("int8int8", false, toks)
-	met8 := metal("int8int8", true, false, toks)
-	met8fast := metal("int8int8", true, true, toks)
-	met4 := metal("int4", false, false, toks)
+	cpu8h, _ := cpu(q8, true, toks)
+	cpu8, _ := cpu(q8, false, toks)
+	met8 := metal(q8, true, false, toks)
+	met8fast := metal(q8, true, true, toks)
+	var met4 [][][]float32
+	if q8 == "int4mix" { // the re-quant arm: int4mix with the native path off
+		prevMix := nativeInt4Mix
+		nativeInt4Mix = false
+		met4 = metal(q8, false, false, toks)
+		nativeInt4Mix = prevMix
+	} else {
+		met4 = metal("int4", false, false, toks)
+	}
 
 	pooled := func(arm [][][]float32) (mean float64, perPrompt []float64) {
 		n := 0

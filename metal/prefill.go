@@ -942,6 +942,12 @@ var gemmTilePolicy = ""
 //
 // A-P01's rule ("a01"): 32 tokens when the pass has at most 32 rows, 32 features when N <= 2048 and rows <= 64.
 func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
+	return pf.gemmTileFor(rows, N, pf.w8)
+}
+
+// gemmTileFor is gemmTile for a weight of a given kind: w8 picks the W8 tiles (int8 slice 2), else the int4 ones. An
+// int4mix resident (w8Attn) passes true for its attention GEMMs and false for its FFN.
+func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
 	tm, tn := 64, 64
 	switch gemmTilePolicy {
 	case "":
@@ -964,7 +970,7 @@ func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 			tn = 32
 		}
 	}
-	if pf.w8 { // int8 slice 2: the native int8 path's weights, the same tile
+	if w8 { // int8 slice 2: the native int8 path's weights, the same tile
 		return pf.pW8[[2]int{tm, tn}], tm, tn
 	}
 	switch {
@@ -1039,7 +1045,7 @@ func (r *resident) ensurePrefill() {
 		}
 	}()
 	compile := r.d.CompileLibrary
-	if r.w8 && r.preciseMath { // the owner's precise-math decision for native int8 (w8PreciseMath) covers its prefill too
+	if (r.w8 || r.w8Attn) && r.preciseMath { // the owner's precise-math decision for native int8 (w8PreciseMath) covers its prefill too
 		compile = r.d.CompileLibraryPrecise
 	}
 	lib, err := compile(prefillKernels, MSL3_1)
@@ -1071,8 +1077,8 @@ func (r *resident) ensurePrefill() {
 
 		pQGateSplit: p("qgate_split_f16"), pCopyCols: p("copy_cols_f16"), pAttnGate: p("attn_gate_f16"),
 	}
-	if r.w8 {
-		r.pf.w8, r.pf.pW8 = true, map[[2]int]Pipeline{}
+	if r.w8 || r.w8Attn {
+		r.pf.w8, r.pf.pW8 = r.w8, map[[2]int]Pipeline{}
 		for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
 			r.pf.pW8[t] = p(fmt.Sprintf("gemm_w8f16_m%dn%d", t[0], t[1]))
 		}
@@ -1294,6 +1300,11 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		p, tm, tn := pf.gemmTile(rows, N)
 		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
 	}
+	// gemmAttn is gemm for the attention projections (qkv, o), whose weights are int8 on an int4mix resident too.
+	gemmAttn := func(e *Encoder, rows, N int, bufs ...Buffer) {
+		p, tm, tn := pf.gemmTileFor(rows, N, r.w8 || r.w8Attn)
+		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
+	}
 	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
 	// prefill.go's own #define, matched here). Real M (unpadded): the tail row-tile's out-of-range
 	// rows are masked in-kernel via buffer(11), not dropped from the grid.
@@ -1329,7 +1340,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				gemm(e, Mpad, 2*kvDim, inAttn, L.qkvW, L.qkvS, kvF, uM, u2KvDim, uH, dummyBias, m0)
 				e.Dispatch(pf.pCopyCols, M*2*kvDim, 256, kvF, qkvF, u2KvDim, uQkv, uKOff, uMReal)
 			} else {
-				gemm(e, Mpad, qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
+				gemmAttn(e, Mpad, qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
 			}
 			if r.qkNorm { // Qwen3 / Olmo 3: per-head Q/K RMSNorm before RoPE
 				qkNH, qkNKV, qkHD, qkNHhd := r.uNH, g0.uNKV, uHd, g0.uNHhd
@@ -1369,11 +1380,11 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			// families skip straight to the fused mode-2 residual epilogue, byte-identical to before
 			// this row.
 			if r.sandwich || r.postOnly {
-				gemm(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
+				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
 				e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
 				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 			} else {
-				gemm(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
+				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 			}
 		}
 		if L.moe != nil {

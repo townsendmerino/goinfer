@@ -59,11 +59,12 @@ func mc3LoadCheckpoint(t *testing.T, slots, ctx int) (*decoder.Model, *resident)
 		t.Skipf("no checkpoint at %s: %v", path, err)
 	}
 	quant := mc3TestQuant
-	if os.Getenv("GOINFER_METAL_MC3_QUANT") == "int8int8" { // the native int8 step on the real checkpoint (slice 3)
-		quant = "int8int8"
-		prev := nativeInt8
-		nativeInt8 = true
-		t.Cleanup(func() { nativeInt8 = prev })
+	switch q := os.Getenv("GOINFER_METAL_MC3_QUANT"); q { // the native int8 step (slice 3) or int4mix (slice 4) on the real checkpoint
+	case "int8int8", "int4mix":
+		quant = q
+		prev, prevMix := nativeInt8, nativeInt4Mix
+		nativeInt8, nativeInt4Mix = true, true
+		t.Cleanup(func() { nativeInt8, nativeInt4Mix = prev, prevMix })
 	}
 	m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: ctx, ResidentKVSlots: slots})
 	if err != nil {
@@ -73,6 +74,9 @@ func mc3LoadCheckpoint(t *testing.T, slots, ctx int) (*decoder.Model, *resident)
 	if err != nil {
 		m.Close()
 		t.Fatalf("build resident: %v", err)
+	}
+	if quant == "int4mix" && !r.w8Attn || quant == "int8int8" && !r.w8 {
+		t.Fatalf("%s at %s: native int8 %v, int4mix %v: not the path asked for", path, quant, r.w8, r.w8Attn)
 	}
 	// Close both and hand the heap back before the next load: the fit guard prices live memory, and a second load in the
 	// same process otherwise sees the first model's host weights still held and (correctly) refuses.

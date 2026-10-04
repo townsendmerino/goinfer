@@ -434,6 +434,9 @@ type resident struct {
 	// the int8 twins, and the paths that only read int4 are off: the R18 rows kernels, the f16 lane, fast prefill and
 	// the MC3 batched step.
 	w8 bool
+	// w8Attn: int4mix run natively (slice 4): the attention projections as W8A8 on their int8 weights, the FFN on its
+	// int4 kernels. Set by buildResident (w8AttnEligible); never with w8.
+	w8Attn bool
 
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
@@ -746,6 +749,10 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 // re-quant arm; it is not an option or an environment variable.
 var nativeInt8 = true
 
+// nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). OFF until its gates pass
+// (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"); tests turn it on.
+var nativeInt4Mix = false
+
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
 // prices the owner's precise-math decision.
 var w8FastMath = false
@@ -785,6 +792,41 @@ func w8Weights(m *decoder.Model) bool {
 	return true
 }
 
+// w8AttnEligible reports whether m runs int4mix natively (r.w8Attn, docs/tasks/task-metal-int8-2026-10.md slice 4):
+// every layer's attention projections int8-kind and its FFN int4-kind (int4mix's per-tensor split), on the plain
+// dense path whose qkv and o-proj run pSABias and pSAResid alone. Sandwich, post-only and parallel-block layers run the
+// o-proj on pSA, which the FFN shares; non-gated MLPs and output biases run other handles; MoE, DeltaNet and K=V layers
+// are not slice 1's shapes. Any of those keeps the int4 re-quantization.
+func w8AttnEligible(m *decoder.Model, r *resident) bool {
+	if !nativeInt8 || !nativeInt4Mix || r.moe != nil || r.g4moe != nil || r.dnet != nil || r.sandwich || r.postOnly || r.parallelBlock ||
+		r.nonGatedMLP || r.outBias || r.layerNorm {
+		return false
+	}
+	return w8AttnWeights(m)
+}
+
+// w8AttnWeights is w8AttnEligible's weight half: attention int8 (K a multiple of 4), gate, up and down int4.
+func w8AttnWeights(m *decoder.Model) bool {
+	w := m.Weights()
+	if len(w.Layers) == 0 {
+		return false
+	}
+	for l := range w.Layers {
+		lw := &w.Layers[l]
+		for _, wm := range []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj} {
+			if _, _, _, ok := wm.Int8(); !ok || wm.Rows() == 0 || wm.Cols()%4 != 0 {
+				return false
+			}
+		}
+		for _, wm := range []*linalg.WeightMat{&lw.GateProj, &lw.UpProj, &lw.DownProj} {
+			if wm.Kind() != "int4" || wm.Rows() == 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // f32Projection names the first dense body projection still at f32, "" when there is none (every projection int4 or
 // int8). A model's router and other f32-kept tensors are not body projections and do not count.
 func f32Projection(m *decoder.Model) string {
@@ -815,7 +857,7 @@ func w8PreciseMath(m *decoder.Model) bool {
 	if _, _, _, _, _, _, _, _, _, _, moe := m.MoEResidentParams(); moe {
 		return false
 	}
-	return w8Weights(m)
+	return w8Weights(m) || nativeInt4Mix && w8AttnWeights(m) // int4mix's attention runs the same int8 kernels
 }
 
 // int8Concat row-concatenates same-K int8 WeightMats into ONE int8 buffer and its per-row f32 scales: int4Concat's
@@ -1027,6 +1069,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// are off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
 	// them through its W8 tiles (slice 2, gemm_w8f16_*).
 	r.w8 = w8Eligible(m, r)
+	r.w8Attn = !r.w8 && w8AttnEligible(m, r)
+	if r.w8Attn {
+		r.decodeLaneW4F16 = false // the f16 lane reads int4 attention weights
+	}
 	if why := f32Projection(m); why != "" {
 		// An f32 load reaches here only when f32 was asked for; this backend runs int4 or int8 weights and does not
 		// quantize them behind the request (docs/tasks/task-metal-int8-2026-10.md, slice 4). A clear decline instead of
@@ -1109,9 +1155,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.moe != nil {
 		r.moe.alias = alias
 	}
-	upload := int4BufA
-	if r.w8 {
-		upload = int8BufA
+	// The native int8 path uploads int8 weights as int8: every projection on r.w8, the attention ones on r.w8Attn
+	// (int4mix, whose FFN stays int4). Anything else re-quantizes an int8 weight to int4.
+	upload := func(d *Device, a *weightAlias, wm *linalg.WeightMat) (Buffer, Buffer, error) {
+		if _, _, _, ok := wm.Int8(); ok && (r.w8 || r.w8Attn) {
+			return int8BufA(d, a, wm)
+		}
+		return int4BufA(d, a, wm)
 	}
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
 		q, s, e := upload(d, alias, wm)
@@ -1122,7 +1172,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	// fuse uploads a fused group (QKV, gate|up): int4ConcatA, or int8Concat on the native int8 path.
 	fuse := func(wms ...*linalg.WeightMat) (Buffer, Buffer) {
-		if r.w8 {
+		if _, _, _, ok := wms[0].Int8(); ok && (r.w8 || r.w8Attn) {
 			return int8Concat(d, alias, wms...)
 		}
 		return int4ConcatA(d, alias, wms...)
@@ -1543,6 +1593,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.gemvExtResid[R] = pipe(fmt.Sprintf("gemv_w4a8_resid_staged%d", R))
 		}
 		r.gemvExtTGMax = d.MaxThreadgroupMemoryLength()
+	}
+	if r.w8Attn {
+		// int4mix (slice 4): the attention projections' handles swap to their int8 twins (same arguments, same launch
+		// shape); the FFN keeps its int4 kernels and R18 rows forms. w8AttnEligible admits only the families whose
+		// qkv and o-proj run exactly these two handles.
+		r.gemvRows.qkv, r.gemvRows.o = 0, 0
+		r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
+		for B := 2; B <= batchMaxSeqs; B++ {
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
 	}
 	if r.w8 {
 		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping

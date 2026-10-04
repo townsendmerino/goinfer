@@ -427,3 +427,37 @@ a standing no.
     model runs at f32 on the CPU (`TestBuildResident_f32DeclinesClearly`).
   - The build-time quantization stays possible if the owner wants it.
   - The backend's stale "no int8 GEMV kernel at all" doc comment is corrected.
+
+### Slice 4: int4mix, native (built 2026-10-04; gates pre-registered the same day, before any graded run)
+
+**What is built.** int4mix keeps a GGUF's attention projections at int8 and its FFN at int4 (`decoder/weightmat.go`,
+`matmulQuant`). Metal re-quantized the attention half to int4. A native int4mix resident (`r.w8Attn`,
+`w8AttnEligible`) now runs the attention projections on the W8A8 kernels and the FFN on its int4 kernels:
+- **Decode:** the qkv and o-proj handles (`pSABias`, `pSAResid`) swap to their int8 twins, with the R18 rows form off for
+  those two sites.
+- **Prefill:** `gemmAttn` takes the W8 tiles for qkv and o.
+- **Batched step:** qkv and o run as int8 (`mc3_gemv_w8a8_rows`, or per row); gate|up and down stay on the int4
+  fragment, calibrated as before. The qkv fragment arms are skipped in calibration, since they would read int8
+  buffers as int4.
+- **Precise math** as for native int8 (O3).
+- **Admits only the plain dense path:** sandwich, post-only and parallel-block layers run the o-proj on the FFN's
+  handle; non-gated MLPs, output biases and LayerNorm run other handles; MoE and DeltaNet are out. Those keep the int4
+  re-quant.
+- The decode path reads `metal-resident (int4mix)`.
+- **Behind `nativeInt4Mix`, off until these gates pass.** `-backend auto` keeps int4mix on the CPU (it was not in
+  S-auto).
+
+**Gates (by day on the 0.5B unless noted).**
+- **M1, identity:** the MC3 checks (`TestMC3Step_bitIdentical`, `_bitIdenticalDeep`, `_rowsPathBitIdentical`) on the real
+  0.5B at int4mix with the native path on (`GOINFER_METAL_MC3_QUANT=int4mix`): 0 differing logits, the resident on
+  `w8Attn`.
+- **M2, same as the CPU at the same quant** (`TestW8Mix_M2_matchesCPU`, residentParity's 24 greedy steps): the native
+  arm's minimum cosine ≥ 0.99 and ≥ the re-quant arm's, and hard flips (gaps over 3%) ≤ the re-quant arm's.
+- **M3, closer to f32:** F3′'s harness at int4mix (`GOINFER_W8_F3_QUANT=int4mix`), 8 prompts × 30 positions. Pooled mean
+  KL(f32 ‖ Metal int4mix native) ≤ 1.10 × KL(f32 ‖ CPU int4mix, f16 KV). Reported: the re-quant arm.
+- **M4, prefill (night):** the §3.2 pooled gate on the 1.5B at int4mix (`GOINFER_METAL_GATE_QUANT=int4mix`), K = 256 /
+  512 / 1024, rule unchanged.
+- **Reported (in-process, by day):** decode tok/s native against re-quant.
+
+**Rule:** M1-M3 pass → `nativeInt4Mix` turns on, with M4 at night as the prefill confirmation; M4 failing turns it off
+again. Any of M1-M3 failing keeps it off.

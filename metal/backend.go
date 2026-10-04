@@ -122,7 +122,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		return nil, false, decoder.DeclineResident("metal: %v", e)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
-	if res.w8 {
+	if res.w8 || res.w8Attn {
 		b.resident.quant = m.Quant()
 	}
 	return b.resident, true, nil
