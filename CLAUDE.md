@@ -81,8 +81,8 @@ along under every subsequent push until someone looks.
 **No new production env reads.** `testdata/env_reads.txt` lists every `GOINFER_*` variable production code reads
 from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is not on it. A new operator choice is a
 `decoder.Options` field with a per-model accessor; a new diagnostic is a test hook. The list only shrinks — see
-`docs/tasks/task-env-config-2026-09.md` for why (per-call reads change a loaded model mid-flight; two models in one
-process cannot differ) and the migration phases.
+`docs/env-vars.md` § "Policy — where a new setting goes" for the rules and why (per-call reads change a loaded model mid-flight; two
+models in one process cannot differ); the migration record is `docs/completed/task-env-config-2026-09.md`.
 
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, which makes
 dir-only skip-guards think a fixture exists and flips skips into failures. Stage explicit paths.
@@ -236,7 +236,7 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
 - **A queued job must run with nobody watching.** Use the `docs/measurements/<campaign>/run-*.sh` shape: pinned revs
   or pre-built binaries (the tree may move before tonight), durable log/record paths, no prompts, nothing that
   needs a Claude session alive. Its output also lands in `~/goinfer-logs/night/runs/<date>/<name>.log`.
-- **One timed run per box** (TE9, `docs/tasks/task-test-efficiency-2026-09.md`).
+- **One timed run per box** (TE9, `docs/completed/task-test-efficiency-2026-09.md`).
   - The `bench_peer*.py` harnesses and every `night.py` job hold `~/.goinfer-timing.lock` for their whole run
     (`scripts/timing_lock.py`). A second timed run refuses, naming the holder, and the holder's children inherit it.
   - A `run-*.sh` whose timed step is not one of those harnesses (a `go test` measurement gate, a sweep loop) wraps it:
@@ -266,6 +266,25 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
   outcome, and the tail of anything that failed). Grade against the pre-registration and commit the records. A job
   that failed or timed out gets fixed and re-queued, not re-run by day.
 - **The owner can override.** "Run it now" means run it now.
+
+## Gate tiers (TE11)
+
+Every gate or check names its tier, its instrument, its stopping rule and where its cost estimate comes from. The pre-registration template (`docs/measurements/noise-registry.md` §8) asks for the same
+five. The release tier (`RELEASING.md`: the full parity sweep and the peer matrix) is unchanged.
+
+| check | tier | instrument | stopping rule | cost basis |
+|---|---|---|---|---|
+| `gofmt -l`, `go vet` (tagged), `staticcheck`, `go run ./cmd/gate quick` | quick | `gate quick` (TE7): the tests that can observe the diff, one `go test` per package in parallel, cache-aware | runs to completion; no sampling | minutes; an unchanged `decoder` re-run replays from the test cache in about 2 s against 310 s cold |
+| `go test -run '<yours>'` on one package; tiny-fixture goldens | quick | the test itself | fixed | seconds to minutes |
+| `scripts/refresh_parity_hashes.sh` | day | the goldens-gated refresh | completes | about 4 min |
+| `go run ./cmd/gate identity <old> <new>` | day (tiny assets) / night (real) | byte identity of full logits at the last validated build and this one, per family (TE6(b)): validation is inherited by identity | all families, all steps | families x steps x per-prompt time; state it first |
+| a kernel speed question | day | a whole-token in-process A/B, interleaved in one process; act on it only when its interval or pair signs resolve 1 (TE5(b)) | stops at a resolved direction; an unresolved one goes to the served gate, at night | tens of seconds to minutes |
+| a served or peer gate (`bench_peer*.py`) | night | same-session interleaved cells; two arms for a new/old ratio (TE5(a)); one timed run per box (the timing lock, TE9) | fixed N, pre-registered, plus the registered skip of the order-reversed pass 2 only when pass 1 clears the bar by more than the two passes' own spread. TE4's sequential stopping rules did not survive their own tests (SEQ-v1 killed on order sensitivity, SEQ-v2 failed its screen), so no ad hoc early stop | cells x runs x per-cell time plus idle-gate waits (about 45% of cell wall is decode being timed; see the census) |
+| a prefill/decode fidelity gate | night | `internal/fidelity` margin-required non-inferiority, N from `scripts/power.py fidelity` (TE12) | a fixed, hashed prompt set; no "wins in half" rule | from the previous run's positions log |
+| a `go test` measurement gate | night | resumable and content-keyed where it is a reference (`TestPrefillGateReference`, TE6(a)); a timed A/B is deliberately not resumed | resume skips finished cells only | the gate's own prior wall, from the record |
+| `go run ./cmd/gate parity`, `gate gpu`, the heavy tier | night / release | the named-gate checksets | complete | from the census and the task doc; estimate before queueing |
+
+The measurement standards in this file did not change; these designs make them cost less. The before-and-after re-count of where session time goes is in `docs/measurements/test-efficiency-2026-09.md` §6.
 
 ## Long-running work
 

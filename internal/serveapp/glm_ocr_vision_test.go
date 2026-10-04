@@ -54,7 +54,7 @@ func TestIsGlmOcrVisionDir(t *testing.T) {
 // this directory has none, so any load would fail — and the tower's eventual load error is reported, not swallowed.
 func TestSetupGlmOcrVision(t *testing.T) {
 	dir := writeQwen35Dir(t, glmConf, glmPre)
-	tower, pp, err := setupGlmOcrVision(dir, false)
+	tower, pp, err := setupGlmOcrVision(dir, false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +73,42 @@ func TestSetupGlmOcrVision(t *testing.T) {
 	if _, err2 := tower.encoder(); err2 == nil || err2.Error() != tower.err.Error() {
 		t.Error("a failed load must be remembered, not retried into a different answer")
 	}
-	if _, _, err := setupGlmOcrVision(writeQwen35Dir(t, `{"model_type":"glm_ocr"}`, glmPre), false); err == nil {
+	if _, _, err := setupGlmOcrVision(writeQwen35Dir(t, `{"model_type":"glm_ocr"}`, glmPre), false, 0); err == nil {
 		t.Error("a text-only directory was accepted as a vision tower")
+	}
+}
+
+// TestSetupGlmOcrVision_pixelCap: -vision-max-pixels (O4, owner decision 2026-10-04: the default stays the model's own 4.82 MP ceiling, the flag only lowers it).
+// It is tested through setupGlmOcrVision, the one function serve's loader calls: a cap below the ceiling lowers MaxPixels and nothing else; 0 leaves the ceiling; a cap
+// ABOVE the ceiling does not raise it (the tower and the context were gated for 6,144 image tokens, no more); a cap below the model's own floor is refused by name.
+func TestSetupGlmOcrVision_pixelCap(t *testing.T) {
+	dir := writeQwen35Dir(t, glmConf, glmPre)
+	const ceiling = 4816896
+	for _, tc := range []struct {
+		name    string
+		cap     int
+		wantMax int
+	}{
+		{"unset keeps the ceiling", 0, ceiling},
+		{"negative keeps the ceiling", -5, ceiling},
+		{"2 MP lowers it", 2_000_000, 2_000_000},
+		{"exactly the ceiling", ceiling, ceiling},
+		{"above the ceiling is not raised", 20_000_000, ceiling},
+	} {
+		_, pp, err := setupGlmOcrVision(dir, false, tc.cap)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if pp.MaxPixels != tc.wantMax {
+			t.Errorf("%s: MaxPixels %d, want %d", tc.name, pp.MaxPixels, tc.wantMax)
+		}
+		if pp.MinPixels != 6272 || pp.PatchSize != 14 || pp.MergeSize != 2 {
+			t.Errorf("%s: the cap changed more than MaxPixels: %+v", tc.name, pp)
+		}
+	}
+	_, _, err := setupGlmOcrVision(dir, false, 1000)
+	if err == nil || !strings.Contains(err.Error(), "-vision-max-pixels") || !strings.Contains(err.Error(), "6272") {
+		t.Errorf("a cap below the model's minimum must be refused naming the flag and the minimum, got %v", err)
 	}
 }
 

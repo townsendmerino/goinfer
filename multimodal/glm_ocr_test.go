@@ -1,6 +1,10 @@
 package multimodal
 
 import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,5 +177,52 @@ func TestGlmOcrExtractionText_rule(t *testing.T) {
 		if replaced || got != in {
 			t.Errorf("%q: replaced=%v text=%q; the user's own text must be kept verbatim", in, replaced, got)
 		}
+	}
+}
+
+// CapGlmOcrPixels is tested through QwenPreprocess, the function that turns the config into a patch grid: a cap on the config that the resize did not honour would
+// pass a field-level test and still send the full-size image to the tower. A 3000x4000 page (12 MP) is far over the model's own 4.82 MP ceiling; the default config
+// lands near the ceiling, a 2 MP cap lands near 2 MP, and a cap above the ceiling changes nothing.
+func TestCapGlmOcrPixels_throughPreprocess(t *testing.T) {
+	cfg := QwenPreprocessConfig{PatchSize: 14, MergeSize: 2, TemporalPatchSize: 2, MinPixels: 6272, MaxPixels: 4816896,
+		Mean: [3]float32{0.5, 0.5, 0.5}, Std: [3]float32{0.5, 0.5, 0.5}}
+	img := image.NewRGBA(image.Rect(0, 0, 3000, 4000))
+	for y := 0; y < 4000; y += 7 {
+		for x := 0; x < 3000; x += 7 {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 128, 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	patches := func(c QwenPreprocessConfig) int {
+		_, grid, err := QwenPreprocess(buf.Bytes(), c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return grid[1] * grid[2]
+	}
+	full := patches(cfg)
+	capped2, err := CapGlmOcrPixels(cfg, 2_000_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two := patches(capped2)
+	above, _ := CapGlmOcrPixels(cfg, 50_000_000)
+	if patches(above) != full {
+		t.Errorf("a cap above the ceiling changed the grid: %d patches, want %d", patches(above), full)
+	}
+	if full*14*14 > 4816896 || full*14*14 < 4_000_000 {
+		t.Errorf("the default budget gave %d patches = %d px, want just under the 4.82 MP ceiling", full, full*14*14)
+	}
+	if two*14*14 > 2_000_000 || two*14*14 < 1_500_000 {
+		t.Errorf("a 2 MP cap gave %d patches = %d px, want just under 2,000,000", two, two*14*14)
+	}
+	if _, err := CapGlmOcrPixels(cfg, 1000); err == nil {
+		t.Error("a cap below the model's minimum was accepted")
+	}
+	if got, _ := CapGlmOcrPixels(cfg, 0); got.MaxPixels != cfg.MaxPixels {
+		t.Error("cap 0 must leave the config alone")
 	}
 }

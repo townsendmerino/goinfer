@@ -91,3 +91,17 @@ func halveForTemporalFrames(cfg QwenPreprocessConfig) QwenPreprocessConfig {
 	cfg.MaxPixels /= cfg.TemporalPatchSize
 	return cfg
 }
+
+// CapGlmOcrPixels lowers the pixel budget to maxPixels (a pixel count, one frame). It never raises it: the checkpoint's own
+// ceiling (4.82 MP, 6,144 image tokens) is the most the tower and the context were gated for. maxPixels <= 0 leaves the config
+// alone; a cap below the config's own floor is an error rather than a silent clamp, because the resize could not honour both.
+func CapGlmOcrPixels(cfg QwenPreprocessConfig, maxPixels int) (QwenPreprocessConfig, error) {
+	if maxPixels <= 0 || maxPixels >= cfg.MaxPixels {
+		return cfg, nil
+	}
+	if maxPixels < cfg.MinPixels {
+		return cfg, fmt.Errorf("multimodal(glm_ocr): a pixel cap of %d is below the model's own minimum of %d pixels", maxPixels, cfg.MinPixels)
+	}
+	cfg.MaxPixels = maxPixels
+	return cfg, nil
+}

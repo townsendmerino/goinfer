@@ -614,7 +614,7 @@ var siteDocs = map[string]siteDoc{
 	"mixtral":          {"Mistral's mixture-of-experts.", []string{"chat"}},
 	"olmo3":            {"Ai2's Olmo 3, 7B and 32B.", []string{"chat"}},
 	"phi3":             {"Microsoft's Phi-3 and Phi-4.", []string{"chat"}},
-	"glm_ocr":          {"Zhipu's GLM-OCR document model. Reads an image of a page: text, a table or a formula out, or, given a schema, JSON that matches it (goinfer-chat --image invoice.png --schema invoice.schema.json). Verified on the real checkpoint, token-identical to transformers at f32. Images up to 6,144 image tokens, about 4.8 megapixels: no smaller default cap yet.", []string{"chat", "vision"}},
+	"glm_ocr":          {"Zhipu's GLM-OCR document model. Reads an image of a page: text, a table or a formula out, or, given a schema, JSON that matches it (goinfer-chat --image invoice.png --schema invoice.schema.json). Verified on the real checkpoint, token-identical to transformers at f32. Images up to 6,144 image tokens, about 4.8 megapixels (the default); --vision-max-pixels lowers the cap, and the CPU vision tower's cost falls with it.", []string{"chat", "vision"}},
 	"qwen2":            {"Qwen2 and Qwen2.5, including the Coder models most of goinfer's numbers are measured on.", []string{"chat", "code"}},
 	"qwen2_moe":        {"Qwen1.5 and Qwen2 mixture-of-experts.", []string{"chat"}},
 	"qwen2_5_vl":       {"Qwen2.5-VL. Reads images.", []string{"chat", "vision"}},

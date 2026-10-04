@@ -48,6 +48,12 @@
    "type": "f32 | int8"
   },
   {
+   "name": "vision-max-pixels",
+   "group": "Choosing models",
+   "summary": "GLM-OCR only: lower the image pixel budget to this many pixels. `0` (the default) keeps the model's own ceiling, 4.82 MP; it is never raised. The CPU vision tower's cost is superlinear in the image.",
+   "type": "int (pixels)"
+  },
+  {
    "name": "embed-model",
    "group": "Choosing models",
    "summary": "An embedding model, served on `/v1/embeddings`: a directory (CodeRankEmbed / NomicBert layout), a decoder-as-embedder `.gguf`, or `hf:<owner>/<repo>:safetensors` (a NomicBert encoder, fetched and checked before its weights) or `hf:<owner>/<repo>:<quant>` (a GGUF)."

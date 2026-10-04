@@ -9,6 +9,23 @@ This registry curates the **operator-facing** knobs — the ones you might set w
 deployment. The full set (≈130, most of them per-family test-model overrides and diagnostic probes)
 is grep-derivable and enumerated at the bottom.
 
+## Policy — where a new setting goes
+
+These rules came out of the configuration-out-of-the-environment program (closed 2026-09-24; its record, with the phase-by-phase
+results, is [`completed/task-env-config-2026-09.md`](completed/task-env-config-2026-09.md)). They are live; `TestEnvVars_docAndCodeAgree`
+enforces the first.
+
+1. **No new production `os.Getenv` / `os.LookupEnv` of a `GOINFER_`-prefixed variable.** A new operator choice is a field on `decoder.Options`
+   (or the app's own config) with a per-model accessor. A new diagnostic is a test hook (`goinfer_testhooks`) or a package variable a test sets.
+   The ratchet is `testdata/env_reads.txt`, the committed list of every production read; **it may only shrink**.
+2. **Migrating a knob keeps its env var working as an override**, read once at the edge (serve/chat flag parsing, or `Load` for library callers
+   that set nothing), never per call. Removing an env var is a separate, announced step.
+3. **A migration leaves default behaviour unchanged**: the gate is bit-identical output on the default path.
+4. **This file stays the single list**; a migrated knob's row names its `Options` field.
+5. **What the list may hold** (the done criterion, as the owner amended it 2026-09-24): diagnostics with a named owner and a reason, plus
+   documented startup configuration read once (an API key, say, which moving out of the environment would make a regression).
+6. **Why:** a knob read per call changes a loaded model mid-flight, and two models in one process cannot differ.
+
 ## Read once per model, at Load (since 2026-09-24)
 
 These fifty-three knobs are snapshotted when a model is loaded, not read on every forward:
@@ -31,7 +48,7 @@ These fifty-three knobs are snapshotted when a model is loaded, not read on ever
 library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
 overrides the environment for that model only).  The CPU, CUDA and Metal paths
 all read them from the model's snapshot (`decoder.Model.Knob`). See
-`docs/tasks/task-env-config-2026-09.md`. A test that A/Bs a loaded model uses
+`docs/completed/task-env-config-2026-09.md` (live rules: "Policy" above). A test that A/Bs a loaded model uses
 `decoder.SetKnobEnvForTest`; in `goinfer_testhooks` builds a post-Load `t.Setenv` of one of these
 panics instead of silently comparing a path with itself.
 
@@ -221,7 +238,7 @@ this file's doc/code check does not read them as live knobs): `MOE_PREFILL_SCRAT
 `ATTN_TIMING_DEBUG` (R13 attention timer — now a package variable its diagnostic test sets), `SSM_STOP_LAYER`
 (resident-SSM layer sweep — now test hooks in `decoder` and `gpu`), `MOE_WILLNEED` (Metal expert readahead, measured and
 declined — the record stays as a comment in `metal/gemma4_moe.go`), and the unprefixed `G4DEBUG` (Gemma-4 per-layer norm
-print, which nothing here tracked because it lacked the prefix). Phase 6 of docs/tasks/task-env-config-2026-09.md
+print, which nothing here tracked because it lacked the prefix). Phase 6 of docs/completed/task-env-config-2026-09.md
 (same day, owner-approved) retired `A10_PROBE` (C′ per-allocation VRAM recording — its capacity-vs-servability answer
 is recorded beside `allocSlots` in `cuda/resident.go`) and `INT4_SLOWPATH` (forced WebGPU's slow int4 upload to
 isolate the fast path; result in docs/completed/mellum2-resident.md), and turned `ROUTER_CAPTURE` and

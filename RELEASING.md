@@ -138,7 +138,7 @@ git push origin main cuda/v0.10.1 gpu/v0.10.1 metal/v0.10.1 demo/agent/v0.10.1
 ## The site (goinfer.dev) deploys itself after a root tag
 
 When `release assets` finishes for a `v*` tag, the `site` workflow builds the site from **that tag's commit** and deploys it to
-Cloudflare Workers (`.github/workflows/site.yml`; `docs/tasks/task-site-2026-09.md` S8). Nothing to do by hand, but two
+Cloudflare Workers (`.github/workflows/site.yml`; `site/README.md`, "Policy"). Nothing to do by hand, but two
 things are worth checking after a release: that the `site` run is green (a failing gate leaves the last good site up), and that
 `https://goinfer.dev/download/` shows the new tag. A push to `main` never deploys; it only validates. A manual run of the workflow
 (Actions → site → Run workflow) deploys the ref it is run on, for a fix between releases. The Download page needs the release's

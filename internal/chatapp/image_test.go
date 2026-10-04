@@ -106,12 +106,33 @@ func TestCheckImageFlags(t *testing.T) {
 	}
 }
 
+// --vision-max-pixels reaches the preprocessing through loadImageInput, the one function the --image run calls: a cap below the image's own size shrinks the grid
+// (the 224x224 test image is 50,176 px), a cap below the model's minimum is refused naming the flag, and 0 changes nothing (TestLoadImageInput).
+func TestLoadImageInput_visionMaxPixels(t *testing.T) {
+	good := writeGlmDir(t, glmTestConf, glmTestPre)
+	img := writeTestPNG(t, t.TempDir())
+	full, err := loadImageInput(good, img, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capped, err := loadImageInput(good, img, 20000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capped.pp.MaxPixels != 20000 || capped.nImg >= full.nImg {
+		t.Errorf("a 20,000 px cap gave MaxPixels %d and %d image tokens; want 20000 and fewer than the uncapped %d", capped.pp.MaxPixels, capped.nImg, full.nImg)
+	}
+	if _, err := loadImageInput(good, img, 100); err == nil || !strings.Contains(err.Error(), "--vision-max-pixels") {
+		t.Errorf("a cap below the model's minimum must be refused naming the flag, got %v", err)
+	}
+}
+
 // loadImageInput fails EARLY and by name: before a model load, for a directory that is not a GLM-OCR checkpoint, a missing
 // file, and bytes that are not an image; and on a good pair it returns the grid and token count the tower will see.
 func TestLoadImageInput(t *testing.T) {
 	good := writeGlmDir(t, glmTestConf, glmTestPre)
 	img := writeTestPNG(t, t.TempDir())
-	in, err := loadImageInput(good, img)
+	in, err := loadImageInput(good, img, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +153,7 @@ func TestLoadImageInput(t *testing.T) {
 		{"missing image", good, filepath.Join(t.TempDir(), "nope.png"), syscall.ENOENT.Error()}, // the OS's own not-found text: "no such file or directory", or Windows' "The system cannot find the file specified."
 		{"not an image", good, notImage, "x.png"},
 	} {
-		if _, err := loadImageInput(tc.dir, tc.file); err == nil || !strings.Contains(err.Error(), tc.want) {
+		if _, err := loadImageInput(tc.dir, tc.file, 0); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: error %v, want one containing %q", tc.name, err, tc.want)
 		}
 	}

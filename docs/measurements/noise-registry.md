@@ -247,12 +247,26 @@ These are listed in the JSON's `gaps`, 16 of them. The ones that bite first:
 TE2(b)'s pre-registered night (1.5B / 7B CUDA goinfer, one build, 4 restarts × 6 runs) closes gap 1's same-binary half.
 **A second build of identical code in the same night closes the cross-build half.**
 
-## 8. Pre-registration template (two lines, per TE3)
+## 8. Pre-registration template (TE3's two lines, extended by TE11; the owner's TE-campaign close, 2026-10-04)
+
+Every pre-registration of a gate or a graded run states these, before the run (the decision rule, its bands and the ambiguous band as well, per `CLAUDE.md`'s measurement discipline):
 
 ```
+Tier: quick | day | night | release  (CLAUDE.md, "Gate tiers").
+Instrument: <which>, and why it is the cheapest one that resolves the bar (an in-process whole-token A/B first for a kernel question; two arms for a new/old ratio, the peer read once per lever, after it ships).
 Noise: the registry's noise for the cell is sd <sd> / floor <floor> (<entry id>, <provenance>, n=<n>), source <record:line or commit>.
 power.py N: `power.py <instrument> <cell> --bar <bar> [--expect <r>] --paired` -> N = <N> blocks (power <p>), or "cannot resolve" -> <the instrument chosen instead>.
+Stopping rule: <fixed N, no early stop> or <the registered skip: pass 2 skipped when pass 1 clears the bar by more than the two passes' own measured spread>. No ad hoc stopping when results look good.
+Ambiguous band: <the parked zone and who decides it>.
+Cost: <estimated wall: cells x runs x per-cell time, plus idle-gate waits>; queued as <night.py job name> or run by day.
 ```
+
+**For a gate on the prefill/decode fidelity protocol** (TE12; the protocol is eleven test files, 10 prose prompts per cell x a K ladder x 64 scored positions, on two models, candidate against exact against a reference), add:
+- **Decision set:** the (model, K) cells, pooled. Per-cell values reported, no per-cell veto.
+- **Criteria:** `fidelity.NonInferior` with `AgreeMarginPts = m_a` and `KLMargin = m_k`, one-sided alpha 0.05, and hard flips under the pooled Poisson bound. No "wins in half" criterion. `Superiority` only if superiority is the claim.
+- **Prompts:** N from `power.py fidelity --from-positions <the last run's positions log>` (or `--agree-sd` / `--kl-cv` from the registry), pooled. The prompt set is fixed and its `fidelity.PromptSetHash` is recorded.
+- **Worst case, if claimed:** the excluded rate r, with N from `power.py worstcase --rate r`.
+- **Log:** `fidelity.WritePositions` output, kept, so the positions-per-prompt split can be sized next time. What sets agreement's N is the discordance between the arms, which that log measures; size from a real log, not an assumption.
 
 ## 9. Refresh (monthly, per TE3)
 

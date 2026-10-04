@@ -114,6 +114,7 @@ type chatFlags struct {
 	modelTmp, showVersion, showThinking        *bool
 	thinking, batch, out, effort, prompt       *string
 	image                                      *string
+	visionMaxPixels                            *int
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -144,6 +145,7 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.out = fs.String("o", "", "with --batch: the output file. Finished lines are appended as they land and already-finished custom_ids are skipped on a rerun; lines that failed go to a sibling <name>.errors.jsonl")
 	c.prompt = fs.String("p", "", "answer this one prompt and exit: only the answer is printed to stdout, with no banner, colours or prompt label (the reasoning of a thinking model, if shown, goes to stderr). Piped input and redirected output get the same plain output without -p")
 	c.image = fs.String("image", "", "answer about this image file (PNG or JPEG) and exit, like -p: one image, one answer, printed to stdout. GLM-OCR only (--model <the zai-org/GLM-OCR directory>); the image goes through its vision tower on the CPU (about a minute per megapixel). With no -p the task is text recognition; with --schema it is EXTRACTION: the prompt is the schema's JSON template and the reply is constrained to the schema (goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json). Unless given, --temp defaults to 0 and --max to 2048 for an image run, and the REPL's coding system prompt is not sent")
+	c.visionMaxPixels = fs.Int("vision-max-pixels", 0, "with --image: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU vision tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
 	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	return c
 }
@@ -285,7 +287,7 @@ All flags:
 	var img *imageInput
 	if *cf.image != "" {
 		var ierr error
-		if img, ierr = loadImageInput(*cf.model, *cf.image); ierr != nil {
+		if img, ierr = loadImageInput(*cf.model, *cf.image, *cf.visionMaxPixels); ierr != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", ierr)
 			os.Exit(1)
 		}

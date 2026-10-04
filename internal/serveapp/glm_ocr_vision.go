@@ -72,7 +72,7 @@ func isGlmOcrVisionDir(dir string) bool {
 // setupGlmOcrVision does everything about a GLM-OCR tower that can be decided without the weights: validates the
 // directory, reads the (halved) preprocessor config, and returns the not-yet-loaded tower. Split from
 // loadGlmOcrVisionTower so the config and the laziness are testable without a tokenizer.
-func setupGlmOcrVision(dir string, int8Tower bool) (*glmOcrTower, multimodal.QwenPreprocessConfig, error) {
+func setupGlmOcrVision(dir string, int8Tower bool, maxPixels int) (*glmOcrTower, multimodal.QwenPreprocessConfig, error) {
 	if !isGlmOcrVisionDir(dir) {
 		return nil, multimodal.QwenPreprocessConfig{}, fmt.Errorf("%s is not a GLM-OCR checkpoint with a usable vision tower (needs model_type glm_ocr, a vision_config, and a preprocessor_config.json with size.shortest_edge/longest_edge)", dir)
 	}
@@ -80,13 +80,18 @@ func setupGlmOcrVision(dir string, int8Tower bool) (*glmOcrTower, multimodal.Qwe
 	if err != nil {
 		return nil, pp, fmt.Errorf("glm-ocr preprocessor config (%s): %w", dir, err)
 	}
+	// -vision-max-pixels lowers the budget (the model's own ceiling is the default and the most it accepts), because the tower is CPU f32 and its cost is
+	// superlinear in the image (docs/measurements/glm-ocr-tower-cost-2026-10.md).
+	if pp, err = multimodal.CapGlmOcrPixels(pp, maxPixels); err != nil {
+		return nil, pp, fmt.Errorf("-vision-max-pixels: %w", err)
+	}
 	return &glmOcrTower{dir: dir, quant: int8Tower}, pp, nil
 }
 
 // loadGlmOcrVisionTower attaches a GLM-OCR tower to the single loaded model. Everything checkable without the tower's
 // weights is checked here, at startup; the weights load on first image.
-func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool) error {
-	tower, pp, err := setupGlmOcrVision(dir, int8Tower)
+func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int) error {
+	tower, pp, err := setupGlmOcrVision(dir, int8Tower, maxPixels)
 	if err != nil {
 		return err
 	}
