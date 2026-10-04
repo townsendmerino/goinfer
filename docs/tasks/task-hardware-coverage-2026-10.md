@@ -360,4 +360,4 @@ paths the claim names; one H4 sweep on the claim's hardware classes.
 - **Performance tuning for rented hardware.** Correctness first. A kernel tuned on a card we do not own
   becomes a path nobody can re-measure.
 
-<!-- doc-reviewed: 2026-10-01 -->
+<!-- doc-reviewed: 2026-10-04 -->
