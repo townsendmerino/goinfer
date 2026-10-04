@@ -20,8 +20,8 @@ any surface may still change.
 - **Metal: prompts of 16 to 63 tokens take the batched prefill pass on a single-slot resident.** The floor below which a
   prompt runs one token at a time drops from 64 to 16 tokens, which passed the same pooled fidelity gate as before at
   16, 32 and 48 tokens. The pass takes a 16-token prompt about 3.5x faster than the token loop on the 1.5B (2.5x on the
-  7B). A multi-slot resident (serve's default on Metal) still runs prompts under 64 tokens on its exact batched step.
-  Audit A-P02.
+  7B). A multi-slot resident (serve's default on Metal) takes the pass from 32 tokens, where it is faster than its exact
+  batched step (1.49x at 32 tokens on the 1.5B), and keeps the step below. Audit A-P02.
 - **Faster greedy and sampled decode on Metal: the next token's forward is queued on the GPU before the host sees this one.**
   Each command buffer ends with the pick (the argmax, or the device's temperature-only draw) and the next starts by
   gathering that token's embedding on the GPU, so the 0.58-0.66 ms per-token gap between buffers is gone. Graded

@@ -825,7 +825,9 @@ prompt taking a different route from the cold one.**
     green.
 - Forward goldens re-proven for the `decoder/model.go` change (41 passed, 23 skipped, 0 failed) and the parity hashes
   refreshed; metal suite 237 passed, 1 failed (the pre-existing `TestPrefillParityMoEGatedShared`).
-- **What this means for the step bound:** the reason it was held back is gone, so it follows the rule (next commit).
+- **The step bound, released to the graded 32 the same morning:** the reason it was held back is gone. A resident with
+  the batched step takes the pass from 32 tokens and keeps the exact step below; E-P01's routing test follows, and
+  `TestGenerate_warmRepeatMatchesCold`'s 2-slot 40-token case now covers the pass on a 2-slot resident.
 
 `TestMC3Chain_aloneMatchesUnbatchedAndRunsTheChain` now uses a 12-token prompt: at 16 and over its unbatched (single-slot)
 model takes the pass and its MC3 model the step, which differ by design. Metal suite: 232 passed, 1 failed (the pre-existing

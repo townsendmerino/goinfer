@@ -626,13 +626,12 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 const metalFastPrefillFloor = 16
 
 // metalStepPrefillCeiling (A-P02's step bound): a resident with the batched step runs a prompt that ends below this many
-// tokens as exact decode rows on the step (E-P01) rather than the pass. The grade put the bound at 32 (the 1.5B measured
-// step / pass 0.755 at K = 16, the step faster in 7 of 7 reps, and 1.485 at K = 32, the pass faster in 7 of 7; the 7B 0.627
-// and 1.243), but it stays at 64, today's, HELD BACK (2026-10-04): on an MC3 resident a newcomer whose prompt takes the
-// pass makes both generations diverge from their alone runs some tens of tokens later (the long-prompt forms of
-// TestMC3Chain_newcomerJoinsAndBothMatchAlone and _stalledConsumer..., red at 0eb53e90 too, so not the serve chain), and
-// 32 would reach that for prompts of 32 to 63 tokens. Lower it to 32 once that is fixed (the task doc's A-P02 result).
-const metalStepPrefillCeiling = 64
+// tokens as exact decode rows on the step (E-P01) rather than the pass. The step is bit-identical to the sequential
+// loop and the pass is not, so it keeps every length where it is not slower: the 1.5B measured step / pass 0.755 at
+// K = 16 (the step faster in 7 of 7 reps) and 1.485 at K = 32 (the pass faster in 7 of 7), the 7B 0.627 and 1.243.
+// Held at 64 for a morning (2026-10-04) on what was read as an MC3 identity defect and was a warm prompt taking a
+// different route from the cold one (fixed: decoder.PrefillTailExact); released to the graded 32 the same day.
+const metalStepPrefillCeiling = 32
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //

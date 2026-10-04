@@ -25,8 +25,8 @@ func TestPrefillLast_stepRouteBitIdentical(t *testing.T) {
 		t.Fatalf("the resident has no step kernels (batchIneligible: %q)", r.batchIneligible())
 	}
 	floor := metalFastPrefillFloorFor(r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
-	if floor != 16 || metalStepPrefillCeiling != 64 {
-		t.Fatalf("fast-prefill floor %d, step bound %d; the cases below are laid out for 16 and 64 (A-P02, the step bound held back)", floor, metalStepPrefillCeiling)
+	if floor != 16 || metalStepPrefillCeiling != 32 {
+		t.Fatalf("fast-prefill floor %d, step bound %d; the cases below are laid out for 16 and 32 (A-P02)", floor, metalStepPrefillCeiling)
 	}
 	seed := uint32(24680)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
@@ -46,8 +46,8 @@ func TestPrefillLast_stepRouteBitIdentical(t *testing.T) {
 		start, n int
 		step     bool
 	}{
-		{0, 8, true}, {0, 9, true}, {0, 15, true}, {0, 20, true}, {0, 33, true}, {0, 63, true}, {40, 23, true}, // ends below the step bound
-		{0, 64, false}, {56, 8, false}, {64, 8, false}, {100, 32, false}, // reaches it: the pass
+		{0, 8, true}, {0, 9, true}, {0, 15, true}, {0, 20, true}, {0, 31, true}, {10, 21, true}, // ends below the step bound
+		{0, 32, false}, {0, 33, false}, {0, 63, false}, {24, 8, false}, {56, 8, false}, {100, 32, false}, // reaches it: the pass
 	}
 	for _, c := range cases {
 		if got := a.promptStepOK(c.n, c.start, floor); got != c.step {
