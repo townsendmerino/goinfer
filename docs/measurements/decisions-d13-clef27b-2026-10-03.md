@@ -43,8 +43,16 @@ process (a bf16 load of the 27B is about 55 GB, an int8int8 one about 28 GB; the
    `CLEF_FIDELITY_EVERY=5`, through `modelload`, the serve path.
 3. **The grade:** D13's `grade.py --ref probs_bf16.jsonl --ref-every 5 --arms int8int8=…:5`.
 
-A one-record probe of step 1, by day and labelled exploratory, comes first, to measure the reference's peak memory and its
-time per token; the night estimate is written from it, below, before the job is queued.
+A one-record probe of step 1, labelled exploratory, comes first, to measure the reference's peak memory and its time per
+token; the night estimate is written from it before the job is queued.
+
+**The probe (2026-10-03 22:30 PDT, nobara, exploratory, not a result; its row is in a separate probe directory and is not
+graded):** the first registered record, 589 tokens: loaded in 4 s (memory-mapped), 122.2 s for the record, about 207 ms
+per token, **maximum resident set 49.0 GB** of 62, probabilities finite and summing to 1 (0.984 / 0.016).
+
+**Estimate:** the reference, 8,659 tokens at about 207 ms, about 30 min. goinfer int8int8: no 27B measurement; Clef-flash
+ran 54 ms per token (D13 §6), and the 27B streams about 3 times the weights, so about 160 ms per token, about 25 min plus a
+load of 1 to 2 min. About 55 min in all; queued at 90, inside the 3-hour job limit. Both phases resume if interrupted.
 
 ## 4. The rule (written before the run)
 
