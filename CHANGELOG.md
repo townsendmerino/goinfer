@@ -22,7 +22,10 @@ any surface may still change.
   with precise math. Decode is 1.56-2.09x the CPU at int8int8 on the 0.5B and 1.5B coder, and 0.78-0.88x the old int4
   re-quant, which carried int4's error. Prompts take the batched prefill pass, about as fast as int4's, and multi-client
   serving batches int8 models too (1.40x / 1.75x / 2.00x aggregate at 2 / 4 / 8 clients on the 1.5B). The decode path
-  reads `metal-resident (int8int8)`. MoE, Gemma 4 MoE and DeltaNet models keep the int4 re-quant for now.
+  reads `metal-resident (int8int8)`. Generic resident MoE models (Qwen-style routed experts, with or without a shared
+  expert) run int8 too: on the Qwen1.5-MoE 4-layer slice at int8int8 the output is about as close to f32 as the CPU's
+  int8int8 at the same KV precision (KL 1.034x of it), against 4.4x for the int4 re-quant. Gemma 4 MoE, gpt-oss,
+  paged-expert and DeltaNet models keep the int4 re-quant for now.
 - **Metal: `-quant int4mix` runs as int4mix.** Its attention projections run at int8 (W8A8) and its FFN at int4, where
   Metal used to re-quantize the attention half to int4 too. On the 0.5B coder its output is 2.2x closer to f32 than
   the re-quant's (mean KL 0.290 against 0.641), and closer than the CPU's own int4mix at the same KV precision. It

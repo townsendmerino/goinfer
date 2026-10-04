@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slice 5 (auto) shipped the same day; slice 4 is open. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slice 5 (auto) shipped the same day, and slice 4 after it: int4mix runs native (M1-M4 pass) and so does a generic MoE at int8int8 (`nativeInt8MoE` on; X1-X4 pass, X3 forced by day on the owner's word). The optional follow-ups are all that is left. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -573,3 +573,20 @@ X1-X3 failing keeps it off.
   - M = 512: KL ratio 0.915, top-1 against the sequential loop 10 of 10.
 - **MoE int8 X3: skipped again.** The memory guard declined the build: 5.46 GB against 5.12 GB, with 7.3 GB
   live-available. It runs by day at the owner's word with the guard overridden, under the swap kill-watch (below).
+
+**MoE int8 X3, forced by day (2026-10-04 14:37-14:39, `0aba1001`; owner: "lets force MoE int8 X3 to run now", "not a
+nightly"): PASSES, and `nativeInt8MoE` turns on.**
+- **How it ran.** Fit guard overridden on the owner's word, under `scripts/swap_killwatch.sh` (kill at +1024 MB of
+  swap). Raw logs: `~/goinfer-logs/metal-int8-2026-10/moe-x3-forced-2/` (this Mac, not committed).
+  - The first forced attempt was killed by the watch at +1.86 GB of swap. Its cause was the harness, not the engine:
+    F3′ held every arm's logits at once, about 0.9 GB. Fixed in `0aba1001` (arms keep per-position KL only, memory
+    freed between arms). The 0.5B's F3′ numbers reproduced exactly on the fixed harness.
+  - The second attempt: peak RSS 9.59 GB, swap delta at most +243 MB, exited on its own.
+- **X3: CPU int8int8 at f16 KV 0.032541, Metal native 0.033637 = 1.034×** (bar 1.10). Further from f32 at 137 of
+  240 positions; per prompt 1.042 1.041 1.009 0.998 1.092 0.998 1.040 1.061.
+  - Reported: CPU at f32 KV 0.034380, fast math 0.034790 (1.069×), int4 re-quant 0.142945 (4.4× the reference).
+- **The rule** (X1-X3 pass, X4 already passed): `nativeInt8MoE` on. The flip moves `TestMetalSnapshotGolden`'s three
+  mixtral-tiny int8int8 cells, re-baked (the old golden still holds with the flag off, so the change is that path
+  alone: the re-quant ran int4 there), and `TestAutoBackend_int8int8` now expects an int8int8 MoE under auto to stay
+  on Metal, with the decline half run with the flag off. Both Metal suites otherwise green except
+  `TestPrefillParityMoEGatedShared`, which fails identically with the flag off (int4 K%32, audit M-10).

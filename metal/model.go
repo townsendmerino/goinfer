@@ -755,8 +755,8 @@ var nativeInt8 = true
 var nativeInt4Mix = true
 
 // nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*).
-// OFF until its gates pass (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8"); tests turn it on.
-var nativeInt8MoE = false
+// ON since 2026-10-04: X1-X4 passed (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8"); tests turn it off.
+var nativeInt8MoE = true
 
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
 // prices the owner's precise-math decision.

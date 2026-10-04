@@ -8,22 +8,22 @@
       "model": "mixtral-tiny",
       "quant": "int8int8",
       "depth": 130,
-      "argmax": 361,
-      "sha256": "2dfa5a267af18ab1e2ca5f3e629ddcaf2e95728796260e007bae39e0e685b47f"
+      "argmax": 168,
+      "sha256": "25a6e2105c4c221efd50c76d9aab454f13b36a991407f843a4a619e2aa71a65e"
     },
     {
       "model": "mixtral-tiny",
       "quant": "int8int8",
       "depth": 260,
-      "argmax": 13,
-      "sha256": "8bcbad394df59b1d59bcd185f2c0857443c03bd8fc9b4288648c610804454880"
+      "argmax": 357,
+      "sha256": "5e3c6ee251155844ed4bbf4e1a9ed5d39489644069e83e8b2d9d0d07b73c2d5f"
     },
     {
       "model": "mixtral-tiny",
       "quant": "int8int8",
       "depth": 320,
-      "argmax": 12,
-      "sha256": "a7e061d2199a78a8aa0455e6b7640eec8151c7a78525e15aea1b480001148f3c"
+      "argmax": 504,
+      "sha256": "edf5a5f938ab8ede3ea128c4c92eb312c04fc1c129917b35b84277e595bcf86f"
     },
     {
       "model": "gemma4-dense-scaled",
