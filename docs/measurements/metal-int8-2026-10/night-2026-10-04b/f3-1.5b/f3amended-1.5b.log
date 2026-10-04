@@ -1,0 +1,6 @@
+=== RUN   TestW8Native_F3amended_closerToF32
+    w8_native_f3amended_test.go:127: f32 reference read from /Users/francistownsend-merino/goinfer-logs/metal-int8-2026-10/f3ref-1.5b-amd64.gob.gz (written on amd64)
+    w8_native_f3amended_test.go:167: F3′: pooled mean KL(f32 ‖ ·) over 8 prompts × 30 positions: CPU int8int8 f16 KV 0.028982, Metal int8int8 (precise) 0.029400 = 1.014× (bar 1.10); further from f32 at 120 of 240 positions; per prompt 1.379 1.298 0.837 1.265 0.768 0.941 0.771 1.272
+    w8_native_f3amended_test.go:169: F3′ reported: CPU int8int8 f32 KV 0.035059, Metal int8int8 fast math 0.030377 (1.048× the reference), Metal int4 0.109060
+--- PASS: TestW8Native_F3amended_closerToF32 (45.40s)
+PASS

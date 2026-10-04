@@ -2392,7 +2392,7 @@ Band [proj]: 0-5% of 1.5B chat tok/s (chat measured 1.068x, copy 2.082x). Lossle
 
 #### E-P07 [P, Minor] Qwen3-family dense models are outside MC3
 
-**Status, 2026-10-04 (graded):** the speed gates pass (4-client aggregate 2.04×, p99 0.48×). Identity fails on A-P02's lane split, not on the change; the owner chose a re-run on the exact lane (docs/tasks/task-metal-audit-2026-10.md, "The night of 2026-10-04"). **Earlier status, 2026-10-04: built, on.** `mc3_qk_norm_rows` (derived from `qk_norm`) puts per-head QK-norm in the batched step; the identity suite reads 0 differing values on the real Qwen3-0.6B, and a qwen3 fixture pins it default-run. Its served confirmation is pre-registered (docs/tasks/task-metal-audit-2026-10.md, "E-P07").
+**Status, 2026-10-04: stays on (owner).** The exact-lane re-run shows identical content in every turn; only the reuse-equality gate failed, on timing-dependent slot reuse. Earlier: the speed gates pass (4-client aggregate 2.04×, p99 0.48×). Identity fails on A-P02's lane split, not on the change; the owner chose a re-run on the exact lane (docs/tasks/task-metal-audit-2026-10.md, "The night of 2026-10-04"). **Earlier status, 2026-10-04: built, on.** `mc3_qk_norm_rows` (derived from `qk_norm`) puts per-head QK-norm in the batched step; the identity suite reads 0 differing values on the real Qwen3-0.6B, and a qwen3 fixture pins it default-run. Its served confirmation is pre-registered (docs/tasks/task-metal-audit-2026-10.md, "E-P07").
 
 `batchIneligible` returns "a family variant the batched step does not reproduce" for `r.qkNorm` (metal/batch.go:313-314). Qwen3 dense is a
 supported family (benchmarks.md:508 lists qwen3-1.7b). It gets no batched step, no step-kernel verify (n-gram verify stays at the old

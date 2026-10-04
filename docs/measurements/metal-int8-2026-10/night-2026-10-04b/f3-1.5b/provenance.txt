@@ -1,0 +1,6 @@
+rev:      518c360c
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-518c360c.test (sha256 671a3fab5dd18394)
+ref:      /Users/francistownsend-merino/goinfer-logs/metal-int8-2026-10/f3ref-1.5b-amd64.gob.gz (sha256 ad1df1ef0c383c67)
+started:  2026-10-04 14:11:34 PDT
+load:     3.57 2.72 2.29
+finished: 2026-10-04 14:12:20 PDT, exit 0

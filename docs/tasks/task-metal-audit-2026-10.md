@@ -1309,6 +1309,18 @@ lane.
 - **Reported:** the exact lane's own speed figures from gates.py, which grade nothing.
 
 
+### E-P07 amendment 2 graded (2026-10-04, 13:44-14:29; raw: `docs/measurements/metal-audit-2026-10/night-2026-10-04b/ep07-exact/`)
+
+- **Identity (gate 1): PASSES.** On the exact lane every turn's content is equal across all old and new cells at 1, 2
+  and 4 clients: 0 content mismatches, against 205 failing turns on the mixed lanes. E-P07 does not change what is
+  served.
+- **Reuse (gate 2): fails in 27 turns.** The batched server reused more of a turn's prompt than the one-at-a-time
+  server (prefilled 133 against 111 at turn 3), and at 4 clients new against new differs too. How much a turn reuses
+  depends on which slot it lands on, which depends on timing. It is a cache statistic, not output.
+- **Speed on the exact lane, reported:** 4-client aggregate 1.591×, p99 0.761×, solo guard p50 0.987× / p99 1.014×.
+- **Owner decision (2026-10-04): E-P07 stays on** ("option 1, keep it on"). The output identity the gate exists for
+  holds; the reuse-equality gate assumed a slot-independent reuse the system does not have.
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.

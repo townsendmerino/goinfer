@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"testing"
 
@@ -57,9 +58,14 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 		prompts[i] = decoder.PrefillGateProseIDsForTest(t, tk, files[i], promptLen)[:promptLen]
 	}
 
+	// Each arm keeps only its per-position KL against ref (once ref is set), not its logits: six arms of 8 × 32 ×
+	// vocab floats held at once cost about 0.9 GB, which pushed the MoE slice's run into swap (X3, 2026-10-04).
+	var ref [][][]float32
+	var toks [][]int
 	// cpu runs every prompt through one CPU model at quant: from the prompt then its own greedy continuation when forced
 	// is nil, else the forced tokens; with f16KV, K and V are rounded to f16 right after the position that wrote them.
-	cpu := func(quant string, f16KV bool, forced [][]int) (out [][][]float32, toks [][]int) {
+	cpu := func(quant string, f16KV bool, forced [][]int) (out [][][]float32, kl [][]float64, toks [][]int) {
+		defer debug.FreeOSMemory()
 		m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: 1024})
 		if errors.Is(err, decoder.ErrWontFitResident) {
 			t.Skipf("the fit guard refused the CPU %q load on this machine now: %v", quant, err)
@@ -69,10 +75,10 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 		}
 		defer m.Close()
 		_, nL, _, nKV, hd, _, _ := m.Dims()
-		out, toks = make([][][]float32, nPrompts), make([][]int, nPrompts)
+		out, kl, toks = make([][][]float32, nPrompts), make([][]float64, nPrompts), make([][]int, nPrompts)
 		for p := range nPrompts {
 			cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
-			out[p], toks[p] = make([][]float32, steps), make([]int, steps)
+			out[p], kl[p], toks[p] = make([][]float32, steps), make([]float64, steps), make([]int, steps)
 			tok := prompts[p][0]
 			for i := range steps {
 				if forced != nil {
@@ -83,7 +89,11 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 				if err != nil {
 					t.Fatalf("cpu forward (%q) prompt %d at %d: %v", quant, p, i, err)
 				}
-				out[p][i] = append([]float32(nil), l...)
+				if ref != nil {
+					kl[p][i] = klLogits(ref[p][i], l)
+				} else {
+					out[p][i] = append([]float32(nil), l...)
+				}
 				if f16KV {
 					for layer := range nL {
 						k, v, _ := cache.LayerKVForTest(layer)
@@ -103,9 +113,10 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 				}
 			}
 		}
-		return out, toks
+		return out, kl, toks
 	}
-	metal := func(quant string, native, fast bool, toks [][]int) [][][]float32 {
+	metal := func(quant string, native, fast bool, toks [][]int) [][]float64 {
+		defer debug.FreeOSMemory()
 		prevN, prevF := nativeInt8, w8FastMath
 		nativeInt8, w8FastMath = native, fast
 		defer func() { nativeInt8, w8FastMath = prevN, prevF }()
@@ -123,34 +134,32 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 		if !ok || (a.r.w8 || a.r.w8Attn) != native || native && a.r.preciseMath == fast {
 			t.Fatalf("%s: native %v precise %v, want native %v precise %v (%s)", quant, ok && (a.r.w8 || a.r.w8Attn), ok && a.r.preciseMath, native, !fast, m.DecodePath())
 		}
-		out := make([][][]float32, nPrompts)
+		kl := make([][]float64, nPrompts)
 		for p := range nPrompts {
-			out[p] = make([][]float32, steps)
+			kl[p] = make([]float64, steps)
 			for i, tok := range toks[p] {
 				l, err := rf.Forward(m.EmbedResidentForTest(tok), i)
 				if err != nil {
 					t.Fatalf("metal forward (%s) prompt %d at %d: %v", quant, p, i, err)
 				}
-				out[p][i] = append([]float32(nil), l...)
+				kl[p][i] = klLogits(ref[p][i], l)
 			}
 		}
-		return out
+		return kl
 	}
 
 	// GOINFER_W8_F3_REF_IN: the CPU f32 reference from a file (decoder's TestW8F3Reference_write, run where the fit
 	// guard admits the f32 model: nobara for the 1.5B), its prompts checked equal to the ones built here.
-	var ref [][][]float32
-	var toks [][]int
 	if in := os.Getenv("GOINFER_W8_F3_REF_IN"); in != "" {
 		ref, toks = readW8F3Ref(t, in, path, prompts, steps)
 	} else {
-		ref, toks = cpu("", false, nil)
+		ref, _, toks = cpu("", false, nil)
 	}
-	cpu8h, _ := cpu(q8, true, toks)
-	cpu8, _ := cpu(q8, false, toks)
+	_, cpu8h, _ := cpu(q8, true, toks)
+	_, cpu8, _ := cpu(q8, false, toks)
 	met8 := metal(q8, true, false, toks)
 	met8fast := metal(q8, true, true, toks)
-	var met4 [][][]float32
+	var met4 [][]float64
 	if q8 == "int4mix" { // the re-quant arm: int4mix with the native path off
 		prevMix := nativeInt4Mix
 		nativeInt4Mix = false
@@ -160,12 +169,12 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 		met4 = metal("int4", false, false, toks)
 	}
 
-	pooled := func(arm [][][]float32) (mean float64, perPrompt []float64) {
+	pooled := func(arm [][]float64) (mean float64, perPrompt []float64) {
 		n := 0
 		for p := range nPrompts {
 			var s float64
 			for i := 2; i < steps; i++ {
-				s += klLogits(ref[p][i], arm[p][i])
+				s += arm[p][i]
 			}
 			perPrompt = append(perPrompt, s/float64(steps-2))
 			mean += s
@@ -181,7 +190,7 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	further := 0
 	for p := range nPrompts {
 		for i := 2; i < steps; i++ {
-			if klLogits(ref[p][i], met8[p][i]) > klLogits(ref[p][i], cpu8h[p][i]) {
+			if met8[p][i] > cpu8h[p][i] {
 				further++
 			}
 		}

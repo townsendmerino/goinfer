@@ -1,0 +1,44 @@
+clients=1: 6 cells compared turn by turn against new1_1 (content and prompt-reused)
+GATE 2 FAIL: old2_1 client 0 turn 3: prefilled 111 != new2_1's 133
+GATE 2 FAIL: old2_1 client 1 turn 3: prefilled 111 != new2_1's 133
+GATE 2 FAIL: old2_2 client 0 turn 3: prefilled 111 != new2_1's 133
+GATE 2 FAIL: old2_2 client 1 turn 3: prefilled 111 != new2_1's 133
+GATE 2 FAIL: old2_3 client 0 turn 3: prefilled 111 != new2_1's 133
+GATE 2 FAIL: old2_3 client 1 turn 3: prefilled 111 != new2_1's 133
+clients=2: 6 cells compared turn by turn against new2_1 (content and prompt-reused)
+GATE 2 FAIL: new4_2 client 1 turn 2: prefilled 77 != new4_1's 55
+GATE 2 FAIL: new4_2 client 1 turn 3: prefilled 133 != new4_1's 56
+GATE 2 FAIL: new4_2 client 2 turn 2: prefilled 77 != new4_1's 55
+GATE 2 FAIL: new4_2 client 3 turn 3: prefilled 133 != new4_1's 56
+GATE 2 FAIL: new4_3 client 0 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: new4_3 client 1 turn 2: prefilled 77 != new4_1's 55
+GATE 2 FAIL: new4_3 client 1 turn 3: prefilled 133 != new4_1's 56
+GATE 2 FAIL: new4_3 client 2 turn 2: prefilled 77 != new4_1's 55
+GATE 2 FAIL: new4_3 client 3 turn 3: prefilled 133 != new4_1's 56
+GATE 2 FAIL: old4_1 client 0 turn 2: prefilled 55 != new4_1's 77
+GATE 2 FAIL: old4_1 client 0 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: old4_1 client 2 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: old4_1 client 3 turn 2: prefilled 55 != new4_1's 77
+GATE 2 FAIL: old4_2 client 0 turn 2: prefilled 55 != new4_1's 77
+GATE 2 FAIL: old4_2 client 0 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: old4_2 client 2 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: old4_2 client 3 turn 2: prefilled 55 != new4_1's 77
+GATE 2 FAIL: old4_3 client 0 turn 2: prefilled 55 != new4_1's 77
+GATE 2 FAIL: old4_3 client 0 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: old4_3 client 2 turn 3: prefilled 56 != new4_1's 133
+GATE 2 FAIL: old4_3 client 3 turn 2: prefilled 55 != new4_1's 77
+clients=4: 6 cells compared turn by turn against new4_1 (content and prompt-reused)
+pair 1 4 clients: aggregate old 115.3 new 183.5 tok/s = 1.591x; p99 turn old 4.62 s new 3.52 s = 0.761x; p50 old 4.17 new 2.56 s
+pair 2 4 clients: aggregate old 111.5 new 172.8 tok/s = 1.549x; p99 turn old 4.84 s new 4.29 s = 0.887x; p50 old 4.38 new 2.55 s
+pair 3 4 clients: aggregate old 108.4 new 176.8 tok/s = 1.630x; p99 turn old 5.27 s new 3.86 s = 0.732x; p50 old 4.31 new 2.56 s
+GATE 3 aggregate median 1.591x (bar >= 1.2x): PASS
+GATE 4 p99 under load median 0.761x (bar <= 1.0): PASS
+pair 1 1 client: p50 old 1.065 new 1.040 s = 0.976x; p99 old 1.256 new 1.274 s = 1.014x; aggregate old 113.5 new 113.6
+pair 2 1 client: p50 old 1.105 new 1.102 s = 0.997x; p99 old 1.334 new 1.261 s = 0.945x; aggregate old 105.5 new 111.8
+pair 3 1 client: p50 old 1.098 new 1.084 s = 0.987x; p99 old 1.307 new 1.357 s = 1.038x; aggregate old 109.2 new 108.2
+GATE 5 solo guard: p50 median 0.987x, p99 median 1.014x (bar <= 1.05 each): PASS
+reported, 2 clients: aggregate old 106.0 new 127.1 = 1.198x; p99 old 2.68 new 2.73 s
+reported, 2 clients: aggregate old 105.8 new 126.0 = 1.190x; p99 old 2.71 new 2.80 s
+reported, 2 clients: aggregate old 107.6 new 126.5 = 1.176x; p99 old 2.66 new 2.74 s
+reported: new's 4-client p99 / new's lone-request p99 = 3.03x
+GATES 1-2 identity and reuse: FAIL (27 turns)

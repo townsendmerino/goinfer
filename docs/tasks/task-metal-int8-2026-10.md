@@ -550,3 +550,26 @@ X1-X3 failing keeps it off.
   - The amendment is the same as F3′'s: the reference file only; every graded arm on the Mac; bar unchanged.
 - **X4** (`TestDG01_expertMajorMoEPrefill` at `GOINFER_DG01_QUANT=int8int8`, the gate checking the resident is on the
   native MoE path) runs in the same night job, after X3.
+
+**The 2026-10-04 afternoon queue (13:44-14:29, run by day on the owner's word; raw:
+`docs/measurements/metal-int8-2026-10/night-2026-10-04b/`).**
+- **W7-int8: CONFIRMED.** Batched int8 serving stays on. Every gate passes:
+  - identity and reuse equal in every turn;
+  - 4-client aggregate new ÷ old 1.541 / 1.532 / 1.537×, median **1.537×** (bar 1.2);
+  - p99 under load 0.656× (bar ≤ 1.0);
+  - solo guard p50 1.001×, p99 1.003× (bar ≤ 1.05);
+  - 9 batched servers, 18 on `metal-resident (int8int8)`.
+- **F3′ on the 1.5B: PASSES.** Nobara's f32 reference, every arm on the Mac:
+  - CPU int8int8 at f16 KV 0.028982, Metal native 0.029400 = **1.014×** (bar 1.10);
+  - reported: CPU at f32 KV 0.035059, fast math 0.030377, int4 0.109060.
+  - Against the 0.5B's 0.677×, the 1.5B sits near parity with the CPU at the same KV precision, as the per-layer
+    comparison predicted: no defect, only the noise any non-identical path carries.
+- **int4mix M4: SHIPS, `nativeInt4Mix` stays on.** The pooled prefill gate on the 1.5B at int4mix:
+  - critA: hard flips 8 fast against 6 exact, inside 6 + 2√6;
+  - critB: agreement 94.06% against 94.11%, d = 53;
+  - critC: KL 0.0200 against 0.0217, fast lower on 23 of 30 prompts.
+- **MoE int8 X4: PASSES.** D-G01's gate on the slice at int8int8, native MoE path:
+  - M = 64: KL ratio 0.915, flips within the bound;
+  - M = 512: KL ratio 0.915, top-1 against the sequential loop 10 of 10.
+- **MoE int8 X3: skipped again.** The memory guard declined the build: 5.46 GB against 5.12 GB, with 7.3 GB
+  live-available. It runs by day at the owner's word with the guard overridden, under the swap kill-watch (below).

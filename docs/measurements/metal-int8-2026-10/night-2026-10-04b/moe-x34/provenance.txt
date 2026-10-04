@@ -1,0 +1,10 @@
+rev:      ac8622e1
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-ac8622e1.test (sha256 94542fa60e41fe03)
+ref:      /Users/francistownsend-merino/goinfer-logs/metal-int8-2026-10/f3ref-moe-slice-amd64.gob.gz (sha256 edccc9374170749a)
+started:  2026-10-04 14:27:22 PDT
+load:     1.48 1.91 2.14
+== X3 — 14:27:22
+x3 exit 0
+== X4 — 14:27:51
+x4 exit 0
+finished: 2026-10-04 14:28:50 PDT

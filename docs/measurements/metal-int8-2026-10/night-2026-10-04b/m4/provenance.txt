@@ -1,0 +1,6 @@
+rev:      e647ac86
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-e647ac86.test (sha256 26b116190d094ea2)
+started:  2026-10-04 14:17:20 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     1.37 2.48 2.41
+finished: 2026-10-04 14:22:21 PDT, exit 0
