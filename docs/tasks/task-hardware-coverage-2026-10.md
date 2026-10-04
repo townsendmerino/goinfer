@@ -1,9 +1,9 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1 and H1.5 (CUDA) are DONE; H1.3 is BUILT in aikit but not pushed, tagged or wired into goinfer's CI, and its first forced run's three failures are classified as path-pinned goldens, not defects (see H1.3); H1.2, H1.4 and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no QEMU job, no self-test, no
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64) and H1.5 (CUDA) are DONE; H1.2, H1.4 as a CI job and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no QEMU job, no self-test, no
 > `check --hardware`, no `scripts/hardware_sweep.sh`, no issue template, no "verified on" column). H1 and H2 are the work that matters most.
 > H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and CUDA and one rented sweep are missing.
-> The census logs **12** never-executed entries (the Windows and arm64 Linux CI records removed two of the 14 first counted).
+> The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
 > RTX 2070 SUPER (8 GB) with a Ryzen 7 3700X. People with newer or bigger hardware will run code paths
@@ -96,7 +96,7 @@ test-only package that CI's `test-rest` job runs.
 - **What it checks.** At goinfer `e91cba3d` / aikit v1.53.0 it finds 25 predicates. It fails on any predicate with no
   entry, and on any entry naming a predicate the source no longer has. It validates every `last_executed` record:
   machine, ISO date, how, both commits, and the gate.
-- **The never-executed list.** The test logs it: 14 entries when first counted, **12 since the arm64 Linux and Windows records landed**. Some of those are marked in their notes as having
+- **The never-executed list.** The test logs it: 14 entries when first counted, **12 after the arm64 Linux and Windows records, 10 after the forced no-AVX2 and emulated no-DotProd runs**. Some of those are marked in their notes as having
   run without a committed record (`cuda-compute-mode`, `cuda-uva`), and `cpu-popcnt` is not reached from goinfer at
   all.
 - **Able to fail.** A fake `var hasAVX10FAKE` in the tree fails it as a missing entry, and a fake `cpu:hasAMX` in an
@@ -161,13 +161,16 @@ test-only package that CI's `test-rest` job runs.
    `hasAVX512VNNI*` report false. CI then runs every kernel suite twice, so the pure-Go and narrower-ISA
    paths execute on every push.
 4. **QEMU user mode for no-DotProd arm64** (`-cpu cortex-a72`). Run the CPU tiny goldens for the Pi 4 class.
+
+   **Run by hand 2026-10-04 for aikit's `linalg` suite (not yet a CI job):** `qemu-aarch64-static` 10.2.2 is installed on nobara; per-test processes under `-cpu cortex-a72`: 210 of 212 ok, 1 SIGILL (a real unguarded
+   test, fixed in aikit v1.54.0), 1 timeout (a throughput measurement). goinfer's own suites were not run this way (too slow). Recorded in the census as `emulated` for `cpu-arm64-no-dotprod`.
 5. **Drive the size-selected paths with small models.** A test hook that overrides the memory probes and the
    CUDA SM / shared-memory attributes: a 0.5B told it has 64 GiB unified memory, or a card with 128 SMs.
    That reaches the residency decisions, slot counts, context defaults and launch grids on our own hardware.
    A grid sized for 128 SMs runs correctly on 40, so the launch math gets real execution, not just
    compilation. Each forced configuration runs the existing correctness gates; nothing new is asserted.
 
-**H1.3 BUILT in aikit 2026-10-04 (aikit commit `1c07223`, local: not pushed, not tagged; the pinned v1.53.0 does not have it).**
+**H1.3 DONE for amd64 2026-10-04: released as aikit v1.54.0 (tag on `6b137b4`), pinned in goinfer's five modules, wired into goinfer's CI as `root-forced-fallbacks` (goinfer `4ad711d0`).**
 - **What it is.** Build tags `aikit_noavx512`, `aikit_noavx2`, `aikit_nopopcnt` (amd64) and `aikit_nodotprod` (arm64) make the dispatch flag read false, with the derived flags
   (`hasQ4KAVX2`, `hasAVX512VNNIVL`) set explicitly; `linalg.ForcedFallbacks()` reports what a build forces; `TestForcedFallbacks_expected` fails when `AIKIT_EXPECT_FORCED`
   names a different set, so a tag that matches no file cannot pass silently (shown: a mistyped tag fails it). aikit's `ci.yml` gains a three-leg amd64 `forced-fallbacks` job and an
@@ -192,8 +195,17 @@ test-only package that CI's `test-rest` job runs.
     should assert on a forced path instead is closeness to a reference, the way `gpt2CosFloor` does, which is a design to do with the wiring, not a skip.
   - **A side observation, not explained:** the default fast-attention path diverges from exact by 1-cosine 1.6e-2 and up to 1.04 in a logit on this model at 768 tokens on the AVX2 build too; the comment in
     `decoder/forwardn.go` records 2.4e-3 (1.5B, depth-matched). Different model and depth, so not a contradiction, but the figure is not obviously the one users get.
-- **Not done:** the aikit push and tag (the owner's ritual), the pin bump in goinfer, the goinfer CI job (it must assert `ForcedFallbacks()` through `AIKIT_EXPECT_FORCED`, and needs a decision on these
-  three goldens: excluded under the tags with the stated reason that they pin one arithmetic path, or fixed if a fallback is wrong), and the census `forced` record for `cpu-amd64-no-avx2` (it needs a pushed aikit commit to cite).
+- **What it became in goinfer (2026-10-04).** `TestForcedFallbacks_expected` (a tag that forces nothing fails the job; the job also requires that test to PASS, not skip); under a forced tag the three path-pinned
+  goldens take closeness bounds instead of exact comparisons (`decoder/forced_fallbacks_test.go` has the measurements): `TestInt4_forwardParity` a centered-cosine floor of 0.99 (measured 1.0 on 21 of 22
+  fixtures, 0.99381 on `gemma4-dense-scaled`), `TestDecodeParityInt4` 1-cosine <= 3e-2 against the int8int8 forward (1.64e-2), `TestLongPromptFast_forwardParity` <= 3e-2 for the fast path against the exact one
+  (8.3e-3). Normal builds keep the exact comparisons. **How sensitive each is, shown by mutation:** `int4GroupSize` 32 -> 64 fails the cosine floor (0.13 to 0.99) but **not** the continuation check (1.92e-2, so that
+  one is a coarse sanity bound for gross breakage and says so; 32 -> 128 fails it at 4.1e-2); a 15% corruption of the fast path's V fails the long-prompt bound (0.102) and the normal exact golden too.
+- **Found by the arm64 leg and by QEMU (aikit, fixed in v1.54.0):** `aikit_nodotprod` on aikit's native arm64 runner failed four tests that assumed DotProd on its first run, and running the arm64 suite under
+  `qemu-aarch64-static -cpu cortex-a72` (a core without DotProd; per-test processes) found a fifth that crashes with SIGILL by calling the row4 SDOT kernel directly; all five now skip without DotProd. Production
+  code declines the layout without DotProd; the bugs were in the tests. The forced tag cannot reach that class (the emulated or real CPU still has DotProd), which is what H1.4 is for.
+- **Not done:** an arm64 `aikit_nodotprod` leg in goinfer's CI (aikit's own CI has one; goinfer's arm64 goldens are arm64-baked and the decoder suite is too slow to pre-verify under emulation); the real-checkpoint goldens'
+  forced branches skip on a CI runner (no assets) and were run by hand, so CI proves the tiny-fixture ones only; and `cpu-avx512-vnni`'s record (the `noavx512` leg forces the AVX2 kernels on whatever the pool gave it, and
+  nothing in the log yet says whether that was an AVX-512 machine: the job prints the flags, so a later run can be read).
 
 **H1.5 DONE for CUDA 2026-10-04 (goinfer `7e24b426`).** `cuda.SetSMShapeForTest` and `decoder.SetMemoryProbeForTest` (`goinfer_testhooks`) tell a real build another card's SM shape or another
 free-VRAM figure. `TestForcedSMShapes_decodeIsIdentical` decodes the 0.5B resident under forced shapes of 20, 46, 82, 128 and 170 SMs (gate/up rows-per-warp 16, 5, 3, 2 and 2, against the real card's 8) and asserts

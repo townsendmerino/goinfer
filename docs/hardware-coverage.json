@@ -74,8 +74,17 @@
     "aikit/linalg/*_amd64.go (the !hasAVX2 side)"
    ],
    "our_machines": "never on hardware",
-   "last_executed": [],
-   "notes": "The pure-Go reference functions run in tests, but the DISPATCH that falls back to them on an amd64 host never has. H1.3 forces it."
+   "last_executed": [
+    {
+     "machine": "nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB",
+     "date": "2026-10-04",
+     "how": "forced",
+     "goinfer": "4ad711d0",
+     "aikit": "v1.54.0",
+     "gate": "aikit linalg under -tags aikit_noavx2 (727 passed, 40 skipped, against 800 and 12 normally; a fallback made to panic fails the tagged run and not the normal one); goinfer decoder 'Parity|Forward' under -tags aikit_noavx2 (93 tests): the exact attention path is bit-identical to the AVX2 build, and the goldens that pin one path's numerics take the closeness bounds in decoder/forced_fallbacks_test.go; CI job root-forced-fallbacks"
+    }
+   ],
+   "notes": "The pure-Go reference functions run in tests, but the DISPATCH that falls back to them on an amd64 host never has. H1.3 forces it (aikit v1.54.0 aikit_noavx2). What forcing cannot show: a CPU that really lacks AVX2 (the AVX2 kernels stay present and runnable here), so a test that calls an AVX2 kernel directly is not caught."
   },
   {
    "id": "cpu-f16c",
@@ -198,8 +207,17 @@
     "aikit/linalg/*_arm64.go (the !hasDotProd side)"
    ],
    "our_machines": "never (M1 has DotProd)",
-   "last_executed": [],
-   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it."
+   "last_executed": [
+    {
+     "machine": "qemu-aarch64-static 10.2.2 user-mode emulation of -cpu cortex-a72 (no DotProd) on nobara-pc",
+     "date": "2026-10-04",
+     "how": "emulated",
+     "goinfer": "4ad711d0",
+     "aikit": "v1.54.0",
+     "gate": "aikit linalg arm64 test binary, each of the 212 tests in its own process: 210 ok, 1 SIGILL (TestActGroup_row4KernelMatchesReference called the row4 SDOT kernel directly; now guarded), 1 timeout (TestFMAPeak_empirical, a throughput measurement that does not finish under emulation); plus aikit's CI step -tags aikit_nodotprod on its native arm64 runner (green on 6b137b4)"
+    }
+   ],
+   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it. Run 2026-10-04 under QEMU, which executes a core without DotProd for real (a forced tag on DotProd hardware cannot reach a test that calls an SDOT kernel directly); goinfer's own suite has not been run this way, the decoder tests being too slow under emulation."
   },
   {
    "id": "cuda-sm-shape",
