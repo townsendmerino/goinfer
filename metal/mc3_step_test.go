@@ -163,6 +163,15 @@ func TestMC3Step_bitIdenticalDeep(t *testing.T) {
 	mc3Identity(t, []int{attnFADepthFloor + 400, attnFADepthFloor - 6, 100, attnFADepthFloor + 64}, 2048)
 }
 
+// TestMC3Step_faRowsBitIdenticalDeep is the deep identity check with E-P05's multi-row flash attention on (parked off by
+// default): two rows past the attention floor and two below, so the multi-row pair serves two rows at once.
+func TestMC3Step_faRowsBitIdenticalDeep(t *testing.T) {
+	prev := mc3FARowsOn
+	mc3FARowsOn = true
+	defer func() { mc3FARowsOn = prev }()
+	mc3Identity(t, []int{attnFADepthFloor + 400, attnFADepthFloor - 6, 100, attnFADepthFloor + 64}, 2048)
+}
+
 func mc3Identity(t *testing.T, depths []int, ctx int) { mc3IdentityWith(t, depths, ctx, nil) }
 
 // mc3IdentityWith is mc3Identity with setup run on the resident before any step (to force a path).

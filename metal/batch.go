@@ -277,10 +277,14 @@ type batchState struct {
 	// S3: per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx
 	// quantisation runs over every row at once
 	posB, qtB, ctxB           Buffer
-	nKeysB, rowmapB, slotOffB Buffer   // per-row key counts; the rows mc3_attention_rows serves; each row's slot offset
-	uCount                    []Buffer // uCount[k] holds k (0..batchMaxSeqs): a row count for a dispatch
-	noBias                    Buffer
-	qkvRows, nHhd, kOff, vOff int
+	nKeysB, rowmapB, slotOffB Buffer // per-row key counts; the rows mc3_attention_rows serves; each row's slot offset
+	// E-P05: per-row split counts, the rows the multi-row flash attention serves, one partial region per row, and the
+	// uniforms for that region's length and the step's largest split count
+	nSplitB, rowmapFA, faPartB Buffer
+	uPartStride, uMaxS         Buffer
+	uCount                     []Buffer // uCount[k] holds k (0..batchMaxSeqs): a row count for a dispatch
+	noBias                     Buffer
+	qkvRows, nHhd, kOff, vOff  int
 	// S4: qkv / gate|up run as per-row production GEMVs at B <= rowsQKV / rowsGU, and as the fragment above that (0:
 	// always the fragment). Set by calibrateRows at build; tests set them to force either path.
 	rowsQKV, rowsGU int
@@ -386,12 +390,22 @@ func (r *resident) buildBatch() {
 	b.gOut = d.NewBufferLen(B)
 	b.posB, b.qtB, b.ctxB = d.NewBufferLen(B), NewBufferFloats(d, make([]float32, B)), d.NewBufferLen(B*b.nHhd)
 	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLen(B), d.NewBufferLen(B), d.NewBufferLen(B)
+	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLen(B), d.NewBufferLen(B), NewBufferU32(d, 1)
+	if r.attnFAPartialLen > 0 {
+		b.faPartB, b.uPartStride = d.NewBufferLen(B*r.attnFAPartialLen), NewBufferU32(d, uint32(r.attnFAPartialLen))
+	}
 	for k := 0; k <= B; k++ {
 		b.uCount = append(b.uCount, NewBufferU32(d, uint32(k)))
 	}
 	r.batch = b
 	r.calibrateRows()
 }
+
+// mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
+// mc3_attention_fa*_rows), bit-identical to their per-row pairs. Off: PARKED 2026-10-04, 1.016x at 2 rows (serve's
+// default slot count) to 1.06x at 8 rows on the 1.5B at depth 1100-2048 (docs/tasks/task-metal-audit-2026-10.md,
+// "E-P05"). Tests turn it on.
+var mc3FARowsOn = false
 
 // batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
 const batchTGBytes = 4 * 2 * 32 * 8
@@ -568,7 +582,9 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		b.slotOffB.U32s()[m] = uint32(q.slot * r.kvSlotBytes[0] / 2) // f16 elements; batchIneligible: uniform layers
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
-			b.uFANSplit[m].SetU32(uint32(r.attnFASplitFor(q.pos+1, r.attnFANKV)))
+			ns := r.attnFASplitFor(q.pos+1, r.attnFANKV)
+			b.uFANSplit[m].SetU32(uint32(ns))
+			b.nSplitB.U32s()[m] = uint32(ns)
 		}
 	}
 	H, I, nHhd := r.H, r.I, b.nHhd
@@ -586,13 +602,21 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	// plan depends on its depth alone. Rows on the per-head kernel run in one dispatch (rowmapB); a row at attention_fa
 	// depth keeps its own two dispatches.
 	faRow := make([]bool, B)
-	nPlain := 0
+	nPlain, nFA, maxS := 0, 0, 0
 	for m, q := range seqs {
 		faRow[m] = r.canUseAttnFAAt(0, q.pos+1)
 		if !faRow[m] {
 			b.rowmapB.U32s()[nPlain] = uint32(m)
 			nPlain++
+		} else {
+			b.rowmapFA.U32s()[nFA] = uint32(m)
+			nFA++
+			maxS = max(maxS, int(b.nSplitB.U32s()[m]))
 		}
+	}
+	faRows := mc3FARowsOn && nFA > 0 && b.faPartB != (Buffer{})
+	if faRows {
+		b.uMaxS.SetU32(uint32(maxS))
 	}
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
@@ -618,8 +642,15 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		// every row's K/V; one runs every per-head-kernel row's attention.
 		kcAll, vcAll := r.kvSlotBufs[0].kc[l], r.kvSlotBufs[0].vc[l]
 		e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, g.uKvDim, b.posB, b.uQKV, b.uM, b.slotOffB)
+		if faRows {
+			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
+			e.DispatchTG(r.pAttnFARows, nFA*g.nKV*maxS*128, 128, shmBytes, b.qkvB, kcAll, vcAll, b.faPartB, g.uNKV, r.uAttnFAG,
+				b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[nFA], b.rowmapFA, b.slotOffB, b.uQKV, b.uPartStride, b.uMaxS)
+			e.Dispatch(r.pAttnFACombineRows, nFA*r.nH*g.hd, g.hd, b.faPartB, b.ctxB, r.uAttnFAG, g.uHd, b.nSplitB, r.uNH,
+				b.uCount[nFA], b.rowmapFA, b.uPartStride, g.uNHhd)
+		}
 		for m, q := range seqs {
-			if !faRow[m] {
+			if !faRow[m] || faRows {
 				continue
 			}
 			sb := r.kvSlotBufs[q.slot]

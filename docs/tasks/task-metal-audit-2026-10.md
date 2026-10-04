@@ -477,7 +477,7 @@ gate runs at night before it ships.
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**; the 16-row tile **shipped**: 1.09× on the slice's 512-token pass, 1.56× / 1.73× on the 1.5B's / 7B's 16-token pass), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
-7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02 (**killed** 2026-10-04: 0.777 ms against its 0.65 ms line, 1.11× on the 7B gate|up at B = 2), E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
+7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02 (**killed** 2026-10-04: 0.777 ms against its 0.65 ms line, 1.11× on the 7B gate|up at B = 2), E-P05 (**parked** 2026-10-04: bit-identical, 1.016× at 2 rows to 1.06× at 8, off by default), E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 (T1.7 ran: it stands on the 7B, parked on the 1.5B; **the owner parked it on both on 2026-10-03**, low value).
@@ -1204,6 +1204,52 @@ threadgroup finds part of the tile in cache, not most of it; the DRAM floor is 0
 - What it would buy at B = 2 on the 7B: about 0.086 ms × 28 layers = 2.4 ms of the 58.76 ms step, about 4%. That is in
   the park zone even without the kill line.
 - The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
+
+### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
+
+**The ceiling probe** (the audit's: a stub that skips rows 1-7's attention). The 1.5B, 8 rows each on its own slot at
+depth 2048: **37.2% of the step** (29.82 → 18.72 ms, 7 reps 0.371-0.374), far over the 5% kill line. The 4096 cell
+did not run: filling 8 slots through `ForwardBatch` took 220 s at 2048, and the test hit its timeout. The A/B below
+fills by the prefill pass instead.
+
+**What is built.** `batch_rows.go` derives rows forms of decode's flash-attention first pass (`attention_fa`,
+`attention_fa_blk<G>` for G = 2-8, `attention_fa_blk64<7>`) and of `attention_fa_combine`. Row j serves batch row
+`rowmap[j]`, with its own q, slot K/V, key count, split count and partial region.
+- The grid is sized for the step's largest split count; a threadgroup past its own row's count returns. Each remaining
+  threadgroup sees the index the row's own dispatch gave it, so each row computes exactly its own pair's bytes.
+- `mc3FARowsOn` runs every deep row of a step through one dispatch pair per layer instead of one pair per row.
+
+**Identity.**
+- `TestMC3Step_faRowsBitIdenticalDeep` (default-run, the MC3 fixture, with the path on): two rows past the floor and two
+  below, 12 steps, every logit equal to production's single-token decode.
+- **Mutation:** every row merging row 0's partials fails `TestMC3Step_bitIdenticalDeep`, with every logit differing.
+- `TestEP05_deepRowsAB` compares the arms' logits every step: bit-equal in every cell below.
+
+**Speed (in-process, by day).** `TestEP05_deepRowsAB`: each slot filled to depth D by the batched prefill pass, steps
+from position D, arms alternated, 7 reps of 12 steps, GPU time per step.
+
+| Model | Rows | Depth | Per-row ÷ multi-row | Reps above 1 |
+|---|---|---|---|---|
+| 1.5B | 8 | 1100 | **1.057** (25.62 → 24.25 ms) | 7/7 |
+| 1.5B | 8 | 2048 | **1.060** (27.40 → 25.86 ms) | 7/7 |
+| 1.5B | 8 | 4096 | 1.015 | 7/7 |
+| 1.5B | 4 | 2048 | 1.026 | 7/7 |
+| 1.5B | 2 | 2048 | 1.016 | 7/7 |
+| 7B `.giw` | 4 | 1100 | 1.029 | 7/7 |
+| 7B `.giw` | 4 | 2048 | 1.029 | 7/7 |
+
+**Why the gain is a sixth of the ceiling.** The stub removed 7 rows' K/V reads, not their dispatches. Each row reads
+its own slot's K/V, and one dispatch cannot share that.
+- What one dispatch does remove is the serial per-row launch and the low occupancy of a 32-threadgroup grid. That is
+  worth 1.5-6%, and least at depth 4096, where the reads dominate.
+- Sharing a K/V stripe is possible only between rows of the same slot (spec verify). That is the audit's second step and
+  changes the reduction shape.
+
+**Verdict: parked**, off by default.
+- Bit-identical and resolved in every cell (7/7), but serve's default is 2 KV slots (E-P09), where it is 1.6%. Low single
+  digits is the owner's park zone, as with D-P03.
+- The case for turning it on is many slots (`-kv-sessions 8`) at depths of 1-2k keys, where it is 6%.
+- The derived kernels and both tests stay.
 
 ## Owner decisions
 

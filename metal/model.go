@@ -203,9 +203,13 @@ type resident struct {
 	// not just below some crossover — a correction to this brief's own original "S=1 below a
 	// measured crossover" text).
 	pAttnFA, pAttnFACombine Pipeline
-	decodeAttnFA            bool
-	attnFAPartial           Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
-	attnFAMaxSplit          int
+	// E-P05: pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
+	// row's partial region, attnFAPartial's.
+	pAttnFARows, pAttnFACombineRows Pipeline
+	attnFAPartialLen                int
+	decodeAttnFA                    bool
+	attnFAPartial                   Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
+	attnFAMaxSplit                  int
 	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
 	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
 	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
@@ -873,6 +877,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
 	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
+	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
 	r.pArgFinish = pipe("argmax_finish")
 	r.pEmbedGather = pipe("embed_gather_i8")
@@ -1512,14 +1517,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		switch g := r.nH / r.attnFANKV; {
 		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk64_rows_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk_rows_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		}
 	}
 	if maxAttnFAPartialElems > 0 {
-		r.attnFAPartial = d.NewBufferLen(maxAttnFAPartialElems * r.attnFAMaxSplit)
+		r.attnFAPartialLen = maxAttnFAPartialElems * r.attnFAMaxSplit
+		r.attnFAPartial = d.NewBufferLen(r.attnFAPartialLen)
 		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32(d, 0), NewBufferU32(d, 0)
 	}
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
