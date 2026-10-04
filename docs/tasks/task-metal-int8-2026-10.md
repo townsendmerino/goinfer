@@ -461,3 +461,35 @@ a standing no.
 
 **Rule:** M1-M3 pass → `nativeInt4Mix` turns on, with M4 at night as the prefill confirmation; M4 failing turns it off
 again. Any of M1-M3 failing keeps it off.
+
+**int4mix, graded by day (2026-10-04, the 0.5B, binaries at `ba0536de`'s tree): M1 and M3 pass, M2 FAILS, so
+`nativeInt4Mix` stays off.**
+- **M1 passes.** `TestMC3Step_bitIdentical`, `_bitIdenticalDeep` and `_rowsPathBitIdentical` on the real 0.5B at
+  int4mix, the resident on `w8Attn`: 0 differing logits in every check.
+- **M3 passes.** Pooled mean KL(f32 ‖ ·) over 8 prompts × 30 positions:
+
+  | arm | KL(f32 ‖ ·) |
+  |---|---|
+  | CPU int4mix, f16 KV (the reference) | 0.328733 |
+  | Metal int4mix native (precise) | 0.289722 (**0.881×**, bar 1.10) |
+  | CPU int4mix, f32 KV (reported) | 0.321189 |
+  | Metal native, fast math (reported) | 0.284686 |
+  | Metal int4mix re-quant (reported) | 0.640974 |
+
+  Native is 2.2× closer to f32 than the re-quant it replaces.
+- **M2 fails on cosine.**
+
+  | arm | min cosine | argmax | hard flips (gap over 3%) |
+  |---|---|---|---|
+  | Metal int4mix native | 0.754915 | 20/24 | **1** |
+  | Metal int4mix re-quant | 0.762199 | 19/24 | 3 |
+
+  - The bar was a minimum cosine of at least 0.99 and at least the re-quant arm's: the native arm misses both.
+  - It passes the hard-flip criterion (1 ≤ 3).
+- **What the failure is.** Both Metal arms sit far from the CPU at some position, because the CPU's int4mix runs its
+  attention as weight-only int8 with f32 activations, which the GPU path (W8A8) does not reproduce. A minimum over 24
+  steps is set by that one position. The comparisons against f32 (M3) and the identity (M1) show no defect, and native
+  int4mix is closer to f32 on every reading but this one.
+- It is F2's situation again: a same-quant cosine floor against a reference with a different activation precision.
+- **For the owner:** read M2 as hard flips, as F2 now is (it passes: 1 against 3), and turn `nativeInt4Mix` on with M4
+  as the night prefill confirmation; or keep int4mix on the re-quant.

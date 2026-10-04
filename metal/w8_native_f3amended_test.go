@@ -181,12 +181,12 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	for p := range nPrompts {
 		per += fmt.Sprintf(" %.3f", pMet[p]/pRef[p])
 	}
-	t.Logf("F3′: pooled mean KL(f32 ‖ ·) over %d prompts × %d positions: CPU int8int8 f16 KV %.6f, Metal int8int8 (precise) %.6f = %.3f× (bar 1.10); further from f32 at %d of %d positions; per prompt%s",
-		nPrompts, steps-2, kRef, kMet, kMet/kRef, further, nPrompts*(steps-2), per)
-	t.Logf("F3′ reported: CPU int8int8 f32 KV %.6f, Metal int8int8 fast math %.6f (%.3f× the reference), Metal int4 %.6f",
-		kCPU8, kFast, kFast/kRef, kMet4)
+	t.Logf("F3′ (%s): pooled mean KL(f32 ‖ ·) over %d prompts × %d positions: CPU %s f16 KV %.6f, Metal %s native (precise) %.6f = %.3f× (bar 1.10); further from f32 at %d of %d positions; per prompt%s",
+		q8, nPrompts, steps-2, q8, kRef, q8, kMet, kMet/kRef, further, nPrompts*(steps-2), per)
+	t.Logf("F3′ reported: CPU %s f32 KV %.6f, Metal %s native fast math %.6f (%.3f× the reference), Metal %s %.6f",
+		q8, kCPU8, q8, kFast, kFast/kRef, map[bool]string{true: "int4mix re-quant", false: "int4"}[q8 == "int4mix"], kMet4)
 	if kMet > 1.10*kRef {
-		t.Errorf("F3′ fails: KL(f32 ‖ Metal int8int8) %.6f is above 1.10 × the f16-KV CPU int8int8's %.6f", kMet, kRef)
+		t.Errorf("F3′ fails: KL(f32 ‖ Metal %s) %.6f is above 1.10 × the f16-KV CPU %s's %.6f", q8, kMet, q8, kRef)
 	}
 }
 
