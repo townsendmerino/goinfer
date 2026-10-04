@@ -152,7 +152,12 @@ test-only package that CI's `test-rest` job runs.
        not clean up its TempDir. The permission check skips on Windows, which has no mode bits to read.
      - **Intermittent:** the prequant mtime premise passed on the first run and failed on the second (the file clock
        ticks every ~1-16 ms). The test now sets the source's mtime.
-     - **Still not covered:** `windows-arm64`. The heap-backed "mmap" also means Windows loads a model into memory
+     - **windows-arm64, added 2026-10-04 (`root-windows-arm64`, GitHub's free `windows-11-arm`, Cobalt 100):** goinfer cross-builds and vets for it clean, and the first CI run FOUND A REAL DEFECT, not a test
+       artefact: aikit assumes no DotProd on any OS but Linux and Darwin, so the default `cpu-arm64` bundle target (row4-only, DotProd-only layouts) wrote a sidecar the same core refused to load and rebuilt on every
+       start. That is the Raspberry Pi 4 class on Linux too, which no job had run. Fixed in `GIWTargetForBackend` (the CHANGELOG entry has the detail), reproduced and verified under QEMU `-cpu cortex-a72`, red-proven.
+       The base SMULL/SADALP kernels are therefore the PRODUCTION path on Windows ARM, not only a fallback. A cost, not a bug: Windows ARM cores with DotProd (Snapdragon X, Cobalt) run the slower kernels because
+       aikit has no probe there (`dotprod_arm64_other.go`). Whether to add one (IsProcessorFeaturePresent, PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE) is an aikit decision, unmade.
+     - **Still not covered:** the heap-backed "mmap" also means Windows loads a model into memory
        rather than mapping it (aikit's `mmap_other.go`), a product limit this run does not measure.
 2. **Intel SDE as a scheduled job** (weekly, like `race-weekly`, or on nobara). Run the CPU parity suite and
    tiny goldens under `sde64 -icx` (AVX-512 VNNI) and `-spr` (Sapphire Rapids). SDE is slow, so goldens only.

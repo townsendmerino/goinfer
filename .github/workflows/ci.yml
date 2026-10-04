@@ -864,7 +864,7 @@ jobs:
       - name: test (aikit_nodotprod)
         run: |
           set -o pipefail
-          AIKIT_EXPECT_FORCED=nodotprod go test -v -timeout 45m -tags 'goinfer_testhooks aikit_nodotprod' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced.log | grep -E '^(--- |ok|FAIL|PASS)'
+          AIKIT_EXPECT_FORCED=nodotprod go test -v -timeout 45m -tags 'goinfer_testhooks aikit_nodotprod' -run 'Parity|Forward|ForcedFallbacks|GIWTarget|GIWAligned' ./decoder/ 2>&1 | tee forced.log | grep -E '^(--- |ok|FAIL|PASS)'
       - name: the expectation test ran and passed (a skip is not a pass)
         run: |
           grep -q -- '--- PASS: TestForcedFallbacks_expected' forced.log

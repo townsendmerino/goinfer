@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — a Linux or Windows arm64 core without DotProd rebuilt its sidecar on every start
+
+On arm64 the default CPU bundle target was `cpu-arm64` (row4-only int4 layouts, kind 5) by `GOARCH` alone, but aikit's row4 kernels need DotProd (`Int4Row4Usable`). A core without it, a Raspberry Pi 4 or Windows on ARM
+(aikit assumes no DotProd on any OS but Linux and Darwin), wrote a sidecar its own loader refused ("stored row4-only ... but this core cannot use that layout") and rebuilt it on every start, never getting a cache
+hit. `GIWTargetForBackend("cpu")` now returns `cpu-arm64` only when `linalg.Int4Row4Usable` says the core can read it, and otherwise the canonical target, which any core loads; a `cpu-arm64` bundle can still be built
+for a DotProd reader with `-target cpu-arm64`. **Found by the first `windows-arm64` CI run** (the job added the same day; the release ships windows-arm64 binaries that nothing had run), and reproduced exactly under QEMU
+`-cpu cortex-a72`. Three tests failed there (`TestGIWAligned_scalesAliasTheMapping` and `TestFreshSidecar_findsTheOneChatAndServeBuild`'s two subtests); all pass on the A72 model, on a DotProd model and natively
+after the fix. New test `TestGIWTargetForBackend_cpuArm64NeedsDotProd` asserts the target follows the core and that a bundle built for it loads back, shown red by reverting the fix on the A72 model. The Linux
+forced-nodotprod CI job now runs it too.
+
 ### Added — the startup self-test covers WebGPU, and `check --hardware` prints the WebGPU adapter
 
 The resident self-test (the four tiny checkpoints through the resident path against the CPU path, once per process and quant) now runs for the WebGPU backend, on a real adapter. On an RTX 2070 SUPER over
