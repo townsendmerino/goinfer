@@ -280,7 +280,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|decoder/model.go:702` | goinfer | `pinnedCtx, err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts))` |
 | `docs/audit-metal-2026-09-30.md|decoder/prefill_budget.go:120` | goinfer | `kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)` |
 | `docs/audit-metal-2026-09-30.md|decoder/residency.go:1149` | goinfer | `rf, ok, err := rb.BuildResident(m)` |
-| `docs/audit-metal-2026-09-30.md|decoder/residency.go:1272` | goinfer | `case m.kvPrecI8:` |
+| `docs/audit-metal-2026-09-30.md|decoder/residency.go:1277` | goinfer | `case m.kvPrecI8:` |
 | `docs/audit-metal-2026-09-30.md|decoder/residency.go:60` | goinfer | `// "Batched" is an amortization OPPORTUNITY, not a structural guarantee every` |
 | `docs/audit-metal-2026-09-30.md|decoder/residency.go:62` | goinfer | `// CUDA's prefillReady path runs the whole batch in one weight-stationary pass (one` |
 | `docs/audit-metal-2026-09-30.md|decoder/resident_reuse.go:19` | goinfer | `//     call plus the tool result. Measured deltas in a real /v1/messages loop were 45 an` |
@@ -771,7 +771,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:2252` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1730` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1476` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/ollama-chase.md|decoder/residency.go:1496` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:786` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:2454` | goinfer | `func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {` |

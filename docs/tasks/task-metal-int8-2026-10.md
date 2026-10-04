@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slices 4 and 5 are open. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slice 5 (auto) shipped the same day; slice 4 is open. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -372,3 +372,15 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
     - slice 5: `-backend auto` picking Metal for int8 models, which S-auto's pass now allows;
     - the served confirmation of the batched int8 step;
     - F3′ on the 1.5B, which needs the fit guard to admit its f32 reference.
+- 2026-10-04: **slice 5 shipped: `-backend auto` admits dense int8int8 on Metal.** S-auto passed both halves: decode
+  1.56-2.09× the CPU at both depths on both models, and warm first-token latency 0.288× / 0.318× the CPU's.
+  - `autoMetalPrecision` lets int8int8 reach the Metal build.
+  - `autoMetalKeepsPrecision` drops the resident for the CPU when it does not report running at int8int8, i.e. when
+    Metal re-quantized it (MoE, DeltaNet), so auto never changes the loaded precision.
+  - Weight-only int8 stays on the CPU under auto: Metal would add int8 activations, and S-auto graded only int8int8.
+    int4mix and f32 stay as before.
+  - Tests:
+    - `TestAutoMetalPrecision_keepsTheLoadedPrecision` (decoder, a fake resident that does or does not report
+      int8int8);
+    - `TestAutoBackend_int8int8` (metal, default-run): a dense tiny int8int8 model under auto runs
+      `metal-resident (int8int8)`, and an int8int8 MoE is kept on the CPU with the reason.

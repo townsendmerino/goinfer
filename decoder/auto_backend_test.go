@@ -83,32 +83,53 @@ func TestLoad_autoResolvesBeforeTheLoad(t *testing.T) {
 // driven without registering that name: the registry entry is unique per test, only Name() says "metal".
 type fakeNamedResidency struct {
 	fakeResidencyBackend
-	name string
+	name   string
+	report string // non-empty: the built resident reports it as ResidentQuant
+}
+
+// quantReporting is a fake resident that reports the precision it runs at (ResidentQuantReporter).
+type quantReporting struct {
+	ResidentForward
+	q string
+}
+
+func (r quantReporting) ResidentQuant() string { return r.q }
+
+func (b *fakeNamedResidency) BuildResident(m *Model) (ResidentForward, bool, error) {
+	rf, ok, err := b.fakeResidencyBackend.BuildResident(m)
+	if b.report != "" {
+		return quantReporting{rf, b.report}, ok, err
+	}
+	return rf, ok, err
 }
 
 func (b *fakeNamedResidency) Name() string { return b.name }
 
-// TestAutoMetalPrecision_keepsTheLoadedPrecision (R17): when auto chose metal, a model Metal would run only
-// re-quantized (int8, int8int8, int4mix: no Metal int8 GEMV kernel) or not at all (f32) stays on the CPU at the
-// precision it loaded at, and says so. int4, and any model on a metal the user named, still goes to BuildResident.
-// Without the guard, the model-included 0.5B goinfer-chat (an int8int8 bundle) went resident on Metal at int4 and
-// loaded in 1.7 s against 0.17 s on the CPU (exploratory runs, docs/measurements/r17-auto-backend-2026-10-01/).
+// TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/tasks/task-metal-int8-2026-10.md): when
+// auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at the
+// precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively, and is
+// kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is dropped for
+// the CPU. int4, and any model on a metal the user named, go resident as before. Without the guard, the model-included
+// 0.5B goinfer-chat (an int8int8 bundle) went resident on Metal at int4 and loaded in 1.7 s against 0.17 s on the CPU
+// (exploratory runs, docs/measurements/r17-auto-backend-2026-10-01/).
 func TestAutoMetalPrecision_keepsTheLoadedPrecision(t *testing.T) {
 	for _, tc := range []struct {
-		auto     bool
-		quant    string
-		resident bool
-		why      string
+		auto        bool
+		quant       string
+		report      string // what the fake resident reports as ResidentQuant ("" reports nothing: a re-quant)
+		built, kept bool
+		why         string
 	}{
-		{true, "int4", true, ""},
-		{true, "int8int8", false, "keeps this int8int8 model on the CPU: metal runs only int4 resident and would re-quantize it"},
-		{true, "int8", false, "keeps this int8 model on the CPU"},
-		{true, "", false, "keeps this f32 model on the CPU: metal runs only int4 resident"},
-		{false, "int8int8", true, ""}, // -backend metal named: runs re-quantized, as before
+		{true, "int4", "", true, true, ""},
+		{true, "int8int8", "int8int8", true, true, ""}, // native int8: kept
+		{true, "int8int8", "", true, false, "keeps this int8int8 model on the CPU: metal would re-quantize it to int4"},
+		{true, "int8", "", false, false, "keeps this int8 model on the CPU"},
+		{true, "", "", false, false, "keeps this f32 model on the CPU: metal runs only int4 resident"},
+		{false, "int8int8", "", true, true, ""}, // -backend metal named: runs re-quantized, as before
 	} {
-		t.Run(fmt.Sprintf("auto=%v quant=%q", tc.auto, tc.quant), func(t *testing.T) {
-			be := &fakeNamedResidency{name: "metal"}
-			reg := fmt.Sprintf("fake-auto-metal-%v-%q", tc.auto, tc.quant)
+		t.Run(fmt.Sprintf("auto=%v quant=%q report=%q", tc.auto, tc.quant, tc.report), func(t *testing.T) {
+			be := &fakeNamedResidency{name: "metal", report: tc.report}
+			reg := fmt.Sprintf("fake-auto-metal-%v-%q-%q", tc.auto, tc.quant, tc.report)
 			RegisterBackend(reg, func() (Backend, error) {
 				cpu, err := NewBackend("cpu")
 				be.Backend = cpu
@@ -119,14 +140,17 @@ func TestAutoMetalPrecision_keepsTheLoadedPrecision(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer m.Close()
-			if got := be.rf != nil; got != tc.resident {
-				t.Fatalf("BuildResident called = %v, want %v (decline %q)", got, tc.resident, m.ResidentDecline())
+			if got := be.rf != nil; got != tc.built {
+				t.Fatalf("BuildResident called = %v, want %v (decline %q)", got, tc.built, m.ResidentDecline())
 			}
-			if !tc.resident && !strings.Contains(m.ResidentDecline(), tc.why) {
+			if got := m.resident != nil; got != tc.kept {
+				t.Fatalf("resident kept = %v, want %v (decline %q)", got, tc.kept, m.ResidentDecline())
+			}
+			if !tc.kept && !strings.Contains(m.ResidentDecline(), tc.why) {
 				t.Errorf("decline %q, want it to contain %q", m.ResidentDecline(), tc.why)
 			}
 			// The banner names auto as the request: the user did not ask for metal by name.
-			if dp := m.DecodePath(); !tc.resident && !strings.Contains(dp, "requested auto (metal) → running on cpu") {
+			if dp := m.DecodePath(); !tc.kept && !strings.Contains(dp, "requested auto (metal) → running on cpu") {
 				t.Errorf("DecodePath() = %q, want it to say auto chose metal and the model runs on the CPU", dp)
 			}
 		})

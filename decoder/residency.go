@@ -1168,6 +1168,11 @@ func (m *Model) withResidency() *Model {
 		}
 		return m
 	}
+	if why := autoMetalKeepsPrecision(m.backendAuto, m.be.Name(), m.Quant(), rf); why != "" {
+		_ = rf.Close()
+		m.resDecline = why
+		return m
+	}
 	m.resident = rf
 	// BuildResident's host-side work — the CUDA backend packs every layer's weights on the Go heap before it
 	// uploads them, and stages the expert stacks in pinned memory — is garbage the moment it returns, but Go hands
@@ -1355,22 +1360,37 @@ func residentQuantLabel(backend, quant string) string {
 	return quant
 }
 
-// autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. Metal
-// runs only int4 resident: it re-quantizes int8, int8int8 and int4mix weights to int4 (no Metal int8 GEMV kernel, see
-// residentQuantLabel) and takes no f32. A backend the user did not name must not change the precision they loaded at,
-// such as the int8int8 bundle a model-included goinfer-chat carries, so auto leaves those models on the CPU; a named
-// -backend metal still runs them re-quantized (R17, docs/tasks/task-first-hour.md).
+// autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
+// backend the user did not name must not change the precision they loaded at, such as the int8int8 bundle a
+// model-included goinfer-chat carries (R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, and since slice 1
+// of docs/tasks/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
+// models native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here
+// (slice 5: gate S-auto passed, 2026-10-04), and autoMetalKeepsPrecision checks afterwards that it ran natively; the
+// others stay on the CPU. A named -backend metal still runs them re-quantized.
 func autoMetalPrecision(auto bool, backend, quant string) string {
-	if !auto || backend != "metal" || quant == "int4" {
+	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" {
 		return ""
 	}
 	switch quant {
-	case "int8", "int8int8", "int4mix":
+	case "int8", "int4mix":
 		return "-backend auto keeps this " + quant + " model on the CPU: metal runs only int4 resident and would re-quantize it (-backend metal does that)"
 	case "", "native": // Quant() of an f32 load
 		quant = "f32"
 	}
 	return "-backend auto keeps this " + quant + " model on the CPU: metal runs only int4 resident"
+}
+
+// autoMetalKeepsPrecision is why a resident -backend auto built on metal must be dropped for the CPU, "" when it keeps
+// it: an int8int8 model the resident did not run natively (ResidentQuantReporter reports no int8int8) was re-quantized
+// to int4, a precision the user did not ask for.
+func autoMetalKeepsPrecision(auto bool, backend, quant string, rf ResidentForward) string {
+	if !auto || backend != "metal" || quant != "int8int8" {
+		return ""
+	}
+	if qr, ok := rf.(ResidentQuantReporter); ok && qr.ResidentQuant() == quant {
+		return ""
+	}
+	return "-backend auto keeps this int8int8 model on the CPU: metal would re-quantize it to int4 (its int8 kernels cover dense models only; -backend metal does that)"
 }
 
 // declinedToCPUReason builds the reason BackendSummary needs when cuda or metal has no staged

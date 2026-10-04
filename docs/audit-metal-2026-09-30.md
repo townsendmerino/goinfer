@@ -321,7 +321,7 @@ Number provenance tags: [rec] a figure the repo recorded (doc:line), [cnt] count
   `device const half*`. `prefillOK` (`metal/model.go:1061`) lists features, per-layer geometry, Gemma-4 MoE, paged MoE and DeltaNet;
   `metal/backend.go:741-813` adds enable, floor and cap checks. Nothing mentions `kvI8` (grep of `kvI8` in `metal/prefill.go` and the
   `PrefillLast` guards returns only `UploadKV` at `metal/backend.go:1071,1095`). `decoder/model.go:1583-1590` calls `PrefillLast` for any
-  suffix >= 8 and `decoder/residency.go:1272-1273` and `metal/residentkv_alloc_test.go:77` show Metal reports and runs `"i8"`.
+  suffix >= 8 and `decoder/residency.go:1277-1278` and `metal/residentkv_alloc_test.go:77` show Metal reports and runs `"i8"`.
 - Failure (derived, not run): any prompt that reaches `PrefillLast` (>= 64 tokens, no adapter) on a Metal resident loaded with
   `-kv i8`. The scatter writes 2 bytes/element into a 1 byte/element buffer: positions >= ctxCap/2 write past the allocation
   (1.5B, kvDim 256, ctx 4096: a 3900-token prompt writes ~2.0 MB into a ~1.05 MB buffer; UMA does not fault, it corrupts a
