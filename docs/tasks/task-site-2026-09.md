@@ -1,9 +1,12 @@
 # Task: a site for goinfer — a browsable library, generated from the repo (S1–S8) — 2026-09
 
-> **Current, 2026-09-29. LIVE at https://goinfer.dev (first launch 2026-09-29, a manual run of the `site` workflow). Built: the
+> **Current, 2026-10-04 (live since 2026-09-29). LIVE at https://goinfer.dev (first launch 2026-09-29, a manual run of the `site` workflow). Built: the
 > generator, Models (S2), Home (S1), Download (S4), the Docs shell (S3), the writeup machinery (S8c) with the first writeup, and the
 > book at `/book/`. The old GitHub Pages address is a redirect stub.**
 >   **Amended 2026-09-30 (S8, below): a push to `main` that changes `docs/capability-matrix.json` also deploys.**
+> - **Added since 2026-09-29 (git history):** the decisions row on each vetted checkpoint (S2 / D9, c528974d), "Coming from Ollama?" with a dated Ollama snapshot (39ee199e; refreshed a96637d4, 9692b547), a
+>   generated serve flag reference (0a3f0a7f), "Use it from Go" (93722530), a "Try it" with claims-checked figures for the book's chapters (0e2dc221, f0f3200a), and a deploy when `main`'s capability matrix differs from the live site's (b767802a).
+> - **Not built:** a decision-model tag for Clef-flash. The owner approved it on 2026-10-03 (`task-constrained-confidence.md`, "Route C — what is still open"); it waits for a release cut and a registry entry for the checkpoint.
 > - **Owner decisions:**
 >   - the site changes **only when a release is cut** (S8d), **or when the capability matrix on `main` changes**
 >     (amendment 2026-09-30);
@@ -32,9 +35,9 @@
 >   - the owner reviews the 37 summaries and the checkpoint labels (they are public copy, now in the registry);
 >   - the fit-rule differences from the mockup (§8g).
 
-> **Status: SCOPED 2026-09-18, unstarted. Domain registered 2026-09-21: `goinfer.dev` (§5). Designed
+> **Status when this doc was written (superseded: the site has been built and live since 2026-09-29, see "Current" at the top).** Scoped 2026-09-18. Domain registered 2026-09-21: `goinfer.dev` (§5). Designed
 > 2026-09-29: three mockups in `site/mockups/` are the reference (§4a). Hosting and the build/deploy
-> pipeline decided 2026-09-29 (§5, §8).** Filed after the owner looked at ollama.com and wanted
+> pipeline decided 2026-09-29 (§5, §8). Filed after the owner looked at ollama.com and wanted
 > something similar in organisation — "not a perfect copy".
 >
 > **The decision this doc makes:** copy their *models library*, not their site. ollama.com is now a

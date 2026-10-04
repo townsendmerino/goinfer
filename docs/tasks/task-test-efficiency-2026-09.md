@@ -1,23 +1,25 @@
 # Task: the same verdicts for a fraction of the machine time — the test-efficiency campaign (TE0–TE12) — 2026-09
 
-> **Status: OPENED 2026-09-28; nothing built. TE0's first cut — the census in §1 — is done, from the records already on
-> disk.** Owner, 2026-09-28: *"holy shit there are so many huge runs, i think we need a campaign to figure out how to
+> **Status, 2026-10-04: the campaign's tooling is built and most items are graded; TE11 (the write-up and the re-count) is open and TE10 stays conditional and unbuilt.**
+> Opened 2026-09-28. Owner, 2026-09-28: *"holy shit there are so many huge runs, i think we need a campaign to figure out how to
 > test things much more efficiently."* The same morning's rule (root `CLAUDE.md`, "Run budget: quick by day, long by
 > night"; c9d8ea04, c4e3aec2) moves long runs to the night queue. This campaign makes them shorter and fewer. It is the
 > device-bound complement of [`task-ci-speed-2026-09.md`](../completed/task-ci-speed-2026-09.md) (C0–C9), whose §4 left
 > exactly this out: "`go run ./cmd/gate` on a real box stays the correctness gate."
 >
-> **Done 2026-09-28 (the §6 first moves):**
-> - TE9, the timing lock (`scripts/timing_lock.py`), and TE5(a), the two-arm rule in `CLAUDE.md`.
-> - TE0's Mac transcript miner. Waiting is the largest class, 66.5 h in 30 days.
-> - The analysis trio:
->   - TE2(b): a null, so restarts stay the unit;
->   - TE4: SEQ-v1 killed by its replay, on order sensitivity;
->   - TE5(b): killed as written, survives if only resolved rows count; the owner decides.
-> - TE7(b): `decoder` does cache, and C7's claim is retracted.
-> - TE1: built and queued for tonight (`te1-aa-mutation`, ~75 min).
+> **Built and graded (from the git history; each item below has its own proof; all 2026-09-28 unless dated):**
+> - **TE0** the census on both machines (166ad15d, 0607f30b; [record](../measurements/test-efficiency-2026-09.md): waiting is the largest class) and per-cell phase times in `bench_peer.py` (06edabb4).
+> - **TE1** the instant idle gate (534393cd). Attempts 1–4 did not complete; **attempt 5 PASSED 2026-10-02** (053d7b41) and the gate is the default on darwin (6d4d2d75). Linux keeps the load gate.
+> - **TE2** (b) is a null, so restarts stay the unit (6187769e); (a)'s server reuse is recorded unsafe on the Mac CPU and for MoE (TE2 below). Nothing built.
+> - **TE3** the noise registry (83 entries) and `scripts/power.py` (e79b82a4).
+> - **TE4** SEQ-v1 killed by its replay on order sensitivity (6187769e); SEQ-v2 failed its pre-registered simulation screen (7d554e80); ABBA tooling in `bench_peer.py` (25950af1).
+> - **TE5** (a) the two-arm rule in `CLAUDE.md` (a625aee7); (b) in-process first for kernel questions, the owner's decision (cd6ce336).
+> - **TE6** (a) content-keyed, resumable prefill references (b327153f); (b) `go run ./cmd/gate identity` (ce97d5ef).
+> - **TE7** `go run ./cmd/gate quick` (651164b3, 6f300225); `decoder`'s test cache works, and C7's claim is retracted (af55f1e4).
+> - **TE8** `TestPrefillGateReference` resumable (b327153f); `TestMoEExpertMajor_endToEnd` is deliberately not resumed (TE8 below).
+> - **TE9** the timing lock, `scripts/timing_lock.py` (a625aee7). **TE12** `internal/fidelity` (e702bf37).
 >
-> TE0 is complete on both machines ([record](../measurements/test-efficiency-2026-09.md)). See each item for its proof.
+> **Open:** **TE11**, updating `CLAUDE.md`'s run-budget section and the pre-registration template to name each gate's tier, instrument, stopping rule and cost, and the TE0 re-count before and after (the run-budget rules of 2026-09-28 and 2026-10-02 are in `CLAUDE.md`; the full TE11 write-up and the re-count are not done). **TE10** stays conditional on TE0 showing parity bookkeeping is still a material cost after TE6, and is unbuilt. TE8's other in-test gates were not re-checked for this header.
 
 ## BLUF
 
