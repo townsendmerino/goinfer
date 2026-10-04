@@ -81,6 +81,57 @@ func writeMC3FixtureTied(t *testing.T, maxPositions int, tied bool) string {
 	return dir
 }
 
+// mc3FixtureWriter writes the fixture mc3FixtureResident loads: the qwen2 one, or (a test swaps it) writeMC3FixtureQwen3.
+var mc3FixtureWriter = writeMC3Fixture
+
+// writeMC3FixtureQwen3 is the fixture as a qwen3 (E-P07): the same geometry with no q/k/v biases and a per-head Q and K
+// RMSNorm (self_attn.q_norm / k_norm, head_dim wide), so the batched step's qk_norm rows run.
+func writeMC3FixtureQwen3(t *testing.T, maxPositions int) string {
+	t.Helper()
+	dir := t.TempDir()
+	rng := rand.New(rand.NewSource(20261004))
+	rnd := func(n int, s float32) []float32 {
+		d := make([]float32, n)
+		for i := range d {
+			d[i] = (rng.Float32()*2 - 1) * s
+		}
+		return d
+	}
+	ones := func(n int) []float32 {
+		d := make([]float32, n)
+		for i := range d {
+			d[i] = 1 + (rng.Float32()*2-1)*0.05
+		}
+		return d
+	}
+	qDim, kvDim := mfHeads*mfHeadDim, mfKVHeads*mfHeadDim
+	writeConfig(t, dir, fmt.Sprintf(`{"model_type":"qwen3","vocab_size":%d,"hidden_size":%d,
+		"num_hidden_layers":%d,"num_attention_heads":%d,"num_key_value_heads":%d,"head_dim":%d,
+		"intermediate_size":%d,"max_position_embeddings":%d,"rms_norm_eps":1e-6,"rope_theta":1000000,"tie_word_embeddings":false}`,
+		mfVocab, mfHidden, mfLayers, mfHeads, mfKVHeads, mfHeadDim, mfInter, maxPositions))
+	ts := map[string]stf32{
+		"model.embed_tokens.weight": {[]int{mfVocab, mfHidden}, rnd(mfVocab*mfHidden, 0.4)},
+		"model.norm.weight":         {[]int{mfHidden}, ones(mfHidden)},
+		"lm_head.weight":            {[]int{mfVocab, mfHidden}, rnd(mfVocab*mfHidden, 0.4)},
+	}
+	for l := range mfLayers {
+		p := fmt.Sprintf("model.layers.%d.", l)
+		ts[p+"self_attn.q_proj.weight"] = stf32{[]int{qDim, mfHidden}, rnd(qDim*mfHidden, 0.3)}
+		ts[p+"self_attn.k_proj.weight"] = stf32{[]int{kvDim, mfHidden}, rnd(kvDim*mfHidden, 0.3)}
+		ts[p+"self_attn.v_proj.weight"] = stf32{[]int{kvDim, mfHidden}, rnd(kvDim*mfHidden, 0.3)}
+		ts[p+"self_attn.o_proj.weight"] = stf32{[]int{mfHidden, qDim}, rnd(mfHidden*qDim, 0.1)}
+		ts[p+"self_attn.q_norm.weight"] = stf32{[]int{mfHeadDim}, ones(mfHeadDim)}
+		ts[p+"self_attn.k_norm.weight"] = stf32{[]int{mfHeadDim}, ones(mfHeadDim)}
+		ts[p+"input_layernorm.weight"] = stf32{[]int{mfHidden}, ones(mfHidden)}
+		ts[p+"post_attention_layernorm.weight"] = stf32{[]int{mfHidden}, ones(mfHidden)}
+		ts[p+"mlp.gate_proj.weight"] = stf32{[]int{mfInter, mfHidden}, rnd(mfInter*mfHidden, 0.3)}
+		ts[p+"mlp.up_proj.weight"] = stf32{[]int{mfInter, mfHidden}, rnd(mfInter*mfHidden, 0.3)}
+		ts[p+"mlp.down_proj.weight"] = stf32{[]int{mfHidden, mfInter}, rnd(mfHidden*mfInter, 0.3)}
+	}
+	writeSTF32(t, filepath.Join(dir, "model.safetensors"), ts)
+	return dir
+}
+
 // mc3FixtureResident loads the fixture at int4 with `slots` resident KV slots and a ctx-token resident context, and
 // builds its Metal resident as the backend does. Both are closed when the test ends.
 func mc3FixtureResident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
@@ -88,7 +139,7 @@ func mc3FixtureResident(t *testing.T, slots, ctx int) (*decoder.Model, *resident
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	m, err := decoder.Load(writeMC3Fixture(t, max(ctx, 4096)), decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: slots})
+	m, err := decoder.Load(mc3FixtureWriter(t, max(ctx, 4096)), decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: slots})
 	if err != nil {
 		t.Fatalf("load the MC3 fixture: %v", err)
 	}

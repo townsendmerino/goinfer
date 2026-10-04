@@ -476,7 +476,7 @@ gate runs at night before it ships.
 5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
-   at night; then D-B02, D-P04, D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
+   at night; then D-B02, D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
@@ -938,6 +938,83 @@ So `GOINFER_MOE_EXPERT_MAJOR` stays default on, and `TestDG01_expertMajorMoEPref
   read 16 hard flips to 15 and agreement 87.8% to 87.7%: plumbing only, not a result.
 - **Unchanged:** the instrument's cells, the rule and the bars. Added to the preconditions:
   `TestDB01_prefillFromZeroResetsState`. The job re-runs from binaries pinned at the commit that carries these fixes.
+
+### E-P07: built, ON (bit-identical); its served confirmation pre-registered (written 2026-10-04, before any graded run; owner: "continue on audit-metal")
+
+**What is built.** Qwen3-family dense models (per-head QK-norm) are in MC3: the batched step runs decode's `qk_norm`
+over every row between the qkv projection and RoPE (`mc3_qk_norm_rows`, derived from `qk_norm`'s own source in
+`batch_rows.go` like the other rows kernels, at decode's threadgroup width). Olmo's whole-vector QK-norm stays out.
+So Qwen3 on a multi-slot Metal resident now gets MC3 batching, the step-kernel verify for `--spec ngram`, and E-P01's
+short-prompt route.
+- **Identity on the real Qwen3-0.6B** (`GOINFER_METAL_MC3=1`, the suite unchanged): `TestMC3Step_bitIdentical`,
+  `_bitIdenticalDeep` (across the attention floor), `_rowsPathBitIdentical` (per-row and fragment forms, B = 2–4),
+  `_drawsMatchForwardSample` and `TestMC3Verify_sameSlotRowsBitIdentical`: **0 differing values**;
+  `TestMC5_prefillChunkInvariance`: 0 at every chunk size.
+- **Default-run:** a generated qwen3 twin of the MC3 fixture backs `TestMC3Step_qwen3BitIdentical` (0 differing).
+- **Mutation:** dropping the step's QK-norm dispatch fails every logit of every step on the real model and 983,040 on
+  the fixture.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-ep07-w7.sh` on the night queue: MC3's W7 harness (`scripts/bench_w7_plain.py`, the 7B record's shape) on Qwen3-0.6B from `~/models`, serve defaults (`-max-concurrent` 4, `-kv-sessions` 4), 6 turns × 128 greedy tokens per client, `--fixed-nonce`, a fresh server per cell. **old** = serve-metal at `d50dbbca` (Qwen3 one generation at a time), **new** = at the E-P07 commit. 4, then 1, then 2 clients, old/new × 3 pairs in the order old new new old old new. Graded by MC3's own `gates.py`. Estimate about 15 minutes; queued at 30. |
+| Precondition | Every new server logs the batched-concurrency line and every old one the one-at-a-time line; otherwise the arms are not what they claim. |
+| Hard gates | (1) **identity**: every turn's `content_sha` equal across old and new, every cell. (2) reuse equal. (4) 4-client p99 turn new ÷ old ≤ 1.0. Any failure: **killed**, E-P07 reverted. |
+| Graded | 4-client aggregate throughput new ÷ old, median of the 3 pairs. |
+| Rule | **Stays on** at ≥ 1.10 with the hard gates held (your ship bar). **Parked** (to you) at 1.02–1.10. **Killed** (reverted) below 1.02. |
+| Reported | 1- and 2-client cells (a lone generation should be unchanged: new ÷ old within 0.98–1.02 at 1 client is expected, not graded); MC3's own 4-client record on Qwen2.5 for context (1.785× on the 7B). |
+
+**Amendment (2026-10-04, before any run):** "serve defaults" would give the new arm 2 KV slots (Metal's default since
+E-P09), so 4 clients could not batch 4 wide. Both arms run with `-kv-sessions 4` passed explicitly, as the 7B record's
+defaults then were. A smoke of both pinned binaries on Qwen3-0.6B: old logs "one generation at a time", new "… generations
+at once … decode tokens batched". Nothing else changes.
+
+### D-P04: SHIPPED (bit-identical; written 2026-10-04)
+
+**The probe** (the audit's own: kill if the (1,1) route dispatch is under 5 us per layer). `BenchmarkMoERoute`
+(`metal/moe_route_bench_test.go`) times 64 route dispatches in one serial encoder, net of 64 (1,1) `copy_u32` dispatches,
+best of 200, on the M1 Pro by day (a kernel microbenchmark, so direction, not size):
+
+| Shape | one thread, net per dispatch |
+|---|---|
+| Qwen1.5-MoE, 60 experts, top 4 | 67.8 us |
+| OLMoE, 64, top 8 | 94.8 us |
+| Qwen3-MoE / Gemma 4, 128, top 8, renormalised | 200.6 us |
+| DeepSeek-V3, 256, top 8, sigmoid, bias, 8 groups keep 4 | 429.8 us |
+| gpt-oss-20b (`route_gptoss`), 32, top 4 | 34.9 us |
+
+7 to 86 times the kill line, so it went ahead. The audit's 4-9% projection came from "~10% of a ~5 ms token"; per
+layer the measured cost is larger than that basis implied at 128 experts and up.
+
+**What is built.** `moe_route_sg` and `route_gptoss_sg` (`metal/moe.go`), one simdgroup dispatched (32,32), replace the
+one-thread kernels in resident MoE decode (`encodeMoERoute`, and Gemma 4's MoE router). Lane l owns experts l, l+32, ….
+Elementwise work runs across lanes with the same expression per element. The softmax sum and the weight sum keep the
+serial order, and lane 0 does the writes, the renormalisation and the scale. Top-k is a per-lane strict-`>` scan, then
+`simd_max` of the value and `simd_min` of the index among the lanes holding it: the serial scan's lowest index on ties.
+Group limiting scores whole groups per lane, because a group's top-2 sum does not depend on order. The one-thread kernels
+stay in the library as the reference. Expert-major prefill's `moe_route_batch` keeps its one-thread body (it is once per
+layer per pass, with the rows in parallel).
+
+**Identity.**
+- `TestMoERouteSG_bitIdentical` (default-run): 420 cases, 250 of them with tied scores. Indices and weight bits are equal to
+  the one-thread kernels across softmax and sigmoid scoring, renormalisation, routed scale, bias, and group limiting. That
+  includes a group size that does not divide nE, more picks than unmasked experts, logits on a 0.25 grid, all-equal
+  logits, -inf entries, and gpt-oss.
+- **Mutation:** a `simd_max` tie-break fails 188 cases; a reversed softmax sum fails 75.
+- `TestDP04_routeSGDecode` (`GOINFER_DP04=1`, the Qwen1.5-MoE 4-layer slice): every logit of 48 decode tokens is
+  bit-equal between the arms.
+
+**Speed (in-process, whole token, by day, TE5(b)).** Same test: token GPU time, one-thread against one-simdgroup router,
+arms alternated rep by rep from the same positions, 7 reps of 48 tokens.
+- **serial/sg median 1.060** (per rep 1.070 1.062 1.066 1.060 1.058 1.060 1.054, all 7 above 1). Saved 68.1 us per MoE
+  layer, which equals the microbenchmark's 67.8.
+- The slice has 4 of the model's 24 layers and the full LM head, so its token ratio understates the full model's.
+- The full model is projected at 24 × 68 us ≈ 1.6 ms per token. That is a projection, not a measurement: the full
+  checkpoint is not resident on this Mac.
+- The direction is resolved and the change is bit-identical, so it ships by day under TE5(b). No served number is
+  claimed.
+
+**Not measured here:** a full resident MoE token (none fits this Mac resident besides the slice), paged MoE (M26 and M35,
+where the per-layer saving is the same but the token is 128-167 ms), and gpt-oss end to end (the kernel gate covers it).
 
 ## Owner decisions
 

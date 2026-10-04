@@ -75,7 +75,7 @@ func mc3RealResident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	t.Helper()
 	m, r := mc3LoadCheckpoint(t, slots, ctx)
 	if r.moe != nil || r.g4moe != nil || r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm ||
-		r.decodeLaneW4F16 || r.nonGatedMLP || r.outBias || r.loraLayers != nil || r.qkNorm || r.learnedPos {
+		r.decodeLaneW4F16 || r.nonGatedMLP || r.outBias || r.loraLayers != nil || r.qkNormWhole || r.learnedPos { // per-head QK-norm (Qwen3) is in the step since E-P07
 		t.Skip("MC3 S1 covers the plain dense W4A8 decode path only")
 	}
 	for _, L := range r.layers {
@@ -138,6 +138,23 @@ func mc3Step(t *testing.T, r *resident, seqs []batchSeq) [][]float32 {
 //
 //	GOINFER_METAL_MC3=1 go test -count=1 -run '^TestMC3Step_bitIdentical$' -v ./metal/
 func TestMC3Step_bitIdentical(t *testing.T) { mc3Identity(t, []int{5, 23, 40, 300}, 1024) }
+
+// TestMC3Step_qwen3BitIdentical (E-P07): a Qwen3-shaped model (per-head QK-norm) runs the batched step, and its rows
+// equal production's single-token forward bit for bit, as TestMC3Step_bitIdentical checks for the qwen2 shape. On the
+// generated qwen3 fixture by default; under GOINFER_METAL_MC3=1 the identity suite runs on whatever checkpoint
+// GOINFER_METAL_MC3_MODEL names (the real Qwen3-0.6B read 0 differing values, 2026-10-04).
+func TestMC3Step_qwen3BitIdentical(t *testing.T) {
+	if os.Getenv("GOINFER_METAL_MC3") == "1" {
+		t.Skip("the fixture form; under GOINFER_METAL_MC3=1 run TestMC3Step_bitIdentical with GOINFER_METAL_MC3_MODEL set to a Qwen3")
+	}
+	mc3FixtureWriter = writeMC3FixtureQwen3
+	t.Cleanup(func() { mc3FixtureWriter = writeMC3Fixture })
+	mc3IdentityWith(t, []int{5, 23, 40, 300}, 1024, func(r *resident) {
+		if !r.qkNorm || r.qkNormWhole {
+			t.Fatalf("the qwen3 fixture loaded with qkNorm %v, qkNormWhole %v: this would check the wrong path", r.qkNorm, r.qkNormWhole)
+		}
+	})
+}
 
 // TestMC3Step_bitIdenticalDeep is the same check where production's single-token step plans attention_fa (at or above
 // attnFADepthFloor keys): two sequences past the floor, one crossing it during the 12 steps, one shallow — so the

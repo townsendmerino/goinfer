@@ -148,5 +148,16 @@ func deriveRowsKernels() string {
 			"    uint nKeys = nKeys_rows[mc3_row];\n"+
 			"    device const half* kc = kc_all + slotOff[mc3_row]; device const half* vc = vc_all + slotOff[mc3_row];"))
 	b.WriteString("\n")
+	// qk_norm (E-P07, Qwen3's per-head Q/K RMSNorm): one threadgroup per (row, head); a row's fused qkv advances
+	// qkvStride floats, and the head is the threadgroup's index within its row.
+	b.WriteString(edit(extractKernel(allKernels, "qk_norm"),
+		"kernel void qk_norm(device float* qkv[[buffer(0)]]",
+		"kernel void mc3_qk_norm_rows(device float* qkv_rows[[buffer(0)]]",
+		"constant uint& addOne[[buffer(8)]], uint head[[threadgroup_position_in_grid]],",
+		"constant uint& addOne[[buffer(8)]], constant uint& qkvStride[[buffer(9)]], uint mc3_gid[[threadgroup_position_in_grid]],",
+		"    threadgroup float red[128];",
+		"    uint head = mc3_gid % (nH + nKV); device float* qkv = qkv_rows + (mc3_gid / (nH + nKV))*qkvStride;\n    threadgroup float red[128];"))
+	b.WriteString("\n")
+
 	return b.String()
 }

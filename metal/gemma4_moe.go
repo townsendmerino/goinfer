@@ -187,7 +187,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		return nil, fmt.Errorf("metal gemma4 MoE nE=%d exceeds moe_route cap %d", b.NE, capE)
 	}
 	g := &gemma4MoeResident{
-		pRouterF32: pipe("gemv_f32_f32"), pRoute: pipe("moe_route"),
+		pRouterF32: pipe("gemv_f32_f32"), pRoute: pipe("moe_route_sg"),
 		pGU: pipe("gemv_w4a8_moe"), pDownWacc: pipe("gemv_w4a8_moe_wacc"),
 		pRmsNW: pipe("rmsnorm_nw"), pScaleWgt: pipe("scale_wgt_by_expert"),
 		pScaleVec: pipe("scale_vec"), pZero: pipe("zero_vec"),
@@ -454,7 +454,7 @@ func (r *resident) encodeG4Phase1(e *Encoder, L *residLayer) {
 	// router on RAW h: weightless out-of-place norm → pure-f32 proj → top-k → per-expert-scale
 	e.Dispatch(g.pRmsNW, tgReduceNorm, tgReduceNorm, r.x, g.g4rn, r.uH, r.uEps)
 	e.Dispatch(g.pRouterF32, g.nE*32, 32, ml.routerW, g.g4rn, g.rLogits, r.uH)
-	e.Dispatch(g.pRoute, 1, 1, g.rLogits, ml.routerBias, g.rIdx, g.rWgt,
+	e.Dispatch(g.pRoute, 32, 32, g.rLogits, ml.routerBias, g.rIdx, g.rWgt,
 		g.uNE, g.uK, g.uSig0, g.uNorm1, g.uScale1, g.uOne, g.uOne)
 	e.Dispatch(g.pScaleWgt, g.topK, g.topK, g.rWgt, g.rIdx, ml.perExpertScale, g.uK)
 	// expert-branch input: xe = preFFN2(h) → mq/mSc (consumed by phase 2)

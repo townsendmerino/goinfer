@@ -17,6 +17,10 @@ any surface may still change.
 
 ### Changed
 
+- **Metal: the MoE router runs on a full simdgroup instead of one GPU thread.** Top-k expert selection took 68 us per MoE
+  layer per token at 60 experts (Qwen1.5-MoE), 201 us at 128 (Qwen3-MoE, Gemma 4) and 430 us at DeepSeek-V3's grouped 256.
+  The new kernels pick the same experts with the same weights, bit for bit, ties included. On a 4-layer Qwen1.5-MoE
+  slice, decode is 1.06x faster per token, 68 us per MoE layer. Audit D-P04.
 - **Metal: prompts of 16 to 63 tokens take the batched prefill pass on a single-slot resident.** The floor below which a
   prompt runs one token at a time drops from 64 to 16 tokens, which passed the same pooled fidelity gate as before at
   16, 32 and 48 tokens. The pass takes a 16-token prompt about 3.5x faster than the token loop on the 1.5B (2.5x on the

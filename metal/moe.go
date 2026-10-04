@@ -119,6 +119,98 @@ kernel void route_gptoss(device const float* logits[[buffer(0)]], device const f
     for (uint j=0u;j<k;j++) outWgt[j]=chosen[j]*inv;
 }
 
+// moe_route_sg / route_gptoss_sg (D-P04): moe_route and route_gptoss on one simdgroup, dispatched (32,32), the same
+// bytes out. moe_route on one thread measured 68 us per dispatch at 60x4 and 201 us at 128x8 (BenchmarkMoERoute, M1
+// Pro), once per MoE layer per token. Lane l owns experts l, l+32, ...; everything elementwise (exp, sigmoid, the
+// scale by 1/sum, +bias) runs lane-strided and is the same expression per element. What is order-sensitive stays in
+// the serial order: the softmax sum and wsum run over i or j ascending, uniformly in every lane, and lane 0 does the
+// output writes, the renorm and the scale exactly as moe_route does. Top-k is exact: a lane's strict-> scan of its
+// own experts in ascending order, then simd_max of the value and simd_min of the index among the lanes holding it,
+// which is the serial scan's lowest index on ties; nothing above -INFINITY selects expert 0, as the serial scan does.
+// Group limiting: a group's top-2 sum is order-independent, so each lane scores whole groups; keep is the serial
+// selection, run uniformly. Tested against moe_route/route_gptoss in moe_route_sg_test.go.
+static inline uint route_sg_pick(threadgroup float* sel, uint nE, uint lane, thread float& m) {
+    float bv=-INFINITY; uint bi=0xFFFFFFFFu;
+    for (uint i=lane; i<nE; i+=32u) { float v=sel[i]; if (v>bv){ bv=v; bi=i; } }
+    m = simd_max(bv);
+    return simd_min((bi != 0xFFFFFFFFu && bv == m) ? bi : 0xFFFFFFFFu);
+}
+kernel void moe_route_sg(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
+    device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
+    constant uint& k[[buffer(5)]], constant uint& sigmoid[[buffer(6)]], constant uint& norm[[buffer(7)]],
+    constant float& scale[[buffer(8)]], constant uint& nGroup[[buffer(9)]], constant uint& topkGroup[[buffer(10)]],
+    uint lane[[thread_index_in_threadgroup]]) {
+    threadgroup float score[256];
+    threadgroup float sel[256];
+    threadgroup float gscore[64];
+    if (sigmoid != 0u) {
+        for (uint i=lane;i<nE;i+=32u) score[i] = 1.0f/(1.0f+exp(-logits[i]));
+    } else {
+        float mx = -INFINITY; for (uint i=lane;i<nE;i+=32u) mx = max(mx, logits[i]);
+        mx = simd_max(mx);
+        for (uint i=lane;i<nE;i+=32u) score[i] = exp(logits[i]-mx);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float sum = 0.0f; for (uint i=0u;i<nE;i++) sum += score[i];
+        float inv = 1.0f/sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint i=lane;i<nE;i+=32u) score[i] *= inv;
+    }
+    for (uint i=lane;i<nE;i+=32u) sel[i] = score[i] + bias[i];
+    if (nGroup > 1u) {
+        uint gsz = nE / nGroup;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint g=lane; g<nGroup; g+=32u) {
+            float t1=-INFINITY, t2=-INFINITY;
+            for (uint i=g*gsz; i<(g+1u)*gsz; i++) { float v=sel[i]; if (v>t1){t2=t1;t1=v;} else if (v>t2){t2=v;} }
+            gscore[g]=t1+t2;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        ulong keep = 0ul;
+        for (uint j=0u; j<topkGroup; j++) {
+            uint bg=0u; float bv=-INFINITY; bool found=false;
+            for (uint g=0u; g<nGroup; g++) if (((keep>>g)&1ul)==0ul && gscore[g]>bv){ bv=gscore[g]; bg=g; found=true; }
+            if (found) keep |= 1ul<<bg;
+        }
+        for (uint i=lane;i<nE;i+=32u) { uint g=i/gsz; if (g<nGroup && ((keep>>g)&1ul)==0ul) sel[i]=-INFINITY; }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float wsum = 0.0f;
+    for (uint j=0u; j<k; j++) {
+        float m;
+        uint best = route_sg_pick(sel, nE, lane, m);
+        if (best == 0xFFFFFFFFu) best = 0u;
+        float w = score[best];
+        if (lane == 0u) { outIdx[j]=best; outWgt[j]=w; }
+        wsum += w;
+        if (lane == (best & 31u)) sel[best]=-INFINITY; // the only lane that reads it next round
+    }
+    if (lane != 0u) return;
+    if (norm != 0u && wsum > 0.0f) for (uint j=0u; j<k; j++) outWgt[j] /= wsum;
+    if (scale != 0.0f && scale != 1.0f) for (uint j=0u; j<k; j++) outWgt[j] *= scale;
+}
+kernel void route_gptoss_sg(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
+    device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
+    constant uint& k[[buffer(5)]],
+    uint lane[[thread_index_in_threadgroup]]) {
+    threadgroup float sc[256];
+    float chosen[256];
+    for (uint i=lane;i<nE;i+=32u) sc[i] = logits[i] + bias[i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint j=0u;j<k;j++) {
+        float bv; // sc[best], or -INFINITY when none is left (best 0xFFFFFFFF, route_gptoss's uint(-1))
+        uint best = route_sg_pick(sc, nE, lane, bv);
+        if (lane == 0u) { outIdx[j]=best; chosen[j]=bv; }
+        if (best != 0xFFFFFFFFu && lane == (best & 31u)) sc[best]=-INFINITY;
+    }
+    if (lane != 0u) return;
+    float mx=chosen[0];
+    for (uint j=1u;j<k;j++) mx=max(mx,chosen[j]);
+    float sum=0.0f;
+    for (uint j=0u;j<k;j++) { chosen[j]=exp(chosen[j]-mx); sum+=chosen[j]; }
+    float inv=1.0f/sum;
+    for (uint j=0u;j<k;j++) outWgt[j]=chosen[j]*inv;
+}
+
 // Indexed Stage-A W4A8 expert GEMV, mode-0 OVERWRITE (fused gate|up). Same body as
 // gemv_w4a8_sa but the WEIGHT row is idx[slot]*rowsPerExpert + outRow (the stacked
 // all-experts buffer); the OUTPUT row is outRow. rowsPerExpert = 2*inter for gate|up.
@@ -386,7 +478,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	}
 	_, _, isGptOss := m.GptOssActResident()
 	mo := &moeResident{
-		pRouter: pipe("gemv_wf32_a8"), pRoute: pipe("moe_route"),
+		pRouter: pipe("gemv_wf32_a8"), pRoute: pipe("moe_route_sg"),
 		pGU: pipe("gemv_w4a8_moe"), pDownWacc: pipe("gemv_w4a8_moe_wacc"),
 		pSharedGate:   pipe("shared_gate_combine"),
 		isGptOss:      isGptOss,
@@ -398,7 +490,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	}
 	if isGptOss {
 		alpha, limit, _ := m.GptOssActResident()
-		mo.pRouteGptOss = pipe("route_gptoss")
+		mo.pRouteGptOss = pipe("route_gptoss_sg")
 		mo.pActGptOss = pipe("swiglu_quant_gptoss")
 		mo.pDownWaccBias = pipe("gemv_w4a8_moe_wacc_bias")
 		mo.uAlpha, mo.uLimit = NewBufferFloats(d, []float32{alpha}), NewBufferFloats(d, []float32{limit})
@@ -719,9 +811,9 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 	// the weight is softmax over the SELECTED biased logits — a genuinely different kernel from
 	// the generic DeepSeek/GLM/Qwen-MoE shape (moe_route), not a parameter swap (see route_gptoss).
 	if mo.isGptOss {
-		e.Dispatch(mo.pRouteGptOss, 1, 1, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt, mo.uNE, mo.uK)
+		e.Dispatch(mo.pRouteGptOss, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt, mo.uNE, mo.uK)
 	} else {
-		e.Dispatch(mo.pRoute, 1, 1, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,
+		e.Dispatch(mo.pRoute, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,
 			mo.uNE, mo.uK, mo.uSigmoid, mo.uNorm, mo.uScale, mo.uNGroup, mo.uTopkGroup)
 	}
 }
