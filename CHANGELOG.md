@@ -17,6 +17,9 @@ any surface may still change.
 
 ### Changed
 
+- **Metal: batched prefill no longer builds and copies a zeroed host buffer for each of its scratch buffers.** Metal
+  zero-fills new buffers itself. The pass is about 1% faster on the 1.5B (5-14 ms at 512-2048 tokens), and the output is
+  bit-identical.
 - **Metal: the MoE router runs on a full simdgroup instead of one GPU thread.** Top-k expert selection took 68 us per MoE
   layer per token at 60 experts (Qwen1.5-MoE), 201 us at 128 (Qwen3-MoE, Gemma 4) and 430 us at DeepSeek-V3's grouped 256.
   The new kernels pick the same experts with the same weights, bit for bit, ties included. On a 4-layer Qwen1.5-MoE

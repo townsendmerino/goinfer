@@ -31,9 +31,9 @@ type prefillDelta struct {
 func (r *resident) newPrefillDelta(M, Mpad int) *prefillDelta {
 	d, dp := r.d, r.dnet
 	s := &prefillDelta{
-		mixedF: NewBufferU16s(d, make([]uint16, Mpad*dp.convDim)),
-		zF:     NewBufferU16s(d, make([]uint16, Mpad*dp.valueDim)),
-		gatedH: NewBufferU16s(d, make([]uint16, Mpad*dp.valueDim)),
+		mixedF: prefillScratchU16(d, Mpad*dp.convDim),
+		zF:     prefillScratchU16(d, Mpad*dp.valueDim),
+		gatedH: prefillScratchU16(d, Mpad*dp.valueDim),
 		bt:     d.NewBufferLen(M * dp.nv), at: d.NewBufferLen(M * dp.nv),
 		conv: d.NewBufferLen(M * dp.convDim), headP: d.NewBufferLen(M * dp.nv * 2),
 		qn: d.NewBufferLen(M * dp.keyDim), kn: d.NewBufferLen(M * dp.keyDim),

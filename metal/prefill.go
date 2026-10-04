@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
 // Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unlike the
@@ -1115,11 +1117,11 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	xh := make([]uint16, Mpad*H)
 	parallelEmbedsF32ToF16(xh, embs, H)
 	xF := NewBufferU16s(d, xh)
-	normF := NewBufferU16s(d, make([]uint16, Mpad*H))
-	qkvF := NewBufferU16s(d, make([]uint16, Mpad*qkvDim))
-	ctxF := NewBufferU16s(d, make([]uint16, Mpad*qDim))
-	guF := NewBufferU16s(d, make([]uint16, Mpad*2*maxI))
-	dqF := NewBufferU16s(d, make([]uint16, Mpad*maxI))
+	normF := prefillScratchU16(d, Mpad*H)
+	qkvF := prefillScratchU16(d, Mpad*qkvDim)
+	ctxF := prefillScratchU16(d, Mpad*qDim)
+	guF := prefillScratchU16(d, Mpad*2*maxI)
+	dqF := prefillScratchU16(d, Mpad*maxI)
 	posv := make([]uint32, Mpad)
 	for m := range M {
 		posv[m] = uint32(startPos + m)
@@ -1168,8 +1170,8 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		moeLogits = NewBufferFloats(d, make([]float32, M*r.moe.nE))
 		moeIdx = NewBufferUint32s(d, make([]uint32, M*r.moe.k))
 		moeWgt = NewBufferFloats(d, make([]float32, M*r.moe.k))
-		expertIn = NewBufferU16s(d, make([]uint16, Mpad*H))
-		expertDown = NewBufferU16s(d, make([]uint16, Mpad*H))
+		expertIn = prefillScratchU16(d, Mpad*H)
+		expertDown = prefillScratchU16(d, Mpad*H)
 		rowIdxBuf = NewBufferUint32s(d, make([]uint32, Mpad*r.moe.k))
 		rowWgtBuf = NewBufferFloats(d, make([]float32, Mpad*r.moe.k))
 	}
@@ -1195,9 +1197,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	var qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN Buffer
 	if r.dnet != nil {
 		dn = r.newPrefillDelta(M, Mpad)
-		qgF = NewBufferU16s(d, make([]uint16, Mpad*2*nHhd))
-		kvF = NewBufferU16s(d, make([]uint16, Mpad*2*kvDim))
-		gateF = NewBufferU16s(d, make([]uint16, M*nHhd))
+		qgF = prefillScratchU16(d, Mpad*2*nHhd)
+		kvF = prefillScratchU16(d, Mpad*2*kvDim)
+		gateF = prefillScratchU16(d, M*nHhd)
 		u2NHhd, u2KvDim, uGateN = NewBufferU32(d, uint32(2*nHhd)), NewBufferU32(d, uint32(2*kvDim)), NewBufferU32(d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
 	}
@@ -1342,6 +1344,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 
 			// 4. Commit and wait so the host can read the routing decisions
 			e.End()
+			if db02Trace != nil {
+				db02Trace(db02Event{layer: l, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
+			}
 			r.recordExecErr(e.Err())
 			if err := r.takeExecErr(); err != nil {
 				return nil
@@ -1400,6 +1405,12 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				}
 
 				CePad := (Ce + 7) / 8 * 8
+				if db02Trace != nil {
+					_, tmGu, _ := pf.gemmTile(CePad, rowsPerExpertGu)
+					_, tmD, _ := pf.gemmTile(CePad, rowsPerExpertD)
+					db02Trace(db02Event{layer: l, expert: eIdx, rows: Ce, padRows: CePad,
+						tileRowsGu: (CePad + tmGu - 1) / tmGu * tmGu, tileRowsD: (CePad + tmD - 1) / tmD * tmD})
+				}
 				uCe := getU32(Ce)
 				uCePad := getU32(CePad)
 				uMoeI := getU32(moeInter)
@@ -1483,6 +1494,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
+	if db02Trace != nil {
+		db02Trace(db02Event{layer: r.nL, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
+	}
 	r.recordExecErr(e.Err()) // C-09
 
 	out := make([]float32, V)
@@ -1495,6 +1509,30 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		softcapParallel(out, r.finalSoftcap)
 	}
 	return out
+}
+
+// prefillScratchU16 allocates one of a pass's f16 scratch buffers, n halves, zero-filled. Metal fills a new buffer with
+// zeros itself (newBufferWithLength), so the pass no longer builds a zeroed Go slice of the same size and copies it in:
+// on the Qwen1.5-MoE slice that host work was 14.6 ms before a 512-token pass reached the GPU and 77.7 ms before a
+// 2048-token one (TestDB02_expertMajorProbe). prefillScratchCopy restores the copy, for the test that compares the two.
+func prefillScratchU16(d *Device, n int) Buffer {
+	if prefillScratchCopy {
+		return NewBufferU16s(d, make([]uint16, n))
+	}
+	return gpu.NewBufferLenOf[uint16](d, n)
+}
+
+var prefillScratchCopy = false
+
+// db02Trace is D-B02's probe (T1.12, metal/audit_db02_test.go): nil in production. The expert-major branch reports
+// each command buffer it ends (gpuStart/gpuEnd, seconds; layer is the MoE layer whose routing it waits for, or nL for
+// the pass's last buffer) and each active expert's rows (real, padded to 8, and padded to each GEMM's row tile).
+var db02Trace func(db02Event)
+
+type db02Event struct {
+	layer, expert                        int
+	gpuStart, gpuEnd                     float64
+	rows, padRows, tileRowsGu, tileRowsD int
 }
 
 // dg01Mutation names a deliberate defect in the expert-major MoE prefill, for D-G01's gate to prove it can go red

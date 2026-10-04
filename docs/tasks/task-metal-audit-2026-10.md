@@ -476,7 +476,7 @@ gate runs at night before it ships.
 5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
-   at night; then D-B02, D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
+   at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
@@ -1048,6 +1048,58 @@ park zone for speed ("park stuff if it's a couple percent above current code", 2
 stay, off by default.
 - **What could reopen it:** a k = 8 model (OLMoE, Qwen3-MoE, DeepSeek), where 20 dispatches go instead of 8. None fits
   resident on this Mac, so none was measured.
+
+### D-B02: T1.12 probed (written 2026-10-04); and a pass-scratch fix it found, SHIPPED
+
+**T1.12** (`TestDB02_expertMajorProbe`, `GOINFER_DP04=1`; exploratory sizing, not a graded result). The setup:
+- The Qwen1.5-MoE 4-layer slice: 60 experts, top 4, a 5632-wide shared expert, fully resident.
+- Prose prompts from the prefill gate set, 3 timed passes after a warm one.
+- The `db02Trace` hook reports each command buffer's GPU time and each active expert's rows. The host intervals come
+  from the hook's own clock.
+
+| M | wall | GPU busy | routing syncs: grouping + unoverlapped encoding | host before the first buffer | expert GEMM rows ÷ routed rows (row tile) |
+|---|---|---|---|---|---|
+| 64 | 111.2 ms | 105.4 ms | 0.17 + 3.92 ms | 1.48 ms | 7.16× (57 active experts a layer, about 4 rows each) |
+| 512 | 253.6 ms | 232.3 ms | 0.53 + 5.63 ms | 14.64 ms | 1.47× |
+| 2048 | 731.7 ms | 657.0 ms | 0.73 + 7.49 ms | 77.72 ms | 1.23× |
+
+Each MoE layer runs 286-300 expert dispatches (5 per active expert).
+
+**What this says about D-B02.** The per-layer routing sync that device-side scheduling would remove is small:
+- Host grouping, plus the encoding the GPU cannot overlap, is 2.4% of the 512-token pass and 1.1% of the 2048-token one.
+- The 300 dispatches cost about 0.8 ms per layer of bubbles at the 2.7 us D-P03 measured.
+
+The bigger D-B02 term is tile padding:
+- At M = 512 the expert GEMMs run 1.47× the routed rows, and at these sizes they are compute-bound, not weight-bound.
+  The routed FLOPs alone are about 142 GFLOP a layer, against 58 ms of GPU time a layer.
+- MLX's bm = 16 tiling, or a device-side scheduler that packs several experts' rows into one tile, is the lever.
+- `gemm_w4f16_tile`'s activation staging assumes TM ≥ 32 (`BPT = 4/(128/TM)`), so a 16-row tile is a kernel change
+  and not just another instantiation.
+- **Next:** the expert GEMMs' share of the busy time, and what a TM = 16 tile buys on the slice, before any
+  device-side kernel.
+
+**The host time before the first buffer was not D-B02 at all.** Every pass allocated its f16 scratch by building a
+zeroed Go slice and copying it into a new Metal buffer. That was about 110 MB at M = 2048 on the slice (`guF` alone
+46 MB). Metal fills a new buffer with zeros itself, so `prefillScratchU16` now allocates with `newBufferWithLength`
+and skips the slice.
+
+Checks:
+- `TestPrefillScratch_zeroFilled`: a dirtied, released buffer of the same size never comes back non-zero.
+- `TestPrefillScratch_identical` (default-run): the tiny dense fixture's logits are bit-equal at 20, 100 and 300
+  tokens.
+- `TestPrefillScratch_AB` (in-process, arms alternated, logits compared every rep, 7 reps; every rep bit-equal):
+
+| Model | M = 512 | M = 2048 |
+|---|---|---|
+| 1.5B | **1.012** (6 of 7 reps above 1) | **1.008** (7 of 7 at or above 1.000) |
+| Qwen1.5-MoE slice | 1.102 | 1.098 |
+
+Copied ÷ zero-filled, the medians. The slice's 4 layers inflate the scratch's share; a full model sits near the
+1.5B's 1%.
+
+It ships: bit-identical, and it removes redundant host work without adding a mechanism. The Metal prefill, DeltaNet,
+MoE and MC3 tests pass (76), apart from the long-standing `TestPrefillParityMoEGatedShared` (fails at HEAD too: a K = 44
+fixture `int4Concat` refuses).
 
 ## Owner decisions
 
