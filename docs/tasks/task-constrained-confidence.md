@@ -1,8 +1,8 @@
-# Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D14) — 2026-09
+# Task: confidence — per-field probabilities on constrained output, and a typed decisions endpoint (built as `POST /v1/systemone`; C0–C2, D0–D14) — 2026-09
 
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
-> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12 is built (`internal/clef`: encoder 150/150 identical; head and the whole pipeline match the reference to 1.8e-7 on a tiny end-to-end fixture, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its gate of record on real hidden states waits on the D10 f32 night job; owner decisions made: request text is tokenized literally, and the `clef` route reports `confidence` as the reference does (the top probability); D13's serve wiring is built (`route: "clef"` on `/v1/systemone`, 2026-10-03) and its fidelity arms and the JEV comparison are graded (2026-10-03, `decisions-d13-clef-fidelity-2026-10-03.md` §7); D12's gate of record on real hidden states passed (worst probability difference 9.65e-8); D14 is graded (below).
+> needed. One backbone pass scores every question, so D8 does not apply to this route. **Status, 2026-10-03: D10–D14 are done.** D10 is the reference fixture (f32 and bf16 over 150 records). D11 is the resident hidden state (CUDA and Metal). D12 is the encoder (150/150 identical) and head, with the head's gate of record passed on real hidden states (worst probability difference 9.65e-8). D13 is the serve wiring (`route: "clef"` on `/v1/systemone`) and its graded fidelity (`decisions-d13-clef-fidelity-2026-10-03.md` §7: f32 PASS; no quantized arm meets the 98% top-1 bar; `int8int8` stays the default), plus the multi-question check on real weights. D14 is graded (below). Owner decisions: request text is tokenized literally; `confidence` is the top probability on this route; no int4 for Clef; Clef-flash at `int8int8` may carry the decision-model tag (his decision, not a gate pass). Open: the site tag (it waits for a release and a registry entry), Clef 27B on the CPU, and whether five questions asked together answer the same as asked one at a time.
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with
@@ -624,7 +624,7 @@ schema was never published (D0).
   - Running jevx's own binary against it: its request shape and fail-closed checks are reproduced in the test
     instead of executing third-party code here.
 
-- `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
+- *(Planned shape; superseded 2026-09-28. `/v1/decisions` and `:batch` were never built: autotrust's schema was never published (D0), and the owner picked the TypeSafe shape, `POST /v1/systemone`, which is what exists.)* `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
   (`internal/serveapp/main.go:685`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
@@ -806,7 +806,7 @@ exists.
     OFF PROJECTION (the projection undercosted the one-pass answer: its prompt carries all five questions, it emits about 50 tokens not 23–26, and
     constrained decode costs about 27 ms per token not 16.5; named in the record). **D8's trigger fires on the measurement: share 0.909 ≥ 0.70.**
 
-### D8 — shared state, many questions (deferred)
+### D8 — shared state, many questions (built for the CPU path; GPU-resident deferred)
 
 TypeSafe's shape asks many questions about one state. On `qwen3_5` each question costs a full
 prefill of the state today (§3). The fix is an in-memory recurrent-state checkpoint (conv window +
@@ -959,8 +959,8 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
 
 #### D13 — wiring and fidelity
 
-- **Loading:** a model directory carrying `joint_head.safetensors` loads as a decision model. `/v1/systemone` and
-  `/v1/decisions` (D5) gain `route: "clef"`, and `/v1/models` advertises it.
+- **Loading:** a model directory carrying `joint_head.safetensors` loads as a decision model. `/v1/systemone` (D5)
+  gains `route: "clef"`, and `/v1/models` advertises it.
 - **Image parts on this route** are refused with a clear error until P8a.
 - **Fidelity, by D6b's method** (Clef-flash against the D10 goldens):
   - arms: f32, int8int8, int4 and q4k;

@@ -595,7 +595,7 @@ names that are served.
     - On nobara's RTX 2070 SUPER, JEV-9B at int4 measured about 3 ms per prompt token, against about 65 ms on its
       CPU (exploratory, five items).
     - The GPU's int4 kernels are not the CPU's, so the two answers differ: slightly on most items, and on one of the 150 by a lot (a 0.956 option read as 0.362 on CUDA int4, unexplained). Until that is explained, do not rely on decisions from a CUDA-resident int4 model (D6b).
-  - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
+  - **How closely it tracks the reference** was graded on the CPU in D6b (`measurements/decisions-d6b-2026-09/results.md`): f32 exact; `int8int8`, the default, mean KL 0.0088 and top-1 0.927; `int4` KL 0.0298 and top-1 0.940; calibration no worse in any arm, and the top-1 bar of 0.98 missed by the quantized arms. The GPU `int8int8` is ungraded, and the CUDA int4 discrepancy above is open.
 - **With Cloudflare's Clef (Route C):** `--model clef=~/models/clef-flash`. A model directory that carries `joint_head.safetensors`
   next to its backbone loads as a decision model; no `head=` is given (and giving one is refused). One backbone pass over the whole
   record answers every question, through the model's joint head, so the cost is one prefill however many questions there are.
