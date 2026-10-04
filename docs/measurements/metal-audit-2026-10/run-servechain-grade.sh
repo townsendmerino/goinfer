@@ -10,8 +10,8 @@
 #
 # Pinned (the tree may move before tonight):
 #   serve binaries ~/goinfer-bench/metal-audit-2026-10/serve-metal-servechain{,-nohold}-3b9ef839
-#   scripts worktree ~/goinfer-bench/metal-audit-2026-10/wt-servechain-3b9ef839 (bench_peer.py, prompts.json,
-#     servechain_cells.py; its one diff from 3b9ef839 is the old arm's patch, in decoder/model.go)
+#   scripts worktree ~/goinfer-bench/metal-audit-2026-10/wt-servechain-3b9ef839, checked out at fca400fe (bench_peer.py, prompts.json,
+#     servechain_cells.py; fca400fe is 3b9ef839 plus docs, and its one local diff is the old arm patch, in decoder/model.go)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-servechain --est 40 --by "Claude (Mac session), serve-chain grade" \
 #     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-servechain-grade.sh
