@@ -980,7 +980,8 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   - **Clef against JEV** (84 gold rows, informational): accuracy 0.690 against 0.774 and ECE 0.107 against 0.122, neither difference resolved.
   - Predictions that failed, recorded as failed: int4 inside the KL band (CPU and CUDA).
   - **Owner decision 2026-10-03: no int4 for Clef.** `quant=int4` on a Clef model is refused at load (`clefQuantRefusal`, tested through `loadDecoder`); `int8int8` stays the default and `f32` is available.
-  - Open for the owner: whether the site tag may go on Clef-flash given that no quantized arm meets the 98% bar.
+  - **Owner decision 2026-10-03: Clef-flash at `int8int8` may carry the decision-model tag, as the owner's decision and NOT as a pass of D13's gate** (int8int8 reads top-1 0.907 against the registered 0.98; the gate as written is failed on that metric and the record says so). The tag's page must show the measured figures (KL 0.0165, 90.7% agreement with the f32 reference, int4 not offered) and the single-question limit below.
+  - **Not built yet:** the tag is a site change, which lands only when a release is cut (task-site-2026-09.md, owner decision 2026-09-29), and Clef-flash is not a registry checkpoint (it is served from a local directory with `--model`). The real-weights runs so far are single-question records only; the multi-question path is covered by the synthetic golden alone, and a small real-weights check of it was offered and is not run.
 - **Then Clef 27B on the Linux box's CPU,** at f32 against a smaller reference set. Report its speed as measured,
   with the machine named.
 

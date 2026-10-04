@@ -135,7 +135,7 @@ On the same 84 gold rows, both at f32 reference: top-1 against gold **Clef 0.690
 
 ### Owner decision after the result (2026-10-03)
 
-**Clef is not served at int4.** `quant=int4` on a Clef model is refused at load, with an error naming these figures; `int8int8` stays the default. The int4 arms stay in this record as the measurement behind the decision, and the harnesses still run int4 (they load through `modelload`, not through serve's check).
+**Clef is not served at int4.** `quant=int4` on a Clef model is refused at load, with an error naming these figures; `int8int8` stays the default. **The decision-model tag may go on Clef-flash at `int8int8`, as the owner's decision and not as a pass of this record's gate** (the registered top-1 bar of 0.98 is missed, 0.907; the gate stays graded FAIL and no bar is moved). Not yet built: the site changes only at a release, and every real-weights record here has one question. The int4 arms stay in this record as the measurement behind the int4 decision, and the harnesses still run int4 (they load through `modelload`, not through serve's check).
 
 ### Not shown by this run
 
