@@ -1,0 +1,6 @@
+rev:      d0d65266
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-d0d65266.test (sha256 1bee8b9a351457c3)
+started:  2026-10-04 10:44:37 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     0.57 0.88 1.42
+finished: 2026-10-04 10:47:41 PDT, exit 0

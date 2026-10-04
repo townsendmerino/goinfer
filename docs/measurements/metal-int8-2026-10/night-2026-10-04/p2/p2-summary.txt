@@ -1,0 +1,35 @@
+[ref-gate] S set "a" K=256 prompt  1/10 exact(agree=96.9% HF=0/64 KL=0.0068) fast(agree=92.2% HF=0/64 KL=0.0051) diff(agree=-4.7pt KL=-0.0016) seedKL=0.0304 elapsed=7s
+[ref-gate] S set "a" K=256 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0015) fast(agree=100.0% HF=0/64 KL=0.0012) diff(agree=+0.0pt KL=-0.0003) seedKL=0.0169 elapsed=13s
+[ref-gate] S set "a" K=256 prompt  3/10 exact(agree=95.3% HF=0/64 KL=0.0100) fast(agree=98.4% HF=0/64 KL=0.0093) diff(agree=+3.1pt KL=-0.0007) seedKL=0.0122 elapsed=19s
+[ref-gate] S set "a" K=256 prompt  4/10 exact(agree=92.2% HF=0/64 KL=0.0069) fast(agree=96.9% HF=0/64 KL=0.0063) diff(agree=+4.7pt KL=-0.0007) seedKL=0.0336 elapsed=25s
+[ref-gate] S set "a" K=256 prompt  5/10 exact(agree=93.8% HF=1/64 KL=0.0098) fast(agree=95.3% HF=0/64 KL=0.0055) diff(agree=+1.6pt KL=-0.0043) seedKL=0.0095 elapsed=32s
+[ref-gate] S set "a" K=256 prompt  6/10 exact(agree=95.3% HF=0/64 KL=0.0100) fast(agree=96.9% HF=0/64 KL=0.0060) diff(agree=+1.6pt KL=-0.0041) seedKL=0.0120 elapsed=38s
+[ref-gate] S set "a" K=256 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.0040) fast(agree=100.0% HF=0/64 KL=0.0024) diff(agree=+0.0pt KL=-0.0016) seedKL=0.0120 elapsed=44s
+[ref-gate] S set "a" K=256 prompt  8/10 exact(agree=95.3% HF=0/64 KL=0.0043) fast(agree=95.3% HF=0/64 KL=0.0029) diff(agree=+0.0pt KL=-0.0015) seedKL=0.0203 elapsed=51s
+[ref-gate] S set "a" K=256 prompt  9/10 exact(agree=98.4% HF=0/64 KL=0.0064) fast(agree=98.4% HF=0/64 KL=0.0030) diff(agree=+0.0pt KL=-0.0034) seedKL=0.0168 elapsed=57s
+[ref-gate] S set "a" K=256 prompt 10/10 exact(agree=100.0% HF=0/64 KL=0.0036) fast(agree=98.4% HF=0/64 KL=0.0013) diff(agree=-1.6pt KL=-0.0022) seedKL=0.0418 elapsed=1m3s
+=== S set "a" K=256 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=96.7% HF=1 meanKL=0.0063 worstGap=4.359%) fast(agree=97.2% HF=0 meanKL=0.0043 worstGap=1.900%) — reported, no per-cell veto
+[ref-gate] S set "a" K=512 prompt  1/10 exact(agree=95.3% HF=0/64 KL=0.0063) fast(agree=96.9% HF=0/64 KL=0.0038) diff(agree=+1.6pt KL=-0.0025) seedKL=0.0328 elapsed=10s
+[ref-gate] S set "a" K=512 prompt  2/10 exact(agree=98.4% HF=0/64 KL=0.0043) fast(agree=96.9% HF=0/64 KL=0.0032) diff(agree=-1.6pt KL=-0.0011) seedKL=0.0038 elapsed=21s
+[ref-gate] S set "a" K=512 prompt  3/10 exact(agree=98.4% HF=0/64 KL=0.0064) fast(agree=95.3% HF=0/64 KL=0.0035) diff(agree=-3.1pt KL=-0.0029) seedKL=0.0193 elapsed=31s
+[ref-gate] S set "a" K=512 prompt  4/10 exact(agree=100.0% HF=0/64 KL=0.0014) fast(agree=100.0% HF=0/64 KL=0.0009) diff(agree=+0.0pt KL=-0.0005) seedKL=0.0001 elapsed=41s
+[ref-gate] S set "a" K=512 prompt  5/10 exact(agree=89.1% HF=0/64 KL=0.0086) fast(agree=95.3% HF=0/64 KL=0.0058) diff(agree=+6.2pt KL=-0.0029) seedKL=0.0037 elapsed=52s
+[ref-gate] S set "a" K=512 prompt  6/10 exact(agree=98.4% HF=0/64 KL=0.0042) fast(agree=100.0% HF=0/64 KL=0.0028) diff(agree=+1.6pt KL=-0.0015) seedKL=0.0200 elapsed=1m2s
+[ref-gate] S set "a" K=512 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.0033) fast(agree=100.0% HF=0/64 KL=0.0021) diff(agree=+0.0pt KL=-0.0013) seedKL=0.0053 elapsed=1m12s
+[ref-gate] S set "a" K=512 prompt  8/10 exact(agree=98.4% HF=0/64 KL=0.0027) fast(agree=100.0% HF=0/64 KL=0.0016) diff(agree=+1.6pt KL=-0.0011) seedKL=0.0001 elapsed=1m23s
+[ref-gate] S set "a" K=512 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0042) fast(agree=98.4% HF=0/64 KL=0.0026) diff(agree=+3.1pt KL=-0.0016) seedKL=0.0118 elapsed=1m33s
+[ref-gate] S set "a" K=512 prompt 10/10 exact(agree=89.1% HF=0/64 KL=0.0116) fast(agree=93.8% HF=0/64 KL=0.0072) diff(agree=+4.7pt KL=-0.0044) seedKL=0.0041 elapsed=1m43s
+=== S set "a" K=512 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=96.2% HF=0 meanKL=0.0053 worstGap=2.304%) fast(agree=97.7% HF=0 meanKL=0.0033 worstGap=1.582%) — reported, no per-cell veto
+[ref-gate] S set "a" K=1024 prompt  1/10 exact(agree=95.3% HF=0/64 KL=0.0100) fast(agree=93.8% HF=0/64 KL=0.0055) diff(agree=-1.6pt KL=-0.0046) seedKL=0.0102 elapsed=19s
+[ref-gate] S set "a" K=1024 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0013) fast(agree=100.0% HF=0/64 KL=0.0008) diff(agree=+0.0pt KL=-0.0005) seedKL=0.0033 elapsed=38s
+[ref-gate] S set "a" K=1024 prompt  3/10 exact(agree=95.3% HF=0/64 KL=0.0079) fast(agree=96.9% HF=0/64 KL=0.0043) diff(agree=+1.6pt KL=-0.0036) seedKL=0.0102 elapsed=57s
+[ref-gate] S set "a" K=1024 prompt  4/10 exact(agree=93.8% HF=0/64 KL=0.0122) fast(agree=95.3% HF=0/64 KL=0.0122) diff(agree=+1.6pt KL=+0.0000) seedKL=0.0533 elapsed=1m16s
+[ref-gate] S set "a" K=1024 prompt  5/10 exact(agree=95.3% HF=0/64 KL=0.0055) fast(agree=96.9% HF=0/64 KL=0.0045) diff(agree=+1.6pt KL=-0.0010) seedKL=0.0009 elapsed=1m35s
+[ref-gate] S set "a" K=1024 prompt  6/10 exact(agree=95.3% HF=0/64 KL=0.0044) fast(agree=98.4% HF=0/64 KL=0.0032) diff(agree=+3.1pt KL=-0.0012) seedKL=0.0000 elapsed=1m54s
+[ref-gate] S set "a" K=1024 prompt  7/10 exact(agree=98.4% HF=0/64 KL=0.0023) fast(agree=100.0% HF=0/64 KL=0.0023) diff(agree=+1.6pt KL=+0.0000) seedKL=0.0127 elapsed=2m13s
+[ref-gate] S set "a" K=1024 prompt  8/10 exact(agree=100.0% HF=0/64 KL=0.0011) fast(agree=98.4% HF=0/64 KL=0.0012) diff(agree=-1.6pt KL=+0.0001) seedKL=0.0016 elapsed=2m32s
+[ref-gate] S set "a" K=1024 prompt  9/10 exact(agree=90.6% HF=0/64 KL=0.0084) fast(agree=92.2% HF=0/64 KL=0.0073) diff(agree=+1.6pt KL=-0.0012) seedKL=0.0154 elapsed=2m51s
+[ref-gate] S set "a" K=1024 prompt 10/10 exact(agree=96.9% HF=0/64 KL=0.0069) fast(agree=96.9% HF=0/64 KL=0.0041) diff(agree=+0.0pt KL=-0.0028) seedKL=0.0139 elapsed=3m11s
+=== S set "a" K=1024 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=96.1% HF=0 meanKL=0.0060 worstGap=2.187%) fast(agree=96.9% HF=0 meanKL=0.0045 worstGap=0.979%) — reported, no per-cell veto
+=== S (set "a", DECIDING) POOLED decision-set verdict (K=[256 512 1024], 3 cells, 1920 positions): critA(hardFlips fast<=exact+2*sqrt(exact))=true (exact=1 fast=0) critB(agree fast>=exact-2*sqrt(d)/N)=true (exactAgree=96.35% fastAgree=97.24% d=65 N=1920) critC(KL pooled fast<=exact & fast lower on >=half prompts & no cell >1.1x)=true (exactMeanKL=0.0059 fastMeanKL=0.0041 fastLowerPrompts=27/30 ceilingOK=true) — SHIPS ===
+    prefill_gate_ref_test.go:211: S (set "a", DECIDING): pooled verdict = SHIPS (critA=true critB=true critC=true)

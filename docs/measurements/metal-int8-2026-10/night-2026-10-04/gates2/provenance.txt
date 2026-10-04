@@ -1,0 +1,12 @@
+rev:      351a3f63
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-351a3f63.test (sha256 15fca6f586f21654)
+started:  2026-10-04 10:17:36 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     0.96 1.49 2.40
+== F3′ on the 1.5B — 10:17:36
+f3amended-1.5b exit 0
+== F2 on the 1.5B — 10:17:37
+f2-1.5b exit 1
+== S, decode speed (four arms) — 10:17:52
+s exit 0
+finished: 2026-10-04 10:33:38 PDT

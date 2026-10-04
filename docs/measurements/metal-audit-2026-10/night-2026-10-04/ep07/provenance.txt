@@ -1,0 +1,26 @@
+old:      /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/serve-metal-ep07old-d50dbbca (sha256 876a2af47c440463)
+new:      /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/serve-metal-ep07new-aa924eca (sha256 7bd713842593ad82)
+model:    /Users/francistownsend-merino/models/qwen3-0.6b-bf16
+started:  2026-10-04 10:11:19 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     { 0.79 1.89 2.97 }
+10:11:19 cell old4_1 clients=4 bin=serve-metal-ep07old-d50dbbca
+10:11:44 cell new4_1 clients=4 bin=serve-metal-ep07new-aa924eca
+10:11:57 cell new4_2 clients=4 bin=serve-metal-ep07new-aa924eca
+10:12:10 cell old4_2 clients=4 bin=serve-metal-ep07old-d50dbbca
+10:12:34 cell old4_3 clients=4 bin=serve-metal-ep07old-d50dbbca
+10:12:58 cell new4_3 clients=4 bin=serve-metal-ep07new-aa924eca
+10:13:11 cell old1_1 clients=1 bin=serve-metal-ep07old-d50dbbca
+10:13:18 cell new1_1 clients=1 bin=serve-metal-ep07new-aa924eca
+10:13:26 cell new1_2 clients=1 bin=serve-metal-ep07new-aa924eca
+10:13:33 cell old1_2 clients=1 bin=serve-metal-ep07old-d50dbbca
+10:13:41 cell old1_3 clients=1 bin=serve-metal-ep07old-d50dbbca
+10:13:48 cell new1_3 clients=1 bin=serve-metal-ep07new-aa924eca
+10:13:56 cell old2_1 clients=2 bin=serve-metal-ep07old-d50dbbca
+10:14:09 cell new2_1 clients=2 bin=serve-metal-ep07new-aa924eca
+10:14:19 cell new2_2 clients=2 bin=serve-metal-ep07new-aa924eca
+10:14:29 cell old2_2 clients=2 bin=serve-metal-ep07old-d50dbbca
+10:14:43 cell old2_3 clients=2 bin=serve-metal-ep07old-d50dbbca
+10:14:56 cell new2_3 clients=2 bin=serve-metal-ep07new-aa924eca
+servers: 9 one-at-a-time, 9 batched (want 9 and 9)
+finished: 2026-10-04 10:15:06 PDT

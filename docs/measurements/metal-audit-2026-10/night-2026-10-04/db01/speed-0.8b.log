@@ -1,0 +1,9 @@
+=== RUN   TestAuditDB01_prefillTiming
+[d-b01    8.2s] qwen3.5-0.8b K=128: sequential 1043.7 ms, pass 124.7 ms (medians of 7); per rep sequential/pass 8.506 8.348 8.371 8.353 8.392 8.387 8.399
+[d-b01    8.2s] RESULT qwen3.5-0.8b K=128: sequential/pass median 8.387 (7 of 7 reps above 1.10, 7 above 2)
+[d-b01   42.0s] qwen3.5-0.8b K=512: sequential 4290.1 ms, pass 532.2 ms (medians of 7); per rep sequential/pass 8.058 8.046 8.061 8.038 8.065 8.045 8.063
+[d-b01   42.0s] RESULT qwen3.5-0.8b K=512: sequential/pass median 8.058 (7 of 7 reps above 1.10, 7 above 2)
+[d-b01  201.9s] qwen3.5-0.8b K=2048: sequential 19375.2 ms, pass 3476.1 ms (medians of 7); per rep sequential/pass 5.565 5.576 5.558 5.604 5.575 5.579 5.590
+[d-b01  201.9s] RESULT qwen3.5-0.8b K=2048: sequential/pass median 5.576 (7 of 7 reps above 1.10, 7 above 2)
+--- PASS: TestAuditDB01_prefillTiming (203.05s)
+PASS

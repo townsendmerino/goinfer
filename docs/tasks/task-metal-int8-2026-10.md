@@ -324,3 +324,38 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
     is excluded from native int8, against a dense int8int8 twin, which would go native. Both now load at int4, the
     like-for-like the tests assume.
   - All four pass with the switch on and off.
+- 2026-10-04: **the gates' night (run by day, 10:17-10:47; raw results in
+  `docs/measurements/metal-int8-2026-10/night-2026-10-04/`).**
+  - **F3′ on the 1.5B: did not run.** The fit guard refused the f32 reference (7.7 GB against a 5.9 GB budget, 8.4 GB
+    available). Not bypassed. F3′ stands on the 0.5B pass.
+  - **F2 on the 1.5B, precise math: FAILS on argmax again.** Metal int8int8 against CPU int8int8: min cosine 0.997749,
+    argmax **21/24**. Metal int4 against CPU int4: 0.997514, 24/24. The cosine bar passes and the argmax bar does not.
+    - All three disagreements are near-ties: the worst gap is 0.325%, and none is over 3%, so 0 hard flips under the 3%
+      near-tie rule CUDA decode is held to against the CPU.
+    - It is F3's problem in F2's form: F2's reference is the CPU at f32 KV, against which any non-identical path flips
+      near-ties.
+    - **Proposed for the owner, not applied:** count F2's argmax criterion as hard flips (gaps over 3%), or compare
+      against the CPU at f16 KV as F3′ does. Under either reading this run passes (0 hard flips), but the bar is the
+      owner's to change.
+  - **S (decode speed, 7 reps, medians, tok/s):**
+
+    | model | depth | native (precise) | native, fast math | re-quant | CPU int8int8 | native ÷ CPU |
+    |---|---|---|---|---|---|---|
+    | 0.5B | 128 | 167.8 | 170.9 | 195.1 | 103.4 | **1.623** |
+    | 0.5B | 2048 | 142.2 | 144.9 | 161.4 | 67.9 | **2.094** |
+    | 1.5B | 128 | 70.6 | 71.4 | 90.2 | 45.3 | **1.560** |
+    | 1.5B | 2048 | 65.4 | 66.3 | 82.9 | 32.5 | **2.014** |
+
+    - **Precise math costs 1.1-1.8% of decode** (precise ÷ fast 0.982-0.989).
+    - **S-auto's decode half passes:** at least 1.20× the CPU at both depths on both models.
+    - S-explicit, reported: native ÷ re-quant 0.86-0.88 on the 0.5B and 0.78-0.79 on the 1.5B.
+  - **P2 (int8 prefill fidelity, the 1.5B, K = 256/512/1024, 1,920 positions): SHIPS.**
+    - critA: hard flips fast 0, exact 1.
+    - critB: agreement 97.24% against 96.35%, d = 65.
+    - critC: pooled KL lower in every cell (0.0043 / 0.0033 / 0.0045 against 0.0063 / 0.0053 / 0.0060).
+  - **S-auto's first-token half (warm, graded): HOLDS.** Native ÷ CPU **0.288** on the 0.5B (462.9 against 1608.2 ms)
+    and **0.318** on the 1.5B (1001.8 against 3148.9 ms). Cold, reported: 0.318 and 0.354.
+  - **Where this leaves the flip.** F3′ (0.5B), P2, S and S-auto pass; F2 fails as written.
+    - The native path turns on only when F3′ (0.5B and, if it runs, 1.5B), F2 on the 1.5B and S all pass. F2 is the
+      one red, on near-ties only.
+    - So native int8 stays off until the owner rules on F2's argmax criterion.

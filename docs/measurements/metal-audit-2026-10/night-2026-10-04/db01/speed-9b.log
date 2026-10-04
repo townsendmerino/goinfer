@@ -1,0 +1,8 @@
+=== RUN   TestAuditDB01_prefillTiming
+[metal] weights aliased from Qwen3.5-9B-Q4_K_M.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4522 MB bound in place, 157 MB copied (anonymous) — 3264 MB int4 nibbles (120 single tensors + 32 fused groups = 1536 MB) + 970 MB int8 codes (1 matrices) + 288 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 8 fused groups not adjacent, 88 scale sets converted
+[d-b01   35.4s] Qwen3.5-9B-Q4_K_M.int4.metal.giw K=128: sequential 5761.0 ms, pass 845.7 ms (medians of 5); per rep sequential/pass 9.572 6.801 6.792 6.832 6.824
+[d-b01   35.4s] RESULT Qwen3.5-9B-Q4_K_M.int4.metal.giw K=128: sequential/pass median 6.824 (5 of 5 reps above 1.10, 5 above 2)
+[d-b01  168.7s] Qwen3.5-9B-Q4_K_M.int4.metal.giw K=512: sequential 23178.7 ms, pass 3456.6 ms (medians of 5); per rep sequential/pass 6.693 6.666 6.726 6.712 6.729
+[d-b01  168.7s] RESULT Qwen3.5-9B-Q4_K_M.int4.metal.giw K=512: sequential/pass median 6.712 (5 of 5 reps above 1.10, 5 above 2)
+--- PASS: TestAuditDB01_prefillTiming (170.85s)
+PASS
