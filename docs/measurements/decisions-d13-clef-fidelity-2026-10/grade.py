@@ -72,14 +72,18 @@ def main():
     ap.add_argument("--arms", nargs="+", default=[])
     ap.add_argument("--bf16")
     ap.add_argument("--exploratory", action="store_true", help="grade whatever rows exist; the output says it is not a verdict")
+    ap.add_argument("--ref-every", type=int, default=1,
+                    help="the reference covers only every Nth record (Clef 27B, decisions-d13-clef27b-2026-10-03.md); it must hold exactly that subset, "
+                         "and every arm must use the same stride")
     a = ap.parse_args()
     recs = load(os.path.join(TD, "clef", "records.jsonl"))
     order = [r["id"] for r in recs]
     R = {r["id"]: r for r in recs}
     enc = {r["id"]: r for r in load(os.path.join(TD, "clef", "encoder.jsonl"))}
     ref = {r["id"]: r for r in load(a.ref)}
-    if len(ref) != 150:
-        print(f"REFERENCE INCOMPLETE: {len(ref)} rows, want 150"); sys.exit(1)
+    want_ref = set(order[::a.ref_every])
+    if set(ref) != want_ref:
+        print(f"REFERENCE INCOMPLETE: {len(ref)} rows, want the {len(want_ref)} of every {a.ref_every}"); sys.exit(1)
     # Everything is compared in the ITEM's label order (the order of target and labels), mapping Clef's option ids (its alphabetical order for choice) by label.
     def dist(row, rec):
         by = dict(zip(row["option_ids"], row["probs"]))
@@ -116,6 +120,8 @@ def main():
         name, _, rest = spec.partition("=")
         path, _, every = rest.partition(":")
         every = int(every) if every else 1
+        if every % a.ref_every:
+            print(f"\n## {name}: stride {every} is not a multiple of the reference's {a.ref_every}"); verdicts[name] = "INVALID"; continue
         want = [i for k, i in enumerate(order) if k % every == 0]
         if not os.path.exists(path):
             print(f"\n## {name}: MISSING ({path})"); verdicts[name] = "MISSING"; continue
@@ -168,7 +174,7 @@ def main():
     jp = os.path.join(TD, "jev9b_ref_f32.jsonl")
     if os.path.exists(jp) and gold_idx:
         jev = {r["id"]: r for r in load(jp)}
-        g = [i for i in gold_idx if i in jev]
+        g = [i for i in gold_idx if i in jev and i in ref]
         cl = {i: (max(ref[i]["probs"]), am(dist(ref[i], R[i])) == gold_idx[i]) for i in g}
         jv = {i: (max(jev[i]["p"]), am(jev[i]["p"]) == gold_idx[i]) for i in g}
         acc = lambda d, s: sum(d[i][1] for i in s) / len(s)
@@ -176,7 +182,7 @@ def main():
         dlo, dhi = boot(lambda s: acc(cl, s) - acc(jv, s), g)
         de = ece(list(cl.values())) - ece(list(jv.values()))
         elo, ehi = boot(lambda s: ece([cl[i] for i in s]) - ece([jv[i] for i in s]), g)
-        print(f"\n## Clef (reference, f32) against JEV-9B (reference, f32) on the same {len(g)} gold rows")
+        print(f"\n## Clef (reference{' at ' + os.path.basename(a.ref) if a.ref_every > 1 else ', f32'}) against JEV-9B (reference, f32) on the same {len(g)} gold rows")
         print(f"  top-1 vs gold: Clef {acc(cl, g):.3f}, JEV {acc(jv, g):.3f}; Clef - JEV {da:+.3f}, 95% paired bootstrap [{dlo:+.3f}, {dhi:+.3f}]")
         print(f"  ECE: Clef {ece(list(cl.values())):.4f}, JEV {ece(list(jv.values())):.4f}; Clef - JEV {de:+.4f}, 95% paired bootstrap [{elo:+.4f}, {ehi:+.4f}]")
         level = da >= 0 and de <= 0

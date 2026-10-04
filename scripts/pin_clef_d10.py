@@ -27,10 +27,15 @@ D10_OUT (default testdata/decisions/clef). Paths in the goldens are never absolu
 """
 import argparse, gzip, hashlib, json, os, platform, sys, time
 
-MODEL_REPO = "Cloudflare/clef-flash"
-MODEL_REV = "17f0b0ad64efb65d273590632833508766b2aae6"
-MODULE_SHA256 = "0e304cf7c6500e8bb59bef7e2afd2c6373f82596dfb3b57d1aa93c175e2dc3a3"   # joint_schema_model.py at MODEL_REV
-HEAD_SHA256 = "19cdcec8c81dc9212be320fff47462ab342fbc1278be4368fb3da71241cf5ba0"     # joint_head.safetensors at MODEL_REV
+# The pinned release. Clef-flash by default; CLEF_REPO, CLEF_REV, CLEF_MODULE_SHA256 and CLEF_HEAD_SHA256 pin another release of the same
+# module (Clef 27B, decisions-d13-clef27b-2026-10-03.md), all four together or none.
+MODEL_REPO = os.environ.get("CLEF_REPO", "Cloudflare/clef-flash")
+MODEL_REV = os.environ.get("CLEF_REV", "17f0b0ad64efb65d273590632833508766b2aae6")
+MODULE_SHA256 = os.environ.get("CLEF_MODULE_SHA256", "0e304cf7c6500e8bb59bef7e2afd2c6373f82596dfb3b57d1aa93c175e2dc3a3")   # joint_schema_model.py at MODEL_REV
+HEAD_SHA256 = os.environ.get("CLEF_HEAD_SHA256", "19cdcec8c81dc9212be320fff47462ab342fbc1278be4368fb3da71241cf5ba0")     # joint_head.safetensors at MODEL_REV
+_PINS = [k for k in ("CLEF_REPO", "CLEF_REV", "CLEF_MODULE_SHA256", "CLEF_HEAD_SHA256") if k in os.environ]
+if _PINS and len(_PINS) != 4:
+    sys.exit(f"pin another release with all four of CLEF_REPO, CLEF_REV, CLEF_MODULE_SHA256, CLEF_HEAD_SHA256 (got {_PINS})")
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL = os.path.expanduser(os.environ.get("CLEF_MODEL", "/srv/models/clef-flash"))
 OUT = os.environ.get("D10_OUT", os.path.join(HERE, "..", "testdata", "decisions", "clef"))
@@ -201,6 +206,8 @@ def cmd_model(a):
     jsm, model = load(a.dtype)
     tok = tokenizer()
     recs = read_jsonl("records.jsonl")
+    if a.every > 1:  # a registered subset: every Nth record by position, the stride the grader checks an arm against
+        recs = recs[::a.every]
     out_name = f"probs_{a.dtype}.jsonl"
     done = {r["id"] for r in read_jsonl(out_name)}
     json.dump(env_record(a.dtype, a.native_bf16), open(path(f"clef_env_{a.dtype}.json"), "w"), indent=1, sort_keys=True)
@@ -275,6 +282,7 @@ def main():
     m.add_argument("--dtype", choices=("bf16", "f32"), required=True)
     m.add_argument("--limit", type=int, default=0)
     m.add_argument("--hidden", type=int, default=0)
+    m.add_argument("--every", type=int, default=1, help="only every Nth record by position (a registered subset)")
     m.add_argument("--native-bf16", action="store_true", help="use PyTorch's own bf16 GEMM (about 3x slower on this CPU) instead of the f32-GEMM emulation")
     a = ap.parse_args()
     {"records": cmd_records, "encode": cmd_encode, "model": cmd_model, "check": cmd_check}[a.cmd](a)
