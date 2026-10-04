@@ -290,7 +290,13 @@ that backend's parity contract. Specifically:
   **A software adapter is not probed** (the backend declares itself ineligible, and the result is "skipped" with the reason): CI's lavapipe runs the gpu module's tests and must not pay for, or be judged by,
   bars measured on a GPU. Lavapipe could not be started on this box (the device request fails under this wgpu version), so that path is tested with a fake backend, not on lavapipe itself.
   The backend's `Name()` is `webgpu:vulkan`; the hook now keys on the registry name before the colon (a bug found before it shipped: the first version looked up `webgpu:vulkan` and would never have run).
-- **Not built:** the optional per-(version, device, OS build) pass cache, and the per-family decline option (whole backend, as the Metal spec's default said).
+- **Not built:** the per-family decline option (whole backend, as the Metal spec's default said), and the optional pass cache below.
+- **PARKED, 2026-10-04 (owner): the per-(version, device, OS build) pass cache.** Measured cost it would remove: about 0.9 s per quant on CUDA (1.75 s cold), 1.2-1.4 s on WebGPU, once per process, so it only
+  matters to things that start often (`goinfer-chat` launches, a batch CLI in a loop). **Why parked:** it weakens what the check is for. A cached pass survives a driver update that changes the PTX JIT output
+  unless the driver version is in the key; CUDA exposes it, **WebGPU does not**, so a WebGPU cache cannot be keyed on the driver and would hide a driver regression; it also never re-checks an intermittent fault, and
+  adds state to harden (corruption, read-only filesystems, a home directory shared across machines with different GPUs, device identifiers written to disk). **Trigger to reopen:** real complaints about start-up
+  latency, or the probe growing past a few seconds. **If built:** key on goinfer build, device, driver version and OS build; cache passes only, never declines; expire after about 30 days; `check --hardware` always runs
+  fresh; `/health` and the report show "pass (cached, <date>)"; a mutation proof for each key field forcing a re-run. **Cheaper levers first:** the 264-position fixture is about 0.6 s of CUDA's 0.9 s and exists to push attention past 256 keys.
 
 ### H3 — a hardware report people can paste
 
