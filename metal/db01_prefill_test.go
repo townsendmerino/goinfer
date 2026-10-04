@@ -216,3 +216,78 @@ func TestDB01_chunkedPrefillMatchesWhole(t *testing.T) {
 		}
 	}
 }
+
+// TestDB01_prefillFromZeroResetsState (D-B01): PrefillLast from position 0 is a fresh sequence, so a hybrid's DeltaNet
+// window and state start from zero, as Forward(pos 0) makes them. The pass continues whatever state the resident holds
+// (right for a continuation), so without the reset a new prompt prefilled after another one started from the previous
+// sequence's state: the fidelity gate's pass arm did, after its sequential arm, and read 115 hard flips to the
+// sequential arm's 15 on a K = 8 smoke. Through metalResident.PrefillLast, the entry point the decoder and the gate
+// call: prompt B after prompt A must equal prompt B on a reset resident, logits and state bit for bit.
+func TestDB01_prefillFromZeroResetsState(t *testing.T) {
+	path := os.Getenv("GOINFER_DB01_MODEL")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, "models", "qwen3.5-0.8b")
+	}
+	if _, err := os.Stat(filepath.Join(path, "config.json")); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: 1024,
+		Knobs: &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	dnetPrefillOn = true
+	defer func() { dnetPrefillOn = false }()
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("resident: %v", err)
+	}
+	defer r.Close()
+	a := &metalResident{r: r, hidden: r.H}
+	tk, err := tokenizer.Load(filepath.Join(path, "tokenizer.json"))
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	_, files := decoder.PrefillGatePromptSet()
+	idsA := decoder.PrefillGateProseIDsForTest(t, tk, files[2], 40)[:40]
+	idsB := decoder.PrefillGateProseIDsForTest(t, tk, files[3], 40)[:40]
+	state := func() (out []uint32) {
+		for l := range r.layers {
+			if D := r.layers[l].delta; D != nil {
+				out = append(append(out, D.win.U32s()...), D.state.U32s()...)
+			}
+		}
+		return
+	}
+	r.resetDeltaNet()
+	want, err := a.PrefillLast(context.Background(), getEmbs(r, idsB), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = append([]float32(nil), want...)
+	wantState := state()
+	if _, err := a.PrefillLast(context.Background(), getEmbs(r, idsA), 0); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.PrefillLast(context.Background(), getEmbs(r, idsB), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lg, st := 0, 0
+	for i := range want {
+		if math.Float32bits(want[i]) != math.Float32bits(got[i]) {
+			lg++
+		}
+	}
+	for i, w := range state() {
+		if w != wantState[i] {
+			st++
+		}
+	}
+	t.Logf("prompt B after prompt A: %d of %d logits and %d window/state words differ from prompt B on a reset resident", lg, len(want), st)
+	if lg != 0 || st != 0 {
+		t.Errorf("PrefillLast from position 0 did not start a fresh sequence (%d logits, %d state words differ)", lg, st)
+	}
+}

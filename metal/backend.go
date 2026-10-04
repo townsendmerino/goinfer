@@ -818,6 +818,12 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
 			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.prefillGeom().hd)
 	}
+	// A fresh sequence (startPos 0) starts a Gated-DeltaNet hybrid's recurrent state from zero, as Forward(pos 0) does: the
+	// pass continues whatever conv window and state the resident holds (D-B01), which for a continuation is the point and
+	// for a new prompt would be the previous sequence's. A no-op for every other family.
+	if startPos == 0 {
+		a.Reset()
+	}
 	// ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
 	// time, with no recover of their own (buildResident's is build-scoped). A transient OOM would kill
 	// the server; recover into an error so the request fails and the caller falls back to sequential

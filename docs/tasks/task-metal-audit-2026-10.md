@@ -893,6 +893,21 @@ So `GOINFER_MOE_EXPERT_MAJOR` stays default on, and `TestDG01_expertMajorMoEPref
 | Reported | K = 128 and 2048 on the 0.8B; the 9B (or why it did not load); per-cell fidelity. |
 | What ships | `dnetPrefillOn = true`, the `PrefillPath` banner, the CHANGELOG, and the docs that say hybrids prefill sequentially on Metal. |
 
+**Amendment (2026-10-04, before any graded run): the first run graded nothing, and two defects are fixed.**
+- **The night of 2026-10-03 stopped at the reference step** (`run-db01-grade.sh`, binaries at `d07e54a8`): the
+  reference key hashed the checkpoint as one file, and Qwen3.5-0.8B is a safetensors directory ("is a directory").
+  Fixed: a directory hashes file by file (`checkpointDirSHA256`; goinfer's `.giw` sidecars and hidden files are left
+  out), `TestCheckpointSHA256_directory`.
+- **A production defect the gate's plumbing then found** (an exploratory smoke on a K = 8 cell, which is not a registered
+  cell): `metalResident.PrefillLast` from position 0 did not reset the DeltaNet window and state, as `Forward(pos 0)`
+  does. The pass continued the previous sequence's state, so the gate's pass arm, run after its sequential arm, read
+  115 hard flips to 15. With `dnetPrefillOn` on, every fresh prompt in serve would have done the same. Fixed:
+  `PrefillLast` resets at position 0, and `TestDB01_prefillFromZeroResetsState` checks it (0 of 248,320 logits differ;
+  without the reset all of them do). My earlier tests had reset the state by hand, which hid it. The same K = 8 smoke then
+  read 16 hard flips to 15 and agreement 87.8% to 87.7%: plumbing only, not a result.
+- **Unchanged:** the instrument's cells, the rule and the bars. Added to the preconditions:
+  `TestDB01_prefillFromZeroResetsState`. The job re-runs from binaries pinned at the commit that carries these fixes.
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
