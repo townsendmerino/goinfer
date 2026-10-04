@@ -266,3 +266,74 @@ func TestGPUProbe_normalizesTheBackendNameAndHonoursIneligibility(t *testing.T) 
 		t.Errorf("standalone probe of an ineligible backend: %s", r.Summary())
 	}
 }
+
+// A resident that computes another precision than the load quant is not judged at the load quant (H2 on Metal: Metal
+// re-quantizes int8int8 DeltaNet and MoE models to int4). Through Load, a fake GPU whose resident reports int4 for an
+// int8int8 load is skipped fixture by fixture, recorded as skipped, not passed, and keeps its resident; the control, the
+// same wrong resident reporting the load quant, is declined. residentPrecision also reads Metal's re-quantizing labels.
+func TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant(t *testing.T) {
+	for _, c := range []struct {
+		backend, quant, report, want string
+	}{
+		{"metal", "int8int8", "", "int4"}, {"metal", "int8", "", "int4"}, {"metal", "int4mix", "", "int4"},
+		{"metal", "int8int8", "int8int8", "int8int8"}, {"metal", "int4", "", "int4"}, {"cuda", "int8int8", "", "int8int8"},
+	} {
+		var rf ResidentForward = &fakeResident{}
+		if c.report != "" {
+			rf = quantReporting{rf, c.report}
+		}
+		if got := residentPrecision(c.backend, c.quant, rf); got != c.want {
+			t.Errorf("residentPrecision(%s, %s, reports %q) = %q, want %q", c.backend, c.quant, c.report, got, c.want)
+		}
+	}
+	for _, c := range []struct {
+		report string
+		want   string
+		kept   bool
+	}{{"int4", SelfTestSkipped, true}, {"int8int8", SelfTestDeclined, false}} {
+		t.Run("reports "+c.report, func(t *testing.T) {
+			t.Cleanup(resetSelfTestCaches)
+			resetSelfTestCaches()
+			prevWarn := selfTestWarn
+			selfTestWarn = func(string) {}
+			t.Cleanup(func() { selfTestWarn = prevWarn })
+			name := "fake-requant-gpu-" + c.report
+			probeMeasured[name] = true
+			t.Cleanup(func() { delete(probeMeasured, name) })
+			RegisterBackend(name, func() (Backend, error) {
+				cpu, err := NewBackend("cpu")
+				if err != nil {
+					return nil, err
+				}
+				be := &fakeNamedResidency{name: name, report: c.report}
+				be.Backend = cpu
+				return be, nil
+			})
+			m, err := Load(tinyFixture(t), Options{Backend: name, Quant: "int8int8"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			if (m.resident != nil) != c.kept {
+				t.Errorf("resident attached = %v, want %v (%s)", m.resident != nil, c.kept, m.ResidentDecline())
+			}
+			var rec *SelfTestResult
+			for _, r := range SelfTestResults() {
+				if r.Backend == name {
+					r := r
+					rec = &r
+				}
+			}
+			if rec == nil || rec.Status != c.want {
+				t.Fatalf("recorded %+v; want status %s", rec, c.want)
+			}
+			if c.want == SelfTestSkipped {
+				for _, fx := range selfTestFixtures {
+					if !strings.Contains(rec.Note, fx.name+": re-quantized to int4") {
+						t.Errorf("note does not say %s was re-quantized and not probed: %q", fx.name, rec.Note)
+					}
+				}
+			}
+		})
+	}
+}

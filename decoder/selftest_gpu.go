@@ -49,9 +49,10 @@ var (
 )
 
 // probeMeasured lists the backends whose healthy-hardware margins against the bars were measured, each on ONE device (the task doc has the figures). A backend not on it is NOT probed (its result is
-// simply absent from the report) rather than probed against bars nobody has seen it clear: Metal's f16 residual stream could sit near 0.995 and decline healthy machines. WebGPU is on it from one NVIDIA
-// adapter over Vulkan; AMD, Intel, DX12 and Metal-backed adapters are probed against those bars unmeasured, which is a risk of a false decline, disclosed in the task doc. Add a backend here with its margins.
-var probeMeasured = map[string]bool{"cuda": true, "webgpu": true}
+// simply absent from the report) rather than probed against bars nobody has seen it clear. WebGPU is on it from one NVIDIA adapter over Vulkan; AMD, Intel and DX12 adapters are probed against those bars
+// unmeasured, which is a risk of a false decline, disclosed in the task doc. Metal is on it from one M1 Pro (int4 worst cosine 0.99937 / relative L2 0.0358, int8int8 0.99971 / 0.0243, three runs
+// each); a fixture Metal re-quantizes to int4 is not compared (residentPrecision). Add a backend here with its margins.
+var probeMeasured = map[string]bool{"cuda": true, "webgpu": true, "metal": true}
 
 // gpuProbeAfterResident is called by withResidency once a resident is attached. It returns the (cached) result for this model's backend and quant, and whether a probe applies at all.
 func gpuProbeAfterResident(m *Model) (SelfTestResult, bool) {
@@ -181,6 +182,13 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 	if rf == nil {
 		return nil, "did not go resident on " + backend + ": " + gm.resDecline, nil
 	}
+	// A resident that computes another precision than the load quant (Metal re-quantizes int8, int4mix and the
+	// int8int8 models its native int8 path does not cover to int4) cannot be judged against the CPU at the load quant:
+	// that would compare int4 with int8int8 and decline a healthy device. Nor against the CPU at int4, which quantizes
+	// from the original weights, not from the int8 ones the resident re-quantized. So it is not compared, and says so.
+	if got := residentPrecision(backend, quant, rf); got != quant {
+		return nil, fmt.Sprintf("re-quantized to %s on %s (loaded at %s); not probed", got, backend, quant), nil
+	}
 	cm, err := Load(dir, Options{Backend: "cpu", Quant: quant, noSelfTest: true})
 	if err != nil {
 		return nil, "", fmt.Errorf("load on cpu: %w", err)
@@ -244,6 +252,18 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 		}
 	}
 	return mismatches, "", nil
+}
+
+// residentPrecision is the quant a resident actually computes at: what it reports (ResidentQuantReporter), else the int4
+// residentQuantLabel names for a re-quantizing (backend, quant), else the load quant.
+func residentPrecision(backend, quant string, rf ResidentForward) string {
+	if qr, ok := rf.(ResidentQuantReporter); ok && qr.ResidentQuant() != "" {
+		return qr.ResidentQuant()
+	}
+	if residentQuantLabel(backend, quant) != quant {
+		return "int4"
+	}
+	return quant
 }
 
 // probeGPUConfigMutator, when set by a test (SetProbeGPUConfigMutatorForTest), rewrites config.json for the GPU copy of each fixture only: the mutation proof that the probe can go red.
