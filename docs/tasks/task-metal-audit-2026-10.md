@@ -476,7 +476,7 @@ gate runs at night before it ships.
 5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. **Both shipped** 2026-10-03 (1.5B 1.085× greedy, 1.066× sampled). T1.3: a 0.58–0.66 ms GPU-idle gap
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
-   at night; then D-B02, D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
+   at night; then D-B02, D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
@@ -1015,6 +1015,39 @@ arms alternated rep by rep from the same positions, 7 reps of 48 tokens.
 
 **Not measured here:** a full resident MoE token (none fits this Mac resident besides the slice), paged MoE (M26 and M35,
 where the per-layer saving is the same but the token is 128-167 ms), and gpt-oss end to end (the kernel gate covers it).
+
+### D-P03: PARKED, off by default (bit-identical; written 2026-10-04)
+
+**What is built.** Resident MoE decode can run the k selected experts in four dispatches instead of 3k:
+- k-slot gate|up;
+- SwiGLU+quant over k rows (MC3's `mc3_swiglu_quant_rows`);
+- k-slot down, storing each slot's unweighted sum;
+- `moe_combine_k`, which adds `wgt[j]*acc*asc[0]` into the residual in slot order. That is `gemv_w4a8_moe_wacc`'s
+  epilogue statement, verbatim.
+
+The two GEMVs are derived from production source in `batch_rows.go` the way the MC3 rows kernels are, so their bodies
+cannot drift. gpt-oss, the paged path and Gemma 4 keep the per-slot loop. `moeKSlotsOn` selects the path; it is
+**off**.
+
+**Identity.**
+- `TestMoEKSlots_bitIdentical` (default-run): a tiny qwen2_moe with 8 distinct experts, top 3 and a live shared expert.
+  16 positions with 15 distinct routed sets: logits bit-equal between the arms.
+- **Mutation:** a combine in reverse slot order fails (1 ulp at position 5), and every slot reading slot 0 fails.
+- `TestDP03_kSlotsDecode` (`GOINFER_DP04=1`, the Qwen1.5-MoE 4-layer slice, k = 4): 48 tokens' logits bit-equal.
+
+**Speed (in-process, whole token, by day).** Same test and shape as D-P04's: **loop/k-slot median 1.019** (per rep
+1.023 1.014 1.007 1.024 1.019 1.015 1.020, all 7 above 1), 21.5 us per MoE layer.
+- That is 8 fewer dispatches per layer at about 2.7 us each, against the audit's projected 3.8 us launch floor.
+- The audit's kill line was 2% of the layer. Taking the slice's LM head at about 1.3 ms (155 MB of int4 at 110-130 GB/s,
+  an estimate) leaves about 0.8 ms per layer, so the saving is about 2.7% of a layer. That clears the kill line, but
+  only just.
+- The full 24-layer model projects to about 2.5% of a token.
+
+**Verdict: parked.** The direction is resolved and the output is bit-identical, but low single digits is the owner's
+park zone for speed ("park stuff if it's a couple percent above current code", 2026-09-26). The code and both tests
+stay, off by default.
+- **What could reopen it:** a k = 8 model (OLMoE, Qwen3-MoE, DeepSeek), where 20 dispatches go instead of 8. None fits
+  resident on this Mac, so none was measured.
 
 ## Owner decisions
 

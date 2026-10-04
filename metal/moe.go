@@ -407,7 +407,14 @@ type moeResident struct {
 	uSlot                         []Buffer // k compile-time slot-index constants
 
 	rLogits, rIdx, rWgt Buffer // router scratch: logits[nE], idx[k] (u32), wgt[k]
-	shGl, shDown        Buffer // shared-expert scratch: gate logit[1], down out[H]
+
+	// D-P03: the k selected experts in four dispatches (gate|up, SwiGLU, down, combine) instead of 3k. kSlots is
+	// false for gpt-oss (its own activation and biased down kernels) and for a shape the k-slot grids do not divide;
+	// then encodeMoEExperts runs the per-slot loop. guK [k][2I] f32, dqK [k][I] int8, dScK [k], accK [k][H].
+	kSlots                          bool
+	pGUk, pSwRows, pDownK, pCombine Pipeline
+	guK, dqK, dScK, accK            Buffer
+	shGl, shDown                    Buffer // shared-expert scratch: gate logit[1], down out[H]
 
 	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging to this
 	// generic MoE shape (Mixtral/Qwen/GLM/gpt-oss/qwen3_5_moe/qwen3_next) — same env var, same
@@ -516,6 +523,13 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	mo.rIdx = NewBufferUint32s(d, make([]uint32, k))
 	mo.rWgt = d.NewBufferLen(k)
 	mo.shGl, mo.shDown = d.NewBufferLen(1), d.NewBufferLen(H)
+	if !isGptOss && (2*inter)%8 == 0 && H%8 == 0 { // 8 rows per 256-thread threadgroup, per slot
+		mo.kSlots = true
+		mo.pGUk, mo.pDownK = pipe("dp03_gemv_w4a8_moe_k"), pipe("dp03_gemv_w4a8_moe_down_k")
+		mo.pSwRows, mo.pCombine = pipe("mc3_swiglu_quant_rows"), pipe("moe_combine_k")
+		mo.guK, mo.dqK = d.NewBufferLen(k*2*inter), byteBuf(d, k*inter)
+		mo.dScK, mo.accK = d.NewBufferLen(k), d.NewBufferLen(k*H)
+	}
 	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
 	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
 	// per token — same knob and semantics as gemma4_moe.go's (shared mechanism, generalized).
@@ -827,6 +841,11 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 // accumulate into an isolated F32 scratch buffer instead, since prefill's own residual (xF) is
 // F16 and these kernels are F32-only — added into xF's row by a SEPARATE small kernel afterward,
 // not by pointing these dispatches at xF directly (a type mismatch: `device float*` vs `half*`).
+// moeKSlotsOn selects D-P03's k-slot dispatches where the shape admits them. Off: PARKED 2026-10-04, bit-identical
+// but 1.019x on the Qwen1.5-MoE slice's token (21.5 us per MoE layer at k = 4), the owner's park zone for speed
+// (docs/tasks/task-metal-audit-2026-10.md, "D-P03"). Tests turn it on for the k-slot arm.
+var moeKSlotsOn = false
+
 func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 	mo := r.moe
 	ml := L.moe
@@ -835,6 +854,16 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 	// its per-expert down bias into the combine step (both INSIDE the router-weight scale — see
 	// swiglu_quant_gptoss / gemv_w4a8_moe_wacc_bias's docs), so it swaps both dispatches, not just
 	// the router.
+	if mo.kSlots && moeKSlotsOn {
+		// D-P03: the same kernels' bodies over all k slots at once (batch_rows.go), then the per-slot weighted
+		// accumulate as one combine in slot order: the same bytes in dst as the loop below.
+		e.DispatchTG(mo.pGUk, mo.k*(2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, mo.guK, r.uH, mo.rIdx, mo.uK, mo.uInter2)
+		e.Dispatch(mo.pSwRows, mo.k*256, 256, mo.guK, mo.guK, mo.dqK, mo.dScK, mo.uInter, r.uAct)
+		e.DispatchTG(mo.pDownK, mo.k*r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, mo.dqK, mo.dScK, mo.accK, mo.uInter, mo.rIdx, mo.rWgt, mo.uK, r.uH)
+		e.Dispatch(mo.pCombine, r.H, 256, dst, mo.accK, mo.rWgt, mo.dScK, mo.uK, r.uH)
+		r.encodeMoESharedExpert(e, L, dst)
+		return
+	}
 	for j := 0; j < mo.k; j++ {
 		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, mo.rIdx, mo.uSlot[j], mo.uInter2)
 		if mo.isGptOss {

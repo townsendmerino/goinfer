@@ -159,5 +159,43 @@ func deriveRowsKernels() string {
 		"    uint head = mc3_gid % (nH + nKV); device float* qkv = qkv_rows + (mc3_gid / (nH + nKV))*qkvStride;\n    threadgroup float red[128];"))
 	b.WriteString("\n")
 
+	// D-P03: decode's k selected experts in one dispatch per stage instead of one per slot. The grid is k slots of
+	// rowsPerExpert/(tgs/32) threadgroups; a threadgroup's slot is its index divided by that, and within the slot it
+	// is the threadgroup production's per-slot dispatch had. Needs rowsPerExpert % (tgs/32) == 0 (encodeMoEExperts
+	// checks it). Gate|up: each slot writes its own [gate | up] row of out_k (2I apart), which mc3_swiglu_quant_rows
+	// reads as its rows.
+	moeTail := "uint lane[[thread_index_in_simdgroup]]) {"
+	moePrologue := "\n    uint dp03_per = rowsPerExpert/(tgs>>5u); uint slot = dp03_tg / dp03_per; uint tgid = dp03_tg % dp03_per;"
+	b.WriteString(edit(extractKernel(allKernels, "gemv_w4a8_moe"),
+		"kernel void gemv_w4a8_moe(", "kernel void dp03_gemv_w4a8_moe_k(",
+		"device float* out[[buffer(4)]]", "device float* out_k[[buffer(4)]]",
+		"constant uint& slot[[buffer(7)]]", "constant uint& dp03_k[[buffer(7)]]",
+		"uint tgid[[threadgroup_position_in_grid]]", "uint dp03_tg[[threadgroup_position_in_grid]]",
+		moeTail, moeTail+moePrologue+" device float* out = out_k + slot*rowsPerExpert;"))
+	b.WriteString("\n")
+	// Down: slot j reads its own activation row (dq rows K = I apart, one scale each) and stores the simdgroup sum
+	// acc, unweighted, to acc_k; moe_combine_k then adds wgt[j]*acc*asc[0] into the residual in slot order, the
+	// accumulation gemv_w4a8_moe_wacc does one dispatch per slot.
+	b.WriteString(edit(extractKernel(allKernels, "gemv_w4a8_moe_wacc"),
+		"kernel void gemv_w4a8_moe_wacc(", "kernel void dp03_gemv_w4a8_moe_down_k(",
+		"device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]]",
+		"device const char* aq_k[[buffer(2)]], device const float* asc_k[[buffer(3)]], device float* acc_k[[buffer(4)]]",
+		"constant uint& slot[[buffer(8)]]", "constant uint& dp03_k[[buffer(8)]]",
+		"uint tgid[[threadgroup_position_in_grid]]", "uint dp03_tg[[threadgroup_position_in_grid]]",
+		moeTail, moeTail+moePrologue+" device const char* aq = aq_k + slot*K;",
+		"if (lane==0) out[row] += wgt[slot]*acc*asc[0];", "if (lane==0) acc_k[slot*rowsPerExpert + row] = acc;"))
+	b.WriteString("\n")
+	// The combine: gemv_w4a8_moe_wacc's epilogue statement, verbatim, once per slot in slot order.
+	b.WriteString(`kernel void moe_combine_k(device float* out[[buffer(0)]], device const float* acc_k[[buffer(1)]],
+    device const float* wgt[[buffer(2)]], device const float* asc_k[[buffer(3)]], constant uint& k[[buffer(4)]],
+    constant uint& H[[buffer(5)]], uint row[[thread_position_in_grid]]) {
+    if (row >= H) return;
+    for (uint slot=0u; slot<k; slot++) {
+        float acc = acc_k[slot*H + row]; device const float* asc = asc_k + slot;
+        out[row] += wgt[slot]*acc*asc[0];
+    }
+}
+`)
+
 	return b.String()
 }
