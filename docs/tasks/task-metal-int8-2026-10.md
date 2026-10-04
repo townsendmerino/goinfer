@@ -163,6 +163,33 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
   1483 ms, cold 543 ms against 1501 ms.
 
 
+**Slice 3 — native int8 in the MC3 batched step (built 2026-10-04, bit-identical).**
+- `batchIneligible` admits `r.w8`. On a native int8 resident every projection runs production's int8 GEMV once per row:
+  qkv and gate|up through the step's existing per-row path (`calibrateRows` pins it), and o and down through decode's
+  `gemv_w8a8_sa_resid` / `gemv_w8a8_body_resid` into the row's residual.
+- The W8A8 sums are exact integers, so per-row is production by definition. The step's fragment kernels read int4 and
+  are not used.
+- **Identity:** `TestMC3Step_w8BitIdentical` (default-run, the MC3 fixture loaded int8int8 with `nativeInt8` on,
+  precise math): shallow rows, deep rows, and deep rows through E-P05's multi-row attention, 0 logits differ from
+  single-token decode. Feeding every row's o-projection from row 0 fails it.
+- **Precise math and the step** (audit E-C02's probe): `TestMC3Step_bitIdenticalPreciseMath` (int4, the library
+  compiled precise) gives 0 differing logits, shallow and deep. The Gumbel block's closing `fp contract(fast)`, which
+  the derived rows kernels follow, does not break identity under precise math on this build.
+- **Speed (in-process, by day, `TestMC3Step_throughput` on the 1.5B at int8int8, depth 128, 7 reps):** aggregate
+  against one-at-a-time production decode:
+
+  | B | aggregate | range | step | production token |
+  |---|---|---|---|---|
+  | 2 | **1.147×** | 1.137-1.165 | 23.43 ms | 13.40 ms |
+  | 4 | **1.247×** | 1.226-1.265 | 43.15 ms | |
+  | 8 | **1.301×** | 1.271-1.327 | 82.72 ms | |
+
+  Every weight is still read once per row. The gain comes from the norms, attention, quantisation and LM head the step
+  already shares. A W8 fragment GEMM (one weight read for B rows, as int4's `mc3_bt`) is the next lever, not built.
+- It ships with the native path: nothing changes while `nativeInt8` is off. The served confirmation (MC3's W7 harness at
+  int8int8) runs after the flip.
+
+
 ## Tests to update
 
 - `TestResidentQuantLabel` (`decoder/staged_device_note_test.go`) and the R17 auto tests, for the new label.

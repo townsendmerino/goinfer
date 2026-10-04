@@ -365,24 +365,24 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/batch.go:255` | goinfer | `b += simd_shuffle_xor(b, 1); b += simd_shuffle_xor(b, 2); b += simd_shuffle_xor(b, 4);` |
 | `docs/audit-metal-2026-09-30.md|metal/batch.go:304` | goinfer | `// path — the family flags every per-row kernel in forwardMulti assumes — on at least tw` |
 | `docs/audit-metal-2026-09-30.md|metal/batch.go:305` | goinfer | `func (r *resident) batchIneligible() string {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:315` | goinfer | `case r.sandwich \|\| r.postOnly \|\| r.parallelBlock \|\| r.kvI8 \|\| r.layerNorm \|\| r.decodeLan` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:370` | goinfer | `b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), ` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:419` | goinfer | `func (r *resident) calibrateRows() {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:471` | goinfer | `func batchSimdSumTreeOK(d *Device, p Pipeline) bool {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:497` | goinfer | `// canUseAttnFAAt is canUseAttnFA for a given key count rather than the one planNKeys re` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:538` | goinfer | `if r.loraLayers != nil {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:544` | goinfer | `last := map[int]int{}` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:565` | goinfer | `r.stopExec()` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:582` | goinfer | `b.slotOffB.U32s()[m] = uint32(q.slot * r.kvSlotBytes[0] / 2) // f16 elements; batchIneli` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:629` | goinfer | `for m := range B {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:633` | goinfer | `pack(e, b.aqB, H, r.uH)` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:652` | goinfer | `for m, q := range seqs {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:664` | goinfer | `e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, b.` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:689` | goinfer | `greedyDraw := make([]bool, B)` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:722` | goinfer | `if argmaxOnly {` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:738` | goinfer | `row := make([]float32, r.V)` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:780` | goinfer | `// conservative end of TestMC3Verify_rowCost on the M1 Pro (the 7B at depth 2048, the de` |
-| `docs/audit-metal-2026-09-30.md|metal/batch.go:803` | goinfer | `func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int,` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:313` | goinfer | `case r.sandwich \|\| r.postOnly \|\| r.parallelBlock \|\| r.kvI8 \|\| r.layerNorm \|\| r.decodeLan` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:368` | goinfer | `b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), ` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:417` | goinfer | `func (r *resident) calibrateRows() {` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:473` | goinfer | `func batchSimdSumTreeOK(d *Device, p Pipeline) bool {` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:499` | goinfer | `// canUseAttnFAAt is canUseAttnFA for a given key count rather than the one planNKeys re` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:540` | goinfer | `if r.loraLayers != nil {` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:546` | goinfer | `last := map[int]int{}` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:567` | goinfer | `r.stopExec()` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:584` | goinfer | `b.slotOffB.U32s()[m] = uint32(q.slot * r.kvSlotBytes[0] / 2) // f16 elements; batchIneli` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:631` | goinfer | `for m := range B {` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:635` | goinfer | `pack(e, b.aqB, H, r.uH)` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:654` | goinfer | `for m, q := range seqs {` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:666` | goinfer | `e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, b.` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:703` | goinfer | `greedyDraw := make([]bool, B)` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:736` | goinfer | `if argmaxOnly {` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:752` | goinfer | `row := make([]float32, r.V)` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:794` | goinfer | `// conservative end of TestMC3Verify_rowCost on the M1 Pro (the 7B at depth 2048, the de` |
+| `docs/audit-metal-2026-09-30.md|metal/batch.go:817` | goinfer | `func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int,` |
 | `docs/audit-metal-2026-09-30.md|metal/batch_rows.go:10` | goinfer | `// MC3 S3 (docs/tasks/task-concurrency-2026-09.md): multi-row forms of the per-row kerne` |
 | `docs/audit-metal-2026-09-30.md|metal/batch_rows.go:146` | goinfer | `"    uint mc3_j = qh_rows / nH; if (mc3_j >= mc3_M) return; uint mc3_row = rowmap[mc3_j]` |
 | `docs/audit-metal-2026-09-30.md|metal/batch_rows.go:51` | goinfer | `func edit(k string, pairs ...string) string {` |
