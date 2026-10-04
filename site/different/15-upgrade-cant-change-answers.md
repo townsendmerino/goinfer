@@ -23,18 +23,18 @@ doesnt:
   - title: "It has not yet stood in for a real re-check."
     text: "On 2026-09-28 the project owner allowed an IDENTICAL result to stand in for re-running a family's reference check, but the record says this has not yet been done for any recorded family. Only the CPU backend qualifies, on the same CPU architecture the family was originally checked on."
 figures:
-  - {text: "120", source: docs/tasks/task-test-efficiency-2026-09.md}
-  - {text: "38", source: docs/tasks/task-test-efficiency-2026-09.md}
-  - {text: "80", source: docs/tasks/task-test-efficiency-2026-09.md}
-  - {text: "19", source: docs/tasks/task-test-efficiency-2026-09.md}
-  - {text: "30", source: docs/tasks/task-test-efficiency-2026-09.md}
-  - {text: "43–46 s", source: docs/tasks/task-test-efficiency-2026-09.md}
+  - {text: "120", source: docs/completed/task-test-efficiency-2026-09.md}
+  - {text: "38", source: docs/completed/task-test-efficiency-2026-09.md}
+  - {text: "80", source: docs/completed/task-test-efficiency-2026-09.md}
+  - {text: "19", source: docs/completed/task-test-efficiency-2026-09.md}
+  - {text: "30", source: docs/completed/task-test-efficiency-2026-09.md}
+  - {text: "43–46 s", source: docs/completed/task-test-efficiency-2026-09.md}
   - {text: "0.897", source: CLAUDE.md}
   - {text: "93%", source: docs/parity-coverage-policy.md}
 sources:
   - cmd/gate/identity.go
   - cmd/gate/identity_compare.go
-  - docs/tasks/task-test-efficiency-2026-09.md
+  - docs/completed/task-test-efficiency-2026-09.md
   - docs/parity-coverage-policy.md
   - CLAUDE.md
 ---
@@ -86,7 +86,7 @@ What would kill the tool was set in writing before it was built (pre-registered)
 </tbody>
 </table>
 
-The figures come from the project's [test-efficiency task record](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-test-efficiency-2026-09.md) and match the message of the commit that added the command, [`ce97d5ef`](https://github.com/townsendmerino/goinfer/commit/ce97d5ef). The record does not name the machine for each backend; only the timing run above names the MacBook. Metal runs only on Apple hardware, so the Metal counts come from a Mac. The record also lists three checks of the tool itself, run on scratch copies of the repo:
+The figures come from the project's [test-efficiency task record](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-test-efficiency-2026-09.md) and match the message of the commit that added the command, [`ce97d5ef`](https://github.com/townsendmerino/goinfer/commit/ce97d5ef). The record does not name the machine for each backend; only the timing run above names the MacBook. Metal runs only on Apple hardware, so the Metal counts come from a Mac. The record also lists three checks of the tool itself, run on scratch copies of the repo:
 
 - a comment-only edit gives all IDENTICAL;
 - a one-ulp change (the smallest step a float can take) in one residual path flags exactly the two families that use it, cohere and cohere2;

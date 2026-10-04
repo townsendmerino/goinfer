@@ -7,7 +7,7 @@ Draft, `reviewed:` empty. Body about 760 words. Site build with `-drafts` passes
 | Command, flags (`-backend`, `-families`, `-assets`, `-quant`, `-only`, `-steps`, `-logdir`, `-keep`, `-record`, `-timeout`), defaults, positionals anywhere, exit codes 0/1/2 | `cmd/gate/identity.go` (`runIdentity`, `reportIdentity` tail); `defaultIdentityQuants` in `identity_assets.go` |
 | Verdicts IDENTICAL / WITHIN TOLERANCE / DIFFERENT / NOT RUN; tolerance = 2x own run-to-run max diff, argmax and tokens exact; GPU cell that fell back to CPU is NOT RUN | `cmd/gate/identity_compare.go` (`judgeCell`, `identityTolFactor`) |
 | Worktrees, dumper, run order new1 -> old -> new2, `GOINFER_*` stripped, decode path printed | `cmd/gate/identity.go` header comment; task doc TE6(b) "BUILT" |
-| 120/120 CPU, 38/38 Metal (19 families), 80/80 WebGPU (30 families), kill criterion did not fire, tolerance mode unused | `docs/tasks/task-test-efficiency-2026-09.md`, TE6(b) "Determinism holds"; commit `ce97d5ef` message |
+| 120/120 CPU, 38/38 Metal (19 families), 80/80 WebGPU (30 families), kill criterion did not fire, tolerance mode unused | `docs/completed/task-test-efficiency-2026-09.md`, TE6(b) "Determinism holds"; commit `ce97d5ef` message |
 | identity HEAD~1 HEAD, tiny, CPU, MacBook: 43-46 s, 30 IDENTICAL, 7 NOT RUN | same, "Wall, tiny assets"; `ce97d5ef` |
 | Real 0.5B demo, L1 change 3cd62e6d -> 5c85f7c0 DIFFERENT from prefill logit 0; three equivalence tests | same, "Real demo" and "Equivalence" |
 | Kill criterion written before build (2026-09-28 10:31, `8a472437`; tool `ce97d5ef` 14:42) | `git log`; task doc TE6 "Kill (b)" |
@@ -16,7 +16,7 @@ Draft, `reviewed:` empty. Body about 760 words. Site build with `-drafts` passes
 | Limits: no CUDA, LogitProcessor dumper skips device-side argmax, 7 families no tiny fixture, not yet used on a real row, only CPU same-arch eligible | task doc TE6(b) "Limits" / "OWNER DECISION"; policy doc "Identity-inherited validation" (~line 72) |
 
 ## Conflicts and resolutions
-- The brief and `task-site-2026-09.md` cite `docs/measurements/test-efficiency-2026-09.md` for 120/38/80. That file (the TE0 census) does not contain them; grep finds them only in `docs/tasks/task-test-efficiency-2026-09.md` (and the commit message). I cite the task doc as the source. The site-task row should be corrected.
+- The brief and `task-site-2026-09.md` cite `docs/measurements/test-efficiency-2026-09.md` for 120/38/80. That file (the TE0 census) does not contain them; grep finds them only in `docs/completed/task-test-efficiency-2026-09.md` (and the commit message). I cite the task doc as the source. The site-task row should be corrected.
 - The figures are run-to-run determinism counts, not old-vs-new results. The page says so in the table heading.
 
 ## Left out as unverified
