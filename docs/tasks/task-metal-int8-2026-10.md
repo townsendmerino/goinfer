@@ -185,4 +185,23 @@ pass.
       2026-08-04 (about 4% at depth 2048, 7% shallow), and re-measure for int8 before deciding.
 
     Nothing is regraded and the native path stays off.
-
+- 2026-10-04: **F3′ on the 0.5B: PASSES** (by day, `278bd1f2`, the test committed with its bar before the run).
+  - Pooled mean KL(f32 ‖ ·) over 8 prompts × 30 positions: CPU int8int8 with f16 KV (the reference) 0.098462, Metal
+    native int8int8 with precise math 0.066667, **0.677×** against the 1.10 bar.
+  - Per prompt the ratio is 0.500 0.559 0.643 0.788 0.638 0.963 0.674 0.616; Metal is further from f32 at 51 of 240
+    positions.
+  - Reported: CPU int8int8 at f32 KV 0.086232, Metal int8 with fast math 0.062854 (0.638×), Metal int4 0.660900.
+  - **Is Metal closer than the CPU because of a mismatch?** A by-day check says no.
+    - `TestW8Native_hiddenVsLogits`: the same 8 prompts teacher-forced over 32 prose tokens, 240 positions.
+    - The final residual stream is as far from f32 on both sides: relative L2 0.1337 Metal, 0.1379 CPU.
+    - Logit KL is 0.12205 against 0.13171, 0.93×.
+    - Nothing points to a different quantization in the trunk or the LM head: the two are equally good, with Metal
+      slightly closer.
+    - The one-prompt F3 (1.27×) and the 8-prompt F3′ disagree in direction, which is why F3′ pools prompts. The 0.677×
+      magnitude rests on 8 prompts and a heavy-tailed KL; the direction rests on all 8 prompts and the teacher-forced
+      check.
+  - **Fast against precise** is within the noise here (0.0629 against 0.0667), while on F3's one prompt precise was
+    closer (0.0254 against 0.0279). The precise-math decision stands as the owner made it; gate S prices it tonight.
+  - **Queued for tonight** (Mac, `run-gates2.sh`, binary pinned at the commit that records this): F3′ on the 1.5B if
+    the fit guard admits its f32 reference, F2 on the 1.5B with precise math (bar unchanged), and S with its fast-math
+    arm.

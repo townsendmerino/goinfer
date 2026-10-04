@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // TestW8Native_perLayerBisect is the Metal int8 doc's next step after F3 and F2 failed (docs/tasks/task-metal-int8-2026-10.md,
@@ -136,4 +137,97 @@ func TestW8Native_perLayerBisect(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[w8-bisect] logits at the probe: KL(cpu8 ‖ met8) %.3e, KL(cpu8h ‖ met8) %.3e, KL(cpu8 ‖ cpu8h) %.3e, KL(cpu4 ‖ met4) %.3e\n",
 		kl(cpu8Lg, met8Lg), kl(cpu8hLg, met8Lg), kl(cpu8Lg, cpu8hLg), kl(cpu4Lg, met4Lg))
+}
+
+// TestW8Native_hiddenVsLogits splits F3′'s surprise (Metal int8int8 closer to f32 than the CPU's int8int8, 0.677×):
+// over F3′'s 8 prompts, each position's final residual stream (before the final norm) and logits, CPU int8int8 and
+// Metal native int8int8 each against CPU f32. If the hidden states are about equally far from f32 and the logits are not,
+// the difference is the LM head (or the final norm), not the trunk. Exploratory, by day.
+//
+//	GOINFER_W8BISECT=1 go test -tags goinfer_testhooks -count=1 -run '^TestW8Native_hiddenVsLogits$' -v ./metal/
+func TestW8Native_hiddenVsLogits(t *testing.T) {
+	if os.Getenv("GOINFER_W8BISECT") != "1" {
+		t.Skip("set GOINFER_W8BISECT=1")
+	}
+	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := decoder.PrefillGatePromptSetFor("a")
+	const nP, steps = 8, 32
+	prompts := make([][]int, nP)
+	for i := range prompts {
+		prompts[i] = decoder.PrefillGateProseIDsForTest(t, tk, files[i], steps)[:steps]
+	}
+	type run struct{ hidden, logits [][]float32 } // [prompt*steps+i]
+	cpu := func(quant string) run {
+		m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: 1024})
+		if err != nil {
+			t.Skipf("load cpu %q: %v", quant, err)
+		}
+		defer m.Close()
+		_, nL, _, nKV, hd, _, _ := m.Dims()
+		var out run
+		for p := range nP {
+			cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
+			for _, id := range prompts[p] {
+				lg, h, err := m.ForwardCapture(id, cache, []int{nL - 1})
+				if err != nil {
+					t.Skipf("ForwardCapture: %v", err)
+				}
+				out.hidden = append(out.hidden, append([]float32(nil), h[0]...))
+				out.logits = append(out.logits, append([]float32(nil), lg...))
+			}
+		}
+		return out
+	}
+	f32, c8 := cpu(""), cpu("int8int8")
+	prev := nativeInt8
+	nativeInt8 = true
+	m, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeInt8 = prev
+	var met run
+	for p := range nP {
+		for i, id := range prompts[p] {
+			emb := m.EmbedResidentForTest(id)
+			met.hidden = append(met.hidden, append([]float32(nil), r.forwardTrunkForTest(emb, i, r.nL)...))
+			met.logits = append(met.logits, append([]float32(nil), r.ForwardEmb(emb, i)...))
+		}
+	}
+	r.Close()
+	m.Close()
+	rel := func(a, b []float32) float64 {
+		var d, n float64
+		for i := range a {
+			x := float64(a[i]) - float64(b[i])
+			d += x * x
+			n += float64(b[i]) * float64(b[i])
+		}
+		return math.Sqrt(d / n)
+	}
+	var hC, hM, kC, kM float64
+	n := 0
+	for p := range nP {
+		for i := 2; i < steps; i++ {
+			j := p*steps + i
+			hC += rel(c8.hidden[j], f32.hidden[j])
+			hM += rel(met.hidden[j], f32.hidden[j])
+			kC += klLogits(f32.logits[j], c8.logits[j])
+			kM += klLogits(f32.logits[j], met.logits[j])
+			n++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[w8-hidden] %d positions: final hidden rel L2 to f32: CPU int8 %.4f, Metal int8 %.4f; logits KL(f32 ‖ ·): CPU int8 %.5f, Metal int8 %.5f\n",
+		n, hC/float64(n), hM/float64(n), kC/float64(n), kM/float64(n))
 }
