@@ -3,6 +3,7 @@ package decoder
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -121,6 +122,11 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 		t    GIWTarget
 	}{{"canonical", GIWTargetNone}, {"cpu-arm64 (kind 5 where eligible)", GIWTargetCPUArm64}} {
 		t.Run(target.name, func(t *testing.T) {
+			if target.t == GIWTargetCPUArm64 && runtime.GOARCH == "arm64" && !linalg.Int4Row4Usable(4, 32, 32) {
+				// A kind-5 file is a promise to a core that can read it; this arm64 core (no DotProd: a Pi 4, Windows on ARM) cannot, and refusing it is the right behaviour
+				// (TestGIWTargetForBackend_cpuArm64NeedsDotProd pins that it is never the default here).
+				t.Skip("this arm64 core has no DotProd, so it cannot load a cpu-arm64 (row4-only) bundle")
+			}
 			src := alignFixtureWeights(t)
 			blob, err := SerializeWeightsForTarget(src, "align", target.t)
 			if err != nil {
@@ -276,5 +282,37 @@ func TestGIWAligned_paddingIsCoveredByTheCRC(t *testing.T) {
 	}
 	if _, err := LoadSerializedWeights(blob); err != nil {
 		t.Fatalf("restoring the byte did not restore a loadable blob: %v", err)
+	}
+}
+
+// TestGIWTargetForBackend_cpuArm64NeedsDotProd: the default CPU target on arm64 is cpu-arm64 (row4-only sidecars) only on a core that can read that layout. Found 2026-10-04 by the first
+// windows-arm64 CI run: aikit assumes no DotProd there, the default load wrote a cpu-arm64 sidecar its own core refused ("this core cannot use that layout"), and it was rebuilt on every start.
+// The test follows the core it runs on, so it asserts the right half on a DotProd Mac or Linux runner and on a no-DotProd one (QEMU Cortex-A72, windows-11-arm).
+func TestGIWTargetForBackend_cpuArm64NeedsDotProd(t *testing.T) {
+	got := GIWTargetForBackend("cpu")
+	switch runtime.GOARCH {
+	case "arm64":
+		want := GIWTargetNone
+		if linalg.Int4Row4Usable(4, 32, 32) {
+			want = GIWTargetCPUArm64
+		}
+		if got != want {
+			t.Errorf("GIWTargetForBackend(cpu) = %q on an arm64 core with Int4Row4Usable=%v, want %q", got, linalg.Int4Row4Usable(4, 32, 32), want)
+		}
+		// And what it returns is something this core can load back: the round trip the bug broke.
+		src := alignFixtureWeights(t)
+		blob, err := SerializeWeightsForTarget(src, "roundtrip", got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, cleanup := writeAndMap(t, blob)
+		defer cleanup()
+		if _, err := LoadSerializedWeights(view); err != nil {
+			t.Errorf("a bundle built for this core's own default target %q does not load on it: %v", got, err)
+		}
+	case "amd64":
+		if got != GIWTargetCPUAmd64 {
+			t.Errorf("GIWTargetForBackend(cpu) = %q on amd64, want %q", got, GIWTargetCPUAmd64)
+		}
 	}
 }

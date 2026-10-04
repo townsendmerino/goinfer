@@ -689,7 +689,13 @@ func GIWTargetForBackend(backendName string) GIWTarget {
 	case "cpu":
 		switch runtime.GOARCH {
 		case "arm64":
-			return GIWTargetCPUArm64
+			// A kind-5 (row4-only) file is a promise that THIS core can read it, and aikit's row4 kernels need DotProd (Int4Row4Usable). A core without it (a Raspberry Pi 4, or Windows on ARM,
+			// where aikit assumes none) that wrote a cpu-arm64 sidecar would refuse to load its own file and rebuild it on every start: found 2026-10-04 by the first windows-arm64 CI run.
+			// Such a core builds canonical bundles, which any core loads. A cpu-arm64 bundle can still be built for a DotProd reader by naming the target (-target cpu-arm64).
+			if linalg.Int4Row4Usable(4, 32, 32) {
+				return GIWTargetCPUArm64
+			}
+			return GIWTargetNone
 		case "amd64":
 			return GIWTargetCPUAmd64
 		default:

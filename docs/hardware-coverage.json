@@ -680,7 +680,7 @@
      "gate": "ci run 37174957127: root-windows (go test -tags goinfer_testhooks ./..., 30 packages ok, decoder 184 s; run without -v, so per-test skips are not visible)"
     }
    ],
-   "notes": "H1.1's first run (ci run 37143040097, PR #6) was red; PR #7 fixed it (task doc H1.1). The fixes: LF checkouts (.gitattributes), a Windows host-RAM probe (decoder/hostram_windows.go, GlobalMemoryStatusEx: fit and the load guard now work there), per-OS test helpers, and test isolation via LocalAppData. Windows reads model files into the heap (aikit's mmap_other.go), not a mapping. windows-arm64 is not covered: windows-latest is x86-64."
+   "notes": "H1.1's first run (ci run 37143040097, PR #6) was red; PR #7 fixed it (task doc H1.1). The fixes: LF checkouts (.gitattributes), a Windows host-RAM probe (decoder/hostram_windows.go, GlobalMemoryStatusEx: fit and the load guard now work there), per-OS test helpers, and test isolation via LocalAppData. Windows reads model files into the heap (aikit's mmap_other.go), not a mapping. windows-arm64: the root-windows-arm64 job (GitHub's windows-11-arm, Cobalt 100) was added 2026-10-04 and its first run was red on a real defect (the default cpu-arm64 bundle target on a core without DotProd; fixed in GIWTargetForBackend). No record is added until the job is green."
   },
   {
    "id": "linux-arm64",
