@@ -1,8 +1,15 @@
-# Generated docs are byte/line compared against LF-generated content by freshness
-# gates (decoder/hardware_matrix_test.go, decoder/capability_matrix_test.go). Pin
-# them to LF so a Windows checkout — or a Windows `-update` regeneration — stays LF
-# instead of fighting git's autocrlf smudge filter. The gates also strip CR before
-# comparing (stripCR), so this is defense in depth, not the sole guard.
+# Every text file checks out LF, on every OS and whatever core.autocrlf says. Tests read the tree
+# as data: freshness gates byte-compare generated docs (decoder/hardware_matrix_test.go,
+# decoder/capability_matrix_test.go, pull's embedded capability-matrix.json copy), cmd/gate
+# round-trips testdata/gate_ledger.json and regex-reads scripts/refresh_parity_hashes.sh,
+# examples/structured parses docs/use-from-go.md's code fences, and source-reading tests look for
+# "\n}\n". A CRLF checkout (Windows' default autocrlf=true) broke all of those on the root-windows
+# CI job, 2026-10-03. Every text file in the index was already LF, so this renormalizes nothing.
+# Binary files are detected as before (text=auto) and left alone.
+* text=auto eol=lf
+
+# The first three pinned, before the rule above; kept explicit because their gates also strip CR
+# (stripCR), and a Windows `-update` regeneration must write LF.
 docs/hardware-matrix.md      text eol=lf
 docs/capability-matrix.md    text eol=lf
 docs/capability-matrix.json  text eol=lf

@@ -77,8 +77,10 @@ func TestResolve_badRefsFailBeforeTheNetwork(t *testing.T) {
 // needs no network stub to prove the property — the function has nothing in it that COULD reach
 // the network.
 func TestResolveOffline_verifiedCacheHitNeedsNoNetwork(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())  // redirect os.UserCacheDir() away from the real machine cache
+	home := t.TempDir()
+	t.Setenv("HOME", home)         // redirect os.UserCacheDir() away from the real machine cache
 	t.Setenv("XDG_CACHE_HOME", "") // don't let a real one from the environment win on Linux
+	t.Setenv("LocalAppData", home) // Windows reads this one
 
 	const repo, file = "o/r", "m.gguf"
 	body := []byte("pretend gguf bytes, byte-identical to what curated.json would pin")
@@ -110,8 +112,10 @@ func TestResolveOffline_verifiedCacheHitNeedsNoNetwork(t *testing.T) {
 // corrupted cache entry from being served as if it were verified, the same discipline
 // cachedIntact already applies inside Download.
 func TestResolveOffline_mismatchIsNotAHit(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("LocalAppData", home)
 
 	const repo, file = "o/r", "m.gguf"
 	body := []byte("actual cached bytes")

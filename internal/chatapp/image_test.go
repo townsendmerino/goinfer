@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -128,7 +129,7 @@ func TestLoadImageInput(t *testing.T) {
 		{"text-only copy (no vision_config)", writeGlmDir(t, `{"model_type":"glm_ocr"}`, glmTestPre), img, "GLM-OCR checkpoint directory"},
 		{"another family", writeGlmDir(t, `{"model_type":"qwen3_5","vision_config":{"depth":12}}`, glmTestPre), img, "GLM-OCR checkpoint directory"},
 		{"not a directory", filepath.Join(t.TempDir(), "model.gguf"), img, "GLM-OCR checkpoint directory"},
-		{"missing image", good, filepath.Join(t.TempDir(), "nope.png"), "no such file"},
+		{"missing image", good, filepath.Join(t.TempDir(), "nope.png"), syscall.ENOENT.Error()}, // the OS's own not-found text: "no such file or directory", or Windows' "The system cannot find the file specified."
 		{"not an image", good, notImage, "x.png"},
 	} {
 		if _, err := loadImageInput(tc.dir, tc.file); err == nil || !strings.Contains(err.Error(), tc.want) {

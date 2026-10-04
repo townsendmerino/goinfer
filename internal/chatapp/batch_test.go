@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func TestPlanBatch(t *testing.T) {
 		"no input":   {"", out, "go together"},
 		"same file":  {in, in, "overwrite it"},
 		"dup ids":    {inputFile(t, "a", "b", "a"), out, "unique"},
-		"missing":    {filepath.Join(dir, "nope.jsonl"), out, "no such file"},
+		"missing":    {filepath.Join(dir, "nope.jsonl"), out, syscall.ENOENT.Error()}, // the OS's own not-found text (Windows words it differently)
 		"bad json":   {writeTemp(t, "{oops\n"), out, "line 1: invalid JSON"},
 		"empty file": {writeTemp(t, "\n"), out, "no request lines"},
 	} {

@@ -18,13 +18,14 @@ import (
 	"github.com/townsendmerino/goinfer/pull"
 )
 
-// fakeCache points os.UserCacheDir at a temp directory (XDG_CACHE_HOME on Linux, HOME on darwin)
-// and returns the pull cache root under it, created.
+// fakeCache points os.UserCacheDir at a temp directory (XDG_CACHE_HOME on Linux, HOME on darwin,
+// LocalAppData on Windows) and returns the pull cache root under it, created.
 func fakeCache(t *testing.T) (tmp, root string) {
 	t.Helper()
 	tmp = t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, "cache"))
 	t.Setenv("HOME", filepath.Join(tmp, "home"))
+	t.Setenv("LocalAppData", filepath.Join(tmp, "cache"))
 	root, err := pull.CacheRoot()
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +118,7 @@ func TestWebLoadPath_cacheRootBehindSymlink(t *testing.T) {
 	}
 	t.Setenv("XDG_CACHE_HOME", link)
 	t.Setenv("HOME", filepath.Join(tmp, "home"))
+	t.Setenv("LocalAppData", link)
 	root, err := pull.CacheRoot()
 	if err != nil {
 		t.Fatal(err)
@@ -344,6 +346,7 @@ func TestWebLoad_realModel(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, "cache"))
 	t.Setenv("HOME", filepath.Join(tmp, "home"))
+	t.Setenv("LocalAppData", filepath.Join(tmp, "cache"))
 	root, err := pull.CacheRoot()
 	if err != nil {
 		t.Fatal(err)

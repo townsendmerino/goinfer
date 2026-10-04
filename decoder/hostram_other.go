@@ -1,11 +1,11 @@
-//go:build !linux && !darwin
+//go:build !linux && !darwin && !windows
 
 package decoder
 
-// HostRAMBytes returns 0 — unknown — on every platform without a probe here (Windows, the BSDs).
+// HostRAMBytes returns 0 — unknown — on every platform without a probe here (the BSDs and the rest).
 // The fit guard treats 0 as "proceed", so those platforms behave exactly as they did before the
-// guard existed rather than getting a wrong number. docs/tasks/task-fit-to-hardware.md §8 records the
-// same position for Windows: say "unknown", never guess.
+// guard existed rather than getting a wrong number: say "unknown", never guess. Windows has its own
+// probe (hostram_windows.go) since 2026-10-03.
 func HostRAMBytes() int64 { return 0 }
 
 // HostRAMAvailableBytes: same "no probe here" answer as HostRAMBytes, for the same reason.

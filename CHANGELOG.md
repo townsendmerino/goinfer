@@ -198,6 +198,12 @@ any surface may still change.
 
 ### Fixed
 
+- **Windows: `fit` and the load-time memory guard read the machine's RAM.** Windows had no host-memory probe, so
+  `fit` placed nothing ("no memory probe available") and the guard let every load proceed unchecked. It now reads
+  `GlobalMemoryStatusEx` (total and available physical memory), as macOS and Linux read theirs.
+- **A Windows checkout is LF.** `.gitattributes` now pins every text file to LF, so a clone with Windows' default
+  `core.autocrlf=true` matches the repository byte for byte, and the tests that read the tree as data pass there.
+
 - **Metal, concurrent generations: a generation with a slow `LogitProcessor` could sample from another generation's
   logits.** Under batched decode a token served alone, and the prompt's first token, handed the generation the
   resident's shared logits buffer, which another generation could overwrite before it was read. Both are copied now.

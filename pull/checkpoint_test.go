@@ -158,7 +158,8 @@ func withCacheRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", root)
-	t.Setenv("HOME", root) // os.UserCacheDir on darwin is $HOME/Library/Caches
+	t.Setenv("HOME", root)         // os.UserCacheDir on darwin is $HOME/Library/Caches
+	t.Setenv("LocalAppData", root) // and on Windows %LocalAppData%
 	return root
 }
 
