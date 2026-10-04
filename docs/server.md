@@ -770,6 +770,19 @@ this encoder's asymmetric query/document encoding, an optional `input_type:
 "query"|"document"` (default `document`, the Cohere/Voyage convention) selects the
 query instruction prefix.
 
+**Startup self-tests, and `check --hardware`.** goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it returns slightly wrong numbers (an AVX-512 VNNI
+accumulator bug did exactly that in September, and surfaced only because one CI runner happened to have the CPU). So the first model load of a process runs aikit's `linalg.SelfCheck`: the dispatched CPU kernels
+(`dotI8`, `dotW4A8`, the activation quantizer, and the activation-sum centering of the W4A8 fold) against their portable references on a small fixed input, held to **the agreement aikit's own tests assert for each**
+(exact, or a relative 1e-5), in about a millisecond (1.2-1.3 ms on a Ryzen 7 3700X). On a mismatch the highest active ISA tier (AVX-512 VNNI, then AVX2; DotProd on arm64) is stepped down and the kernels are checked
+again, so a bad tier degrades to the next one instead of producing wrong numbers, and one `WARN: self-test:` line on stderr names the kernel, the observed and allowed figures and the tier stepped off. Each result is in
+`GET /health` under `selftest` (always an array: `backend`, `status` of `pass`, `repaired`, `declined` or `skipped`, `elapsed_ms`, and `mismatches` and `stepped_down` when there are any). `-no-selftest` skips it (on `goinfer-chat`
+too) for a machine it misjudges; `check --hardware` says what it found. **Only the CPU kernels are covered so far**; a GPU backend's self-test is not built yet, so the CUDA, Metal and WebGPU lines of the report say nothing about their kernels.
+
+`goinfer-serve check --hardware` and `goinfer-chat check --hardware` print the block a hardware bug report needs and exit, with no server involved: the build, OS and kernel, the CPU model and thread count, which CPU kernel tiers the
+CPU supports against which are in use (and any a build tag forced off), host memory, the backends linked into the binary with each one's device facts (the CUDA build prints the device name, compute capability and whether
+its PTX is native or JIT-compiled forward for this card, the multiprocessor count, memory and the driver's CUDA version), and the self-test results. `--fit MODEL` adds the fit decisions for a model. **Nothing is sent
+anywhere**: it is printed for you to paste (the bug-report form asks for it), and it carries no hostname, user name, home directory or network address.
+
 ### Use goinfer with DeepSeek Harness (dsh)
 
 A fully local agent stack: dsh's harness, goinfer's single binary, no cloud. **Verified end to end
