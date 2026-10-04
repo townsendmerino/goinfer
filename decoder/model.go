@@ -1922,16 +1922,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (C-B01, ResidentGreedyChain): the same tokens with the next token's forward queued on the device
-	// before the host has seen this one. Unbatched only (MC3 serves its tokens through its own steps), with no processor
-	// at all (a gated one would need the full row mid-chain) and no adapter, and only where the embedding lookup is a
-	// plain table row, which the resident's gather reproduces.
+	// before the host has seen this one. With no processor at all (a gated one would need the full row mid-chain) and no
+	// adapter, and only where the embedding lookup is a plain table row, which the resident's gather reproduces. Under
+	// MC3 it runs only on the tokens this generation decodes alone, with the resident held across them (holdSolo); every
+	// other token takes the batcher as before, so fastGreedy stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && hasChain && mc3 == nil && sp.LogitProcessor == nil && lora == nil &&
+	useChain := useGPU && hasChain && sp.LogitProcessor == nil && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
-	if useChain {
+	if useChain && mc3 == nil {
 		fastGreedy = false
 	}
+	chainTok := mc3 == nil // this token may run the chain: always unbatched, under MC3 only on a held token
 	chainOpen, chainPos := false, 0
 	stopChain := func() {
 		if chainOpen {
@@ -1984,7 +1986,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// token's forward queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy
 	// chain's, and not where ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
-	if sampleRF != nil && mc3 == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
+	if sampleRF != nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
 		!math.IsInf(1/sp.Temperature, 0) {
 		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
 			sChainRF = rf
@@ -2050,6 +2052,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			m.residentCommitIDs(prompt, generated, nil, lora)
 			return
 		}
+		mc3.releaseHold(stopChain) // before the exclusive section below, which waits for the resident a hold keeps
 		exitDecode()
 		mc3.exclusive(func() {
 			if m.residentBind(mc3Slot) == nil {
@@ -2061,6 +2064,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		mc3.enterDecode()
 		decoding = true
 		defer exitDecode()
+		// Runs before exitDecode (defers unwind last-first): any exit, an error's included, ends a kept hold.
+		defer mc3.releaseHold(stopChain)
+	}
+	var holdGrace *time.Timer // the send grace for a kept hold (one timer per generation, reset per token)
+	if mc3 != nil {
+		holdGrace = time.NewTimer(mc3HoldSendGrace)
+		holdGrace.Stop()
+		defer holdGrace.Stop()
 	}
 	// MC3c step 2 (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
 	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
@@ -2180,6 +2191,25 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// A bare send wedges this goroutine forever if the consumer stops ranging
 		// (even to cancel ctx, the documented stop) — it holds the KV cache and, for
 		// Session.Generate, blocks the post-loop reconciliation, poisoning the session.
+		// A kept hold (a chained decode alone under MC3) must not keep the resident while the consumer is not reading: a
+		// newcomer would wait on this send. Give the consumer a short grace, then let go before blocking.
+		if mc3 != nil && mc3.isHolding() {
+			select {
+			case out <- next:
+				goto sent
+			default:
+			}
+			holdGrace.Reset(mc3HoldSendGrace)
+			select {
+			case out <- next:
+				holdGrace.Stop()
+				goto sent
+			case <-holdGrace.C:
+				mc3.releaseHold(stopChain)
+			case <-ctx.Done():
+				holdGrace.Stop()
+			}
+		}
 		// Select on ctx.Done like every speculative path (M8).
 		select {
 		case <-ctx.Done():
@@ -2196,6 +2226,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			return
 		case out <- next:
 		}
+	sent:
 		generated = append(generated, next)
 		if gated {
 			needFull = sp.LogitProcessorGate(generated)
@@ -2233,7 +2264,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					// The gated processor needs this position's full logits (it is about to mask them).
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
-				} else if useChain {
+				} else if useChain && chainTok {
 					// The chain fed itself this token: it is the argmax of the chain's previous forward. The first token
 					// (from the prompt's seed logits) opens it.
 					if !chainOpen {
@@ -2248,7 +2279,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 						fastNext, ferr = chainRF.GreedyChainNext()
 						chainPos++
 					}
-				} else if sChainRF != nil {
+				} else if sChainRF != nil && chainTok {
 					// The sampled chain: as the greedy chain, with this token's draw (taken above, as ForwardSample's is).
 					if !chainOpen {
 						if ferr = sChainRF.SampleChainStart(next, pos, draw.Temperature, draw.Seed, draw.Draw); ferr == nil {
@@ -2305,22 +2336,32 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				// logits, or ForwardSample's id for a device-drawn token (the same draw). A greedy token served by a
 				// step continues on the full-logits path, which production's fast path equals by its own contract
 				// (ArgmaxEquivalent/GreedyEquivalent above).
-				q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: pos, Emb: emb, Draw: draw},
-					solo: func() error {
-						if berr := m.residentBind(mc3Slot); berr != nil {
-							return berr
-						}
-						if ferr := residentCall(); ferr != nil {
-							return ferr
-						}
-						if viaForward { // copy while this generation still holds the resident (E-C01, mc3Logits)
-							mc3Logits = append(mc3Logits[:0], logits...)
-							logits = mc3Logits
-						}
-						return nil
-					}}
-				err = mc3.forward(q)
-				if err == nil && q.out != nil {
+				solo := func() error {
+					if berr := m.residentBind(mc3Slot); berr != nil {
+						return berr
+					}
+					if ferr := residentCall(); ferr != nil {
+						return ferr
+					}
+					if viaForward { // copy while this generation still holds the resident (E-C01, mc3Logits)
+						mc3Logits = append(mc3Logits[:0], logits...)
+						logits = mc3Logits
+					}
+					return nil
+				}
+				// Alone on the batcher, a chainable token runs the chain with the resident held across tokens; the
+				// first token anyone else wants the resident, the chain stops and this token takes the batcher.
+				held := false
+				if (useChain || sChainRF != nil) && !needFull {
+					chainTok = true
+					held, err = mc3.holdSolo(solo, stopChain)
+					chainTok = false
+				}
+				q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: pos, Emb: emb, Draw: draw}, solo: solo}
+				if !held {
+					err = mc3.forward(q)
+				}
+				if !held && err == nil && q.out != nil {
 					if draw != nil {
 						fastNext = q.out.ID
 						g.DeviceSampled++

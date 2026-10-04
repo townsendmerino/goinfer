@@ -60,6 +60,9 @@ type residentBatcher struct {
 
 	holders  int    // generations holding a slot (claimed, not yet released); guarded by mu
 	slotBusy []bool // resident KV slots a holder is using; guarded by mu
+	// holding: the one holder, decoding alone, keeps the resident (busy) across its tokens (holdSolo), so a chained
+	// forward (C-B01 / C-P02) stays queued on the device between them; guarded by mu.
+	holding bool
 }
 
 // ResidentBatchStats counts what MC3's batcher did (Model.ResidentBatchStats): runs, the tokens batched steps served
@@ -72,9 +75,12 @@ type residentBatcher struct {
 // 2026-09.md, the per-pass prefill cost item).
 type ResidentBatchStats struct {
 	Runs, Steps, StepTokens, SoloTokens, StragglerRuns int
-	StepSizes                                          [batchStatsSizes]int // StepSizes[b] = steps of b sequences
-	PrefillPasses                                      int
-	RunNs, ExclusiveNs, PrefillNs                      int64
+	// HeldTokens are the tokens a lone holder ran with the resident held across them (holdSolo: the chained decode), and
+	// Holds how many times a hold was taken. They are not in Runs or SoloTokens.
+	HeldTokens, Holds             int
+	StepSizes                     [batchStatsSizes]int // StepSizes[b] = steps of b sequences
+	PrefillPasses                 int
+	RunNs, ExclusiveNs, PrefillNs int64
 }
 
 const batchStatsSizes = 17
@@ -165,6 +171,68 @@ func (b *residentBatcher) release() {
 	b.holders--
 	b.cond.Broadcast()
 	b.mu.Unlock()
+}
+
+// holdSolo runs this holder's token fn with the resident kept between calls, while it is the only generation that wants
+// the resident: one holder, decoding, nothing pending and no exclusive section waiting. That is how a chained decode
+// (C-B01 / C-P02) runs under MC3: the chain keeps the next token's forward queued on the device between tokens, and
+// nothing else may touch the resident until it stops. ok is false, with fn not run, when the holder is not alone; if a
+// hold was kept from an earlier call, release (the chain's Stop) runs first with the resident still held, then the hold
+// ends. The caller then submits the token through forward as usual. A newcomer (another holder's claim, its prefill's
+// exclusive section) therefore waits at most until this holder's next token.
+func (b *residentBatcher) holdSolo(fn func() error, release func()) (ok bool, err error) {
+	b.mu.Lock()
+	alone := b.holders == 1 && b.decoders == 1 && b.exclWaiting == 0 && len(b.pending) == 0
+	switch {
+	case b.holding && !alone:
+		b.mu.Unlock()
+		b.releaseHold(release)
+		return false, nil
+	case !b.holding && (!alone || b.busy):
+		b.mu.Unlock()
+		return false, nil
+	case !b.holding:
+		b.busy, b.holding = true, true
+		b.stats.Holds++
+	}
+	b.mu.Unlock()
+	t0 := time.Now()
+	err = runSolo(fn)
+	b.mu.Lock()
+	b.stats.HeldTokens++
+	b.stats.RunNs += time.Since(t0).Nanoseconds()
+	b.mu.Unlock()
+	return true, err
+}
+
+// releaseHold ends a hold holdSolo kept: release (the chain's Stop) runs first, with the resident still held, then the
+// resident is free again. A no-op when no hold is kept. Every exit from a decode loop that may hold calls it before
+// anything else on the batcher (the commit's exclusive section waits for the resident, so a kept hold would deadlock it).
+func (b *residentBatcher) releaseHold(release func()) {
+	b.mu.Lock()
+	held := b.holding
+	b.mu.Unlock()
+	if !held {
+		return
+	}
+	release()
+	b.mu.Lock()
+	b.holding, b.busy = false, false
+	b.freeAt = time.Now()
+	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+// mc3HoldSendGrace is how long a holder keeping the resident (holdSolo) waits for its consumer to take a token before it
+// lets go of the hold: a consumer that is not reading must not keep a newcomer waiting on the resident. Streaming
+// clients read at once, so the grace is short and the hold is kept across them.
+const mc3HoldSendGrace = 2 * time.Millisecond
+
+// isHolding reports whether a hold is kept (the decode loop asks before a token send that might block).
+func (b *residentBatcher) isHolding() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.holding
 }
 
 // claimExclusive is tryClaimResident under a batcher: the whole resident, only while no holder has a slot.
