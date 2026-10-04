@@ -881,6 +881,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 				st := lm.model.ResidentBatchStats()
 				fmt.Fprintf(os.Stderr, "resident batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
+				// The tokens a lone generation ran with the resident held (the chained decode, holdSolo): the record that
+				// the greedy and sampled chains reach serve.
+				fmt.Fprintf(os.Stderr, "resident batch %q held: %d tokens in %d holds\n", lm.name, st.HeldTokens, st.Holds)
 				fmt.Fprintf(os.Stderr, "resident batch %q time: runs %.3f s, exclusive %.3f s (prefill %d passes %.3f s, bookkeeping %.3f s)\n",
 					lm.name, float64(st.RunNs)/1e9, float64(st.ExclusiveNs)/1e9, st.PrefillPasses, float64(st.PrefillNs)/1e9,
 					float64(st.ExclusiveNs-st.PrefillNs)/1e9)
