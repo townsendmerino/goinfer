@@ -116,4 +116,13 @@ func TestAuditM26_pagedProbe(t *testing.T) {
 		line += fmt.Sprintf("; split: commit %.1f ms, waitUntilCompleted %.1f ms, GPU idle in wait %.1f ms per token", commit, wait, wait-gpu)
 	}
 	hb("%s", line)
+	// The pool's hit rate over the whole run, warm-up token included (task-m26-mac-2026-10.md, lever 2: a per-use
+	// zero-copy bind pays its wire on every routed expert, the pool only on a miss).
+	var hits, stages int
+	for l := range r.layers {
+		if gl := r.layers[l].g4moe; gl != nil && gl.pool != nil {
+			hits, stages = hits+gl.pool.hits, stages+gl.pool.stages
+		}
+	}
+	hb("RESULT %d slots: pool hits %d, stages %d, hit rate %.3f", slots, hits, stages, float64(hits)/float64(max(1, hits+stages)))
 }

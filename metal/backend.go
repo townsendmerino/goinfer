@@ -584,17 +584,12 @@ func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature 
 // overlaps token t+1's trunk encode with token t's GPU execution while skipping the LM head
 // dispatch and logits readback (~0.9 ms/token prefill latency recovery).
 //
-// On a paged MoE (g4moe or generic moe), forwardHiddenNoHead's trunk encoder has no paged branch
-// — only Forward → forwardLogitsPaged/forwardLogitsMoEPaged does (the same gap C-02 found at
-// HiddenLast/ForwardArgmax) — so this falls back to the full head-bearing Forward and discards
-// the logits: correct K/V either way, just without the head-skip win on that family.
+// On a paged MoE (g4moe or generic moe) the executor's trunk encoder has no paged branch, so
+// ForwardEmbNoLogitsPipe runs the synchronous paged forward with its final norm and LM head skipped
+// (pagedNoHead): the same layers and K/V, without the head (task-m26-mac-2026-10.md).
 func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 	if len(embedding) != a.hidden {
 		return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
-	}
-	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
-		_, err := a.Forward(embedding, pos)
-		return err
 	}
 	if e := a.checkCap(pos, 1); e != nil {
 		return e
@@ -730,6 +725,9 @@ func metalFusedAttentionEnabled(v string) bool {
 func (a *metalResident) ResidentQuant() string { return a.quant }
 
 func (a *metalResident) PrefillPath() (bool, string) {
+	if a.g4LayerMajor() {
+		return true, "layer-major on decode's kernels (bit-identical to sequential; a paged Gemma 4 MoE)"
+	}
 	if a.r.kvI8 {
 		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
 	}
@@ -752,6 +750,12 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)"
 }
 
+// g4LayerMajor reports whether this resident's prompts take prefillG4Paged: a paged Gemma 4 MoE with no learned
+// positions (the layer-major rows add none), with g4LayerMajorOn.
+func (a *metalResident) g4LayerMajor() bool {
+	return g4LayerMajorOn && a.r.g4moe != nil && a.r.g4moe.paged && !a.r.learnedPos
+}
+
 // PrefillLast (decoder.Prefiller) ingests the whole prompt in one batched f16-MMA pass and
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
@@ -763,6 +767,22 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// chunking inside PrefillLast, as cuda's prefillChunked does (A-D02, audit-metal-2026-09-30.md).
 	if e := ctx.Err(); e != nil {
 		return nil, e
+	}
+	// 4b (docs/tasks/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
+	// layer on decode's own kernels, bit-identical to the sequential loop, so neither the floor nor --exact-prefill
+	// applies. Behind g4LayerMajorOn until graded.
+	if a.g4LayerMajor() {
+		if e := a.checkCap(startPos, len(embeddings)); e != nil {
+			return nil, e
+		}
+		if startPos == 0 {
+			a.Reset() // a fresh sequence, as Forward at position 0 does
+		}
+		lg := a.r.prefillG4Paged(embeddings, startPos, true)
+		if err := a.r.takeExecErr(); err != nil {
+			return nil, err
+		}
+		return lg, nil
 	}
 	// Default on since the §3.2 gate passed on 2026-09-09 (S cells K=256/512/1024), above metalFastPrefillFloor: 16
 	// tokens since A-P02 (cells K=16..64), 64 from R3, 256 before. GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill opts

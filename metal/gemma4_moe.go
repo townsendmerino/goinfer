@@ -614,6 +614,9 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	if split {
 		arp.Drain()
 	}
+	if r.pagedNoHead { // a prompt token: no logits wanted (ForwardEmbNoLogitsPipe)
+		return nil
+	}
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)

@@ -421,6 +421,8 @@ type resident struct {
 	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
 	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 	g4moe                                                      *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
+	pagedNoHead                                                bool               // a paged forward skips the final norm and LM head (ForwardEmbNoLogitsPipe); exec-thread only
+	g4LayerMajorRuns                                           int                // prompts prefillG4Paged ran (4b); a test reads it to see the route was taken
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
 	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +
@@ -2108,12 +2110,13 @@ func (r *resident) ForwardEmbMRoPEPipe(emb []float32, pos, ropePos int) []float3
 // overlapping token t+1's trunk encode with token t's GPU execution while skipping the LM head
 // dispatch and logits readback.
 func (r *resident) ForwardEmbNoLogitsPipe(emb []float32, pos int) {
-	if r.g4moe != nil && r.g4moe.paged {
+	if (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged) {
+		// The synchronous paged path (no executor, ForwardEmbMRoPEPipe's reason), with the final norm and LM head
+		// skipped: a prompt token's logits are discarded, and on M26 the head reads ~0.74 GB of int8 a token
+		// (task-m26-mac-2026-10.md). The layers, and so the KV, are the same calls either way.
+		r.pagedNoHead = true
 		r.ForwardEmb(emb, pos)
-		return
-	}
-	if r.moe != nil && r.moe.paged {
-		r.ForwardEmb(emb, pos)
+		r.pagedNoHead = false
 		return
 	}
 	r.ensureExec()

@@ -14,8 +14,8 @@ Body ~730 words. Build passes (`-drafts`). `figures: []` on purpose: no measured
 | `-job-dir`: JSONL journal `jobs.jsonl`, 0700/0600, last line per id, running becomes `interrupted` | `jobjournal.go`; flag text `internal/serveapp/main.go:394` |
 | Journal has prompt token ids, not text; result is NOT journaled | `job.go` (`PromptIDs` json tag; `result` unexported, comment "not journaled") |
 | After restart: GET gives state, no result; `/events` gives 410 | `handleGetJob` (result only if non-nil); `handleJobEvents` (410 branch) |
-| Without `-job-dir`, all in memory; files and batch records are in memory only | `job.go`, `files.go`, `batches.go` (no journal); `internal/serveapp/main.go:971-979` |
-| Cap 256 each for jobs, files, batches; only terminal jobs evicted | `internal/serveapp/main.go:971-982`; `job.go` `evictLocked` |
+| Without `-job-dir`, all in memory; files and batch records are in memory only | `job.go`, `files.go`, `batches.go` (no journal); `internal/serveapp/main.go:974-982` |
+| Cap 256 each for jobs, files, batches; only terminal jobs evicted | `internal/serveapp/main.go:974-985`; `job.go` `evictLocked` |
 | Text chat only; images/tools refused; batch endpoint must be `/v1/chat/completions` | `jobs_http.go`; `internal/serveapp/batches_http.go:84-86`; task doc J3/J4 "Not built" |
 | `completion_window` accepted, not enforced | task doc J4 "Not built" |
 | One generation per model at a time | `docs/releases/v0.19.0.md` ("One generation at a time per model") |

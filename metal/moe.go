@@ -1081,6 +1081,9 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 		r.encodeLayer(dense, l)
 	}
 	closeDense()
+	if r.pagedNoHead { // a prompt token: no logits wanted (ForwardEmbNoLogitsPipe)
+		return nil
+	}
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)

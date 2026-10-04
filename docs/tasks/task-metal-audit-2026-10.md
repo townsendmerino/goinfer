@@ -23,7 +23,7 @@ Metal int8 task's O1.
   (T1.3, T1.4, T1.10's timing half, T1.12's microbenchmark) move to the night queue here.
 - **One night queue** on the Mac: jobs of 3 h or less, none starting past the 06:30 deadline, the owner starts it.
   Tonight's queue already holds 3 h 45 min, so the first audit batch is tomorrow night at the earliest.
-- **Memory.** 16 GB, with about 5 GB free by day. M26 is off-limits on this Mac without the owner's say-so (a
+- **Memory.** 16 GB, with about 5 GB free by day. Since 2026-10-04 M26 may run by day on Metal, paged, guard on, with `-require-backend` (owner; `docs/tasks/task-m26-mac-2026-10.md`); before that it was off-limits on this Mac without the owner's say-so (a
   monitored night run at most). That gates T1.8, T1.9, C-P01's probe and D-P01's measurement. The gpt-oss 20B
   checkpoint T1.13 needs is not on the Mac, and G20 is off-limits here too, so T1.13 runs on nobara.
 - **Gates before speed.** F-G01 lands before any prefill-attention change, and D-G01 before any MoE prefill build.
