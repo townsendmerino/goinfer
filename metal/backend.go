@@ -71,12 +71,10 @@ func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 // an adapter satisfying decoder.ResidentForward. Never crashes the process: BuildResident
 // compiles MSL / creates the device and panics on failure — recover → decline (ok=false) →
 // the decoder falls back to the staged/CPU path. Callers gate on DecodeRunnerEligible first;
-// weights load as either int4 or int8 (Options{Quant:"int4"/"int8int8"}) — an f32 projection
-// declines. G10 (docs/tasks/task-gpu-paths-2026-09.md): this backend has NO int8 GEMV kernel at all —
-// int4Buf (model.go) re-quantizes an int8-loaded weight through the SAME W4A8 packer an int4
-// load uses, so `--quant int8int8` on Metal runs int4 numerics on the GPU while holding the int8
-// host copy (more RAM, not more precision). decoder.Model.DecodePath() reports this honestly
-// rather than repeating the requested quant string as if it were what actually executes.
+// weights load as either int4 or int8 (Options{Quant:"int4"/"int8int8"}); an f32 projection declines with the
+// quant to use (f32Projection). A dense int8 model runs natively on W8A8 kernels (r.w8, docs/tasks/task-metal-int8-2026-10.md);
+// one native int8 does not cover (MoE, DeltaNet, int4mix) is re-quantized to int4 through the W4A8 packer an int4 load
+// uses, and decoder.Model.DecodePath() names that re-quantization rather than repeating the requested quant.
 func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	defer func() {
 		if p := recover(); p != nil {

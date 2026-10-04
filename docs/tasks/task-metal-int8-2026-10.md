@@ -419,3 +419,11 @@ a standing no.
 - **The file path checked by day on the 0.5B:** a reference written on the Mac and read back reproduces the in-process
   run exactly (0.098462, 0.066667, 0.677×).
 - **Bar and rule unchanged.**
+- 2026-10-04: **slice 4, f32: a clear decline, not a silent quantization.** An f32 model reaches Metal only when f32 was
+  asked for (`-quant` unset on a safetensors load with `-backend metal`). Quantizing it to int8 at build, as CUDA and
+  WebGPU do, would run a precision the user did not ask for.
+  - Metal now declines it with the reason and the quant to use ("weights loaded at f32 (layer 0 q_proj); metal runs
+    int4 or int8 weights: load with -quant int4 or int8int8"), instead of `int4Concat`'s recovered panic, and the
+    model runs at f32 on the CPU (`TestBuildResident_f32DeclinesClearly`).
+  - The build-time quantization stays possible if the owner wants it.
+  - The backend's stale "no int8 GEMV kernel at all" doc comment is corrected.

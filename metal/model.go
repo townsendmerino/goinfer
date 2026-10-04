@@ -785,6 +785,24 @@ func w8Weights(m *decoder.Model) bool {
 	return true
 }
 
+// f32Projection names the first dense body projection still at f32, "" when there is none (every projection int4 or
+// int8). A model's router and other f32-kept tensors are not body projections and do not count.
+func f32Projection(m *decoder.Model) string {
+	w := m.Weights()
+	for l := range w.Layers {
+		lw := &w.Layers[l]
+		for _, c := range []struct {
+			name string
+			wm   *linalg.WeightMat
+		}{{"q_proj", &lw.QProj}, {"o_proj", &lw.OProj}, {"up_proj", &lw.UpProj}, {"down_proj", &lw.DownProj}} {
+			if c.wm.Rows() > 0 && c.wm.Kind() == "f32" {
+				return fmt.Sprintf("layer %d %s", l, c.name)
+			}
+		}
+	}
+	return ""
+}
+
 // w8PreciseMath compiles the library of a model headed for the native int8 path without fast math (owner decision,
 // 2026-10-04, docs/tasks/task-metal-int8-2026-10.md): at int8int8 any difference from the CPU is amplified by the
 // activation quantization, and fast math was about 40% of gate F3's gap (KL(f32 ‖ Metal int8) 0.027917 fast, 0.025440
@@ -1009,6 +1027,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// are off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
 	// them through its W8 tiles (slice 2, gemm_w8f16_*).
 	r.w8 = w8Eligible(m, r)
+	if why := f32Projection(m); why != "" {
+		// An f32 load reaches here only when f32 was asked for; this backend runs int4 or int8 weights and does not
+		// quantize them behind the request (docs/tasks/task-metal-int8-2026-10.md, slice 4). A clear decline instead of
+		// int4Concat's panic on an f32 kind.
+		return nil, fmt.Errorf("weights loaded at f32 (%s); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU", why)
+	}
 	if r.w8 {
 		r.decodeLaneW4F16 = false
 	}
