@@ -398,6 +398,19 @@ type PrefillPathReporter interface {
 	PrefillPath() (batched bool, reason string)
 }
 
+// PrefillTailExact is an OPTIONAL Prefiller extension: true when the backend's PrefillLast over a SHORT suffix that
+// continues a prefix it prefilled computes, bit for bit, what one PrefillLast over the whole prompt computes for those
+// positions, and its routing between its prefill lanes depends on the whole prompt's length, not the suffix's. Then a
+// reused prompt (resident_reuse.go) can hand the batched path a suffix of any length and get the cold run's bits.
+//
+// Without it residentPrefillSeed offers only suffixes of 8 tokens or more, so a repeated prompt (a 1-token suffix) ran
+// its last position through decode while the cold run had computed it in the batched pass, which is not bit-identical
+// to decode: on Metal the warm reply differed from the cold one some tens of tokens in (2026-10-04, found as the
+// "MC3 pass identity defect" in docs/tasks/task-metal-audit-2026-10.md's A-P02 result).
+type PrefillTailExact interface {
+	PrefillTailExact() bool
+}
+
 // VerifyPathReporter is an OPTIONAL resident extension: report at LOAD time whether the
 // speculative verify path (ForwardN) is batched or falls back to a sequential loop.
 // reason names the condition when sequential (e.g. "sequential — paged MoE requires per-layer host staging").

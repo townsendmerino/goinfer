@@ -798,6 +798,35 @@ newcomer whose prompt takes the pass makes both generations diverge from their a
 - A 32 bound would carry the defect to prompts of 32–63 tokens on serve's default 2-slot Metal resident; at 64 nothing
   changes for those residents. Lower `metalStepPrefillCeiling` to 32 once the defect is fixed.
 
+**Root-caused and fixed the same morning (owner: "we need to root-cause and fix this"): not an MC3 defect, a warm
+prompt taking a different route from the cold one.**
+- **Below the decoder it never happened.** Driving the resident directly (A prefilled by the pass on slot 0 and decoded
+  alone 24 tokens, B prefilled by the pass on slot 1, then batched steps), every step's logits equal both solo runs'.
+- **The tests compared warm against cold.** Their alone runs ran first on the same model, so the joint run of A reused
+  99 of its 100 prompt positions. On a fresh model (nothing to reuse) A and B both match their alone runs exactly.
+- **The mechanism:** the decoder offered `PrefillLast` only suffixes of 8 tokens or more, so a repeated prompt (a 1-token
+  suffix) ran its last position through decode, while the cold run had computed it inside the f16 pass. Below the
+  floor both are decode bits, which is why short prompts never showed it. It was the B-P03 trap (cold against warm,
+  `TestSpecNgram_copyOnStepVerify`) again, met from the batching side. The "held back" reasoning above rested on reading
+  it as a batching defect, which it was not.
+- **The fix** (`decoder.PrefillTailExact`): a backend whose short continuation reproduces its cold pass declares it, and
+  `residentPrefillSeed` then offers a reused prompt's suffix of any length whenever the whole prompt reaches 8 tokens.
+  The backend routes on the whole prompt's length, so warm and cold take the same route. Metal declares it for the
+  dense and Gated-DeltaNet passes; MoE stays off (its expert grouping at one row is unproven); CUDA and WebGPU are
+  unchanged. A 1-token suffix whose prompt ends in the step's range declines to the sequential loop, which computes
+  the step's bits (the step needs two rows).
+- **Gates:**
+  - `TestPrefillLast_tailContinuationMatchesCold`: a 1, 2, 7 or 8-token pass continuing a cached pass prefix equals the
+    cold pass in every logit; the decode continuation differs in all of them.
+  - `TestGenerate_warmRepeatMatchesCold`: 1 and 2 slots, prompts of 12, 40 and 100 tokens, a warm repeat (n−1 positions
+    reused, asserted) emits the cold run's 96 tokens. With the decoder change reverted it fails exactly the pass cases
+    (1 slot at 40 and 100, 2 slots at 100; at token 35, 60 and 60).
+  - `TestMC3Chain_newcomerJoinsLongPrompts` and `_stalledConsumerLongPrompts`: the former repro, now default-run and
+    green.
+- Forward goldens re-proven for the `decoder/model.go` change (41 passed, 23 skipped, 0 failed) and the parity hashes
+  refreshed; metal suite 237 passed, 1 failed (the pre-existing `TestPrefillParityMoEGatedShared`).
+- **What this means for the step bound:** the reason it was held back is gone, so it follows the rule (next commit).
+
 `TestMC3Chain_aloneMatchesUnbatchedAndRunsTheChain` now uses a 12-token prompt: at 16 and over its unbatched (single-slot)
 model takes the pass and its MC3 model the step, which differ by design. Metal suite: 232 passed, 1 failed (the pre-existing
 `TestPrefillParityMoEGatedShared`).

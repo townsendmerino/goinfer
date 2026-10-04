@@ -4,7 +4,6 @@ package metal
 
 import (
 	"context"
-	"os"
 	"slices"
 	"testing"
 	"time"
@@ -12,19 +11,15 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMC3PassNewcomer_identityRepro and TestMC3PassStall_identityRepro: an OPEN defect, kept as its repro
-// (docs/tasks/task-metal-audit-2026-10.md, A-P02 result). TestMC3Chain_newcomerJoinsAndBothMatchAlone and
-// _stalledConsumerDoesNotStarveANewcomer with prompts of 100/80 and 90/70 tokens, which take the f16 batched pass instead of
-// the step: on the 2-slot fixture both generations diverge from their alone runs some tens of tokens after the newcomer
-// joins (A first differs at token 42 of 160, B at 47 of 64). RED at 0eb53e90, before the serve chain, and with the chain
-// off; the pass is slot-independent (the same prompt and 60 decode steps on slot 0 and slot 1 match bit for bit). Opt-in
-// (GOINFER_MC3_PASS_REPRO=1) because it is red until fixed; a fix turns it green.
-func TestMC3PassNewcomer_identityRepro(t *testing.T) {
+// TestMC3Chain_newcomerJoinsLongPrompts and TestMC3Chain_stalledConsumerLongPrompts are the two TestMC3Chain_ scenarios
+// with prompts long enough for the batched pass (100/80 and 90/70 tokens) instead of the step. Their alone runs are
+// cold and their joint runs reuse the slot the alone run left, so they also pin warm-against-cold identity: before
+// decoder.PrefillTailExact a warm prompt re-ran its last position through decode where the cold one had used the pass,
+// and both generations diverged tens of tokens in (A at token 42 of 160, B at 47 of 64). That was first read as an MC3
+// batching defect; batching is bit-identical (the joint run on a fresh model matches), the cold/warm route was not.
+func TestMC3Chain_newcomerJoinsLongPrompts(t *testing.T) {
 	pa, pb := mc3ChainPrompt(2, 100), mc3ChainPrompt(3, 80)
 	const na, nb = 160, 64
-	if os.Getenv("GOINFER_MC3_PASS_REPRO") != "1" {
-		t.Skip("the open MC3 identity defect's repro (task doc, A-P02 result); set GOINFER_MC3_PASS_REPRO=1: it is RED until fixed")
-	}
 	m := mc3ChainModel(t, 2)
 	defer m.Close()
 	wantA := mc3ChainRun(t, m, pa, na, decoder.SamplingParams{})
@@ -76,11 +71,8 @@ func TestMC3PassNewcomer_identityRepro(t *testing.T) {
 	t.Logf("A %d tokens, B %d, both identical to alone; %d held tokens, %d batched steps, %d holds", len(gotA), len(gotB), held, steps, st.Holds-before.Holds)
 }
 
-func TestMC3PassStall_identityRepro(t *testing.T) {
+func TestMC3Chain_stalledConsumerLongPrompts(t *testing.T) {
 	pa, pb := mc3ChainPrompt(4, 90), mc3ChainPrompt(5, 70)
-	if os.Getenv("GOINFER_MC3_PASS_REPRO") != "1" {
-		t.Skip("the open MC3 identity defect's repro (task doc, A-P02 result); set GOINFER_MC3_PASS_REPRO=1: it is RED until fixed")
-	}
 	m := mc3ChainModel(t, 2)
 	defer m.Close()
 	wantA := mc3ChainRun(t, m, pa, 80, decoder.SamplingParams{})

@@ -203,6 +203,11 @@ any surface may still change.
 
 ### Fixed
 
+- **Metal: a repeated prompt gives the same reply as the first time.** When a prompt was sent again and its cached
+  copy was reused, its last position was recomputed one token at a time, while the first (cold) request had computed it
+  in the batched prefill pass. The two differ in the last bits, so a long enough reply could part some tens of tokens
+  in. A reused prompt now continues on the same prefill route the cold one took. This affected prompts that take the
+  batched pass (64 tokens and up on a multi-slot resident, 16 and up on a single-slot one).
 - **Windows: `fit` and the load-time memory guard read the machine's RAM.** Windows had no host-memory probe, so
   `fit` placed nothing ("no memory probe available") and the guard let every load proceed unchecked. It now reads
   `GlobalMemoryStatusEx` (total and available physical memory), as macOS and Linux read theirs.

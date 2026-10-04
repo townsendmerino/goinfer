@@ -788,6 +788,12 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 		}
 		return a.prefillByStep(ctx, embeddings, startPos)
 	}
+	// One token whose whole prompt ends in the step's range (a repeated prompt's 1-token suffix, PrefillTailExact): the
+	// step needs two rows, and the pass would not compute the step's bits, which the cold prompt of this length ran on.
+	// The sequential path's decode does.
+	if len(embeddings) < 2 && a.inStepRange(promptLen, floor) {
+		return nil, fmt.Errorf("metal: a 1-token suffix in the batched step's range runs on the sequential path (the step's bits)")
+	}
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
 	}
@@ -1185,3 +1191,16 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 // allocated. Metal buffers are unified/system memory and purego has no ARC, so without this a
 // multi-model serve (or /admin/models/unload) leaks the whole model per load.
 func (a *metalResident) Close() error { return a.r.Close() }
+
+// PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the
+// cold pass bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the
+// whole prompt's length. Proven for the dense and Gated-DeltaNet passes (TestMC5_prefillChunkInvariance,
+// TestDB01_chunkedPrefillMatchesWhole); not claimed for the MoE passes, whose expert grouping is per pass and unproven
+// at one row.
+func (a *metalResident) PrefillTailExact() bool { return a.r.moe == nil && a.r.g4moe == nil }
+
+// inStepRange: a prompt of promptLen tokens is in the range the batched step takes on this resident (promptStepOK's
+// length test, without its two-row minimum).
+func (a *metalResident) inStepRange(promptLen, floor int) bool {
+	return !a.r.promptStepOff && a.VerifyCost() != nil && floor > 0 && promptLen < max(floor, metalStepPrefillCeiling)
+}
