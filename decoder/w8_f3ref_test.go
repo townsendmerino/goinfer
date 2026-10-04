@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/gob"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestW8F3Reference_write(t *testing.T) {
 		t.Skip("set GOINFER_W8_F3_REF_OUT and GOINFER_W8_GATE_MODEL")
 	}
 	const nPrompts, promptLen, steps = 8, 16, 32
-	tk, err := tokenizer.LoadGGUF(path)
+	tk, err := loadTokenizerForTest(path)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
@@ -81,4 +82,12 @@ func TestW8F3Reference_write(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("wrote %s (%s, %d prompts x %d positions)", out, ref.Arch, nPrompts, steps)
+}
+
+// loadTokenizerForTest reads a GGUF's tokenizer, or a checkpoint directory's tokenizer.json.
+func loadTokenizerForTest(path string) (*tokenizer.Tokenizer, error) {
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		return tokenizer.Load(filepath.Join(path, "tokenizer.json"))
+	}
+	return tokenizer.LoadGGUF(path)
 }

@@ -754,6 +754,10 @@ var nativeInt8 = true
 // prefill confirmation (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"). Tests turn it off for the re-quant arm.
 var nativeInt4Mix = true
 
+// nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*).
+// OFF until its gates pass (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8"); tests turn it on.
+var nativeInt8MoE = false
+
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
 // prices the owner's precise-math decision.
 var w8FastMath = false
@@ -764,7 +768,11 @@ var w8FastMath = false
 // (whose families also carry the gated-softmax layers). Anything else keeps the int4 re-quantization. A K=V layer
 // has no v_proj and fails the check, so it is never fused as int8.
 func w8Eligible(m *decoder.Model, r *resident) bool {
-	if !nativeInt8 || r.moe != nil || r.g4moe != nil || r.dnet != nil {
+	if !nativeInt8 || r.g4moe != nil || r.dnet != nil {
+		return false
+	}
+	// slice 4: a generic resident MoE (Qwen-style experts, not gpt-oss's biased ones, not paged: the pool stages int4)
+	if r.moe != nil && (!nativeInt8MoE || r.moe.isGptOss || r.moe.paged) {
 		return false
 	}
 	return w8Weights(m)
@@ -780,9 +788,19 @@ func w8Weights(m *decoder.Model) bool {
 	nonGated := m.NonGatedMLPResident()
 	for l := range w.Layers {
 		lw := &w.Layers[l]
-		mats := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.UpProj, &lw.DownProj}
-		if !nonGated {
-			mats = append(mats, &lw.GateProj)
+		mats := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj}
+		switch {
+		case len(lw.Experts) > 0: // an MoE layer: its routed experts and shared expert carry the FFN (slice 4)
+			for e := range lw.Experts {
+				mats = append(mats, &lw.Experts[e].Gate, &lw.Experts[e].Up, &lw.Experts[e].Down)
+			}
+			if lw.SharedExpert.Up.Rows() > 0 {
+				mats = append(mats, &lw.SharedExpert.Gate, &lw.SharedExpert.Up, &lw.SharedExpert.Down)
+			}
+		case nonGated:
+			mats = append(mats, &lw.UpProj, &lw.DownProj)
+		default:
+			mats = append(mats, &lw.GateProj, &lw.UpProj, &lw.DownProj)
 		}
 		for _, wm := range mats {
 			if _, _, _, ok := wm.Int8(); !ok || wm.Rows() == 0 || wm.Cols()%4 != 0 {
@@ -856,7 +874,11 @@ func w8PreciseMath(m *decoder.Model) bool {
 		return false
 	}
 	if _, _, _, _, _, _, _, _, _, _, moe := m.MoEResidentParams(); moe {
-		return false
+		// slice 4's MoE, as w8Eligible will admit it: not gpt-oss, not paged
+		if _, _, gptoss := m.GptOssActResident(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m) != "" {
+			return false
+		}
+		return w8Weights(m)
 	}
 	return w8Weights(m) || nativeInt4Mix && w8AttnWeights(m) // int4mix's attention runs the same int8 kernels
 }
@@ -1070,6 +1092,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// are off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
 	// them through its W8 tiles (slice 2, gemm_w8f16_*).
 	r.w8 = w8Eligible(m, r)
+	if r.w8 && r.moe != nil { // slice 4: the experts' GEMVs on their int8 weights (buildMoELayer uploads them as int8)
+		r.moe.w8 = true
+		r.moe.pGU, r.moe.pDownWacc = pipe("gemv_w8a8_moe"), pipe("gemv_w8a8_moe_wacc")
+		r.moe.kSlots = false // D-P03's k-slot kernels read int4
+	}
 	r.w8Attn = !r.w8 && w8AttnEligible(m, r)
 	if r.w8Attn {
 		r.decodeLaneW4F16 = false // the f16 lane reads int4 attention weights

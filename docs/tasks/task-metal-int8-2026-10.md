@@ -502,3 +502,34 @@ re-quant's 3.
 - M4 (the pooled prefill gate on the 1.5B at int4mix) is queued tonight as the confirmation. If it fails,
   `nativeInt4Mix` goes off again.
 - CHANGELOG entry under Unreleased.
+
+### Slice 4: MoE int8 (built 2026-10-04; gates pre-registered the same day, before any graded run)
+
+**What is built.** A generic resident MoE (Qwen-style routed experts, optional shared expert; not gpt-oss's biased
+experts, not paged, whose pool stages int4) whose projections are all int8 goes on the native path (`r.w8`, with
+`w8Weights` checking an MoE layer's experts and shared expert in place of a dense FFN):
+- **Expert GEMVs:** `gemv_w8a8_moe` / `gemv_w8a8_moe_wacc`, the int4 expert kernels' signatures over `W8A8_SA_BODY`
+  at the routed expert's row, uploaded with `int8Concat`.
+- **Shared expert:** its int8 weights on the dense int8 twins, through `gemvExt`'s shipped-kernel fallback.
+- **Router:** f32, unchanged.
+- **Prefill:** the expert-major pass with int8 strides on the W8 tiles.
+- **Precise math** (O3). D-P03's k-slot kernels are off for it. MC3 excludes MoE.
+- **Behind `nativeInt8MoE`, off until these gates pass.** Gemma 4 MoE, DeltaNet MoE, gpt-oss and paged experts keep
+  the int4 re-quant.
+
+**Gates.**
+- **X1, kernel exactness (by day):** each int8 expert GEMV equals a Go reference — `float32(Σ int8·int8)·aScale·wScale`,
+  then for `_wacc` `out + wgt·y` — bit for bit on random inputs at the slice's shapes, compiled precise as production
+  compiles a native int8 model.
+- **X2, assembly (by day, tiny fixtures):**
+  - (a) identical experts with a zeroed shared expert against the equivalent dense FFN, both native int8: minimum
+    cosine ≥ 0.9999 and argmax 16/16 (the int4 assembly gate's bar);
+  - (b) distinct experts with a live shared expert, Metal native against the CPU at int8int8: minimum cosine ≥ the int4
+    re-quant arm's against the CPU, and hard flips ≤ its.
+- **X3, closer to f32 (by day, the Qwen1.5-MoE 4-layer slice):** F3′'s harness at int8int8 on the slice, 8 prompts ×
+  30 positions. Pooled KL(f32 ‖ Metal MoE int8 native) ≤ 1.10 × KL(f32 ‖ CPU int8int8, f16 KV). Reported: the re-quant
+  arm.
+- **X4, prefill (night):** D-G01's gate (`TestDG01_expertMajorMoEPrefill`) on the slice at int8int8, its bars unchanged.
+
+**Rule:** X1-X3 pass → `nativeInt8MoE` on, X4 at night as the prefill confirmation; X4 failing turns it off. Any of
+X1-X3 failing keeps it off.

@@ -1503,6 +1503,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				// B. Expert Gate/Up GEMM
 				guWOff := eIdx * rowsPerExpertGu * wprGu * 4
 				guSOff := eIdx * rowsPerExpertGu * gprGu * 2
+				if r.w8 { // int8 slice 4: H bytes of int8 codes and one f32 scale a row
+					guWOff, guSOff = eIdx*rowsPerExpertGu*H, eIdx*rowsPerExpertGu*4
+				}
 				gemm(e, CePad, rowsPerExpertGu, expertIn, L.moe.expGuW.At(guWOff), L.moe.expGuS.At(guSOff), guF, uCePad, u2MoeI, uH, dummyBias, m0)
 
 				// C. SwiGLU
@@ -1511,6 +1514,9 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				// D. Expert Down GEMM
 				dOff := eIdx * rowsPerExpertD * wprD * 4
 				dSOff := eIdx * rowsPerExpertD * gprD * 2
+				if r.w8 { // moeInter bytes of int8 codes and one f32 scale a row
+					dOff, dSOff = eIdx*rowsPerExpertD*moeInter, eIdx*rowsPerExpertD*4
+				}
 				gemm(e, CePad, rowsPerExpertD, dqF, L.moe.expDW.At(dOff), L.moe.expDS.At(dSOff), expertDown, uCePad, uH, uMoeI, dummyBias, m0)
 
 				// E. Scatter-add weighted output into residual xF

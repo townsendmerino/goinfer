@@ -27,6 +27,9 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	path := w8GateModel(t)
 	// GOINFER_W8_F3_QUANT=int4mix runs the same gate for int4mix (M3, slice 4): every int8int8 arm below at int4mix,
 	// the native arm with nativeInt4Mix on, and the int4 arm replaced by int4mix's re-quant.
+	prevMoE := nativeInt8MoE // an MoE checkpoint at int8int8 takes the native MoE path (slice 4, X3)
+	nativeInt8MoE = true
+	t.Cleanup(func() { nativeInt8MoE = prevMoE })
 	q8 := "int8int8"
 	if os.Getenv("GOINFER_W8_F3_QUANT") == "int4mix" {
 		q8 = "int4mix"
@@ -34,7 +37,13 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 		nativeInt4Mix = true
 		t.Cleanup(func() { nativeInt4Mix = prevMix })
 	}
-	tk, err := tokenizer.LoadGGUF(path)
+	loadTok := tokenizer.LoadGGUF
+	if st, serr := os.Stat(path); serr == nil && st.IsDir() { // a checkpoint directory (the MoE slice, X3)
+		loadTok = func(dir string) (*tokenizer.Tokenizer, error) {
+			return tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+		}
+	}
+	tk, err := loadTok(path)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}

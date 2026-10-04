@@ -238,6 +238,46 @@ kernel void gemv_w4a8_moe(device const uint4* wq[[buffer(0)]], device const half
     if (lane==0) out[row] = acc*asc[0];
 }
 
+// gemv_w8a8_moe / gemv_w8a8_moe_wacc (int8 slice 4, docs/tasks/task-metal-int8-2026-10.md): the expert GEMVs above on the
+// native int8 path's weights, in their argument order and launch shape. The stacked buffer holds every expert's int8
+// rows (K bytes each) with one f32 scale per row; the weight row is idx[slot]*rowsPerExpert + outRow. The body is
+// W8A8_SA_BODY's at that row: the activation staged as words, an exact int32 dot, and float(acc)·aScale·wScale through
+// simd_broadcast_first. Mode 0 overwrites (fused gate|up); mode 1 adds wgt[slot]·y into the residual (down), the
+// combine gemv_w4a8_moe_wacc does.
+#define W8A8_MOE_BODY \
+    threadgroup uint* As4 = (threadgroup uint*)As; \
+    device const uint* a4 = (device const uint*)aq; \
+    uint G = K >> 2u; \
+    for (uint i = tid; i < G; i += tgs) As4[i] = a4[i]; \
+    threadgroup_barrier(mem_flags::mem_threadgroup); \
+    uint row = tgid*(tgs>>5u) + sgid; \
+    uint wrow = idx[slot]*rowsPerExpert + row; \
+    device const uint* wr = (device const uint*)(wq + (uint)wrow*K); \
+    int acc = 0; \
+    for (uint g = lane; g < G; g += 32u) acc += DOT4I8(As4[g], wr[g]); \
+    acc = simd_sum(acc); \
+    float y = simd_broadcast_first(float(acc) * asc[0] * sct[wrow]);
+kernel void gemv_w8a8_moe(device const char* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], constant uint& slot[[buffer(7)]],
+    constant uint& rowsPerExpert[[buffer(8)]], threadgroup short* As[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    W8A8_MOE_BODY
+    if (lane==0) out[row] = y;
+}
+kernel void gemv_w8a8_moe_wacc(device const char* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], device const float* wgt[[buffer(7)]],
+    constant uint& slot[[buffer(8)]], constant uint& rowsPerExpert[[buffer(9)]], threadgroup short* As[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    W8A8_MOE_BODY
+    if (lane==0) out[row] += wgt[slot]*y;
+}
+
 // Indexed Stage-A W4A8 expert GEMV, mode-1 WEIGHTED-ACCUMULATE (down projection). Weight
 // row = idx[slot]*rowsPerExpert + outRow (rowsPerExpert = H); epilogue folds the router
 // weight and sums straight into the residual: out[row] += wgt[slot]*acc*asc[0]. This is
@@ -407,6 +447,10 @@ type moeResident struct {
 	uSlot                         []Buffer // k compile-time slot-index constants
 
 	rLogits, rIdx, rWgt Buffer // router scratch: logits[nE], idx[k] (u32), wgt[k]
+
+	// w8: the experts and shared expert run on their int8 weights (int8 slice 4); set by buildResident once w8Eligible
+	// has admitted the model, before the layers are built.
+	w8 bool
 
 	// D-P03: the k selected experts in four dispatches (gate|up, SwiGLU, down, combine) instead of 3k. kSlots is
 	// false for gpt-oss (its own activation and biased down kernels) and for a shape the k-slot grids do not divide;
@@ -734,17 +778,28 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		for e := range lw.Experts {
 			guMats = append(guMats, &lw.Experts[e].Gate, &lw.Experts[e].Up)
 		}
-		ml.expGuW, ml.expGuS = int4Concat(d, guMats...)
 		downMats := make([]*linalg.WeightMat, 0, len(lw.Experts))
 		for e := range lw.Experts {
 			downMats = append(downMats, &lw.Experts[e].Down)
 		}
-		ml.expDW, ml.expDS = int4Concat(d, downMats...)
+		if mo.w8 { // slice 4: every expert's int8 rows stacked, one f32 scale a row
+			ml.expGuW, ml.expGuS = int8Concat(d, mo.alias, guMats...)
+			ml.expDW, ml.expDS = int8Concat(d, mo.alias, downMats...)
+		} else {
+			ml.expGuW, ml.expGuS = int4Concat(d, guMats...)
+			ml.expDW, ml.expDS = int4Concat(d, downMats...)
+		}
 	}
 	if mo.sharedInter > 0 {
-		ml.shGuW, ml.shGuS = int4ConcatA(d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
 		var e error
-		if ml.shDW, ml.shDS, e = int4BufA(d, mo.alias, &lw.SharedExpert.Down); e != nil {
+		if mo.w8 {
+			ml.shGuW, ml.shGuS = int8Concat(d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
+			ml.shDW, ml.shDS, e = int8BufA(d, mo.alias, &lw.SharedExpert.Down)
+		} else {
+			ml.shGuW, ml.shGuS = int4ConcatA(d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
+			ml.shDW, ml.shDS, e = int4BufA(d, mo.alias, &lw.SharedExpert.Down)
+		}
+		if e != nil {
 			panic(e)
 		}
 		if !mo.sharedUngated {
