@@ -477,7 +477,7 @@ gate runs at night before it ships.
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**; the 16-row tile **shipped**: 1.09× on the slice's 512-token pass, 1.56× / 1.73× on the 1.5B's / 7B's 16-token pass), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
-7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
+7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02 (**killed** 2026-10-04: 0.777 ms against its 0.65 ms line, 1.11× on the 7B gate|up at B = 2), E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 (T1.7 ran: it stands on the 7B, parked on the 1.5B; **the owner parked it on both on 2026-10-03**, low value).
@@ -1183,6 +1183,27 @@ The ratio is 256's token time ÷ the arm's; every rep of every arm was below 1:
 stays.
 - **Not built:** the audit's device-read (unstaged) variant at MLX's 64 threads. It is a kernel rewrite, and R18b's
   first cut lost in sequence for exactly an activation re-read.
+
+### E-P02: KILLED by its kill line (written 2026-10-04)
+
+**The probe.** `TestEP02_adjacentRows`, at `fdbf4740`, then removed:
+- `mc3_gemv_w4a8_sa_rows_adj4` runs the batched step's per-row GEMV over B rows in one dispatch. Each weight tile's B
+  threadgroups are adjacent in launch order (tile tg / B, row tg % B), and each runs `sa_rows_acc` as the per-row
+  dispatch does.
+- Against production below the fragment's calibrated size: B dispatches of `gemv_w4a8_sa_rows4`.
+- 16 reps per command buffer, best of 15, arms alternated; GPU time. Every output float equal, in every cell.
+
+| Shape | B = 2 (per-row → adjacent) | B = 3 | B = 4 |
+|---|---|---|---|
+| 7B gate\|up (N 37,888, K 3,584) | 0.863 → **0.777 ms**, 1.111× | 1.134× | 1.147× |
+| 7B qkv width (N 4,608) | 0.111 → 0.100 ms, 1.110× | 1.153× | 1.178× |
+| 1.5B gate\|up (N 17,920, K 1,536) | 1.009× | 1.019× | 1.035× |
+
+**Verdict: killed.** The audit's line was "B = 2 above ~0.65 ms" on the 7B gate|up, and it reads 0.777. The second
+threadgroup finds part of the tile in cache, not most of it; the DRAM floor is 0.435 ms.
+- What it would buy at B = 2 on the 7B: about 0.086 ms × 28 layers = 2.4 ms of the 58.76 ms step, about 4%. That is in
+  the park zone even without the kill line.
+- The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
 
 ## Owner decisions
 

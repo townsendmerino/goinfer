@@ -2280,6 +2280,8 @@ chunk invariance (C = 81, now in the gate). Details in the program doc's log.
 
 #### E-P02 [P,B, Minor; Major if the probe lands] M-adjacent threadgroup layout for the 7B at B=2
 
+**Status, 2026-10-04: killed.** Its own kill line was B = 2 above ~0.65 ms; the adjacent layout reads 0.777 ms against the per-row 0.863 ms on the 7B gate|up (1.111×; 1.13-1.15× at B = 3-4). Outputs were equal. That would be about 4% of the 7B B = 2 step (docs/tasks/task-metal-audit-2026-10.md, "E-P02: KILLED").
+
 metal/batch.go:605-619 and 634-639: at B<=`rowsQKV`/`rowsGU` the qkv and gate|up matmuls run production's GEMV once per row, each
 dispatch streaming the whole weight. S4 chose it because the fragment (1.167 ms) loses to two GEMVs (2 x 0.435 = 0.87 ms) on the
 7B gate|up and it is the one saving the S4 record ships (7B B=2 65.29 -> 58.76 ms at depth 128 [rec], S4:14-27). The weight is
