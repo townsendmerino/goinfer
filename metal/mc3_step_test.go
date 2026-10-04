@@ -20,6 +20,10 @@ import (
 // context: the S1 checkpoint under GOINFER_METAL_MC3=1 (mc3RealResident), and otherwise the generated fixture
 // (mc3_fixture_test.go), so the checks run by default (E-G01, docs/audit-metal-2026-09-30.md). A timing calls
 // mc3RealResident instead: on the fixture it would time nothing real.
+// mc3TestQuant is the quant the MC3 checks load at: "int4", or "int8int8" with nativeInt8 on for the native int8 step
+// (int8 slice 3, TestMC3Step_w8BitIdentical).
+var mc3TestQuant = "int4"
+
 func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	t.Helper()
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
@@ -28,6 +32,9 @@ func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	m, r := mc3FixtureResident(t, slots, ctx)
 	if got := len(r.kvSlotBufs); got < slots || r.batch == nil {
 		t.Fatalf("the MC3 fixture built %d KV slots (%d requested) and batched step %v (batchIneligible: %q)", got, slots, r.batch != nil, r.batchIneligible())
+	}
+	if r.w8 != (mc3TestQuant == "int8int8") {
+		t.Fatalf("native int8 %v at quant %s: not the path asked for", r.w8, mc3TestQuant)
 	}
 	return m, r
 }
@@ -51,7 +58,14 @@ func mc3LoadCheckpoint(t *testing.T, slots, ctx int) (*decoder.Model, *resident)
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s: %v", path, err)
 	}
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: slots})
+	quant := mc3TestQuant
+	if os.Getenv("GOINFER_METAL_MC3_QUANT") == "int8int8" { // the native int8 step on the real checkpoint (slice 3)
+		quant = "int8int8"
+		prev := nativeInt8
+		nativeInt8 = true
+		t.Cleanup(func() { nativeInt8 = prev })
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: ctx, ResidentKVSlots: slots})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

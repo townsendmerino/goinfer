@@ -148,7 +148,7 @@ kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uin
 // the 64 × 64 kernel (gemm_w4f16_m64n64 is this template at that tile, kept for the test that checks the template
 // against it). Smaller tiles stage fewer rows per slab: TN = 32 gives each thread one 8-k word of one weight row instead
 // of two, TM = 32 one 8-k block of one activation row.
-template <ushort TM, ushort TN>
+template <ushort TM, ushort TN, bool W8 = false>
 kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
     device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
     constant uint& M[[buffer(4)]], constant uint& N[[buffer(5)]], constant uint& K[[buffer(6)]],
@@ -179,14 +179,30 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
 
     for (uint k0 = 0; k0 < K; k0 += 32u) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
-        float sc = wok ? float(WS[ncol*gpr + k0/32u]) : 0.0f;
-        for (ushort w = 0; w < WPT; w++) {
-            const ushort kb = kq*WPT + w;
-            const uint word = wok ? W[ncol*wpr + k0/8u + kb] : 0u;
-            threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
-            for (ushort kl = 0; kl < 8; kl++) {
-                *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
-                p += 8;
+        if constexpr (W8) {
+            // int8 slice 2 (docs/tasks/task-metal-int8-2026-10.md): W is the native int8 path's row-major int8 codes,
+            // K bytes a row, and WS its per-row f32 scales; an 8-k block is two words.
+            float sc = wok ? reinterpret_cast<device const float*>(WS)[ncol] : 0.0f;
+            for (ushort w = 0; w < WPT; w++) {
+                const ushort kb = kq*WPT + w;
+                const uint2 wd = wok ? *reinterpret_cast<device const uint2*>(W + (ncol*K + k0 + kb*8u)/4u) : uint2(0u);
+                const char4 c0 = as_type<char4>(wd.x), c1 = as_type<char4>(wd.y);
+                threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
+                for (ushort kl = 0; kl < 8; kl++) {
+                    *p = wok ? half(float(kl < 4 ? c0[kl] : c1[kl - 4]) * sc) : 0.0h;
+                    p += 8;
+                }
+            }
+        } else {
+            float sc = wok ? float(WS[ncol*gpr + k0/32u]) : 0.0f;
+            for (ushort w = 0; w < WPT; w++) {
+                const ushort kb = kq*WPT + w;
+                const uint word = wok ? W[ncol*wpr + k0/8u + kb] : 0u;
+                threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
+                for (ushort kl = 0; kl < 8; kl++) {
+                    *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
+                    p += 8;
+                }
             }
         }
         for (ushort j = 0; j < BPT && (TM >= 32 || tr < TM); j++) {
@@ -222,6 +238,12 @@ template [[host_name("gemm_w4f16_m64n32")]] kernel decltype(gemm_w4f16_tile<64, 
 template [[host_name("gemm_w4f16_m32n32")]] kernel decltype(gemm_w4f16_tile<32, 32>) gemm_w4f16_tile<32, 32>;
 template [[host_name("gemm_w4f16_m16n64")]] kernel decltype(gemm_w4f16_tile<16, 64>) gemm_w4f16_tile<16, 64>;
 template [[host_name("gemm_w4f16_m16n32")]] kernel decltype(gemm_w4f16_tile<16, 32>) gemm_w4f16_tile<16, 32>;
+// int8 slice 2: the same tiles over the native int8 path's weights (W8 = true).
+template [[host_name("gemm_w8f16_m64n64")]] kernel decltype(gemm_w4f16_tile<64, 64, true>) gemm_w4f16_tile<64, 64, true>;
+template [[host_name("gemm_w8f16_m32n64")]] kernel decltype(gemm_w4f16_tile<32, 64, true>) gemm_w4f16_tile<32, 64, true>;
+template [[host_name("gemm_w8f16_m64n32")]] kernel decltype(gemm_w4f16_tile<64, 32, true>) gemm_w4f16_tile<64, 32, true>;
+template [[host_name("gemm_w8f16_m32n32")]] kernel decltype(gemm_w4f16_tile<32, 32, true>) gemm_w4f16_tile<32, 32, true>;
+template [[host_name("gemm_w8f16_m16n32")]] kernel decltype(gemm_w4f16_tile<16, 32, true>) gemm_w4f16_tile<16, 32, true>;
 
 // rmsnorm_quant_f16: RMSNorm a single f16 row and fused-quantize it to int8 + f32 scale — the
 // f16-input twin of the decode path's rmsnorm_quant. Prefill's LM head is the SAME int8-pinned,
@@ -942,6 +964,9 @@ func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 			tn = 32
 		}
 	}
+	if pf.w8 { // int8 slice 2: the native int8 path's weights, the same tile
+		return pf.pW8[[2]int{tm, tn}], tm, tn
+	}
 	switch {
 	case tm == 16 && tn == 32:
 		return pf.pGemmM16N32, 16, 32
@@ -963,6 +988,10 @@ type prefillState struct {
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
 	pGemmM16N32                           Pipeline // D-B02's 16-token tile
+	// int8 slice 2 (docs/tasks/task-metal-int8-2026-10.md): a native int8 resident's GEMMs, gemm_w4f16_tile<TM, TN,
+	// true> by (TM, TN); w8 selects them in gemmTile.
+	w8  bool
+	pW8 map[[2]int]Pipeline
 	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
@@ -1009,7 +1038,11 @@ func (r *resident) ensurePrefill() {
 			panic(err)
 		}
 	}()
-	lib, err := r.d.CompileLibrary(prefillKernels, MSL3_1)
+	compile := r.d.CompileLibrary
+	if r.w8 && r.preciseMath { // the owner's precise-math decision for native int8 (w8PreciseMath) covers its prefill too
+		compile = r.d.CompileLibraryPrecise
+	}
+	lib, err := compile(prefillKernels, MSL3_1)
 	if err != nil {
 		panic(fmt.Sprintf("metal prefill compile: %v", err))
 	}
@@ -1037,6 +1070,12 @@ func (r *resident) ensurePrefill() {
 		pSharedGateAdd:    p("shared_gate_add_f16"),
 
 		pQGateSplit: p("qgate_split_f16"), pCopyCols: p("copy_cols_f16"), pAttnGate: p("attn_gate_f16"),
+	}
+	if r.w8 {
+		r.pf.w8, r.pf.pW8 = true, map[[2]int]Pipeline{}
+		for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
+			r.pf.pW8[t] = p(fmt.Sprintf("gemm_w8f16_m%dn%d", t[0], t[1]))
+		}
 	}
 }
 

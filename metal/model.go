@@ -206,10 +206,12 @@ type resident struct {
 	// E-P05: pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
 	// row's partial region, attnFAPartial's.
 	pAttnFARows, pAttnFACombineRows Pipeline
-	attnFAPartialLen                int
-	decodeAttnFA                    bool
-	attnFAPartial                   Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
-	attnFAMaxSplit                  int
+	// int8 slice 3b: a native int8 resident's batched-step projection, B rows per weight read (batch_rows.go)
+	pW8Rows          [batchMaxSeqs + 1]Pipeline // by B
+	attnFAPartialLen int
+	decodeAttnFA     bool
+	attnFAPartial    Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
+	attnFAMaxSplit   int
 	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
 	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
 	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
@@ -739,10 +741,10 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	return NewBufferUint32s(d, words), NewBufferU16s(d, scales)
 }
 
-// nativeInt8 turns the native int8 path on (w8Eligible). It is off until gates F3 and S of
-// docs/tasks/task-metal-int8-2026-10.md pass, and the gate tests set it; it is not an option or an environment
-// variable. When the gates pass it becomes the default and this variable goes.
-var nativeInt8 = false
+// nativeInt8 turns the native int8 path on (w8Eligible). ON since 2026-10-04: F3′, F2 (read as hard flips, owner
+// decision), P2, S and S-auto passed (docs/tasks/task-metal-int8-2026-10.md). Tests turn it off for the int4
+// re-quant arm; it is not an option or an environment variable.
+var nativeInt8 = true
 
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
 // prices the owner's precise-math decision.
@@ -1004,7 +1006,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	// Native int8 (docs/tasks/task-metal-int8-2026-10.md, slice 1): a dense model whose body projections are all int8
 	// runs them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they
-	// are off for it: fast prefill and the f16 lane here, the R18 rows kernels and the MC3 step below.
+	// are off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
+	// them through its W8 tiles (slice 2, gemm_w8f16_*).
 	r.w8 = w8Eligible(m, r)
 	if r.w8 {
 		r.decodeLaneW4F16 = false
@@ -1039,7 +1042,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// PrefillLast's attention reads the cache as half too. So with -kv i8 every prompt position landed in the wrong
 	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
 	// whose decode kernels write and read the int8 cache.
-	// D-B01: a Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn (off until graded), and only in the shape
+	// D-B01: a Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn (on since its grade, 2026-10-04), and only in the shape
 	// prefill_deltanet.go implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays
 	// sequential.
 	missing := m.MissingResidentFeatures(prefillFeatures)
@@ -1056,7 +1059,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 	}
 	r.prefillOK = len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.w8 &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 &&
 		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 	r.q = d.NewCommandQueue()
 
@@ -1524,6 +1527,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
 		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
 		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
+		for B := 2; B <= batchMaxSeqs; B++ { // the batched step's projections, B rows per weight read (batch_rows.go)
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)

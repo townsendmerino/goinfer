@@ -310,8 +310,6 @@ func (r *resident) batchIneligible() string {
 		return "KV slots that are not one f16 allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
-	case r.w8:
-		return "int8 weights (the batched step's kernels read int4; docs/tasks/task-metal-int8-2026-10.md, slice 3)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"
@@ -401,6 +399,11 @@ func (r *resident) buildBatch() {
 	r.calibrateRows()
 }
 
+// mc3W8RowsOn runs a native int8 resident's step projections as mc3_gemv_w8a8_rows (each weight row read once for all
+// B rows; int8 slice 3b) rather than production's int8 GEMV once per row; both are decode's bits. Tests turn it off
+// for the per-row arm.
+var mc3W8RowsOn = true
+
 // mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
 // mc3_attention_fa*_rows), bit-identical to their per-row pairs. Off: PARKED 2026-10-04, 1.016x at 2 rows (serve's
 // default slot count) to 1.06x at 8 rows on the 1.5B at depth 1100-2048 (docs/tasks/task-metal-audit-2026-10.md,
@@ -418,6 +421,10 @@ const batchTGBytes = 4 * 2 * 32 * 8
 // changes speed only: the per-row path is production's own kernel on each row.
 func (r *resident) calibrateRows() {
 	b := r.batch
+	if r.w8 { // int8 slice 3: the fragment kernels read int4, so every projection runs production's int8 GEMV per row
+		b.rowsQKV, b.rowsGU = batchMaxSeqs, batchMaxSeqs
+		return
+	}
 	n := min(8, r.nL)
 	b.uM.SetU32(batchMaxSeqs)
 	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
@@ -596,6 +603,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	// S4: below the calibrated sizes, qkv and gate|up run production's GEMV once per row (the row's int8 activations
 	// and scale in, its output row out), which is production's arithmetic by definition.
 	rowsQKV, rowsGU := B <= b.rowsQKV, B <= b.rowsGU
+	w8Rows := r.w8 && mc3W8RowsOn && B >= 2 // int8 slice 3b: one weight read for all B rows
 	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
 	pg, ng := saRowsPick(r.pSA, r.pSARows, 2*I, r.gemvRows.gu)
 	// Each row's attention plan, once per step: batchIneligible admits only uniform layers without a window, so a row's
@@ -625,7 +633,9 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		// the per-row kernels run as one dispatch over all B rows (S3; batch_rows.go): norm+quant, RoPE, ctx quant,
 		// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
-		if rowsQKV {
+		if w8Rows {
+			e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
+		} else if rowsQKV {
 			for m := range B {
 				e.DispatchTG(pq, nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), f32(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
 			}
@@ -665,10 +675,20 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, b.uCount[nPlain], b.rowmapB, b.slotOffB)
 		}
 		e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
-		pack(e, b.cqB, nHhd, g.uNHhd)
-		e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
+		if w8Rows {
+			e.Dispatch(r.pW8Rows[B], H*32, 32, L.oW, L.oS, b.cqB, b.cScB, b.xB, g.uNHhd, r.uH, b.uCount[B], b.noBias, b.uMode[2])
+		} else if r.w8 { // int8 slice 3: decode's o-proj + residual (gemv_w8a8_sa_resid) once per row
+			for m := range B {
+				e.DispatchTG(r.pSAResid, H*32, 256, nHhd*2, L.oW, L.oS, b.cqB.At(m*nHhd), b.cScB.At(4*m), f32(b.xB, m, H), g.uNHhd)
+			}
+		} else {
+			pack(e, b.cqB, nHhd, g.uNHhd)
+			e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
+		}
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
-		if rowsGU {
+		if w8Rows {
+			e.Dispatch(r.pW8Rows[B], 2*I*32, 32, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B], b.noBias, b.uMode[0])
+		} else if rowsGU {
 			for m := range B {
 				e.DispatchTG(pg, ng, 256, H*2, L.guW, L.guS, b.mqB.At(m*H), b.mScB.At(4*m), f32(b.guB, m, 2*I), r.uH)
 			}
@@ -677,8 +697,16 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 			e.DispatchTG(b.bt, 2*I/16*128, 128, tgb, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
 		}
 		e.Dispatch(r.pSwRows, B*256, 256, b.guB, b.guB, b.dqB, b.dScB, r.uI, r.uAct)
-		pack(e, b.dqB, I, r.uI)
-		e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
+		if w8Rows {
+			e.Dispatch(r.pW8Rows[B], H*32, 32, L.dW, L.dS, b.dqB, b.dScB, b.xB, r.uI, r.uH, b.uCount[B], b.noBias, b.uMode[2])
+		} else if r.w8 { // int8 slice 3: decode's down-proj + residual (gemv_w8a8_body_resid) once per row
+			for m := range B {
+				e.Dispatch(r.pGemvResid, H*32, 32, L.dW, L.dS, b.dqB.At(m*I), b.dScB.At(4*m), f32(b.xB, m, H), r.uI)
+			}
+		} else {
+			pack(e, b.dqB, I, r.uI)
+			e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
+		}
 	}
 	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)

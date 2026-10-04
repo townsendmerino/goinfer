@@ -139,7 +139,7 @@ func mc3FixtureResident(t *testing.T, slots, ctx int) (*decoder.Model, *resident
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	m, err := decoder.Load(mc3FixtureWriter(t, max(ctx, 4096)), decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: slots})
+	m, err := decoder.Load(mc3FixtureWriter(t, max(ctx, 4096)), decoder.Options{Quant: mc3TestQuant, ResidentContext: ctx, ResidentKVSlots: slots})
 	if err != nil {
 		t.Fatalf("load the MC3 fixture: %v", err)
 	}

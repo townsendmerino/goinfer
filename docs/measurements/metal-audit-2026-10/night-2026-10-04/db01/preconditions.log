@@ -1,0 +1,13 @@
+=== RUN   TestDB01_chunkedPrefillMatchesWhole
+    db01_prefill_test.go:213: chunks 64 + 32: 0 of 248320 logits and 0 state/window/K/V words differ from one pass
+    db01_prefill_test.go:213: chunks 40 + 56: 0 of 248320 logits and 0 state/window/K/V words differ from one pass
+--- PASS: TestDB01_chunkedPrefillMatchesWhole (2.74s)
+=== RUN   TestDB01_prefillFromZeroResetsState
+    db01_prefill_test.go:289: prompt B after prompt A: 0 of 248320 logits and 0 window/state words differ from prompt B on a reset resident
+--- PASS: TestDB01_prefillFromZeroResetsState (1.56s)
+=== RUN   TestDeltaNetSeqKernels_matchDecodeBitwise
+    deltanet_seq_test.go:154: M=1: every stage, the window and the state equal decode's run 1 times
+    deltanet_seq_test.go:154: M=7: every stage, the window and the state equal decode's run 7 times
+    deltanet_seq_test.go:154: M=33: every stage, the window and the state equal decode's run 33 times
+--- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise (0.04s)
+PASS

@@ -1,0 +1,6 @@
+rev:      88cf2c8b
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-int8-2026-10/metal-88cf2c8b.test (sha256 c3a9085e66026bd0)
+started:  2026-10-04 10:38:38 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     1.06 1.52 1.85
+finished: 2026-10-04 10:44:37 PDT, exit 0

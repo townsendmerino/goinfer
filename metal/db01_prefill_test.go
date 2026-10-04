@@ -33,7 +33,10 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
+	prevOff := dnetPrefillOn
+	dnetPrefillOn = false // the switch's off arm (it is on by default since D-B01's grade)
 	off, err := buildResident(m)
+	dnetPrefillOn = prevOff
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -42,8 +45,9 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 	if !declined || off.dnet == nil {
 		t.Fatalf("with dnetPrefillOn off a DeltaNet model must decline the pass (prefillOK %v, dnet %v)", off.prefillOK, off.dnet != nil)
 	}
+	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
-	defer func() { dnetPrefillOn = false }()
+	defer func() { dnetPrefillOn = prevDnet }()
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("resident: %v", err)
@@ -162,8 +166,9 @@ func TestDB01_chunkedPrefillMatchesWhole(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
+	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
-	defer func() { dnetPrefillOn = false }()
+	defer func() { dnetPrefillOn = prevDnet }()
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("resident: %v", err)
@@ -238,8 +243,9 @@ func TestDB01_prefillFromZeroResetsState(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
+	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
-	defer func() { dnetPrefillOn = false }()
+	defer func() { dnetPrefillOn = prevDnet }()
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("resident: %v", err)

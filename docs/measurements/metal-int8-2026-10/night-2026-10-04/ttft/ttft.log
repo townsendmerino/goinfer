@@ -1,0 +1,49 @@
+=== RUN   TestW8Native_S_ttft
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=0 metal-int8-native: 496.9 ms cold, 462.9 ms warm to the first token (metal-resident (int8int8)) elapsed=2s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=0 cpu-int8int8: 1599.3 ms cold, 1625.7 ms warm to the first token (cpu (int8int8)) elapsed=6s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=0 metal-int8-requant: 700.8 ms cold, 460.9 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=9s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=1 cpu-int8int8: 1636.5 ms cold, 1653.5 ms warm to the first token (cpu (int8int8)) elapsed=12s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=1 metal-int8-requant: 495.9 ms cold, 460.4 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=15s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=1 metal-int8-native: 500.8 ms cold, 463.7 ms warm to the first token (metal-resident (int8int8)) elapsed=17s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=2 metal-int8-requant: 493.3 ms cold, 461.2 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=19s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=2 metal-int8-native: 497.8 ms cold, 463.8 ms warm to the first token (metal-resident (int8int8)) elapsed=21s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=2 cpu-int8int8: 1584.0 ms cold, 1578.6 ms warm to the first token (cpu (int8int8)) elapsed=25s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=3 metal-int8-native: 496.5 ms cold, 462.9 ms warm to the first token (metal-resident (int8int8)) elapsed=26s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=3 cpu-int8int8: 1546.6 ms cold, 1607.4 ms warm to the first token (cpu (int8int8)) elapsed=30s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=3 metal-int8-requant: 500.0 ms cold, 460.0 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=32s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=4 cpu-int8int8: 1545.2 ms cold, 1643.3 ms warm to the first token (cpu (int8int8)) elapsed=36s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=4 metal-int8-requant: 496.3 ms cold, 459.2 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=39s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=4 metal-int8-native: 497.8 ms cold, 462.8 ms warm to the first token (metal-resident (int8int8)) elapsed=40s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=5 metal-int8-requant: 500.4 ms cold, 460.0 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=43s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=5 metal-int8-native: 500.0 ms cold, 462.5 ms warm to the first token (metal-resident (int8int8)) elapsed=45s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=5 cpu-int8int8: 1540.8 ms cold, 1565.8 ms warm to the first token (cpu (int8int8)) elapsed=48s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=6 metal-int8-native: 502.6 ms cold, 463.4 ms warm to the first token (metal-resident (int8int8)) elapsed=50s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=6 cpu-int8int8: 1563.7 ms cold, 1608.2 ms warm to the first token (cpu (int8int8)) elapsed=53s
+[S-ttft] qwen2.5-coder-0.5b-instruct-q4_k_m rep=6 metal-int8-requant: 497.5 ms cold, 460.6 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=56s
+    w8_native_speed_test.go:262: S-ttft qwen2.5-coder-0.5b-instruct-q4_k_m, 1000-token prompt, warm (graded): median ms to the first token: Metal native int8 462.9, CPU int8int8 1608.2, Metal int4 re-quant 460.4; native/cpu 0.288 (S-auto: no worse means <= 1)
+    w8_native_speed_test.go:262: S-ttft qwen2.5-coder-0.5b-instruct-q4_k_m, 1000-token prompt, cold (reported): median ms to the first token: Metal native int8 497.8, CPU int8int8 1563.7, Metal int4 re-quant 497.5; native/cpu 0.318 (S-auto: no worse means <= 1)
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=0 metal-int8-native: 1075.3 ms cold, 1001.6 ms warm to the first token (metal-resident (int8int8)) elapsed=1m1s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=0 cpu-int8int8: 3091.4 ms cold, 3274.3 ms warm to the first token (cpu (int8int8)) elapsed=1m8s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=0 metal-int8-requant: 1053.4 ms cold, 995.5 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=1m16s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=1 cpu-int8int8: 3031.9 ms cold, 3267.5 ms warm to the first token (cpu (int8int8)) elapsed=1m23s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=1 metal-int8-requant: 1048.7 ms cold, 995.4 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=1m31s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=1 metal-int8-native: 1070.7 ms cold, 1001.9 ms warm to the first token (metal-resident (int8int8)) elapsed=1m34s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=2 metal-int8-requant: 1050.0 ms cold, 994.6 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=1m42s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=2 metal-int8-native: 1056.4 ms cold, 1001.8 ms warm to the first token (metal-resident (int8int8)) elapsed=1m45s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=2 cpu-int8int8: 2966.9 ms cold, 3161.4 ms warm to the first token (cpu (int8int8)) elapsed=1m52s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=3 metal-int8-native: 1055.6 ms cold, 1001.8 ms warm to the first token (metal-resident (int8int8)) elapsed=1m55s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=3 cpu-int8int8: 3025.3 ms cold, 3077.2 ms warm to the first token (cpu (int8int8)) elapsed=2m2s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=3 metal-int8-requant: 1048.5 ms cold, 995.4 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=2m10s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=4 cpu-int8int8: 2986.2 ms cold, 3148.9 ms warm to the first token (cpu (int8int8)) elapsed=2m17s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=4 metal-int8-requant: 1045.8 ms cold, 995.3 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=2m25s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=4 metal-int8-native: 1057.7 ms cold, 1001.6 ms warm to the first token (metal-resident (int8int8)) elapsed=2m28s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=5 metal-int8-requant: 1046.7 ms cold, 995.0 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=2m36s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=5 metal-int8-native: 1058.4 ms cold, 1001.7 ms warm to the first token (metal-resident (int8int8)) elapsed=2m39s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=5 cpu-int8int8: 2916.2 ms cold, 2955.4 ms warm to the first token (cpu (int8int8)) elapsed=2m45s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=6 metal-int8-native: 1062.1 ms cold, 1002.2 ms warm to the first token (metal-resident (int8int8)) elapsed=2m48s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=6 cpu-int8int8: 2963.2 ms cold, 3012.4 ms warm to the first token (cpu (int8int8)) elapsed=2m55s
+[S-ttft] qwen2.5-coder-1.5b-instruct-q4_k_m rep=6 metal-int8-requant: 1045.5 ms cold, 1001.7 ms warm to the first token (metal-resident (int8int8→int4, no Metal int8 GEMV kernel)) elapsed=3m3s
+    w8_native_speed_test.go:262: S-ttft qwen2.5-coder-1.5b-instruct-q4_k_m, 1000-token prompt, warm (graded): median ms to the first token: Metal native int8 1001.8, CPU int8int8 3148.9, Metal int4 re-quant 995.4; native/cpu 0.318 (S-auto: no worse means <= 1)
+    w8_native_speed_test.go:262: S-ttft qwen2.5-coder-1.5b-instruct-q4_k_m, 1000-token prompt, cold (reported): median ms to the first token: Metal native int8 1058.4, CPU int8int8 2986.2, Metal int4 re-quant 1048.5; native/cpu 0.354 (S-auto: no worse means <= 1)
+--- PASS: TestW8Native_S_ttft (183.16s)
+PASS

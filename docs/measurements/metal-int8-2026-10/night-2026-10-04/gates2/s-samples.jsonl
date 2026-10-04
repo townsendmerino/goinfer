@@ -1,0 +1,112 @@
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"metal-int8-native","tok_per_s":167.0359796825919,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"metal-int8-native-fastmath","tok_per_s":170.83658940867542,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"metal-int8-requant","tok_per_s":195.39965626719197,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"cpu-int8int8","tok_per_s":101.27590210770327,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"metal-int8-native-fastmath","tok_per_s":170.8587127565873,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"metal-int8-requant","tok_per_s":194.58780761228246,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"cpu-int8int8","tok_per_s":101.51069668966367,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"metal-int8-native","tok_per_s":166.94846551822144,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"metal-int8-requant","tok_per_s":194.91071599532657,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"cpu-int8int8","tok_per_s":103.38283401885998,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"metal-int8-native","tok_per_s":167.8030551476084,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"metal-int8-native-fastmath","tok_per_s":170.94979570821042,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"cpu-int8int8","tok_per_s":103.42357342176884,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"metal-int8-native","tok_per_s":167.6247810910158,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"metal-int8-native-fastmath","tok_per_s":170.62470112239853,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"metal-int8-requant","tok_per_s":195.0648844325088,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"metal-int8-native","tok_per_s":167.77382209714497,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"metal-int8-native-fastmath","tok_per_s":171.01567119204537,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"metal-int8-requant","tok_per_s":195.43648062328725,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"cpu-int8int8","tok_per_s":103.54958663522763,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"metal-int8-native-fastmath","tok_per_s":170.7658183677671,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"metal-int8-requant","tok_per_s":194.9580898130143,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"cpu-int8int8","tok_per_s":103.83967812996278,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"metal-int8-native","tok_per_s":175.31849526640062,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"metal-int8-requant","tok_per_s":195.6518196738793,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"cpu-int8int8","tok_per_s":102.39683772559557,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"metal-int8-native","tok_per_s":168.39122895527274,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"metal-int8-native-fastmath","tok_per_s":173.23445220791433,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"metal-int8-native","tok_per_s":145.24924041102787,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"metal-int8-native-fastmath","tok_per_s":144.92054924115254,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"metal-int8-requant","tok_per_s":160.56648549321434,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"cpu-int8int8","tok_per_s":67.87229159094821,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"metal-int8-native-fastmath","tok_per_s":144.49730489704967,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"metal-int8-requant","tok_per_s":161.3765507899099,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"cpu-int8int8","tok_per_s":64.42953296878531,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"metal-int8-native","tok_per_s":142.2341293109666,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"metal-int8-requant","tok_per_s":159.60868005205018,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"cpu-int8int8","tok_per_s":67.88256070465873,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"metal-int8-native","tok_per_s":142.12843906999615,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"metal-int8-native-fastmath","tok_per_s":143.7182845683354,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"cpu-int8int8","tok_per_s":68.3295482180098,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"metal-int8-native","tok_per_s":141.4754315562073,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"metal-int8-native-fastmath","tok_per_s":144.58638719577655,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"metal-int8-requant","tok_per_s":161.71899591755798,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"metal-int8-native","tok_per_s":143.04593819491802,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"metal-int8-native-fastmath","tok_per_s":145.2943511571941,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"metal-int8-requant","tok_per_s":161.7927320922456,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"cpu-int8int8","tok_per_s":68.17483033549108,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"metal-int8-native-fastmath","tok_per_s":144.90457717333146,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"metal-int8-requant","tok_per_s":162.1903594884442,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"cpu-int8int8","tok_per_s":68.04598396382978,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"metal-int8-native","tok_per_s":143.15982883210955,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"metal-int8-requant","tok_per_s":159.38304412390298,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"cpu-int8int8","tok_per_s":67.93078730913409,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"metal-int8-native","tok_per_s":142.22207517412812,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-0.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"metal-int8-native-fastmath","tok_per_s":144.9662899531237,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"metal-int8-native","tok_per_s":70.59333699746368,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"metal-int8-native-fastmath","tok_per_s":71.35755771396435,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"metal-int8-requant","tok_per_s":90.01126220912761,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":0,"arm":"cpu-int8int8","tok_per_s":45.40745353518706,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"metal-int8-native-fastmath","tok_per_s":71.67781502063498,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"metal-int8-requant","tok_per_s":90.20888718368317,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"cpu-int8int8","tok_per_s":45.21182953166734,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":1,"arm":"metal-int8-native","tok_per_s":70.4365172457434,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"metal-int8-requant","tok_per_s":89.99499666387834,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"cpu-int8int8","tok_per_s":43.84546793439894,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"metal-int8-native","tok_per_s":70.35809015783057,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":2,"arm":"metal-int8-native-fastmath","tok_per_s":71.35114289949243,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"cpu-int8int8","tok_per_s":45.42275064336171,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"metal-int8-native","tok_per_s":70.58276858949161,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"metal-int8-native-fastmath","tok_per_s":71.44902261768826,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":3,"arm":"metal-int8-requant","tok_per_s":90.42801517324679,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"metal-int8-native","tok_per_s":70.62540435636394,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"metal-int8-native-fastmath","tok_per_s":71.39321211901408,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"metal-int8-requant","tok_per_s":92.8216225795121,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":4,"arm":"cpu-int8int8","tok_per_s":43.78415948906338,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"metal-int8-native-fastmath","tok_per_s":72.66273605477386,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"metal-int8-requant","tok_per_s":90.55164267693975,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"cpu-int8int8","tok_per_s":45.33543092744369,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":5,"arm":"metal-int8-native","tok_per_s":70.58028103483772,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"metal-int8-requant","tok_per_s":90.11373099508208,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"cpu-int8int8","tok_per_s":45.25607396261371,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"metal-int8-native","tok_per_s":70.27100207146087,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":128,"rep":6,"arm":"metal-int8-native-fastmath","tok_per_s":71.2994186753551,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"metal-int8-native","tok_per_s":65.41122399166413,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"metal-int8-native-fastmath","tok_per_s":66.19699200342963,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"metal-int8-requant","tok_per_s":82.57843968693597,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":0,"arm":"cpu-int8int8","tok_per_s":32.285362972500494,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"metal-int8-native-fastmath","tok_per_s":65.88694060148086,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"metal-int8-requant","tok_per_s":82.56425353672138,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"cpu-int8int8","tok_per_s":32.55478169842351,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":1,"arm":"metal-int8-native","tok_per_s":65.50837291889063,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"metal-int8-requant","tok_per_s":82.96398720971864,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"cpu-int8int8","tok_per_s":32.583606528125564,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"metal-int8-native","tok_per_s":65.33358221072584,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":2,"arm":"metal-int8-native-fastmath","tok_per_s":66.25098554913524,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"cpu-int8int8","tok_per_s":32.49424188365609,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"metal-int8-native","tok_per_s":65.43908938752443,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"metal-int8-native-fastmath","tok_per_s":68.06246027157732,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":3,"arm":"metal-int8-requant","tok_per_s":82.91148736262188,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"metal-int8-native","tok_per_s":65.45004323957106,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"metal-int8-native-fastmath","tok_per_s":66.27090544508552,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"metal-int8-requant","tok_per_s":83.00325540743975,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":4,"arm":"cpu-int8int8","tok_per_s":32.49627205732888,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"metal-int8-native-fastmath","tok_per_s":66.2317796899722,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"metal-int8-requant","tok_per_s":82.92359643586485,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"cpu-int8int8","tok_per_s":31.80158102347526,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":5,"arm":"metal-int8-native","tok_per_s":65.33470572028443,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"metal-int8-requant","tok_per_s":82.84782611374342,"decode_steps":63,"decode_path":"metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"cpu-int8int8","tok_per_s":31.835081487267658,"decode_steps":63,"decode_path":"cpu (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"metal-int8-native","tok_per_s":66.80415718622451,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}
+{"model":"qwen2.5-coder-1.5b-instruct-q4_k_m","depth":2048,"rep":6,"arm":"metal-int8-native-fastmath","tok_per_s":67.61960819531062,"decode_steps":63,"decode_path":"metal-resident (int8int8)"}

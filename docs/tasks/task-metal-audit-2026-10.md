@@ -1251,6 +1251,64 @@ its own slot's K/V, and one dispatch cannot share that.
 - The case for turning it on is many slots (`-kv-sessions 8`) at depths of 1-2k keys, where it is 6%.
 - The derived kernels and both tests stay.
 
+### The night of 2026-10-04 (run by day, 09:48-10:47): D-B01 and E-P07 graded
+
+Raw results and provenance: `docs/measurements/metal-audit-2026-10/night-2026-10-04/`. The queue ran in the daytime on
+the owner's word, so the timed cells shared the machine with a desktop: the load at start was 0.94-1.73.
+
+**D-B01 — SHIPS under its pre-registered rule.**
+- **Preconditions pass:** chunk invariance, reset from zero, and the DeltaNet sequence kernels bitwise.
+- **Fidelity:** the §3.2 pooled gate on Q35 (Qwen3.5-0.8B, set A, K = 256/512/1024, 1,920 positions) SHIPS.
+  - critA: hard flips 65 fast against 65 exact.
+  - critB: agreement 87.92% against 88.12%, d = 52.
+  - critC: pooled KL 0.1147 against 0.1191, fast lower on 24 of 30 prompts, no cell over the ceiling.
+- **Speed (graded cell, the 0.8B at K = 512):** sequential ÷ pass **8.058**, 7 of 7 reps above 1.10. Also 8.387 at
+  K = 128 and 5.576 at K = 2048; the 9B 6.824 at K = 128 and 6.712 at K = 512.
+- **Shipped: `dnetPrefillOn` is on** (2026-10-04). The default and tagged Metal suites pass with it on, apart from
+  the long-standing `TestPrefillParityMoEGatedShared`; the D-B01 tests now restore the switch instead of forcing it
+  off. CHANGELOG entry under Unreleased.
+
+**E-P07 — speed passes, identity (hard gate 1) FAILS; graded as written, decision to the owner.**
+- **Speed** (W7 on Qwen3-0.6B, 3 pairs): 4-client aggregate new ÷ old 2.026 / 2.069 / 2.041×, median **2.041×** against
+  the 1.10 ship bar. p99 under load 0.484× (bar ≤ 1.0). The 1-client solo guard p50 0.983×, p99 1.018× (bar ≤ 1.05).
+  2 clients, reported: 1.28×.
+- **Identity fails in 205 turns, for two reasons. Neither is a fault in E-P07's step, which is bit-identical to decode
+  (its kernel tests).**
+  1. **Old against new differs at turn 1, with one client.** The turn-1 prompt is 29 tokens. On a multi-slot server
+     A-P02 sends 16-31-token prompts to the exact batched step when the model can batch, and to the f16 pass when it
+     cannot. Before E-P07 Qwen3 could not batch, so old took the f16 pass and new the exact step. Different lanes give
+     different bits, so old = new was never a property this change could keep. Every later turn's history follows
+     from turn 1.
+  2. **New against new differs under concurrency** (new2_2 12 turns, new4_2 8, new4_3 8; none at 1 client). The
+     failing turns reuse different amounts of their prompt (prefilled 133 against 111 tokens), because slot assignment
+     depends on timing. A different reused prefix leaves a different suffix, and the suffix's length picks the lane
+     (exact step below 32, f16 pass from 32). So served output under concurrency is not run-to-run identical whenever
+     prompts straddle the lanes.
+     - This follows from A-P02's two lanes plus timing-dependent slot reuse. It is not Qwen3-specific: it applies to
+       any MC3 family since A-P02's 32-token step ceiling, which postdates the 7B W7 identity record.
+- **Rule as written:** any hard-gate failure kills E-P07 and reverts it. Not reverted yet: the failure's mechanism is the
+  gate's premise and A-P02's lane split, not the change. The owner decides between:
+  - (a) revert as written;
+  - (b) re-run the identity gates with both arms on the exact lane (`--exact-prefill`), where old = new and run-to-run
+    identity are properties the system should have, keeping the speed gates as graded.
+- The run-to-run point (2) stands either way, as a finding about served determinism under concurrency.
+- **Owner decision (2026-10-04): (b), re-run.** The amendment is written below before that run.
+
+**E-P07 amendment 2 (written 2026-10-04, before the re-run).** The identity gates re-run with both arms on the exact
+lane.
+- **Instrument:** `docs/measurements/metal-audit-2026-10/run-ep07-w7-exact.sh`, the same pinned binaries, model, cells
+  and order as the first run, with `-exact-prefill` added to both arms' serve arguments. No prompt takes the f16 pass:
+  old prefills sequentially, and new prefills sequentially or through the batched step, which is bit-identical to
+  decode.
+- **Gates:**
+  - (1) identity: every turn's `content_sha` equal across every old and new cell at each client count.
+  - (2) reuse equal.
+  - The precondition is unchanged: 9 one-at-a-time servers and 9 batched.
+- **Rule:** both hold → E-P07 stays on, its speed graded from the first run (2.041×, p99 0.484×, solo guard passed).
+  Either fails → killed and reverted.
+- **Reported:** the exact lane's own speed figures from gates.py, which grade nothing.
+
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.

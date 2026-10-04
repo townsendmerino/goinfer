@@ -17,6 +17,19 @@ any surface may still change.
 
 ### Changed
 
+- **Metal: int8 models run as int8 on the GPU.** `-backend metal` with an int8 or int8int8 model (dense Qwen/Llama-style
+  families) used to re-quantize every weight to int4. It now runs W8A8 kernels at the precision asked for, compiled
+  with precise math. Decode is 1.56-2.09x the CPU at int8int8 on the 0.5B and 1.5B coder, and 0.78-0.88x the old int4
+  re-quant, which carried int4's error. Prompts take the batched prefill pass, about as fast as int4's, and multi-client
+  serving batches int8 models too (1.40x / 1.75x / 2.00x aggregate at 2 / 4 / 8 clients on the 1.5B). The decode path
+  reads `metal-resident (int8int8)`. MoE, Gemma 4 MoE and DeltaNet models keep the int4 re-quant for now.
+- **`-backend auto` now puts dense int8int8 models on the Mac's GPU.** They used to stay on the CPU because Metal would
+  have re-quantized them; they now run natively at their own precision. The model-included `goinfer-chat` bundles are
+  int8int8. A model Metal would still re-quantize (an int8int8 MoE or DeltaNet hybrid) stays on the CPU and says why;
+  weight-only int8, int4mix and f32 stay on the CPU under auto, as before. On the 1.5B coder the GPU path decodes 1.56-2.01x
+  the CPU and reaches the first token of a 1,000-token prompt in 0.32x the time.
+- **Metal: Qwen3.5 hybrids (Gated DeltaNet) prefill in one batched pass.** It is 8.1x the token-by-token loop at 512
+  tokens on Qwen3.5-0.8B and 6.7x on the 9B, and passed the pooled prefill fidelity gate. Audit D-B01.
 - **Metal: short prompts prefill faster through a 16-token GEMM tile.** The batched pass's matrix multiplies take the
   token tile (64, 32 or the new 16) that pads the prompt to the fewest rows, within measured bounds. A 16-token prompt's
   pass is 1.56x faster on the 1.5B and 1.73x on the 7B, 40-88-token prompts 1.05-1.11x. MoE prefill's per-expert GEMMs

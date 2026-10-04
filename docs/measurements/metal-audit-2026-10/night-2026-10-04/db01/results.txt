@@ -1,0 +1,13 @@
+-- preconditions
+--- PASS: TestDB01_chunkedPrefillMatchesWhole (2.74s)
+--- PASS: TestDB01_prefillFromZeroResetsState (1.56s)
+--- PASS: TestDeltaNetSeqKernels_matchDecodeBitwise (0.04s)
+-- gate
+=== Q35 (set "a", DECIDING) POOLED decision-set verdict (K=[256 512 1024], 3 cells, 1920 positions): critA(hardFlips fast<=exact+2*sqrt(exact))=true (exact=65 fast=65) critB(agree fast>=exact-2*sqrt(d)/N)=true (exactAgree=88.12% fastAgree=87.92% d=52 N=1920) critC(KL pooled fast<=exact & fast lower on >=half prompts & no cell >1.1x)=true (exactMeanKL=0.1191 fastMeanKL=0.1147 fastLowerPrompts=24/30 ceilingOK=true) — SHIPS ===
+-- speed 0.8b
+[d-b01    8.2s] RESULT qwen3.5-0.8b K=128: sequential/pass median 8.387 (7 of 7 reps above 1.10, 7 above 2)
+[d-b01   42.0s] RESULT qwen3.5-0.8b K=512: sequential/pass median 8.058 (7 of 7 reps above 1.10, 7 above 2)
+[d-b01  201.9s] RESULT qwen3.5-0.8b K=2048: sequential/pass median 5.576 (7 of 7 reps above 1.10, 7 above 2)
+-- speed 9b
+[d-b01   35.4s] RESULT Qwen3.5-9B-Q4_K_M.int4.metal.giw K=128: sequential/pass median 6.824 (5 of 5 reps above 1.10, 5 above 2)
+[d-b01  168.7s] RESULT Qwen3.5-9B-Q4_K_M.int4.metal.giw K=512: sequential/pass median 6.712 (5 of 5 reps above 1.10, 5 above 2)

@@ -1,6 +1,6 @@
 # Metal runs int8 weights natively (W8A8) — 2026-10
 
-**Status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stays off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
+**Status, 2026-10-04: native int8 is ON by default** (slices 1, 2, 3 and 3b; owner: "2 turn on", with F2's argmax criterion read as hard flips; Log 2026-10-04). Slice 5 (auto) shipped the same day; slice 4 is open. Earlier status: slice 1 built; F3 (0.5B) and F2 (1.5B) failed on 2026-10-02, so the native path stayed off by default. The per-layer comparison (2026-10-04) found no defective op: F3's gap is the f16 KV cache, fast math, and the noise any non-identical path adds at this quant. An amended bar is proposed and waits on the owner (Log, 2026-10-04) (started 2026-10-01, owner: "lets start it").** Gates below were written and committed
 before any implementation or timed run.
 
 ## Why
@@ -101,6 +101,115 @@ f32 reference (it refused it on 2026-10-01: 7.7 GB against 7.6).
 **F2** keeps its bar and re-runs on the 1.5B with precise math. **S** gains the fast-math arm. **S-auto** still waits
 for slice 2. The native path turns on by default only when F3′ (0.5B and, if it runs, 1.5B), F2 on the 1.5B and S all
 pass.
+
+
+**Slice 2 — int8 prefill (built 2026-10-04; its gate P2 pre-registered the same day, before any graded run).**
+
+*What is built.*
+- `gemm_w4f16_tile` takes a third template parameter, `W8`. With it set, the weight staging reads the native int8
+  path's row-major int8 codes and per-row f32 scales, and dequantizes each weight to f16 as `half(q·scale)`. The int4
+  instances are unchanged: `TestGemmTile_bitIdentical` passes over 98,102,016 outputs.
+- `gemm_w8f16_m{64,32,16}n{64,32}` are the W8 tiles; `gemmTile` takes them for a native int8 resident, with the same
+  tile rule as int4. `prefillOK` no longer excludes `r.w8`.
+- The prefill library compiles with precise math when the resident does (O3).
+- The W8F16 form follows the hardware: M1-class GPUs have no int8 simdgroup MMA. The int4 pass's W4F16 shape is used
+  for the same reason.
+
+*Kernel check* (`TestGemmW8Tile_matchesReference`, default-run): every tile against a float64 reference over the same
+f16 inputs and f16-dequantized weights.
+- The bound is one f16 rounding plus f32 accumulation over K products.
+- 7,315,200 outputs pass across six shapes of the 0.5B and 1.5B, 8-72 rows and three epilogues. Every tile equals the
+  64×64 one bit for bit.
+- Swapping the two staged words of an 8-k block fails it (an output off by 5.7 against a 0.003 bound).
+
+*Exploratory, by day* (`TestW8Prefill_passAgainstSequential`: 6 set-A prompts of 256 tokens, the pass's last logits
+against the sequential loop's, after a warm pass):
+
+| model, arm | pass | sequential | KL(seq ‖ pass) | argmax |
+|---|---|---|---|---|
+| 0.5B native int8, precise | 103.2 ms | 1626 ms (15.8×) | 0.0369 | 6/6 |
+| 0.5B native int8, fast math | 101.0 ms | — | 0.0349 | 5/6 |
+| 0.5B int4 (shipped pass) | 102.8 ms | 1415 ms | 0.0433 | 5/6 |
+| 1.5B native int8, precise | 264.9 ms | 3692 ms (13.9×) | 0.0224 | 6/6 |
+| 1.5B int4 (shipped pass) | 263.0 ms | 2992 ms | 0.0165 | 5/6 |
+
+- The pass is compute-bound, so int8's extra bytes and precise math cost nothing there.
+- One exploratory cell of the gate below (1.5B, K = 256, not a decision) read "SHIPS": fast mean KL 0.0043 against
+  exact's 0.0063, with 1 and 0 hard flips.
+
+*Gate P2 — int8 prefill fidelity (night queue).* The §3.2 pooled gate (`TestPrefillGateVsReference`) on the 1.5B,
+prompt set A, decision set K ∈ {256, 512, 1024}, confirmation cells off (`GOINFER_METAL_GATE_QUANT=int8int8`).
+- Both arms run on the native int8 path with precise math: fast is the batched pass, exact is the sequential loop.
+  Both are scored against the CPU f32 references already on disk (set A, `S-K*`).
+- The rule is the one int4's pass shipped under, unchanged: critA, critB and critC pooled over the decision set.
+  Native int8's pass ships iff all three hold.
+- The 7B (`D7`) is left out: the fit guard does not admit it at int8int8 on this Mac.
+- **Not** decided here: S-auto, which also needs first-token latency at a 1,000-token prompt, read from gate S's
+  harness after this.
+
+
+**S-auto's first-token half, made measurable (written 2026-10-04, before any graded run).** S-auto's second condition
+is "first-token latency at a 1,000-token prompt is no worse than the CPU's". Before slice 2 nothing measured it, and
+native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFER_W8_GATE_TTFT=1`):
+- The 0.5B and the 1.5B; a 1,000-token prompt (`w8SpeedPrompt`); arms Metal native int8 (precise math), CPU
+  int8int8, and Metal int4 re-quant (reported). Arms rotate every repetition, 7 repetitions, and each sample loads its
+  arm untimed.
+- **Cold** is the first request after the load. **Warm** is a second request whose prompt shares no prefix with the
+  first (the same tokens reversed).
+- **Amendment, written before the run:** S-auto's latency condition is read on **warm**, the serving steady state.
+  Cold, which includes Metal's one-time prefill-library compile, is reported beside it.
+- The condition holds when the median native ÷ CPU ratio is at most 1.0 on both models.
+- A one-sample smoke on the 0.5B checked the harness by day (labelled exploratory, not a result): warm 470 ms against
+  1483 ms, cold 543 ms against 1501 ms.
+
+
+**Slice 3 — native int8 in the MC3 batched step (built 2026-10-04, bit-identical).**
+- `batchIneligible` admits `r.w8`. On a native int8 resident every projection runs production's int8 GEMV once per row:
+  qkv and gate|up through the step's existing per-row path (`calibrateRows` pins it), and o and down through decode's
+  `gemv_w8a8_sa_resid` / `gemv_w8a8_body_resid` into the row's residual.
+- The W8A8 sums are exact integers, so per-row is production by definition. The step's fragment kernels read int4 and
+  are not used.
+- **Identity:** `TestMC3Step_w8BitIdentical` (default-run, the MC3 fixture loaded int8int8 with `nativeInt8` on,
+  precise math): shallow rows, deep rows, and deep rows through E-P05's multi-row attention, 0 logits differ from
+  single-token decode. Feeding every row's o-projection from row 0 fails it.
+- **Precise math and the step** (audit E-C02's probe): `TestMC3Step_bitIdenticalPreciseMath` (int4, the library
+  compiled precise) gives 0 differing logits, shallow and deep. The Gumbel block's closing `fp contract(fast)`, which
+  the derived rows kernels follow, does not break identity under precise math on this build.
+- **Speed (in-process, by day, `TestMC3Step_throughput` on the 1.5B at int8int8, depth 128, 7 reps):** aggregate
+  against one-at-a-time production decode:
+
+  | B | aggregate | range | step | production token |
+  |---|---|---|---|---|
+  | 2 | **1.147×** | 1.137-1.165 | 23.43 ms | 13.40 ms |
+  | 4 | **1.247×** | 1.226-1.265 | 43.15 ms | |
+  | 8 | **1.301×** | 1.271-1.327 | 82.72 ms | |
+
+  Every weight is still read once per row. The gain comes from the norms, attention, quantisation and LM head the step
+  already shares. A W8 fragment GEMM (one weight read for B rows, as int4's `mc3_bt`) is the next lever, not built.
+- **Slice 3b — each weight row read once for all B rows (built the same day, bit-identical).**
+  - `mc3_gemv_w8a8_rows<B>` (batch_rows.go, compiled into the main library with the decode kernels) gives one
+    simdgroup per output row, holding B integer accumulators over the row's int8 weights. Each row's epilogue is
+    decode's own statement: `float(acc)*aScale*wScale` through `simd_broadcast_first`, then the site's bias or
+    residual.
+  - It replaces the per-row GEMVs at every projection when B ≥ 2 (`mc3W8RowsOn`). The per-row form stays as the test
+    arm.
+  - A first cut with a runtime B loop was slower than per-row at B ≤ 2 (B = 2 aggregate 0.930×). Templating on B put
+    the accumulators in registers.
+  - **Identity:** `TestMC3Step_w8BitIdentical` runs both arms, shallow and deep, 0 differing logits. Feeding every
+    row's dot from row 0's activations fails it.
+  - **Speed (in-process, by day, the 1.5B at int8int8, 7 reps):** aggregate against one-at-a-time production decode:
+
+    | depth | B = 2 | B = 4 | B = 8 |
+    |---|---|---|---|
+    | 128 | **1.402×** (1.398-1.407) | **1.749×** (1.731-1.758) | **2.001×** (1.977-2.010) |
+    | 512 | **1.375×** (1.347-1.381) | **1.729×** (1.699-1.732) | **1.959×** (1.952-1.968) |
+
+    Slice 3's per-row form read 1.147 / 1.247 / 1.301× at depth 128.
+  - Still not built: staging the B activation rows in threadgroup memory (B·K int8 exceeds 32 KB at the 1.5B's K =
+    8960 for B = 8), and an MMA form.
+
+- It ships with the native path: nothing changes while `nativeInt8` is off. The served confirmation (MC3's W7 harness at
+  int8int8) runs after the flip.
 
 
 ## Tests to update
@@ -205,3 +314,73 @@ pass.
   - **Queued for tonight** (Mac, `run-gates2.sh`, binary pinned at the commit that records this): F3′ on the 1.5B if
     the fit guard admits its f32 reference, F2 on the 1.5B with precise math (bar unchanged), and S with its fast-math
     arm.
+- 2026-10-04: **the flip, prepared.** With `nativeInt8 = true` set for a trial run and reverted, the default and tagged
+  Metal suites failed four tests besides the long-standing `TestPrefillParityMoEGatedShared`. Both causes are fixed now,
+  so the flip is the one line plus its CHANGELOG entry:
+  - `TestOlmo3ResidentSmokeMetal` and `TestSmolLM3ResidentSmokeMetal`: `PrefillPath` still reported native int8 as
+    sequential ("the f16 MMA prefill kernels read int4 weights"), stale since slice 2. The branch is removed. It was a
+    report only; the decoder does not gate the pass on it, which is why the TTFT smoke already went through the pass.
+  - `TestMoE_assemblyVsDense` and `TestMoE_declinesPrefill`: they compare an int8int8 MoE, which runs int4 because MoE
+    is excluded from native int8, against a dense int8int8 twin, which would go native. Both now load at int4, the
+    like-for-like the tests assume.
+  - All four pass with the switch on and off.
+- 2026-10-04: **the gates' night (run by day, 10:17-10:47; raw results in
+  `docs/measurements/metal-int8-2026-10/night-2026-10-04/`).**
+  - **F3′ on the 1.5B: did not run.** The fit guard refused the f32 reference (7.7 GB against a 5.9 GB budget, 8.4 GB
+    available). Not bypassed. F3′ stands on the 0.5B pass.
+  - **F2 on the 1.5B, precise math: FAILS on argmax again.** Metal int8int8 against CPU int8int8: min cosine 0.997749,
+    argmax **21/24**. Metal int4 against CPU int4: 0.997514, 24/24. The cosine bar passes and the argmax bar does not.
+    - All three disagreements are near-ties: the worst gap is 0.325%, and none is over 3%, so 0 hard flips under the 3%
+      near-tie rule CUDA decode is held to against the CPU.
+    - It is F3's problem in F2's form: F2's reference is the CPU at f32 KV, against which any non-identical path flips
+      near-ties.
+    - **Proposed for the owner, not applied:** count F2's argmax criterion as hard flips (gaps over 3%), or compare
+      against the CPU at f16 KV as F3′ does. Under either reading this run passes (0 hard flips), but the bar is the
+      owner's to change.
+  - **S (decode speed, 7 reps, medians, tok/s):**
+
+    | model | depth | native (precise) | native, fast math | re-quant | CPU int8int8 | native ÷ CPU |
+    |---|---|---|---|---|---|---|
+    | 0.5B | 128 | 167.8 | 170.9 | 195.1 | 103.4 | **1.623** |
+    | 0.5B | 2048 | 142.2 | 144.9 | 161.4 | 67.9 | **2.094** |
+    | 1.5B | 128 | 70.6 | 71.4 | 90.2 | 45.3 | **1.560** |
+    | 1.5B | 2048 | 65.4 | 66.3 | 82.9 | 32.5 | **2.014** |
+
+    - **Precise math costs 1.1-1.8% of decode** (precise ÷ fast 0.982-0.989).
+    - **S-auto's decode half passes:** at least 1.20× the CPU at both depths on both models.
+    - S-explicit, reported: native ÷ re-quant 0.86-0.88 on the 0.5B and 0.78-0.79 on the 1.5B.
+  - **P2 (int8 prefill fidelity, the 1.5B, K = 256/512/1024, 1,920 positions): SHIPS.**
+    - critA: hard flips fast 0, exact 1.
+    - critB: agreement 97.24% against 96.35%, d = 65.
+    - critC: pooled KL lower in every cell (0.0043 / 0.0033 / 0.0045 against 0.0063 / 0.0053 / 0.0060).
+  - **S-auto's first-token half (warm, graded): HOLDS.** Native ÷ CPU **0.288** on the 0.5B (462.9 against 1608.2 ms)
+    and **0.318** on the 1.5B (1001.8 against 3148.9 ms). Cold, reported: 0.318 and 0.354.
+  - **Where this leaves the flip.** F3′ (0.5B), P2, S and S-auto pass; F2 fails as written.
+    - The native path turns on only when F3′ (0.5B and, if it runs, 1.5B), F2 on the 1.5B and S all pass. F2 is the
+      one red, on near-ties only.
+    - So native int8 stays off until the owner rules on F2's argmax criterion.
+- 2026-10-04: **owner decision O4: "turn on".** F2's argmax criterion is read as hard flips (argmax disagreements whose
+  top-2 gap is over 3%), the rule CUDA decode is held to against the CPU. Under it the night's F2 on the 1.5B passes:
+  0 hard flips, cosine 0.997749 against int4's 0.997514. With F3′ (0.5B), P2, S and S-auto passed, `nativeInt8` is now
+  `true`.
+  - Before the commit, the default and tagged Metal suites pass with it on, apart from the long-standing
+    `TestPrefillParityMoEGatedShared`; the four tests the trial flip found were fixed beforehand.
+  - The D-B01 tests now restore the switches they set instead of forcing them off.
+  - CHANGELOG entry under Unreleased.
+  - Still open:
+    - slice 4: MoE int8, int4mix, f32 → int8;
+    - slice 5: `-backend auto` picking Metal for int8 models, which S-auto's pass now allows;
+    - the served confirmation of the batched int8 step;
+    - F3′ on the 1.5B, which needs the fit guard to admit its f32 reference.
+- 2026-10-04: **slice 5 shipped: `-backend auto` admits dense int8int8 on Metal.** S-auto passed both halves: decode
+  1.56-2.09× the CPU at both depths on both models, and warm first-token latency 0.288× / 0.318× the CPU's.
+  - `autoMetalPrecision` lets int8int8 reach the Metal build.
+  - `autoMetalKeepsPrecision` drops the resident for the CPU when it does not report running at int8int8, i.e. when
+    Metal re-quantized it (MoE, DeltaNet), so auto never changes the loaded precision.
+  - Weight-only int8 stays on the CPU under auto: Metal would add int8 activations, and S-auto graded only int8int8.
+    int4mix and f32 stay as before.
+  - Tests:
+    - `TestAutoMetalPrecision_keepsTheLoadedPrecision` (decoder, a fake resident that does or does not report
+      int8int8);
+    - `TestAutoBackend_int8int8` (metal, default-run): a dense tiny int8int8 model under auto runs
+      `metal-resident (int8int8)`, and an int8int8 MoE is kept on the CPU with the reason.

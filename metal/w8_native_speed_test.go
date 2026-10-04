@@ -205,3 +205,111 @@ func sampleW8Decode(t *testing.T, path string, a w8Arm, prompt []int, n int) w8S
 	s.Rate = float64(s.Steps) / end.Sub(first).Seconds()
 	return s
 }
+
+// TestW8Native_S_ttft is S-auto's other half (docs/tasks/task-metal-int8-2026-10.md, gate S: "first-token latency at a
+// 1,000-token prompt is no worse than the CPU's"), measurable since slice 2 gave the native int8 path the batched
+// prefill pass. Per sample: load the arm (untimed), then time Generate from the call to its first token on a
+// 1,000-token prompt (w8SpeedPrompt). Arms: Metal native int8 (precise math), CPU int8int8, and Metal int4 re-quant
+// (reported), rotated every repetition, 7 repetitions, on the 0.5B and the 1.5B. Night-queue: GOINFER_W8_GATE_TTFT=1.
+func TestW8Native_S_ttft(t *testing.T) {
+	requireHeavyModel(t)
+	if os.Getenv("GOINFER_W8_GATE_TTFT") == "" {
+		t.Skip("a night-queue measurement: set GOINFER_W8_GATE_TTFT=1")
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	models := []string{
+		os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
+	}
+	const depth = 1000
+	reps := 7
+	if os.Getenv("GOINFER_W8_GATE_S_SMOKE") != "" {
+		models, reps = models[:1], 1
+	}
+	arms := []w8Arm{{"metal-int8-native", "metal", true, false}, {"cpu-int8int8", "cpu", false, false},
+		{"metal-int8-requant", "metal", false, false}}
+	start := time.Now()
+	for _, path := range models {
+		if _, err := os.Stat(path); err != nil {
+			t.Logf("no checkpoint at %s", path)
+			continue
+		}
+		name := strings.TrimSuffix(path[strings.LastIndex(path, "/")+1:], ".gguf")
+		tk, err := tokenizer.LoadGGUF(path)
+		if err != nil {
+			t.Fatalf("tokenizer %s: %v", path, err)
+		}
+		prompt := w8SpeedPrompt(t, tk, depth)
+		cold, warm := map[string][]float64{}, map[string][]float64{}
+		for rep := range reps {
+			for j := range arms {
+				a := arms[(j+rep)%len(arms)]
+				c, w, path2 := ttftW8(t, path, a, prompt)
+				if c > 0 {
+					cold[a.name], warm[a.name] = append(cold[a.name], c), append(warm[a.name], w)
+				}
+				fmt.Fprintf(os.Stderr, "[S-ttft] %s rep=%d %s: %.1f ms cold, %.1f ms warm to the first token (%s) elapsed=%s\n",
+					name, rep, a.name, c, w, path2, time.Since(start).Round(time.Second))
+			}
+		}
+		for _, k := range []struct {
+			what string
+			ms   map[string][]float64
+		}{{"warm (graded)", warm}, {"cold (reported)", cold}} {
+			nat, cpu := median(k.ms["metal-int8-native"]), median(k.ms["cpu-int8int8"])
+			t.Logf("S-ttft %s, %d-token prompt, %s: median ms to the first token: Metal native int8 %.1f, CPU int8int8 %.1f, Metal int4 re-quant %.1f; native/cpu %.3f (S-auto: no worse means <= 1)",
+				name, depth, k.what, nat, cpu, median(k.ms["metal-int8-requant"]), nat/cpu)
+		}
+	}
+}
+
+// ttftW8 loads path for arm (untimed), checks the arm took the path it names, and returns the milliseconds from
+// Generate's call to its first token: cold (the first request after the load, prompt) and warm (a second request,
+// prompt reversed), and the decode path.
+func ttftW8(t *testing.T, path string, a w8Arm, prompt []int) (cold, warm float64, decodePath string) {
+	t.Helper()
+	prev, prevFast := nativeInt8, w8FastMath
+	nativeInt8, w8FastMath = a.native, a.fastMath
+	defer func() { nativeInt8, w8FastMath = prev, prevFast }()
+	m, err := decoder.Load(path, decoder.Options{Backend: a.backend, Quant: "int8int8", ResidentContext: len(prompt) + 64})
+	if errors.Is(err, decoder.ErrWontFitResident) {
+		return 0, 0, "the fit guard refused the load"
+	}
+	if err != nil {
+		t.Fatalf("load %s (%s): %v", path, a.name, err)
+	}
+	defer m.Close()
+	p := m.DecodePath()
+	if a.backend == "metal" {
+		ra, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok || ra.r.w8 != a.native {
+			t.Fatalf("%s: native int8 path = %v, want %v (%s)", a.name, ok && ra.r.w8, a.native, p)
+		}
+	} else if !strings.HasPrefix(p, "cpu") {
+		t.Fatalf("%s: decode path %q, want the CPU", a.name, p)
+	}
+	timeFirst := func(pr []int) float64 {
+		st := time.Now()
+		out, gen := m.Generate(context.Background(), pr, 1, decoder.SamplingParams{Temperature: 0})
+		var first time.Duration
+		for range out {
+			if first == 0 {
+				first = time.Since(st)
+			}
+		}
+		if err := gen.Err(); err != nil {
+			t.Fatalf("%s: generate: %v", a.name, err)
+		}
+		return float64(first) / 1e6
+	}
+	cold = timeFirst(prompt)
+	// warm: a second request whose prompt shares no prefix with the first (the same tokens reversed), so nothing is
+	// reused and only one-time costs (the prefill library's compile, first-touch of pages) are gone
+	rev := make([]int, len(prompt))
+	for i, id := range prompt {
+		rev[len(prompt)-1-i] = id
+	}
+	return cold, timeFirst(rev), p
+}
