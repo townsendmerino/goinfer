@@ -746,6 +746,28 @@ fixture `testdata/tiny-qwen2-moe` is a per-machine download, not committed. The 
 got K=44` (audit M-10). It fails the same on untouched HEAD, so it is pre-existing. The fixture's shared-expert width is
 the cause; the test has never passed on this box.
 
+### A-P02: pre-registration (written 2026-10-03, before any graded run; owner: "1 then 2", A-P02 then D-G01 → D-B01)
+
+**What it decides.** `metalFastPrefillFloor` is 64 because R3 gated K = 64 and 128 and no cell below
+(`docs/measurements/metal-prefill-floor-2026-09-20.md`). Below it, a resident with the batched step runs the prompt as
+exact decode rows (E-P01), and one without it runs the sequential loop. A-P02 asks whether the pass can take prompts of
+16 to 63 tokens. E-P01 already serves the default 2-slot serve on the Qwen2.5 dense models, so A-P02 reaches single-slot
+loads (the CLI) and the families MC3 excludes (QK-norm, windows, sandwich norms, adapters, MoE). For residents with the
+step it also decides where the pass takes over from the step, which T1.10 timed before A-P01 made the C ≤ 32 pass 1.8×
+faster.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-ap02-grade.sh` on the night queue, from tagged test binaries pinned at the commit the script names. (1) The 1.5B's CPU f32 references, set A, at K = 16, 32, 48 and 64, regenerated together (`TestPrefillGateReference`, `GOINFER_CPU_REF_MODELS=S`); the R3 K = 64 files are set aside first. (2) The §3.2 pooled fidelity gate on the 1.5B, set A (`TestPrefillGateVsReference/S`, confirmation cells off), once per pool below and once per single cell. (3) `TestAuditAP02_shortPromptTiming` on the 1.5B and the 7B: a fresh K-token prompt three ways (sequential loop, the step in 8-row pieces, the pass with its floor off), K = 16, 32, 48, 64, 7 reps, arms rotated rep by rep, wall time. Estimate about 20 minutes; queued at 30. |
+| Precondition | All 40 reference files present, and no cell VOID on the reference identity check. Otherwise nothing is graded. |
+| Candidates | F ∈ {16, 32, 48}. |
+| Fidelity | F is fidelity-eligible iff the pool P(F) = {K ∈ {16, 32, 48, 64} : K ≥ F} **SHIPS** (critA ∧ critB ∧ critC). The single cell K = F is reported, not deciding (R3's corroboration). |
+| Speed, residents without the step | F is speed-eligible iff, on the **1.5B**, sequential ÷ pass at K = F has a median ≥ **1.5** over 7 paired reps, with ≥ 6 of 7 reps above 1.5 (the audit's kill line, read in-process). |
+| Rule: the floor | **The floor moves to the smallest F that is both fidelity- and speed-eligible.** None: **killed**, the floor stays 64. **Parked** (to the owner): the smallest fidelity-eligible F reads a speed median in [1.3, 1.5). |
+| Rule: the step bound | A resident with the step keeps the step for prompts below S\*, the smallest K in {16, 32, 48, 64} with K ≥ the new floor at which step ÷ pass on the 1.5B has a median > 1.0 with ≥ 6 of 7 reps above 1 (the pass faster). The step is exact and the pass is not, so the step keeps a prompt unless the pass is measured faster there. If the floor does not move, nothing changes. |
+| Reported | The 7B's timing; every single-cell fidelity verdict; the per-cell KL table. Not measured: a served TTFT, which this grade does not claim. Unchanged: the decoder's 8-token threshold (A-P05). |
+| What ships | By day, after the grade: the floor constant, the step bound in `promptStepOK`, the routing tests, `PrefillPath`'s banner text, and the docs that quote 64. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.

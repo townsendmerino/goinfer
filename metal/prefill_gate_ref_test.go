@@ -131,6 +131,11 @@ func TestPrefillGateVsReference(t *testing.T) {
 	}
 	decisionKs := metalGateDecisionKs([]int{256, 512, 1024})
 	confirmKsByModel := map[string][]int{"S": {3900}}
+	// GOINFER_METAL_GATE_CONFIRM=0 drops the confirmation cells, which never gate: a run deciding a short-K floor (A-P02)
+	// pools several candidate sets, one invocation each, and K = 3900's cell would cost minutes in every one of them.
+	if os.Getenv("GOINFER_METAL_GATE_CONFIRM") == "0" {
+		confirmKsByModel = map[string][]int{}
+	}
 
 	for _, mc := range models {
 		t.Run(mc.name, func(t *testing.T) {
