@@ -963,6 +963,11 @@ short-prompt route.
 | Rule | **Stays on** at ≥ 1.10 with the hard gates held (your ship bar). **Parked** (to you) at 1.02–1.10. **Killed** (reverted) below 1.02. |
 | Reported | 1- and 2-client cells (a lone generation should be unchanged: new ÷ old within 0.98–1.02 at 1 client is expected, not graded); MC3's own 4-client record on Qwen2.5 for context (1.785× on the 7B). |
 
+**Amendment (2026-10-04, before any run):** "serve defaults" would give the new arm 2 KV slots (Metal's default since
+E-P09), so 4 clients could not batch 4 wide. Both arms run with `-kv-sessions 4` passed explicitly, as the 7B record's
+defaults then were. A smoke of both pinned binaries on Qwen3-0.6B: old logs "one generation at a time", new "… generations
+at once … decode tokens batched". Nothing else changes.
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
