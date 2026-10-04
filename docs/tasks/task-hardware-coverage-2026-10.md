@@ -1,7 +1,9 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status: IN PROGRESS 2026-10-03.** H0 is done; H1.1 is next. H1 and H2 are the work that matters most,
-> and both can start the same day. H5 is an owner decision that waits on two release sweeps.
+> **Status, 2026-10-04: IN PROGRESS. H0 and H1.1 are DONE; H1.2–H1.5 and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no forced-fallback
+> hooks, no self-test, no `check --hardware`, no `scripts/hardware_sweep.sh`, no issue template, no "verified on" column). H1 and H2 are the work that matters most.
+> H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and CUDA and one rented sweep are missing.
+> The census logs **12** never-executed entries (the Windows and arm64 Linux CI records removed two of the 14 first counted).
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
 > RTX 2070 SUPER (8 GB) with a Ryzen 7 3700X. People with newer or bigger hardware will run code paths
@@ -94,7 +96,7 @@ test-only package that CI's `test-rest` job runs.
 - **What it checks.** At goinfer `e91cba3d` / aikit v1.53.0 it finds 25 predicates. It fails on any predicate with no
   entry, and on any entry naming a predicate the source no longer has. It validates every `last_executed` record:
   machine, ISO date, how, both commits, and the gate.
-- **The never-executed list.** The test logs it: 14 entries today. Some of those are marked in their notes as having
+- **The never-executed list.** The test logs it: 14 entries when first counted, **12 since the arm64 Linux and Windows records landed**. Some of those are marked in their notes as having
   run without a committed record (`cuda-compute-mode`, `cuda-uva`), and `cpu-popcnt` is not reached from goinfer at
   all.
 - **Able to fail.** A fake `var hasAVX10FAKE` in the tree fails it as a missing entry, and a fake `cpu:hasAMX` in an
@@ -109,8 +111,8 @@ test-only package that CI's `test-rest` job runs.
    GitHub's arm64 runners, which are free for public repositories. Both run the CPU suite and the forward
    goldens. The Windows binaries go from never run to run on every push.
 
-   **Done in part 2026-10-03** (`root-windows` and `root-linux-arm64` in `ci.yml`; first run is ci run 37143040097, draft
-   PR #6):
+   **Done 2026-10-03** (`root-windows` and `root-linux-arm64` in `ci.yml`; first run is ci run 37143040097, draft
+   PR #6, now superseded: its three commits are on `main` under other hashes (`git cherry` shows identical patches), and PR #7 carried the Windows fixes):
    - **linux/arm64: GREEN.** It ran on an ARM Neoverse-N2 with 4 CPUs and DotProd. All 30 packages pass, the decoder
      suite with the forward goldens in 156 s. This is recorded in the census as `ci-pool` (`linux-arm64`, and a Linux
      record for `cpu-arm64-dotprod`).
