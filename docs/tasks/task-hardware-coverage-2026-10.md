@@ -1,6 +1,6 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (needs Intel SDE downloaded by the owner), H1.4 as a CI job, H2 on Metal and WebGPU, and H4–H6 are not started** (checked against the tree
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (SDE installed, first run queued for tonight), H1.4 as a CI job, H2 on Metal and WebGPU, and H4–H6 are not started** (checked against the tree
 > 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
 > H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one rented sweep are missing.
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
@@ -157,6 +157,11 @@ test-only package that CI's `test-rest` job runs.
 2. **Intel SDE as a scheduled job** (weekly, like `race-weekly`, or on nobara). Run the CPU parity suite and
    tiny goldens under `sde64 -icx` (AVX-512 VNNI) and `-spr` (Sapphire Rapids). SDE is slow, so goldens only.
    Precedent: `0616cdc0`'s confirmation run.
+
+   **Set up 2026-10-04:** SDE 10.13.1 is at `~/tools/sde` (the tarball and its unchecked `.sig` beside it); `docs/measurements/sde-2026-10-04/run-sde-goldens.sh` runs aikit's `linalg` suite and the goinfer goldens under `-hsw` (control),
+   `-icx` and `-spr`, and is on tonight's queue (`night.py`, estimate 60 min). **Found by hand first:** aikit's `SelfCheck` and its VNNI tests pass under `-icx` with `avx512vnni+vl` detected and active, but goinfer's amd64 int4 greedy
+   golden (`TestDecodeParityInt4`) drifts at id 22 on any VNNI CPU while passing on AVX2: the two paths differ by relative L2 0.072 on that step's logits, each about equally far from f32. The golden is per architecture, not per
+   ISA, and CI cannot see it (the 0.5B asset is absent there). Details and the owner decision (a VNNI golden or a closeness check) are in that directory's README. Not yet a scheduled job: it is a queued one-off until the owner decides.
 3. **Force the fallbacks.** A test-only hook (build tag, in aikit) that makes `hasAVX2` / `hasDotProd` /
    `hasAVX512VNNI*` report false. CI then runs every kernel suite twice, so the pure-Go and narrower-ISA
    paths execute on every push.
