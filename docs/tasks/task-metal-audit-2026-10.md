@@ -1,6 +1,6 @@
 # Metal audit program — 2026-10
 
-**Status: phase 1 done; phase 2 Batch A and the M26 job graded 2026-10-02; C-P01 done (started 2026-10-01 on the local branch `metal-audit`, not pushed until the program is done).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
+**Status, 2026-10-04: phases 1 and 2 done; phase 3 built or closed through D-B02, E-P07 and the serve chain, whose served grade is queued (Phase 3, "The serve chain: served grade"). Open: E-P08; D-P01 and M-11 (M26, the owner's OK); T1.13 (nobara); C-N01 (aikit); the Track 4 decisions. The branch `metal-audit` merged to main on 2026-10-03, and the program continues on main (started 2026-10-01).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
 order the audit's §10 items run in, re-tagged for the run-budget rules and this Mac's limits. Each item keeps the
 definition, band, probe and kill line its §10 row gives; this doc does not restate them, so read the row before
 starting an item. Item IDs are the audit's. Decisions marked **O-** are the audit's Track 4 owner decisions, not the
@@ -738,7 +738,7 @@ step, is a new build with its own gate. Until then the C-B01 and C-P02 numbers d
   - Each gate fails under its own mutation: never hold, a hold never released, no send grace.
 - **On the 1.5B:** the real-checkpoint MC3 identity gates (4 conversations × 3 turns, greedy and sampled) and the spec
   gates pass.
-- **Not yet measured:** the served speed. It needs its own pre-registered night A/B.
+- **Not yet measured:** the served speed. Its night A/B is pre-registered below (Phase 3, "The serve chain: served grade").
 
 **Found while running the metal suite (not tonight's change): `TestPrefillParityMoEGatedShared` fails on main.** Its
 fixture `testdata/tiny-qwen2-moe` is a per-machine download, not committed. The local copy had no config until
@@ -1321,6 +1321,27 @@ lane.
 - **Owner decision (2026-10-04): E-P07 stays on** ("option 1, keep it on"). The output identity the gate exists for
   holds; the reuse-equality gate assumed a slot-independent reuse the system does not have.
 
+### The serve chain: served grade — pre-registration (written 2026-10-04, before any graded run; owner: "this first")
+
+**What it decides.** The serve chain (`0277f4ed`, "The chains in serve" above) lets a lone generation on the MC3
+batcher run the greedy or sampled chain with the resident held. Its identity gates pass; its served speed was never
+measured. Before it, the post-merge peer read found the chains bought nothing in serve (1.5B 0.991×), because serve on
+Metal always batches. This grade says whether the chain now pays where serve runs it.
+
+**The precondition, checked by day (2026-10-04, untimed).** Real serve on the 1.5B at its defaults (2 KV slots), two
+64-token requests per arm, counts from the new shutdown line (`3b9ef839`, `internal/serveapp/main.go`):
+- new arm: 128 of 128 decode tokens held, in 2 holds, greedy and at T = 1.0;
+- old arm: 0 held, 128 solo batcher runs.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-servechain-grade.sh` on the night queue. Two arms, no peer (TE5(a)), both pinned binaries built at `3b9ef839`: goinfer as committed, and goinfer_old with the hold never taken (`servechain-old-arm.patch` beside the binaries: `if false && …` on the one branch that calls `holdSolo`, the gate's "never hold" mutation). `bench_peer.py` on Metal at serve's defaults, depth 128, `greedy` and `temp1.0_notrunc`, the 0.5B, 1.5B and 7B at int4, 3 runs per cell. Four passes, the engine order alternating (new first, old first, new first, old first). `servechain_cells.py` tabulates the passes and checks the precondition. Estimate about 33 minutes (about 8 per pass, 5 of them the 7B's four cells); queued at 40. |
+| Precondition | Every cell of every pass: the new arm ran at least 95% of its decode tokens held, the old arm none, and both report `metal-resident (int4)` (from each cell's serve log). A failure voids the grade, and the cause is found before any re-run. |
+| Graded | The **1.5B greedy** cell. G = the median over the four passes of the pass's new ÷ old (each arm's bench_peer mean over its runs). |
+| Rule | **Stays on** if G ≥ 1.02 and at least 3 of 4 passes are above 1.00. **Killed** if G < 1.00: the hold is reverted (`holdSolo`, `releaseHold` and the branch in `generateInto`), and the record keeps the numbers. **Otherwise parked to the owner** (1.00 ≤ G < 1.02, or G ≥ 1.02 with fewer than 3 passes above 1.00): the chain's in-process grade (1.085×) and the served number then disagree in size, and the owner decides. |
+| Reported | The 1.5B at T = 1.0, and the 0.5B and 7B in both configs, by the same statistic. A 1.5B sampled G below 1.00 goes to the owner, since the sampled chain could be dropped from the hold alone. The in-process grades were 1.085× greedy and 1.066× sampled on the 1.5B; the served number includes HTTP streaming per token, so it can be smaller. |
+| Not read here | The peer ratios. If the chain stays on, the benchmarks Metal decode row is refreshed by its own same-session peer read (TE5(a)), queued separately. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -1646,3 +1667,7 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-03: **D-B04 built, bit-identical, off by default, queued for its grade** (owner: "then D-B04"). The audit's
   DeltaNet sites needed a coal-family rows kernel to stay bit-identical; it is new. A one-rep smoke on the 9B read
   1.06–1.08× on the token. The routed-expert part is not built.
+- 2026-10-04: **the serve chain's served grade pre-registered and queued** (owner: "this first"). The serve chain was
+  built on 2026-10-03 (`0277f4ed`) with its identity gates; only its served speed was owed. Serve's shutdown line now
+  reports held tokens (`3b9ef839`), and real serve on the 1.5B ran 128 of 128 decode tokens held with the hold on and
+  none with it off. The night job is two arms at the same rev, the old one never holding.
