@@ -2,8 +2,9 @@
 # Night job: 4b's grade, the exact layer-major paged prefill on M26 (docs/tasks/task-m26-mac-2026-10.md, "4b",
 # pre-registered 2026-10-04 before any graded run). TestG4LayerMajor_M26AB: a fresh prose prompt through the sequential
 # loop and through prefillG4Paged at M = 128 and 512, one warm-up then 5 reps per arm alternated, one process, logits
-# and K/V compared every rep; the auto-sizer's slot count. Rule: ships (g4LayerMajorOn on) at a median
-# sequential / layer-major >= 1.5 at M = 512 with every rep's K/V equal; parked at 1.2-1.5; killed under 1.2.
+# and K/V compared every rep; the auto-sizer's slot count. Rule (amended by the owner 2026-10-04, before it ran): stays
+# on at a median sequential / layer-major >= 1.02 at both M with every rep's K/V equal; parked at 1.00-1.02; off below
+# 1.00. The pinned binary calls prefillG4Paged directly, so it grades the path whatever its switch says.
 #
 # Pinned (the tree may move before tonight):
 #   test binary ~/goinfer-bench/m26-mac-2026-10/metal-tagged-d79269eb.test
