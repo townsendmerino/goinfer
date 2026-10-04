@@ -136,6 +136,22 @@ test-only package that CI's `test-rest` job runs.
        "unknown", the fit guard proceeds (task-fit-to-hardware.md §8), and `goinfer-chat fit` reports no placement. The
        `internal/fitcmd` tests assume a probe.
      - `windows-arm64` is not covered: `windows-latest` is x86-64.
+   - **Windows: GREEN 2026-10-03 (owner: "yes", fix the failures).** Fixed on draft PR #7 over three CI rounds; ci run
+     37174957127 at a2c3fa1f is the first green run, and the census records it as `ci-pool` (`windows-binaries`). All
+     30 packages pass, decoder in 184 s, on an AMD EPYC 9V74 runner with 2 cores and 4 threads. The job runs without
+     `-v`, so its log names package results, not which tests ran or skipped.
+     - **Fixed:** `.gitattributes` pins every text file to LF (nothing in the index renormalized; reproduced first on
+       a CRLF-converted local tree); `cpuSeconds` per OS; a Windows host-RAM probe (`decoder/hostram_windows.go`,
+       `GlobalMemoryStatusEx`), which closes the `fit` product gap; not-found text from `syscall.ENOENT`; the test
+       helpers set `LocalAppData`.
+     - **Found once the decoder suite built:** `TestMmapAliasWindow` assumed a real mapping, but aikit's mmap reads
+       the file into the heap on Windows, and the alias rightly declines an unaligned heap slice. The test now
+       asserts that and pins the arithmetic on an aligned stand-in. The job journal had no close, so Windows could
+       not clean up its TempDir. The permission check skips on Windows, which has no mode bits to read.
+     - **Intermittent:** the prequant mtime premise passed on the first run and failed on the second (the file clock
+       ticks every ~1-16 ms). The test now sets the source's mtime.
+     - **Still not covered:** `windows-arm64`. The heap-backed "mmap" also means Windows loads a model into memory
+       rather than mapping it (aikit's `mmap_other.go`), a product limit this run does not measure.
 2. **Intel SDE as a scheduled job** (weekly, like `race-weekly`, or on nobara). Run the CPU parity suite and
    tiny goldens under `sde64 -icx` (AVX-512 VNNI) and `-spr` (Sapphire Rapids). SDE is slow, so goldens only.
    Precedent: `0616cdc0`'s confirmation run.

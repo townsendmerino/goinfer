@@ -580,9 +580,18 @@
    "files": [
     ".github/workflows/release.yml"
    ],
-   "our_machines": "GitHub windows-latest (x86-64) in CI since H1.1: the suite RUNS there but does not pass (see notes)",
-   "last_executed": [],
-   "notes": "H1.1's first run, ci run 37143040097 (PR #6, 2026-10-03), is RED, so there is no green record. 22 packages pass; 8 fail. The decoder test package does not build (decoder/a3_fanout_test.go calls syscall.Getrusage with no build tag), so the forward goldens never ran. Other failures are test portability: CRLF checkouts change byte counts and regexes, error-text checks expect unix wording, and os.UserCacheDir ignores the tests' HOME/XDG_CACHE_HOME on Windows, so pull's cache tests share state. One is a documented product gap: no host-RAM probe on Windows (decoder/hostram_other.go returns unknown), so `fit` reports no placement. windows-arm64 is not covered: windows-latest is x86-64. See the task doc's H1.1 record."
+   "our_machines": "GitHub windows-latest (x86-64) in CI since H1.1, green since 2026-10-03; no windows-arm64 run",
+   "last_executed": [
+    {
+     "machine": "GitHub windows-latest runner: AMD EPYC 9V74 (Zen 4), 2 cores / 4 threads, windows/amd64",
+     "date": "2026-10-03",
+     "how": "ci-pool",
+     "goinfer": "a2c3fa1f (PR #7 head)",
+     "aikit": "v1.53.0",
+     "gate": "ci run 37174957127: root-windows (go test -tags goinfer_testhooks ./..., 30 packages ok, decoder 184 s; run without -v, so per-test skips are not visible)"
+    }
+   ],
+   "notes": "H1.1's first run (ci run 37143040097, PR #6) was red; PR #7 fixed it (task doc H1.1). The fixes: LF checkouts (.gitattributes), a Windows host-RAM probe (decoder/hostram_windows.go, GlobalMemoryStatusEx: fit and the load guard now work there), per-OS test helpers, and test isolation via LocalAppData. Windows reads model files into the heap (aikit's mmap_other.go), not a mapping. windows-arm64 is not covered: windows-latest is x86-64."
   },
   {
    "id": "linux-arm64",
