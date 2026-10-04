@@ -1,0 +1,29 @@
+=== 2026-10-03 21:21:12 arm int8int8 start
+=== RUN   TestMultiQuestionArm_run
+[21:21:13 +0s] arm int8int8: loading /home/francis/models/clef-flash through modelload (the path serve uses)
+[21:21:27 +15s] loaded: quant "int8int8", 5 records
+[21:22:12 +1m0s] [1/5] mq-K256-s0: 839 tokens, 5 questions, 45 s
+[21:22:57 +1m44s] [2/5] mq-K256-s1: 833 tokens, 5 questions, 45 s
+[21:23:42 +2m29s] [3/5] mq-K256-s2: 836 tokens, 5 questions, 45 s
+[21:25:20 +4m8s] [4/5] mq-K1024-s0: 1586 tokens, 5 questions, 99 s
+[21:27:02 +5m50s] [5/5] mq-K1024-s1: 1610 tokens, 5 questions, 102 s
+[21:27:02 +5m50s] arm int8int8 done
+--- PASS: TestMultiQuestionArm_run (349.63s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/clef	349.697s
+=== 2026-10-03 21:27:02 arm int8int8 rc=0
+=== 2026-10-03 21:27:02 arm f32 start
+=== RUN   TestMultiQuestionArm_run
+[21:27:03 +0s] arm f32: loading /home/francis/models/clef-flash through modelload (the path serve uses)
+decoder: context capped at 97955 (model allows 262144) so that KV fits: weights 35.1 GB + KV 6.0 GB of budget 41.0 GB — pass -ctx to choose, or -stream-weights to lift
+[21:27:16 +14s] loaded: quant "native", 5 records
+[21:28:25 +1m23s] [1/5] mq-K256-s0: 839 tokens, 5 questions, 69 s
+[21:29:25 +2m22s] [2/5] mq-K256-s1: 833 tokens, 5 questions, 60 s
+[21:30:25 +3m22s] [3/5] mq-K256-s2: 836 tokens, 5 questions, 60 s
+[21:32:24 +5m22s] [4/5] mq-K1024-s0: 1586 tokens, 5 questions, 120 s
+[21:34:26 +7m23s] [5/5] mq-K1024-s1: 1610 tokens, 5 questions, 121 s
+[21:34:26 +7m23s] arm f32 done
+--- PASS: TestMultiQuestionArm_run (442.83s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/clef	443.293s
+=== 2026-10-03 21:34:26 arm f32 rc=0

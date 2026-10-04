@@ -27,4 +27,19 @@ Per question: max |ΔP| over its options, KL(reference ‖ arm), top-1 argmax ag
 
 ## 3. Result
 
-*Not yet run.*
+**Run:** 2026-10-03, 21:17–21:34 PDT, nobara-pc (Ryzen 7 3700X, 8 threads), by day, box otherwise idle. `~/models/clef-flash` (rev `17f0b0ad…`, head sha256 `19cdcec8…`, module sha256 `0e304cf7…`), reference torch 2.14.0+cpu / transformers 5.16.1 (`data/clef_env_f32.json`). The records file has sha256 `0c62417f…c3b4` and the reference rows `data/probs_f32.jsonl`. The grader's output is `data/grade-2026-10-03.txt`; all rows, the reference log and the `go test -v` log are in `data/`. The code under test is the tree at `4bcc2afa`.
+
+Cost against the estimate: reference 3.5 min (est. 7, with a 13 s load), int8int8 5.8 min (est. 5), f32 7.4 min (est. 8). Every record's token count and every question's id and option order matched the reference (0 structural problems); 5 records, 25 questions, 5,704 tokens.
+
+| arm | max \|ΔP\| | mean KL | top-1 | verdict |
+|---|---|---|---|---|
+| goinfer f32 (the port check) | 1.22e-06 | < 1e-5 | 25/25 | **PASS** |
+| goinfer int8int8 | 0.124 | 0.00554 | 24/25 (reported, no bar) | **PASS** |
+
+- **f32:** the multi-question path in the Go port agrees with Cloudflare's code to about 1e-6 on real weights, at every position (largest on the `choice` questions, 1.22e-06 and 9.4e-07; the `noul` first question 6.8e-08).
+- **int8int8, by position (mean KL, top-1):** 1 noul 0.00001, 5/5; 2 score 0.00340, 5/5; 3 choice 0.01096, 5/5; 4 noul 0.00057, 5/5; 5 choice 0.01278, 4/5. The worst position, 0.0128, is a fifth of the 0.06 line. The one flip is `mq-K256-s0` question 5 (a choice), where the reference's own top-two margin was 0.090: a near-tie.
+- **Predictions, graded as written:** f32 PASS with max |ΔP| well under 1e-5: HELD (1.22e-06). int8int8 mean KL between 0.005 and 0.03, no position over 0.06: HELD (0.0055 is just inside the lower edge; the interval of 25 questions from 5 states is wide, so the lower edge is not evidence of anything).
+
+**Reading.** The multi-question path is correct on the real weights, and int8int8 does not degrade when five questions share one pass: its mean KL here (0.0055) is under the single-question mean (0.0165). The `choice` questions carry the error again (as the `score` questions did in the single-question set), which fits the same cause (those probabilities are spread over several options), but nothing here tests that. So the owner's tag can say that the many-questions-in-one-pass path was checked against the reference on real weights, with the sample stated: **5 records of 5 questions each, three at K = 256 and two at K = 1,024, one reference and no gold.**
+
+**Still not shown:** whether five questions asked in one record give the same answers as the same five asked one at a time (the reference's own joint-versus-single difference); accuracy against gold on multi-question records; K = 4,096; the GPU path; a question count other than five; images.

@@ -1,0 +1,22 @@
+reference: 5 records, 25 questions
+
+## f32: 25 questions in 5 records
+  max |dP| 1.22e-06; mean KL 0.00000; top-1 agreement 25/25
+    position 1 (noul): mean KL -0.00000, max |dP| 6.79e-08, top-1 5/5
+    position 2 (score): mean KL -0.00000, max |dP| 3.64e-07, top-1 5/5
+    position 3 (choice): mean KL -0.00000, max |dP| 1.22e-06, top-1 5/5
+    position 4 (noul2): mean KL -0.00000, max |dP| 1.49e-07, top-1 5/5
+    position 5 (choice2): mean KL 0.00000, max |dP| 9.41e-07, top-1 5/5
+
+## int8int8: 25 questions in 5 records
+  max |dP| 0.124; mean KL 0.00554; top-1 agreement 24/25
+    position 1 (noul): mean KL 0.00001, max |dP| 0.00052, top-1 5/5
+    position 2 (score): mean KL 0.00340, max |dP| 0.0475, top-1 5/5
+    position 3 (choice): mean KL 0.01096, max |dP| 0.124, top-1 5/5
+    position 4 (noul2): mean KL 0.00057, max |dP| 0.0132, top-1 5/5
+    position 5 (choice2): mean KL 0.01278, max |dP| 0.11, top-1 4/5
+    top-1 flip: mq-K256-s0 q5 (choice2), reference top-two margin 0.090
+
+VERDICTS
+  f32       PASS (max |dP| 1.22e-06 vs 1e-4 / 1e-3; top-1 25/25; structural problems 0)
+  int8int8  PASS (mean KL 0.0055 vs 0.03 / 0.06; worst position mean KL 0.0128 vs 0.06; top-1 24/25 reported, no bar; structural problems 0)
