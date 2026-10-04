@@ -65,10 +65,10 @@ import (
 // Coverage: mixtral-tiny is full-causal (attention softmax denom over
 // >256 keys → the width coupling at multi-iteration depth) + rmsnorm_quant; gemma4-dense-scaled covers
 // rmsnorm_f32 + qk_norm. llama-attnfa-tiny (added 2026-09-21, R2 golden-coverage follow-up) covers
-// `attention_fa`, DEFAULT ON past depth 1024 (metal/model.go's attnFADepthFloor, 1536 until B-P03) — the other two
+// `attention_fa`, DEFAULT ON past depth 1536 (metal/model.go's attnFADepthFloor) — the other two
 // fixtures both fail canUseAttnFA's head_dim==128 guard (8 and 256 respectively) and can never
 // dispatch it regardless of depth, so this kernel had zero coverage from this suite until this
-// fixture existed. Its checkpoints straddle the floor exactly (1022 declines, 1023 engages) so an
+// fixture existed. Its checkpoints straddle the floor exactly (1534 declines, 1535 engages) so an
 // off-by-one at the boundary is caught, not just steady-state behavior on either side. Union = every
 // pinned-width reduction kernel plus `attention_fa` this build DISPATCHES.
 //
@@ -145,17 +145,17 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		{"../testdata/mixtral-tiny", "int8int8", map[int]bool{130: true, 260: true, 320: true}, 320},
 		// sandwich: rmsnorm_f32, qk_norm (N-13: NOT attention_f32 — N-28 above)
 		{"../testdata/gemma4-dense-scaled", "int4", map[int]bool{130: true, 260: true, 320: true}, 320},
-		// R2: attention_fa, DEFAULT ON past attnFADepthFloor=1024 (metal/model.go; 1536 until B-P03). Every other
+		// R2: attention_fa, DEFAULT ON past attnFADepthFloor=1536 (metal/model.go). Every other
 		// fixture here has head_dim != 128 (mixtral-tiny: 8, gemma4-dense-scaled: 256), so
 		// canUseAttnFA's hd==128 guard declines on both, regardless of depth — neither can ever
 		// cover this kernel. llama-attnfa-tiny (scripts/pin_llama_attnfa_tiny.py) is a plain dense
 		// GQA Llama shaped to clear every other guard too (no sandwich/postOnly/parallelBlock/
 		// attnSink/kvI8/lora/MoE/DeltaNet/qGate/window — see canUseAttnFA). Checkpoints straddle
-		// the floor exactly: curNKeys = pos+1, so pos=1022 (curNKeys=1023) is the last declining
-		// position and pos=1023 (curNKeys=1024) is the first engaging one. 900 is a shipped-kernel-only
-		// control below the floor; 1100 confirms the engaged kernel stays stable past the boundary, not
-		// just at it. Re-baked for B-P03's floor move (G-04; it was 1400 / 1534 / 1535 / 1600 at 1536).
-		{"../testdata/llama-attnfa-tiny", "int4", map[int]bool{900: true, 1022: true, 1023: true, 1100: true}, 1100},
+		// the floor exactly: curNKeys = pos+1, so pos=1534 (curNKeys=1535) is the last declining
+		// position and pos=1535 (curNKeys=1536) is the first engaging one. 1400 is a shipped-kernel-only
+		// control below the floor; 1600 confirms the engaged kernel stays stable past the boundary, not
+		// just at it. (B-P03 moved the floor to 1024 and was reverted the same day; see attnFADepthFloor.)
+		{"../testdata/llama-attnfa-tiny", "int4", map[int]bool{1400: true, 1534: true, 1535: true, 1600: true}, 1600},
 	}
 	ids := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 9, 17, 60, 200, 33, 2} // fixed, arbitrary valid ids
 

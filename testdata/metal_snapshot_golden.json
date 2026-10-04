@@ -49,30 +49,30 @@
     {
       "model": "llama-attnfa-tiny",
       "quant": "int4",
-      "depth": 900,
+      "depth": 1400,
       "argmax": 196,
-      "sha256": "7c048328927fd230fca9263a83d9da99bd591a138a9fc58a6e9f74de79a7f9e4"
+      "sha256": "151c008b2aad47b5f17ada7582cf8f540b25d5a3e90a2a9d56a9032778526b40"
     },
     {
       "model": "llama-attnfa-tiny",
       "quant": "int4",
-      "depth": 1022,
-      "argmax": 41,
-      "sha256": "ec117fdb8c2d7053b960d5c66bfeba1a5051a19c603a84d68abb98ed41c71ed7"
-    },
-    {
-      "model": "llama-attnfa-tiny",
-      "quant": "int4",
-      "depth": 1023,
+      "depth": 1534,
       "argmax": 196,
-      "sha256": "abee6cb9716420e539d22bd0fb01637becfce70d67cc1ac1cbb8f3e927d53f3d"
+      "sha256": "311b32fa6a2aec35715add980f0157c0cc15dc100719e7c0eb6efd8ee35148a6"
     },
     {
       "model": "llama-attnfa-tiny",
       "quant": "int4",
-      "depth": 1100,
+      "depth": 1535,
       "argmax": 41,
-      "sha256": "51be3ff8d50c7c37a3f1af79020dd5bfb32912d967362a5f87f5891669727ddb"
+      "sha256": "487e0cb104eeeb3421e15f6408fdad6eee8a615932d71524caba280b2ae69467"
+    },
+    {
+      "model": "llama-attnfa-tiny",
+      "quant": "int4",
+      "depth": 1600,
+      "argmax": 242,
+      "sha256": "6697ab8830208f9f487590bfc47f85d5a200316a7d79ecccfcfae820d0070611"
     }
   ]
 }
