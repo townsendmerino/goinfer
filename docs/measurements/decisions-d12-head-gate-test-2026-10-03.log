@@ -1,0 +1,5 @@
+=== RUN   TestHead_matchesReference
+    head_test.go:137: 3 items, head isolated: worst probability difference 9.65e-08 (bar 1e-5), worst logit difference 9.54e-07
+--- PASS: TestHead_matchesReference (0.43s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/clef	0.437s
