@@ -203,6 +203,10 @@ test-only package that CI's `test-rest` job runs.
 - **Found by the arm64 leg and by QEMU (aikit, fixed in v1.54.0):** `aikit_nodotprod` on aikit's native arm64 runner failed four tests that assumed DotProd on its first run, and running the arm64 suite under
   `qemu-aarch64-static -cpu cortex-a72` (a core without DotProd; per-test processes) found a fifth that crashes with SIGILL by calling the row4 SDOT kernel directly; all five now skip without DotProd. Production
   code declines the layout without DotProd; the bugs were in the tests. The forced tag cannot reach that class (the emulated or real CPU still has DotProd), which is what H1.4 is for.
+- **First CI run (2026-10-04, run 37210694021, green):** all three legs passed, each with `TestForcedFallbacks_expected` PASS in its log. The runners' CPUs, which the job prints: `noavx2` landed on an **EPYC 9V74** (Zen 4, which
+  natively has AVX-512 VNNI+VL, so the pure-Go path ran on a machine with the fast kernels), `noavx512` and `nopopcnt` on an **EPYC 7763** (Zen 3, no AVX-512), where `noavx512` therefore forced nothing. The pool mixes
+  CPU models, as the 2026-09-24 incident said. **That leg is only a real check on the runs that land on an AVX-512 machine**, and nothing logs which kernel the dispatcher picked, so the AVX-512 record is not claimed;
+  an aikit accessor that reports the active kernel variant is the missing piece, and H3's `check --hardware` needs it too.
 - **Not done:** an arm64 `aikit_nodotprod` leg in goinfer's CI (aikit's own CI has one; goinfer's arm64 goldens are arm64-baked and the decoder suite is too slow to pre-verify under emulation); the real-checkpoint goldens'
   forced branches skip on a CI runner (no assets) and were run by hand, so CI proves the tiny-fixture ones only; and `cpu-avx512-vnni`'s record (the `noavx512` leg forces the AVX2 kernels on whatever the pool gave it, and
   nothing in the log yet says whether that was an AVX-512 machine: the job prints the flags, so a later run can be read).
