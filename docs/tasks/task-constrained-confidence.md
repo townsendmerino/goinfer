@@ -2,7 +2,7 @@
 
 > **Added 2026-10-01: Route C, Cloudflare's Clef and Clef-flash (D10–D14).** Apache-2.0 decision models on `qwen3_5`
 > backbones goinfer already loads, speaking the `/v1/systemone` API D5 serves. Their adapters ship merged, so D3 is not
-> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12 is built (`internal/clef`: encoder 150/150 identical; head and the whole pipeline match the reference to 1.8e-7 on a tiny end-to-end fixture, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its gate of record on real hidden states waits on the D10 f32 night job; owner decisions made: request text is tokenized literally, and the `clef` route reports `confidence` as the reference does (the top probability); D13's serve wiring is built (`route: "clef"` on `/v1/systemone`, 2026-10-03; the fidelity arms and the JEV comparison are not run) and D14 is unstarted.
+> needed. One backbone pass scores every question, so D8 does not apply to this route. In progress (2026-10-02): D10 is read and swept and its fixture queued; D11 is done; D12 is built (`internal/clef`: encoder 150/150 identical; head and the whole pipeline match the reference to 1.8e-7 on a tiny end-to-end fixture, `docs/measurements/decisions-d12-clef-encoder-2026-10-02.md`) and its gate of record on real hidden states waits on the D10 f32 night job; owner decisions made: request text is tokenized literally, and the `clef` route reports `confidence` as the reference does (the top probability); D13's serve wiring is built (`route: "clef"` on `/v1/systemone`, 2026-10-03) and its fidelity arms and the JEV comparison are graded (2026-10-03, `decisions-d13-clef-fidelity-2026-10-03.md` §7); D12's gate of record on real hidden states passed (worst probability difference 9.65e-8); D14 is graded (below).
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
 > quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with
@@ -972,6 +972,14 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   the same items: top-1 against gold where it exists, ECE, and agreement. **Owner decision 2026-10-03: both routes are
   kept and extended equally, so this comparison is informational and no rule hangs on it** (it was "if Clef-flash is at
   least level on both, JEV's route is kept but not extended").
+- **Graded 2026-10-03** ([`decisions-d13-clef-fidelity-2026-10-03.md`](../measurements/decisions-d13-clef-fidelity-2026-10-03.md) §7), 150 records, six arms:
+  - **f32 PASS** (KL below 1e-5, top-1 1.000): the port is correct.
+  - **int8int8 FAIL on top-1** (KL 0.0165 inside the band, top-1 0.907); **int4 FAIL** (KL 0.051, top-1 0.840), on the CPU and on CUDA (0.044, 0.840); **q4k FAIL on top-1** (KL 0.021, top-1 0.887, bartowski's imatrix GGUF).
+  - **Calibration unresolved in every arm** (each interval reaches 0); none failed it. The bf16 reference against f32 reads KL 0.00005, top-1 0.993.
+  - **The default stays int8int8** under the record's rule (a top-1 miss alone does not reopen it), with the disagreement stated: 14 of 150 argmaxes change.
+  - **Clef against JEV** (84 gold rows, informational): accuracy 0.690 against 0.774 and ECE 0.107 against 0.122, neither difference resolved.
+  - Predictions that failed, recorded as failed: int4 inside the KL band (CPU and CUDA).
+  - Open for the owner: whether to keep offering `int4` for Clef, and whether the site tag may go on Clef-flash given that no quantized arm meets the 98% bar.
 - **Then Clef 27B on the Linux box's CPU,** at f32 against a smaller reference set. Report its speed as measured,
   with the machine named.
 
@@ -986,7 +994,7 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   projected; five questions, Clef is 1.14x faster at K = 256 and 1.75x at K = 1,024. The D8 rule read 2.01 at K = 256,
   ambiguous by the rule, and **the owner decided: D8 is unnecessary for Clef's five-question shape** (one backbone pass
   already scores every question).
-- **Resident:** D11's follow-up now exists for CUDA ([`decisions-d11-resident-hidden-2026-10-03.md`](../measurements/decisions-d11-resident-hidden-2026-10-03.md): the all-positions residual comes back from the device; one exploratory run of three records measured 3.2 ms per token at int4, with fidelity ungraded), so the CUDA cells can be registered; Metal and WebGPU do not implement the seam yet. Each cell gets its own pre-registered band.
+- **Resident:** D11's follow-up now exists for CUDA ([`decisions-d11-resident-hidden-2026-10-03.md`](../measurements/decisions-d11-resident-hidden-2026-10-03.md): the all-positions residual comes back from the device; the CUDA int4 arm measured 3.2 ms per token and was graded for fidelity in D13: KL 0.044, top-1 0.840), so the CUDA speed cells can be registered; Metal and WebGPU do not implement the seam yet. Each cell gets its own pre-registered band.
 - **Docs (D9's list):** the route, the per-arm fidelity figures, the measured latency with its machine, and the
   §2 caveat. A site decision-model tag goes on Clef-flash only after D13's fidelity gate passes.
 

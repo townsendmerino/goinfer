@@ -1,0 +1,66 @@
+reference: 150 rows; 84 gold rows
+
+## f32: 150 rows, registered set 150 (every 1)
+  n=150  mean KL(ref || goinfer) -0.00000   top-1 agreement 1.0000   worst item KL 0.0000
+    choice n= 50  KL -0.00000  top-1 1.0000
+    noul   n= 51  KL -0.00000  top-1 1.0000
+    score  n= 49  KL -0.00000  top-1 1.0000
+  gold rows 84: ECE 0.1070 (reference 0.1070); arm - reference +0.0000, 95% paired bootstrap [-0.0000, +0.0000] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.690 (reference 0.690)
+
+## int8int8: 150 rows, registered set 150 (every 1)
+  n=150  mean KL(ref || goinfer) 0.01653   top-1 agreement 0.9067   worst item KL 0.2270
+    choice n= 50  KL 0.01884  top-1 0.9200
+    noul   n= 51  KL 0.01667  top-1 0.9412
+    score  n= 49  KL 0.01403  top-1 0.8571
+  gold rows 84: ECE 0.1244 (reference 0.1070); arm - reference +0.0174, 95% paired bootstrap [-0.0506, +0.0650] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.667 (reference 0.690)
+
+## int4: 150 rows, registered set 150 (every 1)
+  n=150  mean KL(ref || goinfer) 0.05115   top-1 agreement 0.8400   worst item KL 0.8809
+    choice n= 50  KL 0.04223  top-1 0.9000
+    noul   n= 51  KL 0.06368  top-1 0.9020
+    score  n= 49  KL 0.04722  top-1 0.7143
+  gold rows 84: ECE 0.1376 (reference 0.1070); arm - reference +0.0306, 95% paired bootstrap [-0.0532, +0.0821] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.655 (reference 0.690)
+
+## q4k: 150 rows, registered set 150 (every 1)
+  n=150  mean KL(ref || goinfer) 0.02067   top-1 agreement 0.8867   worst item KL 0.9220
+    choice n= 50  KL 0.01233  top-1 0.9200
+    noul   n= 51  KL 0.03269  top-1 0.9412
+    score  n= 49  KL 0.01666  top-1 0.7959
+  gold rows 84: ECE 0.0916 (reference 0.1070); arm - reference -0.0154, 95% paired bootstrap [-0.0648, +0.0349] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.679 (reference 0.690)
+
+## cuda-int4: 150 rows, registered set 150 (every 1)
+  3.2 ms per input token (validity: under 20, i.e. it ran on the device)
+  n=150  mean KL(ref || goinfer) 0.04403   top-1 agreement 0.8400   worst item KL 0.4277
+    choice n= 50  KL 0.03474  top-1 0.8600
+    noul   n= 51  KL 0.05724  top-1 0.9020
+    score  n= 49  KL 0.03978  top-1 0.7551
+  gold rows 84: ECE 0.1427 (reference 0.1070); arm - reference +0.0357, 95% paired bootstrap [-0.0512, +0.0799] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.679 (reference 0.690)
+
+## cuda-int4-pin: 150 rows, registered set 150 (every 1)
+  3.2 ms per input token (validity: under 20, i.e. it ran on the device)
+  n=150  mean KL(ref || goinfer) 0.04512   top-1 agreement 0.8133   worst item KL 0.6837
+    choice n= 50  KL 0.04066  top-1 0.8600
+    noul   n= 51  KL 0.04575  top-1 0.9216
+    score  n= 49  KL 0.04902  top-1 0.6531
+  gold rows 84: ECE 0.1243 (reference 0.1070); arm - reference +0.0173, 95% paired bootstrap [-0.0488, +0.0721] -> calibration unresolved (interval reaches 0)
+            top-1 vs gold 0.714 (reference 0.690)
+
+## reference at bf16 (the release's dtype) against the f32 reference: n=150  mean KL 0.00005  top-1 agreement 0.9933  (the noise floor of a correct port)
+
+## Clef (reference, f32) against JEV-9B (reference, f32) on the same 84 gold rows
+  top-1 vs gold: Clef 0.690, JEV 0.774; Clef - JEV -0.083, 95% paired bootstrap [-0.202, +0.024]
+  ECE: Clef 0.1070, JEV 0.1222; Clef - JEV -0.0153, 95% paired bootstrap [-0.0536, +0.1094]
+  INFORMATIONAL (the owner keeps and extends both routes equally, 2026-10-03; no rule hangs on it). Point estimates, accuracy Clef >= JEV and ECE Clef <= JEV: NO -- both intervals reach 0, so this is a point-estimate reading and unresolved
+
+VERDICTS
+  f32       PASS (KL -0.00000 vs 0.01, top-1 1.0000 vs 0.98; ambiguous band KL <= 0.02, top-1 >= 0.95); calibration unresolved (interval reaches 0)
+  int8int8  FAIL (KL 0.01653 vs 0.03, top-1 0.9067 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)
+  int4      FAIL (KL 0.05115 vs 0.03, top-1 0.8400 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)
+  q4k       FAIL (KL 0.02067 vs 0.03, top-1 0.8867 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)
+  cuda-int4 FAIL (KL 0.04403 vs 0.03, top-1 0.8400 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)
+  cuda-int4-pin FAIL (KL 0.04512 vs 0.03, top-1 0.8133 vs 0.98; ambiguous band KL <= 0.06, top-1 >= 0.95); calibration unresolved (interval reaches 0)

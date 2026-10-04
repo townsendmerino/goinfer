@@ -1,0 +1,20 @@
+{
+ "bf16_matmul": "n/a (f32)",
+ "cpu_threads": 8,
+ "date": "2026-10-03 11:21:03 PDT",
+ "dtype": "f32",
+ "head_sha256": "19cdcec8c81dc9212be320fff47462ab342fbc1278be4368fb3da71241cf5ba0",
+ "host": "nobara-pc",
+ "machine": "x86_64",
+ "model_repo": "Cloudflare/clef-flash",
+ "model_rev": "17f0b0ad64efb65d273590632833508766b2aae6",
+ "module_sha256": "0e304cf7c6500e8bb59bef7e2afd2c6373f82596dfb3b57d1aa93c175e2dc3a3",
+ "python": "3.14.7",
+ "release_tested_with": {
+  "torch": "2.11",
+  "transformers": "5.10.2"
+ },
+ "text_only": true,
+ "torch": "2.14.0+cpu",
+ "transformers": "5.16.1"
+}
