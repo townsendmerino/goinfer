@@ -1163,7 +1163,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 	} // GOINFER_METAL_R17_ACC_ARMS=decision keeps only the arms the pre-registered decision grades
 	// (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md): the exact kernel and the two candidates.
 	// GOINFER_METAL_R17_ACC_ARMS=bp03 keeps the exact kernel and production's attention_fa (the block kernel since
-	// R17): B-P03's P1, at depths below the 1536 floor (docs/tasks/task-metal-audit-2026-10.md); the move to 1024 it graded was reverted.
+	// R17): B-P03's P1, at the depths below the floor as it then stood, 1536 (docs/tasks/task-metal-audit-2026-10.md); it moved to 1024 on that grade.
 	switch os.Getenv("GOINFER_METAL_R17_ACC_ARMS") {
 	case "bp03":
 		keep := map[string]bool{"exact (shipped attention)": true, "production (r.pAttnFA)": true}

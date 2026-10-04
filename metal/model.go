@@ -2666,13 +2666,15 @@ const attnFACoreCount = 14
 // (docs/measurements/metal-decode-attn-r17-2026-09-25.md). The nKeys/32 cap never binds above attnFADepthFloor.
 const attnFABlkSplit = 16
 
-// attnFADepthFloor is where attention_fa takes over from the shipped kernel. B-P03 (docs/tasks/task-metal-audit-2026-10.md,
-// night of 2026-10-03) graded a move to 1024 and passed its fidelity gate (P1 on both models, P2 KL ratio 0.9987 on the
-// 1.5B), but the move was REVERTED the same day (owner): at 1024 the 1.5B's `--spec ngram` stops emitting plain decode's
-// tokens (TestSpecNgram_copyOnStepVerify diverges at token 105, about 1,077 keys; it passes at 1100 and 1536). The verify
-// step's rows are bit-identical to production's logits path there (TestMC3Verify_sameSlotRowsBitIdentical), and the
-// greedy chain is not the cause; plain greedy decode's device-argmax path disagrees with the logits path once the block
-// kernel runs at those depths. The floor stays 1536 until that is understood. The history below set the 1536 floor.
+// attnFADepthFloor is where attention_fa takes over from the shipped kernel. It is 1024 since B-P03
+// (docs/tasks/task-metal-audit-2026-10.md, night of 2026-10-03): T1.2 measured the block kernel at 1.167x the legacy
+// kernel at 1024 keys on the 1.5B and 1.056x on the 7B, and the fidelity gate at the new depths passed. P1 on both
+// models put the block kernel's median and p99 relative L2 against float64 below the exact kernel's at 1024, 1280 and
+// 1535 keys; P2 PASSES on the 1.5B at 1024 (KL ratio 0.9987). Below 1024 the two kernels were level (0.97-1.03x), so
+// the floor stays there. A same-day revert to 1536 was a test artifact: TestSpecNgram_copyOnStepVerify compared spec,
+// whose prompt reused the cache and re-decoded its last position, against a cold plain arm that had prefilled it, and the
+// f16 prefill is not bit-identical to decode; spec matches a plain arm on the same reuse exactly, tokens and K/V. The
+// history below is the original per-query-head kernel's, which set the old 1536 floor.
 //
 // The original floor, 1536: where attention_fa (at a properly-sized split count) started beating the
 // shipped kernel — measured directly (TestAttentionFA_speedProbe, since deleted; tight-interleaved min-of-40,
@@ -2682,7 +2684,7 @@ const attnFABlkSplit = 16
 // floor canUseAttnFA declines entirely and the shipped kernel runs, rather than this kernel at
 // S=1 as R2's own Build text first proposed ("S=1 below a measured crossover") — a correction the
 // speed probe surfaced, recorded here rather than silently overriding the brief's own text.
-const attnFADepthFloor = 1536
+const attnFADepthFloor = 1024
 
 // attnFAMaxG is the most query heads per KV head attention_fa holds: its per-thread arrays are sized
 // ATTN_FA_MAXG in kernels.go (TestAttnFAMaxG_matchesKernel ties the two). A wider group would index past

@@ -135,8 +135,14 @@ func TestSpecNgram_multiTurnMatchesPlain(t *testing.T) {
 }
 
 // TestSpecNgram_copyOnStepVerify: on a verbatim-copy prompt, where n-gram drafting does most, speculation verifying on
-// the step kernels (PrefillLastNArgmax) emits exactly plain decode's ids, and really does draft deep: rounds well
-// under the token count. Reports both arms' wall time (exploratory; the served grading is the measure).
+// the step kernels (PrefillLastNArgmax) emits exactly plain decode's ids and leaves exactly its K/V, and really does
+// draft deep: rounds well under the token count. Reports both arms' wall time (exploratory; the served grading is the
+// measure).
+//
+// Both compared arms reuse the cache's prompt prefix, so both re-decode the prompt's last position. A cold arm would
+// have prefilled it, and the f16 prefill is not bit-identical to decode: comparing spec against the cold arm is a
+// cold-against-warm comparison, which on 2026-10-03 diverged at token 105 with attnFADepthFloor at 1024 and was taken
+// for a spec defect (B-P03's revert, since undone). The cold run is a warm-up only.
 //
 //	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestSpecNgram_copyOnStepVerify$' -v ./metal/
 func TestSpecNgram_copyOnStepVerify(t *testing.T) {
@@ -166,6 +172,16 @@ func TestSpecNgram_copyOnStepVerify(t *testing.T) {
 	if _, ok := m.ResidentForwardForTest().(interface{ VerifyCost() []float64 }); !ok {
 		t.Fatal("the Metal resident does not report a verify cost")
 	}
+	r := m.ResidentForwardForTest().(*metalResident).r
+	snapshot := func(n int) [][]uint16 {
+		var out [][]uint16
+		for l := range r.layers {
+			d := r.layers[l].geom.kvDim
+			o := r.kvHostOff(l, 2)
+			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+		}
+		return out
+	}
 	run := func(spec bool) ([]int, *decoder.Generation, time.Duration) {
 		t0 := time.Now()
 		var ch <-chan int
@@ -187,16 +203,33 @@ func TestSpecNgram_copyOnStepVerify(t *testing.T) {
 		}
 		return ids, g, time.Since(t0)
 	}
-	// Plain runs first and cold; spec then reuses its prompt prefix, so spec's wall excludes most of the prefill. The
-	// ratio printed is indicative only.
-	plain, _, tp := run(false)
+	// A cold plain run fills the cache; plain and spec then each reuse its prompt prefix, so both walls exclude most of
+	// the prefill. The ratio printed is indicative only.
+	run(false)
+	plain, gp, tp := run(false)
+	kvPlain := snapshot(len(prompt) + len(plain) - 1)
 	spec, g, ts := run(true)
+	kvSpec := snapshot(len(prompt) + len(spec) - 1)
+	if gp.PrefillReused != g.PrefillReused {
+		t.Fatalf("plain reused %d prompt positions, spec %d: the arms do not start from the same cache", gp.PrefillReused, g.PrefillReused)
+	}
 	if !slices.Equal(plain, spec) {
 		i := 0
 		for i < min(len(plain), len(spec)) && plain[i] == spec[i] {
 			i++
 		}
 		t.Fatalf("spec differs from plain decode at token %d of %d/%d", i, len(plain), len(spec))
+	}
+	differ := 0
+	for i := range kvPlain {
+		for j := range kvPlain[i] {
+			if kvPlain[i][j] != kvSpec[i][j] {
+				differ++
+			}
+		}
+	}
+	if differ != 0 {
+		t.Fatalf("the K/V spec leaves differs from plain decode's in %d elements", differ)
 	}
 	st := g.Spec
 	fmt.Fprintf(os.Stderr, "[spec-copy] %d tokens identical; spec rounds %d drafted %d accepted %d; wall plain %v spec %v (%.2fx)\n",

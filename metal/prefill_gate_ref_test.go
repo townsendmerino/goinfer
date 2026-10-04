@@ -102,7 +102,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // disable floor so K=256 cell is measured too
 	// Pin the "exact" arm to the plain shipped kernel, independent of decode's own default: this
 	// test's exact-vs-fast comparison is about the PREFILL lane (PrefillLast), not R2's decode
-	// attention lane, and its K sweep reaches 3900 — above attnFADepthFloor (1536), where
+	// attention lane, and its K sweep reaches 3900 — above attnFADepthFloor (1024), where
 	// attention_fa is now default-on (2026-09-21). Without this, "exact" would silently start
 	// meaning "sequential Forward, with attention_fa engaged past 1536" on any future re-run,
 	// changing what this gate's already-recorded results compare against.

@@ -37,9 +37,8 @@ any surface may still change.
 
   It reorders the attention sum, so the tokens are not bit-identical to before. Each part passed the pre-registered
   fidelity gate for reordering-only decode kernels: per-head error against float64 below the old kernel's, and a KL
-  ratio of at most 1.05 against the references. Audit B-P01 / B-P02. B-P03, starting it at 1024 keys instead of
-  1536, passed the same gate but was reverted the same day: at 1024 the 1.5B's `--spec ngram` stopped matching plain
-  decode.
+  ratio of at most 1.05 against the references. Audit B-P01 / B-P02. B-P03 starts it at 1024 keys instead of
+  1536, which passed the same gate (GPU time per token 1.17x faster at 1024 keys on the 1.5B, 1.06x on the 7B).
 - **DeltaNet and shared-expert int4 GEMVs on Metal take the rows-per-simdgroup kernels.** These are the Qwen3.5 9B's
   gated-DeltaNet qkv and z projections, and a shared expert's gate|up and down. The 9B decodes 1.064x faster at depth
   128 and 1.061x at 1024, bit-identical. Audit D-B04.
