@@ -54,4 +54,27 @@ Cost against the estimate: reference 3.5 min (est. 7, with a 13 s load), int8int
 - **Prediction, written now, not a bar:** the mean KL(single ‖ joint) will be well under the int8int8 quantization error (0.0055 jointly, 0.0165 single-question in D13), top-1 agreement at least 23 of 25, and the differences concentrate on the `choice` questions (probability spread over several options). A prediction that fails is recorded as failed.
 - **What it still does not show:** joint versus single under quantization (int8int8), on the device, at K = 4,096, with other question counts, or with different question orders in the record (the position effect here is confounded with the question type, since the order is fixed at noul, score, choice, noul, choice).
 
-*Result: not yet run.*
+### Result (run 2026-10-03, 22:11–22:24 PDT, nobara-pc; reference at f32 on both sides; 25 of 25 requests, 12.2 minutes against the 11 to 12 estimated)
+
+Grader output: `data/grade-joint-single-2026-10-03.txt`; single records `data/records_single.jsonl` (sha256 `e5b42cf0…eb87`), rows `data/probs_single_f32.jsonl`, log `data/ref-single-f32.log`. Same checkpoint, module and torch as section 3. Option ids and order matched on all 25.
+
+**Overall: mean KL(single ‖ joint) 0.01349, median 0.00564, max 0.05584; max |ΔP| 0.1379; top-1 agreement 23 of 25.**
+
+| question (position in the joint record) | mean KL | max \|ΔP\| | top-1 |
+|---|---|---|---|
+| 1 noul | 0.00119 | 0.0090 | 5/5 |
+| 2 score | 0.02688 | 0.0839 | 5/5 |
+| 3 choice | 0.02079 | 0.1379 | 5/5 |
+| 4 noul | 0.00072 | 0.0169 | 5/5 |
+| 5 choice | 0.01784 | 0.1271 | 3/5 |
+
+By state length: K = 256 mean KL 0.01405, top-1 14/15; K = 1,024 mean KL 0.01264, top-1 9/10. **The two flips are both the last question (a `choice`), and both are near-ties:** the single run's top-two margin was 0.041 (`mq-K256-s1`) and 0.050 (`mq-K1024-s1`). The two `noul` questions barely move (mean KL 0.001 and 0.0007, largest |ΔP| 0.017); the three multi-option kinds (`score`, `choice`) carry the difference, up to 0.14 in a single option's probability.
+
+**Predictions, graded as written:**
+- *Mean KL well under the int8int8 quantization error (0.0055 jointly, 0.0165 single-question):* **FAILED.** 0.0135 is about 2.5 times the joint int8int8 error and about equal to the single-question one (0.0165).
+- *Top-1 at least 23 of 25:* HELD, exactly (23).
+- *Differences concentrate on the `choice` questions:* **PARTLY.** They concentrate on the multi-option questions, not the `noul` ones, but the `score` question has the highest mean KL (0.0269), ahead of the `choice` positions (0.0208 and 0.0178). The single largest differences are on `choice` questions (0.0558 and 0.0400 in KL).
+
+**Reading.** Asking the five questions together is not the same as asking them one at a time: for the multi-option questions the difference is about the size of the int8int8 quantization error, and it moves the top answer on near-tie questions (2 of 25 here, both with a top-two margin under 0.06). That is a property of the model's joint head, which attends across the questions; it is neither a port defect (section 3: the port matches the reference jointly to 1e-6) nor evidence that one of the two modes is the more accurate. These states have no gold, so this run cannot say which answer is closer to the truth; the joint mode is how Cloudflare's reference and serve run it, and that is the mode D13's fidelity numbers measure. The tag's page should therefore not claim that joint answers equal one-at-a-time answers; it can state the measured size of the difference with its sample (5 states, 25 questions, fixed question order, reference f32).
+
+**Still not shown (as pre-registered):** joint versus single under int8int8, on the device, at K = 4,096, with other question counts or orders (position is confounded with question type here), and against gold.
