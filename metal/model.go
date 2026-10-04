@@ -410,6 +410,7 @@ type resident struct {
 	preciseMath bool
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
+	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
 	kvI8                                                       bool               // m.KVCacheI8() (CLI flag --kv i8)
 	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
 	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
@@ -884,6 +885,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pRmsRows, r.pQvRows = pipe("mc3_rmsnorm_quant_rows"), pipe("mc3_quant_vec_rows")
 	r.pSwRows, r.pRope2Rows = pipe("mc3_swiglu_quant_rows"), pipe("mc3_rope2_rows")
 	r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_rows"), pipe("mc3_attention_rows")
+	r.pQKNormRows = pipe("mc3_qk_norm_rows")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pCopyVec = pipe("copy_f32")
 	r.pCopyU32 = pipe("copy_u32")

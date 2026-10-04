@@ -309,7 +309,7 @@ func (r *resident) batchIneligible() string {
 	case r.w8:
 		return "int8 weights (the batched step's kernels read int4; docs/tasks/task-metal-int8-2026-10.md, slice 3)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
-		r.outBias || r.qkNorm || r.learnedPos || r.attnSink:
+		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"
 	}
 	g0 := r.layers[0].geom
@@ -608,6 +608,9 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		} else {
 			pack(e, b.aqB, H, r.uH)
 			e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		}
+		if r.qkNorm { // E-P07: Qwen3's per-head Q/K RMSNorm before RoPE, decode's qk_norm over every row, at its width
+			e.Dispatch(r.pQKNormRows, B*(r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, b.qkvB, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne, b.uQKV)
 		}
 		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
 		// KV store and attention, each row over its OWN slot: a layer's slots are one allocation (kvContig), reached

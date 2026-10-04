@@ -939,6 +939,30 @@ So `GOINFER_MOE_EXPERT_MAJOR` stays default on, and `TestDG01_expertMajorMoEPref
 - **Unchanged:** the instrument's cells, the rule and the bars. Added to the preconditions:
   `TestDB01_prefillFromZeroResetsState`. The job re-runs from binaries pinned at the commit that carries these fixes.
 
+### E-P07: built, ON (bit-identical); its served confirmation pre-registered (written 2026-10-04, before any graded run; owner: "continue on audit-metal")
+
+**What is built.** Qwen3-family dense models (per-head QK-norm) are in MC3: the batched step runs decode's `qk_norm`
+over every row between the qkv projection and RoPE (`mc3_qk_norm_rows`, derived from `qk_norm`'s own source in
+`batch_rows.go` like the other rows kernels, at decode's threadgroup width). Olmo's whole-vector QK-norm stays out.
+So Qwen3 on a multi-slot Metal resident now gets MC3 batching, the step-kernel verify for `--spec ngram`, and E-P01's
+short-prompt route.
+- **Identity on the real Qwen3-0.6B** (`GOINFER_METAL_MC3=1`, the suite unchanged): `TestMC3Step_bitIdentical`,
+  `_bitIdenticalDeep` (across the attention floor), `_rowsPathBitIdentical` (per-row and fragment forms, B = 2–4),
+  `_drawsMatchForwardSample` and `TestMC3Verify_sameSlotRowsBitIdentical`: **0 differing values**;
+  `TestMC5_prefillChunkInvariance`: 0 at every chunk size.
+- **Default-run:** a generated qwen3 twin of the MC3 fixture backs `TestMC3Step_qwen3BitIdentical` (0 differing).
+- **Mutation:** dropping the step's QK-norm dispatch fails every logit of every step on the real model and 983,040 on
+  the fixture.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-ep07-w7.sh` on the night queue: MC3's W7 harness (`scripts/bench_w7_plain.py`, the 7B record's shape) on Qwen3-0.6B from `~/models`, serve defaults (`-max-concurrent` 4, `-kv-sessions` 4), 6 turns × 128 greedy tokens per client, `--fixed-nonce`, a fresh server per cell. **old** = serve-metal at `d50dbbca` (Qwen3 one generation at a time), **new** = at the E-P07 commit. 4, then 1, then 2 clients, old/new × 3 pairs in the order old new new old old new. Graded by MC3's own `gates.py`. Estimate about 15 minutes; queued at 30. |
+| Precondition | Every new server logs the batched-concurrency line and every old one the one-at-a-time line; otherwise the arms are not what they claim. |
+| Hard gates | (1) **identity**: every turn's `content_sha` equal across old and new, every cell. (2) reuse equal. (4) 4-client p99 turn new ÷ old ≤ 1.0. Any failure: **killed**, E-P07 reverted. |
+| Graded | 4-client aggregate throughput new ÷ old, median of the 3 pairs. |
+| Rule | **Stays on** at ≥ 1.10 with the hard gates held (your ship bar). **Parked** (to you) at 1.02–1.10. **Killed** (reverted) below 1.02. |
+| Reported | 1- and 2-client cells (a lone generation should be unchanged: new ÷ old within 0.98–1.02 at 1 client is expected, not graded); MC3's own 4-client record on Qwen2.5 for context (1.785× on the 7B). |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
