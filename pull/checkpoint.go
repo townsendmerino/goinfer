@@ -55,6 +55,34 @@ func generativeLoads(modelType string) (string, error) {
 	return "", fmt.Errorf("model_type %q, which this build cannot load from safetensors (docs/capability-matrix.json)", modelType)
 }
 
+// EncoderFamily is the family a checkpoint loads as when it is the embedding encoder's (EncoderLoads), not a generative
+// model's: it opens with serve --embed-model, not --model.
+const EncoderFamily = "nomic_bert encoder"
+
+// EncoderLoads is the model_type check of goinfer's embedding encoder (serve --embed-model; aikit's encoder.Load), which
+// loads a NomicBert (CodeRankEmbed, nomic-embed-text) and checks no model_type itself. The one list of what it takes:
+// serve's own check and the pull CLI both read it.
+func EncoderLoads(modelType string) (string, error) {
+	if modelType == "nomic_bert" {
+		return EncoderFamily, nil
+	}
+	return "", fmt.Errorf("model_type %q, which the embedding encoder does not load (it loads nomic_bert)", modelType)
+}
+
+// AnyLoads is the pull CLI's model_type check: a generative family this build loads from safetensors, else the
+// embedding encoder. The CLI fetches for whatever will open the files; --model and the web UI, which load generative
+// models only, keep PlanCheckpoint's check (task-checkpoint-fetch P7: `pull <encoder>:safetensors` used to decline what
+// serve --embed-model fetches itself).
+func AnyLoads(modelType string) (string, error) {
+	if fam, err := generativeLoads(modelType); err == nil {
+		return fam, nil
+	}
+	if fam, err := EncoderLoads(modelType); err == nil {
+		return fam, nil
+	}
+	return "", fmt.Errorf("model_type %q, which this build loads neither as a generative model from safetensors (docs/capability-matrix.json) nor as the embedding encoder (nomic_bert)", modelType)
+}
+
 // safeRepoPath reports whether a repo file path is safe to join under a local directory: relative, no ".." or empty
 // segment, no backslash. A tree listing is remote input.
 func safeRepoPath(p string) bool {

@@ -165,7 +165,7 @@ func Run(args []string) int {
 	// exiting 0 makes `pull <repo>` a usable discovery step rather than an error to decode.
 	if ref.File == "" && ref.Quant == "" && len(files) == 0 {
 		// No GGUF at all: the repo may be a safetensors checkpoint, so list that plan instead of "0 GGUF files".
-		p, perr := pull.PlanCheckpoint(ctx, ref.Repo)
+		p, perr := pull.PlanCheckpointFor(ctx, ref.Repo, pull.AnyLoads)
 		if perr != nil {
 			fmt.Printf("%s has no .gguf files, and no safetensors checkpoint this build can load: %v\n", ref.Repo, perr)
 			return 0
@@ -289,7 +289,8 @@ func printPlan(p pull.Plan) {
 
 // pullCheckpoint fetches a repo's safetensors checkpoint (pull <owner/repo>:safetensors) as one verified set.
 func pullCheckpoint(ctx context.Context, ref pull.Ref, outDir string) int {
-	p, err := pull.PlanCheckpoint(ctx, ref.Repo)
+	// AnyLoads, not PlanCheckpoint's generative check: the CLI fetches an embedding encoder too (serve --embed-model).
+	p, err := pull.PlanCheckpointFor(ctx, ref.Repo, pull.AnyLoads)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
@@ -335,7 +336,7 @@ func pullCheckpoint(ctx context.Context, ref pull.Ref, outDir string) int {
 		return 1
 	}
 	fmt.Printf("done in %s — every weight file sha256 verified; nothing was published until the whole set was\n%s\n", time.Since(start).Round(time.Second), path)
-	fmt.Printf("\nrun it:\n  %s --model %s\n", self(), path)
+	fmt.Print(runHint(p, path))
 	return 0
 }
 
@@ -478,4 +479,13 @@ func listingLine(f pull.Listed) string {
 		line += "  (vision projector; goinfer cannot load it yet)"
 	}
 	return line + "\n"
+}
+
+// runHint is what pull prints after fetching a checkpoint: how to open it. An embedding encoder opens as serve's
+// embedding model, not as a --model.
+func runHint(p pull.Plan, path string) string {
+	if p.Family == pull.EncoderFamily {
+		return fmt.Sprintf("\nserve it as the embedding model:\n  serve --embed-model %s\n", path)
+	}
+	return fmt.Sprintf("\nrun it:\n  %s --model %s\n", self(), path)
 }

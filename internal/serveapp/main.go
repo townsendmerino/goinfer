@@ -1536,8 +1536,8 @@ func requireAutoBackend(cfg config) error {
 // architecture. It is refused here instead, after config.json and before any weight. A decoder used as an embedder
 // comes as a GGUF (hf:<repo>:<quant>), which is not a checkpoint plan at all.
 func embedEncoderLoads(modelType string) (string, error) {
-	if modelType == "nomic_bert" {
-		return "nomic_bert encoder", nil
+	if fam, err := pull.EncoderLoads(modelType); err == nil {
+		return fam, nil
 	}
 	return "", fmt.Errorf("model_type %q, which -embed-model's encoder does not load (it loads nomic_bert: CodeRankEmbed, nomic-embed-text; a decoder used as an embedder comes as a GGUF, hf:<owner>/<repo>:<quant>)", modelType)
 }
