@@ -76,6 +76,12 @@ func RunSelfTests() []SelfTestResult {
 		for _, f := range fns {
 			RecordSelfTest(f())
 		}
+		// Every linked GPU backend runs the shared resident probe (selftest_gpu.go) unless it registered its own.
+		for _, b := range RegisteredBackends() {
+			if _, own := fns[b]; b != "cpu" && !own {
+				probeStandalone(b)
+			}
+		}
 	}
 	return SelfTestResults()
 }

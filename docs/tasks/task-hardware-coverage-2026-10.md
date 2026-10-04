@@ -1,8 +1,8 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64) and H1.5 (CUDA) are DONE; H1.2, H1.4 as a CI job and H2–H6 are not started** (checked against the tree 2026-10-04: no SDE job, no QEMU job, no self-test, no
-> `check --hardware`, no `scripts/hardware_sweep.sh`, no issue template, no "verified on" column). H1 and H2 are the work that matters most.
-> H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and CUDA and one rented sweep are missing.
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (needs Intel SDE downloaded by the owner), H1.4 as a CI job, H2 on Metal and WebGPU, and H4–H6 are not started** (checked against the tree
+> 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
+> H5 is an owner decision that waits on two release sweeps. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one rented sweep are missing.
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
@@ -252,6 +252,25 @@ that backend's parity contract. Specifically:
   test for this probe is that exact bug, reintroduced: the probe must decline v1.47.0's arithmetic.
 - **Optional cache:** record a pass per (binary version, device, OS build) in the user cache directory, so
   later starts can skip the probe. Any change in that tuple re-runs it.
+
+**As built, 2026-10-04 (CPU and CUDA).** `decoder/selftest.go` (the registry, the `WARN`, `/health`), aikit v1.55.0's `linalg.SelfCheck` for the CPU kernels, and `decoder/selftest_gpu.go` for a GPU backend.
+- **CPU:** the dispatched kernels against their references at the agreement aikit's own tests assert (not the GPU bar), about 1.3 ms at the first `Load`, stepping the ISA tier down on a mismatch. The break-it-first test is
+  aikit's, with the 2026-09-24 centering check as the reintroduced bug.
+- **CUDA, at model level rather than kernel level.** Four tiny committed checkpoints (`decoder/selftestdata`, byte-identical to `testdata/`, a test asserts it: Llama, Gemma 3 text, two Qwen3.5 hybrids) run through the resident
+  path and the CPU path; every position's logits and a batched prefill are compared. Resident kernels are exercised as the real model will use them, with no reimplementation to drift, at the price of a coarser verdict
+  than a per-kernel probe. It runs after the real model's resident is built, once per process and quant, and a decline drops that model's resident.
+- **Bars: cosine 0.995 and relative L2 0.10, not the plan's 0.999.** They are the bars the resident-versus-CPU parity gates already hold, and the relative L2 is there because a cosine cannot see a uniform scale.
+  **Measured margins on the RTX 2070 SUPER (driver 595.91.07):** int4 worst cosine 0.99939, worst relative L2 0.0350 over four fixtures; int8int8 0.99986 and 0.0168 over three (the MoE fixture cannot go resident at int8).
+  The int4 figure is 2.9x inside the L2 bar and 0.0044 above the cosine floor. One card, one driver: it says nothing about Turing neighbours, Ampere or Ada, which is exactly what a rented sweep (H4) would add.
+- **Budget missed by two orders of magnitude: about 0.9 s per quant, not 5 ms** (a CPU forward and a resident forward per position, about 1.3 ms for the pair, over 264 + 100 + 48 + 48 positions; the 264-position Qwen3.5 fixture is 0.6 s of it,
+  needed because attention has to pass 256 keys). 1.75 s when `check --hardware` runs it cold, since it creates the device context. The plan said to shrink the vector, not the tolerance; the shrink left is the 256-key
+  requirement, so this stays, disclosed, with `-no-selftest` as the way out.
+- **Break-it-first, on the real GPU** (`cuda/selftest_probe_test.go`): a wrong `rms_norm_eps` (0.5) or `rope_theta` (3.0) in the GPU copy's config only, CPU reference true. Both decline (cosine 0.67 / 0.93, relative L2 0.98 / 0.39).
+  **The first version of that test passed on a probe that checked nothing for its target:** the fixture it mutated was Phi-3, which the CUDA resident declines by design, so that fixture was silently skipped and the other three
+  carried the "pass". Fixed twice over: the result now carries a note naming any fixture that could not be compared, and the fixtures are chosen and tested so each goes resident.
+- **An unmeasured backend is not probed.** `probeMeasured` lists CUDA only; Metal and WebGPU report "no self-test for this backend yet" rather than being judged against bars nobody has seen them clear (Metal's f16
+  residual stream could sit near 0.995). **Open: H2 on Metal (the Mac) and WebGPU.** The probe is backend-generic, so that port is: measure the margins on that backend, add it to `probeMeasured`, and add the config-mutation test.
+- **Not built:** the optional per-(version, device, OS build) pass cache, and the per-family decline option (whole backend, as the Metal spec's default said).
 
 ### H3 — a hardware report people can paste
 

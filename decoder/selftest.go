@@ -32,6 +32,7 @@ type SelfTestResult struct {
 	Mismatches []string      // each disagreement, as kernel: observed against allowed (detail)
 	Disabled   []string      // the kernel tiers stepped off, in order (CPU)
 	Elapsed    time.Duration // the check's own cost
+	Note       string        // why nothing was checked, for a skipped result
 }
 
 // OK reports a result that left the process on kernels that agree with their references.
@@ -44,6 +45,9 @@ func (r SelfTestResult) Summary() string {
 	s := fmt.Sprintf("%s %s (%.1f ms)", r.Backend, r.Status, float64(r.Elapsed.Microseconds())/1000)
 	if len(r.Disabled) > 0 {
 		s += ", stepped down: " + strings.Join(r.Disabled, ", ")
+	}
+	if r.Note != "" {
+		s += ", " + r.Note
 	}
 	for _, m := range r.Mismatches {
 		s += "; " + m

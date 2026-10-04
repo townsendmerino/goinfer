@@ -776,7 +776,16 @@ accumulator bug did exactly that in September, and surfaced only because one CI 
 (exact, or a relative 1e-5), in about a millisecond (1.2-1.3 ms on a Ryzen 7 3700X). On a mismatch the highest active ISA tier (AVX-512 VNNI, then AVX2; DotProd on arm64) is stepped down and the kernels are checked
 again, so a bad tier degrades to the next one instead of producing wrong numbers, and one `WARN: self-test:` line on stderr names the kernel, the observed and allowed figures and the tier stepped off. Each result is in
 `GET /health` under `selftest` (always an array: `backend`, `status` of `pass`, `repaired`, `declined` or `skipped`, `elapsed_ms`, and `mismatches` and `stepped_down` when there are any). `-no-selftest` skips it (on `goinfer-chat`
-too) for a machine it misjudges; `check --hardware` says what it found. **Only the CPU kernels are covered so far**; a GPU backend's self-test is not built yet, so the CUDA, Metal and WebGPU lines of the report say nothing about their kernels.
+too) for a machine it misjudges; `check --hardware` says what it found.
+
+A GPU backend gets the same treatment at model level: once per process and quant, right after the first resident is built (so the device context is already held), four tiny committed checkpoints (a dense Llama,
+Gemma 3's GELU-tanh and QK-norm, and two Qwen3.5 hybrids with DeltaNet layers, one a MoE; one reaches past 256 keys) run through the resident path and through the CPU path in the same binary. Every position's logits
+must agree with the CPU's to cosine 0.995 and relative L2 0.10 (the bars the resident-versus-CPU parity gates already hold), and a batched prefill is held to the same. **On a mismatch or non-finite logits that model's
+resident is dropped and it continues on the CPU path**, with the reason on its decode path and one `WARN: self-test:` line; nothing crashes. A checkpoint that cannot go resident on that backend at that quant (Phi-3 on CUDA, a
+MoE at int8 on CUDA) is named in the result and counts as unchecked, never as passed. **Cost: about 0.9 s once per process and quant** on an RTX 2070 SUPER (0.6 s of it the 264-position Qwen3.5 fixture), and about 1.8 s
+when `check --hardware` runs it cold, because the device context is then created for it; the first figure is far over the 5 ms the plan hoped for, and `-no-selftest` skips it. On that card the margins are cosine 0.9994
+and relative L2 0.035 (int4), and 0.9999 and 0.017 (int8int8): the report prints the observed worst figures beside the bars. **CUDA is covered; Metal and WebGPU are not built yet** (the Metal and WebGPU lines of the report
+say nothing about their kernels).
 
 `goinfer-serve check --hardware` and `goinfer-chat check --hardware` print the block a hardware bug report needs and exit, with no server involved: the build, OS and kernel, the CPU model and thread count, which CPU kernel tiers the
 CPU supports against which are in use (and any a build tag forced off), host memory, the backends linked into the binary with each one's device facts (the CUDA build prints the device name, compute capability and whether

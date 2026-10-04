@@ -1169,6 +1169,15 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	m.resident = rf
+	// H2: the backend's startup self-test, once per backend and quant per process, with the device context this resident already holds. A mismatch drops the resident and continues on the CPU
+	// path with the reason on the decode path (the existing decline route), instead of producing wrong numbers silently.
+	if r, ran := gpuProbeAfterResident(m); ran && r.Status == SelfTestDeclined {
+		_ = rf.Close()
+		m.resident = nil
+		m.resDecline = describeProbe(r)
+		fmt.Fprintf(os.Stderr, "[resident] %s — continuing on the CPU/staged path\n", m.resDecline)
+		return m
+	}
 	// BuildResident's host-side work — the CUDA backend packs every layer's weights on the Go heap before it
 	// uploads them, and stages the expert stacks in pinned memory — is garbage the moment it returns, but Go hands
 	// freed heap back to the OS only when its background scavenger gets round to it. MEASURED 2026-09-20 on the
