@@ -493,3 +493,12 @@ again. Any of M1-M3 failing keeps it off.
 - It is F2's situation again: a same-quant cosine floor against a reference with a different activation precision.
 - **For the owner:** read M2 as hard flips, as F2 now is (it passes: 1 against 3), and turn `nativeInt4Mix` on with M4
   as the night prefill confirmation; or keep int4mix on the re-quant.
+
+
+**Owner decision O5 (2026-10-04): "turn on".** M2 is read as hard flips, as F2 is (O4); it passes, 1 against the
+re-quant's 3.
+- `nativeInt4Mix` is `true`.
+- The default and tagged Metal suites pass with it on, apart from the long-standing `TestPrefillParityMoEGatedShared`.
+- M4 (the pooled prefill gate on the 1.5B at int4mix) is queued tonight as the confirmation. If it fails,
+  `nativeInt4Mix` goes off again.
+- CHANGELOG entry under Unreleased.

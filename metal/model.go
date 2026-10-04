@@ -749,9 +749,10 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 // re-quant arm; it is not an option or an environment variable.
 var nativeInt8 = true
 
-// nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). OFF until its gates pass
-// (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"); tests turn it on.
-var nativeInt4Mix = false
+// nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). ON since 2026-10-04: M1 and
+// M3 passed, and M2 is read as hard flips (owner decision; it passes, 1 against the re-quant's 3), with M4 the night's
+// prefill confirmation (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"). Tests turn it off for the re-quant arm.
+var nativeInt4Mix = true
 
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
 // prices the owner's precise-math decision.
