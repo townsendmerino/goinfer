@@ -754,6 +754,29 @@ jobs:
       - name: test
         run: go test -timeout 30m -tags goinfer_testhooks ./...
 
+  # H1.1's missing half (docs/tasks/task-hardware-coverage-2026-10.md): the release ships windows-arm64 binaries, and until this job nothing had built or run one. GitHub's windows-11-arm runner is free and unlimited
+  # for public repositories (Azure Cobalt 100, 4 CPUs, 16 GB). aikit cannot detect DotProd on a non-Linux, non-Darwin arm64 OS (dotprod_arm64_other.go assumes none), so this job runs the base SMULL/SADALP kernels
+  # the way a Windows ARM user does. Same build and test as root-windows. The census records which CPU the run landed on.
+  root-windows-arm64:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: cpu (for the hardware census)
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors | Format-List
+          go version; go env GOOS GOARCH
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test -timeout 30m -tags goinfer_testhooks ./...
+
   root-linux-arm64:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
