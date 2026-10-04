@@ -789,6 +789,40 @@ expert. The whole model does not fit this Mac. A slice is a fidelity fixture: no
 | Rule | **Passes:** expert-major stays the default, and this test is its gate of record. **Fails** (any criterion beyond 1.5× or the flips bound): **killed**, the default goes back to row by row (`GOINFER_MOE_EXPERT_MAJOR` default off) until the defect is found. A ratio in (1.25, 1.5] with the flips bound met: **parked**, to the owner. |
 | Reported | Every per-layer ratio, per M; the flips as fractions; seq's own top-1 agreement with row and major on the last position. Not covered: sigmoid and group-limited routing (no such real MoE fits here), multi-model. |
 
+### D-B01: built, off by default; pre-registration (written 2026-10-03, before any graded run; owner: "go on D-B01")
+
+**What is built.** A Gated-DeltaNet hybrid (Qwen3.5) can take the batched prefill pass behind `dnetPrefillOn`
+(`metal/prefill_deltanet.go`), off until this grade.
+- **DeltaNet layers:** the qkv, z and out projections run as prefill GEMMs over all M rows, and in_proj_b/a as a rows
+  kernel, on f16 activations like every batched layer. The mixer runs as one dispatch per stage over the M rows, 13
+  dispatches per layer for the whole prompt against 12 per token sequentially.
+- **The mixer kernels are decode's, copied verbatim** with only row addressing added, and a token loop where the stage is
+  a recurrence. `TestDeltaNetSeqKernels_matchDecodeBitwise` (default-run): every stage, the conv window and the state
+  after the last row equal decode's kernels run M times, bit for bit, at M = 1, 7, 33 from a non-zero state. A one-op
+  reorder in the recurrence turns it red (258 outputs, 16,721 state values).
+- **Gated attention layers:** q_proj's [query ‖ gate] split, K‖V into qkv, ctx × sigmoid(gate) before o_proj; the pass
+  reads its attention geometry from the first attention layer (`prefillGeom`), not layer 0. Head dim 256 runs the exact
+  prefill attention kernel.
+- **Chunked prefill:** `TestDB01_chunkedPrefillMatchesWhole`, 64 + 32 and 40 + 56 against one 96-token pass: 0 of
+  248,320 logits and 0 window/state/K/V words differ. A window that does not carry turns it red.
+- **Against the sequential path** (`TestDB01_prefillAgreesWithSequential`, the 0.8B, a sanity bar, not the grade): logits
+  cosine 0.9957 / 0.9974 at M = 64 / 256, same top-1; per-layer K/V and state 5–10% relative L2 from the second layer
+  on. Against a CPU f32 reference both sit equally far (KL 0.139 / 0.120 at M = 64, 0.122 / 0.122 at 256, pass /
+  sequential): the gap is the activation lane, decode's per-row int8 against the pass's f16. Skipping the attention
+  gate or misrouting the conv window reads cosine below 0.
+- Exploratory, one rep, not a result: about 8× sequential ÷ pass at K = 128 and 512 on the 0.8B.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-db01-grade.sh` on the night queue, from tagged test binaries pinned at the commit it names. (1) The kernel and chunk preconditions. (2) CPU f32 references for Qwen3.5-0.8B, set A, K = 256, 512, 1024 (`TestPrefillGateReference`, cell Q35). (3) The §3.2 pooled fidelity gate on Q35 (`TestPrefillGateVsReference/Q35`, decision cells 256/512/1024). (4) `TestAuditDB01_prefillTiming` on the 0.8B at K = 128, 512, 2048, 7 reps; then the 9B at K = 128, 512, 5 reps, if the fit guard admits it resident. Estimate about 25 minutes; queued at 40. |
+| Precondition | `TestDeltaNetSeqKernels_matchDecodeBitwise` and `TestDB01_chunkedPrefillMatchesWhole` pass at the pinned build, all 30 reference files present, no cell VOID. Otherwise nothing is graded. |
+| Fidelity | The pooled gate **SHIPS** on Q35 (critA ∧ critB ∧ critC). |
+| Graded speed | Sequential ÷ pass on the **0.8B at K = 512**, paired per rep, median of 7. |
+| Rule | **Ships** (`dnetPrefillOn` on) if fidelity ships and speed reads ≥ 1.10 with ≥ 6 of 7 reps above 1.10 (the owner's ship bar, 2026-09-26). **Parked** to the owner at 1.02–1.10. **Killed** below 1.02 or if fidelity fails: the switch stays off. |
+| Thesis (reported, not the ship rule) | The audit projected 3–8× and set a kill line of 2× at K = 512 on the smallest resident Qwen3.5. Reported against that as its own verdict. |
+| Reported | K = 128 and 2048 on the 0.8B; the 9B (or why it did not load); per-cell fidelity. |
+| What ships | `dnetPrefillOn = true`, the `PrefillPath` banner, the CHANGELOG, and the docs that say hybrids prefill sequentially on Metal. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.

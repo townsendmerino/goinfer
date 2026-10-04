@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -478,13 +479,15 @@ type resident struct {
 	dnet                                          *dnetParams
 	pDnConv, pDnGates, pDnNorm, pDnRule, pDnGNorm Pipeline
 	pDnQSplit, pDnAttnGate                        Pipeline // this family's fused double-width q_proj + output gate
-	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP       Buffer   // per-token scratch, sized from dnet (model-level, uniform across layers)
-	dnBt, dnAt, dnZOut, dnCore, dnGated           Buffer
-	dnGq, dnGSc                                   Buffer // int8 activation + scale for the gated output's out_proj GEMV
-	dnQg, dnAGate                                 Buffer // qGate scratch: [2*maxNHhd] fused [query‖gate] q_proj output, [maxNHhd] the split gate
-	uDnConvDim, uDnK, uDnNv, uDnNk, uDnHk, uDnHv  Buffer // DeltaNet geometry uniforms (model-level, uniform across layers)
-	uDnKeyDim, uDnQScale, uDnRep, uDnVBase        Buffer
-	uDnValueDim                                   Buffer // dnet.valueDim — the out_proj GEMV's K (input width)
+	// D-B01: the mixer over M prompt rows (deltanet_kernels.go's _seq/_rows forms; prefill_deltanet.go)
+	pDnConvSeq, pDnGatesRows, pDnNormRows, pDnRuleSeq, pDnGNormRows, pDnProjW8Rows Pipeline
+	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer // per-token scratch, sized from dnet (model-level, uniform across layers)
+	dnBt, dnAt, dnZOut, dnCore, dnGated                                            Buffer
+	dnGq, dnGSc                                                                    Buffer // int8 activation + scale for the gated output's out_proj GEMV
+	dnQg, dnAGate                                                                  Buffer // qGate scratch: [2*maxNHhd] fused [query‖gate] q_proj output, [maxNHhd] the split gate
+	uDnConvDim, uDnK, uDnNv, uDnNk, uDnHk, uDnHv                                   Buffer // DeltaNet geometry uniforms (model-level, uniform across layers)
+	uDnKeyDim, uDnQScale, uDnRep, uDnVBase                                         Buffer
+	uDnValueDim                                                                    Buffer // dnet.valueDim — the out_proj GEMV's K (input width)
 }
 
 // recordExecErr latches the first command-buffer abort a forward path observes (audit C-09).
@@ -951,6 +954,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pDnConv, r.pDnGates = pipe("delta_conv"), pipe("delta_gates")
 		r.pDnNorm, r.pDnRule, r.pDnGNorm = pipe("delta_norm"), pipe("delta_rule"), pipe("delta_gnorm")
 		r.pDnQSplit, r.pDnAttnGate = pipe("delta_qsplit"), pipe("delta_attn_gate")
+		r.pDnConvSeq, r.pDnGatesRows, r.pDnNormRows = pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows")
+		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
 		r.dnMixed, r.dnConvOut = d.NewBufferLen(dp.convDim), d.NewBufferLen(dp.convDim)
 		r.dnBt, r.dnAt = d.NewBufferLen(dp.nv), d.NewBufferLen(dp.nv)
 		r.dnHeadP = d.NewBufferLen(dp.nv * 2)
@@ -1001,8 +1006,24 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// PrefillLast's attention reads the cache as half too. So with -kv i8 every prompt position landed in the wrong
 	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
 	// whose decode kernels write and read the int8 cache.
-	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8 && !r.w8 &&
+	// D-B01: a Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn (off until graded), and only in the shape
+	// prefill_deltanet.go implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays
+	// sequential.
+	missing := m.MissingResidentFeatures(prefillFeatures)
+	dnetOK := r.dnet == nil
+	if r.dnet != nil && dnetPrefillOn && !r.postOnly {
+		dnetOK = true
+		for i := range r.layers {
+			if r.layers[i].preNormBias != (Buffer{}) {
+				dnetOK = false
+			}
+		}
+		if dnetOK {
+			missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatDeltaNet })
+		}
+	}
+	r.prefillOK = len(missing) == 0 && !m.HasPerLayerGeometry() &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 && !r.w8 &&
 		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 	r.q = d.NewCommandQueue()
 

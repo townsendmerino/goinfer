@@ -103,6 +103,9 @@ func TestPrefillGateReference(t *testing.T) {
 		// Q05, the 0.5B (head dim 64): references for B-P01's fidelity gate (docs/tasks/task-metal-audit-2026-10.md), f32
 		// like S. Built only when GOINFER_CPU_REF_MODELS names it, so the standing S/D7 run is unchanged.
 		{"Q05", "GOINFER_CPU_MODEL_Q05", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "", refKs([]int{2048, 3900})},
+		// Q35, Qwen3.5-0.8B (a Gated-DeltaNet hybrid, safetensors): references for D-B01's fidelity gate, f32 like S. Built
+		// only when GOINFER_CPU_REF_MODELS names it.
+		{"Q35", "GOINFER_CPU_MODEL_Q35", "$HOME/models/qwen3.5-0.8b", "", refKs([]int{256, 512, 1024})},
 	}
 	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
 	want := map[string]bool{"S": true, "D7": true}
@@ -148,7 +151,7 @@ func TestPrefillGateReference(t *testing.T) {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
-			tk, err := tokenizer.LoadGGUF(path)
+			tk, err := loadRefTokenizer(path)
 			if err != nil {
 				t.Fatalf("load tokenizer: %v", err)
 			}
@@ -414,4 +417,12 @@ func refArgmax(v []float32) int {
 		}
 	}
 	return bi
+}
+
+// loadRefTokenizer reads a checkpoint's tokenizer: a .gguf carries its own; a safetensors directory has tokenizer.json.
+func loadRefTokenizer(path string) (*tokenizer.Tokenizer, error) {
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		return tokenizer.Load(filepath.Join(path, "tokenizer.json"))
+	}
+	return tokenizer.LoadGGUF(path)
 }

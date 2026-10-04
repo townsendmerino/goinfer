@@ -803,7 +803,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// prefillExactAttnMaxKeys scores; the sequential path's decode kernels tile theirs.
 	if fused, _ := a.r.prefillAttnKernels(); !fused && startPos+len(embeddings) > prefillExactAttnMaxKeys {
 		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
-			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.layers[0].geom.hd)
+			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.prefillGeom().hd)
 	}
 	// ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
 	// time, with no recover of their own (buildResident's is build-scoped). A transient OOM would kill

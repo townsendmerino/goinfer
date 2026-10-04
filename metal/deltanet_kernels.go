@@ -248,4 +248,203 @@ kernel void delta_attn_gate(device float* ctx[[buffer(0)]], device const float* 
     if (t >= n) return;
     ctx[t] = ctx[t] / (1.0f + exp(-gate[t]));
 }
+
+// ---- D-B01: the mixer over M prompt rows in one dispatch each (metal/prefill_deltanet.go) ----
+// Each kernel below is the decode kernel above with its body copied VERBATIM and only the row
+// addressing added: a token loop where the stage is a recurrence (conv's window, rule's state),
+// a row index in the grid where it is per-token. So given the same inputs a row's outputs, and the
+// window and state after the last row, are the decode kernel's run M times
+// (TestDeltaNetSeqKernels_matchDecodeBitwise). The decode kernels are left untouched: refactoring
+// them into shared helpers could move decode's own bits under fast-math.
+
+// delta_conv_seq: delta_conv over rows t = 0..M-1, reading mixed as half (the prefill GEMM's
+// output, row stride convDim) and writing conv rows of convDim floats.
+kernel void delta_conv_seq(device const half* mixed[[buffer(0)]], device const float* convW[[buffer(1)]],
+    device float* win[[buffer(2)]], device float* conv[[buffer(3)]],
+    constant uint& convDim[[buffer(4)]], constant uint& K[[buffer(5)]], constant uint& M[[buffer(6)]],
+    uint c[[thread_position_in_grid]]) {
+    if (c >= convDim) return;
+    for (uint r=0; r<M; r++) {
+        float xc = float(mixed[r*convDim + c]);
+        float s = convW[c*K + (K-1)] * xc; // tap j=K-1 is the current token
+        for (uint j=0; j<K-1; j++) s = fma(convW[c*K+j], win[j*convDim+c], s);
+        conv[r*convDim + c] = dn_silu(s);
+        for (uint j=0; j+1<K-1; j++) win[j*convDim+c] = win[(j+1)*convDim+c];
+        win[(K-2)*convDim+c] = xc;
+    }
+}
+
+// delta_gates_rows: delta_gates for M rows; bt, at are [M][nv], headP [M][nv][2].
+kernel void delta_gates_rows(device const float* bt[[buffer(0)]], device const float* at[[buffer(1)]],
+    device const float* dtBias[[buffer(2)]], device const float* negExpA[[buffer(3)]],
+    device float* headP[[buffer(4)]], constant uint& nv[[buffer(5)]], constant uint& M[[buffer(6)]],
+    uint i[[thread_position_in_grid]]) {
+    if (i >= M*nv) return;
+    uint h = i % nv;
+    float sp = dn_softplus(at[i] + dtBias[h]);
+    headP[i*2+0] = 1.0f / (1.0f + exp(-bt[i]));
+    headP[i*2+1] = exp(negExpA[h] * sp);
+}
+
+// delta_norm_rows: delta_norm, one threadgroup per (row, key head); conv rows are convDim wide,
+// qn/kn rows keyDim.
+kernel void delta_norm_rows(device const float* convAll[[buffer(0)]], device float* qnAll[[buffer(1)]],
+    device float* knAll[[buffer(2)]], constant uint& nk[[buffer(3)]], constant uint& hk[[buffer(4)]],
+    constant uint& keyDim[[buffer(5)]], constant float& qScale[[buffer(6)]],
+    constant uint& convDim[[buffer(7)]], constant uint& M[[buffer(8)]],
+    uint gid[[threadgroup_position_in_grid]],
+    uint t[[thread_index_in_threadgroup]], uint nt[[threads_per_threadgroup]]) {
+    if (gid >= M*nk) return;
+    uint row = gid / nk, h = gid % nk;
+    device const float* conv = convAll + row*convDim;
+    device float* qn = qnAll + row*keyDim;
+    device float* kn = knAll + row*keyDim;
+    threadgroup float redQ[128];
+    threadgroup float redK[128];
+    uint base = h*hk;
+    float qs=0.0f, ks=0.0f;
+    for (uint i=t; i<hk; i+=nt) {
+        float qv=conv[base+i], kv=conv[keyDim+base+i];
+        qs = fma(qv, qv, qs);
+        ks = fma(kv, kv, ks);
+    }
+    redQ[t]=qs; redK[t]=ks;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint o=nt>>1; o>0; o>>=1) {
+        if (t<o) { redQ[t]+=redQ[t+o]; redK[t]+=redK[t+o]; }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    float qi = sqrt(1.0f/(redQ[0]+1e-6f)) * qScale;
+    float ki = sqrt(1.0f/(redK[0]+1e-6f));
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i=t; i<hk; i+=nt) {
+        qn[base+i] = conv[base+i] * qi;
+        kn[base+i] = conv[keyDim+base+i] * ki;
+    }
+}
+
+// delta_rule_seq: delta_rule over rows r = 0..M-1. A thread owns one state row for the whole
+// loop, so rows need no synchronisation between threads: each row reads only inputs earlier
+// dispatches wrote, and its own state row. qn/kn rows are keyDim wide, the v slice sits at vBase
+// of a convDim-wide conv row, headP rows are 2*nv, y rows nv*hv.
+kernel void delta_rule_seq(device const float* qnAll[[buffer(0)]], device const float* knAll[[buffer(1)]],
+    device const float* vAll[[buffer(2)]], device const float* headPAll[[buffer(3)]],
+    device float* state[[buffer(4)]], device float* youtAll[[buffer(5)]],
+    constant uint& nv[[buffer(6)]], constant uint& hk[[buffer(7)]], constant uint& hv[[buffer(8)]],
+    constant uint& rep[[buffer(9)]], constant uint& vBase[[buffer(10)]],
+    constant uint& keyDim[[buffer(11)]], constant uint& convDim[[buffer(12)]], constant uint& M[[buffer(13)]],
+    uint t[[thread_position_in_grid]]) {
+    if (t >= nv*hv) return;
+    uint headV = t / hv;
+    uint vd = t % hv;
+    uint headK = headV / rep;
+    device float* S = state + (uint)(headV*hv+vd)*hk;
+    for (uint r=0; r<M; r++) {
+    device const float* headP = headPAll + r*2*nv;
+    device const float* v = vAll + r*convDim;
+    device float* yout = youtAll + r*nv*hv;
+    float beta = headP[headV*2+0];
+    float gt = headP[headV*2+1];
+    device const float* k = knAll + r*keyDim + headK*hk;
+    device const float* q = qnAll + r*keyDim + headK*hk;
+
+    float kvdot = 0.0f;
+    uint kd = 0;
+    for (; kd+7 < hk; kd += 8) {
+        float k0=k[kd],k1=k[kd+1],k2=k[kd+2],k3=k[kd+3],k4=k[kd+4],k5=k[kd+5],k6=k[kd+6],k7=k[kd+7];
+        float s0=S[kd]*gt,s1=S[kd+1]*gt,s2=S[kd+2]*gt,s3=S[kd+3]*gt;
+        float s4=S[kd+4]*gt,s5=S[kd+5]*gt,s6=S[kd+6]*gt,s7=S[kd+7]*gt;
+        S[kd]=s0; S[kd+1]=s1; S[kd+2]=s2; S[kd+3]=s3; S[kd+4]=s4; S[kd+5]=s5; S[kd+6]=s6; S[kd+7]=s7;
+        kvdot = fma(s0, k0, kvdot);
+        kvdot = fma(s1, k1, kvdot);
+        kvdot = fma(s2, k2, kvdot);
+        kvdot = fma(s3, k3, kvdot);
+        kvdot = fma(s4, k4, kvdot);
+        kvdot = fma(s5, k5, kvdot);
+        kvdot = fma(s6, k6, kvdot);
+        kvdot = fma(s7, k7, kvdot);
+    }
+    for (; kd < hk; kd++) {
+        float s = S[kd] * gt;
+        S[kd] = s;
+        kvdot = fma(s, k[kd], kvdot);
+    }
+    float delta = (v[vBase+headV*hv+vd] - kvdot) * beta;
+    float o = 0.0f;
+    kd = 0;
+    for (; kd+7 < hk; kd += 8) {
+        float k0=k[kd],k1=k[kd+1],k2=k[kd+2],k3=k[kd+3],k4=k[kd+4],k5=k[kd+5],k6=k[kd+6],k7=k[kd+7];
+        float q0=q[kd],q1=q[kd+1],q2=q[kd+2],q3=q[kd+3],q4=q[kd+4],q5=q[kd+5],q6=q[kd+6],q7=q[kd+7];
+        float s0 = fma(k0, delta, S[kd]);
+        float s1 = fma(k1, delta, S[kd+1]);
+        float s2 = fma(k2, delta, S[kd+2]);
+        float s3 = fma(k3, delta, S[kd+3]);
+        float s4 = fma(k4, delta, S[kd+4]);
+        float s5 = fma(k5, delta, S[kd+5]);
+        float s6 = fma(k6, delta, S[kd+6]);
+        float s7 = fma(k7, delta, S[kd+7]);
+        S[kd]=s0; S[kd+1]=s1; S[kd+2]=s2; S[kd+3]=s3; S[kd+4]=s4; S[kd+5]=s5; S[kd+6]=s6; S[kd+7]=s7;
+        o = fma(s0, q0, o);
+        o = fma(s1, q1, o);
+        o = fma(s2, q2, o);
+        o = fma(s3, q3, o);
+        o = fma(s4, q4, o);
+        o = fma(s5, q5, o);
+        o = fma(s6, q6, o);
+        o = fma(s7, q7, o);
+    }
+    for (; kd < hk; kd++) {
+        float s = fma(k[kd], delta, S[kd]);
+        S[kd] = s;
+        o = fma(s, q[kd], o);
+    }
+    yout[headV*hv+vd] = o;
+    }
+}
+
+// delta_gnorm_rows: delta_gnorm, one threadgroup per (row, value head); core and out rows are nv*hv
+// floats, z rows are half (the z projection's prefill GEMM output, row stride nv*hv).
+kernel void delta_gnorm_rows(device const float* coreAll[[buffer(0)]], device const half* zAll[[buffer(1)]],
+    device const float* normW[[buffer(2)]], device float* outAll[[buffer(3)]],
+    constant uint& nv[[buffer(4)]], constant uint& hv[[buffer(5)]], constant float& eps[[buffer(6)]],
+    constant uint& M[[buffer(7)]],
+    uint gid[[threadgroup_position_in_grid]],
+    uint t[[thread_index_in_threadgroup]], uint nt[[threads_per_threadgroup]]) {
+    if (gid >= M*nv) return;
+    uint row = gid / nv, h = gid % nv;
+    device const float* core = coreAll + row*nv*hv;
+    device const half* z = zAll + row*nv*hv;
+    device float* out = outAll + row*nv*hv;
+    threadgroup float red[128];
+    uint base = h*hv;
+    float ss=0.0f;
+    for (uint i=t; i<hv; i+=nt) { float c=core[base+i]; ss = fma(c, c, ss); }
+    red[t]=ss;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint o=nt>>1; o>0; o>>=1) { if (t<o) red[t]+=red[t+o]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float inv = rsqrt(red[0]/float(hv) + eps);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i=t; i<hv; i+=nt) {
+        float g = core[base+i] * inv * normW[i];
+        out[base+i] = g * dn_silu(float(z[base+i]));
+    }
+}
+
+// delta_proj_w8_rows: in_proj_b / in_proj_a for M rows on the prefill lane: half activations
+// (rows of K) against int8 weights with one scale per output row, f32 accumulation. One simdgroup
+// per (row, output); out rows are N wide. Not decode's W8A8 arithmetic (that quantizes the
+// activation to int8 first): the batched lane keeps activations in f16 throughout.
+kernel void delta_proj_w8_rows(device const half* x[[buffer(0)]], device const char* w[[buffer(1)]],
+    device const float* wsc[[buffer(2)]], device float* out[[buffer(3)]],
+    constant uint& K[[buffer(4)]], constant uint& N[[buffer(5)]], constant uint& M[[buffer(6)]],
+    uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    if (gid >= M*N) return;
+    uint row = gid / N, n = gid % N;
+    device const half* xr = x + row*K;
+    device const char* wr = w + n*K;
+    float acc = 0.0f;
+    for (uint k=lid; k<K; k+=32) acc = fma(float(xr[k]), float(wr[k]), acc);
+    acc = simd_sum(acc);
+    if (lid == 0) out[row*N+n] = acc * wsc[n];
+}
 `

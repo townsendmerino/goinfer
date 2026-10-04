@@ -342,12 +342,18 @@ func TestDeltaNetKernels_mutations(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			n := strings.Count(allKernels, c.from)
+			// The anchors are the DECODE kernels' text. D-B01's row kernels (after the marker) copy those bodies
+			// verbatim, so the search stops at the marker: each anchor must still match exactly once there.
+			head, tail := allKernels, ""
+			if i := strings.Index(allKernels, "// ---- D-B01:"); i >= 0 {
+				head, tail = allKernels[:i], allKernels[i:]
+			}
+			n := strings.Count(head, c.from)
 			if n != 1 {
-				t.Fatalf("mutation anchor matched %d times (want exactly 1) — the kernel source has "+
+				t.Fatalf("mutation anchor matched %d times in the decode kernels (want exactly 1) — the kernel source has "+
 					"drifted from this test; update the anchor text: %q", n, c.from)
 			}
-			mutated := strings.Replace(allKernels, c.from, c.to, 1)
+			mutated := strings.Replace(head, c.from, c.to, 1) + tail
 			if mutated == allKernels {
 				t.Fatal("mutation produced no change — anchor did not match allKernels")
 			}
