@@ -1,0 +1,26 @@
+96 rows from 4 block(s); smoke=[False]; invalid or failed: 0 []
+decode paths: [('clef', 'decode path: cpu (int8int8)'), ('jev', 'decode path: cpu (int8int8)')]
+
+ratio = JEV time / Clef time, per state (the geometric mean of that state's times over the passes), geometric mean over states, 95% t-interval;
+> 1 means Clef is faster. band = projected x0.80 .. x1.10.
+cell          n   ratio      95% interval           band   pass 1  pass 2  verdict
+1q K=256      6    0.68      [0.65, 0.72]     0.59..0.81     0.68    0.68  as projected
+5q K=256      6    1.14      [1.13, 1.15]     0.90..1.23     1.14    1.14  as projected
+1q K=1024     6    0.87      [0.85, 0.90]     0.73..1.00     0.87    0.87  as projected
+5q K=1024     6    1.75      [1.75, 1.76]     1.62..2.23     1.75    1.76  as projected
+
+what five questions cost over one (the D8 question): time(5q) / time(1q), per state, geometric mean over states
+  K=  256 jev   5q/1q =  3.38  [3.32, 3.43]
+  K=  256 clef  5q/1q =  2.01  [1.89, 2.14]
+  K= 1024 jev   5q/1q =  3.11  [3.10, 3.13]
+  K= 1024 clef  5q/1q =  1.55  [1.52, 1.58]
+  registered D8 rule (Clef 5q/1q at every K: <= 2.0 unnecessary, <= 3.0 ambiguous, above that wanted): worst 2.01 -> AMBIGUOUS: goes to the owner
+
+  K=  256 jev   1q n=12 mean    15.03 s  input tokens ~293
+  K=  256 jev   5q n=12 mean    50.73 s  input tokens ~1464
+  K=  256 clef  1q n=12 mean    22.11 s  input tokens ~428
+  K=  256 clef  5q n=12 mean    44.45 s  input tokens ~836
+  K= 1024 jev   1q n=12 mean    56.58 s  input tokens ~1050
+  K= 1024 jev   5q n=12 mean   176.05 s  input tokens ~5250
+  K= 1024 clef  1q n=12 mean    64.76 s  input tokens ~1186
+  K= 1024 clef  5q n=12 mean   100.35 s  input tokens ~1594

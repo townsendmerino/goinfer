@@ -129,4 +129,53 @@ The resident cells: **CUDA is now possible** (D11's follow-up, `decisions-d11-re
 
 ## 7. Result
 
-*Not yet run.*
+**Run:**
+- **Where and when:** nobara-pc's night queue, 2026-10-03, 15:21–18:15 PDT (2 h 55 min against the queued 2 h 30; the
+  smoke-based estimate was 116 min).
+- **Binary:** `goinfer-serve-327016d6`, sha256 `44c9f615…`, as registered in amendment 2b. It ran from the pinned
+  worktree at 5dec9c81.
+- **Path:** `-backend cpu`, int8int8. Every server's decode path read `cpu (int8int8)`.
+- **Cells:** 6 states, K = 256 and 1,024, two passes in reversed order.
+- **Validity:** **96 of 96 rows valid**, every JEV answer on route `head` and every Clef answer on route `clef`.
+
+Raw rows, the analysis and the server logs: [`decisions-d14-clef-speed-2026-10/run-2026-10-03/`](decisions-d14-clef-speed-2026-10/run-2026-10-03/).
+
+| Cell | JEV ÷ Clef time | 95% interval | Band (§2a × 0.80–1.10) | Pass 1 | Pass 2 | Verdict |
+|---|---|---|---|---|---|---|
+| 1 question, K = 256 | **0.68** | 0.65–0.72 | 0.59–0.81 | 0.68 | 0.68 | as projected |
+| 5 questions, K = 256 | **1.14** | 1.13–1.15 | 0.90–1.23 | 1.14 | 1.14 | as projected |
+| 1 question, K = 1,024 | **0.87** | 0.85–0.90 | 0.73–1.00 | 0.87 | 0.87 | as projected |
+| 5 questions, K = 1,024 | **1.75** | 1.75–1.76 | 1.62–2.23 | 1.75 | 1.76 | as projected |
+
+More than 1 means Clef is faster.
+- **Five questions:** Clef is faster, 1.14× at K = 256 and 1.75× at K = 1,024.
+- **One question:** JEV is faster, by about a third at K = 256.
+- **Drift:** the two passes agree to 0.01 in every cell, so the reversed order shows none.
+- **Against the projection:** every cell lands inside §2a's revised bands, which priced D8's sharing into the JEV arm. It
+  would have fallen outside §2's original 5-question bands (1.51–2.08 and 2.70–3.71), which assumed five separate
+  prefills.
+
+**Growth, time(5 questions) ÷ time(1 question):**
+
+| | K = 256 | K = 1,024 |
+|---|---|---|
+| JEV (D8: 3 prefills for 5) | 3.38 (3.32–3.43) | 3.11 (3.10–3.13) |
+| Clef | 2.01 (1.89–2.14) | 1.55 (1.52–1.58) |
+
+**The registered D8 rule:**
+- **The rule:** "unnecessary for the five-question shape on Clef if Clef's 5q/1q is at most 2.0 at every K measured;
+  ambiguous between 2.0 and 3.0".
+- **The reading:** the worst cell is **2.01**, at K = 256, with an interval of 1.89–2.14 that straddles the 2.0 line.
+  K = 1,024 reads 1.55, well under it.
+- **The verdict:** by the rule as written, **AMBIGUOUS. It goes to the owner.** The rule does not decide how close a
+  reading must be to the line, so this record does not either.
+
+Mean request times, for the record. Input tokens are approximate; time is the whole request.
+
+| | K = 256, 1 q | K = 256, 5 q | K = 1,024, 1 q | K = 1,024, 5 q |
+|---|---|---|---|---|
+| JEV | 15.03 s (~293 tok) | 50.73 s (~1,464) | 56.58 s (~1,050) | 176.05 s (~5,250) |
+| Clef | 22.11 s (~428) | 44.45 s (~836) | 64.76 s (~1,186) | 100.35 s (~1,594) |
+
+**Quoted as:** nobara-pc's CPU, 2026-10-03, with the interval. It is not a Mac number, because amendment 2b moved the
+run, and not a GPU number. The JEV arm is JEV as served today, with D8's sharing on.

@@ -1,0 +1,137 @@
+=== night job d14-clef-speed
+=== cmd      env SERVE=/home/francis/goinfer-bench/d14/goinfer-serve-327016d6 SERVE_SHA=44c9f61509c1e4981eb295fb57f106b3ec48cbc75141601df22e93249475c99a D14_STATES=6 D14_KS=256,1024 bash /home/francis/goinfer-bench/d14/wt-5dec9c81/docs/measurements/decisions-d14-clef-speed-2026-10/run-d14.sh
+=== cwd      /home/francis/mycode/goinfer
+=== rev      queued at 327016d6, now 4f632cd2
+=== host     nobara-pc
+=== est      150.0 min, timeout 300.0 min
+=== by       Mac session (vscode-claude), D14 Clef speed
+=== doc      docs/measurements/decisions-d14-clef-speed-2026-10-03.md
+=== START    2026-10-03 15:21:01 PDT  loadavg 0.82
+15:21:01 == D14 start; host Linux 7.2.0-202.nobara.fc44.x86_64 x86_64; serve goinfer-serve-327016d6; states 6; ks 256,1024; load 0.82, 5.38, 7.52
+[d14] pass 1 jev  K=256 state 0 1q    14.90 s in=291 ok=True  (1/96, 152 s elapsed)
+[d14] pass 1 jev  K=256 state 0 5q    51.47 s in=1478 ok=True  (2/96, 203 s elapsed)
+[d14] pass 1 jev  K=256 state 1 1q    14.87 s in=290 ok=True  (3/96, 308 s elapsed)
+[d14] pass 1 jev  K=256 state 1 5q    50.30 s in=1448 ok=True  (4/96, 359 s elapsed)
+[d14] pass 1 jev  K=256 state 2 1q    15.21 s in=297 ok=True  (5/96, 429 s elapsed)
+[d14] pass 1 jev  K=256 state 2 5q    50.92 s in=1463 ok=True  (6/96, 480 s elapsed)
+[d14] pass 1 jev  K=256 state 3 1q    14.50 s in=283 ok=True  (7/96, 569 s elapsed)
+[d14] pass 1 jev  K=256 state 3 5q    49.68 s in=1438 ok=True  (8/96, 619 s elapsed)
+[d14] pass 1 jev  K=256 state 4 1q    15.35 s in=298 ok=True  (9/96, 699 s elapsed)
+[d14] pass 1 jev  K=256 state 4 5q    51.50 s in=1488 ok=True  (10/96, 751 s elapsed)
+[d14] pass 1 jev  K=256 state 5 1q    15.25 s in=298 ok=True  (11/96, 851 s elapsed)
+[d14] pass 1 jev  K=256 state 5 5q    50.74 s in=1468 ok=True  (12/96, 902 s elapsed)
+[d14] pass 1 jev  K=1024 state 0 1q    55.86 s in=1038 ok=True  (13/96, 1013 s elapsed)
+[d14] pass 1 jev  K=1024 state 0 5q   174.92 s in=5213 ok=True  (14/96, 1187 s elapsed)
+[d14] pass 1 jev  K=1024 state 1 1q    56.86 s in=1061 ok=True  (15/96, 1324 s elapsed)
+[d14] pass 1 jev  K=1024 state 1 5q   177.58 s in=5303 ok=True  (16/96, 1502 s elapsed)
+[d14] pass 1 jev  K=1024 state 2 1q    57.50 s in=1061 ok=True  (17/96, 1644 s elapsed)
+[d14] pass 1 jev  K=1024 state 2 5q   177.36 s in=5283 ok=True  (18/96, 1822 s elapsed)
+[d14] pass 1 jev  K=1024 state 3 1q    56.37 s in=1044 ok=True  (19/96, 1963 s elapsed)
+[d14] pass 1 jev  K=1024 state 3 5q   175.78 s in=5243 ok=True  (20/96, 2139 s elapsed)
+[d14] pass 1 jev  K=1024 state 4 1q    56.42 s in=1045 ok=True  (21/96, 2285 s elapsed)
+[d14] pass 1 jev  K=1024 state 4 5q   175.10 s in=5223 ok=True  (22/96, 2460 s elapsed)
+[d14] pass 1 jev  K=1024 state 5 1q    56.86 s in=1052 ok=True  (23/96, 2617 s elapsed)
+[d14] pass 1 jev  K=1024 state 5 5q   175.06 s in=5238 ok=True  (24/96, 2792 s elapsed)
+[d14] pass 1 clef K=256 state 0 1q    20.86 s in=404 ok=True  (25/96, 3056 s elapsed)
+[d14] pass 1 clef K=256 state 0 5q    44.75 s in=839 ok=True  (26/96, 3100 s elapsed)
+[d14] pass 1 clef K=256 state 1 1q    23.31 s in=452 ok=True  (27/96, 3219 s elapsed)
+[d14] pass 1 clef K=256 state 1 5q    44.33 s in=833 ok=True  (28/96, 3263 s elapsed)
+[d14] pass 1 clef K=256 state 2 1q    22.15 s in=427 ok=True  (29/96, 3380 s elapsed)
+[d14] pass 1 clef K=256 state 2 5q    44.39 s in=836 ok=True  (30/96, 3425 s elapsed)
+[d14] pass 1 clef K=256 state 3 1q    20.50 s in=396 ok=True  (31/96, 3525 s elapsed)
+[d14] pass 1 clef K=256 state 3 5q    44.14 s in=831 ok=True  (32/96, 3569 s elapsed)
+[d14] pass 1 clef K=256 state 4 1q    23.76 s in=460 ok=True  (33/96, 3663 s elapsed)
+[d14] pass 1 clef K=256 state 4 5q    44.72 s in=841 ok=True  (34/96, 3708 s elapsed)
+[d14] pass 1 clef K=256 state 5 1q    22.05 s in=428 ok=True  (35/96, 3805 s elapsed)
+[d14] pass 1 clef K=256 state 5 5q    44.62 s in=837 ok=True  (36/96, 3849 s elapsed)
+[d14] pass 1 clef K=1024 state 0 1q    62.62 s in=1151 ok=True  (37/96, 4002 s elapsed)
+[d14] pass 1 clef K=1024 state 0 5q    99.89 s in=1586 ok=True  (38/96, 4102 s elapsed)
+[d14] pass 1 clef K=1024 state 1 1q    67.55 s in=1229 ok=True  (39/96, 4239 s elapsed)
+[d14] pass 1 clef K=1024 state 1 5q   102.05 s in=1610 ok=True  (40/96, 4341 s elapsed)
+[d14] pass 1 clef K=1024 state 2 1q    65.07 s in=1191 ok=True  (41/96, 4492 s elapsed)
+[d14] pass 1 clef K=1024 state 2 5q   100.99 s in=1600 ok=True  (42/96, 4593 s elapsed)
+[d14] pass 1 clef K=1024 state 3 1q    63.14 s in=1157 ok=True  (43/96, 4736 s elapsed)
+[d14] pass 1 clef K=1024 state 3 5q    99.36 s in=1592 ok=True  (44/96, 4835 s elapsed)
+[d14] pass 1 clef K=1024 state 4 1q    66.23 s in=1207 ok=True  (45/96, 4996 s elapsed)
+[d14] pass 1 clef K=1024 state 4 5q    99.83 s in=1588 ok=True  (46/96, 5096 s elapsed)
+[d14] pass 1 clef K=1024 state 5 1q    64.52 s in=1182 ok=True  (47/96, 5256 s elapsed)
+[d14] pass 1 clef K=1024 state 5 5q    99.91 s in=1591 ok=True  (48/96, 5356 s elapsed)
+[d14] pass 2 clef K=256 state 0 1q    20.81 s in=404 ok=True  (49/96, 5577 s elapsed)
+[d14] pass 2 clef K=256 state 0 5q    44.62 s in=839 ok=True  (50/96, 5622 s elapsed)
+[d14] pass 2 clef K=256 state 1 1q    23.39 s in=452 ok=True  (51/96, 5720 s elapsed)
+[d14] pass 2 clef K=256 state 1 5q    44.16 s in=833 ok=True  (52/96, 5765 s elapsed)
+[d14] pass 2 clef K=256 state 2 1q    22.07 s in=427 ok=True  (53/96, 5867 s elapsed)
+[d14] pass 2 clef K=256 state 2 5q    44.28 s in=836 ok=True  (54/96, 5911 s elapsed)
+[d14] pass 2 clef K=256 state 3 1q    20.44 s in=396 ok=True  (55/96, 6001 s elapsed)
+[d14] pass 2 clef K=256 state 3 5q    44.10 s in=831 ok=True  (56/96, 6045 s elapsed)
+[d14] pass 2 clef K=256 state 4 1q    23.82 s in=460 ok=True  (57/96, 6129 s elapsed)
+[d14] pass 2 clef K=256 state 4 5q    44.91 s in=841 ok=True  (58/96, 6174 s elapsed)
+[d14] pass 2 clef K=256 state 5 1q    22.14 s in=428 ok=True  (59/96, 6241 s elapsed)
+[d14] pass 2 clef K=256 state 5 5q    44.42 s in=837 ok=True  (60/96, 6286 s elapsed)
+[d14] pass 2 clef K=1024 state 0 1q    62.62 s in=1151 ok=True  (61/96, 6438 s elapsed)
+[d14] pass 2 clef K=1024 state 0 5q    98.93 s in=1586 ok=True  (62/96, 6537 s elapsed)
+[d14] pass 2 clef K=1024 state 1 1q    67.14 s in=1229 ok=True  (63/96, 6694 s elapsed)
+[d14] pass 2 clef K=1024 state 1 5q   102.49 s in=1610 ok=True  (64/96, 6797 s elapsed)
+[d14] pass 2 clef K=1024 state 2 1q    65.08 s in=1191 ok=True  (65/96, 6952 s elapsed)
+[d14] pass 2 clef K=1024 state 2 5q   100.91 s in=1600 ok=True  (66/96, 7053 s elapsed)
+[d14] pass 2 clef K=1024 state 3 1q    62.97 s in=1157 ok=True  (67/96, 7181 s elapsed)
+[d14] pass 2 clef K=1024 state 3 5q   100.07 s in=1592 ok=True  (68/96, 7281 s elapsed)
+[d14] pass 2 clef K=1024 state 4 1q    65.76 s in=1207 ok=True  (69/96, 7442 s elapsed)
+[d14] pass 2 clef K=1024 state 4 5q    99.90 s in=1588 ok=True  (70/96, 7542 s elapsed)
+[d14] pass 2 clef K=1024 state 5 1q    64.39 s in=1182 ok=True  (71/96, 7691 s elapsed)
+[d14] pass 2 clef K=1024 state 5 5q    99.88 s in=1591 ok=True  (72/96, 7791 s elapsed)
+[d14] pass 2 jev  K=256 state 0 1q    14.88 s in=291 ok=True  (73/96, 8003 s elapsed)
+[d14] pass 2 jev  K=256 state 0 5q    51.17 s in=1478 ok=True  (74/96, 8054 s elapsed)
+[d14] pass 2 jev  K=256 state 1 1q    14.96 s in=290 ok=True  (75/96, 8104 s elapsed)
+[d14] pass 2 jev  K=256 state 1 5q    50.36 s in=1448 ok=True  (76/96, 8154 s elapsed)
+[d14] pass 2 jev  K=256 state 2 1q    15.24 s in=297 ok=True  (77/96, 8260 s elapsed)
+[d14] pass 2 jev  K=256 state 2 5q    50.74 s in=1463 ok=True  (78/96, 8310 s elapsed)
+[d14] pass 2 jev  K=256 state 3 1q    14.50 s in=283 ok=True  (79/96, 8400 s elapsed)
+[d14] pass 2 jev  K=256 state 3 5q    49.76 s in=1438 ok=True  (80/96, 8450 s elapsed)
+[d14] pass 2 jev  K=256 state 4 1q    15.38 s in=298 ok=True  (81/96, 8490 s elapsed)
+[d14] pass 2 jev  K=256 state 4 5q    51.42 s in=1488 ok=True  (82/96, 8541 s elapsed)
+[d14] pass 2 jev  K=256 state 5 1q    15.28 s in=298 ok=True  (83/96, 8622 s elapsed)
+[d14] pass 2 jev  K=256 state 5 5q    50.72 s in=1468 ok=True  (84/96, 8672 s elapsed)
+[d14] pass 2 jev  K=1024 state 0 1q    56.10 s in=1038 ok=True  (85/96, 8744 s elapsed)
+[d14] pass 2 jev  K=1024 state 0 5q   175.26 s in=5213 ok=True  (86/96, 8919 s elapsed)
+[d14] pass 2 jev  K=1024 state 1 1q    57.11 s in=1061 ok=True  (87/96, 9051 s elapsed)
+[d14] pass 2 jev  K=1024 state 1 5q   177.80 s in=5303 ok=True  (88/96, 9229 s elapsed)
+[d14] pass 2 jev  K=1024 state 2 1q    57.15 s in=1061 ok=True  (89/96, 9371 s elapsed)
+[d14] pass 2 jev  K=1024 state 2 5q   177.31 s in=5283 ok=True  (90/96, 9548 s elapsed)
+[d14] pass 2 jev  K=1024 state 3 1q    56.23 s in=1044 ok=True  (91/96, 9689 s elapsed)
+[d14] pass 2 jev  K=1024 state 3 5q   175.68 s in=5243 ok=True  (92/96, 9865 s elapsed)
+[d14] pass 2 jev  K=1024 state 4 1q    56.16 s in=1045 ok=True  (93/96, 10011 s elapsed)
+[d14] pass 2 jev  K=1024 state 4 5q   175.37 s in=5223 ok=True  (94/96, 10187 s elapsed)
+[d14] pass 2 jev  K=1024 state 5 1q    56.37 s in=1052 ok=True  (95/96, 10308 s elapsed)
+[d14] pass 2 jev  K=1024 state 5 5q   175.43 s in=5238 ok=True  (96/96, 10483 s elapsed)
+[d14] done
+18:15:48 == run rc=0; rows 96 of 96
+96 rows from 4 block(s); smoke=[False]; invalid or failed: 0 []
+decode paths: [('clef', 'decode path: cpu (int8int8)'), ('jev', 'decode path: cpu (int8int8)')]
+
+ratio = JEV time / Clef time, per state (the geometric mean of that state's times over the passes), geometric mean over states, 95% t-interval;
+> 1 means Clef is faster. band = projected x0.80 .. x1.10.
+cell          n   ratio      95% interval           band   pass 1  pass 2  verdict
+1q K=256      6    0.68      [0.65, 0.72]     0.59..0.81     0.68    0.68  as projected
+5q K=256      6    1.14      [1.13, 1.15]     0.90..1.23     1.14    1.14  as projected
+1q K=1024     6    0.87      [0.85, 0.90]     0.73..1.00     0.87    0.87  as projected
+5q K=1024     6    1.75      [1.75, 1.76]     1.62..2.23     1.75    1.76  as projected
+
+what five questions cost over one (the D8 question): time(5q) / time(1q), per state, geometric mean over states
+  K=  256 jev   5q/1q =  3.38  [3.32, 3.43]
+  K=  256 clef  5q/1q =  2.01  [1.89, 2.14]
+  K= 1024 jev   5q/1q =  3.11  [3.10, 3.13]
+  K= 1024 clef  5q/1q =  1.55  [1.52, 1.58]
+  registered D8 rule (Clef 5q/1q at every K: <= 2.0 unnecessary, <= 3.0 ambiguous, above that wanted): worst 2.01 -> AMBIGUOUS: goes to the owner
+
+  K=  256 jev   1q n=12 mean    15.03 s  input tokens ~293
+  K=  256 jev   5q n=12 mean    50.73 s  input tokens ~1464
+  K=  256 clef  1q n=12 mean    22.11 s  input tokens ~428
+  K=  256 clef  5q n=12 mean    44.45 s  input tokens ~836
+  K= 1024 jev   1q n=12 mean    56.58 s  input tokens ~1050
+  K= 1024 jev   5q n=12 mean   176.05 s  input tokens ~5250
+  K= 1024 clef  1q n=12 mean    64.76 s  input tokens ~1186
+  K= 1024 clef  5q n=12 mean   100.35 s  input tokens ~1594
+18:15:48 == DONE; results in /home/francis/goinfer-bench/decisions-d14/run-2026-10-03
+
+=== END      2026-10-03 18:15:48 PDT  rc=0
