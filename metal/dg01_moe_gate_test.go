@@ -62,7 +62,15 @@ func TestDG01_expertMajorMoEPrefill(t *testing.T) {
 	t.Cleanup(func() { dg01Mutation = "" })
 	maxM := slices.Max(Ms)
 
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: maxM + 64})
+	// GOINFER_DG01_QUANT=int8int8 runs the gate on the native int8 MoE path (MoE int8's X4, docs/tasks/task-metal-int8-2026-10.md).
+	quant := "int4"
+	if os.Getenv("GOINFER_DG01_QUANT") == "int8int8" {
+		quant = "int8int8"
+		prevMoE := nativeInt8MoE
+		nativeInt8MoE = true
+		t.Cleanup(func() { nativeInt8MoE = prevMoE })
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: quant, ResidentContext: maxM + 64})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -72,6 +80,9 @@ func TestDG01_expertMajorMoEPrefill(t *testing.T) {
 		t.Fatalf("resident: %v", err)
 	}
 	defer r.Close()
+	if quant == "int8int8" && (!r.w8 || r.moe == nil || !r.moe.w8) {
+		t.Fatalf("%s at int8int8: native int8 %v: not the path asked for", path, r.w8)
+	}
 	if r.moe == nil || !r.prefillOK {
 		t.Fatalf("%s: moe %v, prefillOK %v: the gate would test nothing", path, r.moe != nil, r.prefillOK)
 	}

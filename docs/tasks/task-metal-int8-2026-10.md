@@ -533,3 +533,20 @@ experts, not paged, whose pool stages int4) whose projections are all int8 goes 
 
 **Rule:** X1-X3 pass → `nativeInt8MoE` on, X4 at night as the prefill confirmation; X4 failing turns it off. Any of
 X1-X3 failing keeps it off.
+
+**MoE int8, by day (2026-10-04, `e9ce33b4`'s tree): X1 and X2 pass; X3 moves to the night.**
+- **X1 passes.** `TestMoEW8_X1_kernelsMatchReference`: 29,952 outputs bit-identical to the Go reference (three shapes,
+  6 stacked experts, three routed slots each, overwrite and weighted accumulate), compiled precise.
+- **X2 passes.** `TestMoEW8_X2_assembly`:
+  - (a) identical experts against the dense FFN, both native int8: min cosine 1.000000, argmax 16/16;
+  - (b) distinct experts against the CPU int8int8: native min cosine **0.999250**, 0 hard flips; the int4 re-quant arm
+    0.404219, 4 hard flips.
+  - Reading every slot's weights from the first routed expert fails both X1 and X2b.
+- **X3 did not run by day.** The Metal memory guard declined the native int8 slice: the build needs 5.46 GB (int8
+  weights, host copy, KV) against a 3.56 GB budget, 70% of the memory live-available with the owner's apps open. Not
+  bypassed. It goes on the night queue unchanged.
+  - Its f32 reference comes from nobara as F3′'s 1.5B did (`TestW8F3Reference_write` on the slice, same sha256
+    `7e48d607`), file sha256 `edccc9374170749a`. The prompts come from the slice's own `tokenizer.json`.
+  - The amendment is the same as F3′'s: the reference file only; every graded arm on the Mac; bar unchanged.
+- **X4** (`TestDG01_expertMajorMoEPrefill` at `GOINFER_DG01_QUANT=int8int8`, the gate checking the resident is on the
+  native MoE path) runs in the same night job, after X3.
