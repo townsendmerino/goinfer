@@ -12,7 +12,7 @@ import (
 // MmapAliasWindow hands Metal the page-aligned window it needs to wrap a weight array without a copy.
 // A window that is off by a page either faults (base below the mapping), wires pages the tensor never
 // reads, or — the case that would silently corrupt — drops the tensor's last bytes (length rounded
-// DOWN). These pin the arithmetic against a REAL mapping at the OS page size.
+// DOWN). These pin the arithmetic against a REAL mapping at the OS page size, where the OS maps files.
 func TestMmapAliasWindow(t *testing.T) {
 	page := os.Getpagesize()
 	path := filepath.Join(t.TempDir(), "alias.bin")
@@ -25,6 +25,17 @@ func TestMmapAliasWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mmap.Unmap(data)
+	if uintptr(unsafe.Pointer(&data[0]))%uintptr(page) != 0 {
+		// No real mapping here: where the OS has no mmap (Windows), aikit's MapReadOnly reads the file into the heap,
+		// and a heap slice is not page-aligned. The alias must decline it (Metal, its only caller, never sees one)...
+		if _, _, _, ok := (&Model{mmap: data}).MmapAliasWindow(data[64:192], page); ok {
+			t.Fatal("an unaligned (heap) mapping gave an alias window")
+		}
+		// ...and the window arithmetic is pinned on a page-aligned stand-in of the same length instead.
+		buf := make([]byte, len(data)+2*page)
+		a := (page - int(uintptr(unsafe.Pointer(&buf[0]))%uintptr(page))) % page
+		data = buf[a : a+len(data)]
+	}
 	m := &Model{mmap: data}
 	base := uintptr(unsafe.Pointer(&data[0]))
 

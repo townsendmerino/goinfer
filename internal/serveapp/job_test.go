@@ -3,8 +3,19 @@ package serveapp
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+// openJournal is newJobJournal, closed when the test ends (Windows cannot remove a TempDir holding an open file).
+func openJournal(t *testing.T, dir string) (*jobJournal, map[string]*job, error) {
+	t.Helper()
+	jj, restored, err := newJobJournal(dir)
+	if err == nil {
+		t.Cleanup(func() { jj.close() })
+	}
+	return jj, restored, err
+}
 
 // TestJobStore_inMemoryWithoutJobDir: -job-dir unset ⇒ every generation still gets a job (task
 // doc J2: "Every generation gets one, whether or not anything durable is on"), but nothing
@@ -41,6 +52,7 @@ func TestJobJournal_roundTrip(t *testing.T) {
 	if s.journal == nil {
 		t.Fatal("journal should be non-nil when -job-dir is set")
 	}
+	t.Cleanup(func() { s.journal.close() })
 	j := s.create("id-1", "m", []int{1, 2, 3})
 	s.finish(j, jobDone, &usage{PromptTokens: 3, CompletionTokens: 4, TotalTokens: 7}, "", nil)
 
@@ -68,7 +80,7 @@ func TestJobJournal_roundTrip(t *testing.T) {
 // (simulating a crash mid-generation, no terminal line ever written), then reload.
 func TestJobJournal_crashedJobReconstructsAsInterrupted(t *testing.T) {
 	dir := t.TempDir()
-	jj, restored, err := newJobJournal(dir)
+	jj, restored, err := openJournal(t, dir)
 	if err != nil {
 		t.Fatalf("newJobJournal: %v", err)
 	}
@@ -106,7 +118,7 @@ func TestJobJournal_crashedJobReconstructsAsInterrupted(t *testing.T) {
 // itself, so the journal's own last line for that id stops silently saying "running".
 func TestJobJournal_reopenCompletesTheInterruptedRecord(t *testing.T) {
 	dir := t.TempDir()
-	jj, _, err := newJobJournal(dir)
+	jj, _, err := openJournal(t, dir)
 	if err != nil {
 		t.Fatalf("newJobJournal (1st open): %v", err)
 	}
@@ -118,7 +130,7 @@ func TestJobJournal_reopenCompletesTheInterruptedRecord(t *testing.T) {
 	}
 
 	// Reopen — simulating the process restarting after the crash.
-	_, restored, err := newJobJournal(dir)
+	_, restored, err := openJournal(t, dir)
 	if err != nil {
 		t.Fatalf("newJobJournal (2nd open): %v", err)
 	}
@@ -128,7 +140,7 @@ func TestJobJournal_reopenCompletesTheInterruptedRecord(t *testing.T) {
 
 	// The FILE's own last line for this id must now be the interrupted transition, not running —
 	// a third open (no new crash) must reconstruct the SAME state, not flip anything again.
-	_, restored3, err := newJobJournal(dir)
+	_, restored3, err := openJournal(t, dir)
 	if err != nil {
 		t.Fatalf("newJobJournal (3rd open): %v", err)
 	}
@@ -142,8 +154,13 @@ func TestJobJournal_reopenCompletesTheInterruptedRecord(t *testing.T) {
 func TestJobJournal_permissions(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "jobs")
-	if _, _, err := newJobJournal(dir); err != nil {
+	if _, _, err := openJournal(t, dir); err != nil {
 		t.Fatalf("newJobJournal: %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		// Go maps Windows file modes to the read-only bit alone, so a stat reports 0777 / 0666 whatever was asked
+		// for; owner-only access there is the profile directory's ACL, not a mode bit this test can read.
+		t.Skip("Unix permission bits do not exist on Windows")
 	}
 	di, err := os.Stat(dir)
 	if err != nil {

@@ -50,6 +50,14 @@ func newJobJournal(dir string) (*jobJournal, map[string]*job, error) {
 	return jj, restored, nil
 }
 
+// close closes the journal's file. serve keeps its journal for the process's life and never calls it; tests do,
+// because Windows cannot delete a file that is still open (TempDir's cleanup fails on one).
+func (jj *jobJournal) close() error {
+	jj.mu.Lock()
+	defer jj.mu.Unlock()
+	return jj.f.Close()
+}
+
 // record appends one line (a full job snapshot) and fsyncs when State is terminal — the point
 // where losing this line matters, mirroring sessions.go's own "fsync on terminal states" for the
 // same underlying reason (this is the record an operator reads after a halt, K9's original ask).
