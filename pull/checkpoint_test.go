@@ -388,3 +388,34 @@ func TestPlanCheckpointFor_embeddingEncoder(t *testing.T) {
 		t.Fatalf("the refused repo's weights were fetched %d times", h2.hits["model.safetensors"])
 	}
 }
+
+// TestAnyLoads_generativeOrEncoder: the pull CLI's check takes a generative family or the embedding encoder, and refuses
+// anything else naming both (task-checkpoint-fetch P7's last gap: `pull <encoder>:safetensors` declined what serve
+// --embed-model fetches itself). PlanCheckpoint, --model's and the web UI's check, still refuses the encoder.
+func TestAnyLoads_generativeOrEncoder(t *testing.T) {
+	if fam, err := AnyLoads("llama"); err != nil || fam == "" || fam == EncoderFamily {
+		t.Errorf("llama: %q, %v; want a generative family", fam, err)
+	}
+	if fam, err := AnyLoads("nomic_bert"); err != nil || fam != EncoderFamily {
+		t.Errorf("nomic_bert: %q, %v; want %q", fam, err, EncoderFamily)
+	}
+	if _, err := AnyLoads("made_up_arch"); err == nil || !strings.Contains(err.Error(), "made_up_arch") || !strings.Contains(err.Error(), "nomic_bert") {
+		t.Errorf("made_up_arch: %v; want a refusal naming it and the encoder", err)
+	}
+	if _, err := generativeLoads("nomic_bert"); err == nil {
+		t.Error("the generative check accepts nomic_bert: --model and the web UI would offer an encoder they cannot run")
+	}
+
+	withCacheRoot(t)
+	h := &fakeHF{files: map[string][]byte{
+		"config.json":           []byte(`{"model_type":"nomic_bert","torch_dtype":"float32"}`),
+		"model.safetensors":     []byte("weights"),
+		"tokenizer.json":        []byte(`{}`),
+		"1_Pooling/config.json": []byte(`{"pooling_mode_cls_token":true}`),
+	}, gated: false}
+	h.serve(t, "o/enc")
+	p, err := PlanCheckpointFor(context.Background(), "o/enc", AnyLoads)
+	if err != nil || p.Family != EncoderFamily {
+		t.Fatalf("the CLI's plan of a NomicBert: family %q, %v; want %q", p.Family, err, EncoderFamily)
+	}
+}

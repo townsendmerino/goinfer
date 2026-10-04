@@ -122,3 +122,13 @@ func TestListingLine_marksVisionProjector(t *testing.T) {
 		t.Errorf("the mmproj row is not marked: %q", m)
 	}
 }
+
+// An embedding encoder's checkpoint opens as serve's embedding model, not as a --model (task-checkpoint-fetch P7).
+func TestRunHint_encoderPointsAtEmbedModel(t *testing.T) {
+	if h := runHint(pull.Plan{Family: pull.EncoderFamily}, "/c/enc"); !strings.Contains(h, "serve --embed-model /c/enc") || strings.Contains(h, " --model ") {
+		t.Errorf("encoder hint: %q", h)
+	}
+	if h := runHint(pull.Plan{Family: "llama"}, "/c/m"); !strings.Contains(h, "--model /c/m") || strings.Contains(h, "embed-model") {
+		t.Errorf("generative hint: %q", h)
+	}
+}
