@@ -169,6 +169,10 @@ More than 1 means Clef is faster.
   K = 1,024 reads 1.55, well under it.
 - **The verdict:** by the rule as written, **AMBIGUOUS. It goes to the owner.** The rule does not decide how close a
   reading must be to the line, so this record does not either.
+- **The owner's decision, 2026-10-03: D8 is unnecessary for the five-question shape on Clef.** Clef reads every
+  question of a request in one backbone pass (`internal/clef/model.go` `Decide`), so a request has no repeated prefill
+  for D8's sharing to remove. Its 5q/1q growth comes from the longer sequence (about 836 tokens against 428 at K = 256).
+  JEV still uses D8's CPU sharing, and its GPU-resident half stays unbuilt and unscheduled.
 
 Mean request times, for the record. Input tokens are approximate; time is the whole request.
 
