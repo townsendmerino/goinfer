@@ -133,6 +133,10 @@ On the same 84 gold rows, both at f32 reference: top-1 against gold **Clef 0.690
 - **`int4` is not a quality-neutral option on the Clef route.** It FAILS outright, on both CPU and device, and the device does not rescue it. Whether to keep offering it is the owner's call; the data says it moves 24 of 150 argmaxes.
 - **Post-hoc paired comparisons, labelled as such** (not registered; the paired design is rule 7 of the measurement discipline, and the intervals are 2000-resample bootstraps of per-record differences): CPU int4 against int8int8, mean KL difference **+0.0346, [+0.0174, +0.0552]** (int4 is resolvably worse than int8int8); q4k against CPU int4, **−0.0305, [−0.0467, −0.0163]** (the third-party imatrix 4-bit file is resolvably closer to the reference than goinfer's own int4; this is a statement about that artifact, 5a, not about q4k as a format); device against CPU, both as served, **−0.0071, [−0.0270, +0.0098]** (unresolved); `--embed-int4` on the device (served − pin), **−0.0011, [−0.0193, +0.0147]** (unresolved: on 150 records the flag's effect is not distinguishable from zero, although it moved single records by as much as 0.53 in P(true)). So the earlier worry that the GPU is worse than the CPU at int4 on this route is **not supported**; neither is the claim that it is the same, at this sample.
 
+### Owner decision after the result (2026-10-03)
+
+**Clef is not served at int4.** `quant=int4` on a Clef model is refused at load, with an error naming these figures; `int8int8` stays the default. The int4 arms stay in this record as the measurement behind the decision, and the harnesses still run int4 (they load through `modelload`, not through serve's check).
+
 ### Not shown by this run
 
 Nothing here grades speed (D14), the Metal backend, the WebGPU backend, the 27B Clef, or a `chat-v1` template. The int8int8 arm is CPU only (it does not fit the card). The f32 row is agreement to about 1e-7 in probability, not a claim of bit-identity.

@@ -979,7 +979,8 @@ doubling it in the shared Qwen3.5 batched path fails all three on `public`. **No
   - **The default stays int8int8** under the record's rule (a top-1 miss alone does not reopen it), with the disagreement stated: 14 of 150 argmaxes change.
   - **Clef against JEV** (84 gold rows, informational): accuracy 0.690 against 0.774 and ECE 0.107 against 0.122, neither difference resolved.
   - Predictions that failed, recorded as failed: int4 inside the KL band (CPU and CUDA).
-  - Open for the owner: whether to keep offering `int4` for Clef, and whether the site tag may go on Clef-flash given that no quantized arm meets the 98% bar.
+  - **Owner decision 2026-10-03: no int4 for Clef.** `quant=int4` on a Clef model is refused at load (`clefQuantRefusal`, tested through `loadDecoder`); `int8int8` stays the default and `f32` is available.
+  - Open for the owner: whether the site tag may go on Clef-flash given that no quantized arm meets the 98% bar.
 - **Then Clef 27B on the Linux box's CPU,** at f32 against a smaller reference set. Report its speed as measured,
   with the machine named.
 
