@@ -106,6 +106,10 @@ var parityWantInt4 = parityWantInt4ByArch[runtime.GOARCH]
 func TestDecodeParityInt4(t *testing.T) {
 	m := loadInt4Model(t)
 	defer m.Close()
+	if len(forcedFallbacks()) > 0 {
+		forcedInt4Closeness(t, m)
+		return
+	}
 
 	const n = 24
 	out, gen := m.Generate(context.Background(), parityPrompt, n, SamplingParams{Temperature: 0})
@@ -186,4 +190,36 @@ func atoiPositive(s string) (int, error) {
 		return 0, os.ErrInvalid
 	}
 	return n, nil
+}
+
+// forcedInt4Closeness replaces TestDecodeParityInt4's token-exact comparison under a forced CPU fallback (H1.3). The golden pins the default path's greedy continuation, whose
+// 4th token is a 0.15 near-tie that a different rounding draw flips (measured: the pure-Go path reads 474 where the AVX2 golden reads 750), so the forced run asks the question that
+// does not depend on the draw: is the int4 forward still as close to the int8int8 forward, for the same ids, as it should be? The prompt and the golden's own 4-token prefix are checked
+// (measured 1 - cosine: 1.64e-2 and 7.98e-3 pure Go, 1.75e-2 and 8.09e-3 AVX2).
+//
+// HOW SENSITIVE THIS IS, measured: it is a COARSE sanity bound. The int4-to-int8int8 distance is dominated by int4's own quantization noise, so the int4GroupSize 32 -> 64 mutation
+// moves it only from 1.64e-2 to 1.92e-2 and this check stays GREEN; 32 -> 128 reads 4.1e-2 and fails it. That mutation is caught by TestInt4_forwardParity's forced centered-cosine
+// floor (cosines 0.13 to 0.99 against 0.99). Do not read this check passing as evidence the int4 grouping is right.
+func forcedInt4Closeness(t *testing.T, m *Model) {
+	t.Helper()
+	ref, err := loadBenchModel() // int8int8 by default: the reference the int4 path is measured against
+	if err != nil {
+		t.Skipf("no int8int8 reference model (%v)", err)
+	}
+	prefix := append(append([]int{}, parityPrompt...), parityWantInt4ByArch["amd64"][:4]...)
+	for name, ids := range map[string][]int{"prompt": parityPrompt, "golden 4-token prefix": prefix} {
+		a, err := m.PromptLogitsMany(context.Background(), [][]int{ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := ref.PromptLogitsMany(context.Background(), [][]int{ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d := cosineDistance(a[0], b[0]); d > forcedLogitCloseness {
+			t.Errorf("forced %v, %s: int4 against int8int8 logits 1-cosine = %.3e, want <= %.0e — the forced int4 forward drifted", forcedFallbacks(), name, d, forcedLogitCloseness)
+		} else {
+			t.Logf("forced %v, %s: int4 against int8int8 logits 1-cosine = %.3e (bound %.0e)", forcedFallbacks(), name, d, forcedLogitCloseness)
+		}
+	}
 }

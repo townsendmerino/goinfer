@@ -87,6 +87,10 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	// "f32 prefill continuation drifted", a false positive: the golden was recorded fused, and an
 	// ambient =0 silently switched this run to the materialized (non-fused) arithmetic path
 	// instead (N-41 (09-02)).
+	if len(forcedFallbacks()) > 0 {
+		forcedLongPromptCloseness(t, m, prompt)
+		return
+	}
 	setKnob(t, m, knobCPUFastAttention, "1")
 	setKnob(t, m, knobFusedAttention, "1")
 	out, gen := m.Generate(context.Background(), prompt, 16, SamplingParams{Temperature: 0})
@@ -125,5 +129,30 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	if same {
 		t.Error("the default and the exact kernel produced identical output at K=768 — this golden " +
 			"is NOT covering the f32 path (floor raised above 768, or the default reverted?)")
+	}
+}
+
+// forcedLongPromptCloseness replaces TestLongPromptFast_forwardParity's token-exact comparison under a forced CPU fallback (H1.3). The golden pins one realization of the f32 fast-attention path
+// (a documented, accepted divergence from the exact path), and the top four exact logits sit within 0.21, so a different realization reorders the continuation (the pure-Go path reads token 304
+// first where the AVX2 golden reads 11). The question that does not depend on the draw: how far is the fast path from the EXACT path on this build (measured 1 - cosine at 768 tokens: 8.3e-3
+// pure Go, 1.6e-2 AVX2, and the exact path itself is bit-identical across the two builds)?
+func forcedLongPromptCloseness(t *testing.T, m *Model, prompt []int) {
+	t.Helper()
+	_, nL, _, nKV, hd, _, _ := m.Dims()
+	logits := func(fast string) []float32 {
+		setKnob(t, m, knobCPUFastAttention, fast)
+		setKnob(t, m, knobFusedAttention, "1")
+		cache := NewKVCache(nL, nKV, hd, 0, len(prompt)+8, nil)
+		lg, err := m.prefillLogits(context.Background(), prompt, cache)
+		if err != nil {
+			t.Fatalf("prefillLogits(fast=%s): %v", fast, err)
+		}
+		return append([]float32(nil), lg...)
+	}
+	exact, fast := logits("0"), logits("1")
+	if d := cosineDistance(fast, exact); d > forcedLogitCloseness {
+		t.Errorf("forced %v: f32 fast attention against the exact path, 1-cosine = %.3e at %d tokens, want <= %.0e — the forced fast path drifted", forcedFallbacks(), d, len(prompt), forcedLogitCloseness)
+	} else {
+		t.Logf("forced %v: f32 fast attention against the exact path, 1-cosine = %.3e at %d tokens (bound %.0e)", forcedFallbacks(), d, len(prompt), forcedLogitCloseness)
 	}
 }

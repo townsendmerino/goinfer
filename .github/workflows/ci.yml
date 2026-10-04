@@ -784,6 +784,39 @@ jobs:
       - name: test
         run: go test -timeout 30m -tags goinfer_testhooks ./...
 
+  # H1.3 (docs/tasks/task-hardware-coverage-2026-10.md): the narrower CPU kernels, forced on whatever CPU the runner has. aikit v1.54.0's aikit_noavx512 / aikit_noavx2 / aikit_nopopcnt tags make the
+  # dispatchers take the AVX2 kernels on an AVX-512 VNNI machine (the ubuntu pool mixes CPU models), or the pure-Go kernels, so the paths that no machine of ours executes run on every push.
+  # AIKIT_EXPECT_FORCED makes a tag that forced nothing FAIL (TestForcedFallbacks_expected) instead of passing silently. Under a tag, the three goldens that pin ONE path's numerics take a closeness
+  # bound instead (decoder/forced_fallbacks_test.go has the measurements, and each is shown red by a mutation). What runs here is the forward and parity tests on the committed tiny fixtures: the
+  # real-checkpoint goldens (TestLongPromptFast_forwardParity, TestDecodeParityInt4) skip without their assets on a runner, and a skip is not a pass, so their forced branches were run by hand
+  # (docs/tasks/task-hardware-coverage-2026-10.md). aikit's own CI forces the arm64 DotProd fallback; goinfer's does not yet.
+  root-forced-fallbacks:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        force: [noavx512, noavx2, nopopcnt]
+    name: forced fallbacks (${{ matrix.force }})
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: cpu (for the hardware census)
+        run: |
+          lscpu | grep -E 'Model name|Vendor ID|^CPU\(s\)' || true
+          for f in avx2 avx512_vnni avx512vl popcnt; do if grep -qw "$f" /proc/cpuinfo; then echo "$f: yes"; else echo "$f: no"; fi; done
+      - name: test (aikit_${{ matrix.force }})
+        run: |
+          set -o pipefail
+          AIKIT_EXPECT_FORCED=${{ matrix.force }} go test -v -timeout 45m -tags 'goinfer_testhooks aikit_${{ matrix.force }}' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced.log | grep -E '^(--- |ok|FAIL|PASS)'
+      - name: the expectation test ran and passed (a skip is not a pass)
+        run: |
+          grep -q -- '--- PASS: TestForcedFallbacks_expected' forced.log
+
   # GPU submodule on darwin/arm64 — the resident Metal decode path. Same
   # ephemeral-workspace stitch as the Linux gpu job, but no apt deps: Metal is a
   # system framework on macOS (linked via Xcode CLT, present on the runner).

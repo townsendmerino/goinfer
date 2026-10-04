@@ -276,6 +276,14 @@ func TestInt4_forwardParity(t *testing.T) {
 			if g.Vocab != w.Vocab {
 				t.Fatalf("vocab = %d, want %d", g.Vocab, w.Vocab)
 			}
+			if len(forcedFallbacks()) > 0 {
+				// A forced narrower kernel is another numeric realization of the same arithmetic, so the recorded samples cannot be matched to 5e-3 (H1.3: gemma4-dense-scaled reads 0.9938). The argmax above
+				// is still exact; the samples are held to a centered-cosine floor, the way gpt2 is (see forced_fallbacks_test.go for the measurement).
+				if cos := centeredCosine(g.Samples, w.Samples); cos < forcedInt4CosFloor {
+					t.Errorf("forced %v: centered cosine(samples) = %g, want >= %g — the forced int4 forward changed", forcedFallbacks(), cos, forcedInt4CosFloor)
+				}
+				return
+			}
 			if name == "gpt2" {
 				if cos := centeredCosine(g.Samples, w.Samples); cos < gpt2CosFloor {
 					t.Errorf("centered cosine(samples) = %g, want >= %g — the int4 forward changed", cos, gpt2CosFloor)
