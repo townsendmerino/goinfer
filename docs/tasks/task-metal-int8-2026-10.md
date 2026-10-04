@@ -384,3 +384,22 @@ native int8 prefilled one token at a time. `TestW8Native_S_ttft` (night, `GOINFE
       int8int8);
     - `TestAutoBackend_int8int8` (metal, default-run): a dense tiny int8int8 model under auto runs
       `metal-resident (int8int8)`, and an int8int8 MoE is kept on the CPU with the reason.
+
+**Gate W7-int8 — the batched int8 step served (pre-registered 2026-10-04, before any graded run).** Native int8 and its
+batched step are on by default since 9e51f882. This is the served confirmation slice 3/3b was promised.
+- **Instrument:** `docs/measurements/metal-int8-2026-10/run-w7-int8.sh` on the night queue.
+  - MC3's W7 harness (`scripts/bench_w7_plain.py`) on the 1.5B coder at int8int8 from `~/models`.
+  - One serve binary pinned at `b1e6fa4b` for both arms: **old** at `-max-concurrent 1` (one generation at a time),
+    **new** at `-max-concurrent 4` (the batched int8 step).
+  - Both arms run `-kv-sessions 4 -exact-prefill`, so no prompt takes the f16 pass and identity is a property the
+    system has (E-P07's finding).
+  - 6 turns × 128 greedy tokens per client, `--fixed-nonce`, a fresh server per cell. 4, then 1, then 2 clients,
+    old/new × 3 pairs in the order old new new old old new. Graded by MC3's `gates.py`.
+- **Precondition:** every new server logs the batched-concurrency line and no old server does; every server's decode
+  path is `metal-resident (int8int8)`.
+- **Rule:** gates.py's hard gates (identity, reuse, 4-client p99 ≤ 1.0, 1-client solo guard ≤ 1.05) and its throughput
+  gate (4-client aggregate ≥ 1.2×) all hold → **confirmed**. Any fails → int8 batching goes off (`batchIneligible`
+  excludes `r.w8` again) until a fix is graded.
+- **Exploratory smoke by day** (not a result): 2 clients, one cell each arm, identical content in 12 of 12 turns,
+  aggregate 56.2 → 69.3 tok/s.
+- Estimate about 12 minutes; queued at 25.
