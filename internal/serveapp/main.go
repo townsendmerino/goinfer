@@ -337,6 +337,7 @@ type config struct {
 	web             bool          // -web: serve the local browser UI + its model-pull routes
 	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	noSelfTest      bool          // -no-selftest: skip the startup self-tests (H2)
 	visionMaxPixels int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
 	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
@@ -404,6 +405,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.toolFormat, "tool-format", "auto", "how tools are put in the prompt for a model whose own chat template declares a tool form goinfer can render byte for byte — Qwen3.5 (its <function=…><parameter=…> XML) and Gemma 4's canonical template: auto (the default: each family's measured default — the model's own template form for Gemma 4, goinfer's own prompt for Qwen3.5), hermes (goinfer's own prompt: for Qwen a JSON call that tool_choice can constrain, for Gemma 4 its earlier order, text before a call) or template (the model's own chat template; tool_choice naming a function is then a 400, as for any form with no JSON wrapper). The Qwen reply parser reads both call forms whichever is chosen. No effect on a model with no such form.")
 	fs.StringVar(&cfg.reasoningBudget, "reasoning-budget", "auto", "ceiling on how long a thinking reply may think before serve forces the block closed so the reply can answer: auto (the default: thinking takes at most three quarters of the request's max_tokens), unlimited (no ceiling of serve's own), or N (cap every thinking reply at N tokens, still leaving room to answer). A request's own budget (thinking_token_budget, or Anthropic's thinking.budget_tokens) applies too, clamped so a quarter of max_tokens is left to answer. Not applied under -spec or -drafter, or to a model with no recognised thinking control.")
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
+	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
@@ -542,6 +544,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if *showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
+	}
+	if cfg.noSelfTest {
+		decoder.SkipSelfTests() // before the first Load, which is what runs the cpu self-test
 	}
 	// R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized
 	// subcommand/positional falls through silently otherwise. Every argument here is a --flag;

@@ -7,6 +7,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/hwreport"
 )
 
 const usage = `%s check — drive a running goinfer server the way a harness would
@@ -29,8 +32,18 @@ func Run(args []string, self string) int {
 	model := fs.String("model", "", "served model id to exercise (default: the first one /v1/models reports)")
 	longPrompt := fs.Int("long-prompt", 2000, "word count for the long-prompt TTFT row (0 skips it)")
 	timeout := fs.Duration("timeout", 10*time.Minute, "overall deadline")
+	hardware := fs.Bool("hardware", false, "print the hardware report (CPU, kernels, memory, GPUs, self-tests) and exit; starts and contacts no server, and sends nothing anywhere")
+	fit := fs.String("fit", "", "with --hardware: add the fit decisions for this model (a path or reference)")
+	noSelfTest := fs.Bool("no-selftest", false, "with --hardware: skip the startup self-tests")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *hardware {
+		if *noSelfTest {
+			decoder.SkipSelfTests()
+		}
+		hwreport.Write(os.Stdout, hwreport.Options{FitModel: *fit})
+		return 0
 	}
 	base := "http://127.0.0.1:8080"
 	if fs.NArg() > 0 {

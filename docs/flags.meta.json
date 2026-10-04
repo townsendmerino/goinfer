@@ -54,6 +54,11 @@
    "type": "int (pixels)"
   },
   {
+   "name": "no-selftest",
+   "group": "Other",
+   "summary": "Skip the startup self-tests. They check each kernel the process will use against a reference on a small fixed input, and step a CPU kernel tier down (or decline a GPU backend) on a mismatch. On by default; `check --hardware` prints what they found."
+  },
+  {
    "name": "embed-model",
    "group": "Choosing models",
    "summary": "An embedding model, served on `/v1/embeddings`: a directory (CodeRankEmbed / NomicBert layout), a decoder-as-embedder `.gguf`, or `hf:<owner>/<repo>:safetensors` (a NomicBert encoder, fetched and checked before its weights) or `hf:<owner>/<repo>:<quant>` (a GGUF)."
