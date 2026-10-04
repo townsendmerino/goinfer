@@ -413,3 +413,24 @@ func SetHostRAMAvailableForTest(v int64) (restore func()) {
 		resetAvailProbeCache()
 	}
 }
+
+// SetMemoryProbeForTest makes the named backend's registered memory probe (RegisterMemoryProbe: "cuda", "metal") report freeBytes and ok, and returns the restore
+// (hardware-coverage H1.5). It reaches the residency decisions that read FreeBytesFor: the resident context a load picks, how many KV slots fit, whether Plan places
+// or declines the model. A budget BELOW the real card runs end to end on it (the model shrinks its context or declines to the CPU); a budget above it only changes the
+// decision, and a resident build that then asked the real card for the memory would fail, so a test should not force a figure the model cannot really be given.
+// Set it BEFORE the model loads. A name with no registered probe is created, so a test can also force a backend that is not linked.
+func SetMemoryProbeForTest(name string, freeBytes int64, ok bool) (restore func()) {
+	memProbeMu.Lock()
+	prev, had := memProbes[name]
+	memProbes[name] = func() (int64, bool) { return freeBytes, ok }
+	memProbeMu.Unlock()
+	return func() {
+		memProbeMu.Lock()
+		defer memProbeMu.Unlock()
+		if had {
+			memProbes[name] = prev
+		} else {
+			delete(memProbes, name)
+		}
+	}
+}

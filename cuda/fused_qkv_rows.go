@@ -66,6 +66,7 @@ func (r *cudaResident) waveRowsPerWarp(rows, smemPerBlock int) int {
 // readSMShape reads the device shape waveRowsPerWarp needs: SM count, max threads per SM, max shared memory per SM. Any failure leaves the field zero, which makes waveRowsPerWarp
 // answer "cannot tell" and the caller fall back to the static rules.
 func (r *cudaResident) readSMShape() {
+	defer r.applySMShapeOverride()
 	d := r.dev.Context().Device()
 	if d == nil {
 		return
@@ -78,5 +79,19 @@ func (r *cudaResident) readSMShape() {
 	}
 	if v, err := d.Attribute(gc.DeviceAttributeMaxSharedMemoryPerMultiprocessor); err == nil {
 		r.smSmem = v
+	}
+}
+
+// smShapeOverride, when set, replaces the SM shape readSMShape read from the driver. It is nil in every build but one that links cuda/testhooks.go
+// (-tags goinfer_testhooks), which sets it to make a card with more or fewer SMs than the one we own run through the wave sizing and the grids it picks.
+// A grid sized for 128 SMs is correct on 40 (the kernels are bit-identical for any rows-per-warp), so this reaches the launch math with real execution.
+var smShapeOverride func() (sms, threadsPerSM, smemPerSM int, ok bool)
+
+func (r *cudaResident) applySMShapeOverride() {
+	if smShapeOverride == nil {
+		return
+	}
+	if sms, thr, smem, ok := smShapeOverride(); ok {
+		r.smCount, r.smThreads, r.smSmem = sms, thr, smem
 	}
 }

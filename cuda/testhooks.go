@@ -189,3 +189,13 @@ func (r *cudaResident) GumbelForTest(logits []float32, temperature float64, seed
 	})
 	return id, err
 }
+
+// SetSMShapeForTest makes every cudaResident built after this call size its wave-based fused-projection grids as if the device had sms multiprocessors,
+// threadsPerSM resident threads and smemPerSM bytes of shared memory per multiprocessor (hardware-coverage H1.5), and returns the restore. It changes only the
+// numbers waveRowsPerWarp sees: the kernels are bit-identical for any rows-per-warp, so a decode under a forced shape must equal the real one. Set it BEFORE the
+// model loads; BuildResident reads the shape once.
+func SetSMShapeForTest(sms, threadsPerSM, smemPerSM int) (restore func()) {
+	prev := smShapeOverride
+	smShapeOverride = func() (int, int, int, bool) { return sms, threadsPerSM, smemPerSM, true }
+	return func() { smShapeOverride = prev }
+}
