@@ -414,3 +414,14 @@ func ReadPrefillReferenceForTest(path string) (seedLogits []float32, refTokens [
 	}
 	return seedLogits, refTokens, refLogits, nil
 }
+
+// W8F3Ref is F3′'s CPU f32 reference (docs/tasks/task-metal-int8-2026-10.md, "F3′"), written by
+// TestW8F3Reference_write on a machine whose fit guard admits the f32 model (nobara for the 1.5B) and read by
+// metal's TestW8Native_F3amended_closerToF32 through GOINFER_W8_F3_REF_IN: the 8 prompts, the f32 model's greedy
+// continuation (the tokens every arm is teacher-forced on), and the f32 logits at every position.
+type W8F3Ref struct {
+	Model, Arch    string
+	Prompts, Toks  [][]int
+	Logits         [][][]float32 // [prompt][position][vocab]
+	PromptLen, Pos int
+}

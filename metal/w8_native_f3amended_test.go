@@ -3,8 +3,13 @@
 package metal
 
 import (
+	"compress/gzip"
+	"encoding/gob"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -114,7 +119,15 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 		return out
 	}
 
-	ref, toks := cpu("", false, nil)
+	// GOINFER_W8_F3_REF_IN: the CPU f32 reference from a file (decoder's TestW8F3Reference_write, run where the fit
+	// guard admits the f32 model: nobara for the 1.5B), its prompts checked equal to the ones built here.
+	var ref [][][]float32
+	var toks [][]int
+	if in := os.Getenv("GOINFER_W8_F3_REF_IN"); in != "" {
+		ref, toks = readW8F3Ref(t, in, path, prompts, steps)
+	} else {
+		ref, toks = cpu("", false, nil)
+	}
 	cpu8h, _ := cpu("int8int8", true, toks)
 	cpu8, _ := cpu("int8int8", false, toks)
 	met8 := metal("int8int8", true, false, toks)
@@ -158,4 +171,33 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	if kMet > 1.10*kRef {
 		t.Errorf("F3′ fails: KL(f32 ‖ Metal int8int8) %.6f is above 1.10 × the f16-KV CPU int8int8's %.6f", kMet, kRef)
 	}
+}
+
+// readW8F3Ref reads F3′'s f32 reference written by decoder's TestW8F3Reference_write and checks it is this test's: the
+// same checkpoint file name, the same prompts token for token, the same number of positions.
+func readW8F3Ref(t *testing.T, in, path string, prompts [][]int, steps int) ([][][]float32, [][]int) {
+	t.Helper()
+	f, err := os.Open(in)
+	if err != nil {
+		t.Fatalf("reference: %v", err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("reference: %v", err)
+	}
+	var r decoder.W8F3Ref
+	if err := gob.NewDecoder(zr).Decode(&r); err != nil {
+		t.Fatalf("reference: %v", err)
+	}
+	if filepath.Base(r.Model) != filepath.Base(path) || r.Pos != steps || len(r.Prompts) != len(prompts) {
+		t.Fatalf("reference %s is for %s, %d positions, %d prompts; this run is %s, %d, %d", in, r.Model, r.Pos, len(r.Prompts), path, steps, len(prompts))
+	}
+	for p := range prompts {
+		if !slices.Equal(r.Prompts[p], prompts[p]) {
+			t.Fatalf("reference prompt %d differs from this run's", p)
+		}
+	}
+	t.Logf("f32 reference read from %s (written on %s)", in, r.Arch)
+	return r.Logits, r.Toks
 }

@@ -403,3 +403,19 @@ batched step are on by default since 9e51f882. This is the served confirmation s
 - **Exploratory smoke by day** (not a result): 2 clients, one cell each arm, identical content in 12 of 12 turns,
   aggregate 56.2 → 69.3 tok/s.
 - Estimate about 12 minutes; queued at 25.
+
+**F3′ amendment (written 2026-10-04, before the 1.5B run): the f32 reference from nobara.** The Mac's fit guard
+refuses the 1.5B's f32 model (7.7 GB against a 5.9 GB budget with the owner's apps open), and bypassing it on this Mac is
+a standing no.
+- **The reference only:** the prompts, the f32 model's greedy continuation, and its logits at every position. It is
+  generated on nobara's CPU (`TestW8F3Reference_write`, decoder, tagged; amd64), copied to the Mac, and read through
+  `GOINFER_W8_F3_REF_IN`. The test checks the file's checkpoint name, prompts (token for token) and position count
+  against its own.
+- **Every graded arm still runs on the Mac:** the CPU int8int8 f16-KV reference arm, Metal native int8, and the
+  reported arms.
+- **Why the bar is unaffected:** the f32 forward is bit-identical within an architecture and differs across amd64 and
+  arm64 only by fused multiply-adds (`cpu-reference-arch-scoped`), orders of magnitude below the int8 noise this KL
+  measures.
+- **The file path checked by day on the 0.5B:** a reference written on the Mac and read back reproduces the in-process
+  run exactly (0.098462, 0.066667, 0.677×).
+- **Bar and rule unchanged.**
