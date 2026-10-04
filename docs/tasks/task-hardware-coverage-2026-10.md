@@ -1,6 +1,6 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, first run pending) are set up; H2 on Metal and WebGPU and H6 are not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU and CUDA) and H3 are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H2 on Metal and WebGPU and H6 are not started; H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
 > 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
 > H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** H2 on Metal and one sweep on other hardware are missing, and with H4 parked the second can only be met by a different route (see H4).
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).

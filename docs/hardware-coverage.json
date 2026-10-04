@@ -223,9 +223,25 @@
      "goinfer": "4ad711d0",
      "aikit": "v1.54.0",
      "gate": "aikit linalg arm64 test binary, each of the 212 tests in its own process: 210 ok, 1 SIGILL (TestActGroup_row4KernelMatchesReference called the row4 SDOT kernel directly; now guarded), 1 timeout (TestFMAPeak_empirical, a throughput measurement that does not finish under emulation); plus aikit's CI step -tags aikit_nodotprod on its native arm64 runner (green on 6b137b4)"
+    },
+    {
+     "machine": "GitHub ubuntu-24.04-arm runner: Neoverse-N2 (has DotProd, forced off by aikit_nodotprod)",
+     "date": "2026-10-04",
+     "how": "forced",
+     "goinfer": "9f52ad53",
+     "aikit": "v1.55.0",
+     "gate": "ci job root-forced-fallbacks-arm64 (run 37236789252): go test -tags 'goinfer_testhooks aikit_nodotprod' -run 'Parity|Forward|ForcedFallbacks' ./decoder/, AIKIT_EXPECT_FORCED=nodotprod: 51 passed, 44 skipped (real-checkpoint assets absent on the runner), 0 failed; TestForcedFallbacks_expected passed (a tag that forced nothing would fail it)"
+    },
+    {
+     "machine": "qemu-aarch64-static 10.2.2 user-mode emulation of -cpu cortex-a72 (no DotProd) on nobara-pc",
+     "date": "2026-10-04",
+     "how": "emulated",
+     "goinfer": "37694114",
+     "aikit": "v1.55.0",
+     "gate": "goinfer decoder test binary cross-compiled GOARCH=arm64 with -tags 'goinfer_testhooks aikit_nodotprod': TestForcedFallbacks_expected and TestInt4_forwardParity pass (21 s). The whole decoder suite is not viable this way: 6 tests passed in 10 minutes"
     }
    ],
-   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it. Run 2026-10-04 under QEMU, which executes a core without DotProd for real (a forced tag on DotProd hardware cannot reach a test that calls an SDOT kernel directly); goinfer's own suite has not been run this way, the decoder tests being too slow under emulation."
+   "notes": "H1.4 (QEMU -cpu cortex-a72) and H1.3 reach it. Run 2026-10-04 under QEMU, which executes a core without DotProd for real (a forced tag on DotProd hardware cannot reach a test that calls an SDOT kernel directly); goinfer's decoder suite is far too slow under emulation (6 tests in 10 minutes), so goinfer runs the kernels through the forced-tag CI job instead, which cannot reach an unguarded DotProd instruction outside the dispatched kernels. H1.4 is done as that job; a QEMU leg for aikit's linalg in aikit's CI is the unbuilt remainder."
   },
   {
    "id": "cuda-sm-shape",
