@@ -823,6 +823,42 @@ expert. The whole model does not fit this Mac. A slice is a fidelity fixture: no
 | Rule | **Passes:** expert-major stays the default, and this test is its gate of record. **Fails** (any criterion beyond 1.5× or the flips bound): **killed**, the default goes back to row by row (`GOINFER_MOE_EXPERT_MAJOR` default off) until the defect is found. A ratio in (1.25, 1.5] with the flips bound met: **parked**, to the owner. |
 | Reported | Every per-layer ratio, per M; the flips as fractions; seq's own top-1 agreement with row and major on the last position. Not covered: sigmoid and group-limited routing (no such real MoE fits here), multi-model. |
 
+### D-G01: PASSES, graded 2026-10-04 (expert-major MoE prefill stays the default; this is its gate of record)
+
+Run: the Mac's night queue, 2026-10-03 23:01–23:05 PDT, `run-dg01-grade.sh` from the tagged binary pinned at `ec3cafd1`, on
+the Qwen1.5-MoE 4-layer slice (`model.safetensors` sha256 `7e48d607…`), 10 set-A prompts at M = 64 and 512 (logs
+`~/goinfer-logs/metal-audit-2026-10/dg01/`).
+
+**The mutations, run first: all three FAIL**, so the gate is evidence. K/V ratio against the row baseline and KL ratio, at
+M = 64 / 512:
+
+| mutation | K/V, worst layer | KL | flips over the bound |
+|---|---|---|---|
+| `topk-renorm` (scatter weights) | 12.7x / 13.8x | 60.6x / 146.4x | yes / yes |
+| `rank-swap` (route order) | 3.72x / 3.67x | 16.1x / 17.8x | yes / yes |
+| `shared-off` | 16.7x / 18.0x | 90.6x / 149.0x | yes / yes |
+
+**The gate: PASSES at both M.**
+
+| | M = 64 | M = 512 |
+|---|---|---|
+| flips against seq (row / major) | 535 / **507** of 2,560 (20.9% / 19.8%); bound 581 | 4,629 / **4,476** of 20,480 (22.6% / 21.9%); bound 4,765 |
+| K/V relative L2, major ÷ row, layers 1–3 | 1.011 / 1.003 / 0.985 | 1.017 / 1.001 / 0.984 |
+| last-position KL, major ÷ row | 0.931 | **1.217** |
+| top-1 against seq (row / major) | 4 / 5 of 10 | 9 / 10 of 10 |
+
+- **Expert-major is as close to the sequential path as the f16 lane's own MoE baseline:** it flips fewer expert sets and
+  its K/V is level with the row arm's.
+- **The closest reading is M = 512's KL ratio, 1.217 against the 1.25 bar.** It passes, with a margin of under 3%, on
+  ten prompts.
+- **Both arms flip about a fifth of the (token, layer) expert sets against decode.** That is the f16 lane, not expert-major:
+  top-4 of 60 is full of near-ties. It is what the "flips" bound is measured against, not a defect.
+- **Not covered:** sigmoid and group-limited routing (no such MoE fits this Mac), and an accumulation-order change of a
+  few ulps (the gate reads gross defects, as the mutations show).
+
+So `GOINFER_MOE_EXPERT_MAJOR` stays default on, and `TestDG01_expertMajorMoEPrefill` is the gate the MoE prefill builds
+(D-B02, D-P03, D-P01) grade against.
+
 ### D-B01: built, off by default; pre-registration (written 2026-10-03, before any graded run; owner: "go on D-B01")
 
 **What is built.** A Gated-DeltaNet hybrid (Qwen3.5) can take the batched prefill pass behind `dnetPrefillOn`

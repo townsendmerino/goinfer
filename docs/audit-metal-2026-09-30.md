@@ -1732,6 +1732,8 @@ measurement for a Metal batched DeltaNet exists in the snapshot. `ForwardN` also
 
 #### D-G01 [G] Major: expert-major MoE prefill is default ON on a gate that cannot see it
 
+**Status, 2026-10-04: CLOSED, the gate exists and passes.** `TestDG01_expertMajorMoEPrefill` on a real Qwen1.5-MoE layer slice: expert-major against the f16 lane's row-by-row MoE, flips, per-layer K/V and KL; all three planted defects fail it; the shipped path passes at M = 64 and 512 (docs/tasks/task-metal-audit-2026-10.md, "D-G01: PASSES").
+
 **Claim.** The §3.2 pooled gate that licenses the batched f16 lane ran on the dense S model
 (`metal/backend.go:611-618`, "S model, K=64/128"; Sep 12 `:85` names it a dense 1.5B). The MoE branch inherits the same
 switch. `metal/prefill.go:1312` tests only for `"0"`, so expert-major is ON whenever the lane is.
