@@ -1218,6 +1218,12 @@ B >= 2 (`mc3AdjRowsOn`, on).
   does not run, and the cell is a do-nothing control.
 - **Left open:** calibrateRows still prices per-row as B separate GEMVs. With the cheaper adjacent form per-row may win
   at B = 3-4 too (the kernel read 1.13-1.15x there); re-pricing it is a separate change.
+- **The follow-up, read and PARKED 2026-10-04 (owner: "E-P02 follow-up").** calibrateRows timed the adjacent form
+  itself at each B against the fragment; on the 7B it then took qkv and gate|up per-row up to B = 3 (from 2). The whole
+  step (`TestEP02_stepAB`, 7 reps alternated, GPU time): B = 2 1.073 (7 of 7, unchanged: adjacent on both pricings),
+  **B = 3 1.000 (4 of 7)**, B = 4 0.999 (2 of 7, the fragment on both, a control). The kernel's 1.13x at B = 3 does not
+  survive into the step. In the owner's park zone, and it would add calibration time to every load, so the code was not
+  kept; the pricing stays B separate GEMVs.
 - The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
 
 ### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
@@ -1773,3 +1779,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-04: **M-11's cheap half shipped: async phase 2** (1.132x a token on M26); C-B03's fence built, gated bit-exact
   and never stale, and off (0.878x / 0.848x). Lever 3's prefetch the same (0.894x / 0.947x). Record:
   `docs/tasks/task-m26-mac-2026-10.md`, "Decode levers".
+- 2026-10-04: **E-P02's calibration follow-up parked**: adjacent per-row up to B = 3 on the 7B, whole step 1.000 at B = 3.
+  Not kept.
