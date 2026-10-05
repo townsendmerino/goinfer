@@ -69,8 +69,7 @@ type moeExpertMajorState struct {
 	mqAll, mScAll, wgtAll     Buffer   // per-row scratch: mqAll[row]=quantized activation, mScAll[row]=its scale, wgtAll[row*topK+j]=routing weight
 	scratch                   []Buffer // rank-indexed [M,hidden] accumulators, len topK
 	hostIdx                   []uint32 // [M*topK], this chunk's routed expert ids
-	hostWgt                   []float32
-	emSlot                    Buffer // 1-element: the CURRENTLY-resident expert's cache slot, for gemv_w4a8_moe's idx[0]
+	emSlot                    Buffer   // 1-element: the CURRENTLY-resident expert's cache slot, for gemv_w4a8_moe's idx[0]
 }
 
 // prefillMoEExpertMajorEligible reports whether layer Ly can take the expert-major path at all — checked ONCE
@@ -100,6 +99,7 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	var scratch []Buffer
 	af := func(n int) Buffer { b := r.af(n); scratch = append(scratch, b); return b }
 	ai := func(n int) Buffer { b := r.ai(n); scratch = append(scratch, b); return b }
+	au := func(n int) Buffer { b := r.au32(n); scratch = append(scratch, b); return b }
 	defer func() {
 		for _, b := range scratch {
 			r.dev.ReleaseBuf(b)
@@ -109,17 +109,18 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	st.mqAll = ai(M * hidden / 4)
 	st.mScAll = af(M)
 	st.wgtAll = af(M * r.topK)
+	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop (audit R-22)
 	st.emSlot = r.au32(1)
 	st.scratch = make([]Buffer, r.topK)
-	zero := make([]float32, M*hidden)
 	for j := range st.scratch {
 		st.scratch[j] = af(M * hidden)
-		if e := gpu.Upload(st.scratch[j], zero); e != nil {
+		// The expert kernel ACCUMULATES into these, so they must start at zero. Stream-ordered on r.stream, where every kernel below launches: no host
+		// copy of a zero slice (46 MB per layer per chunk at M=512) and no context sync. The buffer is fresh, so there is no earlier reader to wait for.
+		if e := r.stream.ZeroAsync(st.scratch[j], M*hidden*4); e != nil {
 			return e
 		}
 	}
 	st.hostIdx = make([]uint32, M*r.topK)
-	st.hostWgt = make([]float32, M*r.topK)
 
 	// --- Phase 1: route every row, storing its quantized activation directly into mqAll/mScAll (r.rms and the
 	// router GEMV both take explicit destination buffers, so this is a plain retarget, no extra copy). ---
@@ -139,23 +140,20 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 			return e
 		}
 		if e := r.launch(r.fRoute, onecfg(1, 0),
-			Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
+			Arg(r.rLogits), Arg(Ly.routerB), Arg(idxAll.At(m*r.topK*4)), Arg(st.wgtAll.At(m*r.topK*4)),
 			gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(r.moeSigmoid),
 			gpu.ArgValue(r.moeNormTopK), gpu.ArgValue(r.moeScale),
 			gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup))); e != nil {
 			return e
 		}
-		if e := r.stream.Sync(); e != nil {
-			return e
-		}
-		if e := gpu.Download(r.rIdx, st.hostIdx[m*r.topK:(m+1)*r.topK]); e != nil {
-			return e
-		}
-		if e := gpu.Download(r.rWgt, st.hostWgt[m*r.topK:(m+1)*r.topK]); e != nil {
-			return e
-		}
+		// No per-row Sync and Downloads (audit R-22). Each row's route output lands in its own slice of idxAll/wgtAll; the loop is launches only, in
+		// stream order, and r.rLogits (the one scratch every row reuses) is written by row m's router GEMV and read by row m's route kernel before row
+		// m+1's GEMV overwrites it, exactly as before. The weights never come to the host: the host only buckets by expert id.
 	}
-	if e := gpu.Upload(st.wgtAll, st.hostWgt); e != nil {
+	if e := r.stream.Sync(); e != nil {
+		return e
+	}
+	if e := gpu.Download(idxAll, st.hostIdx); e != nil {
 		return e
 	}
 

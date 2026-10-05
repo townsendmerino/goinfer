@@ -941,6 +941,14 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
 
 ### R-22 · CUDA expert-major MoE prefill: routing round-trips through the host one row at a time
 
+> **Status 2026-10-05: fixed (the round trip and both zero uploads); the g4x2All fold-into-rank-0 variant was not taken.** The route kernel now writes each row's expert ids and weights into per-chunk device arrays
+> (`idxAll`, `wgtAll`), the row loop is launches only, and the host reads the ids back once after one `stream.Sync` per layer per chunk; the weights never leave the device. The rank accumulators and Gemma 4's `g4x2All` are
+> zeroed with `ZeroAsync` instead of a pageable zero upload. **Not taken:** folding the ranks into `rankScratch[0]` instead of zeroing `g4x2All`, because `0 + x` and `x` differ in the sign of a negative zero, so "bit-identical"
+> would have needed its own proof for one alloc and one memset. Gates: `TestMoEExpertMajorCUDA_bitIdentical` (qwen3moe-tiny k=2 and k=3) and `TestMoEExpertMajorGemma4CUDA_bitIdentical` compare the new path against the unchanged
+> per-row path on every logit, with non-vacuity counters: 0 differ. **Shown red** by pointing the route output at row 0 (generic and Gemma 4 weights), and by removing each of the three zeroings. Full `cuda` suite: 388 pass, 0 fail.
+> **Speed, exploratory only** (`docs/measurements/r22-cuda-moe-route-roundtrip-2026-10-05.txt`): real gemma4-26b, M=512, 3 runs per arm in order-balanced separate processes, old 18.27 ms/token mean, new 16.03, every new run
+> faster than every old run (about 12% less time per token). Not pre-registered and not a result; the served read and other M go to a night job if a number is wanted.
+
 - **What happens:** for each row, `stream.Sync`, `Download(rIdx)`, `Download(rWgt)`; after the loop, one
   `Upload` of all the weights (`cuda/moe_expert_major.go`, and the Gemma 4 version). The host never reads the
   weights; it only uploads them back.

@@ -43,6 +43,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 	var scratch []Buffer
 	af := func(n int) Buffer { b := r.af(n); scratch = append(scratch, b); return b }
 	ai := func(n int) Buffer { b := r.ai(n); scratch = append(scratch, b); return b }
+	au := func(n int) Buffer { b := r.au32(n); scratch = append(scratch, b); return b }
 	defer func() {
 		for _, b := range scratch {
 			r.dev.ReleaseBuf(b)
@@ -53,20 +54,21 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 	mqAll := ai(M * hidden / 4)
 	mScAll := af(M)
 	wgtAll := af(M * r.topK)
+	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop (audit R-22)
 	emSlot := r.au32(1)
 	rankScratch := make([]Buffer, r.topK) // this layer's Σ_j wgt[j]·expertDown_j(...), per rank
-	zero := make([]float32, M*hidden)
 	for j := range rankScratch {
 		rankScratch[j] = af(M * hidden)
-		if e := gpu.Upload(rankScratch[j], zero); e != nil {
+		// The expert kernel ACCUMULATES into these, so they must start at zero: stream-ordered on r.stream, no host zero slice (46 MB per layer per
+		// chunk at M=512 on the real model) and no context sync. The buffer is fresh, so there is no earlier reader to wait for.
+		if e := r.stream.ZeroAsync(rankScratch[j], M*hidden*4); e != nil {
 			return e
 		}
 	}
 	hostIdx := make([]uint32, M*r.topK)
-	hostWgt := make([]float32, M*r.topK)
 	nullBias := ArgNull()
 
-	// --- Phase 1: per row, the dense branch (-> g4x1All) and the router+MoE-input-norm (-> hostIdx/
+	// --- Phase 1: per row, the dense branch (-> g4x1All) and the router+MoE-input-norm (-> idxAll/
 	// hostWgt, mqAll/mScAll). Identical arithmetic to gemma4MoeMLPPre, only the destinations differ. ---
 	for m := 0; m < M; m++ {
 		if e := ctx.Err(); e != nil {
@@ -101,30 +103,26 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 			Arg(Ly.routerW), Arg(r.g4rn), gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
 			return e
 		}
-		if e := r.launch(r.fRoute, onecfg(1, 0), Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
+		if e := r.launch(r.fRoute, onecfg(1, 0), Arg(r.rLogits), Arg(Ly.routerB), Arg(idxAll.At(m*r.topK*4)), Arg(wgtAll.At(m*r.topK*4)),
 			gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)),
 			gpu.ArgValue(float32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
 			return e
 		}
 		if e := r.launch(r.fScaleWgt, LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(r.topK), BlockY: 1, BlockZ: 1},
-			Arg(r.rWgt), Arg(r.rIdx), Arg(Ly.perExpertScaleB), gpu.ArgValue(int32(r.topK))); e != nil {
+			Arg(wgtAll.At(m*r.topK*4)), Arg(idxAll.At(m*r.topK*4)), Arg(Ly.perExpertScaleB), gpu.ArgValue(int32(r.topK))); e != nil {
 			return e
 		}
-		if e := r.stream.Sync(); e != nil {
-			return e
-		}
-		if e := gpu.Download(r.rIdx, hostIdx[m*r.topK:(m+1)*r.topK]); e != nil {
-			return e
-		}
-		if e := gpu.Download(r.rWgt, hostWgt[m*r.topK:(m+1)*r.topK]); e != nil {
-			return e
-		}
+		// No per-row Sync and Downloads (audit R-22): this row's route output and per-expert scale sit in its own slice of idxAll/wgtAll; the loop
+		// is launches only, in stream order. The weights never come to the host: the host only buckets by expert id.
 		// xe = preFFNNorm2(h), the MoE branch's own input norm — straight into this row's slot.
 		if e := r.rms(xm, Ly.g4preFFN2, mqAll.At(m*hidden/4*4), mScAll.At(m*4)); e != nil {
 			return e
 		}
 	}
-	if e := gpu.Upload(wgtAll, hostWgt); e != nil {
+	if e := r.stream.Sync(); e != nil {
+		return e
+	}
+	if e := gpu.Download(idxAll, hostIdx); e != nil {
 		return e
 	}
 
@@ -186,7 +184,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 
 	// --- Phase 3: fold every row's topK contributions into g4x2All, IN RANK ORDER. ---
 	g4x2All := af(M * hidden)
-	if e := gpu.Upload(g4x2All, zero); e != nil {
+	if e := r.stream.ZeroAsync(g4x2All, M*hidden*4); e != nil { // stream-ordered, like rankScratch; the fold below adds each rank into it
 		return e
 	}
 	for j := 0; j < r.topK; j++ {
