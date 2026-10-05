@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — WebGPU batched prefill reuses each layer's buffers and quantizes each input once (audit R-25)
+
+The batched prefill created fresh storage buffers for every intermediate of every layer and held them all until the pass finished, and wgpu zero-filled each one before the kernels overwrote it. Each layer now reuses the previous layer's buffers of the same
+size, so the pass holds one layer's intermediates instead of all of them (on internlm2-1.8B, 87 MB instead of 2.09 GB at 512 tokens, computed from the buffer sizes). q, k and v now share one quantization of their input, and gate and up another.
+**Bit-identical:** logits and K/V against fresh buffers and per-projection quantization, with and without q/k/v biases, and with every reused buffer poisoned first. **Speed:** in-process on the Mac's wgpu-on-Metal, internlm2-1.8B, 1.033x at 512
+tokens and 1.005x at 128 (7 of 7 reps each) for the buffer reuse; the shared quantization measured 1.002-1.004x. An in-process direction, not a served claim. Record: `docs/measurements/r25-webgpu-sharedquant-2026-10-05.txt`.
+
 ### Changed — CPU decode on a sliding-window model reads its window in place instead of copying it every token (audit R-12)
 
 On Gemma 2 and 3 and Cohere2, each decoded token copied every resident window row of K and V out of the ring into scratch, for every local layer: 2.46 ms of a 39.4 ms token on Gemma 3 1B at depth 900, and 31.7 ms of 201 ms (15.7%) on Gemma 2 2B at

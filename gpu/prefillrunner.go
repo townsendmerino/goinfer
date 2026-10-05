@@ -562,9 +562,51 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	// VRAM exhaustion is an error the caller falls back on rather than a panic or a
 	// downstream nil-buffer deref.
 	var buildErr error
+	// R-25 (docs/tasks/task-recompute-audit.md): a layer's buffers are dead once the layer is encoded (the residual
+	// stream is updated in place, K/V are copied into the cache), so each layer recycles the one before it: storF hands
+	// out a free buffer of the same size before it creates one. A recycled buffer was written before, so wgpu does not
+	// zero-fill it again, and the pass holds one layer's intermediates instead of every layer's. The queue orders the
+	// dispatches, so a later layer's writes follow the earlier layer's reads. prefillBufFresh (tests only) restores a
+	// fresh buffer per call; prefillBufPoison (tests only) overwrites every recycled buffer with NaN bytes first.
+	free := map[int][]*wgpu.Buffer{}
+	var layerBufs []*wgpu.Buffer
+	var poison *wgpu.Buffer
+	recycle := func() {
+		for _, b := range layerBufs {
+			n := int(b.GetSize() / 4)
+			free[n] = append(free[n], b)
+		}
+		layerBufs = layerBufs[:0]
+	}
 	storF := func(n int) *wgpu.Buffer {
 		if buildErr != nil {
 			return nil
+		}
+		if l := free[n]; !prefillBufFresh && len(l) > 0 {
+			b := l[len(l)-1]
+			free[n] = l[:len(l)-1]
+			if prefillBufPoison {
+				if poison == nil || poison.GetSize() < uint64(n*4) {
+					fill := make([]uint32, n)
+					for i := range fill {
+						fill[i] = 0xFFFFFFFF
+					}
+					p, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(fill), Usage: wgpu.BufferUsageCopySrc})
+					if e != nil {
+						buildErr = e
+						return nil
+					}
+					keepBuf(p)
+					poison = p
+				}
+				if e := enc.TryCopyBufferToBuffer(poison, 0, b, 0, uint64(n*4)); e != nil {
+					buildErr = e
+					return nil
+				}
+			}
+			layerBufs = append(layerBufs, b)
+			prefillBufReused.Add(1)
+			return b
 		}
 		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 		if e != nil {
@@ -572,6 +614,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 			return nil
 		}
 		keepBuf(b)
+		layerBufs = append(layerBufs, b)
 		return b
 	}
 	uni := func(v []uint32) *wgpu.Buffer {
@@ -887,6 +930,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	}
 	pt = c.prefillProfTic()
 	for i := range m.Layers {
+		recycle() // the previous layer's buffers back to the free list (xd is not one: it is created above, outside storF)
 		lw := &m.Layers[i]
 		xn := rmsB(xd, lw.Attn.Norm.buf)
 		profBoundary(profNormsRope)
@@ -1021,3 +1065,11 @@ var prefillQuantPerProj = false
 
 // prefillSharedQuants counts the quantizations sharedQ shared across projections (a test reads it to see R-25 ran).
 var prefillSharedQuants atomic.Int64
+
+// prefillBufFresh and prefillBufPoison are tests-only switches on the pass's buffer recycling (R-25, storF): fresh
+// buffers for every call, as before, and NaN-filled recycled buffers. prefillBufReused counts recycled buffers.
+var (
+	prefillBufFresh  = false
+	prefillBufPoison = false
+	prefillBufReused atomic.Int64
+)

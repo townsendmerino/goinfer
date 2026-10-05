@@ -1035,7 +1035,7 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
   before its first use. That is implicit zeroing of buffers the kernels then fully overwrite: R-11's class,
   depending on how wgpu-native tracks initialization.
 
-**Status, 2026-10-05: the repeated quantization FIXED (bit-identical), speed-neutral on the Mac; stays on (owner: "it stays on").** `tiledProjB` is now
+**Status, 2026-10-05: both halves FIXED (bit-identical). The repeated quantization is speed-neutral on the Mac and stays on (owner: "it stays on"); the buffer recycling is 1.033 at 512 tokens (below).** `tiledProjB` is now
 `quantB` then `projQB` (`gpu/prefillrunner.go`); `sharedQ` quantizes `xn` once for q/k/v and `xn2` once for gate/up
 when their K match (always here), and `prefillQuantPerProj` (tests only) restores a quantization each.
 - **Gate:** `TestPrefillLastW8A8_sharedQuantBitIdentical`: last-row logits and every K/V cache element bit-identical to
@@ -1047,7 +1047,22 @@ when their K match (always here), and `prefillQuantPerProj` (tests only) restore
   layer do not show. The Qwen2 1.5B could not be timed here: this backend declines the batched prefill for q/k/v bias
   (Vulkan only), so on the Mac R-25's bias path runs only in the synthetic gate. Raw:
   `docs/measurements/r25-webgpu-sharedquant-2026-10-05.txt`.
-- **Not done:** the implicit-zeroing half, which depends on wgpu-native's initialization tracking and was not measured.
+- **The implicit-zeroing half: FIXED 2026-10-05 (bit-identical), 1.033 at 512 tokens; on by default.** Every layer's
+  buffers are dead once the layer is encoded (`xd` is updated in place, K/V are copied into the cache), so `storF` now
+  hands out the previous layer's buffer of the same size before it creates one (`recycle()` at the top of the layer
+  loop). A reused buffer is not zero-filled again, and the pass holds one layer's intermediates instead of every
+  layer's: on internlm2-1.8B that is 87 MB instead of 2.09 GB at 512 tokens, 22 MB instead of 522 MB at 128
+  (computed from the buffer sizes, not measured). `prefillBufFresh` (tests only) restores a fresh buffer per call;
+  `prefillBufPoison` fills every recycled buffer with 0xFF bytes first.
+  - **Gate:** `TestPrefillLastW8A8_bufferRecycleBitIdentical`, 3 synthetic layers with and without q/k/v biases: logits
+    and every K/V element bit-identical fresh, recycled, and recycled-and-poisoned, 38 buffers recycled. Mutations: a
+    `recycle()` moved mid-layer (q and ctxv become one buffer) fails it through wgpu validation; a quantize shader that
+    leaves each row's last word unwritten (reliance on zero-fill) fails it on the logits. A list never cleared between
+    layers passes, and is harmless: LIFO pops over identical layers never hand one buffer to two live values. The gpu
+    suite passes (203 passed, 60 skipped).
+  - **Speed** (`TestPrefill_sharedQuantAB` with `GOINFER_R25_LEVER=buf`, by day, in-process, both directions resolved):
+    fresh ÷ recycled **1.005** at 128 tokens and **1.033** at 512, 7 of 7 reps above 1 at each. Raw: the second section of
+    `docs/measurements/r25-webgpu-sharedquant-2026-10-05.txt`.
 
 ### Checked and necessary, so not re-reported
 
@@ -1072,6 +1087,6 @@ Status 2026-10-05, after the first pass through the list:
    - R-12 (CPU Gemma 2/3 at depth: the window copied out of the ring every token);
    - R-13 and R-14 together (CPU activation quantization; R-13(b) needs an aikit `MatmulBTW4A8F16Pre` entry, so an aikit release);
    - R-15 (int8 KV dequantizes the whole history every token; opt-in `--kv i8`, so lower priority);
-   - R-17 (small CPU duplicates) and R-25 (WebGPU batched prefill quantizes per projection), as they come up.
+   - R-17 (small CPU duplicates), as it comes up. R-25 is done: both halves shipped 2026-10-05.
 
 <!-- doc-reviewed: 2026-10-05 -->

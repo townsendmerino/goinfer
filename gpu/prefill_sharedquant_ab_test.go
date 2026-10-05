@@ -21,7 +21,8 @@ import (
 // quantization per projection (prefillQuantPerProj, as it was) against sharedQ's one per input (q/k/v of xn, gate/up of
 // xn2), on one loaded model (GOINFER_RESIDENT_GGUF, else the 1.5B), at P = 128 and 512 (GOINFER_R25_PS), whole
 // PrefillLast wall time, arms alternated rep by rep after a warm-up, last-row logits compared every run. By day,
-// in-process, exploratory.
+// in-process, exploratory. GOINFER_R25_LEVER=buf times R-25's second half instead: fresh buffers for every call
+// (prefillBufFresh, as it was) against each layer recycling the one before it; "old" is then the fresh arm.
 //
 //	GOINFER_R25_AB=1 go test -tags 'gpu goinfer_testhooks' -count=1 -run '^TestPrefill_sharedQuantAB$' -v ./gpu/
 func TestPrefill_sharedQuantAB(t *testing.T) {
@@ -48,7 +49,13 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 	if !ok {
 		t.Skip("resident forward does not implement Prefiller")
 	}
-	defer func() { prefillQuantPerProj = false }()
+	setOld := func(old bool) { prefillQuantPerProj = old }
+	oldName, newName := "per-projection", "shared"
+	if os.Getenv("GOINFER_R25_LEVER") == "buf" {
+		setOld = func(old bool) { prefillBufFresh = old }
+		oldName, newName = "fresh buffers", "recycled"
+	}
+	defer func() { prefillQuantPerProj, prefillBufFresh = false, false }()
 	hidden, _, _, _, _, _, _ := m.Dims()
 	Ps := []int{128, 512}
 	if v := os.Getenv("GOINFER_R25_PS"); v != "" {
@@ -80,7 +87,7 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 				order = []bool{false, true}
 			}
 			for _, perProj := range order {
-				prefillQuantPerProj = perProj
+				setOld(perProj)
 				st := time.Now()
 				lg, err := pf.PrefillLast(context.Background(), embs, 0)
 				if err != nil {
@@ -111,7 +118,7 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 			}
 			per += fmt.Sprintf(" %.3f", ratio[i])
 		}
-		fmt.Fprintf(os.Stderr, "[r25 %6.1fs] P=%d: per-projection %.2f ms, shared %.2f ms (medians of %d); RESULT per-projection / shared median %.3f, %d of %d reps above 1 (per rep%s)\n",
-			time.Since(t0).Seconds(), P, med(ms[true]), med(ms[false]), reps, med(ratio), above, reps, per)
+		fmt.Fprintf(os.Stderr, "[r25 %6.1fs] P=%d: %s %.2f ms, %s %.2f ms (medians of %d); RESULT %s / %s median %.3f, %d of %d reps above 1 (per rep%s)\n",
+			time.Since(t0).Seconds(), P, oldName, med(ms[true]), newName, med(ms[false]), reps, oldName, newName, med(ratio), above, reps, per)
 	}
 }
