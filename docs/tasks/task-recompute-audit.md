@@ -857,10 +857,17 @@ The input does not change between calls, and quantization is deterministic, so e
     The ~1.1 KB is `scoresBuf`'s per-token regrowth at ~275 keys; at real dims and depth it scales with the key count,
     and `ctx` with heads × head dim per attention layer.
   - The 41 forward goldens pass (refresh_parity_hashes, arm64); the full decoder suite passes.
-- **Not done:** the AV kernels writing straight into `ctx` (it leans on `MatmulAVAcc64`'s contract and changes Arm B's
-  structure), `deltaNetCore`'s per-call allocations, `moeOut` → `out`, postOnly's copy, Gemma 4's head gather/scatter,
-  and the logprobs scans (not bit-identical). Each is smaller still. No wall-clock A/B: by size these are well under
-  1% of a token, below CPU decode's run-to-run noise.
+- **Done 2026-10-05, the remainder's headline item: the AV kernels write straight into `ctx`.** `attendBatchedHeads` no longer copies a head's context out of scratch on its K=1 paths: the ungrouped path (a one-row tile) writes
+  `ctx[t0*qDim+qhead*hd:+hd]` directly (`MatmulAVAcc64` overwrites its destination, the R-11 contract), the grouped path (Arm A) writes `ctx[qh0*hd:+group*hd]` (the `[group, hd]` layout it was copied into), and Arm B scatters each
+  worker's dim slice into `ctx` instead of a combined scratch that was then copied (`groupCtxCombined` is gone). A tile of several rows keeps its scratch, because its `[kt, hd]` result is not contiguous in `ctx`.
+  Gates: `TestAttendBatchedHeads_ctxBitsUnchanged` hashes `ctx` for eight shapes (ungrouped serial and head fan-out, group 1, 4, 6 and 7, Arm A, Arm B with ragged key and dim splits) against values recorded from the code BEFORE
+  the change; the f64 kernels are bit-identical across architectures, and the same table holds on arm64 under QEMU (`-cpu max` with the NEON grouped kernels, and `cortex-a72`). Red under three plantings, one per site, and the
+  existing grouped-vs-ungrouped tests still pass. End to end, a throwaway hash of 48 decode steps of full logits on the real Qwen2.5 1.5B (depth 400) and Gemma 3 1B (depth 700) is identical between the pre-change build and this
+  one (`2cbaf241...` and `043db40e...`). Full `decoder` package: 1447 pass, and the one failure was the parity manifest, refreshed (64 goldens, 0 skipped).
+- **Not done, with the size of each (bytes per layer per token, from the code):** `moeMLP`'s `out` copied into the caller's buffer (`hidden` floats, 4 to 14 KB, behind a signature shared by five callers), postOnly's `copy(scr.norm, h)`
+  (`hidden` floats), `deltaNetCore`'s per-call `conv` allocation (`convDim` floats, about 32 KB on a 9B DeltaNet layer; the window keeps a reference to `mixed`, so it needs care), Gemma 4's head gather (a transposed V, not a copy that
+  can simply go), and the logprobs scans (not bit-identical). The change above removes up to `qDim` floats of copy per attention layer per token (about 14 KB, roughly 400 KB a token on a 28-layer 7B, tens of microseconds against
+  a 130 ms token); the rest are smaller still. **No wall-clock A/B: these are below CPU decode's run-to-run noise, and the claim is "less work, bit-identical", not a speedup.**
 
 ### R-18 · `pull` hashes every downloaded file twice
 

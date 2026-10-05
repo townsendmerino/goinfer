@@ -172,14 +172,15 @@ type headWorkerScratch struct {
 	//
 	// Arm B (attendGroupedLayer, forwardn.go): groupScores/groupCtx/
 	// groupAvAcc are each WORKER's own TEMP buffer for its key-range (QK) or
-	// dim-range (AV) slice; groupScoresCombined/groupCtxCombined, used only
-	// on pool[0], are the shared full-width [group,nKeys]/[group,hd]
-	// buffers every worker's slice is scatter-copied into (a plain byte
-	// copy at each worker's own disjoint offset — never summed, so this
-	// never reassociates a float add; see attendGroupedLayer's own doc).
-	groupScores, groupCtx                 []float32
-	groupAvAcc                            []float64
-	groupScoresCombined, groupCtxCombined []float32
+	// dim-range (AV) slice; groupScoresCombined, used only on pool[0], is the
+	// shared full-width [group,nKeys] buffer every worker's score slice is
+	// scatter-copied into (a plain byte copy at each worker's own disjoint
+	// offset — never summed, so this never reassociates a float add; see
+	// attendGroupedLayer's own doc). The context needs no combined buffer
+	// (R-17): each worker's dim slice is scattered straight into ctx.
+	groupScores, groupCtx []float32
+	groupAvAcc            []float64
+	groupScoresCombined   []float32
 	// mmWS is this slot's private matmul Workspace, threshold pinned so high
 	// that MatmulBT through it is always SERIAL. The f32 attention path fans
 	// out over query heads (A3); MatmulBT ALSO fans out internally over its
@@ -369,11 +370,11 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 			p.groupCtx = make([]float32, c)
 			p.groupAvAcc = make([]float64, c)
 		}
-		// groupScoresCombined/groupCtxCombined (Arm B) are grown lazily inside
-		// attendGroupedLayer itself instead of here: their size depends on nKV,
+		// groupScoresCombined (Arm B) is grown lazily inside
+		// attendGroupedLayer itself instead of here: its size depends on nKV,
 		// which headWorkerPool's callers don't thread through this signature,
 		// and attendGroupedLayer already has it captured. Only pool[0] (the
-		// "leader" slot — see headWorkerScratch's own doc) ever uses them.
+		// "leader" slot — see headWorkerScratch's own doc) ever uses it.
 	}
 	return s.headPool[:n]
 }

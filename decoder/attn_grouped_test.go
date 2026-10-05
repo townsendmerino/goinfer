@@ -155,7 +155,6 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 		// the full-width combined buffers every worker's slice scatters into
 		// — see headWorkerScratch's own doc. Only slot 0 needs them.
 		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
-		pool[0].groupCtxCombined = make([]float32, hd*attnGroupedNEONSize)
 		return pool
 	}
 
@@ -207,7 +206,6 @@ func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
 			}
 		}
 		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
-		pool[0].groupCtxCombined = make([]float32, hd*attnGroupedNEONSize)
 		return pool
 	}
 

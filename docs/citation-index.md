@@ -87,8 +87,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:198` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1039` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:1571` | goinfer | `func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:1624` | goinfer | `if cache.treeMask != nil && !m.canBatchN(K) {` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:1574` | goinfer | `func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:1627` | goinfer | `if cache.treeMask != nil && !m.canBatchN(K) {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:167` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:780` | goinfer | `// constraint, so the slot is what gets to decide. Every other slot buffer follows from ` |
@@ -290,7 +290,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|decoder/resident_reuse.go:391` | goinfer | `func (m *Model) residentForgetIDs() {` |
 | `docs/audit-metal-2026-09-30.md|decoder/residentneed.go:61` | goinfer | `for l := range nLayers {` |
 | `docs/audit-metal-2026-09-30.md|decoder/residentneed.go:62` | goinfer | `if dnetOK && m.Qwen35LinearLayer(l) {` |
-| `docs/audit-metal-2026-09-30.md|decoder/scratch.go:232` | goinfer | `const prefillAttnScratchBudget = 256 << 20 // 256 MiB` |
+| `docs/audit-metal-2026-09-30.md|decoder/scratch.go:251` | goinfer | `const prefillAttnScratchBudget = 256 << 20 // 256 MiB` |
 | `docs/audit-metal-2026-09-30.md|decoder/serialize.go:1109` | goinfer | `// int4Scales writes an int4 scale array in the form this writer's version uses: binary1` |
 | `docs/audit-metal-2026-09-30.md|decoder/serialize.go:1738` | goinfer | `func (r *giwReader) int4Scales() []uint16 {` |
 | `docs/audit-metal-2026-09-30.md|decoder/serialize.go:1895` | goinfer | `r.recordF16(q4, f16)` |
@@ -784,7 +784,7 @@ supports.
 | `docs/queue-engineering.md|cuda/prefill.go:904` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:551` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:992` | goinfer | `// decodes garbage. The setup job's last statement returns r.setupErr, which BuildReside` |
-| `docs/queue-engineering.md|decoder/forwardn.go:1582` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `docs/queue-engineering.md|decoder/forwardn.go:1585` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:1350` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
@@ -845,7 +845,7 @@ supports.
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:118` | goinfer | `if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQu` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:195` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:300` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
-| `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:194` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
+| `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:213` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:155` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1454` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:337` | goinfer | `type Options struct {` |

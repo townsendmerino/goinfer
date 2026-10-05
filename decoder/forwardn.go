@@ -1150,14 +1150,24 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			// splitkv-attention.md:36's "split the independent axis" principle).
 			// Measured 1.81x at depth 130, 2.39x at depth 8192 (aikit
 			// MatmulAVAcc64_ABBench).
-			if useAcc64 {
+			//
+			// R-17: a one-row tile (every K=1 decode) writes this head's context straight into ctx. MatmulAVAcc64 OVERWRITES its destination, and this head's hd
+			// floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work there. A tile of several rows has a
+			// [kt,hd] result that is NOT contiguous in ctx (row stride qDim), so it keeps the scatter.
+			direct := useAcc64 && kt == 1
+			if direct {
+				b := t0*qDim + qhead*hd
+				linalg.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
+			} else if useAcc64 {
 				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
 			} else {
 				mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
 			}
-			for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
-				b := (t0+i)*qDim + qhead*hd
-				copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
+			if !direct {
+				for i := range kt { // scatter this tile's ctx_head into ctx[K,qDim]
+					b := (t0+i)*qDim + qhead*hd
+					copy(ctx[b:b+hd], ch[i*hd:i*hd+hd])
+				}
 			}
 		}
 	}
@@ -1222,10 +1232,10 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				clear(rowS[:nKeys])
 			}
 		}
-		gCtx := ws.groupCtx[:group*hd]
+		// R-17: MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx (the same layout), so it
+		// writes straight into ctx; the scratch gCtx and the copy are gone.
 		gAvAcc := ws.groupAvAcc[:group*hd]
-		linalg.MatmulAVAcc64Group(gScores, vals, gCtx, gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
-		copy(ctx[qh0*hd:qh0*hd+group*hd], gCtx)
+		linalg.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
 		atomic.AddInt64(&attnGroupedRuns, 1)
 	}
 	// attnGroupedOK is this call's eligibility for the grouped path — checked
@@ -1311,11 +1321,8 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom (R-17)
 			leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
 		}
-		if c := nKV * group * hd; cap(leader.groupCtxCombined) < c {
-			leader.groupCtxCombined = make([]float32, c)
-		}
 		fullScores := leader.groupScoresCombined[:nKV*group*nKeys]
-		fullCtx := leader.groupCtxCombined[:nKV*group*hd]
+		fullCtx := ctx[:nKV*group*hd] // R-17: kv head kvh's group is ctx[kvh*group*hd:(kvh+1)*group*hd], the layout the old combined scratch was copied into at the end
 
 		runSplitAligned(splitWorkers, nKeys, attnGroupedNEONBlock, func(w, lo, hi int) {
 			ws := &pool[w]
@@ -1407,10 +1414,6 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			}
 		})
 
-		for kvh := range nKV {
-			qh0 := kvh * group
-			copy(ctx[qh0*hd:qh0*hd+group*hd], fullCtx[kvh*group*hd:(kvh+1)*group*hd])
-		}
 		atomic.AddInt64(&attnGroupedRuns, int64(nKV))
 	}
 

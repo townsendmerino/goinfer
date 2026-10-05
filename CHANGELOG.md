@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — decode attention writes each head's context straight into `ctx` (audit R-17, the remainder's main item)
+
+`attendBatchedHeads` computed a head's `scores·V` into scratch (`ch`, the grouped `gCtx`, Arm B's combined buffer) and then copied it into `ctx`, though `MatmulAVAcc64` and `MatmulAVAcc64Group` overwrite a contiguous destination and the head's slice of
+`ctx` is contiguous on every K=1 path. They now write into `ctx` directly (the multi-row tile keeps its scratch: its result is not contiguous in `ctx`), and Arm B's `groupCtxCombined` is gone. Bit-identical: a hash of `ctx` for eight shapes against
+values recorded before the change, the same table on amd64 and on arm64 under QEMU (the NEON grouped kernels included), red under a planted bug at each site; and 48 decode steps of full logits on the real Qwen2.5 1.5B and Gemma 3 1B equal
+between the pre-change build and this one. It removes up to about 14 KB of copying per attention layer per token on a 7B, tens of microseconds against a 130 ms token, so there is no speed claim. The other items R-17 listed are each smaller and were
+left, with their sizes in `docs/tasks/task-recompute-audit.md`.
+
 ### Changed — int8-KV decode widens its history on all cores instead of one (audit R-15)
 
 With `--kv i8` every decoded token widens every stored K and V row of every global layer (and a ring layer's window) back to f32 in front of the attention, on a single thread: 17.4 ms of an 80.5 ms token on Qwen2.5 1.5B at depth 2000,
