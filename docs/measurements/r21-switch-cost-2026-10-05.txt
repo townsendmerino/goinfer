@@ -1,0 +1,6 @@
+# R-21 item 3 (docs/tasks/task-recompute-audit.md): the cost of a switch between one-sequence and batched decode on Metal
+# TestR21_switchCost, in-process, by day, exploratory. MacBook Pro M1 Pro 16 GB, macOS 26.6.2, tree 17f5b54d + the harness, qwen2.5-coder-0.5b-instruct-q4_k_m.gguf from ~/models at int4 (the 1.5B got only 1 of 2 KV slots from the memory guard on live memory), 2 KV slots filled to 256 tokens, 32-step blocks, 7 reps after a warm-up, block order rotated; load ~2.8, swap 4.2 GB used
+[r21-switch    6.9s] executor: steady batched 7.575 ms, steady one-seq 5.297 ms; alternating batched 7.787 ms (+0.212), one-seq 5.875 ms (+0.578)
+[r21-switch    6.9s] RESULT executor: a switch pair (one-seq -> batched -> one-seq) costs median 0.836 ms over the steady steps (per rep 0.845 0.617 1.027 0.836 0.643 0.993 0.572)
+[r21-switch   15.1s] chain: steady batched 7.543 ms, steady one-seq 5.046 ms; alternating batched 12.825 ms (+5.281), one-seq 5.928 ms (+0.882)
+[r21-switch   15.1s] RESULT chain: a switch pair (one-seq -> batched -> one-seq) costs median 6.044 ms over the steady steps (per rep 6.201 6.044 6.017 6.282 5.959 6.155 5.845)

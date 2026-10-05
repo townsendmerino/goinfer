@@ -894,9 +894,19 @@ measurements, not timed:
 - **The qGate K‖V copy: real, negligible.** `pCopyCols` copies the K‖V GEMM's output into `qkvF` in each full-attention
   layer of the Qwen3.5/3.6 and Qwen3-Next hybrids. On the Qwen3.5-9B that is 8 layers × 8 MB at M = 2048, about 64 MB
   per pass at the GPU's copy bandwidth, a fraction of a millisecond in a multi-second pass.
-- **`stopExec` in `forwardMultiInto`: cheaper than stated.** It is a no-op unless the one-sequence executor or chain is
-  running (`execReq` nil), so steady batched steps pay nothing. The cost is one stop and restart per switch between one
-  sequence and several, which serve does when a client joins or leaves, not per token.
+- **`stopExec` in `forwardMultiInto`: per switch, not per step; measured 2026-10-05.** It is a no-op unless the
+  one-sequence executor or chain is running (`execReq` nil), so steady batched steps pay nothing. A switch pays it, which
+  serve does when a client joins or leaves, not per token. `TestR21_switchCost` (the 0.5B, 2 slots at 256 tokens, by
+  day, exploratory):
+  - **executor:** a switch pair (one-seq, batched, one-seq) costs **0.84 ms** over the steady steps (5.3 / 7.6 ms);
+  - **greedy chain:** **6.04 ms**, of it 5.28 ms on the batched step. The chain keeps the next token committed ahead, so
+    the batched step waits for that forward to finish and discards it: about one lone-sequence token (5.05 ms here;
+    one 1.5B token on the 1.5B).
+
+  Serve's lone generation runs the chain, so a client joining a solo stream costs about one token of GPU time. At a
+  switch per request of a hundred or more tokens that is under 1%. The fix that would recover it, handing the chain's
+  run-ahead token to the batched step instead of discarding it, is not worth its complexity at that size. Raw:
+  `docs/measurements/r21-switch-cost-2026-10-05.txt`.
 - **The paged `ForwardN` double copy: real, negligible.** Device to `logitsHost`, then `logitsHost` to the output row
   (needed as written, since `logitsHost` is reused). About 1 MB a position on Gemma 4's 262k vocabulary, on the order
   of 0.1 ms of a 75 ms paged position, and only speculative verify calls it.
