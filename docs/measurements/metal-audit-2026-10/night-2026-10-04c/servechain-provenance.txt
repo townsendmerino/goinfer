@@ -1,0 +1,10 @@
+started: 2026-10-04 22:37:18 PDT; new 3b9ef839 (sha256 8f3d7c6e313babd1), old 3b9ef839 never-hold (sha256 e50a784202dc65ba)
+pass 1 (goinfer,goinfer_old): 22:37:18
+pass 1 bench_peer exit 0: 22:49:02
+pass 2 (goinfer_old,goinfer): 22:49:02
+pass 2 bench_peer exit 0: 22:56:22
+pass 3 (goinfer,goinfer_old): 22:56:22
+pass 3 bench_peer exit 0: 23:03:40
+pass 4 (goinfer_old,goinfer): 23:03:40
+pass 4 bench_peer exit 0: 23:10:55
+finished: 2026-10-04 23:10:55 PDT, exit 0

@@ -1,6 +1,6 @@
 # Metal audit program — 2026-10
 
-**Status, 2026-10-04: phases 1 and 2 done; phase 3 built or closed through D-B02, E-P07 and the serve chain, whose served grade is queued (Phase 3, "The serve chain: served grade"). Open: E-P08; D-P01 and M-11 (M26, the owner's OK); T1.13 (nobara); C-N01 (aikit); the Track 4 decisions. The branch `metal-audit` merged to main on 2026-10-03, and the program continues on main (started 2026-10-01).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
+**Status, 2026-10-05: phases 1 and 2 done; phase 3 built or closed through E-P08, M-11's async phase 2 and the paged layer-major prefills. The serve chain's served grade kept it on (1.034×), and the peer refresh replaced the benchmarks Metal decode row. Open: the int8 MoE rows form's speed read (re-queued); D-P01's batched expert GEMM; T1.13 (nobara); C-N01 (an aikit `gpu/` tag); the Track 4 decisions. The branch `metal-audit` merged to main on 2026-10-03, and the program continues on main (started 2026-10-01).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
 order the audit's §10 items run in, re-tagged for the run-budget rules and this Mac's limits. Each item keeps the
 definition, band, probe and kill line its §10 row gives; this doc does not restate them, so read the row before
 starting an item. Item IDs are the audit's. Decisions marked **O-** are the audit's Track 4 owner decisions, not the
@@ -1364,6 +1364,20 @@ Metal always batches. This grade says whether the chain now pays where serve run
 | Reported | The 1.5B at T = 1.0, and the 0.5B and 7B in both configs, by the same statistic. A 1.5B sampled G below 1.00 goes to the owner, since the sampled chain could be dropped from the hold alone. The in-process grades were 1.085× greedy and 1.066× sampled on the 1.5B; the served number includes HTTP streaming per token, so it can be smaller. |
 | Not read here | The peer ratios. If the chain stays on, the benchmarks Metal decode row is refreshed by its own same-session peer read (TE5(a)), queued separately. |
 
+**Graded 2026-10-05 (night of 2026-10-04, 22:37–23:10 PDT): STAYS ON.** The precondition holds in every cell of every
+pass. **G = 1.034, 4 of 4 passes above 1.00** (per pass 1.036 / 1.029 / 1.033 / 1.040; 1.5B greedy, 92.1–93.7 against
+88.9–90.1 tok/s). Reported, by the same statistic, all 4 of 4 above 1.00:
+
+| model | greedy | T = 1.0 |
+|---|---|---|
+| 0.5B | 1.113 | 1.174 |
+| 1.5B | **1.034** (graded) | 1.076 |
+| 7B | 1.013 | 1.025 |
+
+The 1.5B's in-process grades were 1.085× greedy and 1.066× sampled; served greedy reads less, as the pre-registration
+expected (HTTP streaming a token), and served sampled about the same. Raw:
+`docs/measurements/metal-audit-2026-10/night-2026-10-04c/servechain-cells.txt` (with its provenance beside it).
+
 ### E-P08: SHIPPED (bit-identical; built and read 2026-10-04, owner: "do E-P08 now")
 
 **What it does.** A greedy generation's batched token came back as its whole logits row: the step copied 151,936 floats
@@ -1439,6 +1453,31 @@ D-B04, E-P05/E-P02/E-P08 and native int8 shipped.
 | Void if | Tonight's serve-chain grade turns the serve chain off (the sweep's goinfer ran with it on), or any cell's goinfer DecodePath is not `metal-resident (int4)`: then the row is not updated from it, and the sweep re-runs on the build that ships. |
 | Reported | The 0.5B at 2048 and 3900 against the post-merge read's 0.80x and 0.60x of Ollama (B-P01's block kernel postdates it). |
 
+**Read 2026-10-05 (night of 2026-10-04, 23:28–23:54 PDT, main `a845af18`, a clean tree): VALID.** The serve chain stays
+on, and all 12 cells' goinfer ran `metal-resident (int4)`. Mean tok/s over 3 runs (spread under 2% in every goinfer
+cell):
+
+| model | depth, config | goinfer | ÷ Ollama | ÷ mlx-lm |
+|---|---|---|---|---|
+| 0.5B | 128 greedy | 203.9 | 1.401 | — |
+| 0.5B | 2048 greedy | 169.6 | 1.242 | — |
+| 0.5B | 3900 greedy | 145.7 | 1.131 | — |
+| 1.5B | 128 greedy | 94.1 | 1.106 | 0.864 |
+| 1.5B | 2048 greedy | 85.9 | 1.070 | 0.871 |
+| 1.5B | 3900 greedy | 80.4 | 1.048 | 0.886 |
+| 7B | 128 greedy | 30.8 | 1.227 | 0.839 |
+| 7B | 2048 greedy | 27.8 | 1.149 | 0.788 |
+| 7B | 3900 greedy | 26.2 | 1.120 | 0.768 |
+| 0.5B | 128 T = 1.0 | 207.1 | 1.423 | — |
+| 1.5B | 128 T = 1.0 | 94.2 | 1.108 | 0.879 |
+| 7B | 128 T = 1.0 | 30.9 | 1.236 | 0.822 |
+
+The reported cells: the **0.5B at 2048 and 3900 now 1.24× and 1.13× of Ollama**, against the post-merge read's 0.80×
+and 0.60×. goinfer is ahead of Ollama in all 12 cells, and behind mlx-lm (a different quantisation) in all 6 it has.
+The `docs/benchmarks.md` Metal decode row carries it. Raw:
+`docs/measurements/metal-audit-2026-10/night-2026-10-04c/peer-refresh.json`, tabulated in `peer-refresh-cells.txt`
+beside it.
+
 ### Layer-major prefill for the generic paged MoE: SHIPPED (bit-identical; built and read 2026-10-04, owner)
 
 The exact layer-major prefill M26 got (`prefillG4Paged`, `docs/tasks/task-m26-mac-2026-10.md` 4b) for the generic
@@ -1476,8 +1515,14 @@ Picked at build with the int8 experts where the row counts admit it (`moeExpertR
 
 | | |
 |---|---|
-| Instrument | `docs/measurements/metal-audit-2026-10/run-moe-int8-rows.sh` on the night queue (priority 60): `TestDB04R_expertRowsAB` at `GOINFER_DB04R_QUANT=int8int8` on the slice, resident: the one-row kernels against the rows form swapped on one resident (the one-row arm compiled precise, as the resident is), 32 tokens, 7 reps alternated, GPU time a token, logits bit-identical first. About 2 minutes; queued at 5. |
+| Instrument | `docs/measurements/metal-audit-2026-10/run-moe-int8-rows.sh` on the night queue (priority 60): `TestDB04R_expertRowsAB` at `GOINFER_DB04R_QUANT=int8int8` on the slice, resident: the one-row kernels against the rows form swapped on one resident (the one-row arm compiled precise, as the resident is), 32 tokens, 7 reps alternated, GPU time a token, logits bit-identical first. About 2 minutes; queued at 5 minutes; re-queued 2026-10-05 at 20 minutes, the memory wait included, priority 40. |
 | Rule | The owner's bar: **stays on** at a median one-row ÷ rows ≥ 1.02; **parked** (`moeExpertRowsOn` cannot split them, so the int8 rows wiring is reverted) at 1.00-1.02; **off** below 1.00. |
+
+**Night of 2026-10-04: not run.** The guard declined the build at 23:23 PDT, 9 s in: it needs 5.43 GB, and live-available
+memory read 5.17 GB, right after `m26-g4lm-grade` had mapped M26's 16 GB. Nothing was measured, so the rule was not
+applied and the rows form stays on as built. The job now waits up to 15 minutes for the guard's own live-available sum to
+reach 5.8 GiB before it loads, and fails naming the reading after that. It is re-queued at priority 40, ahead of any M26
+job.
 
 ## Owner decisions
 
@@ -1825,3 +1870,7 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   Qwen1.5-MoE slice's prompt at 128 and 512 tokens.
 - 2026-10-04: **the int8 MoE rows form built**, bit-identical, on; its speed read queued for tonight (the guard declines
   the int8 slice by day).
+- 2026-10-05: **the night of 2026-10-04 graded.** The serve chain **stays on** (G = 1.034, 4 of 4). M26's layer-major
+  prefill **stays on** (1.385 at M = 128, 1.549 at M = 512; `docs/tasks/task-m26-mac-2026-10.md` 4b). The peer refresh
+  is valid and replaces the benchmarks Metal decode row: ahead of Ollama in all 12 cells, the 0.5B at depth now 1.24 / 1.13×.
+  The int8 MoE rows read did not run (the guard declined it on memory M26 had just used) and is re-queued with a wait.
