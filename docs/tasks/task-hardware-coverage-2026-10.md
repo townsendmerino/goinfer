@@ -1,9 +1,13 @@
 # Task: hardware we don't own — find the paths it runs, reach them, guard them in the field (H0–H6) — 2026-10
 
-> **Status, 2026-10-04: IN PROGRESS. H0, H1.1, H1.3 (amd64), H1.5 (CUDA), H2 (CPU, CUDA, WebGPU and Metal) and H3 (device facts for CUDA, WebGPU and Metal) are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
-> 2026-10-04: no SDE job, no QEMU job, no `scripts/hardware_sweep.sh`, no "verified on" column). H1 and H2 are the work that matters most.
+> **Status, 2026-10-04: IN PROGRESS. H0, H1.1 (including windows-arm64, green since d791f36f), H1.3 (amd64), H1.5 (CUDA), H2 (CPU, CUDA, WebGPU and Metal) and H3 (device facts for CUDA, WebGPU and Metal) are DONE; H1.2 (SDE installed, first run queued for tonight) and H1.4 (the forced no-DotProd CI job, green on its first run, 9f52ad53, plus aikit's QEMU job `qemu-nodotprod`, green on c8314c6) are set up; H6 is DONE (the generated "Verified on" section, the Download page and README copy, the RELEASING line); H4 is PARKED (owner, 2026-10-04: no rented machines) and H5 with it** (checked against the tree
+> 2026-10-04: the SDE job is a queued one-off with its cadence deferred to about 2026-11-04, and there is no `scripts/hardware_sweep.sh`, which is parked with H4). What is open is listed at the end of this status block.
 > H5 is an owner decision that waits on two release sweeps, which will not happen while H4 is parked. **What would make a public speed claim fair (§3) is not met:** one sweep on other hardware is missing (H2 on Metal landed 2026-10-04), and with H4 parked the second can only be met by a different route (see H4).
 > The census logs **10** never-executed entries (14 when first counted; the Windows and arm64 Linux CI records took two, and the forced no-AVX2 and emulated no-DotProd runs of 2026-10-04 two more).
+>
+> **Open, 2026-10-04:** (1) the `sde-goldens` night run is queued and not yet run, and its cadence is deferred to about 2026-11-04; (2) aikit's Windows ARM DotProd probe shipped in aikit v1.56.0 (green on a real Cobalt 100 runner: probe true, the whole aikit suite on the SDOT kernels) and goinfer is pinned to it, and goinfer's `root-windows-arm64` runs the DotProd kernels and row4
+> layouts, **green since 4c4fc020 with its log stating `detected [dotprod]; in use [dotprod]` and the startup self-test passing** (the first `check --hardware` on Windows ARM); the speed effect is unmeasured, so this item is closed except for that; (3) the WebGPU self-test's bars were measured on NVIDIA/Vulkan and an Apple GPU over Metal, so AMD, Intel and DirectX 12 adapters are unmeasured; (4) the optional self-test pass cache is parked, with its reopen trigger; (5) H4 and H5 are parked by the owner;
+> (6) the never-executed list below (10 of 31 paths) stays until hardware we do not own runs them.
 >
 > **The concern (Francis, 2026-10-01).** goinfer is built and measured on an M1 Pro (16 GB) and an
 > RTX 2070 SUPER (8 GB) with a Ryzen 7 3700X. People with newer or bigger hardware will run code paths
@@ -156,7 +160,7 @@ test-only package that CI's `test-rest` job runs.
        artefact: aikit assumes no DotProd on any OS but Linux and Darwin, so the default `cpu-arm64` bundle target (row4-only, DotProd-only layouts) wrote a sidecar the same core refused to load and rebuilt on every
        start. That is the Raspberry Pi 4 class on Linux too, which no job had run. Fixed in `GIWTargetForBackend` (the CHANGELOG entry has the detail), reproduced and verified under QEMU `-cpu cortex-a72`, red-proven.
        The base SMULL/SADALP kernels are therefore the PRODUCTION path on Windows ARM, not only a fallback. A cost, not a bug: Windows ARM cores with DotProd (Snapdragon X, Cobalt) run the slower kernels because
-       aikit has no probe there (`dotprod_arm64_other.go`). Whether to add one (IsProcessorFeaturePresent, PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE) is an aikit decision, unmade.
+       aikit has no probe there (`dotprod_arm64_other.go`). **Probe built, released and pinned 2026-10-04 (aikit v1.56.0, `IsProcessorFeaturePresent(PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE)`, new `windows-arm64` job on `windows-11-arm`, green, `dotprod` detected and active on the runner). Everything above about the base kernels being the production path on Windows ARM describes v1.55.0 and earlier.**
      - **Still not covered:** the heap-backed "mmap" also means Windows loads a model into memory
        rather than mapping it (aikit's `mmap_other.go`), a product limit this run does not measure.
 2. **Intel SDE as a scheduled job** (weekly, like `race-weekly`, or on nobara). Run the CPU parity suite and
