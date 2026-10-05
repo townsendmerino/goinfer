@@ -477,7 +477,7 @@ gate runs at night before it ships.
    per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02 (T1.12 **probed** 2026-10-04: the routing sync is 1-2% of the pass, tile padding 1.47× at M = 512 is the lever; it also found the pass-scratch copy, **fixed**; the 16-row tile **shipped**: 1.09× on the slice's 512-token pass, 1.56× / 1.73× on the 1.5B's / 7B's 16-token pass), D-P04 (**shipped** 2026-10-04: bit-identical, 1.060× on the slice's token, 68 us per MoE layer), D-P03 (**parked** 2026-10-04: bit-identical, 1.019× on the slice's token, off by default) and D-B04. D-P01 needs M26 and so the owner's OK.
-7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02 (**killed** 2026-10-04: 0.777 ms against its 0.65 ms line, 1.11× on the 7B gate|up at B = 2), E-P05 (**parked** 2026-10-04: bit-identical, 1.016× at 2 rows to 1.06× at 8, off by default), E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
+7. **The batched step:** E-P03 (**killed** 2026-10-03: no 7B projection is 3% faster at FB = 4), E-P02 (killed by its kill line, then **reopened and shipped** 2026-10-04 by the owner: 1.076× on the 7B's B = 2 step), E-P05 (parked, then **turned on** 2026-10-04 by the owner: bit-identical, 1.016× at 2 rows to 1.06× at 8), E-P06 (**killed** 2026-10-03), E-P08 (**shipped** 2026-10-04), E-P07 (**on**, owner 2026-10-04). Metal int8 slice 3 joins here.
 8. **Memory:** C-P01 (**done** 2026-10-02: −1451 MB of heap on M26, decode 1.061×), E-P09 (**done** 2026-10-02: 2 slots by default on Metal), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 (T1.7 ran: it stands on the 7B, parked on the 1.5B; **the owner parked it on both on 2026-10-03**, low value).
@@ -1184,7 +1184,7 @@ stays.
 - **Not built:** the audit's device-read (unstaged) variant at MLX's 64 threads. It is a kernel rewrite, and R18b's
   first cut lost in sequence for exactly an activation re-read.
 
-### E-P02: KILLED by its kill line (written 2026-10-04)
+### E-P02: killed by its kill line, then REOPENED and SHIPPED the same day (owner, 2026-10-04; written 2026-10-04)
 
 **The probe.** `TestEP02_adjacentRows`, at `fdbf4740`, then removed:
 - `mc3_gemv_w4a8_sa_rows_adj4` runs the batched step's per-row GEMV over B rows in one dispatch. Each weight tile's B
@@ -1226,7 +1226,7 @@ B >= 2 (`mc3AdjRowsOn`, on).
   kept; the pricing stays B separate GEMVs.
 - The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
 
-### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
+### E-P05: parked, then turned ON by the owner the same day (bit-identical; written 2026-10-04)
 
 **The ceiling probe** (the audit's: a stub that skips rows 1-7's attention). The 1.5B, 8 rows each on its own slot at
 depth 2048: **37.2% of the step** (29.82 → 18.72 ms, 7 reps 0.371-0.374), far over the 5% kill line. The 4096 cell
@@ -1535,18 +1535,19 @@ It needs a smaller resident int8 MoE, or a box with more RAM. Kill-watch log: `n
 
 ## Owner decisions
 
-None blocks phase 1 or 2. Each is needed only when its build comes up.
+None blocks phase 1 or 2. Each is needed only when its build comes up. Decisions the owner made on individual items are
+recorded at each item and in the log; this table is the audit's Track 4 questions, none of which the owner has answered yet.
 
-| ID | Question | Needed before | Recommendation |
-|---|---|---|---|
-| O1 (A-P04) | Embeddings: exact or batched | A-P04 | Pipeline first: bit-identical, 1.05–1.5×. Decide batched after measuring it |
-| O2 (D-B05) | `delta_rule`'s summation order | D-B05 (after D-B01) | Decide once D-B01 shows the recurrence share is large |
-| O3 (B-N01) | An int4 head on Metal | none in this plan | Defer: lossy, about 2.3 points top-1, and its quality re-eval is parked |
-| O4 (B-P05) | Move decode's down projection off the per-word chain | phase 3 step 4 | Decide after B-P04 and B-P06, with the fidelity gate's result |
-| O5 (D-B03) | Native MXFP4 for gpt-oss | after T1.13 | Decide on T1.13's error numbers |
-| O6 (E-P04) | Device top-k/top-p/min-p | after phase 3 | Decide after the batched-step items |
-| O7 (F-B01) | Keep P in f32 in steel | after F-G01 | A fidelity question; run the pooled gate first |
-| — | M26 night runs (T1.8, T1.9, C-P01, D-P01) | phase 2's owner-gated row | A monitored run with the night queue's kill-watch, or not at all |
+| ID | Question | Needed before | Recommendation | Status (2026-10-05) |
+|---|---|---|---|---|
+| O1 (A-P04) | Embeddings: exact or batched | A-P04 | Pipeline first: bit-identical, 1.05–1.5×. Decide batched after measuring it | **Open.** A-P04 not built |
+| O2 (D-B05) | `delta_rule`'s summation order | D-B05 (after D-B01) | Decide once D-B01 shows the recurrence share is large | **Open, now askable.** D-B01 shipped (8.06× on the 0.8B prefill); the recurrence share has not been read |
+| O3 (B-N01) | An int4 head on Metal | none in this plan | Defer: lossy, about 2.3 points top-1, and its quality re-eval is parked | **Open, deferred** (recommendation stands) |
+| O4 (B-P05) | Move decode's down projection off the per-word chain | phase 3 step 4 | Decide after B-P04 and B-P06, with the fidelity gate's result | **Open, now askable.** Both preconditions are in: B-P04 killed 2026-10-03, B-P06 killed 2026-10-04 |
+| O5 (D-B03) | Native MXFP4 for gpt-oss | after T1.13 | Decide on T1.13's error numbers | **Open, waiting on T1.13** (nobara) |
+| O6 (E-P04) | Device top-k/top-p/min-p | after phase 3 | Decide after the batched-step items | **Open, now askable.** The batched-step items are done (E-P02/E-P05/E-P08 shipped, E-P03 killed) |
+| O7 (F-B01) | Keep P in f32 in steel | after F-G01 | A fidelity question; run the pooled gate first | **Open** |
+| — | M26 night runs (T1.8, T1.9, C-P01, D-P01) | phase 2's owner-gated row | A monitored run with the night queue's kill-watch, or not at all | **Superseded 2026-10-04** by the owner's M26 day-use rule (Metal, paged, guard on, `-require-backend`); T1.8 parked, C-P01 shipped, D-P01's layer-major path shipped |
 
 ## Log
 
