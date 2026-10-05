@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — int8-KV decode widens its history on all cores instead of one (audit R-15)
+
+With `--kv i8` every decoded token widens every stored K and V row of every global layer (and a ring layer's window) back to f32 in front of the attention, on a single thread: 17.4 ms of an 80.5 ms token on Qwen2.5 1.5B at depth 2000,
+where the f32 token is 59.5 ms. The widen is elementwise, so it is now split by rows across the usual fan-out width, above a size where a fork/join pays. **Bit-identical and memory-neutral:** random-shape and whole-decode tests (int8
+rings and global layers), and 48 x 151936 real logits with 0 differing, each red under a planted bug. **Paired ABBA:** Qwen2.5 1.5B at depth 2000, 81.87 to 66.55 ms/token, median 1.234x, 4 of 4 pairs faster (the int8 penalty over f32
+drops from about 22 ms to 7); Gemma 3 1B (small int8 rings) 1.017x. The widen is still O(context) per token (a persistent f32 shadow would cost more memory than f32 KV, and a fused int8 attention would not be bit-identical to the path
+decode, prefill and verify share). `kvDequantParallel` is a test seam, not an environment variable. Record: `docs/measurements/r15-kvi8-widen-2026-10-05.md`.
+
 ### Changed — CPU decode on a sliding-window model reads its window in place instead of copying it every token (audit R-12)
 
 On Gemma 2 and 3 and Cohere2, each decoded token copied every resident window row of K and V out of the ring into scratch, for every local layer: 2.46 ms of a 39.4 ms token on Gemma 3 1B at depth 900, and 31.7 ms of 201 ms (15.7%) on Gemma 2 2B at

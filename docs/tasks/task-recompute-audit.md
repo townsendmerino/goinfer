@@ -804,6 +804,12 @@ The input does not change between calls, and quantization is deterministic, so e
 
 ### R-15 · int8 KV decode dequantizes the whole history every token (opt-in `--kv i8`)
 
+> **Status 2026-10-05: the widen now runs on all cores, bit-identical (1.234x on Qwen2.5 1.5B at depth 2000); the O(context) work itself remains.** Measured first: at depth 2000 the int8-KV token is 80.5 ms against 59.5 for f32, and the
+> widen is 17.4 ms of it, on one thread. `dequantKVRows` splits that elementwise widen by rows (both the global layers and the int8 ring window), so no bit moves and memory is unchanged: 4 of 4 paired ABBA pairs, 81.87 to 66.55 ms/token on
+> Qwen2.5 1.5B (the int8 penalty over f32 drops from about 22 ms to 7), 1.017x on Gemma 3 1B whose int8 rings are small; 48 x 151936 real logits, 0 differ; red under three plantings. **Not done, deliberately:** a persistent f32 shadow
+> (4.5 bytes per element on top of the int8 cache, worse than f32 KV) and a fused int8 attention (not bit-identical to the f32 path decode, prefill and verify share); and the ring's double quantization of the new row, which is `kvDim`
+> elements per layer per token and the same data both times. Record: `docs/measurements/r15-kvi8-widen-2026-10-05.md`.
+
 - **Global layers:** `dequantGlobalLayer` dequantizes every stored row on every token. That is O(context) per
   token per layer, and int8 ends up moving more bytes than f32 at decode.
 - **Ring layers:** the window is dequantized per token, and the new row is quantized twice (the round-trip, then
@@ -1065,13 +1071,12 @@ when their K match (always here), and `prefillQuantPerProj` (tests only) restore
 
 Status 2026-10-05, after the first pass through the list:
 
-1. **Done:** R-11 (contracts, tests, lint), R-16 (cheap variant), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
+1. **Done:** R-11 (contracts, tests, lint), R-12, R-15 (the widen made parallel), R-16 (cheap variant), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
 2. **Declined with reasons, reopen only on new evidence:** R-16's full dirty flag (a missed state-mutating site is a conversation-state leak), R-24's `launchToken` upload (about 20 microseconds against about 4.5 ms per token) and
    the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate; measure the real transfer time first), and R-22's `g4x2All` fold (negative zero).
 3. **Still open, with real hot-path weight, each needing a pre-registered band and a bit-identity gate first:**
-   - R-12 (CPU Gemma 2/3 at depth: the window copied out of the ring every token);
    - R-13 and R-14 together (CPU activation quantization; R-13(b) needs an aikit `MatmulBTW4A8F16Pre` entry, so an aikit release);
-   - R-15 (int8 KV dequantizes the whole history every token; opt-in `--kv i8`, so lower priority);
+   - ~~R-15~~ (done 2026-10-05: the widen is parallel; the O(context) work remains, see R-15);
    - R-17 (small CPU duplicates) and R-25 (WebGPU batched prefill quantizes per projection), as they come up.
 
 <!-- doc-reviewed: 2026-10-05 -->
