@@ -1439,6 +1439,28 @@ D-B04, E-P05/E-P02/E-P08 and native int8 shipped.
 | Void if | Tonight's serve-chain grade turns the serve chain off (the sweep's goinfer ran with it on), or any cell's goinfer DecodePath is not `metal-resident (int4)`: then the row is not updated from it, and the sweep re-runs on the build that ships. |
 | Reported | The 0.5B at 2048 and 3900 against the post-merge read's 0.80x and 0.60x of Ollama (B-P01's block kernel postdates it). |
 
+### Layer-major prefill for the generic paged MoE: SHIPPED (bit-identical; built and read 2026-10-04, owner)
+
+The exact layer-major prefill M26 got (`prefillG4Paged`, `docs/tasks/task-m26-mac-2026-10.md` 4b) for the generic
+pager: `prefillMoEPaged` (`metal/prefill_g4paged.go`), for Mixtral, Qwen MoE and the Qwen3.5/3.6 DeltaNet hybrids (M35's
+shape), routed from `PrefillLast` (`moeLayerMajorOn`, on; gpt-oss excluded). Per layer, one command buffer of every row's
+mixer (attention, or the DeltaNet mixer) and router through decode's own kernels, the routes read, then phase 2 (routed
+experts from the pool and the shared expert) in runs that fit the pool, the grouping now shared with the Gemma 4 path
+(`layerMajorExpertGroups`). A DeltaNet layer's recurrent state is per layer, and its rows run in order, as the
+sequential loop runs them.
+- **Gate** (`TestMoELayerMajor_matchesSequential`): Mixtral, Qwen3-MoE (k = 2 and 3) and the Qwen3.5 MoE hybrid, paged
+  at 2 and 3 slots, prompts of 1, 5, 9 rows and 6 rows on a 3-row prefix: last logits, every attention layer's K/V and 3
+  decode steps (which read the DeltaNet state) bit-identical to the sequential loop. Phase 2 taking the next row's state
+  fails it. The Gemma 4 gates pass on the shared grouping.
+- **Through the decoder** (`TestMoELayerMajor_generateThroughDecoder`): `Generate` on paged Mixtral and the paged Qwen3.5
+  hybrid, 16 greedy tokens equal with and without, the route taken.
+- **Speed, in process, by day** (`TestG4LayerMajor_M26AB`, now driving either pager): the Qwen1.5-MoE 4-layer slice
+  paged at 8 slots (M35 is not on this Mac), 5 reps alternated, logits and K/V equal every rep: sequential ÷ layer-major
+  **1.261 at 128 tokens, 1.256 at 512**, every rep above 1.22. Staging is unchanged (1,633 against 1,642 experts at
+  128): the gain is the round trips, as on M26.
+- `TestPrefillLast_declinesPagedGenericMoE` still holds as written: it pins `prefillOK` (the f16 pass's gate), which a
+  paged generic MoE still fails; the layer-major branch runs ahead of that pass, on decode's kernels.
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -1781,3 +1803,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   `docs/tasks/task-m26-mac-2026-10.md`, "Decode levers".
 - 2026-10-04: **E-P02's calibration follow-up parked**: adjacent per-row up to B = 3 on the 7B, whole step 1.000 at B = 3.
   Not kept.
+- 2026-10-04: **layer-major prefill for the generic paged MoE shipped** (owner): bit-identical, 1.26x on the paged
+  Qwen1.5-MoE slice's prompt at 128 and 512 tokens.

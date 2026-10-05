@@ -427,6 +427,7 @@ type resident struct {
 	g4moe                                                      *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 	pagedNoHead                                                bool               // a paged forward skips the final norm and LM head (ForwardEmbNoLogitsPipe); exec-thread only
 	g4LayerMajorRuns                                           int                // prompts prefillG4Paged ran (4b); a test reads it to see the route was taken
+	moeLayerMajorRuns                                          int                // prompts prefillMoEPaged ran; a test reads it to see the route was taken
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
 	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +

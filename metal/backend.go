@@ -725,8 +725,8 @@ func metalFusedAttentionEnabled(v string) bool {
 func (a *metalResident) ResidentQuant() string { return a.quant }
 
 func (a *metalResident) PrefillPath() (bool, string) {
-	if a.g4LayerMajor() {
-		return true, "layer-major on decode's kernels (bit-identical to sequential; a paged Gemma 4 MoE)"
+	if a.g4LayerMajor() || a.moeLayerMajor() {
+		return true, "layer-major on decode's kernels (bit-identical to sequential; a paged MoE)"
 	}
 	if a.r.kvI8 {
 		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
@@ -756,6 +756,12 @@ func (a *metalResident) g4LayerMajor() bool {
 	return g4LayerMajorOn && a.r.g4moe != nil && a.r.g4moe.paged && !a.r.learnedPos
 }
 
+// moeLayerMajor is g4LayerMajor for the generic pager (prefillMoEPaged): a paged generic MoE, not gpt-oss (its sink and
+// biased experts), with moeLayerMajorOn.
+func (a *metalResident) moeLayerMajor() bool {
+	return moeLayerMajorOn && a.r.moe != nil && a.r.moe.paged && !a.r.moe.isGptOss && !a.r.learnedPos
+}
+
 // PrefillLast (decoder.Prefiller) ingests the whole prompt in one batched f16-MMA pass and
 // returns the last token's logits, populating the resident KV. Falls back (declines) for prompts
 // shorter than the fast-prefill floor or longer than the resident KV/attention cap.
@@ -771,14 +777,19 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// 4b (docs/tasks/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
 	// layer on decode's own kernels, bit-identical to the sequential loop, so neither the floor nor --exact-prefill
 	// applies. Behind g4LayerMajorOn until graded.
-	if a.g4LayerMajor() {
+	if a.g4LayerMajor() || a.moeLayerMajor() {
 		if e := a.checkCap(startPos, len(embeddings)); e != nil {
 			return nil, e
 		}
 		if startPos == 0 {
-			a.Reset() // a fresh sequence, as Forward at position 0 does
+			a.Reset() // a fresh sequence, as Forward at position 0 does (it zeroes a DeltaNet's state)
 		}
-		lg := a.r.prefillG4Paged(embeddings, startPos, true)
+		var lg []float32
+		if a.g4LayerMajor() {
+			lg = a.r.prefillG4Paged(embeddings, startPos, true)
+		} else {
+			lg = a.r.prefillMoEPaged(embeddings, startPos, true)
+		}
 		if err := a.r.takeExecErr(); err != nil {
 			return nil, err
 		}

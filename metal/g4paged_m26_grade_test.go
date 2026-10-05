@@ -65,14 +65,27 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 	}
 	defer m.Close()
 	a, ok := m.ResidentForwardForTest().(*metalResident)
-	if !ok || a.r.g4moe == nil || !a.r.g4moe.paged {
-		t.Fatalf("no paged Gemma 4 MoE resident on Metal (decode path %q)", m.DecodePath())
+	if !ok || !((a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged)) {
+		t.Fatalf("no paged MoE resident on Metal (decode path %q)", m.DecodePath())
 	}
 	r := a.r
+	layerMajor := r.prefillG4Paged // the generic pager's twin when the model is not Gemma 4 (prefillMoEPaged)
+	if r.g4moe == nil {
+		layerMajor = r.prefillMoEPaged
+	}
+	pool := func(l int) *expertPool {
+		if gl := r.layers[l].g4moe; gl != nil {
+			return gl.pool
+		}
+		if ml := r.layers[l].moe; ml != nil {
+			return ml.pool
+		}
+		return nil
+	}
 	nSlots := 0
 	for l := range r.layers {
-		if gl := r.layers[l].g4moe; gl != nil && gl.pool != nil {
-			nSlots = len(gl.pool.slotExpert)
+		if p := pool(l); p != nil {
+			nSlots = len(p.slotExpert)
 			break
 		}
 	}
@@ -81,6 +94,9 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 	kvHash := func(n int) [32]byte {
 		h := sha256.New()
 		for l := range r.layers {
+			if r.layers[l].delta != nil || r.kc[l] == (Buffer{}) {
+				continue
+			}
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
 			for _, b := range []Buffer{r.kc[l], r.vc[l]} {
@@ -95,8 +111,8 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 	stagesAndSubmits := func() int {
 		n := 0
 		for l := range r.layers {
-			if gl := r.layers[l].g4moe; gl != nil && gl.pool != nil {
-				n += gl.pool.stages
+			if p := pool(l); p != nil {
+				n += p.stages + p.prefetched
 			}
 		}
 		return n
@@ -127,7 +143,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			a.Reset()
 			s0 := stagesAndSubmits()
 			st := time.Now()
-			lg := r.prefillG4Paged(embs, 0, true)
+			lg := layerMajor(embs, 0, true)
 			if err := r.takeExecErr(); err != nil {
 				t.Fatalf("layer-major: %v", err)
 			}
@@ -180,7 +196,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 		}
 		above := 0
 		for _, q := range ratios {
-			if q > 1.5 {
+			if q > 1 {
 				above++
 			}
 		}
@@ -189,7 +205,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			sort.Ints(s)
 			return s[len(s)/2]
 		}
-		hb("RESULT M=%d, %d slots: sequential %.0f ms, layer-major %.0f ms (medians of %d); sequential / layer-major median %.3f, %d of %d reps above 1.5 (per rep %v); experts staged a prompt: sequential %d, layer-major %d; logits and K/V equal in every rep",
+		hb("RESULT M=%d, %d slots: sequential %.0f ms, layer-major %.0f ms (medians of %d); sequential / layer-major median %.3f, %d of %d reps above 1 (per rep %v); experts staged a prompt: sequential %d, layer-major %d; logits and K/V equal in every rep",
 			M, nSlots, med(seqMs), med(lmMs), reps, med(ratios), above, reps, auditFmt3(ratios), medInt(seqSt), medInt(lmSt))
 	}
 }
