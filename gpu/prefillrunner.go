@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -794,18 +795,52 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	// tiled kernel instead of a separate post-hoc residual-kernel add — see the
 	// original tiledProj's doc comment (git history) for the measured reason this
 	// matters for bit-exactness (TestLocalize_BiasEpilogue).
-	tiledProjB := func(xnPacked *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer {
-		K, N := rm.cols, rm.rows
-		var aqC, asC *wgpu.Buffer
+	//
+	// R-25 (docs/tasks/task-recompute-audit.md): it is quantB then projQB, so the projections that read the same input
+	// (q, k, v of xn; gate, up of xn2) quantize it once and share the result. Quantization is deterministic, so each GEMM
+	// reads the same bytes it did when it quantized its own copy.
+	quantB := func(xnPacked *wgpu.Buffer, rowsM, K int) (aqC, asC *wgpu.Buffer) {
 		if rowsM == M {
 			aqC, asC, _ = quantPackedM(xnPacked, K)
-		} else { // the M=1 LM-head call
-			kp := padK(K)
-			aqC = storF(kp / 4)
-			asC = storF(1)
-			p := uni([]uint32{1, uint32(K), uint32(kp), 0})
-			disp(c.quantizePipeline, bind(c.quantizeLayout, xnPacked, aqC, asC, p), 1, 1)
+			return aqC, asC
 		}
+		// the M=1 LM-head call
+		kp := padK(K)
+		aqC = storF(kp / 4)
+		asC = storF(1)
+		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
+		disp(c.quantizePipeline, bind(c.quantizeLayout, xnPacked, aqC, asC, p), 1, 1)
+		return aqC, asC
+	}
+	var projQB func(aqC, asC *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer
+	tiledProjB := func(xnPacked *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer {
+		aqC, asC := quantB(xnPacked, rowsM, rm.cols)
+		return projQB(aqC, asC, rowsM, rm, bias)
+	}
+	// sharedQ returns the projections of one input x through rms, quantizing x once (R-25) when every projection has
+	// the same K, which q/k/v and gate/up always do; prefillQuantPerProj (tests only) restores a quantization each.
+	sharedQ := func(x *wgpu.Buffer, rms []*ResidentW8A8, biases []*wgpu.Buffer) []*wgpu.Buffer {
+		out := make([]*wgpu.Buffer, len(rms))
+		same := !prefillQuantPerProj
+		for _, rm := range rms[1:] {
+			same = same && rm.cols == rms[0].cols
+		}
+		var aqC, asC *wgpu.Buffer
+		if same {
+			aqC, asC = quantB(x, M, rms[0].cols)
+			prefillSharedQuants.Add(1)
+		}
+		for i, rm := range rms {
+			if same {
+				out[i] = projQB(aqC, asC, M, rm, biases[i])
+			} else {
+				out[i] = tiledProjB(x, M, rm, biases[i])
+			}
+		}
+		return out
+	}
+	projQB = func(aqC, asC *wgpu.Buffer, rowsM int, rm *ResidentW8A8, bias *wgpu.Buffer) *wgpu.Buffer {
+		N := rm.rows
 		dstC := storF(rowsM * N)
 		p := uni([]uint32{uint32(rowsM), uint32(rm.kp), uint32(N), 0})
 		gx, gy := c.gemmGrid(N, rowsM)
@@ -861,18 +896,18 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		}
 		var q *wgpu.Buffer
 		var aGate *wgpu.Buffer
+		qkv := sharedQ(xn, []*ResidentW8A8{lw.Attn.QProj, lw.Attn.KProj, lw.Attn.VProj}, []*wgpu.Buffer{qBias, kBias, vBias})
 		if lw.Attn.QGate {
-			qRaw := tiledProjB(xn, M, lw.Attn.QProj, qBias)
+			qRaw := qkv[0]
 			qN := M * nH * hd
 			q = storF(qN)
 			aGate = storF(qN)
 			p := uni([]uint32{uint32(qN), uint32(hd), 0, 0})
 			disp(c.deltaQSplitPipeline, bind(c.deltaQSplitLayout, qRaw, q, aGate, p), uint32(qN+63)/64, 1)
 		} else {
-			q = tiledProjB(xn, M, lw.Attn.QProj, qBias)
+			q = qkv[0]
 		}
-		k := tiledProjB(xn, M, lw.Attn.KProj, kBias)
-		v := tiledProjB(xn, M, lw.Attn.VProj, vBias)
+		k, v := qkv[1], qkv[2]
 		profBoundary(profGemm)
 		if lw.Attn.QNorm != nil {
 			qkNormB(q, lw.Attn.QNorm.buf, nH)
@@ -920,8 +955,8 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		xd = residualB(xd, attnOut) // in-place: xd += attnOut
 		xn2 := rmsB(xd, lw.MLPNorm.buf)
 		profBoundary(profNormsRope)
-		gate := tiledProjB(xn2, M, lw.Gate, nil)
-		up := tiledProjB(xn2, M, lw.Up, nil)
+		gu := sharedQ(xn2, []*ResidentW8A8{lw.Gate, lw.Up}, []*wgpu.Buffer{nil, nil})
+		gate, up := gu[0], gu[1]
 		profBoundary(profGemm)
 		mid := swigluB(gate, up)
 		profBoundary(profNormsRope)
@@ -979,3 +1014,10 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	}
 	return out, nil
 }
+
+// prefillQuantPerProj restores the batched prefill's quantization per projection (R-25, sharedQ), for the test that
+// compares the two and the A/B that times them. Tests only.
+var prefillQuantPerProj = false
+
+// prefillSharedQuants counts the quantizations sharedQ shared across projections (a test reads it to see R-25 ran).
+var prefillSharedQuants atomic.Int64

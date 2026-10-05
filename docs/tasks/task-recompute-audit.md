@@ -1010,6 +1010,20 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
   before its first use. That is implicit zeroing of buffers the kernels then fully overwrite: R-11's class,
   depending on how wgpu-native tracks initialization.
 
+**Status, 2026-10-05: the repeated quantization FIXED (bit-identical), speed-neutral on the Mac.** `tiledProjB` is now
+`quantB` then `projQB` (`gpu/prefillrunner.go`); `sharedQ` quantizes `xn` once for q/k/v and `xn2` once for gate/up
+when their K match (always here), and `prefillQuantPerProj` (tests only) restores a quantization each.
+- **Gate:** `TestPrefillLastW8A8_sharedQuantBitIdentical`: last-row logits and every K/V cache element bit-identical to
+  the per-projection prefill, with and without Qwen2's q/k/v biases, 2 shared quantizations per layer. A mutation that
+  hands the later projections an unquantized buffer fails it; one feeding gate/up from `xn` fails the existing
+  `TestPrefillLastW8A8_parity` (cosine 0.026). The gpu suite passes.
+- **Speed** (`TestPrefill_sharedQuantAB`, by day, exploratory): internlm2-1.8B on the Mac's wgpu-on-Metal, per-projection
+  ÷ shared **1.004** at 128 tokens and **1.002** at 512. The pass is GEMM- and attention-bound; three quantize dispatches a
+  layer do not show. The Qwen2 1.5B could not be timed here: this backend declines the batched prefill for q/k/v bias
+  (Vulkan only), so on the Mac R-25's bias path runs only in the synthetic gate. Raw:
+  `docs/measurements/r25-webgpu-sharedquant-2026-10-05.txt`.
+- **Not done:** the implicit-zeroing half, which depends on wgpu-native's initialization tracking and was not measured.
+
 ### Checked and necessary, so not re-reported
 
 - **Clears before accumulating writes are required:** `attendQuery`'s `clear(ctx)`, `moeMLP`'s `clear(out)`, the
