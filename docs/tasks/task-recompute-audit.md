@@ -139,13 +139,13 @@ positions are inherent, not recompute.
   `cuda/resident.go:503` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
-  reuses through `rewindForReuse` (`decoder/session.go:73-80`) → `KVCache.TruncateTo`
-  (`decoder/kvcache.go:540`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
+  reuses through `rewindForReuse` (`decoder/session.go:80-87`) → `KVCache.TruncateTo`
+  (`decoder/kvcache.go:544`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
   is **inexact** (cold prefill), and `pos == c.pos` is **exact**. An agent turn is `previous prompt +
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
   hybrid-specific refusal on that path is `reconcile`'s reset after a mid-sweep rollback
-  (`decoder/session.go:98-102`). So `docs/completed/qwen3_5_moe.md:132` ("falls back to full
+  (`decoder/session.go:113-117`). So `docs/completed/qwen3_5_moe.md:132` ("falls back to full
   recompute") was stale for the case that matters; corrected 2026-09-12 alongside that doc's
   archival, with the test below already the evidence for the fix.
 - **Phase 0 — exact extension, no snapshot.** Replace the blanket refusal with the staged rule:
@@ -803,6 +803,14 @@ The input does not change between calls, and quantization is deterministic, so e
   again in `commitBatch` → `ring.write`).
 
 ### R-16 · Recurrent state is zeroed twice per request
+
+> **Status 2026-10-05: the cheap variant is done; the full dirty flag was deliberately not built.** A `Session` now carries `cleanCache`, true only from `NewSession` and `Reset` (so a new session, and `sessionLRU.fresh`'s
+> eviction path, which is Reset then Generate), and `rewindForReuse` skips its `TruncateTo(0)` when the flag is true, the token list is empty and the cache is at position 0, then consumes the flag whatever happens. The default
+> is false, so a snapshot-restored session and every session after its first generation take the full reset. This removes the redundant zero in the two cases the audit names (the second zero after Reset, and the zero of a
+> born-zero cache). It does NOT remove a redundant zero on a warm session's cold-reset path, which stays.
+> **Why not the dirty flag the audit asks for:** it needs a set at every site that mutates recurrent state (the Mamba, DeltaNet, KDA and LFM2 steps, the batched DeltaNet path and the prefix-share restore, about seven), and a
+> site missed there silently leaks one conversation's state into the next, the C-01 and C-03 class. The saving is one memset per request, an estimate of a few milliseconds against a request of seconds. `TestSession_cleanCacheSkipsTheSecondRecurrentReset`
+> counts resets on a real recurrent cache and pins every case where the skip must not happen; shown red by dropping the guards, by not consuming the flag, and by not setting the flag. Not timed.
 
 - **How:** `sessionLRU.fresh` → `Reset` → `TruncateTo(0)` zeroes the state. Then `Session.Generate` →
   `rewindForReuse` finds no shared tokens, calls `TruncateTo(0)` again, and zeroes it again.

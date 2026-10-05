@@ -15,6 +15,15 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — a new or just-reset session no longer zeroes its recurrent state a second time (audit R-16, the cheap variant)
+
+`sessionLRU.fresh` Reset an evicted session (which zeroes the Mamba, DeltaNet, KDA and LFM2 state) and the first `Generate` then ran `TruncateTo(0)` again, zeroing the same state; a brand-new session did the same on its first
+rewind. `Session` now carries a `cleanCache` flag, true only from `NewSession` and `Reset`, which `rewindForReuse` consumes; it skips the redundant reset only when the flag is set, the token list is empty and the cache is at position 0.
+The flag defaults to false, so snapshot-restored sessions and every session after its first generation behave exactly as before. **The full fix the audit proposes, a dirty flag set at every state-mutating site, was not built:** a missed site
+leaks one conversation's state into the next (the C-01 and C-03 class) for a saving of one memset per request, an estimate of a few milliseconds. `TestSession_cleanCacheSkipsTheSecondRecurrentReset` counts `resetRecurrent` calls
+(a new diagnostic counter, `KVCache.recurrentResets`; nothing branches on it) and pins both the skip and every case where it must not happen. Shown red by dropping the guards, not consuming the flag, and not setting the flag.
+Output is unchanged (a reset of an already-reset cache is idempotent). Not timed. Parity refresh: 64 goldens passed, 39 `deps_hash` lines changed.
+
 ### Fixed — `pull` no longer reads a downloaded file a second time to learn its hash (audit R-18)
 
 `Download` verified the sha256 while streaming but never wrote the `.sha256` sidecar, so the first `Resolve` after a pull, through `cachedIntact`, read the whole file again to arrive at the digest the download had just computed:

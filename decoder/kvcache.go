@@ -92,6 +92,9 @@ type KVCache struct {
 	// (its linear layers don't Append, so the last-layer trigger is unreliable).
 	manualPos bool
 
+	// recurrentResets counts resetRecurrent calls: a diagnostic, read by the R-16 test that proves a clean session does not zero its state twice. Nothing branches on it.
+	recurrentResets int
+
 	// delta holds the Gated DeltaNet recurrent state for qwen3_5_moe's linear
 	// layers (nil entry on softmax layers, nil slice on every other family). This
 	// is the recurrent half of the hybrid cache — see docs/qwen3_5_moe.md.
@@ -488,6 +491,7 @@ func (c *KVCache) hasRecurrentState() bool {
 // SSM/linear-attn state) so a reused cache doesn't leak the prior sequence's recurrence
 // into a fresh one (audit C-01). No-op on non-recurrent families (nil slices).
 func (c *KVCache) resetRecurrent() {
+	c.recurrentResets++
 	// LFM2's conv window is recurrent state in exactly the sense audit C-01 is about:
 	// leaving it would let the previous sequence's last K-1 tokens bleed into the first
 	// K-1 of the next one, which is a small, fluent, entirely wrong prefix.
