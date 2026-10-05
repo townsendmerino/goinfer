@@ -1010,7 +1010,7 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
   before its first use. That is implicit zeroing of buffers the kernels then fully overwrite: R-11's class,
   depending on how wgpu-native tracks initialization.
 
-**Status, 2026-10-05: the repeated quantization FIXED (bit-identical), speed-neutral on the Mac.** `tiledProjB` is now
+**Status, 2026-10-05: the repeated quantization FIXED (bit-identical), speed-neutral on the Mac; stays on (owner: "it stays on").** `tiledProjB` is now
 `quantB` then `projQB` (`gpu/prefillrunner.go`); `sharedQ` quantizes `xn` once for q/k/v and `xn2` once for gate/up
 when their K match (always here), and `prefillQuantPerProj` (tests only) restores a quantization each.
 - **Gate:** `TestPrefillLastW8A8_sharedQuantBitIdentical`: last-row logits and every K/V cache element bit-identical to
