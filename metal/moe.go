@@ -277,6 +277,52 @@ kernel void gemv_w8a8_moe_wacc(device const char* wq[[buffer(0)]], device const 
     W8A8_MOE_BODY
     if (lane==0) out[row] += wgt[slot]*y;
 }
+// gemv_w8a8_moe_rows / gemv_w8a8_moe_wacc_rows: the two int8 expert GEMVs above with R output rows per simdgroup, one
+// read of each staged activation word feeding R exact int32 dots (the integer sum does not depend on the order), then the
+// originals' epilogue for each row, the same expression: y = simd_broadcast_first(float(acc)*asc*sct), out = y or
+// out += wgt*y. Full threadgroups only (rows % 8R == 0, gemvRowsFor).
+#define W8A8_MOE_ROWS_BODY \
+    threadgroup uint* As4 = (threadgroup uint*)As; \
+    device const uint* a4 = (device const uint*)aq; \
+    uint G = K >> 2u; \
+    for (uint i = tid; i < G; i += tgs) As4[i] = a4[i]; \
+    threadgroup_barrier(mem_flags::mem_threadgroup); \
+    uint row0 = (tgid*(tgs>>5u) + sgid)*R; \
+    uint wrow0 = idx[slot]*rowsPerExpert + row0; \
+    int acc[R]; \
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = 0; \
+    for (uint g = lane; g < G; g += 32u) { \
+        uint a = As4[g]; \
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] += DOT4I8(a, ((device const uint*)(wq + (uint)(wrow0+r)*K))[g]); \
+    } \
+    float y[R]; \
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) { int sr = simd_sum(acc[r]); y[r] = simd_broadcast_first(float(sr) * asc[0] * sct[wrow0+r]); }
+template <uint R>
+kernel void gemv_w8a8_moe_rows(device const char* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], constant uint& slot[[buffer(7)]],
+    constant uint& rowsPerExpert[[buffer(8)]], threadgroup short* As[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    W8A8_MOE_ROWS_BODY
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = y[r]; }
+}
+template <uint R>
+kernel void gemv_w8a8_moe_wacc_rows(device const char* wq[[buffer(0)]], device const float* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], device const float* wgt[[buffer(7)]],
+    constant uint& slot[[buffer(8)]], constant uint& rowsPerExpert[[buffer(9)]], threadgroup short* As[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    W8A8_MOE_ROWS_BODY
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += wgt[slot]*y[r]; }
+}
+template [[host_name("gemv_w8a8_moe_rows2")]] kernel decltype(gemv_w8a8_moe_rows<2>) gemv_w8a8_moe_rows<2>;
+template [[host_name("gemv_w8a8_moe_rows4")]] kernel decltype(gemv_w8a8_moe_rows<4>) gemv_w8a8_moe_rows<4>;
+template [[host_name("gemv_w8a8_moe_wacc_rows2")]] kernel decltype(gemv_w8a8_moe_wacc_rows<2>) gemv_w8a8_moe_wacc_rows<2>;
+template [[host_name("gemv_w8a8_moe_wacc_rows4")]] kernel decltype(gemv_w8a8_moe_wacc_rows<4>) gemv_w8a8_moe_wacc_rows<4>;
 
 // Indexed Stage-A W4A8 expert GEMV, mode-1 WEIGHTED-ACCUMULATE (down projection). Weight
 // row = idx[slot]*rowsPerExpert + outRow (rowsPerExpert = H); epilogue folds the router

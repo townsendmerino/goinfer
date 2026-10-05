@@ -1103,8 +1103,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.w8 && r.moe != nil { // slice 4: the experts' GEMVs on their int8 weights (buildMoELayer uploads them as int8)
 		r.moe.w8 = true
 		r.moe.pGU, r.moe.pDownWacc = pipe("gemv_w8a8_moe"), pipe("gemv_w8a8_moe_wacc")
-		r.moe.guR, r.moe.downR = 0, 0 // the int8 expert kernels are one row per simdgroup
-		r.moe.kSlots = false          // D-P03's k-slot kernels read int4
+		r.moe.guR, r.moe.downR = 0, 0
+		if moeExpertRowsOn { // the int8 expert GEMVs' rows form (gemv_w8a8_moe_rows), where the row counts admit it
+			if R := gemvRowsFor(2*r.moe.inter, 4); R > 0 {
+				r.moe.pGU, r.moe.guR = pipe(fmt.Sprintf("gemv_w8a8_moe_rows%d", R)), R
+			}
+			if R := gemvRowsFor(r.H, 4); R > 0 {
+				r.moe.pDownWacc, r.moe.downR = pipe(fmt.Sprintf("gemv_w8a8_moe_wacc_rows%d", R)), R
+			}
+		}
+		r.moe.kSlots = false // D-P03's k-slot kernels read int4
 	}
 	r.w8Attn = !r.w8 && w8AttnEligible(m, r)
 	if r.w8Attn {

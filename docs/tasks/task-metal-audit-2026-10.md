@@ -1461,6 +1461,24 @@ sequential loop runs them.
 - `TestPrefillLast_declinesPagedGenericMoE` still holds as written: it pins `prefillOK` (the f16 pass's gate), which a
   paged generic MoE still fails; the layer-major branch runs ahead of that pass, on decode's kernels.
 
+### Int8 MoE rows form: built ON, bit-identical; its speed read pre-registered for tonight (written 2026-10-04, owner)
+
+The native int8 MoE's expert GEMVs (`gemv_w8a8_moe` / `_wacc`, slice 4 of the int8 task) were one row per simdgroup.
+`gemv_w8a8_moe_rows<R>` / `gemv_w8a8_moe_wacc_rows<R>` (R = 2, 4): one read of each staged activation word feeds R
+exact int32 dots, then each row's epilogue is the original's expression (`simd_broadcast_first(float(acc)*asc*sct)`,
+then `out = y` or `out += wgt*y`); native int8 compiles with precise math, which leaves the compiler no reassociation.
+Picked at build with the int8 experts where the row counts admit it (`moeExpertRowsOn`).
+- **Gate** (`TestMoEExpertRows_int8BitIdentical`): Mixtral and Qwen3-MoE at int8int8 on the native path, every logit of
+  8 positions equal with and without the rows form, the rows form engaged. Reading every row's weights from the first
+  row's offset fails it. `TestMoEW8_X1_kernelsMatchReference`, X2 and the snapshot golden's Mixtral int8int8 cells pass.
+- **Speed: not read by day.** The Qwen1.5-MoE slice at int8int8 needs 5.43 GB resident against 3.0 GB live-available,
+  and the guard declines it; the day-use exception covers M26 only.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-moe-int8-rows.sh` on the night queue (priority 60): `TestDB04R_expertRowsAB` at `GOINFER_DB04R_QUANT=int8int8` on the slice, resident: the one-row kernels against the rows form swapped on one resident (the one-row arm compiled precise, as the resident is), 32 tokens, 7 reps alternated, GPU time a token, logits bit-identical first. About 2 minutes; queued at 5. |
+| Rule | The owner's bar: **stays on** at a median one-row ÷ rows ≥ 1.02; **parked** (`moeExpertRowsOn` cannot split them, so the int8 rows wiring is reverted) at 1.00-1.02; **off** below 1.00. |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -1805,3 +1823,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   Not kept.
 - 2026-10-04: **layer-major prefill for the generic paged MoE shipped** (owner): bit-identical, 1.26x on the paged
   Qwen1.5-MoE slice's prompt at 128 and 512 tokens.
+- 2026-10-04: **the int8 MoE rows form built**, bit-identical, on; its speed read queued for tonight (the guard declines
+  the int8 slice by day).
