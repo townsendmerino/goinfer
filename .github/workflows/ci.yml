@@ -772,6 +772,8 @@ jobs:
         run: |
           Get-CimInstance Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors | Format-List
           go version; go env GOOS GOARCH
+      - name: kernels in use (aikit probes DotProd here since v1.56.0), and check --hardware on Windows ARM
+        run: go run ./cmd/serve check --hardware
       - name: build
         run: go build ./...
       - name: test
