@@ -1,0 +1,8 @@
+# R-13 (docs/tasks/task-recompute-audit.md): CPU W4A8, each input quantized once for the projections that share it vs every matmul quantizing its own (w4a8PreOff). TestR13_cpuAB, in-process, by day, exploratory
+# MacBook Pro M1 Pro 16 GB, macOS 26.6.2, CPU (arm64 NEON), goinfer r13-w4a8-pre b7895d2b + aikit r13-w4a8-pre 69822b0 (local workspace), int4, one activation scale per row, checkpoints from ~/models; 15:52-15:53 PDT, load 1.2-2.9 at start, desktop in use
+# decode: fresh cache per arm, 8 warm-up tokens, median of 32 timed steps; prefill: one 256-token forwardN; 7 reps an arm alternated after a warm-up; logits bit-equal every rep
+[r13    4.9s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: loaded (28 layers, MoE false)
+[r13   16.0s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf decode ms a token: off 16.159, on 16.396 (medians of 7); off / on median 0.995, 2 of 7 reps above 1 (per rep 1.009 0.808 1.003 0.996 0.990 0.995 0.987)
+[r13   36.5s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf prefill 256 ms: off 1297.605, on 1274.172 (medians of 7); off / on median 1.014, 6 of 7 reps above 1 (per rep 1.014 0.989 1.035 1.034 1.001 1.014 1.009)
+[r13   49.3s] qwen15-moe-a27b-l4slice: loaded (4 layers, MoE true)
+[r13   54.3s] RESULT qwen15-moe-a27b-l4slice decode ms a token: off 7.186, on 7.172 (medians of 7); off / on median 1.008, 4 of 7 reps above 1 (per rep 1.021 1.008 0.998 0.978 0.974 1.013 1.011)
