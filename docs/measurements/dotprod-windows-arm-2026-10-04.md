@@ -1,6 +1,6 @@
 # DotProd versus the base kernels on Azure Cobalt 100 (the Windows ARM question): pre-registration, 2026-10-04
 
-**Status: run 1 done and NOT the registered measurement (instrument defects, below); run 2 pending.** The rule and bands below were committed before any run and are not edited after one. Corrections and run results are appended as dated sections at the end, with this text unchanged above them, except that the "Arms" bullet carries an inline correction.
+**Status: run 1 done and NOT the registered measurement (instrument defects, Deviation 1); run 2 aborted by its own guard and graded nothing (Deviation 2); run 3 pending.** The rule and bands below were committed before any run and are not edited after one. Corrections and run results are appended as dated sections at the end, with this text unchanged above them, except that the "Arms" bullet carries an inline correction.
 
 ## The question
 
@@ -59,6 +59,16 @@ The Result section will carry, per runner: aikit commit, runner image version, t
 
 **Decision, made before run 2 and independent of its result.** Run 2 is the registered measurement. **The rule, the bands, the cells and the 21 rounds are unchanged.** The instrument is fixed in aikit: each arm is calibrated to its own call count so EVERY arm's block is at least 20 ms; Windows reads `QueryPerformanceCounter` instead of its coarse `time.Now`; and the test now FAILS (rather than prints) if any arm's timing is non-positive or non-finite, or if any timed block is under 90% of 20 ms, and logs the clock and its smallest tick. Plumbing was checked under QEMU with emulated DotProd (its ratios are artefacts and are not quoted). If run 2 disagrees with run 1, both are reported and the registered one (run 2) is graded. Run 1's logs are kept as workflow artifacts of run 37265393092.
 
+## Deviation 2: run 2 was aborted by its own guard and graded nothing (written after run 2, before run 3)
+
+**Run 2** (aikit workflow run 37267553780, aikit `9b8e5a2`, the fixed harness) stopped on both runners at the new block-length guard before completing a cell grid: ubuntu-24.04-arm after 33 s (`int8 qwen2.5-0.5B o_proj M=64 workers=0`: the shortest timed block was
+14.63 ms against the 18 ms floor, which is 90% of the pre-registered 20 ms), and windows-11-arm after 61 s (`int8 qwen2.5-0.5B gate M=1 workers=1`: 17.56 ms). **No cell from run 2 is graded or quoted**: the cells it printed before stopping are a partial grid.
+What it did show: the Windows clock fix took (`QueryPerformanceCounter`, smallest tick 100 ns; Linux 32 ns), and there were no NaN or Inf lines.
+
+**Cause.** The per-arm calibration measured a per-call time slightly faster than the rounds then saw (by about 27% in the worst case), so a block sized to exactly 20 ms came in under. The guard refused it, as designed, rather than keeping a short block.
+
+**Fix, decided before run 3 and independent of its result.** Calibrate each arm to 1.5x the target so ordinary variation stays above the floor, and re-time an arm with a larger call count when a block still comes in under 90% of 20 ms (at most three times, then the test fails). **The re-timing is triggered by block length only, never by the speedup, and the short measurement is discarded, not kept.** The count of re-timings per cell is logged (`retimed N`) next to the shortest block (`min-block`). The floor itself is not lowered, and the rule, bands, cells and 21 rounds are unchanged. **Run 3 is the registered measurement.** Runs 1 and 2 are reported as what they are.
+
 ## Result
 
-*Run 2 not yet run.*
+*Run 3 not yet run.*
