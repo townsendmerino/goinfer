@@ -87,7 +87,7 @@ func (m *Model) lfm2Attention(n []float32, lw *LayerWeights, arch *Architecture,
 	applyRoPE(k, nKV, hd, pos, invFreq, ms)
 
 	cache.Append(layer, k, v)
-	ctx := make([]float32, nH*hd)
+	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQuery clears it
 	nKeys := len(cache.Keys(layer)) / (nKV * hd)
 	// Full causal attention on every attention layer: LFM2 has no sliding window — the conv
 	// layers ARE its locality mechanism, so the 8 attention layers are all global.

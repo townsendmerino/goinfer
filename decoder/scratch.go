@@ -111,12 +111,30 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 }
 
 // scoresBuf returns a length-n scores buffer, reusing the backing array when it
-// is large enough and growing it (once) as the context extends.
+// is large enough. It grows with headroom (R-17, docs/tasks/task-recompute-audit.md): n is the key count, which rises
+// by one a token, so growing to exactly n reallocated and re-zeroed the buffer on every token. The caller writes all n
+// scores before reading any, so the spare capacity's contents never matter.
 func (s *decodeScratch) scoresBuf(n int) []float32 {
 	if cap(s.scores) < n {
-		s.scores = make([]float32, n)
+		s.scores = make([]float32, growCap(cap(s.scores), n))
 	}
 	return s.scores[:n]
+}
+
+// growCap is the capacity a per-token buffer grows to when it needs n: at least n, and at least double the old
+// capacity, so a buffer that grows by one row a token reallocates O(log n) times instead of every token (R-17).
+func growCap(old, n int) int {
+	return max(n, 2*old, 256)
+}
+
+// ctxBuf returns the attention context buffer, length n, from the scratch (R-17): the own-forward families
+// (Qwen3.5, Granite, Llama 4, LFM2, Nemotron) used to make a fresh zeroed one per layer per token, and attendQuery
+// clears it before accumulating anyway. The caller consumes it (the o-projection) before the next layer asks again.
+func (s *decodeScratch) ctxBuf(n int) []float32 {
+	if len(s.ctx) < n {
+		s.ctx = make([]float32, n)
+	}
+	return s.ctx[:n]
 }
 
 // gateBuf returns a length-n buffer for Laguna's attention output gate (the

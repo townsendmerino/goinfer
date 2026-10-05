@@ -831,6 +831,24 @@ The input does not change between calls, and quantization is deterministic, so e
 - **Others:** `moeOut` → `out`; postOnly's `copy(scr.norm, h)` (plausible); Gemma 4's gather/scatter of heads that
   are already contiguous; logprobs' extra full-vocab max and exp scans (not bit-identical by summation order).
 
+**Status, 2026-10-05: the per-token allocations FIXED (bit-identical); the copies and the rest left.**
+- **Done:**
+  - `scoresBuf` and Arm B's `groupScoresCombined` grow with headroom (`growCap`: at least double), so a buffer that
+    gains a row a token reallocates O(log n) times instead of every token.
+  - The five own-forward families take `ctx` from the per-sequence scratch (`ctxBuf`) instead of a fresh `make`
+    per layer per token; `attendQuery` and `attendQueryI8` clear it before accumulating either way.
+- **Checks:**
+  - A throwaway measurement before and after, 300 decode tokens on six tiny fixtures (the five families plus a dense
+    control): the hash of every step's logits bits is identical.
+  - Allocation per decode token falls by 1,095-1,863 bytes and 2-5 allocations on the five; the control is unchanged.
+    The ~1.1 KB is `scoresBuf`'s per-token regrowth at ~275 keys; at real dims and depth it scales with the key count,
+    and `ctx` with heads × head dim per attention layer.
+  - The 41 forward goldens pass (refresh_parity_hashes, arm64); the full decoder suite passes.
+- **Not done:** the AV kernels writing straight into `ctx` (it leans on `MatmulAVAcc64`'s contract and changes Arm B's
+  structure), `deltaNetCore`'s per-call allocations, `moeOut` → `out`, postOnly's copy, Gemma 4's head gather/scatter,
+  and the logprobs scans (not bit-identical). Each is smaller still. No wall-clock A/B: by size these are well under
+  1% of a token, below CPU decode's run-to-run noise.
+
 ### R-18 · `pull` hashes every downloaded file twice
 
 > **Status 2026-10-05: fixed.** `Download` now writes the digest sidecar from the sha256 it verified while streaming (both the normal and the 416-already-complete paths), so the first `Resolve` after a pull finds it

@@ -1308,8 +1308,8 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			splitWorkers = 1
 		}
 		leader := &pool[0]
-		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c {
-			leader.groupScoresCombined = make([]float32, c)
+		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom (R-17)
+			leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
 		}
 		if c := nKV * group * hd; cap(leader.groupCtxCombined) < c {
 			leader.groupCtxCombined = make([]float32, c)

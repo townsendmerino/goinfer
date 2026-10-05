@@ -103,7 +103,7 @@ func (m *Model) graniteAttention(n []float32, lw *LayerWeights, arch *Architectu
 	}
 
 	cache.Append(layer, k, v)
-	ctx := make([]float32, nH*hd)
+	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQuery clears it
 	nKeys := len(cache.Keys(layer)) / (nKV * hd)
 	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full attention*/, arch)
 

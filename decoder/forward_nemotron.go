@@ -65,7 +65,7 @@ func (m *Model) nemotronAttention(n []float32, lw *LayerWeights, arch *Architect
 	matmul(m.be, &lw.VProj, n, v, 1)
 
 	cache.Append(layer, k, v)
-	ctx := make([]float32, nH*hd)
+	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQuery clears it
 	nKeys := len(cache.Keys(layer)) / (nKV * hd)
 	attendQuery(q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, true /*full attention*/, arch)
 
