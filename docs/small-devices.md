@@ -27,9 +27,9 @@ What to expect, and what to check before quoting a number:
   are correct. **The fallback differs by quant, and the default is the bad one** (corrected 2026-10-04; this
   page said "the base NEON kernel" for both): **int8 has a NEON kernel without DotProd**, about 1.4-1.9x slower
   than `SDOT` on the decode projections; **int4 (W4A8) has no non-DotProd kernel and runs the pure-Go scalar
-  reference**, which a kernel benchmark on an Azure Cobalt 100 put at roughly 28x slower than the `SDOT` path
-  (out of spec in its first run, with the registered run pending: `docs/measurements/dotprod-windows-arm-2026-10-04.md`;
-  a kernel figure gives direction, not a served speed, and no Pi was measured). So on a board without DotProd,
+  reference**, which a pre-registered kernel benchmark on an Azure Cobalt 100 put at about 28x slower than the
+  `SDOT` path for decode and about 36x for prefill (`docs/measurements/dotprod-windows-arm-2026-10-04.md`; a kernel
+  figure gives direction, not a served speed, and no Pi was measured). So on a board without DotProd,
   `-quant int8int8` is likely to decode far faster than the default int4, at twice the weight memory, which
   matters on a 512 MB board. That is a reading of the kernels, not a measurement on one.
 - **No board row is published yet.** The numbers in [`docs/benchmarks.md`](benchmarks.md)
