@@ -258,6 +258,7 @@ Noise: the registry's noise for the cell is sd <sd> / floor <floor> (<entry id>,
 power.py N: `power.py <instrument> <cell> --bar <bar> [--expect <r>] --paired` -> N = <N> blocks (power <p>), or "cannot resolve" -> <the instrument chosen instead>.
 Stopping rule: <fixed N, no early stop> or <the registered skip: pass 2 skipped when pass 1 clears the bar by more than the two passes' own measured spread>. No ad hoc stopping when results look good.
 Ambiguous band: <the parked zone and who decides it>.
+Speed bar: the owner's default, unless the brief says why not: ship >= 1.02x, park 1.00-1.02x, off < 1.00x. The hard preconditions (bit-identity or the fidelity gate, no regression at any cell) stay strict; whether the thesis delivered is reported separately and never gates. Never a 1.2 / 1.5 / 2x ship line (owner 2026-09-26, R18; again 2026-10-04, M26 4b).
 Cost: <estimated wall: cells x runs x per-cell time, plus idle-gate waits>; queued as <night.py job name> or run by day.
 ```
 
