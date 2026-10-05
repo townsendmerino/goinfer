@@ -686,9 +686,17 @@
      "goinfer": "d791f36f",
      "aikit": "v1.55.0",
      "gate": "ci job root-windows-arm64 (run 37243583527): go build ./... and go test -tags goinfer_testhooks ./... green, decoder 180 s. Its first run (355da399) was red on a real defect, the default cpu-arm64 bundle target on a core without DotProd (aikit assumes none off Linux and Darwin), fixed in bf4e5759. The base SMULL/SADALP kernels are the production path here"
+    },
+    {
+     "machine": "GitHub windows-11-arm runner: Azure Cobalt 100 (ARMv8, Microsoft), 4 logical CPUs, Windows 10.0.26200, windows/arm64, go1.27.0",
+     "date": "2026-10-04",
+     "how": "ci-pool",
+     "goinfer": "4c4fc020",
+     "aikit": "v1.56.0",
+     "gate": "ci job root-windows-arm64: go build ./... and go test -tags goinfer_testhooks ./... green on the DotProd kernels. Its log (goinfer-serve check --hardware, the first run of the report on Windows ARM) states `cpu kernels (arm64): detected [dotprod]; in use [dotprod]; forced by build tags none` and `cpu pass (1.4 ms)` for the startup self-test. First run with aikit v1.56.0's Windows DotProd probe; the speed effect is unmeasured"
     }
    ],
-   "notes": "H1.1's first run (ci run 37143040097, PR #6) was red; PR #7 fixed it (task doc H1.1). The fixes: LF checkouts (.gitattributes), a Windows host-RAM probe (decoder/hostram_windows.go, GlobalMemoryStatusEx: fit and the load guard now work there), per-OS test helpers, and test isolation via LocalAppData. Windows reads model files into the heap (aikit's mmap_other.go), not a mapping. windows-arm64: the root-windows-arm64 job (GitHub's windows-11-arm, Cobalt 100) was added 2026-10-04 and its first run was red on a real defect (the default cpu-arm64 bundle target on a core without DotProd; fixed in GIWTargetForBackend). It is green since d791f36f (record above), which ran aikit v1.55.0's base SMULL/SADALP kernels. From the aikit v1.56.0 bump (aikit probes DotProd on Windows ARM) the same job runs the SDOT kernels and row4 layouts for the first time; no record for that is added until it is green."
+   "notes": "H1.1's first run (ci run 37143040097, PR #6) was red; PR #7 fixed it (task doc H1.1). The fixes: LF checkouts (.gitattributes), a Windows host-RAM probe (decoder/hostram_windows.go, GlobalMemoryStatusEx: fit and the load guard now work there), per-OS test helpers, and test isolation via LocalAppData. Windows reads model files into the heap (aikit's mmap_other.go), not a mapping. windows-arm64: the root-windows-arm64 job (GitHub's windows-11-arm, Cobalt 100) was added 2026-10-04 and its first run was red on a real defect (the default cpu-arm64 bundle target on a core without DotProd; fixed in GIWTargetForBackend). It is green since d791f36f (record above), which ran aikit v1.55.0's base SMULL/SADALP kernels. From the aikit v1.56.0 bump (aikit probes DotProd on Windows ARM) the same job runs the SDOT kernels and row4 layouts, green since 4c4fc020 with the log showing dotprod in use (record above)."
   },
   {
    "id": "linux-arm64",

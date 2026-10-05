@@ -111,6 +111,7 @@ How it ran: **native** is real hardware; **ci-pool** is a GitHub runner whose CP
 | Francis's MacBook Pro: M1 Pro, 16 GB unified memory, macOS (Darwin 25.6.0), wgpu-native Metal backend (adapter Apple M1 Pro, integrated-gpu, dot4I8Packed yes) | native | 1 | 2026-10-04 |
 | GitHub windows-latest runner: AMD EPYC 9V74 (Zen 4), 2 cores / 4 threads, windows/amd64 | ci-pool | 1 | 2026-10-03 |
 | GitHub windows-11-arm runner: Azure Cobalt 100 (Neoverse N2), 4 CPUs, windows/arm64, go1.27.0 | ci-pool | 1 | 2026-10-04 |
+| GitHub windows-11-arm runner: Azure Cobalt 100 (ARMv8, Microsoft), 4 logical CPUs, Windows 10.0.26200, windows/arm64, go1.27.0 | ci-pool | 1 | 2026-10-04 |
 
 **10 of 31 hardware-selected paths have no record of ever executing:**
 
