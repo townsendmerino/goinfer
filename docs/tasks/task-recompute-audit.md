@@ -883,6 +883,27 @@ short-lived garbage per 2048-token pass, not for speed. Raw: `docs/measurements/
 - **Paged `ForwardN`** copies logits twice on the host.
 - **The off-by-default Gemma 4 prefetch** recomputes `g4rn`.
 
+**Status, 2026-10-05: checked against the code, none worth doing.** Estimates from the code and this repo's own
+measurements, not timed:
+- **The three reductions: real.** `encodeG4Phase1` reduces `r.x` in `rmsnorm_quant` (preFFN), `rmsnorm_nw` (the
+  router) and `rmsnorm_quant` (preFFN2). The sums are the same code and the same 256-wide tree, so one sum could feed all
+  three outputs bit for bit, provided the fused kernel keeps `rmsnorm_nw`'s fast `rsqrt` beside the others'
+  `precise::rsqrt`. M26 has 30 layers: 2 extra dispatches × 30 = 60 a token. At the 2.7 us a dispatch D-P03 measured,
+  that is about 0.16 ms of M26's 75.1 ms paged token (0.2%), on phase 1, so it would reach wall time in full. The
+  layer-major prefill pays the same per prompt row (about 0.3% of 56 ms). Gemma 4's MoE has no other model here.
+- **The qGate K‖V copy: real, negligible.** `pCopyCols` copies the K‖V GEMM's output into `qkvF` in each full-attention
+  layer of the Qwen3.5/3.6 and Qwen3-Next hybrids. On the Qwen3.5-9B that is 8 layers × 8 MB at M = 2048, about 64 MB
+  per pass at the GPU's copy bandwidth, a fraction of a millisecond in a multi-second pass.
+- **`stopExec` in `forwardMultiInto`: cheaper than stated.** It is a no-op unless the one-sequence executor or chain is
+  running (`execReq` nil), so steady batched steps pay nothing. The cost is one stop and restart per switch between one
+  sequence and several, which serve does when a client joins or leaves, not per token.
+- **The paged `ForwardN` double copy: real, negligible.** Device to `logitsHost`, then `logitsHost` to the output row
+  (needed as written, since `logitsHost` is reused). About 1 MB a position on Gemma 4's 262k vocabulary, on the order
+  of 0.1 ms of a 75 ms paged position, and only speculative verify calls it.
+- **The prefetch's `g4rn`:** costs nothing while `g4PrefetchOn` is off.
+
+Reopen the first item only if M26's paged token falls far enough that 0.16 ms matters; the rest, not at all.
+
 ### R-22 · CUDA expert-major MoE prefill: routing round-trips through the host one row at a time
 
 - **What happens:** for each row, `stream.Sync`, `Download(rIdx)`, `Download(rWgt)`; after the loop, one
