@@ -1531,7 +1531,8 @@ armed at +1 GB (07:52 PDT): RSS reached 6.45 GB during the build, then swap went
 file grew from 2 to 3 GB), and the kill-watch killed it 19 s in, before any token was timed. **The guard was right: the
 int8 slice does not fit resident on this Mac.** Nothing was measured; the rows form stays on as built, bit-identical,
 its speed unread. It is not re-queued: no night on this Mac gives it more memory than the guard has already refused.
-It needs a smaller resident int8 MoE, or a box with more RAM. Kill-watch log: `night-2026-10-04c/int8rows-bypass-killwatch.log`.
+It needs a smaller resident int8 MoE, or a box with more RAM. **Owner, 2026-10-05: not pursued.** The workarounds offered (a 2-layer slice of the local slice, at a diluted read; a
+Qwen3-30B-A3B slice, about 8 GB of download) were declined, so the speed stays unread and nothing is queued. Kill-watch log: `night-2026-10-04c/int8rows-bypass-killwatch.log`.
 
 ## Owner decisions
 
