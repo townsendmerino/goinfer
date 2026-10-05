@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -25,7 +26,9 @@ func TestEnsureCPUSelfTest_recordsAPass(t *testing.T) {
 	if got.Status != SelfTestPass && got.Status != SelfTestSkipped {
 		t.Fatalf("a healthy host's cpu self-test is %s: %s", got.Status, got.Summary())
 	}
-	if got.Status == SelfTestPass && got.Elapsed <= 0 {
+	// Windows' monotonic clock ticks every ~0.5-15 ms and the CPU self-test takes about 1 ms (less with the DotProd kernels
+	// aikit v1.56.0 enabled there), so a pass there can honestly record 0: root-windows-arm64 read "elapsed 0s" at ee07ced7.
+	if got.Status == SelfTestPass && got.Elapsed <= 0 && runtime.GOOS != "windows" {
 		t.Errorf("a pass records its cost: elapsed %v", got.Elapsed)
 	}
 }
