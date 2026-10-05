@@ -941,6 +941,14 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
 
 ### R-22 · CUDA expert-major MoE prefill: routing round-trips through the host one row at a time
 
+> **Status 2026-10-05: fixed (the round trip and both zero uploads); the g4x2All fold-into-rank-0 variant was not taken.** The route kernel now writes each row's expert ids and weights into per-chunk device arrays
+> (`idxAll`, `wgtAll`), the row loop is launches only, and the host reads the ids back once after one `stream.Sync` per layer per chunk; the weights never leave the device. The rank accumulators and Gemma 4's `g4x2All` are
+> zeroed with `ZeroAsync` instead of a pageable zero upload. **Not taken:** folding the ranks into `rankScratch[0]` instead of zeroing `g4x2All`, because `0 + x` and `x` differ in the sign of a negative zero, so "bit-identical"
+> would have needed its own proof for one alloc and one memset. Gates: `TestMoEExpertMajorCUDA_bitIdentical` (qwen3moe-tiny k=2 and k=3) and `TestMoEExpertMajorGemma4CUDA_bitIdentical` compare the new path against the unchanged
+> per-row path on every logit, with non-vacuity counters: 0 differ. **Shown red** by pointing the route output at row 0 (generic and Gemma 4 weights), and by removing each of the three zeroings. Full `cuda` suite: 388 pass, 0 fail.
+> **Speed, exploratory only** (`docs/measurements/r22-cuda-moe-route-roundtrip-2026-10-05.txt`): real gemma4-26b, M=512, 3 runs per arm in order-balanced separate processes, old 18.27 ms/token mean, new 16.03, every new run
+> faster than every old run (about 12% less time per token). Not pre-registered and not a result; the served read and other M go to a night job if a number is wanted.
+
 - **What happens:** for each row, `stream.Sync`, `Download(rIdx)`, `Download(rWgt)`; after the loop, one
   `Upload` of all the weights (`cuda/moe_expert_major.go`, and the Gemma 4 version). The host never reads the
   weights; it only uploads them back.
@@ -969,6 +977,21 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
   to fix.
 
 ### R-24 · Other CUDA duplicates
+
+> **Status 2026-10-05: two of the four fixed, two declined with reasons.**
+> - **Fixed, batched-prefill tail:** the full `[M, hidden]` residual is now downloaded only for `ResidualAll`, the one tail that reads it on the host; the argmax and all-logits heads read `xB` on the device, and the last-row
+>   tails (`PrefillLast`, `HiddenLast`) copy that row `xB -> r.x` on the device (a `kv_store` launch, as in R-23) instead of downloading everything and uploading one row back. Gate: `TestPrefillTails_bitIdenticalToTheRecordedBaseline`
+>   hashes every tail mode (last-row logits plus a greedy decode continuation, all-logits, argmax ids, hidden-last, residual-all) on three fixtures against a baseline recorded from the unmodified code
+>   (`cuda/testdata/prefill_tails_baseline.json`): 15 outputs bit-identical. Shown red by copying the wrong row, by dropping the `ResidualAll` download, and by dropping the last-row copy.
+> - **Fixed, Gemma 4 `g4x2` clear:** the clear is now a `ZeroAsync` on `r.stream` in every mode; the non-overlap path had done `r.stream.Sync()` then a pageable `gpu.Upload` of a host zero slice (two more context syncs). This audit entry
+>   said the Upload already context-syncs, so the Sync was redundant; that is wrong: `gpu.Upload` runs on the legacy stream with no ordering against `r.stream`, which is why the Sync was there (audit R-03). The stream-ordered memset
+>   keeps that ordering. Gated by the existing decode baseline (`TestKEqVCopy_*`: `gemma4-moe-scaled`, CUDA graphs on and off, 4 runs bit-identical) and red when the clear is removed. The `g4zero` host buffer is gone.
+> - **Declined, `launchToken`'s upload:** `gpu.Upload` of the embedding costs a median 20.5 microseconds (p90 33) on an idle context at hidden 1024 to 5120, against about 4.5 ms for a decode token on the 1.5B (0.5% at most,
+>   less on larger models), and replacing it means a pinned staging buffer and an async upload on the decode hot path. Below anything an A/B here could resolve, so not worth the risk.
+> - **Declined for now, block-spec drafter's three device-host-device trips:** it needs a device-handle variant of `decoder.ResidentBlockDrafter` (an interface and loop change in `decoder`, so a parity refresh) plus the cuda drafter.
+>   The data per round is small (an estimate, not measured: 5 taps x M x hidden floats for the capture, M x hidden for the fused rows, a few rows for the trunk, on the order of half a millisecond of transfers against a round of tens
+>   of milliseconds, a few percent on the DFlash path only). Worth doing with a measurement of the real transfer time first.
+> - Nothing here was timed. The tail change saves one residual download per prefill pass, 23 MB at M=2048 on a 2816-wide model (an estimate from the byte count).
 
 - **Batched-prefill tail downloads the full residual even when nothing reads it.** This happens every MC3 step and
   every verify round; the last-row case uploads one row back. `r.norm` can read `xB` at an offset directly.

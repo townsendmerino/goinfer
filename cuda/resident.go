@@ -924,7 +924,6 @@ type cudaResident struct {
 	// because the join norms (x1+x2) BEFORE adding the residual h — the experts can't wacc into the
 	// residual stream the way the generic moeMLP does.
 	g4x1, g4x2, g4rn Buffer
-	g4zero           []float32 // host [hidden] zeros to clear x2 before the wacc loop (no D2D helper)
 
 	// Shared-expert scratch (allocated only when any layer hasShared). Sized to sharedInter,
 	// which is its own width — distinct from both the dense inter and the routed moeInter.
@@ -4172,25 +4171,14 @@ func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
 // qwen3_next) and would otherwise skip the router readback entirely.
 func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error {
 	if Ly.g4moe {
-		// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING); gpu.Upload runs the
-		// zero-fill copy on the context's legacy null stream, which has NO ordering vs r.stream
-		// (aikit gpu/cuda.go) — its full sync fixes upload→next-launch, not pending-launch→upload.
-		// Without this, the DMA can land mid-segC(l-1) and zero the previous layer's expert
-		// contribution before the join reads it: a data race on every g4moe layer after the first.
-		// Sync r.stream so the clear is ordered after the prior layer's kernels (audit R-03).
-		// Overlap mode: a memset ON r.stream is ordered by the stream itself — after segC(l-1)'s
-		// join read it, before segC(l) accumulates into it — and drains nothing.
-		if r.overlap {
-			if e := r.stream.ZeroAsync(r.g4x2, r.hidden*4); e != nil {
-				return e
-			}
-		} else {
-			if e := r.stream.Sync(); e != nil {
-				return e
-			}
-			if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
-				return e
-			}
+		// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING). The clear must land after that read and before segC(l) accumulates
+		// into it. A memset ON r.stream is ordered by the stream itself, in every mode, and drains nothing (audit R-24). The non-overlap path used to
+		// do r.stream.Sync() then gpu.Upload of a host zero slice, because gpu.Upload runs its copy on the context's legacy null stream, which has NO
+		// ordering against r.stream (aikit gpu/cuda.go): the Sync made the clear follow the prior layer's kernels (audit R-03), and the Upload added two
+		// more context syncs and a pageable copy. ZeroAsync keeps the R-03 ordering without any of them. The router readback that follows
+		// (loadRoutedExperts) still syncs r.stream itself, so the wait is not lost, only moved to where it was needed anyway.
+		if e := r.stream.ZeroAsync(r.g4x2, r.hidden*4); e != nil {
+			return e
 		}
 		r.profMark(&r.profClear)
 	}

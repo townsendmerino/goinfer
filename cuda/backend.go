@@ -1732,9 +1732,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.shGl = r.af(1) // the sigmoid gate logit; allocated unconditionally (one float)
 			}
 		}
-		if r.gemma4Moe { // parallel dense‖MoE branch scratch + the host zero slice to clear x2
+		if r.gemma4Moe { // parallel dense‖MoE branch scratch
 			r.g4x1, r.g4x2, r.g4rn = r.af(H), r.af(H), r.af(H)
-			r.g4zero = make([]float32, H)
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)

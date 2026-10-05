@@ -1,0 +1,53 @@
+R-22 (docs/tasks/task-recompute-audit.md section 5): CUDA expert-major MoE prefill, the per-row routing round trip removed.
+EXPLORATORY. Not a result and not to be quoted as one: 3 runs per arm, separate processes, no pre-registered rule, no thermal record. It gives a direction.
+
+what ran      TestPrefillLongPrompt, M=512 batched prefill, ms/token as the test prints it. One process per run (model load, then the first PrefillLast), killed after the M=512 line.
+machine       nobara-pc, RTX 2070 SUPER, driver 595.91.07, idle box (load ~1), timing lock held (scripts/timing_lock.py), 2026-10-05
+checkpoint    ~/models/gemma4-26b-int4.giw (local NVMe, not /srv/models), -moe-cache-experts (GOINFER_LONGPROMPT_MOECACHE=1), GOINFER_LONGPROMPT_GIW=1, ctx 8192, synthetic embeddings (fixed seed 12345 in the test)
+old arm       cuda test binary built from 21bf7ad8 (git worktree)
+new arm       cuda test binary built from the working tree at 21bf7ad8 plus the R-22 change (cuda/moe_expert_major.go, cuda/moe_expert_major_gemma4.go)
+order         old new new old old new (order-balanced, one binary per run, 5 s apart)
+driver        a throwaway shell loop, reproduced at the end of this file; run under `python3 scripts/timing_lock.py run --label r22-ab-exploratory -- ab.sh`
+
+raw output
+run 1 old: [longprompt] M=512   batched OK 9.365s     (18.290 ms/token)
+run 2 new: [longprompt] M=512   batched OK 8.19s      (15.996 ms/token)
+run 3 new: [longprompt] M=512   batched OK 8.358s     (16.324 ms/token)
+run 4 old: [longprompt] M=512   batched OK 9.404s     (18.366 ms/token)
+run 5 old: [longprompt] M=512   batched OK 9.295s     (18.155 ms/token)
+run 6 new: [longprompt] M=512   batched OK 8.076s     (15.773 ms/token)
+
+old   18.290  18.366  18.155   mean 18.270 ms/token
+new   15.996  16.324  15.773   mean 16.031 ms/token
+ratio old/new = 1.140 (new takes 12.3% less time per token); every new run is faster than every old run.
+
+context       the 2026-09-21 record (docs/measurements/p20-expert-major-m26-2026-09-21.md) measured the old path at 18.897 ms/token at M=512 on this model and card; the old arm here reads 18.27, consistent.
+not established  M other than 512; whether the effect holds under the served path; the sequential control (not run: the change touches only the batched MoE prefill loop); a pre-registered band.
+what moved    per row, the MoE layer no longer does stream.Sync + two Downloads (expert ids, weights); the route kernel writes each row's ids and weights into device arrays and the host reads the ids back once per layer per chunk. The accumulator scratch is zeroed with ZeroAsync instead of a pageable zero upload.
+
+--- driver (ab.sh, scratch paths elided to $S) ---
+#!/bin/bash
+# Exploratory A/B, R-22: old (21bf7ad8) vs new cuda test binary, real gemma4-26b (M26), M=512 batched prefill, ms/token. Order-balanced: ON NO ON... see ORDER.
+S=$S
+OUT=$S/ab-results.txt; : > $OUT
+export GOINFER_HEAVY_TESTS=1 GOINFER_LONGPROMPT_MODEL=gemma4-26b-int4.giw GOINFER_LONGPROMPT_MOECACHE=1 GOINFER_LONGPROMPT_GIW=1 GOINFER_LONGPROMPT_LENGTHS=512
+ORDER="old new new old old new"
+i=0
+t_start=$(date +%s)
+for arm in $ORDER; do
+  i=$((i+1))
+  if [ $arm = old ]; then dir=$S/ab-wt/cuda; bin=$S/cuda-old.test; else dir=/home/francis/mycode/goinfer/cuda; bin=$S/cuda-new.test; fi
+  log=$S/ab-run$i-$arm.log
+  ( cd $dir && exec $bin -test.run TestPrefillLongPrompt -test.v -test.timeout 20m > $log 2>&1 ) &
+  pid=$!
+  for s in $(seq 1 300); do
+    if grep -q "M=512 .*batched OK" $log 2>/dev/null || ! kill -0 $pid 2>/dev/null; then break; fi
+    sleep 1
+  done
+  kill $pid 2>/dev/null; wait $pid 2>/dev/null
+  line=$(grep "M=512 .*batched OK" $log | head -1)
+  echo "run $i $arm: ${line:-NO RESULT}" | tee -a $OUT
+  echo "[ab] $i/6 done, elapsed $(( $(date +%s) - t_start ))s"
+  sleep 5
+done
+echo "[ab] finished"

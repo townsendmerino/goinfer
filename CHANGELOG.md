@@ -15,6 +15,23 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — CUDA batched-prefill tails and the Gemma 4 `g4x2` clear stop doing host round trips they do not need (audit R-24, two of four)
+
+**Prefill tail.** After every batched pass the resident downloaded the whole `[M, hidden]` residual, though only `ResidualAll` reads it on the host: the argmax and all-logits heads read it on the device, and the last-row tails downloaded
+all M rows, then uploaded one back. It is now downloaded only for `ResidualAll`, and the last-row tails copy that row on the device. **Gemma 4 `g4x2`:** the per-layer accumulator clear is a stream-ordered `ZeroAsync` in every mode; the
+non-overlap path did `r.stream.Sync()` and a pageable host-zero `Upload` (two more context syncs); `g4zero` is gone. **Bit-identical:** `TestPrefillTails_bitIdenticalToTheRecordedBaseline` (new, 15 tail outputs over three fixtures against
+`cuda/testdata/prefill_tails_baseline.json`, recorded from the unmodified code) and the existing `TestKEqVCopy_*` decode baseline (CUDA graphs on and off); each shown red by a planted bug. Full `cuda` suite: 389 pass, 0 fail. Not timed.
+**Declined:** `launchToken`'s embedding upload (20.5 microseconds median, against about 4.5 ms per token), and the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate).
+
+### Changed — CUDA expert-major MoE prefill no longer round-trips the router output through the host once per row (audit R-22)
+
+For each row of a chunk, per layer, the expert-major path did a `stream.Sync`, then two `Download`s (the expert ids and the weights), and after the loop uploaded all the weights back; the host never used the weights. The route kernel now writes each
+row's ids and weights into per-chunk device arrays, the row loop is launches only, and the host reads the ids back once per layer per chunk (the weights stay on the device). The rank accumulators and Gemma 4's `g4x2All` are zeroed with
+`ZeroAsync` instead of a pageable zero upload (about 46 MB per layer per chunk at M=512 on the real model). **Bit-identical**: `TestMoEExpertMajorCUDA_bitIdentical` (k=2, k=3) and `TestMoEExpertMajorGemma4CUDA_bitIdentical` compare it with the
+unchanged per-row path on every logit, 0 differ, and each is shown red by pointing the route output at row 0 or removing a zeroing. Full `cuda` suite: 388 pass, 0 fail. **Speed, exploratory only:** on the real gemma4-26b at M=512, 3 runs per
+arm in separate processes, order-balanced, the old path read 18.27 ms/token and the new 16.03 (every new run faster than every old run, about 12%); no pre-registered rule, so not a result (`docs/measurements/r22-cuda-moe-route-roundtrip-2026-10-05.txt`).
+The Gemma 4 `g4x2All` fold into `rankScratch[0]` was not taken: `0 + x` and `x` differ in the sign of a negative zero.
+
 ### Changed — a new or just-reset session no longer zeroes its recurrent state a second time (audit R-16, the cheap variant)
 
 `sessionLRU.fresh` Reset an evicted session (which zeroes the Mamba, DeltaNet, KDA and LFM2 state) and the first `Generate` then ran `TruncateTo(0)` again, zeroing the same state; a brand-new session did the same on its first
