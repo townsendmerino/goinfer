@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — aikit v1.56.0: DotProd is detected on Windows on ARM
+
+goinfer now requires aikit v1.56.0 in all five modules. Its one library change is that `detectDotProd` asks Windows (`IsProcessorFeaturePresent`) instead of assuming none, so a Windows ARM machine whose CPU has DotProd
+(Snapdragon X, Azure Cobalt 100) runs the SDOT kernels and row4 int4 layouts, and the default CPU bundle target there is `cpu-arm64` (the sidecar fix of `bf4e5759` selects it only where the core can read it). **Not measured:**
+the speed effect on Windows ARM, and goinfer's own Windows ARM tests on those kernels, until the first `root-windows-arm64` run on this commit. Nothing changes on any other platform: aikit's compiled `linalg` file set is
+identical to v1.55.0 on linux/amd64, linux/arm64, darwin/arm64 and windows/amd64. Parity refresh: 64 goldens passed, 40 `deps_hash` lines changed.
+
 ### Added — the startup self-test covers Metal, and `check --hardware` prints the Metal device
 
 The resident self-test now runs for the Metal backend too. On an M1 Pro its worst cosine is 0.99937 and its worst relative L2
