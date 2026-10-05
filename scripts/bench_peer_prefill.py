@@ -205,7 +205,10 @@ class Engine:
             # A GPU cell passes -require-backend so a silent CPU fallback fails at startup instead of timing the CPU
             # (docs/measurements/peer-sweep-2026-09-29.md). BENCH_GOINFER_ARGS adds flags to every goinfer serve, e.g.
             # "-embed-int4=false", and the server's own log is kept so the decode path is on record.
-            if self.backend != "cpu":
+            # Not for the --exact-prefill arm: -require-backend also refuses a load whose PREFILL declines to the
+            # sequential path, and sequential prefill is that arm's whole point, so it never came up (the 2026-09-30
+            # sweep's cell h and the 2026-10-05 short-prompt run both lost it). Its decode path stays on record in its log.
+            if self.backend != "cpu" and "--exact-prefill" not in self.extra_flags:
                 argv.append("-require-backend")
             argv += self.extra_flags + shlex.split(os.environ.get("BENCH_GOINFER_ARGS", ""))
             log_dir = os.environ.get("BENCH_SERVE_LOG_DIR") or os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "serve-logs")

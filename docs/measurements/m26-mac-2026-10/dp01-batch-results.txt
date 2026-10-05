@@ -1,0 +1,3 @@
+[g4lm   10.6s] built: metal-resident (int4), 51 slots a layer, pid 21365
+[g4lm   83.4s] RESULT M=128, 51 slots: per-row 6546 ms, batched 5423 ms (medians of 5); per-row / batched median 1.201, 5 of 5 reps above 1 (per rep 1.201 1.189 1.243 1.243 1.147); experts staged a prompt: per-row 3078, batched 3078; logits and K/V equal in every rep
+[g4lm  329.6s] RESULT M=512, 51 slots: per-row 22478 ms, batched 18295 ms (medians of 5); per-row / batched median 1.234, 5 of 5 reps above 1 (per rep 1.231 1.225 1.234 1.238 1.236); experts staged a prompt: per-row 12225, batched 12225; logits and K/V equal in every rep

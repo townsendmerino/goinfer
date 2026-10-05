@@ -1,0 +1,2 @@
+started: 2026-10-05 13:17:47 PDT; goinfer 93d586af (sha256 c066338abcfb9a9b); ollama Warning: client version is 0.32.5; mlx-lm 0.31.3
+finished: 2026-10-05 13:35:24 PDT, bench_peer_prefill exit 0

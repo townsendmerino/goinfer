@@ -1,0 +1,7 @@
+rev:     f7497c2c
+binary:  /Users/francistownsend-merino/goinfer-bench/m26-mac-2026-10/metal-tagged-f7497c2c.test (sha256 4d298e841f3152b6)
+model:   /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw (16222840395 bytes)
+started: 2026-10-05 13:37:09 PDT
+load:    1.00 1.31 1.80
+swap:    total = 2048.00M  used = 826.12M  free = 1221.88M  (encrypted)
+finished: 2026-10-05 13:42:40 PDT, exit 0

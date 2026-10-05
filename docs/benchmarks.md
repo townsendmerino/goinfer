@@ -648,6 +648,27 @@ candidate, is the new floor. `metal/backend.go`'s `metalFastPrefillFloor` moved 
 prefill attention (2026-09-27), and none has been re-measured since. The floor's fidelity verdict stands; the ratios
 to Ollama are not current.
 
+**Update 2026-10-05, the re-measure (T1.11's other half, pre-registered in
+`tasks/parked/task-metal-audit-followups-2026-10.md` item 1):** the same command on goinfer `93d586af` (R16, R19,
+A-P01, A-P02's floor of 16; MacBook Pro M1 Pro 16 GB, macOS 26.6.2, the 1.5B q4_k_m from `~/models` at int4, every
+goinfer cell `metal-resident (int4)`), Ollama 0.32.5 and mlx-lm 0.31.3 interleaved per cell, 6 unique-prefix prompts a
+point. Run from the night queue at 13:17 PDT on the owner's start, with the owner away. Prompt tokens per second, each
+engine's own token count over its TTFT (the chat templates differ: 42 / 63 / 53 tokens at K=32); pairs decide; a spread
+over 5% caps a cell:
+
+| K | goinfer tok/s (spread) | ÷ Ollama, median (pairs) | ÷ mlx-lm, median (pairs) | grade |
+|---|---|---|---|---|
+| 32  | 546.1 (7.2%)  | 1.62 (1.50–1.67) | 2.02 (1.89–2.07) | AMBIGUOUS-HIGH: goinfer's spread caps it |
+| 64  | 831.2 (51.5%) | 1.71 (1.14–1.76) | 1.89 (1.30–1.97) | AMBIGUOUS-HIGH (spread) |
+| 128 | 924.3 (42.1%) | 1.42 (1.05–1.47) | 1.53 (1.12–1.55) | AMBIGUOUS-HIGH (spread) |
+| 256 | 794.1 (0.8%)  | 1.06 (1.06–1.08) | 1.04 (1.03–1.05) | **AHEAD** of both |
+
+Every pair at every K is above 1.03; only the spread cap keeps K = 32-128 from AHEAD. On 2026-09-20 goinfer's fast arm
+was 0.80× / 0.75× / 0.66× / 0.43× of Ollama at these K (from the table above). The `--exact-prefill` arm did not start in
+any cell (the harness's `-require-backend` refused its sequential prefill; fixed in `scripts/bench_peer_prefill.py`), so
+batched ÷ exact is not re-read here. Raw: [`measurements/metal-audit-2026-10/night-2026-10-05/shortk-ttft-cells.txt`](measurements/metal-audit-2026-10/night-2026-10-05/shortk-ttft-cells.txt)
+and the JSON beside it.
+
 #### Vision tower CPU prefill — re-measured 2026-09-08
 
 **SigLIP/Gemma 3 tower** (`gemma-3-4b-it`, 896², 4096 patches) and **Qwen2.5-VL tower**

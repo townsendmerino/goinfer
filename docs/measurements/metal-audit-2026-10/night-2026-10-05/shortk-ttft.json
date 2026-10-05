@@ -1,0 +1,399 @@
+{
+  "header": {
+    "utc": "2026-10-05T20:17:51Z",
+    "host": "macbookpro.lan",
+    "driver": "26.6.2",
+    "gpu": "",
+    "kernel": "25.6.0",
+    "distro": "",
+    "goinfer_commit": "93d586af",
+    "goinfer_dirty": false,
+    "peer_version": "Warning: could not connect to a running Ollama instance",
+    "serve_mtime": "",
+    "loadavg": ""
+  },
+  "cache_check": [
+    {
+      "model": "1.5B",
+      "depth": 32,
+      "engine": "goinfer",
+      "repeat_over_new": 0.45480619692504626
+    },
+    {
+      "model": "1.5B",
+      "depth": 32,
+      "engine": "ollama",
+      "repeat_over_new": 0.6809126218442699
+    },
+    {
+      "model": "1.5B",
+      "depth": 32,
+      "engine": "mlx",
+      "repeat_over_new": 0.6878645179921635
+    },
+    {
+      "model": "1.5B",
+      "depth": 64,
+      "engine": "goinfer",
+      "repeat_over_new": 0.2640017238060392
+    },
+    {
+      "model": "1.5B",
+      "depth": 64,
+      "engine": "ollama",
+      "repeat_over_new": 0.5964370302568915
+    },
+    {
+      "model": "1.5B",
+      "depth": 64,
+      "engine": "mlx",
+      "repeat_over_new": 0.6057190956490582
+    },
+    {
+      "model": "1.5B",
+      "depth": 128,
+      "engine": "goinfer",
+      "repeat_over_new": 0.18152492127423084
+    },
+    {
+      "model": "1.5B",
+      "depth": 128,
+      "engine": "ollama",
+      "repeat_over_new": 0.5055258258039135
+    },
+    {
+      "model": "1.5B",
+      "depth": 128,
+      "engine": "mlx",
+      "repeat_over_new": 0.48663242008921653
+    },
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "engine": "goinfer",
+      "repeat_over_new": 0.11345834154375067
+    },
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "engine": "ollama",
+      "repeat_over_new": 0.3447720078116879
+    },
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "engine": "mlx",
+      "repeat_over_new": 0.332947858622536
+    }
+  ],
+  "scaling_check": {
+    "goinfer:1.5B": {
+      "depths": [
+        32,
+        256
+      ],
+      "ttft_ms": [
+        76.9,
+        335.0
+      ],
+      "ttft_growth": 4.36,
+      "depth_growth": 8.0
+    },
+    "ollama:1.5B": {
+      "depths": [
+        32,
+        256
+      ],
+      "ttft_ms": [
+        190.9,
+        384.0
+      ],
+      "ttft_growth": 2.01,
+      "depth_growth": 8.0
+    },
+    "mlx:1.5B": {
+      "depths": [
+        32,
+        256
+      ],
+      "ttft_ms": [
+        195.6,
+        363.7
+      ],
+      "ttft_growth": 1.86,
+      "depth_growth": 8.0
+    }
+  },
+  "marginal": {
+    "goinfer:1.5B": {
+      "marginal_tok_s": 839.6,
+      "ms_per_token": 1.1911,
+      "fixed_overhead_ms": 7.8,
+      "local": [
+        {
+          "from": 42.0,
+          "to": 72.0,
+          "ms_per_token": 0.3233,
+          "tok_s": 3092.8
+        },
+        {
+          "from": 72.0,
+          "to": 136.0,
+          "ms_per_token": 0.9453,
+          "tok_s": 1057.9
+        },
+        {
+          "from": 136.0,
+          "to": 266.0,
+          "ms_per_token": 1.4454,
+          "tok_s": 691.9
+        }
+      ]
+    },
+    "ollama:1.5B": {
+      "marginal_tok_s": 1106.0,
+      "ms_per_token": 0.9041,
+      "fixed_overhead_ms": 116.4,
+      "local": [
+        {
+          "from": 63.0,
+          "to": 93.0,
+          "ms_per_token": 0.01,
+          "tok_s": 100000.0
+        },
+        {
+          "from": 93.0,
+          "to": 157.0,
+          "ms_per_token": 0.7938,
+          "tok_s": 1259.8
+        },
+        {
+          "from": 157.0,
+          "to": 287.0,
+          "ms_per_token": 1.0923,
+          "tok_s": 915.5
+        }
+      ]
+    },
+    "mlx:1.5B": {
+      "marginal_tok_s": 1255.7,
+      "ms_per_token": 0.7964,
+      "fixed_overhead_ms": 136.3,
+      "local": [
+        {
+          "from": 53.0,
+          "to": 83.0,
+          "ms_per_token": -0.15,
+          "tok_s": null
+        },
+        {
+          "from": 83.0,
+          "to": 147.0,
+          "ms_per_token": 0.7734,
+          "tok_s": 1292.9
+        },
+        {
+          "from": 147.0,
+          "to": 277.0,
+          "ms_per_token": 0.9469,
+          "tok_s": 1056.1
+        }
+      ]
+    },
+    "ratio:1.5B": 1.32
+  },
+  "cells": [
+    {
+      "model": "1.5B",
+      "depth": 32,
+      "calibrated_tokens": 35,
+      "goinfer": {
+        "ttft_ms_median": 76.9,
+        "ttft_ms_all": [
+          77.0,
+          81.5,
+          76.3,
+          76.9,
+          81.8,
+          76.8
+        ],
+        "prompt_tokens": 42.0,
+        "ttft_tok_s": 546.1,
+        "spread_pct": 7.2
+      },
+      "ollama": {
+        "ttft_ms_median": 190.9,
+        "ttft_ms_all": [
+          183.3,
+          183.2,
+          191.3,
+          190.6,
+          191.7,
+          191.3
+        ],
+        "prompt_tokens": 63.0,
+        "ttft_tok_s": 330.0,
+        "spread_pct": 4.4
+      },
+      "mlx": {
+        "ttft_ms_median": 195.6,
+        "ttft_ms_all": [
+          201.1,
+          201.9,
+          195.5,
+          195.4,
+          195.2,
+          195.7
+        ],
+        "prompt_tokens": 53.0,
+        "ttft_tok_s": 271.0,
+        "spread_pct": 3.4
+      },
+      "ttft_peer_over_goinfer": 0.6
+    },
+    {
+      "model": "1.5B",
+      "depth": 64,
+      "calibrated_tokens": 65,
+      "goinfer": {
+        "ttft_ms_median": 86.6,
+        "ttft_ms_all": [
+          125.0,
+          128.8,
+          84.3,
+          88.9,
+          84.3,
+          84.2
+        ],
+        "prompt_tokens": 72.0,
+        "ttft_tok_s": 831.2,
+        "spread_pct": 51.5
+      },
+      "ollama": {
+        "ttft_ms_median": 191.2,
+        "ttft_ms_all": [
+          216.7,
+          190.1,
+          190.9,
+          191.7,
+          190.8,
+          191.6
+        ],
+        "prompt_tokens": 93.0,
+        "ttft_tok_s": 486.3,
+        "spread_pct": 13.9
+      },
+      "mlx": {
+        "ttft_ms_median": 191.1,
+        "ttft_ms_all": [
+          216.1,
+          192.5,
+          191.8,
+          187.6,
+          188.8,
+          190.5
+        ],
+        "prompt_tokens": 83.0,
+        "ttft_tok_s": 434.2,
+        "spread_pct": 14.9
+      },
+      "ttft_peer_over_goinfer": 0.59
+    },
+    {
+      "model": "1.5B",
+      "depth": 128,
+      "calibrated_tokens": 129,
+      "goinfer": {
+        "ttft_ms_median": 147.1,
+        "ttft_ms_all": [
+          204.3,
+          199.9,
+          147.0,
+          142.4,
+          147.2,
+          142.6
+        ],
+        "prompt_tokens": 136.0,
+        "ttft_tok_s": 924.3,
+        "spread_pct": 42.1
+      },
+      "ollama": {
+        "ttft_ms_median": 242.0,
+        "ttft_ms_all": [
+          275.1,
+          242.0,
+          240.7,
+          242.0,
+          241.3,
+          242.1
+        ],
+        "prompt_tokens": 157.0,
+        "ttft_tok_s": 648.8,
+        "spread_pct": 14.2
+      },
+      "mlx": {
+        "ttft_ms_median": 240.6,
+        "ttft_ms_all": [
+          267.8,
+          241.2,
+          239.9,
+          237.5,
+          247.2,
+          239.1
+        ],
+        "prompt_tokens": 147.0,
+        "ttft_tok_s": 611.0,
+        "spread_pct": 12.6
+      },
+      "ttft_peer_over_goinfer": 0.7
+    },
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "calibrated_tokens": 259,
+      "goinfer": {
+        "ttft_ms_median": 335.0,
+        "ttft_ms_all": [
+          335.2,
+          335.1,
+          334.9,
+          333.4,
+          334.0,
+          336.2
+        ],
+        "prompt_tokens": 266.0,
+        "ttft_tok_s": 794.1,
+        "spread_pct": 0.8
+      },
+      "ollama": {
+        "ttft_ms_median": 384.0,
+        "ttft_ms_all": [
+          384.1,
+          383.7,
+          383.9,
+          382.8,
+          389.0,
+          386.8
+        ],
+        "prompt_tokens": 287.0,
+        "ttft_tok_s": 747.4,
+        "spread_pct": 1.6
+      },
+      "mlx": {
+        "ttft_ms_median": 363.7,
+        "ttft_ms_all": [
+          364.5,
+          360.2,
+          362.9,
+          365.4,
+          359.6,
+          366.7
+        ],
+        "prompt_tokens": 277.0,
+        "ttft_tok_s": 761.6,
+        "spread_pct": 1.9
+      },
+      "ttft_peer_over_goinfer": 0.94
+    }
+  ]
+}

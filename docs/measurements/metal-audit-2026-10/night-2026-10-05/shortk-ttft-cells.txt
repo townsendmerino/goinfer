@@ -1,0 +1,12 @@
+# short-prompt Metal TTFT, 1.5B, goinfer 93d586af (night queue started by the owner at 13:12 PDT 2026-10-05, owner away), 6 unique-prefix prompts per K
+# tok/s = the engine's own prompt-token count / TTFT (chat templates differ: e.g. 42 / 63 / 53 prompt tokens at K=32); pairs = the i-th request of each engine
+# bands (peer sweep): level 0.97-1.03, ahead > 1.03, behind < 0.97, all pairs decide; an engine spread over 5% caps the cell to AMBIGUOUS
+K=32  goinfer  546.1 tok/s (TTFT 76.9 ms, spread 7.2%)  ollama  330.0 tok/s (TTFT 190.9 ms, spread 4.4%)  goinfer/ollama median 1.620 pairs 1.499-1.671  AMBIGUOUS-HIGH (spread cap)
+K=32  goinfer  546.1 tok/s (TTFT 76.9 ms, spread 7.2%)  mlx  271.0 tok/s (TTFT 195.6 ms, spread 3.4%)  goinfer/mlx median 2.016 pairs 1.891-2.070  AMBIGUOUS-HIGH (spread cap)
+K=64  goinfer  831.2 tok/s (TTFT 86.6 ms, spread 51.5%)  ollama  486.3 tok/s (TTFT 191.2 ms, spread 13.9%)  goinfer/ollama median 1.711 pairs 1.143-1.762  AMBIGUOUS-HIGH (spread cap)
+K=64  goinfer  831.2 tok/s (TTFT 86.6 ms, spread 51.5%)  mlx  434.2 tok/s (TTFT 191.1 ms, spread 14.9%)  goinfer/mlx median 1.887 pairs 1.296-1.974  AMBIGUOUS-HIGH (spread cap)
+K=128 goinfer  924.3 tok/s (TTFT 147.1 ms, spread 42.1%)  ollama  648.8 tok/s (TTFT 242.0 ms, spread 14.2%)  goinfer/ollama median 1.419 pairs 1.049-1.472  AMBIGUOUS-HIGH (spread cap)
+K=128 goinfer  924.3 tok/s (TTFT 147.1 ms, spread 42.1%)  mlx  611.0 tok/s (TTFT 240.6 ms, spread 12.6%)  goinfer/mlx median 1.526 pairs 1.116-1.554  AMBIGUOUS-HIGH (spread cap)
+K=256 goinfer  794.1 tok/s (TTFT 335.0 ms, spread 0.8%)  ollama  747.4 tok/s (TTFT 384.0 ms, spread 1.6%)  goinfer/ollama median 1.063 pairs 1.061-1.079  AHEAD
+K=256 goinfer  794.1 tok/s (TTFT 335.0 ms, spread 0.8%)  mlx  761.6 tok/s (TTFT 363.7 ms, spread 1.9%)  goinfer/mlx median 1.042 pairs 1.032-1.052  AHEAD
+goinfer_exact (--exact-prefill): did not start in any cell (the harness's -require-backend refuses a sequential prefill; fixed for next time)
