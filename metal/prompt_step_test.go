@@ -123,3 +123,61 @@ func TestPrefillLast_stepRouteCancels(t *testing.T) {
 		t.Fatal("PrefillLast on a cancelled context returned no error")
 	}
 }
+
+// TestPrefillLast_stepRouteNoHead is R-19's gate (docs/tasks/task-recompute-audit.md): the step route runs no head on
+// its pieces before the last (multiNoHead) and copies out only the last row of the last piece (multiLastRow). For
+// prompts of 9, 16, 20 and 31 tokens the last-row logits and every K/V element equal the route with every head run
+// (stepPrefillAllHeads), and the head-less pieces were taken: ceil(n/8)-1 of them per prompt.
+func TestPrefillLast_stepRouteNoHead(t *testing.T) {
+	a := mc3PrefillResident(t, 2, 1024)
+	r := a.r
+	if a.VerifyCost() == nil {
+		t.Fatalf("the resident has no step kernels (batchIneligible: %q)", r.batchIneligible())
+	}
+	defer func() { stepPrefillAllHeads = false }()
+	seed := uint32(13579)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	for _, n := range []int{9, 16, 20, 31} {
+		embs := make([][]float32, n)
+		for i := range embs {
+			embs[i] = mc3Emb(r, rnd())
+		}
+		var lg [2][]float32
+		var kvs [2][][]uint16
+		var noHead [2]int
+		for arm, all := range []bool{true, false} {
+			stepPrefillAllHeads = all
+			if err := r.useKVSlot(arm); err != nil {
+				t.Fatal(err)
+			}
+			h0 := r.batch.noHeadSteps
+			got, err := a.PrefillLast(context.Background(), embs, 0)
+			if err != nil {
+				t.Fatalf("%d tokens: %v", n, err)
+			}
+			noHead[arm] = r.batch.noHeadSteps - h0
+			lg[arm] = append([]float32(nil), got...)
+			for l := range r.layers {
+				d := r.layers[l].geom.kvDim
+				o := r.kvHostOff(l, 2)
+				kvs[arm] = append(kvs[arm], append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			}
+		}
+		if want := (n+batchMaxSeqs-1)/batchMaxSeqs - 1; noHead[0] != 0 || noHead[1] != want {
+			t.Fatalf("%d tokens: head-less pieces %d with every head run, %d without; want 0 and %d", n, noHead[0], noHead[1], want)
+		}
+		for j := range lg[0] {
+			if math.Float32bits(lg[0][j]) != math.Float32bits(lg[1][j]) {
+				t.Fatalf("%d tokens: last-row logit %d is %v without the heads, %v with them", n, j, lg[1][j], lg[0][j])
+			}
+		}
+		for i := range kvs[0] {
+			for j := range kvs[0][i] {
+				if kvs[0][i][j] != kvs[1][i][j] {
+					t.Fatalf("%d tokens: K/V buffer %d element %d differs", n, i, j)
+				}
+			}
+		}
+		t.Logf("%d tokens: %d head-less pieces; logits and K/V bit-identical to every head run", n, noHead[1])
+	}
+}

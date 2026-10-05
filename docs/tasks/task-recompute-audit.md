@@ -845,6 +845,19 @@ for a 5–20 GB model, on the first start after a pull.
 - **Already known:** the 09-30 Metal audit's E-P01 said this route "needs a mode that skips the LM head on
   non-final pieces". It shipped without one.
 
+**Status, 2026-10-05: FIXED (bit-identical), and it pays.** `forwardMultiOut` (`metal/batch.go`) takes an output mode:
+`prefillByStep` runs its pieces before the last as `multiNoHead` (the trunk only: no final norm, LM head or argmax, nothing
+read back) and its last piece as `multiLastRow` (only the last row is copied out; the head still runs for every row,
+since it reads the whole LM head's weights once at any row count). `forwardMultiInto`'s two modes are unchanged for its
+other callers.
+- **Gates:** `TestPrefillLast_stepRouteNoHead` (default-run, the MC3 fixture): prompts of 9, 16, 20 and 31 tokens give
+  last-row logits and every K/V element bit-identical to the route with every head run (`stepPrefillAllHeads`), with
+  1, 1, 2 and 3 head-less pieces taken. The existing `TestPrefillLast_stepRouteBitIdentical` (against the sequential
+  loop) passes. Mutation: the last piece copying out the wrong row fails both. Default metal suite green.
+- **Speed** (`TestR19_stepPrefillAB`, the 1.5B, by day, in-process, exploratory): every-head ÷ R-19 **1.075** at 16
+  tokens and **1.087** at 31, 7 of 7 reps above 1 each. The direction is resolved in-process (TE5(b)), so it stays on.
+  Raw: `docs/measurements/r19-step-prefill-2026-10-05.txt`.
+
 ### R-20 · Metal: `ecafa0ae`'s zero-then-copy shape, where that commit missed it
 
 - **`PrefillLast`'s `xF`:** `make([]uint16, Mpad*H)` zeroes it, `parallelEmbedsF32ToF16` overwrites rows 0..M−1,

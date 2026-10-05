@@ -1,0 +1,4 @@
+# R-19 (docs/tasks/task-recompute-audit.md): the step-route prefill's head-less pieces. TestR19_stepPrefillAB, in-process, by day, exploratory
+# MacBook Pro M1 Pro 16 GB, macOS 26.6.2, tree 13eca72f + R-19 (uncommitted at run time), qwen2.5-coder-1.5b-instruct-q4_k_m.gguf from ~/models at int4, 2 KV slots, fresh prompts through PrefillLast, 7 reps an arm alternated after a warm-up, last-row logits bit-equal every rep; started 12:33 PDT, desktop load present
+[r19    0.7s] 16 tokens: every head 38.51 ms, R-19 36.17 ms (medians of 7); RESULT every-head / R-19 median 1.075, 7 of 7 reps above 1 (per rep 1.050 1.075 1.111 1.171 1.082 1.045 1.065)
+[r19    1.9s] 31 tokens: every head 76.45 ms, R-19 70.42 ms (medians of 7); RESULT every-head / R-19 median 1.087, 7 of 7 reps above 1 (per rep 1.077 1.096 1.104 1.077 1.076 1.087 1.089)

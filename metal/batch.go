@@ -276,6 +276,7 @@ type batchState struct {
 	gOut                           Buffer // [batchMaxSeqs] int32 ids
 	amaxPart, amaxTok, uAmaxP      Buffer // E-P08: each greedy row's argmax partials, its id, and the partial count
 	greedyDevRows                  int    // E-P08: greedy-draw rows a step served from the device argmax (a test reads it)
+	noHeadSteps                    int    // R-19: steps that ran no head (prefillByStep's pieces before the last; a test reads it)
 	// S3: per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx
 	// quantisation runs over every row at once
 	posB, qtB, ctxB           Buffer
@@ -558,6 +559,32 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 // the step's logits buffer (no per-row copy). That is the same id the copied row's argmax gives when no logit transform
 // applies, and the caller falls back to the full rows when one does (softcap, a logit scale).
 func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits [][]float32, ids []int, err error) {
+	if argmaxOnly {
+		return r.forwardMultiOut(seqs, multiArgmax)
+	}
+	return r.forwardMultiOut(seqs, multiFull)
+}
+
+// multiOut is what a step returns. multiNoHead and multiLastRow are R-19's (docs/tasks/task-recompute-audit.md), for a
+// prompt run on the step kernels (prefillByStep): a piece before the last needs only its K/V, so the step encodes no
+// final norm, LM head or argmax and returns nothing; the last piece needs only its last row's logits, so only that row
+// is copied out (the head still runs for every row: it reads the whole LM head's weights once at any row count).
+type multiOut int
+
+// stepPrefillAllHeads restores prefillByStep's pre-R-19 modes (every piece runs the head; the last converts every row),
+// for the test that compares the two and the A/B that times them. Tests only.
+var stepPrefillAllHeads = false
+
+const (
+	multiFull    multiOut = iota // every row's logits, or a draw row's id
+	multiArgmax                  // every row's argmax, read in place
+	multiNoHead                  // the trunk only: K/V written, no head, nothing returned
+	multiLastRow                 // multiFull for the last row only; the other rows' logits are nil
+)
+
+// forwardMultiOut is forwardMultiInto with an explicit output mode (multiOut).
+func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]float32, ids []int, err error) {
+	argmaxOnly := out == multiArgmax
 	b := r.batch
 	if b == nil {
 		return nil, nil, fmt.Errorf("metal: batched decode unavailable")
@@ -739,6 +766,17 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 			e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
 		}
 	}
+	if out == multiNoHead { // R-19: the caller reads nothing from this step but the K/V it wrote
+		e.End()
+		r.recordExecErr(e.Err())
+		if err := r.takeExecErr(); err != nil {
+			return nil, nil, err
+		}
+		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
+		b.steps, b.seqs, b.maxSeqs = b.steps+1, b.seqs+B, max(b.maxSeqs, B)
+		b.noHeadSteps++
+		return nil, nil, nil
+	}
 	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)
 	e.DispatchTG(b.lm, r.V/128*128, 128, 0, r.lmW, r.lmS, b.aTp, b.aScB, b.logitsB, r.uH, b.uV, b.uM)
@@ -824,6 +862,9 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 			}
 			ids[m] = int(id)
 			continue
+		}
+		if out == multiLastRow && m != B-1 {
+			continue // R-19: only the last row is read
 		}
 		logits[m] = r.transformedRow(lg[m*r.V : (m+1)*r.V])
 	}
@@ -974,8 +1015,9 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 // slot's sequence, batchMaxSeqs at a time, exactly as PrefillLastNArgmax runs a verify, and the last row's logits come
 // back. forwardMulti is bit-identical to production decode for such rows (TestMC3Verify_sameSlotRowsBitIdentical,
 // TestMC3Step_promptInRowsBitIdentical), so this is the sequential path's numerics at about a quarter of its time
-// (T1.10: 0.22× on the 1.5B, 0.25× on the 7B). Pieces before the last read only their argmax, which skips the
-// per-row logits copy; a one-row last piece runs production's own Forward. Cancellation is checked between pieces.
+// (T1.10: 0.22× on the 1.5B, 0.25× on the 7B). Pieces before the last run no head at all (R-19, multiNoHead), and the
+// last piece copies out only its last row (multiLastRow); a one-row last piece runs production's own Forward.
+// Cancellation is checked between pieces.
 func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error) {
 	r := a.r
 	defer func() {
@@ -1000,7 +1042,17 @@ func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float3
 			for i := range n {
 				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
 			}
-			rows, _, err := r.forwardMultiInto(seqs, !last)
+			mode := multiNoHead // R-19: a piece before the last needs only its K/V
+			if last {
+				mode = multiLastRow
+			}
+			if stepPrefillAllHeads { // the route as it was, for the test that compares the two
+				mode = multiArgmax
+				if last {
+					mode = multiFull
+				}
+			}
+			rows, _, err := r.forwardMultiOut(seqs, mode)
 			if err != nil {
 				return nil, err
 			}
