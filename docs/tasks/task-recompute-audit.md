@@ -825,6 +825,10 @@ The input does not change between calls, and quantization is deterministic, so e
 
 ### R-18 · `pull` hashes every downloaded file twice
 
+> **Status 2026-10-05: fixed.** `Download` now writes the digest sidecar from the sha256 it verified while streaming (both the normal and the 416-already-complete paths), so the first `Resolve` after a pull finds it
+> and does not read the file again. Only a file with a declared digest records one. `TestDownload_recordsDigestSoResolveDoesNotRehash` counts full-file hashes on a fresh and a resumed download and fails with the
+> write removed. Not timed: it saves one sequential read of the file, once per pull, which is the several seconds the audit estimated for a 5-20 GB model.
+
 `Download` verifies SHA-256 while streaming but never writes the `.sha256` sidecar. So the first `Resolve` →
 `cachedIntact` re-hashes the whole file to the same digest. That is once per downloaded file: several seconds
 for a 5–20 GB model, on the first start after a pull.

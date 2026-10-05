@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -221,5 +222,90 @@ func TestDownload_badDigestIsNotKept(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "m.gguf")); !os.IsNotExist(err) {
 		t.Error("nothing may be written to the final path on a digest mismatch")
+	}
+}
+
+// TestDownload_recordsDigestSoResolveDoesNotRehash is audit R-18: Download verifies the sha256 while streaming, so the first cachedIntact after
+// a pull must find a sidecar for it instead of reading the whole file again. The count is of full-file hashes (hashFile), and it covers both the
+// normal path and the resume path (the digest there covers the bytes already on disk, so it is just as verified).
+func TestDownload_recordsDigestSoResolveDoesNotRehash(t *testing.T) {
+	body := make([]byte, 256*1024)
+	rand.New(rand.NewSource(18)).Read(body)
+	sum := sha256.Sum256(body)
+	want := hex.EncodeToString(sum[:])
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls++; calls == 1 {
+			w.Header().Set("Content-Length", "999999")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body[:len(body)/3]) // drop early: the second attempt resumes
+			return
+		}
+		http.ServeContent(w, r, "m.gguf", time.Unix(0, 0), bytes.NewReader(body))
+	}))
+	defer srv.Close()
+	hfCDN = srv.URL
+	defer func() { hfCDN = "https://huggingface.co" }()
+
+	var hashes int
+	orig := hashFile
+	hashFile = func(p string) (string, error) { hashes++; return orig(p) }
+	defer func() { hashFile = orig }()
+
+	for name, attempts := range map[string]int{"fresh": 1, "resumed": 2} {
+		calls, hashes = 0, 0
+		if name == "fresh" {
+			calls = 1 // skip the dropping response
+		}
+		dir := t.TempDir()
+		f := File{Path: "m.gguf", Size: int64(len(body)), SHA256: want}
+		var path string
+		var err error
+		for i := 0; i < attempts; i++ {
+			path, err = Download(context.Background(), "o/r", f, dir, nil)
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		afterDownload := hashes
+		got, ok := cachedIntact(dir, f)
+		if !ok || got != path {
+			t.Fatalf("%s: cachedIntact = %q, %v after a verified download", name, got, ok)
+		}
+		if hashes != afterDownload {
+			t.Errorf("%s: cachedIntact re-hashed the file (%d full-file hashes after Download, %d before): the digest Download verified was not recorded", name, hashes, afterDownload)
+		}
+		var sc digestSidecar
+		b, rerr := os.ReadFile(sidecarPath(path))
+		if rerr != nil || json.Unmarshal(b, &sc) != nil || sc.SHA256 != want || sc.Size != int64(len(body)) {
+			t.Errorf("%s: sidecar missing or wrong (%v, %+v)", name, rerr, sc)
+		}
+		// the recorded digest must be invalidated by a change, as the existing sidecar is: touch the file's mtime and it re-hashes
+		now := time.Now().Add(time.Hour)
+		if err := os.Chtimes(path, now, now); err != nil {
+			t.Fatal(err)
+		}
+		before := hashes
+		if _, ok := cachedIntact(dir, f); !ok || hashes != before+1 {
+			t.Errorf("%s: after the file's mtime changed, cachedIntact should re-hash once (hashes %d -> %d, ok=%v)", name, before, hashes, ok)
+		}
+	}
+}
+
+// No declared digest, nothing verified, nothing recorded.
+func TestDownload_noDeclaredDigestWritesNoSidecar(t *testing.T) {
+	body := []byte(strings.Repeat("goinfer", 3000))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(body) }))
+	defer srv.Close()
+	hfCDN = srv.URL
+	defer func() { hfCDN = "https://huggingface.co" }()
+	dir := t.TempDir()
+	path, err := Download(context.Background(), "o/r", File{Path: "m.gguf", Size: int64(len(body))}, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sidecarPath(path)); !os.IsNotExist(err) {
+		t.Errorf("a download with no declared digest must not record one (stat err = %v)", err)
 	}
 }

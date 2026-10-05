@@ -760,6 +760,7 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		if err := os.Rename(part, final); err != nil {
 			return "", err
 		}
+		recordVerifiedDigest(final, f.SHA256)
 		return final, nil
 	default:
 		return "", fmt.Errorf("downloading %s: HuggingFace returned %s", f.Path, resp.Status)
@@ -799,7 +800,29 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 	if err := os.Rename(part, final); err != nil {
 		return "", err
 	}
+	recordVerifiedDigest(final, f.SHA256)
 	return final, nil
+}
+
+// recordVerifiedDigest writes path's digest sidecar from a digest Download has JUST verified against the streamed bytes (audit R-18).
+// Without it the first Resolve after a pull, via cachedIntact, read the whole file again to arrive at the digest the download had already
+// computed: several seconds for a 5-20 GB model. A no-op when no digest was declared (sum == ""), so nothing unverified is ever recorded.
+// Best-effort like cachedFileSHA256's own write: a failure only costs the next call a re-hash.
+func recordVerifiedDigest(path, sum string) {
+	if sum == "" {
+		return
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	writeDigestSidecar(path, st, sum)
+}
+
+func writeDigestSidecar(path string, st os.FileInfo, sum string) {
+	if b, err := json.Marshal(digestSidecar{Size: st.Size(), ModTime: st.ModTime().UnixNano(), SHA256: sum}); err == nil {
+		_ = os.WriteFile(sidecarPath(path), b, 0o644)
+	}
 }
 
 // hashPrefix feeds path's current contents into h and returns how many bytes it covered.
@@ -879,15 +902,16 @@ func cachedFileSHA256(path string) (string, error) {
 			return sc.SHA256, nil
 		}
 	}
-	sum, err := fileSHA256(path)
+	sum, err := hashFile(path)
 	if err != nil {
 		return "", err
 	}
-	if b, err := json.Marshal(digestSidecar{Size: st.Size(), ModTime: st.ModTime().UnixNano(), SHA256: sum}); err == nil {
-		_ = os.WriteFile(sp, b, 0o644) // best-effort: a failed write just costs the next call a re-hash
-	}
+	writeDigestSidecar(path, st, sum) // best-effort: a failed write just costs the next call a re-hash
 	return sum, nil
 }
+
+// hashFile is fileSHA256 behind a variable so a test can count full-file reads.
+var hashFile = fileSHA256
 
 // progressWriter reports throughput on a TIME ticker rather than every N bytes, so the line
 // updates about once a second whatever the transfer rate — the same reasoning behind this

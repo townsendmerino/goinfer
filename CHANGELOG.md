@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — `pull` no longer reads a downloaded file a second time to learn its hash (audit R-18)
+
+`Download` verified the sha256 while streaming but never wrote the `.sha256` sidecar, so the first `Resolve` after a pull, through `cachedIntact`, read the whole file again to arrive at the digest the download had just computed:
+several seconds on first start for a 5-20 GB model. `Download` now records the verified digest (normal and resumed downloads, and the 416 path that finds a complete `.part`), and only when a digest was declared, so nothing unverified is
+ever recorded. The sidecar is still keyed on size and mtime, so a changed file re-hashes. `TestDownload_recordsDigestSoResolveDoesNotRehash` counts full-file hashes (a seam, `hashFile`) on a fresh and a resumed download, and fails
+with the write removed; `TestDownload_noDeclaredDigestWritesNoSidecar` pins the other direction. Not timed.
+
 ### Changed — aikit v1.56.1 and `gpu` v0.33.5; a lint for dead zeroing before aikit's overwrite kernels (audit R-11, C-N01)
 
 All five modules require aikit v1.56.1, and `cuda/` and `metal/` require `gpu` v0.33.5 (they were on v0.33.3). aikit v1.56.1 is documentation and tests: every non-test Go file is code-identical to v1.56.0 apart from comments. `gpu` v0.33.5
