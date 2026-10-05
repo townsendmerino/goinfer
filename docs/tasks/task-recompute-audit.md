@@ -1071,12 +1071,12 @@ when their K match (always here), and `prefillQuantPerProj` (tests only) restore
 
 Status 2026-10-05, after the first pass through the list:
 
-1. **Done:** R-11 (contracts, tests, lint), R-12, R-15 (the widen made parallel), R-16 (cheap variant), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
+1. **Done:** R-11 (contracts, tests, lint), R-12, R-15 (the widen made parallel), R-16 (cheap variant), R-17 (the per-token allocations), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
 2. **Declined with reasons, reopen only on new evidence:** R-16's full dirty flag (a missed state-mutating site is a conversation-state leak), R-24's `launchToken` upload (about 20 microseconds against about 4.5 ms per token) and
    the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate; measure the real transfer time first), and R-22's `g4x2All` fold (negative zero).
 3. **Still open, with real hot-path weight, each needing a pre-registered band and a bit-identity gate first:**
    - R-13 and R-14 together (CPU activation quantization; R-13(b) needs an aikit `MatmulBTW4A8F16Pre` entry, so an aikit release);
    - ~~R-15~~ (done 2026-10-05: the widen is parallel; the O(context) work remains, see R-15);
-   - R-17 (small CPU duplicates) and R-25 (WebGPU batched prefill quantizes per projection), as they come up.
+   - R-17's remainder (its per-token allocations were fixed 2026-10-05; the copies the AV kernels could write past, and the rest, were left; see R-17) and R-25 (WebGPU batched prefill quantizes per projection), as they come up.
 
 <!-- doc-reviewed: 2026-10-05 -->
