@@ -709,15 +709,22 @@ P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aiki
 
 ### R-11 · Root cause: aikit's output contracts are not written down, and GPU buffers disagree across backends
 
-> **Status 2026-10-05: partly done.** Contracts and tests landed in aikit v1.56.1; `NewBufferLen*` behaviour is deliberately unchanged; the goinfer-side lint is still open.
-> - **Landed:** one `Output contract:` line on every exported writer in `linalg`, `embed`, `encoder` and `gpu` (about 90; item 1 below), the corrected `QuantizeGroupInt4Row`, `AttendTileFused`,
->   `encoder.Backend.MatmulBT` and `gpu.NewBufferLen*` docs, the poison tests (item 3) and `TestOutputContract_everyWriterIsDocumented`, which stops a new writer landing without a line. It found three
->   writers this section had missed (`Q8Backend.MatmulBTQ8` and its two device implementations).
-> - **Checked against the code, not copied from this list:** the "overwrite" claim held for every portable writer (227 poison cases pass on amd64, the generic kernels and arm64 under QEMU); `MatmulBT`,
->   `MatmulBTInto`, `MatmulBTQ8Fused*`, `PackSignBits*` clear first, as written; and `QuantizeGroupInt4Row` is exactly the pad nibble, for odd `cols`, as written.
-> - **Not done:** `NewBufferLen*` still differs between backends (item 2 chose "document the difference"); goinfer's lint for `clear(x)` before an overwrite kernel (the goinfer fix below); the **arm64 assembly on
->   real hardware** (QEMU only here — run `go test ./...` in aikit on a Mac); and a CUDA/Metal device run of the encoder backends' contract (their CPU fallback is covered, the device path is not).
-> - **goinfer side:** the Metal sites that rely on the zero-fill (`prefillScratchU16` and its callers) now say so and point at the contract; comments only.
+> **Status 2026-10-05: done, apart from NewBufferLen behaviour (deliberately unchanged) and the GPU-side dead zeroing, which belongs to R-20 and R-24.**
+> - **aikit (v1.56.1, `gpu/v0.33.5`):** one `Output contract:` line on every exported writer in `linalg`, `embed`, `encoder` and `gpu` (about 90; item 1 below); the corrected `QuantizeGroupInt4Row`, `AttendTileFused`,
+>   `encoder.Backend.MatmulBT` and `gpu.NewBufferLen*` docs; the poison tests (item 3); `TestOutputContract_everyWriterIsDocumented`, which stops a new writer landing without a line. It found three writers this section had
+>   missed (`Q8Backend.MatmulBTQ8` and its two device implementations).
+> - **Checked against the code, not copied from this list:** the "overwrite" claim held for every portable writer (227 poison cases on amd64, the generic kernels and arm64 under QEMU) and, **on native Apple silicon (M1 Pro),
+>   245 cases in the default build and 234 under `aikit_nodotprod`, 0 fail, 0 skip**. `MatmulBT`, `MatmulBTInto`, `MatmulBTQ8Fused*`, `PackSignBits*` clear first, as written; `QuantizeGroupInt4Row` is exactly the pad nibble,
+>   for odd `cols`, as written. The encoder backends' contract is proven on the DEVICE path on both Metal and CUDA (`TestEncMetal_outputContract`, `TestEncCUDA_outputContract`; the CUDA one covers both readback paths), each
+>   shown red by skipping the last element of the copy-back.
+> - **The goinfer lint (the fix below): `internal/prezerolint`.** It reads the `Output contract:` lines from the pinned aikit source and fails on a `clear(x)` or zeroing loop within six statements of a call that takes x
+>   and whose callee has an overwrite or zeroes-internally contract. It fails (not skips) if the pinned aikit has no contract lines. Shown able to fire: a planted dead clear before `linalg.MatmulBTInto` turns it red. **Survey
+>   result: goinfer has 17 non-test `clear()` calls and none is dead work against an aikit writer** (the audit's "checked and necessary" list holds), so the CPU side had nothing to delete. The lint guards the class; it is
+>   name-and-proximity, so it does not follow a buffer through a helper, see a zeroed `make`, or see GPU-side zero uploads.
+> - **Still open, by design:** `NewBufferLen*` still differs between backends (item 2 chose "document the difference"); and the dead zeroing that DOES exist is GPU-side (zero Go slices copied into device buffers: the
+>   `prefillScratchU16` pattern), which R-20 and R-24 own.
+> - **goinfer side:** the Metal sites that rely on the zero-fill (`prefillScratchU16` and its callers) say so and point at the contract; goinfer now pins aikit v1.56.1 and `gpu` v0.33.5, which also brings in the Encoder
+>   31-buffer guard (audit C-N01).
 
 - **No aikit CPU kernel accumulates into its output.**
   - **Overwrite:** every matmul, attention, dequant and activation kernel goinfer calls writes every element it

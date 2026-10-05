@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — aikit v1.56.1 and `gpu` v0.33.5; a lint for dead zeroing before aikit's overwrite kernels (audit R-11, C-N01)
+
+All five modules require aikit v1.56.1, and `cuda/` and `metal/` require `gpu` v0.33.5 (they were on v0.33.3). aikit v1.56.1 is documentation and tests: every non-test Go file is code-identical to v1.56.0 apart from comments. `gpu` v0.33.5
+is the first `gpu/` tag with the Encoder bind-limit guard (31 buffers, a clear panic message on a 32nd), so **goinfer's Metal path now has audit C-N01's length guard** (its widest dispatch binds 15). Parity refresh: 64 goldens passed, 0 skipped,
+0 failed; 40 `deps_hash` lines changed. Full `cuda` suite on the new pins: 388 pass, 0 fail. Metal was not re-run on this commit.
+
+`internal/prezerolint` reads the `Output contract:` lines from the pinned aikit source (68 writers with an overwrite or zeroes-internally contract) and fails on a `clear(x)` or zeroing loop within six statements of a call that takes x
+and whose callee has such a contract, because the callee overwrites and the clear is dead work. It refuses to pass if the pinned aikit predates the contract lines, and **a planted dead clear turns it red**. On today's tree it finds
+nothing: goinfer has 17 non-test `clear()` calls, all before accumulating writes or masks. It is name-and-proximity: it does not follow a buffer through a helper, a zeroed `make`, or GPU-side zero uploads. The speed levers that remain are
+elsewhere (R-12, R-13, R-14, R-19, R-22, and R-20's GPU scratch); none of this commit changes a measured speed.
+
 ### Changed — CUDA K=V layers copy the k projection into v instead of projecting twice (audit R-23); Metal's zero-fill reliance is now written down (R-11)
 
 On a Gemma 4 global layer (`attention_k_eq_v`) V is `v_norm` of the RAW k projection, and the CUDA resident path used to compute that projection twice on identical inputs: decode (`doG(Ly.k → kB)` then `doG(Ly.k → vB)`) and prefill (the same

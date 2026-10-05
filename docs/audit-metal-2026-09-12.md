@@ -889,7 +889,7 @@ re-baked by the code it checks (G-04).
   finding wherever that content now lives first.
 
 #### M-16 · Every buffer is hazard-tracked and every encoder serial; the binding exposes neither the untracked option bit nor `computeCommandEncoderWithDispatchType:`, and the record calls the resulting per-dispatch floor "unassessed"
-- **Where:** aikit `metal.go:438,432,443,491,500` (every `newBuffer*` passes `options = 0` =
+- **Where:** aikit `metal.go:441,432,443,491,500` (every `newBuffer*` passes `options = 0` =
   Shared + DefaultCache + HazardTrackingModeDefault), `:682,701,906` (`selComputeEncoder`, serial);
   `docs/completed/metal-verdict.md:131-133` ("~14 cores + serial hazard-tracked encoding ⇒ a ~3.8
   µs/dispatch GPU-side floor"), `:248-249` (watch item, "unassessed").
@@ -951,7 +951,7 @@ re-baked by the code it checks (G-04).
   `metal/model.go:1967-1775` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:517-507`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
-  `metal.go:777-748` (OOB/unmapped reads are silently tolerated).
+  `metal.go:791-762` (OOB/unmapped reads are silently tolerated).
 - **Failure:** on a `--moe-cache-slots` MoE (generic or Gemma 4), an embeddings request returns a
   finite garbage vector with no error; the snapshot golden's `Forward` path likewise.
 - **Fix:** decline in `HiddenLast`/`Forward`/`ForwardArgmax` when `r.g4moe.paged || r.moe.paged`,
@@ -1015,7 +1015,7 @@ re-baked by the code it checks (G-04).
   staticcheck clean.
 
 #### C-05 · aikit `Queue.Run1DBatchTG` / `Run1DTG` own an NSAutoreleasePool without the G22 OS-thread pin every sibling helper has
-- **Where:** aikit `metal.go:983-928` (`pool := … Send(selInit); defer pool.Send(selDrain)` with
+- **Where:** aikit `metal.go:995-940` (`pool := … Send(selInit); defer pool.Send(selDrain)` with
   no `runtime.LockOSThread`) vs `:585-589,621-625,925-929` (siblings pin, citing "intermittent
   SIGSEGV (fault 0x10) inside objc_msgSend"). Only production caller (`qwenmetal.ForwardViT`) pins
   for the whole forward; goinfer's batch-k harnesses call it unpinned.
@@ -1050,7 +1050,7 @@ re-baked by the code it checks (G-04).
 #### C-06 · `visionmetal` has no threadgroup-memory budget guard (qwenmetal's C-02 fix was not mirrored), and the status latch it relies on cannot fire on Apple silicon
 - **Where:** aikit `visionmetal/encoder.go:225-228` (`DispatchTG(…, np*4, …)` — over the 32 KiB
   limit above np=7,680) vs `qwenmetal/encoder.go:247-250,368` (`attnThreadgroupBytes` guard);
-  `metal.go:775-748` ("silently tolerates … over-budget threadgroup memory … status Completed").
+  `metal.go:789-762` ("silently tolerates … over-budget threadgroup memory … status Completed").
 - **Failure:** a SigLIP tower with >7,680 patches returns a plausible wrong hidden state. Not a
   shipped shape today (so400m/896 = 4,096).
 - **Fix:** the qwenmetal check with `np` in `newEncoder`. **Confidence:** plausible. **Prior:** aikit
@@ -1246,7 +1246,7 @@ re-baked by the code it checks (G-04).
   cells. **Fix:** let it run on the paged 35B, sequential vs expert-major once M-05 exists.
 
 #### G-10 · The C-09 status latch (`mustCmdBufOK` / `Encoder.Err()`) is, by its own comment, inert on Apple silicon — host-side pre-checks are the real gate
-- **Where:** aikit `metal.go:775-748,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
+- **Where:** aikit `metal.go:789-762,770-775`, `metal/cmdbuf_status_test.go:19-22` (both repos'
   tests inject the error). Documentation, not a lever: every "Err() will catch it" reliance needs a
   pre-check (C-06 is the bare one).
 - **CLOSED 2026-09-14 — this finding names no fix of its own.** It carries no independent **Fix:**
@@ -1254,7 +1254,7 @@ re-baked by the code it checks (G-04).
   which it cites as "the bare" (i.e. only) concrete instance. C-06 shipped and released this
   session (`gpu/v0.33.1`, closed above): `visionmetal` now has the same `attnThreadgroupBytes`
   host-side pre-check qwenmetal already had, checked in `newEncoder` before `Err()` would ever need
-  to catch the corresponding silent-tolerance case. `aikit metal.go:770-775`'s comment (Apple
+  to catch the corresponding silent-tolerance case. `aikit metal.go:784-789`'s comment (Apple
   silicon "silently tolerates … over-budget threadgroup memory … status Completed") and
   `metal/cmdbuf_status_test.go:19-22` are unchanged and still correctly describe `Err()`'s own limits —
   that is not something to fix, it is the documented reason the pre-check pattern exists at all.
@@ -1529,7 +1529,7 @@ re-baked by the code it checks (G-04).
   memory/bandwidth-bound — not a clear win, and the audit's own number (<1%) doesn't justify the
   added complexity without measuring first. rope2_kv (0.6%) is unchanged, as the finding itself
   says.
-- N-31 `metal.go:744-747` — `WaitDone` reads four GPU timestamps per production token for
+- N-31 `metal.go:758-761` — `WaitDone` reads four GPU timestamps per production token for
   `LastGPUTimes` (tests only); µs.
 - N-32 `metal_vit.go:1117-1119` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
@@ -1619,7 +1619,7 @@ re-baked by the code it checks (G-04).
   `waitUntilCompleted`, one serial encoder, 310 dispatches, ~1,030 purego transitions, one heap
   allocation per token; no per-token buffer creation; `setBuffers` batching already cut binds from
   ~2,600 to ~337 msgSends/token; ICB and unretained references are recorded nulls
-  (`metal/model.go:2101-1976`, `metal.go:732-812`, `metal-verdict.md:171-172`).
+  (`metal/model.go:2101-1976`, `metal.go:746-826`, `metal-verdict.md:171-172`).
 - **Encode-ahead on the production path:** `metalResident.Forward` → `ForwardEmbPipe` → `execLoop`;
   t+1 encoded between `Commit(t)` and `WaitDone(t)`; value-independent (pos/nKeys/`r.x` written at
   commit); only 1 token in 64 (pool drain), the first token after `SetAdapter`, paged models and

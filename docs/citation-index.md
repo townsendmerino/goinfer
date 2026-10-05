@@ -138,13 +138,13 @@ supports.
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1097` | goinfer | `// dir is -vision if set, else the sole --model's own dir when it carries a vision` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1493` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
-| `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
-| `docs/audit-metal-2026-09-12.md|metal.go:732` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
-| `docs/audit-metal-2026-09-12.md|metal.go:744` | gpu | `e.cb.Send(selWaitCompleted)` |
-| `docs/audit-metal-2026-09-12.md|metal.go:770` | gpu | `// (goinfer audit C-09): callers MUST consult Err before trusting the outputs of a commi` |
-| `docs/audit-metal-2026-09-12.md|metal.go:775` | gpu | `// real GPU abort is nearly impossible to provoke on demand (the hardware silently toler` |
-| `docs/audit-metal-2026-09-12.md|metal.go:777` | gpu | `// such command buffer still reports status Completed), which is exactly why this status` |
-| `docs/audit-metal-2026-09-12.md|metal.go:983` | gpu | `func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {` |
+| `docs/audit-metal-2026-09-12.md|metal.go:441` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
+| `docs/audit-metal-2026-09-12.md|metal.go:746` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
+| `docs/audit-metal-2026-09-12.md|metal.go:758` | gpu | `e.cb.Send(selWaitCompleted)` |
+| `docs/audit-metal-2026-09-12.md|metal.go:784` | gpu | `// (goinfer audit C-09): callers MUST consult Err before trusting the outputs of a commi` |
+| `docs/audit-metal-2026-09-12.md|metal.go:789` | gpu | `// real GPU abort is nearly impossible to provoke on demand (the hardware silently toler` |
+| `docs/audit-metal-2026-09-12.md|metal.go:791` | gpu | `// such command buffer still reports status Completed), which is exactly why this status` |
+| `docs/audit-metal-2026-09-12.md|metal.go:995` | gpu | `func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {` |
 | `docs/audit-metal-2026-09-12.md|metal/attention_prefill_fused_test.go:39` | goinfer | `anchor: func TestAttentionPrefillFused(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:201` | goinfer | `func metalMoESlotsRequest(m *decoder.Model) string {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:355` | goinfer | `func residentNeedBytes(m *decoder.Model) int64 {` |
@@ -311,14 +311,14 @@ supports.
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:186` | goinfer | `o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:433` | goinfer | `fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled ` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:455` | goinfer | `fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) \| ngram — lossless` |
-| `docs/audit-metal-2026-09-30.md|linalg/quant.go:568` | aikit | `func QuantizeGroupsInt4(w []float32, rows, cols, group int) (packed []byte, scales []flo` |
-| `docs/audit-metal-2026-09-30.md|metal.go:676` | gpu | `// tax finding). The default serial compute encoder inserts barriers between dependent` |
-| `docs/audit-metal-2026-09-30.md|metal.go:686` | gpu | `// Encode-tax trims (measured: together only ~0.5ms of the ~2.4ms/token overhead — the` |
-| `docs/audit-metal-2026-09-30.md|metal.go:740` | gpu | `// WaitDone blocks until the committed command buffer completes, then captures any abort` |
-| `docs/audit-metal-2026-09-30.md|metal.go:808` | gpu | `func (e *Encoder) ReadTimes() {` |
-| `docs/audit-metal-2026-09-30.md|metal.go:819` | gpu | `func (e *Encoder) Dispatch(p Pipeline, n, tg int, bufs ...Buffer) {` |
-| `docs/audit-metal-2026-09-30.md|metal.go:954` | gpu | `// Consumers that already pin are unaffected: LockOSThread nests.` |
-| `docs/audit-metal-2026-09-30.md|metal.go:988` | gpu | `// Consumers that already pin are unaffected: LockOSThread nests. Missed here` |
+| `docs/audit-metal-2026-09-30.md|linalg/quant.go:588` | aikit | `func QuantizeGroupsInt4(w []float32, rows, cols, group int) (packed []byte, scales []flo` |
+| `docs/audit-metal-2026-09-30.md|metal.go:1000` | gpu | `// Consumers that already pin are unaffected: LockOSThread nests. Missed here` |
+| `docs/audit-metal-2026-09-30.md|metal.go:690` | gpu | `// tax finding). The default serial compute encoder inserts barriers between dependent` |
+| `docs/audit-metal-2026-09-30.md|metal.go:700` | gpu | `// Encode-tax trims (measured: together only ~0.5ms of the ~2.4ms/token overhead — the` |
+| `docs/audit-metal-2026-09-30.md|metal.go:754` | gpu | `// WaitDone blocks until the committed command buffer completes, then captures any abort` |
+| `docs/audit-metal-2026-09-30.md|metal.go:822` | gpu | `func (e *Encoder) ReadTimes() {` |
+| `docs/audit-metal-2026-09-30.md|metal.go:852` | gpu | `func (e *Encoder) Dispatch(p Pipeline, n, tg int, bufs ...Buffer) {` |
+| `docs/audit-metal-2026-09-30.md|metal.go:966` | gpu | `// Consumers that already pin are unaffected: LockOSThread nests.` |
 | `docs/audit-metal-2026-09-30.md|metal/alias.go:209` | goinfer | `if off%16 != 0 {` |
 | `docs/audit-metal-2026-09-30.md|metal/alias.go:222` | goinfer | `// stores exactly F16Bits of each f32 scale, the conversion this package applies at load` |
 | `docs/audit-metal-2026-09-30.md|metal/alias.go:267` | goinfer | `if sc, ok := a.scales16(d, wms); ok { // v14 metal-target file: the members' f16 scales ` |
@@ -676,7 +676,7 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:281` | goinfer | `} else if s.p.TopK > 0 \|\| s.p.TopP > 0 \|\| s.p.MinP > 0 {` |
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
-| `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:321` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
+| `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:335` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:847` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
@@ -731,7 +731,7 @@ supports.
 | `docs/measurements/r2-attn-fa-followup-2026-09-20.md|metal/kernels.go:1248` | goinfer | `kernel void attention_fa(` |
 | `docs/measurements/r2-attn-fa-followup-2026-09-20.md|metal/model.go:1701` | goinfer | `r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)` |
 | `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|decoder/attention.go:355` | goinfer | `qScale := float64(linalg.QuantizeRowInt8(q[qh*hd:qh*hd+hd], qq))` |
-| `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|linalg/quant.go:135` | aikit | `func QuantizeRowInt8(row []float32, q []int8) (scale float32) {` |
+| `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|linalg/quant.go:137` | aikit | `func QuantizeRowInt8(row []float32, q []int8) (scale float32) {` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/attn_fused_test.go:18` | goinfer | `// plus "cosine >= 0.9999 per row", derived from f16 operand rounding. That bar failed w` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/prefill.go:743` | goinfer | `//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three crit` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:123` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
@@ -795,7 +795,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
 | `docs/queue-engineering.md|internal/serveapp/main.go:841` | goinfer | `go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)` |
-| `docs/queue-engineering.md|linalg/quant.go:214` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
+| `docs/queue-engineering.md|linalg/quant.go:222` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1755` | goinfer | `r.ensureBatchCap(16)` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:950` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1418` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |

@@ -1281,14 +1281,14 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 |---|---|---|---|---|---|---|
 | C-P01 | Major | Paged-expert f16 scale cache holds ~1.43 GB of anonymous heap that duplicates scales the v15 .giw aliases; guard does not price it | the paged branches of metal/gemma4_moe.go and metal/moe.go and `int4DirectBytes` in metal/model.go, at `844700f8` (removed 2026-10-02); s6-alias-2026-09-24.md:262-270 | none (MLX has no paging) | -1.43 GB of 2,967 MB (-48%) [C]; decode -6% to 0% [P] | heap profile + footprint A/B on M26 v15; kill if reduction < 1.0 GB or decode worse than -3% |
 | C-C01 | Major (conditional) | Decoder guards price f32 KV and have no Metal ceiling; auto-pin inflates Metal KV vs the 4096 default or exceeds 32768 and forces CPU fallback | decoder/fitguard.go:366-423,742-757; decoder/model.go:604-614; metal/model.go:22-60; decoder/fitplan.go:233-243; decoder/residency.go:1160-1179; audit N-41 (:1588-1603) | resident.cpp / allocator.cpp budget by memory limit, not by kernel ceiling | KV 3-7x default at pin [R]; CPU fallback = whole-forward loss | unit test with injected hostRAMAvailable and a 131072-window config; kill if guardGIWFit never returns > 32768 |
-| C-B01 | Minor (Major only at top of band on 0.5B) | No on-device token feedback: every token pays wake + 608 KB copy + host argmax + embed row + commit between kernels | metal/model.go:2268-2333,2394-2424; decoder/model.go:2276-2335 | eval.cpp:29-69 async_eval; device.cpp:511-513 | 0.30-0.45 ms/token [P]: 2.2-3.4% (1.5B), 0.7-1.1% (7B), 5.3-7.9% (0.5B, assumes the 1.5B gap) | log kernStart(t+1)-kernEnd(t) (aikit metal.go:808-814); kill if gap < 0.15 ms |
+| C-B01 | Minor (Major only at top of band on 0.5B) | No on-device token feedback: every token pays wake + 608 KB copy + host argmax + embed row + commit between kernels | metal/model.go:2268-2333,2394-2424; decoder/model.go:2276-2335 | eval.cpp:29-69 async_eval; device.cpp:511-513 | 0.30-0.45 ms/token [P]: 2.2-3.4% (1.5B), 0.7-1.1% (7B), 5.3-7.9% (0.5B, assumes the 1.5B gap) | log kernStart(t+1)-kernEnd(t) (aikit metal.go:822-828); kill if gap < 0.15 ms |
 | C-P02 | Minor | ForwardSample / ForwardArgmax are synchronous Begin/End and bypass encode-ahead | metal/gumbel_sample.go:45-71; metal/model.go:2399-2427 | eval.cpp:29-69 | up to 3.6-4.2% (0.5B), ~2.8% (1.5B), ~0.9% (7B) [P] | add sample mode to execJob, A/B at T=1.0 |
 | C-B02 | Minor, REVISIT | Residency verdict: MLX sets are requests under memory pressure and default to 0; goinfer's recorded bisect says pinning costs in proportion to set size; the premise was measured on paged MoE, not dense | resident.h:15-26; resident.cpp:221-237; allocator.cpp:100-105,254-262; metal/model.go:1757-1823; s6-alias-2026-09-24.md:197-198 | resident.cpp | 7B alias cost -1.4% [R]; recovery or regression unknown | per-encoder set on dense 7B, interleaved A/B n>=12; kill if no recovery of the 1.4% or +0.5 ms/token |
 | C-B03 | Minor, REVISIT | MLX's spin fence (fast-synch) is not what the recorded shared-event test measured | fence.cpp:11-24,34-50; kernels/fence.metal; utils.h:220-222; metal/pagecost_sharedevent_test.go:47-64 | event.cpp is MTLSharedEvent | upper bound only: 7.8 ms/token = 5.4% of M26 at 30 boundaries [D]; no saving figure recorded | empty-CB round trip: commit+wait vs commit+spin, n>=1000; kill if saving < 25 us/boundary |
 | C-N02 | Minor | Whole-prompt prefill is one command buffer: no cancel point, scratch O(M), watchdog behaviour unrecorded | metal/backend.go:768-839; metal/prefill.go:1188-1280 | device.cpp:604-622 (40-50 ops/CB) | not an effect finding | cross-ref area A |
 | C-G01 | Minor (G) | TestMetal_CloseFreesMemory gates on RSS only, which UMA GPU buffers do not move | metal/close_leak_test.go; sibling tests 144-282 use CurrentAllocatedSize | none | n/a | make the RSS test also assert CurrentAllocatedSize |
 | C-D01 | Minor (D) | Stale comments/specs: guardGIWFit "file-backed" comment, S6 "never swap" wording vs v15, attnFACoreCount=14 vs 16-core target, N-20 premise, ForwardArgmax contradictory comments, runtime-selftest spec unimplemented | listed in entry | none | n/a | read-only |
-| C-N01 | Minor | Encoder.Dispatch binds through a fixed [16] scratch with no length check; widest call binds 15 | aikit metal.go:676-700,819-842; metal/batch.go:703-705 | none | n/a | add a len guard |
+| C-N01 | Minor | Encoder.Dispatch binds through a fixed [16] scratch with no length check; widest call binds 15 | aikit metal.go:690-714,819-842; metal/batch.go:703-705 | none | n/a | add a len guard |
 | C-N03 | Minor | PrefillLast allocates 26 fresh buffers per call from zero-filled Go slices (34.3 MB at 1.5B, M=512 [C]) | metal/prefill.go:1188-1280 | allocator.cpp BufferCache | recorded host overhead indistinguishable from zero (metal-prefill-decomp-2026-09-25.md:49-50); at most 0.5% [P] | not worth a probe unless short-prompt TTFT becomes a target |
 
 ---
@@ -1363,7 +1363,7 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 
 **Bit-identity.** Identical: same kernels in the same order; only where the token id travels changes. The gather must reproduce `loadEmbedRow` exactly, including the arch scale and any learned position add (`addLearnedPos`). Tied-embedding and device-picked modes only; non-greedy modes that need full logits (penalties, processors, logprobs) keep the host path.
 
-**Probe.** Read `kernStart(t+1) - kernEnd(t)` from the existing timestamps (`ReadTimes`, aikit metal.go:808-814) across 200 tokens on 1.5B and 0.5B to get the real GPU-idle gap; that number replaces the band. **Kill:** median gap under 0.15 ms.
+**Probe.** Read `kernStart(t+1) - kernEnd(t)` from the existing timestamps (`ReadTimes`, aikit metal.go:822-828) across 200 tokens on 1.5B and 0.5B to get the real GPU-idle gap; that number replaces the band. **Kill:** median gap under 0.15 ms.
 
 **Status, 2026-10-02 (branch `metal-audit`): built, bit-identical, pending its night grade.** T1.3 measured the gap at
 0.583 ms (0.5B) and 0.663 ms (1.5B), so the finding stood.
@@ -1465,7 +1465,7 @@ task doc ("C-P02: built, pending its grade").
 
 #### C-N01 [N] Fixed-size binding scratch
 
-`Encoder.Dispatch` and `DispatchTG` fill `idScr [16]` and `offScr [16]` and call one batched `setBuffers:offsets:withRange:` (aikit metal.go:676-700,819-842) with no length check. The widest dispatch in goinfer binds 15 buffers (metal/batch.go:703-705). One more binding on that kernel overruns the array. Add a bounds check or panic with the kernel name at encode time.
+`Encoder.Dispatch` and `DispatchTG` fill `idScr [16]` and `offScr [16]` and call one batched `setBuffers:offsets:withRange:` (aikit metal.go:690-714,819-842) with no length check. The widest dispatch in goinfer binds 15 buffers (metal/batch.go:703-705). One more binding on that kernel overruns the array. Add a bounds check or panic with the kernel name at encode time.
 
 #### C-N03 [N] Per-request prefill scratch
 
@@ -1475,9 +1475,9 @@ task doc ("C-P02: built, pending its grade").
 
 #### Direct answers: launch overhead per token, goinfer versus MLX
 
-**Count.** Dense Qwen2, 28 layers: 11 dispatches per layer [C] (attention half 7: norm, qkv GEMV with bias, rope, kv store, attention, o-proj with residual, plus the f32-to-f16 conversion on the f16 lane; FFN half 4: norm, fused gate|up GEMV, SwiGLU, down with residual; metal/model.go:3097-3249 and 2357-2445), plus 2 at the head: 11 x 28 + 2 = 310 dispatches/token (338 when `attention_fa` adds partial+combine, i.e. +1 dispatch x 28 layers at depth >= 1536: 310 + 28 = 338). `Encoder.Dispatch` makes three purego calls (setComputePipelineState on change, one batched setBuffers, dispatchThreads; aikit metal.go:819-842); every adjacent pair of dispatches has different pipelines, so the pipeline set is not skipped; 4 of 11 per layer are `DispatchTG` with one more call (setThreadgroupMemoryLength): 11 x 3 + 4 = 37 per layer. 37 x 28 + 2 x 3 = 1,042 transitions per token, plus about 10 command-buffer-level calls (create, encoder, end, commit, wait, status, and four timestamp reads in `ReadTimes`, N-31). The Sep 12 audit counted "~1,030" (audit-metal-2026-09-12.md:1612). [C]
+**Count.** Dense Qwen2, 28 layers: 11 dispatches per layer [C] (attention half 7: norm, qkv GEMV with bias, rope, kv store, attention, o-proj with residual, plus the f32-to-f16 conversion on the f16 lane; FFN half 4: norm, fused gate|up GEMV, SwiGLU, down with residual; metal/model.go:3097-3249 and 2357-2445), plus 2 at the head: 11 x 28 + 2 = 310 dispatches/token (338 when `attention_fa` adds partial+combine, i.e. +1 dispatch x 28 layers at depth >= 1536: 310 + 28 = 338). `Encoder.Dispatch` makes three purego calls (setComputePipelineState on change, one batched setBuffers, dispatchThreads; aikit metal.go:852-875); every adjacent pair of dispatches has different pipelines, so the pipeline set is not skipped; 4 of 11 per layer are `DispatchTG` with one more call (setThreadgroupMemoryLength): 11 x 3 + 4 = 37 per layer. 37 x 28 + 2 x 3 = 1,042 transitions per token, plus about 10 command-buffer-level calls (create, encoder, end, commit, wait, status, and four timestamp reads in `ReadTimes`, N-31). The Sep 12 audit counted "~1,030" (audit-metal-2026-09-12.md:1612). [C]
 
-**Cost per transition.** Recorded host encode ~0.9 ms (metal/model.go:469-471) / 1,042 = 0.86 us each [D]. The aikit comment records that the two trims already shipped removed only ~0.5 ms of a ~2.4 ms/token overhead and that "the rest is GPU-side per-Dispatch latency, not Go-side msgSend" (aikit metal.go:686-689). Today's GPU floor with every pipeline no-op'd is 0.86 ms on the 1.5B = 2.8 us/dispatch [D]. After encode-ahead the visible host side is 0.45 ms [R].
+**Cost per transition.** Recorded host encode ~0.9 ms (metal/model.go:469-471) / 1,042 = 0.86 us each [D]. The aikit comment records that the two trims already shipped removed only ~0.5 ms of a ~2.4 ms/token overhead and that "the rest is GPU-side per-Dispatch latency, not Go-side msgSend" (aikit metal.go:700-703). Today's GPU floor with every pipeline no-op'd is 0.86 ms on the 1.5B = 2.8 us/dispatch [D]. After encode-ahead the visible host side is 0.45 ms [R].
 
 **MLX.** MLX encodes the same kind of per-op calls from C++ with no purego layer (per-call cost not measured here), puts 20-50 ops in a command buffer by chip (device.cpp:604-622) and commits asynchronously (eval.cpp:29-69). At goinfer's 310 dispatches that is 7 command buffers at 50 ops and 8 at 40 ([D]; MLX counts primitives, not dispatches, so the true count differs); which bucket an M1 Pro falls in is not statically known (section (f)). MLX does not wait between graphs; goinfer waits once per token.
 
@@ -1485,7 +1485,7 @@ task doc ("C-P02: built, pending its grade").
 
 **Argument buffers.** One setBuffer(s) call per dispatch becomes one setBuffer(argument-buffer, offset) call: the transition count is unchanged. They also drop Metal's implicit residency of the referenced buffers, so each would need `useResource` or a residency set (C-B02's cost). Not a reduction.
 
-**Fewer encoders.** Already one encoder per command buffer (aikit metal.go:676-700). Nothing to merge.
+**Fewer encoders.** Already one encoder per command buffer (aikit metal.go:690-714). Nothing to merge.
 
 **What would reduce transitions.** Only an indirect command buffer (one `executeCommandsInBuffer` per token): a recorded negative (red-october.md:466; Sep 12 §5 :1614-1615). Premise check in the next block.
 
@@ -1506,7 +1506,7 @@ task doc ("C-P02: built, pending its grade").
 | Negative | Recorded premise | Status today | Evidence |
 |---|---|---|---|
 | ICB (red-october.md:466; Sep 12 §5 :1614-1615) | Per-dispatch cost is GPU-side latency, not Go-side msgSend; per-token values (pos, key count, attention plan) vary | HOLDS. Recomputed bound: host encode 0.9 ms hidden to 0.45 ms visible, so an ICB can save at most that 0.45 ms (3.4%, 1.5B); the 0.86 ms floor is GPU-side and was measured with the encoder path unchanged. The attention plan switches at depth 1536 (11 vs 12 dispatches per layer), so one ICB per plan would be needed | metal/model.go:469-471; decomp doc :43; model.go attnFACoreCount region 2495-2507 |
-| Unretained references (MLX uses them, device.cpp:323,559) | Retain/release per binding is small against the risk of a freed buffer | HOLDS. Binding count per token is unchanged (310 dispatches, same as Sep 12); aikit binds with `commandBuffer` (retained refs). Lifetime would be safe (the ledger frees at Close, prefill scratch is released after a waiting `End`), so this is a measured-small-gain close, not a safety close; I did not find a gain figure that would reopen it | aikit metal.go:819-842; metal/prefill.go:1223-1282 |
+| Unretained references (MLX uses them, device.cpp:323,559) | Retain/release per binding is small against the risk of a freed buffer | HOLDS. Binding count per token is unchanged (310 dispatches, same as Sep 12); aikit binds with `commandBuffer` (retained refs). Lifetime would be safe (the ledger frees at Close, prefill scratch is released after a waiting `End`), so this is a measured-small-gain close, not a safety close; I did not find a gain figure that would reopen it | aikit metal.go:852-875; metal/prefill.go:1223-1282 |
 | Megakernel / dispatch-count fusion | A chain of 11 with reduction-order sensitivity | HOLDS. qkv and gate|up are already fused; ceiling for any further count reduction is the 0.86 ms floor (0.67% per 10% of dispatches [P]); fusing across a reduction boundary changes bits | red-october.md:466; decomp doc :43 |
 | Shared event (metal/pagecost_sharedevent_test.go:47-64) | Event handshake ~0.26 vs per-layer submit ~0.23 ms/boundary, measured on a dense 1.5B | STALE in shape. Target cost on the paged shape fell from ~9-15 ms to 0.44 ms/CB idle after the slot residency set; the primitive tested was the event, not MLX's fence; re-run never done (M-11 open). REVISIT as C-B03 with the cheapest probe above | audit :1154-1160, :1760-1766; metal/model.go:1760,1802 |
 | M-16 untracked hazard tracking | 99.6-101.5% of baseline | HOLDS, limited to the serial encoder; says nothing about a concurrent encoder (which has no unbarriered pair on the dense chain, above) | aikit hazard_tracking_probe_test.go |
@@ -1524,7 +1524,7 @@ task doc ("C-P02: built, pending its grade").
 | M-13 | Pager engages only with explicit slots | CLOSED (auto-sized slots) | audit :1760-1762 |
 | M-14 | Residency set rides every command buffer (+62 ms/token) | CLOSED, wiring verified live; saving not re-measured | metal/model.go:1817-1823; metal/moe.go:1167; metal/gemma4_moe.go:656; aikit residencyset.go:117-125 (TestEncoder_useResidencySet) |
 | M-16 | Every buffer hazard-tracked, every encoder serial | NEGATIVE-CLOSED (serial-encoder premise) | aikit hazard_tracking_probe_test.go; audit :1779 |
-| C-05 | `Run1DBatchTG`/`Run1DTG` own an autorelease pool without the OS-thread pin | CLOSED-VERIFIED | aikit metal.go:954-955 and 988-992 (`runtime.LockOSThread`, "Missed here" note) |
+| C-05 | `Run1DBatchTG`/`Run1DTG` own an autorelease pool without the OS-thread pin | CLOSED-VERIFIED | aikit metal.go:966-967 and 1000-1004 (`runtime.LockOSThread`, "Missed here" note) |
 | G-05 | Shared-event verdict measured on a shape without the cost | OPEN (no re-run); see C-B03 | audit :1154-1160 |
 | G-06 | Device-ledger free assertions pass by construction | CLOSED for two gates; residue C-G01 | metal/close_leak_test.go:162-300 |
 | G-10 | C-09 status latch inert on Apple silicon | pointer closed (host pre-checks are the gate; `recordExecErr` sites at metal/gumbel_sample.go:69-71, metal/model.go:2430) | audit :1244 |
@@ -1533,7 +1533,7 @@ task doc ("C-P02: built, pending its grade").
 | N-27 | 608 KB logits memcpy on the pipe path | DECLINED, reason still valid (decoder/spec_optfwd.go:202-211) | audit :1466-1480 |
 | N-28 | No CPU-sampler overlap above T=0.2 | PARTLY ADDRESSED by R7b device sampler; executor half remains (C-P02) | r7b-metal-mac-2026-09-20.md:215-216 |
 | N-29 | Load path rebuilt words byte by byte | FIXED (bulk copy in `bytesToU32`) | metal/model.go:577-584 |
-| N-31 | Four GPU timestamp reads per production token | PRESENT (counted in the 10 command-buffer-level calls) | aikit metal.go:808-814 |
+| N-31 | Four GPU timestamp reads per production token | PRESENT (counted in the 10 command-buffer-level calls) | aikit metal.go:822-828 |
 | N-34 | metal_copy / upload_batch unused and unfenced | UNCHANGED, still correct on UMA | aikit gpu/metal_copy.go, metal_upload_batch.go |
 | N-36 | KV charged for DeltaNet layers | FIXED | decoder/residentneed.go; memory-accounting-metal-2026-09-25.md:38-46 |
 | N-41 | Auto-pin ignores Metal's ceiling | PARTIAL, live in a new form | C-C01 |
@@ -1545,7 +1545,7 @@ M-08 and C-04 belong to area E and are not carried here.
 ### (e) Checked and found correct
 
 - Decode structure: one command buffer, one commit, one serial encoder, one wait per token; 310 dispatches and 1,042 transitions counted against the Sep 12 "~1,030".
-- `Encoder.Dispatch`: pipeline set only on change, one batched `setBuffers:offsets:withRange:`, uniforms as 1-word buffers; retained-reference command buffers (aikit metal.go:819-842). Only the missing length check (C-N01).
+- `Encoder.Dispatch`: pipeline set only on change, one batched `setBuffers:offsets:withRange:`, uniforms as 1-word buffers; retained-reference command buffers (aikit metal.go:852-875). Only the missing length check (C-N01).
 - `execLoop` (metal/model.go:2268-2333): OS-thread pinned, one long-lived autorelease pool drained every 64 tokens, `attnPlan` mismatch drops the pre-encoded buffer, `SetAdapter` tears the executor down because the t+1 buffer bakes in LoRA state (C-07), paged MoE bypasses the executor (:1750-1758).
 - NoCopy alias: MAP_SHARED read-only mapping, `VM_INHERIT_NONE` (decoder/giwmap_darwin.go, forkinherit_darwin.go); alias.go reasons correctly about COW wiring (:28-36) and the gate requires fused groups, singles, f16 scales and the int8 head each aliased with 0 heap-backed/unaligned/non-adjacent (s6-alias-2026-09-24.md:211-212, 258). Footprints at token 32, aliased vs copied: 1.5B 90 vs 1,013 MB, 7B 105 vs 4,134 MB, M26 2,967 vs 4,485 MB [R] (:188-189, :262).
 - Fit accounting: `ResidentHostCopyBytes` subtracts mmap-aliased bytes (decoder/weightbytes.go:184-192), so the guard does not over-price an aliased .giw (recorded 1.40 GB for the v14 1.5B). The Metal guard is min(70% of hw.memsize, live available) (metal/backend.go:69-115). `TestResidentKVBytes_matchesMetalAllocation` 5/5 exact (memory-accounting-metal-2026-09-25.md:38-41).
@@ -1618,7 +1618,7 @@ moe_inter 704 (`docs/measurements/prefill-moe-m26-2026-09-04.md:20`), top_k 8 (N
 | D-G01 | Major | Expert-major prefill ships default ON on a dense gate; MoE tests cannot see its failure modes | `metal/prefill.go:1394`; `metal/backend.go:604-651`; `metal/moe_expert_major_prefill_test.go:32,48,83`; `metal/prefill_moe_parity_test.go:23-24,107` | none (gate) | n/a | real-MoE paged-off fixture, per-layer cosine, router-flip count, mutation set |
 | D-B02 | Major | Host-grouped expert loop: 5 x nE dispatches/layer, per-layer sync, 64-row tile padding; MLX schedules on device with bm=16 | `metal/prefill.go:1425-1433,1477-1505`; header `:36-38` | `quantized.h:2426-2574`, `quantized.cpp:1661-1823,1996`, `utils.h:503-542`, `gather_mm_offsets.metal:8-22` | 5-25% of MoE prefill at 64-128 experts (proj) | count tile waste, then device-side offsets kernel A/B |
 | D-P04 | Major | MoE router top-k runs on one GPU thread; recorded about 10% of a fitting ~5 ms MoE token | `metal/moe.go:45-95,97-120,963-972`; Sep 12 `:1438-1440` | none cheaper (`sort.cpp:346-348`) | 4-9% of a resident MoE token (proj on rec) | GPU timestamps around the (1,1) dispatch |
-| D-B03 | Major | gpt-oss MXFP4 is requantized to int4 absmax/7; native MXFP4 (E2M1 x E8M0) would keep the checkpoint's values and save 0.6 GB | `decoder/gptoss_safetensors.go:148-192`; aikit `linalg/quant.go:568-640` | `fp_quantized.h:30-38,82-100`, `fp4.h:36-38`, `fp8.h:51-85` | 0.6 GB (cnt); fidelity unquantified | requantization error on the real checkpoint (a CPU-side script) |
+| D-B03 | Major | gpt-oss MXFP4 is requantized to int4 absmax/7; native MXFP4 (E2M1 x E8M0) would keep the checkpoint's values and save 0.6 GB | `decoder/gptoss_safetensors.go:148-192`; aikit `linalg/quant.go:588-660` | `fp_quantized.h:30-38,82-100`, `fp4.h:36-38`, `fp8.h:51-85` | 0.6 GB (cnt); fidelity unquantified | requantization error on the real checkpoint (a CPU-side script) |
 | D-B04 | Minor | R18 rows form not applied to shared experts, DeltaNet projections, routed expert GEMVs | `metal/model.go:1613-1638`; `metal/deltanet.go:133-136` | `gemv.h` (R18 source) | 5-12% on shared-expert-heavy/hybrid decode (proj) | wire shared-expert GEMV through `gemvRowsFor` |
 | D-P02 | Minor (REVISIT) | M-11 / R11(c) premises are stale for M26 | Sep 12 `:568-590`; `red-october.md:296-305,424` | none | ~0% for the shared-event design (proj) | PROF_SPLIT on aliased v14 M26; N=64 rerun with kill-watch |
 | D-B05 | Minor (REVISIT) | `delta_rule` layout: 4x state traffic per token, thread-per-row, uncoalesced; "at ceiling" is stale | `metal/deltanet_kernels.go:128-206`; Sep 12 `:1663` | `gated_delta_update.h:271-366` | 40-96 us/layer recovered (proj) | micro-benchmark lane-per-Dk variant |
@@ -1862,7 +1862,7 @@ no probe; I found no later measurement or comment (`metal/moe.go:44-47` describe
 
 **What goinfer does.** Both loaders decode MXFP4 (`mxfp4Pair`) to f32 rows and call `streamQ`, which quantizes
 to int4 group-32 f16 scales with `QuantizeGroupInt4Row` (`decoder/gptoss_safetensors.go:148-192`; aikit
-`linalg/quant.go:568-640`, scale `maxAbs/7`). Metal then holds int4 and runs `gemv_w4a8_moe*`. The router stays
+`linalg/quant.go:588-660`, scale `maxAbs/7`). Metal then holds int4 and runs `gemv_w4a8_moe*`. The router stays
 f32 (`decoder/gptoss_safetensors.go:150`).
 
 **What MLX does (mlx).** `fp_quantized.h` dequantizes E8M0 scales as `fp8_e8m0` for group size 32 (`:30-38`),
@@ -2724,7 +2724,7 @@ Status uses the five values from the brief. "Record only" means the cited target
 | C-02 | CLOSED-VERIFIED | `metal/backend.go:931-933` declines `HiddenLast` on a paged MoE (also `:569`, `:842`, `:869`); chokepoint panics at `metal/moe.go:934`, `metal/gemma4_moe.go:442`; test `metal/c02_paged_forward_entrypoints_test.go:28`. |
 | C-03 | CLOSED-VERIFIED (code; test record only) | `decoder/lora.go:165-196` `validateComputeTimeDims`, called at `:380`. `decoder/*_test.go` not in snapshot. |
 | C-04 | CLOSED-VERIFIED | `metal/lora.go:173-176,203` (`bound` flag, deferred release); `metal/lora_bind_leak_test.go:20`. |
-| C-05 | CLOSED-VERIFIED | aikit `metal.go:988-992` pins the thread in `Run1DBatchTG`. |
+| C-05 | CLOSED-VERIFIED | aikit `metal.go:1000-1004` pins the thread in `Run1DBatchTG`. |
 | C-06 | CLOSED-VERIFIED | aikit `visionmetal/encoder.go:115-127,174-181`; `visionmetal/threadgroup_budget_test.go:21-38`. |
 | G-01 | CLOSED-VERIFIED | `metal/moe_model_test.go:326` sets the floor to 0. |
 | G-02 | PARTIAL | Missing-cell Fatalf present (`metal/prefill_gate_ref_test.go:305-314`); the "resident not built -> Skipf" half is still there (`metal/prefill_gate_ref_test.go:194`, "metal resident not built for this model") and was never reproduced, per the record. Unchanged since the record. |
@@ -2766,7 +2766,7 @@ Status uses the five values from the brief. "Record only" means the cited target
 | N-28 | OPEN | Sampler/GPU overlap unchanged by anything I read; not an F item. |
 | N-29 | CLOSED-VERIFIED | `bytesToU32` at `metal/model.go:577`; `int4Concat` pre-sized (`:452-677`). |
 | N-30 | PARTIAL | Stale K<=1536 comment corrected at `metal/kernels.go:397-400`; `swiglu_quant` double evaluation stays a recorded negative. |
-| N-31 | OPEN | `WaitDone` still captures timestamps (aikit `metal.go:740-767`); microseconds. |
+| N-31 | OPEN | `WaitDone` still captures timestamps (aikit `metal.go:754-781`); microseconds. |
 | N-32 | PARTIAL | Comment fixed (`metal_vit.go:1149-1150`); the library-wide fast-math-off compile remains (`metal_vit.go:363`). |
 | N-33 | CLOSED-VERIFIED | `metal/expertpool.go:66-77`. |
 | N-34 | OPEN | informational; not re-read. |
@@ -3005,7 +3005,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | C-02 | CLOSED-VERIFIED | `metal/backend.go:931-933` declines `HiddenLast` on a paged MoE (also `:569`, `:842`, `:869`); chokepoint panics at `metal/moe.go:934`, `metal/gemma4_moe.go:442`; test `metal/c02_paged_forward_entrypoints_test.go:28`. |
 | C-03 | CLOSED-VERIFIED (code; test record only) | `decoder/lora.go:165-196` `validateComputeTimeDims`, called at `:380`. `decoder/*_test.go` not in snapshot. |
 | C-04 | CLOSED-VERIFIED | `metal/lora.go:173-176,203` (`bound` flag, deferred release); `metal/lora_bind_leak_test.go:20`. |
-| C-05 | CLOSED-VERIFIED | aikit `metal.go:988-992` pins the thread in `Run1DBatchTG`. |
+| C-05 | CLOSED-VERIFIED | aikit `metal.go:1000-1004` pins the thread in `Run1DBatchTG`. |
 | C-06 | CLOSED-VERIFIED | aikit `visionmetal/encoder.go:115-127,174-181`; `visionmetal/threadgroup_budget_test.go:21-38`. |
 | C-07 | CLOSED-VERIFIED | `SetAdapter` tears the executor down because the pre-encoded t+1 buffer bakes in LoRA state; `execLoop` `metal/model.go:2268-2333` (C). |
 | C-08 | CLOSED-VERIFIED | `prefillOK` excludes a paged generic MoE (`metal/model.go:1181-1183`, with its C-08 comment); paged entry points decline (`metal/backend.go:587-589,911`) (D, F). |
@@ -3051,7 +3051,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | N-28 | PARTIAL | Temperature-only requests are on-device since R7b (`gumbel.go`, `gumbel_sample.go`); filtered sampling is host-side (E-P04); the device sampler bypasses encode-ahead (C-P02). |
 | N-29 | CLOSED-VERIFIED | `bytesToU32` at `metal/model.go:577`; `int4Concat` pre-sized (`:452-677`). |
 | N-30 | PARTIAL; negative stands | Stale K≤1536 comment corrected (`metal/kernels.go:397-400`); `swiglu_quant` double evaluation is a recorded negative needing a device scratch buffer (audit `:1509-1520`); `rope2_kv` stays unwired (0.6%). |
-| N-31 | OPEN (microseconds) | `WaitDone` still reads four GPU timestamps per production token (aikit `metal.go:740-767`); counted in C's ~10 command-buffer-level calls. |
+| N-31 | OPEN (microseconds) | `WaitDone` still reads four GPU timestamps per production token (aikit `metal.go:754-781`); counted in C's ~10 command-buffer-level calls. |
 | N-32 | PARTIAL | Comment fixed (`metal_vit.go:1149-1150`); the library-wide fast-math-off compile remains (`metal_vit.go:363`). |
 | N-33 | CLOSED-VERIFIED | `metal/expertpool.go:66-77`. |
 | N-34 | UNCHANGED, still correct on UMA | aikit `metal_copy.go`, `metal_upload_batch.go`: host memcpy, unused by goinfer (C). |
