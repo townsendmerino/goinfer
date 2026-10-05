@@ -69,11 +69,12 @@
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | **L-15/P-18 half FIXED 2026-09-23** (`bestExtend` now picks longest-common-prefix, not whole containment, guarded against hijacking a session that merely shares another's system-prompt preamble); the resident-GPU parking half (R-01 phase 2) stays open, pre-registered decision rule below |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:141-146` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
-| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:98-110` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule. **Follow-up 2026-09-20** (red-october.md R9 step 1's own finding that MLP's token share grows with model size raised the question of whether this does better at 7B): it does not — OFF 58.98 ms/token (stdev 2.10), ON 59.0 (stdev 1.60), a difference an order of magnitude below either arm's own noise — an even cleaner null than the 1.5B result, not a size-dependent win, consistent with the remedy amortizing a roughly fixed per-barrier cost that matters proportionally *less* as the matmuls it's amortized against get bigger. See `docs/measurements/w4a8-batch-7b-2026-09-20.md`. Stays parked. |
+| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:98-110` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule. **Follow-up 2026-09-20** (red-october.md R9 step 1's own finding that MLP's token share grows with model size raised the question of whether this does better at 7B): it does not — OFF 58.98 ms/token (stdev 2.10), ON 59.0 (stdev 1.60), a difference an order of magnitude below either arm's own noise — an even cleaner null than the 1.5B result, not a size-dependent win, consistent with the remedy amortizing a roughly fixed per-barrier cost that matters proportionally *less* as the matmuls it's amortized against get bigger. See `docs/measurements/w4a8-batch-7b-2026-09-20.md`. Stays parked. **Superseded 2026-09-27:** `w4a8BatchDefault` is now on for non-arm64 (`decoder/cpu_tuning_other.go`), off on arm64 (`cpu_tuning_arm64.go`); this row's PARKED text is the 09-20 state. Remaining repeats (fused gate+up, MoE, own-forward families, `forwardN`) are R-13 in §5. |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
 | **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **ALL FOUR COPIES FIXED.** Serving hot path 2026-09-03 (P-13, P-15, `openai.go` `streamTokens`); `chatapp`/the demo agent 2026-09-11 (`c0ab6ed3`, found already done this pass — this row's own prior text was stale, see below); `gemmaapp` 2026-09-23 (this pass, its own design needed to preserve the leading-space-strip semantic incrementally, as anticipated) |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
 | **R-10** | every KV head's history re-gathered and transposed per layer per token (Gemma-4 CPU) | P-09 | 2–3× attention traffic at long context | store V transposed at append | filed, contingent |
+| **R-11–R-25** | the same work done twice on one buffer within a call or step: double zeroing, repeated activation quantization, discarded LM heads, redundant host round-trips | §5 (2026-10-05 sweep), all four backends and aikit | per item in §5 | per item in §5; R-11 (aikit output contracts and `NewBufferLen` mismatch) first | **filed 2026-10-05**, unmeasured |
 
 Checked and **not** recompute, or already closed: prefill does not run the LM head per position
 (KV-only prefill skips it for all but the last token, `decoder/model.go`); the block-spec seed that
@@ -692,4 +693,228 @@ P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aiki
 `gpu/cuda_copy.go`, `gpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
 `docs/task-simd-audit.md` (S-01, S-02, S-03, S-09.1).
 
-<!-- doc-reviewed: 2026-09-23 -->
+## 5. Same work twice on the same data — the 2026-10-05 sweep (R-11–R-25)
+
+> **Why this section exists.** On 2026-10-04 a buffer was found zeroed by goinfer and again by the aikit kernel
+> it was handed to (the committed relative is `ecafa0ae`: a zeroed Go slice copied into every Metal f16 scratch
+> buffer, when Metal zero-fills the buffer itself). Francis asked for a sweep of that class and its relatives:
+> any data structure that gets the same work twice. Four static passes, one per area, read goinfer `338789c6`
+> and aikit `e636c78` (2026-10-05). The top findings were then re-read by hand: R-12, R-13, R-14, R-19, R-22,
+> R-23 and R-11's buffer-contract mismatch.
+>
+> **What this section is not.** §1–§4 cover state thrown away and rebuilt *between* calls. This covers work
+> repeated *within* one call or step. Nothing here was measured. Costs are sizes times frequency, labelled as
+> estimates. Every fix below is expected to be bit-identical unless it says otherwise, and each needs its own
+> identity gate before it ships.
+
+### R-11 · Root cause: aikit's output contracts are not written down, and GPU buffers disagree across backends
+
+- **No aikit CPU kernel accumulates into its output.**
+  - **Overwrite:** every matmul, attention, dequant and activation kernel goinfer calls writes every element it
+    covers. This includes every arch variant and the assembly: none loads `dst` before storing.
+  - **Zero, then accumulate:** `MatmulBT`, `MatmulBTInto`, `MatmulBTQ8Fused*`, `PackSignBits*` clear `dst`
+    themselves first.
+  - **Consequence:** a caller that zeroes before any aikit CPU kernel is doing dead work. Yet almost none of their
+    doc comments say so; a caller cannot tell from the signature.
+- **`gpu.NewBufferLen*` is inconsistent, and its doc is wrong for one backend.** CUDA returns uninitialized
+  memory (`MemAlloc`); Metal returns zero-filled memory (`newBufferWithLength`). Both doc comments say
+  "uninitialized". Metal code now relies on the zero-fill (`ecafa0ae`'s `prefillScratchU16`, and R-20's fixes
+  would too). The same pattern ported to CUDA would read garbage.
+- **One misleading doc:** `QuantizeGroupInt4Row` says "packed is assumed zeroed". Only the pad nibble needs it,
+  and only when `cols` is odd.
+- **Contracts a caller must meet but cannot see:** `AttendTileFused` requires its `mm` callback to overwrite;
+  `encoder.Backend.MatmulBT` (goinfer's WebGPU backend implements it) states no contract at all.
+- **Fix, in aikit:**
+  1. One line per exported writer: "overwrites dst; do not pre-zero", "zeroes internally", or "accumulates;
+     caller zeroes".
+  2. Make `NewBufferLen*` agree across backends, or document the difference.
+  3. A poison test per overwrite-contract kernel: fill `dst` with NaN, call, and assert no NaN survives. That
+     makes the contract a gate, not a comment.
+- **Fix, in goinfer:** a lint, or a review rule, that flags `clear(x)` directly before a call whose contract is
+  overwrite.
+- **Do first:** it is cheap, and it is what stops the class from coming back.
+
+### R-12 · CPU decode copies the whole sliding window out of the ring, every token, every local layer
+
+- **What happens:** decode on a ring layer calls `batchReadLocal` with K=1 (`decoder/attention.go`,
+  `decoder/kvcache.go`). That copies every resident window row of K and V into `localK`/`localV`. One row changed
+  since the last token.
+- **Affects:** generic-forward sliding-window families on CPU (Gemma 2/3, Cohere2).
+- **Estimated cost, at full window:**
+  - Gemma-3-4B (W=1024, kvDim=1024, about 29 local layers): about 240 MB per token.
+  - Gemma-2-9B (W=4096, kvDim=2048, 21 local layers): about 1.4 GB per token.
+- **Fix:** a ring stored twice over (2W slots, each row written at `s%W` and `s%W+W`), so any window is one
+  contiguous slice. Costs one extra row write per token.
+- **Not R-10.** R-10 is the per-head re-gather, which the strided Acc64 reads replaced.
+
+### R-13 · The same activation is quantized many times (goinfer side)
+
+The input does not change between calls, and quantization is deterministic, so every repeat is dead.
+- **(a) MoE decode: 2k+2 quantizations per layer.** `moeMLP` → `swiGLUExpert` runs two W4A8 matmuls per routed
+  expert, plus two for the shared expert. Each `MatmulBTW4A8F16Into` re-quantizes `h`. At k=8 with a shared
+  expert that is 18 quantizations where 1 suffices. Same shape in `forward_llama4.go`. Every CPU MoE family.
+- **(b) Fused gate+up: 2w per layer.** `cpu_gateup_fused.go`: each of w workers quantizes the full `h` twice,
+  once for its gate chunk and once for its up chunk. It is on by default on amd64 (w = 16 on the 3700X). In
+  wall time that is about one extra quantization per layer; the rest is CPU time stolen from the matmul. Needs
+  aikit to expose a pre-quantized `MatmulBTW4A8F16Pre`, the way `MatmulBTW8A8Pre` already exists.
+- **(c) R-06, current state.**
+  - **Doc is stale:** R-06's row above says PARKED, but `w4a8BatchDefault` has been true on non-arm64 since
+    2026-09-27.
+  - **arm64:** still 7 quantizations per layer, unchanged by choice (a measured null at 7B on the M1 Pro).
+  - **Own-forward families never got it:** Qwen3.5 attention (3), Gated DeltaNet (2) and KDA (5).
+  - **Batched prefill (`forwardN`):** quantizes the K×hidden norm block 5 times per layer where 2 would do
+    (about 9.4M element-quantizations per layer on the 1.5B at K=2048). The helper that fixes it already exists:
+    `w4a8FusedOps` + `matmulW4A8Batch`, used by `cpu_batch.go`.
+
+### R-14 · The same activation is quantized many times (aikit side), and other per-call waste
+
+- **Grouped `MatmulBTW4A8Batch` quantizes once per op.** It also forks and joins once per op. goinfer always sets
+  `SetActQuantGroup`, so this is the batched path's real behaviour. The non-grouped batch quantizes once.
+- **Grouped fast rows with M>1** re-widen all of N×nGroups f16 scales, allocate, and fork/join, once per
+  activation row (prefill, speculative verify).
+- **`MatmulBT` zeroes then accumulates** even when K fits one tile; the first tile could store directly. Low
+  impact.
+- **Per-call allocations where the caller could pass scratch:** `MatmulQKAcc64Group` (`make` per token, layer and
+  group), `WeightMat.Row` on canonical int4, and the grouped paths' per-span buffers.
+- **Vision towers:** `make` then a `MatmulBT` that clears again (patch embed, every tower). Low impact.
+
+### R-15 · int8 KV decode dequantizes the whole history every token (opt-in `--kv i8`)
+
+- **Global layers:** `dequantGlobalLayer` dequantizes every stored row on every token. That is O(context) per
+  token per layer, and int8 ends up moving more bytes than f32 at decode.
+- **Ring layers:** the window is dequantized per token, and the new row is quantized twice (the round-trip, then
+  again in `commitBatch` → `ring.write`).
+
+### R-16 · Recurrent state is zeroed twice per request
+
+- **How:** `sessionLRU.fresh` → `Reset` → `TruncateTo(0)` zeroes the state. Then `Session.Generate` →
+  `rewindForReuse` finds no shared tokens, calls `TruncateTo(0)` again, and zeroes it again.
+- **A brand-new session is worse:** the state is born zero, then zeroed on the first rewind.
+- **Size:** about 63 MB per redundant pass for a 30-layer DeltaNet model (illustrative), per request.
+- **Fix needs a dirty flag.** `pos==0` does not prove the state is clean: `reconcile` resets after a mid-sweep
+  error with pos at 0.
+
+### R-17 · Small CPU duplicates (per token unless noted)
+
+- **`make` then `clear` of `ctx`:** in the Qwen3.5, Granite, Llama4, LFM2 and Nemotron forwards, with
+  `attendQuery` clearing again. Also `deltaNetCore`'s per-call `conv` and `core` allocations.
+- **Buffers that grow by exactly one row per token, so they reallocate and re-zero every token:** `scoresBuf`,
+  and Arm B's `groupScoresCombined`.
+- **Copies the AV kernels could write past:** `MatmulAVAcc64`/`Group` overwrite a contiguous destination, so they
+  can write straight into `ctx`. This removes the Arm B `fullCtx` → `ctx` copy, and the `ch` → `ctx` and
+  `gCtx` → `ctx` copies.
+- **Others:** `moeOut` → `out`; postOnly's `copy(scr.norm, h)` (plausible); Gemma 4's gather/scatter of heads that
+  are already contiguous; logprobs' extra full-vocab max and exp scans (not bit-identical by summation order).
+
+### R-18 · `pull` hashes every downloaded file twice
+
+`Download` verifies SHA-256 while streaming but never writes the `.sha256` sidecar. So the first `Resolve` →
+`cachedIntact` re-hashes the whole file to the same digest. That is once per downloaded file: several seconds
+for a 5–20 GB model, on the first start after a pull.
+
+### R-19 · Metal step-route prefill runs the LM head and argmax on pieces whose output it discards
+
+- **What happens:** `prefillByStep` calls `forwardMultiInto(seqs, !last)` (`metal/batch.go`). For non-final
+  pieces it drops the result, but `forwardMultiInto` always encodes the final norm, `mc3_pack_lm`,
+  `mc3_lm_fb4` over the whole vocabulary, and, with device argmax on, two argmax dispatches per row.
+- **The last piece too:** it converts all n rows to host vectors, and only `rows[n-1]` is used.
+- **Affects:** every fresh prompt under `metalStepPrefillCeiling` (32), the default route for short turns.
+- **Cost:** about 8% of each non-final piece on the 1.5B (`lm_fb4` was 1.52 ms of about 17–18 ms in the 09-30
+  audit), plus 16 argmax dispatches per piece.
+- **Already known:** the 09-30 Metal audit's E-P01 said this route "needs a mode that skips the LM head on
+  non-final pieces". It shipped without one.
+
+### R-20 · Metal: `ecafa0ae`'s zero-then-copy shape, where that commit missed it
+
+- **`PrefillLast`'s `xF`:** `make([]uint16, Mpad*H)` zeroes it, `parallelEmbedsF32ToF16` overwrites rows 0..M−1,
+  and `NewBufferU16s` copies the whole slice in again. Only the pad rows need zeros, and Metal's zero-fill gives
+  them. That is 6.3 MB zeroed plus 6.3 MB copied per pass on the 1.5B at M=2048 (14.7 MB on the 7B). **Fix:**
+  `NewBufferLenOf[uint16]`, then convert straight into its `U16s()`.
+- **MoE expert-major prefill:** five buffers (`moeLogits`, `moeIdx`, `moeWgt`, `rowIdxBuf`, `rowWgtBuf`) are
+  built from zeroed slices and copied in. The router GEMM, the route kernels, or the host then fully overwrite
+  them. 0.6–1.3 MB per pass at M=2048.
+- **`resetDeltaNet`:** builds zeroed Go slices and copies them into every DeltaNet layer's `state` and `win` on
+  each fresh sequence. One `clear` on the shared buffer's contents does the same without a temporary. 1–2 MB per
+  layer per request.
+- **Depends on R-11:** these fixes lean on Metal's zero-fill, so R-11's contract line comes first.
+
+### R-21 · Smaller Metal duplicates
+
+- **Gemma 4 MoE:** three reductions of the same sum of squares over `r.x` per layer (`rmsnorm_quant` twice,
+  `rmsnorm_nw` once), about 60 dispatches per token on the 26B.
+- **qGate prefill:** writes K‖V to scratch, then copies it into `qkvF` (plausible; removing it needs a GEMM
+  epilogue with a row stride).
+- **`forwardMultiInto` calls `stopExec` every batched step,** so alternating B=1 and B≥2 re-encodes the trunk on
+  each switch (CPU time, mostly hidden).
+- **Paged `ForwardN`** copies logits twice on the host.
+- **The off-by-default Gemma 4 prefetch** recomputes `g4rn`.
+
+### R-22 · CUDA expert-major MoE prefill: routing round-trips through the host one row at a time
+
+- **What happens:** for each row, `stream.Sync`, `Download(rIdx)`, `Download(rWgt)`; after the loop, one
+  `Upload` of all the weights (`cuda/moe_expert_major.go`, and the Gemma 4 version). The host never reads the
+  weights; it only uploads them back.
+- **Fix:** the route kernel takes an output pointer already. Point it at `wgtAll.At(m·topK·4)`, route all rows
+  into a device index array, and do one sync and one download per chunk.
+- **Estimated cost:** about 15k drains and 31k small downloads per chunk at M=512 with 30 MoE layers, roughly
+  tens of milliseconds or more per chunk.
+- **Same area:**
+  - The Gemma 4 `g4x2All` is zero-uploaded, then `rankScratch[0]` is added into it. Folding the ranks into
+    `rankScratch[0]` is bit-identical and drops an alloc/free, a 5.8 MB pageable upload and two syncs per layer
+    per chunk.
+  - `rankScratch` zeroing is necessary (the expert kernel accumulates), but it is a pageable upload of about
+    46 MB per layer per chunk, where `ZeroAsync` exists.
+
+### R-23 · CUDA K=V layers run the K projection twice
+
+- **Decode:** `doG(Ly.k → kB)`, then `doG(Ly.k → vB)` on identical inputs (`cuda/resident.go`).
+- **Prefill:** the same pair of `bGemvB` calls (`cuda/prefill.go`).
+- **Fix:** `CopyDevice(vB, kB)` is bit-identical. WebGPU already does it that way. Change decode and prefill
+  together, since the prefill comment says the duplicate was kept to match decode.
+- **Cost:** one extra `kvDim × hidden` weight read per K=V layer per token. Under 1% of a Gemma 4 token. Cheap
+  to fix.
+
+### R-24 · Other CUDA duplicates
+
+- **Batched-prefill tail downloads the full residual even when nothing reads it.** This happens every MC3 step and
+  every verify round; the last-row case uploads one row back. `r.norm` can read `xB` at an offset directly.
+- **Block-spec drafter:** three device → host → device trips per round, with the data unmodified. Needs a
+  device-handle variant of the drafter interface.
+- **Gemma 4 decode `g4x2` clear:** an `r.stream.Sync` before an `Upload` that already context-syncs, plus a
+  pageable upload where `ZeroAsync` would do. This matters only on uncached or CUDA-graphs runs, which were
+  never measured.
+- **`launchToken`'s upload** runs a context sync the previous step already drained.
+
+### R-25 · WebGPU batched prefill quantizes per projection
+
+- **Repeated quantization:** `tiledProjB` quantizes its input on every call, so `xn` is quantized three times
+  (q, k, v) and `xn2` twice per layer per pass.
+- **Implicit zeroing (plausible):** every pass allocates fresh storage buffers, and wgpu zero-fills a new buffer
+  before its first use. That is implicit zeroing of buffers the kernels then fully overwrite: R-11's class,
+  depending on how wgpu-native tracks initialization.
+
+### Checked and necessary, so not re-reported
+
+- **Clears before accumulating writes are required:** `attendQuery`'s `clear(ctx)`, `moeMLP`'s `clear(out)`, the
+  DeltaNet and KDA `clear(kv)`, Metal's `zero_vec` before `gemv_w4a8_moe_wacc`, `zero_f32` on `moeDst`, CUDA's
+  `g4x2` and `rankScratch` zeroing (only the mechanism is in question), and recurrent-state zeroing at sequence
+  start.
+- **Zeros the kernels read as data:** bias buffers (`zeroBias`, router biases), masked score columns, and xF's pad
+  rows (kept by R-20's fix).
+- **No pre-zeroing found:** before any CPU aikit overwrite kernel on the decode path (`scr.logits`, q/k/v,
+  gate/up, `ctx`); Metal and CUDA flash-decode partials; CUDA graph captures (no memsets replayed); MC1 slot
+  switches.
+
+### Order
+
+1. **R-11:** contracts, the `NewBufferLen` mismatch, and the poison test. It stops recurrence, and R-20 depends
+   on it.
+2. **The cheap, certain fixes:** R-23, R-20, R-18, R-16.
+3. **The ones with real hot-path weight,** each with a pre-registered band:
+   - R-19 (short Metal prompts, an agent's every turn);
+   - R-22 (CUDA MoE prefill);
+   - R-12 (CPU Gemma 2/3 at depth);
+   - R-13 and R-14 together (CPU quantization; needs the aikit `Pre` entry).
+4. **The rest as they come up.**
+
+<!-- doc-reviewed: 2026-10-05 -->
