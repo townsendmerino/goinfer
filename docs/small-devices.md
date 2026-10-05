@@ -23,8 +23,15 @@ What to expect, and what to check before quoting a number:
   the low end reachable at all — see [`docs/giw-bundles.md`](giw-bundles.md).
 - **The fast arm64 kernels need the DotProd extension (ARMv8.2 `SDOT`).** goinfer reads
   the kernel's HWCAP at startup and uses `SDOT` where it exists — Cortex-A76 and newer, so a
-  Pi 5 — and the base NEON kernel where it does not (Cortex-A53/A72: Pi Zero 2 W, Pi 3, Pi 4).
-  Both are correct; the base kernel is several times slower.
+  Pi 5 — and a slower fallback where it does not (Cortex-A53/A72: Pi Zero 2 W, Pi 3, Pi 4). Both
+  are correct. **The fallback differs by quant, and the default is the bad one** (corrected 2026-10-04; this
+  page said "the base NEON kernel" for both): **int8 has a NEON kernel without DotProd**, about 1.4-1.9x slower
+  than `SDOT` on the decode projections; **int4 (W4A8) has no non-DotProd kernel and runs the pure-Go scalar
+  reference**, which a kernel benchmark on an Azure Cobalt 100 put at roughly 28x slower than the `SDOT` path
+  (out of spec in its first run, with the registered run pending: `docs/measurements/dotprod-windows-arm-2026-10-04.md`;
+  a kernel figure gives direction, not a served speed, and no Pi was measured). So on a board without DotProd,
+  `-quant int8int8` is likely to decode far faster than the default int4, at twice the weight memory, which
+  matters on a 512 MB board. That is a reading of the kernels, not a measurement on one.
 - **No board row is published yet.** The numbers in [`docs/benchmarks.md`](benchmarks.md)
   come from a MacBook and a desktop GPU box, and a Pi figure will appear there only once it has
   been measured under the same rules (local disk, pinned versions, thermal note). Until then,

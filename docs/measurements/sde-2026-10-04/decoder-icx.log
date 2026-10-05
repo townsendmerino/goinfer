@@ -1,0 +1,538 @@
+=== RUN   TestActQuantGroup_perModel
+--- PASS: TestActQuantGroup_perModel (1.26s)
+=== RUN   TestActivationQuantHazard_declinesGPUResidency
+--- PASS: TestActivationQuantHazard_declinesGPUResidency (0.01s)
+=== RUN   TestMatmulW4A8Batch_routesThroughQuantBatchBackend4
+=== RUN   TestMatmulW4A8Batch_routesThroughQuantBatchBackend4/backend_accepts:_CPU_kernel_must_NOT_also_run
+=== RUN   TestMatmulW4A8Batch_routesThroughQuantBatchBackend4/backend_declines:_CPU_kernel_must_run
+=== RUN   TestMatmulW4A8Batch_routesThroughQuantBatchBackend4/backend_does_not_implement_QuantBatchBackend4:_CPU_kernel_must_run
+--- PASS: TestMatmulW4A8Batch_routesThroughQuantBatchBackend4 (0.03s)
+    --- PASS: TestMatmulW4A8Batch_routesThroughQuantBatchBackend4/backend_accepts:_CPU_kernel_must_NOT_also_run (0.00s)
+    --- PASS: TestMatmulW4A8Batch_routesThroughQuantBatchBackend4/backend_declines:_CPU_kernel_must_run (0.01s)
+    --- PASS: TestMatmulW4A8Batch_routesThroughQuantBatchBackend4/backend_does_not_implement_QuantBatchBackend4:_CPU_kernel_must_run (0.00s)
+=== RUN   TestBailingHybrid_forwardParity
+    bailing_hybrid_test.go:125: bailing_hybrid: argmax=3 (want 3) | maxSampleΔ=0.00000 | cosine=0.9999999999999226
+--- PASS: TestBailingHybrid_forwardParity (0.17s)
+=== RUN   TestCohere2_forwardParity
+    cohere2_test.go:82: argmax: got 164 | want 164
+    cohere2_test.go:98: last-logit parity: cosine=1.00000000 maxAbs=5.215e-08 over 256 vocab
+    cohere2_test.go:123: continuation: got [164 164 164 164 164 164] | want [164 164 164 164 164 164]
+--- PASS: TestCohere2_forwardParity (0.16s)
+=== RUN   TestCohere_forwardParity
+    cohere_test.go:72: argmax: got 240 (logit 0.1016) | want 240 (golden logit 0.1016)
+    cohere_test.go:90: last-logit parity: cosine=1.00000000 maxAbs=2.235e-08 over 256 vocab
+    cohere_test.go:116: continuation: got [240 240 240 240 240 240] | want [240 240 240 240 240 240]
+--- PASS: TestCohere_forwardParity (0.15s)
+=== RUN   TestCPUInt4Bench
+    cpuint4_bench_test.go:27: set GOINFER_CPUINT4_GGUF, GOINFER_CPUINT4_INT4, GOINFER_CPUINT4_LABEL
+--- SKIP: TestCPUInt4Bench (0.01s)
+=== RUN   TestDecodeParity
+--- PASS: TestDecodeParity (8.79s)
+=== RUN   TestDecode_greedyContinuationParity
+    decode_test.go:104: greedy continuation (48 tok) matches HF: " Paris. It is the most visited city in the world. It is the most visited city in the world. It is the most visited city in the world. It is the most visited city in the world. It is the most visited city"
+--- PASS: TestDecode_greedyContinuationParity (7.30s)
+=== RUN   TestGenerate_streamMatchesGolden
+--- PASS: TestGenerate_streamMatchesGolden (5.98s)
+=== RUN   TestDeepseek_textParity
+    deepseek_test.go:122: deepseek text parity: argmax got=115 want=115 | logit cosine=1.000000
+--- PASS: TestDeepseek_textParity (0.04s)
+=== RUN   TestDFlash_referenceParity
+=== RUN   TestDFlash_referenceParity/raw
+    dflash_test.go:127: layer_out.0: cosine 1.00000000 maxAbs 4.883e-04
+    dflash_test.go:127: layer_out.1: cosine 1.00000000 maxAbs 9.766e-04
+    dflash_test.go:127: layer_out.2: cosine 1.00000000 maxAbs 9.766e-04
+    dflash_test.go:127: layer_out.3: cosine 1.00000000 maxAbs 1.465e-03
+    dflash_test.go:127: layer_out.4: cosine 1.00000000 maxAbs 2.930e-03
+    dflash_test.go:141: trunk_out: cosine 1.00000000 maxAbs 5.150e-05 (ctx=5 block=16)
+=== RUN   TestDFlash_referenceParity/chat
+    dflash_test.go:127: layer_out.0: cosine 1.00000000 maxAbs 3.662e-04
+    dflash_test.go:127: layer_out.1: cosine 1.00000000 maxAbs 1.709e-03
+    dflash_test.go:127: layer_out.2: cosine 1.00000000 maxAbs 1.221e-03
+    dflash_test.go:127: layer_out.3: cosine 1.00000000 maxAbs 9.766e-04
+    dflash_test.go:127: layer_out.4: cosine 1.00000000 maxAbs 2.930e-03
+    dflash_test.go:141: trunk_out: cosine 1.00000000 maxAbs 3.052e-05 (ctx=23 block=16)
+--- PASS: TestDFlash_referenceParity (7.52s)
+    --- PASS: TestDFlash_referenceParity/raw (3.53s)
+    --- PASS: TestDFlash_referenceParity/chat (3.90s)
+=== RUN   TestDSpark_referenceParity
+=== RUN   TestDSpark_referenceParity/raw
+    dspark_test.go:116: layer_out.0: cosine 1.00000000 maxAbs 6.104e-05
+    dspark_test.go:116: layer_out.1: cosine 1.00000000 maxAbs 1.221e-04
+    dspark_test.go:116: layer_out.2: cosine 1.00000000 maxAbs 1.831e-04
+    dspark_test.go:116: layer_out.3: cosine 1.00000000 maxAbs 4.883e-04
+    dspark_test.go:116: layer_out.4: cosine 1.00000000 maxAbs 8.545e-04
+    dspark_test.go:128: trunk_out: cosine 1.00000000 maxAbs 3.815e-05 (ctx=5 block=7)
+    dspark_test.go:141: markov_logits[pos0]: cosine 1.00000000 maxAbs 2.074e-05
+    dspark_test.go:145: drafted got  = [13 576 6722 315 279 3070 59604]
+    dspark_test.go:146: drafted want = [13 576 6722 315 279 3070 59604]
+    dspark_test.go:162: confidence got  = [0.4751528 -0.35897404 0.29218185 -0.7315626 -1.2808691 -1.4823396 -1.5907209]
+    dspark_test.go:163: confidence want = [0.47515374 -0.3589743 0.29218298 -0.7315606 -1.2808692 -1.4823388 -1.5907199]
+=== RUN   TestDSpark_referenceParity/chat
+    dspark_test.go:116: layer_out.0: cosine 1.00000000 maxAbs 6.104e-05
+    dspark_test.go:116: layer_out.1: cosine 1.00000000 maxAbs 6.104e-05
+    dspark_test.go:116: layer_out.2: cosine 1.00000000 maxAbs 1.221e-04
+    dspark_test.go:116: layer_out.3: cosine 1.00000000 maxAbs 2.441e-04
+    dspark_test.go:116: layer_out.4: cosine 1.00000000 maxAbs 7.019e-04
+    dspark_test.go:128: trunk_out: cosine 1.00000000 maxAbs 3.624e-05 (ctx=23 block=7)
+    dspark_test.go:141: markov_logits[pos0]: cosine 1.00000000 maxAbs 1.335e-05
+    dspark_test.go:145: drafted got  = [0 5692 594 264 13027 729 429]
+    dspark_test.go:146: drafted want = [0 5692 594 264 13027 729 429]
+    dspark_test.go:162: confidence got  = [11.420493 5.958566 8.342214 8.71747 6.1519895 6.3614974 2.4713767]
+    dspark_test.go:163: confidence want = [11.420502 5.9585648 8.342215 8.71747 6.151985 6.361499 2.4713798]
+--- PASS: TestDSpark_referenceParity (4.34s)
+    --- PASS: TestDSpark_referenceParity/raw (2.03s)
+    --- PASS: TestDSpark_referenceParity/chat (2.22s)
+=== RUN   TestEmbedInt4Knob
+    embedint4_test.go:12: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestEmbedInt4Knob (0.00s)
+=== RUN   TestFakeQuantSymMatchesRuntimeInt4
+--- PASS: TestFakeQuantSymMatchesRuntimeInt4 (0.01s)
+=== RUN   TestFakeQuantOffBitIdentical
+--- PASS: TestFakeQuantOffBitIdentical (0.00s)
+=== RUN   TestQuantBytesPerElem_everyModeIsPlausible
+=== RUN   TestQuantBytesPerElem_everyModeIsPlausible/f32
+=== RUN   TestQuantBytesPerElem_everyModeIsPlausible/int8
+=== RUN   TestQuantBytesPerElem_everyModeIsPlausible/int8int8
+=== RUN   TestQuantBytesPerElem_everyModeIsPlausible/int4
+    fitguard_test.go:738: int4: 0.5625 bytes/elem (encoding only)
+=== RUN   TestQuantBytesPerElem_everyModeIsPlausible/int4mix
+    fitguard_test.go:738: int4mix: 0.5625 bytes/elem (encoding only)
+--- PASS: TestQuantBytesPerElem_everyModeIsPlausible (0.01s)
+    --- PASS: TestQuantBytesPerElem_everyModeIsPlausible/f32 (0.00s)
+    --- PASS: TestQuantBytesPerElem_everyModeIsPlausible/int8 (0.00s)
+    --- PASS: TestQuantBytesPerElem_everyModeIsPlausible/int8int8 (0.00s)
+    --- PASS: TestQuantBytesPerElem_everyModeIsPlausible/int4 (0.00s)
+    --- PASS: TestQuantBytesPerElem_everyModeIsPlausible/int4mix (0.00s)
+=== RUN   TestForward_logitParity
+    forward_test.go:122: argmax=9079 (want 9079) | maxSampleΔ=0.00001 | sum rel=8.83e-07 | cosine=NaN
+--- PASS: TestForward_logitParity (0.89s)
+=== RUN   TestGemma12_forwardParity
+=== RUN   TestGemma12_forwardParity/gemma1
+    gemma12_test.go:96: gemma1 per-token: max |Δlogit| 9.54e-07, cosine 1.00000000
+    gemma12_test.go:104: gemma1 batched: max |Δlogit| 9.54e-07, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma2
+    gemma12_test.go:96: gemma2 per-token: max |Δlogit| 2.15e-06, cosine 1.00000000
+    gemma12_test.go:104: gemma2 batched: max |Δlogit| 2.15e-06, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma1.gguf
+    gemma12_test.go:96: gemma1 per-token: max |Δlogit| 9.54e-07, cosine 1.00000000
+    gemma12_test.go:104: gemma1 batched: max |Δlogit| 9.54e-07, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma2-hd.gguf
+    gemma12_test.go:96: gemma2-hd per-token: max |Δlogit| 2.38e-06, cosine 1.00000000
+    gemma12_test.go:104: gemma2-hd batched: max |Δlogit| 2.38e-06, cosine 1.00000000
+--- PASS: TestGemma12_forwardParity (0.07s)
+    --- PASS: TestGemma12_forwardParity/gemma1 (0.02s)
+    --- PASS: TestGemma12_forwardParity/gemma2 (0.02s)
+    --- PASS: TestGemma12_forwardParity/gemma1.gguf (0.02s)
+    --- PASS: TestGemma12_forwardParity/gemma2-hd.gguf (0.01s)
+=== RUN   TestGemma3VL_textParity
+    gemma3_vl_test.go:56: gemma3-VL text parity: argmax got=246 want=246 | logit cosine=1.000000
+--- PASS: TestGemma3VL_textParity (0.01s)
+=== RUN   TestGemma3VL_imageParity
+    gemma3_vl_test.go:121: gemma3-VL image parity: argmax got=179 want=179 | logit cosine=0.994641
+--- PASS: TestGemma3VL_imageParity (0.02s)
+=== RUN   TestGemma4_12B_logitParity
+    gemma4_12b_parity_test.go:19: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_12B_logitParity (0.00s)
+=== RUN   TestGemma4MoE_forwardParity
+    gemma4_moe_forward_test.go:121: argmax: got 88 (logit 1.1106) | want 88 (golden logit 1.1106)
+    gemma4_moe_forward_test.go:121: last-logit parity: cosine=1.00000000 maxAbs=3.219e-06 over 256 vocab
+    gemma4_moe_forward_test.go:121: continuation: got [88 88 88 161 161 161] | want [88 88 88 161 161 161]
+--- PASS: TestGemma4MoE_forwardParity (0.15s)
+=== RUN   TestGemma4MoEUnified_forwardParity
+    gemma4_moe_forward_test.go:135: argmax: got 88 (logit 1.1106) | want 88 (golden logit 1.1106)
+    gemma4_moe_forward_test.go:135: last-logit parity: cosine=1.00000000 maxAbs=3.219e-06 over 256 vocab
+    gemma4_moe_forward_test.go:135: continuation: got [88 88 88 161 161 161] | want [88 88 88 161 161 161]
+--- PASS: TestGemma4MoEUnified_forwardParity (0.11s)
+=== RUN   TestGemma4DenseTwoGeom_forwardParity
+    gemma4_moe_forward_test.go:148: argmax: got 67 (logit 1.1321) | want 67 (golden logit 1.1321)
+    gemma4_moe_forward_test.go:148: last-logit parity: cosine=1.00000000 maxAbs=1.032e-06 over 256 vocab
+    gemma4_moe_forward_test.go:148: continuation: got [67 67 67 67 67 67] | want [67 67 67 67 67 67]
+--- PASS: TestGemma4DenseTwoGeom_forwardParity (0.06s)
+=== RUN   TestGemma4DenseScaled_forwardParity
+    gemma4_moe_forward_test.go:160: argmax: got 200 (logit 3.3384) | want 200 (golden logit 3.3384)
+    gemma4_moe_forward_test.go:160: last-logit parity: cosine=1.00000000 maxAbs=1.518e-04 over 256 vocab
+    gemma4_moe_forward_test.go:160: continuation: got [200 200 200 200 200 200] | want [200 200 200 200 200 200]
+--- PASS: TestGemma4DenseScaled_forwardParity (6.09s)
+=== RUN   TestGemma4MoEKV_forwardParity
+    gemma4_moe_forward_test.go:172: argmax: got 14 (logit 0.4197) | want 14 (golden logit 0.4197)
+    gemma4_moe_forward_test.go:172: last-logit parity: cosine=1.00000000 maxAbs=2.161e-06 over 256 vocab
+    gemma4_moe_forward_test.go:172: continuation: got [14 209 26 26 26 171] | want [14 209 26 26 26 171]
+--- PASS: TestGemma4MoEKV_forwardParity (0.04s)
+=== RUN   TestGemma4_logitParity
+    gemma4_parity_test.go:17: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_logitParity (0.00s)
+=== RUN   TestGemma4VLBidir_textParity
+    gemma4_vl_bidir_test.go:71: sequential: argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:89: batched:    argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:101: sequential vs batched: logit cosine=1.00000000
+--- PASS: TestGemma4VLBidir_textParity (0.06s)
+=== RUN   TestGemma4VLBidir_imageParity
+    gemma4_vl_bidir_test.go:173: bidirectional: argmax got=142 want=142 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:192: causal-only:   argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:201: bidirectional vs causal-only: logit cosine=0.953037 (must be well below 1.0 — fixture must be non-vacuous)
+--- PASS: TestGemma4VLBidir_imageParity (0.04s)
+=== RUN   TestGemma4VL_textParity
+    gemma4_vl_test.go:69: gemma4-VL text parity: argmax got=8 want=8 | logit cosine=1.000000
+--- PASS: TestGemma4VL_textParity (0.03s)
+=== RUN   TestGemma4VL_imageParity
+    gemma4_vl_test.go:134: gemma4-VL image parity: argmax got=207 want=207 | logit cosine=1.000000
+--- PASS: TestGemma4VL_imageParity (0.02s)
+=== RUN   TestGGUFRouter_staysF32AtQuant
+=== RUN   TestGGUFRouter_staysF32AtQuant/quant=int8
+=== RUN   TestGGUFRouter_staysF32AtQuant/quant=int8int8
+=== RUN   TestGGUFRouter_staysF32AtQuant/quant=int4
+=== RUN   TestGGUFRouter_staysF32AtQuant/quant=int4mix
+--- PASS: TestGGUFRouter_staysF32AtQuant (0.08s)
+    --- PASS: TestGGUFRouter_staysF32AtQuant/quant=int8 (0.04s)
+    --- PASS: TestGGUFRouter_staysF32AtQuant/quant=int8int8 (0.00s)
+    --- PASS: TestGGUFRouter_staysF32AtQuant/quant=int4 (0.02s)
+    --- PASS: TestGGUFRouter_staysF32AtQuant/quant=int4mix (0.01s)
+=== RUN   TestGIWF16_metalTargetCarriesF16ScalesForEveryInt4Tensor
+--- PASS: TestGIWF16_metalTargetCarriesF16ScalesForEveryInt4Tensor (0.16s)
+=== RUN   TestCheckGiwQuantMatch
+    giwquant_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestCheckGiwQuantMatch (0.00s)
+=== RUN   TestGlm4Moe_biasParity
+    glm4moe_test.go:100: glm4_moe bias parity: argmax got=207 want=207 | logit cosine=1.000000
+--- PASS: TestGlm4Moe_biasParity (0.01s)
+=== RUN   TestGlm4Moe_textParity
+    glm4moe_test.go:170: glm4_moe text parity: argmax got=200 want=200 | logit cosine=1.000000
+--- PASS: TestGlm4Moe_textParity (0.01s)
+=== RUN   TestGlmOcr_forwardParity
+    glm_ocr_test.go:675: sequential last-logit parity vs HF: cosine=1.000000000 max|diff|=1.931e-05 over 160 vocab, argmax 124
+    glm_ocr_test.go:689: batched last-logit parity vs HF: cosine=1.000000000 max|diff|=1.931e-05
+    glm_ocr_test.go:712: continuation: got [124 144 69 31 54 101 122 75] | want [124 144 69 31 54 101 122 75]
+--- PASS: TestGlmOcr_forwardParity (0.24s)
+=== RUN   TestGlmOcr_mropeParity
+    glm_ocr_test.go:775: m-RoPE prefill last-logit parity vs HF: cosine=1.000000000 max|diff|=9.596e-06, argmax 122 (want 122); scalar-position cosine would be 0.138
+    glm_ocr_test.go:801: continuation past the image: got [122 50 13 46 150 0] | want [122 50 13 46 150 0]
+--- PASS: TestGlmOcr_mropeParity (0.04s)
+=== RUN   TestGoldenNames_matchTheFileOnDisk
+    golden_names_test.go:74: checked 163 golden names (34 .gz)
+--- PASS: TestGoldenNames_matchTheFileOnDisk (0.31s)
+=== RUN   TestGPT2_forwardParity
+    gpt2_test.go:120: gpt2: argmax=262 (want 262) | maxSampleΔ=0.00014 | cosine=0.9999999999999403
+--- PASS: TestGPT2_forwardParity (1.03s)
+=== RUN   TestParseQuantConfig
+--- PASS: TestParseQuantConfig (0.01s)
+=== RUN   TestGraniteDense_forwardParity
+    granite_dense_test.go:109: granite (dense): argmax=194 (want 194) | maxSampleΔ=0.00000 | cosine=0.999999999999992
+--- PASS: TestGraniteDense_forwardParity (0.02s)
+=== RUN   TestGranite_textParity
+    granite_test.go:92: granite text parity: argmax got=96 want=96 | logit cosine=1.000000
+--- PASS: TestGranite_textParity (0.10s)
+=== RUN   TestInt4_forwardParity
+=== RUN   TestInt4_forwardParity/cohere-tiny
+=== RUN   TestInt4_forwardParity/cohere2-tiny
+=== RUN   TestInt4_forwardParity/deepseek-tiny
+=== RUN   TestInt4_forwardParity/gemma3-vl-tiny
+=== RUN   TestInt4_forwardParity/gemma4-dense-scaled
+=== RUN   TestInt4_forwardParity/gemma4-dense-twogeom-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-kv-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-unified-tiny
+=== RUN   TestInt4_forwardParity/glm-tiny
+=== RUN   TestInt4_forwardParity/glm-tiny-bias
+=== RUN   TestInt4_forwardParity/gpt2
+=== RUN   TestInt4_forwardParity/granite-tiny
+=== RUN   TestInt4_forwardParity/kimi-tiny
+=== RUN   TestInt4_forwardParity/llama4-tiny
+=== RUN   TestInt4_forwardParity/mixtral-tiny
+=== RUN   TestInt4_forwardParity/nemotron-tiny
+=== RUN   TestInt4_forwardParity/nemotron3nano-tiny
+=== RUN   TestInt4_forwardParity/phi3-tiny
+=== RUN   TestInt4_forwardParity/qwen25vl-tiny
+=== RUN   TestInt4_forwardParity/qwen35-tiny
+=== RUN   TestInt4_forwardParity/qwen3next-tiny
+=== NAME  TestInt4_forwardParity
+    int4_golden_test.go:316: int4 goldens: 22 fixtures compared against recorded int4 output
+--- PASS: TestInt4_forwardParity (4.84s)
+    --- PASS: TestInt4_forwardParity/cohere-tiny (0.03s)
+    --- PASS: TestInt4_forwardParity/cohere2-tiny (0.02s)
+    --- PASS: TestInt4_forwardParity/deepseek-tiny (0.02s)
+    --- PASS: TestInt4_forwardParity/gemma3-vl-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/gemma4-dense-scaled (1.04s)
+    --- PASS: TestInt4_forwardParity/gemma4-dense-twogeom-tiny (0.08s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-kv-tiny (0.02s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-tiny (0.09s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-unified-tiny (0.09s)
+    --- PASS: TestInt4_forwardParity/glm-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/glm-tiny-bias (0.01s)
+    --- PASS: TestInt4_forwardParity/gpt2 (2.96s)
+    --- PASS: TestInt4_forwardParity/granite-tiny (0.02s)
+    --- PASS: TestInt4_forwardParity/kimi-tiny (0.05s)
+    --- PASS: TestInt4_forwardParity/llama4-tiny (0.08s)
+    --- PASS: TestInt4_forwardParity/mixtral-tiny (0.03s)
+    --- PASS: TestInt4_forwardParity/nemotron-tiny (0.06s)
+    --- PASS: TestInt4_forwardParity/nemotron3nano-tiny (0.03s)
+    --- PASS: TestInt4_forwardParity/phi3-tiny (0.02s)
+    --- PASS: TestInt4_forwardParity/qwen25vl-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/qwen35-tiny (0.08s)
+    --- PASS: TestInt4_forwardParity/qwen3next-tiny (0.03s)
+=== RUN   TestInt4MixMode
+    int4mix_test.go:11: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestInt4MixMode (0.00s)
+=== RUN   TestInternLM2_textParity
+    internlm2_test.go:83: internlm2 text parity (groups=4): argmax got=113 want=113 | logit cosine=1.000000
+--- PASS: TestInternLM2_textParity (0.04s)
+=== RUN   TestInternLM3_textParity
+    internlm3_test.go:79: internlm3 text parity: argmax got=105 want=105 | logit cosine=1.000000
+--- PASS: TestInternLM3_textParity (0.02s)
+=== RUN   TestKimi_textParity
+    kimi_test.go:109: kimi text parity: argmax got=100 want=100 | logit cosine=1.000000
+--- PASS: TestKimi_textParity (0.07s)
+=== RUN   TestKVI8_genParity
+    kvi8_test.go:216: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVI8_genParity (0.00s)
+=== RUN   TestLaguna_textParity
+=== RUN   TestLaguna_textParity/xs21
+    laguna_test.go:104: laguna/xs21 text parity: argmax got=1 want=1 | logit cosine=1.000000 | gate=per-head
+=== RUN   TestLaguna_textParity/xs2
+    laguna_test.go:104: laguna/xs2 text parity: argmax got=1 want=1 | logit cosine=1.000000 | gate=per-head
+=== RUN   TestLaguna_textParity/m1
+    laguna_test.go:104: laguna/m1 text parity: argmax got=111 want=111 | logit cosine=1.000000 | gate=per-element
+--- PASS: TestLaguna_textParity (0.18s)
+    --- PASS: TestLaguna_textParity/xs21 (0.09s)
+    --- PASS: TestLaguna_textParity/xs2 (0.05s)
+    --- PASS: TestLaguna_textParity/m1 (0.04s)
+=== RUN   TestLFM2_kvQuantI8_generates
+--- PASS: TestLFM2_kvQuantI8_generates (0.03s)
+=== RUN   TestLFM2_textParity
+    lfm2_test.go:185: lfm2 text parity: argmax got=88 want=88 | logit cosine=1.000000
+--- PASS: TestLFM2_textParity (0.01s)
+=== RUN   TestLlama32_forwardParity
+    llama32_forward_test.go:113: llama3.2: argmax=12366 (want 12366) | maxSampleΔ=0.00001 | cosine=NaN
+--- PASS: TestLlama32_forwardParity (3.35s)
+=== RUN   TestLlama4_textParity
+    llama4_test.go:96: llama4 text parity: argmax got=18 want=18 | logit cosine=1.000000
+--- PASS: TestLlama4_textParity (0.01s)
+=== RUN   TestLlama_forwardParity
+    llama_forward_test.go:101: llama: argmax=3681 (want 3681) | maxSampleΔ=0.00001 | cosine=NaN
+--- PASS: TestLlama_forwardParity (4.41s)
+=== RUN   TestLlamaTiny_textParity
+    llama_tiny_test.go:88: llama-tiny parity: argmax=45 cosine=1.00000000 maxAbs=1.453e-07 over 256 vocab
+--- PASS: TestLlamaTiny_textParity (0.02s)
+=== RUN   TestLoRACompute_forwardParity
+--- PASS: TestLoRACompute_forwardParity (0.07s)
+=== RUN   TestMellum2_logitParity
+    mellum2_parity_test.go:97: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMellum2_logitParity (0.00s)
+=== RUN   TestMellum2_windowParity
+    mellum2_parity_test.go:107: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMellum2_windowParity (0.00s)
+=== RUN   TestMinistral3_forwardParity
+    ministral3_test.go:119: mistral3: argmax=371 (want 371) | maxSampleΔ=0.00000 | cosine=0.9999999999999654
+--- PASS: TestMinistral3_forwardParity (0.01s)
+=== RUN   TestMistral_forwardParity
+    mistral_test.go:104: mistral: 67-token prompt (window 32) | argmax=13 (want 13) | maxSampleΔ=0.00000 | cosine=NaN
+--- PASS: TestMistral_forwardParity (7.65s)
+=== RUN   TestMixtral_forwardParity
+    mixtral_test.go:109: mixtral: 8x top-2 | argmax=131 (want 131) | maxSampleΔ=0.00000 | cosine=0.9999999999999634
+--- PASS: TestMixtral_forwardParity (0.02s)
+=== RUN   TestMXFP4_bitExactGolden
+    mxfp4_test.go:139: bit-exact vs gguf on "blk.0.ffn_down_exps.weight": 128 blocks / 4096 values, 0 mismatches
+--- PASS: TestMXFP4_bitExactGolden (0.01s)
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/absent_(older_exports_omit_it)
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/explicit_v1
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/gptq_v2_is_refused
+=== RUN   TestParseQuantConfig_gptqCheckpointFormat/an_unknown_format_is_refused
+--- PASS: TestParseQuantConfig_gptqCheckpointFormat (0.01s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/absent_(older_exports_omit_it) (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/explicit_v1 (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/gptq_v2_is_refused (0.00s)
+    --- PASS: TestParseQuantConfig_gptqCheckpointFormat/an_unknown_format_is_refused (0.00s)
+=== RUN   TestNemotron3NanoMoE_textParity
+    nemotron_moe_test.go:191: nemotron3nano-moe text parity: argmax got=151 want=151 | logit cosine=1.000000
+--- PASS: TestNemotron3NanoMoE_textParity (0.02s)
+=== RUN   TestNemotron_textParity
+    nemotron_test.go:89: nemotron text parity: argmax got=177 want=177 | logit cosine=1.000000
+--- PASS: TestNemotron_textParity (0.02s)
+=== RUN   TestCheckGiwQuantMatch_f32IsNative
+--- PASS: TestCheckGiwQuantMatch_f32IsNative (0.02s)
+=== RUN   TestOlmo3_forwardParity
+    olmo3_test.go:110: olmo3: argmax=366 (want 366) | maxSampleΔ=0.00000 | cosine=0.9999999999994874
+--- PASS: TestOlmo3_forwardParity (0.02s)
+=== RUN   TestOlmoHybrid_forwardParity
+    olmo_hybrid_test.go:142: olmo_hybrid: argmax=57 (want 57) | maxSampleΔ=0.00000 | cosine=0.9999999999998593
+--- PASS: TestOlmoHybrid_forwardParity (0.04s)
+=== RUN   TestParityEmit_methodVocabulary
+    parity_emit_b15_test.go:41: checked 41 emitParityRow call sites against the vocabulary
+--- PASS: TestParityEmit_methodVocabulary (0.40s)
+=== RUN   TestParityMerge_noPromotionWithoutMethod
+--- PASS: TestParityMerge_noPromotionWithoutMethod (0.02s)
+=== RUN   TestDecodeParityInt4
+--- PASS: TestDecodeParityInt4 (15.31s)
+=== RUN   TestParityManifest_merge
+    parity_manifest_test.go:138: set -merge-rows <file> to merge collected PARITY_ROW lines
+--- SKIP: TestParityManifest_merge (0.00s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:413: staleness: 40/40 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (6.42s)
+=== RUN   TestParityManifest_methodTier
+--- PASS: TestParityManifest_methodTier (0.00s)
+=== RUN   TestPhi3_textParity
+    phi3_test.go:81: phi3 text parity: argmax got=60 want=60 | logit cosine=1.000000
+--- PASS: TestPhi3_textParity (0.02s)
+=== RUN   TestGiwRecordsResolvedQuant
+    quant_label_test.go:15: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGiwRecordsResolvedQuant (0.00s)
+=== RUN   TestGiwInt4LabelNotMix
+    quant_label_test.go:68: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGiwInt4LabelNotMix (0.00s)
+=== RUN   TestQuantInt8_accuracy
+    quant_test.go:50: matmul weight memory: int8 270 MB vs f32 1072 MB (3.98x smaller)
+--- PASS: TestQuantInt8_accuracy (1.94s)
+=== RUN   TestQuantInt4_accuracy
+    quant_test.go:135: matmul weight memory: quant 231 MB vs f32 1072 MB (4.63x smaller)
+--- PASS: TestQuantInt4_accuracy (3.09s)
+=== RUN   TestQuantInt8I8_accuracy
+--- PASS: TestQuantInt8I8_accuracy (1.87s)
+=== RUN   TestQwen25VL_imageParity
+    qwen25vl_test.go:221: qwen2.5-VL image parity: argmax got=174 want=174 | logit cosine=0.999981
+    qwen25vl_test.go:239: qwen2.5-VL decode continuation: got=[174 144 249 267] want=[174 144 249 267]
+--- PASS: TestQwen25VL_imageParity (0.03s)
+=== RUN   TestQwen25VL_textParity
+    qwen25vl_test.go:351: qwen2.5-VL text parity: argmax got=147 want=147 | logit cosine=1.000000
+--- PASS: TestQwen25VL_textParity (0.01s)
+=== RUN   TestQwen2_forwardParity
+    qwen2_test.go:116: qwen2: argmax=12095 (want 12095) | maxSampleΔ=0.00002 | cosine=NaN
+--- PASS: TestQwen2_forwardParity (3.52s)
+=== RUN   TestQwen2Moe_forwardParity
+    qwen2moe_test.go:103: qwen2_moe: argmax=97936 (want 97936) | maxSampleΔ=0.00000 | cosine=0.9999999999999133
+--- PASS: TestQwen2Moe_forwardParity (0.07s)
+=== RUN   TestQwen35_forwardParity
+    qwen35_forward_test.go:71: qwen3_5_moe prefill: argmax=162 cosine=1.00000000
+    qwen35_forward_test.go:92: greedy continuation matches HF: [162 127 171 212 161 226]
+--- PASS: TestQwen35_forwardParity (0.02s)
+=== RUN   TestQwen35VL_imageParity
+    qwen35vl_test.go:162: last-logit cosine 1.000000000, argmax 174 (HF 174), continuation [174 179 26 59 179 26 59 7] (HF [174 179 26 59 179 26 59 7])
+--- PASS: TestQwen35VL_imageParity (0.02s)
+=== RUN   TestQwen3_5_textParity
+=== RUN   TestQwen3_5_textParity/dense
+    qwen3_5_test.go:108: qwen3_5 text parity (3 linear / 1 full): argmax got=159 want=159 | logit cosine=1.000000
+=== RUN   TestQwen3_5_textParity/moe
+    qwen3_5_test.go:108: qwen3_5_moe text parity (3 linear / 1 full): argmax got=190 want=190 | logit cosine=1.000000
+--- PASS: TestQwen3_5_textParity (0.08s)
+    --- PASS: TestQwen3_5_textParity/dense (0.04s)
+    --- PASS: TestQwen3_5_textParity/moe (0.03s)
+=== RUN   TestQwen3_forwardParity
+    qwen3_test.go:94: qwen3: argmax=12095 (want 12095) | maxSampleΔ=0.00002 | cosine=NaN
+--- PASS: TestQwen3_forwardParity (11.00s)
+=== RUN   TestQwen3Moe_forwardParity
+    qwen3moe_test.go:113: qwen3_moe: 8x top-2 | argmax=485 (want 485) | maxSampleΔ=0.00000 | cosine=0.99999999999992
+--- PASS: TestQwen3Moe_forwardParity (0.02s)
+=== RUN   TestQwen3Next_textParity
+    qwen3next_real_test.go:63: qwen3next text parity: argmax got=88 want=88 | logit cosine=1.000000
+--- PASS: TestQwen3Next_textParity (0.05s)
+=== RUN   TestQwen3VL_textParity
+    qwen3vl_test.go:65: qwen3-VL text parity: argmax got=217 want=217 | logit cosine=1.000000
+--- PASS: TestQwen3VL_textParity (0.01s)
+=== RUN   TestRequantBar_DoubleQuantCost
+    requant_test.go:36: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestRequantBar_DoubleQuantCost (0.00s)
+=== RUN   TestSession_reuseParity
+--- PASS: TestSession_reuseParity (5.60s)
+=== RUN   TestSmolLM3_forwardParity
+    smollm3_test.go:101: smollm3: argmax=5 (want 5) | maxSampleΔ=0.00000 | cosine=0.9999999999999784
+--- PASS: TestSmolLM3_forwardParity (0.01s)
+=== RUN   TestSpark25Tiny_textParity
+    spark25_test.go:96: spark2-5-tiny parity: argmax=154 cosine=1.00000000 maxAbs=2.086e-07 over 256 vocab
+--- PASS: TestSpark25Tiny_textParity (0.05s)
+=== RUN   TestGrammarSpecParity
+    spec_grammar_parity_test.go:72: grammar-spec parity OK: 17 tok, acceptance 0.400, 1.13 tok/round, out="{\n  \"location\": \"Paris\",\n  \"unit\": \"celsius\"\n}"
+--- PASS: TestGrammarSpecParity (15.77s)
+=== RUN   TestNgramSpeculativeGreedyParity
+--- PASS: TestNgramSpeculativeGreedyParity (99.36s)
+=== RUN   TestNgramAdaptiveGreedyParity
+--- PASS: TestNgramAdaptiveGreedyParity (70.61s)
+=== RUN   TestSessionNgramSpecParity
+--- PASS: TestSessionNgramSpecParity (135.25s)
+=== RUN   TestSpecDecodeConflict_refusesStagedWebGPUInt4
+--- PASS: TestSpecDecodeConflict_refusesStagedWebGPUInt4 (0.04s)
+=== RUN   TestSpeculativeGreedyParity
+--- PASS: TestSpeculativeGreedyParity (166.31s)
+=== RUN   TestSpeculativeGreedyParity_draftTarget
+    speculative_test.go:116: set GOINFER_SPEC_TARGET to the 1.5B gguf to run the draft≠target gate
+--- SKIP: TestSpeculativeGreedyParity_draftTarget (0.00s)
+=== RUN   TestResidentQuantLabel
+--- PASS: TestResidentQuantLabel (0.00s)
+=== RUN   TestDecodePath_residentReportsItsQuant
+--- PASS: TestDecodePath_residentReportsItsQuant (0.00s)
+=== RUN   TestTreeMaskLinearParity
+    tree_verify_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestTreeMaskLinearParity (0.00s)
+=== RUN   TestW4A8DecodeParity
+    w4a8_parity_test.go:65: int4 W4A8 decode (16 tok): "Recursion is a programming technique where a function calls itself to solve a problem."
+    w4a8_parity_test.go:66: int8 W8A8 ref    (16 tok): "Recursion is a programming technique where a function calls itself to solve a problem."
+    w4a8_parity_test.go:67: int4 tokens: [3820 34280 374 264 15473 14762 1380 264 729 6738 5086 311 11625 264 3491 13]
+    w4a8_parity_test.go:68: ref  tokens: [3820 34280 374 264 15473 14762 1380 264 729 6738 5086 311 11625 264 3491 13]
+    w4a8_parity_test.go:92: === W4A8 parity: int4(W4A8) vs int8(W8A8) greedy agreement 16/16 ===
+--- PASS: TestW4A8DecodeParity (27.13s)
+=== RUN   TestMatmulInt4_MConsistent
+--- PASS: TestMatmulInt4_MConsistent (0.00s)
+=== RUN   TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical
+    w4a8_row4_giwkind5_test.go:25: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical (0.00s)
+=== RUN   TestW4A8Row4GiwKind_loadTimeAndMemoryDelta
+    w4a8_row4_giwkind_loadcost_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestW4A8Row4GiwKind_loadTimeAndMemoryDelta (0.00s)
+=== RUN   TestSerializedInt4Weights_row4Kind_matchesCanonical
+    w4a8_row4_giwkind_test.go:16: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializedInt4Weights_row4Kind_matchesCanonical (0.00s)
+=== RUN   TestW4A8Row4_loadTimeAndMemoryDelta
+    w4a8_row4_loadcost_test.go:19: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestW4A8Row4_loadTimeAndMemoryDelta (0.00s)
+=== RUN   TestW4A8Row4_skippedForMetalBackend
+    w4a8_row4_metalskip_test.go:48: row4 layout is arm64 dotprod only; non-arm64 builds never build row4
+--- SKIP: TestW4A8Row4_skippedForMetalBackend (0.00s)
+=== RUN   TestW4A8Row4_skippedForMetalBackend_MoE
+    w4a8_row4_metalskip_test.go:135: row4 layout is arm64 dotprod only; non-arm64 builds never build row4
+--- SKIP: TestW4A8Row4_skippedForMetalBackend_MoE (0.00s)
+=== RUN   TestSerializedInt4Weights_neverRepacked_pagedFallback
+    w4a8_row4_pagedfallback_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializedInt4Weights_neverRepacked_pagedFallback (0.00s)
+=== RUN   TestW4A8SplitHalfFires_onBenchModel
+    w4a8_splithalf_fires_test.go:21: set GOINFER_BENCH_QUANT=int4 (and GOINFER_PREQUANT_GGUF) — this checks the int4 load path the A/B measures
+--- SKIP: TestW4A8SplitHalfFires_onBenchModel (0.00s)
+=== RUN   TestW4A8SplitHalfWiring_matchesCanonical
+    w4a8_splithalf_wiring_test.go:40: split-half repack not eligible here (needs amd64 + AVX2 and NO AVX-512 VNNI, group=32, cols%32==0) — on a VNNI host aikit declines on purpose, because canonical uses the VNNI tier there and this layout is AVX2-only
+--- SKIP: TestW4A8SplitHalfWiring_matchesCanonical (0.00s)
+=== RUN   TestWantsCanonicalInt4_onlyExplicitCPUUnlocksRepackedOnly
+--- PASS: TestWantsCanonicalInt4_onlyExplicitCPUUnlocksRepackedOnly (0.00s)
+=== RUN   TestQuantizeEmbedWM_repackedOnlyWhenEligible
+    weightmat_repacked_only_test.go:74: this core cannot build row4 at all (non-arm64, or no dotprod) — nothing to test here
+--- SKIP: TestQuantizeEmbedWM_repackedOnlyWhenEligible (0.00s)
+=== RUN   TestQuantizeEmbedWM_repackedOnlyMatchesCanonical
+    weightmat_repacked_only_test.go:110: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestQuantizeEmbedWM_repackedOnlyMatchesCanonical (0.00s)
+=== RUN   TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical
+--- PASS: TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical (0.00s)
+=== RUN   TestLoad_embedInt4RepackedOnlyEndToEnd
+    weightmat_repacked_only_test.go:201: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestLoad_embedInt4RepackedOnlyEndToEnd (0.00s)
+=== RUN   TestIsW4A8_trueForRepackedOnly
+    weightmat_repacked_only_test.go:224: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestIsW4A8_trueForRepackedOnly (0.00s)
+=== RUN   TestQuantizeBatchedProjWM_repackedOnlyWhenEligible
+    weightmat_repacked_only_test.go:243: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestQuantizeBatchedProjWM_repackedOnlyWhenEligible (0.00s)
+=== RUN   TestMatmulW4A8Batch_repackedOnlyMatchesCanonical
+    weightmat_repacked_only_test.go:291: this core cannot build row4 at all (non-arm64, or no dotprod)
+--- SKIP: TestMatmulW4A8Batch_repackedOnlyMatchesCanonical (0.00s)
+=== RUN   TestMatmulQuant_routerStaysInt8UnderInt4Mix
+--- PASS: TestMatmulQuant_routerStaysInt8UnderInt4Mix (0.00s)
+=== RUN   TestForward_slidingWindowParity
+    window_test.go:99: 748 tokens (window 512) | argmax=562 (want 562) | maxSampleΔ=0.00003 | cosine=NaN
+--- PASS: TestForward_slidingWindowParity (64.28s)
+=== RUN   FuzzParseQuantConfig
+=== RUN   FuzzParseQuantConfig/seed#0
+=== RUN   FuzzParseQuantConfig/seed#1
+=== RUN   FuzzParseQuantConfig/seed#2
+=== RUN   FuzzParseQuantConfig/seed#3
+--- PASS: FuzzParseQuantConfig (0.03s)
+    --- PASS: FuzzParseQuantConfig/seed#0 (0.01s)
+    --- PASS: FuzzParseQuantConfig/seed#1 (0.00s)
+    --- PASS: FuzzParseQuantConfig/seed#2 (0.00s)
+    --- PASS: FuzzParseQuantConfig/seed#3 (0.00s)
+PASS

@@ -1,0 +1,1716 @@
+=== RUN   TestMatmulBTAcc64_bitIdentical
+--- PASS: TestMatmulBTAcc64_bitIdentical (0.37s)
+=== RUN   TestMatmulBTAcc64_beatsF32
+    acc64_test.go:74: max |Δ| vs f64 ref — MatmulBT(f32) 2.289e-05, MatmulBTAcc64 0.000e+00
+--- PASS: TestMatmulBTAcc64_beatsF32 (0.07s)
+=== RUN   TestActGroup_splitHalfKernelMatchesReference
+--- PASS: TestActGroup_splitHalfKernelMatchesReference (0.04s)
+=== RUN   TestActGroup_splitHalfMultiRow
+--- PASS: TestActGroup_splitHalfMultiRow (0.06s)
+=== RUN   TestActGroup_splitHalfScaledKernelOddGroups
+--- PASS: TestActGroup_splitHalfScaledKernelOddGroups (0.01s)
+=== RUN   TestActGroup_wholeRowGroupIsThePerRowKernel
+--- PASS: TestActGroup_wholeRowGroupIsThePerRowKernel (0.03s)
+=== RUN   TestActGroup_layoutsAgree
+--- PASS: TestActGroup_layoutsAgree (0.01s)
+=== RUN   TestActGroup_outlierStaysInItsGroup
+    actgroup_test.go:129: rel err without the outlier's own term: per-row 0.949, per-32 0.0834
+--- PASS: TestActGroup_outlierStaysInItsGroup (0.02s)
+=== RUN   TestActGroup_offIsInert
+--- PASS: TestActGroup_offIsInert (0.00s)
+=== RUN   TestActGroup_perWorkspace
+--- PASS: TestActGroup_perWorkspace (0.00s)
+=== RUN   TestActGroup_weightStamp
+--- PASS: TestActGroup_weightStamp (0.01s)
+=== RUN   TestAccAcc64AVX_isLoadBearing
+--- PASS: TestAccAcc64AVX_isLoadBearing (0.00s)
+=== RUN   TestAvAcc64AVX32_matchesGo
+--- PASS: TestAvAcc64AVX32_matchesGo (0.00s)
+=== RUN   TestQkAcc64AVX4_matchesGo
+--- PASS: TestQkAcc64AVX4_matchesGo (0.00s)
+=== RUN   TestW8A8Batch_bitIdenticalToPerOp
+--- PASS: TestW8A8Batch_bitIdenticalToPerOp (0.07s)
+=== RUN   TestW8A8Into_bitIdenticalToWrapper
+--- PASS: TestW8A8Into_bitIdenticalToWrapper (0.03s)
+=== RUN   TestW8A8Reblock_matchesPerRow
+--- PASS: TestW8A8Reblock_matchesPerRow (0.10s)
+=== RUN   TestW8A8Into_zeroAllocWhenReused
+--- PASS: TestW8A8Into_zeroAllocWhenReused (0.15s)
+=== RUN   TestW8A8Into_boundedAllocOnParallelPath
+    batch_test.go:190: parallel-path allocs/op at 4 workers: N=512 -> 5, N=4864 -> 5 (bound 6)
+--- PASS: TestW8A8Into_boundedAllocOnParallelPath (0.16s)
+=== RUN   TestDequantizeRowsInt8_bitIdentical
+--- PASS: TestDequantizeRowsInt8_bitIdentical (0.01s)
+=== RUN   TestDequantizeRowsInt8_extremes
+--- PASS: TestDequantizeRowsInt8_extremes (0.00s)
+=== RUN   TestDequantizeRowsInt8_doesNotOverrun
+--- PASS: TestDequantizeRowsInt8_doesNotOverrun (0.00s)
+=== RUN   TestDot2x8_equalsDot8x4
+--- PASS: TestDot2x8_equalsDot8x4 (0.01s)
+=== RUN   TestDot3x4_matchesDotFMA8
+--- PASS: TestDot3x4_matchesDotFMA8 (0.01s)
+=== RUN   TestAVX2_dotFMA_matchesGeneric
+--- PASS: TestAVX2_dotFMA_matchesGeneric (0.01s)
+=== RUN   TestAVX2_blockedKernels_oddN4
+--- PASS: TestAVX2_blockedKernels_oddN4 (0.01s)
+=== RUN   TestAVX2_detection
+    dot_amd64_test.go:120: hasAVX2=true (maxLeaf=13)
+--- PASS: TestAVX2_detection (0.02s)
+=== RUN   TestAVX512VNNI_detection
+    dot_i8_avx512vnni_amd64_test.go:19: hasAVX512VNNI=false hasAVX2=true (maxLeaf=13)
+--- PASS: TestAVX512VNNI_detection (0.01s)
+=== RUN   TestAVX512VNNI_dotI8AVX512VNNI_matchesScalar
+    dot_i8_avx512vnni_amd64_test.go:35: CPU lacks AVX-512 VNNI; dotI8AVX512VNNI asm path not exercised
+--- SKIP: TestAVX512VNNI_dotI8AVX512VNNI_matchesScalar (0.01s)
+=== RUN   TestAVX512VNNI_dotI8_dispatchesThroughEveryTier
+--- PASS: TestAVX512VNNI_dotI8_dispatchesThroughEveryTier (0.00s)
+=== RUN   TestDotI8Scaled32x2_matchesGo
+--- PASS: TestDotI8Scaled32x2_matchesGo (0.01s)
+=== RUN   TestDotI8Scaled32_matchesGo
+--- PASS: TestDotI8Scaled32_matchesGo (0.01s)
+=== RUN   TestActGroup_w8a8KernelMatchesReference
+--- PASS: TestActGroup_w8a8KernelMatchesReference (0.01s)
+=== RUN   TestActGroup_w8a8BatchMultiOp
+--- PASS: TestActGroup_w8a8BatchMultiOp (0.01s)
+=== RUN   TestDotI8x8_matchesScalar
+--- PASS: TestDotI8x8_matchesScalar (0.01s)
+=== RUN   TestDotI8x8_columnsAreIndependent
+--- PASS: TestDotI8x8_columnsAreIndependent (0.00s)
+=== RUN   TestDotI8x8_lengthMismatchPanics
+--- PASS: TestDotI8x8_lengthMismatchPanics (0.01s)
+=== RUN   TestDotF32_matchesScalar
+--- PASS: TestDotF32_matchesScalar (0.01s)
+=== RUN   TestDotF32_orthogonalAndParallel
+--- PASS: TestDotF32_orthogonalAndParallel (0.00s)
+=== RUN   TestDot4x4_matchesScalar
+--- PASS: TestDot4x4_matchesScalar (0.01s)
+=== RUN   TestDot8x4_matchesScalar
+--- PASS: TestDot8x4_matchesScalar (0.01s)
+=== RUN   TestDotW4A8Fold2AccAVX2_matchesOracle
+    dot_w4a8_2acc_amd64_test.go:53: nGroups=2    oracle -54.431129  2Acc -54.431133 (rel 7e-08)  1Acc -54.431133 (rel 7e-08)  2Acc-vs-1Acc 0
+    dot_w4a8_2acc_amd64_test.go:53: nGroups=4    oracle -80.090485  2Acc -80.090477 (rel 9.5e-08)  1Acc -80.090469 (rel 1.9e-07)  2Acc-vs-1Acc 9.5e-08
+    dot_w4a8_2acc_amd64_test.go:53: nGroups=10   oracle 45.793571  2Acc 45.793568 (rel 8.3e-08)  1Acc 45.793564 (rel 1.7e-07)  2Acc-vs-1Acc 8.3e-08
+    dot_w4a8_2acc_amd64_test.go:53: nGroups=32   oracle -135.464325  2Acc -135.464279 (rel 3.4e-07)  1Acc -135.464264 (rel 4.5e-07)  2Acc-vs-1Acc 1.1e-07
+    dot_w4a8_2acc_amd64_test.go:53: nGroups=160  oracle 383.913574  2Acc 383.913513 (rel 1.6e-07)  1Acc 383.913666 (rel 2.4e-07)  2Acc-vs-1Acc 4e-07
+--- PASS: TestDotW4A8Fold2AccAVX2_matchesOracle (0.02s)
+=== RUN   TestAVX512VNNIVL_detection
+    dot_w4a8_avx512vnni_amd64_test.go:19: hasAVX512VNNIVL=false hasAVX512VNNI=false hasAVX2=true
+--- PASS: TestAVX512VNNIVL_detection (0.00s)
+=== RUN   TestAVX512VNNI_dotW4A8FoldAVX512VNNI_matchesScalar
+    dot_w4a8_avx512vnni_amd64_test.go:34: CPU lacks AVX-512 VNNI+VL; dotW4A8FoldAVX512VNNI asm path not exercised
+--- SKIP: TestAVX512VNNI_dotW4A8FoldAVX512VNNI_matchesScalar (0.00s)
+=== RUN   TestAVX512VNNI_dotW4A8_dispatchesThroughEveryTier
+--- PASS: TestAVX512VNNI_dotW4A8_dispatchesThroughEveryTier (0.00s)
+=== RUN   TestAVX512VNNI_dotW4A8FoldAVX512VNNI_centersInInt32
+    dot_w4a8_avx512vnni_amd64_test.go:152: CPU lacks AVX-512 VNNI+VL; dotW4A8FoldAVX512VNNI asm path not exercised
+--- SKIP: TestAVX512VNNI_dotW4A8FoldAVX512VNNI_centersInInt32 (0.00s)
+=== RUN   TestDotW4A8SplitHalfAVX2_matchesOracle
+    dot_w4a8_splithalf_amd64_test.go:72: nGroups=1    oracle -77.443207  splithalf -77.443207  (rel 0)
+    dot_w4a8_splithalf_amd64_test.go:72: nGroups=2    oracle -44.816448  splithalf -44.816452  (rel 8.5e-08)
+    dot_w4a8_splithalf_amd64_test.go:72: nGroups=5    oracle -20.575821  splithalf -20.575829  (rel 3.7e-07)
+    dot_w4a8_splithalf_amd64_test.go:72: nGroups=32   oracle -47.241409  splithalf -47.241394  (rel 3.2e-07)
+    dot_w4a8_splithalf_amd64_test.go:72: nGroups=160  oracle 1365.445435  splithalf 1365.445312  (rel 8.9e-08)
+--- PASS: TestDotW4A8SplitHalfAVX2_matchesOracle (0.00s)
+=== RUN   TestExpF32AVX2_bitIdenticalToContract
+    exp_avx2_amd64_test.go:49: bit-identical over 201640 inputs spanning [-87.33654, 88.72283]
+--- PASS: TestExpF32AVX2_bitIdenticalToContract (0.03s)
+=== RUN   TestExpF32AVX2_overflowBranch
+    exp_avx2_amd64_test.go:81: overflow branch agrees over 37288 inputs, 34661 with k=128
+--- PASS: TestExpF32AVX2_overflowBranch (0.01s)
+=== RUN   TestTanhF32AVX2_bitIdenticalToContract
+    exp_avx2_amd64_test.go:119: bit-identical over 200536 inputs
+--- PASS: TestTanhF32AVX2_bitIdenticalToContract (0.03s)
+=== RUN   TestErfF32AVX2_bitIdenticalToContract
+    exp_avx2_amd64_test.go:153: bit-identical over 200504 inputs
+--- PASS: TestErfF32AVX2_bitIdenticalToContract (0.04s)
+=== RUN   TestContractCrossArchGolden
+--- PASS: TestContractCrossArchGolden (0.02s)
+=== RUN   TestContractDispatch_matchesScalarEverywhere
+--- PASS: TestContractDispatch_matchesScalarEverywhere (0.01s)
+=== RUN   TestContractDispatch_specials
+--- PASS: TestContractDispatch_specials (0.00s)
+=== RUN   TestContractDispatch_inPlace
+--- PASS: TestContractDispatch_inPlace (0.00s)
+=== RUN   TestSoftmaxRowScaledContractInto_bitIdenticalToUnfused
+--- PASS: TestSoftmaxRowScaledContractInto_bitIdenticalToUnfused (0.00s)
+=== RUN   TestFMA32_isExactF32FMA
+--- PASS: TestFMA32_isExactF32FMA (0.39s)
+=== RUN   TestFMA32_contractionIndependent
+--- PASS: TestFMA32_contractionIndependent (0.04s)
+=== RUN   TestExpF32Contract_accuracy
+    exp_contract_test.go:143: expF32Contract vs math.Exp: max 0.873 ULP (at x=59.2687)
+--- PASS: TestExpF32Contract_accuracy (0.08s)
+=== RUN   TestExpF32Contract_vsExpF32Core
+    exp_contract_test.go:179: contract vs shipped expF32Core: 9.83% of inputs differ, max 1.00 ULP
+--- PASS: TestExpF32Contract_vsExpF32Core (0.02s)
+=== RUN   TestExpF32_accuracy
+    exp_test.go:59: over 3828001 points: max rel err 8.06e-08 (0.68 ULP) at x=-5.8674717, mean 2.29e-08 (0.19 ULP)
+--- PASS: TestExpF32_accuracy (0.17s)
+=== RUN   TestExpF32_specialCases
+--- PASS: TestExpF32_specialCases (0.00s)
+=== RUN   TestExpF32_monotone
+--- PASS: TestExpF32_monotone (0.02s)
+=== RUN   TestSoftmaxRowInto_matchesReference
+--- PASS: TestSoftmaxRowInto_matchesReference (0.02s)
+=== RUN   TestSoftmaxRowScaledInto_bitIdenticalToTwoPass
+--- PASS: TestSoftmaxRowScaledInto_bitIdenticalToTwoPass (0.02s)
+=== RUN   TestErfF32_accuracy
+    exp_test.go:385: erf max abs 1.92e-07 (at -1.006032); GELU max abs 4.67e-07 (binding); GELU max rel on x≥0.1 1.69e-07 (1.41 ULP, at 2.059336)
+--- PASS: TestErfF32_accuracy (0.37s)
+=== RUN   TestErfF32_specialCases
+--- PASS: TestErfF32_specialCases (0.00s)
+=== RUN   TestSiLUF32_accuracy
+    exp_test.go:487: SiLU max rel error 1.44e-07 (1.21 ULP) at x=-4.15102; max abs 1.27e-06
+--- PASS: TestSiLUF32_accuracy (0.17s)
+=== RUN   TestTanhF32_accuracy
+    exp_test.go:580: tanh max rel error 1.31e-07 (1.10 ULP) at x=-0.64686
+--- PASS: TestTanhF32_accuracy (0.17s)
+=== RUN   TestGELUTanhF32_accuracy
+    exp_test.go:606: GELU-tanh max abs error 4.33e-07 at x=4.710875
+--- PASS: TestGELUTanhF32_accuracy (0.17s)
+=== RUN   TestF32ToF16_rounding
+--- PASS: TestF32ToF16_rounding (0.02s)
+=== RUN   TestW4A8F16_everyPathMatchesF32
+    f16scale_test.go:182: fused amd64 row kernel active: true; row4 usable: false; split-half usable: true
+--- PASS: TestW4A8F16_everyPathMatchesF32 (0.07s)
+=== RUN   TestWidenF16_exhaustive
+--- PASS: TestWidenF16_exhaustive (0.01s)
+=== RUN   TestFMAIssueProbe
+    fma_issue_probe_test.go:54: measurement harness — set AIKIT_HARNESS=1 to run it on a settled box
+--- SKIP: TestFMAIssueProbe (0.01s)
+=== RUN   TestForcedFallbacks_flagsFollowTheTags
+    force_amd64_test.go:12: no fallback forced: flags are as detected (avx2=true f16c=true vnni=false vnniVL=false popcnt=true)
+--- PASS: TestForcedFallbacks_flagsFollowTheTags (0.00s)
+=== RUN   TestForcedFallbacks_expected
+    force_test.go:16: AIKIT_EXPECT_FORCED unset: not asserting which fallbacks this build forces
+--- SKIP: TestForcedFallbacks_expected (0.00s)
+=== RUN   TestForcedFallbacks_returnsACopy
+--- PASS: TestForcedFallbacks_returnsACopy (0.00s)
+=== RUN   TestAttendTileFused_bitIdenticalToGoinferRef
+--- PASS: TestAttendTileFused_bitIdenticalToGoinferRef (1.31s)
+=== RUN   TestAttendTileFused_matchesAcc64WithinCosine
+--- PASS: TestAttendTileFused_matchesAcc64WithinCosine (0.01s)
+=== RUN   TestPackSignBitsRow_bitOrder
+--- PASS: TestPackSignBitsRow_bitOrder (0.00s)
+=== RUN   TestHammingRows_matchesScalar
+--- PASS: TestHammingRows_matchesScalar (0.00s)
+=== RUN   TestHammingRows_writesEveryDestination
+--- PASS: TestHammingRows_writesEveryDestination (0.00s)
+=== RUN   TestHammingRows_angleProxy
+    hamming_test.go:147: theta=0.1 rad: mean Hamming 24.0 / 768 (θ/π·dim = 24.4)
+    hamming_test.go:147: theta=0.3 rad: mean Hamming 73.9 / 768 (θ/π·dim = 73.3)
+    hamming_test.go:147: theta=0.6 rad: mean Hamming 145.8 / 768 (θ/π·dim = 146.7)
+    hamming_test.go:147: theta=1.0 rad: mean Hamming 243.3 / 768 (θ/π·dim = 244.5)
+    hamming_test.go:147: theta=1.4 rad: mean Hamming 342.6 / 768 (θ/π·dim = 342.2)
+--- PASS: TestHammingRows_angleProxy (0.03s)
+=== RUN   TestInt4Scheme_candidates
+    int4scheme_test.go:42: squared error: default 37.06, fullrange 29.47, mse 26.11
+--- PASS: TestInt4Scheme_candidates (0.01s)
+=== RUN   TestPackedFillPad_matchesNaive
+--- PASS: TestPackedFillPad_matchesNaive (1.77s)
+=== RUN   TestKQuantUnpackMatchesEmbed
+--- PASS: TestKQuantUnpackMatchesEmbed (0.01s)
+=== RUN   TestKQuantDotPartials_matchesScalar
+--- PASS: TestKQuantDotPartials_matchesScalar (0.00s)
+=== RUN   TestQuantizeActQ8K
+--- PASS: TestQuantizeActQ8K (0.01s)
+=== RUN   TestKQuantDot_vsOracle
+--- PASS: TestKQuantDot_vsOracle (0.01s)
+=== RUN   TestKQuant_edgeCases
+--- PASS: TestKQuant_edgeCases (0.00s)
+=== RUN   TestKQuantMatmulBT
+--- PASS: TestKQuantMatmulBT (0.01s)
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=256
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=64
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=96
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=128
+=== RUN   TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=256
+--- PASS: TestMatmulAVAcc64Group_matchesUngrouped (0.64s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=96 (0.02s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=128 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=1_N=4097_K=256 (0.04s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=96 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=128 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=2_N=4097_K=256 (0.05s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=96 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=128 (0.03s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=4_N=4097_K=256 (0.04s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=96 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=128 (0.02s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=6_N=4097_K=256 (0.06s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=96 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=128 (0.03s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=7_N=4097_K=256 (0.04s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=96 (0.01s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=128 (0.03s)
+    --- PASS: TestMatmulAVAcc64Group_matchesUngrouped/G=8_N=4097_K=256 (0.07s)
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=130
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=131
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=132
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=133
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=300
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=80_nKeys=97
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=96_nKeys=1
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/prefill_M=8_hd=128_nKeys=300
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/prefill_M=5_odd_hd=16_nKeys=40
+=== RUN   TestMatmulAVAcc64_exactMatchesStrided/long-ctx_M=1_hd=128_nKeys=8192
+--- PASS: TestMatmulAVAcc64_exactMatchesStrided (0.06s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=130 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=131 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=132 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=133 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=300 (0.01s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=80_nKeys=97 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/decode_M=1_hd=96_nKeys=1 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/prefill_M=8_hd=128_nKeys=300 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/prefill_M=5_odd_hd=16_nKeys=40 (0.00s)
+    --- PASS: TestMatmulAVAcc64_exactMatchesStrided/long-ctx_M=1_hd=128_nKeys=8192 (0.04s)
+=== RUN   TestMatmulBTQ8Fused_bitIdentical
+--- PASS: TestMatmulBTQ8Fused_bitIdentical (2.22s)
+=== RUN   TestMatmulBTQ8Fused_mutationDetected
+--- PASS: TestMatmulBTQ8Fused_mutationDetected (0.04s)
+=== RUN   TestMatmulBT_MConsistent
+=== RUN   TestMatmulBT_MConsistent/square_blocked_vs_naive
+=== RUN   TestMatmulBT_MConsistent/col_tail_4
+=== RUN   TestMatmulBT_MConsistent/col_tail_scalar
+=== RUN   TestMatmulBT_MConsistent/k_remainder_2
+=== RUN   TestMatmulBT_MConsistent/odd_M
+=== RUN   TestMatmulBT_MConsistent/packed_large_K
+--- PASS: TestMatmulBT_MConsistent (0.07s)
+    --- PASS: TestMatmulBT_MConsistent/square_blocked_vs_naive (0.01s)
+    --- PASS: TestMatmulBT_MConsistent/col_tail_4 (0.00s)
+    --- PASS: TestMatmulBT_MConsistent/col_tail_scalar (0.01s)
+    --- PASS: TestMatmulBT_MConsistent/k_remainder_2 (0.01s)
+    --- PASS: TestMatmulBT_MConsistent/odd_M (0.02s)
+    --- PASS: TestMatmulBT_MConsistent/packed_large_K (0.01s)
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=256
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=64
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=96
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=128
+=== RUN   TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=256
+--- PASS: TestMatmulQKAcc64Group_matchesUngrouped (0.74s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=96 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=128 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=1_N=4097_K=256 (0.03s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=96 (0.02s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=128 (0.03s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=2_N=4097_K=256 (0.05s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=96 (0.02s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=128 (0.04s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=4_N=4097_K=256 (0.05s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=96 (0.02s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=128 (0.02s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=6_N=4097_K=256 (0.04s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=96 (0.02s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=128 (0.04s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=7_N=4097_K=256 (0.05s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=1_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=7_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=8_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=9_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=15_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=16_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=17_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=127_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=128_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=64 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=96 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=129_K=256 (0.00s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=64 (0.01s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=96 (0.03s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=128 (0.04s)
+    --- PASS: TestMatmulQKAcc64Group_matchesUngrouped/G=8_N=4097_K=256 (0.07s)
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=128
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=129
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=130
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=131
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=132
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=133
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=134
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=135
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=1
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=2
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=7
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=80_nKeys=97
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/prefill_M=8_hd=128_nKeys=300
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/prefill_M=5_odd_hd=16_nKeys=41
+=== RUN   TestMatmulQKAcc64_exactMatchesStrided/long-ctx_M=1_hd=128_nKeys=8192
+--- PASS: TestMatmulQKAcc64_exactMatchesStrided (0.09s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=128 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=129 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=130 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=131 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=132 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=133 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=134 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=128_nKeys=135 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=1 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=2 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=64_nKeys=7 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/decode_M=1_hd=80_nKeys=97 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/prefill_M=8_hd=128_nKeys=300 (0.01s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/prefill_M=5_odd_hd=16_nKeys=41 (0.00s)
+    --- PASS: TestMatmulQKAcc64_exactMatchesStrided/long-ctx_M=1_hd=128_nKeys=8192 (0.07s)
+=== RUN   TestMatmulBTW4A8_MConsistent
+=== RUN   TestMatmulBTW4A8_MConsistent/prod_qkv_gate_up
+=== RUN   TestMatmulBTW4A8_MConsistent/prod_down_proj
+=== RUN   TestMatmulBTW4A8_MConsistent/n_tail_not_mul4
+=== RUN   TestMatmulBTW4A8_MConsistent/k_ragged
+=== RUN   TestMatmulBTW4A8_MConsistent/small_serial
+--- PASS: TestMatmulBTW4A8_MConsistent (1.07s)
+    --- PASS: TestMatmulBTW4A8_MConsistent/prod_qkv_gate_up (0.55s)
+    --- PASS: TestMatmulBTW4A8_MConsistent/prod_down_proj (0.51s)
+    --- PASS: TestMatmulBTW4A8_MConsistent/n_tail_not_mul4 (0.00s)
+    --- PASS: TestMatmulBTW4A8_MConsistent/k_ragged (0.00s)
+    --- PASS: TestMatmulBTW4A8_MConsistent/small_serial (0.00s)
+=== RUN   TestMatmulBTW8A8_MConsistent
+=== RUN   TestMatmulBTW8A8_MConsistent/prod_qkv_gate_up
+=== RUN   TestMatmulBTW8A8_MConsistent/prod_down_proj
+=== RUN   TestMatmulBTW8A8_MConsistent/n_tail_not_mul4
+=== RUN   TestMatmulBTW8A8_MConsistent/k_ragged
+=== RUN   TestMatmulBTW8A8_MConsistent/small_serial
+--- PASS: TestMatmulBTW8A8_MConsistent (0.64s)
+    --- PASS: TestMatmulBTW8A8_MConsistent/prod_qkv_gate_up (0.37s)
+    --- PASS: TestMatmulBTW8A8_MConsistent/prod_down_proj (0.26s)
+    --- PASS: TestMatmulBTW8A8_MConsistent/n_tail_not_mul4 (0.00s)
+    --- PASS: TestMatmulBTW8A8_MConsistent/k_ragged (0.00s)
+    --- PASS: TestMatmulBTW8A8_MConsistent/small_serial (0.00s)
+=== RUN   TestWeightMatW4A8_MConsistentAcrossRow4Dispatch
+=== RUN   TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/prod_qkv_gate_up
+=== RUN   TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/prod_down_proj
+=== RUN   TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/n_tail_not_mul4
+=== RUN   TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/k_ragged
+=== RUN   TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/small_serial
+--- PASS: TestWeightMatW4A8_MConsistentAcrossRow4Dispatch (0.87s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/prod_qkv_gate_up (0.43s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/prod_down_proj (0.44s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/n_tail_not_mul4 (0.00s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/k_ragged (0.00s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossRow4Dispatch/small_serial (0.00s)
+=== RUN   TestMatmulBTAcc64Strided_bitIdenticalToPacked
+--- PASS: TestMatmulBTAcc64Strided_bitIdenticalToPacked (0.12s)
+=== RUN   TestMatmulBTAcc64Strided_packedEqualsMatmulBTAcc64
+--- PASS: TestMatmulBTAcc64Strided_packedEqualsMatmulBTAcc64 (0.00s)
+=== RUN   TestMatmulBT_matchesNaive
+--- PASS: TestMatmulBT_matchesNaive (2.21s)
+=== RUN   TestMatmulBTW4A8SplitHalfTile_bitIdenticalToCanonical
+--- PASS: TestMatmulBTW4A8SplitHalfTile_bitIdenticalToCanonical (2.48s)
+=== RUN   TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch
+=== RUN   TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/prod_qkv_gate_up
+=== RUN   TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/prod_down_proj
+=== RUN   TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/n_tail_not_mul4
+=== RUN   TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/k_ragged
+    matmul_w4a8_splithalf_tile_amd64_test.go:120: split-half not usable for K=100 group=32 on this core
+=== RUN   TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/small_serial
+--- PASS: TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch (0.86s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/prod_qkv_gate_up (0.41s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/prod_down_proj (0.45s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/n_tail_not_mul4 (0.00s)
+    --- SKIP: TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/k_ragged (0.00s)
+    --- PASS: TestWeightMatW4A8_MConsistentAcrossSplitHalfDispatch/small_serial (0.00s)
+=== RUN   TestQ4K_matchesFloat64
+--- PASS: TestQ4K_matchesFloat64 (0.03s)
+=== RUN   TestQ4K_rowAndKind
+--- PASS: TestQ4K_rowAndKind (0.01s)
+=== RUN   TestQ4K_kernelMatchesGo
+--- PASS: TestQ4K_kernelMatchesGo (0.01s)
+=== RUN   TestQ8Span_bitIdenticalToScalarWiden
+    q8span_bitidentity_test.go:65: M=1 serial (M=1 K=2048 N=4096): 4096 outputs byte-identical
+    q8span_bitidentity_test.go:65: M=1 parallel — the large-vocab LM head (M=1 K=2048 N=152064): 152064 outputs byte-identical
+    q8span_bitidentity_test.go:65: K not a multiple of 16 — SIMD tail (M=1 K=100 N=40): 40 outputs byte-identical
+    q8span_bitidentity_test.go:65: M>1 prefill (M=8 K=768 N=512): 4096 outputs byte-identical
+--- PASS: TestQ8Span_bitIdenticalToScalarWiden (4.47s)
+=== RUN   TestQ8Span8Cols_bitIdenticalToColumnForm
+--- PASS: TestQ8Span8Cols_bitIdenticalToColumnForm (0.19s)
+=== RUN   TestMatmulBTQ8Into_parallelScratchPooled
+--- PASS: TestMatmulBTQ8Into_parallelScratchPooled (0.29s)
+=== RUN   TestMatmulBTQ8Into_bitIdentical
+--- PASS: TestMatmulBTQ8Into_bitIdentical (0.01s)
+=== RUN   TestQuantActAVX2Kernels_matchScalar
+--- PASS: TestQuantActAVX2Kernels_matchScalar (0.00s)
+=== RUN   TestQuantActAVX2Kernels_adversarialInfDoesNotFlipSign
+--- PASS: TestQuantActAVX2Kernels_adversarialInfDoesNotFlipSign (0.00s)
+=== RUN   TestQuantizeRowInt8_bitIdenticalToScalar
+--- PASS: TestQuantizeRowInt8_bitIdenticalToScalar (0.01s)
+=== RUN   TestQuantizeRowInt8_corners
+--- PASS: TestQuantizeRowInt8_corners (0.02s)
+=== RUN   TestQuantizeRowInt8_publicEntriesDispatch
+--- PASS: TestQuantizeRowInt8_publicEntriesDispatch (0.00s)
+=== RUN   TestQuantizeRowsInt8_roundTrip
+--- PASS: TestQuantizeRowsInt8_roundTrip (0.00s)
+=== RUN   TestQuantizeGroupsInt4_roundTrip
+--- PASS: TestQuantizeGroupsInt4_roundTrip (0.00s)
+=== RUN   TestMatmulBTQ4_matchesDequant
+--- PASS: TestMatmulBTQ4_matchesDequant (0.07s)
+=== RUN   TestDotI8_matchesScalar
+--- PASS: TestDotI8_matchesScalar (0.01s)
+=== RUN   TestDotI8_lengthMismatchPanics
+--- PASS: TestDotI8_lengthMismatchPanics (0.00s)
+=== RUN   TestMatmulBTW8A8_closeToF32
+    quant_test.go:300: shape {M:1 K:640 N:1024}: W8A8 relL2 = 0.0109
+    quant_test.go:300: shape {M:1 K:2048 N:640}: W8A8 relL2 = 0.0113
+    quant_test.go:300: shape {M:4 K:256 N:300}: W8A8 relL2 = 0.0100
+--- PASS: TestMatmulBTW8A8_closeToF32 (0.06s)
+=== RUN   TestMatmulBTQ8_closeToF32
+--- PASS: TestMatmulBTQ8_closeToF32 (0.07s)
+=== RUN   TestDequantizeRowInt4_bitIdenticalToRef
+    quant_test.go:384: group-outer dequant ≡ reference across 10 group sizes × 13 column counts, incl. odd groups spanning a packed byte
+--- PASS: TestDequantizeRowInt4_bitIdenticalToRef (0.00s)
+=== RUN   TestW4A8_dotMatchesScalar
+--- PASS: TestW4A8_dotMatchesScalar (0.00s)
+=== RUN   TestMatmulBTW4A8_closeToF32
+    quant_w4a8_test.go:79: shape {M:1 K:640 N:1024 group:32}: W4A8 relL2 = 0.0081
+    quant_w4a8_test.go:79: shape {M:1 K:2048 N:640 group:32}: W4A8 relL2 = 0.0076
+    quant_w4a8_test.go:79: shape {M:64 K:256 N:320 group:32}: W4A8 relL2 = 0.0068
+    quant_w4a8_test.go:79: shape {M:1 K:300 N:128 group:32}: W4A8 relL2 = 0.0067
+    quant_w4a8_test.go:79: shape {M:1 K:512 N:256 group:64}: W4A8 relL2 = 0.0093
+    quant_w4a8_test.go:79: shape {M:4 K:384 N:192 group:128}: W4A8 relL2 = 0.0068
+--- PASS: TestMatmulBTW4A8_closeToF32 (0.08s)
+=== RUN   TestW4A8TileRowsIndexHoisted_isBitIdentical
+--- PASS: TestW4A8TileRowsIndexHoisted_isBitIdentical (0.01s)
+=== RUN   TestSelfCheck_repairStepsDownATier
+--- PASS: TestSelfCheck_repairStepsDownATier (0.04s)
+=== RUN   TestSelfCheck_repairTurnsVNNIOffBeforeAVX2
+    selfcheck_amd64_test.go:49: no AVX-512 VNNI here: run on a VNNI host, or under SDE (-icx)
+--- SKIP: TestSelfCheck_repairTurnsVNNIOffBeforeAVX2 (0.00s)
+=== RUN   TestSelfCheck_healthyHostPasses
+    selfcheck_test.go:21: self-check passed in 2.516269ms
+--- PASS: TestSelfCheck_healthyHostPasses (0.01s)
+=== RUN   TestSelfCheck_detectsBrokenKernels
+=== RUN   TestSelfCheck_detectsBrokenKernels/dotI8_off_by_one_at_a_length_that_straddles_the_wide_loop
+=== RUN   TestSelfCheck_detectsBrokenKernels/dotW4A8_off_by_1e-3_relative
+=== RUN   TestSelfCheck_detectsBrokenKernels/quantizer_returns_a_different_scale
+=== RUN   TestSelfCheck_detectsBrokenKernels/NaN_is_a_mismatch,_not_a_pass
+--- PASS: TestSelfCheck_detectsBrokenKernels (0.03s)
+    --- PASS: TestSelfCheck_detectsBrokenKernels/dotI8_off_by_one_at_a_length_that_straddles_the_wide_loop (0.00s)
+    --- PASS: TestSelfCheck_detectsBrokenKernels/dotW4A8_off_by_1e-3_relative (0.01s)
+    --- PASS: TestSelfCheck_detectsBrokenKernels/quantizer_returns_a_different_scale (0.01s)
+    --- PASS: TestSelfCheck_detectsBrokenKernels/NaN_is_a_mismatch,_not_a_pass (0.01s)
+=== RUN   TestSelfCheck_declinesTheUncenteredFoldOf20260924
+    selfcheck_test.go:109: uncentered fold: dotW4A8 (centering): observed 10.4, allowed 1 (nGroups=2: dispatched -15.5429688, exact -15.5428723, |diff| 9.64e-05 against a bound of 9.26e-06: the error scales with the uncentered magnitude, so the activation-sum correction is not applied in int32 before the f32 fold)
+--- PASS: TestSelfCheck_declinesTheUncenteredFoldOf20260924 (0.01s)
+=== RUN   TestActiveKernels_isConsistent
+    selfcheck_test.go:129: arch amd64 detected [avx2 f16c popcnt] active [avx2 f16c popcnt] forced []
+--- PASS: TestActiveKernels_isConsistent (0.01s)
+=== RUN   TestMatmulShapeChecks_recoverableAcrossFanout
+--- PASS: TestMatmulShapeChecks_recoverableAcrossFanout (0.01s)
+=== RUN   TestShapeChecks_overflow
+--- PASS: TestShapeChecks_overflow (0.00s)
+=== RUN   TestSpanRows_emptyRowRangeVisitsNoColumns
+=== RUN   TestSpanRows_emptyRowRangeVisitsNoColumns/w8a8
+=== RUN   TestSpanRows_emptyRowRangeVisitsNoColumns/w4a8
+=== RUN   TestSpanRows_emptyRowRangeVisitsNoColumns/nonEmptyStillWorks
+--- PASS: TestSpanRows_emptyRowRangeVisitsNoColumns (0.00s)
+    --- PASS: TestSpanRows_emptyRowRangeVisitsNoColumns/w8a8 (0.00s)
+    --- PASS: TestSpanRows_emptyRowRangeVisitsNoColumns/w4a8 (0.00s)
+    --- PASS: TestSpanRows_emptyRowRangeVisitsNoColumns/nonEmptyStillWorks (0.00s)
+=== RUN   TestW4A8TileVsSpanAB_amd64
+    tile_ab_amd64_test.go:64: measurement harness — set AIKIT_HARNESS=1 to run it on a settled box
+--- SKIP: TestW4A8TileVsSpanAB_amd64 (0.00s)
+=== RUN   TestW8A8TileVsSpanAB_amd64
+    tile_ab_amd64_test.go:146: measurement harness — set AIKIT_HARNESS=1 to run it on a settled box
+--- SKIP: TestW8A8TileVsSpanAB_amd64 (0.00s)
+=== RUN   TestDotW4A8Uncentered_matchesScalar_exact
+--- PASS: TestDotW4A8Uncentered_matchesScalar_exact (0.01s)
+=== RUN   TestMatmulBTW4A8Batch_splitHalfOnlyMatchesCanonical
+--- PASS: TestMatmulBTW4A8Batch_splitHalfOnlyMatchesCanonical (0.04s)
+=== RUN   TestMatmulBTW4A8Batch_splitHalfOnlyM2Panics
+    w4a8_batch_splithalf_amd64_test.go:82: panicked as expected: linalg: w4a8BatchOp: repacked-only op (N=8) needs the canonical fallback for columns [0,8) at M=2 — MatmulBTW4A8Batch only serves row4/split-half at M=1 (row4 additionally needs whole-quad boundaries); a repacked-only WeightMat cannot be used in a batch whose shard boundaries split one of its row4 quads, or at M>1
+--- PASS: TestMatmulBTW4A8Batch_splitHalfOnlyM2Panics (0.00s)
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/qkv_row4_M1
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/gate_up_row4_M1
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/qkv_canonical_M1
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/prefill_M5
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/prefill_M8
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/mixed_N_tail
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/k_ragged
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/small_serial
+=== RUN   TestW4A8Batch_bitIdenticalToPerOp/single_op
+--- PASS: TestW4A8Batch_bitIdenticalToPerOp (1.18s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/qkv_row4_M1 (0.10s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/gate_up_row4_M1 (0.80s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/qkv_canonical_M1 (0.10s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/prefill_M5 (0.06s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/prefill_M8 (0.01s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/mixed_N_tail (0.00s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/k_ragged (0.00s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/small_serial (0.00s)
+    --- PASS: TestW4A8Batch_bitIdenticalToPerOp/single_op (0.10s)
+=== RUN   TestW4A8Batch_widthInert
+--- PASS: TestW4A8Batch_widthInert (0.07s)
+=== RUN   TestW4A8Batch_emptyOpsIsNoop
+--- PASS: TestW4A8Batch_emptyOpsIsNoop (0.00s)
+=== RUN   TestW4A8OpsPerByte
+    w4a8_opsperbyte_bench_test.go:35: measurement harness — set AIKIT_HARNESS=1 to run it on a settled box
+--- SKIP: TestW4A8OpsPerByte (0.00s)
+=== RUN   TestW4A8IssueWidthProbe
+    w4a8_opsperbyte_bench_test.go:133: measurement harness — set AIKIT_HARNESS=1 to run it on a settled box
+--- SKIP: TestW4A8IssueWidthProbe (0.00s)
+=== RUN   TestW4A8VNNIOpsPerByte
+    w4a8_vnni_opsperbyte_bench_test.go:30: measurement harness — set AIKIT_HARNESS=1 to run it on a settled box
+--- SKIP: TestW4A8VNNIOpsPerByte (0.00s)
+=== RUN   TestWeightMat_MappedSpan
+--- PASS: TestWeightMat_MappedSpan (0.06s)
+=== RUN   TestWeightMatInt4_truthTable
+=== RUN   TestWeightMatInt4_truthTable/empty
+=== RUN   TestWeightMatInt4_truthTable/f32
+=== RUN   TestWeightMatInt4_truthTable/int8
+=== RUN   TestWeightMatInt4_truthTable/canonical-only
+=== RUN   TestWeightMatInt4_truthTable/both
+=== RUN   TestWeightMatInt4_truthTable/repacked-only-row4
+    weightmat_repacked_only_test.go:112: row4 not usable on this core
+=== RUN   TestWeightMatInt4_truthTable/repacked-only-splithalf
+--- PASS: TestWeightMatInt4_truthTable (0.01s)
+    --- PASS: TestWeightMatInt4_truthTable/empty (0.00s)
+    --- PASS: TestWeightMatInt4_truthTable/f32 (0.00s)
+    --- PASS: TestWeightMatInt4_truthTable/int8 (0.00s)
+    --- PASS: TestWeightMatInt4_truthTable/canonical-only (0.00s)
+    --- PASS: TestWeightMatInt4_truthTable/both (0.00s)
+    --- SKIP: TestWeightMatInt4_truthTable/repacked-only-row4 (0.00s)
+    --- PASS: TestWeightMatInt4_truthTable/repacked-only-splithalf (0.00s)
+=== RUN   TestWeightMatInt4_repackedOnlyHoldsNoCanonical
+--- PASS: TestWeightMatInt4_repackedOnlyHoldsNoCanonical (0.00s)
+=== RUN   TestWeightMatInt4_repackedOnlyGateFailureLeavesInputUntouched
+--- PASS: TestWeightMatInt4_repackedOnlyGateFailureLeavesInputUntouched (0.00s)
+=== RUN   TestWeightMatInt4_existingPoliciesUnchanged
+=== RUN   TestWeightMatInt4_existingPoliciesUnchanged/canonical-only
+=== RUN   TestWeightMatInt4_existingPoliciesUnchanged/both-if-usable
+--- PASS: TestWeightMatInt4_existingPoliciesUnchanged (0.00s)
+    --- PASS: TestWeightMatInt4_existingPoliciesUnchanged/canonical-only (0.00s)
+    --- PASS: TestWeightMatInt4_existingPoliciesUnchanged/both-if-usable (0.00s)
+=== RUN   TestWeightMatRow_repackedMatchesCanonical
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows4_cols1536
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows4_cols1536/splithalf
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows16_cols2048
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows16_cols2048/splithalf
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows32_cols2560
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows32_cols2560/splithalf
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows64_cols4096
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows64_cols4096/splithalf
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows128_cols8960
+=== RUN   TestWeightMatRow_repackedMatchesCanonical/rows128_cols8960/splithalf
+--- PASS: TestWeightMatRow_repackedMatchesCanonical (0.07s)
+    --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows4_cols1536 (0.01s)
+        --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows4_cols1536/splithalf (0.00s)
+    --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows16_cols2048 (0.00s)
+        --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows16_cols2048/splithalf (0.00s)
+    --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows32_cols2560 (0.00s)
+        --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows32_cols2560/splithalf (0.00s)
+    --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows64_cols4096 (0.01s)
+        --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows64_cols4096/splithalf (0.00s)
+    --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows128_cols8960 (0.05s)
+        --- PASS: TestWeightMatRow_repackedMatchesCanonical/rows128_cols8960/splithalf (0.01s)
+=== RUN   TestRepackInt4Row4InPlace_allocsIndependentOfRows
+    weightmat_repacked_only_test.go:329: row4 not usable on this core
+--- SKIP: TestRepackInt4Row4InPlace_allocsIndependentOfRows (0.00s)
+=== RUN   TestWeightMat_RepackInt4Row4_dispatchMatchesCanonical
+--- PASS: TestWeightMat_RepackInt4Row4_dispatchMatchesCanonical (0.86s)
+=== RUN   TestWeightMatSplitHalf_matchesCanonical
+    weightmat_splithalf_amd64_test.go:76: rows=1    cols=32    OK — both dispatch paths agree across 1 outputs
+    weightmat_splithalf_amd64_test.go:76: rows=2    cols=64    OK — both dispatch paths agree across 2 outputs
+    weightmat_splithalf_amd64_test.go:76: rows=7    cols=128   OK — both dispatch paths agree across 7 outputs
+    weightmat_splithalf_amd64_test.go:76: rows=129  cols=512   OK — both dispatch paths agree across 129 outputs
+    weightmat_splithalf_amd64_test.go:76: rows=512  cols=5120  OK — both dispatch paths agree across 512 outputs
+--- PASS: TestWeightMatSplitHalf_matchesCanonical (0.12s)
+=== RUN   TestWeightMatSplitHalf_canonicalUntouched
+--- PASS: TestWeightMatSplitHalf_canonicalUntouched (0.00s)
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M1
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M2
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M3
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M4
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M8
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M64
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M1
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M2
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M3
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M4
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M8
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M64
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M1
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M2
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M3
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M4
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M8
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M64
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M1
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M2
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M3
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M4
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M8
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M64
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M1
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M2
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M3
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M4
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M8
+=== RUN   TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M64
+--- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical (0.43s)
+    --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536 (0.01s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M1 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M2 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M3 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M4 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M8 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows4_cols1536/M64 (0.00s)
+    --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048 (0.01s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M1 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M2 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M3 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M4 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M8 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows16_cols2048/M64 (0.00s)
+    --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560 (0.02s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M1 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M2 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M3 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M4 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M8 (0.00s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows32_cols2560/M64 (0.01s)
+    --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096 (0.07s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M1 (0.01s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M2 (0.01s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M3 (0.02s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M4 (0.01s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M8 (0.01s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows64_cols4096/M64 (0.01s)
+    --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960 (0.32s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M1 (0.06s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M2 (0.05s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M3 (0.04s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M4 (0.04s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M8 (0.04s)
+        --- PASS: TestWeightMatSplitHalf_repackedOnlyMatchesCanonical/rows128_cols8960/M64 (0.09s)
+=== RUN   TestRepackInt4SplitHalfInPlace_matchesOutOfPlace
+--- PASS: TestRepackInt4SplitHalfInPlace_matchesOutOfPlace (0.01s)
+=== RUN   TestRepackInt4SplitHalfRow_streamedMatchesInPlace
+--- PASS: TestRepackInt4SplitHalfRow_streamedMatchesInPlace (0.01s)
+=== RUN   TestRepackInt4SplitHalfInPlace_allocsIndependentOfRows
+    weightmat_splithalf_repacked_only_amd64_test.go:232: allocs: rows=8 -> 2, rows=128 -> 2
+--- PASS: TestRepackInt4SplitHalfInPlace_allocsIndependentOfRows (0.02s)
+=== RUN   TestWeightMat_bitIdenticalToKernels
+--- PASS: TestWeightMat_bitIdenticalToKernels (0.01s)
+=== RUN   TestWeightMat_wrapConstructors
+--- PASS: TestWeightMat_wrapConstructors (0.01s)
+=== RUN   TestParallelWidth_bitIdentical
+--- PASS: TestParallelWidth_bitIdentical (0.14s)
+=== RUN   TestParallelWidth_effective
+--- PASS: TestParallelWidth_effective (0.00s)
+=== RUN   TestWorkspace_scopedThreshold
+--- PASS: TestWorkspace_scopedThreshold (0.00s)
+=== RUN   TestWorkspace_scopedW8A8
+--- PASS: TestWorkspace_scopedW8A8 (0.01s)
+=== RUN   TestWorkspace_scopedWidth
+--- PASS: TestWorkspace_scopedWidth (0.00s)
+=== RUN   TestWorkspace_quantizeActivationsSurvivesWeightOnlyMatmul
+--- PASS: TestWorkspace_quantizeActivationsSurvivesWeightOnlyMatmul (0.01s)
+=== RUN   Example
+--- PASS: Example (0.01s)
+PASS
