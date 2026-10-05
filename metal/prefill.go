@@ -1186,6 +1186,8 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	}
 
 	// f16 activation scratch (per call, sized to the padded prompt).
+	// The five prefillScratchU16 buffers below rely on Metal's zero-fill of a new buffer for their pad rows
+	// (aikit gpu.NewBufferLen* contract: Metal only; CUDA's is uninitialized) — see prefillScratchU16.
 	xh := make([]uint16, Mpad*H)
 	parallelEmbedsF32ToF16(xh, embs, H)
 	xF := NewBufferU16s(d, xh)
@@ -1242,6 +1244,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		moeLogits = NewBufferFloats(d, make([]float32, M*r.moe.nE))
 		moeIdx = NewBufferUint32s(d, make([]uint32, M*r.moe.k))
 		moeWgt = NewBufferFloats(d, make([]float32, M*r.moe.k))
+		// expertIn/expertDown rely on the same Metal zero-fill for their pad rows as the scratch above (see prefillScratchU16).
 		expertIn = prefillScratchU16(d, Mpad*H)
 		expertDown = prefillScratchU16(d, Mpad*H)
 		rowIdxBuf = NewBufferUint32s(d, make([]uint32, Mpad*r.moe.k))
@@ -1598,6 +1601,11 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 // zeros itself (newBufferWithLength), so the pass no longer builds a zeroed Go slice of the same size and copies it in:
 // on the Qwen1.5-MoE slice that host work was 14.6 ms before a 512-token pass reached the GPU and 77.7 ms before a
 // 2048-token one (TestDB02_expertMajorProbe). prefillScratchCopy restores the copy, for the test that compares the two.
+//
+// THIS RELIES ON THE ZERO-FILL, and the zero-fill is a Metal property only: aikit's gpu.NewBufferLen* contract says Metal returns zeroed memory and CUDA returns
+// uninitialized memory, and that code shared across backends must not rely on zeros. These scratch buffers are sized to Mpad rows and the pass writes M of them, so the pad rows hold
+// the zeros Metal gave them. Metal-only code may do that; a CUDA port of the same pattern must zero the buffer explicitly (Queue.ZeroAsync) or it reads garbage.
+// TestPrefillScratch_zeroFilled pins the property on this backend.
 func prefillScratchU16(d *Device, n int) Buffer {
 	if prefillScratchCopy {
 		return NewBufferU16s(d, make([]uint16, n))

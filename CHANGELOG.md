@@ -15,6 +15,22 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — CUDA K=V layers copy the k projection into v instead of projecting twice (audit R-23); Metal's zero-fill reliance is now written down (R-11)
+
+On a Gemma 4 global layer (`attention_k_eq_v`) V is `v_norm` of the RAW k projection, and the CUDA resident path used to compute that projection twice on identical inputs: decode (`doG(Ly.k → kB)` then `doG(Ly.k → vB)`) and prefill (the same
+pair of `bGemvB`). It now projects once and copies `kB → vB` (`cuda/resident.go` `copyF32`, one launch of the existing `kv_store` kernel at position 0, which is an exact copy), in decode and prefill in the same change, as the prefill
+comment required. The copy is a kernel launch like every other op in the captured segments, so it records into the CUDA graph; `gpu.CopyDevice` could not (it synchronizes the context and is not stream-ordered). No new PTX.
+**Cleanup, not a speed claim**: it removes one `kvDim x hidden` weight read per K=V layer per token, under 1% of a Gemma 4 token, and it was not timed.
+
+- **Gate:** `TestKEqVCopy_bitIdenticalToTheDoubleProjection` (`cuda/keqv_copy_test.go`, `cuda && goinfer_testhooks`) compares full logits and the greedy token stream, for decode and for prefill, with CUDA graphs on and off, against a
+  baseline recorded from the UNMODIFIED code on this card and driver (`cuda/testdata/keqv_copy_baseline.json`, keyed by GPU and driver, so a different box skips rather than mis-compares). Fixtures: `gemma4-dense-scaled` and
+  `gemma4-moe-scaled` (K=V plus MoE, resident on CUDA). **`gemma4-moe-kv-tiny` is not CUDA-resident (it declines), so it cannot gate this change**; `gemma4-moe-scaled` is the K=V MoE gate in its place. Bit-identical on all of them,
+  and graphs-on equals graphs-off.
+- **The gate can fail:** copying from the wrong source (`qB`) in decode turns it red, and in prefill likewise; both were reverted. Full `cuda` suite after the change: 0 failures (153 s).
+- **R-11, goinfer side:** `prefillScratchU16` and its callers (`metal/prefill.go`, `metal/prefill_deltanet.go`) rely on Metal handing back a zero-filled buffer for the pad rows of the f16 scratch. That is a Metal property
+  (aikit v1.56.1 documents `gpu.NewBufferLen*`: CUDA is uninitialized, Metal zero-filled), so each site now says so and points at the contract; a CUDA port of the pattern must zero explicitly. Comments only; no goinfer production
+  code beyond R-23 changed, so no aikit bump is needed for it.
+
 ### Changed — aikit v1.56.0: DotProd is detected on Windows on ARM
 
 goinfer now requires aikit v1.56.0 in all five modules. Its one library change is that `detectDotProd` asks Windows (`IsProcessorFeaturePresent`) instead of assuming none, so a Windows ARM machine whose CPU has DotProd

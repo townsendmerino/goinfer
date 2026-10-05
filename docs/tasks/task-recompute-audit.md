@@ -709,6 +709,16 @@ P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aiki
 
 ### R-11 · Root cause: aikit's output contracts are not written down, and GPU buffers disagree across backends
 
+> **Status 2026-10-05: partly done.** Contracts and tests landed in aikit v1.56.1; `NewBufferLen*` behaviour is deliberately unchanged; the goinfer-side lint is still open.
+> - **Landed:** one `Output contract:` line on every exported writer in `linalg`, `embed`, `encoder` and `gpu` (about 90; item 1 below), the corrected `QuantizeGroupInt4Row`, `AttendTileFused`,
+>   `encoder.Backend.MatmulBT` and `gpu.NewBufferLen*` docs, the poison tests (item 3) and `TestOutputContract_everyWriterIsDocumented`, which stops a new writer landing without a line. It found three
+>   writers this section had missed (`Q8Backend.MatmulBTQ8` and its two device implementations).
+> - **Checked against the code, not copied from this list:** the "overwrite" claim held for every portable writer (227 poison cases pass on amd64, the generic kernels and arm64 under QEMU); `MatmulBT`,
+>   `MatmulBTInto`, `MatmulBTQ8Fused*`, `PackSignBits*` clear first, as written; and `QuantizeGroupInt4Row` is exactly the pad nibble, for odd `cols`, as written.
+> - **Not done:** `NewBufferLen*` still differs between backends (item 2 chose "document the difference"); goinfer's lint for `clear(x)` before an overwrite kernel (the goinfer fix below); the **arm64 assembly on
+>   real hardware** (QEMU only here — run `go test ./...` in aikit on a Mac); and a CUDA/Metal device run of the encoder backends' contract (their CPU fallback is covered, the device path is not).
+> - **goinfer side:** the Metal sites that rely on the zero-fill (`prefillScratchU16` and its callers) now say so and point at the contract; comments only.
+
 - **No aikit CPU kernel accumulates into its output.**
   - **Overwrite:** every matmul, attention, dequant and activation kernel goinfer calls writes every element it
     covers. This includes every arch variant and the assembly: none loads `dst` before storing.
@@ -867,6 +877,10 @@ for a 5–20 GB model, on the first start after a pull.
 
 ### R-23 · CUDA K=V layers run the K projection twice
 
+> **Status 2026-10-05: fixed.** Decode and prefill now project once and copy `kB → vB` with one launch of the existing `kv_store` kernel at position 0 (an exact copy; `gpu.CopyDevice` was not usable, it synchronizes
+> the context and cannot be captured in a CUDA graph). Bit-identical logits and greedy tokens, decode and prefill, graphs on and off, on `gemma4-dense-scaled` and `gemma4-moe-scaled`
+> (`TestKEqVCopy_bitIdenticalToTheDoubleProjection`); `gemma4-moe-kv-tiny` is not CUDA-resident, so it cannot gate this. A copy from the wrong source turned the gate red in both paths. No speed claim: it was not timed.
+
 - **Decode:** `doG(Ly.k → kB)`, then `doG(Ly.k → vB)` on identical inputs (`cuda/resident.go`).
 - **Prefill:** the same pair of `bGemvB` calls (`cuda/prefill.go`).
 - **Fix:** `CopyDevice(vB, kB)` is bit-identical. WebGPU already does it that way. Change decode and prefill
@@ -908,8 +922,8 @@ for a 5–20 GB model, on the first start after a pull.
 ### Order
 
 1. **R-11:** contracts, the `NewBufferLen` mismatch, and the poison test. It stops recurrence, and R-20 depends
-   on it.
-2. **The cheap, certain fixes:** R-23, R-20, R-18, R-16.
+   on it. *Partly done 2026-10-05 (see R-11); R-20 may now cite the contract.*
+2. **The cheap, certain fixes:** ~~R-23~~ (fixed 2026-10-05), R-20, R-18, R-16.
 3. **The ones with real hot-path weight,** each with a pre-registered band:
    - R-19 (short Metal prompts, an agent's every turn);
    - R-22 (CUDA MoE prefill);
