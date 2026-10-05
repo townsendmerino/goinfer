@@ -1534,7 +1534,18 @@ its speed unread. It is not re-queued: no night on this Mac gives it more memory
 It needs a smaller resident int8 MoE, or a box with more RAM. **Owner, 2026-10-05: not pursued.** The workarounds offered (a 2-layer slice of the local slice, at a diluted read; a
 Qwen3-30B-A3B slice, about 8 GB of download) were declined, so the speed stays unread and nothing is queued. Kill-watch log: `night-2026-10-04c/int8rows-bypass-killwatch.log`.
 
-## Owner decisions
+### Short-prompt prefill rows (T1.11's other half): pre-registration (written 2026-10-05, before it runs; owner: "lets work the 'Builds still open' in order")
+
+`docs/benchmarks.md`'s "Metal short-prompt prefill floor — R3, 2026-09-20" table (1.5B, K = 32 / 64 / 128 / 256) predates
+R16's prefill GEMM, R19's prefill attention, A-P01's tile selector and A-P02's floor of 16, and its 2026-10-01 note says
+the ratios to Ollama are not current (A-D01). This re-measures it.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-shortk-ttft.sh` on the night queue: the table's own command, `scripts/bench_peer_prefill.py --backend metal --models 1.5B --depths 32,64,128,256 --n 6`, on a pinned serve binary and scripts worktree. Per cell the engines run interleaved, each server restarted: goinfer_exact (`--exact-prefill`), goinfer (the default, which batches from 16 tokens, so no floor override as the 09-20 run needed), Ollama 0.32.5 and mlx-lm 0.31.3 on its local 4-bit checkpoint. 6 unique-prefix prompts a cell, plus the harness's cache check (repeat ÷ fresh) and its depth-scaling check. Estimate about 30 minutes. |
+| Reading | A record, not a gate. Per K: goinfer ÷ Ollama, goinfer ÷ mlx-lm, and goinfer ÷ goinfer_exact, each from the cell's TTFT medians, graded by the peer sweep's bands (level 0.97–1.03, ahead > 1.03, behind < 0.97; all six pairs decide, never the mean; an engine's spread over 5% caps the cell to AMBIGUOUS). The cells replace the 09-20 table's, which stays as history. |
+| Void if | Any goinfer cell's serve log shows a decode path other than `metal-resident (int4)`, the harness's cache check fails (an engine answering fresh prompts from a cache), or TTFT does not rise with K for an engine (the harness refuses then). |
+| Reported | The 09-20 table's ratios beside the new ones; the batched default against `--exact-prefill` at every K. |
 
 None blocks phase 1 or 2. Each is needed only when its build comes up. Decisions the owner made on individual items are
 recorded at each item and in the log; this table is the audit's Track 4 questions, none of which the owner has answered yet.

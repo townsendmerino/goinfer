@@ -25,7 +25,7 @@ import (
 // SHA-256 of their K/V over the prompt. The slot count is the auto-sizer's (MoECacheExperts) unless GOINFER_AUDIT_SLOTS
 // sets one. Heartbeat on stderr after every arm.
 //
-//	GOINFER_G4LM_M26=1 GOINFER_AUDIT_MODEL=<.giw> [GOINFER_AUDIT_SLOTS=N] [GOINFER_G4LM_MS=128,512] ./metal-<rev>.test \
+//	GOINFER_G4LM_M26=1 GOINFER_AUDIT_MODEL=<.giw> [GOINFER_AUDIT_SLOTS=N] [GOINFER_G4LM_MS=128,512] [GOINFER_G4LM_REPS=5] ./metal-<rev>.test \
 //	  -test.run '^TestG4LayerMajor_M26AB$' -test.v -test.timeout 60m
 func TestG4LayerMajor_M26AB(t *testing.T) {
 	if os.Getenv("GOINFER_G4LM_M26") != "1" {
@@ -45,7 +45,10 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			}
 		}
 	}
-	const reps = 5
+	reps := 5 // the grade's; GOINFER_G4LM_REPS lowers it for a profile read
+	if n, err := strconv.Atoi(os.Getenv("GOINFER_G4LM_REPS")); err == nil && n > 0 {
+		reps = n
+	}
 	t0 := time.Now()
 	hb := func(format string, a ...any) {
 		fmt.Fprintf(os.Stderr, "[g4lm %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
@@ -123,9 +126,22 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 		for i, id := range ids {
 			embs[i] = m.EmbedResidentForTest(id)
 		}
+		// The arm's time split: GPU-busy over every command buffer, the host's staging wall, and the
+		// rest of the wall (encode, submit and wait gaps, the route reads), from r.prof, a prompt token's share in ms.
+		var prof0 pagedProfile
+		profLine := func(arm string, wallMs float64) string {
+			p := r.PagedProfile()
+			gpu := float64(p.p1GpuNanos-prof0.p1GpuNanos+p.p2GpuNanos-prof0.p2GpuNanos+p.denseGpuNanos-prof0.denseGpuNanos) / 1e6
+			p2 := float64(p.p2GpuNanos-prof0.p2GpuNanos) / 1e6
+			stage := float64(p.stageWallNanos-prof0.stageWallNanos) / 1e6
+			f := float64(M)
+			return fmt.Sprintf("PROF M=%d %s, ms a prompt token: wall %.2f = GPU-busy %.2f (of it phase 2, the experts, %.2f) + staging %.2f + other %.2f",
+				M, arm, wallMs/f, gpu/f, p2/f, stage/f, (wallMs-gpu-stage)/f)
+		}
 		seq := func() ([]float32, [32]byte, float64, int) {
 			a.Reset()
 			s0 := stagesAndSubmits()
+			prof0 = r.PagedProfile()
 			st := time.Now()
 			for i := 0; i < M-1; i++ {
 				if err := a.ForwardNoLogits(embs[i], i); err != nil {
@@ -142,6 +158,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 		lm := func() ([]float32, [32]byte, float64, int) {
 			a.Reset()
 			s0 := stagesAndSubmits()
+			prof0 = r.PagedProfile()
 			st := time.Now()
 			lg := layerMajor(embs, 0, true)
 			if err := r.takeExecErr(); err != nil {
@@ -176,6 +193,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 					}
 				}
 				hb("M=%d rep %d %s: %.0f ms, %d experts staged", M, rep, map[bool]string{false: "sequential", true: "layer-major"}[isLM], tm[k], st)
+				hb("%s", profLine(map[bool]string{false: "sequential", true: "layer-major"}[isLM], tm[k]))
 			}
 			for j := range lgs[0] {
 				if math.Float32bits(lgs[0][j]) != math.Float32bits(lgs[1][j]) {

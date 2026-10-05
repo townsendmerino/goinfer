@@ -1,0 +1,27 @@
+[g4lm   11.7s] built: metal-resident (int4), 23 slots a layer, pid 64337
+[g4lm   28.6s] M=128 rep 0 sequential: 16688 ms, 8900 experts staged
+[g4lm   28.6s] PROF M=128 sequential, ms a prompt token: wall 130.37 = GPU-busy 46.66 (of it phase 2, the experts, 22.92) + staging 58.58 + other 25.14
+[g4lm   36.6s] M=128 rep 0 layer-major: 7955 ms, 9500 experts staged
+[g4lm   36.6s] PROF M=128 layer-major, ms a prompt token: wall 62.15 = GPU-busy 30.40 (of it phase 2, the experts, 14.98) + staging 19.18 + other 12.57
+[g4lm   44.7s] M=128 rep 1 layer-major: 8065 ms, 9512 experts staged
+[g4lm   44.7s] PROF M=128 layer-major, ms a prompt token: wall 63.01 = GPU-busy 30.28 (of it phase 2, the experts, 14.70) + staging 19.21 + other 13.52
+[g4lm   62.5s] M=128 rep 1 sequential: 17744 ms, 8790 experts staged
+[g4lm   62.5s] PROF M=128 sequential, ms a prompt token: wall 138.62 = GPU-busy 53.61 (of it phase 2, the experts, 26.02) + staging 59.53 + other 25.49
+[g4lm   80.6s] M=128 rep 2 sequential: 18132 ms, 8778 experts staged
+[g4lm   80.6s] PROF M=128 sequential, ms a prompt token: wall 141.66 = GPU-busy 53.90 (of it phase 2, the experts, 26.13) + staging 65.23 + other 22.52
+[g4lm   89.0s] M=128 rep 2 layer-major: 8400 ms, 9500 experts staged
+[g4lm   89.0s] PROF M=128 layer-major, ms a prompt token: wall 65.63 = GPU-busy 32.51 (of it phase 2, the experts, 15.41) + staging 19.29 + other 13.83
+[g4lm   89.1s] RESULT M=128, 23 slots: sequential 18132 ms, layer-major 8400 ms (medians of 2); sequential / layer-major median 2.200, 2 of 2 reps above 1 (per rep 2.200 2.158); experts staged a prompt: sequential 8790, layer-major 9512; logits and K/V equal in every rep
+[g4lm  155.7s] M=512 rep 0 sequential: 66340 ms, 35032 experts staged
+[g4lm  155.7s] PROF M=512 sequential, ms a prompt token: wall 129.57 = GPU-busy 55.66 (of it phase 2, the experts, 25.65) + staging 53.53 + other 20.38
+[g4lm  184.8s] M=512 rep 0 layer-major: 28968 ms, 38049 experts staged
+[g4lm  184.8s] PROF M=512 layer-major, ms a prompt token: wall 56.58 = GPU-busy 32.15 (of it phase 2, the experts, 15.62) + staging 15.03 + other 9.39
+[g4lm  213.5s] M=512 rep 1 layer-major: 28597 ms, 38084 experts staged
+[g4lm  213.5s] PROF M=512 layer-major, ms a prompt token: wall 55.85 = GPU-busy 31.56 (of it phase 2, the experts, 15.10) + staging 14.88 + other 9.42
+[g4lm  271.6s] M=512 rep 1 sequential: 58039 ms, 34987 experts staged
+[g4lm  271.6s] PROF M=512 sequential, ms a prompt token: wall 113.36 = GPU-busy 42.82 (of it phase 2, the experts, 19.92) + staging 51.62 + other 18.92
+[g4lm  333.4s] M=512 rep 2 sequential: 61732 ms, 34952 experts staged
+[g4lm  333.4s] PROF M=512 sequential, ms a prompt token: wall 120.57 = GPU-busy 46.60 (of it phase 2, the experts, 21.89) + staging 55.29 + other 18.68
+[g4lm  362.3s] M=512 rep 2 layer-major: 28846 ms, 38049 experts staged
+[g4lm  362.3s] PROF M=512 layer-major, ms a prompt token: wall 56.34 = GPU-busy 32.10 (of it phase 2, the experts, 15.46) + staging 15.26 + other 8.97
+[g4lm  362.3s] RESULT M=512, 23 slots: sequential 61732 ms, layer-major 28846 ms (medians of 2); sequential / layer-major median 2.140, 2 of 2 reps above 1 (per rep 2.030 2.140); experts staged a prompt: sequential 34987, layer-major 38084; logits and K/V equal in every rep

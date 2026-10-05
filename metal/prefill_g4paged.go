@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"time"
 )
 
 // g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/tasks/task-m26-mac-2026-10.md, 4b)
@@ -86,28 +87,31 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 		r.x, r.mq, r.mSc, g.g4x1, g.rIdx, g.rWgt, g.slotIdx = rw.x, rw.mq, rw.mSc, rw.x1, rw.rIdx, rw.rWgt, rw.slotIdx
 		r.encNKeys, r.encFANSplit = rw.pos+1, rw.u.uFANSplit
 	}
-	submit := func(e *Encoder) {
+	submit := func(e *Encoder, w0 time.Time, gpu, wall *int64) {
 		e.End()
 		r.recordExecErr(e.Err())
+		lmProf(e, w0, gpu, wall)
 	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		if L.g4moe == nil || L.g4moe.pool == nil {
+			w0 := time.Now()
 			e := r.q.Begin()
 			for i := range rows {
 				use(&rows[i])
 				r.encodeLayerWith(e, l, rows[i].u.uPos, rows[i].u.uNKeys, rows[i].u.uQTempScale, rows[i].u.uRopePos)
 			}
-			submit(e)
+			submit(e, w0, &r.prof.denseGpuNanos, &r.prof.denseWallNanos)
 			continue
 		}
+		w0 := time.Now()
 		e := r.q.Begin() // phase 1, every row: attention, dense branch, router, expert input
 		for i := range rows {
 			use(&rows[i])
 			r.encodeAttentionWith(e, l, rows[i].u.uPos, rows[i].u.uNKeys, rows[i].u.uQTempScale, rows[i].u.uRopePos)
 			r.encodeG4Phase1(e, L)
 		}
-		submit(e)
+		submit(e, w0, &r.prof.p1GpuNanos, &r.prof.p1WallNanos)
 		if r.execErr != nil {
 			return nil
 		}
@@ -128,12 +132,20 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 		return nil
 	}
 	use(&rows[len(rows)-1])
+	w0 := time.Now()
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
-	submit(e)
+	submit(e, w0, &r.prof.denseGpuNanos, &r.prof.denseWallNanos) // the head counts as dense
 	r.finalizeLogits()
 	return r.logitsHost
+}
+
+// lmProf adds a waited command buffer's GPU-busy time, and the wall time since w0, to two of r.prof's counters: the
+// layer-major prefills keep the paged decode's profile (PagedProfile), phase 1, staging, phase 2 and dense alike.
+func lmProf(e *Encoder, w0 time.Time, gpu, wall *int64) {
+	*gpu += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
+	*wall += time.Since(w0).Nanoseconds()
 }
 
 // layerMajorExpertGroups runs one layer's phase 2 for n prompt rows of a layer-major paged prefill: rows in order, in the
@@ -161,11 +173,14 @@ func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids
 			}
 			union = append(union, add...)
 		}
+		ws := time.Now()
 		staged := pool.ensureResidentBatch(union)
+		r.prof.stageWallNanos += time.Since(ws).Nanoseconds()
 		slotOf := make(map[int]uint32, len(union))
 		for k, id := range union {
 			slotOf[id] = uint32(staged[k].slot)
 		}
+		w2 := time.Now()
 		e2 := r.q.Begin()
 		if r.residency != (ResidencySet{}) {
 			e2.UseResidencySet(r.residency)
@@ -179,6 +194,7 @@ func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids
 		}
 		e2.End()
 		r.recordExecErr(e2.Err())
+		lmProf(e2, w2, &r.prof.p2GpuNanos, &r.prof.p2WallNanos)
 		if r.execErr != nil {
 			return false
 		}
@@ -250,24 +266,27 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 		r.x, r.mq, r.mSc, mo.rIdx, mo.rWgt, mo.slotIdx = rw.x, rw.mq, rw.mSc, rw.rIdx, rw.rWgt, rw.slot
 		r.encNKeys, r.encFANSplit = rw.pos+1, rw.u.uFANSplit
 	}
-	submit := func(e *Encoder) {
+	submit := func(e *Encoder, w0 time.Time, gpu, wall *int64) {
 		e.End()
 		r.recordExecErr(e.Err())
+		lmProf(e, w0, gpu, wall)
 	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		if L.moe == nil || L.moe.pool == nil {
+			w0 := time.Now()
 			e := r.q.Begin()
 			for i := range rows {
 				use(&rows[i])
 				r.encodeLayerWith(e, l, rows[i].u.uPos, rows[i].u.uNKeys, rows[i].u.uQTempScale, rows[i].u.uRopePos)
 			}
-			submit(e)
+			submit(e, w0, &r.prof.denseGpuNanos, &r.prof.denseWallNanos)
 			if r.execErr != nil {
 				return nil
 			}
 			continue
 		}
+		w0 := time.Now()
 		e := r.q.Begin() // phase 1, every row: the mixer and the router
 		for i := range rows {
 			use(&rows[i])
@@ -278,7 +297,7 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 			}
 			r.encodeMoERouter(e, L)
 		}
-		submit(e)
+		submit(e, w0, &r.prof.p1GpuNanos, &r.prof.p1WallNanos)
 		if r.execErr != nil {
 			return nil
 		}
@@ -298,10 +317,11 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 		return nil
 	}
 	use(&rows[len(rows)-1])
+	w0 := time.Now()
 	e := r.q.Begin()
 	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
-	submit(e)
+	submit(e, w0, &r.prof.denseGpuNanos, &r.prof.denseWallNanos) // the head counts as dense
 	r.finalizeLogits()
 	return r.logitsHost
 }
