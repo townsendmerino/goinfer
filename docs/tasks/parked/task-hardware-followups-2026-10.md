@@ -1,0 +1,19 @@
+# Task (parked): what was left when the hardware-coverage task closed (2026-10)
+
+> **Filed 2026-10-05**, when [`task-hardware-coverage-2026-10.md`](../../completed/task-hardware-coverage-2026-10.md) (H0-H6) was archived. Everything it scoped is done, measured, or listed here with a trigger.
+> What it built is live code and live generated docs, not this file: the census (`docs/hardware-coverage.json`, checked by `internal/hwcensus`), the "Verified on" section of `docs/hardware-matrix.md`, the startup self-tests (`docs/server.md`),
+> `check --hardware`, and the CI jobs `root-forced-fallbacks`, `root-forced-fallbacks-arm64`, `root-windows` and `root-windows-arm64`.
+
+| # | item | state | trigger or owner |
+|---|---|---|---|
+| 1 | The SDE `-spr` leg of `sde-goldens` | **Partial:** 0 failures, 85 decoder tests passed, then a 25-minute cap inside one test that passes alone in 102 s; cause unexplained. A `-spr`-only re-run (`sde-spr-rerun`, 45-minute cap, output in `docs/measurements/sde-2026-10-04/rerun-spr-1/`) is queued and starts when the owner starts the night queue | Record its result in `docs/measurements/sde-2026-10-04/README.md` and the census. Until it runs the only `-spr` claim is "85 passed, 0 failed, incomplete" |
+| 2 | How often SDE runs | Deferred by the owner on 2026-10-04 to **about 2026-11-04**. Options: an item in the `RELEASING.md` pre-flight and the aikit-bump checklist (queue `sde-goldens`, read `summary.txt` before tagging; the recommendation, because SDE results only move when kernels or the decoder do); a weekly `night.py add` from a nobara crontab (the queue is still started by hand); both. Not a GitHub workflow: SDE is a click-through-license download | The owner decides; the reminder is a note in the assistant's own memory, so **nothing pings anyone** |
+| 3 | A rented sweep before a public claim (H4) | **Parked by the owner, 2026-10-04: no rented machines.** The design is in the archived task doc: one NVIDIA card per generation, one current Apple Silicon Mac, one native-AVX-512 x86 box, one Windows machine, correctness only, judged against the CPU reference with each backend's parity tolerance. As far as is known a Claude cloud session is a CPU container with no GPU and no Mac, so it could cover at most the AVX-512 row | The owner decides to rent, borrow or be given the hardware |
+| 4 | Buy a Mac mini (H5) | Blocked on item 3 (its trigger is two H4 sweeps) | After two sweeps |
+| 5 | The self-test pass cache | Parked. A cached pass would hide a driver regression unless the driver version is in the key, and WebGPU does not expose it; about 1 s per launch is what it would save | Start-up latency complaints, or the probe growing past a few seconds. Safe shape: key on build, device, driver and OS build; passes only; expire in about 30 days; `check --hardware` always fresh; show "cached" |
+| 6 | Hardware nobody here owns | The self-test bars were measured on NVIDIA over Vulkan (CUDA and WebGPU), an Apple M1 Pro (Metal and WebGPU) only; AMD, Intel and DirectX 12 adapters, other CUDA generations and Apple GPU families are held to them unmeasured. The DotProd kernel speed was measured on Cobalt 100 only (Snapdragon X is a different core); its whole-token effect is unmeasured everywhere | Item 3, or a user's `check --hardware` output in a bug report (the form asks for it): add a census record and, for a GPU, its probe margins |
+| 7 | The never-executed list | 10 of 31 hardware-selected paths at 2026-10-04, generated at the end of `docs/hardware-matrix.md` | Read before every tag (`RELEASING.md` pre-flight item 7); shrinks only when something runs |
+
+**Not scoped, stated in the archived doc and unchanged:** telemetry of any kind; certifying every GPU; new native backends (`gpu-vendor-coverage.md` owns that); tuning for rented hardware.
+
+<!-- doc-reviewed: 2026-10-05 -->

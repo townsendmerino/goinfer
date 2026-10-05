@@ -88,6 +88,8 @@ survives to a tag unless caught here.
    hardware-selected path with no record of ever running. Read it before tagging, and make sure nothing in the release notes, the README or the site claims support for hardware on that list.
    If this release changed a hardware-selected path, add its record (or its absence) to the census first; the matrix test goes red until the generated section is regenerated
    (`go test ./decoder -run HardwareMatrix -update`).
+   **If this release changes which backends the startup self-test covers, or which adapters it skips,** edit its three statements by hand (the matrix test does not see them): the self-test paragraph in `docs/server.md`,
+   "What it has been run on" in `README.md`, and the same section in `site/internal/site/templates/download.html`. The site's output check requires that section to exist, not what it says about coverage.
 
 ## The two-step tag (post-M-19)
 
