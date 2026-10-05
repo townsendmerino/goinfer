@@ -1024,14 +1024,15 @@ Reopen the first item only if M26's paged token falls far enough that 0.16 ms ma
 
 ### Order
 
-1. **R-11:** contracts, the `NewBufferLen` mismatch, and the poison test. It stops recurrence, and R-20 depends
-   on it. *Partly done 2026-10-05 (see R-11); R-20 may now cite the contract.*
-2. **The cheap, certain fixes:** ~~R-23~~ (fixed 2026-10-05), R-20, R-18, R-16.
-3. **The ones with real hot-path weight,** each with a pre-registered band:
-   - R-19 (short Metal prompts, an agent's every turn);
-   - R-22 (CUDA MoE prefill);
-   - R-12 (CPU Gemma 2/3 at depth);
-   - R-13 and R-14 together (CPU quantization; needs the aikit `Pre` entry).
-4. **The rest as they come up.**
+Status 2026-10-05, after the first pass through the list:
+
+1. **Done:** R-11 (contracts, tests, lint), R-16 (cheap variant), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
+2. **Declined with reasons, reopen only on new evidence:** R-16's full dirty flag (a missed state-mutating site is a conversation-state leak), R-24's `launchToken` upload (about 20 microseconds against about 4.5 ms per token) and
+   the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate; measure the real transfer time first), and R-22's `g4x2All` fold (negative zero).
+3. **Still open, with real hot-path weight, each needing a pre-registered band and a bit-identity gate first:**
+   - R-12 (CPU Gemma 2/3 at depth: the window copied out of the ring every token);
+   - R-13 and R-14 together (CPU activation quantization; R-13(b) needs an aikit `MatmulBTW4A8F16Pre` entry, so an aikit release);
+   - R-15 (int8 KV dequantizes the whole history every token; opt-in `--kv i8`, so lower priority);
+   - R-17 (small CPU duplicates) and R-25 (WebGPU batched prefill quantizes per projection), as they come up.
 
 <!-- doc-reviewed: 2026-10-05 -->
