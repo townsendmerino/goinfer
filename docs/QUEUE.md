@@ -48,8 +48,6 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 - **Metal runs int8 weights natively (W8A8)**, `docs/tasks/task-metal-int8-2026-10.md`. Slice 1, dense int8 decode,
   built 2026-10-01 with the native path off by default; F1 and F2 passed by day, F3 and S are on the Mac's night queue.
   Owner decision O1: native, once F3 and S pass.
-- **Metal audit program** (proposed 2026-10-01), `docs/tasks/task-metal-audit-2026-10.md`: the order of
-  `docs/audit-metal-2026-09-30.md` §10's items. Phase 1 (guards, gates, text) is day work; the probes are night batches.
 
 ## Queued
 
@@ -845,6 +843,11 @@ Until one fires, the per-precision split is correct and sufficient, and nothing 
 ## Done
 
 _(append with commit sha and date)_
+
+**Metal audit program** — `mac`, **DONE and archived 2026-10-05** (its last build pushed in `f7497c2c`). It ran
+`docs/audit-metal-2026-09-30.md` §10's items from 2026-10-01; the record is `docs/completed/task-metal-audit-2026-10.md`,
+and what it left open, each with a trigger, is `docs/tasks/parked/task-metal-audit-followups-2026-10.md`. The audit
+itself stays live.
 
 **G12 · `role: "developer"` silently demoted to a user turn on the OpenAI surfaces** — `mac`,
 **DONE `4ca19e9` (2026-08-25).** Claimed and finished the same day. One `case "developer":` arm in

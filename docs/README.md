@@ -54,7 +54,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (56: 50 in `tasks/`, 6 in `tasks/parked/`)
+## Design records — `task-*.md` (59: 50 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -103,6 +103,12 @@ document-OCR model: the text decoder on the generic path from existing parts, a 
 for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 (reading) is done
 2026-10-01 and stops nothing: O1 (decoder) and O2 (tower, from aikit's Qwen3.5+ encoder) are unblocked.
 
+[`task-metal-audit-2026-10.md`](completed/task-metal-audit-2026-10.md) (filed 2026-10-01, **closed and archived 2026-10-05**; its live remainder is
+[`tasks/parked/task-metal-audit-followups-2026-10.md`](tasks/parked/task-metal-audit-followups-2026-10.md)) ran the Metal audit's §10 items
+([`audit-metal-2026-09-30.md`](audit-metal-2026-09-30.md), which stays live): guards and gates first, night probes, then the builds in order. Among
+what shipped: the hd = 64 and G = 2–8 block attention kernels, the batched step's rows forms and device argmax, batched DeltaNet prefill
+(8.06×), exact layer-major paged MoE prefill, and the serve chain; the peer refresh after it put Metal decode ahead of Ollama in all 12 cells.
+
 [`task-hardware-coverage-2026-10.md`](completed/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01, **closed and archived 2026-10-05**; its live remainder is
 [`tasks/parked/task-hardware-followups-2026-10.md`](tasks/parked/task-hardware-followups-2026-10.md)) was about the hardware goinfer is not built on: a checked census of every path selected by a CPU feature,
 a GPU attribute or a memory size (`hardware-coverage.json`, and the generated "Verified on" section of `hardware-matrix.md`), ways to reach those paths without owning the machine (CI runners including windows-arm64,
@@ -138,7 +144,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (131)
+## Archive — `completed/` (132)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation

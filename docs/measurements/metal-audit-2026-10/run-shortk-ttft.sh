@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Night job: T1.11's other half, the short-prompt Metal TTFT rows (docs/tasks/task-metal-audit-2026-10.md, "Short-prompt
-# prefill rows: pre-registration", registered 2026-10-05 before it runs). benchmarks.md's "Metal short-prompt prefill
+# Night job: T1.11's other half, the short-prompt Metal TTFT rows (docs/tasks/parked/task-metal-audit-followups-2026-10.md,
+# item 1, its pre-registration moved there verbatim when the program doc was archived; registered 2026-10-05 before it runs). benchmarks.md's "Metal short-prompt prefill
 # floor — R3, 2026-09-20" table predates R16's prefill GEMM, R19's prefill attention, A-P01's tile selector and A-P02's
 # floor of 16 (A-D01). The same command as that table, on today's build: scripts/bench_peer_prefill.py --backend metal
 # --models 1.5B --depths 32,64,128,256 --n 6. Engines interleaved per cell, each server restarted: goinfer_exact
@@ -11,7 +11,7 @@
 # scripts worktree ~/goinfer-bench/metal-audit-2026-10/wt-shortk-REV (bench_peer_prefill.py, prompts.json).
 # Queued with:
 #   python3 scripts/night.py add metal-audit-shortk-ttft --est 30 --priority 50 --by "Claude (Mac session), T1.11 short-K" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-shortk-ttft.sh
+#     --doc docs/tasks/parked/task-metal-audit-followups-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-shortk-ttft.sh
 # bench_peer_prefill.py holds the timing lock (inherited from the night runner); it has no idle gate of its own, so it
 # runs at night with nothing else on the box. MLX runs as `python3 -m mlx_lm.server` on the local checkpoint.
 set -uo pipefail

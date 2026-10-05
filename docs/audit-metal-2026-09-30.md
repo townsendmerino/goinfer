@@ -40,7 +40,7 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 - `de1c7f17` (2026-09-30) **fixed both Criticals.** A-C01 ≡ F-C01 (`-kv i8` prefill) and F-C02 (the exact prefill
   attention past 4096 keys) now decline batched prefill and name the reason, with device tests that fail when the guards
   are removed. No Critical is open.
-- Since 2026-10-01 the program in `docs/tasks/task-metal-audit-2026-10.md` fixes findings on a branch; the Track 0
+- Since 2026-10-01 the program in `docs/completed/task-metal-audit-2026-10.md` fixes findings on a branch; the Track 0
   status column below says which. So far: F-G03 (the decode attention kernels tested past 4096 keys against a float64
   reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
   F-G01 (a default test of the steel prefill attention kernel against a float64 reference), A-G01 (the
@@ -65,7 +65,7 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/tasks/task-gpu-paths-2026-09.md`,
 labelled since M-25). Running those weights natively is planned in `docs/tasks/task-metal-int8-2026-10.md`.
 
-The order §10's items run in, under the run-budget rules and this Mac's limits, is `docs/tasks/task-metal-audit-2026-10.md`.
+The order §10's items run in, under the run-budget rules and this Mac's limits, is `docs/completed/task-metal-audit-2026-10.md`.
 
 **Reading order.** Part I (§0–§3) is the summary: the shape of it, the MLX technique ledger, the register of Critical and
 Major findings, and the cross-area notes. Part II (§4–§9) is the six area reports, A to F. Part III (§10–§13) is the
@@ -412,7 +412,7 @@ skipping only. The Sep 12 §7 list does not contain a small-M prefill tile.
 
 #### A-P02 · Major: the floor is a gate floor; fresh prompts of 10-63 tokens still run sequentially
 
-**Status, 2026-10-04: shipped in part.** The floor is 16 (the pooled gate ships on K = 16–64; the pass is 3.48x the sequential loop at K = 16 on the 1.5B). A resident with the batched step keeps the exact step below 64: the graded bound was 32, held back by an open MC3 identity defect (docs/tasks/task-metal-audit-2026-10.md, "A-P02: SHIPPED in part").
+**Status, 2026-10-04: shipped in part.** The floor is 16 (the pooled gate ships on K = 16–64; the pass is 3.48x the sequential loop at K = 16 on the 1.5B). A resident with the batched step keeps the exact step below 64: the graded bound was 32, held back by an open MC3 identity defect (docs/completed/task-metal-audit-2026-10.md, "A-P02: SHIPPED in part").
 
 Where: `metal/backend.go:619` (`metalFastPrefillFloor = 64`), `:722-724` (floor on `startPos + len(embeddings)`), decoder threshold
 `decoder/model.go:1586` (suffix >= 8).
@@ -975,7 +975,7 @@ with the teacher-forced gate). **Kill:** below 1.03x in-sequence down work on th
 
 #### B-P06 [P, B, Minor] Threadgroup geometry of the rows kernels is untested
 
-**Status, 2026-10-04: killed.** In sequence, 256 threads beat 64, 128 and 512 on every rep: the 1.5B ran 0.828 / 0.972 / 0.890× at those sizes and the 7B 0.521 / 0.903 / 0.925×. The device-read variant was not built (docs/tasks/task-metal-audit-2026-10.md, "B-P06: KILLED").
+**Status, 2026-10-04: killed.** In sequence, 256 threads beat 64, 128 and 512 on every rep: the 1.5B ran 0.828 / 0.972 / 0.890× at those sizes and the 7B 0.521 / 0.903 / 0.925×. The device-read variant was not built (docs/completed/task-metal-audit-2026-10.md, "B-P06: KILLED").
 
 **Counted.** Every R18/R18b dispatch is `DispatchTG(..., 256, ...)` (`metal/model.go:2786` gate/up, `:2440` down, `:2653`
 qkv, `:2762` o): 8 simdgroups per threadgroup, `row0 = (tgid*8 + sgid)*R` (`metal/kernels.go:559`), and `gemvRowsFor` tiles rows by
@@ -1347,7 +1347,7 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 #### C-B01 [B, P] On-device token feedback (async chain) (Minor on 1.5B/7B)
 
 **Status, 2026-10-03: shipped on the branch.** Graded chain ÷ off **1.085×** on the 1.5B (9 of 9 pairs above 1); 0.5B
-1.063×, 7B 1.010×. Record: `docs/tasks/task-metal-audit-2026-10.md`, "The night of 2026-10-02: results".
+1.063×, 7B 1.010×. Record: `docs/completed/task-metal-audit-2026-10.md`, "The night of 2026-10-02: results".
 
 **What MLX does.** `async_eval` encodes graph n+1 on the host while graph n runs and commits with a completion handler; there is no host wait between graphs (eval.cpp:29-69). The commit policy is per-chip ops and MB per buffer (device.cpp:511-513, 604-622: 'p' 20/40, 'g' 40/40, 's' 50/50, 'd' 50/50, default 40/40; env MLX_MAX_OPS_PER_BUFFER, MLX_MAX_MB_PER_BUFFER). That the next token's id is an array inside the graph is a property of mlx-lm, which is not in the snapshot, so I cite only the mechanism MLX provides (async commit without a wait), not the decode loop.
 
@@ -1684,7 +1684,7 @@ intended behaviour. Nothing schedules the paged build.
 
 #### D-B01 [B,P] Major: no batched DeltaNet prefill
 
-**Status, 2026-10-04: shipped.** Qwen3.5 hybrids take the batched pass (`dnetPrefillOn` on). The pooled fidelity gate SHIPS on Qwen3.5-0.8B, and the pass is 8.06× the sequential loop at K = 512 (the 9B 6.7×) (docs/tasks/task-metal-audit-2026-10.md, "The night of 2026-10-04").
+**Status, 2026-10-04: shipped.** Qwen3.5 hybrids take the batched pass (`dnetPrefillOn` on). The pooled fidelity gate SHIPS on Qwen3.5-0.8B, and the pass is 8.06× the sequential loop at K = 512 (the 9B 6.7×) (docs/completed/task-metal-audit-2026-10.md, "The night of 2026-10-04").
 
 **Claim.** Qwen3.5/3.6/3.8 and Olmo-Hybrid families prefill as M decode tokens because DeltaNet is excluded
 from `PrefillLast` (`metal/model.go:1181-1183`). The record's stated reason ("a DeltaNet layer's conv/matrix state must
@@ -1736,7 +1736,7 @@ measurement for a Metal batched DeltaNet exists in the snapshot. `ForwardN` also
 
 #### D-G01 [G] Major: expert-major MoE prefill is default ON on a gate that cannot see it
 
-**Status, 2026-10-04: CLOSED, the gate exists and passes.** `TestDG01_expertMajorMoEPrefill` on a real Qwen1.5-MoE layer slice: expert-major against the f16 lane's row-by-row MoE, flips, per-layer K/V and KL; all three planted defects fail it; the shipped path passes at M = 64 and 512 (docs/tasks/task-metal-audit-2026-10.md, "D-G01: PASSES").
+**Status, 2026-10-04: CLOSED, the gate exists and passes.** `TestDG01_expertMajorMoEPrefill` on a real Qwen1.5-MoE layer slice: expert-major against the f16 lane's row-by-row MoE, flips, per-layer K/V and KL; all three planted defects fail it; the shipped path passes at M = 64 and 512 (docs/completed/task-metal-audit-2026-10.md, "D-G01: PASSES").
 
 **Claim.** The §3.2 pooled gate that licenses the batched f16 lane ran on the dense S model
 (`metal/backend.go:604-611`, "S model, K=64/128"; Sep 12 `:85` names it a dense 1.5B). The MoE branch inherits the same
@@ -1778,7 +1778,7 @@ the flip rate exceeds what the f16 dense lane already tolerates, which is itself
 
 #### D-B02 [B,P] Major: device-side expert scheduling instead of host grouping
 
-**Status, 2026-10-04: probed (T1.12, the Qwen1.5-MoE slice).** Host grouping plus the encoding the GPU cannot overlap after each routing sync is 2.4% of a 512-token pass and 1.1% of a 2048-token one. The expert GEMMs run 1.47× the routed rows at M = 512 (1.23× at 2048), which is the lever. The probe also found 14.6 / 77.7 ms of per-call scratch copying before the pass reached the GPU; that is fixed, bit-identical (docs/tasks/task-metal-audit-2026-10.md, "D-B02: T1.12 probed"). **Then the 16-row tile shipped, bit-identical:** `gemmTile` takes the token tile that pads to the fewest rows, within bounds. The slice's 512-token pass is 1.090× faster, the 1.5B's 16-token pass 1.555× and the 7B's 1.727×, with no cell regressing (same doc, "D-B02: the 16-row tile").
+**Status, 2026-10-04: probed (T1.12, the Qwen1.5-MoE slice).** Host grouping plus the encoding the GPU cannot overlap after each routing sync is 2.4% of a 512-token pass and 1.1% of a 2048-token one. The expert GEMMs run 1.47× the routed rows at M = 512 (1.23× at 2048), which is the lever. The probe also found 14.6 / 77.7 ms of per-call scratch copying before the pass reached the GPU; that is fixed, bit-identical (docs/completed/task-metal-audit-2026-10.md, "D-B02: T1.12 probed"). **Then the 16-row tile shipped, bit-identical:** `gemmTile` takes the token tile that pads to the fewest rows, within bounds. The slice's 512-token pass is 1.090× faster, the 1.5B's 16-token pass 1.555× and the 7B's 1.727×, with no cell regressing (same doc, "D-B02: the 16-row tile").
 
 **What goinfer does (cnt, `metal/prefill.go:1390-1552`).** Per MoE layer per chunk: batched router, route, `e.End()` and
 host readback of `moeIdx`/`moeWgt` (`:1129-1134`), host grouping into `byExpert` (`:1136-1153`), a new encoder,
@@ -1824,7 +1824,7 @@ rows, since then the padding saving is eaten.
 
 #### D-P04 [P] Major: MoE router top-k on one GPU thread
 
-**Status, 2026-10-04: shipped (bit-identical).** The probe measured 35-430 us per (1,1) dispatch, against the 5 us kill line: 68 us at 60x4 and 201 us at 128x8. `moe_route_sg`/`route_gptoss_sg` run on one simdgroup with bit-equal indices and weights. On the Qwen1.5-MoE slice the token is 1.060x faster in-process, 68 us per MoE layer (docs/tasks/task-metal-audit-2026-10.md, "D-P04: SHIPPED").
+**Status, 2026-10-04: shipped (bit-identical).** The probe measured 35-430 us per (1,1) dispatch, against the 5 us kill line: 68 us at 60x4 and 201 us at 128x8. `moe_route_sg`/`route_gptoss_sg` run on one simdgroup with bit-equal indices and weights. On the Qwen1.5-MoE slice the token is 1.060x faster in-process, 68 us per MoE layer (docs/completed/task-metal-audit-2026-10.md, "D-P04: SHIPPED").
 
 **Claim.** `moe_route` and `route_gptoss` early-return unless `tid == 0` and are dispatched as (1,1)
 (`metal/moe.go:50,101,963-972`). The Sep 12 record notes "moe_route on one GPU thread (deliberate, value-independent
@@ -1986,7 +1986,7 @@ unrecorded. Probe: micro-benchmark a lane-per-Dk variant at hk=hv=128, nv=32 and
 
 #### D-P03 [P] Minor (REVISIT): one dispatch over the k selected experts
 
-**Status, 2026-10-04: parked, off by default (bit-identical).** Four dispatches instead of 3k, with an exact slot-order combine. On the Qwen1.5-MoE slice (k = 4) the token is 1.019x faster in-process, 21.5 us per MoE layer: the owner's park zone. A k = 8 model is unmeasured (docs/tasks/task-metal-audit-2026-10.md, "D-P03: PARKED").
+**Status, 2026-10-04: parked, off by default (bit-identical).** Four dispatches instead of 3k, with an exact slot-order combine. On the Qwen1.5-MoE slice (k = 4) the token is 1.019x faster in-process, 21.5 us per MoE layer: the owner's park zone. A k = 8 model is unmeasured (docs/completed/task-metal-audit-2026-10.md, "D-P03: PARKED").
 
 **What goinfer does.** `encodeMoEExperts` loops j over k and issues GU GEMV, SwiGLU, down-wacc each time
 (`metal/moe.go:989-1019`): 3k = 24 dispatches per layer at k=8 (cnt), plus the router and shared expert. The slot is a
@@ -2282,7 +2282,7 @@ chunk invariance (C = 81, now in the gate). Details in the program doc's log.
 
 #### E-P02 [P,B, Minor; Major if the probe lands] M-adjacent threadgroup layout for the 7B at B=2
 
-**Status, 2026-10-04: killed.** Its own kill line was B = 2 above ~0.65 ms; the adjacent layout reads 0.777 ms against the per-row 0.863 ms on the 7B gate|up (1.111×; 1.13-1.15× at B = 3-4). Outputs were equal. That would be about 4% of the 7B B = 2 step (docs/tasks/task-metal-audit-2026-10.md, "E-P02: KILLED").
+**Status, 2026-10-04: killed.** Its own kill line was B = 2 above ~0.65 ms; the adjacent layout reads 0.777 ms against the per-row 0.863 ms on the 7B gate|up (1.111×; 1.13-1.15× at B = 3-4). Outputs were equal. That would be about 4% of the 7B B = 2 step (docs/completed/task-metal-audit-2026-10.md, "E-P02: KILLED").
 
 metal/batch.go:668-682 and 634-639: at B<=`rowsQKV`/`rowsGU` the qkv and gate|up matmuls run production's GEMV once per row, each
 dispatch streaming the whole weight. S4 chose it because the fragment (1.167 ms) loses to two GEMVs (2 x 0.435 = 0.87 ms) on the
@@ -2342,7 +2342,7 @@ Fidelity: the CUDA design keeps the host draw bit-identical when K covers the ma
 
 #### E-P05 [P,B, Minor] Deep rows in the batched step: per-row FA pairs, no timing above 1536
 
-**Status, 2026-10-04: parked, off by default (bit-identical).** The stub ceiling is 37.2% of the 8-row step at depth 2048, but it removes K/V reads, not dispatches. One multi-row FA dispatch pair per layer (`mc3FARowsOn`) gives 1.057-1.060× at 8 rows on the 1.5B at depth 1100-2048, 1.015× at 4096, 1.016× at 2 rows and 1.029× on the 7B at 4 rows. All are bit-equal (docs/tasks/task-metal-audit-2026-10.md, "E-P05: PARKED").
+**Status, 2026-10-04: parked, off by default (bit-identical).** The stub ceiling is 37.2% of the 8-row step at depth 2048, but it removes K/V reads, not dispatches. One multi-row FA dispatch pair per layer (`mc3FARowsOn`) gives 1.057-1.060× at 8 rows on the 1.5B at depth 1100-2048, 1.015× at 4096, 1.016× at 2 rows and 1.029× on the 7B at 4 rows. All are bit-equal (docs/completed/task-metal-audit-2026-10.md, "E-P05: PARKED").
 
 metal/batch.go:691-705: a row at `attnFADepthFloor` (1536) or deeper runs `attention_fa_blk` plus `attention_fa_combine` as its own two
 dispatches, in a serial encoder; rows below run `mc3_attention_rows` as one dispatch. At B=8 that is 16 attention dispatches per layer
@@ -2375,7 +2375,7 @@ same occupancy without it.
 
 #### E-P06 [P, Minor] One verify cost curve for every model
 
-**Status, 2026-10-03: killed and removed.** Graded at 1.014× on the 1.5B chat (bar 1.02), and the code was removed (docs/tasks/task-metal-audit-2026-10.md, "E-P06: KILLED"). The 2026-10-02 status that follows is history: built, lossless, pending its night grade. A model loaded with
+**Status, 2026-10-03: killed and removed.** Graded at 1.014× on the 1.5B chat (bar 1.02), and the code was removed (docs/completed/task-metal-audit-2026-10.md, "E-P06: KILLED"). The 2026-10-02 status that follows is history: built, lossless, pending its night grade. A model loaded with
 `Options.SpecNgram` (`--spec ngram`) measures its own curve at load, at depth 2048 (`calibrateVerifyCost`). Real
 1.5B at that depth: 1.64 / 1.93 / 2.44 at 2 / 4 / 8 rows against the constant's 1.79 / 2.11 / 2.65. That is 8–9% below
 it, not 12–51%: the gap below compared depth 128 against 2048 as well as model against model. The grade and its rule
@@ -2392,7 +2392,7 @@ Band [proj]: 0-5% of 1.5B chat tok/s (chat measured 1.068x, copy 2.082x). Lossle
 
 #### E-P07 [P, Minor] Qwen3-family dense models are outside MC3
 
-**Status, 2026-10-04: stays on (owner).** The exact-lane re-run shows identical content in every turn; only the reuse-equality gate failed, on timing-dependent slot reuse. Earlier: the speed gates pass (4-client aggregate 2.04×, p99 0.48×). Identity fails on A-P02's lane split, not on the change; the owner chose a re-run on the exact lane (docs/tasks/task-metal-audit-2026-10.md, "The night of 2026-10-04"). **Earlier status, 2026-10-04: built, on.** `mc3_qk_norm_rows` (derived from `qk_norm`) puts per-head QK-norm in the batched step; the identity suite reads 0 differing values on the real Qwen3-0.6B, and a qwen3 fixture pins it default-run. Its served confirmation is pre-registered (docs/tasks/task-metal-audit-2026-10.md, "E-P07").
+**Status, 2026-10-04: stays on (owner).** The exact-lane re-run shows identical content in every turn; only the reuse-equality gate failed, on timing-dependent slot reuse. Earlier: the speed gates pass (4-client aggregate 2.04×, p99 0.48×). Identity fails on A-P02's lane split, not on the change; the owner chose a re-run on the exact lane (docs/completed/task-metal-audit-2026-10.md, "The night of 2026-10-04"). **Earlier status, 2026-10-04: built, on.** `mc3_qk_norm_rows` (derived from `qk_norm`) puts per-head QK-norm in the batched step; the identity suite reads 0 differing values on the real Qwen3-0.6B, and a qwen3 fixture pins it default-run. Its served confirmation is pre-registered (docs/completed/task-metal-audit-2026-10.md, "E-P07").
 
 `batchIneligible` returns "a family variant the batched step does not reproduce" for `r.qkNorm` (metal/batch.go:315-316). Qwen3 dense is a
 supported family (benchmarks.md:508 lists qwen3-1.7b). It gets no batched step, no step-kernel verify (n-gram verify stays at the old
@@ -2406,7 +2406,7 @@ Probe: derive the kernel and run the same-slot and distinct-slot identity tests 
 
 For greedy rows without a device draw, `forwardMultiInto` copies the 607,744 B row (151,936 x 4) and applies softcap/scale on the host
 (metal/batch.go:841-852, `transformedRow` since the fix); `argmaxOnly` rows are argmaxed on the host after the command buffer (metal/batch.go:801-810;
-since E-P08 shipped, 2026-10-04, both take a GPU argmax, `docs/tasks/task-metal-audit-2026-10.md`). S4's non-GPU slope is
+since E-P08 shipped, 2026-10-04, both take a GPU argmax, `docs/completed/task-metal-audit-2026-10.md`). S4's non-GPU slope is
 ~0.067 ms per row (1.26/1.39/1.66 ms at B=2/4/8 [rec]), so the ceiling is 0.067 x 8 / 18.7 = 2.9% at B=8 and 1.4% at B=4 [cnt].
 The recorded negative ("fused argmax") priced one token with a zero-copy view; it did not price MC3's per-row copied rows. The machinery
 exists (`greedyDraw` and the gumbel two-stage reduction already run per row on `logitsB`; `Temperature=+Inf` takes the argmax path at

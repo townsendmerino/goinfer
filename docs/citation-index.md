@@ -55,6 +55,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
 | `f0b9cf90` | parity manifest: the scoped re-validation (70be7081, aikit v1.51.1) re-stamps 12 families; 8 demotions refused |
 | `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
+| `f7497c2c` | Merge remote-tracking branch 'origin/main' |
 
 ## Path index
 
@@ -503,8 +504,8 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2726` | goinfer | `func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQ` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2784` | goinfer | `p, n := saRowsPick(r.pSA, r.pSARows, 2*r.I, r.gemvRows.gu)` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2786` | goinfer | `anchor: func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN` |
-| `docs/audit-metal-2026-09-30.md|metal/model.go:2811` | goinfer | `if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:28` | goinfer | `// attnScoreTileBound) tile past it with online softmax, which TestAttentionKernelsPastT` |
+| `docs/audit-metal-2026-09-30.md|metal/model.go:2811` | goinfer | `if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2827` | goinfer | `func gemvRowsFor(rows, want int) int {` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2847` | goinfer | `// only: the plainest possible dense layer — every special case (Gemma sandwich, Olmo` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2875` | goinfer | `const attnFACoreCount = 14` |
@@ -521,8 +522,8 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3066` | goinfer | `want := (2*attnFACoreCount + nKV - 1) / nKV` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3097` | goinfer | `func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3107` | goinfer | `// --- attention block (7 dispatches in the baseline dense case — norm, fused QKV+bias, ` |
-| `docs/audit-metal-2026-09-30.md|metal/model.go:3141` | goinfer | `p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:313` | goinfer | `pCopyVec             Pipeline // copy_f32 for on-device embedding copy in batched forwar` |
+| `docs/audit-metal-2026-09-30.md|metal/model.go:3141` | goinfer | `p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3183` | goinfer | `// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3187` | goinfer | `anchor: func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:44` | goinfer | `func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {` |
