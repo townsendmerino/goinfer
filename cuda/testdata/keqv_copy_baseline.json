@@ -1,0 +1,109 @@
+{
+ "device": "NVIDIA GeForce RTX 2070 SUPER",
+ "driver": "595.91.07",
+ "recorded_at_commit": "f7497c2c",
+ "note": "Hashes of every decode logit and greedy token, and of PrefillLast, on a CUDA resident with K=V layers, recorded BEFORE R-23 replaced the second k projection with a copy. Device-specific: compared only on the same device and driver.",
+ "fixtures": {
+  "gemma4-dense-scaled": {
+   "graphs=off": {
+    "decode_logits_sha256": "b354d08ceccdf0d0e7dbfae985c30be9fbcbe383b72ba3ac12f694f346192e83",
+    "greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ],
+    "prefill_logits_sha256": "26787c4d3500bfee3030dd4390975e82ca1b46c20486bec022d51f45942ae6bf",
+    "prefill_greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ]
+   },
+   "graphs=on": {
+    "decode_logits_sha256": "b354d08ceccdf0d0e7dbfae985c30be9fbcbe383b72ba3ac12f694f346192e83",
+    "greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ],
+    "prefill_logits_sha256": "26787c4d3500bfee3030dd4390975e82ca1b46c20486bec022d51f45942ae6bf",
+    "prefill_greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ]
+   }
+  },
+  "gemma4-moe-kv-tiny": {},
+  "gemma4-moe-scaled": {
+   "graphs=off": {
+    "decode_logits_sha256": "40c3b9c0403b44e03f6f2d9f6c8659cb40d0a264da7e9d4e978d67ecc84b1c33",
+    "greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ],
+    "prefill_logits_sha256": "18b563fbf946ea401fa9e1ef351f57abd00fab820388851b00937d5a8ca4aff2",
+    "prefill_greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ]
+   },
+   "graphs=on": {
+    "decode_logits_sha256": "40c3b9c0403b44e03f6f2d9f6c8659cb40d0a264da7e9d4e978d67ecc84b1c33",
+    "greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ],
+    "prefill_logits_sha256": "18b563fbf946ea401fa9e1ef351f57abd00fab820388851b00937d5a8ca4aff2",
+    "prefill_greedy_tokens": [
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120,
+     120
+    ]
+   }
+  }
+ }
+}

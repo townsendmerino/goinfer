@@ -1032,12 +1032,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					return e
 				}
 				if Ly.kEqV {
-					// K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW
-					// pre-RoPE k_proj output), so recompute the k projection into the V buffer here and
-					// normalize it below, before rope_kv_batched rotates k. Mirrors segA's decode path
-					// launch for launch; a SECOND GEMV rather than a copy of kBb because that is what
-					// decode does, and the two paths must not differ by so much as an operation order.
-					if e := r.bGemvB(Ly.k, aqB, aScB, kb, vBb, M, 0); e != nil {
+					// K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the V buffer here and normalize it
+					// below, before rope_kv_batched rotates k. Mirrors segA's decode path op for op. It used to project k a SECOND time "because decode does": decode now copies too
+					// (R-23, docs/tasks/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
+					// copy of M*kvDim floats moves every row.
+					if e := r.copyF32(kBb, vBb, M*Ly.kvDim); e != nil {
 						return e
 					}
 				} else if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {

@@ -883,6 +883,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		} else if r.ropeKV, e = r.dev.NewComputePipeline(gmod, "rope_kv"); e != nil {
 			return e
 		}
+		// kv_store at pos 0 is an exact device copy (copyF32), used by K=V layers to fill vB from kB. It is the one use of kv_store, which the fused rope_kv still subsumes for the KV cache.
+		if r.kvCopy, e = r.dev.NewComputePipeline(gmod, "kv_store"); e != nil {
+			return e
+		}
 		qmod, e2 := r.dev.CompileLibrary(fusedQKVPTX)
 		if e2 != nil {
 			return e2

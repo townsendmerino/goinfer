@@ -719,6 +719,7 @@ type cudaResident struct {
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
 	fTopK                                                                                   Pipeline // topk_select (R7)
+	kvCopy                                                                                  Pipeline // kv_store at pos 0 = an exact device copy (R-23: K=V layers copy raw k into vB instead of projecting twice)
 	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
 	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
 	smCount, smThreads, smSmem                                                              int      // device shape for wave-sized fused-projection grids (zero when unread): SM count, max threads per SM, max shared memory per SM
@@ -2438,6 +2439,12 @@ func (r *cudaResident) Close() error {
 
 // --- launch helpers (executor-thread only) ---
 
+// copyF32 copies n float32 from src to dst on the decode stream: a launch of kv_store at pos 0 (cache[i] = src[i]), so it is an ordinary kernel launch in the same stream order as the projections
+// around it and, unlike gpu.CopyDevice (which synchronizes the context), it records into a CUDA graph. Exact: no arithmetic. The two buffers must not overlap.
+func (r *cudaResident) copyF32(src, dst Buffer, n int) error {
+	return r.launch(r.kvCopy, g1cfg(n, 256), Arg(src), Arg(dst), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(n)))
+}
+
 func g1cfg(n, b int) LaunchConfig {
 	return LaunchConfig{GridX: uint32((n + b - 1) / b), GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1}
 }
@@ -3214,8 +3221,10 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			return err
 		}
 		if Ly.kEqV {
-			// K=V: recompute the k projection into vB (raw pre-norm k), which v_norm consumes below.
-			if err := r.doG(Ly.k, r.aq, r.aSc, kb, r.vB, 0); err != nil {
+			// K=V: vB is the RAW (pre-norm) k projection, which v_norm consumes below. It used to be projected a second time from the same inputs (one more kvDim x hidden
+			// weight read per K=V layer per token); a copy of kB is bit-identical, and a launch like every other op here, so it records into the CUDA graph and is ordered on this stream
+			// between the projection and qk_norm (which rewrites kB in place), exactly where the second projection sat.
+			if err := r.copyF32(r.kB, r.vB, Ly.kvDim); err != nil {
 				return err
 			}
 		} else {
