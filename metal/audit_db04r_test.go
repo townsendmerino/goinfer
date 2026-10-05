@@ -38,7 +38,11 @@ func TestDB04R_expertRowsAB(t *testing.T) {
 		t.Skipf("no checkpoint at %s: %v", path, err)
 	}
 	const tokens = 32
-	opts := decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: tokens + 64}
+	quant := "int4"
+	if q := os.Getenv("GOINFER_DB04R_QUANT"); q != "" { // int8int8: the native int8 experts' rows form
+		quant = q
+	}
+	opts := decoder.Options{Quant: quant, Backend: "metal", ResidentContext: tokens + 64}
 	if s := os.Getenv("GOINFER_DB04R_SLOTS"); s != "" {
 		opts.MoECacheExperts = true
 		for _, c := range s {
@@ -61,12 +65,20 @@ func TestDB04R_expertRowsAB(t *testing.T) {
 		defer runtime.UnlockOSThread()
 		pool := NewARPool()
 		defer pool.Drain()
-		lib, err := r.d.CompileLibrary(allKernels, MSL3_1)
+		compile := r.d.CompileLibrary
+		if r.preciseMath { // the one-row arm compiled as the resident's library is (native int8: precise)
+			compile = r.d.CompileLibraryPrecise
+		}
+		lib, err := compile(allKernels, MSL3_1)
 		if err != nil {
 			t.Fatalf("compile: %v", err)
 		}
-		gu, err1 := r.d.NewComputePipeline(lib, "gemv_w4a8_moe")
-		down, err2 := r.d.NewComputePipeline(lib, "gemv_w4a8_moe_wacc")
+		guName, downName := "gemv_w4a8_moe", "gemv_w4a8_moe_wacc"
+		if r.moe != nil && r.moe.w8 {
+			guName, downName = "gemv_w8a8_moe", "gemv_w8a8_moe_wacc"
+		}
+		gu, err1 := r.d.NewComputePipeline(lib, guName)
+		down, err2 := r.d.NewComputePipeline(lib, downName)
 		if err1 != nil || err2 != nil {
 			t.Fatalf("pipelines: %v %v", err1, err2)
 		}
@@ -85,7 +97,7 @@ func TestDB04R_expertRowsAB(t *testing.T) {
 		g := r.g4moe
 		rows, paged = arm{g.pGU, g.pDownWacc, g.guR, g.downR}, g.paged
 		set = func(x arm) { g.pGU, g.pDownWacc, g.guR, g.downR = x.gu, x.down, x.guR, x.downR }
-	case r.moe != nil && !r.moe.isGptOss && !r.moe.w8:
+	case r.moe != nil && !r.moe.isGptOss:
 		mo := r.moe
 		rows, paged = arm{mo.pGU, mo.pDownWacc, mo.guR, mo.downR}, mo.paged
 		set = func(x arm) { mo.pGU, mo.pDownWacc, mo.guR, mo.downR = x.gu, x.down, x.guR, x.downR }

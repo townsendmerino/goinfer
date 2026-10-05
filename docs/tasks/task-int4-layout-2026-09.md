@@ -53,7 +53,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   slower path. The failure mode we are designing against is a Metal box quietly decoding on the
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
-  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:641`,
+  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:687`,
   `metal/gemma4_moe.go:244`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
@@ -73,7 +73,7 @@ nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 **The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:138`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:679`) declined via its
+and therefore repacked-only, `int4Concat` (`metal/model.go:680`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -279,7 +279,7 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
-  silently loosened, since Metal's OWN expert paging (`metal/moe.go:641`,
+  silently loosened, since Metal's OWN expert paging (`metal/moe.go:687`,
   `metal/gemma4_moe.go:244`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't

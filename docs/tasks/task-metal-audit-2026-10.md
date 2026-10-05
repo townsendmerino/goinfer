@@ -1218,6 +1218,12 @@ B >= 2 (`mc3AdjRowsOn`, on).
   does not run, and the cell is a do-nothing control.
 - **Left open:** calibrateRows still prices per-row as B separate GEMVs. With the cheaper adjacent form per-row may win
   at B = 3-4 too (the kernel read 1.13-1.15x there); re-pricing it is a separate change.
+- **The follow-up, read and PARKED 2026-10-04 (owner: "E-P02 follow-up").** calibrateRows timed the adjacent form
+  itself at each B against the fragment; on the 7B it then took qkv and gate|up per-row up to B = 3 (from 2). The whole
+  step (`TestEP02_stepAB`, 7 reps alternated, GPU time): B = 2 1.073 (7 of 7, unchanged: adjacent on both pricings),
+  **B = 3 1.000 (4 of 7)**, B = 4 0.999 (2 of 7, the fragment on both, a control). The kernel's 1.13x at B = 3 does not
+  survive into the step. In the owner's park zone, and it would add calibration time to every load, so the code was not
+  kept; the pricing stays B separate GEMVs.
 - The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
 
 ### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
@@ -1432,6 +1438,46 @@ D-B04, E-P05/E-P02/E-P08 and native int8 shipped.
 | Reading | A record, not a gate. Per cell: goinfer ÷ mlx-lm and goinfer ÷ Ollama, each with its runs' spread. They replace the Metal decode row's cells in `docs/benchmarks.md`, with this provenance. |
 | Void if | Tonight's serve-chain grade turns the serve chain off (the sweep's goinfer ran with it on), or any cell's goinfer DecodePath is not `metal-resident (int4)`: then the row is not updated from it, and the sweep re-runs on the build that ships. |
 | Reported | The 0.5B at 2048 and 3900 against the post-merge read's 0.80x and 0.60x of Ollama (B-P01's block kernel postdates it). |
+
+### Layer-major prefill for the generic paged MoE: SHIPPED (bit-identical; built and read 2026-10-04, owner)
+
+The exact layer-major prefill M26 got (`prefillG4Paged`, `docs/tasks/task-m26-mac-2026-10.md` 4b) for the generic
+pager: `prefillMoEPaged` (`metal/prefill_g4paged.go`), for Mixtral, Qwen MoE and the Qwen3.5/3.6 DeltaNet hybrids (M35's
+shape), routed from `PrefillLast` (`moeLayerMajorOn`, on; gpt-oss excluded). Per layer, one command buffer of every row's
+mixer (attention, or the DeltaNet mixer) and router through decode's own kernels, the routes read, then phase 2 (routed
+experts from the pool and the shared expert) in runs that fit the pool, the grouping now shared with the Gemma 4 path
+(`layerMajorExpertGroups`). A DeltaNet layer's recurrent state is per layer, and its rows run in order, as the
+sequential loop runs them.
+- **Gate** (`TestMoELayerMajor_matchesSequential`): Mixtral, Qwen3-MoE (k = 2 and 3) and the Qwen3.5 MoE hybrid, paged
+  at 2 and 3 slots, prompts of 1, 5, 9 rows and 6 rows on a 3-row prefix: last logits, every attention layer's K/V and 3
+  decode steps (which read the DeltaNet state) bit-identical to the sequential loop. Phase 2 taking the next row's state
+  fails it. The Gemma 4 gates pass on the shared grouping.
+- **Through the decoder** (`TestMoELayerMajor_generateThroughDecoder`): `Generate` on paged Mixtral and the paged Qwen3.5
+  hybrid, 16 greedy tokens equal with and without, the route taken.
+- **Speed, in process, by day** (`TestG4LayerMajor_M26AB`, now driving either pager): the Qwen1.5-MoE 4-layer slice
+  paged at 8 slots (M35 is not on this Mac), 5 reps alternated, logits and K/V equal every rep: sequential ÷ layer-major
+  **1.261 at 128 tokens, 1.256 at 512**, every rep above 1.22. Staging is unchanged (1,633 against 1,642 experts at
+  128): the gain is the round trips, as on M26.
+- `TestPrefillLast_declinesPagedGenericMoE` still holds as written: it pins `prefillOK` (the f16 pass's gate), which a
+  paged generic MoE still fails; the layer-major branch runs ahead of that pass, on decode's kernels.
+
+### Int8 MoE rows form: built ON, bit-identical; its speed read pre-registered for tonight (written 2026-10-04, owner)
+
+The native int8 MoE's expert GEMVs (`gemv_w8a8_moe` / `_wacc`, slice 4 of the int8 task) were one row per simdgroup.
+`gemv_w8a8_moe_rows<R>` / `gemv_w8a8_moe_wacc_rows<R>` (R = 2, 4): one read of each staged activation word feeds R
+exact int32 dots, then each row's epilogue is the original's expression (`simd_broadcast_first(float(acc)*asc*sct)`,
+then `out = y` or `out += wgt*y`); native int8 compiles with precise math, which leaves the compiler no reassociation.
+Picked at build with the int8 experts where the row counts admit it (`moeExpertRowsOn`).
+- **Gate** (`TestMoEExpertRows_int8BitIdentical`): Mixtral and Qwen3-MoE at int8int8 on the native path, every logit of
+  8 positions equal with and without the rows form, the rows form engaged. Reading every row's weights from the first
+  row's offset fails it. `TestMoEW8_X1_kernelsMatchReference`, X2 and the snapshot golden's Mixtral int8int8 cells pass.
+- **Speed: not read by day.** The Qwen1.5-MoE slice at int8int8 needs 5.43 GB resident against 3.0 GB live-available,
+  and the guard declines it; the day-use exception covers M26 only.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-moe-int8-rows.sh` on the night queue (priority 60): `TestDB04R_expertRowsAB` at `GOINFER_DB04R_QUANT=int8int8` on the slice, resident: the one-row kernels against the rows form swapped on one resident (the one-row arm compiled precise, as the resident is), 32 tokens, 7 reps alternated, GPU time a token, logits bit-identical first. About 2 minutes; queued at 5. |
+| Rule | The owner's bar: **stays on** at a median one-row ÷ rows ≥ 1.02; **parked** (`moeExpertRowsOn` cannot split them, so the int8 rows wiring is reverted) at 1.00-1.02; **off** below 1.00. |
 
 ## Owner decisions
 
@@ -1773,3 +1819,9 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-04: **M-11's cheap half shipped: async phase 2** (1.132x a token on M26); C-B03's fence built, gated bit-exact
   and never stale, and off (0.878x / 0.848x). Lever 3's prefetch the same (0.894x / 0.947x). Record:
   `docs/tasks/task-m26-mac-2026-10.md`, "Decode levers".
+- 2026-10-04: **E-P02's calibration follow-up parked**: adjacent per-row up to B = 3 on the 7B, whole step 1.000 at B = 3.
+  Not kept.
+- 2026-10-04: **layer-major prefill for the generic paged MoE shipped** (owner): bit-identical, 1.26x on the paged
+  Qwen1.5-MoE slice's prompt at 128 and 512 tokens.
+- 2026-10-04: **the int8 MoE rows form built**, bit-identical, on; its speed read queued for tonight (the guard declines
+  the int8 slice by day).

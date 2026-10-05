@@ -54,6 +54,11 @@ llvmpipe, SwiftShader) is not probed and is reported as skipped with the reason.
 
 ### Changed
 
+- **Metal: long prompts on mixture-of-experts models that page their experts start faster, with the same output.** The
+  prompt now runs layer by layer on the decode kernels, so the per-token command-buffer round trips go: 1.42-1.43x on the
+  Gemma-4-26B-A4B's short prompts and 1.26x on a paged Qwen1.5-MoE slice at 128 and 512 tokens, bit-identical to the
+  token-by-token prompt. Covers Gemma 4's MoE, Mixtral, Qwen MoE and the Qwen3.5/3.6 DeltaNet MoE hybrids. Paged MoE
+  decode also stops waiting on half its command buffers (1.13x per token on the Gemma-4-26B-A4B).
 - **Metal: mixture-of-experts decode is a little faster, with the same output.** The routed experts' matrix-vector
   products compute four output rows per SIMD group: 1.05x per token on a resident Qwen1.5-MoE slice and 1.05x less GPU
   time per token on the paged Gemma-4-26B-A4B. And on a resident MoE a repeated prompt now continues exactly as its
