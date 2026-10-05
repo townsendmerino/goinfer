@@ -246,7 +246,7 @@ re-baked by the code it checks (G-04).
   declined via the fit-guard (same pre-existing memory gap as M-03's run).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
-- **Where:** `metal/prefill.go:1286-1034` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
+- **Where:** `metal/prefill.go:1296-1034` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:989-954`; `metal/model.go:1137-1028` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:720-521` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
@@ -307,11 +307,11 @@ re-baked by the code it checks (G-04).
 #### M-06 · Gemma 3 never reaches the batched prefill — `prefillFeatures` still lacks `FeatPerLayerRoPE` (prior audit M-23, open)
 - **Where:** `metal/model.go:103-133` (the map: no `FeatPerLayerRoPE`), `decoder/features.go:154`
   (`add(!a.ropeUniform(), FeatPerLayerRoPE)` — every shipped Gemma 3, 5:1 local/global, derives it),
-  `metal/prefill.go:1259-1041` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
+  `metal/prefill.go:1269-1041` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
   at `:624-625` says the feature "is not claimed").
 - **Mechanism and bound:** every real Gemma 3 prompt is sequential: M-01's 671 MB head per token on
   4B, at 13.5 ms/token. Note admitting it would still route Gemma 3 (hd=256) to the *exact*
-  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:1224`) — the 46 GB/layer re-read shape — so the
+  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:1225`) — the 46 GB/layer re-read shape — so the
   fused kernel needs an hd=256 variant for the full win.
 - **Fix:** `decoder.FeatPerLayerRoPE: true` in `prefillFeatures` (safe: `FeatRopeMscale` stays
   undeclared so per-layer *mscale* families still decline); give `testdata/gemma3-vl-tiny` a global
@@ -1335,7 +1335,7 @@ re-baked by the code it checks (G-04).
   CI on real cross-machine/quantization variance.
 
 **Cold-path waste and small levers:**
-- N-15 `metal/prefill.go:1224-1046` (`PrefillLast`) — 26 per-request scratch buffers built from
+- N-15 `metal/prefill.go:1225-1046` (`PrefillLast`) — 26 per-request scratch buffers built from
   `make`d, zero-filled Go slices then copied (`guF` alone 140 MB at M=3900; ≈262 MB memset + ≈262 MB
   memcpy per long prompt); `gpu.NewBufferLenOf` exists and goinfer never calls it; only `xF` needs
   zeroed pad rows. A high-water-mark cache across calls removes the allocation entirely. Tens of ms

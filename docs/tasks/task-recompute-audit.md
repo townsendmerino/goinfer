@@ -855,6 +855,23 @@ for a 5–20 GB model, on the first start after a pull.
   layer per request.
 - **Depends on R-11:** these fixes lean on Metal's zero-fill, so R-11's contract line comes first.
 
+**Status, 2026-10-05: FIXED, speed-neutral, kept (owner: "yep keep, speed neutral").** All three sites, bit-identical:
+- `PrefillLast`'s `xF` is a zero-filled Metal buffer the embeddings are converted straight into (`prefillScratchU16`).
+- The five MoE routing buffers come from `prefillScratch[T]`, zero-filled by Metal.
+- `resetDeltaNet` clears each layer's `win` and `state` prefix in place.
+
+Gates:
+- `TestPrefillScratch_moeRoutingWrittenFirst`: Mixtral-tiny, qwen35-tiny and qwen3next-tiny, logits bit-equal with the
+  scratch copied, zero-filled, and with the five routing buffers poisoned to 0xFF bytes. So nothing reads them before
+  the pass writes them, and they need no zeros at all.
+- `TestResetDeltaNet_clearsState`: every DeltaNet layer dirtied by a forward, then cleared.
+- A mutation per site turns its gate red: one embedding row too few (the three existing prefill parity tests), each
+  expert's last routing entry unwritten, the last DeltaNet layer not cleared.
+
+Speed (in-process A/B, the 1.5B, by day, exploratory): R-20's `xF` alone reads copied ÷ zero-filled 0.997 at 512 tokens
+and 0.999 at 2048; the MoE buffers are 5-10× smaller and were not timed. Kept for removing dead work and about 12.6 MB of
+short-lived garbage per 2048-token pass, not for speed. Raw: `docs/measurements/r20-metal-scratch-2026-10-05.txt`.
+
 ### R-21 · Smaller Metal duplicates
 
 - **Gemma 4 MoE:** three reductions of the same sum of squares over `r.x` per layer (`rmsnorm_quant` twice,

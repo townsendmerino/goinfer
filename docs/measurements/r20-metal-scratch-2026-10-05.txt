@@ -1,0 +1,9 @@
+# R-20 (docs/tasks/task-recompute-audit.md), Metal prefill scratch: in-process A/B, TestPrefillScratch_AB, by day, exploratory
+# MacBook Pro M1 Pro 16 GB, macOS 26.6.2, tree e781faf4+R-20 (uncommitted at run time), qwen2.5-coder-1.5b-instruct-q4_k_m.gguf from ~/models, int4, 7 reps an arm alternated after a warm-up, logits bit-equal every rep
+# box under the owner's desktop load (loadavg 3.39 2.81 2.73 at start), swap 2.8-4.2 GB used
+## all scratch copied vs zero-filled (ecafa0ae's sites + R-20's xF), 11:51 PDT
+[p-scratch    8.5s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf M=512: copied 517.84 ms, zero-filled 508.79 ms (medians of 7); RESULT copied/zero-filled median 1.018 (per rep 1.015 1.022 1.029 1.020 1.016 1.018 1.016)
+[p-scratch   42.2s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf M=2048: copied 2133.96 ms, zero-filled 2077.62 ms (medians of 7); RESULT copied/zero-filled median 1.025 (per rep 1.025 1.025 1.020 1.023 1.026 1.027 1.045)
+## R-20's sites only (GOINFER_PSCRATCH_R20=1: xF on this dense model), 11:52 PDT
+[p-scratch    8.3s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf M=512: copied 509.52 ms, zero-filled 510.72 ms (medians of 7); RESULT copied/zero-filled median 0.997 (per rep 0.997 1.003 1.007 0.995 0.994 1.004 0.986)
+[p-scratch   41.4s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf M=2048: copied 2072.13 ms, zero-filled 2072.58 ms (medians of 7); RESULT copied/zero-filled median 0.999 (per rep 0.996 0.998 1.003 1.001 0.999 0.999 1.002)

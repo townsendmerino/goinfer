@@ -1186,11 +1186,12 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	}
 
 	// f16 activation scratch (per call, sized to the padded prompt).
-	// The five prefillScratchU16 buffers below rely on Metal's zero-fill of a new buffer for their pad rows
+	// xF and the five prefillScratchU16 buffers below rely on Metal's zero-fill of a new buffer for their pad rows
 	// (aikit gpu.NewBufferLen* contract: Metal only; CUDA's is uninitialized) — see prefillScratchU16.
-	xh := make([]uint16, Mpad*H)
-	parallelEmbedsF32ToF16(xh, embs, H)
-	xF := NewBufferU16s(d, xh)
+	// xF too (R-20): the embeddings are converted straight into the buffer's M rows, its pad rows left as Metal zeroed
+	// them, instead of into a zeroed Go slice of Mpad rows that was then copied in whole.
+	xF := prefillScratchU16(d, Mpad*H)
+	parallelEmbedsF32ToF16(xF.U16s()[:M*H], embs, H)
 	normF := prefillScratchU16(d, Mpad*H)
 	qkvF := prefillScratchU16(d, Mpad*qkvDim)
 	ctxF := prefillScratchU16(d, Mpad*qDim)
@@ -1241,14 +1242,23 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		rowWgtBuf  Buffer
 	)
 	if r.moe != nil {
-		moeLogits = NewBufferFloats(d, make([]float32, M*r.moe.nE))
-		moeIdx = NewBufferUint32s(d, make([]uint32, M*r.moe.k))
-		moeWgt = NewBufferFloats(d, make([]float32, M*r.moe.k))
+		// R-20: zero-filled by Metal, not copied from zeroed Go slices; the router GEMM, the route kernels and the host
+		// fill them before anything reads them (see prefillScratch).
+		moeLogits = prefillScratch[float32](d, M*r.moe.nE)
+		moeIdx = prefillScratch[uint32](d, M*r.moe.k)
+		moeWgt = prefillScratch[float32](d, M*r.moe.k)
 		// expertIn/expertDown rely on the same Metal zero-fill for their pad rows as the scratch above (see prefillScratchU16).
 		expertIn = prefillScratchU16(d, Mpad*H)
 		expertDown = prefillScratchU16(d, Mpad*H)
-		rowIdxBuf = NewBufferUint32s(d, make([]uint32, Mpad*r.moe.k))
-		rowWgtBuf = NewBufferFloats(d, make([]float32, Mpad*r.moe.k))
+		rowIdxBuf = prefillScratch[uint32](d, Mpad*r.moe.k)
+		rowWgtBuf = prefillScratch[float32](d, Mpad*r.moe.k)
+		if prefillScratchPoison { // a test's proof that nothing reads these before the pass writes them
+			for _, b := range []Buffer{moeLogits, moeIdx, moeWgt, rowIdxBuf, rowWgtBuf} {
+				for i, u := 0, b.U32s(); i < len(u); i++ {
+					u[i] = 0xFFFFFFFF
+				}
+			}
+		}
 	}
 
 	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
@@ -1613,7 +1623,29 @@ func prefillScratchU16(d *Device, n int) Buffer {
 	return gpu.NewBufferLenOf[uint16](d, n)
 }
 
+// prefillScratch is prefillScratchU16 for any element type (R-20, docs/tasks/task-recompute-audit.md): the pass's f32
+// and u32 buffers that the router GEMM, the route kernels or the host fill before they are read (the expert-major MoE
+// branch's moeLogits, moeIdx, moeWgt, rowIdxBuf, rowWgtBuf), and xF, which the embeddings are converted straight into.
+// Same zero-fill reliance and the same copy arm, plus prefillR20Copy, which copies these alone so a test can time R-20
+// apart from the scratch ecafa0ae already moved.
+func prefillScratch[T gpu.Scalar](d *Device, n int) Buffer {
+	if prefillScratchCopy || prefillR20Copy {
+		return gpu.NewBufferOf(d, make([]T, n))
+	}
+	return gpu.NewBufferLenOf[T](d, n)
+}
+
 var prefillScratchCopy = false
+
+// prefillR20Copy restores the copy for R-20's sites only (xF and the five MoE routing buffers), for the A/B that times
+// them; tests only.
+var prefillR20Copy = false
+
+// prefillScratchPoison fills the expert-major branch's five routing buffers with 0xFF bytes (NaN as f32, an
+// out-of-range expert id as u32) before the pass, set only by TestPrefillScratch_moeRoutingWrittenFirst: equal logits
+// then prove the router GEMM, the route kernels and the host write every element before anything reads it, so the
+// buffers need no zeros at all (R-20).
+var prefillScratchPoison = false
 
 // db02Trace is D-B02's probe (T1.12, metal/audit_db02_test.go): nil in production. The expert-major branch reports
 // each command buffer it ends (gpuStart/gpuEnd, seconds; layer is the MoE layer whose routing it waits for, or nL for

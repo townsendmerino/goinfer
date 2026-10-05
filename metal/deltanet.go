@@ -158,14 +158,16 @@ func (r *resident) resetDeltaNet() {
 	if r.dnet == nil {
 		return
 	}
-	winZ := make([]float32, (r.dnet.convK-1)*r.dnet.convDim)
-	stZ := make([]float32, r.dnet.stateElems)
+	// R-20 (docs/tasks/task-recompute-audit.md): the same prefix the copy from two zeroed slices covered, cleared in
+	// place, without building the slices.
+	nWin, nSt := (r.dnet.convK-1)*r.dnet.convDim, r.dnet.stateElems
 	for i := range r.layers {
 		L := &r.layers[i]
 		if L.delta == nil {
 			continue
 		}
-		copy(L.delta.win.Floats(), winZ)
-		copy(L.delta.state.Floats(), stZ)
+		win, st := L.delta.win.Floats(), L.delta.state.Floats()
+		clear(win[:min(nWin, len(win))])
+		clear(st[:min(nSt, len(st))])
 	}
 }
