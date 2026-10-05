@@ -305,6 +305,44 @@ kernel void gemv_w4a8_moe_wacc(device const uint4* wq[[buffer(0)]], device const
     acc = simd_sum(acc);
     if (lane==0) out[row] += wgt[slot]*acc*asc[0];
 }
+// gemv_w4a8_moe_rows / gemv_w4a8_moe_wacc_rows (D-B04's routed-expert half, docs/audit-metal-2026-09-30.md): the two
+// expert GEMVs above with R18's R rows per simdgroup. gemv_w4a8_moe is gemv_w4a8_sa's body at the routed expert's rows,
+// and sa_rows_acc<R> computes gemv_w4a8_sa's sums for R rows (R18, bit-identical), so these run sa_rows_acc over the
+// expert's own weight block (rows idx[slot]*rowsPerExpert onwards) and apply the originals' epilogues: out = acc*asc, and
+// the accumulate as the compiler lowers the original's. Full threadgroups only, as sa_rows_acc requires (rows % 8R == 0).
+template <uint R>
+kernel void gemv_w4a8_moe_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], constant uint& slot[[buffer(7)]],
+    constant uint& rowsPerExpert[[buffer(8)]], threadgroup half* Ah[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    uint G = K>>5u, base = idx[slot]*rowsPerExpert;
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq + (uint)base*G, sct + (uint)base*G, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
+}
+template <uint R>
+kernel void gemv_w4a8_moe_wacc_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], device const uint* idx[[buffer(6)]], device const float* wgt[[buffer(7)]],
+    constant uint& slot[[buffer(8)]], constant uint& rowsPerExpert[[buffer(9)]], threadgroup half* Ah[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    uint G = K>>5u, base = idx[slot]*rowsPerExpert;
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq + (uint)base*G, sct + (uint)base*G, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    // fma(wgt*acc, asc, out), written out: it is how the compiler lowers gemv_w4a8_moe_wacc's out += wgt*acc*asc under fast
+    // math and under precise (measured, every output of 3 shapes x 3 seeds); left implicit here, fast math reassociated
+    // it differently inside the R loop and the outputs differed in the last bit.
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = fma(wgt[slot]*acc[r], asc[0], out[row0+r]); }
+}
+template [[host_name("gemv_w4a8_moe_rows2")]] kernel decltype(gemv_w4a8_moe_rows<2>) gemv_w4a8_moe_rows<2>;
+template [[host_name("gemv_w4a8_moe_rows4")]] kernel decltype(gemv_w4a8_moe_rows<4>) gemv_w4a8_moe_rows<4>;
+template [[host_name("gemv_w4a8_moe_wacc_rows2")]] kernel decltype(gemv_w4a8_moe_wacc_rows<2>) gemv_w4a8_moe_wacc_rows<2>;
+template [[host_name("gemv_w4a8_moe_wacc_rows4")]] kernel decltype(gemv_w4a8_moe_wacc_rows<4>) gemv_w4a8_moe_wacc_rows<4>;
 // gemv_w4a8_moe_wacc_bias: gpt-oss's down-projection combine. Its bias is added INSIDE the
 // expert, before the router weight scales the result (decoder/forward_gptoss.go's
 // gptOssExpert: dst = Down·h + downBias; then gptOssMoE combines out += w·dst) — so the bias
@@ -428,6 +466,7 @@ type moeLayer struct {
 // all MoE layers (config is uniform per model). rIdx/rWgt are the on-GPU router outputs.
 type moeResident struct {
 	pRouter, pRoute, pGU, pDownWacc, pSharedGate Pipeline
+	guR, downR                                   int // D-B04: R18 rows per simdgroup of pGU / pDownWacc, 0 = one row (moeExpertRows)
 
 	// gpt-oss: its own router/activation/down-combine kernels (route_gptoss,
 	// swiglu_quant_gptoss, gemv_w4a8_moe_wacc_bias) replace pRoute/pGU+pSw/pDownWacc in
@@ -530,7 +569,6 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	_, _, isGptOss := m.GptOssActResident()
 	mo := &moeResident{
 		pRouter: pipe("gemv_wf32_a8"), pRoute: pipe("moe_route_sg"),
-		pGU: pipe("gemv_w4a8_moe"), pDownWacc: pipe("gemv_w4a8_moe_wacc"),
 		pSharedGate:   pipe("shared_gate_combine"),
 		isGptOss:      isGptOss,
 		nE:            nE,
@@ -539,6 +577,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		sharedInter:   sharedInter,
 		sharedUngated: sharedUngated,
 	}
+	mo.pGU, mo.pDownWacc, mo.guR, mo.downR = moeExpertRows(pipe, 2*inter, H, !isGptOss)
 	if isGptOss {
 		alpha, limit, _ := m.GptOssActResident()
 		mo.pRouteGptOss = pipe("route_gptoss_sg")
@@ -920,14 +959,14 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 		return
 	}
 	for j := 0; j < mo.k; j++ {
-		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, mo.rIdx, mo.uSlot[j], mo.uInter2)
+		e.DispatchTG(mo.pGU, rowsGrid(2*mo.inter, mo.guR), 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, mo.rIdx, mo.uSlot[j], mo.uInter2)
 		if mo.isGptOss {
 			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
 				ml.expGuBias, mo.biasIdx(), mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
 			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, dst, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
 		} else {
 			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
-			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, dst, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
+			e.DispatchTG(mo.pDownWacc, rowsGrid(r.H, mo.downR), 256, mo.inter*2, ml.expDW, ml.expDS, r.dq, r.dSc, dst, mo.uInter, mo.rIdx, mo.rWgt, mo.uSlot[j], r.uH)
 		}
 	}
 	r.encodeMoESharedExpert(e, L, dst)
@@ -958,7 +997,7 @@ func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, pool *expert
 	mo := r.moe
 	ml := L.moe
 	for j := 0; j < mo.k; j++ {
-		e.DispatchTG(mo.pGU, (2*mo.inter)*32, 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, mo.slotIdx, mo.uSlot[j], mo.uInter2)
+		e.DispatchTG(mo.pGU, rowsGrid(2*mo.inter, mo.guR), 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, mo.slotIdx, mo.uSlot[j], mo.uInter2)
 		if mo.isGptOss {
 			// mo.rIdx, not slotIdx: this kernel's idx feeds ONLY biasOff, and the gate/up bias
 			// table is the stacked all-expert one even on the paged path (C-09).
@@ -967,7 +1006,7 @@ func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, pool *expert
 			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, pool.dW, pool.dS, r.dq, r.dSc, r.x, mo.uInter, mo.slotIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
 		} else {
 			e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter, r.uAct)
-			e.DispatchTG(mo.pDownWacc, r.H*32, 256, mo.inter*2, pool.dW, pool.dS, r.dq, r.dSc, r.x, mo.uInter, mo.slotIdx, mo.rWgt, mo.uSlot[j], r.uH)
+			e.DispatchTG(mo.pDownWacc, rowsGrid(r.H, mo.downR), 256, mo.inter*2, pool.dW, pool.dS, r.dq, r.dSc, r.x, mo.uInter, mo.slotIdx, mo.rWgt, mo.uSlot[j], r.uH)
 		}
 	}
 	// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardcoded to
@@ -1099,4 +1138,32 @@ func (r *resident) encodeMoECapture(e *Encoder, slot int) {
 	off := slot * mo.k * 4
 	e.Dispatch(r.pCopyU32, mo.k, 32, mo.rIdx, r.moeCap.idx.At(off), mo.uK)
 	e.Dispatch(r.pCopyVec, mo.k, 32, mo.rWgt, r.moeCap.wgt.At(off), mo.uK)
+}
+
+// moeExpertRowsOn takes the routed-expert GEMVs through R18's rows form (D-B04's routed-expert half,
+// gemv_w4a8_moe_rows / gemv_w4a8_moe_wacc_rows), bit-identical to the one-row kernels.
+var moeExpertRowsOn = true
+
+// moeExpertRows picks the routed-expert gate|up and down pipelines and their rows per simdgroup: the rows form when
+// moeExpertRowsOn, ok and the output row counts admit it (gemvRowsFor, full threadgroups), else the one-row kernels.
+func moeExpertRows(pipe func(string) Pipeline, guRows, downRows int, ok bool) (gu, down Pipeline, guR, downR int) {
+	if moeExpertRowsOn && ok {
+		guR, downR = gemvRowsFor(guRows, 4), gemvRowsFor(downRows, 4)
+	}
+	gu, down = pipe("gemv_w4a8_moe"), pipe("gemv_w4a8_moe_wacc")
+	if guR > 0 {
+		gu = pipe(fmt.Sprintf("gemv_w4a8_moe_rows%d", guR))
+	}
+	if downR > 0 {
+		down = pipe(fmt.Sprintf("gemv_w4a8_moe_wacc_rows%d", downR))
+	}
+	return gu, down, guR, downR
+}
+
+// rowsGrid is a GEMV's thread count for `rows` outputs at R rows per simdgroup (0: one row).
+func rowsGrid(rows, R int) int {
+	if R > 0 {
+		return rows * 32 / R
+	}
+	return rows * 32
 }

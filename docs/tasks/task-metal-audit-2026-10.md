@@ -619,7 +619,7 @@ written. They run the coal kernel family, and R18's SA rows kernels sum in a dif
 kernel's.
 
 **Not built:** the routed-expert rows kernel (a new MoE kernel variant), and nothing on this Mac would time it
-resident.
+resident. **Built 2026-10-04 (owner), below: "D-B04's routed-expert half".**
 
 By day:
 - **`TestGemvExt_bitIdentical`** on the tiny Qwen3.5 hybrid (DeltaNet, MoE with a gated shared expert): 0 of 6,144
@@ -1386,6 +1386,40 @@ NaN, which the host checks from element 0.
   - the argmax-only form: 1.022, 1.036, 1.081.
   - The audit's ceiling was 1.4% at B = 4 and 2.9% at B = 8; the copy and host scan cost more than its S4 slope priced.
 
+### D-B04's routed-expert half: SHIPPED (bit-identical; built and read 2026-10-04, owner: the leftovers)
+
+**What it does.** `gemv_w4a8_moe_rows<R>` and `gemv_w4a8_moe_wacc_rows<R>` (R = 2, 4): the routed-expert GEMVs with
+R18's R rows per simdgroup, `sa_rows_acc<R>` over the routed expert's own weight block. `moeExpertRows` picks them at
+build for the generic MoE and Gemma 4's MoE, resident and paged (`moeExpertRowsOn`, on), wherever the row counts admit
+full threadgroups; gpt-oss and the int8 expert path keep their one-row kernels.
+- **The trap, found by the gate:** the accumulate epilogue, written `out += wgt*acc*asc`, differed from the one-row
+  kernel's in the last bit. The sums are equal; under fast math the compiler lowered the two differently (an epilogue
+  probe on 3 shapes x 3 seeds: the one-row kernel computes `fma(wgt*acc, asc, out)` under fast and under precise math,
+  and five other forms differ in 157-822 outputs). The rows kernel now writes that `fma` out.
+- **Gate** (`TestMoEExpertRows_bitIdentical`, default-run): the tiny Gemma 4 MoE and the tiny Qwen3.5 MoE, all experts
+  resident and paged at 2 slots, every logit of 8 positions equal with and without the rows form, the rows form engaged
+  (R > 0). The unpinned epilogue failed it.
+- **Speed, in process, by day** (`TestDB04R_expertRowsAB`, the arms' logits bit-identical first, 7 reps alternated):
+  - the Qwen1.5-MoE 4-layer slice, resident, GPU time a token: 4.607 -> 4.402 ms, **1.046x**, 7 of 7;
+  - M26, paged at 24 slots, under the kill-watch (swap flat): GPU-busy a token 32.9 -> 31.2 ms, **1.052x**, 7 of 7. Its
+    wall time a token is dominated by expert staging from disk (86-105 ms a rep) and read 0.970 with 3 of 7 above 1,
+    unresolved, which is why the paged arm is graded on GPU-busy time.
+
+### PrefillTailExact for MoE: ON (bit-identical; 2026-10-04, owner: the leftovers)
+
+The warm-against-cold fix (`decoder.PrefillTailExact`, A-P02's record) was declared for the dense and Gated-DeltaNet
+passes only: "MoE's expert grouping at one row is unproven". Now proven and declared for every resident
+(`PrefillTailExact` returns true): the shapes that could differ decline the pass, so their suffix runs the sequential
+loop as before (paged generic MoE, resident Gemma 4 MoE, gpt-oss, int8 KV), and a paged Gemma 4 MoE's layer-major path
+is decode's kernels.
+- `TestPrefillLast_tailContinuationMatchesCold_MoE`: Mixtral, two Qwen3-MoE shapes and the Qwen3.5 MoE hybrid, tails of
+  1, 2, 7, 8, 16 and 33 rows continuing a cached prefix equal the cold pass in every logit; decode of the last position
+  differs (the control).
+- `TestGenerate_warmRepeatMatchesCold_MoE`: through `Generate`, a 20-token prompt repeated (19 positions reused) emits
+  the cold run's 40 greedy tokens on Mixtral and Qwen3-MoE. With MoE excluded again, Mixtral's repeat diverges at token 5;
+  Qwen3-MoE does not diverge either way, so Mixtral is the discriminating case. (A 40-token run with 20 tokens did not
+  discriminate on either; the test was lengthened until it did.)
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -1717,3 +1751,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   none with it off. The night job is two arms at the same rev, the old one never holding.
 - 2026-10-04: **E-P05 on, E-P02 reopened and shipped, E-P08 shipped** (owner: "turn E-P05 on. and E-P02. do E-P08 now").
   All bit-identical. E-P02 1.076x on the 7B's B = 2 step; E-P08 1.022 / 1.036 / 1.081x at B = 2 / 4 / 8 on the 1.5B.
+- 2026-10-04: **D-B04's routed-expert half shipped and PrefillTailExact on for MoE** (owner: the two leftovers). Both
+  bit-identical; the rows form 1.046x on the Qwen1.5-MoE slice's token and 1.052x on M26's GPU-busy time.

@@ -1209,9 +1209,11 @@ func (a *metalResident) Close() error { return a.r.Close() }
 // PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the
 // cold pass bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the
 // whole prompt's length. Proven for the dense and Gated-DeltaNet passes (TestMC5_prefillChunkInvariance,
-// TestDB01_chunkedPrefillMatchesWhole); not claimed for the MoE passes, whose expert grouping is per pass and unproven
-// at one row.
-func (a *metalResident) PrefillTailExact() bool { return a.r.moe == nil && a.r.g4moe == nil }
+// TestDB01_chunkedPrefillMatchesWhole) and, since 2026-10-04, for the generic resident MoE's expert-major pass
+// (TestPrefillLast_tailContinuationMatchesCold_MoE: Mixtral, two Qwen3-MoE shapes and the Qwen3.5 MoE hybrid, tails of
+// 1-33 rows). A paged Gemma 4 MoE's layer-major path is decode's kernels, so exact by construction; every other MoE shape
+// (paged generic, resident Gemma 4, gpt-oss) declines the pass, and its suffix runs the sequential loop as before.
+func (a *metalResident) PrefillTailExact() bool { return true }
 
 // inStepRange: a prompt of promptLen tokens is in the range the batched step takes on this resident (promptStepOK's
 // length test, without its two-row minimum).

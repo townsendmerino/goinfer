@@ -111,6 +111,7 @@ kernel void zero_vec(device float* x[[buffer(0)]], uint i[[thread_position_in_gr
 // gemma4 is not. Routing is off the suspect list (Step 5a); this is the rest of the delta.
 type gemma4MoeResident struct {
 	pRouterF32, pRoute, pGU, pDownWacc  Pipeline
+	guR, downR                          int // D-B04: rows per simdgroup of pGU / pDownWacc (moeExpertRows)
 	pRmsNW, pScaleWgt, pScaleVec, pZero Pipeline
 
 	nE, topK, denseInter, moeInter int
@@ -188,11 +189,11 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	}
 	g := &gemma4MoeResident{
 		pRouterF32: pipe("gemv_f32_f32"), pRoute: pipe("moe_route_sg"),
-		pGU: pipe("gemv_w4a8_moe"), pDownWacc: pipe("gemv_w4a8_moe_wacc"),
 		pRmsNW: pipe("rmsnorm_nw"), pScaleWgt: pipe("scale_wgt_by_expert"),
 		pScaleVec: pipe("scale_vec"), pZero: pipe("zero_vec"),
 		nE: b.NE, topK: b.TopK, denseInter: b.DenseInter, moeInter: b.MoeInter,
 	}
+	g.pGU, g.pDownWacc, g.guR, g.downR = moeExpertRows(pipe, 2*b.MoeInter, H, true)
 	g.uNE, g.uK = NewBufferU32(d, uint32(b.NE)), NewBufferU32(d, uint32(b.TopK))
 	g.uHidden = NewBufferU32(d, uint32(H))
 	g.uDenseInter, g.uMoeInter = NewBufferU32(d, uint32(b.DenseInter)), NewBufferU32(d, uint32(b.MoeInter))
@@ -468,9 +469,9 @@ func (r *resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 	ml := L.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
-		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, g.rIdx, g.uSlot[j], g.uMoeGU)
+		e.DispatchTG(g.pGU, rowsGrid(2*g.moeInter, g.guR), 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, g.rIdx, g.uSlot[j], g.uMoeGU)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
-		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, ml.expDW, ml.expDS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.rIdx, g.rWgt, g.uSlot[j], r.uH)
+		e.DispatchTG(g.pDownWacc, rowsGrid(r.H, g.downR), 256, g.moeInter*2, ml.expDW, ml.expDS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.rIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
 }
 
@@ -485,9 +486,9 @@ func (r *resident) encodeG4Phase2Paged(e *Encoder, pool *expertPool) {
 	g := r.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
-		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, g.slotIdx, g.uSlot[j], g.uMoeGU)
+		e.DispatchTG(g.pGU, rowsGrid(2*g.moeInter, g.guR), 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, g.slotIdx, g.uSlot[j], g.uMoeGU)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
-		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, pool.dW, pool.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.slotIdx, g.rWgt, g.uSlot[j], r.uH)
+		e.DispatchTG(g.pDownWacc, rowsGrid(r.H, g.downR), 256, g.moeInter*2, pool.dW, pool.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.slotIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
 }
 
