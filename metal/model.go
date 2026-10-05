@@ -421,12 +421,15 @@ type resident struct {
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
 	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
+	pMoeBatch                                                  [5]Pipeline        // D-P01: moe_batch_gemv at R = 2, 4 (prefill_g4batch.go)
+	pMoeCombine                                                Pipeline           // D-P01: moe_batch_combine
 	kvI8                                                       bool               // m.KVCacheI8() (CLI flag --kv i8)
 	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
 	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 	g4moe                                                      *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 	pagedNoHead                                                bool               // a paged forward skips the final norm and LM head (ForwardEmbNoLogitsPipe); exec-thread only
 	g4LayerMajorRuns                                           int                // prompts prefillG4Paged ran (4b); a test reads it to see the route was taken
+	g4BatchGroups, g4BatchMaxCnt                               int                // D-P01: slot groups the batched phase 2 ran, and the most pairs one entry shared
 	moeLayerMajorRuns                                          int                // prompts prefillMoEPaged ran; a test reads it to see the route was taken
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
@@ -1010,6 +1013,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pSwRows, r.pRope2Rows = pipe("mc3_swiglu_quant_rows"), pipe("mc3_rope2_rows")
 	r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_rows"), pipe("mc3_attention_rows")
 	r.pQKNormRows = pipe("mc3_qk_norm_rows")
+	r.pMoeBatch[2], r.pMoeBatch[4] = pipe("moe_batch_gemv2"), pipe("moe_batch_gemv4")
+	r.pMoeCombine = pipe("moe_batch_combine")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pCopyVec = pipe("copy_f32")
 	r.pCopyU32 = pipe("copy_u32")

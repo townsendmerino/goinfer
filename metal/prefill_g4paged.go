@@ -78,9 +78,9 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 		r.writePosUniforms(rw.u, rw.pos, rw.pos)
 	}
 	// Each row's encodes bind its own buffers: the encoders read these fields at encode time.
-	sx, smq, smSc, sx1, sIdx, sWgt, sSlot := r.x, r.mq, r.mSc, g.g4x1, g.rIdx, g.rWgt, g.slotIdx
+	sx, smq, smSc, sx1, sx2, sIdx, sWgt, sSlot := r.x, r.mq, r.mSc, g.g4x1, g.g4x2, g.rIdx, g.rWgt, g.slotIdx
 	defer func() {
-		r.x, r.mq, r.mSc, g.g4x1, g.rIdx, g.rWgt, g.slotIdx = sx, smq, smSc, sx1, sIdx, sWgt, sSlot
+		r.x, r.mq, r.mSc, g.g4x1, g.g4x2, g.rIdx, g.rWgt, g.slotIdx = sx, smq, smSc, sx1, sx2, sIdx, sWgt, sSlot
 		r.encNKeys, r.encFANSplit = 0, Buffer{}
 	}()
 	use := func(rw *g4Row) {
@@ -91,6 +91,25 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 		e.End()
 		r.recordExecErr(e.Err())
 		lmProf(e, w0, gpu, wall)
+	}
+	// D-P01: a slot group's phase 2 through the batched expert kernels (prefill_g4batch.go), when the shapes admit it
+	var batch g4Batch
+	group := func(L *residLayer, pool *expertPool) func(e *Encoder, i, j int) {
+		if !r.g4ExpertBatchOK() {
+			return nil
+		}
+		return func(e2 *Encoder, i, j int) {
+			grp := make([]*g4Row, 0, j-i)
+			for k := i; k < j; k++ {
+				grp = append(grp, &rows[k])
+			}
+			r.encodeG4Phase2Batch(e2, pool, &batch, grp, func(e *Encoder, rw *g4Row, x2 Buffer) {
+				use(rw)
+				g.g4x2 = x2
+				r.encodeG4Join(e, L)
+			}, nb)
+			g.g4x2 = sx2
+		}
 	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
@@ -123,7 +142,7 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 				use(&rows[i])
 				r.encodeG4Phase2Paged(e2, pool)
 				r.encodeG4Join(e2, L)
-			})
+			}, group(L, pool))
 		if !ok {
 			return nil
 		}
@@ -152,7 +171,8 @@ func lmProf(e *Encoder, w0 time.Time, gpu, wall *int64) {
 // longest runs whose routed experts fit the pool at once (ensureResidentBatch must never evict an expert another row of
 // the same command buffer reads), each run's experts staged once, then one command buffer of the run's phase 2s. ids(i)
 // is row i's route, slots(i) its slot table to fill, encode(e, i) its phase-2 dispatches. False when a buffer aborted.
-func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids, slots func(i int) []uint32, encode func(e *Encoder, i int)) bool {
+func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids, slots func(i int) []uint32, encode func(e *Encoder, i int),
+	group func(e *Encoder, i, j int)) bool {
 	nSlots := len(pool.slotExpert)
 	for i := 0; i < n; {
 		var union []int
@@ -190,7 +210,12 @@ func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids
 			for jj, id := range ids(k)[:topK] {
 				si[jj] = slotOf[int(id)]
 			}
-			encode(e2, k)
+			if group == nil {
+				encode(e2, k)
+			}
+		}
+		if group != nil {
+			group(e2, i, j)
 		}
 		e2.End()
 		r.recordExecErr(e2.Err())
@@ -308,7 +333,7 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 			func(e2 *Encoder, i int) {
 				use(&rows[i])
 				r.encodeMoEExpertsPaged(e2, L, pool)
-			})
+			}, nil)
 		if !ok {
 			return nil
 		}

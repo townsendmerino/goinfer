@@ -25,7 +25,7 @@ import (
 // SHA-256 of their K/V over the prompt. The slot count is the auto-sizer's (MoECacheExperts) unless GOINFER_AUDIT_SLOTS
 // sets one. Heartbeat on stderr after every arm.
 //
-//	GOINFER_G4LM_M26=1 GOINFER_AUDIT_MODEL=<.giw> [GOINFER_AUDIT_SLOTS=N] [GOINFER_G4LM_MS=128,512] [GOINFER_G4LM_REPS=5] ./metal-<rev>.test \
+//	GOINFER_G4LM_M26=1 GOINFER_AUDIT_MODEL=<.giw> [GOINFER_AUDIT_SLOTS=N] [GOINFER_G4LM_MS=128,512] [GOINFER_G4LM_REPS=5] [GOINFER_G4LM_BATCHAB=1] ./metal-<rev>.test \
 //	  -test.run '^TestG4LayerMajor_M26AB$' -test.v -test.timeout 60m
 func TestG4LayerMajor_M26AB(t *testing.T) {
 	if os.Getenv("GOINFER_G4LM_M26") != "1" {
@@ -138,7 +138,29 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			return fmt.Sprintf("PROF M=%d %s, ms a prompt token: wall %.2f = GPU-busy %.2f (of it phase 2, the experts, %.2f) + staging %.2f + other %.2f",
 				M, arm, wallMs/f, gpu/f, p2/f, stage/f, (wallMs-gpu-stage)/f)
 		}
+		// GOINFER_G4LM_BATCHAB=1 (D-P01's read): the "sequential" arm is the layer-major pass with the per-row phase 2
+		// and the "layer-major" arm the same pass with the batched expert phase 2 (g4ExpertBatchOn), so the ratio is
+		// per-row / batched.
+		batchAB := os.Getenv("GOINFER_G4LM_BATCHAB") == "1"
+		arm := map[bool]string{false: "sequential", true: "layer-major"}
+		if batchAB {
+			arm = map[bool]string{false: "per-row", true: "batched"}
+		}
 		seq := func() ([]float32, [32]byte, float64, int) {
+			if batchAB {
+				g4ExpertBatchOn = false
+				defer func() { g4ExpertBatchOn = true }()
+				a.Reset()
+				s0 := stagesAndSubmits()
+				prof0 = r.PagedProfile()
+				st := time.Now()
+				lg := layerMajor(embs, 0, true)
+				if err := r.takeExecErr(); err != nil {
+					t.Fatalf("layer-major per-row: %v", err)
+				}
+				ms := float64(time.Since(st).Microseconds()) / 1e3
+				return append([]float32(nil), lg...), kvHash(M), ms, stagesAndSubmits() - s0
+			}
 			a.Reset()
 			s0 := stagesAndSubmits()
 			prof0 = r.PagedProfile()
@@ -192,8 +214,8 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 						seqMs, seqSt = append(seqMs, tm[k]), append(seqSt, st)
 					}
 				}
-				hb("M=%d rep %d %s: %.0f ms, %d experts staged", M, rep, map[bool]string{false: "sequential", true: "layer-major"}[isLM], tm[k], st)
-				hb("%s", profLine(map[bool]string{false: "sequential", true: "layer-major"}[isLM], tm[k]))
+				hb("M=%d rep %d %s: %.0f ms, %d experts staged", M, rep, arm[isLM], tm[k], st)
+				hb("%s", profLine(arm[isLM], tm[k]))
 			}
 			for j := range lgs[0] {
 				if math.Float32bits(lgs[0][j]) != math.Float32bits(lgs[1][j]) {
@@ -223,7 +245,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			sort.Ints(s)
 			return s[len(s)/2]
 		}
-		hb("RESULT M=%d, %d slots: sequential %.0f ms, layer-major %.0f ms (medians of %d); sequential / layer-major median %.3f, %d of %d reps above 1 (per rep %v); experts staged a prompt: sequential %d, layer-major %d; logits and K/V equal in every rep",
-			M, nSlots, med(seqMs), med(lmMs), reps, med(ratios), above, reps, auditFmt3(ratios), medInt(seqSt), medInt(lmSt))
+		hb("RESULT M=%d, %d slots: %s %.0f ms, %s %.0f ms (medians of %d); %s / %s median %.3f, %d of %d reps above 1 (per rep %v); experts staged a prompt: %s %d, %s %d; logits and K/V equal in every rep",
+			M, nSlots, arm[false], med(seqMs), arm[true], med(lmMs), reps, arm[false], arm[true], med(ratios), above, reps, auditFmt3(ratios), arm[false], medInt(seqSt), arm[true], medInt(lmSt))
 	}
 }

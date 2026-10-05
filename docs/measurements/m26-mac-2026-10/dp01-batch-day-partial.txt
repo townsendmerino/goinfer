@@ -1,0 +1,23 @@
+[g4lm   13.4s] built: metal-resident (int4), 13 slots a layer, pid 79449
+[g4lm   24.5s] M=128 rep 0 per-row: 10816 ms, 15668 experts staged
+[g4lm   24.5s] PROF M=128 per-row, ms a prompt token: wall 84.50 = GPU-busy 37.25 (of it phase 2, the experts, 20.63) + staging 29.24 + other 18.01
+[g4lm   33.7s] M=128 rep 0 batched: 9181 ms, 15650 experts staged
+[g4lm   33.7s] PROF M=128 batched, ms a prompt token: wall 71.73 = GPU-busy 28.10 (of it phase 2, the experts, 12.14) + staging 27.42 + other 16.20
+[g4lm   42.8s] M=128 rep 1 batched: 9064 ms, 15650 experts staged
+[g4lm   42.8s] PROF M=128 batched, ms a prompt token: wall 70.81 = GPU-busy 26.92 (of it phase 2, the experts, 11.04) + staging 27.47 + other 16.43
+[g4lm   52.7s] M=128 rep 1 per-row: 9872 ms, 15650 experts staged
+[g4lm   52.7s] PROF M=128 per-row, ms a prompt token: wall 77.12 = GPU-busy 32.18 (of it phase 2, the experts, 16.71) + staging 27.61 + other 17.34
+[g4lm   62.6s] M=128 rep 2 per-row: 9883 ms, 15650 experts staged
+[g4lm   62.6s] PROF M=128 per-row, ms a prompt token: wall 77.21 = GPU-busy 31.97 (of it phase 2, the experts, 16.60) + staging 27.28 + other 17.96
+[g4lm   71.6s] M=128 rep 2 batched: 9041 ms, 15650 experts staged
+[g4lm   71.6s] PROF M=128 batched, ms a prompt token: wall 70.63 = GPU-busy 27.20 (of it phase 2, the experts, 11.32) + staging 27.36 + other 16.07
+[g4lm   80.6s] M=128 rep 3 batched: 8912 ms, 15650 experts staged
+[g4lm   80.6s] PROF M=128 batched, ms a prompt token: wall 69.63 = GPU-busy 26.82 (of it phase 2, the experts, 11.00) + staging 26.87 + other 15.94
+[g4lm   90.4s] M=128 rep 3 per-row: 9819 ms, 15650 experts staged
+[g4lm   90.4s] PROF M=128 per-row, ms a prompt token: wall 76.71 = GPU-busy 32.26 (of it phase 2, the experts, 16.65) + staging 27.32 + other 17.12
+[g4lm  100.2s] M=128 rep 4 per-row: 9762 ms, 15650 experts staged
+[g4lm  100.2s] PROF M=128 per-row, ms a prompt token: wall 76.26 = GPU-busy 31.51 (of it phase 2, the experts, 16.11) + staging 27.13 + other 17.62
+[g4lm  109.4s] M=128 rep 4 batched: 9099 ms, 15650 experts staged
+[g4lm  109.4s] PROF M=128 batched, ms a prompt token: wall 71.09 = GPU-busy 27.49 (of it phase 2, the experts, 11.36) + staging 27.10 + other 16.50
+[g4lm  118.8s] M=128 rep 5 batched: 9375 ms, 15650 experts staged
+[g4lm  118.8s] PROF M=128 batched, ms a prompt token: wall 73.24 = GPU-busy 28.05 (of it phase 2, the experts, 11.95) + staging 28.18 + other 17.01

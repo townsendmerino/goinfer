@@ -1,0 +1,2 @@
+started: 2026-10-05 08:42:20 PDT; tree efc93379+dirty (D-P01 batched expert phase 2); sha256 4d60c091fb6aeb46; swap total = 3072.00M  used = 2302.06M  free = 769.94M  (encrypted); load { 2.39 2.74 3.01 }
+finished: 2026-10-05 08:44:20 PDT, exit 137; swap total = 4096.00M  used = 3361.25M  free = 734.75M  (encrypted)

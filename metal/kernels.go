@@ -2086,4 +2086,4 @@ kernel void copy_u32(device const uint* src [[buffer(0)]], device uint* dst [[bu
     constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i < N) dst[i] = src[i];
 }
-` + moeKernels + gemma4MoeKernels + deltaNetKernels + gumbelMSLKernels
+` + moeKernels + gemma4MoeKernels + deltaNetKernels + gumbelMSLKernels + moeBatchKernels
