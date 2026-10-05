@@ -1,0 +1,11 @@
+SDE goldens 2026-10-04T22:31:21-07:00; decoder bin /home/francis/goinfer-logs/night/bin/decoder-sde-vnnigolden.test; linalg bin /home/francis/goinfer-logs/night/bin/linalg-sde-v1.55.0.test; run=Golden|Parity|Int4|Int8|W4A8|Quant skip=LongPrompt
+hsw linalg: pass=160 skip=12 fail=0 timeout=0
+hsw decoder: pass=100 skip=29 fail=0 timeout=0
+hsw exit codes: linalg=0 decoder=0
+icx linalg: pass=151 skip=21 fail=0 timeout=0
+icx decoder: pass=99 skip=30 fail=0 timeout=0
+icx exit codes: linalg=0 decoder=0
+spr linalg: pass=151 skip=21 fail=0 timeout=0
+spr decoder: pass=85 skip=13 fail=0 timeout=1
+spr exit codes: linalg=0 decoder=2
+overall: UNEXPECTED FAILURE, TIMEOUT, OR MISSING LOG: read the per-CPU logs

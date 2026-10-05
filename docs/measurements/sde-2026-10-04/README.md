@@ -23,3 +23,19 @@ about the same distance from f32 (VNNI 3% further on this one step: one position
 On the 2026-09-24 SDE run only `TestInt4_forwardParity` was executed, so there is no evidence this is new. The golden is per architecture, not per ISA: an amd64 host with AVX-512 VNNI fails it. **Resolved the same day (owner's decision: a VNNI-specific golden):** `parityWantInt4ByArch` gained an `"amd64-vnni"` list, captured under SDE `-icx` and `-spr` (identical 24 ids; it parts from the AVX2 list only at ids 22 and 23: 333, 1304 for 8960, 4136), selected by `int4GoldenKey()` from the ACTIVE kernels. The test passes under `-hsw`, `-icx`, `-spr` and natively. The list is integer-exact, but it has never been seen on a real VNNI CPU: the first run of this test with the asset on one is owed a look. Any failure in the night job is now unexpected.
 
 The raw logits of that investigation are not committed (600 KB each); the table above is the record.
+
+## Result of the first night run (2026-10-04, 22:31-23:12 PDT, 41 min; goinfer binary built at 37694114, aikit local checkout be7c35f = v1.55.0 + one commit)
+
+| CPU model | aikit `linalg` | goinfer decoder (golden / parity / int4 / int8 / W4A8 / quant set) |
+|---|---|---|
+| `-hsw` (control: AVX2 only, must match native) | 160 passed, 12 skipped, 0 failed | 100 passed, 29 skipped, 0 failed |
+| `-icx` (Ice Lake, AVX-512 VNNI+VL) | 151 passed, 21 skipped, 0 failed | 99 passed, 30 skipped, 0 failed |
+| `-spr` (Sapphire Rapids) | 151 passed, 21 skipped, 0 failed | **partial**: 85 passed, 13 skipped, 0 failed, then the 25-minute cap |
+
+`TestDecodeParityInt4` passed on the amd64-vnni golden under both `-icx` (15.3 s) and `-spr` (17.0 s) and on the AVX2 golden under `-hsw`: the golden captured under SDE holds on a second emulated VNNI core.
+The skip counts differ across CPU models (aikit `linalg`: 12 under `-hsw`, 21 under the two VNNI models): tests that depend on a CPU feature skip themselves. The reasons are printed in the logs and I have not tabulated them.
+
+**What is not established.** The `-spr` decoder leg did not complete: it hit its 25-minute cap inside `TestNgramSpeculativeGreedyParity`, with 14 tests that `-icx` completed never reached (TestNgramAdaptiveGreedyParity, TestSessionNgramSpecParity,
+TestSpeculativeGreedyParity, TestW4A8DecodeParity, TestMatmulInt4_MConsistent and nine others). That test takes 15 s under `-hsw`, 99 s under `-icx` and **102 s run alone under `-spr`**, so the 22+ minutes is not a property of the test or of
+SPR emulation alone, and I could not reproduce it. The goroutine dump at the cap shows no hang: the test was waiting on its token channel while a decode goroutine was runnable in `gatedMLP` and the suite's memory reclaimer was inside a GC.
+The cause is **unexplained**. A `-spr`-only re-run with a 45-minute cap and its own output directory (`rerun-spr-1/`) is queued (`sde-spr-rerun`); a second stall there would be a second sample of the same dump. No `-spr` claim beyond "85 passed, 0 failed, incomplete" is made until it runs.

@@ -97,7 +97,8 @@ How it ran: **native** is real hardware; **ci-pool** is a GitHub runner whose CP
 
 | Machine | How it ran | Paths with a record | Latest record |
 |---|---|---|---|
-| nobara-pc under Intel SDE 10.13.1 (sde64 -icx, Ice Lake AVX-512 VNNI+VL) | emulated | 1 | 2026-09-24 |
+| nobara-pc under Intel SDE 10.13.1 (sde64 -icx, Ice Lake AVX-512 VNNI+VL) | emulated | 1 | 2026-10-04 |
+| nobara-pc under Intel SDE 10.13.1 (sde64 -spr, Sapphire Rapids) | emulated | 1 | 2026-10-04 |
 | GitHub ubuntu-24.04 runner pool (x86-64; the run does not log the CPU model) | ci-pool | 5 | 2026-10-03 |
 | nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB; RTX 2070 SUPER (sm_75, 40 SMs, 8 GB), driver 595.91.07 | forced, native | 6 | 2026-10-04 |
 | nobara-pc: Ryzen 7 3700X (AVX2, no AVX-512), 62 GB | forced | 1 | 2026-10-04 |

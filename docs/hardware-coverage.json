@@ -28,9 +28,25 @@
      "goinfer": "0616cdc0",
      "aikit": "v1.47.1 (2b817be)",
      "gate": "aikit TestAVX512VNNI* and TestMatmulBTW4A8_MConsistent; goinfer TestInt4_forwardParity, 15 fixtures (aikit CHANGELOG [1.47.1])"
+    },
+    {
+     "machine": "nobara-pc under Intel SDE 10.13.1 (sde64 -icx, Ice Lake AVX-512 VNNI+VL)",
+     "date": "2026-10-04",
+     "how": "emulated",
+     "goinfer": "37694114",
+     "aikit": "v1.55.0 (local checkout be7c35f)",
+     "gate": "night job sde-goldens (docs/measurements/sde-2026-10-04/, 22:31-23:12 PDT): aikit linalg suite 151 passed / 21 skipped / 0 failed; goinfer decoder golden+parity set 99 passed / 30 skipped / 0 failed, including TestDecodeParityInt4 on its amd64-vnni golden and TestInt4_forwardParity. Control: -hsw (AVX2 only) 160 + 100 passed, 0 failed, matching native. LongPrompt tests and the linalg FMA-peak timing test skipped by name"
+    },
+    {
+     "machine": "nobara-pc under Intel SDE 10.13.1 (sde64 -spr, Sapphire Rapids)",
+     "date": "2026-10-04",
+     "how": "emulated",
+     "goinfer": "37694114",
+     "aikit": "v1.55.0 (local checkout be7c35f)",
+     "gate": "the same night job, PARTIAL: aikit linalg 151 passed / 21 skipped / 0 failed; goinfer decoder 85 passed / 13 skipped / 0 failed, then the run hit its 25-minute cap inside TestNgramSpeculativeGreedyParity (99 s under -icx, 102 s alone under -spr, so not reproduced), leaving 14 tests that -icx completed not reached; TestDecodeParityInt4 passed on the amd64-vnni golden. A re-run is queued (sde-spr-rerun)"
     }
    ],
-   "notes": "GitHub's ubuntu-24.04 pool mixes CPU models, so some CI runs land on AVX-512 VNNI hardware (that is how the v1.47.0 bug surfaced, on a failing run); goinfer's CI does not log the CPU, so no green ci-pool run can be named. H1.2 makes the SDE run a schedule. Seen 2026-10-04 (run 37210694021's /proc/cpuinfo): the ubuntu pool does include AVX-512 VNNI+VL machines (an EPYC 9V74, Zen 4), and the noavx512 leg landed on an EPYC 7763 (no AVX-512), where the tag forced nothing. No record is added: no job yet logs which kernel the dispatcher selected, so a native run cannot be told from a forced one without an accessor (H3's `check --hardware` needs the same one)."
+   "notes": "GitHub's ubuntu-24.04 pool mixes CPU models, so some CI runs land on AVX-512 VNNI hardware (that is how the v1.47.0 bug surfaced, on a failing run); goinfer's CI does not log the CPU, so no green ci-pool run can be named. H1.2 makes the SDE run a schedule. Seen 2026-10-04 (run 37210694021's /proc/cpuinfo): the ubuntu pool does include AVX-512 VNNI+VL machines (an EPYC 9V74, Zen 4), and the noavx512 leg landed on an EPYC 7763 (no AVX-512), where the tag forced nothing. No record is added: no job yet logs which kernel the dispatcher selected, so a native run cannot be told from a forced one without an accessor (H3's `check --hardware` needs the same one). Re-run under SDE on 2026-10-04: -icx complete and clean, -spr partial (see the records); both agree with the amd64-vnni int4 golden. Still never run on a real VNNI CPU."
   },
   {
    "id": "cpu-avx2",
