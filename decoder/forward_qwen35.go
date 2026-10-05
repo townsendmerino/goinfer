@@ -111,12 +111,13 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	eps := arch.NormEps
 
 	// q_proj emits [query ‖ gate] per head; split them.
-	qg := matvecWM(m.be, &a.qProj, n)
+	cache.scr.hq.prepare(m.be, &a.qProj, n, 1) // n quantized once for q, k and v (R-13)
+	qg := matvecWMPre(m.be, &a.qProj, &cache.scr.hq, n)
 	q := make([]float32, nH*hd)
 	gate := make([]float32, nH*hd)
 	splitQGate(qg, q, gate, nH, hd)
-	k := matvecWM(m.be, &a.kProj, n)
-	v := matvecWM(m.be, &a.vProj, n)
+	k := matvecWMPre(m.be, &a.kProj, &cache.scr.hq, n)
+	v := matvecWMPre(m.be, &a.vProj, &cache.scr.hq, n)
 
 	// QK-norm (query half only) then partial RoPE.
 	rmsNorm(q, a.qNorm, nH, hd, eps, arch.RMSAddOne)

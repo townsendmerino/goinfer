@@ -156,6 +156,7 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 	}
 
 	normd := make([]float32, K*hidden)
+	var hq w4a8Act // the K-row normd block, quantized once for q/k/v and once for gate/up (R-13); reused per layer
 	for l := range arch.NumLayers {
 		if err := reqCtx.Err(); err != nil {
 			return nil, err
@@ -177,7 +178,8 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 		}
 
 		q := make([]float32, K*nH*hd)
-		matmul(be, &lw.QProj, normd, q, K)
+		hq.prepare(be, &lw.QProj, normd, K)
+		matmulPre(be, &lw.QProj, &hq, normd, q, K)
 		rmsNorm(q, lw.QNorm, K*nH, hd, arch.NormEps, arch.RMSAddOne)
 		for row := range K {
 			pos := startPos + row
@@ -186,12 +188,12 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 
 		if l < firstShared { // owns its KV
 			k := make([]float32, K*nKV*hd)
-			matmul(be, &lw.KProj, normd, k, K)
+			matmulPre(be, &lw.KProj, &hq, normd, k, K)
 			v := make([]float32, K*nKV*hd)
 			if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
 				copy(v, k)
 			} else {
-				matmul(be, &lw.VProj, normd, v, K)
+				matmulPre(be, &lw.VProj, &hq, normd, v, K)
 			}
 			rmsNorm(k, lw.KNorm, K*nKV, hd, arch.NormEps, arch.RMSAddOne) // K: k_norm + RoPE
 			rmsNormNoWeight(v, K*nKV, hd, arch.NormEps)                   // V: scale-less v_norm, no RoPE
@@ -242,8 +244,9 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 			}
 			gate := make([]float32, K*ffn)
 			up := make([]float32, K*ffn)
-			matmul(be, &lw.GateProj, normd, gate, K)
-			matmul(be, &lw.UpProj, normd, up, K)
+			hq.prepare(be, &lw.GateProj, normd, K)
+			matmulPre(be, &lw.GateProj, &hq, normd, gate, K)
+			matmulPre(be, &lw.UpProj, &hq, normd, up, K)
 			parallelElementwise(len(gate), func(lo, hi int) {
 				for i := lo; i < hi; i++ {
 					gate[i] = geluTanh(gate[i]) * up[i]

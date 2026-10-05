@@ -130,6 +130,13 @@ func matvecWM(be Backend, w *linalg.WeightMat, x []float32) []float32 {
 	return y
 }
 
+// matvecWMPre is matvecWM using p's block when it was quantized for x and w (R-13; see w4a8Act).
+func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []float32 {
+	y := make([]float32, w.Rows())
+	matmulPre(be, w, p, x, y, 1)
+	return y
+}
+
 func sigmoidf(x float32) float32 { return float32(1 / (1 + math.Exp(-float64(x)))) }
 
 // softplusf matches torch.nn.functional.softplus (default beta=1, threshold=20:
@@ -150,6 +157,7 @@ func softplusf(x float32) float32 {
 type deltaState struct {
 	convWin [][]float32 // up to K-1 prior mixed_qkv vectors, oldest first
 	s       []float32   // [numV * head_k_dim * head_v_dim]
+	hq      w4a8Act     // h quantized once for in_proj_qkv and in_proj_z (R-13); rewritten every step
 }
 
 func newDeltaState(p qwen35Params) *deltaState {
@@ -167,14 +175,15 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	if deltaNetTiming {
 		t0 = time.Now()
 	}
-	mixed := matvecWM(be, &w.inProjQKV, h)
+	st.hq.prepare(be, &w.inProjQKV, h, 1)
+	mixed := matvecWMPre(be, &w.inProjQKV, &st.hq, h)
 	if deltaNetTiming {
 		dnProjNs.Add(int64(time.Since(t0)))
 		t0 = time.Now()
 	}
 	bt := matvec(w.inProjB, nv, hidden, h)
 	at := matvec(w.inProjA, nv, hidden, h)
-	z := matvecWM(be, &w.inProjZ, h)
+	z := matvecWMPre(be, &w.inProjZ, &st.hq, h)
 	if deltaNetTiming {
 		dnOtherNs.Add(int64(time.Since(t0)))
 	}

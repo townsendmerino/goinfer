@@ -210,6 +210,7 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 	var guOps [2]linalg.W8A8Op
 	// ws4: the fused W4A8 calls (S1), at the threshold matmul() gives int4 weights.
 	var ws4 linalg.Workspace
+	var hq w4a8Act // the B-row normed block for the matmul fallbacks below, quantized once per projection group (R-13)
 	ws4.SetThreshold(int4ParThreshold)
 	var qkvOps4 [3]linalg.W4A8Op
 	var guOps4 [2]linalg.W4A8Op
@@ -232,9 +233,10 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 			// S1: q‖k‖v in one fork/join over the B rows — numerically identical to three matmul calls per op.
 			matmulW4A8Batch(be, &ws4, norm, B, lw.QProj.Cols(), group, qkvOps4[:], ag)
 		} else {
-			matmul(be, &lw.QProj, norm, q, B)
-			matmul(be, &lw.KProj, norm, k, B)
-			matmul(be, &lw.VProj, norm, v, B)
+			hq.prepare(be, &lw.QProj, norm, B)
+			matmulPre(be, &lw.QProj, &hq, norm, q, B)
+			matmulPre(be, &lw.KProj, &hq, norm, k, B)
+			matmulPre(be, &lw.VProj, &hq, norm, v, B)
 		}
 		invFreq, ms := arch.ropeInvFreq(l), arch.ropeMscale(l)
 		noPE := arch.isNoPELayer(l)
@@ -288,8 +290,9 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 			// S1: gate‖up in one fork/join over the B rows.
 			matmulW4A8Batch(be, &ws4, norm, B, lw.GateProj.Cols(), group, guOps4[:], ag)
 		} else {
-			matmul(be, &lw.GateProj, norm, gate, B)
-			matmul(be, &lw.UpProj, norm, up, B)
+			hq.prepare(be, &lw.GateProj, norm, B)
+			matmulPre(be, &lw.GateProj, &hq, norm, gate, B)
+			matmulPre(be, &lw.UpProj, &hq, norm, up, B)
 		}
 		switch arch.Act { // forwardN's activation step, verbatim
 		case ActGeluTanh:

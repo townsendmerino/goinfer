@@ -417,6 +417,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// Workspace (scratch.go's newDecodeScratch), fans out. Large-K prefill matmuls clear both
 	// thresholds comfortably, so this only changes behavior for the small-K case it was missing.
 	var ws linalg.Workspace
+	var hq w4a8Act // the K-row normed block, quantized once for q/k/v and once for gate/up (R-13); reused per layer
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
 	var qkvOps [3]linalg.W8A8Op
 	var guOps [2]linalg.W8A8Op
@@ -478,9 +479,10 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
 			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
 		} else {
-			matmul(be, &lw.QProj, norm, q, K)
-			matmul(be, &lw.KProj, norm, k, K)
-			matmul(be, &lw.VProj, norm, v, K)
+			hq.prepare(be, &lw.QProj, norm, K)
+			matmulPre(be, &lw.QProj, &hq, norm, q, K)
+			matmulPre(be, &lw.KProj, &hq, norm, k, K)
+			matmulPre(be, &lw.VProj, &hq, norm, v, K)
 		}
 		if arch.QKVBias {
 			for i := range K {
@@ -691,8 +693,9 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
 			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
 		} else {
-			matmul(be, &lw.GateProj, norm, gate, K)
-			matmul(be, &lw.UpProj, norm, up, K)
+			hq.prepare(be, &lw.GateProj, norm, K)
+			matmulPre(be, &lw.GateProj, &hq, norm, gate, K)
+			matmulPre(be, &lw.UpProj, &hq, norm, up, K)
 		}
 		switch arch.Act {
 		case ActGeluTanh:

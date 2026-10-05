@@ -791,6 +791,66 @@ func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) 
 // huge call (e.g. the vocab-sized LM head) from pinning that size forever.
 var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}
 
+// w4a8Act is one activation quantized once for several CPU W4A8 matmuls over it (audit R-13): q, k and v of one
+// normed row, gate and up, every expert of a MoE layer. aikit's quantizing entry re-quantized the same input in each
+// call; quantization is deterministic, so the repeats were dead work. prepare quantizes exactly as matmul's CPU W4A8
+// path would (a workspace carrying the weight's activation group), and matmulPre runs aikit's Pre entry on it, so the
+// result is the bits matmul gives. A weight the block does not fit (another K, another activation group, a backend
+// that may take the call) runs matmul instead.
+// w4a8PreOff (tests only) makes prepare leave every block unset, so each matmul quantizes its own input as before
+// R-13, for the gate that compares the two and the A/B that times them. w4a8PreCalls counts the matmuls that ran on a
+// shared block (a test reads it to see the path was taken).
+var (
+	w4a8PreOff   = false
+	w4a8PreCalls atomic.Int64
+)
+
+type w4a8Act struct {
+	q        linalg.ActQ
+	set      bool
+	group, M int
+}
+
+// cpuW4A8 reports whether matmul runs w on the CPU W4A8 path for certain: an int4 weight no QuantBackend4 can claim
+// (matmul offers a per-row-scale int4 matmul to one first).
+func cpuW4A8(be Backend, w *linalg.WeightMat) bool {
+	if !w.IsInt4() {
+		return false
+	}
+	if _, ok := be.(QuantBackend4); ok && w.ActQuantGroup() == 0 {
+		return false
+	}
+	return true
+}
+
+// prepare quantizes a (M rows of w.Cols()) for w and every weight sharing its K and activation group, or clears the
+// block when w does not run the CPU W4A8 path.
+func (p *w4a8Act) prepare(be Backend, w *linalg.WeightMat, a []float32, M int) {
+	p.set = false
+	if w4a8PreOff || !cpuW4A8(be, w) {
+		return
+	}
+	ws := matmulWSPool.Get().(*linalg.Workspace)
+	defer matmulWSPool.Put(ws)
+	ws.SetActQuantGroup(w.ActQuantGroup())
+	w.QuantizeActW4A8(ws, a, M, &p.q)
+	p.set, p.group, p.M = true, w.ActQuantGroup(), M
+}
+
+// matmulPre is matmul(be, w, a, dst, M), using p's block when it was quantized for an input w can take (R-13).
+func matmulPre(be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
+	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
+		matmul(be, w, a, dst, M)
+		return
+	}
+	ws := matmulWSPool.Get().(*linalg.Workspace)
+	defer matmulWSPool.Put(ws)
+	ws.SetThreshold(int4ParThreshold)
+	ws.SetActQuantGroup(w.ActQuantGroup())
+	w.MatmulBTW4A8PreInto(ws, &p.q, dst, M)
+	w4a8PreCalls.Add(1)
+}
+
 // matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
 // with goinfer's backend routing: the f32, W8A8 and W4A8 paths can run on a GPU backend
 // (be.MatmulBT / QuantBackend.MatmulW8A8 / QuantBackend4.MatmulW4A8, the last a G6
@@ -911,6 +971,19 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 // decodeScratch, and "a cache is one generation stream, so the buffers are never shared
 // concurrently" (decoder/scratch.go). The per-call Workspace in matmul stays exactly as it was, for
 // callers that have no scratch at all.
+// matmulIntoPre is matmulInto(ws, be, w, a, dst, M), using p's block when it was quantized for an input w can take
+// (R-13; see w4a8Act).
+func matmulIntoPre(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, p *w4a8Act, a, dst []float32, M int) {
+	if p == nil || !p.set || p.M != M || p.q.K != w.Cols() || p.group != w.ActQuantGroup() || !cpuW4A8(be, w) {
+		matmulInto(ws, be, w, a, dst, M)
+		return
+	}
+	ws.SetActQuantGroup(w.ActQuantGroup())
+	ws.SetThreshold(int4ParThreshold)
+	w.MatmulBTW4A8PreInto(ws, &p.q, dst, M)
+	w4a8PreCalls.Add(1)
+}
+
 func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if isW8A8(w) {
 		q8, scales, _, _ := w.Int8()

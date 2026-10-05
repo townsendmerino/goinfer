@@ -149,16 +149,29 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 		egate, eup = make([]float32, sc), make([]float32, sc)
 	}
 	clear(out)
+	// h is every routed and shared expert's gate and up input: quantize it once for the layer (R-13), where each
+	// of the 2k+2 matmuls quantized it again.
+	var hq *w4a8Act
+	if scr != nil {
+		hq = &scr.moeHQ
+	} else {
+		hq = new(w4a8Act)
+	}
+	if len(idx) > 0 {
+		hq.prepare(be, &lw.Experts[idx[0]].Gate, h, 1)
+	} else {
+		hq.prepare(be, &lw.SharedExpert.Gate, h, 1)
+	}
 	for j, e := range idx {
 		ex := &lw.Experts[e]
-		swiGLUExpert(ex, h, expOut, moe.IntermediateDim, be, egate, eup)
+		swiGLUExpert(ex, h, expOut, moe.IntermediateDim, be, egate, eup, hq)
 		addScaled(out, expOut, wts[j])
 	}
 
 	// Shared always-on expert (Qwen2-MoE / GLM). Qwen2 scales it by a per-token
 	// sigmoid(SharedGate·h) gate; GLM/DeepSeek add it ungated.
 	if moe.SharedIntermediateDim > 0 {
-		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be, egate, eup)
+		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be, egate, eup, hq)
 		if moe.SharedUngated {
 			addResidual(out, expOut)
 		} else {
@@ -413,13 +426,20 @@ func gegluExact(gate, up []float32) {
 //
 // expertScratch sizes them; a nil or short buffer allocates, so callers that have no scratch (the
 // llama4 path) keep working unchanged.
-func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, gate, up []float32) {
+//
+// hq, when non-nil, is h already quantized for the CPU W4A8 path (R-13): moeMLP quantizes h once for every expert of
+// the layer. With hq nil, gate and up still share one quantization of h.
+func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, gate, up []float32, hq *w4a8Act) {
 	if cap(gate) < inter || cap(up) < inter {
 		gate, up = make([]float32, inter), make([]float32, inter)
 	}
 	gate, up = gate[:inter], up[:inter]
-	matmul(be, &ex.Gate, h, gate, 1)
-	matmul(be, &ex.Up, h, up, 1)
+	if hq == nil {
+		hq = new(w4a8Act)
+		hq.prepare(be, &ex.Gate, h, 1)
+	}
+	matmulPre(be, &ex.Gate, hq, h, gate, 1)
+	matmulPre(be, &ex.Up, hq, h, up, 1)
 	if len(gate) < activationFanoutThreshold {
 		swiglu(gate, up)
 	} else {
@@ -570,8 +590,9 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		if decodeTiming {
 			dt0 = time.Now()
 		}
-		matmulInto(scr.ws, be, &lw.GateProj, h, gate, 1)
-		matmulInto(scr.ws, be, &lw.UpProj, h, up, 1)
+		scr.hq.prepare(be, &lw.GateProj, h, 1) // one quantization of h for gate and up (R-13)
+		matmulIntoPre(scr.ws, be, &lw.GateProj, &scr.hq, h, gate, 1)
+		matmulIntoPre(scr.ws, be, &lw.UpProj, &scr.hq, h, up, 1)
 		if decodeTiming {
 			atomic.AddInt64(&dtGU, int64(time.Since(dt0)))
 		}

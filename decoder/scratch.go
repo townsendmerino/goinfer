@@ -57,7 +57,14 @@ type decodeScratch struct {
 	// forwardn.go, which builds its own per-K-batch scratch and has no cache.scr).
 	moeLogits         []float32 // [NumExperts]
 	moeOut, moeExpOut []float32 // [HiddenDim]
-	moeGate, moeUp    []float32 // [max(IntermediateDim, SharedIntermediateDim)]
+	// moeHQ is moeMLP's per-layer quantization of h, shared by the layer's experts (R-13); its buffers are reused.
+	moeHQ w4a8Act
+	// hq is a decode layer's one quantization of its normed row for the projections that share it (q/k/v, then
+	// gate/up), R-13. Rewritten by each use before it is read.
+	hq w4a8Act
+	// gateUpQ is gatedMLPFusedGateUp's one quantization of h, read by every worker (R-13).
+	gateUpQ        linalg.ActQ
+	moeGate, moeUp []float32 // [max(IntermediateDim, SharedIntermediateDim)]
 }
 
 // loraBuf returns a length-r scratch for the compute-time LoRA A·x intermediate,
