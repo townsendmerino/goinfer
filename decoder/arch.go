@@ -598,6 +598,11 @@ func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 			continue
 		}
 		positions := arch.kvPositionsAt(l, ctx)
+		// R-12: a local layer's f32 ring keeps a mirror copy of its window once the window has wrapped (so decode reads it in place), i.e. 2*W positions, not W.
+		// The int8 ring has no mirror. Priced here so the fit guard counts what is actually resident.
+		if !kvI8 && arch.SlidingWindow > 0 && !arch.isGlobalLayer(l) && ctx > arch.SlidingWindow {
+			positions += arch.SlidingWindow
+		}
 		total += 2 * perElem * float64(dim) * float64(positions) // ×2 for K and V
 	}
 	return int64(total)

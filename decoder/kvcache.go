@@ -249,10 +249,53 @@ func (r *ring) write(p int, k, v []float32) {
 		o := slot * r.stride
 		copy(r.k[o:o+r.stride], k)
 		copy(r.v[o:o+r.stride], v)
+		if r.mirrored() {
+			m := o + r.w*r.stride
+			copy(r.k[m:m+r.stride], k)
+			copy(r.v[m:m+r.stride], v)
+		}
 	}
 	if p+1 > r.count {
 		r.count = p + 1
 	}
+}
+
+// ringDirectDecode makes K=1 decode on an f32 ring read its window in place (audit R-12) instead of copying every resident row into scratch each token.
+// It is an A/B handle and a test seam, never read from the environment: tests flip it to compare the two paths bit for bit.
+var ringDirectDecode = true
+
+// mirrored reports whether the ring holds its second copy: slots [w, 2w) equal slots [0, w), so ANY run of up to w consecutive positions is one contiguous
+// slice of k/v whatever the wrap point. f32 rings only; the int8 ring keeps the copy path (it round-trips the new row through the quantizer).
+func (r *ring) mirrored() bool {
+	return r.quant != kvI8 && r.stride > 0 && len(r.k) == 2*r.w*r.stride
+}
+
+// ensureMirror allocates the second copy the first time a window wraps, so a layer that never wraps (a short context) costs no extra memory and no copy, and a
+// restored snapshot (which rebuilds k/v at w slots) simply loses the mirror and rebuilds it here. Every writer below (write, commitBatch) keeps it coherent
+// from then on; TestRingMirror_* asserts that invariant after every kind of mutation.
+func (r *ring) ensureMirror() {
+	if r.mirrored() {
+		return
+	}
+	ws := r.w * r.stride
+	nk, nv := make([]float32, 2*ws), make([]float32, 2*ws)
+	copy(nk, r.k[:ws])
+	copy(nk[ws:], r.k[:ws])
+	copy(nv, r.v[:ws])
+	copy(nv[ws:], r.v[:ws])
+	r.k, r.v = nk, nv
+}
+
+// window returns the K and V rows of absolute positions [base, base+n) as one contiguous slice each, with no copy: the run starts at slot base%w and, when it
+// crosses the end of the first copy, continues into the mirror. n ≤ w. Requires the rows to be resident (they are the live window) and, if the run wraps, the
+// mirror (ensureMirror).
+func (r *ring) window(base, n int) (k, v []float32) {
+	slot0 := base % r.w
+	if slot0+n > r.w {
+		r.ensureMirror()
+	}
+	o, e := slot0*r.stride, (slot0+n)*r.stride
+	return r.k[o:e], r.v[o:e]
 }
 
 // truncate drops logical positions ≥ p. Returns true iff the result is exact —
@@ -721,16 +764,28 @@ func (c *KVCache) commitBatch(layer, startPos, K int, newK, newV []float32) {
 	srcOffset := (K - effK) * stride
 	slot0 := effStart % r.w
 	seg1 := min(effK, r.w-slot0)
+	mir := 0 // offset of the mirror copy, or 0 when there is none
+	if r.mirrored() {
+		mir = r.w * r.stride
+	}
 	if seg1 > 0 {
 		len1 := seg1 * stride
 		copy(r.k[slot0*stride:(slot0+seg1)*stride], newK[srcOffset:srcOffset+len1])
 		copy(r.v[slot0*stride:(slot0+seg1)*stride], newV[srcOffset:srcOffset+len1])
+		if mir > 0 {
+			copy(r.k[mir+slot0*stride:mir+(slot0+seg1)*stride], newK[srcOffset:srcOffset+len1])
+			copy(r.v[mir+slot0*stride:mir+(slot0+seg1)*stride], newV[srcOffset:srcOffset+len1])
+		}
 	}
 	if seg2 := effK - seg1; seg2 > 0 {
 		len1 := seg1 * stride
 		len2 := seg2 * stride
 		copy(r.k[:len2], newK[srcOffset+len1:srcOffset+len1+len2])
 		copy(r.v[:len2], newV[srcOffset+len1:srcOffset+len1+len2])
+		if mir > 0 {
+			copy(r.k[mir:mir+len2], newK[srcOffset+len1:srcOffset+len1+len2])
+			copy(r.v[mir:mir+len2], newV[srcOffset+len1:srcOffset+len1+len2])
+		}
 	}
 	if startPos+K > r.count {
 		r.count = startPos + K

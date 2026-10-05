@@ -185,6 +185,21 @@ func causalAttention(
 	ctx := cache.scr.ctx[:nH*hd]
 	acc64 := true
 	switch {
+	case cache.rings[layer] != nil && ringDirectDecode && cache.rings[layer].quant != kvI8:
+		// Local ring layer, f32 (audit R-12): store this token's K/V first, then read the window [base, pos] in place as one contiguous slice. The write
+		// before the read is safe because the slot it takes holds position pos-W, the one row just OUTSIDE the window [pos-W+1, pos] (and an empty slot
+		// before the first wrap). The copy path below moved every resident row into scratch each token (about 32 ms of a 201 ms token at depth 4500 on
+		// Gemma-2-2B, 2.5 ms of 39 on Gemma-3-1B at depth 900, measured here); the attention then sees the same rows in the same order, so it is bit-identical.
+		r := cache.rings[layer]
+		r.write(pos, k, v)
+		base := max(pos-r.w+1, 0)
+		nKeys := pos - base + 1
+		wk, wv := r.window(base, nKeys)
+		pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil, acc64)
+		attendBatchedHeads(q, ctx, wk, wv, base, cache, layer, pos, 1, global, arch, acc64, pool)
+		if !cache.manualPos && layer == cache.numLayers-1 {
+			cache.pos++ // the write above doesn't step pos; mirror Append's last-layer advance
+		}
 	case cache.rings[layer] != nil:
 		// Local ring layer: defer the write past the read and assemble the [base, pos]
 		// window (resident history + this token's K/V), as the batched prefill does.

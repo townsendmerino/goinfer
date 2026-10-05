@@ -15,6 +15,15 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — CPU decode on a sliding-window model reads its window in place instead of copying it every token (audit R-12)
+
+On Gemma 2 and 3 and Cohere2, each decoded token copied every resident window row of K and V out of the ring into scratch, for every local layer: 2.46 ms of a 39.4 ms token on Gemma 3 1B at depth 900, and 31.7 ms of 201 ms (15.7%) on Gemma 2 2B at
+depth 4500, measured with a throwaway timer. The f32 ring now keeps a mirror of its slots (`[w, 2w)` equal `[0, w)`, allocated the first time a layer's window wraps) so any window is one contiguous slice; decode writes the new row first and
+attends over the slice. **Bit-identical:** a random-operation ring invariant, three tiny sliding-window checkpoints across every wrap, and 48 decode steps x 262144 logits on the real Gemma 3 1B (0 differ), each red under a planted bug.
+**Speed:** paired ABBA on Gemma 3 1B at depth 900, 39.39 to 37.73 ms/token, median 1.045x, 5 of 5 pairs faster (an in-process direction, not a served claim); the Gemma 2 2B arm is pre-registered and queued overnight.
+**Memory: a layer that has wrapped holds 2W rows instead of W** (+436 MB on Gemma 2 2B at full window, nothing before the first wrap, nothing for `--kv i8`), and the host-RAM fit guard counts it. `ringDirectDecode` is a test seam, not an environment
+variable. Record: `docs/measurements/r12-ring-direct-2026-10-05.md`.
+
 ### Changed — CUDA batched-prefill tails and the Gemma 4 `g4x2` clear stop doing host round trips they do not need (audit R-24, two of four)
 
 **Prefill tail.** After every batched pass the resident downloaded the whole `[M, hidden]` residual, though only `ResidualAll` reads it on the host: the argmax and all-logits heads read it on the device, and the last-row tails downloaded
