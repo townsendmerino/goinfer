@@ -108,6 +108,9 @@ for laptops, and schema-bound extraction (an invoice image into a Go struct) as 
 a GPU attribute or a memory size (`hardware-coverage.json`, and the generated "Verified on" section of `hardware-matrix.md`), ways to reach those paths without owning the machine (CI runners including windows-arm64,
 Intel SDE, forced fallbacks, faked probes), a startup self-test on CPU, CUDA, WebGPU and Metal that declines rather than answers wrong, and a pasteable `check --hardware` report.
 
+[`task-pull-to-giw-2026-09.md`](tasks/task-pull-to-giw-2026-09.md) (a proposal, filed 2026-09-25 and reviewed 2026-10-05; P0 done, P1-P3 not started, four owner decisions open and a fifth added) is about disk:
+`pull` converting to `.giw` after a verified download and keeping the `.gguf` only on request, and a load that finds the `.giw` without its source. It was indexed nowhere before the review.
+
 [`task-test-efficiency-2026-09.md`](completed/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28, **closed and archived 2026-10-04**; its live rules are in `CLAUDE.md`'s "Run budget" and "Gate tiers") was the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
 and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each

@@ -4,6 +4,15 @@
 > model, can we convert it to `.giw` as it downloads, still verify it's a good file, and have a flag to keep the original
 > format?" The facts below were checked against `main` at `fe970d7c`. Four decisions are the owner's (§ Decisions).
 
+> **Review 2026-10-05 (checked against `main`, `338789c6`): still LIVE, still not started beyond P0, but the facts under it had moved. Corrections are marked "[2026-10-05]" beside each claim they change.**
+> - **P0 is done** (`internal/prequant/projected.go`). **P1-P3 are not started**: no `--keep-gguf`, no provenance record, no `.giw.json`; `pull` still "deliberately does NOT convert" (`pull/pull.go`). The four decisions are still the owner's and still open.
+> - **The sidecar name and sizes changed.** The default int4 sidecar is `<base>.int4.e4h.<target>.giw` (int4 embedding and head, the default since 2026-09-28), and the `.giw` int4 scales became binary16 (v15) on 2026-09-28. The size table below predates both: measured now on this box, the default sidecar is 0.73x (0.5B), 0.90x (1.5B), 0.92x (7B), 0.89x (9B), 0.96x (Gemma 4 12B) of its `.gguf`.
+>   A default pulled model therefore costs about 1.7-1.9x its download, not 2.0-2.2x, and deleting the `.gguf` still saves about half.
+> - **Sidecars accumulate, which this proposal did not model.** This box has 14 `.gguf` files with sidecars: 122.7 GB of `.gguf` and **275.0 GB of sidecars (2.24x)**, up to six per `.gguf` (quant x target x head variants, plus f32 and int8int8 experiments), on a `/home` at 97%. This is a developer box, not a typical user's, but it says the larger reclaim may be pruning stale sidecars (P3 below) rather than deleting the `.gguf`.
+> - **`checkpoint-fetch` landed (2026-10-04), so the "out of scope" paragraph is stale**: `pull` now fetches a split GGUF as one model and a safetensors checkpoint as one verified set. The proposal says nothing about what "delete the source after converting" means for either. See Decision 5.
+> - **`cacheFresh` also checks the weights-layout version now** (v15), and **the default CPU target on an arm64 core without DotProd is canonical, not `cpu-arm64`** (2026-10-05, `bf4e5759`). Both are corrected in place below.
+> - **Decision 3 has precedent now**: `prequant -lora` records the adapter in `<bundle>.lora.json` (`24ffe1b5`), a provenance sidecar of exactly option (a)'s shape.
+
 ## Summary
 
 - **Recommended:** convert right after the download finishes and verifies, then delete the `.gguf` unless `--keep-gguf` is
@@ -30,7 +39,9 @@ Since the sidecar default (darwin 2026-09-22, Linux 2026-09-24), every `.gguf` t
 | Gemma 4 26B-A4B, int4 | 0.959× |
 | Qwen2.5-Coder 1.5B, int8int8 | ~1.60× |
 
-So a pulled model now costs roughly 2.0–2.2× its download size. After a load, only the `.giw` is ever read; the `.gguf`
+**[2026-10-05: this table predates the `e4h` default and the binary16 scales. Current default (`.int4.e4h.<target>.giw`), measured on this box: 0.5B 0.734x, 1.5B 0.900x, 7B 0.916x, Qwen3.5 9B 0.893x, Gemma 4 12B 0.963x, gpt-oss-20b 0.975x; the rows above are the older int8-head sidecars (`.int4.<target>.giw`), which still exist and still load. The int8int8 rows, ~1.58-1.60x, are unchanged.]**
+
+So a pulled model now costs roughly 2.0–2.2× its download size. **[2026-10-05: about 1.7-1.9x for a default load.]** After a load, only the `.giw` is ever read; the `.gguf`
 is dead weight until someone asks for a different quant or backend layout.
 
 ## What exists today
@@ -48,10 +59,10 @@ is dead weight until someone asks for a different quant or backend layout.
   happens on first load.
 
 **The conversion (`prequant.EnsureCachedGIW` → `StreamTranscodeGGUF`)**
-- It writes `<base>.<quant>.<target>.giw` next to the `.gguf`, one layer at a time.
+- It writes `<base>.<quant>.<target>.giw` next to the `.gguf`, one layer at a time. **[2026-10-05: by default `<base>.int4.e4h.<target>.giw`; the `e4h` segment marks int4 embedding and head, so a sidecar built with an int8 head before 2026-09-28 is never mistaken for it (`internal/prequant/prequant.go`).]**
   - The quant comes from `--quant` (default `int4`).
   - The target comes from `--backend` via `GIWTargetForBackend`: `cpu` maps to `cpu-amd64` or `cpu-arm64`, and `metal`,
-    `cuda` and `webgpu` map to their own names. `cpu-amd64` and `cuda` currently write byte-identical files.
+    `cuda` and `webgpu` map to their own names. **[2026-10-05: on arm64, `cpu` maps to `cpu-arm64` only on a core that can read that layout (DotProd); a core without it (Raspberry Pi 4, Windows on ARM before aikit v1.56.0) gets the canonical target, because the old mapping wrote a sidecar its own loader refused and rebuilt it on every start.]** `cpu-amd64` and `cuda` currently write byte-identical files.
 - It writes to `.tmp.giw`, checks the result by loading it (a full CRC read, then a `.giw.verified` marker), and renames
   it into place.
 - It mmaps the whole source and fetches tensors by name, so the complete file must exist when it starts.
@@ -64,7 +75,7 @@ is dead weight until someone asks for a different quant or backend layout.
 **How a `.giw` is found and trusted today**
 - It is found by name from its `.gguf`: the `.gguf` path, plus the quant and the target.
 - It counts as fresh (`cacheFresh`) if the source `.gguf` exists, the `.giw` is newer than it, and the `.giw` loads. The
-  source's mtime is the only thing compared: no size, no hash.
+  source's mtime is the only thing compared: no size, no hash. **[2026-10-05: also, for an int4 sidecar, its weights layout must be at least v15 (binary16 group scales), or it is rebuilt once (`minInt4CacheGIWVersion`).]**
 - It records only the source's basename, as its header id, and the reader discards that. There is no provenance hash
   in the format.
 
@@ -144,10 +155,14 @@ the download could only be committed after the final check, which is exactly wha
      surprise download); or
    - (b) download the `.gguf` again and convert (convenient, but multi-GB and silent).
 3. **Where provenance lives:**
-   - (a) a small `<name>.giw.json` beside the `.giw`, like today's `.giw.verified` marker (recommended; no format bump);
+   - (a) a small `<name>.giw.json` beside the `.giw`, like today's `.giw.verified` marker and, since 2026-09-30, `<bundle>.lora.json` (the `prequant -lora` record of the adapter and its sha256) (recommended; no format bump);
    - (b) a field in the `.giw` header (a format-version bump, and a stale-sidecar rebuild for every existing file); or
    - (c) the tokenizer half's GGUF metadata.
-4. **Existing caches:** leave today's `.gguf` + `.giw` pairs alone (recommended), or offer a one-time prune.
+4. **Existing caches:** leave today's `.gguf` + `.giw` pairs alone (recommended), or offer a one-time prune. **[2026-10-05: the measured case for a prune is stronger than this assumed: see the review block. A prune of sidecars the current build would not load or that are not the default for this host could reclaim more than deleting the `.gguf`.]**
+5. **[Added 2026-10-05] What "convert, then delete the source" means for the multi-file checkpoints `pull` now fetches.**
+   - A **split GGUF** is several files that load as one model; deleting after conversion has to remove all of them, and the provenance record has to name all of their hashes.
+   - A **safetensors checkpoint** is a verified set (`config.json`, tokenizer, shards). `prequant` can build a `.giw` from such a directory (`transcodeDir`), but its own comment says it loads the model at the target quant rather than streaming a layer at a time, so the peak RAM is the model's, not one layer's. That has not been checked end to end for a pulled checkpoint.
+   - Options: (a) P2 applies to single-file GGUFs only, and the others stay as they are (recommended until measured); (b) extend it to both, with the multi-file provenance and RAM cost above.
 
 ## Work, in order
 
@@ -164,10 +179,9 @@ the download could only be committed after the final check, which is exactly wha
 - **P2 — `pull` converts, with `--quant`, `--backend` and `--keep-gguf`**, in the CLI and the web UI. Gate: a default
   `pull demo:0.5b` leaves one `.giw` and no `.gguf`, and a default `goinfer-chat --model demo:0.5b` then loads without
   converting or downloading.
-- **P3 (optional) — `goinfer-chat prune`** for existing pairs, if Decision 4 wants it.
+- **P3 (optional) — `goinfer-chat prune`** for existing pairs, if Decision 4 wants it. **[2026-10-05: no prune or gc exists for the model cache today (checked); `pull`'s cache view (checkpoint-fetch P8, `pull.CacheEntries`) lists what the cache holds and is the natural place to show what a prune would reclaim, and to show a `.giw`-only entry once P1 lands.]**
 
-**Out of scope:** split GGUFs and safetensors repositories (`task-checkpoint-fetch-2026-09.md` owns fetching them;
-`pull` refuses a split quant today). Converting during the download, for the reasons above.
+**Out of scope:** converting during the download, for the reasons above. **[2026-10-05: this line used to also put split GGUFs and safetensors repositories out of scope, because `pull` refused a split quant and fetched one file. `task-checkpoint-fetch-2026-09.md` (now `docs/completed/`) built both on 2026-10-03 and 2026-10-04, so they are in scope until Decision 5 says otherwise.]**
 
 ## Related
 
@@ -176,4 +190,4 @@ the download could only be committed after the final check, which is exactly wha
 - `docs/tasks/task-never-swap-2026-09.md` S1 introduced the sidecar default this builds on.
 - `docs/giw-bundles.md` documents the `.giw` format and when sidecars are rebuilt.
 
-<!-- doc-reviewed: 2026-09-25 -->
+<!-- doc-reviewed: 2026-10-05 -->
