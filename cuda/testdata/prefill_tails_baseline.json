@@ -1,0 +1,29 @@
+{
+ "device": "NVIDIA GeForce RTX 2070 SUPER",
+ "driver": "595.91.07",
+ "recorded_at_commit": "1fa90543",
+ "note": "Hashes of every batched-prefill tail mode's output (PrefillLast plus a greedy decode continuation, PrefillLastN, PrefillLastNArgmax, HiddenLast, ResidualAll), recorded BEFORE R-24 stopped downloading the full residual on the tails that do not read it. Device-specific: compared only on this GPU and driver.",
+ "fixtures": {
+  "gemma4-dense-scaled": {
+   "HiddenLast": "b8192e7f7aff86d84717b4320a498eafd7c580fbffcbf1cefd6189ba27aa967b",
+   "PrefillLast+decode": "c11d7b680a3b13c7525249de86f15000a134855ec337bb0be0c91a1e0fcd4f0b",
+   "PrefillLastN": "02dd9b93bc4f2c2b259d64b842e2975aba0a7d54cad3b2b23dd290c5fbd31c68",
+   "PrefillLastNArgmax": "[1 7 42 100 5 200 9 88 3 71 128 9 250 17 60 200 4 33 91 120]",
+   "ResidualAll": "c9a0d088bdb5add8eaae1dbb55230436a9c2b98b7cc575397087a20aca7b81a2"
+  },
+  "gemma4-moe-scaled": {
+   "HiddenLast": "82fdca801d7d3dce222923b21a4e126b3e39c9144d7fcb4f20ceb17531ab1388",
+   "PrefillLast+decode": "22d5c669996786ad1affc0051b15f101970b456ed56972dec199d384c975485f",
+   "PrefillLastN": "f7eb8bf5d14b159003f97d53e7c7a17b8ff789fb5afc1baea1eede8f0d00477c",
+   "PrefillLastNArgmax": "[1 7 42 100 5 200 13 88 3 71 128 9 250 17 60 200 4 33 91 120]",
+   "ResidualAll": "dde94c2022e992aca96ded37b22ab0d2f76c26bc5f947f5224fed23b2584d203"
+  },
+  "qwen3moe-tiny-k3": {
+   "HiddenLast": "49a4564a2ba4203918db0e69c19ff41b6a636e26aff3d4b375f85fc18a307ecd",
+   "PrefillLast+decode": "96f18e78b8f4f111d678867f4c4ca8955cebc0f9f652781a0f97a9f05dcb92bd",
+   "PrefillLastN": "27799ed915176f43ff1d06219ee47c3913d8d9429610003f8762e6063a614dae",
+   "PrefillLastNArgmax": "[139 88 295 295 319 47 139 485 36 0 499 88 277 450 306 104 53 18 443 104]",
+   "ResidualAll": "f92a137e4a87cc75df343064e0603b54712fc4b41f4e04be97928b59ba810884"
+  }
+ }
+}

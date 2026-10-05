@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — CUDA batched-prefill tails and the Gemma 4 `g4x2` clear stop doing host round trips they do not need (audit R-24, two of four)
+
+**Prefill tail.** After every batched pass the resident downloaded the whole `[M, hidden]` residual, though only `ResidualAll` reads it on the host: the argmax and all-logits heads read it on the device, and the last-row tails downloaded
+all M rows, then uploaded one back. It is now downloaded only for `ResidualAll`, and the last-row tails copy that row on the device. **Gemma 4 `g4x2`:** the per-layer accumulator clear is a stream-ordered `ZeroAsync` in every mode; the
+non-overlap path did `r.stream.Sync()` and a pageable host-zero `Upload` (two more context syncs); `g4zero` is gone. **Bit-identical:** `TestPrefillTails_bitIdenticalToTheRecordedBaseline` (new, 15 tail outputs over three fixtures against
+`cuda/testdata/prefill_tails_baseline.json`, recorded from the unmodified code) and the existing `TestKEqVCopy_*` decode baseline (CUDA graphs on and off); each shown red by a planted bug. Full `cuda` suite: 389 pass, 0 fail. Not timed.
+**Declined:** `launchToken`'s embedding upload (20.5 microseconds median, against about 4.5 ms per token), and the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate).
+
 ### Changed — CUDA expert-major MoE prefill no longer round-trips the router output through the host once per row (audit R-22)
 
 For each row of a chunk, per layer, the expert-major path did a `stream.Sync`, then two `Download`s (the expert ids and the weights), and after the loop uploaded all the weights back; the host never used the weights. The route kernel now writes each

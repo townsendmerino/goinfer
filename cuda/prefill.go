@@ -1419,10 +1419,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		if tail == tailKVOnly {
 			return r.launchErr
 		}
-		if e := gpu.Download(xB, xhost); e != nil {
-			return e
-		}
 		if tail == tailResidualAll {
+			// The ONLY tail that reads the whole residual on the host (audit R-24): the argmax and all-logits heads below read xB on the device, and
+			// the last-row tails need one row, copied device-to-device. Downloading all M rows for them was M*hidden*4 bytes (23 MB at M=2048 on a
+			// 2816-wide model) of pageable D2H after every pass, for nothing.
+			if e := gpu.Download(xB, xhost); e != nil {
+				return e
+			}
 			outs = make([][]float32, M)
 			for m := range outs {
 				outs[m] = append([]float32(nil), xhost[m*hidden:(m+1)*hidden]...)
@@ -1449,7 +1452,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		// head here would compute M-1 rows nobody reads — the exact regression the tailAllLogits
 		// branch above exists to avoid. One row, unchanged from before this lever.
 		for m := M - 1; m < M; m++ {
-			if e := gpu.Upload(r.x, xhost[m*hidden:(m+1)*hidden]); e != nil {
+			// The last row goes xB -> r.x on the device, the same bytes the host round trip (Download all, Upload one row) produced. A launch on r.stream
+			// like every other op here, so it is ordered after the layer stack with no extra sync.
+			if e := r.copyF32(xB.At(m*hidden*4), r.x, hidden); e != nil {
 				return e
 			}
 			if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
