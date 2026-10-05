@@ -118,7 +118,18 @@ type expertPool struct {
 	// 375 MB/s, 9.8×). Fetch and copy collapse into the single read. nil ⇒ the mmap byte-copy path.
 	stagePread  func(e int, s expertSlot)
 	scalePreads atomic.Int64 // stages whose f16 scales were pread from the file too (C-P01); atomic: batch stages run concurrently
+
+	// Lever 3 (docs/tasks/task-m26-mac-2026-10.md): experts guessed for this layer's next use, claimed on the caller's
+	// thread and read in the background (prefetchAsync); finishPrefetch, which ensureResidentBatch runs first, waits for
+	// the reads and only then marks them resident, so the GPU never reads a slot still being written.
+	prefetchWG      sync.WaitGroup
+	prefetchPending []prefetchSlot
+	prefetchLive    map[int]bool // prefetched experts not yet asked for: a later hit on one counts in prefetchHits
+	prefetched      int          // experts prefetched
+	prefetchHits    int          // ensureResidentBatch hits on an expert that was prefetched for it
 }
+
+type prefetchSlot struct{ expert, slot int }
 
 // preadIntoPoolSlot/preadRangeIntoPoolSlot pread a SLOT within a pool's contiguous per-field buffer
 // (M-11), addressed by slot NUMBER rather than by a distinct Buffer object. They do NOT use
@@ -305,6 +316,13 @@ func (p *expertPool) ensureResident(e int) expertSlot {
 // "the paged forward must submit+wait at each layer before calling this") — this only parallelizes
 // the I/O WITHIN one call, on the single host goroutine that already owns this pool exclusively.
 func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
+	p.finishPrefetch()
+	for _, e := range ids {
+		if p.prefetchLive[e] {
+			p.prefetchHits++
+			delete(p.prefetchLive, e)
+		}
+	}
 	out := make([]expertSlot, len(ids))
 	type miss struct{ idx, expert, slot int }
 	var misses []miss
@@ -375,16 +393,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 			go func(ms miss) {
 				defer wg.Done()
 				t0 := time.Now()
-				sv := p.slotView(ms.slot)
-				if p.stagePread != nil {
-					p.stagePread(ms.expert, sv)
-				} else {
-					guW, guS, dW, dS := p.stage(ms.expert)
-					copyBytesToU32Buf(sv.guW, guW)
-					copyU16sToBuf(sv.guS, guS)
-					copyBytesToU32Buf(sv.dW, dW)
-					copyU16sToBuf(sv.dS, dS)
-				}
+				p.stageInto(ms.expert, ms.slot)
 				d := time.Since(t0).Nanoseconds()
 				mu.Lock()
 				fetchNanos += d
@@ -413,6 +422,87 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		}
 	}
 	return out
+}
+
+// stageInto reads expert e's weights into slot s's buffers (pread, or the mmap byte-copy).
+func (p *expertPool) stageInto(e, s int) {
+	sv := p.slotView(s)
+	if p.stagePread != nil {
+		p.stagePread(e, sv)
+		return
+	}
+	guW, guS, dW, dS := p.stage(e)
+	copyBytesToU32Buf(sv.guW, guW)
+	copyU16sToBuf(sv.guS, guS)
+	copyBytesToU32Buf(sv.dW, dW)
+	copyU16sToBuf(sv.dS, dS)
+}
+
+// prefetchAsync starts reading the experts of ids this pool does not hold into slots, in the background, on a guess
+// that the next ensureResidentBatch asks for them (lever 3, the decode prefetch). It claims the slots now, on the
+// caller's thread (the pool's one owner), evicting least-recently-used ones as a miss would, and never one of ids
+// itself; at most len(slots) - 1 claims, so a guess can never take the whole pool. The caller must not let the GPU read
+// this pool until finishPrefetch (ensureResidentBatch calls it first).
+func (p *expertPool) prefetchAsync(ids []int) {
+	p.finishPrefetch()
+	claimed := map[int]bool{}
+	want := map[int]bool{}
+	for _, e := range ids {
+		want[e] = true
+	}
+	for _, e := range ids {
+		if _, ok := p.where[e]; ok || claimed[e] || len(p.prefetchPending) >= len(p.slotExpert)-1 {
+			continue
+		}
+		s := p.pickSlot()
+		if old := p.slotExpert[s]; old >= 0 {
+			if want[old] {
+				continue // the LRU slot holds another guessed expert: leave it
+			}
+			delete(p.where, old)
+			delete(p.prefetchLive, old)
+			p.evictions++
+		} else {
+			p.coldStarts++
+		}
+		p.slotExpert[s] = e
+		p.touch(s)
+		claimed[e] = true
+		p.prefetchPending = append(p.prefetchPending, prefetchSlot{e, s})
+	}
+	for _, ps := range p.prefetchPending {
+		p.prefetchWG.Add(1)
+		go func(ps prefetchSlot) {
+			defer p.prefetchWG.Done()
+			p.stageInto(ps.expert, ps.slot)
+		}(ps)
+	}
+}
+
+// finishPrefetch waits for the reads prefetchAsync started and marks those experts resident.
+func (p *expertPool) finishPrefetch() {
+	if len(p.prefetchPending) == 0 {
+		return
+	}
+	t0 := time.Now()
+	p.prefetchWG.Wait()
+	p.stageNanos += time.Since(t0).Nanoseconds() // the part of the reads the caller still waited for
+	if p.prefetchLive == nil {
+		p.prefetchLive = map[int]bool{}
+	}
+	if p.distinctExperts == nil {
+		p.distinctExperts = map[int]bool{}
+	}
+	for _, ps := range p.prefetchPending {
+		p.where[ps.expert] = ps.slot
+		p.prefetchLive[ps.expert] = true
+		p.distinctExperts[ps.expert] = true
+	}
+	p.prefetched += len(p.prefetchPending)
+	if p.stagePread != nil {
+		p.preads += len(p.prefetchPending)
+	}
+	p.prefetchPending = p.prefetchPending[:0]
 }
 
 // pickSlot returns a free slot if one exists, else the least-recently-used slot (lru tail).

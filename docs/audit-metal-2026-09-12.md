@@ -566,8 +566,8 @@ re-baked by the code it checks (G-04).
 ### C. The paged path (26B / 35B / gpt-oss-20b on the Mac)
 
 #### M-11 · Paged decode pays a ~14 ms command-buffer boundary 61–81× per token; the one design that removes it was rejected on a measurement taken where the boundary costs 0.2 ms
-- **Where:** `metal/gemma4_moe.go:506-544` (`begin()`/`end()` per phase; `end` = commit +
-  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:1080-1043` (same, generic);
+- **Where:** `metal/gemma4_moe.go:513-554` (`begin()`/`end()` per phase; `end` = commit +
+  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:1086-1043` (same, generic);
   `metal/residency_probe_test.go:11-12` ("~15 ms/boundary of GPU-idle-in-wait, 72× Step-0's 0.213
   ms"); `metal/pagecost_sharedevent_test.go:47-64` (verdict "recovers ~0%" — measured on
   qwen2.5-coder-1.5b, dense); `metal/model.go:1771-1659` (residency-set comment: p1 still carries
@@ -641,10 +641,10 @@ re-baked by the code it checks (G-04).
   the number of command-buffer boundaries per token, so it carries no expected perf effect and no
   new risk to a running paged decode; the actual single-CB rework and its measurement remain
   explicitly owed, gated on the same real-hardware caution as M-05.
-- **Where:** `metal/moe.go:1101` (was a serial `ensureResident` loop — see this finding's own
+- **Where:** `metal/moe.go:1107` (was a serial `ensureResident` loop — see this finding's own
   closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
-  `metal/expertpool.go:247-220`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
+  `metal/expertpool.go:258-231`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
 - **Mechanism and bound (record-derived):** per-miss cost from the sweep = staging share ×
   s/token ÷ misses/token = 1.6 ms (N=8), 3.0 ms (N=32), 3.6 ms (N=64) for ~1.57 MB — 440–980 MB/s
   effective against the same file's measured 3,687 MB/s sequential pread. Per-miss cost *rising*
@@ -1155,7 +1155,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/pagecost_sharedevent_test.go:47-64` (qwen2.5-1.5b dense int8int8; "recovers ~0%"),
   `metal/pagecost_measure_test.go:47-52` ("There is NO such checkpoint on this Mac … this measures
   the SUBMISSION-STRUCTURE cost on a DENSE model"), `metal/residency_probe_test.go:11-12` (paged
-  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:497-469`,
+  26B: ~15 ms/boundary). Carried into production comments as settled (`metal/gemma4_moe.go:504-476`,
   `metal/model.go:3048-2627`). **Fix:** M-11's re-run. **Confidence:** confirmed.
 
 #### G-06 · The device-ledger "did Close/ReleaseBuf free it" assertions pass by construction
@@ -1410,7 +1410,7 @@ re-baked by the code it checks (G-04).
   0 fail; gofmt/go vet/staticcheck clean.
   *2026-10-01 (C-D01 item 4, `docs/audit-metal-2026-09-30.md`):* under weights format v15 the premise no longer holds:
   a v15 bundle stores binary16 scales, so there is no f32 heap copy to re-derive them from (C-P01 there).
-- N-21 `metal/expertpool.go:215-218` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
+- N-21 `metal/expertpool.go:226-229` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
   **FIXED 2026-09-13** — used `gpu.NewBufferLenOf[T]` instead (the exact generic, right-sized,
   uninitialized allocator the finding names; `NewBufferBytes` alone would have mis-sized `.n` for a
@@ -1419,8 +1419,9 @@ re-baked by the code it checks (G-04).
   `TestExpertPoolBatch_matchesSequential/_pread`, and the real paged-forward parity tests
   (`TestGemma4Paging_bitExact`, `TestMoEPaging_matchesNonPaged`) all still pass — if uninitialized
   memory leaked through anywhere, the staged-content checks in these would have caught it.
-- N-22 `metal/moe.go:1108-1031`, `metal/gemma4_moe.go:593-544` — phase 2 of layer l and phase 1 of l+1 have no
-  host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
+- N-22 `metal/moe.go:1114`, `metal/gemma4_moe.go:654-554` — phase 2 of layer l and phase 1 of l+1 have no
+  host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11. **Since 2026-10-04 phase 2 is
+  committed without a wait** (`pagedAsyncPhase2On`, 1.132x on M26; `docs/tasks/task-m26-mac-2026-10.md`).
 - N-23 `metal/moe.go:1046` — a hybrid's dense layers each get their own `Begin/End` in
   `forwardLogitsMoEPaged`. **FIXED 2026-09-13**: consecutive dense layers now share ONE command
   buffer (`Begin()` on first use, closed only when the next MoE-paged layer's router readback needs

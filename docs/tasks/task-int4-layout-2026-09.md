@@ -54,7 +54,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
   load-time repack step and preads canonical spans off the mapping (`metal/moe.go:641`,
-  `metal/gemma4_moe.go:237`, `decoder/moepaging.go`).
+  `metal/gemma4_moe.go:244`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
 ---
@@ -280,7 +280,7 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
   silently loosened, since Metal's OWN expert paging (`metal/moe.go:641`,
-  `metal/gemma4_moe.go:237`, cited by the ground rule, NOT inspected this round) may have a real
+  `metal/gemma4_moe.go:244`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
   fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose

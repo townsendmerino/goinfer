@@ -1068,6 +1068,12 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 	// seam (idx/rWgt must land host-side before staging). dense is a Begin()-on-first-use, close on
 	// the next MoE layer (or the loop's end) run, mirroring encodeTrunkInto's own all-layers-in-one
 	// pattern for the pure-dense path.
+	async := pagedAsyncPhase2On // M-11: phase 2 committed, not waited (gemma4_moe.go, pagedAsyncPhase2On)
+	var arp ARPool
+	if async {
+		arp = NewARPool()
+	}
+	var pending []*Encoder
 	var dense *Encoder
 	closeDense := func() {
 		if dense == nil {
@@ -1105,13 +1111,24 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 			for j, s := range slots {
 				moIdx[j] = uint32(s.slot)
 			}
-			e2 := r.q.Begin()                    // phase 2: experts from slots (+ shared expert)
+			var e2 *Encoder // phase 2: experts from slots (+ shared expert)
+			if async {
+				e2 = r.q.BeginNP()
+			} else {
+				e2 = r.q.Begin()
+			}
 			if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
 				e2.UseResidencySet(r.residency)
 			}
 			r.encodeMoEExpertsPaged(e2, L, L.moe.pool)
-			e2.End()
-			r.recordExecErr(e2.Err())
+			if async {
+				e2.FinishEncoding()
+				e2.Commit()
+				pending = append(pending, e2)
+			} else {
+				e2.End()
+				r.recordExecErr(e2.Err())
+			}
 			continue
 		}
 		if dense == nil {
@@ -1120,6 +1137,13 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 		r.encodeLayer(dense, l)
 	}
 	closeDense()
+	for _, pe := range pending {
+		pe.WaitDone()
+		r.recordExecErr(pe.Err())
+	}
+	if async {
+		arp.Drain()
+	}
 	if r.pagedNoHead { // a prompt token: no logits wanted (ForwardEmbNoLogitsPipe)
 		return nil
 	}

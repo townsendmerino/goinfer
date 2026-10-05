@@ -47,7 +47,7 @@ func TestG4LayerMajor_matchesSequential(t *testing.T) {
 			stages := func() (n int) {
 				for l := range r.layers {
 					if gl := r.layers[l].g4moe; gl != nil && gl.pool != nil {
-						n += gl.pool.stages
+						n += gl.pool.stages + gl.pool.prefetched // every expert read, a prefetch included (g4PrefetchOn)
 					}
 				}
 				return n

@@ -1420,6 +1420,19 @@ is decode's kernels.
   Qwen3-MoE does not diverge either way, so Mixtral is the discriminating case. (A 40-token run with 20 tokens did not
   discriminate on either; the test was lengthened until it did.)
 
+### Peer refresh: pre-registration (written 2026-10-04, before it runs; owner: "we should set this up to run tonight, right?")
+
+`docs/benchmarks.md`'s Metal decode row describes a build main no longer runs: the post-merge read's consistency check
+failed (the chains never reached serve), the 0.5B's depth cells predate B-P01, and since then the serve chain, B-P02,
+D-B04, E-P05/E-P02/E-P08 and native int8 shipped.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-peer-refresh.sh` on the night queue, priority 80 (after tonight's serve-chain grade and M26 prefill grade). One same-session `bench_peer.py` sweep on Metal: goinfer at the pinned rev, mlx-lm 0.31.3, Ollama 0.32.5; greedy at depth 128, 2048 and 3900, and `temp1.0_notrunc` at depth 128; the 0.5B, 1.5B and 7B (no MLX 0.5B checkpoint); 3 runs per cell; the instant idle gate; serve at its defaults (2 KV slots). No old arm (TE5(a): the levers were graded new / old already). Estimate about 45 minutes (the post-merge read's 4 engines took about an hour); queued at 50. |
+| Reading | A record, not a gate. Per cell: goinfer ÷ mlx-lm and goinfer ÷ Ollama, each with its runs' spread. They replace the Metal decode row's cells in `docs/benchmarks.md`, with this provenance. |
+| Void if | Tonight's serve-chain grade turns the serve chain off (the sweep's goinfer ran with it on), or any cell's goinfer DecodePath is not `metal-resident (int4)`: then the row is not updated from it, and the sweep re-runs on the build that ships. |
+| Reported | The 0.5B at 2048 and 3900 against the post-merge read's 0.80x and 0.60x of Ollama (B-P01's block kernel postdates it). |
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -1753,3 +1766,10 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   All bit-identical. E-P02 1.076x on the 7B's B = 2 step; E-P08 1.022 / 1.036 / 1.081x at B = 2 / 4 / 8 on the 1.5B.
 - 2026-10-04: **D-B04's routed-expert half shipped and PrefillTailExact on for MoE** (owner: the two leftovers). Both
   bit-identical; the rows form 1.046x on the Qwen1.5-MoE slice's token and 1.052x on M26's GPU-busy time.
+- 2026-10-04: **the peer refresh pre-registered and queued** (owner: "we should set this up to run tonight, right?"),
+  after the serve-chain grade. **C-N01:** aikit v1.56.0 has the fix in its tree (`a143d8d`), but the `gpu` module is
+  tagged separately and its latest tag, `gpu/v0.33.3`, predates it, so goinfer's metal module cannot take it yet; it waits
+  for a `gpu/` tag.
+- 2026-10-04: **M-11's cheap half shipped: async phase 2** (1.132x a token on M26); C-B03's fence built, gated bit-exact
+  and never stale, and off (0.878x / 0.848x). Lever 3's prefetch the same (0.894x / 0.947x). Record:
+  `docs/tasks/task-m26-mac-2026-10.md`, "Decode levers".
