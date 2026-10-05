@@ -84,4 +84,4 @@ found, is [`docs/completed/task-site-2026-09.md`](../docs/completed/task-site-20
 - **What stays hand-written:** the "What's different" writeups and each family's `summary` field. Each writeup carries a `reviewed:` date and its figures go through the claims check.
   Tone is plain and humble.
 - **Not built:** preview deploys for pull requests; a `www.goinfer.dev` redirect (a Cloudflare Single Redirect rule set in the dashboard, optional); a decision-model tag for Clef-flash
-  (approved 2026-10-03, waits for a release cut and a registry entry; see `docs/tasks/task-constrained-confidence.md`, "Route C — what is still open").
+  (approved 2026-10-03, waits for a release cut and a registry entry; see `docs/tasks/parked/task-constrained-confidence.md`, "Route C — what is still open").

@@ -88,8 +88,8 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
-[`task-constrained-confidence.md`](tasks/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
-2026-09-27) is confidence on answers.
+[`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
+2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
 - **Shipped:** per-field probabilities on schema-constrained output (C0–C2), and a TypeSafe-compatible decisions
   endpoint, `POST /v1/systemone` (D5). It takes a state plus typed questions in and returns a distribution over the
   allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).

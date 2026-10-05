@@ -503,8 +503,8 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2721` | goinfer | `func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQ` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2779` | goinfer | `p, n := saRowsPick(r.pSA, r.pSARows, 2*r.I, r.gemvRows.gu)` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2781` | goinfer | `anchor: func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN` |
-| `docs/audit-metal-2026-09-30.md|metal/model.go:2806` | goinfer | `if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:28` | goinfer | `// attnScoreTileBound) tile past it with online softmax, which TestAttentionKernelsPastT` |
+| `docs/audit-metal-2026-09-30.md|metal/model.go:2806` | goinfer | `if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2822` | goinfer | `func gemvRowsFor(rows, want int) int {` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2842` | goinfer | `// only: the plainest possible dense layer — every special case (Gemma sandwich, Olmo` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:2870` | goinfer | `const attnFACoreCount = 14` |
@@ -521,8 +521,8 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3061` | goinfer | `want := (2*attnFACoreCount + nKV - 1) / nKV` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3092` | goinfer | `func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3102` | goinfer | `// --- attention block (7 dispatches in the baseline dense case — norm, fused QKV+bias, ` |
-| `docs/audit-metal-2026-09-30.md|metal/model.go:3136` | goinfer | `p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:313` | goinfer | `pCopyVec             Pipeline // copy_f32 for on-device embedding copy in batched forwar` |
+| `docs/audit-metal-2026-09-30.md|metal/model.go:3136` | goinfer | `p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3178` | goinfer | `// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:3182` | goinfer | `anchor: func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:44` | goinfer | `func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {` |
@@ -537,11 +537,13 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/model.go:968` | goinfer | `preciseMath := preciseMathCompile \|\| modelKnob(m, "GOINFER_PRECISE_MATH") != "" \|\| w8Pre` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:972` | goinfer | `lib, err := compile(allKernels+mc3RowsKernels, MSL3_1) // + MC3 S3's multi-row forms, de` |
 | `docs/audit-metal-2026-09-30.md|metal/model.go:990` | goinfer | `r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal"` |
+| `docs/audit-metal-2026-09-30.md|metal/moe.go:1009` | goinfer | `if mo.isGptOss {` |
+| `docs/audit-metal-2026-09-30.md|metal/moe.go:1021` | goinfer | `// encodeMoEExpertsPaged is encodeMoEExperts' paged twin: the k selected experts run out` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:1067` | goinfer | `func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer, dst Buffer) {` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:1167` | goinfer | `e2.UseResidencySet(r.residency)` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:217` | goinfer | `kernel void gemv_w4a8_moe(device const uint4* wq[[buffer(0)]], device const half* sct[[b` |
-| `docs/audit-metal-2026-09-30.md|metal/moe.go:331` | goinfer | `kernel void gemv_w4a8_moe_wacc(device const uint4* wq[[buffer(0)]], device const half* s` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:30` | goinfer | `kernel void gemv_wf32_a8(device const float* wf[[buffer(0)]], device const char* aq[[buf` |
+| `docs/audit-metal-2026-09-30.md|metal/moe.go:331` | goinfer | `kernel void gemv_w4a8_moe_wacc(device const uint4* wq[[buffer(0)]], device const half* s` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:44` | goinfer | `// CPU's f64 — a cosmetic near-tie difference, Metal has no double). nE<=256, nGroup<=64` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:45` | goinfer | `kernel void moe_route(device const float* logits[[buffer(0)]], device const float* bias[` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:50` | goinfer | `if (tid != 0u) return;` |
@@ -553,8 +555,6 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:931` | goinfer | `func (r *resident) encodeMoEFFNWithX(e *Encoder, L *residLayer, x Buffer) {` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:934` | goinfer | `panic("metal: encodeMoEFFNWithX reached a paged MoE layer — route through forwardLogitsM` |
 | `docs/audit-metal-2026-09-30.md|metal/moe.go:989` | goinfer | `func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {` |
-| `docs/audit-metal-2026-09-30.md|metal/moe.go:1009` | goinfer | `if mo.isGptOss {` |
-| `docs/audit-metal-2026-09-30.md|metal/moe.go:1021` | goinfer | `// encodeMoEExpertsPaged is encodeMoEExperts' paged twin: the k selected experts run out` |
 | `docs/audit-metal-2026-09-30.md|metal/moe_expert_major_prefill_test.go:32` | goinfer | `ckpt := "../testdata/mixtral-tiny"` |
 | `docs/audit-metal-2026-09-30.md|metal/moe_model_test.go:23` | goinfer | `tmHidden  = 64` |
 | `docs/audit-metal-2026-09-30.md|metal/moe_model_test.go:25` | goinfer | `tmHeadDim = 16 // qDim = 64` |
@@ -816,6 +816,22 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/tasks/parked/task-constrained-confidence.md|constrain/constrain.go:148` | goinfer | `func (m *Masker) MaskAt(g Grammar, logits []float32) {` |
+| `docs/tasks/parked/task-constrained-confidence.md|constrain/constrain.go:98` | goinfer | `func (m *Masker) ForcedRun(max int) []int {` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/arch.go:368` | goinfer | `// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/arch.go:954` | goinfer | `{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayer` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/capture.go:14` | goinfer | `// THE CONTRACT, stated once because the drafters depend on it: captureResidual(l, h) is` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/kvcache.go:540` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/kvsnapshot.go:62` | goinfer | `// Some families carry recurrent / latent state this format does not persist: qwen3_5_mo` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/lora.go:144` | goinfer | `func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer in` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/lora.go:353` | goinfer | `func (m *Model) LoadAdapter(name, dir string) error {` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/model.go:1322` | goinfer | `func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, ` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/weights.go:701` | goinfer | `if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/weights.go:764` | goinfer | `if derr = lora.merge(name, data, out, in); derr != nil {` |
+| `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/main.go:692` | goinfer | `// the mux is built once, so these routes registered only when a model existed at startu` |
+| `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/openai.go:35` | goinfer | `const maxTopLogprobs = 20` |
+| `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/openai.go:565` | goinfer | `Logprobs            bool            `json:"logprobs"`` |
+| `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/openai.go:567` | goinfer | `ResponseFormat      *respFormat     `json:"response_format"`` |
 | `docs/tasks/red-october.md|cuda/resident.go:357` | goinfer | `case nKV*hd >= splitkvNeverKVFloats:` |
 | `docs/tasks/red-october.md|cuda/resident.go:3875` | goinfer | `func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {` |
 | `docs/tasks/red-october.md|decoder/sampler.go:234` | goinfer | `func (s *Sampler) ArgmaxEquivalent() bool {` |
@@ -829,22 +845,6 @@ supports.
 | `docs/tasks/task-actquant-pergroup-2026-09.md|decoder/features.go:382` | goinfer | `if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && backend == "cuda") {` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:118` | goinfer | `if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQu` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:195` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
-| `docs/tasks/task-constrained-confidence.md|constrain/constrain.go:148` | goinfer | `func (m *Masker) MaskAt(g Grammar, logits []float32) {` |
-| `docs/tasks/task-constrained-confidence.md|constrain/constrain.go:98` | goinfer | `func (m *Masker) ForcedRun(max int) []int {` |
-| `docs/tasks/task-constrained-confidence.md|decoder/arch.go:368` | goinfer | `// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/` |
-| `docs/tasks/task-constrained-confidence.md|decoder/arch.go:954` | goinfer | `{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayer` |
-| `docs/tasks/task-constrained-confidence.md|decoder/capture.go:14` | goinfer | `// THE CONTRACT, stated once because the drafters depend on it: captureResidual(l, h) is` |
-| `docs/tasks/task-constrained-confidence.md|decoder/kvcache.go:540` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
-| `docs/tasks/task-constrained-confidence.md|decoder/kvsnapshot.go:62` | goinfer | `// Some families carry recurrent / latent state this format does not persist: qwen3_5_mo` |
-| `docs/tasks/task-constrained-confidence.md|decoder/lora.go:144` | goinfer | `func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer in` |
-| `docs/tasks/task-constrained-confidence.md|decoder/lora.go:353` | goinfer | `func (m *Model) LoadAdapter(name, dir string) error {` |
-| `docs/tasks/task-constrained-confidence.md|decoder/model.go:1322` | goinfer | `func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, ` |
-| `docs/tasks/task-constrained-confidence.md|decoder/weights.go:701` | goinfer | `if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {` |
-| `docs/tasks/task-constrained-confidence.md|decoder/weights.go:764` | goinfer | `if derr = lora.merge(name, data, out, in); derr != nil {` |
-| `docs/tasks/task-constrained-confidence.md|internal/serveapp/main.go:692` | goinfer | `// the mux is built once, so these routes registered only when a model existed at startu` |
-| `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:35` | goinfer | `const maxTopLogprobs = 20` |
-| `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:565` | goinfer | `Logprobs            bool            `json:"logprobs"`` |
-| `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:567` | goinfer | `ResponseFormat      *respFormat     `json:"response_format"`` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:300` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:194` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:155` | goinfer | `func Detect(meta Meta) (*Template, error) {` |

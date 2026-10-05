@@ -102,7 +102,7 @@ type Source struct {
 }
 
 // DecisionClaim is one checkpoint's measured decision figures (the S2 decisions row, D9 of
-// docs/tasks/task-constrained-confidence.md): label scoring (Route A) through POST /v1/systemone, top-1 and ECE on a
+// docs/tasks/parked/task-constrained-confidence.md): label scoring (Route A) through POST /v1/systemone, top-1 and ECE on a
 // labelled sample, both of which must appear in the cited record, as a speed must.
 type DecisionClaim struct {
 	ID         string `json:"id"`

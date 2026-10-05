@@ -36,14 +36,14 @@ figures:
   - {text: "1.44%", source: "docs/measurements/confidence-c0-2026-09-27.md"}
   - {text: "0.542", source: "docs/measurements/confidence-c0-2026-09-27.md"}
   - {text: "37.55 ms", source: "docs/measurements/confidence-c0-2026-09-27.md"}
-  - {text: "0.65", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "0.55", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "0.29 ms", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "0.28 ms", source: "docs/tasks/task-constrained-confidence.md"}
+  - {text: "0.65", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "0.55", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "0.29 ms", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "0.28 ms", source: "docs/tasks/parked/task-constrained-confidence.md"}
 sources:
   - "docs/server.md"
   - "docs/measurements/confidence-c0-2026-09-27.md"
-  - "docs/tasks/task-constrained-confidence.md"
+  - "docs/tasks/parked/task-constrained-confidence.md"
   - "constrain/confidence.go"
   - "examples/confidence"
 ---
