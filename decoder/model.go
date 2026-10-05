@@ -1994,6 +1994,15 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			sampleRF = rf
 		}
 	}
+	// E-P08 (docs/audit-metal-2026-09-30.md): a greedy generation's batched token asks the step for its argmax id (a
+	// Greedy draw) where the resident offers that, instead of its whole logits row; the id is the argmax the sampler
+	// would take from that row. Rows run alone keep residentCall's own path.
+	batchGreedy := false
+	if mc3 != nil && !fastGreedy && sampleRF == nil && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
+		if bg, ok := m.resident.(ResidentBatchGreedy); ok && bg.BatchGreedyDraw() {
+			batchGreedy = true
+		}
+	}
 	// The sampled chain (C-P02, ResidentSampleChain): where the device draw serves the token, the same draw with the next
 	// token's forward queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy
 	// chain's, and not where ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
@@ -2267,6 +2276,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			if !needFull && !fastGreedy && sampleRF != nil {
 				seed, d := sampler.NextDraw()
 				draw = &ResidentBatchDraw{Temperature: sp.Temperature, Seed: seed, Draw: d}
+			} else if batchGreedy && !needFull {
+				draw = &ResidentBatchDraw{Greedy: true}
 			}
 			// residentCall is this token's production resident call.
 			viaForward := false // residentCall returned Forward's logits, the resident's shared host buffer
@@ -2376,7 +2387,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				if !held && err == nil && q.out != nil {
 					if draw != nil {
 						fastNext = q.out.ID
-						g.DeviceSampled++
+						if !draw.Greedy {
+							g.DeviceSampled++
+						}
 					} else {
 						logits, fastNext = q.out.Logits, -1
 					}

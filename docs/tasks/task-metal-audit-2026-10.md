@@ -1203,6 +1203,21 @@ stays.
 threadgroup finds part of the tile in cache, not most of it; the DRAM floor is 0.435 ms.
 - What it would buy at B = 2 on the 7B: about 0.086 ms × 28 layers = 2.4 ms of the 58.76 ms step, about 4%. That is in
   the park zone even without the kill line.
+
+**Reopened and SHIPPED, 2026-10-04 (owner: "turn ... E-P02 on").** The kill was a thesis line (an absolute 0.65 ms on one
+kernel), not a regression, and the owner's bar is 1.02x on the whole step. Rebuilt for production:
+`mc3_gemv_w4a8_sa_rows_adj<R>` and a bias twin `mc3_gemv_w4a8_sa_bias_rows_adj<R>` (R = 2, 4), pipelines beside
+`pSARows` / `pSABiasRows`, run from the batched step wherever calibrateRows gives qkv or gate|up to per-row GEMVs at
+B >= 2 (`mc3AdjRowsOn`, on).
+- **Identity:** `TestMC3Step_rowsPathBitIdentical`'s per-row case (now asserting the fixture's rows kernels exist, so it
+  runs the adjacent form) at B = 2, 3, 4: 0 logits differ from single-token decode. Every row reading row 0's activations
+  fails it (all 20,480 logits).
+- **Whole step, in process, by day (`TestEP02_stepAB`, the 7B `.giw`, depth 128, 7 reps alternated, GPU time):**
+  B = 2 per-row 58.046 ms against adjacent 53.927 ms, **1.076x**, 7 of 7 reps above 1 (about twice the 4% estimated
+  above). B = 4 reads 0.997 (1 of 7): calibrateRows gives gate|up to the fragment above B = 2 there, so the adjacent form
+  does not run, and the cell is a do-nothing control.
+- **Left open:** calibrateRows still prices per-row as B separate GEMVs. With the cheaper adjacent form per-row may win
+  at B = 3-4 too (the kernel read 1.13-1.15x there); re-pricing it is a separate change.
 - The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
 
 ### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
@@ -1245,7 +1260,8 @@ its own slot's K/V, and one dispatch cannot share that.
 - Sharing a K/V stripe is possible only between rows of the same slot (spec verify). That is the audit's second step and
   changes the reduction shape.
 
-**Verdict: parked**, off by default.
+**Verdict: parked**, off by default. **Turned ON 2026-10-04 by the owner** ("turn E-P05 on"): bit-identical and faster in
+every cell measured (1.016-1.06x), which clears the owner's bar of a clean non-regressing win; `mc3FARowsOn` is true.
 - Bit-identical and resolved in every cell (7/7), but serve's default is 2 KV slots (E-P09), where it is 1.6%. Low single
   digits is the owner's park zone, as with D-P03.
 - The case for turning it on is many slots (`-kv-sessions 8`) at depths of 1-2k keys, where it is 6%.
@@ -1341,6 +1357,34 @@ Metal always batches. This grade says whether the chain now pays where serve run
 | Rule | **Stays on** if G ≥ 1.02 and at least 3 of 4 passes are above 1.00. **Killed** if G < 1.00: the hold is reverted (`holdSolo`, `releaseHold` and the branch in `generateInto`), and the record keeps the numbers. **Otherwise parked to the owner** (1.00 ≤ G < 1.02, or G ≥ 1.02 with fewer than 3 passes above 1.00): the chain's in-process grade (1.085×) and the served number then disagree in size, and the owner decides. |
 | Reported | The 1.5B at T = 1.0, and the 0.5B and 7B in both configs, by the same statistic. A 1.5B sampled G below 1.00 goes to the owner, since the sampled chain could be dropped from the hold alone. The in-process grades were 1.085× greedy and 1.066× sampled on the 1.5B; the served number includes HTTP streaming per token, so it can be smaller. |
 | Not read here | The peer ratios. If the chain stays on, the benchmarks Metal decode row is refreshed by its own same-session peer read (TE5(a)), queued separately. |
+
+### E-P08: SHIPPED (bit-identical; built and read 2026-10-04, owner: "do E-P08 now")
+
+**What it does.** A greedy generation's batched token came back as its whole logits row: the step copied 151,936 floats
+(about 600 KB) a row to the host, applied any softcap or logit scale there, and the decoder took the argmax. The audit's
+fix, built: the decoder now sends such a row as a **Greedy draw** (`decoder.ResidentBatchDraw.Greedy`, only to a resident
+implementing `decoder.ResidentBatchGreedy`; Metal does), and the step returns its id. Metal (no ForwardArgmax in
+production, so this was every greedy batched row) takes it on the GPU when no transform applies, and on the host from
+the transformed row when a softcap or logit scale does, which is the id the decoder would have picked either way. The
+step's argmax-only rows (the prompt step, spec verify), scanned on the host after the command buffer, take the same GPU
+argmax. `argmax_rows_part` (64 partials a row, NaN skipped) then the existing `argmax_finish` take it on the GPU, and the host
+reads 4 bytes a row (`mc3DeviceArgmaxOn`, on). The id is `argmaxF32`'s: the first maximum, and 0 for a row that starts with
+NaN, which the host checks from element 0.
+- **Kernel gate** (`TestArgmaxRowsPart_matchesHost`, default-run): 42 rows at V = 151,936, 152,064, 32,000, 1,000, 257 and
+  1: random, ties at the maximum, maximum last, all -inf, all equal, NaN first, NaN scattered; the device equals
+  `argmaxF32` on every one. Letting a later equal value win fails it.
+- **Step gate** (`TestMC3Step_deviceArgmaxMatchesHost`, the MC3 fixture): 54 rows at B = 2, 3, 4 over 6 steps, argmax-only
+  ids and temperature-0 draw rows equal to `argmaxF32` of the same step's full logits rows.
+- **Through the decoder:** `TestMC3Chain_newcomerJoinsAndBothMatchAlone` (two greedy generations batched through
+  `Generate`, each identical to its alone run) now asserts that the batched steps' greedy rows came back as device ids.
+  The decoder suite passes; the parity hashes were refreshed for the `decoder/model.go` edit (forward goldens 41 passed,
+  0 failed).
+- **Whole step, in process, by day** (`TestEP08_stepWallAB`, the 1.5B, depth 128, 7 reps alternated, wall time, ids equal
+  every rep):
+  - serve's route (`GOINFER_EP08_ROUTE=serve`: Greedy draws against full rows argmaxed on the host): **1.034 at B = 2,
+    1.048 at B = 4, 1.102 at B = 8**, 7 of 7 reps above 1 in each;
+  - the argmax-only form: 1.022, 1.036, 1.081.
+  - The audit's ceiling was 1.4% at B = 4 and 2.9% at B = 8; the copy and host scan cost more than its S4 slope priced.
 
 ## Owner decisions
 
@@ -1671,3 +1715,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   built on 2026-10-03 (`0277f4ed`) with its identity gates; only its served speed was owed. Serve's shutdown line now
   reports held tokens (`3b9ef839`), and real serve on the 1.5B ran 128 of 128 decode tokens held with the hold on and
   none with it off. The night job is two arms at the same rev, the old one never holding.
+- 2026-10-04: **E-P05 on, E-P02 reopened and shipped, E-P08 shipped** (owner: "turn E-P05 on. and E-P02. do E-P08 now").
+  All bit-identical. E-P02 1.076x on the 7B's B = 2 step; E-P08 1.022 / 1.036 / 1.081x at B = 2 / 4 / 8 on the 1.5B.

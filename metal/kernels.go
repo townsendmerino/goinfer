@@ -611,6 +611,40 @@ template [[host_name("gemv_w4a8_sa_rows2")]] kernel decltype(gemv_w4a8_sa_rows<2
 template [[host_name("gemv_w4a8_sa_rows4")]] kernel decltype(gemv_w4a8_sa_rows<4>) gemv_w4a8_sa_rows<4>;
 template [[host_name("gemv_w4a8_sa_bias_rows2")]] kernel decltype(gemv_w4a8_sa_bias_rows<2>) gemv_w4a8_sa_bias_rows<2>;
 template [[host_name("gemv_w4a8_sa_bias_rows4")]] kernel decltype(gemv_w4a8_sa_bias_rows<4>) gemv_w4a8_sa_bias_rows<4>;
+// E-P02 (docs/audit-metal-2026-09-30.md): gemv_w4a8_sa_rows / _bias_rows over B activation rows in ONE dispatch, the B
+// threadgroups that read one weight tile adjacent in launch order (threadgroup tg serves batch row tg % B, tile tg / B),
+// so a row's threadgroup can find the tile in cache. Each (row, tile) runs sa_rows_acc exactly as the per-row dispatch
+// does for that row alone: bit-identical. Rows are K int8s / one scale / N floats apart, as the batched step lays them out.
+template <uint R>
+kernel void mc3_gemv_w4a8_sa_rows_adj(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq_b[[buffer(2)]], device const float* asc_b[[buffer(3)]], device float* out_b[[buffer(4)]],
+    constant uint& K[[buffer(5)]], constant uint& N[[buffer(6)]], constant uint& B[[buffer(7)]],
+    threadgroup half* Ah [[threadgroup(0)]], uint tg_b[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint b = tg_b % B, tgid = tg_b / B;
+    device const char* aq = aq_b + b*K; device const float* asc = asc_b + b; device float* out = out_b + b*N;
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
+}
+template <uint R>
+kernel void mc3_gemv_w4a8_sa_bias_rows_adj(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq_b[[buffer(2)]], device const float* asc_b[[buffer(3)]], device float* out_b[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], constant uint& N[[buffer(7)]],
+    constant uint& B[[buffer(8)]], threadgroup half* Ah [[threadgroup(0)]], uint tg_b[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint b = tg_b % B, tgid = tg_b / B;
+    device const char* aq = aq_b + b*K; device const float* asc = asc_b + b; device float* out = out_b + b*N;
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0] + bias[row0+r]; }
+}
+template [[host_name("mc3_gemv_w4a8_sa_rows_adj2")]] kernel decltype(mc3_gemv_w4a8_sa_rows_adj<2>) mc3_gemv_w4a8_sa_rows_adj<2>;
+template [[host_name("mc3_gemv_w4a8_sa_rows_adj4")]] kernel decltype(mc3_gemv_w4a8_sa_rows_adj<4>) mc3_gemv_w4a8_sa_rows_adj<4>;
+template [[host_name("mc3_gemv_w4a8_sa_bias_rows_adj2")]] kernel decltype(mc3_gemv_w4a8_sa_bias_rows_adj<2>) mc3_gemv_w4a8_sa_bias_rows_adj<2>;
+template [[host_name("mc3_gemv_w4a8_sa_bias_rows_adj4")]] kernel decltype(mc3_gemv_w4a8_sa_bias_rows_adj<4>) mc3_gemv_w4a8_sa_bias_rows_adj<4>;
 template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
 template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
 
@@ -828,6 +862,21 @@ kernel void gemv_w8a8_amax(device const char* aq[[buffer(0)]], device const floa
         for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
         part[tgid].v = bv; part[tgid].i = bi;
     }
+}
+// argmax_rows_part (E-P08, the batched step's greedy rows): one f32 logits row's partial argmaxes, threadgroup g over
+// elements g, g+P*256, ... in a grid-stride loop, reduced as argmax_finish reduces (the greater value, or the equal one
+// at the lower index), so argmax_finish over the P partials gives the row's first maximum. NaN is skipped: the host's
+// argmaxF32 never picks a NaN unless the row starts with one, and the caller checks element 0 for that.
+kernel void argmax_rows_part(device const float* row[[buffer(0)]], device AmaxPart* part[[buffer(1)]],
+    constant uint& V[[buffer(2)]], constant uint& P[[buffer(3)]], uint g[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float v=-INFINITY; uint idx=0xFFFFFFFFu;
+    for (uint i=g*256u+tid; i<V; i+=P*256u) { float x=row[i]; if (!isnan(x) && (x>v||(x==v&&i<idx))) { v=x; idx=i; } }
+    for (uint off=16u; off>0u; off>>=1u) { float ov=simd_shuffle_down(v,off); uint oi=simd_shuffle_down(idx,off); if(ov>v||(ov==v&&oi<idx)){v=ov;idx=oi;} }
+    threadgroup float tv[8]; threadgroup uint ti[8];
+    if (lane==0u){tv[sgid]=v;ti[sgid]=idx;}
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0u){ float bv=tv[0];uint bi=ti[0]; for(uint s=1u;s<8u;s++) if(tv[s]>bv||(tv[s]==bv&&ti[s]<bi)){bv=tv[s];bi=ti[s];} part[g].v=bv; part[g].i=bi; }
 }
 kernel void argmax_finish(device const AmaxPart* part[[buffer(0)]], device uint* tok[[buffer(1)]],
     constant uint& P[[buffer(2)]], uint tid[[thread_index_in_threadgroup]],

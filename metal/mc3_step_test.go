@@ -241,7 +241,8 @@ func mc3IdentityWith(t *testing.T, depths []int, ctx int, setup func(r *resident
 
 // TestMC3Step_rowsPathBitIdentical is S4's identity check: with qkv and gate|up forced onto per-row production GEMVs
 // at every batch size, and then forced onto the fragment at every size, a batched step at B = 2, 3 and 4 matches
-// production's single-token forward on every logit. Which one calibrateRows picks changes speed only.
+// production's single-token forward on every logit. Which one calibrateRows picks changes speed only. The per-row case
+// runs E-P02's one-dispatch adjacent form (mc3AdjRowsOn), so it is that kernel's identity gate too.
 //
 //	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestMC3Step_rowsPathBitIdentical$' -v ./metal/
 func TestMC3Step_rowsPathBitIdentical(t *testing.T) {
@@ -251,7 +252,13 @@ func TestMC3Step_rowsPathBitIdentical(t *testing.T) {
 	}{{"per-row", batchMaxSeqs}, {"fragment", 0}} {
 		for _, depths := range [][]int{{5, 300}, {23, 40, 300}, {5, 23, 40, 300}} {
 			t.Run(fmt.Sprintf("%s/B=%d", c.name, len(depths)), func(t *testing.T) {
-				mc3IdentityWith(t, depths, 1024, func(r *resident) { r.batch.rowsQKV, r.batch.rowsGU = c.rows, c.rows })
+				mc3IdentityWith(t, depths, 1024, func(r *resident) {
+					r.batch.rowsQKV, r.batch.rowsGU = c.rows, c.rows
+					// E-P02: the per-row case runs the adjacent-threadgroup form (mc3AdjRowsOn), which needs the rows kernels
+					if c.rows > 0 && mc3AdjRowsOn && (r.gemvRows.qkv == 0 || r.gemvRows.gu == 0) {
+						t.Fatalf("the fixture's qkv / gate|up rows kernels are %d / %d: the adjacent form would not run", r.gemvRows.qkv, r.gemvRows.gu)
+					}
+				})
 			})
 		}
 	}

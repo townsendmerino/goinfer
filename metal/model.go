@@ -192,6 +192,7 @@ type resident struct {
 	decodeLaneW4F16                 bool
 	axF16, mxF16, cxF16             Buffer   // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
 	pArgFinish                      Pipeline // fused block-argmax lm head reduce
+	pArgRowsPart                    Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
 	// R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
 	// split) instead of by query head, DEFAULT ON since 2026-09-21 (decodeAttnFA, set from
 	// metalAttnFAEnabled(); GOINFER_METAL_ATTN_FA=0 opts out) — see that function's own doc
@@ -244,6 +245,9 @@ type resident struct {
 	// kernels (then flush the executor, stopExec).
 	gemvRows                                             struct{ qkv, o, gu, down int }
 	pSABiasRows, pSAResidRows, pSARows, pGemvResidStaged Pipeline
+	// E-P02: the batched step's per-row qkv and gate|up GEMVs as one dispatch with each tile's B threadgroups adjacent
+	// (mc3_gemv_w4a8_sa_{bias_}rows_adj<R>, the twin of pSABiasRows / pSARows), set with them; batch.go mc3AdjRowsOn.
+	pSABiasRowsAdj, pSARowsAdj Pipeline
 	// D-B04: R18's rows form at the int4 GEMV sites R18 never reached (gemvExt): the staged coal kernel, the SA rows
 	// kernel and the staged residual kernel at R = 2 and 4, and the threadgroup memory a staged kernel may take.
 	gemvExtCoal, gemvExtSA, gemvExtResid [5]Pipeline
@@ -993,6 +997,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
 	r.pArgFinish = pipe("argmax_finish")
+	r.pArgRowsPart = pipe("argmax_rows_part") // E-P08: the batched step's greedy rows (batch.go)
 	r.pEmbedGather = pipe("embed_gather_i8")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
@@ -1616,6 +1621,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pSABiasRows = rowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv)
 		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
 		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
+		r.pSABiasRowsAdj = rowsPipe("mc3_gemv_w4a8_sa_bias_rows_adj", r.gemvRows.qkv)
+		r.pSARowsAdj = rowsPipe("mc3_gemv_w4a8_sa_rows_adj", r.gemvRows.gu)
 		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
 		for _, R := range []int{2, 4} {
 			r.gemvExtCoal[R] = pipe(fmt.Sprintf("gemv_w4a8_coal_staged%d", R))

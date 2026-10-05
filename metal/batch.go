@@ -274,6 +274,8 @@ type batchState struct {
 	// per-row uniforms and outputs of a device draw (ForwardSample's gumbel dispatches, run on a row of logitsB)
 	uGInvT, uGK0, uGK1, uGD0, uGD1 []Buffer
 	gOut                           Buffer // [batchMaxSeqs] int32 ids
+	amaxPart, amaxTok, uAmaxP      Buffer // E-P08: each greedy row's argmax partials, its id, and the partial count
+	greedyDevRows                  int    // E-P08: greedy-draw rows a step served from the device argmax (a test reads it)
 	// S3: per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx
 	// quantisation runs over every row at once
 	posB, qtB, ctxB           Buffer
@@ -386,6 +388,7 @@ func (r *resident) buildBatch() {
 		b.uGD0, b.uGD1 = append(b.uGD0, NewBufferU32(d, 0)), append(b.uGD1, NewBufferU32(d, 0))
 	}
 	b.gOut = d.NewBufferLen(B)
+	b.amaxPart, b.amaxTok, b.uAmaxP = d.NewBufferLen(2*B*batchArgmaxParts), d.NewBufferLen(B), NewBufferU32(d, batchArgmaxParts)
 	b.posB, b.qtB, b.ctxB = d.NewBufferLen(B), NewBufferFloats(d, make([]float32, B)), d.NewBufferLen(B*b.nHhd)
 	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLen(B), d.NewBufferLen(B), d.NewBufferLen(B)
 	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLen(B), d.NewBufferLen(B), NewBufferU32(d, 1)
@@ -405,10 +408,24 @@ func (r *resident) buildBatch() {
 var mc3W8RowsOn = true
 
 // mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
-// mc3_attention_fa*_rows), bit-identical to their per-row pairs. Off: PARKED 2026-10-04, 1.016x at 2 rows (serve's
-// default slot count) to 1.06x at 8 rows on the 1.5B at depth 1100-2048 (docs/tasks/task-metal-audit-2026-10.md,
-// "E-P05"). Tests turn it on.
-var mc3FARowsOn = false
+// mc3_attention_fa*_rows), bit-identical to their per-row pairs. ON since 2026-10-04 (owner: "turn E-P05 on"): faster in
+// every cell measured, 1.016x at 2 rows (serve's default slot count) to 1.06x at 8 rows on the 1.5B at depth 1100-2048,
+// 1.029x on the 7B (docs/tasks/task-metal-audit-2026-10.md, "E-P05").
+var mc3FARowsOn = true
+
+// mc3DeviceArgmaxOn takes a batched step's greedy rows' argmax on the GPU (E-P08): argmax_rows_part then argmax_finish
+// over each row of logitsB, so the host reads 4 bytes a row instead of scanning V floats after the command buffer. The id
+// is the host argmaxF32's (the first maximum; a row that starts with NaN is 0, as there), so output is unchanged.
+var mc3DeviceArgmaxOn = true
+
+// batchArgmaxParts is the partial count argmax_rows_part writes a row: 64 threadgroups of 256 threads.
+const batchArgmaxParts = 64
+
+// mc3AdjRowsOn runs the batched step's per-row qkv and gate|up GEMVs (the sizes calibrateRows gives to per-row) as one
+// dispatch with each weight tile's B threadgroups adjacent (E-P02, mc3_gemv_w4a8_sa_{bias_}rows_adj), bit-identical to
+// the B per-row dispatches. ON since 2026-10-04 (owner: "turn ... E-P02 on"); its kernel A/B read 1.11-1.15x on the 7B's
+// gate|up at B = 2-4 and 1.01-1.04x on the 1.5B's.
+var mc3AdjRowsOn = true
 
 // batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
 const batchTGBytes = 4 * 2 * 32 * 8
@@ -645,6 +662,8 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 		if w8AttnRows {
 			e.Dispatch(r.pW8Rows[B], b.qkvRows*32, 32, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, r.uH, b.uQKV, b.uCount[B], L.qkvBias, b.uMode[1])
+		} else if rowsQKV && mc3AdjRowsOn && B >= 2 && r.gemvRows.qkv > 0 {
+			e.DispatchTG(r.pSABiasRowsAdj, B*nq, 256, H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH, b.uQKV, b.uCount[B])
 		} else if rowsQKV {
 			for m := range B {
 				e.DispatchTG(pq, nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), f32(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
@@ -698,6 +717,8 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		if w8Rows {
 			e.Dispatch(r.pW8Rows[B], 2*I*32, 32, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B], b.noBias, b.uMode[0])
+		} else if rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0 {
+			e.DispatchTG(r.pSARowsAdj, B*ng, 256, H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, b.uGU, b.uCount[B])
 		} else if rowsGU {
 			for m := range B {
 				e.DispatchTG(pg, ng, 256, H*2, L.guW, L.guS, b.mqB.At(m*H), b.mScB.At(4*m), f32(b.guB, m, 2*I), r.uH)
@@ -747,6 +768,20 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		e.DispatchTG(r.pGumbel2, gbThreads, gbThreads, gbShmBytes,
 			r.gumbelBKey, r.gumbelBIdx, r.uGumbelNB, b.gOut.At(4*m))
 	}
+	devArg := make([]bool, B) // E-P08: rows whose id is the argmax of the raw row, taken on the GPU
+	if mc3DeviceArgmaxOn {
+		for m, q := range seqs {
+			if !argmaxOnly && !greedyDraw[m] {
+				continue // a full-logits row (the caller reads the row) or a sampled one (the gumbel draw gives its id)
+			}
+			if !argmaxOnly && q.draw.Greedy && r.logitTransform() {
+				continue // a greedy generation's id is the argmax of the transformed row: taken on the host below
+			}
+			devArg[m] = true
+			e.DispatchTG(r.pArgRowsPart, batchArgmaxParts*256, 256, 0, b.logitsB.At(4*m*r.V), b.amaxPart.At(8*m*batchArgmaxParts), b.uV, b.uAmaxP)
+			e.DispatchTG(r.pArgFinish, 256, 256, 0, b.amaxPart.At(8*m*batchArgmaxParts), b.amaxTok.At(4*m), b.uAmaxP)
+		}
+	}
 	e.End()
 	r.recordExecErr(e.Err())
 	if err := r.takeExecErr(); err != nil {
@@ -757,9 +792,19 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	logits, ids = make([][]float32, B), make([]int, B)
 	lg := b.logitsB.Floats()
 	gid := b.gOut.U32s()
+	devID := func(m int) int { // the GPU's argmax, or argmaxF32's answer for a row that starts with NaN (0)
+		if math.IsNaN(float64(lg[m*r.V])) {
+			return 0
+		}
+		return int(b.amaxTok.U32s()[m])
+	}
 	if argmaxOnly {
 		for m := range seqs {
-			ids[m] = argmaxF32(lg[m*r.V : (m+1)*r.V])
+			if devArg[m] {
+				ids[m] = devID(m)
+			} else {
+				ids[m] = argmaxF32(lg[m*r.V : (m+1)*r.V])
+			}
 		}
 		return nil, ids, nil
 	}
@@ -767,26 +812,49 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 		ids[m] = -1
 		if q.draw != nil {
 			id := int32(gid[m])
-			if greedyDraw[m] || id < 0 { // ForwardSample's fallbacks: the argmax of the raw row
+			if greedyDraw[m] && devArg[m] {
+				id = int32(devID(m))
+				if q.draw.Greedy {
+					b.greedyDevRows++
+				}
+			} else if greedyDraw[m] && q.draw.Greedy { // E-P08 with a softcap or logit scale: the transformed row's argmax
+				id = int32(argmaxF32(r.transformedRow(lg[m*r.V : (m+1)*r.V])))
+			} else if greedyDraw[m] || id < 0 { // ForwardSample's fallbacks: the argmax of the raw row
 				id = int32(argmaxF32(lg[m*r.V : (m+1)*r.V]))
 			}
 			ids[m] = int(id)
 			continue
 		}
-		row := make([]float32, r.V)
-		copy(row, lg[m*r.V:(m+1)*r.V])
-		if r.finalSoftcap > 0 {
-			softcapParallel(row, r.finalSoftcap)
-		}
-		if r.logitScale != 0 && r.logitScale != 1 {
-			for i := range row {
-				row[i] *= r.logitScale
-			}
-		}
-		logits[m] = row
+		logits[m] = r.transformedRow(lg[m*r.V : (m+1)*r.V])
 	}
 	return logits, ids, nil
 }
+
+// logitTransform reports whether a step's logits row is transformed on the host before it is returned (a final softcap
+// or a logit scale), which the device argmax over the raw row would not see.
+func (r *resident) logitTransform() bool {
+	return r.finalSoftcap > 0 || (r.logitScale != 0 && r.logitScale != 1)
+}
+
+// transformedRow is a copy of one raw logits row of a step with the host's transforms applied: the row forwardMulti
+// returns.
+func (r *resident) transformedRow(raw []float32) []float32 {
+	row := make([]float32, r.V)
+	copy(row, raw)
+	if r.finalSoftcap > 0 {
+		softcapParallel(row, r.finalSoftcap)
+	}
+	if r.logitScale != 0 && r.logitScale != 1 {
+		for i := range row {
+			row[i] *= r.logitScale
+		}
+	}
+	return row
+}
+
+// BatchGreedyDraw is decoder.ResidentBatchGreedy's (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
+// the row forwardMulti would have returned, first maximum on a tie.
+func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil }
 
 // BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.
