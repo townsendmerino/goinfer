@@ -671,15 +671,13 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 			src1 := slot0 * stride
 			sc1 := slot0 * nKV
 			rows1 := seg1 * nKV
-			linalg.DequantizeRowsInt8Into(dstK[:len1], r.kq[src1:src1+len1], r.ksc[sc1:sc1+rows1], rows1, r.headDim)
-			linalg.DequantizeRowsInt8Into(dstV[:len1], r.vq[src1:src1+len1], r.vsc[sc1:sc1+rows1], rows1, r.headDim)
+			dequantKVRows(dstK[:len1], dstV[:len1], r.kq[src1:src1+len1], r.vq[src1:src1+len1], r.ksc[sc1:sc1+rows1], r.vsc[sc1:sc1+rows1], rows1, r.headDim)
 		}
 		if seg2 := hist - seg1; seg2 > 0 {
 			len1 := seg1 * stride
 			len2 := seg2 * stride
 			rows2 := seg2 * nKV
-			linalg.DequantizeRowsInt8Into(dstK[len1:len1+len2], r.kq[:len2], r.ksc[:rows2], rows2, r.headDim)
-			linalg.DequantizeRowsInt8Into(dstV[len1:len1+len2], r.vq[:len2], r.vsc[:rows2], rows2, r.headDim)
+			dequantKVRows(dstK[len1:len1+len2], dstV[len1:len1+len2], r.kq[:len2], r.vq[:len2], r.ksc[:rows2], r.vsc[:rows2], rows2, r.headDim)
 		}
 		if cap(r.tq) < stride {
 			r.tq = make([]int8, stride)
@@ -728,8 +726,8 @@ func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int
 	}
 	totalRows := n * nKV
 	totalFloats := n * kvDim
-	linalg.DequantizeRowsInt8Into(dstK[:totalFloats], c.keysQ[layer][:totalFloats], c.keyScale[layer][:totalRows], totalRows, c.headDim)
-	linalg.DequantizeRowsInt8Into(dstV[:totalFloats], c.valsQ[layer][:totalFloats], c.valScale[layer][:totalRows], totalRows, c.headDim)
+	dequantKVRows(dstK[:totalFloats], dstV[:totalFloats], c.keysQ[layer][:totalFloats], c.valsQ[layer][:totalFloats],
+		c.keyScale[layer][:totalRows], c.valScale[layer][:totalRows], totalRows, c.headDim) // R-15: split by rows, bit-identical
 	return n
 }
 

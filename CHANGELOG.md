@@ -15,6 +15,22 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — decode attention writes each head's context straight into `ctx` (audit R-17, the remainder's main item)
+
+`attendBatchedHeads` computed a head's `scores·V` into scratch (`ch`, the grouped `gCtx`, Arm B's combined buffer) and then copied it into `ctx`, though `MatmulAVAcc64` and `MatmulAVAcc64Group` overwrite a contiguous destination and the head's slice of
+`ctx` is contiguous on every K=1 path. They now write into `ctx` directly (the multi-row tile keeps its scratch: its result is not contiguous in `ctx`), and Arm B's `groupCtxCombined` is gone. Bit-identical: a hash of `ctx` for eight shapes against
+values recorded before the change, the same table on amd64 and on arm64 under QEMU (the NEON grouped kernels included), red under a planted bug at each site; and 48 decode steps of full logits on the real Qwen2.5 1.5B and Gemma 3 1B equal
+between the pre-change build and this one. It removes up to about 14 KB of copying per attention layer per token on a 7B, tens of microseconds against a 130 ms token, so there is no speed claim. The other items R-17 listed are each smaller and were
+left, with their sizes in `docs/tasks/task-recompute-audit.md`.
+
+### Changed — int8-KV decode widens its history on all cores instead of one (audit R-15)
+
+With `--kv i8` every decoded token widens every stored K and V row of every global layer (and a ring layer's window) back to f32 in front of the attention, on a single thread: 17.4 ms of an 80.5 ms token on Qwen2.5 1.5B at depth 2000,
+where the f32 token is 59.5 ms. The widen is elementwise, so it is now split by rows across the usual fan-out width, above a size where a fork/join pays. **Bit-identical and memory-neutral:** random-shape and whole-decode tests (int8
+rings and global layers), and 48 x 151936 real logits with 0 differing, each red under a planted bug. **Paired ABBA:** Qwen2.5 1.5B at depth 2000, 81.87 to 66.55 ms/token, median 1.234x, 4 of 4 pairs faster (the int8 penalty over f32
+drops from about 22 ms to 7); Gemma 3 1B (small int8 rings) 1.017x. The widen is still O(context) per token (a persistent f32 shadow would cost more memory than f32 KV, and a fused int8 attention would not be bit-identical to the path
+decode, prefill and verify share). `kvDequantParallel` is a test seam, not an environment variable. Record: `docs/measurements/r15-kvi8-widen-2026-10-05.md`.
+
 ### Changed — WebGPU batched prefill reuses each layer's buffers and quantizes each input once (audit R-25)
 
 The batched prefill created fresh storage buffers for every intermediate of every layer and held them all until the pass finished, and wgpu zero-filled each one before the kernels overwrote it. Each layer now reuses the previous layer's buffers of the same

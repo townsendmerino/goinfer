@@ -29,6 +29,12 @@ type cpuDecodeAB struct {
 
 func newCPUDecodeAB(t *testing.T, envKey, def string, depth int) *cpuDecodeAB {
 	t.Helper()
+	return newCPUDecodeABWith(t, envKey, def, depth, Options{})
+}
+
+// newCPUDecodeABWith is newCPUDecodeAB with extra load options (KVQuant, ...); Backend and Quant are always cpu and int4.
+func newCPUDecodeABWith(t *testing.T, envKey, def string, depth int, extra Options) *cpuDecodeAB {
+	t.Helper()
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)")
 	}
@@ -42,7 +48,8 @@ func newCPUDecodeAB(t *testing.T, envKey, def string, depth int) *cpuDecodeAB {
 	prev := decodeTiming
 	decodeTiming = true
 	t.Cleanup(func() { decodeTiming = prev })
-	m, err := Load(path, Options{Backend: "cpu", Quant: "int4"})
+	extra.Backend, extra.Quant = "cpu", "int4"
+	m, err := Load(path, extra)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

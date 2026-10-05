@@ -804,6 +804,12 @@ The input does not change between calls, and quantization is deterministic, so e
 
 ### R-15 · int8 KV decode dequantizes the whole history every token (opt-in `--kv i8`)
 
+> **Status 2026-10-05: the widen now runs on all cores, bit-identical (1.234x on Qwen2.5 1.5B at depth 2000); the O(context) work itself remains.** Measured first: at depth 2000 the int8-KV token is 80.5 ms against 59.5 for f32, and the
+> widen is 17.4 ms of it, on one thread. `dequantKVRows` splits that elementwise widen by rows (both the global layers and the int8 ring window), so no bit moves and memory is unchanged: 4 of 4 paired ABBA pairs, 81.87 to 66.55 ms/token on
+> Qwen2.5 1.5B (the int8 penalty over f32 drops from about 22 ms to 7), 1.017x on Gemma 3 1B whose int8 rings are small; 48 x 151936 real logits, 0 differ; red under three plantings. **Not done, deliberately:** a persistent f32 shadow
+> (4.5 bytes per element on top of the int8 cache, worse than f32 KV) and a fused int8 attention (not bit-identical to the f32 path decode, prefill and verify share); and the ring's double quantization of the new row, which is `kvDim`
+> elements per layer per token and the same data both times. Record: `docs/measurements/r15-kvi8-widen-2026-10-05.md`.
+
 - **Global layers:** `dequantGlobalLayer` dequantizes every stored row on every token. That is O(context) per
   token per layer, and int8 ends up moving more bytes than f32 at decode.
 - **Ring layers:** the window is dequantized per token, and the new row is quantized twice (the round-trip, then
@@ -851,10 +857,17 @@ The input does not change between calls, and quantization is deterministic, so e
     The ~1.1 KB is `scoresBuf`'s per-token regrowth at ~275 keys; at real dims and depth it scales with the key count,
     and `ctx` with heads × head dim per attention layer.
   - The 41 forward goldens pass (refresh_parity_hashes, arm64); the full decoder suite passes.
-- **Not done:** the AV kernels writing straight into `ctx` (it leans on `MatmulAVAcc64`'s contract and changes Arm B's
-  structure), `deltaNetCore`'s per-call allocations, `moeOut` → `out`, postOnly's copy, Gemma 4's head gather/scatter,
-  and the logprobs scans (not bit-identical). Each is smaller still. No wall-clock A/B: by size these are well under
-  1% of a token, below CPU decode's run-to-run noise.
+- **Done 2026-10-05, the remainder's headline item: the AV kernels write straight into `ctx`.** `attendBatchedHeads` no longer copies a head's context out of scratch on its K=1 paths: the ungrouped path (a one-row tile) writes
+  `ctx[t0*qDim+qhead*hd:+hd]` directly (`MatmulAVAcc64` overwrites its destination, the R-11 contract), the grouped path (Arm A) writes `ctx[qh0*hd:+group*hd]` (the `[group, hd]` layout it was copied into), and Arm B scatters each
+  worker's dim slice into `ctx` instead of a combined scratch that was then copied (`groupCtxCombined` is gone). A tile of several rows keeps its scratch, because its `[kt, hd]` result is not contiguous in `ctx`.
+  Gates: `TestAttendBatchedHeads_ctxBitsUnchanged` hashes `ctx` for eight shapes (ungrouped serial and head fan-out, group 1, 4, 6 and 7, Arm A, Arm B with ragged key and dim splits) against values recorded from the code BEFORE
+  the change; the f64 kernels are bit-identical across architectures, and the same table holds on arm64 under QEMU (`-cpu max` with the NEON grouped kernels, and `cortex-a72`). Red under three plantings, one per site, and the
+  existing grouped-vs-ungrouped tests still pass. End to end, a throwaway hash of 48 decode steps of full logits on the real Qwen2.5 1.5B (depth 400) and Gemma 3 1B (depth 700) is identical between the pre-change build and this
+  one (`2cbaf241...` and `043db40e...`). Full `decoder` package: 1447 pass, and the one failure was the parity manifest, refreshed (64 goldens, 0 skipped).
+- **Not done, with the size of each (bytes per layer per token, from the code):** `moeMLP`'s `out` copied into the caller's buffer (`hidden` floats, 4 to 14 KB, behind a signature shared by five callers), postOnly's `copy(scr.norm, h)`
+  (`hidden` floats), `deltaNetCore`'s per-call `conv` allocation (`convDim` floats, about 32 KB on a 9B DeltaNet layer; the window keeps a reference to `mixed`, so it needs care), Gemma 4's head gather (a transposed V, not a copy that
+  can simply go), and the logprobs scans (not bit-identical). The change above removes up to `qDim` floats of copy per attention layer per token (about 14 KB, roughly 400 KB a token on a 28-layer 7B, tens of microseconds against
+  a 130 ms token); the rest are smaller still. **No wall-clock A/B: these are below CPU decode's run-to-run noise, and the claim is "less work, bit-identical", not a speedup.**
 
 ### R-18 · `pull` hashes every downloaded file twice
 
@@ -1080,13 +1093,12 @@ when their K match (always here), and `prefillQuantPerProj` (tests only) restore
 
 Status 2026-10-05, after the first pass through the list:
 
-1. **Done:** R-11 (contracts, tests, lint), R-16 (cheap variant), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
+1. **Done:** R-11 (contracts, tests, lint), R-12, R-15 (the widen made parallel), R-16 (cheap variant), R-17 (the per-token allocations), R-18, R-19, R-20, R-22, R-23, and R-24 (two of four). R-21 was checked and none of it is worth doing.
 2. **Declined with reasons, reopen only on new evidence:** R-16's full dirty flag (a missed state-mutating site is a conversation-state leak), R-24's `launchToken` upload (about 20 microseconds against about 4.5 ms per token) and
    the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate; measure the real transfer time first), and R-22's `g4x2All` fold (negative zero).
 3. **Still open, with real hot-path weight, each needing a pre-registered band and a bit-identity gate first:**
-   - R-12 (CPU Gemma 2/3 at depth: the window copied out of the ring every token);
    - R-13 and R-14 together (CPU activation quantization; R-13(b) needs an aikit `MatmulBTW4A8F16Pre` entry, so an aikit release);
-   - R-15 (int8 KV dequantizes the whole history every token; opt-in `--kv i8`, so lower priority);
-   - R-17 (small CPU duplicates), as it comes up. R-25 is done: both halves shipped 2026-10-05.
+   - ~~R-15~~ (done 2026-10-05: the widen is parallel; the O(context) work remains, see R-15);
+   - R-17's remainder (its per-token allocations were fixed 2026-10-05; the copies the AV kernels could write past, and the rest, were left; see R-17), as it comes up. R-25 is done: both halves shipped 2026-10-05.
 
 <!-- doc-reviewed: 2026-10-05 -->
