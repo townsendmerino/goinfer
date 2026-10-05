@@ -36,11 +36,10 @@ goinfer-serve -model local=<path>/Qwen3.5-9B-Q4_K_M.gguf -ctx 4096
 
 - **Label scoring on the served model:** one prefill per question, with the model's probabilities read at the option
   labels. Nothing is decoded, so `usage.output_tokens` is 0.
-- **Not TypeSafe's hosted model, and not a trained decision head.** How good the answers are depends on the model.
-  goinfer's measurement on Qwen3.5-9B (D6a in
-  [`task-constrained-confidence.md`](../tasks/task-constrained-confidence.md)) is pending.
-- **Many questions about one state re-read the state once per question.** On Qwen3.5 no prefix is shared between
-  questions today, so a request's cost grows with its question count. If the questions are fixed, one
-  schema-constrained generation that answers every field in a single pass may be the faster shape
-  (`response_format` with `"goinfer_confidence": true`, `docs/server.md`). The speed comparison is D7; its projection
-  is recorded, and the measurement is not yet run.
+- **Not TypeSafe's hosted model.** This recipe serves a model by label scoring (Route A), and how good the answers are depends on the model. **Measured (D6a, 2026-09-28,
+  [`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)):** Qwen3.5-9B with the `chat-v1` template, calibrated, reads top-1 0.4197 and ECE 0.1656 on the fixture where JEV-9B's trained head reads top-1 0.9181, so label scoring is far behind a trained head.
+  A model served with a trained head (`head=DIR`: the JEV-9B and Clef routes) answers by that route instead: `docs/server.md`, "Decisions".
+- **Many questions about one state.** On the GPU-resident path each question is a full prefill of the state, so a request's cost grows with its question count. On the CPU path, `D8` (built 2026-10-03) shares the state across a request's questions
+  ([`decisions-d8-shared-state-2026-10-03.md`](../measurements/decisions-d8-shared-state-2026-10-03.md)). **Measured (D7, 2026-10-02,
+  [`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md)):** for one question a decision was faster than a schema-constrained answer (1.24x, 1.07x and 1.01x at 256, 1,024 and 4,096 state tokens), and for five questions it took 1.76x, 3.21x and 4.47x as long as one
+  schema pass. If the questions are fixed, one schema-constrained generation that answers every field in a single pass (`response_format` with `"goinfer_confidence": true`, `docs/server.md`) is the faster shape for many questions.

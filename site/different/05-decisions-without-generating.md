@@ -29,16 +29,16 @@ figures:
   - {text: "0.9181", source: "docs/measurements/decisions-d0-prior-art-2026-09-27.md"}
   - {text: "0.0720", source: "docs/measurements/decisions-d0-prior-art-2026-09-27.md"}
   - {text: "0.0396", source: "docs/measurements/decisions-d0-prior-art-2026-09-27.md"}
-  - {text: "0.8881", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "0.8181", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "0.05", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "3/6", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "1/6", source: "docs/tasks/task-constrained-confidence.md"}
-  - {text: "872", source: "docs/tasks/task-constrained-confidence.md"}
+  - {text: "0.8881", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "0.8181", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "0.05", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "3/6", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "1/6", source: "docs/tasks/parked/task-constrained-confidence.md"}
+  - {text: "872", source: "docs/tasks/parked/task-constrained-confidence.md"}
   - {text: "0.847", source: "docs/measurements/confidence-c0-2026-09-27.md"}
 sources:
   - "docs/server.md"
-  - "docs/tasks/task-constrained-confidence.md"
+  - "docs/tasks/parked/task-constrained-confidence.md"
   - "docs/measurements/decisions-d0-prior-art-2026-09-27.md"
   - "docs/measurements/decisions-d7-2026-09-28.md"
   - "docs/measurements/confidence-c0-2026-09-27.md"

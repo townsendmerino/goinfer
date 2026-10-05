@@ -88,8 +88,8 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
-[`task-constrained-confidence.md`](tasks/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
-2026-09-27) is confidence on answers.
+[`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
+2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
 - **Shipped:** per-field probabilities on schema-constrained output (C0–C2), and a TypeSafe-compatible decisions
   endpoint, `POST /v1/systemone` (D5). It takes a state plus typed questions in and returns a distribution over the
   allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).
@@ -103,11 +103,13 @@ document-OCR model: the text decoder on the generic path from existing parts, a 
 for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 (reading) is done
 2026-10-01 and stops nothing: O1 (decoder) and O2 (tower, from aikit's Qwen3.5+ encoder) are unblocked.
 
-[`task-hardware-coverage-2026-10.md`](tasks/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01) is about
-the hardware goinfer is not built on: a checked census of every path selected by a CPU feature, a GPU attribute
-or a memory size, ways to reach those paths without owning the machine (CI runners, Intel SDE, forced
-fallbacks, faked probes), a runtime self-test on every backend that declines rather than answers wrong
-(it absorbs the Metal self-test spec), a pasteable hardware report, and a rented sweep before each public claim.
+[`task-hardware-coverage-2026-10.md`](completed/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01, **closed and archived 2026-10-05**; its live remainder is
+[`tasks/parked/task-hardware-followups-2026-10.md`](tasks/parked/task-hardware-followups-2026-10.md)) was about the hardware goinfer is not built on: a checked census of every path selected by a CPU feature,
+a GPU attribute or a memory size (`hardware-coverage.json`, and the generated "Verified on" section of `hardware-matrix.md`), ways to reach those paths without owning the machine (CI runners including windows-arm64,
+Intel SDE, forced fallbacks, faked probes), a startup self-test on CPU, CUDA, WebGPU and Metal that declines rather than answers wrong, and a pasteable `check --hardware` report.
+
+[`task-pull-to-giw-2026-09.md`](tasks/task-pull-to-giw-2026-09.md) (a proposal, filed 2026-09-25 and reviewed 2026-10-05; P0 done, P1-P3 not started, four owner decisions open and a fifth added) is about disk:
+`pull` converting to `.giw` after a verified download and keeping the `.gguf` only on request, and a load that finds the `.giw` without its source. It was indexed nowhere before the review.
 
 [`task-test-efficiency-2026-09.md`](completed/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28, **closed and archived 2026-10-04**; its live rules are in `CLAUDE.md`'s "Run budget" and "Gate tiers") was the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
@@ -136,7 +138,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (129)
+## Archive — `completed/` (131)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
