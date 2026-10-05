@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -111,6 +112,7 @@ kernel void zero_vec(device float* x[[buffer(0)]], uint i[[thread_position_in_gr
 // gemma4 is not. Routing is off the suspect list (Step 5a); this is the rest of the delta.
 type gemma4MoeResident struct {
 	pRouterF32, pRoute, pGU, pDownWacc  Pipeline
+	guR, downR                          int // D-B04: rows per simdgroup of pGU / pDownWacc (moeExpertRows)
 	pRmsNW, pScaleWgt, pScaleVec, pZero Pipeline
 
 	nE, topK, denseInter, moeInter int
@@ -122,6 +124,10 @@ type gemma4MoeResident struct {
 
 	rLogits, rIdx, rWgt Buffer // router scratch: logits[nE], idx[k] (u32), wgt[k]
 	g4x1, g4x2, g4rn    Buffer // dense-branch out, expert-branch accumulator, router-norm input — all [hidden]
+	// Lever 3's guess at the next layer's experts (g4PrefetchOn): its router on this layer's residual, into its own
+	// buffers so the true route is never touched.
+	rLogitsP, rIdxP, rWgtP, g4rnP Buffer
+	fence                         *pagedFence // M-11 / C-B03 (paged_fence.go); nil unpaged or where MSL 3.2 does not compile
 
 	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): the full expert set doesn't fit resident, so
 	// each layer keeps N experts in a slot pool and stages the routed top-k in per token. Off (all
@@ -188,11 +194,11 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	}
 	g := &gemma4MoeResident{
 		pRouterF32: pipe("gemv_f32_f32"), pRoute: pipe("moe_route_sg"),
-		pGU: pipe("gemv_w4a8_moe"), pDownWacc: pipe("gemv_w4a8_moe_wacc"),
 		pRmsNW: pipe("rmsnorm_nw"), pScaleWgt: pipe("scale_wgt_by_expert"),
 		pScaleVec: pipe("scale_vec"), pZero: pipe("zero_vec"),
 		nE: b.NE, topK: b.TopK, denseInter: b.DenseInter, moeInter: b.MoeInter,
 	}
+	g.pGU, g.pDownWacc, g.guR, g.downR = moeExpertRows(pipe, 2*b.MoeInter, H, true)
 	g.uNE, g.uK = NewBufferU32(d, uint32(b.NE)), NewBufferU32(d, uint32(b.TopK))
 	g.uHidden = NewBufferU32(d, uint32(H))
 	g.uDenseInter, g.uMoeInter = NewBufferU32(d, uint32(b.DenseInter)), NewBufferU32(d, uint32(b.MoeInter))
@@ -208,6 +214,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	g.rIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
 	g.rWgt = d.NewBufferLen(b.TopK)
 	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLen(H), d.NewBufferLen(H), d.NewBufferLen(H)
+	g.rLogitsP, g.rIdxP, g.rWgtP, g.g4rnP = d.NewBufferLen(b.NE), NewBufferUint32s(d, make([]uint32, b.TopK)), d.NewBufferLen(b.TopK), d.NewBufferLen(H)
 
 	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
 	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
@@ -224,6 +231,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 		if n < b.NE { // n>=nE would hold every expert — no paging, just build the stacked path
 			g.paged, g.slots = true, n
 			g.slotIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
+			g.fence = newPagedFence(d, nL, b.TopK)
 		}
 	}
 	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
@@ -468,9 +476,9 @@ func (r *resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 	ml := L.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
-		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, g.rIdx, g.uSlot[j], g.uMoeGU)
+		e.DispatchTG(g.pGU, rowsGrid(2*g.moeInter, g.guR), 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, r.gu, r.uH, g.rIdx, g.uSlot[j], g.uMoeGU)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
-		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, ml.expDW, ml.expDS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.rIdx, g.rWgt, g.uSlot[j], r.uH)
+		e.DispatchTG(g.pDownWacc, rowsGrid(r.H, g.downR), 256, g.moeInter*2, ml.expDW, ml.expDS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.rIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
 }
 
@@ -485,9 +493,9 @@ func (r *resident) encodeG4Phase2Paged(e *Encoder, pool *expertPool) {
 	g := r.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
 	for j := 0; j < g.topK; j++ {
-		e.DispatchTG(g.pGU, (2*g.moeInter)*32, 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, g.slotIdx, g.uSlot[j], g.uMoeGU)
+		e.DispatchTG(g.pGU, rowsGrid(2*g.moeInter, g.guR), 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, g.slotIdx, g.uSlot[j], g.uMoeGU)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(g.moeInter*4), r.dq, r.dSc, g.uMoeInter, r.uAct)
-		e.DispatchTG(g.pDownWacc, r.H*32, 256, g.moeInter*2, pool.dW, pool.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.slotIdx, g.rWgt, g.uSlot[j], r.uH)
+		e.DispatchTG(g.pDownWacc, rowsGrid(r.H, g.downR), 256, g.moeInter*2, pool.dW, pool.dS, r.dq, r.dSc, g.g4x2, g.uMoeInter, g.slotIdx, g.rWgt, g.uSlot[j], r.uH)
 	}
 }
 
@@ -531,10 +539,13 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	// isn't per-boundary — which ALSO discriminates mechanism 2 (per-CB autorelease churn): if this
 	// path's per-boundary cost is much lower than the default End() path, the per-CB pool was the cost.
 	split := os.Getenv("GOINFER_MOE_PROF_SPLIT") == "1"
+	async := pagedAsyncPhase2On && !split // M-11: phase 2 committed, not waited (pagedAsyncPhase2On)
 	var arp ARPool
-	if split {
+	if split || async {
 		arp = NewARPool()
 	}
+	var pending []*Encoder   // async phase-2 buffers, waited at the token's end
+	var pendingP1 []*Encoder // fenced phase-1 buffers whose route the host read from the fence, waited at the token's end
 	end := func(e *Encoder, commitAcc, waitAcc *int64) {
 		if !split {
 			e.End()
@@ -551,7 +562,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 		*waitAcc += time.Since(tw).Nanoseconds()
 	}
 	begin := func() *Encoder {
-		if split {
+		if split || async {
 			return r.q.BeginNP()
 		}
 		return r.q.Begin()
@@ -563,17 +574,68 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 			e := begin() // phase 1: attention + dense + router → rIdx/rWgt
 			r.encodeAttention(e, l)
 			r.encodeG4Phase1(e, L)
+			var next *gemma4MoeLayer // lever 3: guess the next paged MoE layer's experts from this residual
+			if g4PrefetchOn && l+1 < r.nL {
+				if nl := r.layers[l+1].g4moe; nl != nil && nl.pool != nil {
+					next = nl
+					e.Dispatch(g.pRmsNW, tgReduceNorm, tgReduceNorm, r.x, g.g4rnP, r.uH, r.uEps)
+					e.Dispatch(g.pRouterF32, g.nE*32, 32, nl.routerW, g.g4rnP, g.rLogitsP, r.uH)
+					e.Dispatch(g.pRoute, 32, 32, g.rLogitsP, nl.routerBias, g.rIdxP, g.rWgtP,
+						g.uNE, g.uK, g.uSig0, g.uNorm1, g.uScale1, g.uOne, g.uOne)
+				}
+			}
+			fenced := g.fence != nil && async // M-11 / C-B03: the route mirrored and fenced, the host spins (paged_fence.go)
+			var seq uint32
+			if fenced {
+				var idx2 Buffer
+				if next != nil {
+					idx2 = g.rIdxP
+				}
+				seq = g.fence.encode(e, l, g.rIdx, idx2)
+			}
 			encDone := time.Now()
-			end(e, &p.p1CommitNanos, &p.p1WaitNanos) // commit + wait: rIdx/rWgt now readable
+			if fenced {
+				e.FinishEncoding()
+				e.Commit()
+				done := g.fence.wait(e, seq)
+				if pagedFenceCheckForTest {
+					if !done {
+						e.WaitDone()
+						done = true
+					}
+					if !slices.Equal(g.fence.ids(g.topK, false), u32sToInts(g.rIdx.U32s()[:g.topK])) ||
+						next != nil && !slices.Equal(g.fence.ids(g.topK, true), u32sToInts(g.rIdxP.U32s()[:g.topK])) {
+						g.fence.stale++
+					}
+				}
+				if done {
+					r.recordExecErr(e.Err())
+					p.p1GpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
+				} else {
+					pendingP1 = append(pendingP1, e)
+				}
+			} else {
+				end(e, &p.p1CommitNanos, &p.p1WaitNanos) // commit + wait: rIdx/rWgt now readable
+				p.p1GpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
+			}
 			p.p1EncNanos += encDone.Sub(w1).Nanoseconds()
 			p.p1SubNanos += time.Since(encDone).Nanoseconds()
 			p.p1WallNanos += time.Since(w1).Nanoseconds()
-			p.p1GpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
 			c0 := time.Now()
-			idx := g.rIdx.U32s()
-			ids := make([]int, g.topK)
-			for j := 0; j < g.topK; j++ {
-				ids[j] = int(idx[j])
+			var ids []int
+			if fenced {
+				ids = g.fence.ids(g.topK, false)
+			} else {
+				ids = u32sToInts(g.rIdx.U32s()[:g.topK])
+			}
+			if next != nil { // start the guess's reads first, so they queue on the disk beside this layer's misses
+				var all []int
+				if fenced {
+					all = g.fence.ids(g.topK, true)
+				} else {
+					all = u32sToInts(g.rIdxP.U32s()[:g.topK])
+				}
+				next.pool.prefetchAsync(all[:min(g.topK, g4PrefetchTop)]) // the guess's highest-scoring experts (moe_route's rank order)
 			}
 			p.idxCoordNanos += time.Since(c0).Nanoseconds()
 			s0 := time.Now()
@@ -596,11 +658,19 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 			r.encodeG4Phase2Paged(e2, L.g4moe.pool)
 			r.encodeG4Join(e2, L)
 			enc2 := time.Now()
-			end(e2, &p.p2CommitNanos, &p.p2WaitNanos)
+			if async {
+				e2.FinishEncoding()
+				e2.Commit()
+				pending = append(pending, e2)
+			} else {
+				end(e2, &p.p2CommitNanos, &p.p2WaitNanos)
+			}
 			p.p2EncNanos += enc2.Sub(w2).Nanoseconds()
 			p.p2SubNanos += time.Since(enc2).Nanoseconds()
 			p.p2WallNanos += time.Since(w2).Nanoseconds()
-			p.p2GpuNanos += int64((e2.GPUEnd() - e2.GPUStart()) * 1e9)
+			if !async {
+				p.p2GpuNanos += int64((e2.GPUEnd() - e2.GPUStart()) * 1e9)
+			}
 			continue
 		}
 		w0 := time.Now()
@@ -611,7 +681,17 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 		p.denseWallNanos += time.Since(w0).Nanoseconds()
 		p.denseGpuNanos += int64((e.GPUEnd() - e.GPUStart()) * 1e9)
 	}
-	if split {
+	for _, pe := range pendingP1 {
+		pe.WaitDone()
+		r.recordExecErr(pe.Err())
+		p.p1GpuNanos += int64((pe.GPUEnd() - pe.GPUStart()) * 1e9)
+	}
+	for _, pe := range pending { // already complete or nearly: the queue ran them before the phase 1s that followed
+		pe.WaitDone()
+		r.recordExecErr(pe.Err())
+		p.p2GpuNanos += int64((pe.GPUEnd() - pe.GPUStart()) * 1e9)
+	}
+	if split || async {
 		arp.Drain()
 	}
 	if r.pagedNoHead { // a prompt token: no logits wanted (ForwardEmbNoLogitsPipe)
@@ -637,3 +717,22 @@ func (r *resident) encodeG4Join(e *Encoder, L *residLayer) {
 	e.Dispatch(r.pRes, r.H, 256, r.x, g.g4x1)                                                      // r.x = h + comb
 	e.Dispatch(g.pScaleVec, r.H, 256, r.x, ml.uLayerScalar)                                        // r.x *= layerScalar
 }
+
+// pagedAsyncPhase2On commits a paged MoE layer's phase 2 (experts and join) without waiting for it (M-11,
+// docs/audit-metal-2026-09-30.md): the host reads nothing back from phase 2, and the next layer's phase 1 runs on the
+// same queue, ordered after it by Metal's hazard tracking on the residual it reads. The slot table the host rewrites for
+// the next layer is written only after that phase 1 is seen complete, so after this phase 2. Half the token's
+// submit-and-wait round trips go; the arithmetic is unchanged. Both pagers (forwardLogitsPaged, forwardLogitsMoEPaged).
+var pagedAsyncPhase2On = true
+
+// g4PrefetchOn guesses a paged Gemma 4 MoE layer's experts from the layer before it and reads the misses in the
+// background (lever 3, docs/tasks/task-m26-mac-2026-10.md): phase 1 of layer l also runs layer l+1's router on layer l's
+// residual, the host starts reading those experts into layer l+1's pool, and the reads overlap the GPU's phase 2 of l and
+// phase 1 of l+1. The true router still picks; a wrong guess costs an evicted slot, never a wrong bit. OFF: on M26 at
+// 24 slots it read 0.894x a token guessing all 8 experts (43% of guesses used) and 0.947x guessing the top 2 (60%), 0
+// of 9 reps above 1 each: the extra reads compete with demand reads on the SSD (docs/tasks/task-m26-mac-2026-10.md,
+// "Lever 3"). Kept, gated bit-exact, for a better guess.
+var g4PrefetchOn = false
+
+// g4PrefetchTop is how many of the guess's experts are prefetched, highest score first.
+var g4PrefetchTop = 2

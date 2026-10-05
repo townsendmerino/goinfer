@@ -619,7 +619,7 @@ written. They run the coal kernel family, and R18's SA rows kernels sum in a dif
 kernel's.
 
 **Not built:** the routed-expert rows kernel (a new MoE kernel variant), and nothing on this Mac would time it
-resident.
+resident. **Built 2026-10-04 (owner), below: "D-B04's routed-expert half".**
 
 By day:
 - **`TestGemvExt_bitIdentical`** on the tiny Qwen3.5 hybrid (DeltaNet, MoE with a gated shared expert): 0 of 6,144
@@ -1203,6 +1203,21 @@ stays.
 threadgroup finds part of the tile in cache, not most of it; the DRAM floor is 0.435 ms.
 - What it would buy at B = 2 on the 7B: about 0.086 ms × 28 layers = 2.4 ms of the 58.76 ms step, about 4%. That is in
   the park zone even without the kill line.
+
+**Reopened and SHIPPED, 2026-10-04 (owner: "turn ... E-P02 on").** The kill was a thesis line (an absolute 0.65 ms on one
+kernel), not a regression, and the owner's bar is 1.02x on the whole step. Rebuilt for production:
+`mc3_gemv_w4a8_sa_rows_adj<R>` and a bias twin `mc3_gemv_w4a8_sa_bias_rows_adj<R>` (R = 2, 4), pipelines beside
+`pSARows` / `pSABiasRows`, run from the batched step wherever calibrateRows gives qkv or gate|up to per-row GEMVs at
+B >= 2 (`mc3AdjRowsOn`, on).
+- **Identity:** `TestMC3Step_rowsPathBitIdentical`'s per-row case (now asserting the fixture's rows kernels exist, so it
+  runs the adjacent form) at B = 2, 3, 4: 0 logits differ from single-token decode. Every row reading row 0's activations
+  fails it (all 20,480 logits).
+- **Whole step, in process, by day (`TestEP02_stepAB`, the 7B `.giw`, depth 128, 7 reps alternated, GPU time):**
+  B = 2 per-row 58.046 ms against adjacent 53.927 ms, **1.076x**, 7 of 7 reps above 1 (about twice the 4% estimated
+  above). B = 4 reads 0.997 (1 of 7): calibrateRows gives gate|up to the fragment above B = 2 there, so the adjacent form
+  does not run, and the cell is a do-nothing control.
+- **Left open:** calibrateRows still prices per-row as B separate GEMVs. With the cheaper adjacent form per-row may win
+  at B = 3-4 too (the kernel read 1.13-1.15x there); re-pricing it is a separate change.
 - The 1.5B gains little because its weights are near the SLC's size, as the audit predicted.
 
 ### E-P05: PARKED, off by default (bit-identical; written 2026-10-04)
@@ -1245,7 +1260,8 @@ its own slot's K/V, and one dispatch cannot share that.
 - Sharing a K/V stripe is possible only between rows of the same slot (spec verify). That is the audit's second step and
   changes the reduction shape.
 
-**Verdict: parked**, off by default.
+**Verdict: parked**, off by default. **Turned ON 2026-10-04 by the owner** ("turn E-P05 on"): bit-identical and faster in
+every cell measured (1.016-1.06x), which clears the owner's bar of a clean non-regressing win; `mc3FARowsOn` is true.
 - Bit-identical and resolved in every cell (7/7), but serve's default is 2 KV slots (E-P09), where it is 1.6%. Low single
   digits is the owner's park zone, as with D-P03.
 - The case for turning it on is many slots (`-kv-sessions 8`) at depths of 1-2k keys, where it is 6%.
@@ -1341,6 +1357,81 @@ Metal always batches. This grade says whether the chain now pays where serve run
 | Rule | **Stays on** if G ≥ 1.02 and at least 3 of 4 passes are above 1.00. **Killed** if G < 1.00: the hold is reverted (`holdSolo`, `releaseHold` and the branch in `generateInto`), and the record keeps the numbers. **Otherwise parked to the owner** (1.00 ≤ G < 1.02, or G ≥ 1.02 with fewer than 3 passes above 1.00): the chain's in-process grade (1.085×) and the served number then disagree in size, and the owner decides. |
 | Reported | The 1.5B at T = 1.0, and the 0.5B and 7B in both configs, by the same statistic. A 1.5B sampled G below 1.00 goes to the owner, since the sampled chain could be dropped from the hold alone. The in-process grades were 1.085× greedy and 1.066× sampled on the 1.5B; the served number includes HTTP streaming per token, so it can be smaller. |
 | Not read here | The peer ratios. If the chain stays on, the benchmarks Metal decode row is refreshed by its own same-session peer read (TE5(a)), queued separately. |
+
+### E-P08: SHIPPED (bit-identical; built and read 2026-10-04, owner: "do E-P08 now")
+
+**What it does.** A greedy generation's batched token came back as its whole logits row: the step copied 151,936 floats
+(about 600 KB) a row to the host, applied any softcap or logit scale there, and the decoder took the argmax. The audit's
+fix, built: the decoder now sends such a row as a **Greedy draw** (`decoder.ResidentBatchDraw.Greedy`, only to a resident
+implementing `decoder.ResidentBatchGreedy`; Metal does), and the step returns its id. Metal (no ForwardArgmax in
+production, so this was every greedy batched row) takes it on the GPU when no transform applies, and on the host from
+the transformed row when a softcap or logit scale does, which is the id the decoder would have picked either way. The
+step's argmax-only rows (the prompt step, spec verify), scanned on the host after the command buffer, take the same GPU
+argmax. `argmax_rows_part` (64 partials a row, NaN skipped) then the existing `argmax_finish` take it on the GPU, and the host
+reads 4 bytes a row (`mc3DeviceArgmaxOn`, on). The id is `argmaxF32`'s: the first maximum, and 0 for a row that starts with
+NaN, which the host checks from element 0.
+- **Kernel gate** (`TestArgmaxRowsPart_matchesHost`, default-run): 42 rows at V = 151,936, 152,064, 32,000, 1,000, 257 and
+  1: random, ties at the maximum, maximum last, all -inf, all equal, NaN first, NaN scattered; the device equals
+  `argmaxF32` on every one. Letting a later equal value win fails it.
+- **Step gate** (`TestMC3Step_deviceArgmaxMatchesHost`, the MC3 fixture): 54 rows at B = 2, 3, 4 over 6 steps, argmax-only
+  ids and temperature-0 draw rows equal to `argmaxF32` of the same step's full logits rows.
+- **Through the decoder:** `TestMC3Chain_newcomerJoinsAndBothMatchAlone` (two greedy generations batched through
+  `Generate`, each identical to its alone run) now asserts that the batched steps' greedy rows came back as device ids.
+  The decoder suite passes; the parity hashes were refreshed for the `decoder/model.go` edit (forward goldens 41 passed,
+  0 failed).
+- **Whole step, in process, by day** (`TestEP08_stepWallAB`, the 1.5B, depth 128, 7 reps alternated, wall time, ids equal
+  every rep):
+  - serve's route (`GOINFER_EP08_ROUTE=serve`: Greedy draws against full rows argmaxed on the host): **1.034 at B = 2,
+    1.048 at B = 4, 1.102 at B = 8**, 7 of 7 reps above 1 in each;
+  - the argmax-only form: 1.022, 1.036, 1.081.
+  - The audit's ceiling was 1.4% at B = 4 and 2.9% at B = 8; the copy and host scan cost more than its S4 slope priced.
+
+### D-B04's routed-expert half: SHIPPED (bit-identical; built and read 2026-10-04, owner: the leftovers)
+
+**What it does.** `gemv_w4a8_moe_rows<R>` and `gemv_w4a8_moe_wacc_rows<R>` (R = 2, 4): the routed-expert GEMVs with
+R18's R rows per simdgroup, `sa_rows_acc<R>` over the routed expert's own weight block. `moeExpertRows` picks them at
+build for the generic MoE and Gemma 4's MoE, resident and paged (`moeExpertRowsOn`, on), wherever the row counts admit
+full threadgroups; gpt-oss and the int8 expert path keep their one-row kernels.
+- **The trap, found by the gate:** the accumulate epilogue, written `out += wgt*acc*asc`, differed from the one-row
+  kernel's in the last bit. The sums are equal; under fast math the compiler lowered the two differently (an epilogue
+  probe on 3 shapes x 3 seeds: the one-row kernel computes `fma(wgt*acc, asc, out)` under fast and under precise math,
+  and five other forms differ in 157-822 outputs). The rows kernel now writes that `fma` out.
+- **Gate** (`TestMoEExpertRows_bitIdentical`, default-run): the tiny Gemma 4 MoE and the tiny Qwen3.5 MoE, all experts
+  resident and paged at 2 slots, every logit of 8 positions equal with and without the rows form, the rows form engaged
+  (R > 0). The unpinned epilogue failed it.
+- **Speed, in process, by day** (`TestDB04R_expertRowsAB`, the arms' logits bit-identical first, 7 reps alternated):
+  - the Qwen1.5-MoE 4-layer slice, resident, GPU time a token: 4.607 -> 4.402 ms, **1.046x**, 7 of 7;
+  - M26, paged at 24 slots, under the kill-watch (swap flat): GPU-busy a token 32.9 -> 31.2 ms, **1.052x**, 7 of 7. Its
+    wall time a token is dominated by expert staging from disk (86-105 ms a rep) and read 0.970 with 3 of 7 above 1,
+    unresolved, which is why the paged arm is graded on GPU-busy time.
+
+### PrefillTailExact for MoE: ON (bit-identical; 2026-10-04, owner: the leftovers)
+
+The warm-against-cold fix (`decoder.PrefillTailExact`, A-P02's record) was declared for the dense and Gated-DeltaNet
+passes only: "MoE's expert grouping at one row is unproven". Now proven and declared for every resident
+(`PrefillTailExact` returns true): the shapes that could differ decline the pass, so their suffix runs the sequential
+loop as before (paged generic MoE, resident Gemma 4 MoE, gpt-oss, int8 KV), and a paged Gemma 4 MoE's layer-major path
+is decode's kernels.
+- `TestPrefillLast_tailContinuationMatchesCold_MoE`: Mixtral, two Qwen3-MoE shapes and the Qwen3.5 MoE hybrid, tails of
+  1, 2, 7, 8, 16 and 33 rows continuing a cached prefix equal the cold pass in every logit; decode of the last position
+  differs (the control).
+- `TestGenerate_warmRepeatMatchesCold_MoE`: through `Generate`, a 20-token prompt repeated (19 positions reused) emits
+  the cold run's 40 greedy tokens on Mixtral and Qwen3-MoE. With MoE excluded again, Mixtral's repeat diverges at token 5;
+  Qwen3-MoE does not diverge either way, so Mixtral is the discriminating case. (A 40-token run with 20 tokens did not
+  discriminate on either; the test was lengthened until it did.)
+
+### Peer refresh: pre-registration (written 2026-10-04, before it runs; owner: "we should set this up to run tonight, right?")
+
+`docs/benchmarks.md`'s Metal decode row describes a build main no longer runs: the post-merge read's consistency check
+failed (the chains never reached serve), the 0.5B's depth cells predate B-P01, and since then the serve chain, B-P02,
+D-B04, E-P05/E-P02/E-P08 and native int8 shipped.
+
+| | |
+|---|---|
+| Instrument | `docs/measurements/metal-audit-2026-10/run-peer-refresh.sh` on the night queue, priority 80 (after tonight's serve-chain grade and M26 prefill grade). One same-session `bench_peer.py` sweep on Metal: goinfer at the pinned rev, mlx-lm 0.31.3, Ollama 0.32.5; greedy at depth 128, 2048 and 3900, and `temp1.0_notrunc` at depth 128; the 0.5B, 1.5B and 7B (no MLX 0.5B checkpoint); 3 runs per cell; the instant idle gate; serve at its defaults (2 KV slots). No old arm (TE5(a): the levers were graded new / old already). Estimate about 45 minutes (the post-merge read's 4 engines took about an hour); queued at 50. |
+| Reading | A record, not a gate. Per cell: goinfer ÷ mlx-lm and goinfer ÷ Ollama, each with its runs' spread. They replace the Metal decode row's cells in `docs/benchmarks.md`, with this provenance. |
+| Void if | Tonight's serve-chain grade turns the serve chain off (the sweep's goinfer ran with it on), or any cell's goinfer DecodePath is not `metal-resident (int4)`: then the row is not updated from it, and the sweep re-runs on the build that ships. |
+| Reported | The 0.5B at 2048 and 3900 against the post-merge read's 0.80x and 0.60x of Ollama (B-P01's block kernel postdates it). |
 
 ## Owner decisions
 
@@ -1671,3 +1762,14 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   built on 2026-10-03 (`0277f4ed`) with its identity gates; only its served speed was owed. Serve's shutdown line now
   reports held tokens (`3b9ef839`), and real serve on the 1.5B ran 128 of 128 decode tokens held with the hold on and
   none with it off. The night job is two arms at the same rev, the old one never holding.
+- 2026-10-04: **E-P05 on, E-P02 reopened and shipped, E-P08 shipped** (owner: "turn E-P05 on. and E-P02. do E-P08 now").
+  All bit-identical. E-P02 1.076x on the 7B's B = 2 step; E-P08 1.022 / 1.036 / 1.081x at B = 2 / 4 / 8 on the 1.5B.
+- 2026-10-04: **D-B04's routed-expert half shipped and PrefillTailExact on for MoE** (owner: the two leftovers). Both
+  bit-identical; the rows form 1.046x on the Qwen1.5-MoE slice's token and 1.052x on M26's GPU-busy time.
+- 2026-10-04: **the peer refresh pre-registered and queued** (owner: "we should set this up to run tonight, right?"),
+  after the serve-chain grade. **C-N01:** aikit v1.56.0 has the fix in its tree (`a143d8d`), but the `gpu` module is
+  tagged separately and its latest tag, `gpu/v0.33.3`, predates it, so goinfer's metal module cannot take it yet; it waits
+  for a `gpu/` tag.
+- 2026-10-04: **M-11's cheap half shipped: async phase 2** (1.132x a token on M26); C-B03's fence built, gated bit-exact
+  and never stale, and off (0.878x / 0.848x). Lever 3's prefetch the same (0.894x / 0.947x). Record:
+  `docs/tasks/task-m26-mac-2026-10.md`, "Decode levers".

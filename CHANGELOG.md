@@ -54,6 +54,15 @@ llvmpipe, SwiftShader) is not probed and is reported as skipped with the reason.
 
 ### Changed
 
+- **Metal: mixture-of-experts decode is a little faster, with the same output.** The routed experts' matrix-vector
+  products compute four output rows per SIMD group: 1.05x per token on a resident Qwen1.5-MoE slice and 1.05x less GPU
+  time per token on the paged Gemma-4-26B-A4B. And on a resident MoE a repeated prompt now continues exactly as its
+  first run did, which before could drift after some tokens (the batched prefill's warm-prompt fix now covers MoE).
+- **Metal: multi-client serving steps faster, with the same output.** When several conversations decode together, each
+  step now takes its greedy tokens' argmax on the GPU instead of copying every row's logits back (1.03x / 1.05x / 1.10x
+  per step at 2 / 4 / 8 clients on the 1.5B coder), reads a shared weight tile once for two clients' projections on the
+  7B (1.08x per step at 2 clients), and runs deep-context attention for all clients in one dispatch (1.02-1.06x). All
+  three are bit-identical to decoding each conversation alone.
 - **Metal: int8 models run as int8 on the GPU.** `-backend metal` with an int8 or int8int8 model (dense Qwen/Llama-style
   families) used to re-quantize every weight to int4. It now runs W8A8 kernels at the precision asked for, compiled
   with precise math. Decode is 1.56-2.09x the CPU at int8int8 on the 0.5B and 1.5B coder, and 0.78-0.88x the old int4

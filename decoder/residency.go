@@ -117,10 +117,21 @@ type ResidentBatchSeq struct {
 }
 
 // ResidentBatchDraw is a temperature-only draw a batched step makes on-device for its row: ForwardSample's
-// arguments, from the sequence's own Sampler.NextDraw.
+// arguments, from the sequence's own Sampler.NextDraw. Greedy marks a greedy generation's row (E-P08,
+// docs/audit-metal-2026-09-30.md), sent only to a resident that implements ResidentBatchGreedy: the id must be the
+// argmax of the logits the row would have returned (after any softcap or logit scale), first maximum on a tie, exactly
+// as the decoder's sampler would pick it from them.
 type ResidentBatchDraw struct {
 	Temperature float64
 	Seed, Draw  uint64
+	Greedy      bool
+}
+
+// ResidentBatchGreedy is an OPTIONAL ResidentBatchStepper extension: BatchGreedyDraw reports that StepBatch returns a
+// Greedy draw row's argmax id (ResidentBatchDraw.Greedy) instead of its logits, so a greedy generation's batched token
+// costs no logits readback.
+type ResidentBatchGreedy interface {
+	BatchGreedyDraw() bool
 }
 
 // ResidentBatchOut is one row of a StepBatch: the drawn id (>= 0) for a sequence that carried a Draw, else its logits.

@@ -119,6 +119,11 @@ func TestMC3Chain_newcomerJoinsAndBothMatchAlone(t *testing.T) {
 	wantB := mc3ChainRun(t, m, pb, nb, decoder.SamplingParams{})
 
 	before := m.ResidentBatchStats()
+	mr, _ := m.ResidentForwardForTest().(*metalResident)
+	greedyBefore := 0
+	if mr != nil && mr.r.batch != nil {
+		greedyBefore = mr.r.batch.greedyDevRows
+	}
 	chA, gA := m.Generate(context.Background(), pa, na, decoder.SamplingParams{})
 	var gotA []int
 	for id := range chA {
@@ -151,6 +156,10 @@ func TestMC3Chain_newcomerJoinsAndBothMatchAlone(t *testing.T) {
 	held, steps := st.HeldTokens-before.HeldTokens, st.Steps-before.Steps
 	if held == 0 || steps == 0 {
 		t.Errorf("held tokens %d, batched steps %d: want both (A chained alone, then batched with B)", held, steps)
+	}
+	// E-P08: the batched steps' greedy rows came back as device-argmax ids, not logits rows (decoder's Greedy draws)
+	if mr == nil || mr.r.batch == nil || mr.r.batch.greedyDevRows-greedyBefore == 0 {
+		t.Errorf("no batched greedy row was served by the device argmax (E-P08's route did not run)")
 	}
 	t.Logf("A %d tokens, B %d, both identical to alone; %d held tokens, %d batched steps, %d holds", len(gotA), len(gotB), held, steps, st.Holds-before.Holds)
 }
