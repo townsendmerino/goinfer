@@ -1,0 +1,2 @@
+started: 2026-10-05 07:52:30 PDT; rev e7a8bef4 (sha256 ff8f1e8f2a342ff7); GOINFER_NO_RESIDENT_MEM_GUARD=1 (owner's one-off OK); swap total = 2048.00M  used = 657.12M  free = 1390.88M  (encrypted); load { 2.05 1.50 1.38 }
+finished: 2026-10-05 07:52:49 PDT, exit 137; swap total = 3072.00M  used = 1864.69M  free = 1207.31M  (encrypted)

@@ -1,0 +1,12 @@
+07:52:30 killwatch: baseline swap-used 657.12MB; kill at +1024MB, tick rule 200MB x2 (0=off), poll 2s, pid 52207
+07:52:30 t+0s swap_used=657.12MB delta=+0MB tick=0MB rss=14800KB free_disk=25G
+07:52:32 t+2s swap_used=657.12MB delta=+0MB tick=0MB rss=2671232KB free_disk=25G
+07:52:34 t+4s swap_used=657.12MB delta=+0MB tick=0MB rss=4386560KB free_disk=25G
+07:52:36 t+6s swap_used=657.12MB delta=+0MB tick=0MB rss=5114400KB free_disk=25G
+07:52:38 t+8s swap_used=657.12MB delta=+0MB tick=0MB rss=5649920KB free_disk=25G
+07:52:40 t+10s swap_used=657.12MB delta=+0MB tick=0MB rss=6453424KB free_disk=25G
+07:52:42 t+12s swap_used=657.12MB delta=+0MB tick=0MB rss=4846960KB free_disk=25G
+07:52:44 t+14s swap_used=657.12MB delta=+0MB tick=0MB rss=2214432KB free_disk=25G
+07:52:47 t+17s swap_used=1394.94MB delta=+737.82MB tick=737.82MB rss=3090224KB free_disk=25G
+07:52:49 t+19s swap_used=1864.69MB delta=+1207.57MB tick=469.75MB rss=2731584KB free_disk=24G
+07:52:49 killwatch: swap delta +1207.57MB > 1024MB -- KILLING 52207

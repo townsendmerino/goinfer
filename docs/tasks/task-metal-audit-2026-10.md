@@ -1,6 +1,6 @@
 # Metal audit program — 2026-10
 
-**Status, 2026-10-05: phases 1 and 2 done; phase 3 built or closed through E-P08, M-11's async phase 2 and the paged layer-major prefills. The serve chain's served grade kept it on (1.034×), and the peer refresh replaced the benchmarks Metal decode row. Open: the int8 MoE rows form's speed read (re-queued); D-P01's batched expert GEMM; T1.13 (nobara); C-N01 (an aikit `gpu/` tag); the Track 4 decisions. The branch `metal-audit` merged to main on 2026-10-03, and the program continues on main (started 2026-10-01).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
+**Status, 2026-10-05: phases 1 and 2 done; phase 3 built or closed through E-P08, M-11's async phase 2 and the paged layer-major prefills. The serve chain's served grade kept it on (1.034×), and the peer refresh replaced the benchmarks Metal decode row. Open: the int8 MoE rows form's speed read (the slice does not fit resident on the Mac); D-P01's batched expert GEMM; T1.13 (nobara); C-N01 (an aikit `gpu/` tag); the Track 4 decisions. The branch `metal-audit` merged to main on 2026-10-03, and the program continues on main (started 2026-10-01).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
 order the audit's §10 items run in, re-tagged for the run-budget rules and this Mac's limits. Each item keeps the
 definition, band, probe and kill line its §10 row gives; this doc does not restate them, so read the row before
 starting an item. Item IDs are the audit's. Decisions marked **O-** are the audit's Track 4 owner decisions, not the
@@ -1524,6 +1524,15 @@ applied and the rows form stays on as built. The job now waits up to 15 minutes 
 reach 5.8 GiB before it loads, and fails naming the reading after that. It is re-queued at priority 40, ahead of any M26
 job.
 
+**2026-10-05, owner: "force int8 MoE rows to run now".** Run by day at 03:30 PDT, the guard on: 6.55 GiB live-available
+before the load, and the guard read 3.70 GB after it (the decoder's own CPU-side copy is resident by then) and declined
+again. Then, with the owner's one-off OK, it ran with `GOINFER_NO_RESIDENT_MEM_GUARD=1` and `scripts/swap_killwatch.sh`
+armed at +1 GB (07:52 PDT): RSS reached 6.45 GB during the build, then swap went 657 → 1,395 → 1,865 MB in 4 s (the swap
+file grew from 2 to 3 GB), and the kill-watch killed it 19 s in, before any token was timed. **The guard was right: the
+int8 slice does not fit resident on this Mac.** Nothing was measured; the rows form stays on as built, bit-identical,
+its speed unread. It is not re-queued: no night on this Mac gives it more memory than the guard has already refused.
+It needs a smaller resident int8 MoE, or a box with more RAM. Kill-watch log: `night-2026-10-04c/int8rows-bypass-killwatch.log`.
+
 ## Owner decisions
 
 None blocks phase 1 or 2. Each is needed only when its build comes up.
@@ -1874,3 +1883,5 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   prefill **stays on** (1.385 at M = 128, 1.549 at M = 512; `docs/tasks/task-m26-mac-2026-10.md` 4b). The peer refresh
   is valid and replaces the benchmarks Metal decode row: ahead of Ollama in all 12 cells, the 0.5B at depth now 1.24 / 1.13×.
   The int8 MoE rows read did not run (the guard declined it on memory M26 had just used) and is re-queued with a wait.
+- 2026-10-05: **the int8 MoE rows read forced by day** (owner): the guard declined it again, and the bypass (owner's
+  one-off OK, kill-watch armed) was killed at +1.2 GB of swap in 19 s, before any timing. Speed unread; not re-queued.
