@@ -1,0 +1,3 @@
+[g4lm   11.7s] built: metal-resident (int4), 47 slots a layer, pid 41033
+[g4lm  105.9s] RESULT M=128, 47 slots: sequential 8955 ms, layer-major 6550 ms (medians of 5); sequential / layer-major median 1.385, 0 of 5 reps above 1.5 (per rep 1.333 1.398 1.343 1.385 1.388); experts staged a prompt: sequential 3239, layer-major 3568; logits and K/V equal in every rep
+[g4lm  456.4s] RESULT M=512, 47 slots: sequential 35278 ms, layer-major 22882 ms (medians of 5); sequential / layer-major median 1.549, 5 of 5 reps above 1.5 (per rep 1.537 1.541 1.556 1.549 1.564); experts staged a prompt: sequential 12561, layer-major 14269; logits and K/V equal in every rep

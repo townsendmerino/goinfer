@@ -1,0 +1,7 @@
+rev:     a845af18
+binary:  /Users/francistownsend-merino/goinfer-bench/m26-mac-2026-10/metal-tagged-a845af18.test (sha256 6c44d6ca6f0361fd)
+model:   /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw (16222840395 bytes)
+started: 2026-10-04 23:10:55 PDT
+load:    0.60 0.77 1.09
+swap:    total = 2048.00M  used = 656.88M  free = 1391.12M  (encrypted)
+finished: 2026-10-04 23:18:33 PDT, exit 0
