@@ -140,7 +140,7 @@ positions are inherent, not recompute.
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:80-87`) → `KVCache.TruncateTo`
-  (`decoder/kvcache.go:544`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
+  (`decoder/kvcache.go:587`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
   is **inexact** (cold prefill), and `pos == c.pos` is **exact**. An agent turn is `previous prompt +
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
@@ -752,6 +752,13 @@ P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aiki
 - **Do first:** it is cheap, and it is what stops the class from coming back.
 
 ### R-12 · CPU decode copies the whole sliding window out of the ring, every token, every local layer
+
+> **Status 2026-10-05: fixed for f32 rings (bit-identical, 1.045x on Gemma 3 1B); the Gemma 2 2B read is queued overnight.** Measured first: the copy is 2.46 ms of a 39.4 ms token on Gemma 3 1B at depth 900 and 31.7 ms of 201 ms
+> (15.7%) on Gemma 2 2B at depth 4500. The design is the audit's, in one respect different: the ring keeps a MIRROR of its slots (`[w, 2w)` equal `[0, w)`), allocated only when a layer's window first wraps, and `write` and
+> `commitBatch` keep it coherent, so the canonical half every other reader uses is untouched. Decode writes the new row first and attends over `ring.window()` with no copy; int8 rings keep the copy path. **Cost: a wrapped layer holds
+> 2W rows, +436 MB on Gemma 2 2B at full window**; `kvBytesForCtx` counts it. Gates, all in `docs/measurements/r12-ring-direct-2026-10-05.md`: the random-operation ring invariant, three tiny sliding-window checkpoints across every wrap,
+> and 48 x 262144 logits on the real Gemma 3 1B, 0 differ; red under five plantings. Paired ABBA on the 1B: 39.39 to 37.73 ms/token, median 1.045x, 5 of 5 pairs faster (67% of the copy cost; the rest is cache warmth the copy used to
+> provide). The 2B arm is pre-registered in that record with a decision rule and queued for tonight.
 
 - **What happens:** decode on a ring layer calls `batchReadLocal` with K=1 (`decoder/attention.go`,
   `decoder/kvcache.go`). That copies every resident window row of K and V into `localK`/`localV`. One row changed

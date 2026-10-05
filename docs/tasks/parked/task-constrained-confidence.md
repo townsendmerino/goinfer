@@ -134,7 +134,7 @@ is.
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
   (`decoder/model.go:1322`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
-  (`decoder/arch.go:954`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
+  (`decoder/arch.go:959`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
   contract (`decoder/capture.go:14`) is the residual *after* layer l, before the final norm, so D2
   applies the final RMSNorm itself and must match HF's `hidden_states[-1]`, which is already normed
   on Qwen. Verify in D2; do not assume.
@@ -145,7 +145,7 @@ is.
     closure (`decoder/weights.go:764`), and the GDN projections are loaded outside it.
   - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:353`) refuses every own-forward
     family by design.
-- **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:544`) reports
+- **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:587`) reports
   inexact on any partial rewind when the model has recurrent state, and `.giw-kv` snapshots skip
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
@@ -938,10 +938,10 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 
 `constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
 `Process`) · `decoder/model.go:1322` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
-contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
+contract) · `decoder/arch.go:959` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:701`, `:744`
-(merge-at-load) · `decoder/kvcache.go:544` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
+(merge-at-load) · `decoder/kvcache.go:587` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:35`, `:536`, `:538` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/serveapp/main.go:692` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
