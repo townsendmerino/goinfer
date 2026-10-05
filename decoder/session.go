@@ -27,13 +27,19 @@ type Session struct {
 	m      *Model
 	cache  *KVCache
 	tokens []int // the token sequence whose KV is live in cache (prompt + generated)
+
+	// cleanCache: the cache was fully reset and nothing has run through it since, so a second TruncateTo(0) would find nothing to do (audit R-16). True only from
+	// NewSession (a born-zero cache) and Reset; rewindForReuse consumes it. The zero value is the safe side: a session restored from a snapshot, and every session
+	// after its first generation, takes the full reset. It is NOT a general "the state is clean" claim; the extra checks in rewindForReuse (no tokens, pos 0) exist
+	// because tests and snapshot loaders build caches by hand.
+	cleanCache bool
 }
 
 // NewSession allocates an empty session. capHint pre-sizes the KV cache for an
 // expected max sequence length (0 = grow on demand); the cache persists and is
 // reused across this session's Generate calls.
 func (m *Model) NewSession(capHint int) *Session {
-	return &Session{m: m, cache: m.NewCache(capHint)}
+	return &Session{m: m, cache: m.NewCache(capHint), cleanCache: true}
 }
 
 // Tokens returns the token sequence currently materialized in the cache (the
@@ -63,6 +69,7 @@ func (s *Session) ClearAdapter() { s.cache.lora = nil }
 func (s *Session) Reset() {
 	s.cache.TruncateTo(0)
 	s.tokens = s.tokens[:0]
+	s.cleanCache = true
 }
 
 // rewindForReuse rewinds the cache to the longest reusable prefix shared with prompt and returns
@@ -71,6 +78,14 @@ func (s *Session) Reset() {
 // stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejected call
 // leaves a warm session untouched.
 func (s *Session) rewindForReuse(prompt []int) int {
+	// R-16: a session that was just created, or Reset (sessionLRU.fresh's eviction path), has already had everything TruncateTo(0) clears cleared, and nothing has
+	// run since, so the reset below would zero a recurrent state (about 63 MB for a 30-layer DeltaNet model, an estimate) that is already zero. Every guard fails
+	// toward doing the reset: the flag is consumed here whatever happens, and a session with tokens or a cache past position 0 never skips.
+	clean := s.cleanCache && len(s.tokens) == 0 && s.cache.Pos() == 0
+	s.cleanCache = false
+	if clean {
+		return 0
+	}
 	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
 	if !s.cache.TruncateTo(matched) {
 		s.cache.TruncateTo(0) // drop everything; a full cold prefill re-populates the ring slots

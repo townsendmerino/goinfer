@@ -229,7 +229,7 @@ shrink it:
 - **Ring buffers for sliding-window layers** — some layers only ever need the
   last *W* tokens, so the cache for them is a fixed-size circular buffer that
   overwrites old entries instead of growing forever
-  ([decoder/kvcache.go:141-141](../decoder/kvcache.go#L126-L141)).
+  ([decoder/kvcache.go:144-144](../decoder/kvcache.go#L126-L141)).
 
 ### Quantization — making the *weights* small too
 
@@ -290,7 +290,7 @@ adapter."
 
 ### Two more worth a mention
 
-- **Session prefix reuse** ([decoder/session.go:71-99](../decoder/session.go#L71-L99)) —
+- **Session prefix reuse** ([decoder/session.go:78-106](../decoder/session.go#L71-L99)) —
   in a chat, each new turn shares a long prefix with the last one (the whole
   conversation history). Instead of reprocessing it, the engine keeps the KV
   cache from before and only processes the *new* part. Huge win for chat and

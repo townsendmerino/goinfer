@@ -208,3 +208,92 @@ func TestSession_bailingHybridNeverReusesKDAState(t *testing.T) {
 		t.Errorf("Session.Reset (sessionLRU eviction) left the previous conversation's state in %v", d)
 	}
 }
+
+// TestSession_cleanCacheSkipsTheSecondRecurrentReset is audit R-16. A new session, or one that was just Reset (sessionLRU.fresh's eviction path),
+// had its recurrent state zeroed already; rewindForReuse used to zero it again on the first Generate. The count is of resetRecurrent calls on a real
+// recurrent cache. The other half matters more: every case where the skip must NOT happen is pinned too, because a wrongly skipped reset is the
+// cross-conversation state leak audit C-01 and C-03 closed.
+func TestSession_cleanCacheSkipsTheSecondRecurrentReset(t *testing.T) {
+	var fam ownForwardFamily
+	for _, f := range ownForwards {
+		if f.Name == "bailing_hybrid" {
+			fam = f
+		}
+	}
+	if fam.Name == "" {
+		t.Fatal("bailing_hybrid is no longer in ownForwards — this gate would test nothing")
+	}
+	m, _ := realCacheFor(t, fam)
+	prompt := []int{4, 5, 6}
+
+	t.Run("new session: no reset at all before the first generation", func(t *testing.T) {
+		s := m.NewSession(8)
+		if names, _ := recurrentKinds(s.cache); len(names) == 0 {
+			t.Fatal("the session cache holds no recurrent kinds")
+		}
+		if got := s.rewindForReuse(prompt); got != 0 || s.cache.recurrentResets != 0 {
+			t.Errorf("rewindForReuse = %d with %d recurrent resets; want 0 and 0 (a born-zero cache needs none)", got, s.cache.recurrentResets)
+		}
+	})
+
+	t.Run("reset session: Reset zeroes once, the following rewind does not zero again", func(t *testing.T) {
+		s := m.NewSession(8)
+		names, fields := recurrentKinds(s.cache)
+		fillRecurrent(t, fields)
+		for range 3 {
+			s.cache.Advance()
+		}
+		s.tokens = []int{1, 2, 3}
+		s.cleanCache = false // as after a real generation
+		s.Reset()
+		if s.cache.recurrentResets != 1 {
+			t.Fatalf("Session.Reset made %d recurrent resets, want 1", s.cache.recurrentResets)
+		}
+		if d := recurrentDirt(names, fields); len(d) > 0 {
+			t.Fatalf("Reset left state behind: %v", d)
+		}
+		if got := s.rewindForReuse(prompt); got != 0 || s.cache.recurrentResets != 1 {
+			t.Errorf("rewindForReuse after Reset = %d with %d recurrent resets; want 0 and still 1", got, s.cache.recurrentResets)
+		}
+		// The flag is consumed by the first rewind. Dirty the state WITHOUT moving pos or adding tokens, the shape of a forward that errored mid-sweep
+		// (state advanced, pos not): the pos and token guards cannot see it, so only the consumed flag makes this second rewind reset.
+		fillRecurrent(t, fields)
+		s.rewindForReuse(prompt)
+		if s.cache.recurrentResets != 2 {
+			t.Errorf("a second rewindForReuse skipped its reset (%d resets); the clean flag must be consumed by the first", s.cache.recurrentResets)
+		}
+		if d := recurrentDirt(names, fields); len(d) > 0 {
+			t.Errorf("state survived the second rewind: %v", d)
+		}
+	})
+
+	t.Run("never skips when the cache is not provably empty", func(t *testing.T) {
+		// Guards for hand-built caches (tests, snapshot loaders): the flag alone is not trusted. (A forward that errors mid-sweep with pos unmoved is
+		// covered by the flag being consumed, pinned in the previous subtest: every Session forward goes through rewindForReuse first.)
+		for name, mutate := range map[string]func(s *Session){
+			"cache advanced": func(s *Session) { s.cache.Advance() },
+			"tokens present": func(s *Session) { s.tokens = []int{1} },
+		} {
+			s := m.NewSession(8)
+			names, fields := recurrentKinds(s.cache)
+			fillRecurrent(t, fields)
+			mutate(s)
+			before := s.cache.recurrentResets
+			s.rewindForReuse(prompt)
+			if s.cache.recurrentResets != before+1 {
+				t.Errorf("%s: the reset was skipped on a cache that is not provably empty", name)
+			}
+			if d := recurrentDirt(names, fields); len(d) > 0 {
+				t.Errorf("%s: state survived: %v", name, d)
+			}
+		}
+		// a session built the way LoadSession builds one starts with the flag false
+		s := &Session{m: m, cache: m.NewCache(8)}
+		_, fields := recurrentKinds(s.cache)
+		fillRecurrent(t, fields)
+		s.rewindForReuse(prompt)
+		if s.cache.recurrentResets != 1 {
+			t.Errorf("a session constructed without NewSession skipped its reset (%d)", s.cache.recurrentResets)
+		}
+	})
+}
