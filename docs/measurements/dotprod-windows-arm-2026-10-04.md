@@ -1,6 +1,6 @@
 # DotProd versus the base kernels on Azure Cobalt 100 (the Windows ARM question): pre-registration, 2026-10-04
 
-**Status: run 1 done and NOT the registered measurement (instrument defects, Deviation 1); run 2 aborted by its own guard and graded nothing (Deviation 2); run 3 pending.** The rule and bands below were committed before any run and are not edited after one. Corrections and run results are appended as dated sections at the end, with this text unchanged above them, except that the "Arms" bullet carries an inline correction.
+**Status: DONE. Run 3 is the registered measurement and meets the pre-registered claim on both runners (see Result); run 1 had instrument defects (Deviation 1) and run 2 aborted by its own guard and graded nothing (Deviation 2).** The rule and bands below were committed before any run and are not edited after one. Corrections and run results are appended as dated sections at the end, with this text unchanged above them, except that the "Arms" bullet carries an inline correction.
 
 ## The question
 
@@ -69,6 +69,42 @@ What it did show: the Windows clock fix took (`QueryPerformanceCounter`, smalles
 
 **Fix, decided before run 3 and independent of its result.** Calibrate each arm to 1.5x the target so ordinary variation stays above the floor, and re-time an arm with a larger call count when a block still comes in under 90% of 20 ms (at most three times, then the test fails). **The re-timing is triggered by block length only, never by the speedup, and the short measurement is discarded, not kept.** The count of re-timings per cell is logged (`retimed N`) next to the shortest block (`min-block`). The floor itself is not lowered, and the rule, bands, cells and 21 rounds are unchanged. **Run 3 is the registered measurement.** Runs 1 and 2 are reported as what they are.
 
-## Result
+## Result: run 3, the registered measurement (2026-10-05 03:29-03:37 PDT)
 
-*Run 3 not yet run.*
+aikit workflow run **37296843637**, aikit `f00df3f`, both runners succeeded, 21 rounds, 100 production-arm cells each. Raw logs: `docs/measurements/dotprod-windows-arm-2026-10-04/run3-registered-{linux,windows}-arm64.log` (run 1's are kept beside them, labelled).
+
+| runner | image | CPU | 1-min load at start | clock (smallest tick) |
+|---|---|---|---|---|
+| ubuntu-24.04-arm | `ubuntu-24.04-arm` 20260927.135.1 | Neoverse-N2 (Cobalt 100), 4 vCPU | 0.40 | `time.Now` monotonic (32 ns) |
+| windows-11-arm | `windows-11-vs2026-arm64` 20260924.168.1 | Cobalt 100, 4 cores | not captured | `QueryPerformanceCounter` (100 ns) |
+
+Both reported `ActiveKernels = {Arch:arm64 Detected:[dotprod] Active:[dotprod] Forced:[]}`.
+
+**Validity** (the conditions Deviations 1 and 2 added): no NaN or Inf line on either runner; the shortest timed block was **23.2 ms (Linux) and 18.8 ms (Windows)** against the 18 ms floor; **no re-timing was needed in any cell**; the equivalence check passed in every cell (base and dot results agree to 1e-4).
+
+**SUMMARY lines, verbatim**
+
+| runner | line |
+|---|---|
+| ubuntu-24.04-arm | `60 cells, 60 FASTER, 0 SLOWER, 0 other; overall claim "DotProd is faster on this core" = true` |
+| windows-11-arm | `60 cells, 60 FASTER, 0 SLOWER, 0 other; overall claim "DotProd is faster on this core" = true` |
+
+**Verdict under the pre-registered rule: the claim "DotProd is faster on Cobalt 100's kernels" holds on both runners.** At every M (not only decode), Linux has 100 of 100 production-arm cells FASTER; Windows has 99 FASTER and 1 `AMBIGUOUS (noisy)` (`int4 qwen2.5-1.5B k_proj K=1536 N=256 M=64 workers=0`: median 28.03x, IQR [25.06, 33.13], all rounds above 1); **no cell on either runner is SLOWER**.
+In all 200 cells both order-half medians are at least 1.03 (no arm wins only by going second).
+
+**What it measured** (median over the per-cell medians; range over cells; the production `dot` arm against `base`):
+
+| | decode (M=1) | prefill (M=64) |
+|---|---|---|
+| int4 W4A8, Linux | **28.3x** (24.9 - 28.8) | **35.6x** (29.0 - 37.4) |
+| int4 W4A8, Windows | **28.2x** (24.5 - 28.6) | **35.8x** (28.0 - 37.4) |
+| int8 W8A8, Linux | **1.62x** (1.35 - 1.89) | **3.99x** (2.73 - 4.53) |
+| int8 W8A8, Windows | **1.54x** (1.33 - 1.76) | **3.99x** (2.87 - 4.55) |
+
+- **The int4 ratio is large because the base arm is scalar Go**, not a NEON kernel (Deviation 1): a core without DotProd runs `dotW4A8Scalar` for every int4 matmul, which is what Windows on ARM did before aikit v1.56.0.
+- **Attribution (Linux, int4 decode, not graded):** SDOT on the canonical layout is **16.1x** over base, and the row4 layout (what goinfer's loaders build) takes it to 28.3x, so about 1.75x of the 28x is the layout and the rest the instruction.
+- **Windows tracks Linux cell by cell** (Windows/Linux speedup ratio: median 0.997, range 0.86 - 1.08), as expected for the same silicon: the OS does not change the kernels, and aikit v1.56.0's probe puts Windows on them.
+- **Models:** the int4 decode ratio is the same at 0.5B, 1.5B and 7B (about 28x); the int8 decode ratio rises with size (1.45x, 1.64x, 1.72x on Linux).
+- **Run 1 agreed** (Linux, out-of-spec blocks: int4 28.1x / 35.6x, int8 1.61x / 4.00x), so the deviations changed the instrument, not the answer.
+
+**What this does not establish.** A kernel-level result gives DIRECTION, not size: this repo measured a kernel microbenchmark's served effect at 0.05-1.72x of it, and a decode token spends time outside these projections (attention, norms, the embedding and head, sampling), so **the whole-token speedup is smaller than the kernel ratios above and is unmeasured.** Shared VMs, no idle gate, exploratory (no benchmarks-table row). **Snapdragon X, a different core, is not covered.** Cobalt 100 is the only silicon measured.
