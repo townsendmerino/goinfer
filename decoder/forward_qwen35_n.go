@@ -53,6 +53,7 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 	var attnPool []headWorkerScratch
 	var alk, alv []float32
 
+	var hq w4a8Act // the K-row normed block, quantized once per projection group (R-13); reused per layer
 	for l := 0; l < arch.NumLayers; l++ {
 		if err := reqCtx.Err(); err != nil {
 			return nil, err
@@ -70,8 +71,9 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 			if dnZ == nil {
 				dnZ, dnCore = make([]float32, K*valueDim), make([]float32, K*valueDim)
 			}
-			matmul(be, &d.inProjQKV, norm, mixed, K)
-			matmul(be, &d.inProjZ, norm, dnZ, K)
+			hq.prepare(be, &d.inProjQKV, norm, K)
+			matmulPre(be, &d.inProjQKV, &hq, norm, mixed, K)
+			matmulPre(be, &d.inProjZ, &hq, norm, dnZ, K)
 			for i := range K {
 				n := row(norm, i, hidden)
 				bt := matvec(d.inProjB, nv, hidden, n)
@@ -89,9 +91,10 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 					alk, alv = make([]float32, (startPos+K)*kvDim), make([]float32, (startPos+K)*kvDim)
 				}
 			}
-			matmul(be, &a.qProj, norm, qg, K)
-			matmul(be, &a.kProj, norm, k, K)
-			matmul(be, &a.vProj, norm, v, K)
+			hq.prepare(be, &a.qProj, norm, K)
+			matmulPre(be, &a.qProj, &hq, norm, qg, K)
+			matmulPre(be, &a.kProj, &hq, norm, k, K)
+			matmulPre(be, &a.vProj, &hq, norm, v, K)
 			invFreq := arch.ropeInvFreq(l)
 			ms := arch.ropeMscale(l)
 			for i := range K {
@@ -124,8 +127,9 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 			if gt == nil {
 				gt, up = make([]float32, K*inter), make([]float32, K*inter)
 			}
-			matmul(be, &lw.GateProj, norm, gt, K)
-			matmul(be, &lw.UpProj, norm, up, K)
+			hq.prepare(be, &lw.GateProj, norm, K)
+			matmulPre(be, &lw.GateProj, &hq, norm, gt, K)
+			matmulPre(be, &lw.UpProj, &hq, norm, up, K)
 			if len(gt) < activationFanoutThreshold {
 				swiglu(gt, up)
 			} else {

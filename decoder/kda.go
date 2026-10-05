@@ -32,6 +32,7 @@ type kdaWeights struct {
 type kdaState struct {
 	convWinQ, convWinK, convWinV [][]float32
 	s                            []float32
+	hq                           w4a8Act // h quantized once for q, k, v, f and g (R-13); rewritten every step
 }
 
 func newKDAState(p kdaParams) *kdaState {
@@ -79,9 +80,10 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 	projSize := H * D
 
 	// 1. Project, then per-stream depthwise causal conv + SiLU.
-	qm := matvecWM(be, &w.qProj, h)
-	km := matvecWM(be, &w.kProj, h)
-	vm := matvecWM(be, &w.vProj, h)
+	st.hq.prepare(be, &w.qProj, h, 1)
+	qm := matvecWMPre(be, &w.qProj, &st.hq, h)
+	km := matvecWMPre(be, &w.kProj, &st.hq, h)
+	vm := matvecWMPre(be, &w.vProj, &st.hq, h)
 	q := kdaConvStream(qm, w.qConvW, st.convWinQ, K)
 	k := kdaConvStream(km, w.kConvW, st.convWinK, K)
 	v := kdaConvStream(vm, w.vConvW, st.convWinV, K)
@@ -90,7 +92,7 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 	st.convWinV = kdaSlideWindow(st.convWinV, vm, K)
 
 	// 2. Gates: per-channel decay-gate input, per-head beta.
-	gDecayRaw := matvecWM(be, &w.fProj, h) // [projSize]
+	gDecayRaw := matvecWMPre(be, &w.fProj, &st.hq, h) // [projSize]
 	betaLogits := matvec(w.bProj, H, hidden, h)
 
 	// 3. Per-head KDA recurrence — the one genuinely new primitive (per-channel decay), reusing
@@ -100,7 +102,7 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 
 	// 4. Gated RMSNorm (over headDim, × sigmoid(g), NOT SiLU — FusedRMSNormGated's own
 	// activation='sigmoid'), then out_proj.
-	gOutRaw := matvecWM(be, &w.gProj, h)
+	gOutRaw := matvecWMPre(be, &w.gProj, &st.hq, h)
 	for hh := range H {
 		seg := core[hh*D : (hh+1)*D]
 		zt := gOutRaw[hh*D : (hh+1)*D]

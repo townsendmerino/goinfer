@@ -137,6 +137,7 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 	normd := make([]float32, hidden)
 	sub := make([]float32, hidden)
 
+	var hq w4a8Act // normd quantized once for q/k/v and once for gate/up (R-13); reused per layer
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
 		global := arch.isGlobalLayer(l)
@@ -152,18 +153,19 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 		normalizeInto(arch, normd, h, lw.PreAttnNorm, nil, hidden)
 
 		q := make([]float32, nH*hd)
-		matmul(be, &lw.QProj, normd, q, 1)
+		hq.prepare(be, &lw.QProj, normd, 1)
+		matmulPre(be, &lw.QProj, &hq, normd, q, 1)
 		rmsNorm(q, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
 		applyRoPE(q, nH, hd, pos, invFreq, 1.0)
 
 		if l < firstShared { // owns its KV
 			k := make([]float32, nKV*hd)
-			matmul(be, &lw.KProj, normd, k, 1)
+			matmulPre(be, &lw.KProj, &hq, normd, k, 1)
 			v := make([]float32, nKV*hd)
 			if lw.VFromK { // attention_k_eq_v: V is v_norm(k_proj output)
 				copy(v, k)
 			} else {
-				matmul(be, &lw.VProj, normd, v, 1)
+				matmulPre(be, &lw.VProj, &hq, normd, v, 1)
 			}
 			rmsNorm(k, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne) // K: k_norm + RoPE
 			applyRoPE(k, nKV, hd, pos, invFreq, 1.0)
@@ -199,8 +201,9 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 			normalizeInto(arch, normd, h, lw.PreMLPNorm, nil, hidden)
 			gate := make([]float32, ffn)
 			up := make([]float32, ffn)
-			matmul(be, &lw.GateProj, normd, gate, 1)
-			matmul(be, &lw.UpProj, normd, up, 1)
+			hq.prepare(be, &lw.GateProj, normd, 1)
+			matmulPre(be, &lw.GateProj, &hq, normd, gate, 1)
+			matmulPre(be, &lw.UpProj, &hq, normd, up, 1)
 			if len(gate) < activationFanoutThreshold {
 				geglu(gate, up)
 			} else {

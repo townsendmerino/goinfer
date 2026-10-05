@@ -111,9 +111,11 @@ func causalAttention(
 		scr.ws.SetThreshold(int4ParThreshold)
 		matmulW4A8Batch(be, scr.ws, h, 1, lw.QProj.Cols(), group, scr.qkvOpsW4[:], lw.QProj.ActQuantGroup())
 	} else {
-		matmulInto(scr.ws, be, &lw.QProj, h, q, 1)
-		matmulInto(scr.ws, be, &lw.KProj, h, k, 1)
-		matmulInto(scr.ws, be, &lw.VProj, h, v, 1)
+		// h quantized once for q, k and v (R-13) when they run the CPU W4A8 path; each matmul quantized it again.
+		scr.hq.prepare(be, &lw.QProj, h, 1)
+		matmulIntoPre(scr.ws, be, &lw.QProj, &scr.hq, h, q, 1)
+		matmulIntoPre(scr.ws, be, &lw.KProj, &scr.hq, h, k, 1)
+		matmulIntoPre(scr.ws, be, &lw.VProj, &scr.hq, h, v, 1)
 	}
 	if decodeTiming {
 		atomic.AddInt64(&dtQKV, int64(time.Since(dt0)))

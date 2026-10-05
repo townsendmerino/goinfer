@@ -113,7 +113,7 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 	l4gate, l4up := make([]float32, sc), make([]float32, sc)
 
 	// Shared expert on the unscaled input, ungated.
-	swiGLUExpert(&lw.SharedExpert, h, out, moe.SharedIntermediateDim, m.be, l4gate, l4up)
+	swiGLUExpert(&lw.SharedExpert, h, out, moe.SharedIntermediateDim, m.be, l4gate, l4up, nil)
 
 	// M-34 (audit-2026-09-10): touch every routed expert before evaluating it, same as
 	// moeMLP (decoder/mlp.go) — without this, m.pager's budget banner and SpanCache LRU are
@@ -132,7 +132,7 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 		for i := range h {
 			scaled[i] = w * h[i]
 		}
-		swiGLUExpert(&lw.Experts[e], scaled, expOut, moe.IntermediateDim, m.be, l4gate, l4up)
+		swiGLUExpert(&lw.Experts[e], scaled, expOut, moe.IntermediateDim, m.be, l4gate, l4up, nil) // each expert's input is h scaled by its own weight
 		addResidual(out, expOut)
 	}
 }

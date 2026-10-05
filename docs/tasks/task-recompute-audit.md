@@ -802,6 +802,26 @@ The input does not change between calls, and quantization is deterministic, so e
   group), `WeightMat.Row` on canonical int4, and the grouped paths' per-span buffers.
 - **Vision towers:** `make` then a `MatmulBT` that clears again (patch embed, every tower). Low impact.
 
+**R-13 and R-14, status 2026-10-05: built, bit-identical, stays on (owner: "it stays on"); lands with the aikit tag
+that carries the Pre entries.**
+- **aikit (branch `r13-w4a8-pre`, `69822b0`; released by nobara):** `ActQ`, `QuantizeActQ`,
+  `WeightMat.QuantizeActW4A8`, `WeightMat.MatmulBTW4A8PreInto`, `MatmulBTW4A8F16Pre`. Every quantizing W4A8 entry is now
+  quantize-into-scratch then the shared dispatch, so Pre and non-Pre are bit-identical by construction. The grouped
+  `MatmulBTW4A8Batch` quantizes once for the batch (R-14's first item).
+- **goinfer (branch `r13-w4a8-pre`):** one quantization per shared input in `moeMLP` (2k+2 -> 1 a layer),
+  `swiGLUExpert`, the fused gate+up workers (R-13b), decode q/k/v and gate/up, `forwardN` and `cpu_batch`'s
+  fallbacks, Qwen3.5 attention and its batched forward, Gated DeltaNet, KDA, and Gemma 4's decode and batched forwards.
+- **Gates:** `TestW4A8Pre_decodeBitIdenticalAndTaken` (10 tiny fixtures, groups 0 and 32) and
+  `TestW4A8Pre_prefillBitIdenticalAndTaken`, bit-identical to `w4a8PreOff` with the shared path taken; a stale-block
+  mutation fails them. Before/after hashes identical on 8 fixtures x 3 modes against main + aikit v1.56.1.
+- **Speed on the Mac's CPU** (`TestR13_cpuAB`, by day, exploratory): 1.5B decode 0.995, 256-token prefill 1.014; the
+  Qwen1.5-MoE slice's decode 1.008. NEON quantization is too cheap for the repeats to show on arm64. Not measured on
+  amd64, where the fused gate+up path is on by default (2w -> 1 quantizations a layer) and quantization is slower.
+  Raw: `docs/measurements/r13-cpu-ab-2026-10-05.txt`.
+- **Not done:** R-14's single fork/join across a grouped batch's ops, the grouped fast rows' per-row scale widening at
+  M > 1, its per-call allocations (`MatmulQKAcc64Group`, `WeightMat.Row`, grouped per-span buffers) and `MatmulBT`'s
+  zero-then-accumulate.
+
 ### R-15 · int8 KV decode dequantizes the whole history every token (opt-in `--kv i8`)
 
 > **Status 2026-10-05: the widen now runs on all cores, bit-identical (1.234x on Qwen2.5 1.5B at depth 2000); the O(context) work itself remains.** Measured first: at depth 2000 the int8-KV token is 80.5 ms against 59.5 for f32, and the
