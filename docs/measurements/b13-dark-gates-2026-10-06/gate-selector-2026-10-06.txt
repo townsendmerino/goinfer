@@ -1,0 +1,190 @@
+  EXAMINED: 1003 test func(s) across 1 scanned dir(s) — decoder. Packages outside that list are NOT counted here.
+  SELECTOR COVERAGE — 1003 tests in decoder/
+    reached by a selector : 72
+    reached by NONE       : 931
+
+  SELECTED but conditionally unreachable — these are the plumbing gaps:
+    asset-gated (skips without a checkpoint)  (68)
+      TestAWQ_parity
+      TestBailingHybrid_forwardParity
+      TestCohere2_forwardParity
+      TestCohere_forwardParity
+      TestDeepseek_textParity
+      TestForward_logitParity
+      … and 62 more
+    build tag: realckpt  (1)
+      TestGptOssReal_logitParity
+    env-gated: GOINFER_INT4_GOLDEN_UPDATE  (1)
+      TestInt4_forwardParity
+
+  REACHED BY NONE (931), broken down by what ALSO gates them:
+    A test here runs only if someone invokes it directly. One that is additionally
+    env- or asset-gated will then SKIP unless that is set too — two silent layers.
+    no gate — runs whenever selected, but nothing selects it  (449)
+      TestAPITiers_hardListMatchesDoc
+      TestActQuantGroup_perModel
+      TestActivationQuantHazard_declinesGPUResidency
+      TestAdaptiveDepth_costCurve
+      TestAddBias
+      TestAdmitPrefillMemory_admitsARequestThatFits
+      … and 443 more
+    asset-gated (skips without a checkpoint)  (275)
+      TestA3FastAttentionDivergence
+      TestA3NeverReachesSpeculativeVerify
+      TestApplyMRoPEPairwise_matchesHF
+      TestApplyMRoPEPairwise_textIsInterleaved
+      TestApplyMRoPE_scalarEquivalence
+      TestAttendBatchedHeads_vsNaive
+      … and 269 more
+    build tag: realckpt  (76)
+      TestCohere2R7bReal_gate
+      TestCohereAyaReal_gate
+      TestDFlashAcceptance
+      TestDFlashDraftScaling
+      TestDFlashGemma4_diag
+      TestDeepseekGGUFReal_gate
+      … and 70 more
+    build tag: goinfer_testhooks  (34)
+      TestA3MoEExclusionIsMeasured
+      TestA3MoERouteFlips
+      TestA3MoETokenLevel
+      TestCPUDecode_weightBytesPerToken
+      TestCPUKVI8_parallelWidenAB
+      TestCPUKVI8_parallelWidenLogitsBitIdentical
+      … and 28 more
+    build tag: darwin  (10)
+      TestDecodeSysctlU64
+      TestDecodeXswUsed
+      TestExcludeFromFork_syscallReachesMinherit
+      TestHostRAMBytes_matchesSysctlCommand
+      TestLoad_mapsGIWSharedOnDarwin
+      TestParseVMStatAvailable_missingFieldIsUnknown
+      … and 4 more
+    env-gated: GOINFER_TEST_MODEL  (10)
+      TestCommonPrefixLen
+      TestKVCache_TruncateTo_kvShared
+      TestKVI8_batchedPrefill
+      TestKVI8_decodeQuality
+      TestKVI8_genParity
+      TestKVI8_snapshotRoundtrip
+      … and 4 more
+    build tag: linux  (9)
+      TestHostRAMAvailableBytes_readsRealMeminfo
+      TestMadvise_dontneedFreesRSS
+      TestMeminfoField_missingKeyIsUnknown
+      TestMeminfoField_realShape
+      TestMeminfoField_unexpectedUnitIsUnknown
+      TestParseSwapUsedLinuxMeminfo_missingFieldsAreUnknown
+      … and 3 more
+    env-gated: GOINFER_CPUBATCH_S0_MODEL,GOINFER_CPUBATCH_S1_DEPTH,GOINFER_CPUBATCH_S1_MODEL  (4)
+      TestCPUBatchS0_matmulScaling
+      TestCPUBatchS0b_fusedShapesAndWidth
+      TestCPUBatchS0c_widthAA
+      TestCPUBatchS1_fusedVsUnfused
+    env-gated: GOINFER_CPUBATCH_MODE,GOINFER_CPUBATCH_MODEL  (4)
+      TestCPUBatch_concurrentMatchesAlone
+      TestCPUBatch_everyEligibleFixtureBitIdentical
+      TestCPUBatch_ineligibleCachesBypass
+      TestEnableCPUBatch_policy
+    env-gated: GOINFER_MOE_GIW  (4)
+      TestExpertBufferPool_capNeverExceedsBudget
+      TestExpertPager_faultDelta
+      TestExpertPaging_bitExact
+      TestExpertPaging_touchesEveryFamilyThatBuildsAPager
+    env-gated: GOINFER_P19,GOINFER_P19_E2E,GOINFER_P19_K,GOINFER_P19_MODEL,GOINFER_P19_PAIRS,GOINFER_P19_SERIAL  (4)
+      TestFusedAttention_endToEnd
+      TestFusedAttention_logitDivergence
+      TestFusedAttention_matchesMaterialized
+      TestP19FusedAttention
+    env-gated: GOINFER_MANIFEST_MACHINE  (4)
+      TestParityManifest_fresh
+      TestParityManifest_merge
+      TestParityManifest_methodTier
+      TestRootAikitVersion_readsFromGoMod
+    env-gated: GOINFER_A3_FANOUT  (3)
+      TestA3FanoutEndToEnd
+      TestA3FanoutUtilization
+      TestAttendF32Fanout_bitIdentical
+    env-gated: GOINFER_FIXTURE_IDENTITY_UPDATE  (3)
+      TestFixtureIdentityMismatch
+      TestFixtureIdentity_manifestIsComplete
+      TestFixtureIdentity_update
+    build tag: arm64  (3)
+      TestGemma4EndToEndThroughput
+      TestR9_s05FoldAB
+      TestRow4_vsCanonical_gemma4Shapes
+    env-gated: GOINFER_MOE_BATCH_E2E,GOINFER_MOE_BATCH_K,GOINFER_MOE_BATCH_PAIRS,GOINFER_MOE_BATCH_PROBE  (3)
+      TestMoEExpertBatching_M1vsMN
+      TestMoEExpertMajor_bitIdentical
+      TestMoEExpertMajor_endToEnd
+    env-gated: GOINFER_DIAG  (3)
+      TestP13_mmapAliasRisk_classifiesDTypes
+      TestP13_realCheckpointReleases
+      TestP13_rssAfterLoad
+    env-gated: GOINFER_SPEC_SUFFIX_IN  (3)
+      TestSuffixProbe_draftCost
+      TestSuffixProbe_matchProvenance
+      TestSuffixProbe_step2
+    env-gated: GOINFER_SPEC_TARGET  (3)
+      TestGenerateSpeculative_residentContextCapFinishesCleanly
+      TestSpeculativeGreedyParity
+      TestSpeculativeGreedyParity_draftTarget
+    env-gated: GOINFER_MC2,GOINFER_MC2_BACKEND,GOINFER_MC2_MODEL,GOINFER_MC2_QUANT  (2)
+      TestMC2_batchedDecodeThroughput
+      TestMC2_decodeMultiStepBitIdentical
+    env-gated: GOINFER_CPU_FAST_ATTENTION  (2)
+      TestLoad_exactPrefillFalseLeavesEnvUntouched
+      TestLoad_exactPrefillOptionIsAModelProperty
+    env-gated: GOINFER_CTX_RECORD  (1)
+      TestAttendBatchedHeads_ctxBitsUnchanged
+    env-gated: GOINFER_MC3C_MODEL  (1)
+      TestConcurrentSessions_matchAlone
+    env-gated: GOINFER_CPUINT4_GGUF,GOINFER_CPUINT4_INT4,GOINFER_CPUINT4_LABEL  (1)
+      TestCPUInt4Bench
+    env-gated: GOINFER_DELTANET_TIMING  (1)
+      TestDeltaNetTiming_gate0Split
+    env-gated: GOINFER_BENCH_QUANT,GOINFER_G15_ALLOW_BUSY,GOINFER_G15_K,GOINFER_G15_PROF  (1)
+      TestG15PrefillProfile
+    env-gated: GOINFER_G24  (1)
+      TestG24AttnKernelRatio
+    build tag: gpu  (1)
+      TestGraniteResidentBridge
+    env-gated: GOINFER_BENCH_QUANT,GOINFER_MELLUM_ALLOW_BUSY,GOINFER_MELLUM_IDS,GOINFER_MELLUM_K,GOINFER_MELLUM_PROF  (1)
+      TestMellum2PrefillProfile
+    env-gated: GOINFER_MOE_PREAD_CPU  (1)
+      TestResolveMoEPagerPool
+    env-gated: GOINFER_MOE35  (1)
+      TestMoEPagingSpike
+    env-gated: GOINFER_PREFILL_LEN  (1)
+      TestDecodeParityInt4
+    env-gated: GOINFER_PERROW_PHASE0  (1)
+      TestPerRowScalePhase0
+    env-gated: GOINFER_PERROW_PHASE0B  (1)
+      TestPerRowScalePhase0b
+    env-gated: GOINFER_PREFILL_ABS,GOINFER_PREFILL_ABS_MODEL,GOINFER_PREFILL_ABS_QUANT  (1)
+      TestPrefillAbsoluteTable
+    env-gated: GOINFER_STUBPROBE_GGUF  (1)
+      TestQwen35StreamingTranscode_matchesResident
+    env-gated: GOINFER_G3_CHECK,GOINFER_G3_WRITE  (1)
+      TestQwen35_textIdentityHashes
+    env-gated: GOINFER_R13_AB,GOINFER_R13_MODELS  (1)
+      TestR13_cpuAB
+    env-gated: GOINFER_SPECTRACE_OUT  (1)
+      TestNgramSpecHarness
+    build tag: darwin && goinfer_testhooks  (1)
+      TestSpecHitRate
+    env-gated: GOINFER_SPEC_SUFFIX_OUT,GOINFER_SPEC_SUFFIX_PROBE  (1)
+      TestSuffixProbe_step1
+    env-gated: GOINFER_TEST_MEMLIMIT  (1)
+      TestMain
+    env-gated: GOINFER_THETA_PROBE  (1)
+      TestThetaProbe_CPU
+    env-gated: GOINFER_BENCH_QUANT  (1)
+      TestW4A8SplitHalfFires_onBenchModel
+
+    ENV VARS gating otherwise-unreached tests (96) — set these, or
+    accept that the tests behind them have never run:
+      GOINFER_A3_FANOUT  GOINFER_AB_PAIRS  GOINFER_BENCH_QUANT  GOINFER_CPUBATCH_MODE  GOINFER_CPUBATCH_MODEL  GOINFER_CPUBATCH_S0_MODEL  GOINFER_CPUBATCH_S1_DEPTH  GOINFER_CPUBATCH_S1_MODEL  GOINFER_CPUINT4_GGUF  GOINFER_CPUINT4_INT4  GOINFER_CPUINT4_LABEL  GOINFER_CPU_FAST_ATTENTION  GOINFER_CPU_MODEL  GOINFER_CPU_MODEL_D7  GOINFER_CPU_REF_KS  GOINFER_CPU_REF_MODELS  GOINFER_CPU_REF_WORKERS  GOINFER_CTX_RECORD  GOINFER_DECODE_TIMING  GOINFER_DELTANET_TIMING  GOINFER_DFLASH_DRAFTER  GOINFER_DFLASH_MAXNEW  GOINFER_DFLASH_QUANT  GOINFER_DFLASH_SUITE  GOINFER_DFLASH_TARGET  GOINFER_DFLASH_THINKING  GOINFER_DFLASH_TOKENIZER  GOINFER_DFLASH_VERIFY_WIDTH  GOINFER_DIAG  GOINFER_FAKEQUANT  GOINFER_FAKEQUANT_ACT  GOINFER_FAKEQUANT_EXPERTS  GOINFER_FIXTURE_IDENTITY_UPDATE  GOINFER_G15_ALLOW_BUSY  GOINFER_G15_K  GOINFER_G15_PROF  GOINFER_G24  GOINFER_G3_CHECK  GOINFER_G3_WRITE  GOINFER_GEMMA4_26B  GOINFER_HEAVY_TESTS  GOINFER_MANIFEST_MACHINE  GOINFER_MC2  GOINFER_MC2_BACKEND  GOINFER_MC2_MODEL  GOINFER_MC2_QUANT  GOINFER_MC3C_MODEL  GOINFER_MELLUM_ALLOW_BUSY  GOINFER_MELLUM_IDS  GOINFER_MELLUM_K  GOINFER_MELLUM_N  GOINFER_MELLUM_PROF  GOINFER_MOE35  GOINFER_MOE_BATCH_E2E  GOINFER_MOE_BATCH_K  GOINFER_MOE_BATCH_PAIRS  GOINFER_MOE_BATCH_PROBE  GOINFER_MOE_GIW  GOINFER_MOE_PREAD_CPU  GOINFER_NEMOTRON_GGUF  GOINFER_P19  GOINFER_P19_E2E  GOINFER_P19_K  GOINFER_P19_MODEL  GOINFER_P19_PAIRS  GOINFER_P19_SERIAL  GOINFER_PERROW_PHASE0  GOINFER_PERROW_PHASE0B  GOINFER_PREFILL_ABS  GOINFER_PREFILL_ABS_MODEL  GOINFER_PREFILL_ABS_QUANT  GOINFER_PREFILL_LEN  GOINFER_QWEN35_08B  GOINFER_QWEN35_SLICE_REF  GOINFER_QWEN3_REAL  GOINFER_R13_AB  GOINFER_R13_MODELS  GOINFER_R9_DEPTHS  GOINFER_SNAPCOST_QUANT  GOINFER_SPECTRACE_OUT  GOINFER_SPEC_PROBE  GOINFER_SPEC_PROBE_GIW  GOINFER_SPEC_SUFFIX_IN  GOINFER_SPEC_SUFFIX_OUT  GOINFER_SPEC_SUFFIX_PROBE  GOINFER_SPEC_TARGET  GOINFER_SPEC_TOKENS  GOINFER_SSM_Q8WEIGHTS  GOINFER_SSM_QUALITY  GOINFER_STUBPROBE_GGUF  GOINFER_TEST_MEMLIMIT  GOINFER_TEST_MODEL  GOINFER_THETA_PROBE  GOINFER_W4A8_BATCH  GOINFER_W8_F3_REF_OUT  GOINFER_W8_GATE_MODEL
+
+  A green here means nothing became UNREACHABLE since a person last looked.
+  It does NOT mean coverage is adequate — a test can be selected and still vacuous.

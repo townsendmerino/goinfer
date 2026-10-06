@@ -1,0 +1,18 @@
+[0m
+> build · qwen2.5-coder-7b-instruct-q4_k_m
+[0m
+Let's start by finding the `calc.go` file. Can you provide the path to the file or the relevant content of the file?
+rc=0
+--- calc.go after:
+package main
+
+import "fmt"
+
+// add returns the sum of a and b.
+func add(a, b int) int {
+	return a - b
+}
+
+func main() {
+	fmt.Println(add(2, 3))
+}

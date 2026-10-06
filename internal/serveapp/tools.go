@@ -48,7 +48,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	tm := lm.templateFor(ts)
-	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
+	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
 	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25: harden the no-tools/content spans
@@ -66,7 +66,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// call to that tool's schema (when the family has a JSON call form). A NAMED
 	// tool_choice that cannot be constrained is a 400, not a silent unconstrained
 	// decode (audit M-05).
-	forced := forcedTool(req.ToolChoice, tools)
+	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error())
@@ -397,7 +397,13 @@ func openAIUnionMode(toolChoice json.RawMessage) string {
 
 // forcedTool returns the single tool the call must be (a forced function, or the
 // lone tool) — the "tight when unambiguous" case. nil means don't constrain.
-func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {
+//
+// The lone-tool convenience is for the model's FIRST call. afterToolResult (the conversation already ends in a tool
+// result, endsWithToolResult) lifts it under auto: forced on every turn it left a client with exactly one tool unable to
+// ever get an answer, the agent-livelock `serve check` reported as "turn two asked for the tool again instead of
+// answering" on Qwen2.5-Coder-7B and Qwen2.5-7B-Instruct alike (G39). An explicit "required" or a named function is the
+// client's own request and is forced on every turn, as before; "none" is never forced.
+func forcedTool(toolChoice json.RawMessage, tools []chat.Tool, afterToolResult bool) *chat.Tool {
 	switch toolChoiceMode(toolChoice) {
 	case "none":
 		return nil
@@ -414,8 +420,18 @@ func forcedTool(toolChoice json.RawMessage, tools []chat.Tool) *chat.Tool {
 		}
 		return nil
 	}
-	if len(tools) == 1 { // lone tool ⇒ unambiguous
+	if len(tools) == 1 && !(afterToolResult && toolChoiceMode(toolChoice) == "auto") { // lone tool ⇒ unambiguous, until it has been answered
 		return &tools[0]
 	}
 	return nil
+}
+
+// endsWithToolResult reports whether the conversation's last turn is a tool result (an OpenAI tool message, or an Anthropic
+// user turn that carries tool_result blocks): the point after which a model must be free to answer in prose.
+func endsWithToolResult(turns []chat.Turn) bool {
+	if len(turns) == 0 {
+		return false
+	}
+	last := turns[len(turns)-1]
+	return last.Role == "tool" || last.ToolLoop
 }

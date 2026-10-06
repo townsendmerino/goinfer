@@ -356,6 +356,9 @@ type config struct {
 	// toolFormat is -tool-format (auto | hermes | template): how a family whose own template declares a native tool form (Qwen3.5, Gemma 4's canonical
 	// template) has its tools put in the prompt (chat/qwen_xml_tools.go, chat/gemma4_tools.go). Applied to the model's template at load, like -thinking.
 	toolFormat string
+	// lenientToolCalls is -lenient-tool-calls: also read ONE fenced JSON call at the end of a reply as a tool call, on the <tool_call> families
+	// (chat.Template.WithLenientToolCalls, docs/queue-correctness.md G39). Off by default. Applied to the model's template at load.
+	lenientToolCalls bool
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -406,6 +409,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
 	fs.StringVar(&cfg.thinking, "thinking", "template", "default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the checkpoint's own template renders — Qwen3.5-0.8B: off, Qwen3.5-9B: on), asis (the prompt bytes serve rendered before thinking was modelled: nothing written, the model decides), on, or off. A request overrides it with chat_template_kwargs.enable_thinking, reasoning_effort, or Anthropic's thinking. A model whose template control is not recognised ignores this.")
 	fs.StringVar(&cfg.toolFormat, "tool-format", "auto", "how tools are put in the prompt for a model whose own chat template declares a tool form goinfer can render byte for byte — Qwen3.5 (its <function=…><parameter=…> XML) and Gemma 4's canonical template: auto (the default: each family's measured default — the model's own template form for Gemma 4, goinfer's own prompt for Qwen3.5), hermes (goinfer's own prompt: for Qwen a JSON call that tool_choice can constrain, for Gemma 4 its earlier order, text before a call) or template (the model's own chat template; tool_choice naming a function is then a 400, as for any form with no JSON wrapper). The Qwen reply parser reads both call forms whichever is chosen. No effect on a model with no such form.")
+	fs.BoolVar(&cfg.lenientToolCalls, "lenient-tool-calls", false, "also read a tool call a model writes as ONE fenced JSON block at the end of its reply (```json {\"name\": ..., \"arguments\": {...}} ```) as a call, for the Qwen-style <tool_call> families (Qwen2.5-Coder under an agent writes its calls this way and otherwise makes none). Narrow on purpose: exactly one fence, last in the reply, tag json or none, only name/arguments/id keys, a supplied tool name, arguments that validate against that tool's schema. Off by default because a demonstration that ends on one valid call looks the same as a meant call, so a model asked to show an example can have it executed; turn it on for an agent whose client confirms before it acts")
 	fs.StringVar(&cfg.reasoningBudget, "reasoning-budget", "auto", "ceiling on how long a thinking reply may think before serve forces the block closed so the reply can answer: auto (the default: thinking takes at most three quarters of the request's max_tokens), unlimited (no ceiling of serve's own), or N (cap every thinking reply at N tokens, still leaving room to answer). A request's own budget (thinking_token_budget, or Anthropic's thinking.budget_tokens) applies too, clamped so a quarter of max_tokens is left to answer. Not applied under -spec or -drafter, or to a model with no recognised thinking control.")
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
@@ -1454,7 +1458,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 	}
 	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
-		lm.tmpl = tmpl.WithThinking(cfg.thinkDefault()).WithToolFormat(cfg.toolFormatDefault())
+		lm.tmpl = cfg.tuneTemplate(tmpl)
 		for _, str := range tmpl.Stops().Strings {
 			if id, ok := tk.TokenID(str); ok {
 				lm.stopIDs = append(lm.stopIDs, id)

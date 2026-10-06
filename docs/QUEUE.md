@@ -519,6 +519,12 @@ gap to the f32 reference (`decisions-d6a-2026-09-28.md`) is therefore not yet a 
 at CPU int4 and CPU int8int8 on D6a's 400 OOD noul rows (about 2 h each on nobara, night) splits int4 from the CUDA
 path; then difference CUDA against CPU int4 per layer on the confident-flip item.
 
+**GRADED 2026-10-06 (the arms had run 2026-10-01/02 and sat ungraded for five days): the CUDA path is a minor part** by the
+pre-registered rule: CPU int4 agrees with the f32 reference on 0.650 of the 100 rows against CUDA int4's 0.660 (s = -0.03; band
+s <= 0.25), and CPU int8int8 on 0.740 (s = +0.24). Top-1 on 100 rows, so it cannot resolve small differences, and it does not test the
+KL gap or the confident flip. The per-layer CUDA-against-CPU difference on that item is therefore lower priority, not closed.
+Record: `docs/measurements/b9-route-a-cpu-2026-10-01/results.md`.
+
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
 Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.

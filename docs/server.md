@@ -340,6 +340,14 @@ anything else stays prose, and a name you did not supply never becomes a call). 
 choice of tool. Measured in `docs/measurements/tool-call-failure-t0-2026-09-23.md` (0 → 219–236 parsed calls of 300 on the
 0.5B/1.5B; no other output changed).
 
+**A fenced call is accepted on request (`-lenient-tool-calls`, off by default).** Qwen2.5-Coder-7B under opencode (the cold-user run of 2026-10-05) twice wrote its edit call as a fenced
+```` ```json ```` block, once after a sentence and once as the whole reply, and so made no edit. With the flag, a reply on the `<tool_call>` families is read as one call when exactly one fenced
+block is the last thing in it, its tag is `json` or absent, it holds a single object whose only keys are `name`, `arguments` (or `parameters`) and `id`, `name` is a tool the request supplied, and
+`arguments` validate against that tool's schema (required properties present, declared types and enums, `additionalProperties: false`). The text before the fence is the call's `content`. A reply that
+does not meet all of it is prose exactly as before: a second block, an explanation after the fence, another language tag, a missing required argument, an unsupplied tool. **It cannot tell a shown call
+from a meant one when a demonstration ends on a single valid call**, which is why it is off by default: use it with an agent whose client confirms before it edits or runs anything. Other families
+and requests without the flag are unchanged. The rule and its pre-registered cases are in `chat/fenced_tool_call_test.go`; the open question is `docs/queue-correctness.md` G39.
+
 The `messages` array accepts **only `user` and `assistant`**, as upstream does; any
 other role is a `400 invalid_request_error` naming the offending role. In particular
 `system` is **not** a message role on this API — it is the top-level `system` field —
