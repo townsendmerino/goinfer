@@ -358,7 +358,7 @@ func ledgerClassify(name string) string {
 func runParity(w io.Writer, logDir string) int {
 	realckpt := env("REALCKPT", "1") == "1"
 	emitManifest := env("EMIT_MANIFEST", "0") == "1"
-	timeout := env("TIMEOUT", "120m")
+	timeout := env("TIMEOUT", "180m")
 
 	cellEnv := assetPreflight(w)
 	if emitManifest {
@@ -620,11 +620,20 @@ func emitterCoverage(w io.Writer, res *results, fams map[string]bool) {
 	fmt.Fprintf(w, "-- emitter coverage (numeric-oracle gates) --\n")
 	for _, g := range emitGates {
 		act, seen := res.lookupTop(g.Test)
+		// A gate that records several families names them joined by "+" ("gemma+gemma2"); the merged-row set holds
+		// each family on its own, so look the parts up one by one. Looking the joined string up never matched, and
+		// the v0.21.0 sweep warned "emitted NO row for gemma+gemma2" while both rows had been merged.
+		var missing []string
+		for _, f := range strings.Split(g.Family, "+") {
+			if !fams[f] {
+				missing = append(missing, f)
+			}
+		}
 		switch {
-		case fams[g.Family]:
+		case len(missing) == 0:
 			fmt.Fprintf(w, "   %-34s ✅ recorded row (%s)\n", g.Test, g.Family)
 		case seen && act == "pass":
-			fmt.Fprintf(w, "   %-34s ⚠️  PASSED but emitted NO row for %s (emitter missing?)\n", g.Test, g.Family)
+			fmt.Fprintf(w, "   %-34s ⚠️  PASSED but emitted NO row for %s (emitter missing?)\n", g.Test, strings.Join(missing, "+"))
 		default:
 			r := "MISSING"
 			if seen {
@@ -1080,8 +1089,14 @@ func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellRe
 	// sweep delivers a verdict about a cell that never finished.
 	for _, c := range cells {
 		if c.Hidden {
-			fmt.Fprintf(w, "\n   ❌ cell %q exited rc=%d with zero --- FAIL lines (crash, timeout or "+
-				"build failure) — BLOCKER: %s\n", c.Cell.Name, c.RC, c.LogPath)
+			if after, running := res.timeoutPanic(); after != "" {
+				fmt.Fprintf(w, "\n   ❌ cell %q TIMED OUT at -timeout %s (rc=%d), not a test failure: in flight %s; every gate after "+
+					"it did not run — raise TIMEOUT, or re-run just those gates with GATE_RUN — BLOCKER: %s\n",
+					c.Cell.Name, after, c.RC, strings.Join(running, ", "), c.LogPath)
+			} else {
+				fmt.Fprintf(w, "\n   ❌ cell %q exited rc=%d with zero --- FAIL lines (crash, timeout or "+
+					"build failure) — BLOCKER: %s\n", c.Cell.Name, c.RC, c.LogPath)
+			}
 			extra++
 		}
 	}

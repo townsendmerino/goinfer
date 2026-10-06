@@ -141,6 +141,12 @@ failure mode is not a clean timeout error against the slow test, it is a DIFFERE
 never running. Raise phase 2's timeout (or split it per-gate so one long test cannot starve the
 others) before the next family lands a real-model gate.
 
+**BIT AGAIN AT v0.21.0, THEN ACTIONED (2026-10-06).** The same cell (now `-tags realckpt`, 120m) ran out with `TestQwen3MoeReal_oracle`
+in flight and four gates unreached (`docs/measurements/release-v0.21.0/parity-sweep-2026-10-06.md`); recovered by a scoped re-run. Done:
+the sweep's cell timeout defaults to 180m (`cmd/gate/parity.go`), a timed-out cell's verdict now names the budget and the tests in flight
+(`TestParity_timedOutCellNamesItsBudget`), and RELEASING.md §C1 says to pass `-logdir` so the raw JSON survives the next run (B2). Not done:
+splitting the cell per gate, so one slow checkpoint cannot starve the rest.
+
 
 **R1 · The v0.14.0 pre-tag CUDA gate is RED — two failures, classified, neither caused by this
 release** — `linux`, **decision owed before the tag**

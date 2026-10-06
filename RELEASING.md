@@ -294,6 +294,14 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
   parity) on real checkpoints, then `-update` the manifest (bump `validated_at` + metrics) at
   the freeze commit. That is the true validation; the Mac refresh is not a substitute.
 
+    **Run the sweep with `-logdir <a durable directory>`** (`go run ./cmd/gate parity -logdir "$LOG"`). The raw `go test -json`
+    streams otherwise go to `$TMPDIR` as `gate_parity_<cell>.json`, and the next run overwrites them: the v0.21.0 sweep's
+    timeout panic was in one of those and was gone by the next morning. The cell timeout defaults to 180m (`TIMEOUT`;
+    it was 120m, which the v0.21.0 sweep's real-checkpoint cell outran when its checkpoints loaded from the `/srv/models`
+    archive), and a cell that hits it now says so in the verdict (`TIMED OUT at -timeout …`, the tests in flight)
+    instead of reading as a crash. If it still happens, re-run just the gates after the in-flight one with `GATE_RUN`
+    (`docs/measurements/release-v0.21.0/run-scoped-unreached.sh` is the template).
+
     **§C1 HAS TWO HALVES, AND THE SECOND CAN FAIL SEPARATELY.** The wording above assumed an
     emitter that stamps *truthfully*, so that "run the sweep" and "`-update` the manifest" read as
     one step described twice. **B15 disproves that assumption.** They are separate obligations:

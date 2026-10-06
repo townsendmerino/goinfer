@@ -949,3 +949,91 @@ func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {
 		}
 	}
 }
+
+// A gate that records more than one family is listed in emitGates as "a+b". The merged-row set holds the families
+// one by one, so the coverage report must look the parts up separately: the v0.21.0 sweep printed "PASSED but
+// emitted NO row for gemma+gemma2" while the manifest had both rows (TestGemma12Real_gate emits each).
+func TestEmitterCoverage_joinedFamilies(t *testing.T) {
+	res := newResults()
+	k := testKey{Test: "TestGemma12Real_gate"}
+	res.final[k] = "pass"
+	res.order = append(res.order, k)
+
+	report := func(fams map[string]bool) string {
+		var b strings.Builder
+		emitterCoverage(&b, res, fams)
+		for _, l := range strings.Split(b.String(), "\n") {
+			if strings.Contains(l, "TestGemma12Real_gate") {
+				return l
+			}
+		}
+		t.Fatal("no coverage line for TestGemma12Real_gate")
+		return ""
+	}
+	if l := report(map[string]bool{"gemma": true, "gemma2": true}); !strings.Contains(l, "recorded row (gemma+gemma2)") {
+		t.Errorf("both families merged, line = %q, want the recorded-row line", l)
+	}
+	if l := report(map[string]bool{"gemma": true}); !strings.Contains(l, "NO row for gemma2") || strings.Contains(l, "gemma+gemma2") {
+		t.Errorf("only gemma merged, line = %q, want a warning naming gemma2 alone", l)
+	}
+	if l := report(map[string]bool{}); !strings.Contains(l, "NO row for gemma+gemma2") {
+		t.Errorf("nothing merged, line = %q, want a warning naming both", l)
+	}
+}
+
+// The v0.21.0 sweep's realckpt cell hit its -timeout and the verdict only said "crash, timeout or build failure".
+// The panic text carries the budget and the tests in flight; the verdict has to name them.
+func TestTimeoutPanic_namesBudgetAndInFlightTests(t *testing.T) {
+	blob := "=== RUN   TestQwen3MoeReal_oracle\n" +
+		"panic: test timed out after 2h0m0s\n" +
+		"\trunning tests:\n" +
+		"\t\tTestQwen3MoeReal_oracle (30s)\n" +
+		"\t\tTestOther (1m2s)\n\n" +
+		"goroutine 1 [running]:\n"
+	after, running := timeoutPanic(blob)
+	if after != "2h0m0s" || len(running) != 2 || running[0] != "TestQwen3MoeReal_oracle" || running[1] != "TestOther" {
+		t.Errorf("timeoutPanic = %q, %v; want 2h0m0s and both in-flight tests", after, running)
+	}
+	if a, _ := timeoutPanic("panic: runtime error: index out of range\n"); a != "" {
+		t.Errorf("an unrelated panic read as a timeout: %q", a)
+	}
+
+	// Through results: the panic arrives as package-level output.
+	res := newResults()
+	res.pkgOut["p"] = strings.SplitAfter(blob, "\n")
+	if a, run := res.timeoutPanic(); a != "2h0m0s" || len(run) != 2 {
+		t.Errorf("results.timeoutPanic = %q, %v", a, run)
+	}
+}
+
+// THROUGH THE VERDICT: a real cell that runs into its -timeout. The helper test above reads a hand-written panic;
+// this one has go test produce it (a 1 s budget against a test that sleeps), runs it through runCell, and reads what
+// extraBlockers prints. The line has to say the budget and the in-flight test, and that it is not a test failure.
+func TestParity_timedOutCellNamesItsBudget(t *testing.T) {
+	const src = `package scratch
+
+import (
+	"testing"
+	"time"
+)
+
+func TestSleepsPastTheBudget(t *testing.T) { time.Sleep(30 * time.Second) }
+`
+	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: true}
+	c := cell{Name: "slow", Pkgs: []string{"./..."}, Dir: scratchModule(t, src), Timeout: "1s"}
+	res := newResults()
+	cells := []cellResult{runCell(c, cfg, res, t.TempDir())}
+	if !cells[0].Hidden {
+		t.Fatalf("the premise broke: a timed-out cell was not marked Hidden: %+v", cells[0])
+	}
+	var buf strings.Builder
+	if got := extraBlockers(&buf, res, nil, cells, false); got != 1 {
+		t.Fatalf("extraBlockers = %d, want 1\n%s", got, buf.String())
+	}
+	out := buf.String()
+	for _, want := range []string{"TIMED OUT at -timeout 1s", "TestSleepsPastTheBudget", "not a test failure"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verdict lacks %q:\n%s", want, out)
+		}
+	}
+}
