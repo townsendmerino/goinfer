@@ -1618,7 +1618,26 @@ the env vars gating otherwise-unreached tests — **42 of them**.
 
 **RE-FILED 2026-08-13** — destroyed by the same `--update` bug. **DO NOT ENABLE ANY BEFORE THE TAG.**
 
-**STATE 2026-10-06: THE EMBARGO HAS LIFTED (v0.21.0 is tagged), AND THE FIGURES BELOW ARE STALE.** `go run ./cmd/gate selector` now reports **96** unselected env-gated sets, not 42, and the `scripts/selector_coverage.py` named below is gone (E8 replaced it with `gate selector`). The campaign also overlaps B16's list, which that entry says to reconcile first. It has not been started; starting it is a multi-day, budgeted decision for the owner, not a post-tag chore.
+**REWRITTEN 2026-10-06 — what the surface really is, measured today. (The note that stood here said 96 variables; that figure came from a review agent's report and was not checked. The command reports 61 variables behind 73 tests. The 42 below was the August figure.)**
+
+`go run ./cmd/gate selector` (it scans `decoder/` only; output saved in `docs/measurements/b13-dark-gates-2026-10-06/gate-selector-2026-10-06.txt`): 1,003 tests, 931 named by no gate selector. Most of those are not dark: 449 are ordinary tests that `go test ./decoder` runs, 275 are asset-gated and run when the sweep has the checkpoint, 76 sit behind `realckpt`, 34 behind `goinfer_testhooks`, and so on. **The env-gated part is 73 tests behind 61 variables** (1 more among the selected ones: `GOINFER_INT4_GOLDEN_UPDATE`). Reading each group's own skip text and code, they are not 73 dark gates:
+
+| what | tests | examples |
+|---|---|---|
+| not a gate at all: the test sets the variable itself, reads it as an optional override of a default it runs anyway, or uses it as a label | about 24 | `GOINFER_CPU_FAST_ATTENTION` and `GOINFER_MOE_PREAD_CPU` (the test calls `t.Setenv`), `GOINFER_CPUBATCH_MODEL` and `GOINFER_MC3C_MODEL` (the test runs on `testdata/llama-tiny` and the variable swaps in a bigger model), `GOINFER_TEST_MODEL` and `GOINFER_MOE35` (a default path under `~/models`, behind `GOINFER_HEAVY_TESTS`), `GOINFER_MANIFEST_MACHINE` (a label), `GOINFER_PREFILL_LEN` |
+| measurement and prototype probes, opt-in by design: their own skip text says "measurement", "prototype", "Phase 0", "kernel comparison" | about 40 | `GOINFER_P19*`, `GOINFER_A3_FANOUT`, `GOINFER_G24`, `GOINFER_CPUBATCH_S0/S1_*`, `GOINFER_MC2*` (a throughput run), `GOINFER_PERROW_PHASE0/0B`, `GOINFER_CPUINT4_*`, `GOINFER_SPEC_SUFFIX_IN` (step 2 of a two-step probe) |
+| **correctness gates that skip without the variable** | **2 functions (5 with their siblings)** | `GOINFER_MOE_GIW` (`TestExpertPaging_bitExact`) and `GOINFER_SPEC_TARGET` (`TestSpeculativeGreedyParity_draftTarget`) |
+
+The classification is by reading, not by running the probes, and the three bands are approximate. **The two real gates were run today** (`docs/measurements/b13-dark-gates-2026-10-06/`):
+
+- `TestSpeculativeGreedyParity_draftTarget` with the 1.5B Coder GGUF as the target: **PASS**, 34 s.
+- `TestExpertPaging_bitExact`: **it had been failing since 2026-09-23** and nothing knew. The S4 working-set guard (8f34a177) refuses the test's own 512 MB-budget paged load on a big MoE (predicted 1.95 tok/s against a 2.0 floor, and the error tells you to pass `AcceptSlowMoE`), and the test never set it; it had no caller. That is this entry's thesis, found again in the first batch: a dark gate hides when it broke. The fix is one test option (`AcceptSlowMoE: true`, commented). With it and the intended asset, `qwen3.6-35b-a3b-int4-v12.giw`: **PASS**, paged decode byte-identical over 24 tokens at a 512 MB budget, 4,753 hits, 5,487 misses, 5,143 evictions, 277 s cold and 67 s warm. Against `gemma4-26b-int4.giw` the same test stops at "no tokens generated", which was not investigated: probably the wrong asset for an arbitrary prompt, possibly not.
+
+**So the campaign this entry asked for is mostly done, and it is small.** Both real gates run in under 6 minutes together (`run-dark-gates.sh`, tested end to end), so there is nothing to put on the night queue for them. What is NOT done, and is the actual remaining decision: neither gate is in any gate list, so they will go dark again. Registering them (the heavy tier, or a nightly cell) is an owner decision, since it adds a 35B load to a tier.
+
+**The census itself overstates.** It counts a variable the test sets with `t.Setenv` and an optional override with a default as "env-gated". Teaching `gate selector` to tell "skips when unset" (a `t.Skip` guarded by the variable) from "reads it" would turn this list into the real one. Not built.
+
+**Not examined here:** the tag-gated and asset-gated tests (76 behind `realckpt`, 34 behind `goinfer_testhooks`, 275 asset-gated). Whether the sweeps ever select them is a different question from this one.
 
 **Rationale.** Enabling these converts a **bounded release into an unbounded investigation**: each
 failure needs a bisect against the previous tag before anyone can say whether it blocks. **Nothing

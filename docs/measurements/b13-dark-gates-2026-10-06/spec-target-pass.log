@@ -1,0 +1,14 @@
+=== RUN   TestSpeculativeGreedyParity_draftTarget
+    speculative_test.go:146: prompt 0 K=1: acceptance 0.560, 1.60 tokens/round
+    speculative_test.go:146: prompt 0 K=4: acceptance 0.359, 2.50 tokens/round
+    speculative_test.go:146: prompt 0 K=8: acceptance 0.223, 2.86 tokens/round
+    speculative_test.go:146: prompt 1 K=1: acceptance 0.950, 2.00 tokens/round
+    speculative_test.go:146: prompt 1 K=4: acceptance 0.775, 4.00 tokens/round
+    speculative_test.go:146: prompt 1 K=8: acceptance 0.607, 5.71 tokens/round
+    speculative_test.go:146: prompt 2 K=1: acceptance 0.950, 2.00 tokens/round
+    speculative_test.go:146: prompt 2 K=4: acceptance 0.889, 4.44 tokens/round
+    speculative_test.go:146: prompt 2 K=8: acceptance 0.643, 5.71 tokens/round
+--- PASS: TestSpeculativeGreedyParity_draftTarget (33.82s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	33.840s
+GOINFER_SPEC_TARGET=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf go    311.59s user 9.17s system 836% cpu 38.345 total

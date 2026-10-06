@@ -1,0 +1,20 @@
+=== RUN   TestExpertPaging_bitExact
+decoder: expert paging (mmap): 3840 experts, 11.4 GB total, 0.5 GB budget
+decoder: predicted paged-MoE decode rate ~1.95 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+    moepaging_test.go:52: load paged .giw: decoder: gemma4-26b-int4.giw's paged-MoE working set predicts ~1.95 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment) below the 2.0 tok/s floor. Pass --accept-slow (decoder.Options.AcceptSlowMoE) to load it anyway, or raise -weight-cache to shrink the miss rate this prediction assumes
+--- FAIL: TestExpertPaging_bitExact (27.95s)
+=== RUN   TestExpertPaging_touchesEveryFamilyThatBuildsAPager
+=== RUN   TestExpertPaging_touchesEveryFamilyThatBuildsAPager/gpt-oss
+    moepaging_test.go:193: gpt-oss: hits=0 misses=2
+=== RUN   TestExpertPaging_touchesEveryFamilyThatBuildsAPager/llama4
+    moepaging_test.go:219: llama4: hits=0 misses=1
+=== RUN   TestExpertPaging_touchesEveryFamilyThatBuildsAPager/nemotron3nano
+    moepaging_test.go:245: nemotron3nano: hits=0 misses=2
+--- PASS: TestExpertPaging_touchesEveryFamilyThatBuildsAPager (0.00s)
+    --- PASS: TestExpertPaging_touchesEveryFamilyThatBuildsAPager/gpt-oss (0.00s)
+    --- PASS: TestExpertPaging_touchesEveryFamilyThatBuildsAPager/llama4 (0.00s)
+    --- PASS: TestExpertPaging_touchesEveryFamilyThatBuildsAPager/nemotron3nano (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	27.967s
+FAIL
+GOINFER_MOE_GIW=$HOME/models/gemma4-26b-int4.giw go test ./decoder -count=1    5.49s user 11.48s system 59% cpu 28.312 total
