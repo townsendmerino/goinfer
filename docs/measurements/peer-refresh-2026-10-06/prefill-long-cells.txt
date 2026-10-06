@@ -1,0 +1,9 @@
+# long-prompt Metal TTFT, 1.5B, goinfer 52024b37 (Mac night queue started by the owner at 21:54 PDT 2026-10-05, on AC), 6 unique-prefix prompts per K
+# tok/s = the engine's own prompt-token count / TTFT; pairs = the i-th request of each engine
+# bands (peer sweep, as the 2026-10-05 short-prompt table): level 0.97-1.03, ahead > 1.03, behind < 0.97, all pairs decide; an engine spread over 5% caps the cell to AMBIGUOUS
+K=512   goinfer  1012.8 tok/s (TTFT 513.4 ms, spread 11.3%)  ollama   927.6 tok/s (TTFT 583.2 ms, spread 4.2%)  goinfer/ollama median 1.092 pairs 0.987-1.097  AMBIGUOUS-HIGH (spread cap)
+K=512   goinfer  1012.8 tok/s (TTFT 513.4 ms, spread 11.3%)  mlx   961.8 tok/s (TTFT 552.1 ms, spread 6.7%)  goinfer/mlx median 1.048 pairs 0.956-1.060  AMBIGUOUS-HIGH (spread cap)
+K=512   goinfer_exact (--exact-prefill) 104.2 tok/s (TTFT 4990.6 ms, spread 0.8%); goinfer batched / exact 9.72x
+K=3900  goinfer   922.3 tok/s (TTFT 4269.8 ms, spread 0.2%)  ollama   943.1 tok/s (TTFT 4198.0 ms, spread 0.2%)  goinfer/ollama median 0.978 pairs 0.977-0.979  LEVEL
+K=3900  goinfer   922.3 tok/s (TTFT 4269.8 ms, spread 0.2%)  mlx  1024.2 tok/s (TTFT 3855.6 ms, spread 2.7%)  goinfer/mlx median 0.901 pairs 0.893-0.917  BEHIND
+K=3900  goinfer_exact (--exact-prefill) 93.8 tok/s (TTFT 41968.4 ms, spread 1.6%); goinfer batched / exact 9.83x

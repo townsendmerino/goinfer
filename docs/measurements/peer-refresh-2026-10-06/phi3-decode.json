@@ -1,0 +1,625 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-10-06T04:58:12Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "52024b37",
+  "goinfer_tree_dirty": false,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": null
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/peer-refresh-2026-10-06/serve-metal-52024b37",
+    "mtime": "2026-10-06T04:28:20Z"
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   1.05908203125,
+   1.3798828125,
+   1.7236328125
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "decode path is the CPU's, not metal's: cpu (int8int8) \u2014 requested metal \u2192 running on cpu: every resident metal projection quantizes activations to int8, and Phi-3's activation outliers are rounded to",
+  "machine": {
+   "loadavg": [
+    1.05908203125,
+    1.3798828125,
+    1.7236328125
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.4,
+    "busy_pct": 2.7
+   }
+  },
+  "secs": 27.8
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   41.92709634275564,
+   42.003869748178836,
+   41.89063172408186
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.34375,
+    1.41552734375,
+    1.72216796875
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 2.8
+   }
+  },
+  "secs": 44.8,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    41.9215159346588,
+    41.90584338033443,
+    41.91163281448574,
+    41.92070581019902,
+    41.98507897909444,
+    41.918667308643975,
+    41.93360861388276,
+    41.91971790074596,
+    41.92576925022164,
+    41.91698341496212,
+    41.87102329055002,
+    42.214646221310396,
+    42.35914081604692,
+    41.932504961874784,
+    41.90562503960412,
+    41.905264990860715,
+    41.765324124082994,
+    41.9208987578453,
+    41.89286135316772,
+    41.90590030148933,
+    41.91173040350968,
+    41.91979229051311,
+    41.90957893794762,
+    41.898967624099114
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 3965328,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 3.99,
+    "runs_wall_s": 37.21,
+    "decode_timed_s": 36.05,
+    "prefill_and_request_s": 1.16,
+    "teardown_s": 3.04
+   }
+  },
+  "mean": 41.9,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 2048,
+  "prompt_tokens": 2048,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "decode path is the CPU's, not metal's: cpu (int8int8) \u2014 requested metal \u2192 running on cpu: every resident metal projection quantizes activations to int8, and Phi-3's activation outliers are rounded to",
+  "machine": {
+   "loadavg": [
+    1.025390625,
+    1.31103515625,
+    1.6650390625
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 2.7
+   }
+  },
+  "secs": 3.5
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 2048,
+  "prompt_tokens": 2048,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   35.87048321880615,
+   35.707242289154486,
+   35.90101022937875
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.0947265625,
+    1.31689453125,
+    1.66259765625
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 2.8
+   }
+  },
+  "secs": 35.8,
+  "counts": {
+   "tokens": 0,
+   "chunks": 816,
+   "tokens_per_chunk": 0.0,
+   "completion_rates": [
+    35.93896421697743,
+    35.889403553885664,
+    35.92174123309753,
+    35.867726334028816,
+    35.88816757409041,
+    35.83366666197363,
+    35.90978483999662,
+    35.71441133639912,
+    35.85847150174157,
+    35.878494206444806,
+    34.89550801378612,
+    35.22507401809072,
+    35.88486016634861,
+    35.950401492700955,
+    36.005944226164225,
+    35.95918468795886,
+    35.97256111228873,
+    35.910125117571035,
+    35.895265800406115,
+    35.8942148657381,
+    35.89083150829032,
+    35.85000682134189,
+    35.879129736222964,
+    35.91594687317082
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "warmup_tokens": null,
+   "token_gate": {
+    "verdict": "void",
+    "reason": "engine reported no token count",
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 4032112,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 7.43,
+    "runs_wall_s": 24.83,
+    "decode_timed_s": 22.11,
+    "prefill_and_request_s": 2.72,
+    "teardown_s": 3.03
+   }
+  },
+  "mean": 35.8,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 3900,
+  "prompt_tokens": 3930,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "decode path is the CPU's, not metal's: cpu (int8int8) \u2014 requested metal \u2192 running on cpu: every resident metal projection quantizes activations to int8, and Phi-3's activation outliers are rounded to",
+  "machine": {
+   "loadavg": [
+    2.521484375,
+    1.70263671875,
+    1.79052734375
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 9.0,
+    "busy_pct": 3.4
+   }
+  },
+  "secs": 3.5
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 3900,
+  "prompt_tokens": 3930,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   31.45349188493351,
+   31.48210826547797,
+   31.503376763915888
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    2.29345703125,
+    1.6796875,
+    1.78076171875
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.4,
+    "busy_pct": 3.6
+   }
+  },
+  "secs": 67.4,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    31.447103347227472,
+    31.44610006436827,
+    31.39545052804204,
+    31.423203655211672,
+    31.429263852769772,
+    31.64021028549187,
+    31.45520385634638,
+    31.391399490010595,
+    31.41434226299531,
+    31.43695123021262,
+    31.382989182915768,
+    31.330947355965353,
+    31.561958096457555,
+    31.64094657403276,
+    31.404281713076816,
+    31.68444970816758,
+    31.662715343375535,
+    31.447765261378468,
+    31.359478179761428,
+    31.44685089187698,
+    31.583991038736023,
+    31.62878582068092,
+    31.542396261186774,
+    31.35503131433098
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 4020000,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 14.15,
+    "runs_wall_s": 49.66,
+    "decode_timed_s": 48.03,
+    "prefill_and_request_s": 1.63,
+    "teardown_s": 3.05
+   }
+  },
+  "mean": 31.5,
+  "spread": 0.0
+ },
+ {
+  "phase": "C",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": null,
+  "error": "decode path is the CPU's, not metal's: cpu (int8int8) \u2014 requested metal \u2192 running on cpu: every resident metal projection quantizes activations to int8, and Phi-3's activation outliers are rounded to",
+  "machine": {
+   "loadavg": [
+    3.17236328125,
+    2.20166015625,
+    1.97705078125
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 3.7
+   }
+  },
+  "secs": 3.6
+ },
+ {
+  "phase": "C",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0,
+   "seed": 1
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   42.06341762394654,
+   42.089369631079556,
+   41.904411452800986
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    2.64794921875,
+    2.16552734375,
+    1.97119140625
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 25.4,
+    "busy_pct": 8.4
+   }
+  },
+  "secs": 43.5,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    41.91858943233917,
+    41.889095128233045,
+    41.89904773722637,
+    41.908542734761596,
+    41.930144381235735,
+    42.20160056248791,
+    42.38993320966451,
+    42.370387805624006,
+    42.38507787122172,
+    42.30275375710123,
+    42.34413075179047,
+    42.28716035103657,
+    41.8759332522302,
+    41.80993088275051,
+    41.82726849487422,
+    41.88270168763154,
+    41.89881784749952,
+    41.89930780531208,
+    41.90748573509456,
+    41.900183286812826,
+    41.88598400427919,
+    41.90060363928564,
+    41.94961501626896,
+    41.89329428785509
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 4017568,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 2.74,
+    "runs_wall_s": 37.14,
+    "decode_timed_s": 35.98,
+    "prefill_and_request_s": 1.15,
+    "teardown_s": 3.05
+   }
+  },
+  "mean": 42.0,
+  "spread": 0.2
+ }
+]

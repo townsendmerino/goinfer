@@ -40,3 +40,33 @@ this provenance.
   gate, or a step exits non-zero. A void cell is reported as void and the row keeps its old reading, marked stale.
 - **Reported against the old readings:** phi3-mini against 0.94× (2026-09-17); K = 512 against 1.037 and K = 3900
   against 0.983 (2026-09-30).
+
+## Read 2026-10-06 (the Mac night queue, 21:54 PDT start on AC power; the job ran 21:58–22:14)
+
+Provenance: goinfer `52024b37` (a clean tree, serve sha256 `02e7cce6fc11db99…`), Ollama 0.32.5, mlx-lm 0.31.3. Both
+steps exited 0. Raw: `phi3-decode.json`, `prefill-long.json` and `prefill-long-cells.txt` in
+`docs/measurements/peer-refresh-2026-10-06/`.
+
+**1. phi3-mini decode: VOID, all four goinfer cells.** goinfer never ran on Metal. The harness loads phi3-mini at
+int8int8 (its `BENCH_QUANT_OVERRIDE` default), goinfer then uses per-32 activation scales for Phi-3 ("Phi-3's activation
+outliers are rounded to zero by the per-row int8 activation scale", queue-engineering.md H2), and the Metal resident
+declined: every goinfer cell's decode path was `cpu (int8int8)`, and the harness refused it as not `metal-resident`,
+which is this record's void rule. Ollama's cells ran (41.9 / 35.8 / 31.5 tok/s greedy at 128 / 2048 / 3900, 42.0 at
+T = 1.0, spreads under 0.3%). Per the rule, the row keeps its 2026-09-17 reading, marked stale. What the void shows:
+**at the quantization the harness treats as Phi-3's default, phi3-mini is not served by Metal at all on this build**,
+so the 0.94× describes a configuration a default load no longer takes. Whether a Metal phi3-mini row should be read at
+another quantization (int4, which the 2026-09-17 row may have used) is a question for the owner, not this record.
+
+**2. The 1.5B's long-prompt TTFT: VALID.** Every engine started in both cells, and every cache check was healthy (fresh
+prompts miss each engine's prefix cache). Graded per pair as the 2026-10-05 short-prompt table (level 0.97–1.03, ahead
+> 1.03, behind < 0.97, all pairs decide, an engine spread over 5% caps the cell):
+
+| K | goinfer tok/s (spread) | ÷ Ollama, median (pairs) | ÷ mlx-lm, median (pairs) | grade vs Ollama | grade vs mlx-lm |
+|---|---|---|---|---|---|
+| 512 | 1012.8 (11.3%) | 1.092 (0.987–1.097) | 1.048 (0.956–1.060) | AMBIGUOUS-HIGH (spread) | AMBIGUOUS-HIGH (spread) |
+| 3900 | 922.3 (0.2%) | 0.978 (0.977–0.979) | 0.901 (0.893–0.917) | **LEVEL** | **BEHIND** |
+
+Against the old readings: K = 512 1.037 → 1.092, still AMBIGUOUS-HIGH, and still capped by goinfer's own spread (its
+first two requests read 567 and 569 ms, the other four 511–514); K = 3900 0.983 → 0.978, LEVEL both times. The
+prediction (it holds) held. New to this row: mlx-lm is ahead of goinfer at K = 3900 by about 10%. goinfer's batched
+prefill is 9.7–9.8× its own `--exact-prefill` (104 and 94 tok/s), which ran in both cells this time.
