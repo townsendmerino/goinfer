@@ -43,9 +43,12 @@ The Spark-X2.5 task found three of its own "we already have" claims wrong this w
 The text backbone is Gemma-shaped, and the pieces it needs mostly landed for other reasons.
 Verified in the tree at `53a241a`:
 
-- **Gated FFN with exact GELU — already there, on both paths.** `decoder/mlp.go:379` `gegluExact`,
-  reached via `ActGelu` in the decode-path switch (`decoder/mlp.go:524`) *and* in the batched-prefill
-  switch (`decoder/forwardn.go:718`, calling `gegluExact` at `:720`). Both were checked: the second one is
+- **Gated FFN with exact GELU — already there, on both paths.** *(Gate 0, 2026-10-06: the model uses
+  `gelu_pytorch_tanh`, not exact GELU, so this bullet is moot for it. The tanh form is in the same switch,
+  `ActGeluTanh` → `geglu` at `decoder/mlp.go:614`, but the encoder does not use the decoder path at all; see Results.
+  Line numbers below re-pointed to the code they describe.)* `decoder/mlp.go:397` `gegluExact`,
+  reached via `ActGelu` in the decode-path switch (`decoder/mlp.go:630`) *and* in the batched-prefill
+  switch (`decoder/forwardn.go:721`, calling `gegluExact` at `:723`). Both were checked: the second one is
   the copy Spark-X2.5 had to add after its own three gates missed that `Generate()` would crash on
   any multi-token prompt without it. EmbeddingGemma 2 is the second family to use this activation
   and inherits the fix.
