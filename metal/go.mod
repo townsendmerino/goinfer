@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/townsendmerino/aikit v1.57.0
 	github.com/townsendmerino/aikit/gpu v0.33.5
-	github.com/townsendmerino/goinfer v0.21.0
+	github.com/townsendmerino/goinfer v0.22.0
 	golang.org/x/sys v0.47.0
 )
 
