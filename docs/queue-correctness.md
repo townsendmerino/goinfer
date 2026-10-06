@@ -99,3 +99,21 @@ whole local community, and native sparse attention is where the field (V3.2, GLM
 converging — building the DSA/compressor path once plausibly buys the next several Chinese
 frontier releases, which is the strategic case for filing this now even though it's not a
 near-term ship. Lowest priority of the five items filed alongside this one (`G4`-`G7`).
+
+**G39 · A chatml model that answers a tool request with a fenced JSON call in prose makes no tool call — an owner decision before any code** — `any`, **filed 2026-10-06**
+
+Found by the cold-user run (`docs/measurements/cold-user-2026-10-05-nobara-pc.md`, dead end B): opencode on Qwen2.5-Coder-7B-Instruct (q4_k_m, CUDA, `-ctx 16384`) made one real `read` call, then wrote its `edit`
+call as a ```json fenced block in prose, twice, and no edit happened. On the same server `serve check` failed 2 of 9 rows: `tools, OpenAI` (turn two asked for the tool again instead of answering: the agent-livelock
+shape) and `stop sequences` (the reply never reached the stop sequence). Qwen2.5-7B-Instruct on the same card passes all of it (`docs/integrations/opencode.md`).
+
+What the code does today: on chatml a call is constrained from the `<tool_call>` opener, and `AcceptsBareToolCall` additionally parses an UNWRAPPED call, but only when the output's first non-space byte
+is `{` (`chat/tools.go`, `NewBareAwareProseStreamer`). Prose that later contains a fenced `{"name": "edit", "arguments": {...}}` is parsed as prose. The README and the opencode recipe now say which checkpoint is
+measured to work (70148d89); that is the whole of the fix so far.
+
+**The option, and why it is not just built.** Accept a ```json fence whose object names a supplied tool and parses as `{name, arguments}` as a call. It would have turned both opencode attempts into edits. It also
+turns a model that was asked to SHOW an example call, in a fenced block, into one that executes it, and an agent that executes a tool it was only asked to describe is worse than one that does nothing. That
+trade (tolerance against a false execution) is the owner's, not an implementation detail. If taken: pre-register a held-out set of fenced-example prompts that must NOT parse as calls and the opencode
+transcripts that must, restrict it to a fence that is the whole reply or its last block, and gate it on `serve check`.
+
+**Also open, and separate from the parser:** why Qwen2.5-Coder-7B fails `tools, OpenAI` turn two and `stop sequences` when the Instruct model of the same size does not. It may be the checkpoint, or
+the Coder template, or this server; nothing here has told them apart. Needs the Coder-7B GGUF on nobara (4.4 GiB pull) and a `serve check` run with the rendered prompts logged.
