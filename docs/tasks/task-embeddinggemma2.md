@@ -380,8 +380,8 @@ parts, mixed with strings; inline base64 only; one image per input, text after i
 (`internal/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
 real checkpoint, the table image read cosine 0.999683 alone and 0.999713 with text against sentence-transformers,
 matching the gate's CPU figures. The reference's bicubic resize is in and the default since the same day (R1/R2 below:
-pixels bit-identical, every case 1.000000000), bilinear selectable. Open: text before an image, several images in one
-input, and the bicubic in aikit for Gemma 4.
+pixels bit-identical, every case 1.000000000), bilinear selectable, and the tower runs on Metal with the encoder (Phase
+VM below). Open: text before an image, several images in one input, and the bicubic in aikit for Gemma 4.
 
 **Gate 0 (read from the real checkpoint, transformers 5.19.0 and sentence-transformers 6.1.0):**
 - The composite forward runs the vision tower and `embed_vision` (`Gemma4Model.get_image_features`), then
@@ -462,6 +462,66 @@ env read). Gates, on the same four images and 12 cases as V1-V4:
   not antialias). `TestPreprocessBicubic_layout` checks the patch layout and positions against aikit's on an image
   neither resizes.
 - Preprocessing, exploratory: bicubic 13-45 ms an image, bilinear 6-20 ms, beside a tower of about 5 s on the CPU.
+
+## Phase VM — the vision tower on Metal, planned and pre-registered 2026-10-06
+
+The owner, 2026-10-06: vision for EmbeddingGemma 2 working on the GPU first, then audio. After Phase V the tower is
+the cost of an image embedding: about 5 s on the CPU against about 0.5 s for the encoder after it.
+
+- **Weights (owner's choice): an aikit export.** `vision.Gemma4Encoder` keeps its weights unexported; aikit gains a
+  `Gemma4Encoder.Weights()` export, as SigLIP's `GPUWeights` is, in f32 with each projection's clip bounds and the
+  standardize buffers. One loader, and Gemma 4's own image input can take the same Metal tower later. It needs an
+  aikit tag before goinfer's commits that use it can be pushed; until then the work runs through `go.work` against the
+  aikit checkout.
+- **The tower here:** 16 layers, hidden 768, 12 heads of 64, MLP 3072, about 2,300-2,520 patches an image,
+  `use_clipped_linears` false, `standardize` false. About 0.73 TFLOP of projections and MLP and 0.29 of attention an
+  image: at the f32 GEMM's measured rate (about 1 TFLOP/s on this Mac) an estimate of about 1 s, to be measured.
+- **What runs on the GPU, float32:** the patch-embed GEMM and the two position tables' adds; per layer the four
+  RMSNorms (the Gemma 4 kind, `w`), the q/k/v projections, q and k norms with weights and v without, the 2-D axial
+  RoPE from the CPU's own tables, full bidirectional attention at scale 1.0 as Phase M's GEMM blocks (no window, one
+  head per KV head), the output projection, the gated GELU-tanh MLP, and every projection's input and output clamp
+  when the checkpoint has finite bounds. The 3x3 average pool, the √hidden scale, standardize, the unscaled RMSNorm
+  and the projection to 512 run on the host at first (under 1% of the FLOPs).
+- **Seam:** a tower accelerator beside the encoder's (`embeddinggemma2.RegisterVisionAccelerator`, or the existing
+  registration widened), registered by goinfer/metal; `UseAccelerator("metal")` moves both; the CPU tower stays the
+  fallback, and serve's startup line says where the tower runs.
+- **Gates, written before any measurement:**
+  - **VM1, tiny (the committed `testdata/gemma4-vision-tiny`, finite clip bounds on):** the Metal tower against
+    aikit's CPU tower, cosine >= 0.9999 on every soft token, at attention block sizes that do and do not divide the
+    patch count.
+  - **VM2, real tower:** fed HF's own pixels (the Phase V artifacts), the Metal tower against HF's image features,
+    cosine >= 0.9999 on every soft token of all four images (V2's bar).
+  - **VM3, end to end:** the Metal tower and the Metal encoder with the bicubic resize, every one of the 12 cases at
+    cosine >= 0.9999 with sentence-transformers. In [0.999, 0.9999): ambiguous, parked for the owner. Under 0.999:
+    fails.
+  - **VM4, planted defects, each red on VM1:** the RoPE axes swapped, the position tables swapped, v given q's norm
+    weight, the attention scale 1/sqrt(64) instead of 1, the clamps skipped.
+  - Speed against the CPU tower on the four images is a record, not a gate: exploratory by day, a timed read on the
+    night queue.
+
+**Status 2026-10-06: BUILT, VM1-VM4 passed; on by default where the encoder runs on Metal.** aikit gained
+`Gemma4Encoder.Weights()`, `Gemma4RopeTables` and `FinishHidden` on a local branch (`gemma4-tower-export`, not yet
+tagged; this tree's gitignored `go.work` uses the aikit checkout until it is). `metal/gemma4_vision.go` is the tower;
+`embeddinggemma2.RegisterVisionAccelerator` the seam; `UseAccelerator("metal")` moves both; serve says where the
+tower runs at startup and again when the first image loads it. Read 2026-10-06, 15:13-15:19 PDT:
+- **VM1: PASS**, worst soft-token cosine **1.000000000** in all 12 cases (18, 54 and 135 patches, raster and
+  shuffled, blocks of 256, 6 and 5), the tiny tower's clip bounds on and its position tables and norm weights
+  randomised. The fixture's own tables and norm weights are all ones, which hid two of the planted defects until they
+  were randomised (a swapped table read 1.000000000; v given q's norm weight was invisible).
+- **VM2: PASS**, the Metal tower on HF's own pixels against HF's image features: worst soft-token cosine 0.999999999
+  or better on every image (against the CPU tower, 0.999999997 or better).
+- **VM3: PASS**, end to end with the bicubic resize, the Metal tower and the Metal encoder: **1.000000000** in all 12
+  cases. Through the Metal serve binary, the table image read 1.000000000 alone and with text.
+- **VM4: PASS**, each planted defect red on VM1: the RoPE axes swapped (12 of 12 cases), the position tables swapped
+  (12), v given q's norm weight (12), the attention scale 1/sqrt(head dim) (12), and the clamps skipped (the test's
+  own control, 0.947).
+- **Speed, exploratory** (by day, Metal and CPU towers alternated per image in one process, not a speed result): 1.22-1.98 s
+  an image on Metal against 5.11-5.75 s on the CPU tower. A timed read belongs on the night queue. Raw:
+  `docs/measurements/embeddinggemma2-2026-10-06/metal-vm-gates.txt`.
+- The aikit export's own test (`TestGemma4Weights_reproduceForward`) builds a tower from the export alone and matches
+  `Forward` at 1.000000000; a dropped clamp, an unnormalised v, swapped tables and the wrong RoPE theta turn it red.
+- **Not done:** Gemma 4's own image input still runs aikit's CPU tower (the Metal one takes the same export, so
+  wiring it is small); the tower's weights are held twice (aikit's f32 copy and the GPU's), about 0.6 GB extra.
 
 ## Phase 2 — the other four modalities, later and only on P7's back
 

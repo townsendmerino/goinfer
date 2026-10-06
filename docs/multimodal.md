@@ -427,7 +427,9 @@ number is published without provenance.
   **EmbeddingGemma 2 now has the reference's resize** (`embeddinggemma2/preprocess.go`, default since 2026-10-06):
   torchvision's antialiased bicubic on uint8, bit-identical to it on the four gate images and twelve synthetic cases,
   which brought its image embeddings to 1.000000000. It lives in goinfer, not aikit, so Gemma 4's image input still
-  resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both.
+  resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both. **A Metal Gemma 4 tower exists
+  too** (`metal/gemma4_vision.go`, 2026-10-06, from aikit's `Gemma4Encoder.Weights()` export), so far used only by
+  EmbeddingGemma 2; Gemma 4's own image input could take it the same way.
   Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
   EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
   from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.

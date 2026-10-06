@@ -800,8 +800,8 @@ The object form also takes bare base64 for `image`. A lone `{"type": "image_url"
 Images are inline only, a base64 `data:` URI (never a URL the server fetches), at most one per input with any text
 after it (text before the image is a 400 for now), at most 16 per request and 16 MiB each, decoded. `task` and
 `input_type` choose the prompt as for text, and `usage` counts the image's soft tokens (256 to 280). The vision tower
-loads on the first image request, so a text-only server never pays for it. It runs on the CPU; the encoder after it
-runs on Metal where text does. The image is resized as the reference's processor does it (torchvision's antialiased
+loads on the first image request, so a text-only server never pays for it. It runs on Metal with the encoder when
+the encoder is on Metal (startup says where, and so does a line when the first image loads it), on the CPU otherwise. The image is resized as the reference's processor does it (torchvision's antialiased
 bicubic, reproduced bit for bit), and an image embedding then matches sentence-transformers' to cosine 1.000000000 on
 the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
 bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.

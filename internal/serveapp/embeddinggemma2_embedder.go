@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,8 +66,15 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 			s.embedWidths = append(s.embedWidths, w)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type; images resized %s) in %s\n",
-		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), e.ImageResizeMode(), time.Since(t0).Round(time.Millisecond))
+	tower := "CPU"
+	if a := e.Accelerator(); a != nil && slices.Contains(embeddinggemma2.VisionAccelerators(), a.Name()) {
+		tower = a.Name()
+	}
+	e.OnVisionLoad(func(device string, took time.Duration) {
+		fmt.Fprintf(os.Stderr, "EmbeddingGemma 2 image tower loaded on %s in %s\n", device, took.Round(time.Millisecond))
+	})
+	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type; images resized %s, tower on %s, loaded on the first image) in %s\n",
+		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), e.ImageResizeMode(), tower, time.Since(t0).Round(time.Millisecond))
 	return nil
 }
 

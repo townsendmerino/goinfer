@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -26,14 +27,18 @@ type imageTokens struct {
 	EOI   int `json:"eoi_token_id"`
 }
 
-// visionTower is the loaded image path: aikit's tower and projector, and the three image token ids.
+// visionTower is the loaded image path: aikit's tower and projector, the three image token ids, and the tower's
+// accelerator when it runs on another device (vision_accel.go).
 type visionTower struct {
-	enc *vision.Gemma4Encoder
-	tok imageTokens
+	enc    *vision.Gemma4Encoder
+	tok    imageTokens
+	accel  VisionAccelerator // nil: the CPU tower
+	device string            // VisionDevice's account when not plain CPU
 }
 
 // EnableVision loads the checkpoint's vision tower (from the same directory as the encoder) so EmbedImage works. The
-// tower runs on the CPU; the text encoder after it runs where the encoder does (UseAccelerator).
+// tower runs on the encoder's accelerator when one of that name is registered for it (RegisterVisionAccelerator), and
+// on the CPU otherwise (VisionDevice says which); the text encoder after it runs where the encoder does.
 func (e *Encoder) EnableVision() error {
 	if e.dir == "" {
 		return fmt.Errorf("embeddinggemma2: the encoder was not loaded from a directory")
@@ -60,6 +65,7 @@ func (e *Encoder) EnableVision() error {
 		return fmt.Errorf("embeddinggemma2: the vision projector emits %d wide, the encoder takes %d", enc.TextHiddenSize, e.m.cfg.Hidden)
 	}
 	e.vis = &visionTower{enc: enc, tok: cfg.imageTokens}
+	e.bindVisionAccel()
 	return nil
 }
 
@@ -136,8 +142,22 @@ func (e *Encoder) ImageFeaturesFrom(patches []float32, pos [][2]int) ([]float32,
 }
 
 func (e *Encoder) featuresFrom(patches []float32, pos [][2]int) ([]float32, int, error) {
+	return e.featuresOn(e.vis.accel, patches, pos)
+}
+
+// featuresOn runs the tower on a (nil: the CPU), then aikit's tail.
+func (e *Encoder) featuresOn(a VisionAccelerator, patches []float32, pos [][2]int) ([]float32, int, error) {
 	n := multimodal.Gemma4PooledTokens(pos, e.vis.enc.Cfg.PoolingKernelSize)
-	feats, err := e.vis.enc.Forward(patches, pos)
+	var feats []float32
+	var err error
+	if a != nil {
+		var h []float32
+		if h, err = a.Hidden(patches, pos); err == nil {
+			feats, err = e.vis.enc.FinishHidden(h, pos)
+		}
+	} else {
+		feats, err = e.vis.enc.Forward(patches, pos)
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("embeddinggemma2: vision tower: %w", err)
 	}
@@ -183,14 +203,22 @@ func (e *Encoder) EmbedImageFeatures(in ImageInput, feats []float32, n int) ([]f
 // visMu serialises the lazy EnableVision of EmbedImageTask.
 var visMu sync.Mutex
 
+// OnVisionLoad sets a function EmbedImageTask calls once, when its first image loads the tower, with where the tower
+// runs (VisionDevice) and how long the load took: a server reports it, since that happens after its startup line.
+func (e *Encoder) OnVisionLoad(f func(device string, took time.Duration)) { e.onVis = f }
+
 // EmbedImageTask embeds one image input for a server: it loads the vision tower on first use (a text-only server never
 // pays for it), then EmbedImage. prompt names a task prompt or is "" for none.
 func (e *Encoder) EmbedImageTask(img []byte, text, prompt string) ([]float32, int, error) {
 	visMu.Lock()
 	if e.vis == nil {
+		t0 := time.Now()
 		if err := e.EnableVision(); err != nil {
 			visMu.Unlock()
 			return nil, 0, err
+		}
+		if e.onVis != nil {
+			e.onVis(e.VisionDevice(), time.Since(t0))
 		}
 	}
 	visMu.Unlock()

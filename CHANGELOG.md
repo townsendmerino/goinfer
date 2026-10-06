@@ -26,7 +26,9 @@ better; and end to end at 1.000000000 in all twelve cases. The image is resized 
 torchvision's antialiased bicubic on the uint8 image, reproduced bit for bit (no pixel differs on the four gate images
 or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resize bilinear` (or
 `Encoder.SetImageResize`) selects aikit's bilinear resize instead, which reads 0.99924-0.99986. Inline images only
-(never a fetched URL), one per input, 16 per request.
+(never a fetched URL), one per input, 16 per request. On a Mac the vision tower runs on Metal with the encoder
+(1.000000000 end to end on the same twelve cases; about 1.2-2.0 s an image against 5.1-5.8 s for the CPU tower, an
+exploratory read), through a weights export new in aikit.
 
 ### Added — EmbeddingGemma 2 on Metal
 
