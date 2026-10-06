@@ -49,6 +49,11 @@ credited with detecting a wrong merger activation. (Un-amplified, the tiny fixtu
   uint8 with bicubic `antialias=True`; goinfer's `qwenBicubicU8` is PIL-style (a = −0.5), which is
   tolerance-matched to PIL, not to torchvision, and a = −0.75 vs −0.5 differ. No PIL/torchvision in the venvs
   here. Every G2/G4 image is grid-aligned; a photograph from a user is not.
+  *Correction 2026-10-06:* torchvision's bicubic with `antialias=True` is Keys a = −0.5, not −0.75 (−0.75 is its
+  non-antialiased bicubic). Measured: `embeddinggemma2/preprocess.go`, a = −0.5 in torchvision's uint8 fixed point,
+  reproduces torchvision 0.29.1 bit for bit, and a = −0.75 fails every case
+  (`docs/tasks/task-embeddinggemma2.md`, Phase V resize). So the kernels agree; `qwenBicubicU8` may still differ from
+  torchvision in support, rounding or fixed point, which is not measured.
 
 ## Release state (deviation from the brief, flagged)
 

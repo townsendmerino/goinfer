@@ -809,9 +809,14 @@ number is published without provenance.
        mlx-vlm both use erf. P8a follows HF (erf); if P8b ever loads an mmproj it inherits tensors trained
        against erf, so it should also use erf, not copy llama.cpp.
      - llama.cpp's default image budget is 8–4096 tokens (min px 8192, max 4,194,304), not the checkpoint's
-       65536 / 16777216, and its resize is Pillow-style bicubic a = −0.5 with antialiasing where the HF fast
-       processor (torchvision) uses a = −0.75; its `round` is half-away, Python's is half-even (smart_resize
-       differs only on exact .5 ties). Ollama's MLX runner uses RoundToEven, Catmull-Rom, `pix/127.5 − 1`.
+       65536 / 16777216, and its resize is Pillow-style bicubic a = −0.5 with antialiasing, which is also what
+       the HF fast processor (torchvision) runs: it calls `tvF.resize(..., antialias=True)` (transformers 5.19,
+       `image_processing_backends.py`, Qwen2-VL's `resize` passing the default), and torchvision's antialiased
+       bicubic is Keys a = −0.5. (This line said the HF side uses a = −0.75 until 2026-10-06. That value is
+       torchvision's bicubic WITHOUT antialiasing. Measured: goinfer's `embeddinggemma2/preprocess.go` with
+       a = −0.5 reproduces torchvision 0.29.1's antialiased uint8 bicubic bit for bit, and with a = −0.75 it fails
+       on every case. The two can still differ in rounding and fixed point; that is not measured for llama.cpp.)
+       Its `round` is half-away, Python's is half-even (smart_resize differs only on exact .5 ties). Ollama's MLX runner uses RoundToEven, Catmull-Rom, `pix/127.5 − 1`.
      - **Do not pair images.** llama.cpp `mtmd` (`can_merge_with`, #21858) fuses ADJACENT SAME-SIZE images into
        one 2-frame temporal input, so 4 images read as 2 (llama.cpp #24303, Ollama #17814). HF treats every
        image as its own t = 1 grid with a duplicated frame; so must we.
