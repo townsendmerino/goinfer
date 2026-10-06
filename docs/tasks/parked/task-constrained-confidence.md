@@ -637,7 +637,7 @@ schema was never published (D0).
 
 - *(Planned shape; superseded 2026-09-28. `/v1/decisions` and `:batch` were never built: autotrust's schema was never published (D0), and the owner picked the TypeSafe shape, `POST /v1/systemone`, which is what exists.)* `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:692`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:696`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -943,7 +943,7 @@ contract) · `decoder/arch.go:959` (the `qwen3_5` / `qwen3_5_moe` own-forward ro
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:701`, `:744`
 (merge-at-load) · `decoder/kvcache.go:587` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:35`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:692` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:696` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·
