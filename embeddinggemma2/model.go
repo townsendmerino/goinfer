@@ -259,24 +259,50 @@ func poolNormalize(h []float32, T, d int) []float32 {
 // forward is the encoder. With keepLayers it also returns every layer's input and the last layer's output (before the
 // final norm), for per-layer differencing in tests.
 func (m *Model) forward(ids []int, keepLayers bool) ([]float32, [][]float32, error) {
+	x, err := m.EmbedTokens(ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.forwardEmbeds(x, len(ids), keepLayers)
+}
+
+// EmbedTokens is the encoder's input rows for ids: each token's embedding times sqrt(hidden), [len(ids), hidden]. An
+// image's soft tokens replace their placeholder rows after this scale, unscaled (EmbedImage).
+func (m *Model) EmbedTokens(ids []int) ([]float32, error) {
 	c := m.cfg
-	T, H, P := len(ids), c.Hidden, c.PLEDim
-	if T == 0 {
-		return nil, nil, fmt.Errorf("embeddinggemma2: no input ids")
+	H := c.Hidden
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("embeddinggemma2: no input ids")
 	}
-	if c.MaxPositions > 0 && T > c.MaxPositions {
-		return nil, nil, fmt.Errorf("embeddinggemma2: %d ids, over max_position_embeddings %d", T, c.MaxPositions)
-	}
-	x := make([]float32, T*H)
+	x := make([]float32, len(ids)*H)
 	scale := float32(math.Sqrt(float64(H)))
 	for t, id := range ids {
 		if id < 0 || id >= c.VocabSize {
-			return nil, nil, fmt.Errorf("embeddinggemma2: token id %d out of range [0, %d)", id, c.VocabSize)
+			return nil, fmt.Errorf("embeddinggemma2: token id %d out of range [0, %d)", id, c.VocabSize)
 		}
 		row := m.embed[id*H : (id+1)*H]
 		for j, v := range row {
 			x[t*H+j] = v * scale
 		}
+	}
+	return x, nil
+}
+
+// ForwardEmbedsCPU runs the encoder on T prepared input rows x [T, hidden] (EmbedTokens, with any image rows spliced
+// in), returning the projected last hidden state as forward does. x is not modified.
+func (m *Model) ForwardEmbedsCPU(x []float32, T int, keepLayers bool) ([]float32, [][]float32, error) {
+	return m.forwardEmbeds(append([]float32(nil), x...), T, keepLayers)
+}
+
+// forwardEmbeds is the encoder from its input rows; it works in x in place.
+func (m *Model) forwardEmbeds(x []float32, T int, keepLayers bool) ([]float32, [][]float32, error) {
+	c := m.cfg
+	H, P := c.Hidden, c.PLEDim
+	if T == 0 || len(x) != T*H {
+		return nil, nil, fmt.Errorf("embeddinggemma2: %d input values for %d rows of %d", len(x), T, H)
+	}
+	if c.MaxPositions > 0 && T > c.MaxPositions {
+		return nil, nil, fmt.Errorf("embeddinggemma2: %d positions, over max_position_embeddings %d", T, c.MaxPositions)
 	}
 	// Projection-only per-layer inputs: RMSNorm(reshape(W · emb · hidden^-0.5, [T, L, P])), from the scaled embeddings.
 	ple := make([]float32, T*c.Layers*P)

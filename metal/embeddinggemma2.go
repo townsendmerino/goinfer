@@ -299,18 +299,15 @@ func (a *eg2Accel) rms(e *Encoder, x, w, out Buffer, rows, dim int) {
 	e.Dispatch(a.vit.RMSNorm, rows*256, 256, x, w, out, a.u32(uint32(rows)), a.u32(uint32(dim)), a.f32(float32(a.cfg.RMSNormEps)))
 }
 
-// Forward runs the encoder over ids (see embeddinggemma2.Accelerator).
+// Forward runs the encoder over ids (see embeddinggemma2.Accelerator): the embedding gather on the host, then
+// ForwardEmbeds.
 func (a *eg2Accel) Forward(ids []int, keepLayers bool) ([]float32, [][]float32, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	c := a.cfg
-	T, H, I, P, L, E := len(ids), c.Hidden, c.Intermediate, c.PLEDim, c.Layers, c.EmbeddingDim
-	if T == 0 {
+	H := c.Hidden
+	if len(ids) == 0 {
 		return nil, nil, fmt.Errorf("metal: no input ids")
 	}
-	a.grow(T)
-	s := &a.scr
-	x := s.x.Floats()[:T*H]
+	x := make([]float32, len(ids)*H)
 	scale := float32(math.Sqrt(float64(H)))
 	for t, id := range ids {
 		if id < 0 || id >= c.VocabSize {
@@ -320,6 +317,22 @@ func (a *eg2Accel) Forward(ids []int, keepLayers bool) ([]float32, [][]float32, 
 			x[t*H+j] = v * scale
 		}
 	}
+	return a.ForwardEmbeds(x, len(ids), keepLayers)
+}
+
+// ForwardEmbeds runs the encoder from T prepared input rows (see embeddinggemma2.Accelerator).
+func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float32, [][]float32, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	c := a.cfg
+	H, I, P, L, E := c.Hidden, c.Intermediate, c.PLEDim, c.Layers, c.EmbeddingDim
+	if T == 0 || len(x0) != T*H {
+		return nil, nil, fmt.Errorf("metal: %d input values for %d rows of %d", len(x0), T, H)
+	}
+	a.grow(T)
+	s := &a.scr
+	x := s.x.Floats()[:T*H]
+	copy(x, x0)
 	var layers [][]float32
 	if keepLayers {
 		layers = append(layers, append([]float32(nil), x...))

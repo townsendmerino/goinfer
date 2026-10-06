@@ -1,0 +1,33 @@
+=== RUN   TestReal_vision
+    vision_real_test.go:165: gemma3_preprocess_image: V2 tower on HF's pixels, worst soft-token cosine 0.999999996 over 256; V3 grid 2304 patches (HF 2304, 0 not at an HF position), soft tokens 256 (HF 256), patch max|diff| 3.268e-03
+    vision_real_test.go:165: qwen25vl_preprocess_image: V2 tower on HF's pixels, worst soft-token cosine 0.999999999 over 260; V3 grid 2340 patches (HF 2340, 0 not at an HF position), soft tokens 260 (HF 260), patch max|diff| 5.363e-03
+    vision_real_test.go:165: formula: V2 tower on HF's pixels, worst soft-token cosine 0.999999997 over 270; V3 grid 2430 patches (HF 2430, 0 not at an HF position), soft tokens 270 (HF 270), patch max|diff| 2.572e-01
+    vision_real_test.go:165: table: V2 tower on HF's pixels, worst soft-token cosine 1.000000000 over 266; V3 grid 2394 patches (HF 2394, 0 not at an HF position), soft tokens 266 (HF 266), patch max|diff| 2.028e-01
+    vision_real_test.go:195: item  0 testdata/gemma3_preprocess_image.png   prompt ""     text false: V4 cosine 0.999861369 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 0: V4 end-to-end cosine 0.999861369, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  1 testdata/gemma3_preprocess_image.png   prompt "query" text false: V4 cosine 0.999754053 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 1: V4 end-to-end cosine 0.999754053, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  2 testdata/gemma3_preprocess_image.png   prompt ""     text true : V4 cosine 0.999573700 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 2: V4 end-to-end cosine 0.999573700, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  3 testdata/qwen25vl_preprocess_image.png prompt ""     text false: V4 cosine 0.999240959 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 3: V4 end-to-end cosine 0.999240959, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  4 testdata/qwen25vl_preprocess_image.png prompt "query" text false: V4 cosine 0.999477533 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 4: V4 end-to-end cosine 0.999477533, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  5 testdata/qwen25vl_preprocess_image.png prompt ""     text true : V4 cosine 0.999401515 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 5: V4 end-to-end cosine 0.999401515, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  6 testdata/glm_ocr/formula.png           prompt ""     text false: V4 cosine 0.999514634 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 6: V4 end-to-end cosine 0.999514634, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  7 testdata/glm_ocr/formula.png           prompt "query" text false: V4 cosine 0.999534504 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 7: V4 end-to-end cosine 0.999534504, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  8 testdata/glm_ocr/formula.png           prompt ""     text true : V4 cosine 0.999577200 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 8: V4 end-to-end cosine 0.999577200, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item  9 testdata/glm_ocr/table.png             prompt ""     text false: V4 cosine 0.999682824 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 9: V4 end-to-end cosine 0.999682824, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item 10 testdata/glm_ocr/table.png             prompt "query" text false: V4 cosine 0.999652709 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 10: V4 end-to-end cosine 0.999652709, under 0.9999 (from HF's own pixels 1.000000000)
+    vision_real_test.go:195: item 11 testdata/glm_ocr/table.png             prompt ""     text true : V4 cosine 0.999713124 (from HF's pixels 1.000000000)
+    vision_real_test.go:197: item 11: V4 end-to-end cosine 0.999713124, under 0.9999 (from HF's own pixels 1.000000000)
+--- FAIL: TestReal_vision (55.80s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/embeddinggemma2	56.352s
+FAIL

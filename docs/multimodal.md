@@ -419,6 +419,11 @@ number is published without provenance.
   vision_serve.go`) — the vision-tower primitive and its decoder-side hook are proven correct in
   isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
   similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
+  **Open, found 2026-10-06 (unmeasured for Gemma 4):** `vision.Gemma4Preprocess` resizes bilinearly, and
+  `Gemma4ImageProcessor` resizes bicubic (`resample=3`, torchvision backend). On EmbeddingGemma 2, which shares the
+  processor and the tower, that alone took image embeddings from cosine 1.000000000 (from HF's pixels) to
+  0.99924-0.99986 (`docs/tasks/task-embeddinggemma2.md`, Phase V). Gemma 4's own image input goes through the same
+  resizer, so it probably carries the same gap; a stage pin of the preprocessed pixels against HF would say.
   Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
   EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
   from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.

@@ -31,7 +31,9 @@ type Encoder struct {
 	prompts map[string]string
 	bos     int
 	eos     int
-	accel   Accelerator // nil: the CPU forward (UseAccelerator)
+	accel   Accelerator  // nil: the CPU forward (UseAccelerator)
+	dir     string       // the checkpoint directory (EnableVision reads the tower from it)
+	vis     *visionTower // nil until EnableVision
 }
 
 // LoadEncoder loads the model, tokenizer.json and the prompt table from an HF checkpoint directory.
@@ -59,7 +61,7 @@ func LoadEncoder(dir string) (*Encoder, error) {
 		}
 		prompts = st.Prompts
 	}
-	return &Encoder{m: m, tok: tok, prompts: prompts, bos: bos, eos: eos}, nil
+	return &Encoder{m: m, tok: tok, prompts: prompts, bos: bos, eos: eos, dir: dir}, nil
 }
 
 // Model returns the underlying text encoder.

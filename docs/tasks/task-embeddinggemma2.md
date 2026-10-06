@@ -316,6 +316,8 @@ encoder on the CPU only.
    splice of the image's soft tokens into the encoder's input, an image input on `/v1/embeddings`, and stage pins
    against the reference. Metal for the tower only if image embedding is too slow on the CPU. Video follows as
    frames through the same tower.
+4. **Then `docs/multimodal.md`** (owner, 2026-10-06: "after we do audio for this model, i want to finish up" the
+   multimodal plan): its open items, with P7's audio half done by step 3.
 3. **Audio, after vision, on the owner's word.** `gemma4_audio` (12 layers, hidden 1024, chunked local attention,
    conv blocks, a 128-bin mel front end) has no implementation anywhere in goinfer or aikit: `docs/multimodal.md` P7
    scoped Gemma 4's audio and never built it. It is one build for both families, so it is done as P7's audio half
@@ -397,6 +399,20 @@ weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query suppo
 - **V4, end to end:** every case's embedding has cosine >= 0.9999 with sentence-transformers'. **In [0.999, 0.9999):
   ambiguous, parked for the owner**, with V2 and V3 saying where the gap is. Under 0.999: fails.
 - A tiny-fixture check that the refactored forward from embeddings is bit-identical to the forward from ids for text.
+
+**Read 2026-10-06 (14:27-14:28, CPU float32, `embeddinggemma2/vision_real_test.go`):**
+- **V1: PASS**, all 12 cases' ids equal sentence-transformers'.
+- **V2: PASS**, the tower and projector on HF's own pixels: worst soft-token cosine 0.999999996 or better on every
+  image (aikit's Gemma 4 tower is exact for this checkpoint).
+- **V3:** the patch grid and soft-token counts equal HF's on every image, but the patches differ by a max |diff| of
+  0.20-0.54 on the [0, 1] scale. **Cause, found:** the reference's `Gemma4ImageProcessor` resizes with `resample=3`
+  (bicubic) on the torchvision backend; aikit's `vision.Gemma4Preprocess` resizes bilinearly (`gemma4ResizeToHWC01`).
+- **V4: AMBIGUOUS, parked for the owner** under the pre-registered rule: end-to-end cosine 0.99924-0.99986, inside
+  [0.999, 0.9999). The same pipeline from HF's own pixels reads **1.000000000** in all 12 cases, so the whole gap is
+  the resize. Raw: `docs/measurements/embeddinggemma2-2026-10-06/vision-gates.txt`.
+- **The same resizer serves Gemma 4's own image input** (`internal/serveapp/vision_serve.go` calls
+  `vision.Gemma4Preprocess`, and Gemma 4's processor is the same `Gemma4ImageProcessor`), so it probably carries the
+  same mismatch; noted in `docs/multimodal.md` P7.
 
 ## Phase 2 — the other four modalities, later and only on P7's back
 

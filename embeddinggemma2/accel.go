@@ -13,6 +13,9 @@ import (
 type Accelerator interface {
 	Name() string
 	Forward(ids []int, keepLayers bool) (last []float32, layers [][]float32, err error)
+	// ForwardEmbeds is Forward from T prepared input rows x [T, hidden] (Model.EmbedTokens with any image rows
+	// spliced in); x is not modified.
+	ForwardEmbeds(x []float32, T int, keepLayers bool) (last []float32, layers [][]float32, err error)
 	Close() error
 }
 
