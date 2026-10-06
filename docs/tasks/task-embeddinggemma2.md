@@ -303,7 +303,169 @@ written reason rather than a default that happened. Whichever is chosen, the pre
 applied must appear in the response or the server logs, because a retrieval index built under one
 prefix and queried under another degrades quietly and is very hard to diagnose afterwards.
 
+## The order from here (owner, 2026-10-06)
+
+**Text on Metal first, then vision, then audio once the owner is happy with those two.** v0.22.0 shipped the text
+encoder on the CPU only.
+
+1. **Phase M: the text encoder on Metal** (below). In progress.
+2. **Vision**, CPU first. EmbeddingGemma 2's `vision_config` is `gemma4_vision` with the Gemma 4 vision encoder's
+   shape (16 layers, hidden 768, 12 heads of 64, 3×3 pooling to 280 soft tokens, axial RoPE), and that encoder is
+   already built and gated in aikit (`vision/gemma4_encoder.go`, shipped by `docs/multimodal.md` P7 Phases B and C).
+   New for this model: its projector into the text encoder's 512 width (`EmbeddingGemma2MultimodalEmbedder`), the
+   splice of the image's soft tokens into the encoder's input, an image input on `/v1/embeddings`, and stage pins
+   against the reference. Metal for the tower only if image embedding is too slow on the CPU. Video follows as
+   frames through the same tower.
+4. **Then `docs/multimodal.md`** (owner, 2026-10-06: "after we do audio for this model, i want to finish up" the
+   multimodal plan): its open items, with P7's audio half done by step 3.
+3. **Audio, after vision, on the owner's word.** `gemma4_audio` (12 layers, hidden 1024, chunked local attention,
+   conv blocks, a 128-bin mel front end) has no implementation anywhere in goinfer or aikit: `docs/multimodal.md` P7
+   scoped Gemma 4's audio and never built it. It is one build for both families, so it is done as P7's audio half
+   and then wired here, not as an EmbeddingGemma 2-only tower.
+
+## Phase M — the text encoder on Metal (planned 2026-10-06)
+
+**Status 2026-10-06: BUILT, Gates 1-3 passed; on by default in serve on a Mac.** `metal/embeddinggemma2.go`
+registers a `metal` accelerator (`embeddinggemma2.RegisterAccelerator`); serve's loader uses it when `--backend`
+resolves to metal and says so (`f32, Metal` on the startup line), falls back to the CPU with the reason if it
+declines, and refuses instead under `--require-backend`.
+
+- **What it runs:** aikit's f32 GEMM and row RMSNorm; attention as those GEMMs over blocks of 256 query rows (scores
+  Q·Kᵀ against only the keys a block reaches, a windowed row softmax, then scores × V against the block's values
+  transposed), never a T x T matrix; RoPE from the CPU's own tables; GELU-tanh multiplies and residual adds in a small
+  precise-math library of its own. The embedding gather, pooling and normalisation stay on the host. A first,
+  one-threadgroup-per-query attention kernel was correct but no faster than the CPU (each query re-read every key: 7.4
+  s against the CPU's 4.8 at 1,771 tokens), and was replaced by the GEMM form.
+- **Gate 1 (tiny fixture, Metal against the CPU forward):** cosine 1.000000000 on every layer's input, the projected
+  hidden state and the embedding, for the golden's four cases and two random inputs of 300 and 700 tokens, at blocks
+  of 256, 4 and 5 rows. **Gate 3:** five planted defects, each red: the window one wider, a causal mask, the KV-head
+  mapping, a block's key range one short, the PLE block reading layer 0's input.
+- **Gate 2 (real checkpoint against the committed sentence-transformers golden):** all 48 texts with identical ids,
+  worst cosine **0.999999989**, head dims 256 and 512 included.
+- **Speed, exploratory** (by day, load about 4, Metal and CPU alternated per text in one process, not a speed result):
+  all 48 texts 9.4 s on Metal against 40.8 s on the CPU (4.3x); 0.20 s against 1.03 at 449 tokens, 1.17 s against
+  5.10 at 1,771. A timed read belongs on the night queue. Raw: `docs/measurements/embeddinggemma2-2026-10-06/metal-gate2.txt`.
+- **Not done:** f16 or int8 weights on the GPU, and any GPU backend but Metal.
+
+The survey (2026-10-06) found that nothing in goinfer/metal runs this encoder as it stands: every GEMM there takes
+int4/int8 weights, and every prefill attention kernel hard-codes the causal mask (the fused and steel kernels also
+stop at head dim 128; this model needs 256 and 512). aikit/gpu's ViT library, which goinfer/metal reaches through
+`Device.NewViT()` at the pinned `aikit/gpu` v0.33.5, has an f32 tiled GEMM (about 1 TFLOP/s on an M1 Pro), a
+weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query support.
+
+- **Precision: float32 throughout.** The CPU path reaches cosine 0.999999987 against sentence-transformers; f16
+  activations would give that up on a family with a documented f16 overflow (Gemma's GELU-tanh on Metal).
+- **Reused:** aikit's f32 GEMM (`GEMMF32Plan`) and row RMSNorm. **New, in goinfer/metal** (no aikit release
+  needed): a bidirectional grouped-query attention kernel with online softmax, head dims up to 512 and a per-query
+  key range (the symmetric window, or the whole input on full layers); GELU-tanh times a multiplier (the MLP and the
+  PLE block); the layer-scalar residual. RoPE from host cos/sin tables, as the CPU path builds them. The embedding
+  gather, the PLE precompute's scale, mean pooling and normalisation can stay on the host at first.
+- **Seam:** `embeddinggemma2.RegisterAccelerator(name, factory)` in the root module; goinfer/metal registers
+  itself in `init()`; serve's EmbeddingGemma 2 loader tries it when `--backend` is auto or metal on a Mac, and keeps
+  the CPU forward as the fallback, saying which ran.
+- **Gates, pre-registered before any measurement:** (1) Metal against the CPU forward on the tiny fixture: cosine
+  >= 0.9999 on every layer's input and on the embedding, all four cases, and at attention block sizes that cut the
+  window; (2) Metal against the committed sentence-transformers golden (`testdata/embeddinggemma2-real/golden.json`)
+  on the real checkpoint: every embedding at cosine >= 0.9999; (3) planted defects in the new attention kernel (the
+  window one wider, a causal mask, the KV-head mapping) each red. Then speed against the CPU on the same 48 texts, a
+  record, not a gate.
+- **Estimate:** about 0.6 s for the 1,771-token document against the CPU's 3.8 s, from the GEMM rate and the
+  attention FLOPs; to be measured, not quoted.
+
+## Phase V — images (CPU first), pre-registered 2026-10-06
+
+**Status 2026-10-06: DONE on the CPU (the tower) with the encoder on Metal or the CPU; served at `/v1/embeddings`.**
+V1-V3 below, V4 accepted by the owner. Request shapes (owner: both): `{"image", "text"}` objects and OpenAI content
+parts, mixed with strings; inline base64 only; one image per input, text after it; the tower loads lazily
+(`internal/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
+real checkpoint, the table image read cosine 0.999683 alone and 0.999713 with text against sentence-transformers,
+matching the gate's CPU figures. The reference's bicubic resize is in and the default since the same day (R1/R2 below:
+pixels bit-identical, every case 1.000000000), bilinear selectable. Open: text before an image, several images in one
+input, and the bicubic in aikit for Gemma 4.
+
+**Gate 0 (read from the real checkpoint, transformers 5.19.0 and sentence-transformers 6.1.0):**
+- The composite forward runs the vision tower and `embed_vision` (`Gemma4Model.get_image_features`), then
+  `masked_scatter`s the pooled image features over the placeholder rows **after** the token embedding's √H scale (the
+  image rows are not scaled), then runs the text encoder on those embeddings: the PLE block and the mean pool both see
+  the image tokens.
+- The tower is `gemma4_vision`, and its tensors carry exactly the names aikit's `vision.LoadGemma4Encoder` reads
+  (`vision_tower.*`, `embed_vision.embedding_projection.weight`, no `model.` prefix; `standardize` false, so no std
+  tensors). aikit's `Gemma4Encoder.Forward` returns the pooled and projected soft tokens at the text width (512), and
+  `vision.Gemma4Preprocess` with `multimodal.Gemma4PooledTokens` gives the patches and the soft-token count.
+- sentence-transformers' ids, probed on a 320×240 image: `<bos>`, the prompt's text if one is named, `<|image>`
+  (255999), the soft tokens (`<|image|>`, 258880; 266 of them for 320×240, by aspect ratio), `<image|>` (258882),
+  then any text in the input's own order, `<eos>`. The tower is fed 2,520 padded patches (280 soft tokens × 9).
+
+**Gates, written before any measurement**, on the real checkpoint, four repo images of different aspect ratios
+(`testdata/gemma3_preprocess_image.png` 896×896, `testdata/qwen25vl_preprocess_image.png` 84×56,
+`testdata/glm_ocr/formula.png` 1000×1200, `testdata/glm_ocr/table.png` 1200×900), each as image alone, image with the
+`query` prompt, and image followed by text: 12 cases.
+- **V1, ids:** every case's ids equal sentence-transformers' exactly.
+- **V2, the tower in isolation:** fed sentence-transformers' own pixel values and position ids, aikit's tower and
+  projector match HF's `get_image_features` to cosine >= 0.9999 per soft token. This separates the tower from resizing.
+- **V3, preprocessing:** the patch grid and soft-token count equal HF's; the pixel values' max |diff| is reported (a
+  resampler difference shows here, not in V2).
+- **V4, end to end:** every case's embedding has cosine >= 0.9999 with sentence-transformers'. **In [0.999, 0.9999):
+  ambiguous, parked for the owner**, with V2 and V3 saying where the gap is. Under 0.999: fails.
+- A tiny-fixture check that the refactored forward from embeddings is bit-identical to the forward from ids for text.
+
+**Read 2026-10-06 (14:27-14:28, CPU float32, `embeddinggemma2/vision_real_test.go`):**
+- **V1: PASS**, all 12 cases' ids equal sentence-transformers'.
+- **V2: PASS**, the tower and projector on HF's own pixels: worst soft-token cosine 0.999999996 or better on every
+  image (aikit's Gemma 4 tower is exact for this checkpoint).
+- **V3:** the patch grid and soft-token counts equal HF's on every image, but the patches differ by a max |diff| of
+  0.0033-0.257 on the [0, 1] scale (0.83-65.6 uint8 steps; the raw record's figures. This line said 0.20-0.54 until
+  2026-10-06, which the raw record never showed). **Cause, found:** the reference's `Gemma4ImageProcessor` resizes with `resample=3`
+  (bicubic) on the torchvision backend; aikit's `vision.Gemma4Preprocess` resizes bilinearly (`gemma4ResizeToHWC01`).
+- **V4: AMBIGUOUS under the pre-registered rule, then ACCEPTED by the owner** ("since we understand the difference i'm
+  ok with it", 2026-10-06): end-to-end cosine 0.99924-0.99986, inside [0.999, 0.9999). The same pipeline from HF's own
+  pixels reads **1.000000000** in all 12 cases, so the whole gap is the resize. The test's bar is now 0.999 end to end
+  **and** 0.9999 from HF's pixels, so the loose bar covers the resize alone and anything after it is still held to the
+  original. Matching torchvision's bicubic resize was then done in goinfer (the resize option below); in aikit, which
+  would also serve Gemma 4, it stays open.
+  Raw: `docs/measurements/embeddinggemma2-2026-10-06/vision-gates.txt`.
+- **The same resizer serves Gemma 4's own image input** (`internal/serveapp/vision_serve.go` calls
+  `vision.Gemma4Preprocess`, and Gemma 4's processor is the same `Gemma4ImageProcessor`), so it probably carries the
+  same mismatch; noted in `docs/multimodal.md` P7.
+
+### Phase V, the resize option: pre-registered 2026-10-06, before it runs
+
+The owner, 2026-10-06: "maybe a flag to choose resize". `embeddinggemma2/preprocess.go` adds the reference's resize
+beside aikit's: torchvision's antialiased bicubic on the uint8 image (`tvF.resize(..., BICUBIC, antialias=True)`), as
+its uint8 CPU path computes it (separable, horizontal first, Keys a = -0.5, int16 weights at the pass's precision,
+integer accumulation with a rounding offset, a clamp to uint8 after each pass), skipped when the size is unchanged.
+It is chosen by `Encoder.SetImageResize("bilinear" | "bicubic")` and serve's `-eg2-image-resize` flag (a flag, not an
+env read). Gates, on the same four images and 12 cases as V1-V4:
+- **R1, the pixels:** with bicubic, V3's patch max |diff| against HF's pixels is <= 1/255 on every image (one uint8
+  step; 0 if the fixed point matches exactly). The count of differing values is reported. A float64 variant (one
+  rounding at the end, a test seam) is read beside it to show whether the fixed point matters.
+- **R2, end to end:** with bicubic, every case's V4 cosine is >= 0.9999 (the original pre-registered bar).
+- **Decision:** R1 and R2 both pass: bicubic becomes the default and bilinear stays selectable. R2 in
+  [0.999, 0.9999) or R1 failing: bicubic ships as the option only, the default stays bilinear, parked for the owner.
+  R2 under 0.999 on any case: the option does not ship.
+- The preprocessing time of each, one image, is reported as exploratory (by day, on the Mac), never quoted.
+
+**Read 2026-10-06 (14:49-14:51 PDT, CPU float32, `embeddinggemma2/vision_real_test.go`; raw:
+`docs/measurements/embeddinggemma2-2026-10-06/resize-gates.txt`):**
+- **R1: PASS, exactly.** Bicubic's patches equal HF's on all four images: 0 of 7,271,424 values differ (max |diff|
+  5.96e-08, float32 representation of the same uint8 over 255). The float64 variant misses by one uint8 step on 5,956
+  values over the three resized images (none on the 896x896), so the fixed point is what makes it exact. Bilinear,
+  read beside it: 0.83-65.6 uint8 steps.
+- **R2: PASS.** Every case's bicubic embedding has cosine **1.000000000** with sentence-transformers' (12 of 12),
+  against bilinear's 0.99924-0.99986 in the same run and 1.000000000 from HF's own pixels. V1 and V2 unchanged.
+- **Decision (the rule above): bicubic is the default; bilinear stays selectable** (`SetImageResize`,
+  `serve --embed-image-resize bilinear`).
+- A checkpoint-free test holds it in CI: `TestResizeBicubic_matchesTorchvision` against torchvision 0.29.1's output
+  for seeded noise and gradients over downscales, upscales, mixed and single-axis resizes (12 cases, every value
+  equal; `testdata/embeddinggemma2-resize/golden.json`, `scripts/pin_embeddinggemma2_resize.py`). Planted defects
+  (no rounding offset, a = -0.75, no antialias widening) each turn it red, 12, 12 and 10 cases (the two upscales do
+  not antialias). `TestPreprocessBicubic_layout` checks the patch layout and positions against aikit's on an image
+  neither resizes.
+- Preprocessing, exploratory: bicubic 13-45 ms an image, bilinear 6-20 ms, beside a tower of about 5 s on the CPU.
+
 ## Phase 2 — the other four modalities, later and only on P7's back
+
+*(Superseded in order by "The order from here" above; kept for the reasoning.)*
 
 Do not start this with Gate 1–3. The vision (170M) and audio (300M) encoders are separate towers,
 and `docs/multimodal.md` P7 is already building exactly that kind of tower for Gemma 4 — a mel

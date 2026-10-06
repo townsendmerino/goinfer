@@ -779,7 +779,8 @@ this encoder's asymmetric query/document encoding, an optional `input_type:
 query instruction prefix.
 
 **EmbeddingGemma 2** (`google/embeddinggemma-2`, text only) loads the same way, from its HF directory or
-`hf:google/embeddinggemma-2:safetensors`: `--embed-model ~/models/embeddinggemma-2`. It runs on the CPU in float32
+`hf:google/embeddinggemma-2:safetensors`: `--embed-model ~/models/embeddinggemma-2`. It runs in float32, on the GPU
+when `--backend` is (or resolves to) `metal` on a Mac and otherwise on the CPU, and the startup line says which
 (`--embed-quant` other than `f32` is refused), with a 768-wide vector that `dimensions` truncates to 512 and nothing
 else (any other width is a 400 naming 768 and 512). The model card also lists 256 and 128; measured here, they lost
 too much retrieval to offer (recall@10 0.89x and 0.68x of the full width on this repo's docs). Its quality depends on a task prompt, and the OpenAI shape has nowhere
@@ -790,6 +791,28 @@ for one, so it takes a non-standard field:
 - without `task`, `input_type` selects the model's `query` or `document` prompt;
 - with neither, **no prompt is applied**, which is what sentence-transformers does by default, so an unmodified OpenAI
   client gets the reference model's own output.
+
+**Images.** EmbeddingGemma 2 also embeds images into the same space as text, so text can find images and the other
+way round. An `input` element may be an image, in either of two shapes, mixed freely with plain strings in one
+request (one vector per element, in order):
+
+```json
+{"input": [
+  "a plain text input",
+  {"image": "data:image/png;base64,iVBOR...", "text": "optional text after the image"},
+  [{"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBOR..."}}, {"type": "text", "text": "optional"}]
+]}
+```
+
+The object form also takes bare base64 for `image`. A lone `{"type": "image_url", ...}` part is a one-part input.
+Images are inline only, a base64 `data:` URI (never a URL the server fetches), at most one per input with any text
+after it (text before the image is a 400 for now), at most 16 per request and 16 MiB each, decoded. `task` and
+`input_type` choose the prompt as for text, and `usage` counts the image's soft tokens (256 to 280). The vision tower
+loads on the first image request, so a text-only server never pays for it. It runs on the CPU; the encoder after it
+runs on Metal where text does. The image is resized as the reference's processor does it (torchvision's antialiased
+bicubic, reproduced bit for bit), and an image embedding then matches sentence-transformers' to cosine 1.000000000 on
+the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
+bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.
 
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
 `X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt

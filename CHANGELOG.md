@@ -19,6 +19,29 @@ any surface may still change.
 
 The image prompt of a Gated-DeltaNet model (Qwen3.5, and the Qwen3.6 and 3.8 MoE and dense variants) was run through the model one token at a time, which is decode speed (about 20 tokens/s on a 0.8B). It now runs the batched forward the embedding route already used, with every projection one matmul over the prompt and the m-RoPE positions applied to the full-attention layers; the DeltaNet recurrence stays sequential inside it. On Qwen3.5-0.8B on the CPU, time to first token for a 1024x640 image went from about 38 s to 13.8 s (a resend, with the tower's output cached, from 34.5 s to 10.7 s); exploratory, one run per cell (`docs/measurements/image-resend-2026-10-06.md`). **Not bit-identical to the old loop** (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; the HF-golden tests (cosine 0.9999, argmax, continuation past the image), a new batched-vs-per-token test over four prompt layouts, and the real 0.8B gates (`TestQwen35VLReal_G2`, `TestServe_qwen35Image_G4`: exact reply text against HF for three images) all pass. A model with a layer pager, a capture request or the Olmo Hybrid layout still takes the per-token loop. CUDA users get the same gain, because their image prefill runs on the CPU; moving it onto the GPU is still open (queue P26).
 
+### Added — EmbeddingGemma 2 embeds images
+
+`/v1/embeddings` with EmbeddingGemma 2 takes images, in the same vector space as its text: an `input` element can be
+`{"image": "<data: URI or base64>", "text": "..."}` or an OpenAI content-part array (`image_url` then `text`), mixed
+with plain strings. The tower is aikit's Gemma 4 vision encoder, which this checkpoint shares; it loads on the first
+image request. **Checked** on the real checkpoint against sentence-transformers over four images of different aspect
+ratios, three input shapes each: identical ids; the tower on the reference's own pixels at cosine 0.999999996 or
+better; and end to end at 1.000000000 in all twelve cases. The image is resized as the reference's processor does it,
+torchvision's antialiased bicubic on the uint8 image, reproduced bit for bit (no pixel differs on the four gate images
+or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resize bilinear` (or
+`Encoder.SetImageResize`) selects aikit's bilinear resize instead, which reads 0.99924-0.99986. Inline images only
+(never a fetched URL), one per input, 16 per request.
+
+### Added — EmbeddingGemma 2 on Metal
+
+On a Mac, `--embed-model` with EmbeddingGemma 2 now runs on the GPU when `--backend` resolves to `metal` (the default
+there), still in float32, and falls back to the CPU with the reason if Metal declines (`--require-backend` refuses
+instead). The attention runs as aikit's f32 GEMMs over blocks of query rows, never forming a full score matrix.
+**Checked:** against the CPU forward on the tiny fixture at cosine 1.000000000 layer by layer (five planted defects
+each fail it), and on the real checkpoint against sentence-transformers, 48 texts at cosine 0.999999989 or better.
+**Speed, exploratory** (by day on an M1 Pro, not a speed result): 4.3x the CPU over those 48 texts, 1.2 s for a
+1,771-token document against 5.1 s. `docs/tasks/task-embeddinggemma2.md`, Phase M.
+
 ### Fixed — a request with exactly one tool could never get an answer after the tool's result (`/v1/chat/completions`, `/v1/responses`)
 
 With one tool in `tools` and `tool_choice` auto or absent, the reply was constrained to that tool's call from its first token on every turn, including the turn after the tool's own result, so the model called the tool again, forever. `serve check` reported it as `tools, OpenAI`: "turn two asked for the tool again instead of answering — the agent-livelock shape", and it did so on Qwen2.5-7B-Instruct as well as Qwen2.5-Coder-7B. The lone-tool constraint now applies only to the first call: it is lifted when the conversation already ends in a tool result and `tool_choice` is auto or absent. An explicit `required`, a named function and `none` behave as before, and a request with two or more tools never had the problem. After the fix `serve check` passes 9 of 9 on the Instruct model. (`docs/measurements/g39-lone-tool-livelock-2026-10-06/`.)

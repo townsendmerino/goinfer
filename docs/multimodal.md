@@ -419,7 +419,18 @@ number is published without provenance.
   vision_serve.go`) — the vision-tower primitive and its decoder-side hook are proven correct in
   isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
   similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
-  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched.
+  **Open, found 2026-10-06 (unmeasured for Gemma 4):** `vision.Gemma4Preprocess` resizes bilinearly, and
+  `Gemma4ImageProcessor` resizes bicubic (`resample=3`, torchvision backend). On EmbeddingGemma 2, which shares the
+  processor and the tower, that alone took image embeddings from cosine 1.000000000 (from HF's pixels) to
+  0.99924-0.99986 (`docs/tasks/task-embeddinggemma2.md`, Phase V). Gemma 4's own image input goes through the same
+  resizer, so it probably carries the same gap; a stage pin of the preprocessed pixels against HF would say.
+  **EmbeddingGemma 2 now has the reference's resize** (`embeddinggemma2/preprocess.go`, default since 2026-10-06):
+  torchvision's antialiased bicubic on uint8, bit-identical to it on the four gate images and twelve synthetic cases,
+  which brought its image embeddings to 1.000000000. It lives in goinfer, not aikit, so Gemma 4's image input still
+  resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both.
+  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
+  EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
+  from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.
 
   **Phase B (serving integration) DONE, 2026-09-09 — CPU-only, E2B/E4B-class (causal) v1.** Wired
   the Phase A tower into real image-in-prompt requests: `multimodal.Gemma4ImageBlock`/
@@ -798,9 +809,14 @@ number is published without provenance.
        mlx-vlm both use erf. P8a follows HF (erf); if P8b ever loads an mmproj it inherits tensors trained
        against erf, so it should also use erf, not copy llama.cpp.
      - llama.cpp's default image budget is 8–4096 tokens (min px 8192, max 4,194,304), not the checkpoint's
-       65536 / 16777216, and its resize is Pillow-style bicubic a = −0.5 with antialiasing where the HF fast
-       processor (torchvision) uses a = −0.75; its `round` is half-away, Python's is half-even (smart_resize
-       differs only on exact .5 ties). Ollama's MLX runner uses RoundToEven, Catmull-Rom, `pix/127.5 − 1`.
+       65536 / 16777216, and its resize is Pillow-style bicubic a = −0.5 with antialiasing, which is also what
+       the HF fast processor (torchvision) runs: it calls `tvF.resize(..., antialias=True)` (transformers 5.19,
+       `image_processing_backends.py`, Qwen2-VL's `resize` passing the default), and torchvision's antialiased
+       bicubic is Keys a = −0.5. (This line said the HF side uses a = −0.75 until 2026-10-06. That value is
+       torchvision's bicubic WITHOUT antialiasing. Measured: goinfer's `embeddinggemma2/preprocess.go` with
+       a = −0.5 reproduces torchvision 0.29.1's antialiased uint8 bicubic bit for bit, and with a = −0.75 it fails
+       on every case. The two can still differ in rounding and fixed point; that is not measured for llama.cpp.)
+       Its `round` is half-away, Python's is half-even (smart_resize differs only on exact .5 ties). Ollama's MLX runner uses RoundToEven, Catmull-Rom, `pix/127.5 − 1`.
      - **Do not pair images.** llama.cpp `mtmd` (`can_merge_with`, #21858) fuses ADJACENT SAME-SIZE images into
        one 2-frame temporal input, so 4 images read as 2 (llama.cpp #24303, Ollama #17814). HF treats every
        image as its own t = 1 grid with a duplicated frame; so must we.

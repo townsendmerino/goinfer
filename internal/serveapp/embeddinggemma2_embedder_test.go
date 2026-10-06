@@ -2,10 +2,13 @@ package serveapp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
 // taskStub is a taskEmbedder with EmbeddingGemma 2's query/document prompts and one more. It records the prompt each
@@ -140,6 +143,19 @@ func TestLoadEmbeddingGemma2_refusesAQuantItCannotHonour(t *testing.T) {
 	}
 }
 
+// TestLoadEmbeddingGemma2_refusesAnUnknownResize: an -embed-image-resize the encoder does not have is refused by name
+// before anything loads (the tiny fixture has no tokenizer, so reaching the load would fail differently).
+func TestLoadEmbeddingGemma2_refusesAnUnknownResize(t *testing.T) {
+	s := &server{}
+	err := s.loadEmbeddingGemma2(config{embedPath: "../../testdata/embeddinggemma2-tiny", embedResize: "lanczos"})
+	if err == nil || !strings.Contains(err.Error(), "-embed-image-resize") || !strings.Contains(err.Error(), "bicubic") {
+		t.Fatalf("lanczos: %v, want a refusal naming the flag and the choices", err)
+	}
+	if s.embed != nil {
+		t.Fatal("an embedder was attached after the refusal")
+	}
+}
+
 // TestIsEmbeddingGemma2: the dispatch in loadEncoder recognises the checkpoint by its config.json, and nothing else.
 func TestIsEmbeddingGemma2(t *testing.T) {
 	if !isEmbeddingGemma2("../../testdata/embeddinggemma2-tiny") {
@@ -147,5 +163,46 @@ func TestIsEmbeddingGemma2(t *testing.T) {
 	}
 	if isEmbeddingGemma2(t.TempDir()) {
 		t.Error("an empty directory is recognised")
+	}
+}
+
+// eg2AccelStub stands in for the encoder in chooseEG2Device's test: err, when set, is what UseAccelerator returns.
+type eg2AccelStub struct {
+	err  error
+	used []string
+}
+
+func (s *eg2AccelStub) UseAccelerator(name string) (embeddinggemma2.Accelerator, error) {
+	s.used = append(s.used, name)
+	return nil, s.err
+}
+
+// TestChooseEG2Device: serve puts EmbeddingGemma 2 on Metal when its backend resolved to metal, falls back to the CPU
+// with the reason when Metal declines (and refuses instead under -require-backend), and runs it on the CPU, saying so,
+// for every other backend.
+func TestChooseEG2Device(t *testing.T) {
+	ok := &eg2AccelStub{}
+	if where, err := chooseEG2Device(ok, "metal", false); err != nil || where != "Metal" || len(ok.used) != 1 || ok.used[0] != "metal" {
+		t.Errorf("metal: %q %v %v", where, err, ok.used)
+	}
+	bad := &eg2AccelStub{err: errors.New("no device")}
+	if where, err := chooseEG2Device(bad, "metal", false); err != nil || !strings.Contains(where, "Metal declined: no device") {
+		t.Errorf("metal declined: %q %v", where, err)
+	}
+	if _, err := chooseEG2Device(bad, "metal", true); err == nil {
+		t.Error("metal declined under -require-backend did not refuse")
+	}
+	for _, be := range []string{"cpu", ""} {
+		s := &eg2AccelStub{}
+		if where, err := chooseEG2Device(s, be, true); err != nil || where != "CPU" || len(s.used) != 0 {
+			t.Errorf("%q: %q %v %v", be, where, err, s.used)
+		}
+	}
+	s := &eg2AccelStub{}
+	if where, err := chooseEG2Device(s, "cuda", false); err != nil || !strings.Contains(where, "Metal only") || len(s.used) != 0 {
+		t.Errorf("cuda: %q %v %v", where, err, s.used)
+	}
+	if _, err := chooseEG2Device(s, "cuda", true); err == nil {
+		t.Error("cuda under -require-backend did not refuse")
 	}
 }

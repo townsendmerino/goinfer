@@ -363,6 +363,9 @@ type config struct {
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
 	embedName  string // -embed-served-model-name
+	// embedResize is -embed-image-resize: how an image-embedding model resizes an image before its tower ("" = the
+	// model's default). EmbeddingGemma 2 takes bilinear (aikit's) or bicubic (its reference processor's).
+	embedResize string
 }
 
 // serveFlags is what the serve flags parse into: the config every model shares, the four listener flags that
@@ -461,6 +464,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.embedPath, "embed-model", "", "embedding model for /v1/embeddings: a CodeRankEmbed/NomicBert HF dir (config.json + model.safetensors + tokenizer.json), a decoder-as-embedder .gguf, or a HuggingFace reference: hf:<owner>/<repo>:safetensors fetches a NomicBert encoder checkpoint (anything else is refused before the weights), hf:<owner>/<repo>:<quant> a GGUF")
 	fs.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	fs.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
+	fs.StringVar(&cfg.embedResize, "embed-image-resize", "", "image resize before an image-embedding model's tower (EmbeddingGemma 2): bilinear | bicubic (the reference processor's torchvision antialiased bicubic). Default: the model's")
 	return sf
 }
 

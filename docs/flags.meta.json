@@ -64,6 +64,12 @@
    "summary": "An embedding model, served on `/v1/embeddings`: a directory (CodeRankEmbed / NomicBert layout), a decoder-as-embedder `.gguf`, or `hf:<owner>/<repo>:safetensors` (a NomicBert encoder, fetched and checked before its weights) or `hf:<owner>/<repo>:<quant>` (a GGUF)."
   },
   {
+   "name": "embed-image-resize",
+   "group": "Choosing models",
+   "summary": "How an image-embedding model (EmbeddingGemma 2) resizes an image before its tower: `bicubic`, the reference processor's torchvision antialiased bicubic (the default), or `bilinear`, aikit's.",
+   "type": "bilinear | bicubic"
+  },
+  {
    "name": "embed-quant",
    "group": "Choosing models",
    "summary": "Embedding weight precision.",
