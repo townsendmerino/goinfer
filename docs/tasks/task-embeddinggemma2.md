@@ -523,6 +523,73 @@ tower runs at startup and again when the first image loads it. Read 2026-10-06, 
 - **Not done:** Gemma 4's own image input still runs aikit's CPU tower (the Metal one takes the same export, so
   wiring it is small); the tower's weights are held twice (aikit's f32 copy and the GPU's), about 0.6 GB extra.
 
+## Phase A — audio (CPU first, then Metal), planned and pre-registered 2026-10-06
+
+The owner, 2026-10-06: audio after vision, on Metal, and aikit tagged once at the end (everything stays on the local
+branch `eg2-gpu-multimodal` and aikit's `gemma4-tower-export` until then). `gemma4_audio` is the tower Gemma 4
+E2B/E4B use too, so it is built once, in aikit beside the vision tower, as P7's audio half
+(`docs/multimodal.md`), and wired here first.
+
+**Gate 0, read 2026-10-06** (transformers 5.19.0, the real checkpoint's header; the full spec with file:line
+citations, and the probes behind it, are `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/`):
+- **Features:** 16 kHz mono float. 160 zeros of left pad, 320-sample frames at hop 160, periodic Hann (applied in
+  f32), a 512-point rFFT, magnitude (not power), a 128-bin HTK mel bank with no norm (its filter 0 is all zero), then
+  `ln(mel + 0.001)`. Truncated at 30 s. `T_valid = (N - 161) // 160 + 1` frames.
+- **Tower:** two 3x3 stride-2 convs (1→128→32 channels, each a bias-free LayerNorm with eps 1e-6, then ReLU),
+  flattened `f*32 + c` and projected 1024 → 1024. Then 12 conformer blocks, each:
+  - FFN, residual 0.5;
+  - chunked local attention: 8 heads of 128; keys at distance 0..11 only; relative-position keys from a [sin ‖ cos]
+    table; queries scaled by `128^-0.5 / ln 2 · softplus(per_dim_scale)`, keys by `ln(1+e)/ln 2`; a softcap of 50
+    before a -1e9 mask;
+  - a GLU, then a causal depthwise conv of kernel 5 (left pad 4);
+  - another FFN, residual 0.5;
+  - a closing RMSNorm (`x·w`).
+
+  Every linear but the relative-key and input projections is a ClippableLinear with finite, asymmetric BF16 bounds,
+  and 107 of the 120 clamp on a chirp. Then `output_proj` 1024 → 1536 with bias, an unweighted RMSNorm, and
+  1536 → 512.
+- **Tokens:** `ceil(ceil(T_valid/2)/2)` soft tokens (1 s → 25; at most 750 at 30 s; the config's 280 feeds only a
+  vLLM helper), laid out `<bos>` [prompt] `<|audio>` (256000) n x `<|audio|>` (258881) `<audio|>` (258883) [text]
+  `<eos>`. Probed through sentence-transformers. The rows are spliced in unscaled, as images are.
+- **Traps the gates below are built against:**
+  - The reference must be pinned with sdpa: eager inverts the audio mask, cosine 0.82.
+  - Clips under 13 tokens (about 0.5 s) never reach the window's edge, so the 0..11 window needs clips of 2 s or
+    more.
+  - A random-init tower has ±inf clip bounds and all-ones norms (the fixture trap Phase VM met), so the tiny fixture
+    sets them.
+  - The checkpoint is BF16; the reference runs in f32 (BF16 against f32 reads 0.99933).
+
+**Where:** aikit `audio` (new): `Gemma4AudioFeatures` (waveform → log-mel) and `Gemma4AudioEncoder`
+(`LoadGemma4AudioEncoder`, `Forward` → soft tokens at the text width), with a weights export like the vision tower's
+for the Metal port. goinfer: `Encoder.EnableAudio`, `EmbedAudio` (16 kHz mono samples, or a 16-bit PCM WAV at
+16 kHz; any other rate is refused, not resampled), serve's `{"audio": ...}` input, then
+`metal/gemma4_audio.go`.
+
+**Gates, written before any measurement.** The reference is `scripts/pin_embeddinggemma2_audio.py`, which uses
+sentence-transformers in f32 with sdpa asserted, the non-persistent buffers and three loaded clip scalars checked
+against the header, and per-stage tensors stored gzipped. The clips are three 16-bit 16 kHz WAVs it generates from a
+seed (chirp, tones and noise) and commits: 0.37 s (9 tokens, under the window), 2.37 s (59), and 7.83 s (not aligned
+to 128 or 160 samples). Each is embedded as audio alone, with the `query` prompt, and followed by text: 9 cases.
+- **A1, features:** the Go log-mel's `T_valid` equals HF's, and its max |diff| from HF's features is <= 1e-4 on every
+  clip. The value is reported; HF's own f32/f64 mix is the floor.
+- **A2, the tower in stages,** fed HF's own features: cosine >= 0.9999 on every soft token at every stage (after the
+  subsampler, after each of the 12 blocks, the tower's output, the embedder's output). The first stage under the bar
+  is named.
+- **A2t, tiny (CI):** a committed random `gemma4_audio` tower with finite asymmetric clip bounds, random norm weights
+  and `per_dim_scale`, the same stages at cosine >= 0.9999, on clips long enough for the window to bind.
+- **A3, ids:** every case's ids equal sentence-transformers'.
+- **A4, end to end:** every case's embedding is at cosine >= 0.9999 with sentence-transformers'. In [0.999, 0.9999):
+  ambiguous, parked for the owner. Under 0.999: fails.
+- **A5, planted defects, each red on A2 (2.37 s or 7.83 s):** the window admitting distance 12; the flatten
+  `c*32 + f`; the clamps skipped; `per_dim_scale` used without softplus; the depthwise conv centred instead of
+  causal.
+- **Then on Metal (AM):**
+  - **AM1:** the Metal tower against the CPU tower, cosine >= 0.9999 on every soft token, on A2t and on the three
+    real clips.
+  - **AM2:** end to end with the Metal tower and encoder, every case >= 0.9999.
+  - **AM3:** A5's defects planted in the Metal kernels, each red.
+  - Speed against the CPU tower is a record, not a gate: exploratory by day, timed at night.
+
 ## Phase 2 — the other four modalities, later and only on P7's back
 
 *(Superseded in order by "The order from here" above; kept for the reasoning.)*
