@@ -119,7 +119,8 @@ func (e *Encoder) UseAccelerator(name string) (Accelerator, error) {
 		return nil, err
 	}
 	e.accel = a
-	e.bindVisionAccel() // a tower already loaded moves too
+	e.bindVisionAccel() // towers already loaded move too
+	e.bindAudioAccel()
 	return a, nil
 }
 

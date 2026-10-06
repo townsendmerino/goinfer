@@ -624,6 +624,30 @@ to 128 or 160 samples). Each is embedded as audio alone, with the `query` prompt
   under a second end to end for the 7.83 s clip. That is much less than the image tower's 5 s, so AM matters less here
   than VM did.
 
+**Status 2026-10-06: AM BUILT, and AM1-AM3 passed; the audio tower runs on Metal with the encoder.**
+- **Code:** `metal/gemma4_audio.go` runs the 12 blocks with aikit's GEMMs and RMSNorm, the vision tower's clamps, and
+  kernels of its own:
+  - SiLU, the weighted residual, the GLU, the causal depthwise conv and the q/k scales;
+  - a sliding-window attention kernel, one threadgroup per query and head.
+
+  The subsampler, `output_proj` and the embedder stay on the host (aikit's `Subsample`, `FinishBlocks`). The seam is
+  `embeddinggemma2.RegisterAudioAccelerator`, and `UseAccelerator("metal")` moves it. Serve's startup line and the
+  first audio request say where it runs.
+- **Read 2026-10-06, 16:24 PDT** (raw: `docs/measurements/embeddinggemma2-2026-10-06/metal-am-gates.txt`):
+  - **AM1: PASS.** On the tiny tower, 1.000000000 against both the CPU tower and transformers. On the real clips,
+    0.999999999 or better against the CPU tower.
+  - **AM2: PASS**, all 9 cases at **1.000000000**. Through the Metal serve binary, the long clip with text read
+    1.000000000.
+  - **AM3: PASS**, each defect planted in the Metal path red on the tiny gate:
+    - the window one narrower: 0.99595 (one wider cannot be planted here: the relative-key table holds 12 rows);
+    - the clamps skipped: 0.97305;
+    - no softplus: 0.99965;
+    - a centred conv: 0.99696.
+
+    The flatten is host-side, aikit's, and covered by A5.
+- **Speed, exploratory** (by day, not a result): the Metal tower takes 71 and 176 ms against the CPU's 232 and 766 ms
+  on the 2.37 s and 7.83 s clips. The 0.37 s clip reads 165 against 73 ms, the first Metal call.
+
 ## Phase 2 — the other four modalities, later and only on P7's back
 
 *(Superseded in order by "The order from here" above; kept for the reasoning.)*

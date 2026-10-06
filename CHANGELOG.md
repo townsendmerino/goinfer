@@ -37,7 +37,8 @@ element can be `{"audio": "<data: URI or base64 of a WAV>", "text": "..."}` or a
 is 16-bit PCM, mono, 16 kHz, up to 30 s; anything else is refused, not resampled. The tower is Gemma 4's audio
 encoder, new in aikit (the conformer and its log-mel front end, in pure Go), and loads on the first audio request.
 **Checked** on the real checkpoint against sentence-transformers over three clips, three input shapes each: identical
-ids, the log-mel within 4.8e-7, every tower stage at cosine 1.000000, and every embedding at 1.000000000.
+ids, the log-mel within 4.8e-7, every tower stage at cosine 1.000000, and every embedding at 1.000000000. On a Mac
+the tower's blocks run on Metal with the encoder, at 1.000000000 on the same cases.
 
 ### Added — EmbeddingGemma 2 on Metal
 

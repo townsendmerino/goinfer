@@ -22,12 +22,15 @@ type audioTokens struct {
 }
 
 type audioTower struct {
-	enc *audio.Gemma4AudioEncoder
-	tok audioTokens
+	enc    *audio.Gemma4AudioEncoder
+	tok    audioTokens
+	accel  AudioAccelerator // nil: the blocks run on the CPU (audio_accel.go)
+	device string           // AudioDevice's account when not plain CPU
 }
 
-// EnableAudio loads the checkpoint's audio tower (from the encoder's directory) so EmbedAudio works. It runs on the
-// CPU.
+// EnableAudio loads the checkpoint's audio tower (from the encoder's directory) so EmbedAudio works. Its blocks run on
+// the encoder's accelerator when one of that name is registered for audio (RegisterAudioAccelerator), on the CPU
+// otherwise (AudioDevice says which).
 func (e *Encoder) EnableAudio() error {
 	if e.dir == "" {
 		return fmt.Errorf("embeddinggemma2: the encoder was not loaded from a directory")
@@ -54,6 +57,7 @@ func (e *Encoder) EnableAudio() error {
 		return fmt.Errorf("embeddinggemma2: the audio embedder emits %d wide, the encoder takes %d", enc.TextHiddenSize, e.m.cfg.Hidden)
 	}
 	e.aud = &audioTower{enc: enc, tok: cfg.audioTokens}
+	e.bindAudioAccel()
 	return nil
 }
 
@@ -83,7 +87,10 @@ func (e *Encoder) AudioDevice() string {
 	if e.aud == nil {
 		return ""
 	}
-	return "CPU"
+	if e.aud.device == "" {
+		return "CPU"
+	}
+	return e.aud.device
 }
 
 // MaxAudioSeconds is the longest clip the tower reads (the reference extractor truncates at 30 s; here a longer clip is
@@ -164,11 +171,7 @@ func (e *Encoder) AudioFeaturesFrom(mel []float32, T int) ([]float32, int, error
 	if e.aud == nil {
 		return nil, 0, fmt.Errorf("embeddinggemma2: audio is not enabled (EnableAudio)")
 	}
-	f, err := e.aud.enc.Forward(mel, T)
-	if err != nil {
-		return nil, 0, fmt.Errorf("embeddinggemma2: audio tower: %w", err)
-	}
-	return f, audio.Gemma4SoftTokens(T), nil
+	return e.audioFeaturesOn(e.aud.accel, mel, T)
 }
 
 // AudioTower is the loaded aikit tower (nil before EnableAudio), for per-stage tests.

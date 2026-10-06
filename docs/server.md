@@ -816,7 +816,7 @@ URI or bare base64 of a WAV>", "text": "optional text after it"}`, or the OpenAI
 
 The WAV must be 16-bit PCM, mono, at 16 kHz, and at most 30 s. Anything else is a 400; nothing is resampled or cut.
 One image or one audio clip per input, at most 16 clips per request. `usage` counts the clip's soft tokens, 25 a
-second. The audio tower loads on the first audio request, and runs on the CPU. On the gate's nine cases the embeddings
+second. The audio tower loads on the first audio request, and runs on Metal with the encoder when the encoder is on Metal, on the CPU otherwise. On the gate's nine cases the embeddings
 match sentence-transformers' to cosine 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A).
 
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
