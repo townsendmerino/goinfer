@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # R-13, the amd64 arm (pre-registered in ../r13-amd64-ab-2026-10-05.md, committed before this runs): TestR13_cpuAB on nobara, in-process, one process per model set.
-# A pre-built test binary (built from 575a3768, so the tree may move before tonight). Nothing here needs a Claude session alive.
+# A pre-built test binary (built from 3db00301, which includes 9863cb4c: the fused gate+up honours w4a8PreOff on amd64; the first build, from 575a3768, was discarded unrun. The tree may move before tonight). Nothing here needs a Claude session alive.
 D=$HOME/goinfer-logs/r13
 BIN=$D/decoder.test
 if [ ! -x "$BIN" ]; then echo "FATAL: $BIN is missing or not executable"; exit 2; fi
