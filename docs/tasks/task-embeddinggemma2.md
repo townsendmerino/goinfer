@@ -207,9 +207,17 @@ Raw: `docs/measurements/embeddinggemma2-2026-10-06/` (`provenance.txt`, `referen
   (0.888 against 0.90). The absolute recalls are low because a heading is a weak query for a long section of
   repository docs; the rule compares widths with each other, which that does not affect. This corpus is one repo's
   docs, not a benchmark, and a different corpus could move 256 across the line.
-- **Speed, observed, not a gate:** goinfer's CPU forward took about 10 s for a 450-token document and about 80 s
-  for 1,771 tokens (sentence-transformers did all 48 texts in about 14 s). The attention is a scalar triple loop per
-  head, quadratic in length; it is the obvious thing to fix before this is a usable embedding server.
+- **Speed, observed, not a gate:** goinfer's CPU forward took about 9 s for a 450-token document and about 83 s
+  for 1,771 tokens (sentence-transformers did all 48 texts in about 14 s): the attention was a scalar triple loop per
+  head.
+- **Fixed the same day (owner: "make it fast"):** the attention now runs as `linalg.MatmulBT` matmuls over blocks of
+  128 query rows against only the keys each block can reach, with the softmax and the GELU loops split across cores.
+  The same parity run, on the same machine against the same committed golden: **all 48 texts still pass** (worst
+  cosine 0.999999987), and the run took 34.2 s instead of 503.0 s (14.7x): 1.0 s instead of 8.8 s at 449 tokens, 3.8 s
+  instead of 83.7 s at 1,771 (22x); short inputs unchanged. sentence-transformers is still about 2.4x faster over the
+  48. Gate 1 passes, the embedding at 0.66-1.45x the float32 reference's distance to float64 (bar 1.5x), and
+  `TestTiny_blockingIsInvisible` runs every case at blocks of 4 and 5 rows (the default block holds the tiny inputs
+  whole), which three planted key-range off-by-ones fail. Raw: `parity-fast-attention.txt` beside the others.
 
 ## Gate 0 — desk work, no code, no GPU
 

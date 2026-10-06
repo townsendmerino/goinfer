@@ -29,7 +29,8 @@ prompt, and with neither no prompt is applied, sentence-transformers' own defaul
 modeling code matches at cosine 1.000000000 layer by layer and is as close to a float64 run as the float32 reference,
 with 12 planted defects all failing it; on the real checkpoint, 48 texts (10 to 1,771 tokens, four past the sliding
 window) have sentence-transformers' ids exactly and its embeddings at cosine 0.999999994 or better
-(`docs/tasks/task-embeddinggemma2.md`, Gate 2).
+(`docs/tasks/task-embeddinggemma2.md`, Gate 2). Speed on an M1 Pro's CPU: about 1 s for a 450-token document and 3.8 s
+for 1,771 tokens; sentence-transformers is about 2.4x faster.
 
 ### Changed — CPU W4A8 quantizes each input once for the projections that share it; aikit v1.57.0 (audit R-13, R-14)
 

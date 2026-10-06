@@ -158,3 +158,37 @@ func TestLoadConfig_refusesOtherModels(t *testing.T) {
 		t.Fatal("a gemma3 config loaded as embedding_gemma2")
 	}
 }
+
+// TestTiny_blockingIsInvisible: the attention runs over blocks of query rows against the key range each block can
+// reach, and at the default block size the tiny fixture's inputs (17 tokens at most) fit in one block. With blocks of
+// 4 and 5 rows, which cut through the sliding radius of 3 and leave a partial last block, every case still matches the
+// reference (cosine 0.9999) and the one-block result to float32 rounding (cosine 0.9999999).
+func TestTiny_blockingIsInvisible(t *testing.T) {
+	m, g := loadTiny(t)
+	defer func(b int) { attnBlock = b }(attnBlock)
+	for ci, c := range g.Cases {
+		attnBlock = 128
+		ref, err := m.Embed(c.IDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range []int{4, 5} {
+			attnBlock = b
+			v, err := m.Embed(c.IDs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cr, _ := cosMax(v, c.Normalized)
+			var dot, n1, n2 float64
+			for j := range v {
+				dot += float64(v[j]) * float64(ref[j])
+				n1 += float64(v[j]) * float64(v[j])
+				n2 += float64(ref[j]) * float64(ref[j])
+			}
+			cb := dot / math.Sqrt(n1*n2)
+			if cr < 0.9999 || cb < 0.9999999 {
+				t.Errorf("case %d (%d tokens), block %d: cosine %.9f to the reference, %.9f to the one-block run", ci, len(c.IDs), b, cr, cb)
+			}
+		}
+	}
+}

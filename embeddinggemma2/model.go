@@ -15,7 +15,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -315,12 +317,14 @@ func (m *Model) forward(ids []int, keepLayers bool) ([]float32, [][]float32, err
 		// PLE block: x += RMSNorm(proj(gelu(gate(x)) * ple_i))
 		g := make([]float32, T*P)
 		linalg.MatmulBT(x, ly.pleGate, g, T, H, P)
-		for t := range T {
-			pi := ple[(t*c.Layers+li)*P : (t*c.Layers+li+1)*P]
-			for j := range P {
-				g[t*P+j] = geluTanh(g[t*P+j]) * pi[j]
+		parallelRows(T, func(t0, t1 int) {
+			for t := t0; t < t1; t++ {
+				pi := ple[(t*c.Layers+li)*P : (t*c.Layers+li+1)*P]
+				for j := range P {
+					g[t*P+j] = geluTanh(g[t*P+j]) * pi[j]
+				}
 			}
-		}
+		})
 		pr := make([]float32, T*H)
 		linalg.MatmulBT(g, ly.pleProj, pr, T, P, H)
 		rmsRows(pr, ly.plePostNorm, T, H, c.RMSNormEps)
@@ -338,6 +342,10 @@ func (m *Model) forward(ids []int, keepLayers bool) ([]float32, [][]float32, err
 // attention is one bidirectional self-attention block on the normed rows xn [T, H]: q/k/v projections, per-head
 // RMSNorm (q and k scaled, v unscaled), rotate-half RoPE at positions 0..T-1, scores scaled by 1.0 (the q/k norms
 // take the place of 1/sqrt(d)), a symmetric window on sliding layers, softmax in float32, and o_proj.
+//
+// The scores and the weighted values are matmuls (linalg.MatmulBT, SIMD and parallel), over blocks of attnBlock query
+// rows against only the keys a block can reach (the window plus the block on a sliding layer), so the score matrix is
+// never T x T and a long input does not allocate T^2. Keys outside a row's own window get no weight.
 func (m *Model) attention(ly *layer, xn []float32, T int) []float32 {
 	c := m.cfg
 	H, nH, hd, nKV := c.Hidden, c.Heads, ly.headDim, ly.kvH
@@ -348,55 +356,71 @@ func (m *Model) attention(ly *layer, xn []float32, T int) []float32 {
 	linalg.MatmulBT(xn, ly.q, q, T, H, qd)
 	linalg.MatmulBT(xn, ly.k, k, T, H, kvd)
 	linalg.MatmulBT(xn, ly.v, v, T, H, kvd)
-	for r := 0; r < T*nH; r++ {
-		rmsNorm(q[r*hd:(r+1)*hd], ly.qNorm, c.RMSNormEps)
-	}
-	for r := 0; r < T*nKV; r++ {
-		rmsNorm(k[r*hd:(r+1)*hd], ly.kNorm, c.RMSNormEps)
-		rmsNorm(v[r*hd:(r+1)*hd], nil, c.RMSNormEps)
-	}
 	cos, sin := ropeTables(T, hd, ly.theta)
-	for t := range T {
-		for h := range nH {
-			rope(q[(t*nH+h)*hd:(t*nH+h+1)*hd], cos[t*hd/2:(t+1)*hd/2], sin[t*hd/2:(t+1)*hd/2])
+	// Normalise and rotate, and lay each head out contiguously: qh [nH][T][hd], kh and vh [nKV][T][hd].
+	qh := make([]float32, nH*T*hd)
+	kh := make([]float32, nKV*T*hd)
+	vh := make([]float32, nKV*T*hd)
+	parallelRows(T, func(t0, t1 int) {
+		for t := t0; t < t1; t++ {
+			cs, sn := cos[t*hd/2:(t+1)*hd/2], sin[t*hd/2:(t+1)*hd/2]
+			for h := range nH {
+				dst := qh[(h*T+t)*hd : (h*T+t+1)*hd]
+				copy(dst, q[(t*nH+h)*hd:(t*nH+h+1)*hd])
+				rmsNorm(dst, ly.qNorm, c.RMSNormEps)
+				rope(dst, cs, sn)
+			}
+			for h := range nKV {
+				dk := kh[(h*T+t)*hd : (h*T+t+1)*hd]
+				copy(dk, k[(t*nKV+h)*hd:(t*nKV+h+1)*hd])
+				rmsNorm(dk, ly.kNorm, c.RMSNormEps)
+				rope(dk, cs, sn)
+				dv := vh[(h*T+t)*hd : (h*T+t+1)*hd]
+				copy(dv, v[(t*nKV+h)*hd:(t*nKV+h+1)*hd])
+				rmsNorm(dv, nil, c.RMSNormEps)
+			}
 		}
-		for h := range nKV {
-			rope(k[(t*nKV+h)*hd:(t*nKV+h+1)*hd], cos[t*hd/2:(t+1)*hd/2], sin[t*hd/2:(t+1)*hd/2])
-		}
-	}
+	})
 	ctx := make([]float32, T*qd)
-	scores := make([]float32, T)
+	B := min(attnBlock, T)
+	scores := make([]float32, B*T)
+	vt := make([]float32, hd*T)
+	outb := make([]float32, B*hd)
 	group := nH / nKV
-	for h := range nH {
-		kh := h / group
-		for i := range T {
-			lo, hi := 0, T-1
+	W := c.SlidingWindow
+	for g := range nKV {
+		for i0 := 0; i0 < T; i0 += B {
+			i1 := min(T, i0+B)
+			rows := i1 - i0
+			klo, khi := 0, T
 			if !ly.full {
-				lo, hi = max(0, i-c.SlidingWindow), min(T-1, i+c.SlidingWindow)
+				klo, khi = max(0, i0-W), min(T, i1+W)
 			}
-			qi := q[(i*nH+h)*hd : (i*nH+h+1)*hd]
-			mx := float32(math.Inf(-1))
-			for j := lo; j <= hi; j++ {
-				kj := k[(j*nKV+kh)*hd : (j*nKV+kh+1)*hd]
-				var s float32
-				for d := range hd {
-					s += qi[d] * kj[d]
+			kc := khi - klo
+			// vt is this block's values transposed, [hd][kc], so the weighted sum is an a·bᵀ matmul too.
+			for j := klo; j < khi; j++ {
+				row := vh[(g*T+j)*hd : (g*T+j+1)*hd]
+				for d, x := range row {
+					vt[d*kc+(j-klo)] = x
 				}
-				scores[j] = s
-				mx = max(mx, s)
 			}
-			var sum float32
-			for j := lo; j <= hi; j++ {
-				e := float32(math.Exp(float64(scores[j] - mx)))
-				scores[j] = e
-				sum += e
-			}
-			out := ctx[(i*nH+h)*hd : (i*nH+h+1)*hd]
-			for j := lo; j <= hi; j++ {
-				w := scores[j] / sum
-				vj := v[(j*nKV+kh)*hd : (j*nKV+kh+1)*hd]
-				for d := range hd {
-					out[d] += w * vj[d]
+			for h := g * group; h < (g+1)*group; h++ {
+				sc := scores[:rows*kc]
+				linalg.MatmulBT(qh[(h*T+i0)*hd:(h*T+i1)*hd], kh[(g*T+klo)*hd:(g*T+khi)*hd], sc, rows, hd, kc)
+				parallelRows(rows, func(r0, r1 int) {
+					for r := r0; r < r1; r++ {
+						i := i0 + r
+						lo, hi := klo, khi
+						if !ly.full {
+							lo, hi = max(klo, i-W), min(khi, i+W+1)
+						}
+						softmaxWindow(sc[r*kc:(r+1)*kc], lo-klo, hi-klo)
+					}
+				})
+				ob := outb[:rows*hd]
+				linalg.MatmulBT(sc, vt[:hd*kc], ob, rows, kc, hd)
+				for r := range rows {
+					copy(ctx[((i0+r)*nH+h)*hd:((i0+r)*nH+h+1)*hd], ob[r*hd:(r+1)*hd])
 				}
 			}
 		}
@@ -406,15 +430,63 @@ func (m *Model) attention(ly *layer, xn []float32, T int) []float32 {
 	return o
 }
 
+// attnBlock is how many query rows one attention matmul takes. A var only so a test can make blocks smaller than the
+// tiny fixture's inputs and the sliding window (TestTiny_blockingIsInvisible).
+var attnBlock = 128
+
+// softmaxWindow turns row[lo:hi] into softmax weights (float32, max-subtracted) and zeroes the rest of row.
+func softmaxWindow(row []float32, lo, hi int) {
+	mx := float32(math.Inf(-1))
+	for _, s := range row[lo:hi] {
+		mx = max(mx, s)
+	}
+	var sum float32
+	for j := lo; j < hi; j++ {
+		e := float32(math.Exp(float64(row[j] - mx)))
+		row[j] = e
+		sum += e
+	}
+	inv := 1 / sum
+	for j := lo; j < hi; j++ {
+		row[j] *= inv
+	}
+	clear(row[:lo])
+	clear(row[hi:])
+}
+
+// parallelRows splits [0, n) across GOMAXPROCS goroutines (serially when n is small).
+func parallelRows(n int, f func(lo, hi int)) {
+	w := runtime.GOMAXPROCS(0)
+	if n < 2*w || w == 1 {
+		f(0, n)
+		return
+	}
+	var wg sync.WaitGroup
+	for i := range w {
+		lo, hi := n*i/w, n*(i+1)/w
+		if lo == hi {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f(lo, hi)
+		}()
+	}
+	wg.Wait()
+}
+
 // mlp is down(gelu_tanh(gate(x)) * up(x)) over T rows.
 func mlp(x, gate, up, down []float32, T, H, I int) []float32 {
 	g := make([]float32, T*I)
 	u := make([]float32, T*I)
 	linalg.MatmulBT(x, gate, g, T, H, I)
 	linalg.MatmulBT(x, up, u, T, H, I)
-	for i := range g {
-		g[i] = geluTanh(g[i]) * u[i]
-	}
+	parallelRows(len(g), func(lo, hi int) {
+		for i := lo; i < hi; i++ {
+			g[i] = geluTanh(g[i]) * u[i]
+		}
+	})
 	out := make([]float32, T*H)
 	linalg.MatmulBT(g, down, out, T, I, H)
 	return out

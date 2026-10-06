@@ -1,0 +1,54 @@
+=== RUN   TestReal_parity
+[eg2    2.8s] loaded /Users/francistownsend-merino/models/embeddinggemma-2 (revision 914f7f89142e33e77833254d9c9b90c3cef7303b), 48 texts
+[eg2    2.9s] item  0 prompt "query"            13 tokens: cosine 1.000000006 max|d| 9.13e-08
+[eg2    3.0s] item  1 prompt "query"            15 tokens: cosine 0.999999998 max|d| 1.04e-07
+[eg2    3.1s] item  2 prompt "query"            16 tokens: cosine 1.000000000 max|d| 1.03e-07
+[eg2    3.1s] item  3 prompt "query"            16 tokens: cosine 1.000000002 max|d| 1.74e-07
+[eg2    3.2s] item  4 prompt "query"            13 tokens: cosine 0.999999990 max|d| 1.34e-07
+[eg2    3.3s] item  5 prompt "query"            13 tokens: cosine 0.999999999 max|d| 9.69e-08
+[eg2    3.3s] item  6 prompt "query"            22 tokens: cosine 0.999999999 max|d| 1.19e-07
+[eg2    3.5s] item  7 prompt "query"            11 tokens: cosine 1.000000005 max|d| 8.94e-08
+[eg2    3.5s] item  8 prompt "query"            13 tokens: cosine 0.999999997 max|d| 1.79e-07
+[eg2    3.7s] item  9 prompt "query"            43 tokens: cosine 0.999999998 max|d| 1.36e-07
+[eg2    3.8s] item 10 prompt "query"            40 tokens: cosine 0.999999995 max|d| 1.42e-07
+[eg2    3.8s] item 11 prompt "query"            21 tokens: cosine 0.999999998 max|d| 1.55e-07
+[eg2    3.9s] item 12 prompt "query"            15 tokens: cosine 1.000000005 max|d| 1.34e-07
+[eg2    4.0s] item 13 prompt "query"            31 tokens: cosine 0.999999996 max|d| 1.29e-07
+[eg2    4.3s] item 14 prompt "query"            30 tokens: cosine 1.000000001 max|d| 1.28e-07
+[eg2    4.3s] item 15 prompt "query"            10 tokens: cosine 1.000000003 max|d| 8.20e-08
+[eg2    5.3s] item 16 prompt "document"        449 tokens: cosine 0.999999997 max|d| 1.27e-07
+[eg2    6.4s] item 17 prompt "document"        567 tokens: cosine 1.000000005 max|d| 1.79e-07
+[eg2    7.4s] item 18 prompt "document"        443 tokens: cosine 1.000000003 max|d| 1.29e-07
+[eg2    8.4s] item 19 prompt "document"        451 tokens: cosine 1.000000003 max|d| 1.25e-07
+[eg2    9.1s] item 20 prompt "document"        413 tokens: cosine 0.999999998 max|d| 1.60e-07
+[eg2   10.0s] item 21 prompt "document"        521 tokens: cosine 0.999999999 max|d| 2.50e-07
+[eg2   11.1s] item 22 prompt "document"        595 tokens: cosine 0.999999998 max|d| 1.64e-07
+[eg2   12.1s] item 23 prompt "document"        527 tokens: cosine 0.999999995 max|d| 2.01e-07
+[eg2   13.0s] item 24 prompt "document"        426 tokens: cosine 1.000000002 max|d| 1.30e-07
+[eg2   14.0s] item 25 prompt "document"        632 tokens: cosine 0.999999998 max|d| 1.53e-07
+[eg2   15.0s] item 26 prompt "document"        473 tokens: cosine 1.000000003 max|d| 1.15e-07
+[eg2   15.9s] item 27 prompt "document"        523 tokens: cosine 0.999999999 max|d| 1.30e-07
+[eg2   16.9s] item 28 prompt "document"        551 tokens: cosine 0.999999999 max|d| 1.17e-07
+[eg2   18.0s] item 29 prompt "document"        499 tokens: cosine 0.999999998 max|d| 1.33e-07
+[eg2   18.9s] item 30 prompt "document"        468 tokens: cosine 1.000000002 max|d| 1.29e-07
+[eg2   19.7s] item 31 prompt "document"        402 tokens: cosine 1.000000001 max|d| 1.20e-07
+[eg2   19.9s] item 32 prompt ""                114 tokens: cosine 1.000000001 max|d| 1.25e-07
+[eg2   20.1s] item 33 prompt ""                143 tokens: cosine 1.000000000 max|d| 1.12e-07
+[eg2   20.4s] item 34 prompt ""                129 tokens: cosine 0.999999999 max|d| 1.34e-07
+[eg2   20.5s] item 35 prompt ""                 94 tokens: cosine 1.000000004 max|d| 1.01e-07
+[eg2   20.7s] item 36 prompt ""                127 tokens: cosine 0.999999999 max|d| 1.61e-07
+[eg2   20.9s] item 37 prompt ""                109 tokens: cosine 1.000000002 max|d| 1.36e-07
+[eg2   21.2s] item 38 prompt ""                137 tokens: cosine 1.000000001 max|d| 1.64e-07
+[eg2   21.4s] item 39 prompt ""                119 tokens: cosine 0.999999993 max|d| 1.51e-07
+[eg2   21.5s] item 40 prompt "STS"              15 tokens: cosine 1.000000001 max|d| 1.08e-07
+[eg2   21.5s] item 41 prompt "STS"              16 tokens: cosine 0.999999992 max|d| 8.94e-08
+[eg2   21.8s] item 42 prompt "Classification"   177 tokens: cosine 0.999999987 max|d| 2.03e-07
+[eg2   22.3s] item 43 prompt "Classification"   223 tokens: cosine 1.000000004 max|d| 9.59e-08
+[eg2   25.9s] item 44 prompt "document"       1745 tokens: cosine 1.000000002 max|d| 2.01e-07
+[eg2   29.4s] item 45 prompt "document"       1634 tokens: cosine 1.000000002 max|d| 4.17e-07
+[eg2   33.2s] item 46 prompt "document"       1590 tokens: cosine 0.999999999 max|d| 1.97e-07
+[eg2   37.0s] item 47 prompt "document"       1771 tokens: cosine 1.000000002 max|d| 2.01e-07
+[eg2   37.0s] RESULT 48 texts, worst cosine 0.999999987, longest 1771 tokens
+--- PASS: TestReal_parity (37.05s)
+PASS
+ok  	github.com/townsendmerino/goinfer/embeddinggemma2	37.423s
