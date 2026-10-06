@@ -323,6 +323,28 @@ encoder on the CPU only.
 
 ## Phase M — the text encoder on Metal (planned 2026-10-06)
 
+**Status 2026-10-06: BUILT, Gates 1-3 passed; on by default in serve on a Mac.** `metal/embeddinggemma2.go`
+registers a `metal` accelerator (`embeddinggemma2.RegisterAccelerator`); serve's loader uses it when `--backend`
+resolves to metal and says so (`f32, Metal` on the startup line), falls back to the CPU with the reason if it
+declines, and refuses instead under `--require-backend`.
+
+- **What it runs:** aikit's f32 GEMM and row RMSNorm; attention as those GEMMs over blocks of 256 query rows (scores
+  Q·Kᵀ against only the keys a block reaches, a windowed row softmax, then scores × V against the block's values
+  transposed), never a T x T matrix; RoPE from the CPU's own tables; GELU-tanh multiplies and residual adds in a small
+  precise-math library of its own. The embedding gather, pooling and normalisation stay on the host. A first,
+  one-threadgroup-per-query attention kernel was correct but no faster than the CPU (each query re-read every key: 7.4
+  s against the CPU's 4.8 at 1,771 tokens), and was replaced by the GEMM form.
+- **Gate 1 (tiny fixture, Metal against the CPU forward):** cosine 1.000000000 on every layer's input, the projected
+  hidden state and the embedding, for the golden's four cases and two random inputs of 300 and 700 tokens, at blocks
+  of 256, 4 and 5 rows. **Gate 3:** five planted defects, each red: the window one wider, a causal mask, the KV-head
+  mapping, a block's key range one short, the PLE block reading layer 0's input.
+- **Gate 2 (real checkpoint against the committed sentence-transformers golden):** all 48 texts with identical ids,
+  worst cosine **0.999999989**, head dims 256 and 512 included.
+- **Speed, exploratory** (by day, load about 4, Metal and CPU alternated per text in one process, not a speed result):
+  all 48 texts 9.4 s on Metal against 40.8 s on the CPU (4.3x); 0.20 s against 1.03 at 449 tokens, 1.17 s against
+  5.10 at 1,771. A timed read belongs on the night queue. Raw: `docs/measurements/embeddinggemma2-2026-10-06/metal-gate2.txt`.
+- **Not done:** f16 or int8 weights on the GPU, and any GPU backend but Metal.
+
 The survey (2026-10-06) found that nothing in goinfer/metal runs this encoder as it stands: every GEMM there takes
 int4/int8 weights, and every prefill attention kernel hard-codes the causal mask (the fused and steel kernels also
 stop at head dim 128; this model needs 256 and 512). aikit/gpu's ViT library, which goinfer/metal reaches through

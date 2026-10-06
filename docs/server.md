@@ -771,7 +771,8 @@ this encoder's asymmetric query/document encoding, an optional `input_type:
 query instruction prefix.
 
 **EmbeddingGemma 2** (`google/embeddinggemma-2`, text only) loads the same way, from its HF directory or
-`hf:google/embeddinggemma-2:safetensors`: `--embed-model ~/models/embeddinggemma-2`. It runs on the CPU in float32
+`hf:google/embeddinggemma-2:safetensors`: `--embed-model ~/models/embeddinggemma-2`. It runs in float32, on the GPU
+when `--backend` is (or resolves to) `metal` on a Mac and otherwise on the CPU, and the startup line says which
 (`--embed-quant` other than `f32` is refused), with a 768-wide vector that `dimensions` truncates to 512 and nothing
 else (any other width is a 400 naming 768 and 512). The model card also lists 256 and 128; measured here, they lost
 too much retrieval to offer (recall@10 0.89x and 0.68x of the full width on this repo's docs). Its quality depends on a task prompt, and the OpenAI shape has nowhere

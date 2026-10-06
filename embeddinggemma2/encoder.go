@@ -31,6 +31,7 @@ type Encoder struct {
 	prompts map[string]string
 	bos     int
 	eos     int
+	accel   Accelerator // nil: the CPU forward (UseAccelerator)
 }
 
 // LoadEncoder loads the model, tokenizer.json and the prompt table from an HF checkpoint directory.
@@ -116,7 +117,7 @@ func (e *Encoder) EmbedText(text, prompt string) ([]float32, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	v, err := e.m.Embed(ids)
+	v, err := e.embedIDs(ids)
 	return v, len(ids), err
 }
 

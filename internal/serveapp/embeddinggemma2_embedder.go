@@ -37,6 +37,10 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 	if err != nil {
 		return fmt.Errorf("load embedding model: %w", err)
 	}
+	where, err := chooseEG2Device(e, cfg.load.Backend, cfg.requireBE)
+	if err != nil {
+		return err
+	}
 	name := cfg.embedName
 	if name == "" {
 		name = filepath.Base(strings.TrimRight(cfg.embedPath, "/"))
@@ -48,7 +52,36 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 			s.embedWidths = append(s.embedWidths, w)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, CPU, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type) in %s\n",
-		name, s.embedDim, s.embedWidths, len(e.PromptNames()), time.Since(t0).Round(time.Millisecond))
+	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type) in %s\n",
+		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), time.Since(t0).Round(time.Millisecond))
 	return nil
+}
+
+// eg2Accelerable is the part of the EmbeddingGemma 2 encoder chooseEG2Device uses (a seam for its test).
+type eg2Accelerable interface {
+	UseAccelerator(name string) (embeddinggemma2.Accelerator, error)
+}
+
+// chooseEG2Device puts the encoder on the GPU when serve's resolved backend is Metal (Phase M of
+// docs/tasks/task-embeddinggemma2.md), and says where it runs. Metal failing to start falls back to the CPU with the
+// reason, unless -require-backend asks for a refusal instead. Other backends run it on the CPU: its only GPU path is
+// Metal so far.
+func chooseEG2Device(e eg2Accelerable, backend string, require bool) (string, error) {
+	switch backend {
+	case "metal":
+		if _, err := e.UseAccelerator("metal"); err != nil {
+			if require {
+				return "", fmt.Errorf("-require-backend: EmbeddingGemma 2 could not start on Metal: %w", err)
+			}
+			return "CPU (Metal declined: " + err.Error() + ")", nil
+		}
+		return "Metal", nil
+	case "", "cpu":
+		return "CPU", nil
+	default:
+		if require {
+			return "", fmt.Errorf("-require-backend: EmbeddingGemma 2 has no %s path; it runs on Metal or the CPU", backend)
+		}
+		return "CPU (its GPU path is Metal only; -backend is " + backend + ")", nil
+	}
 }

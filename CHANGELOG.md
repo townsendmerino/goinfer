@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — EmbeddingGemma 2 on Metal
+
+On a Mac, `--embed-model` with EmbeddingGemma 2 now runs on the GPU when `--backend` resolves to `metal` (the default
+there), still in float32, and falls back to the CPU with the reason if Metal declines (`--require-backend` refuses
+instead). The attention runs as aikit's f32 GEMMs over blocks of query rows, never forming a full score matrix.
+**Checked:** against the CPU forward on the tiny fixture at cosine 1.000000000 layer by layer (five planted defects
+each fail it), and on the real checkpoint against sentence-transformers, 48 texts at cosine 0.999999989 or better.
+**Speed, exploratory** (by day on an M1 Pro, not a speed result): 4.3x the CPU over those 48 texts, 1.2 s for a
+1,771-token document against 5.1 s. `docs/tasks/task-embeddinggemma2.md`, Phase M.
+
 ## [v0.22.0] — 2026-10-06
 
 ### Highlights
