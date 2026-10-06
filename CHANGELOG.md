@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.22.0] — 2026-10-06
+
+### Highlights
+
+- **EmbeddingGemma 2 at `/v1/embeddings`.** Google's 270M text encoder, on the CPU in float32, matched against
+  sentence-transformers on the real checkpoint (48 texts, ids exact, worst cosine 0.999999987). A non-standard
+  `task` field chooses among its 20 prompts; with none named, no prompt is applied, as sentence-transformers does.
+  `dimensions` takes 768 and 512. Parity and the Metal device gate carry over from v0.21.0, unchanged code
+  (`docs/measurements/release-v0.22.0/record.md`).
+
 ### Added — EmbeddingGemma 2 at `/v1/embeddings`, with a `task` field for its prompts
 
 `--embed-model` takes Google's EmbeddingGemma 2 (`google/embeddinggemma-2`, the 270M text encoder; the vision and audio
