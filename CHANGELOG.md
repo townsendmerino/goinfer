@@ -38,6 +38,12 @@ or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resi
 (1.000000000 end to end on the same twelve cases; about 1.2-2.0 s an image against 5.1-5.8 s for the CPU tower, an
 exploratory read), through a weights export new in aikit.
 
+### Changed — Gemma 4 images are resized like the reference processor
+
+Gemma 4's image input now resizes with the reference processor's resampler: torchvision's antialiased bicubic, through
+aikit's `Gemma4Preprocess` (it was bilinear). On four real images its pixels equal transformers' `Gemma4ImageProcessor`'s
+exactly (`multimodal/gemma4_preprocess_pixels_test.go`). EmbeddingGemma 2 uses the same resize, now aikit's.
+
 ### Added — EmbeddingGemma 2 embeds audio
 
 `/v1/embeddings` with EmbeddingGemma 2 takes audio, in the same vector space as its text and images. An `input`

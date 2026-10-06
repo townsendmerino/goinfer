@@ -457,10 +457,14 @@ env read). Gates, on the same four images and 12 cases as V1-V4:
   `serve --embed-image-resize bilinear`).
 - A checkpoint-free test holds it in CI: `TestResizeBicubic_matchesTorchvision` against torchvision 0.29.1's output
   for seeded noise and gradients over downscales, upscales, mixed and single-axis resizes (12 cases, every value
-  equal; `testdata/embeddinggemma2-resize/golden.json`, `scripts/pin_embeddinggemma2_resize.py`). Planted defects
-  (no rounding offset, a = -0.75, no antialias widening) each turn it red, 12, 12 and 10 cases (the two upscales do
-  not antialias). `TestPreprocessBicubic_layout` checks the patch layout and positions against aikit's on an image
-  neither resizes.
+  equal). Planted defects (no rounding offset, a = -0.75, no antialias widening) each turn it red, 12, 12 and 10 cases
+  (the two upscales do not antialias). A layout test checks the patch layout and positions against bilinear on an
+  image neither resizes.
+- **Moved to aikit 2026-10-06** (`docs/multimodal.md`, "Finishing this doc", F1): the resize is aikit's
+  `vision.ResizeBicubicAA` and `Gemma4Preprocess`'s default now, and the two tests, the golden and its pin script went
+  with it (aikit's `TestResizeBicubicAA_matchesTorchvision`, `TestGemma4PreprocessResize_layout`; the same three
+  defects red there). `embeddinggemma2/preprocess.go` keeps only the option. Re-read through aikit, `TestReal_vision`:
+  R1 0 pixels differ on all four images, R2 12 of 12 at 1.000000000.
 - Preprocessing, exploratory: bicubic 13-45 ms an image, bilinear 6-20 ms, beside a tower of about 5 s on the CPU.
 
 ## Phase VM — the vision tower on Metal, planned and pre-registered 2026-10-06
