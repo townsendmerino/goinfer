@@ -815,6 +815,13 @@ skipped), and the forward goldens are green on arm64 (41 passed, 23 skipped, 0 f
 - **Gates:** `TestW4A8Pre_decodeBitIdenticalAndTaken` (10 tiny fixtures, groups 0 and 32) and
   `TestW4A8Pre_prefillBitIdenticalAndTaken`, bit-identical to `w4a8PreOff` with the shared path taken; a stale-block
   mutation fails them. Before/after hashes identical on 8 fixtures x 3 modes against main + aikit v1.56.1.
+- **amd64 fix, 2026-10-05 (caught by CI after the bump):** on amd64 the dense decode takes the fused gate+up path
+  (`fusedGateUpDefault`) and the grouped q/k/v batch (`w4a8BatchEnabled`), not the per-projection calls the gate
+  counted, so `TestW4A8Pre_decodeBitIdenticalAndTaken` saw 0 shared matmuls on linux and windows. The fused path did
+  quantize once, but under `w4a8PreOff` too, so on amd64 the gate's off arm was not the old code. It now honours
+  `w4a8PreOff` (per-call `MatmulBTW4A8F16Into`, as before R-13) and counts its two projections: run on nobara, every
+  fixture bit-identical with the path taken (2 shared matmuls a layer a token on the dense fixtures), red under a stale
+  block. The q/k/v batch quantizes once inside aikit (R-14) in both arms; goinfer has no switch for it.
 - **Speed on the Mac's CPU** (`TestR13_cpuAB`, by day, exploratory): 1.5B decode 0.995, 256-token prefill 1.014; the
   Qwen1.5-MoE slice's decode 1.008. NEON quantization is too cheap for the repeats to show on arm64. Not measured on
   amd64, where the fused gate+up path is on by default (2w -> 1 quantizations a layer) and quantization is slower.

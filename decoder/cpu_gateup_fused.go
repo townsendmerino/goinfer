@@ -97,19 +97,29 @@ func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr 
 	// h quantized once for every worker's gate and up chunk (R-13): each MatmulBTW4A8F16Into re-quantized all of h,
 	// 2w times a layer. The workers' workspaces carry the weight's activation group, or none (then aikit's process
 	// default applies), so the block is quantized with the group they resolve to; the kernels only read it.
-	ag := lw.GateProj.ActQuantGroup()
-	if ag == 0 {
-		ag = linalg.ActQuantGroup()
+	// w4a8PreOff (tests only) restores a quantization per call, as it was.
+	pre := !w4a8PreOff
+	if pre {
+		ag := lw.GateProj.ActQuantGroup()
+		if ag == 0 {
+			ag = linalg.ActQuantGroup()
+		}
+		linalg.QuantizeActQ(h, 1, K, ag, &scr.gateUpQ)
+		w4a8PreCalls.Add(2) // gate and up, every worker's chunk of each, on the one block
 	}
-	linalg.QuantizeActQ(h, 1, K, ag, &scr.gateUpQ)
 	chunk := func(i int) {
 		j0, j1 := N*i/w, N*(i+1)/w
 		if j0 >= j1 {
 			return
 		}
 		wss[i].SetActQuantGroup(lw.GateProj.ActQuantGroup())
-		linalg.MatmulBTW4A8F16Pre(wss[i], &scr.gateUpQ, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
-		linalg.MatmulBTW4A8F16Pre(wss[i], &scr.gateUpQ, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		if pre {
+			linalg.MatmulBTW4A8F16Pre(wss[i], &scr.gateUpQ, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
+			linalg.MatmulBTW4A8F16Pre(wss[i], &scr.gateUpQ, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		} else {
+			linalg.MatmulBTW4A8F16Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
+			linalg.MatmulBTW4A8F16Into(wss[i], h, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		}
 		swiglu(gate[j0:j1], up[j0:j1])
 	}
 	if w == 1 {
