@@ -419,7 +419,9 @@ number is published without provenance.
   vision_serve.go`) — the vision-tower primitive and its decoder-side hook are proven correct in
   isolation; wiring them into an end-to-end image-in-prompt request is real, separate work, sized
   similarly to Qwen2.5-VL's own `vision_serve.go` integration, and is the natural next slice.
-  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched.
+  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
+  EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
+  from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.
 
   **Phase B (serving integration) DONE, 2026-09-09 — CPU-only, E2B/E4B-class (causal) v1.** Wired
   the Phase A tower into real image-in-prompt requests: `multimodal.Gemma4ImageBlock`/

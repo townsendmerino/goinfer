@@ -303,7 +303,54 @@ written reason rather than a default that happened. Whichever is chosen, the pre
 applied must appear in the response or the server logs, because a retrieval index built under one
 prefix and queried under another degrades quietly and is very hard to diagnose afterwards.
 
+## The order from here (owner, 2026-10-06)
+
+**Text on Metal first, then vision, then audio once the owner is happy with those two.** v0.22.0 shipped the text
+encoder on the CPU only.
+
+1. **Phase M: the text encoder on Metal** (below). In progress.
+2. **Vision**, CPU first. EmbeddingGemma 2's `vision_config` is `gemma4_vision` with the Gemma 4 vision encoder's
+   shape (16 layers, hidden 768, 12 heads of 64, 3×3 pooling to 280 soft tokens, axial RoPE), and that encoder is
+   already built and gated in aikit (`vision/gemma4_encoder.go`, shipped by `docs/multimodal.md` P7 Phases B and C).
+   New for this model: its projector into the text encoder's 512 width (`EmbeddingGemma2MultimodalEmbedder`), the
+   splice of the image's soft tokens into the encoder's input, an image input on `/v1/embeddings`, and stage pins
+   against the reference. Metal for the tower only if image embedding is too slow on the CPU. Video follows as
+   frames through the same tower.
+3. **Audio, after vision, on the owner's word.** `gemma4_audio` (12 layers, hidden 1024, chunked local attention,
+   conv blocks, a 128-bin mel front end) has no implementation anywhere in goinfer or aikit: `docs/multimodal.md` P7
+   scoped Gemma 4's audio and never built it. It is one build for both families, so it is done as P7's audio half
+   and then wired here, not as an EmbeddingGemma 2-only tower.
+
+## Phase M — the text encoder on Metal (planned 2026-10-06)
+
+The survey (2026-10-06) found that nothing in goinfer/metal runs this encoder as it stands: every GEMM there takes
+int4/int8 weights, and every prefill attention kernel hard-codes the causal mask (the fused and steel kernels also
+stop at head dim 128; this model needs 256 and 512). aikit/gpu's ViT library, which goinfer/metal reaches through
+`Device.NewViT()` at the pinned `aikit/gpu` v0.33.5, has an f32 tiled GEMM (about 1 TFLOP/s on an M1 Pro), a
+weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query support.
+
+- **Precision: float32 throughout.** The CPU path reaches cosine 0.999999987 against sentence-transformers; f16
+  activations would give that up on a family with a documented f16 overflow (Gemma's GELU-tanh on Metal).
+- **Reused:** aikit's f32 GEMM (`GEMMF32Plan`) and row RMSNorm. **New, in goinfer/metal** (no aikit release
+  needed): a bidirectional grouped-query attention kernel with online softmax, head dims up to 512 and a per-query
+  key range (the symmetric window, or the whole input on full layers); GELU-tanh times a multiplier (the MLP and the
+  PLE block); the layer-scalar residual. RoPE from host cos/sin tables, as the CPU path builds them. The embedding
+  gather, the PLE precompute's scale, mean pooling and normalisation can stay on the host at first.
+- **Seam:** `embeddinggemma2.RegisterAccelerator(name, factory)` in the root module; goinfer/metal registers
+  itself in `init()`; serve's EmbeddingGemma 2 loader tries it when `--backend` is auto or metal on a Mac, and keeps
+  the CPU forward as the fallback, saying which ran.
+- **Gates, pre-registered before any measurement:** (1) Metal against the CPU forward on the tiny fixture: cosine
+  >= 0.9999 on every layer's input and on the embedding, all four cases, and at attention block sizes that cut the
+  window; (2) Metal against the committed sentence-transformers golden (`testdata/embeddinggemma2-real/golden.json`)
+  on the real checkpoint: every embedding at cosine >= 0.9999; (3) planted defects in the new attention kernel (the
+  window one wider, a causal mask, the KV-head mapping) each red. Then speed against the CPU on the same 48 texts, a
+  record, not a gate.
+- **Estimate:** about 0.6 s for the 1,771-token document against the CPU's 3.8 s, from the GEMM rate and the
+  attention FLOPs; to be measured, not quoted.
+
 ## Phase 2 — the other four modalities, later and only on P7's back
+
+*(Superseded in order by "The order from here" above; kept for the reasoning.)*
 
 Do not start this with Gate 1–3. The vision (170M) and audio (300M) encoders are separate towers,
 and `docs/multimodal.md` P7 is already building exactly that kind of tower for Gemma 4 — a mel
