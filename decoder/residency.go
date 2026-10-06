@@ -373,6 +373,16 @@ type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
 
+// ResidentHybridMRoPEPrefill is an OPTIONAL marker for a ResidentMRoPEPrefill implementer: its batched m-RoPE prefill is correct for a
+// model with RECURRENT state (the Gated-DeltaNet hybrids, Qwen3.5+), building that state itself from the spliced embeddings. Without
+// it GenerateQwenVL keeps a recurrent family on the CPU prefill, because the CPU-prefill-then-UploadKV bridge copies only the layers
+// that have a KV and would leave the recurrent state zeroed (docs/multimodal.md, P8 record, item 5). HybridMRoPEPrefill reports
+// whether it applies to THIS loaded model (the kernel is present, the layout is supported, and no layer is one the implementer has not
+// been gated on).
+type ResidentHybridMRoPEPrefill interface {
+	HybridMRoPEPrefill() bool
+}
+
 // ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's
 // m-RoPE 3D rotary positions — the resident twin of prefillLogitsQwenVL's CPU forward
 // (decoder/forwardn.go). Distinct from ResidentMRoPE (decode's single-scalar ropePos split,
@@ -1092,6 +1102,11 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 // to compute its own cumulative section boundaries; every other resident capability is family-
 // agnostic and has no equivalent accessor.
 func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
+
+// MRopeInterleavedResident reports whether the model's m-RoPE assigns position components per frequency INDEX (Qwen3-VL and the
+// Qwen3.5+ family: decoder.mropeComponentInterleaved) rather than in contiguous section blocks (Qwen2.5-VL: mropeComponent). A
+// resident that rotates by m-RoPE must apply the matching rule.
+func (m *Model) MRopeInterleavedResident() bool { return m.w.arch.MRopeInterleaved }
 
 // PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE (adjacent dims
 // 2d, 2d+1 share frequency d: Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR) rather than the

@@ -256,7 +256,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		return
 	}
 	tm := lm.templateFor(ts)
-	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
+	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
 	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
@@ -270,7 +270,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		return
 	}
 	gr.id = id // K1: registers this generation for cancel-by-id
-	forced := forcedTool(req.ToolChoice, tools)
+	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)

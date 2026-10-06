@@ -1,0 +1,24 @@
+[0m
+> build · qwen2.5-coder-7b-instruct-q4_k_m
+[0m
+Sure! Let's start by searching for the `calc.go` file to find any related issues. Run the following command:
+
+```bash
+grep -rn "calc.go" .
+```
+
+This will search for any occurrences of `calc.go` in the current directory and its subdirectories. Once we have the file, we can open and read it to understand the bug. After reading, we can proceed to fix it.
+rc=0
+--- calc.go after:
+package main
+
+import "fmt"
+
+// add returns the sum of a and b.
+func add(a, b int) int {
+	return a - b
+}
+
+func main() {
+	fmt.Println(add(2, 3))
+}

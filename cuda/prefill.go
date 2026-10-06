@@ -242,6 +242,26 @@ func (r *cudaResident) PrefillMRoPELast(ctx context.Context, embeddings [][]floa
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, mropePos)
 }
 
+// HybridMRoPEPrefill satisfies decoder.ResidentHybridMRoPEPrefill: for a Gated-DeltaNet hybrid (Qwen3.5+), PrefillMRoPELast builds
+// the recurrent state itself, because prefillCore runs the DeltaNet layers' recurrence over the same spliced rows
+// (prefillDeltaNetRows) and rotates the full-attention layers by the m-RoPE positions in the layout the model uses
+// (rope_kv_mrope_batched mode 1 for Qwen3.5's interleaved one). That is exercised on the dense tiny hybrid VL fixture
+// (TestGenerateQwenVL_hybridResidentPrefillMatchesCPU) and, on the real 0.8B, against the CPU path. A hybrid with MoE layers is
+// NOT claimed: no MoE hybrid image gate exists, so it stays on the CPU prefill until one does.
+func (r *cudaResident) HybridMRoPEPrefill() bool {
+	if !r.mropePrefillReady {
+		return false
+	}
+	delta := false
+	for l := range r.layers {
+		if r.layers[l].isMoE || r.layers[l].g4moe {
+			return false
+		}
+		delta = delta || r.layers[l].isDeltaNet
+	}
+	return delta
+}
+
 // prefillChunkRows is the row budget for one batched pass — prefillDefaultChunk unless
 // GOINFER_PREFILL_CHUNK says otherwise. An unparseable or non-positive value is ignored rather than
 // failing the request: this is a tuning knob on a path that has a correct fallback, so a typo in it
@@ -1099,6 +1119,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					if mropePos != nil {
 						mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
 							Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
+						if r.mropeTakesMode { // rope_kv_mrope_batched takes the layout mode; the pairwise twin has no such argument
+							mropeArgs = append(mropeArgs, gpu.ArgValue(r.mropeMode))
+						}
 						ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
 					} else {
 						// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different

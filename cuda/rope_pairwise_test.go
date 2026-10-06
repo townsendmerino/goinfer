@@ -404,14 +404,19 @@ func TestRopePairwiseKernels_mrope(t *testing.T) {
 		return b
 	}
 	dT, dH, dW := up(pT), up(pH), up(pW)
-	runMR := func(fn *gc.Function, tt, hh, ww *gc.Buffer[int32]) pwRef {
+	runMR := func(fn *gc.Function, neox bool, tt, hh, ww *gc.Buffer[int32]) pwRef {
 		b := pwUpload(t, cx, q, k, v, invF, c.startPos+c.M, kvDim)
 		cfg := gc.LaunchConfig{GridX: uint32((n + 255) / 256), GridY: uint32(c.M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-		if e := fn.LaunchOn(bg, stream, cfg,
+		args := []gc.KernelArg{
 			gc.Arg(b.q), gc.Arg(b.k), gc.Arg(b.v), gc.Arg(b.invF), gc.Arg(b.kc), gc.Arg(b.vc),
 			gc.ArgValue(int32(c.nH)), gc.ArgValue(int32(c.nKV)), gc.ArgValue(int32(c.hd)),
 			gc.ArgValue(int32(c.startPos)), gc.ArgValue(int32(rhalf)), gc.ArgValue(int32(c.M)), gc.ArgValue(c.mscale),
-			gc.Arg(tt), gc.Arg(hh), gc.Arg(ww), gc.ArgValue(sec0), gc.ArgValue(sec1)); e != nil {
+			gc.Arg(tt), gc.Arg(hh), gc.Arg(ww), gc.ArgValue(sec0), gc.ArgValue(sec1),
+		}
+		if neox { // rope_kv_mrope_batched takes the layout mode last (0: contiguous sections); the pairwise twin does not
+			args = append(args, gc.ArgValue(int32(0)))
+		}
+		if e := fn.LaunchOn(bg, stream, cfg, args...); e != nil {
 			t.Fatalf("launch: %v", e)
 		}
 		if e := stream.Synchronize(bg); e != nil {
@@ -419,14 +424,14 @@ func TestRopePairwiseKernels_mrope(t *testing.T) {
 		}
 		return pwDownload(t, b, len(q), len(k), (c.startPos+c.M)*kvDim)
 	}
-	got := runMR(fnMR, dT, dH, dW)
+	got := runMR(fnMR, false, dT, dH, dW)
 	for _, r := range []*pwRef{&got, &want} {
 		for i := 0; i < c.startPos*kvDim; i++ {
 			r.kc[i], r.vc[i] = 0, 0
 		}
 	}
 	pwAssert(t, "rope_kv_mrope_batched_pw", got, want)
-	neox := runMR(fnNeoX, dT, dH, dW)
+	neox := runMR(fnNeoX, true, dT, dH, dW)
 	if d, _ := pwMaxDiff(neox.q, want.q); d < 1e-2 {
 		t.Fatalf("control: the NeoX m-RoPE kernel agrees with the pairwise reference (max|diff| %.3g)", d)
 	} else {
@@ -439,7 +444,7 @@ func TestRopePairwiseKernels_mrope(t *testing.T) {
 		seq[m] = int32(c.startPos + m)
 	}
 	dS := up(seq)
-	a := runMR(fnMR, dS, dS, dS)
+	a := runMR(fnMR, false, dS, dS, dS)
 	bScalar := func() pwRef {
 		b := pwUpload(t, cx, q, k, v, invF, c.startPos+c.M, kvDim)
 		cfg := gc.LaunchConfig{GridX: uint32((n + 255) / 256), GridY: uint32(c.M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}

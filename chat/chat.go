@@ -99,6 +99,8 @@ type Template struct {
 	toolFormat  ToolFormat
 	// nativeByDefault: for this template the native form is what `auto` selects — true only where a pre-registered A/B adopted it.
 	nativeByDefault bool
+	// lenientFenced: WithLenientToolCalls — also read ONE fenced JSON call at the end of a reply as a call (fenced_tool_calls.go). Off by default.
+	lenientFenced bool
 
 	// groupsToolResults: the template puts CONSECUTIVE tool results in one user turn (Qwen2.5, Qwen3, Qwen3.5 do), read from its text
 	// (detectGroupedToolResults). goinfer's Hermes renderer writes one user turn per result for a template that does not.

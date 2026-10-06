@@ -1,0 +1,20 @@
+[0m
+> build · qwen2.5-coder-7b-instruct-q4_k_m
+[0m
+[0m✗ [0mWebFetch https://s3.amazonaws.com/s.codecademy.com/courses/learn-go/assignments/calc.go failed
+[91m[1mError: [0mStatusCode: non 2xx status code (404 GET https://s3.amazonaws.com/s.codecademy.com/courses/learn-go/assignments/calc.go)
+I'm unable to access the provided URL. Please provide a direct URL or the specific issue you're facing with `calc.go`.
+rc=0
+--- calc.go after:
+package main
+
+import "fmt"
+
+// add returns the sum of a and b.
+func add(a, b int) int {
+	return a - b
+}
+
+func main() {
+	fmt.Println(add(2, 3))
+}

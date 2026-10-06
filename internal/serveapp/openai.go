@@ -47,18 +47,20 @@ const maxOutputTokensCeiling = 131072
 // The server registry holds N of them keyed by served name; each has its own
 // mutex, so requests to distinct models run in parallel.
 type loadedModel struct {
-	tk           *tokenizer.Tokenizer
-	model        *decoder.Model
-	tmpl         *chat.Template // nil → raw completion
-	stopIDs      []int          // turn-stop token ids from the template
-	eosIDs       []int
-	vocab        int
-	name         string // served id (reported by /v1/models, matched on the request model field)
-	fp           string // model fingerprint (binds --session-dir snapshots)
-	source       string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
-	adapter      string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
-	spec         bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
-	specAdaptive bool   // --spec-adaptive: MC4 candidate, speculate only while alone, join MC3's batch otherwise
+	featCacheOnce sync.Once // vision_serve.go: the tower-output cache, made on first image
+	featCache     *featureCache
+	tk            *tokenizer.Tokenizer
+	model         *decoder.Model
+	tmpl          *chat.Template // nil → raw completion
+	stopIDs       []int          // turn-stop token ids from the template
+	eosIDs        []int
+	vocab         int
+	name          string // served id (reported by /v1/models, matched on the request model field)
+	fp            string // model fingerprint (binds --session-dir snapshots)
+	source        string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
+	adapter       string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
+	spec          bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
+	specAdaptive  bool   // --spec-adaptive: MC4 candidate, speculate only while alone, join MC3's batch otherwise
 	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. Attached
 	// ONCE at load: the weight upload is a per-process cost, and doing it per request measured
 	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).

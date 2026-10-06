@@ -293,7 +293,7 @@
   **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
   `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's
   gOff/uOff rather than Go-side pointer arithmetic" — but `aikit/gpu.Buffer.At(byteOff)` returns a
-  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:1417`), and its
+  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:1419`), and its
   `arg()` binds the offset as a raw device pointer. So the existing per-row MoE kernels can be fed
   row *m* of a batched residual as `xB.At(m*hidden*4)`, and the first slice — batch the attention
   half, loop the FFN per row — becomes a Go refactor (thread the residual buffer through
@@ -778,3 +778,15 @@ verdict position, so the item reads as open long after it closed. A2 (a pre-regi
 four days earlier), D3b (shipped eleven days earlier), A10 (resolved, header still said OPEN) and
 P16 (a stale-list four items out of date) all failed this way. **When you close something, correct
 the sentence a scanner stops at — not only the body.**
+
+**P26 · An image turn on a Gated-DeltaNet hybrid (Qwen3.5) prefills one token at a time, so a resend costs the same as a new image** — `linux`, **filed 2026-10-06**
+
+Found by the cold-user run (`docs/measurements/cold-user-2026-10-05-nobara-pc.md` F: 37.5 to 42 s to first token for a 662-token image prompt on Qwen3.5-0.8B, the same for a byte-identical
+resend, the same on `-backend cuda`). Measured to its cause on 2026-10-06 (`docs/measurements/image-resend-2026-10-06.md`, exploratory): the vision tower is ~3 s of ~38 s; the rest is
+`prefillLogitsQwen35VL`'s per-token loop (~20 tokens/s, decode speed), because the recurrent state needs every token in order and `canBatchN` is false for the family. Image-prefix reuse
+(P9a) and the resident image prefill are both resident-only and exclude recurrent families, so neither engages. A per-image tower-output cache shipped (serve, `featureCache`) and removes the
+~3 s. **P26a DONE 2026-10-06:** the image prefill now runs the existing batched hybrid forward (`runLayersQwen35N`, taught to rotate by m-RoPE positions) instead of one token at a time: 38 s to 13.8 s for a new image and 34.5 s to 10.7 s for a resend on the 0.8B CPU, exploratory (`docs/measurements/image-resend-2026-10-06.md`). **P26b DONE 2026-10-06:** the CUDA-resident image prefill and decode for the dense hybrids (an `interleaved` mode in `rope_kv_mrope_batched`, a `ResidentHybridMRoPEPrefill` marker, and the branch in `GenerateQwenVL`): 37.5 s to 3.6 s for a new image and to 0.30 s for a resend on the 0.8B (`docs/measurements/p26b-cuda-hybrid-image-prefill-2026-10-06/`). Still open under P26: **(c)** what the ~10 s on the CPU is (the DeltaNet recurrence and conv stay sequential per token), **(d)** an MoE hybrid on the GPU image path (no gate exists), and the 9B, whose CPU gate `TestQwen35VLReal_G2_9B` is queued at night.
+The original sketch follows. Next, in order of size: (1) a batched hybrid prefill (chunked DeltaNet scan, the same state at the end, so bit-identity against the per-token loop is the gate), which also speeds every
+long text prompt on the family; (2) a snapshot of the recurrent state and KV at the image block's end that a resend restores, for the repeated-image case only. Both are decoder edits and
+re-stale the parity manifest. Measure the per-token prefill on the 9B before sizing either: the 0.8B's 20 tokens/s is not the 9B's.
+

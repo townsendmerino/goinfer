@@ -51,6 +51,10 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 			} else {
 				prose = chat.NewProseStreamer(opener)
 			}
+			// With -lenient-tool-calls a fenced block may turn out to be the call, so nothing from the fence on may stream as prose.
+			if lm.tmpl.LenientToolCalls() {
+				prose.FenceAware()
+			}
 		}
 	}
 	var sb, streamed strings.Builder

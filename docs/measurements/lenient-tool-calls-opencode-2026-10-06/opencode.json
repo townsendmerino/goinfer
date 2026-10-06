@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "goinfer": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "goinfer",
+      "options": { "baseURL": "http://127.0.0.1:18082/v1" },
+      "models": { "qwen2.5-coder-7b-instruct-q4_k_m": { "name": "Qwen2.5-Coder-7B (goinfer)" } }
+    }
+  },
+  "model": "goinfer/qwen2.5-coder-7b-instruct-q4_k_m"
+}

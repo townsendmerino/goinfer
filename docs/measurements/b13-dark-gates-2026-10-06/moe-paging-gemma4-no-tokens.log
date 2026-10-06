@@ -1,0 +1,9 @@
+=== RUN   TestExpertPaging_bitExact
+decoder: expert paging (mmap): 3840 experts, 11.4 GB total, 0.5 GB budget
+decoder: predicted paged-MoE decode rate ~1.95 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+    moepaging_test.go:63: no tokens generated
+--- FAIL: TestExpertPaging_bitExact (8.18s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	8.214s
+FAIL
+GOINFER_MOE_GIW=$HOME/models/gemma4-26b-int4.giw go test ./decoder -count=1    31.33s user 7.64s system 310% cpu 12.561 total

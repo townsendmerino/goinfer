@@ -187,7 +187,7 @@ func forceNeoXRope(t *testing.T, cr *cudaResident) func() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldDec, oldBat, oldMR := cr.ropeKV, cr.bRopeKV, cr.bRopeKVMRoPE
+	oldDec, oldBat, oldMR, oldTakes := cr.ropeKV, cr.bRopeKV, cr.bRopeKVMRoPE, cr.mropeTakesMode
 	cr.ropeKV, cr.bRopeKV = dec, bat
 	if cr.mropePrefillReady { // m-RoPE families (GLM-OCR) also bind the m-RoPE prefill kernel
 		mmod, err := cr.dev.CompileLibrary(ropeMRopePrefillPTX)
@@ -197,8 +197,9 @@ func forceNeoXRope(t *testing.T, cr *cudaResident) func() {
 		if cr.bRopeKVMRoPE, err = cr.dev.NewComputePipeline(mmod, "rope_kv_mrope_batched"); err != nil {
 			t.Fatal(err)
 		}
+		cr.mropeTakesMode = true // the NeoX kernel takes the layout mode as its last argument (mode 0 there; this resident is pairwise)
 	}
-	return func() { cr.ropeKV, cr.bRopeKV, cr.bRopeKVMRoPE = oldDec, oldBat, oldMR }
+	return func() { cr.ropeKV, cr.bRopeKV, cr.bRopeKVMRoPE, cr.mropeTakesMode = oldDec, oldBat, oldMR, oldTakes }
 }
 
 // TestPairwiseRoPEResidentParityCUDA: Cohere (cohere-tiny) and Cohere2 (cohere2-tiny, sliding window +

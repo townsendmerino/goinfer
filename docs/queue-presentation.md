@@ -184,8 +184,11 @@ Needs: instrumentation, a banner line (feeds **U2**), and a `benchmarks.md` cell
 cold and warm load. No task doc exists for this; proposed here.
 
 **U12 · Go Weekly submission — the root cause is fixed; the release itself still has to be
-re-cut before the premise holds** — release, **BLOCKED, filed 2026-09-15, root cause fixed
+re-cut before the premise holds** — release, **DONE 2026-10-06 (owner closed it; see below), was BLOCKED, filed 2026-09-15, root cause fixed
 2026-09-15**
+
+**CLOSED 2026-10-06 by the owner.** The blocking condition was met: v0.21.0 was cut and its own run attached 27 assets, counted with `scripts/check_release_assets.sh v0.21.0` (OK against v0.20.0's 27), and
+goinfer.dev/download shows the tag. This records the item as closed, not that a submission to `editor@cooperpress.com` was sent: nothing in the repo says whether one was.
 
 This item's premise was that release binaries (six platforms, chat and serve, plus
 model-embedded 0.5B/1.5B builds) now exist, unblocking a submission to Go Weekly

@@ -1406,6 +1406,13 @@ func softcapParallel(logits []float32, softcap float32) {
 func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 	arch := m.w.arch
 	normalize(arch, h, m.w.FinalNorm, m.w.FinalNormBias, arch.HiddenDim)
+	return m.logitsFromNormed(h, cache)
+}
+
+// logitsFromNormed is logitsFromHidden for a hidden state that has ALREADY been through the final norm (the batched
+// Qwen3.5 forward returns its rows normed): the LM head, softcap and logit scale, exactly as logitsFromHidden runs them.
+func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
+	arch := m.w.arch
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
 	if arch.TiedLMHead {
 		matmulInto(cache.scr.ws, m.be, &m.w.Embed, h, logits, 1) // tied: embedding doubles as the head

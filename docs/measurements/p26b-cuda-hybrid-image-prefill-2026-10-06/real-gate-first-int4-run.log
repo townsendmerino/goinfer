@@ -1,0 +1,21 @@
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU/A
+    qwen35vl_real_resident_test.go:84: A: 84 prompt tokens, resident vs CPU last-token logits cosine 0.951444, argmax 1919 vs 1919
+    qwen35vl_real_resident_test.go:86: cosine 0.951444 < 0.999
+    qwen35vl_real_resident_test.go:113: A: the continuations agree on the first 6 of 16 tokens
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU/B
+    qwen35vl_real_resident_test.go:84: B: 116 prompt tokens, resident vs CPU last-token logits cosine 0.975262, argmax 1919 vs 1919
+    qwen35vl_real_resident_test.go:86: cosine 0.975262 < 0.999
+    qwen35vl_real_resident_test.go:113: B: the continuations agree on the first 4 of 16 tokens
+=== RUN   TestQwen35VLReal_residentImagePrefillMatchesCPU/C
+    qwen35vl_real_resident_test.go:84: C: 180 prompt tokens, resident vs CPU last-token logits cosine 0.946183, argmax 1919 vs 1919
+    qwen35vl_real_resident_test.go:86: cosine 0.946183 < 0.999
+    qwen35vl_real_resident_test.go:113: C: the continuations agree on the first 16 of 16 tokens
+--- FAIL: TestQwen35VLReal_residentImagePrefillMatchesCPU (22.78s)
+    --- FAIL: TestQwen35VLReal_residentImagePrefillMatchesCPU/A (4.60s)
+    --- FAIL: TestQwen35VLReal_residentImagePrefillMatchesCPU/B (5.72s)
+    --- FAIL: TestQwen35VLReal_residentImagePrefillMatchesCPU/C (8.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	22.864s
+FAIL
+GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' . -run  -count=1  102.60s user 4.59s system 412% cpu 26.007 total

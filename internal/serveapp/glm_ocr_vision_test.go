@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"image"
 	"image/color"
 	"image/png"
@@ -279,5 +280,56 @@ func TestGlmOcr_textOnlyPromptIDs(t *testing.T) {
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%s: ids %v, HF %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// THROUGH visionPrompt ITSELF: the per-image feature cache is applied on serve's real prompt path, not only by the
+// seam the unit tests drive. This model's tower cannot run (glm: dir "unused"), so a features() that returns the
+// pre-seeded numbers can only have come from the cache, and one that returns an error shows the cache was bypassed.
+func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
+	dir := filepath.Join(os.Getenv("HOME"), "models", "glm-ocr")
+	if _, err := os.Stat(filepath.Join(dir, "tokenizer.json")); err != nil {
+		t.Skipf("no tokenizer.json under %s", dir)
+	}
+	tk, err := tokenizer.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil || tmpl.Name() != "glm_ocr" {
+		t.Fatalf("Detect on the checkpoint's template: %v, %v", tmpl, err)
+	}
+	m, err := decoder.Load("../../testdata/glm-ocr-tiny", decoder.Options{Quant: "f32"})
+	if err != nil {
+		t.Skipf("no tiny fixture: %v", err)
+	}
+	defer m.Close()
+	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, glm: &glmOcrTower{dir: "unused"}, qwenMerge: 2, qwenImgTok: 59280}
+	if lm.qwenPP, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
+		t.Fatal(err)
+	}
+	img := imageRef{mediaType: "image/png", data: glmOcrTestPNG(t)}
+	turns := func() []chat.Turn { return []chat.Turn{{Role: "user", Content: "Text Recognition:"}} }
+
+	vi, err := lm.visionPrompt(tmpl, "", turns(), img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := vi.features(); err == nil {
+		t.Fatal("premise broke: this model's tower ran, so a cache hit and a compute cannot be told apart")
+	}
+
+	want := make([]float32, vi.imgLen*m.Config().HiddenDim)
+	for i := range want {
+		want[i] = float32(i)
+	}
+	lm.visionFeatureCache().put(sha256.Sum256(img.data), want)
+	vi2, err := lm.visionPrompt(tmpl, "", turns(), img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := vi2.features()
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("visionPrompt's features did not come from the cache: %v (len %d, want %d)", err, len(got), len(want))
 	}
 }

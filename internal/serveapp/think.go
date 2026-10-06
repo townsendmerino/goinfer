@@ -62,6 +62,12 @@ func (c config) thinkDefault() chat.ThinkMode {
 	return m
 }
 
+// tuneTemplate applies the flags that shape how a loaded model's template renders and reads a conversation: -thinking, -tool-format and
+// -lenient-tool-calls. One place, so a test can hold the flag-to-template wiring.
+func (c config) tuneTemplate(t *chat.Template) *chat.Template {
+	return t.WithThinking(c.thinkDefault()).WithToolFormat(c.toolFormatDefault()).WithLenientToolCalls(c.lenientToolCalls)
+}
+
 // toolFormatDefault resolves -tool-format (validated at startup); the empty value, as in a config built without the flag, is hermes.
 func (c config) toolFormatDefault() chat.ToolFormat {
 	f, _ := chat.ParseToolFormat(c.toolFormat)

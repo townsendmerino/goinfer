@@ -1,0 +1,20 @@
+[0m
+> build · qwen2.5-coder-7b-instruct-q4_k_m
+[0m
+```json
+{"name": "task", "arguments": {"description": "Fix the bug", "prompt": "Locate and fix the bug in calc.go", "subagent_type": "explore", "task_id": null, "command": null}}
+```
+rc=0
+--- calc.go after:
+package main
+
+import "fmt"
+
+// add returns the sum of a and b.
+func add(a, b int) int {
+	return a - b
+}
+
+func main() {
+	fmt.Println(add(2, 3))
+}

@@ -89,9 +89,9 @@ one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no l
 speed on a GPU box.
 
 **Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
-CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1631–1077`
+CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1633–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
-(`internal/serveapp/openai.go:1112–663`).
+(`internal/serveapp/openai.go:1114–663`).
 **Effect.** On the Mac or a CUDA box, a Gemma 3 image request runs the *text* decode at CPU speed
 even though `gemma3` text is resident on both backends. `-tags gpu` moves only the SigLIP tower
 (`docs/multimodal.md`); the cgo-free release binaries move nothing.
@@ -113,10 +113,10 @@ record it there as P6a and do it with the tower move rather than after.
 
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
-**Where.** `internal/serveapp/openai.go:1524`: `if lm.model.ResidentActive() && lm.adapter == ""` —
-adapter models take the session path below it, and `decoder/model.go:1614` makes a session
+**Where.** `internal/serveapp/openai.go:1526`: `if lm.model.ResidentActive() && lm.adapter == ""` —
+adapter models take the session path below it, and `decoder/model.go:1621` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
-commit == nil`). The comment at `internal/serveapp/openai.go:1501` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
+commit == nil`). The comment at `internal/serveapp/openai.go:1503` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
 **Fix.** Apply the compute-time LoRA on the resident path: the adapter is a per-projection
 low-rank delta applied to the activations (`Session.UseAdapter` → cache's `lora`), so the resident
@@ -124,7 +124,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:1068`).
+assumes (`internal/serveapp/main.go:1072`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -138,7 +138,7 @@ re-run on the 0.5B.
 the only serving caller.
 
 **Fix.** A resident `HiddenLast`: the resident prefill already exposes hidden-state capture for the
-block drafter (`hidCapTaps`, `cuda/prefill.go:379–319`), so a "prefill and return the last row's
+block drafter (`hidCapTaps`, `cuda/prefill.go:399–319`), so a "prefill and return the last row's
 pre-LM-head hidden state" entry is mostly wiring on CUDA; Metal and WebGPU need the same tap. Must
 respect `ownForward` families (they error today, keep that), claim `resBusy`, and forget `resIDs`
 after (it drives the shared positional KV).
@@ -186,7 +186,7 @@ WebGPU.
 
 ### G7 — Nemotron 3 Nano / 3.5 Lightning are CPU on every backend, and the matrix says otherwise
 
-**Where.** `decoder/residency.go:392`: `if a.nemotron != nil { return a.MoE == nil }` — the
+**Where.** `decoder/residency.go:402`: `if a.nemotron != nil { return a.MoE == nil }` — the
 MoE block kind has no resident builder on any backend (comment at 234–240). `docs/hardware-matrix.md`
 row "Nemotron-H → WebGPU ✅ resident" is generated from the *dense* representative config, so it is
 true of Nemotron-H and false of the two models people download. docs/completed/task-families-2026-09.md F2
@@ -211,7 +211,7 @@ FeatPartialRotary}`; `metal/model.go:963` sets `prefillOK` from it; `metal/backe
 Separately, `metal/backend.go:645` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
-covers dense and MoE (`cuda/prefill.go:352–320`) and declines only f32 projections and the
+covers dense and MoE (`cuda/prefill.go:372–320`) and declines only f32 projections and the
 per-token debug seams.
 
 **Fix.** Two levers, in order: (a) extend the f16-MMA prefill to MoE (per-row FFN off the batched
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1436`: "WebGPU implements no Prefiller"; `gpu/residency.go:1150`
+**Where.** `decoder/model.go:1443`: "WebGPU implements no Prefiller"; `gpu/residency.go:1150`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -261,11 +261,11 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1820`), but serve
-  serializes each model's generations (`internal/serveapp/openai.go:76` `turns`), so it never fires
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1827`), but serve
+  serializes each model's generations (`internal/serveapp/openai.go:78` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
-- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1524`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
+- Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1526`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
   the CPU block drafter was measured negative and its code removed 2026-09-24 (record: `docs/completed/task-laguna.md`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
 

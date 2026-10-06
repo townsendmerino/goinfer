@@ -519,6 +519,12 @@ gap to the f32 reference (`decisions-d6a-2026-09-28.md`) is therefore not yet a 
 at CPU int4 and CPU int8int8 on D6a's 400 OOD noul rows (about 2 h each on nobara, night) splits int4 from the CUDA
 path; then difference CUDA against CPU int4 per layer on the confident-flip item.
 
+**GRADED 2026-10-06 (the arms had run 2026-10-01/02 and sat ungraded for five days): the CUDA path is a minor part** by the
+pre-registered rule: CPU int4 agrees with the f32 reference on 0.650 of the 100 rows against CUDA int4's 0.660 (s = -0.03; band
+s <= 0.25), and CPU int8int8 on 0.740 (s = +0.24). Top-1 on 100 rows, so it cannot resolve small differences, and it does not test the
+KL gap or the confident flip. The per-layer CUDA-against-CPU difference on that item is therefore lower priority, not closed.
+Record: `docs/measurements/b9-route-a-cpu-2026-10-01/results.md`.
+
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
 Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.
@@ -553,7 +559,7 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3668`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3670`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
 > back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
@@ -1255,7 +1261,7 @@ so the instrument was built and never wired. Raw `docs/measurements/g31-cprime-r
 
 | | 30 slots (48 req) | 16 slots | ratio |
 |---|---|---|---|
-| **stall** (the `Sync` at `cuda/resident.go:1459`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
+| **stall** (the `Sync` at `cuda/resident.go:1461`) | 15 ms (**0.4%**) | 15 ms (**0.3%**) | 1.00 |
 | **host** (slot bookkeeping) | 107 ms (2.7%) | 108 ms (2.0%) | 1.01 |
 | **dma** (expert transfers) | 1.808 s (**45.1%**) | 3.227 s (**59.9%**) | **1.785** |
 | misses | 5229 | 9316 | **1.782** |
