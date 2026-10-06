@@ -27,7 +27,23 @@ model, with `prefill_reused_tokens=0` on the resend. That run used different ima
 - So the cold-user finding (resend costs the same as a new image) is explained, and a feature cache is the wrong lever for it on this family. It is the right one where the tower
   dominates and the prefill is batched (Gemma 3's SigLIP tower on the CPU, measured at 171 s in `docs/multimodal.md`, before the resident encoder), which this run did not measure.
 
-## What would move the number
+## After P26a: the image prefill batched (same day, same machine, same harness, exploratory)
+
+`prefillLogitsQwen35VL` now runs the batched hybrid forward (`runLayersQwen35N`, which already existed for the embedding route) over the whole prompt, with m-RoPE positions, instead of one token at a time. Same four requests, `serve` built from the
+working tree, `-backend cpu`, load average 5.0 at the start (my own gate tests had just finished, so if anything this under-reads the change):
+
+| request | TTFT before | TTFT after | server log |
+|---|---|---|---|
+| F1 new image (shot1) | 38.27 s | **13.81 s** | `encoded … in 3.243s` |
+| F2 the same bytes, a new question | 34.48 s | **10.67 s** | `reused the cached encode` |
+| F3 a different image (shot2) | 37.71 s | **13.72 s** | `encoded … in 3.083s` |
+| F4 the same bytes as F3 | 34.57 s | **10.59 s** | `reused the cached encode` |
+
+That is 2.8x on a new image and 3.2x on a resend (the cache removes the ~3 s tower; what is left, about 10.5 s, is the prefill of ~670 tokens at ~63 tokens/s, against ~20 before). One run per cell; the replies are not byte-identical to the per-token ones (a
+batched matmul reduces in a different order) and read the same. Gates, all passing: the tiny fixture's HF goldens (cosine 0.9999, argmax, 8-token continuation past the image), a new test that holds the batched path to the per-token loop over four prompt layouts
+(cosine >= 0.999999, same argmax, same 8-step continuation from each path's own cache; red when the m-RoPE positions are dropped), `TestQwen35VLReal_G2` and `TestServe_qwen35Image_G4` on the real 0.8B (exact reply text against HF for three images).
+
+## What would move the number further
 
 A batched prefill for the hybrid family, or a snapshot of the recurrent state and KV at the end of the image block that a resend restores. Both are decoder work, which re-stales the
 parity manifest, and neither is built. Queued as a performance item (`docs/queue-performance.md`, P26).

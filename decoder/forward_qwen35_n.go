@@ -21,10 +21,17 @@ import (
 // qwen35BatchN reports whether it applies. Olmo Hybrid (PlainFullAttn, per-layer norm placement), a capture request
 // and a dense layer pager take the per-token path.
 func (m *Model) qwen35BatchN(K int, cache *KVCache) bool {
+	return cache.mropePos == nil && m.qwen35BatchNAnyPos(K, cache)
+}
+
+// qwen35BatchNAnyPos is qwen35BatchN without its m-RoPE exclusion: the image prefill (prefillLogitsQwen35VL) runs this forward
+// over a cache that carries m-RoPE positions, which runLayersQwen35N rotates the full-attention layers' q and k by. qwen35BatchN
+// keeps the exclusion for its other callers (prefix sharing documents "no m-RoPE" as a precondition).
+func (m *Model) qwen35BatchNAnyPos(K int, cache *KVCache) bool {
 	a := m.w.arch
 	return K > 1 && a.qwen35 != nil && !a.qwen35.PlainFullAttn && a.NormPlacementLinear == nil &&
 		a.NormPlacement == NormPre2 && m.layerPager == nil && cache.captureLayers == nil && cache.treeMask == nil &&
-		cache.mropePos == nil && !cache.localAny && m.w.Embed.Rows() != 0 &&
+		!cache.localAny && m.w.Embed.Rows() != 0 &&
 		(a.MoE != nil || a.Act == ActSiLU)
 }
 
@@ -104,8 +111,8 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 				ki, vi := row(k, i, kvDim), row(v, i, kvDim)
 				rmsNorm(qi, a.qNorm, nH, hd, eps, arch.RMSAddOne)
 				rmsNorm(ki, a.kNorm, nKV, hd, eps, arch.RMSAddOne)
-				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, nil, 0, false, arch.MRopeInterleaved)
-				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, nil, 0, false, arch.MRopeInterleaved)
+				ropeAt(qi, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, false, arch.MRopeInterleaved)
+				ropeAt(ki, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, false, arch.MRopeInterleaved)
 				cache.Append(l, ki, vi)
 			}
 			if cache.quant == kvI8 {
