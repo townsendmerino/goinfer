@@ -295,7 +295,9 @@ The tautological-gate shape was found on CUDA today (four graph tests comparing 
 graphs-off without asserting graphs were admitted). **The same shape is plausibly live on Metal and
 nothing would say so.**
 
-**TRIGGER FIRED 2026-09-05 at `v0.16.0` — C3 IS NOW DUE ON `macbook-arm64`, AND HAS NOT RUN.**
+**CORRECTED 2026-10-06 (this paragraph said "HAS NOT RUN" for v0.16.0 and was read as the current verdict for five releases).** C3 has run against `metal/v0.13.0` (`docs/measurements/c3-metal-consumer-window.md`), v0.14.0, v0.18.0 and v0.20.0 (`c3-metal-consumer-window-v0.14.0.md`, `-v0.18.0.md`, `-v0.20.0.md`). It was MISSED for v0.16.0 and v0.17.0. **It is DUE for v0.21.0** (aikit v1.51.1 to v1.57.0, `aikit/gpu` v0.33.5) and has no record yet: it runs on `macbook-arm64` against `metal/v0.21.0`, the submodule tag, not the root tag. v0.22.0 carries no aikit bump, so by this entry's own rule it does not re-trigger it.
+
+**Original verdict, 2026-09-05, kept:** TRIGGER FIRED at `v0.16.0` — C3 WAS DUE ON `macbook-arm64`.
 That release bumped `aikit` v1.28.0 → **v1.34.0** and `aikit/gpu` v0.30.1 → **v0.32.0** against
 `v0.15.0`, which is exactly the condition below. It was cut from `nobara-pc`, so the Metal consumer
 evaluation could not run in the same sitting and is outstanding against tag `v0.16.0`: build with
@@ -554,7 +556,7 @@ Francis**, which is the **second** move of this reservation and the history is k
 | `v0.12.0` | that number was taken by the CUDA expert-cache campaign |
 | `v0.13.0` | *(superseded, 2026-08-12)* |
 | `v0.14.0` | *(shipped 2026-08-19)* — v0.13.0 was cut for the aikit bump + D3's flag promotion |
-| **`v0.16.0`** | **current shipped tag (2026-09-05)** — v0.15.0 shipped 2026-08-27; this table's "current" marker had been left on v0.14.0 across two releases, the stale-verdict shape this file warns about |
+| **`v0.16.0`** | **the shipped tag when this table was last moved (2026-09-05; read `git tag` for the current one, this marker went stale four releases running)** — v0.15.0 shipped 2026-08-27; this table's "current" marker had been left on v0.14.0 across two releases, the stale-verdict shape this file warns about |
 
 **The reason, recorded because it is the useful part.** `v0.13.0` is the honest number for what it
 carries: **D3's `--moe-cache-experts` / `--moe-cache-slots` promotion is new user-visible CLI
@@ -881,6 +883,8 @@ a different test from `TestQwen35GGUF_weightDiff`**, whose failure is separately
 `6d4fc79`; conflating the two misattributes both — and that one is still open.
 
 ## Draft: contents of the next release
+
+**STALE — checked 2026-10-06.** Every release since this section was written has shipped (v0.12.0 to v0.21.0, and v0.22.0 is cut), so it is not a draft of anything. The release notes are `CHANGELOG.md`; read that. Kept, not deleted, because the text below carries findings other entries cite.
 
 ## C1a's discharge is UNVERIFIABLE, not wrong — retraction 2026-08-13
 

@@ -549,7 +549,9 @@ every internal gate was green"). A platform-specific call landing in `cmd/serve`
 is not a one-time event; the next one will fail the same way, silently, until a human happens to
 count assets on the releases page.
 
-**Fix:** a step in `release-assets.yml`, after the attach step, that queries the just-published
+**FIXED (verified 2026-10-06): `scripts/check_release_assets.sh`**, called from `release-assets.yml`'s last job and from RELEASING.md, fails on zero assets or fewer than the nearest earlier release. v0.21.0 passes it (27 assets against v0.20.0's 27).
+
+**Fix (as filed):** a step in `release-assets.yml`, after the attach step, that queries the just-published
 release's own asset count via `gh api` (the same call this finding used to find the problem) and
 fails the workflow loudly if it is below the expected count for that tag — not a new build
 target, a verification step over what the workflow itself just did. Whatever the right threshold
@@ -717,7 +719,10 @@ during the v1.17.0 bump; MEASURED AND STILL LIVE 2026-09-06 — see the box imme
 >
 > The durable fix is still the one below: derive the field, do not type it. This box records what
 > is true today so the next person does not re-derive it from scratch.
-
+>
+> **RESOLVED (verified 2026-10-06): the field no longer exists.** `5ed2d2ab` (G-01) derives it from `go.mod`
+> (`rootAikitVersion`, `decoder/parity_manifest_test.go`), `testdata/parity_manifest.json` has no `aikit_version`, and the
+> v0.21.0 sweep merged the manifest on the derived value (`a70b2bed`). Nothing outstanding here.
 
 `testdata/parity_manifest.json` carries an `aikit_version` field that is **mixed into `deps_hash`**,
 so the staleness gate re-stales every family when it changes. That is the right design and it works.
@@ -1336,6 +1341,8 @@ there.
 
 ## Draft: contents of the next release
 
+**STALE — checked 2026-10-06.** Every release since this section was written has shipped (v0.12.0 to v0.21.0, and v0.22.0 is cut), so it is not a draft of anything. The release notes are `CHANGELOG.md`; read that. Kept, not deleted, because the text below carries findings other entries cite.
+
 ## B14 — the gate needs the FOURTH outcome implemented (policy filed, code pending)
 
 `docs/parity-coverage-policy.md` now defines four T3 outcomes: pass / fail / cannot-evaluate /
@@ -1611,6 +1618,8 @@ the env vars gating otherwise-unreached tests — **42 of them**.
 
 **RE-FILED 2026-08-13** — destroyed by the same `--update` bug. **DO NOT ENABLE ANY BEFORE THE TAG.**
 
+**STATE 2026-10-06: THE EMBARGO HAS LIFTED (v0.21.0 is tagged), AND THE FIGURES BELOW ARE STALE.** `go run ./cmd/gate selector` now reports **96** unselected env-gated sets, not 42, and the `scripts/selector_coverage.py` named below is gone (E8 replaced it with `gate selector`). The campaign also overlaps B16's list, which that entry says to reconcile first. It has not been started; starting it is a multi-day, budgeted decision for the owner, not a post-tag chore.
+
 **Rationale.** Enabling these converts a **bounded release into an unbounded investigation**: each
 failure needs a bisect against the previous tag before anyone can say whether it blocks. **Nothing
 about this surface got worse because v0.13.0 happened** — it has been dark for as long as the
@@ -1760,6 +1769,10 @@ all — one resident, in practice, only ever produces ONE decline reason across 
 lifetime, which is exactly what a plain `sync.Once` reports correctly. The machine-readable
 reason-code plumbing this entry sketched would only earn its keep for a resident whose decline
 reason can change turn to turn, which none of today's backends are.
+
+### B15 — the `EMIT_MANIFEST=1` merge can write a method or status the tier rules reject
+
+*(This entry's heading was lost; its body sat under B20's heading with no title while `queue-release.md` and RELEASING.md kept citing `[[B15]]`. Restored 2026-10-06.)* **FIXED:** `emitParityRow` checks the method against the closed vocabulary at the source (`decoder/parity_emit_test.go`, `knownParityMethod`), and `TestParityManifest_methodTier` refuses a validated row whose method is not a T3 one. The v0.21.0 merge was checked against both.
 
 **Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
 

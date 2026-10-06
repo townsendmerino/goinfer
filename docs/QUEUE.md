@@ -501,7 +501,7 @@ uses shares that key, and `--update` then moves both. Fix both in `scripts/queue
 **B7 · Other goldens pinned under transformers 5.12.** Olmo3's real golden was wrong because transformers 5.12 put YaRN
 on every layer (re-pinned under 5.15 in `a86742fc`). Audit which other pins ran under 5.12 (nobara's `~/.venv-vl`) for
 families whose HF code changed by 5.15, and re-pin or record each. The olmo3 manifest row is still tiny-golden; the
-next full sweep's emitter merge should promote it, so check that it does.
+next full sweep's emitter merge should promote it, so check that it does. **The olmo3 half is DONE (2026-10-06):** the v0.21.0 sweep's merge promoted it to `validated` / `full-forward-oracle` on its real Olmo-3-7B-Think gate. The audit of the OTHER pins made under 5.12 is still open.
 
 **B8 · `standalone-build` goes red on four of a release's five tag pushes, by construction.** It runs on every `v*`,
 `gpu/v*`, `cuda/v*`, `metal/v*` and `demo/agent/v*` push and builds all four submodules with `GOWORK=off`. Until the
@@ -1015,6 +1015,8 @@ CI-invisible), unrelated to this release. Full findings in
 `docs/measurements/gpu_gate_metal_v0.14.0_4d91858_FAIL-c8b65ba-only.log`.
 
 ## Draft: contents of the next release
+
+**STALE — checked 2026-10-06.** Every release since this section was written has shipped (v0.12.0 to v0.21.0, and v0.22.0 is cut), so it is not a draft of anything. The release notes are `CHANGELOG.md`; read that. Kept, not deleted, because the text below carries findings other entries cite.
 
 **Not a version number** — that is a separate call. This is what has accumulated since
 `demo/agent/v0.11.0` (93 commits) that a user would notice, and **none of it depends on the freeze

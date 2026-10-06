@@ -134,6 +134,8 @@ Also left in the queue at CLOSED rather than deleted, for the same reason as U6.
 **U8 · Landing site — a decision, not a doc** — landing site, **DECISION PENDING, filed
 2026-09-15**
 
+**UPDATE 2026-10-06: the premise below is out of date.** `goinfer.dev` exists and redeploys itself after each root tag (RELEASING.md, "The site"); it carries /download, /models, /docs and /book, and the README links it. What is left of this entry is whether it is the landing site the entry wanted, not whether one exists.
+
 No landing site exists. The GitHub Pages site this repo does publish
 (`https://townsendmerino.github.io/goinfer/`, built by `.github/workflows/book-pages.yml`) is the
 book reader (see U9) — a chapter-by-chapter primer, not a hero/download/proof page. Static hosting
@@ -213,7 +215,7 @@ vet`/staticcheck clean under both the native and Windows `GOOS`.
 **Still blocking U12**: the fix lands the *next* release; `v0.18.0` itself was already published
 with zero assets and is not retroactively fixed by a later commit. A submission to Go Weekly with
 a `README` "Download a binary" instruction that 404s on the current latest tag would be a worse
-outcome than no submission — this stays BLOCKED until either `v0.18.0`'s release-assets workflow
+outcome than no submission — **UPDATE 2026-10-06: the condition below is now MET.** v0.21.0 was cut, its run attached 27 assets (counted, `scripts/check_release_assets.sh v0.21.0`), and goinfer.dev/download shows it. Whether to submit is the owner's call. — this stayed BLOCKED until either `v0.18.0`'s release-assets workflow
 is re-run (backfilling the same tag) or a new tag is cut and its own run is confirmed to attach a
 full asset set, checked the same way this finding was: by counting, not by trusting the workflow's
 own green checkmark.
