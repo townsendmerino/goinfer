@@ -20,7 +20,44 @@ type embedReq struct {
 	EncodingFormat string          `json:"encoding_format"` // "float" (default) | "base64"
 	Dimensions     *int            `json:"dimensions"`      // optional: truncate (then renormalize)
 	InputType      string          `json:"input_type"`      // extension: "query" | "document" (default)
+	Task           string          `json:"task"`            // extension: a named task prompt of a model that has them, or "none"
 	User           string          `json:"user"`            // accepted, ignored
+}
+
+// taskEmbedder is the optional capability of an embedder whose quality depends on a named task prompt
+// (EmbeddingGemma 2's twenty, from its config_sentence_transformers.json). The handler then chooses the prompt
+// (embedTask) instead of the query/document flag, and echoes the one it applied.
+type taskEmbedder interface {
+	PromptNames() []string
+	PromptText(name string) (string, error)
+	EncodeTasks(texts []string, prompt string) ([][]float32, []int, error)
+}
+
+// embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md, Gate 3, owner decision
+// 2026-10-06): an explicit task names one of the model's prompts ("none" for none); else input_type maps onto the
+// model's own "query" and "document" prompts; else no prompt, which is what sentence-transformers applies by default,
+// so a client that knows nothing about prompts gets the reference's own output.
+func embedTask(te taskEmbedder, task, inputType string) (string, error) {
+	if task != "" {
+		if task == "none" {
+			return "", nil
+		}
+		if _, err := te.PromptText(task); err != nil {
+			return "", err
+		}
+		return task, nil
+	}
+	if inputType == "" {
+		return "", nil
+	}
+	isQuery, err := parseInputType(inputType)
+	if err != nil {
+		return "", err
+	}
+	if isQuery {
+		return "query", nil
+	}
+	return "document", nil
 }
 
 // Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the encoder is
@@ -85,6 +122,17 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	te, hasTasks := s.embed.(taskEmbedder)
+	var task string
+	if hasTasks {
+		if task, err = embedTask(te, req.Task, req.InputType); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else if req.Task != "" {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("model %q has no named task prompts; omit task (input_type selects query or document)", s.embedID))
+		return
+	}
 	dims, err := s.resolveDimensions(req.Dimensions)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -111,7 +159,17 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	// count-only tokenize pass (countEmbedTokens).
 	var vecs [][]float32
 	var promptTokens int
-	if bc, ok := s.embed.(embedBatchCounter); ok {
+	if hasTasks {
+		var counts []int
+		vecs, counts, err = te.EncodeTasks(inputs, task)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "encode: "+err.Error())
+			return
+		}
+		for _, c := range counts {
+			promptTokens += c
+		}
+	} else if bc, ok := s.embed.(embedBatchCounter); ok {
 		var counts []int
 		var err error
 		vecs, counts, err = bc.EncodeBatchCounted(inputs, isQueries, 0)
@@ -141,12 +199,25 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		}
 		data[i] = map[string]any{"object": "embedding", "index": i, "embedding": emb}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"object": "list",
 		"data":   data,
 		"model":  s.embedID,
 		"usage":  map[string]any{"prompt_tokens": promptTokens, "total_tokens": promptTokens},
-	})
+	}
+	if hasTasks {
+		// The prompt actually applied, so an index built under one prompt and queried under another can be seen:
+		// that mismatch degrades retrieval quietly and is very hard to diagnose afterwards.
+		name, text := task, ""
+		if name == "" {
+			name = "none"
+		} else {
+			text, _ = te.PromptText(task)
+		}
+		resp["goinfer_task"] = map[string]any{"name": name, "prompt": text}
+		w.Header().Set("X-Goinfer-Embedding-Task", name)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // parseEmbedInput reads "input" as a string or []string. (OpenAI also allows
@@ -197,6 +268,14 @@ func (s *server) resolveDimensions(d *int) (int, error) {
 	}
 	if *d < 1 || *d > s.embedDim {
 		return 0, fmt.Errorf("dimensions must be between 1 and %d", s.embedDim)
+	}
+	if len(s.embedWidths) > 0 {
+		for _, w := range s.embedWidths {
+			if *d == w {
+				return *d, nil
+			}
+		}
+		return 0, fmt.Errorf("dimensions %d is not a width %q was trained to be truncated to: dimensions must be one of %v", *d, s.embedID, s.embedWidths)
 	}
 	if s.embedMRLMin <= 0 {
 		return 0, fmt.Errorf("model %q does not support the dimensions parameter: it was not trained "+

@@ -392,6 +392,10 @@ type server struct {
 	// embedMRLMin is the smallest width this embedder may be truncated to (0 = NOT truncatable,
 	// the safe default). Only Matryoshka-trained models may be sliced; see resolveDimensions.
 	embedMRLMin int
+	// embedWidths, when set, is the exact set of widths the embedder was trained to be truncated to
+	// (EmbeddingGemma 2: 768, 512, 256, 128); `dimensions` must be one of them. It takes precedence
+	// over embedMRLMin's floor.
+	embedWidths []int
 
 	// Responses API (/v1/responses) state store for store/previous_response_id.
 	responses *responseStore

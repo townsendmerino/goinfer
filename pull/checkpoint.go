@@ -59,14 +59,21 @@ func generativeLoads(modelType string) (string, error) {
 // model's: it opens with serve --embed-model, not --model.
 const EncoderFamily = "nomic_bert encoder"
 
-// EncoderLoads is the model_type check of goinfer's embedding encoder (serve --embed-model; aikit's encoder.Load), which
-// loads a NomicBert (CodeRankEmbed, nomic-embed-text) and checks no model_type itself. The one list of what it takes:
-// serve's own check and the pull CLI both read it.
+// EmbeddingGemma2Family is the family an EmbeddingGemma 2 checkpoint loads as (serve --embed-model, through
+// goinfer's own embeddinggemma2 package rather than aikit's encoder).
+const EmbeddingGemma2Family = "embedding_gemma2 encoder"
+
+// EncoderLoads is the model_type check of goinfer's embedding encoders (serve --embed-model): aikit's encoder.Load,
+// which loads a NomicBert (CodeRankEmbed, nomic-embed-text) and checks no model_type itself, and the embeddinggemma2
+// package. The one list of what they take: serve's own check and the pull CLI both read it.
 func EncoderLoads(modelType string) (string, error) {
-	if modelType == "nomic_bert" {
+	switch modelType {
+	case "nomic_bert":
 		return EncoderFamily, nil
+	case "embedding_gemma2":
+		return EmbeddingGemma2Family, nil
 	}
-	return "", fmt.Errorf("model_type %q, which the embedding encoder does not load (it loads nomic_bert)", modelType)
+	return "", fmt.Errorf("model_type %q, which the embedding encoder does not load (it loads nomic_bert and embedding_gemma2)", modelType)
 }
 
 // AnyLoads is the pull CLI's model_type check: a generative family this build loads from safetensors, else the
@@ -80,7 +87,7 @@ func AnyLoads(modelType string) (string, error) {
 	if fam, err := EncoderLoads(modelType); err == nil {
 		return fam, nil
 	}
-	return "", fmt.Errorf("model_type %q, which this build loads neither as a generative model from safetensors (docs/capability-matrix.json) nor as the embedding encoder (nomic_bert)", modelType)
+	return "", fmt.Errorf("model_type %q, which this build loads neither as a generative model from safetensors (docs/capability-matrix.json) nor as an embedding encoder (nomic_bert, embedding_gemma2)", modelType)
 }
 
 // safeRepoPath reports whether a repo file path is safe to join under a local directory: relative, no ".." or empty

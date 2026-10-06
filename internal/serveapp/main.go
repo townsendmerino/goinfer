@@ -1547,7 +1547,7 @@ func embedEncoderLoads(modelType string) (string, error) {
 	if fam, err := pull.EncoderLoads(modelType); err == nil {
 		return fam, nil
 	}
-	return "", fmt.Errorf("model_type %q, which -embed-model's encoder does not load (it loads nomic_bert: CodeRankEmbed, nomic-embed-text; a decoder used as an embedder comes as a GGUF, hf:<owner>/<repo>:<quant>)", modelType)
+	return "", fmt.Errorf("model_type %q, which -embed-model's encoders do not load (they load nomic_bert: CodeRankEmbed, nomic-embed-text; and embedding_gemma2: google/embeddinggemma-2; a decoder used as an embedder comes as a GGUF, hf:<owner>/<repo>:<quant>)", modelType)
 }
 
 // resolveEmbedModel turns -embed-model into a local path: a plain path unchanged, hf:<repo>:safetensors fetched as an
@@ -1567,6 +1567,11 @@ func (s *server) loadEncoder(cfg config) error {
 	// another flag — see docs/completed/task-decoder-as-embedder.md.
 	if fi, statErr := os.Stat(cfg.embedPath); statErr == nil && !fi.IsDir() {
 		return s.loadDecoderEmbedder(cfg)
+	}
+	// EmbeddingGemma 2 is a directory too, but aikit's encoder.Load reads it as a NomicBert and would fail late; it
+	// has its own loader (embeddinggemma2_embedder.go).
+	if isEmbeddingGemma2(cfg.embedPath) {
+		return s.loadEmbeddingGemma2(cfg)
 	}
 	t0 := time.Now()
 	var (

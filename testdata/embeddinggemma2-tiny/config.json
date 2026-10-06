@@ -1,0 +1,75 @@
+{
+  "architectures": [
+    "EmbeddingGemma2Model"
+  ],
+  "model_type": "embedding_gemma2",
+  "text_config": {
+    "_name_or_path": "",
+    "architectures": null,
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "bos_token_id": 2,
+    "chunk_size_feed_forward": 0,
+    "dtype": null,
+    "embedding_dim": 48,
+    "eos_token_id": 1,
+    "head_dim": 16,
+    "hidden_activation": "gelu_pytorch_tanh",
+    "hidden_size": 64,
+    "hidden_size_per_layer_input": 16,
+    "id2label": {
+      "0": "LABEL_0",
+      "1": "LABEL_1"
+    },
+    "initializer_range": 0.02,
+    "intermediate_size": 96,
+    "is_encoder_decoder": false,
+    "label2id": {
+      "LABEL_0": 0,
+      "LABEL_1": 1
+    },
+    "layer_types": [
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention",
+      "sliding_attention",
+      "sliding_attention",
+      "full_attention"
+    ],
+    "max_position_embeddings": 262144,
+    "model_type": "embedding_gemma2_text",
+    "num_attention_heads": 4,
+    "num_hidden_layers": 6,
+    "num_key_value_heads": 2,
+    "output_attentions": false,
+    "output_hidden_states": false,
+    "pad_token_id": 0,
+    "per_layer_config": {
+      "2": {
+        "head_dim": 32,
+        "num_key_value_heads": 1
+      },
+      "5": {
+        "head_dim": 32,
+        "num_key_value_heads": 1
+      }
+    },
+    "problem_type": null,
+    "return_dict": true,
+    "rms_norm_eps": 1e-06,
+    "rope_parameters": {
+      "full_attention": {
+        "rope_theta": 1000000.0,
+        "rope_type": "default"
+      },
+      "sliding_attention": {
+        "rope_theta": 10000.0,
+        "rope_type": "default"
+      }
+    },
+    "sliding_window": 3,
+    "transformers_version": "5.19.0",
+    "vocab_size": 256
+  },
+  "transformers_version": "5.19.0"
+}
