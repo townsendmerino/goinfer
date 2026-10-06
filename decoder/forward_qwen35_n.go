@@ -81,11 +81,25 @@ func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVC
 			hq.prepare(be, &d.inProjQKV, norm, K)
 			matmulPre(be, &d.inProjQKV, &hq, norm, mixed, K)
 			matmulPre(be, &d.inProjZ, &hq, norm, dnZ, K)
-			for i := range K {
-				n := row(norm, i, hidden)
-				bt := matvec(d.inProjB, nv, hidden, n)
-				at := matvec(d.inProjA, nv, hidden, n)
-				deltaNetCore(row(dnCore, i, valueDim), row(mixed, i, convDim), bt, at, row(dnZ, i, valueDim), d, *g, eps, st)
+			if deltaNetCoreNOK(K) {
+				// P26c: the gate projections per row, then the conv, the recurrence (heads in parallel) and the gated norm over all K rows at once;
+				// bit-identical to the per-token loop below (deltanet_n.go).
+				bts, ats := make([]float32, K*nv), make([]float32, K*nv)
+				fanOut(K, deltaNetWorkers(K), func(lo, hi int) {
+					for i := lo; i < hi; i++ {
+						n := row(norm, i, hidden)
+						copy(bts[i*nv:(i+1)*nv], matvec(d.inProjB, nv, hidden, n))
+						copy(ats[i*nv:(i+1)*nv], matvec(d.inProjA, nv, hidden, n))
+					}
+				})
+				deltaNetCoreN(dnCore, mixed, bts, ats, dnZ, K, d, *g, eps, st)
+			} else {
+				for i := range K {
+					n := row(norm, i, hidden)
+					bt := matvec(d.inProjB, nv, hidden, n)
+					at := matvec(d.inProjA, nv, hidden, n)
+					deltaNetCore(row(dnCore, i, valueDim), row(mixed, i, convDim), bt, at, row(dnZ, i, valueDim), d, *g, eps, st)
+				}
 			}
 			matmul(be, &d.outProj, dnCore, mix, K)
 		} else {

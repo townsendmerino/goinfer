@@ -1,0 +1,61 @@
+package decoder
+
+import (
+	"context"
+	"math/rand"
+	"os"
+	"testing"
+	"time"
+)
+
+// SCRATCH (not committed): where do the ~10 s of the CPU image prefill go?
+func TestZZP26cProfile(t *testing.T) {
+	requireHeavyModel(t)
+	ckpt := os.Getenv("HOME") + "/models/qwen3.5-0.8b"
+	m, err := Load(ckpt, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	hidden := m.w.arch.HiddenDim
+	const nImg, nPre, nPost = 662, 14, 8
+	ids := make([]int, nPre+nImg+nPost)
+	for i := range ids {
+		ids[i] = 1000 + i%50
+	}
+	feats := make([]float32, nImg*hidden)
+	rng := rand.New(rand.NewSource(1))
+	for i := range feats {
+		feats[i] = float32(rng.NormFloat64()) * 0.1
+	}
+	pos, err := mropePositions(ids, 1000, [][3]int{{1, 26, 50}}, 2) // placeholder grid; replaced below if it errs
+	if err != nil {
+		// positions from a hand-made all-text layout: image run = ids[nPre:nPre+nImg]
+		pos = make([][3]int, len(ids))
+		for i := range pos {
+			pos[i] = [3]int{i, i, i}
+		}
+	}
+	run := func(label string, batched bool) {
+		cache := m.NewCache(len(ids) + 8)
+		cache.mropePos = pos
+		cache.mropeDelta = mropeDelta(pos, len(ids))
+		t0 := time.Now()
+		var e error
+		if batched {
+			_, e = m.prefillQwen35VLBatched(context.Background(), ids, feats, nPre, nImg, cache)
+		} else {
+			_, e = m.prefillQwen35VLPerToken(context.Background(), ids, feats, nPre, nImg, cache)
+		}
+		if e != nil {
+			t.Fatal(e)
+		}
+		d := time.Since(t0)
+		t.Logf("%s: %d tokens in %.2fs = %.1f tok/s", label, len(ids), d.Seconds(), float64(len(ids))/d.Seconds())
+	}
+	run("batched (warm-up)", true)
+	if os.Getenv("ZZ_PERTOKEN") != "" {
+		run("per-token", false)
+	}
+	run("batched", true)
+}
