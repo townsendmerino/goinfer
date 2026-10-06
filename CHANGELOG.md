@@ -15,12 +15,27 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.21.0] — 2026-10-06
+
+### Highlights
+
+- **The CLIs use the GPU by default.** `goinfer-serve`, `goinfer-chat` and `decide` default to `--backend auto`; CUDA's default context is up to 16384 when the card has room, enough for a coding agent's first request.
+- **Metal**: int8, int8int8 and `int4mix` models run as themselves on the GPU, Qwen3.5 hybrids prefill in one batched pass, paged Gemma 4 MoE prompts read each expert once per layer, and several decode and prefill kernels are faster. Each change is output-identical (see Changed).
+- **Tool use and reasoning**: gpt-oss calls tools and separates its analysis channel from `content`; Qwen3.5's own tool-call form is read always and prompted with `-tool-format`; parallel tool results are one user turn on the Qwen templates that write them so.
+- **Batch and scripting**: `goinfer-chat --batch in.jsonl -o out.jsonl` runs a resumable batch locally, and `goinfer-chat -p "prompt"` answers one prompt and exits.
+- **Decisions**: Clef decision models load on `/v1/systemone` (Route C), and a decision request's questions share the prefill of what their prompts have in common.
+- **Safer to run**: the first model load runs a CPU self-test, `check --hardware` prints what was selected, and a load the swap tripwire does not cover now says so.
+- **Release binaries no longer read `-dirty`.** The stamp is now read back off every asset before it is published.
+- **Under the hood**: aikit v1.57.0, and a series of bit-identical removals of redundant copying, zeroing and quantizing on the CPU, CUDA and WebGPU paths (audit R-11 to R-25), each gated by identity tests; the CPU gains are small and are measured per entry.
+- **Parity**: the §C1 sweep is green at 7b50947a (`docs/measurements/release-v0.21.0/parity-sweep-2026-10-06.md`), and `olmo3` is now `validated` on its real Olmo-3-7B-Think gate.
+- **Changes to check before upgrading** (not API-breaking): the CLIs' default backend is now `auto`, decision models load at `int8int8`, Metal keeps 2 resident KV slots by default (was 4; `--kv-sessions N` still asks for N), CUDA's default context is larger, and the Qwen3.5 / gpt-oss / Gemma 4 template changes alter prompts for tool-using conversations. The entries marked "Changes resource use" below say what moves.
+
 ### Changed — CPU W4A8 quantizes each input once for the projections that share it; aikit v1.57.0 (audit R-13, R-14)
 
 Every CPU W4A8 matmul quantized its own activation, so one normed row was quantized for q, k and v, again for gate and up, and once per routed expert in a MoE layer (2k+2 times a layer). aikit v1.57.0 adds entries that take an activation quantized
 once (`ActQ`, `QuantizeActW4A8`, `MatmulBTW4A8PreInto`, `MatmulBTW4A8F16Pre`), and its grouped `MatmulBTW4A8Batch` now quantizes once for the batch; goinfer uses them in the MoE and dense MLPs, the fused gate+up workers, decode attention,
 `forwardN`, Qwen3.5, Gated DeltaNet, KDA and Gemma 4. **Bit-identical** by construction (each quantizing entry is now quantize then the same dispatch), and by gate: 10 tiny fixtures at activation groups 0 and 32, with the shared path taken.
-**Speed:** none measurable on the Mac's CPU (1.5B decode 0.995x, 256-token prefill 1.014x, a MoE slice's decode 1.008x; NEON quantization is cheap); not measured on amd64. `w4a8PreOff` is a test seam. Record: `docs/measurements/r13-cpu-ab-2026-10-05.txt`.
+**Speed:** none measurable on the Mac's CPU (1.5B decode 0.995x, 256-token prefill 1.014x, a MoE slice's decode 1.008x; NEON quantization is cheap); on amd64 (nobara-pc, 7 interleaved reps) decode is 1.001x and a MoE slice's decode 0.997x, no measurable effect, and 256-token prefill is 1.007x with 7 of 7 reps above 1, a small measurable win; the MoE slice's predicted 1.01 to 1.03 did not appear. `w4a8PreOff` is a test seam. Records: `docs/measurements/r13-cpu-ab-2026-10-05.txt`, `docs/measurements/r13-amd64-ab-2026-10-05.md`.
 
 ### Changed — decode attention writes each head's context straight into `ctx` (audit R-17, the remainder's main item)
 
@@ -153,6 +168,8 @@ llvmpipe, SwiftShader) is not probed and is reported as skipped with the reason.
 
 ### Changed
 
+- **`olmo3` is `validated` (was `experimental`), on a real checkpoint.** Its real-model gate, `TestOlmo3Real_gate` (f32 against `allenai/Olmo-3-7B-Think`, exact argmax and continuation, last-logit cosine bar 0.9999), passed in the v0.21.0 sweep, so the manifest row and the capability matrix move from the tiny fixture to the real oracle. No code change.
+- **README and the opencode recipe name the measured agent checkpoint.** Qwen2.5-7B-Instruct `q4_k_m` on a CUDA GPU with 8 GB or more is the one measured to work; Qwen2.5-Coder-7B-Instruct on the same card failed `serve check` on 2 of 9 rows and made no edits under opencode (cold-user run, v0.20.0).
 - **Metal: long prompts on mixture-of-experts models that page their experts start faster, with the same output.** The
   prompt now runs layer by layer on the decode kernels, so the per-token command-buffer round trips go: 1.42-1.43x on the
   Gemma-4-26B-A4B's short prompts and 1.26x on a paged Qwen1.5-MoE slice at 128 and 512 tokens, bit-identical to the
@@ -358,6 +375,7 @@ llvmpipe, SwiftShader) is not probed and is reported as skipped with the reason.
 
 ### Added
 
+- **A load the swap tripwire does not cover says so.** The load-time guard watches only a direct `.gguf` build, so a `.giw` (including the one a `.gguf` is transcoded to), a safetensors directory or a `-stream-weights` load armed nothing and printed nothing; a cold-user run loaded one for 20 s with an empty log. `serve`, `goinfer-chat` and `fit` now print `swap guard (load): not armed for <path> — only a direct .gguf build is watched…` on stderr. The serving watch still arms once the server is up.
 - **Startup self-tests (H2, CPU part) and `check --hardware` (H3).** The first model load of a process runs aikit v1.55.0's `linalg.SelfCheck(true)`: the dispatched CPU kernels against their portable references, held to the agreement
   aikit's own tests assert (exact, or a relative 1e-5), in about 1.2 ms. A mismatch steps the highest active ISA tier down (AVX-512 VNNI, then AVX2; DotProd on arm64) and prints one `WARN: self-test:` line naming the kernel, the observed
   and allowed figures and the tier. Results are in `GET /health` under `selftest`; `-no-selftest` (serve and chat) skips it. `goinfer-serve check --hardware` and `goinfer-chat check --hardware` print the block a hardware bug
