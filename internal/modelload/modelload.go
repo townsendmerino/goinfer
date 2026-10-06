@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -99,6 +100,9 @@ type Result struct {
 // and check the abort really reaches decoder.Load (a guard armed but never passed through would be
 // silent in every other test).
 var startLoadGuard = swapguard.StartLoad
+
+// loadNoticeOut is where loadGuarded says a load is not covered by the tripwire; a variable so a test can read it.
+var loadNoticeOut io.Writer = os.Stderr
 
 // Load runs the whole path from a --model value to a loaded model. The caller owns Result.Model.
 func Load(ctx context.Context, req Request) (*Result, error) {
@@ -226,6 +230,11 @@ func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Mod
 	stopLoadGuard := func() {}
 	if !opts.StreamWeights && strings.HasSuffix(path, ".gguf") {
 		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = startLoadGuard(path, opts, advice)
+	} else {
+		// Say so: a cold-user run (2026-10-05, gemma-4-26b-a4b) loaded a non-.gguf source for 20 s with an
+		// empty log, and its operator could not tell "guarded and quiet" from "not guarded at all".
+		fmt.Fprintf(loadNoticeOut, "swap guard (load): not armed for %s — only a direct .gguf build is watched, "+
+			"so a swap-growing load is not stopped here; the serving watch arms once the server is up\n", path)
 	}
 	model, err := decoder.Load(path, loadOpts)
 	stopLoadGuard() // done with this attempt either way — never left running through a retry

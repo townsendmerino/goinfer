@@ -1,6 +1,7 @@
 package modelload
 
 import (
+	"bytes"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -56,5 +57,32 @@ func TestLoadGuarded_swapGuardAbortReachesTheLoad(t *testing.T) {
 	}
 	if armed != 0 {
 		t.Errorf("a -stream-weights load armed the guard %d times; only a .gguf direct build observes LoadAbort", armed)
+	}
+}
+
+// A load the tripwire does not cover must say so. The cold-user run on gemma-4-26b-a4b (2026-10-05) loaded a
+// non-.gguf source with an empty log, and the operator could not tell a guarded, quiet load from an unguarded one.
+// Through loadGuarded, both ways: the streamed load prints the notice naming the path, and a .gguf direct build
+// (guard seam stubbed to arm) prints none.
+func TestLoadGuarded_saysWhenTheLoadIsNotGuarded(t *testing.T) {
+	gguf := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
+	origOut, origGuard := loadNoticeOut, startLoadGuard
+	t.Cleanup(func() { loadNoticeOut, startLoadGuard = origOut, origGuard })
+	startLoadGuard = func(string, decoder.Options, string) (<-chan struct{}, func(error) error, func()) {
+		return nil, func(err error) error { return err }, func() {}
+	}
+
+	var buf bytes.Buffer
+	loadNoticeOut = &buf
+	loadGuarded(gguf, decoder.Options{Quant: "int4", StreamWeights: true}, "x") //nolint:errcheck // only the notice is under test
+	got := buf.String()
+	if !strings.Contains(got, "not armed for "+gguf) || !strings.Contains(got, "only a direct .gguf build is watched") {
+		t.Errorf("an unguarded (streamed) load printed %q, want the not-armed notice naming %s", got, gguf)
+	}
+
+	buf.Reset()
+	loadGuarded(gguf, decoder.Options{Quant: "int4"}, "x") //nolint:errcheck // only the notice is under test
+	if buf.Len() != 0 {
+		t.Errorf("a .gguf direct build, which the guard covers, printed the not-armed notice: %q", buf.String())
 	}
 }
