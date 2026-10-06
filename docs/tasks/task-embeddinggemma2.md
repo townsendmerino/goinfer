@@ -370,6 +370,34 @@ weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query suppo
 - **Estimate:** about 0.6 s for the 1,771-token document against the CPU's 3.8 s, from the GEMM rate and the
   attention FLOPs; to be measured, not quoted.
 
+## Phase V — images (CPU first), pre-registered 2026-10-06
+
+**Gate 0 (read from the real checkpoint, transformers 5.19.0 and sentence-transformers 6.1.0):**
+- The composite forward runs the vision tower and `embed_vision` (`Gemma4Model.get_image_features`), then
+  `masked_scatter`s the pooled image features over the placeholder rows **after** the token embedding's √H scale (the
+  image rows are not scaled), then runs the text encoder on those embeddings: the PLE block and the mean pool both see
+  the image tokens.
+- The tower is `gemma4_vision`, and its tensors carry exactly the names aikit's `vision.LoadGemma4Encoder` reads
+  (`vision_tower.*`, `embed_vision.embedding_projection.weight`, no `model.` prefix; `standardize` false, so no std
+  tensors). aikit's `Gemma4Encoder.Forward` returns the pooled and projected soft tokens at the text width (512), and
+  `vision.Gemma4Preprocess` with `multimodal.Gemma4PooledTokens` gives the patches and the soft-token count.
+- sentence-transformers' ids, probed on a 320×240 image: `<bos>`, the prompt's text if one is named, `<|image>`
+  (255999), the soft tokens (`<|image|>`, 258880; 266 of them for 320×240, by aspect ratio), `<image|>` (258882),
+  then any text in the input's own order, `<eos>`. The tower is fed 2,520 padded patches (280 soft tokens × 9).
+
+**Gates, written before any measurement**, on the real checkpoint, four repo images of different aspect ratios
+(`testdata/gemma3_preprocess_image.png` 896×896, `testdata/qwen25vl_preprocess_image.png` 84×56,
+`testdata/glm_ocr/formula.png` 1000×1200, `testdata/glm_ocr/table.png` 1200×900), each as image alone, image with the
+`query` prompt, and image followed by text: 12 cases.
+- **V1, ids:** every case's ids equal sentence-transformers' exactly.
+- **V2, the tower in isolation:** fed sentence-transformers' own pixel values and position ids, aikit's tower and
+  projector match HF's `get_image_features` to cosine >= 0.9999 per soft token. This separates the tower from resizing.
+- **V3, preprocessing:** the patch grid and soft-token count equal HF's; the pixel values' max |diff| is reported (a
+  resampler difference shows here, not in V2).
+- **V4, end to end:** every case's embedding has cosine >= 0.9999 with sentence-transformers'. **In [0.999, 0.9999):
+  ambiguous, parked for the owner**, with V2 and V3 saying where the gap is. Under 0.999: fails.
+- A tiny-fixture check that the refactored forward from embeddings is bit-identical to the forward from ids for text.
+
 ## Phase 2 — the other four modalities, later and only on P7's back
 
 *(Superseded in order by "The order from here" above; kept for the reasoning.)*
