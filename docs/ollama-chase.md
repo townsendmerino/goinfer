@@ -1533,7 +1533,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - ~~**embedResident host-scratch reuse — still open.**~~ **DONE, `c28c847` (2026-09-10, P-08 of
-  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1516`);
+  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1531`);
   `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
   call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
   reused `embScratch` (`decoder/model.go:2271,1486`) instead of allocating fresh per token. Gated by
@@ -1591,16 +1591,16 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   bit-identity is structural (per-element, no accumulation order to perturb), not merely convenient.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
-  cuda/resident.go:923,1183) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  cuda/resident.go:925,1183) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:1181) does Sync → D2H routing
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:1183) does Sync → D2H routing
   indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:2387) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:2389) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.

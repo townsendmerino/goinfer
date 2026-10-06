@@ -1,0 +1,80 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// SCRATCH (not committed): controls for the 0.951 cosine the real gate read.
+func TestZZP26Controls(t *testing.T) {
+	requireHeavyModel(t)
+	requireCUDADevice(t)
+	ckpt := decoder.AssetPathForTest(t, "GOINFER_QWEN35VL_08B")
+	dir := decoder.AssetPathForTest(t, "GOINFER_QWEN35VL_G2")
+	gpuM, _ := decoder.Load(ckpt, decoder.Options{Backend: "cuda", ResidentContext: 4096})
+	defer gpuM.Close()
+	r := gpuM.ResidentForwardForTest().(*cudaResident)
+	cpu4, _ := decoder.Load(ckpt, decoder.Options{Quant: "int4"})
+	defer cpu4.Close()
+	cpu32, _ := decoder.Load(ckpt, decoder.Options{})
+	defer cpu32.Close()
+	var g struct {
+		InputIDs      []int     `json:"input_ids"`
+		ImageToken    int       `json:"image_token_id"`
+		ImageStart    int       `json:"image_token_start"`
+		NImageTokens  int       `json:"n_image_tokens"`
+		GridTHW       [][3]int  `json:"grid_thw"`
+		ImageFeatures []float32 `json:"image_features"`
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "golden_A.json"))
+	_ = json.Unmarshal(raw, &g)
+	pos, _ := decoder.MRopePositionsForTest(g.InputIDs, g.ImageToken, g.GridTHW, 2)
+	img := func(m *decoder.Model) []float32 {
+		l, err := m.PrefillLogitsQwenVLForTest(context.Background(), g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, pos, m.NewCache(len(g.InputIDs)+8))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return append([]float32(nil), l...)
+	}
+	c4, c32 := img(cpu4), img(cpu32)
+	r.Reset()
+	gi, _, err := gpuM.ResidentMRoPEPrefillForTest(context.Background(), r, g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("IMAGE  cos(CPU int4, CPU f32)=%.6f  cos(resident, CPU f32)=%.6f  cos(resident, CPU int4)=%.6f", logitCos(c4, c32), logitCos(gi, c32), logitCos(gi, c4))
+	// text-only control: the image positions replaced by an ordinary token, no m-RoPE, the EXISTING resident text prefill
+	ids := append([]int(nil), g.InputIDs...)
+	for i := g.ImageStart; i < g.ImageStart+g.NImageTokens; i++ {
+		ids[i] = 100
+	}
+	text := func(m *decoder.Model) []float32 {
+		c := m.NewCache(len(ids) + 8)
+		var l []float32
+		var err error
+		for _, id := range ids {
+			if l, err = m.ForwardForTest(id, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return append([]float32(nil), l...)
+	}
+	t4, t32 := text(cpu4), text(cpu32)
+	r.Reset()
+	var rows [][]float32
+	for _, id := range ids {
+		rows = append(rows, gpuM.EmbedResidentForTest(id))
+	}
+	gt, err := r.PrefillLast(context.Background(), rows, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("TEXT   cos(CPU int4, CPU f32)=%.6f  cos(resident, CPU f32)=%.6f  cos(resident, CPU int4)=%.6f", logitCos(t4, t32), logitCos(gt, t32), logitCos(gt, t4))
+}

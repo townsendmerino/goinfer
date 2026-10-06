@@ -1,0 +1,7 @@
+=== RUN   TestZZP26Controls
+    zz_p26_controls_test.go:52: IMAGE  cos(CPU int4, CPU f32)=0.849582  cos(resident, CPU f32)=0.849173  cos(resident, CPU int4)=0.951444
+    zz_p26_controls_test.go:79: TEXT   cos(CPU int4, CPU f32)=0.843864  cos(resident, CPU f32)=0.825742  cos(resident, CPU int4)=0.980390
+--- PASS: TestZZP26Controls (23.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	23.291s
+GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' . -run  -count=1  124.75s user 4.85s system 490% cpu 26.423 total

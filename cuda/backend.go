@@ -1092,7 +1092,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					}
 					loadMRope(&r.bRopeKVMRoPE, mropeName)
 					if r.mropePrefillReady {
+						r.mropeTakesMode = !r.pairwiseRoPE
 						r.mropeSec0, r.mropeSec1 = int32(sec[0]), int32(sec[0]+sec[1])
+						if m.MRopeInterleavedResident() {
+							if r.pairwiseRoPE {
+								// Pairwise rotation over the interleaved layout is a combination no checkpoint registers (decoder.ropeAt),
+								// and rope_kv_mrope_batched_pw has no such mode: decline rather than rotate by the wrong rule.
+								r.mropePrefillReady = false
+							}
+							r.mropeMode, r.mropeSec0, r.mropeSec1 = 1, int32(3*sec[1]), int32(3*sec[2])
+						}
 					}
 				}
 			}

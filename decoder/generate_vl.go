@@ -269,14 +269,13 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		// never the tower's output — so it's available up front, before any reuse decision.
 		mropeDelta := mropeDelta(mropePos, len(ids))
 
-		// A recurrent family (the Gated-DeltaNet hybrids) takes NO resident branch here, and must
-		// be refused rather than merely not engaged: every resident executor implements
-		// ResidentMRoPE, so the type assertions below succeed on a CUDA-resident qwen3.5, and the
-		// CPU-prefill → residentUploadPrefill bridge copies only layers that have KV — a DeltaNet
-		// layer has none, so it is skipped and resident decode would start from a ZEROED recurrent
-		// state, with no error and wrong tokens (the failure class 62309847 fixed for reuse). Image
-		// turns on a recurrent family are CPU prefill + CPU decode until a resident hybrid m-RoPE
-		// prefill (or a recurrent-state upload) exists. docs/multimodal.md P8 record, item 5.
+		// A recurrent family (the Gated-DeltaNet hybrids) takes NO resident REUSE branch and NO CPU-prefill-then-UploadKV bridge here, and
+		// must be refused those rather than merely not engaged: every resident executor implements ResidentMRoPE, so the type assertions
+		// below succeed on a CUDA-resident qwen3.5, and the bridge copies only layers that have KV, a DeltaNet layer has none, so it
+		// is skipped and resident decode would start from a ZEROED recurrent state, with no error and wrong tokens (the failure class
+		// 62309847 fixed for reuse). Its one resident route is the resident m-RoPE prefill, taken only when the resident says it
+		// builds the recurrent state itself (ResidentHybridMRoPEPrefill; the CUDA resident, dense hybrids, since 2026-10-06, P26b), and
+		// otherwise an image turn on a recurrent family is CPU prefill + CPU decode. docs/multimodal.md P8 record, item 5.
 		recurrent := m.hasRecurrentState()
 
 		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
@@ -340,8 +339,21 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		// chunk, resident busy) falls through UNCHANGED to the CPU-prefill+UploadKV bridge;
 		// the claim is released before falling through so the CPU prefill below never runs
 		// while holding it.
-		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && !recurrent {
+		//
+		// A recurrent family joins this branch only if the resident says its prefill builds the recurrent state itself
+		// (ResidentHybridMRoPEPrefill). It has no reuse fast path above and no UploadKV bridge below, and the resident's recorded ids are
+		// forgotten BEFORE the attempt: a prefill that fails partway has already overwritten the recurrent state, and a stale record
+		// of the previous conversation would let a later strict-extension reuse (residentReuseLen) continue from that garbage.
+		hybridOK := false
+		if recurrent {
+			hp, isHP := m.resident.(ResidentHybridMRoPEPrefill)
+			hybridOK = isHP && hp.HybridMRoPEPrefill()
+		}
+		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) {
 			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
+				if recurrent {
+					m.residentForgetIDs()
+				}
 				if logits, gpuPos, ferr := m.residentMRoPEPrefill(ctx, rmp, ids, feats, imgPos, imgLen, mropePos); ferr == nil {
 					g.ImgPrefillResident = true
 					if capper, ok := m.resident.(ResidentCapped); ok {

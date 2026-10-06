@@ -138,7 +138,7 @@ re-run on the 0.5B.
 the only serving caller.
 
 **Fix.** A resident `HiddenLast`: the resident prefill already exposes hidden-state capture for the
-block drafter (`hidCapTaps`, `cuda/prefill.go:379–319`), so a "prefill and return the last row's
+block drafter (`hidCapTaps`, `cuda/prefill.go:399–319`), so a "prefill and return the last row's
 pre-LM-head hidden state" entry is mostly wiring on CUDA; Metal and WebGPU need the same tap. Must
 respect `ownForward` families (they error today, keep that), claim `resBusy`, and forget `resIDs`
 after (it drives the shared positional KV).
@@ -186,7 +186,7 @@ WebGPU.
 
 ### G7 — Nemotron 3 Nano / 3.5 Lightning are CPU on every backend, and the matrix says otherwise
 
-**Where.** `decoder/residency.go:392`: `if a.nemotron != nil { return a.MoE == nil }` — the
+**Where.** `decoder/residency.go:402`: `if a.nemotron != nil { return a.MoE == nil }` — the
 MoE block kind has no resident builder on any backend (comment at 234–240). `docs/hardware-matrix.md`
 row "Nemotron-H → WebGPU ✅ resident" is generated from the *dense* representative config, so it is
 true of Nemotron-H and false of the two models people download. docs/completed/task-families-2026-09.md F2
@@ -211,7 +211,7 @@ FeatPartialRotary}`; `metal/model.go:963` sets `prefillOK` from it; `metal/backe
 Separately, `metal/backend.go:645` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
-covers dense and MoE (`cuda/prefill.go:352–320`) and declines only f32 projections and the
+covers dense and MoE (`cuda/prefill.go:372–320`) and declines only f32 projections and the
 per-token debug seams.
 
 **Fix.** Two levers, in order: (a) extend the f16-MMA prefill to MoE (per-row FFN off the batched

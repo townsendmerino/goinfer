@@ -104,7 +104,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | CPU `QwenVisionEncoder` | CPU | recorded; tiny fixtures verified-run (T7) |
-| CUDA | **CPU**, int8 by the rule. aikit now has the seam (`vision/qwen_resident.go:38,44`) and the module (`gpu/qwencuda`), but **goinfer registers no Qwen factory and imports neither** (B1; `docs/tasks/task-aikit-boundary-2026-09.md:33`), and serve never calls `EnableResident` on it | resident m-RoPE prefill (`cuda/prefill.go:227`) then `ForwardMRoPE` decode (`cuda/resident.go:2171`), else CPU prefill + `UploadKV`; 3.86x decode recorded 2026-09-08 | **verified-run** (P2, T2, T3: real 3B checkpoint, cosine 0.998644 prefill, 1.000000 decode step, reuse 165) |
+| CUDA | **CPU**, int8 by the rule. aikit now has the seam (`vision/qwen_resident.go:38,44`) and the module (`gpu/qwencuda`), but **goinfer registers no Qwen factory and imports neither** (B1; `docs/tasks/task-aikit-boundary-2026-09.md:33`), and serve never calls `EnableResident` on it | resident m-RoPE prefill (`cuda/prefill.go:227`) then `ForwardMRoPE` decode (`cuda/resident.go:2173`), else CPU prefill + `UploadKV`; 3.86x decode recorded 2026-09-08 | **verified-run** (P2, T2, T3: real 3B checkpoint, cosine 0.998644 prefill, 1.000000 decode step, reuse 165) |
 | Metal | CPU (`gpu/qwenmetal` exists, not imported, B2) | `ForwardMRoPE` + `UploadKV` exist (`metal/backend.go:537,967`); no m-RoPE prefill kernel, so CPU prefill then bridge | read-from-code |
 | WebGPU | CPU, int8 | `ForwardMRoPE` + `UploadKV` (`gpu/residency.go:1249,1428`), CPU prefill then bridge | **verified-run** (P9: reuse 165; T9 primitives cosine 1.0). At temperature 0 the cold and the reused turn give different text, every time (a CPU-prefill versus GPU-last-token arithmetic gap; item 8 below) |
 
@@ -113,7 +113,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | aikit `Qwen3VisionEncoder` on the CPU, **loaded on the first image**, f32 unless the flag, at most 1024 merged tokens per image (`internal/serveapp/qwen35_vision.go:24,83`) | CPU, one token at a time (the Gated-DeltaNet recurrence has no batched form) | **recorded 2026-09-30**: 0.8B 32/32 tokens identical to HF f32 on three images (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`) and **9B 32/32 on three images** (night run `~/goinfer-logs/night/runs/2026-09-30/p8a-g2-9b.log`, `--- PASS: TestQwen35VLReal_G2_9B (767.58s)`). The old "9B leg open" text is stale |
-| CUDA | CPU, **int8** by the rule (the 0.8B/9B gates ran f32; I found no int8 gate for this tower) | **CPU prefill and CPU decode**: every resident branch is refused for a recurrent family (`decoder/generate_vl.go:280-282,343,394`) | **verified-run** (P3: reuse 0, 7.0 s, the tower reruns on a repeat; `TestGenerateQwenVL_recurrentTakesNoResidentBranch` T7) |
+| CUDA | CPU, **int8** by the rule (the 0.8B/9B gates ran f32; I found no int8 gate for this tower) | **CPU prefill and CPU decode**: every resident branch is refused for a recurrent family (`decoder/generate_vl.go:279-281,343,394`) | **verified-run** (P3: reuse 0, 7.0 s, the tower reruns on a repeat; `TestGenerateQwenVL_recurrentTakesNoResidentBranch` T7) |
 | Metal | CPU | CPU (the refusal is in `decoder/`, not backend-specific) | read-from-code |
 | WebGPU | CPU, int8 | CPU, same | read-from-code |
 

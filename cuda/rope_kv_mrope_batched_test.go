@@ -35,13 +35,13 @@ func requireCUDAResidentMRoPE(t *testing.T) *cudaResident {
 
 // ropeMRopeArgs builds rope_kv_mrope_batched's argument list — the scalar rope_kv_batched prefix
 // plus the three per-row position arrays and the cumulative section boundaries.
-func ropeMRopeArgs(q, k, v, invF, kc, vc Buffer, nH, nKV, hd, startPos, rhalf, M int, mscale float32, posT, posH, posW Buffer, sec0, sec1 int32) []gpu.KernelArg {
+func ropeMRopeArgs(q, k, v, invF, kc, vc Buffer, nH, nKV, hd, startPos, rhalf, M int, mscale float32, posT, posH, posW Buffer, sec0, sec1, mode int32) []gpu.KernelArg {
 	return []gpu.KernelArg{
 		Arg(q), Arg(k), Arg(v), Arg(invF), Arg(kc), Arg(vc),
 		gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 		gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 		gpu.ArgValue(mscale),
-		Arg(posT), Arg(posH), Arg(posW), gpu.ArgValue(sec0), gpu.ArgValue(sec1),
+		Arg(posT), Arg(posH), Arg(posW), gpu.ArgValue(sec0), gpu.ArgValue(sec1), gpu.ArgValue(mode),
 	}
 }
 
@@ -163,7 +163,7 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 		if e := r.launch(r.bRopeKV, cfg, scalarArgs...); e != nil {
 			return fmt.Errorf("rope_kv_batched: %w", e)
 		}
-		mropeArgsList := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1)
+		mropeArgsList := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1, 0)
 		if e := r.launch(r.bRopeKVMRoPE, cfg, mropeArgsList...); e != nil {
 			return fmt.Errorf("rope_kv_mrope_batched: %w", e)
 		}
@@ -288,7 +288,7 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 
 		ropeN := nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
 		cfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-		args := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1)
+		args := ropeMRopeArgs(qB, kB, vB, invFB, kcBb, vcBb, nH, nKV, hd, startPos, rhalf, M, mscale, posTB, posHB, posWB, sec0, sec1, 0)
 		if e := r.launch(r.bRopeKVMRoPE, cfg, args...); e != nil {
 			return fmt.Errorf("rope_kv_mrope_batched: %w", e)
 		}

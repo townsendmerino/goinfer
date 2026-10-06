@@ -33,7 +33,25 @@
 // attn_img_prefill.cu's header states: regenerating prefill_batched.ptx in place risks shifting
 // codegen for kernels every batched-prefill parity gate rests on. No shipped PTX changes there.
 //
-// Regenerate with:  ./build_ptx.sh rope_mrope_prefill
+// MODE (added 2026-10-06 for the Qwen3.5 hybrids' image prefill, docs/queue-performance.md P26): 0 is Qwen2.5-VL's contiguous
+// section layout exactly as before; 1 is Qwen3-VL's interleaved layout (see mrope_pos). GLM-OCR's pairwise twin
+// (rope_pairwise.cu's rope_kv_mrope_batched_pw) is a separate kernel with its own argument list and is untouched.
+//
+// Regenerate with:  ./build_ptx.sh rope_mrope_prefill   (NVRTC 12.9.86, which reproduces the previous PTX byte for byte)
+
+// mrope_pos picks the position component for frequency index d.
+//   mode 0 (Qwen2.5-VL, contiguous blocks; decoder.mropeComponent): sec0 = section[0], sec1 = section[0]+section[1];
+//          d < sec0 temporal, d < sec1 height, else width.
+//   mode 1 (Qwen3-VL / Qwen3.5, per-index interleave; decoder.mropeComponentInterleaved): sec0 = 3*section[1],
+//          sec1 = 3*section[2]; d%3==1 && d<sec0 height, d%3==2 && d<sec1 width, else temporal (which also covers
+//          the tail beyond the strided runs). Mode 0 is the original expression, unchanged.
+__device__ __forceinline__ int mrope_pos(int d, int sec0, int sec1, int mode, int pT, int pH, int pW)
+{
+    if (mode == 0) return (d < sec0) ? pT : (d < sec1 ? pH : pW);
+    if (d % 3 == 1 && d < sec0) return pH;
+    if (d % 3 == 2 && d < sec1) return pW;
+    return pT;
+}
 
 extern "C" {
 
@@ -42,7 +60,7 @@ __global__ void rope_kv_mrope_batched(
     const float* __restrict__ invFreq, float* __restrict__ kc, float* __restrict__ vc,
     int nH, int nKV, int hd, int startPos, int rhalf, int M, float mscale,
     const int* __restrict__ posT, const int* __restrict__ posH, const int* __restrict__ posW,
-    int sec0, int sec1)
+    int sec0, int sec1, int mode)
 {
     int m = blockIdx.y; if (m >= M) return;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -56,14 +74,14 @@ __global__ void rope_kv_mrope_batched(
     const float* vm = v + (long)m * kvDim;
     if (idx < qn) {
         int h = idx / rhalf, d = idx % rhalf;
-        int p = (d < sec0) ? pT : (d < sec1 ? pH : pW); // mropeComponent(d, section), inlined
+        int p = mrope_pos(d, sec0, sec1, mode, pT, pH, pW); // mropeComponent / mropeComponentInterleaved(d, section), inlined
         float ang = p * invFreq[d]; float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = qm + h * hd;
         float a = base[d], b = base[d + rhalf];
         base[d] = __fmaf_rn(a, c, -__fmul_rn(b, s)); base[d + rhalf] = __fmaf_rn(a, s, __fmul_rn(b, c));
     } else if (idx < qn + kn) {
         int j = idx - qn; int h = j / rhalf, d = j % rhalf;
-        int p = (d < sec0) ? pT : (d < sec1 ? pH : pW);
+        int p = mrope_pos(d, sec0, sec1, mode, pT, pH, pW);
         float ang = p * invFreq[d]; float c = cosf(ang) * mscale, s = sinf(ang) * mscale;
         float* base = km + h * hd;
         float a = base[d], b = base[d + rhalf];

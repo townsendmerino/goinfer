@@ -32,8 +32,7 @@
 >   int8 under those backends, which measured not faster and far from f32 (`docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). On CPU and Metal every tower is f32 unless asked.
 > - **Decoder.** Gemma 3 and Qwen2.5-VL decode resident after an image on every backend that has `UploadKV` and `ForwardMRoPE` (CUDA, WebGPU, Metal); only CUDA also has a
 >   resident image prefill (`ResidentImagePrefill`, `ResidentMRoPEPrefill`), the others prefill the image on the CPU and upload the KV. Gemma 4 26B/31B uses the same bridge
->   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode**: a recurrent family refuses every resident branch (`decoder/generate_vl.go:280`), so a repeat
->   of the same image also re-runs the tower. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
+>   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:279`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
 >   resident on CUDA only (pairwise rope); on WebGPU it runs the staged path, on Metal the CPU.
 > - **Release binaries.** `goinfer-serve-linux-{amd64,arm64}` is built from `cuda/cmd/serve` with `CGO_ENABLED=0 -tags cuda`: **CUDA is cgo-free, so a downloaded Linux
 >   binary on an NVIDIA box does Gemma 3 images with the resident tower** (run: `encoder int8/cuda-resident`, 4.9 s for a cold image). The darwin binaries carry Metal (no tower,
@@ -770,7 +769,7 @@ number is published without provenance.
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
-     (`cuda/resident.go:2170`), the WebGPU `residentDecoder` (`gpu/residency.go:1249`) and `metalResident`
+     (`cuda/resident.go:2172`), the WebGPU `residentDecoder` (`gpu/residency.go:1249`) and `metalResident`
      (`metal/backend.go:537`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
@@ -842,7 +841,7 @@ number is published without provenance.
      - Not found anywhere: an image-token-count off-by-one, or an m-RoPE bug tied to `partial_rotary_factor`
        0.25. Not verified by anyone: whether ggml's im2col patch conv rounds to F16.
   **UPDATE 2026-10-02: the 9B leg ran** (night job 2026-09-30, `~/goinfer-logs/night/runs/2026-09-30/p8a-g2-9b.log`: `--- PASS: TestQwen35VLReal_G2_9B`, 32/32 tokens
-  identical on all three images, worst-row tower cosine 0.999999987 on the third), and aikit v1.52.0 is tagged and pinned by all five modules. Still open: resident image decode (a recurrent family
+  identical on all three images, worst-row tower cosine 0.999999987 on the third), and aikit v1.52.0 is tagged and pinned by all five modules. Still open (as of this record; resident image prefill and decode for the dense hybrids on CUDA landed 2026-10-06, `docs/measurements/p26b-cuda-hybrid-image-prefill-2026-10-06/`): resident image decode (a recurrent family
   refuses every resident branch, so Qwen3.5+ images are CPU prefill and CPU decode on every backend, run on CUDA 2026-10-02), the MoE checkpoint (serve accepts the model type; no image has
   been run through it), resize fidelity, and the think-block decision. The gates ran f32, and since 2026-10-02 so does serve unless `-vision-quant int8` is given.
   **P8a STATUS 2026-09-30 (local commits, NOT pushed).** G0 (tower vs HF), G0b (preprocessing), G1 (tiny fixture),
