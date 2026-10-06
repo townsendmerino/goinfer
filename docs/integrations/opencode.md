@@ -114,7 +114,7 @@ hardware profile, the honest picture is narrower:
 | Qwen2.5-Coder-1.5B-Instruct | nobara-pc (CUDA) | **skip — too small** (prose, not a real call) |
 | Qwen2.5-Coder-3B-Instruct | Mac (CPU, fits comfortably) | **skip — too small** |
 | Qwen2.5-7B-Instruct q3_k_m | Mac (CPU) | never reached — does not fit this Mac's real available memory |
-| Qwen2.5-Coder-7B-Instruct q4_k_m | nobara-pc (CUDA, 8 GB VRAM) | **fails** — `serve check` failed 2 of 9 rows (`tools, OpenAI`: the agent-livelock shape, and `stop sequences`); opencode wrote its edit call as fenced JSON prose, 0 edits in 2 runs (v0.20.0, 2026-10-05, [cold-user run](../measurements/cold-user-2026-10-05-nobara-pc.md)). Same size and hardware as the working row below; a "Coder" name is not a tool-calling guarantee |
+| Qwen2.5-Coder-7B-Instruct q4_k_m | nobara-pc (CUDA, 8 GB VRAM) | **fails** — `serve check` failed 2 of 9 rows (`tools, OpenAI`: the agent-livelock shape, and `stop sequences`); opencode wrote its edit call as fenced JSON prose, 0 edits in 2 runs (v0.20.0, 2026-10-05, [cold-user run](../measurements/cold-user-2026-10-05-nobara-pc.md)). Same size and hardware as the working row below; a "Coder" name is not a tool-calling guarantee. With `serve -lenient-tool-calls` it read-then-edited the file in 3 of 8 runs (0 of 8 without), exploratory: [record](../measurements/lenient-tool-calls-opencode-2026-10-06/README.md) |
 | **Qwen2.5-7B-Instruct q4_k_m** | **nobara-pc (CUDA, 8 GB VRAM)** | **ok — real tool calls, real completion** |
 | `phi3-mini-4k`, `granite-4.0-h-tiny`, `gpt-oss-20b`, `gemma-4-26b-a4b` | — | not yet measured |
 

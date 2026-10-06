@@ -1,0 +1,18 @@
+[0m
+> build · qwen2.5-coder-7b-instruct-q4_k_m
+[0m
+Sure, I'd help you fix the bug in `calc.go`. Could you please provide more details about the bug? What is the issue you're encountering? The more information you provide, the better I can assist you.
+rc=0
+--- calc.go after:
+package main
+
+import "fmt"
+
+// add returns the sum of a and b.
+func add(a, b int) int {
+	return a - b
+}
+
+func main() {
+	fmt.Println(add(2, 3))
+}
