@@ -15,6 +15,19 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — EmbeddingGemma 2 at `/v1/embeddings`, with a `task` field for its prompts
+
+`--embed-model` takes Google's EmbeddingGemma 2 (`google/embeddinggemma-2`, the 270M text encoder; the vision and audio
+towers in the same checkpoint are not loaded). It is a bidirectional Gemma 4-style encoder, so it is its own package,
+`embeddinggemma2`, not a `decoder.Load` family: CPU, float32, mean-pooled and normalised as sentence-transformers does.
+`dimensions` takes the model's Matryoshka widths, 768, 512, 256 and 128, and nothing else. **A non-standard `task`
+field** picks one of the model's 20 named prompts (or `"none"`); without it `input_type` selects its query or document
+prompt, and with neither no prompt is applied, sentence-transformers' own default. The prompt applied is echoed in
+`goinfer_task` and the `X-Goinfer-Embedding-Task` header. **Checked:** a tiny fixture pinned with transformers' own
+modeling code matches at cosine 1.000000000 layer by layer and is as close to a float64 run as the float32 reference,
+with 12 planted defects all failing it; the real checkpoint's Gate 2 (48 texts against sentence-transformers, ids and
+embeddings, and what truncation to each width costs in retrieval) is in `docs/tasks/task-embeddinggemma2.md`.
+
 ### Changed — CPU W4A8 quantizes each input once for the projections that share it; aikit v1.57.0 (audit R-13, R-14)
 
 Every CPU W4A8 matmul quantized its own activation, so one normed row was quantized for q, k and v, again for gate and up, and once per routed expert in a MoE layer (2k+2 times a layer). aikit v1.57.0 adds entries that take an activation quantized

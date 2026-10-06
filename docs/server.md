@@ -770,6 +770,23 @@ this encoder's asymmetric query/document encoding, an optional `input_type:
 "query"|"document"` (default `document`, the Cohere/Voyage convention) selects the
 query instruction prefix.
 
+**EmbeddingGemma 2** (`google/embeddinggemma-2`, text only) loads the same way, from its HF directory or
+`hf:google/embeddinggemma-2:safetensors`: `--embed-model ~/models/embeddinggemma-2`. It runs on the CPU in float32
+(`--embed-quant` other than `f32` is refused), with a 768-wide vector that `dimensions` truncates to exactly 512, 256
+or 128 (any other width is a 400 naming these). Its quality depends on a task prompt, and the OpenAI shape has nowhere
+for one, so it takes a non-standard field:
+
+- `task` names one of the model's own 20 prompts (`query`, `document`, `STS`, `Classification`, `Clustering`,
+  `CodeRetrieval`, …; an unknown name is a 400 listing them), or `"none"`;
+- without `task`, `input_type` selects the model's `query` or `document` prompt;
+- with neither, **no prompt is applied**, which is what sentence-transformers does by default, so an unmodified OpenAI
+  client gets the reference model's own output.
+
+Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
+`X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt
+and queried under another retrieves worse without any error, and the echo is there so that can be seen. Its checks
+against sentence-transformers are in `docs/tasks/task-embeddinggemma2.md`.
+
 **Startup self-tests, and `check --hardware`.** goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it returns slightly wrong numbers (an AVX-512 VNNI
 accumulator bug did exactly that in September, and surfaced only because one CI runner happened to have the CPU). So the first model load of a process runs aikit's `linalg.SelfCheck`: the dispatched CPU kernels
 (`dotI8`, `dotW4A8`, the activation quantizer, and the activation-sum centering of the W4A8 fold) against their portable references on a small fixed input, held to **the agreement aikit's own tests assert for each**
