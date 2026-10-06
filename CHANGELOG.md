@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — EmbeddingGemma 2 embeds images
+
+`/v1/embeddings` with EmbeddingGemma 2 takes images, in the same vector space as its text: an `input` element can be
+`{"image": "<data: URI or base64>", "text": "..."}` or an OpenAI content-part array (`image_url` then `text`), mixed
+with plain strings. The tower is aikit's Gemma 4 vision encoder, which this checkpoint shares; it loads on the first
+image request. **Checked** on the real checkpoint against sentence-transformers over four images of different aspect
+ratios, three input shapes each: identical ids; the tower on the reference's own pixels at cosine 0.999999996 or
+better; the whole embedding from those pixels at 1.000000000; and end to end 0.99924-0.99986, the gap being one known
+difference (goinfer resizes the image bilinearly, the reference bicubic), accepted. Inline images only (never a fetched
+URL), one per input, 16 per request.
+
 ### Added — EmbeddingGemma 2 on Metal
 
 On a Mac, `--embed-model` with EmbeddingGemma 2 now runs on the GPU when `--backend` resolves to `metal` (the default

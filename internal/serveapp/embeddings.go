@@ -105,9 +105,29 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inputs, err := parseEmbedInput(req.Input)
+	var imageItems []embedItem // set only when the request carries an image (Phase V)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+		items, ierr := parseEmbedItems(req.Input)
+		if ierr != nil {
+			writeErr(w, http.StatusBadRequest, ierr.Error())
+			return
+		}
+		if n, has := embedHasImages(items); has {
+			_, okT := s.embed.(taskEmbedder)
+			if _, ok := s.embed.(imageEmbedder); !ok || !okT {
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("model %q takes no image input", s.embedID))
+				return
+			}
+			if n > maxEmbedImages {
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("too many images: %d (max %d per request)", n, maxEmbedImages))
+				return
+			}
+			imageItems = items
+		}
+		inputs = make([]string, len(items))
+		for i, it := range items {
+			inputs[i] = it.text
+		}
 	}
 	if len(inputs) == 0 {
 		writeErr(w, http.StatusBadRequest, "input is required (a string or array of strings)")
@@ -159,7 +179,13 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	// count-only tokenize pass (countEmbedTokens).
 	var vecs [][]float32
 	var promptTokens int
-	if hasTasks {
+	if imageItems != nil {
+		vecs, promptTokens, err = encodeImageItems(s.embed.(imageEmbedder), te, imageItems, task)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "encode: "+err.Error())
+			return
+		}
+	} else if hasTasks {
 		var counts []int
 		vecs, counts, err = te.EncodeTasks(inputs, task)
 		if err != nil {

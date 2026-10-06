@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -177,4 +178,21 @@ func (e *Encoder) EmbedImageFeatures(in ImageInput, feats []float32, n int) ([]f
 		return nil, 0, err
 	}
 	return poolNormalize(h, len(ids), e.m.cfg.EmbeddingDim), len(ids), nil
+}
+
+// visMu serialises the lazy EnableVision of EmbedImageTask.
+var visMu sync.Mutex
+
+// EmbedImageTask embeds one image input for a server: it loads the vision tower on first use (a text-only server never
+// pays for it), then EmbedImage. prompt names a task prompt or is "" for none.
+func (e *Encoder) EmbedImageTask(img []byte, text, prompt string) ([]float32, int, error) {
+	visMu.Lock()
+	if e.vis == nil {
+		if err := e.EnableVision(); err != nil {
+			visMu.Unlock()
+			return nil, 0, err
+		}
+	}
+	visMu.Unlock()
+	return e.EmbedImage(ImageInput{Image: img, Text: text, Prompt: prompt})
 }

@@ -374,6 +374,13 @@ weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query suppo
 
 ## Phase V — images (CPU first), pre-registered 2026-10-06
 
+**Status 2026-10-06: DONE on the CPU (the tower) with the encoder on Metal or the CPU; served at `/v1/embeddings`.**
+V1-V3 below, V4 accepted by the owner. Request shapes (owner: both): `{"image", "text"}` objects and OpenAI content
+parts, mixed with strings; inline base64 only; one image per input, text after it; the tower loads lazily
+(`internal/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
+real checkpoint, the table image read cosine 0.999683 alone and 0.999713 with text against sentence-transformers,
+matching the gate's CPU figures. Open: the bicubic resize (aikit), text before an image, several images in one input.
+
 **Gate 0 (read from the real checkpoint, transformers 5.19.0 and sentence-transformers 6.1.0):**
 - The composite forward runs the vision tower and `embed_vision` (`Gemma4Model.get_image_features`), then
   `masked_scatter`s the pooled image features over the placeholder rows **after** the token embedding's √H scale (the
