@@ -352,12 +352,12 @@
       "value": "PASS"
     },
     {
-      "commit": "70be7081",
-      "date": "2026-10-01",
+      "commit": "7b50947a",
+      "date": "2026-10-06",
       "gate": "TestInt4_forwardParity",
-      "note": "v0.20.0 \u00a7C1 scoped re-validation step 1 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/cell1.log): untagged cell 794 pass / 59 skip / 0 fail, ALL REQUIRED GATES GREEN",
-      "promoted_by": "claude",
-      "source_sha256": "eb7a4e2027025c92",
+      "note": "v0.21.0 \u00a7C1 sweep ~/goinfer-logs/parity-sweep-v021-2026-10-05/parity-sweep.log: PASS at 7b50947a; re-confirms after the 4ad711d0 closeness-bound change",
+      "promoted_by": "nobara session (Francis)",
+      "source_sha256": "7bcf94171ffb8ee8",
       "value": "PASS"
     },
     {
