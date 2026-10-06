@@ -34,6 +34,7 @@ type Encoder struct {
 	accel   Accelerator  // nil: the CPU forward (UseAccelerator)
 	dir     string       // the checkpoint directory (EnableVision reads the tower from it)
 	vis     *visionTower // nil until EnableVision
+	resize  ImageResize  // "" = the default (ImageResizeMode)
 }
 
 // LoadEncoder loads the model, tokenizer.json and the prompt table from an HF checkpoint directory.

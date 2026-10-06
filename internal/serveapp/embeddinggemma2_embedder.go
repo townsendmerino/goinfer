@@ -32,10 +32,23 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 	default:
 		return fmt.Errorf("invalid -embed-quant %q for EmbeddingGemma 2: it runs in f32 only (omit -embed-quant, or pass f32)", cfg.embedQuant)
 	}
+	var resize embeddinggemma2.ImageResize
+	if cfg.embedResize != "" {
+		r, err := embeddinggemma2.ParseImageResize(cfg.embedResize)
+		if err != nil {
+			return fmt.Errorf("-embed-image-resize: %w", err)
+		}
+		resize = r
+	}
 	t0 := time.Now()
 	e, err := embeddinggemma2.LoadEncoder(cfg.embedPath)
 	if err != nil {
 		return fmt.Errorf("load embedding model: %w", err)
+	}
+	if resize != "" {
+		if err := e.SetImageResize(resize); err != nil {
+			return fmt.Errorf("-embed-image-resize: %w", err)
+		}
 	}
 	where, err := chooseEG2Device(e, cfg.load.Backend, cfg.requireBE)
 	if err != nil {
@@ -52,8 +65,8 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 			s.embedWidths = append(s.embedWidths, w)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type) in %s\n",
-		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), time.Since(t0).Round(time.Millisecond))
+	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type; images resized %s) in %s\n",
+		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), e.ImageResizeMode(), time.Since(t0).Round(time.Millisecond))
 	return nil
 }
 

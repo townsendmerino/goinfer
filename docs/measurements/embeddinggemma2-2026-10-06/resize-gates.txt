@@ -1,0 +1,32 @@
+=== RUN   TestReal_vision
+    vision_real_test.go:146: gemma3_preprocess_image: V2 tower on HF's pixels, worst soft-token cosine 0.999999996 over 256
+    vision_real_test.go:192: gemma3_preprocess_image bilinear   : V3 grid 2304 patches (HF 2304, 0 not at an HF position), soft tokens 256 (HF 256), patch max|diff| 3.268e-03 (0.83 uint8 steps), 489912 of 1769472 values differ; preprocess 14ms (exploratory)
+    vision_real_test.go:192: gemma3_preprocess_image bicubic    : V3 grid 2304 patches (HF 2304, 0 not at an HF position), soft tokens 256 (HF 256), patch max|diff| 5.960e-08 (0.00 uint8 steps), 0 of 1769472 values differ; preprocess 34ms (exploratory)
+    vision_real_test.go:192: gemma3_preprocess_image bicubic-f64: V3 grid 2304 patches (HF 2304, 0 not at an HF position), soft tokens 256 (HF 256), patch max|diff| 5.960e-08 (0.00 uint8 steps), 0 of 1769472 values differ; preprocess 51ms (exploratory)
+    vision_real_test.go:146: qwen25vl_preprocess_image: V2 tower on HF's pixels, worst soft-token cosine 0.999999999 over 260
+    vision_real_test.go:192: qwen25vl_preprocess_image bilinear   : V3 grid 2340 patches (HF 2340, 0 not at an HF position), soft tokens 260 (HF 260), patch max|diff| 5.363e-03 (1.37 uint8 steps), 1773168 of 1797120 values differ; preprocess 6ms (exploratory)
+    vision_real_test.go:192: qwen25vl_preprocess_image bicubic    : V3 grid 2340 patches (HF 2340, 0 not at an HF position), soft tokens 260 (HF 260), patch max|diff| 5.960e-08 (0.00 uint8 steps), 0 of 1797120 values differ; preprocess 13ms (exploratory)
+    vision_real_test.go:192: qwen25vl_preprocess_image bicubic-f64: V3 grid 2340 patches (HF 2340, 0 not at an HF position), soft tokens 260 (HF 260), patch max|diff| 3.922e-03 (1.00 uint8 steps), 5218 of 1797120 values differ; preprocess 21ms (exploratory)
+    vision_real_test.go:146: formula: V2 tower on HF's pixels, worst soft-token cosine 0.999999997 over 270
+    vision_real_test.go:192: formula bilinear   : V3 grid 2430 patches (HF 2430, 0 not at an HF position), soft tokens 270 (HF 270), patch max|diff| 2.572e-01 (65.58 uint8 steps), 101724 of 1866240 values differ; preprocess 20ms (exploratory)
+    vision_real_test.go:192: formula bicubic    : V3 grid 2430 patches (HF 2430, 0 not at an HF position), soft tokens 270 (HF 270), patch max|diff| 5.960e-08 (0.00 uint8 steps), 0 of 1866240 values differ; preprocess 45ms (exploratory)
+    vision_real_test.go:192: formula bicubic-f64: V3 grid 2430 patches (HF 2430, 0 not at an HF position), soft tokens 270 (HF 270), patch max|diff| 3.922e-03 (1.00 uint8 steps), 399 of 1866240 values differ; preprocess 64ms (exploratory)
+    vision_real_test.go:146: table: V2 tower on HF's pixels, worst soft-token cosine 1.000000000 over 266
+    vision_real_test.go:192: table bilinear   : V3 grid 2394 patches (HF 2394, 0 not at an HF position), soft tokens 266 (HF 266), patch max|diff| 2.028e-01 (51.71 uint8 steps), 188504 of 1838592 values differ; preprocess 19ms (exploratory)
+    vision_real_test.go:192: table bicubic    : V3 grid 2394 patches (HF 2394, 0 not at an HF position), soft tokens 266 (HF 266), patch max|diff| 5.960e-08 (0.00 uint8 steps), 0 of 1838592 values differ; preprocess 40ms (exploratory)
+    vision_real_test.go:192: table bicubic-f64: V3 grid 2394 patches (HF 2394, 0 not at an HF position), soft tokens 266 (HF 266), patch max|diff| 3.922e-03 (1.00 uint8 steps), 339 of 1838592 values differ; preprocess 60ms (exploratory)
+    vision_real_test.go:242: item  0 testdata/gemma3_preprocess_image.png   prompt ""     text false: from HF's pixels 1.000000000, bilinear 0.999861369, bicubic 1.000000000, bicubic-f64 1.000000000
+    vision_real_test.go:242: item  1 testdata/gemma3_preprocess_image.png   prompt "query" text false: from HF's pixels 1.000000000, bilinear 0.999754053, bicubic 1.000000000, bicubic-f64 1.000000000
+    vision_real_test.go:242: item  2 testdata/gemma3_preprocess_image.png   prompt ""     text true : from HF's pixels 1.000000000, bilinear 0.999573700, bicubic 1.000000000, bicubic-f64 1.000000000
+    vision_real_test.go:242: item  3 testdata/qwen25vl_preprocess_image.png prompt ""     text false: from HF's pixels 1.000000000, bilinear 0.999240959, bicubic 1.000000000, bicubic-f64 0.999991050
+    vision_real_test.go:242: item  4 testdata/qwen25vl_preprocess_image.png prompt "query" text false: from HF's pixels 1.000000000, bilinear 0.999477533, bicubic 1.000000000, bicubic-f64 0.999972838
+    vision_real_test.go:242: item  5 testdata/qwen25vl_preprocess_image.png prompt ""     text true : from HF's pixels 1.000000000, bilinear 0.999401515, bicubic 1.000000000, bicubic-f64 0.999965838
+    vision_real_test.go:242: item  6 testdata/glm_ocr/formula.png           prompt ""     text false: from HF's pixels 1.000000000, bilinear 0.999514634, bicubic 1.000000000, bicubic-f64 0.999999975
+    vision_real_test.go:242: item  7 testdata/glm_ocr/formula.png           prompt "query" text false: from HF's pixels 1.000000000, bilinear 0.999534504, bicubic 1.000000000, bicubic-f64 0.999999953
+    vision_real_test.go:242: item  8 testdata/glm_ocr/formula.png           prompt ""     text true : from HF's pixels 1.000000000, bilinear 0.999577200, bicubic 1.000000000, bicubic-f64 0.999999967
+    vision_real_test.go:242: item  9 testdata/glm_ocr/table.png             prompt ""     text false: from HF's pixels 1.000000000, bilinear 0.999682824, bicubic 1.000000000, bicubic-f64 0.999999988
+    vision_real_test.go:242: item 10 testdata/glm_ocr/table.png             prompt "query" text false: from HF's pixels 1.000000000, bilinear 0.999652709, bicubic 1.000000000, bicubic-f64 0.999999995
+    vision_real_test.go:242: item 11 testdata/glm_ocr/table.png             prompt ""     text true : from HF's pixels 1.000000000, bilinear 0.999713124, bicubic 1.000000000, bicubic-f64 0.999999994
+--- PASS: TestReal_vision (109.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/embeddinggemma2	110.467s

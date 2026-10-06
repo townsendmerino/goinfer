@@ -801,9 +801,10 @@ Images are inline only, a base64 `data:` URI (never a URL the server fetches), a
 after it (text before the image is a 400 for now), at most 16 per request and 16 MiB each, decoded. `task` and
 `input_type` choose the prompt as for text, and `usage` counts the image's soft tokens (256 to 280). The vision tower
 loads on the first image request, so a text-only server never pays for it. It runs on the CPU; the encoder after it
-runs on Metal where text does. The image's resize is bilinear where the reference's processor is bicubic, so an image
-embedding is cosine 0.9992 to 0.9999 from sentence-transformers' (text is 0.999999987); everything after the resize
-matches to 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase V).
+runs on Metal where text does. The image is resized as the reference's processor does it (torchvision's antialiased
+bicubic, reproduced bit for bit), and an image embedding then matches sentence-transformers' to cosine 1.000000000 on
+the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
+bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.
 
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
 `X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt

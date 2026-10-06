@@ -424,6 +424,10 @@ number is published without provenance.
   processor and the tower, that alone took image embeddings from cosine 1.000000000 (from HF's pixels) to
   0.99924-0.99986 (`docs/tasks/task-embeddinggemma2.md`, Phase V). Gemma 4's own image input goes through the same
   resizer, so it probably carries the same gap; a stage pin of the preprocessed pixels against HF would say.
+  **EmbeddingGemma 2 now has the reference's resize** (`embeddinggemma2/preprocess.go`, default since 2026-10-06):
+  torchvision's antialiased bicubic on uint8, bit-identical to it on the four gate images and twelve synthetic cases,
+  which brought its image embeddings to 1.000000000. It lives in goinfer, not aikit, so Gemma 4's image input still
+  resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both.
   Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
   EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
   from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.

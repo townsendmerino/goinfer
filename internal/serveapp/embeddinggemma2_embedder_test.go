@@ -143,6 +143,19 @@ func TestLoadEmbeddingGemma2_refusesAQuantItCannotHonour(t *testing.T) {
 	}
 }
 
+// TestLoadEmbeddingGemma2_refusesAnUnknownResize: an -embed-image-resize the encoder does not have is refused by name
+// before anything loads (the tiny fixture has no tokenizer, so reaching the load would fail differently).
+func TestLoadEmbeddingGemma2_refusesAnUnknownResize(t *testing.T) {
+	s := &server{}
+	err := s.loadEmbeddingGemma2(config{embedPath: "../../testdata/embeddinggemma2-tiny", embedResize: "lanczos"})
+	if err == nil || !strings.Contains(err.Error(), "-embed-image-resize") || !strings.Contains(err.Error(), "bicubic") {
+		t.Fatalf("lanczos: %v, want a refusal naming the flag and the choices", err)
+	}
+	if s.embed != nil {
+		t.Fatal("an embedder was attached after the refusal")
+	}
+}
+
 // TestIsEmbeddingGemma2: the dispatch in loadEncoder recognises the checkpoint by its config.json, and nothing else.
 func TestIsEmbeddingGemma2(t *testing.T) {
 	if !isEmbeddingGemma2("../../testdata/embeddinggemma2-tiny") {

@@ -113,13 +113,13 @@ func (e *Encoder) TokenizeImage(in ImageInput, n int) (ids []int, imgPos int, er
 	return ids, imgPos, nil
 }
 
-// ImageFeatures runs aikit's preprocessing and tower on encoded image bytes: the pooled, projected soft tokens
-// [n, hidden] and n.
+// ImageFeatures preprocesses encoded image bytes (the encoder's resize, SetImageResize) and runs aikit's tower: the
+// pooled, projected soft tokens [n, hidden] and n.
 func (e *Encoder) ImageFeatures(img []byte) ([]float32, int, error) {
 	if e.vis == nil {
 		return nil, 0, fmt.Errorf("embeddinggemma2: vision is not enabled (EnableVision)")
 	}
-	patches, pos, err := vision.Gemma4Preprocess(img, MaxImageSoftTokens)
+	patches, pos, err := e.preprocessImage(img)
 	if err != nil {
 		return nil, 0, fmt.Errorf("embeddinggemma2: image: %w", err)
 	}

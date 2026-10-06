@@ -11,8 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/townsendmerino/aikit/vision"
+	"time"
 )
 
 func readF32(t *testing.T, path string) []float32 {
@@ -65,7 +64,9 @@ func cos64(a []float32, b []float64) float64 {
 //	    0.9999 end to end; the read landed in its ambiguous band (0.99924-0.99986) with the whole gap in the resize
 //	    (aikit bilinear, the reference bicubic; 1.000000000 from HF's pixels), and the owner accepted it on 2026-10-06
 //	    ("since we understand the difference i'm ok with it"). The loose bar covers only the resize: everything after it
-//	    is still held to 0.9999 through HF's pixels.
+//	    is still held to 0.9999 through HF's pixels. V3 and V4 are read for bilinear.
+//	R1: with the reference's bicubic (preprocess.go), V3's patch max |diff| is at most one uint8 step on every image.
+//	R2: with bicubic, every case's end-to-end cosine is >= 0.9999. Bicubic's float64 variant is logged beside both.
 //
 // CPU, float32.
 func TestReal_vision(t *testing.T) {
@@ -106,9 +107,17 @@ func TestReal_vision(t *testing.T) {
 		t.Fatal(err)
 	}
 	H := e.Model().Config().Hidden
+	// The modes read: aikit's bilinear (V3/V4), the reference's bicubic in torchvision's fixed point (R1/R2), and the
+	// same bicubic in float64 with one rounding (reported beside it, the fixed point's own share).
+	modes := []struct {
+		name   string
+		resize ImageResize
+		float  bool
+	}{{"bilinear", ResizeBilinear, false}, {"bicubic", ResizeBicubic, false}, {"bicubic-f64", ResizeBicubic, true}}
 	type perImage struct {
-		goFeats, hfFeats []float32
-		n                int
+		hfFeats []float32
+		goFeats map[string][]float32
+		n       int
 	}
 	images := map[string]*perImage{}
 	for _, it := range g.Items {
@@ -136,12 +145,11 @@ func TestReal_vision(t *testing.T) {
 			}
 			worst = math.Min(worst, dot/math.Sqrt(na*nb))
 		}
-		// V3: aikit's own preprocessing.
-		img, err := os.ReadFile("../" + it.Image)
-		if err != nil {
-			t.Fatal(err)
+		t.Logf("%s: V2 tower on HF's pixels, worst soft-token cosine %.9f over %d", name, worst, n)
+		if worst < 0.9999 {
+			t.Errorf("%s: V2 worst soft-token cosine %.9f, under 0.9999", name, worst)
 		}
-		goPatches, goPos, err := vision.Gemma4Preprocess(img, MaxImageSoftTokens)
+		img, err := os.ReadFile("../" + it.Image)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,30 +158,50 @@ func TestReal_vision(t *testing.T) {
 			hfAt[p] = i
 		}
 		pd := len(hfPatches) / len(hfPos)
-		maxDiff, missing := 0.0, 0
-		for i, p := range goPos {
-			j, ok := hfAt[p]
-			if !ok {
-				missing++
-				continue
+		pi := &perImage{hfFeats: f, goFeats: map[string][]float32{}, n: n}
+		for _, md := range modes {
+			// V3 / R1: this mode's preprocessing against HF's pixels.
+			if err := e.SetImageResize(md.resize); err != nil {
+				t.Fatal(err)
 			}
-			for k := range pd {
-				maxDiff = math.Max(maxDiff, math.Abs(float64(goPatches[i*pd+k]-hfPatches[j*pd+k])))
+			eg2ResizeFloat = md.float
+			t0 := time.Now()
+			goPatches, goPos, err := e.preprocessImage(img)
+			pre := time.Since(t0)
+			if err != nil {
+				t.Fatal(err)
 			}
+			maxDiff, missing, differ := 0.0, 0, 0
+			for i, p := range goPos {
+				j, ok := hfAt[p]
+				if !ok {
+					missing++
+					continue
+				}
+				for k := range pd {
+					d := math.Abs(float64(goPatches[i*pd+k] - hfPatches[j*pd+k]))
+					maxDiff = math.Max(maxDiff, d)
+					if d > 1e-6 {
+						differ++
+					}
+				}
+			}
+			goFeats, goN, err := e.ImageFeatures(img)
+			eg2ResizeFloat = false
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s %-11s: V3 grid %d patches (HF %d, %d not at an HF position), soft tokens %d (HF %d), patch max|diff| %.3e (%.2f uint8 steps), %d of %d values differ; preprocess %s (exploratory)",
+				name, md.name, len(goPos), len(hfPos), missing, goN, n, maxDiff, maxDiff*255, differ, len(goPos)*pd, pre.Round(time.Millisecond))
+			if len(goPos) != len(hfPos) || missing != 0 || goN != n {
+				t.Errorf("%s %s: V3 grid differs: %d patches (HF %d), %d off-grid, %d soft tokens (HF %d)", name, md.name, len(goPos), len(hfPos), missing, goN, n)
+			}
+			if md.name == "bicubic" && maxDiff > 1.0/255+1e-6 {
+				t.Errorf("%s: R1 bicubic patch max|diff| %.3e, over one uint8 step", name, maxDiff)
+			}
+			pi.goFeats[md.name] = goFeats
 		}
-		goFeats, goN, err := e.ImageFeatures(img)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("%s: V2 tower on HF's pixels, worst soft-token cosine %.9f over %d; V3 grid %d patches (HF %d, %d not at an HF position), soft tokens %d (HF %d), patch max|diff| %.3e",
-			name, worst, n, len(goPos), len(hfPos), missing, goN, n, maxDiff)
-		if worst < 0.9999 {
-			t.Errorf("%s: V2 worst soft-token cosine %.9f, under 0.9999", name, worst)
-		}
-		if len(goPos) != len(hfPos) || missing != 0 || goN != n {
-			t.Errorf("%s: V3 grid differs: %d patches (HF %d), %d off-grid, %d soft tokens (HF %d)", name, len(goPos), len(hfPos), missing, goN, n)
-		}
-		images[it.Image] = &perImage{goFeats: goFeats, hfFeats: f, n: n}
+		images[it.Image] = pi
 	}
 	for i, it := range g.Items {
 		im := images[it.Image]
@@ -186,21 +214,33 @@ func TestReal_vision(t *testing.T) {
 			t.Errorf("item %d (%s, prompt %q, text %q): V1 ids differ from the reference (%d against %d)", i, it.Image, it.Prompt, it.Text, len(ids), len(it.IDs))
 			continue
 		}
-		vGo, _, err := e.EmbedImageFeatures(in, im.goFeats, im.n)
-		if err != nil {
-			t.Fatal(err)
-		}
 		vHF, _, err := e.EmbedImageFeatures(in, im.hfFeats, im.n)
 		if err != nil {
 			t.Fatal(err)
 		}
-		cGo, cHF := cos64(vGo, it.Embedding), cos64(vHF, it.Embedding)
-		t.Logf("item %2d %-38s prompt %-6q text %-5v: V4 cosine %.9f (from HF's pixels %.9f)", i, it.Image, it.Prompt, it.Text != "", cGo, cHF)
-		if cGo < 0.999 {
-			t.Errorf("item %d: V4 end-to-end cosine %.9f, under 0.999 (from HF's own pixels %.9f)", i, cGo, cHF)
-		}
+		cHF := cos64(vHF, it.Embedding)
+		line := fmt.Sprintf("item %2d %-38s prompt %-6q text %-5v: from HF's pixels %.9f", i, it.Image, it.Prompt, it.Text != "", cHF)
 		if cHF < 0.9999 {
 			t.Errorf("item %d: from HF's own pixels cosine %.9f, under 0.9999: something after the resize moved", i, cHF)
 		}
+		for _, md := range modes {
+			v, _, err := e.EmbedImageFeatures(in, im.goFeats[md.name], im.n)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := cos64(v, it.Embedding)
+			line += fmt.Sprintf(", %s %.9f", md.name, c)
+			switch md.name {
+			case "bilinear":
+				if c < 0.999 {
+					t.Errorf("item %d: V4 bilinear end-to-end cosine %.9f, under 0.999", i, c)
+				}
+			case "bicubic":
+				if c < 0.9999 {
+					t.Errorf("item %d: R2 bicubic end-to-end cosine %.9f, under 0.9999", i, c)
+				}
+			}
+		}
+		t.Log(line)
 	}
 }

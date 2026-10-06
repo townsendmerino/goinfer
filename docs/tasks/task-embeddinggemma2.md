@@ -379,7 +379,9 @@ V1-V3 below, V4 accepted by the owner. Request shapes (owner: both): `{"image", 
 parts, mixed with strings; inline base64 only; one image per input, text after it; the tower loads lazily
 (`internal/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
 real checkpoint, the table image read cosine 0.999683 alone and 0.999713 with text against sentence-transformers,
-matching the gate's CPU figures. Open: the bicubic resize (aikit), text before an image, several images in one input.
+matching the gate's CPU figures. The reference's bicubic resize is in and the default since the same day (R1/R2 below:
+pixels bit-identical, every case 1.000000000), bilinear selectable. Open: text before an image, several images in one
+input, and the bicubic in aikit for Gemma 4.
 
 **Gate 0 (read from the real checkpoint, transformers 5.19.0 and sentence-transformers 6.1.0):**
 - The composite forward runs the vision tower and `embed_vision` (`Gemma4Model.get_image_features`), then
@@ -412,17 +414,54 @@ matching the gate's CPU figures. Open: the bicubic resize (aikit), text before a
 - **V2: PASS**, the tower and projector on HF's own pixels: worst soft-token cosine 0.999999996 or better on every
   image (aikit's Gemma 4 tower is exact for this checkpoint).
 - **V3:** the patch grid and soft-token counts equal HF's on every image, but the patches differ by a max |diff| of
-  0.20-0.54 on the [0, 1] scale. **Cause, found:** the reference's `Gemma4ImageProcessor` resizes with `resample=3`
+  0.0033-0.257 on the [0, 1] scale (0.83-65.6 uint8 steps; the raw record's figures. This line said 0.20-0.54 until
+  2026-10-06, which the raw record never showed). **Cause, found:** the reference's `Gemma4ImageProcessor` resizes with `resample=3`
   (bicubic) on the torchvision backend; aikit's `vision.Gemma4Preprocess` resizes bilinearly (`gemma4ResizeToHWC01`).
 - **V4: AMBIGUOUS under the pre-registered rule, then ACCEPTED by the owner** ("since we understand the difference i'm
   ok with it", 2026-10-06): end-to-end cosine 0.99924-0.99986, inside [0.999, 0.9999). The same pipeline from HF's own
   pixels reads **1.000000000** in all 12 cases, so the whole gap is the resize. The test's bar is now 0.999 end to end
   **and** 0.9999 from HF's pixels, so the loose bar covers the resize alone and anything after it is still held to the
-  original. Matching torchvision's bicubic resize (in aikit, which would also serve Gemma 4) stays open, not done.
+  original. Matching torchvision's bicubic resize was then done in goinfer (the resize option below); in aikit, which
+  would also serve Gemma 4, it stays open.
   Raw: `docs/measurements/embeddinggemma2-2026-10-06/vision-gates.txt`.
 - **The same resizer serves Gemma 4's own image input** (`internal/serveapp/vision_serve.go` calls
   `vision.Gemma4Preprocess`, and Gemma 4's processor is the same `Gemma4ImageProcessor`), so it probably carries the
   same mismatch; noted in `docs/multimodal.md` P7.
+
+### Phase V, the resize option: pre-registered 2026-10-06, before it runs
+
+The owner, 2026-10-06: "maybe a flag to choose resize". `embeddinggemma2/preprocess.go` adds the reference's resize
+beside aikit's: torchvision's antialiased bicubic on the uint8 image (`tvF.resize(..., BICUBIC, antialias=True)`), as
+its uint8 CPU path computes it (separable, horizontal first, Keys a = -0.5, int16 weights at the pass's precision,
+integer accumulation with a rounding offset, a clamp to uint8 after each pass), skipped when the size is unchanged.
+It is chosen by `Encoder.SetImageResize("bilinear" | "bicubic")` and serve's `-eg2-image-resize` flag (a flag, not an
+env read). Gates, on the same four images and 12 cases as V1-V4:
+- **R1, the pixels:** with bicubic, V3's patch max |diff| against HF's pixels is <= 1/255 on every image (one uint8
+  step; 0 if the fixed point matches exactly). The count of differing values is reported. A float64 variant (one
+  rounding at the end, a test seam) is read beside it to show whether the fixed point matters.
+- **R2, end to end:** with bicubic, every case's V4 cosine is >= 0.9999 (the original pre-registered bar).
+- **Decision:** R1 and R2 both pass: bicubic becomes the default and bilinear stays selectable. R2 in
+  [0.999, 0.9999) or R1 failing: bicubic ships as the option only, the default stays bilinear, parked for the owner.
+  R2 under 0.999 on any case: the option does not ship.
+- The preprocessing time of each, one image, is reported as exploratory (by day, on the Mac), never quoted.
+
+**Read 2026-10-06 (14:49-14:51 PDT, CPU float32, `embeddinggemma2/vision_real_test.go`; raw:
+`docs/measurements/embeddinggemma2-2026-10-06/resize-gates.txt`):**
+- **R1: PASS, exactly.** Bicubic's patches equal HF's on all four images: 0 of 7,271,424 values differ (max |diff|
+  5.96e-08, float32 representation of the same uint8 over 255). The float64 variant misses by one uint8 step on 5,956
+  values over the three resized images (none on the 896x896), so the fixed point is what makes it exact. Bilinear,
+  read beside it: 0.83-65.6 uint8 steps.
+- **R2: PASS.** Every case's bicubic embedding has cosine **1.000000000** with sentence-transformers' (12 of 12),
+  against bilinear's 0.99924-0.99986 in the same run and 1.000000000 from HF's own pixels. V1 and V2 unchanged.
+- **Decision (the rule above): bicubic is the default; bilinear stays selectable** (`SetImageResize`,
+  `serve --embed-image-resize bilinear`).
+- A checkpoint-free test holds it in CI: `TestResizeBicubic_matchesTorchvision` against torchvision 0.29.1's output
+  for seeded noise and gradients over downscales, upscales, mixed and single-axis resizes (12 cases, every value
+  equal; `testdata/embeddinggemma2-resize/golden.json`, `scripts/pin_embeddinggemma2_resize.py`). Planted defects
+  (no rounding offset, a = -0.75, no antialias widening) each turn it red, 12, 12 and 10 cases (the two upscales do
+  not antialias). `TestPreprocessBicubic_layout` checks the patch layout and positions against aikit's on an image
+  neither resizes.
+- Preprocessing, exploratory: bicubic 13-45 ms an image, bilinear 6-20 ms, beside a tower of about 5 s on the CPU.
 
 ## Phase 2 — the other four modalities, later and only on P7's back
 

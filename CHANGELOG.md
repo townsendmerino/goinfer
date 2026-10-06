@@ -22,9 +22,11 @@ any surface may still change.
 with plain strings. The tower is aikit's Gemma 4 vision encoder, which this checkpoint shares; it loads on the first
 image request. **Checked** on the real checkpoint against sentence-transformers over four images of different aspect
 ratios, three input shapes each: identical ids; the tower on the reference's own pixels at cosine 0.999999996 or
-better; the whole embedding from those pixels at 1.000000000; and end to end 0.99924-0.99986, the gap being one known
-difference (goinfer resizes the image bilinearly, the reference bicubic), accepted. Inline images only (never a fetched
-URL), one per input, 16 per request.
+better; and end to end at 1.000000000 in all twelve cases. The image is resized as the reference's processor does it,
+torchvision's antialiased bicubic on the uint8 image, reproduced bit for bit (no pixel differs on the four gate images
+or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resize bilinear` (or
+`Encoder.SetImageResize`) selects aikit's bilinear resize instead, which reads 0.99924-0.99986. Inline images only
+(never a fetched URL), one per input, 16 per request.
 
 ### Added — EmbeddingGemma 2 on Metal
 
