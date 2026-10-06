@@ -802,13 +802,14 @@ The input does not change between calls, and quantization is deterministic, so e
   group), `WeightMat.Row` on canonical int4, and the grouped paths' per-span buffers.
 - **Vision towers:** `make` then a `MatmulBT` that clears again (patch embed, every tower). Low impact.
 
-**R-13 and R-14, status 2026-10-05: built, bit-identical, stays on (owner: "it stays on"); lands with the aikit tag
-that carries the Pre entries.**
-- **aikit (branch `r13-w4a8-pre`, `69822b0`; released by nobara):** `ActQ`, `QuantizeActQ`,
+**R-13 and R-14, status 2026-10-05: SHIPPED on aikit v1.57.0, bit-identical, on by default (owner: "it stays on").**
+On main with all five modules bumped to v1.57.0: the R-13 gates pass, the decoder suite passes (1395 passed, 139
+skipped), and the forward goldens are green on arm64 (41 passed, 23 skipped, 0 failed; the deps_hash refresh).
+- **aikit (`69822b0`, released by nobara as v1.57.0):** `ActQ`, `QuantizeActQ`,
   `WeightMat.QuantizeActW4A8`, `WeightMat.MatmulBTW4A8PreInto`, `MatmulBTW4A8F16Pre`. Every quantizing W4A8 entry is now
   quantize-into-scratch then the shared dispatch, so Pre and non-Pre are bit-identical by construction. The grouped
   `MatmulBTW4A8Batch` quantizes once for the batch (R-14's first item).
-- **goinfer (branch `r13-w4a8-pre`):** one quantization per shared input in `moeMLP` (2k+2 -> 1 a layer),
+- **goinfer (merged from the branch `r13-w4a8-pre`):** one quantization per shared input in `moeMLP` (2k+2 -> 1 a layer),
   `swiGLUExpert`, the fused gate+up workers (R-13b), decode q/k/v and gate/up, `forwardN` and `cpu_batch`'s
   fallbacks, Qwen3.5 attention and its batched forward, Gated DeltaNet, KDA, and Gemma 4's decode and batched forwards.
 - **Gates:** `TestW4A8Pre_decodeBitIdenticalAndTaken` (10 tiny fixtures, groups 0 and 32) and
@@ -1117,7 +1118,7 @@ Status 2026-10-05, after the first pass through the list:
 2. **Declined with reasons, reopen only on new evidence:** R-16's full dirty flag (a missed state-mutating site is a conversation-state leak), R-24's `launchToken` upload (about 20 microseconds against about 4.5 ms per token) and
    the block-spec drafter's device-host-device trips (an interface and loop change in `decoder`, a few percent on one path by estimate; measure the real transfer time first), and R-22's `g4x2All` fold (negative zero).
 3. **Still open, with real hot-path weight, each needing a pre-registered band and a bit-identity gate first:**
-   - R-13 and R-14 together (CPU activation quantization; R-13(b) needs an aikit `MatmulBTW4A8F16Pre` entry, so an aikit release);
+   - ~~R-13 and R-14~~ (done 2026-10-05 on aikit v1.57.0; R-14's remainder is listed under R-13 and R-14);
    - ~~R-15~~ (done 2026-10-05: the widen is parallel; the O(context) work remains, see R-15);
    - R-17's remainder (its per-token allocations were fixed 2026-10-05; the copies the AV kernels could write past, and the rest, were left; see R-17), as it comes up. R-25 is done: both halves shipped 2026-10-05.
 

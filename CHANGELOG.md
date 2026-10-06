@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — CPU W4A8 quantizes each input once for the projections that share it; aikit v1.57.0 (audit R-13, R-14)
+
+Every CPU W4A8 matmul quantized its own activation, so one normed row was quantized for q, k and v, again for gate and up, and once per routed expert in a MoE layer (2k+2 times a layer). aikit v1.57.0 adds entries that take an activation quantized
+once (`ActQ`, `QuantizeActW4A8`, `MatmulBTW4A8PreInto`, `MatmulBTW4A8F16Pre`), and its grouped `MatmulBTW4A8Batch` now quantizes once for the batch; goinfer uses them in the MoE and dense MLPs, the fused gate+up workers, decode attention,
+`forwardN`, Qwen3.5, Gated DeltaNet, KDA and Gemma 4. **Bit-identical** by construction (each quantizing entry is now quantize then the same dispatch), and by gate: 10 tiny fixtures at activation groups 0 and 32, with the shared path taken.
+**Speed:** none measurable on the Mac's CPU (1.5B decode 0.995x, 256-token prefill 1.014x, a MoE slice's decode 1.008x; NEON quantization is cheap); not measured on amd64. `w4a8PreOff` is a test seam. Record: `docs/measurements/r13-cpu-ab-2026-10-05.txt`.
+
 ### Changed — decode attention writes each head's context straight into `ctx` (audit R-17, the remainder's main item)
 
 `attendBatchedHeads` computed a head's `scores·V` into scratch (`ch`, the grouped `gCtx`, Arm B's combined buffer) and then copied it into `ctx`, though `MatmulAVAcc64` and `MatmulAVAcc64Group` overwrite a contiguous destination and the head's slice of
