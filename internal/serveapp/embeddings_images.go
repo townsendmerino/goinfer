@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
 // Image inputs to /v1/embeddings (docs/tasks/task-embeddinggemma2.md, Phase V; owner: accept both shapes). `input`
@@ -14,17 +16,30 @@ import (
 // with a "type" is a one-part input. Images are inline base64 only (a data: URI, or bare base64 in the object form),
 // never a fetched URL (decodeDataURI's SSRF guard). One image per input, and text only after it, the layout
 // EmbeddingGemma 2's reference builds for an image followed by text.
+//
+// Audio (Phase A) takes the same two shapes: {"audio": <a data: URI or bare base64 of a WAV>, "text": ...}, and the
+// OpenAI part {"type": "input_audio", "input_audio": {"data": <base64>, "format": "wav"}}. The WAV is 16-bit PCM,
+// mono, at 16 kHz, at most 30 s (embeddinggemma2.DecodeWAV and MaxAudioSeconds; nothing is resampled or cut). An
+// input carries one image or one audio clip, not both.
 
 const (
 	maxEmbedImages     = 16
 	maxEmbedImageBytes = 16 << 20 // decoded
+	maxEmbedAudio      = 16       // clips per request
 )
 
-// embedItem is one /v1/embeddings input: text, or an image with optional text after it.
+// embedItem is one /v1/embeddings input: text, or an image or an audio clip with optional text after it.
 type embedItem struct {
 	text     string
 	image    []byte
 	hasImage bool
+	audio    []float32 // 16 kHz samples
+	hasAudio bool
+}
+
+// audioEmbedder is the optional capability of an embedder that embeds audio (EmbeddingGemma 2 with its audio tower).
+type audioEmbedder interface {
+	EmbedAudioTask(samples []float32, text, prompt string) ([]float32, int, error)
 }
 
 // imageEmbedder is the optional capability of an embedder that embeds images (EmbeddingGemma 2 with its vision tower).
@@ -103,12 +118,28 @@ func parseEmbedObject(obj map[string]json.RawMessage) (embedItem, error) {
 				return embedItem{}, err
 			}
 			it.image, it.hasImage = img, true
+		case "audio":
+			var s string
+			if err := json.Unmarshal(v, &s); err != nil {
+				return embedItem{}, fmt.Errorf("audio must be a base64 string or a data: URI of a WAV")
+			}
+			raw, err := decodeEmbedImage(s, true)
+			if err != nil {
+				return embedItem{}, fmt.Errorf("audio: %w", err)
+			}
+			if it.audio, err = decodeEmbedAudio(raw); err != nil {
+				return embedItem{}, err
+			}
+			it.hasAudio = true
 		default:
-			return embedItem{}, fmt.Errorf("unknown field %q (an input object takes image and text)", k)
+			return embedItem{}, fmt.Errorf("unknown field %q (an input object takes image, audio and text)", k)
 		}
 	}
-	if !it.hasImage && it.text == "" {
-		return embedItem{}, fmt.Errorf("an input object needs an image or text")
+	if it.hasImage && it.hasAudio {
+		return embedItem{}, fmt.Errorf("an input takes one image or one audio clip, not both")
+	}
+	if !it.hasImage && !it.hasAudio && it.text == "" {
+		return embedItem{}, fmt.Errorf("an input object needs an image, audio or text")
 	}
 	return it, nil
 }
@@ -130,8 +161,8 @@ func parseEmbedParts(parts []map[string]json.RawMessage) (embedItem, error) {
 			}
 			text = append(text, s)
 		case "image_url":
-			if it.hasImage {
-				return embedItem{}, fmt.Errorf("part %d: one image per input", i)
+			if it.hasImage || it.hasAudio {
+				return embedItem{}, fmt.Errorf("part %d: one image or audio clip per input", i)
 			}
 			if len(text) > 0 {
 				return embedItem{}, fmt.Errorf("part %d: text before the image is not supported yet; put the image part first", i)
@@ -147,8 +178,33 @@ func parseEmbedParts(parts []map[string]json.RawMessage) (embedItem, error) {
 				return embedItem{}, fmt.Errorf("part %d: %w", i, err)
 			}
 			it.image, it.hasImage = img, true
+		case "input_audio":
+			if it.hasImage || it.hasAudio {
+				return embedItem{}, fmt.Errorf("part %d: one image or audio clip per input", i)
+			}
+			if len(text) > 0 {
+				return embedItem{}, fmt.Errorf("part %d: text before the audio is not supported yet; put the audio part first", i)
+			}
+			var ia struct {
+				Data   string `json:"data"`
+				Format string `json:"format"`
+			}
+			if err := json.Unmarshal(p["input_audio"], &ia); err != nil || ia.Data == "" {
+				return embedItem{}, fmt.Errorf("part %d: input_audio needs data", i)
+			}
+			if ia.Format != "" && ia.Format != "wav" {
+				return embedItem{}, fmt.Errorf("part %d: input_audio format %q (only wav)", i, ia.Format)
+			}
+			raw, err := decodeEmbedImage(ia.Data, true)
+			if err != nil {
+				return embedItem{}, fmt.Errorf("part %d: audio: %w", i, err)
+			}
+			if it.audio, err = decodeEmbedAudio(raw); err != nil {
+				return embedItem{}, fmt.Errorf("part %d: %w", i, err)
+			}
+			it.hasAudio = true
 		default:
-			return embedItem{}, fmt.Errorf("part %d: type %q (want image_url or text)", i, typ)
+			return embedItem{}, fmt.Errorf("part %d: type %q (want image_url, input_audio or text)", i, typ)
 		}
 	}
 	it.text = strings.Join(text, "")
@@ -177,25 +233,46 @@ func decodeEmbedImage(s string, allowBare bool) ([]byte, error) {
 	return data, nil
 }
 
-// embedHasImages reports whether any item carries an image, and how many.
-func embedHasImages(items []embedItem) (int, bool) {
-	n := 0
-	for _, it := range items {
-		if it.hasImage {
-			n++
-		}
+// decodeEmbedAudio reads a WAV into 16 kHz samples, refusing a clip over embeddinggemma2.MaxAudioSeconds.
+func decodeEmbedAudio(raw []byte) ([]float32, error) {
+	s, err := embeddinggemma2.DecodeWAV(raw)
+	if err != nil {
+		return nil, err
 	}
-	return n, n > 0
+	if len(s) > embeddinggemma2.MaxAudioSeconds*16000 {
+		return nil, fmt.Errorf("audio is %.1f s, over the %d s the model reads", float64(len(s))/16000, embeddinggemma2.MaxAudioSeconds)
+	}
+	return s, nil
 }
 
-// encodeImageItems embeds a request that carries images: each image item through ie, each text item through te,
-// in order, all under one prompt.
-func encodeImageItems(ie imageEmbedder, te taskEmbedder, items []embedItem, task string) ([][]float32, int, error) {
+// embedMedia counts the items that carry an image and an audio clip.
+func embedMedia(items []embedItem) (images, audio int) {
+	for _, it := range items {
+		if it.hasImage {
+			images++
+		}
+		if it.hasAudio {
+			audio++
+		}
+	}
+	return images, audio
+}
+
+// encodeMediaItems embeds a request that carries images or audio: each image item through ie, each audio item through
+// ae, each text item through te, in order, all under one prompt.
+func encodeMediaItems(ie imageEmbedder, ae audioEmbedder, te taskEmbedder, items []embedItem, task string) ([][]float32, int, error) {
 	vecs := make([][]float32, len(items))
 	total := 0
 	for i, it := range items {
-		if it.hasImage {
-			v, n, err := ie.EmbedImageTask(it.image, it.text, task)
+		if it.hasImage || it.hasAudio {
+			var v []float32
+			var n int
+			var err error
+			if it.hasImage {
+				v, n, err = ie.EmbedImageTask(it.image, it.text, task)
+			} else {
+				v, n, err = ae.EmbedAudioTask(it.audio, it.text, task)
+			}
 			if err != nil {
 				return nil, 0, fmt.Errorf("input %d: %w", i, err)
 			}

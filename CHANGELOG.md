@@ -30,6 +30,15 @@ or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resi
 (1.000000000 end to end on the same twelve cases; about 1.2-2.0 s an image against 5.1-5.8 s for the CPU tower, an
 exploratory read), through a weights export new in aikit.
 
+### Added — EmbeddingGemma 2 embeds audio
+
+`/v1/embeddings` with EmbeddingGemma 2 takes audio, in the same vector space as its text and images. An `input`
+element can be `{"audio": "<data: URI or base64 of a WAV>", "text": "..."}` or an OpenAI `input_audio` part. The WAV
+is 16-bit PCM, mono, 16 kHz, up to 30 s; anything else is refused, not resampled. The tower is Gemma 4's audio
+encoder, new in aikit (the conformer and its log-mel front end, in pure Go), and loads on the first audio request.
+**Checked** on the real checkpoint against sentence-transformers over three clips, three input shapes each: identical
+ids, the log-mel within 4.8e-7, every tower stage at cosine 1.000000, and every embedding at 1.000000000.
+
 ### Added — EmbeddingGemma 2 on Metal
 
 On a Mac, `--embed-model` with EmbeddingGemma 2 now runs on the GPU when `--backend` resolves to `metal` (the default

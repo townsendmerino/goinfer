@@ -430,7 +430,10 @@ number is published without provenance.
   resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both. **A Metal Gemma 4 tower exists
   too** (`metal/gemma4_vision.go`, 2026-10-06, from aikit's `Gemma4Encoder.Weights()` export), so far used only by
   EmbeddingGemma 2; Gemma 4's own image input could take it the same way.
-  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
+  **Audio's tower is built (2026-10-06):** aikit `audio` runs `gemma4_audio` (the log-mel and the conformer) and
+  matches transformers on EmbeddingGemma 2 at 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A). Gemma 4
+  E2B/E4B declare the same `gemma4_audio` tower, but it has not been run against their checkpoints (their widths,
+  e.g. the embedder's output, are unread); that, the decoder-side splice and the audio prompt layout are what is left. Video (Phase C in the roadmap above) remains untouched. **Audio had a second consumer queued:**
   EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
   from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.
 

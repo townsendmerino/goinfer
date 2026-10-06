@@ -32,11 +32,12 @@ type Encoder struct {
 	prompts map[string]string
 	bos     int
 	eos     int
-	accel   Accelerator                             // nil: the CPU forward (UseAccelerator)
-	dir     string                                  // the checkpoint directory (EnableVision reads the tower from it)
-	vis     *visionTower                            // nil until EnableVision
-	resize  ImageResize                             // "" = the default (ImageResizeMode)
-	onVis   func(device string, took time.Duration) // OnVisionLoad
+	accel   Accelerator                                    // nil: the CPU forward (UseAccelerator)
+	dir     string                                         // the checkpoint directory (EnableVision reads the tower from it)
+	vis     *visionTower                                   // nil until EnableVision
+	aud     *audioTower                                    // nil until EnableAudio
+	resize  ImageResize                                    // "" = the default (ImageResizeMode)
+	onTower func(tower, device string, took time.Duration) // OnTowerLoad
 }
 
 // LoadEncoder loads the model, tokenizer.json and the prompt table from an HF checkpoint directory.

@@ -590,6 +590,40 @@ to 128 or 160 samples). Each is embedded as audio alone, with the `query` prompt
   - **AM3:** A5's defects planted in the Metal kernels, each red.
   - Speed against the CPU tower is a record, not a gate: exploratory by day, timed at night.
 
+**Status 2026-10-06: the CPU half is BUILT, and A1-A5 and A2t passed; it is served at `/v1/embeddings`.**
+- **Code:** aikit `audio` (on the local branch; `Gemma4Features`, `LoadGemma4AudioEncoder`, `ForwardStages`).
+  `embeddinggemma2/audio.go` (`EnableAudio`, `EmbedAudio`, `DecodeWAV`). The image and audio layouts now share one
+  tokenizer and splice.
+- **The reference:** `scripts/pin_embeddinggemma2_audio.py` passed all its sanity checks: sdpa, the inverse
+  timescales, the softcap, and three clip scalars and a `per_dim_scale` against the header. The clips are 9, 59 and
+  196 soft tokens. Read 2026-10-06, 16:09 PDT, on the CPU in float32 (raw:
+  `docs/measurements/embeddinggemma2-2026-10-06/audio-gates.txt`):
+- **A1: PASS.** The valid-frame counts equal HF's (36, 236, 783), and the log-mel max |diff| is 2.4e-7 to 4.8e-7.
+- **A2: PASS.** From HF's features, every stage (subsampler, 12 blocks, tower, embedder) is at worst-row cosine
+  1.000000 on every clip; max |diff| is at most 1.3e-3 at a block and 1.1e-4 at the embedder.
+- **A3: PASS**, all 9 cases' ids. **A4: PASS**, all 9 at cosine **1.000000000**.
+- **A2t: PASS.** On the tiny tower (`testdata/gemma4-audio-tiny`, its bounds binding in 15 of 20 projections, a
+  1.3 s clip of 33 soft tokens), every stage is at 1.000000000 and the log-mel within 4.8e-7. This one runs in CI.
+- **A5: PASS**, each defect red on the real gate (and on A2t):
+  - the window admitting distance 12: red on the 2.37 s and 7.83 s clips from block 0, not on the 0.37 s one, as Gate
+    0 predicted;
+  - the flatten `c*32 + f`: red at the subsampler;
+  - the clamps skipped: red from block 0, end to end 0.86-0.99;
+  - `per_dim_scale` without softplus: red from block 0;
+  - a centred conv: red from block 0.
+  The first try at the clamp defect was a broken mutation, not a gate miss: it prefixed `false &&` to an
+  `a || b` condition, which still clamped, and read "no effect". Fixed and re-run, it is strongly red.
+- **Serve:**
+  - Shapes: `{"audio": <a data: URI or base64 of a WAV>, "text": ...}` or the OpenAI part
+    `{"type": "input_audio", "input_audio": {"data", "format": "wav"}}`, mixed with images and strings.
+  - The WAV: 16-bit PCM, mono, 16 kHz, at most 30 s. Anything else is a 400, never resampled or cut; the reference
+    truncates at 30 s, silently.
+  - Limits: one image or one clip per input, 16 clips per request. The tower loads on first use and says so.
+  - Through the Metal serve binary, both longer clips in all three shapes read 1.000000000.
+- **Speed, exploratory** (by day, not a result): the CPU tower takes 0.27, 0.23 and 0.67 s on the three clips, with
+  under a second end to end for the 7.83 s clip. That is much less than the image tower's 5 s, so AM matters less here
+  than VM did.
+
 ## Phase 2 — the other four modalities, later and only on P7's back
 
 *(Superseded in order by "The order from here" above; kept for the reasoning.)*

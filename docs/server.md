@@ -806,6 +806,19 @@ bicubic, reproduced bit for bit), and an image embedding then matches sentence-t
 the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
 bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.
 
+**Audio.** EmbeddingGemma 2 embeds audio into the same space too. An `input` element may be `{"audio": "<data:
+URI or bare base64 of a WAV>", "text": "optional text after it"}`, or the OpenAI part
+`{"type": "input_audio", "input_audio": {"data": "<base64>", "format": "wav"}}` (alone, or before a text part):
+
+```json
+{"input": [{"audio": "data:audio/wav;base64,UklGR..."}, "a dog barking"]}
+```
+
+The WAV must be 16-bit PCM, mono, at 16 kHz, and at most 30 s. Anything else is a 400; nothing is resampled or cut.
+One image or one audio clip per input, at most 16 clips per request. `usage` counts the clip's soft tokens, 25 a
+second. The audio tower loads on the first audio request, and runs on the CPU. On the gate's nine cases the embeddings
+match sentence-transformers' to cosine 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A).
+
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
 `X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt
 and queried under another retrieves worse without any error, and the echo is there so that can be seen. Its checks

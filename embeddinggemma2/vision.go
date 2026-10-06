@@ -87,36 +87,8 @@ func (e *Encoder) TokenizeImage(in ImageInput, n int) (ids []int, imgPos int, er
 	if e.vis == nil {
 		return nil, 0, fmt.Errorf("embeddinggemma2: vision is not enabled (EnableVision)")
 	}
-	p, err := e.PromptText(in.Prompt)
-	if err != nil {
-		return nil, 0, err
-	}
-	ids = []int{e.bos}
-	if p != "" {
-		pi, err := e.tok.Encode(p, false)
-		if err != nil {
-			return nil, 0, err
-		}
-		ids = append(ids, pi...)
-	}
-	ids = append(ids, e.vis.tok.BOI)
-	imgPos = len(ids)
-	for range n {
-		ids = append(ids, e.vis.tok.Image)
-	}
-	ids = append(ids, e.vis.tok.EOI)
-	if in.Text != "" {
-		ti, err := e.tok.Encode(in.Text, false)
-		if err != nil {
-			return nil, 0, err
-		}
-		ids = append(ids, ti...)
-	}
-	ids = append(ids, e.eos)
-	if len(ids) > MaxTokens {
-		return nil, 0, fmt.Errorf("input is %d tokens, over the model's %d-token context", len(ids), MaxTokens)
-	}
-	return ids, imgPos, nil
+	t := e.vis.tok
+	return e.tokenizeMedia(in.Prompt, in.Text, t.BOI, t.Image, t.EOI, n)
 }
 
 // ImageFeatures preprocesses encoded image bytes (the encoder's resize, SetImageResize) and runs aikit's tower: the
@@ -182,30 +154,16 @@ func (e *Encoder) EmbedImageFeatures(in ImageInput, feats []float32, n int) ([]f
 	if err != nil {
 		return nil, 0, err
 	}
-	x, err := e.m.EmbedTokens(ids)
-	if err != nil {
-		return nil, 0, err
-	}
-	H := e.m.cfg.Hidden
-	copy(x[imgPos*H:(imgPos+n)*H], feats) // unscaled, as the reference's masked_scatter
-	var h []float32
-	if e.accel != nil {
-		h, _, err = e.accel.ForwardEmbeds(x, len(ids), false)
-	} else {
-		h, _, err = e.m.forwardEmbeds(x, len(ids), false)
-	}
-	if err != nil {
-		return nil, 0, err
-	}
-	return poolNormalize(h, len(ids), e.m.cfg.EmbeddingDim), len(ids), nil
+	return e.embedSpliced(ids, imgPos, feats, n) // unscaled, as the reference's masked_scatter
 }
 
 // visMu serialises the lazy EnableVision of EmbedImageTask.
 var visMu sync.Mutex
 
-// OnVisionLoad sets a function EmbedImageTask calls once, when its first image loads the tower, with where the tower
-// runs (VisionDevice) and how long the load took: a server reports it, since that happens after its startup line.
-func (e *Encoder) OnVisionLoad(f func(device string, took time.Duration)) { e.onVis = f }
+// OnTowerLoad sets a function EmbedImageTask and EmbedAudioTask call once each, when the first image or audio clip
+// loads its tower, with the tower ("image" or "audio"), where it runs and how long the load took: a server reports
+// it, since that happens after its startup line.
+func (e *Encoder) OnTowerLoad(f func(tower, device string, took time.Duration)) { e.onTower = f }
 
 // EmbedImageTask embeds one image input for a server: it loads the vision tower on first use (a text-only server never
 // pays for it), then EmbedImage. prompt names a task prompt or is "" for none.
@@ -217,8 +175,8 @@ func (e *Encoder) EmbedImageTask(img []byte, text, prompt string) ([]float32, in
 			visMu.Unlock()
 			return nil, 0, err
 		}
-		if e.onVis != nil {
-			e.onVis(e.VisionDevice(), time.Since(t0))
+		if e.onTower != nil {
+			e.onTower("image", e.VisionDevice(), time.Since(t0))
 		}
 	}
 	visMu.Unlock()

@@ -72,7 +72,7 @@ func TestEmbeddings_imageShapes(t *testing.T) {
 func TestEmbeddings_imageRefusals(t *testing.T) {
 	cases := []struct{ body, want string }{
 		{`{"input":[[{"type":"text","text":"x"},{"type":"image_url","image_url":{"url":"` + embedDataURI("A") + `"}}]]}`, "text before the image"},
-		{`{"input":[[{"type":"image_url","image_url":{"url":"` + embedDataURI("A") + `"}},{"type":"image_url","image_url":{"url":"` + embedDataURI("B") + `"}}]]}`, "one image per input"},
+		{`{"input":[[{"type":"image_url","image_url":{"url":"` + embedDataURI("A") + `"}},{"type":"image_url","image_url":{"url":"` + embedDataURI("B") + `"}}]]}`, "one image or audio clip per input"},
 		{`{"input":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}]}`, "data: URI"},
 		{`{"input":[{"image":"not base64 !!"}]}`, "neither a data: URI nor valid base64"},
 		{`{"input":[{"image":"` + embedDataURI("A") + `","colour":"red"}]}`, "unknown field"},
