@@ -753,12 +753,12 @@ P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aiki
 
 ### R-12 · CPU decode copies the whole sliding window out of the ring, every token, every local layer
 
-> **Status 2026-10-05: fixed for f32 rings (bit-identical, 1.045x on Gemma 3 1B); the Gemma 2 2B read is queued overnight.** Measured first: the copy is 2.46 ms of a 39.4 ms token on Gemma 3 1B at depth 900 and 31.7 ms of 201 ms
+> **Status 2026-10-05: fixed for f32 rings (bit-identical, 1.045x on Gemma 3 1B and 1.194x on Gemma 2 2B).** Measured first: the copy is 2.46 ms of a 39.4 ms token on Gemma 3 1B at depth 900 and 31.7 ms of 201 ms
 > (15.7%) on Gemma 2 2B at depth 4500. The design is the audit's, in one respect different: the ring keeps a MIRROR of its slots (`[w, 2w)` equal `[0, w)`), allocated only when a layer's window first wraps, and `write` and
 > `commitBatch` keep it coherent, so the canonical half every other reader uses is untouched. Decode writes the new row first and attends over `ring.window()` with no copy; int8 rings keep the copy path. **Cost: a wrapped layer holds
 > 2W rows, +436 MB on Gemma 2 2B at full window**; `kvBytesForCtx` counts it. Gates, all in `docs/measurements/r12-ring-direct-2026-10-05.md`: the random-operation ring invariant, three tiny sliding-window checkpoints across every wrap,
 > and 48 x 262144 logits on the real Gemma 3 1B, 0 differ; red under five plantings. Paired ABBA on the 1B: 39.39 to 37.73 ms/token, median 1.045x, 5 of 5 pairs faster (67% of the copy cost; the rest is cache warmth the copy used to
-> provide). The 2B arm is pre-registered in that record with a decision rule and queued for tonight.
+> provide). The 2B arm ran on the night queue: depth 4500, 202.45 to 170.00 ms/token, paired median **1.194x**, 3 of 3 pairs faster, graded as predicted or better by the rule written beforehand (prediction about 1.12).
 
 - **What happens:** decode on a ring layer calls `batchReadLocal` with K=1 (`decoder/attention.go`,
   `decoder/kvcache.go`). That copies every resident window row of K and V into `localK`/`localV`. One row changed
@@ -826,6 +826,9 @@ skipped), and the forward goldens are green on arm64 (41 passed, 23 skipped, 0 f
   Qwen1.5-MoE slice's decode 1.008. NEON quantization is too cheap for the repeats to show on arm64. Not measured on
   amd64, where the fused gate+up path is on by default (2w -> 1 quantizations a layer) and quantization is slower.
   Raw: `docs/measurements/r13-cpu-ab-2026-10-05.txt`.
+- **Speed on amd64 (nobara, night queue, pre-registered, `docs/measurements/r13-amd64-ab-2026-10-05.md`):** 1.5B decode 1.001 (no measurable
+  effect), 1.5B 256-token prefill **1.007** (7 of 7 reps above 1: a small measurable win), the MoE slice's decode 0.997 (no measurable effect; the
+  predicted 1.01 to 1.03 was missed). Logits bit-identical every rep; nothing near the park condition (below 0.99).
 - **Not done:** R-14's single fork/join across a grouped batch's ops, the grouped fast rows' per-row scale widening at
   M > 1, its per-call allocations (`MatmulQKAcc64Group`, `WeightMat.Row`, grouped per-span buffers) and `MatmulBT`'s
   zero-then-accumulate.
