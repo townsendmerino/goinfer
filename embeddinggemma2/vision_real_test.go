@@ -60,11 +60,14 @@ func cos64(a []float32, b []float64) float64 {
 //	V2: aikit's tower and projector, fed HF's own patches and positions, match HF's image features to cosine >= 0.9999
 //	    on every soft token.
 //	V3: aikit's preprocessing gives HF's patch grid and soft-token count; the patches' max |diff| is reported.
-//	V4: every case's end-to-end embedding (aikit's preprocessing and tower, then the encoder) has cosine >= 0.9999 with
-//	    the reference. [0.999, 0.9999) is the pre-registered ambiguous band and fails this test for the owner to read.
+//	V4: every case's end-to-end embedding (aikit's preprocessing and tower, then the encoder) has cosine >= 0.999 with
+//	    the reference, and the same embedding from HF's own pixels has cosine >= 0.9999. The pre-registered bar was
+//	    0.9999 end to end; the read landed in its ambiguous band (0.99924-0.99986) with the whole gap in the resize
+//	    (aikit bilinear, the reference bicubic; 1.000000000 from HF's pixels), and the owner accepted it on 2026-10-06
+//	    ("since we understand the difference i'm ok with it"). The loose bar covers only the resize: everything after it
+//	    is still held to 0.9999 through HF's pixels.
 //
-// CPU, float32. The embedding from HF's own patches is reported beside V4, so a gap can be placed in preprocessing or
-// after it.
+// CPU, float32.
 func TestReal_vision(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GOINFER_EG2_DIR")
@@ -193,8 +196,11 @@ func TestReal_vision(t *testing.T) {
 		}
 		cGo, cHF := cos64(vGo, it.Embedding), cos64(vHF, it.Embedding)
 		t.Logf("item %2d %-38s prompt %-6q text %-5v: V4 cosine %.9f (from HF's pixels %.9f)", i, it.Image, it.Prompt, it.Text != "", cGo, cHF)
-		if cGo < 0.9999 {
-			t.Errorf("item %d: V4 end-to-end cosine %.9f, under 0.9999 (from HF's own pixels %.9f)", i, cGo, cHF)
+		if cGo < 0.999 {
+			t.Errorf("item %d: V4 end-to-end cosine %.9f, under 0.999 (from HF's own pixels %.9f)", i, cGo, cHF)
+		}
+		if cHF < 0.9999 {
+			t.Errorf("item %d: from HF's own pixels cosine %.9f, under 0.9999: something after the resize moved", i, cHF)
 		}
 	}
 }

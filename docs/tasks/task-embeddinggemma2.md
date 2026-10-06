@@ -407,9 +407,12 @@ weighted row RMSNorm and GELU-tanh, but its attention has no grouped-query suppo
 - **V3:** the patch grid and soft-token counts equal HF's on every image, but the patches differ by a max |diff| of
   0.20-0.54 on the [0, 1] scale. **Cause, found:** the reference's `Gemma4ImageProcessor` resizes with `resample=3`
   (bicubic) on the torchvision backend; aikit's `vision.Gemma4Preprocess` resizes bilinearly (`gemma4ResizeToHWC01`).
-- **V4: AMBIGUOUS, parked for the owner** under the pre-registered rule: end-to-end cosine 0.99924-0.99986, inside
-  [0.999, 0.9999). The same pipeline from HF's own pixels reads **1.000000000** in all 12 cases, so the whole gap is
-  the resize. Raw: `docs/measurements/embeddinggemma2-2026-10-06/vision-gates.txt`.
+- **V4: AMBIGUOUS under the pre-registered rule, then ACCEPTED by the owner** ("since we understand the difference i'm
+  ok with it", 2026-10-06): end-to-end cosine 0.99924-0.99986, inside [0.999, 0.9999). The same pipeline from HF's own
+  pixels reads **1.000000000** in all 12 cases, so the whole gap is the resize. The test's bar is now 0.999 end to end
+  **and** 0.9999 from HF's pixels, so the loose bar covers the resize alone and anything after it is still held to the
+  original. Matching torchvision's bicubic resize (in aikit, which would also serve Gemma 4) stays open, not done.
+  Raw: `docs/measurements/embeddinggemma2-2026-10-06/vision-gates.txt`.
 - **The same resizer serves Gemma 4's own image input** (`internal/serveapp/vision_serve.go` calls
   `vision.Gemma4Preprocess`, and Gemma 4's processor is the same `Gemma4ImageProcessor`), so it probably carries the
   same mismatch; noted in `docs/multimodal.md` P7.
