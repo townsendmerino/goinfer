@@ -101,6 +101,18 @@ the source's comments — the 2026-09-06 run flagged this itself rather than let
    prints `swap guard: baseline N GB swap-used` at start (and chat/serve arm a load-time guard for a
    direct `.gguf` load) — record the baseline it printed, and whether the guard or the tester noticed
    swap growth first (S3, `docs/tasks/task-never-swap-2026-09.md`).
+   **Amended 2026-10-06: the trigger is pageouts, or swap-used growth past the guard's threshold — not
+   any rise in swap-used.** On nobara (zram swap) the 2026-10-05 run's watcher killed scenario D twice
+   on swap-used rises of +18.9 MB and +14.5 MB with `pswpin`/`pswpout` +0 and `vmstat` si/so 0 throughout
+   (`docs/measurements/cold-user-2026-10-05-nobara-pc.md`), so neither attempt reached model output and
+   the scenario was recorded as a dead end by the tester's own tripwire, not by the product. Stop on
+   `pswpout` (Linux) / Swapouts (macOS) increasing, or on swap-used growing more than the guard's
+   default, 512 MB, over the baseline (`GOINFER_SWAP_GUARD`, the same figure goinfer's own watch uses).
+   Record any smaller swap-used movement in the friction log; do not stop on it. Note too that goinfer's
+   load-time guard covers only a direct `.gguf` build: a `.giw` (including the one a `.gguf` is
+   transcoded to), a safetensors directory or a streamed load is not watched, and since 7c93b154 says so
+   on stderr as it starts. A watcher you run yourself is the only protection for those loads, which is
+   why it must not trip on noise.
 3. Record a friction log with **timestamps**, tagged `Guessed` / `Wanted and absent` / `Error`,
    plus a numbers table per scenario. The timestamps are what make "half the time if…" checkable.
 4. Record `--version` output for every binary used. (This exists *because* of R2; the 2026-09-06
