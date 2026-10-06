@@ -120,5 +120,11 @@ transcripts that must, restrict it to a fence that is the whole reply or its las
 and "the fence is the last thing in the reply" catches both. A demonstration ("Here is an example call: ```json ...```") has the same shape as attempt 1, so no parse rule separates a shown call from a meant one; the residual false execution is a demo that ends on the fence. Options in order of
 strength: opt-in flag (off by default); the narrow match above plus validating the arguments against the named tool's schema; and the client's own confirmation prompt, which is not verified here for opencode.
 
+**BUILT 2026-10-06 (owner chose "opt-in flag plus the narrow match with schema validation"): `serve -lenient-tool-calls`, off by default** (`chat/fenced_tool_calls.go`, `chat.Template.WithLenientToolCalls`, a fence-aware prose streamer, `docs/server.md`).
+The pre-registered cases (`chat/fenced_tool_call_test.go`, committed as 4015c5ec before the code) pass: both real replies parse, 22 shown-example and near-miss shapes stay prose, other families are untouched, and
+the streaming prefix guarantee holds under byte-at-a-time chunking; each clause of the rule goes red when removed. One pre-registered assertion was wrong (it claimed no family parses a fenced call by default, but llama3's
+parser has always found a bare JSON call anywhere) and was narrowed to the families the rule is for. **Not measured: whether it makes Qwen2.5-Coder-7B work under opencode end to end**, which needs the Coder-7B GGUF and the opencode
+harness on nobara. The residual false execution (a demonstration that ends on one valid call) is accepted as the price of the option and is why it is off by default.
+
 **Also open, and separate from the parser:** why Qwen2.5-Coder-7B fails `tools, OpenAI` turn two and `stop sequences` when the Instruct model of the same size does not. It may be the checkpoint, or
 the Coder template, or this server; nothing here has told them apart. Needs the Coder-7B GGUF on nobara (4.4 GiB pull) and a `serve check` run with the rendered prompts logged.

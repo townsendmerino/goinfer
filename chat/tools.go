@@ -170,6 +170,11 @@ func (t *Template) ParseToolCallsFor(out string, tools []Tool) ([]ToolCall, stri
 	if c, ok := bareToolCall(out, tools); ok {
 		return []ToolCall{c}, ""
 	}
+	if t.lenientFenced {
+		if c, fenceLead, ok := fencedToolCall(out, tools); ok {
+			return []ToolCall{c}, fenceLead
+		}
+	}
 	return calls, lead
 }
 
@@ -621,12 +626,13 @@ func StreamableLen(pending, opener string) int {
 // streamable family: the concatenation of everything Push returns is always a
 // PREFIX of the lead ParseToolCalls will compute over the full output.
 type ProseStreamer struct {
-	opener    string
-	bareAware bool // hold an output that opens with '{' (NewBareAwareProseStreamer)
-	pending   strings.Builder
-	started   bool // a non-space byte has been emitted
-	done      bool // the opener was seen; nothing after it is prose
-	held      bool // the output opened with '{': it may be a bare call, emit nothing
+	opener     string
+	bareAware  bool // hold an output that opens with '{' (NewBareAwareProseStreamer)
+	fenceAware bool // hold everything from the first code fence on (FenceAware)
+	pending    strings.Builder
+	started    bool // a non-space byte has been emitted
+	done       bool // the opener was seen; nothing after it is prose
+	held       bool // the output opened with '{': it may be a bare call, emit nothing
 }
 
 // NewProseStreamer returns a streamer for a family's opener (Template.ToolCallOpener).
@@ -642,6 +648,13 @@ func NewProseStreamer(opener string) *ProseStreamer { return &ProseStreamer{open
 // TestBareAwareProseStreamerMatchesParser.
 func NewBareAwareProseStreamer(opener string) *ProseStreamer {
 	return &ProseStreamer{opener: opener, bareAware: true}
+}
+
+// FenceAware makes the streamer hold everything from the first code fence on, for a template with
+// WithLenientToolCalls: the fenced block may be a call, and prose already streamed cannot be recalled.
+func (p *ProseStreamer) FenceAware() *ProseStreamer {
+	p.fenceAware = true
+	return p
 }
 
 // Done reports whether the opener has been seen, after which nothing more is prose.
@@ -663,10 +676,23 @@ func (p *ProseStreamer) Push(chunk string) string {
 	}
 
 	n := StreamableLen(buf, p.opener)
+	fenced := false
+	if p.fenceAware && !strings.Contains(buf, p.opener) {
+		// A fenced block may turn out to be the call (WithLenientToolCalls), so nothing from its opening fence on may go out as prose:
+		// release up to the fence, and hold a partial fence at the tail like a partial opener. What was held is delivered once the
+		// turn ends, by the same reconciliation every held output already goes through (serveapp reconcileProse).
+		if m := StreamableLen(buf, "```"); m < n || strings.Contains(buf, "```") {
+			n = min(n, m)
+			fenced = strings.Contains(buf, "```")
+		}
+	}
 	safe, rest := buf[:n], buf[n:]
 	if strings.Contains(buf, p.opener) {
 		p.done = true
 		rest = "" // everything from the opener on belongs to the call
+	} else if fenced {
+		p.held = true
+		rest = "" // and so does everything from the fence on, if the turn ends in a call; if not, the end-of-turn delivery sends it as prose
 	}
 
 	if !p.started {
@@ -675,7 +701,7 @@ func (p *ProseStreamer) Push(chunk string) string {
 			p.started = true
 		}
 	}
-	if p.done {
+	if p.done || p.held {
 		// The parser trims the lead's tail; so must we, and there is no later
 		// chunk that could turn this whitespace back into interior text.
 		safe = strings.TrimRight(safe, " \t\r\n")

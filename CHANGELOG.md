@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added — `serve -lenient-tool-calls`: read one fenced JSON call at the end of a reply as a tool call (off by default)
+
+Qwen2.5-Coder-7B under opencode wrote its edit call as a ```` ```json ```` block, in prose, twice, and no edit happened (the cold-user run; `docs/queue-correctness.md` G39). With `-lenient-tool-calls`, a reply on the `<tool_call>` families (chatml, mellum2) is read as a call when exactly one fenced block is the last thing in it, its tag is `json` or none, it holds one object with only `name`, `arguments`/`parameters` and `id`, the name is a supplied tool, and the arguments validate against that tool's schema. A reply that fails any of it is prose as before, and nothing streams from the fence on until the turn settles. **It cannot tell a shown call from a meant one when a demonstration ends on one valid call, so it is off by default;** use it with a client that confirms before it acts. The cases, written before the code, are in `chat/fenced_tool_call_test.go`; whether it makes Qwen2.5-Coder usable under opencode was not measured.
+
 ### Changed — `serve` remembers each image's vision-tower output, so a resent image is not encoded again
 
 A chat client resends the whole conversation every turn, so an image in the history was run through the vision tower every turn. The tower's output is now cached per loaded model, keyed by the SHA-256 of the image bytes (256 MiB of features at most, least recently used out first), and a hit hands back the same numbers: the reply is identical. The log says which happened: `vision: encoded a N-byte image in 3.4s` or `vision: reused the cached encode of this image`. **Measured effect, on a Qwen3.5-0.8B on the CPU: about 3 s of a 38 s time to first token** (exploratory, one run per cell, `docs/measurements/image-resend-2026-10-06.md`). The other 34 s is the prefill of the image turn, which on a Gated-DeltaNet hybrid runs one token at a time and is not helped by this; that is queued as P26. Where the tower is the slow part (a family whose prefill is batched), a resend now skips it, which that run did not measure.
