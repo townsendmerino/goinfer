@@ -20,8 +20,8 @@ claim (into a stub panic), and the speculative one, with only its bare CAS resto
 ran 4 forwards while an MC3 generation held a place". The existing MC3, speculative and block-spec tests pass; the
 parity manifest is unaffected (neither file is hashed).
 
-- **Where:** `decoder/speculative.go:135` (`GenerateSpeculative`, the target model's claim, and `:148` for the draft
-  model) and `decoder/blockspec.go:227` (`BlockSpec`) take the resident with a bare
+- **Where:** `decoder/speculative.go:137` (`GenerateSpeculative`, the target model's claim, and `:150` for the draft
+  model) and `decoder/blockspec.go:229` (`BlockSpec`) take the resident with a bare
   `atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)`. `m.tryClaimResident()` (`decoder/model.go:1730`) routes through
   `m.batcher.claimExclusive`, which also requires `holders == 0`; MC3's `claim` (`decoder/mc3_batch.go:158`) reads
   `resBusy` but never sets it. So with resident concurrency on, these two paths can take the resident while batched
@@ -36,7 +36,15 @@ parity manifest is unaffected (neither file is hashed).
   caller): a resident with a batcher and one live holder must refuse both claims. Touches a decoder file, so it is a
   normal core edit (parity hashes refresh), not a release-day change.
 
-### A2 · No runtime check that Metal's prefill logits are finite (audit 1.4, Medium; real)
+### A2 · No runtime check that Metal's prefill logits are finite (audit 1.4, Medium) — CLOSED, already covered
+
+**Status 2026-10-06: not real; it was filed in error.** `metalResident.PrefillLast` (`metal/backend.go`) already scans
+the logits with `firstNonFinite` straight after readback and declines to the sequential path on any NaN or Inf
+(A-C02, `docs/audit-metal-2026-09-30.md`), with a test hook that poisons a logit. The check tests the float's bit
+pattern, so the grep for `math.IsNaN` that this item was filed on missed it. The layer-major paged paths (M26, the
+generic paged MoE) return without the scan; they run decode's own kernels, which carry float32 and are bit-identical
+to the sequential fallback, so declining there would change nothing. The original text follows.
+
 
 - **Where:** `metal/` `PrefillLast` returns the last row's logits with no finiteness check. Finite output is asserted
   by tests (`metal/prefill_nan_test.go`, `prefill_parity_test.go`) and by the Metal device gate's "prefill emits
@@ -47,6 +55,21 @@ parity manifest is unaffected (neither file is hashed).
   `vocab` floats per prompt.
 
 ### A3 · To confirm first: does the host-RAM fit guard price Metal's KV at f32? (audit 1.2, filed as High)
+
+**Status 2026-10-06: CONFIRMED by reading, and wider than the audit said; the fix needs a design choice.** Both host
+guards run for every backend (`guardGIWFit` at `decoder/model.go:610`, `guardFit` at `:705`; neither checks the
+backend). Both price KV from `opts.KVPrecision == "f16"`, and serve's `-kv` defaults to `f32`
+(`internal/loadflags/loadflags.go:65`), so a default Metal load is priced at 4 bytes an element while Metal allocates
+f16 only. And with no `-ctx`, the guard prices the model's whole `max_position_embeddings` (`guardGIWFit`'s
+`effCtx`), not Metal's 4,096-position default (`decoder/fitplan.go`, `MetalCtxDefault`): on a Qwen2.5 at 32,768
+positions that is about 16× the KV the resident will hold. When the guard auto-pins a smaller context it writes
+`opts.ResidentContext`, which Metal reads, so the pin can move Metal's context away from its own default in either
+direction. Not yet measured: a load where the overcharge refuses or pins something it should not. **Fix shape to
+decide:** price KV per backend from what the backend will allocate (Metal: f16, `MetalCtxDefault` unless pinned),
+through a value `decoder` already owns (`fitplan.go` holds the Metal constants) since it cannot import `metal`; and
+make the guard's pin never raise a backend's context above what it would have allocated. Then a load-time test that
+shows the pin's effect on a Metal plan.
+
 
 - **The claim:** `decoder/fitguard.go` prices KV from `opts.KVPrecision == "f16"` (`:393`, `:820`), so a default
   Metal load (no `-kv`) would be priced at 4 bytes an element while Metal always allocates f16 (2 bytes).

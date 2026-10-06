@@ -803,7 +803,7 @@ supports.
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:53` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:496` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:503` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
-| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:622` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:624` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:154` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:157` | goinfer | `type deltaState struct {` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:230` | goinfer | `win := st.convWin` |
@@ -844,10 +844,12 @@ supports.
 | `docs/tasks/task-actquant-pergroup-2026-09.md|decoder/features.go:382` | goinfer | `if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && backend == "cuda") {` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:122` | goinfer | `if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQu` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:199` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/blockspec.go:227` | goinfer | `if !atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/blockspec.go:229` | goinfer | `if !m.tryClaimResident() {` |
 | `docs/tasks/task-audit-followups-2026-10-06.md|decoder/mc3_batch.go:158` | goinfer | `func (b *residentBatcher) claim(resBusy *int32) bool {` |
 | `docs/tasks/task-audit-followups-2026-10-06.md|decoder/model.go:1730` | goinfer | `func (m *Model) tryClaimResident() bool {` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/speculative.go:135` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/model.go:610` | goinfer | `if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/speculative.go:137` | goinfer | `if target.tryClaimResident() {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|internal/loadflags/loadflags.go:65` | goinfer | `fs.StringVar(&f.KV, "kv", "f32", kvHelp+per("kv"))` |
 | `docs/tasks/task-audit-followups-2026-10-06.md|metal/backend.go:311` | goinfer | `// (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:313` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:220` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
@@ -957,7 +959,7 @@ supports.
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:503` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:98` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |
 | `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:201` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
-| `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:239` | goinfer | `if m.resDrafterSynced != s {` |
+| `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:241` | goinfer | `if m.resDrafterSynced != s {` |
 | `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:197` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/kvcache.go:587` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
@@ -970,7 +972,7 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/resident_reuse.go:125` | goinfer | `if m.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:113` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:80` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
-| `docs/tasks/task-recompute-audit.md|decoder/speculative.go:135` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
+| `docs/tasks/task-recompute-audit.md|decoder/speculative.go:137` | goinfer | `if target.tryClaimResident() {` |
 | `docs/tasks/task-recompute-audit.md|internal/serveapp/openai.go:1558` | goinfer | `sess := lm.sessions.acquire(gr.promptIDs)` |
 | `docs/tasks/task-recompute-audit.md|tokenizer/sentencepiece.go:878` | goinfer | `// Decoding prompt+generation together gives the right answer too, by re-decoding the` |
 | `docs/tasks/task-spark-x2-5.md|decoder/arch.go:288` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
@@ -978,7 +980,7 @@ supports.
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:119` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/constrain.go:23` | goinfer | `type Grammar interface {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/tool_grammar.go:30` | goinfer | `func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, paramSchema [` |
-| `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:622` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:624` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/tasks/task-web-ui-2026-09.md|decoder/backend.go:228` | goinfer | `func FreeBytesFor(name string) (freeBytes int64, ok bool) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:125` | goinfer | `func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:183` | goinfer | `func (s *server) publishLoaded(lm *loadedModel) bool {` |
