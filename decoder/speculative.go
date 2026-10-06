@@ -131,8 +131,10 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		// positional device KV, interleaving writes and corrupting both streams against a
 		// Model doc that promises concurrent distinct sequences. On loss, fall back to the
 		// staged CPU cache. Draft is a separate Model with its own claim.
+		// tryClaimResident, not a bare CAS on resBusy: MC3's batched holders never set resBusy, so only the claim
+		// that also requires no holder keeps this off a resident mid-batch (docs/tasks/task-audit-followups-2026-10-06.md, A1).
 		if resident {
-			if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {
+			if target.tryClaimResident() {
 				defer atomic.StoreInt32(&target.resBusy, 0)
 				// Forget FIRST (audit R-00) — from here until this generation completes (or
 				// returns early) the resident KV is mid-write, so the next turn must
@@ -145,7 +147,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			}
 		}
 		if draftResident {
-			if atomic.CompareAndSwapInt32(&draft.resBusy, 0, 1) {
+			if draft.tryClaimResident() {
 				defer atomic.StoreInt32(&draft.resBusy, 0)
 				// R-00's shape on the second Model (V-09, docs/review-2026-09-04.md): the
 				// target's own claim just above forgets first for exactly this reason — from

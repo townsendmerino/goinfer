@@ -224,7 +224,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// must not contend for resBusy or forget a resIDs commit it never wrote.
 	var reuseFrom int
 	if m.resident != nil {
-		if !atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
+		// tryClaimResident, not a bare CAS: it also refuses while an MC3 generation holds a batch place, which never
+		// sets resBusy (docs/tasks/task-audit-followups-2026-10-06.md, A1).
+		if !m.tryClaimResident() {
 			return nil, 0, errBlockSpecResidentBusy
 		}
 		defer atomic.StoreInt32(&m.resBusy, 0)

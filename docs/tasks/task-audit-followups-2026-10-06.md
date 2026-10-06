@@ -12,6 +12,14 @@ not change, and was in v0.21.0 too.
 
 ### A1 · Two exclusive resident claims bypass MC3's holder count (audit 1.1, filed as Critical; real for library callers)
 
+**Status 2026-10-06: FIXED.** `GenerateSpeculative`'s target and draft claims and `BlockSpec.generate`'s claim now
+go through `tryClaimResident()`. `decoder/resident_claim_mc3_test.go` tests both callers with one MC3 place held:
+block-spec generation returns `ErrBlockSpecResidentBusy` before any device call, and speculative decoding runs on
+the CPU fallback with zero resident forwards. Each test was red on the old code: the block-spec one ran past its
+claim (into a stub panic), and the speculative one, with only its bare CAS restored, reported "the target's resident
+ran 4 forwards while an MC3 generation held a place". The existing MC3, speculative and block-spec tests pass; the
+parity manifest is unaffected (neither file is hashed).
+
 - **Where:** `decoder/speculative.go:135` (`GenerateSpeculative`, the target model's claim, and `:148` for the draft
   model) and `decoder/blockspec.go:227` (`BlockSpec`) take the resident with a bare
   `atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)`. `m.tryClaimResident()` (`decoder/model.go:1730`) routes through
