@@ -1635,6 +1635,8 @@ The classification is by reading, not by running the probes, and the three bands
 
 **So the campaign this entry asked for is mostly done, and it is small.** Both real gates run in under 6 minutes together (`run-dark-gates.sh`, tested end to end), so there is nothing to put on the night queue for them. What is NOT done, and is the actual remaining decision: neither gate is in any gate list, so they will go dark again. Registering them (the heavy tier, or a nightly cell) is an owner decision, since it adds a 35B load to a tier.
 
+**REGISTERED AS A NIGHT-TIER CHECK 2026-10-06 (owner: "lets do nightly").** `run-dark-gates.sh` is a row in CLAUDE.md's gate-tier table and runs both gates against a detached worktree of `origin/main` (a skip counts as a failure; a missing model exits 2 rather than skipping). It is queued with `night.py add`, which is a one-shot queue with no recurrence, so "nightly" means it is re-queued each evening unless a recurring trigger is added; that is the open choice. The morning reader's check is `python3 scripts/night.py morning`, and a red there is a regression in one of the two gates, found within a day instead of 13.
+
 **The census itself overstates.** It counts a variable the test sets with `t.Setenv` and an optional override with a default as "env-gated". Teaching `gate selector` to tell "skips when unset" (a `t.Skip` guarded by the variable) from "reads it" would turn this list into the real one. Not built.
 
 **Not examined here:** the tag-gated and asset-gated tests (76 behind `realckpt`, 34 behind `goinfer_testhooks`, 275 asset-gated). Whether the sweeps ever select them is a different question from this one.
