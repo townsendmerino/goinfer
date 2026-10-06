@@ -678,7 +678,7 @@ supports.
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:335` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
-| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:847` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
+| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:856` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:782` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:1120` | goinfer | `func (m *Model) withResidency() *Model {` |
@@ -842,8 +842,13 @@ supports.
 | `docs/tasks/red-october.md|metal/model.go:515` | goinfer | `if err != nil && r.execErr == nil {` |
 | `docs/tasks/red-october.md|metal/prefill_gemm_s2_test.go:419` | goinfer | `threadgroup half wscr[8*(CPS*64)];` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|decoder/features.go:382` | goinfer | `if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && backend == "cuda") {` |
-| `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:118` | goinfer | `if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQu` |
-| `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:195` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
+| `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:122` | goinfer | `if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQu` |
+| `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:199` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/blockspec.go:227` | goinfer | `if !atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/mc3_batch.go:158` | goinfer | `func (b *residentBatcher) claim(resBusy *int32) bool {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/model.go:1730` | goinfer | `func (m *Model) tryClaimResident() bool {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/speculative.go:135` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
+| `docs/tasks/task-audit-followups-2026-10-06.md|metal/backend.go:311` | goinfer | `// (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:313` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:220` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:155` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
@@ -946,7 +951,7 @@ supports.
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:204` | goinfer | `budget = mmap.AutoBudget()` |
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:213` | goinfer | `if pool && giwPath != "" && len(poolMembers) == len(members) {` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/fitcmd/fit.go:107` | goinfer | `m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})` |
-| `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:173` | goinfer | `opts.StreamWeights = true` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:177` | goinfer | `opts.StreamWeights = true` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:227` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 boo` |
 | `docs/tasks/task-never-swap-2026-09.md|metal/backend.go:140` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:503` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
