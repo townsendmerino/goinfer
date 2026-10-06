@@ -16,12 +16,10 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/townsendmerino/aikit v1.56.1 h1:Cj7T7KekVAgAQ9B+02tVYFEfTSTVIUFtnmhu0OAiG3U=
-github.com/townsendmerino/aikit v1.56.1/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit v1.57.0 h1:9bVyYcNf3assIy6hff/Gwg6cLCYQLAnSvhn0rdJ/w/k=
 github.com/townsendmerino/aikit v1.57.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
-github.com/townsendmerino/goinfer v0.20.0 h1:Ogj4Qih0g4J8Gk7j1LcNafca2JrBDvMQxD1aCTEzwJU=
-github.com/townsendmerino/goinfer v0.20.0/go.mod h1:zfm50vG1o6r9tMHh4+fpHwi472WhbeI/KLLbmrpsN0U=
+github.com/townsendmerino/goinfer v0.21.0 h1:+Qg1rLT4lKZ8NGPLL5Gk96og4Mdk9f24dVdjuh1Frzs=
+github.com/townsendmerino/goinfer v0.21.0/go.mod h1:GoDnQkbzz+rycZWq36RPqRuqzAn4ni2q603Y4EhN0UM=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
 golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.40.0 h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=
