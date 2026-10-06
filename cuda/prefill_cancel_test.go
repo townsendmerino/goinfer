@@ -152,21 +152,47 @@ func TestPrefillCancel_dense(t *testing.T) {
 		embs[i] = row
 	}
 
-	rf.Reset()
-	t0 := time.Now()
-	if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
-		t.Fatalf("uncancelled: %v", e)
+	// The baseline is a WARM run. The first prefill on a fresh model pays one-off costs (kernel JIT, buffer
+	// first-touch), and a baseline taken from it overstates the steady-state cost several times over: measured, one
+	// run read 1.185 s cold and the cancelled run then finished the whole prefill in 162 ms, before the cancel
+	// scheduled at a fifth of the cold figure (237 ms) could fire. That read as "cancel ignored" and failed the test
+	// without any cancellation being wrong. So: one untimed warm-up, then the fastest of three timed runs.
+	prefill := func(ctx context.Context) (time.Duration, error) {
+		rf.Reset()
+		t0 := time.Now()
+		_, e := rf.PrefillLast(ctx, embs, 0)
+		return time.Since(t0), e
 	}
-	full := time.Since(t0)
-	t.Logf("uncancelled dense prefill of %d rows at chunk 32: %s", M, full.Round(time.Millisecond))
+	if _, e := prefill(context.Background()); e != nil {
+		t.Fatalf("warm-up: %v", e)
+	}
+	full := time.Duration(1<<63 - 1)
+	for range 3 {
+		d, e := prefill(context.Background())
+		if e != nil {
+			t.Fatalf("uncancelled: %v", e)
+		}
+		full = min(full, d)
+	}
+	t.Logf("uncancelled dense prefill of %d rows at chunk 32: %s (fastest of 3 warm runs)", M, full.Round(time.Millisecond))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(full/5, cancel)
-	rf.Reset()
-	t1 := time.Now()
-	_, e := rf.PrefillLast(ctx, embs, 0)
-	took := time.Since(t1)
-	t.Logf("cancelled at ~%s, returned after %s", (full / 5).Round(time.Millisecond), took.Round(time.Millisecond))
+	// A run that completes before the cancel fires says nothing about cancellation (the machine was faster this time
+	// than the baseline), so it is retried rather than judged; only a run the cancel actually landed inside is.
+	var took time.Duration
+	var e error
+	landed := false
+	for attempt := 1; attempt <= 5 && !landed; attempt++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		timer := time.AfterFunc(full/5, cancel)
+		took, e = prefill(ctx)
+		timer.Stop()
+		cancel()
+		t.Logf("attempt %d: cancel at ~%s, returned after %s (err %v)", attempt, (full / 5).Round(time.Millisecond), took.Round(time.Millisecond), e)
+		landed = e != nil || took >= full/5
+	}
+	if !landed {
+		t.Fatalf("no attempt ran long enough for the cancel to land (baseline %s): the machine is too noisy to time this", full)
+	}
 	if e == nil {
 		t.Fatal("dense mid-flight cancel ignored — the chunk-boundary check is not firing")
 	}
