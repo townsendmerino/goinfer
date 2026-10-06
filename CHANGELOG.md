@@ -158,6 +158,11 @@ llvmpipe, SwiftShader) is not probed and is reported as skipped with the reason.
   Gemma-4-26B-A4B's short prompts and 1.26x on a paged Qwen1.5-MoE slice at 128 and 512 tokens, bit-identical to the
   token-by-token prompt. Covers Gemma 4's MoE, Mixtral, Qwen MoE and the Qwen3.5/3.6 DeltaNet MoE hybrids. Paged MoE
   decode also stops waiting on half its command buffers (1.13x per token on the Gemma-4-26B-A4B).
+- **Metal: the paged Gemma 4 MoE prompt reads each routed expert once for all the rows that chose it.** The layer-major
+  pass ran an expert's matrix-vector products once per (row, expert) pair; it now groups a layer's pairs by expert and runs
+  each expert's weights once across up to four of its rows, then adds each row's experts back in route order. On the
+  Gemma-4-26B-A4B on a 16 GB M1 Pro (51 expert slots): 1.201x at a 128-token prompt and 1.234x at 512, logits and K/V
+  bit-identical to the per-pair pass in every rep. Audit D-P01, `docs/tasks/task-m26-mac-2026-10.md`.
 - **Metal: mixture-of-experts decode is a little faster, with the same output.** The routed experts' matrix-vector
   products compute four output rows per SIMD group: 1.05x per token on a resident Qwen1.5-MoE slice and 1.05x less GPU
   time per token on the paged Gemma-4-26B-A4B. And on a resident MoE a repeated prompt now continues exactly as its
