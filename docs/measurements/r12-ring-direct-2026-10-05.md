@@ -64,3 +64,15 @@ Decision rule, written before the result:
 - a greedy-stream mismatch in any pair is a defect (the harness fails the run), not a result.
 
 This arm does not gate the commit: the ship decision rests on bit identity and the 1B result. It sizes the win where the window is largest.
+
+## 6. Result of the Gemma 2 2B arm (nobara's night queue, 2026-10-05 18:26 to 18:41 PDT, `run-g2.sh`, binary pre-built from `16e45a6d`)
+
+`TestCPURing_directDecodeAB/gemma2-2b-W4096`, depth 4500, 3 ABBA pairs, forward ms/token (greedy streams matched in every pair; the harness fails the run otherwise):
+
+| pair | ON (in place) | OFF (copy) | OFF/ON |
+|---:|---:|---:|---:|
+| 0 | 171.04 | 201.78 | 1.180 |
+| 1 | 170.15 | 204.05 | 1.199 |
+| 2 | 168.82 | 201.52 | 1.194 |
+
+Means 170.00 ON, 202.45 OFF ms/token; paired median **1.194x**, range 1.180 to 1.199, 3 of 3 pairs faster. **Graded by the rule in section 5:** a median at least 1.06 with every pair above 1.00, so "as predicted or better". The prediction was about 1.12 (the 1B recovered 67% of its copy cost); the 2B saved 32.5 ms a token against the 31.7 ms the instrument said the copy cost, so all of it, and the in-place read here loses nothing to the attention re-reading cold ring memory, and the extra 436 MB of mirror memory cost no speed at the largest window this repo has a checkpoint for. The park condition (any pair below 1.00) did not fire. Raw: `~/goinfer-logs/r12/g2-ab.log`; the night runner's log is `~/goinfer-logs/night/runs/2026-10-05/r12-ring-gemma2-2b.log`.

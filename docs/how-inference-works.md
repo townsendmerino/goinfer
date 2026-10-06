@@ -128,7 +128,7 @@ in modern models:
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:152-139](../decoder/attention.go#L124-L129).
+  is. [decoder/attention.go:154-141](../decoder/attention.go#L124-L129).
 
 ### 2d. The MLP — the "thinking" step
 

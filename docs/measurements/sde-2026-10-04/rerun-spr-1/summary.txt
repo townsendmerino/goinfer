@@ -1,0 +1,5 @@
+SDE goldens 2026-10-05T18:11:52-07:00; decoder bin /home/francis/goinfer-logs/night/bin/decoder-sde-vnnigolden.test; linalg bin /home/francis/goinfer-logs/night/bin/linalg-sde-v1.55.0.test; run=Golden|Parity|Int4|Int8|W4A8|Quant skip=LongPrompt
+spr linalg: pass=151 skip=21 fail=0 timeout=0
+spr decoder: pass=99 skip=30 fail=0 timeout=0
+spr exit codes: linalg=0 decoder=0
+overall: no unexpected failure

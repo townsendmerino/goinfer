@@ -377,8 +377,8 @@ wired into any decode path, and the harness that produced these numbers
 
 ### What is being priced, and why it is not the deferred track
 
-The refusal above traces to `decoder/deltanet.go:150` — `deltaState` holds a running recurrent
-matrix plus a conv window, and the comment at `decoder/deltanet.go:147` records that it is fixed
+The refusal above traces to `decoder/deltanet.go:157` — `deltaState` holds a running recurrent
+matrix plus a conv window, and the comment at `decoder/deltanet.go:154` records that it is fixed
 size, independent of sequence length, and **not position-truncatable**. A verify advances that
 state by K tokens; a partial rejection needs it as of an earlier token, which no truncation or
 inversion recovers. `decoder/speculative.go:92` is where that refusal is applied.
@@ -486,7 +486,7 @@ The CPU figures must not be read as a bound on a GPU-resident path in either dir
 
 This one is answerable from the code rather than by measurement, and the answer is not "probably".
 `gatedDeltaNetStep` reads `convWin` as the depthwise conv's left context every step
-(`decoder/deltanet.go:221`, taps `j = 0..K-2`) and mutates it every step, appending the current
+(`decoder/deltanet.go:230`, taps `j = 0..K-2`) and mutates it every step, appending the current
 mixed vector and sliding to the last `K-1`. A verify of width K advances that window by K tokens.
 
 **With `ConvKernel = 4` the window is 3 vectors, so any verify of width K ≥ 4 replaces it
