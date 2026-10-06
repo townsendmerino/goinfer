@@ -1127,6 +1127,6 @@ Status 2026-10-05, after the first pass through the list:
 3. **Still open, with real hot-path weight, each needing a pre-registered band and a bit-identity gate first:**
    - ~~R-13 and R-14~~ (done 2026-10-05 on aikit v1.57.0; R-14's remainder is listed under R-13 and R-14);
    - ~~R-15~~ (done 2026-10-05: the widen is parallel; the O(context) work remains, see R-15);
-   - R-17's remainder (its per-token allocations were fixed 2026-10-05; the copies the AV kernels could write past, and the rest, were left; see R-17), as it comes up. R-25 is done: both halves shipped 2026-10-05.
+   - R-17's last small items (its per-token allocations and the AV-writes-into-`ctx` copies were done 2026-10-05; `moeMLP`'s output copy, postOnly's copy, `deltaNetCore`'s `conv` allocation, Gemma 4's head gather and the logprobs scans were sized and left; see R-17), as they come up. R-25 is done: both halves shipped 2026-10-05.
 
 <!-- doc-reviewed: 2026-10-05 -->
