@@ -36,7 +36,7 @@ caught by its result being implausibly bad, not by any gate. A second attempt at
 *previous* default (`--quant int8int8`, forced by `bench_peer.py`'s own `BENCH_QUANT_OVERRIDE`,
 which predates `activationSafeQuant`'s later q4k default) gave 6.3 tok/s, matching the release
 section's informal "guard's 6.3 tok/s" figure exactly — but that quant is no longer what Phi-3
-actually loads at by default (`internal/modelload/modelload.go:195-200`: Phi-3 on `.gguf` now
+actually loads at by default (`internal/modelload/modelload.go:199-204`: Phi-3 on `.gguf` now
 defaults to `--quant q4k` on CPU or CUDA, 1.31× int8int8's CPU decode per that doc's own citation).
 Re-run at the TRUE current default, `--quant q4k`:
 
@@ -68,7 +68,7 @@ needs the Mac.
 The decisive ratio is **S = goinfer's CPU fallback ÷ Ollama on Metal**, the two interleaved in one session.
 
 **What the Mac showed before any timing (probe, 2026-09-29, `docs/measurements/phi3-metal-2026-09-29/`).** nobara's read of
-`internal/modelload/modelload.go:118` holds here. A Metal user who passes no `-quant` gets `--quant int8int8` with per-32 activations, and the
+`internal/modelload/modelload.go:122` holds here. A Metal user who passes no `-quant` gets `--quant int8int8` with per-32 activations, and the
 log says `decode path: cpu (int8int8) — requested metal → running on cpu`. The quant is chosen from the *requested* backend
 (`activationSafeQuant`'s CPU-or-CUDA test for q4k), so the CPU fallback of a Metal user is stuck at the slower int8int8, which
 was 6.3 tok/s on nobara. So there are two goinfer arms, and they are not the same thing.

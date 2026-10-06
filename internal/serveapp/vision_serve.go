@@ -80,6 +80,27 @@ func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 
 // tm is the per-request template (think.go): the model's own, switched to the request's thinking mode.
 func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
+	vi, err := lm.visionPromptUncached(tm, system, turns, img)
+	if err != nil {
+		return vi, err
+	}
+	// One place for every family: the cache sits between the prompt builders and the generate call.
+	return lm.withFeatureCache(vi, img.data), nil
+}
+
+// withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode.
+func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte) visionInput {
+	vi.features = lm.visionFeatureCache().wrap(raw, vi.features)
+	return vi
+}
+
+// visionFeatureCache is this model's per-image tower-output cache, made on first use.
+func (lm *loadedModel) visionFeatureCache() *featureCache {
+	lm.featCacheOnce.Do(func() { lm.featCache = newFeatureCache(featureCacheBudget) })
+	return lm.featCache
+}
+
+func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
 	if lm.tmpl == nil {
 		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
 	}

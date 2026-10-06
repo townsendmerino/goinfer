@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — `serve` remembers each image's vision-tower output, so a resent image is not encoded again
+
+A chat client resends the whole conversation every turn, so an image in the history was run through the vision tower every turn. The tower's output is now cached per loaded model, keyed by the SHA-256 of the image bytes (256 MiB of features at most, least recently used out first), and a hit hands back the same numbers: the reply is identical. The log says which happened: `vision: encoded a N-byte image in 3.4s` or `vision: reused the cached encode of this image`. **Measured effect, on a Qwen3.5-0.8B on the CPU: about 3 s of a 38 s time to first token** (exploratory, one run per cell, `docs/measurements/image-resend-2026-10-06.md`). The other 34 s is the prefill of the image turn, which on a Gated-DeltaNet hybrid runs one token at a time and is not helped by this; that is queued as P26. Where the tower is the slow part (a family whose prefill is batched), a resend now skips it, which that run did not measure.
+
 ## [v0.22.0] — 2026-10-06
 
 ### Highlights

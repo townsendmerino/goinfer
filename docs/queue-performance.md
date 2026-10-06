@@ -778,3 +778,14 @@ verdict position, so the item reads as open long after it closed. A2 (a pre-regi
 four days earlier), D3b (shipped eleven days earlier), A10 (resolved, header still said OPEN) and
 P16 (a stale-list four items out of date) all failed this way. **When you close something, correct
 the sentence a scanner stops at — not only the body.**
+
+**P26 · An image turn on a Gated-DeltaNet hybrid (Qwen3.5) prefills one token at a time, so a resend costs the same as a new image** — `linux`, **filed 2026-10-06**
+
+Found by the cold-user run (`docs/measurements/cold-user-2026-10-05-nobara-pc.md` F: 37.5 to 42 s to first token for a 662-token image prompt on Qwen3.5-0.8B, the same for a byte-identical
+resend, the same on `-backend cuda`). Measured to its cause on 2026-10-06 (`docs/measurements/image-resend-2026-10-06.md`, exploratory): the vision tower is ~3 s of ~38 s; the rest is
+`prefillLogitsQwen35VL`'s per-token loop (~20 tokens/s, decode speed), because the recurrent state needs every token in order and `canBatchN` is false for the family. Image-prefix reuse
+(P9a) and the resident image prefill are both resident-only and exclude recurrent families, so neither engages. A per-image tower-output cache shipped (serve, `featureCache`) and removes the
+~3 s. Next, in order of size: (1) a batched hybrid prefill (chunked DeltaNet scan, the same state at the end, so bit-identity against the per-token loop is the gate), which also speeds every
+long text prompt on the family; (2) a snapshot of the recurrent state and KV at the image block's end that a resend restores, for the repeated-image case only. Both are decoder edits and
+re-stale the parity manifest. Measure the per-token prefill on the 9B before sizing either: the 0.8B's 20 tokens/s is not the 9B's.
+
