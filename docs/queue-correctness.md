@@ -127,5 +127,6 @@ parser has always found a bare JSON call anywhere) and was narrowed to the famil
 vague prompt in 0 of 3 either way, and `serve check`'s `tools, harness-scale` row went from skip to ok. The flag turns the fenced calls into calls; the model still fails most runs for its own reasons (asks the user for the file, answers in prose),
 and `tools, OpenAI` turn two and `stop sequences` are unchanged, so those two are not the parser's. The residual false execution (a demonstration that ends on one valid call) is accepted as the price of the option and is why it is off by default.
 
-**Also open, and separate from the parser:** why Qwen2.5-Coder-7B fails `tools, OpenAI` turn two and `stop sequences` when the Instruct model of the same size does not. It may be the checkpoint, or
-the Coder template, or this server; nothing here has told them apart. Needs the Coder-7B GGUF on nobara (4.4 GiB pull) and a `serve check` run with the rendered prompts logged.
+**DIAGNOSED AND FIXED 2026-10-06 (`docs/measurements/g39-lone-tool-livelock-2026-10-06/`): the `tools, OpenAI` failure was goinfer's, not the model's.** A lone tool under `tool_choice` auto was forced on every turn, including after the tool result; the Instruct model
+failed the same row on this tree. Fixed so the convenience ends at the tool result (c69a6f87 pre-registration, then the fix). The `stop sequences` failure is the Coder model's own (it answers "The count is now 10." to a count prompt) and is not a goinfer defect. G39 is closed apart from
+the parser's residual risk, which is the owner's call and is behind an off-by-default flag.
