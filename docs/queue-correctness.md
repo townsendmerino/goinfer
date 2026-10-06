@@ -115,5 +115,10 @@ turns a model that was asked to SHOW an example call, in a fenced block, into on
 trade (tolerance against a false execution) is the owner's, not an implementation detail. If taken: pre-register a held-out set of fenced-example prompts that must NOT parse as calls and the opencode
 transcripts that must, restrict it to a fence that is the whole reply or its last block, and gate it on `serve check`.
 
+**The two real replies (from the archived raw logs, `~/goinfer-logs/cold-user-raw/cold-user-2026-10-05-raw.tgz`, `B-agent/oc-run1.log`, `oc-run2.log`).** Attempt 1: one sentence of prose ("The `add` function should subtract instead of add. I'll update the function and verify it."), then the fenced
+`{"name": "edit", "arguments": {...}}` block, then nothing. Attempt 2, told to use the edit tool and not describe the change: the whole reply was that one fenced block. So a "reply must start with the fence" rule (the analogue of the bare-`{` rule) catches only attempt 2,
+and "the fence is the last thing in the reply" catches both. A demonstration ("Here is an example call: ```json ...```") has the same shape as attempt 1, so no parse rule separates a shown call from a meant one; the residual false execution is a demo that ends on the fence. Options in order of
+strength: opt-in flag (off by default); the narrow match above plus validating the arguments against the named tool's schema; and the client's own confirmation prompt, which is not verified here for opencode.
+
 **Also open, and separate from the parser:** why Qwen2.5-Coder-7B fails `tools, OpenAI` turn two and `stop sequences` when the Instruct model of the same size does not. It may be the checkpoint, or
 the Coder template, or this server; nothing here has told them apart. Needs the Coder-7B GGUF on nobara (4.4 GiB pull) and a `serve check` run with the rendered prompts logged.
