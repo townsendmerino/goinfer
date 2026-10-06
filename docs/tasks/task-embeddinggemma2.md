@@ -1,7 +1,8 @@
 # Task — add EmbeddingGemma 2 (`embeddinggemma2`)
 
-**Status:** 2026-10-06: Gate 0 done, Gate 1 passed, Gate 3 built; Gate 2 pre-registered below and queued for the
-night of 2026-10-06 (owner: "build it today, release tomorrow"). Work is on the branch `embeddinggemma2`, kept off
+**Status:** 2026-10-06: Gates 0-3 done. Gate 2 PASSED, run by day on the owner's word ("run gate 2 now") under the
+rule pre-registered below; its truncation reading kept 768 and 512 and dropped 256 and 128. Release planned for
+2026-10-07 (owner: "build it today, release tomorrow"). Work is on the branch `embeddinggemma2`, kept off
 `main` while v0.21.0 is tagged.
 **Venue:** mac for Gate 0–2 (a 270M text backbone fits anywhere); nobara-pc only if Phase 2's
 audio tower is attempted.
@@ -182,6 +183,33 @@ sentence-transformers', and the embedding's cosine is 0.999999998, max |diff| 1.
 - **Cost basis:** a 270M encoder on the CPU; the by-day smoke embedded 18 tokens in well under a second and loaded in
   2 s. 48 parity texts on each side plus about 800 encodes for the truncation reading: estimated 15 minutes, queued
   at 30.
+
+### Gate 2: read 2026-10-06, 12:12-12:23 PDT (by day, owner's word), from the worktree pinned at `2ec0cdc9`
+
+Provenance: checkpoint revision `914f7f89`, weights sha256 `197a3296…`, from `~/models/embeddinggemma-2`;
+transformers 5.19.0, sentence-transformers 6.1.0, torch 2.14.0; both sides CPU float32, not resident. Both steps exited 0.
+Raw: `docs/measurements/embeddinggemma2-2026-10-06/` (`provenance.txt`, `reference.txt`, `parity.txt`,
+`truncation.json`); the reference golden is committed as `testdata/embeddinggemma2-real/golden.json`.
+
+- **Parity: PASS.** All 48 texts have the reference's ids exactly. Embeddings: worst cosine **0.999999994**, max
+  |diff| 7.5e-8 to 3.5e-7, under every prompt (16 `query`, 16 + 4 `document`, 8 none, 2 `STS`, 2 `Classification`),
+  10 to 1,771 tokens, the four over 1,025 included (worst of them 0.999999994).
+- **Truncation, 341 sections** (the corpus had 341 of the "up to 400"):
+
+  | width | recall@1 | ÷ 768 | recall@10 | ÷ 768 | rule |
+  |---|---|---|---|---|---|
+  | 768 | 0.270 | 1 | 0.548 | 1 | baseline |
+  | 512 | 0.255 | 0.946 | 0.534 | 0.973 | **offered** (>= 0.90 and >= 0.95) |
+  | 256 | 0.226 | 0.837 | 0.487 | 0.888 | **not offered** (recall@10 under 0.90x) |
+  | 128 | 0.179 | 0.663 | 0.375 | 0.684 | **not offered** |
+
+  So `MatryoshkaWidths` is now 768 and 512, and serve refuses 256 and 128. 256 missed the not-offered line by a little
+  (0.888 against 0.90). The absolute recalls are low because a heading is a weak query for a long section of
+  repository docs; the rule compares widths with each other, which that does not affect. This corpus is one repo's
+  docs, not a benchmark, and a different corpus could move 256 across the line.
+- **Speed, observed, not a gate:** goinfer's CPU forward took about 10 s for a 450-token document and about 80 s
+  for 1,771 tokens (sentence-transformers did all 48 texts in about 14 s). The attention is a scalar triple loop per
+  head, quadratic in length; it is the obvious thing to fix before this is a usable embedding server.
 
 ## Gate 0 — desk work, no code, no GPU
 

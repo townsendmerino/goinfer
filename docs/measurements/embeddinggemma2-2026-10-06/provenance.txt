@@ -1,0 +1,6 @@
+started: 2026-10-06 12:12:29 PDT; rev 2ec0cdc9051990b2045fe30c7dde0efd86ca0382; checkpoint revision 914f7f89142e33e77833254d9c9b90c3cef7303b
+weights sha256 197a32965d4b1105
+transformers 5.19.0 sentence-transformers 6.1.0 torch 2.14.0
+=== step 1: reference (12:12:39)
+=== step 2: goinfer parity (12:15:04)
+finished: 2026-10-06 12:23:30 PDT, reference exit 0, parity exit 0

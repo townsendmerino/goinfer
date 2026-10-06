@@ -20,13 +20,16 @@ any surface may still change.
 `--embed-model` takes Google's EmbeddingGemma 2 (`google/embeddinggemma-2`, the 270M text encoder; the vision and audio
 towers in the same checkpoint are not loaded). It is a bidirectional Gemma 4-style encoder, so it is its own package,
 `embeddinggemma2`, not a `decoder.Load` family: CPU, float32, mean-pooled and normalised as sentence-transformers does.
-`dimensions` takes the model's Matryoshka widths, 768, 512, 256 and 128, and nothing else. **A non-standard `task`
+`dimensions` takes 768 and 512 and nothing else: the model card also lists 256 and 128, but on 341 sections of this
+repo's docs they cut heading-to-section recall@10 to 0.89x and 0.68x of the full width, under the pre-registered 0.90x,
+so they are not offered. **A non-standard `task`
 field** picks one of the model's 20 named prompts (or `"none"`); without it `input_type` selects its query or document
 prompt, and with neither no prompt is applied, sentence-transformers' own default. The prompt applied is echoed in
 `goinfer_task` and the `X-Goinfer-Embedding-Task` header. **Checked:** a tiny fixture pinned with transformers' own
 modeling code matches at cosine 1.000000000 layer by layer and is as close to a float64 run as the float32 reference,
-with 12 planted defects all failing it; the real checkpoint's Gate 2 (48 texts against sentence-transformers, ids and
-embeddings, and what truncation to each width costs in retrieval) is in `docs/tasks/task-embeddinggemma2.md`.
+with 12 planted defects all failing it; on the real checkpoint, 48 texts (10 to 1,771 tokens, four past the sliding
+window) have sentence-transformers' ids exactly and its embeddings at cosine 0.999999994 or better
+(`docs/tasks/task-embeddinggemma2.md`, Gate 2).
 
 ### Changed — CPU W4A8 quantizes each input once for the projections that share it; aikit v1.57.0 (audit R-13, R-14)
 

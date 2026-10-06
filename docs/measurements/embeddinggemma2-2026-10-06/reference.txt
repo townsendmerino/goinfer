@@ -1,0 +1,6 @@
+[eg2    1.6s] corpus: 341 sections from 56 docs at 2ec0cdc9
+[eg2   16.1s] parity golden: 48 texts, 10-1771 tokens, 4 over 1025 -> /Users/francistownsend-merino/goinfer-logs/embeddinggemma2-2026-10-06/golden.json
+[eg2  140.2s] RESULT width 768: recall@1 0.270, recall@10 0.548 (341 sections)
+[eg2  140.2s] RESULT width 512: recall@1 0.255, recall@10 0.534 (341 sections)
+[eg2  140.2s] RESULT width 256: recall@1 0.226, recall@10 0.487 (341 sections)
+[eg2  140.2s] RESULT width 128: recall@1 0.179, recall@10 0.375 (341 sections)

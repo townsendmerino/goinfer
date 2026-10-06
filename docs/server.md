@@ -772,8 +772,9 @@ query instruction prefix.
 
 **EmbeddingGemma 2** (`google/embeddinggemma-2`, text only) loads the same way, from its HF directory or
 `hf:google/embeddinggemma-2:safetensors`: `--embed-model ~/models/embeddinggemma-2`. It runs on the CPU in float32
-(`--embed-quant` other than `f32` is refused), with a 768-wide vector that `dimensions` truncates to exactly 512, 256
-or 128 (any other width is a 400 naming these). Its quality depends on a task prompt, and the OpenAI shape has nowhere
+(`--embed-quant` other than `f32` is refused), with a 768-wide vector that `dimensions` truncates to 512 and nothing
+else (any other width is a 400 naming 768 and 512). The model card also lists 256 and 128; measured here, they lost
+too much retrieval to offer (recall@10 0.89x and 0.68x of the full width on this repo's docs). Its quality depends on a task prompt, and the OpenAI shape has nowhere
 for one, so it takes a non-standard field:
 
 - `task` names one of the model's own 20 prompts (`query`, `document`, `STS`, `Classification`, `Clustering`,
