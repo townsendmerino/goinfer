@@ -176,7 +176,7 @@ model at all. The HTTP surface (OpenAI, Anthropic, multi-model, vision, embeddin
 [docs/integrations/](docs/integrations). A coding agent's first request is about 11,000 tokens, more than the default GPU context
 on Metal (4096) or on a CUDA model too big to hold 16384 positions in each of its 4 KV slots (the server then picks less),
 so start the server for an agent with `-ctx 16384` as those recipes do; a longer prompt gets a 400 that names `-ctx`. `serve check` and the `tools:` line of
-`goinfer-chat models` report which checkpoints hold up under a real agent's tool schema.
+`goinfer-chat models` report which checkpoints hold up under a real agent's tool schema. The one measured to: Qwen2.5-7B-Instruct `q4_k_m` on a CUDA GPU with 8 GB or more. Qwen2.5-Coder-7B-Instruct on the same card did not (opencode made no edits), so run `serve check` before trusting a checkpoint for an agent ([measured table](docs/integrations/opencode.md#picking-a-model-honestly)).
 
 `POST /v1/systemone` answers TypeSafe's decisions wire shape, so clients such as jevx work against
 it ([recipe](docs/integrations/typesafe-jevx.md)). By default it scores the option labels with the
