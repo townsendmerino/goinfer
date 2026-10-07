@@ -124,6 +124,49 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     between the before and after readings. The bars are never loosened.
   - The 26B is re-checked on the night queue.
   - CUDA's and WebGPU's `v_norm` fix runs as its own pass on nobara, under the same rule, before S1 reaches CUDA.
+
+  **S1.0 read 2026-10-06, 19:14 PDT, on the Mac: PASS.**
+  - **The fix:** `metal/model.go` gains the dense layer scalar (a `layer_scale` kernel at each dense Gemma 4 layer's
+    end) and `v_norm` on every Gemma 4 layer that owns its K/V. The test seams `GOINFER_S10_DROP=scalar|vnorm|both`
+    re-drop either fix.
+  - **The readings,** each test's own summary metric, before (both dropped) → after:
+
+    | test | before | after |
+    |---|---|---|
+    | scaled dense, pos0 | 0.982297 | **0.999148** |
+    | scaled dense, mean | 0.858647 | **0.926917** |
+    | two-geometry localize, layer 0 (local, real V) | 0.987958 | **1.000000** |
+    | two-geometry localize, layer 1 (global, K=V) | 0.980768 | **0.999940** |
+    | two-geometry resident, min | 0.981251 | **0.999761** (max abs 0.21 → 0.024) |
+    | MoE localize, worst layer | 0.999644 | **0.999982** |
+    | MoE resident, min | 0.958904 | **0.999809** |
+
+    - Argmax agreement is unchanged (15/16 dense, 8/8 two-geometry, all MoE).
+    - Each fix alone moves its own tests: the scalar alone lifts the scaled-dense mean to 0.880, `v_norm` alone to
+      0.906.
+    - Two individual scaled-dense positions read lower after (pos 2 0.918→0.907, pos 12 0.884→0.836). At those
+      positions the CPU's own int4 path is at 0.70 and 0.45 against f32, so they are quantization noise on a
+      low-agreement position, not a regression. Every summary metric and every two-geometry and MoE position rose.
+  - **A correction:** `TestGemma4TwoGeom_f16ScaleConfound` attributed its ~0.98 residual to "the broader resident
+    quant path". It was these two bugs; matched to f16 scales, it now reads 0.999761.
+  - **The amendment** (the fix is the mechanism; each bar sits between its before and after readings):
+
+    | bar | old | new |
+    |---|---|---|
+    | scaled dense pos0 | 0.97 | 0.99 |
+    | scaled dense mean | none | 0.90 |
+    | two-geometry localize, each layer | 0.95 | 0.999 |
+    | two-geometry f16-scale and resident, min | 0.95 / 0.90 | 0.995 |
+    | MoE localize | 0.90 | 0.9999 |
+    | MoE resident, min | 0.60 | 0.995 |
+
+    Under the new bars, the fixed code passes all six tests, both fixes dropped fail all six, the scalar alone
+    dropped fails two, and `v_norm` alone dropped fails five.
+  - **The Metal snapshot golden moved,** on the Gemma 4 dense-scaled rows only (3 of 10 checkpoints). With the fixes
+    dropped it matches the old golden 10/10, byte for byte, so the fix is exactly what moved them. It is re-baked
+    (same M1 Pro, macOS 26.6.2).
+  - **Raw:** `docs/measurements/multimodal-support-2026-10/s10-*.log`.
+  - **Still owed:** the 26B on Metal (night queue), and the same `v_norm` fix on CUDA and WebGPU (nobara).
 - **G1, tiny E-model, Metal resident against the CPU, every position, int4 on both sides:**
   - argmax identical, a first divergence where the CPU's top-1/top-2 margin is under 3% counting as a near-tie (the
     two-geometry rule);

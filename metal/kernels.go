@@ -1992,6 +1992,8 @@ kernel void act_quant(device const float* u[[buffer(0)]], device char* dq[[buffe
     for (uint i=(I4<<2u)+tid; i<I; i+=tgs){ float s=glu_act(u[i],act); dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
 }
 kernel void residual(device float* x[[buffer(0)]], device const float* y[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]+=y[i]; }
+// Gemma 4's per-layer output scalar on a dense layer: x *= s (decoder/forward_gemma4.go; the MoE join has its own).
+kernel void layer_scale(device float* x[[buffer(0)]], device const float* s[[buffer(1)]], uint i[[thread_position_in_grid]]) { x[i]*=s[0]; }
 
 // lora_delta: compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md), the two-GEMV low-rank
 // delta y[o] += scale·Σ_r B[o,r]·(A·x)[r], fused into ONE dispatch (P-11, audit-2026-09-10 —

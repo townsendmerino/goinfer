@@ -124,6 +124,7 @@ type residLayer struct {
 	qNorm, kNorm                         Buffer          // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
 	moe                                  *moeLayer       // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
 	g4moe                                *gemma4MoeLayer // non-nil ⇒ Gemma-4 parallel dense‖MoE FFN (gemma4_moe.go)
+	uLayerScalar                         Buffer          // Gemma 4 dense layer's output scalar (S1.0); zero Buffer when 1 or absent
 	postAttnNorm, postMLPNorm            Buffer          // Gemma sandwich norms on each sublayer OUTPUT (zero if !sandwich)
 	invf                                 Buffer          // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
 	mscale                               Buffer          // per-layer YaRN mscale (RopeMscaleLayer; 1.0 = no-op for every family without it)
@@ -179,6 +180,8 @@ type resident struct {
 	d                                                                  *Device
 	q                                                                  Queue
 	pRms, pQv, pGemv, pGemvResid, pRope, pRope2, pKv, pAttn, pSw, pRes Pipeline
+	pLayerScale                                                        Pipeline // Gemma 4 dense layer scalar (S1.0)
+	g4VNorm                                                            bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
 	pSA, pSABias, pSAResid                                             Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
 	// R1 (docs/tasks/red-october.md): the W4F16 decode lane — f16 activations, no int8
 	// quantization, gated by GOINFER_METAL_DECODE_LANE=w4f16 (decodeLaneW4F16). Pipelines are
@@ -1009,6 +1012,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
+	r.pLayerScale = pipe("layer_scale")
 	r.pRmsRows, r.pQvRows = pipe("mc3_rmsnorm_quant_rows"), pipe("mc3_quant_vec_rows")
 	r.pSwRows, r.pRope2Rows = pipe("mc3_swiglu_quant_rows"), pipe("mc3_rope2_rows")
 	r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_rows"), pipe("mc3_attention_rows")
@@ -1395,6 +1399,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				L.postMLPNorm = NewBufferFloats(d, lw.PostMLPNorm)
 			}
 		}
+		// Gemma 4's per-layer output scalar on a DENSE layer (h *= layer_scalar after the FFN residual,
+		// decoder/forward_gemma4.go; HF Gemma4DecoderLayer). The g4moe join applies its own; a dense layer had
+		// none here until S1.0 (docs/tasks/task-multimodal-support-2026-10.md). 1 and absent (0) are no-ops, as on
+		// the CPU, so no dispatch is encoded for them.
+		if L.g4moe == nil && m.IsGemma4Resident() {
+			if s := m.Gemma4DenseLayerScalarAtResident(l); s != 0 && s != 1 {
+				L.uLayerScalar = NewBufferFloats(d, []float32{s})
+			}
+		}
 		if !isDelta {
 			// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
 			// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
@@ -1741,6 +1754,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		ones[i] = 1
 	}
 	r.vNormUnit = NewBufferFloats(d, ones)
+	// HF and the CPU apply Gemma 4's scale-less v_norm on EVERY layer that owns its K/V, not only on K=V layers
+	// (S1.0); a K=V layer's V slot holds the raw k_proj output, any other's the v_proj output, and both take it.
+	r.g4VNorm = m.IsGemma4Resident()
 	if r.dnet != nil {
 		// qGate scratch (Gated-DeltaNet family's softmax layers): sized to the widest layer's
 		// qDim, same maxNHhd every other per-token scratch buffer uses — this family's softmax
@@ -2818,6 +2834,9 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			}
 		}
 	}
+	if L.uLayerScalar != (Buffer{}) && !g4DropLayerScalarForTest {
+		e.Dispatch(r.pLayerScale, r.H, 256, x, L.uLayerScalar) // Gemma 4 dense layer: h *= layer_scalar (S1.0)
+	}
 }
 
 // gemvRowsFor is the rows-per-simdgroup count for an R18 GEMV of `rows` outputs: the largest of want, want/2, ..., 2
@@ -3169,8 +3188,9 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		}
 		e.Dispatch(r.pQKNorm, grid, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, g.uNHhd, r.uEps, r.uAddOne)
 	}
-	if g.kEqV {
-		// K=V (Gemma 4 globals): the V slot holds the RAW k_proj output ([Q|K|K] fusion). Apply
+	if g.kEqV || (r.g4VNorm && !g4DropVNormForTest) {
+		// Gemma 4, every K/V-owning layer (S1.0): scale-less v_norm on the V slot. For K=V (Gemma 4 globals)
+		// the V slot holds the RAW k_proj output ([Q|K|K] fusion); otherwise the v_proj output. Apply
 		// scale-less v_norm to it — qk_norm over the V slot (qkv.At(vOff)) with nH=0 so every
 		// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Runs
 		// AFTER qk_norm (which touched the K slot, not V) and BEFORE RoPE (which never touches V),
@@ -3343,3 +3363,10 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 
 	return out, nil
 }
+
+// S1.0 test seams (docs/tasks/task-multimodal-support-2026-10.md): re-drop each Gemma 4 fix, so a gate can show it
+// reproduces the before-fix numbers. Never set outside tests.
+var (
+	g4DropLayerScalarForTest bool
+	g4DropVNormForTest       bool
+)

@@ -76,8 +76,9 @@ func TestGemma4MoE_localize(t *testing.T) {
 		}
 	}
 	t.Logf("gemma4 MoE localize: worst layer %d cosine %.6f over %d layers", worstLayer, worst, nLayers)
-	if worst < 0.90 {
-		t.Errorf("layer %d cosine %.6f < 0.90 — a crater, not quant noise; the dense‖MoE block at that layer diverges", worstLayer, worst)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.999644 and after-fix 0.999982 readings)
+	if worst < 0.9999 {
+		t.Errorf("layer %d cosine %.6f < 0.9999 — a crater, not quant noise; the dense‖MoE block at that layer diverges", worstLayer, worst)
 	}
 }
 
@@ -135,7 +136,8 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 	// CPU-vs-CPU (noise-floor pre-flight), so 0.60 catches a crater without encoding the quant floor
 	// as a quality bar. Correctness rests on the argmax gate + Step-5a router idx parity + Step-5c
 	// expert chain + the localization above.
-	if minCos < 0.60 {
-		t.Errorf("minCosine %.6f < 0.60 — a crater, not quant noise; the dense‖MoE forward is broken", minCos)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.958904 and after-fix 0.999809 readings)
+	if minCos < 0.995 {
+		t.Errorf("minCosine %.6f < 0.995 — a crater, not quant noise; the dense‖MoE forward is broken", minCos)
 	}
 }

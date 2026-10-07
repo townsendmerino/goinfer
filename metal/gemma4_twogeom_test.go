@@ -98,11 +98,13 @@ func TestGemma4TwoGeom_localize(t *testing.T) {
 	// the quant floor. The KEY diagnostic is that layer 1 (K=V) tracks layer 0 (no K=V): if the K=V
 	// forward were wrong, L1 would sit far below L0, not ~0.007 under it. So the relative check is
 	// the sharp one; the absolute 0.95 is the crater backstop.
-	if c0 < 0.95 {
-		t.Errorf("layer 0 cosine %.6f < 0.95 — the per-layer GEOMETRY seam (local hd=16) diverges", c0)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.987958 and after-fix 1.000000 readings)
+	if c0 < 0.999 {
+		t.Errorf("layer 0 cosine %.6f < 0.999 — the per-layer GEOMETRY seam (local hd=16) diverges", c0)
 	}
-	if c1 < 0.95 {
-		t.Errorf("layer 1 cosine %.6f < 0.95 — the K=V forward (global hd=512, v_norm(raw k)) diverges", c1)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.980768 and after-fix 0.999940 readings)
+	if c1 < 0.999 {
+		t.Errorf("layer 1 cosine %.6f < 0.999 — the K=V forward (global hd=512, v_norm(raw k)) diverges", c1)
 	}
 	if c1 < c0-0.05 {
 		t.Errorf("layer 1 (K=V) cosine %.6f is >0.05 below layer 0 (%.6f) — the K=V forward adds error the geometry/quant baseline does not; K=V is the culprit, not the seam", c1, c0)
@@ -165,8 +167,10 @@ func TestGemma4TwoGeom_f16ScaleConfound(t *testing.T) {
 	}
 	t.Logf("f16-scale-matched minCosine = %.6f — vs ~0.9806 against the f32-scale CPU: the group-scale "+
 		"representation is ~0 of the gap; the residual is the broader resident quant path (f16 KV / int8 act)", minCos)
-	if minCos < 0.95 {
-		t.Errorf("f16-scale-matched minCosine %.6f < 0.95 — a crater, not quant noise", minCos)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings) The ~0.98 this
+	// test used to attribute to "the broader resident quant path" was the two Gemma 4 fixes, not quantization.
+	if minCos < 0.995 {
+		t.Errorf("f16-scale-matched minCosine %.6f < 0.995 — a crater, not quant noise", minCos)
 	}
 }
 
@@ -228,7 +232,8 @@ func TestGemma4TwoGeom_residentParity(t *testing.T) {
 	// cannot detect a small quality regression, only a crater. The SENSITIVE cosine gate is
 	// TestGemma4TwoGeom_f16ScaleConfound, which removes the scale confound. Keep 0.90 here purely as
 	// a "not obviously broken" backstop; do NOT tighten it toward the noise floor (that was the trap).
-	if minCos < 0.90 {
-		t.Errorf("minCosine %.6f < 0.90 — a crater, not quant noise; the two-geometry/K=V forward is broken", minCos)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings)
+	if minCos < 0.995 {
+		t.Errorf("minCosine %.6f < 0.995 — a crater, not quant noise; the two-geometry/K=V forward is broken", minCos)
 	}
 }
