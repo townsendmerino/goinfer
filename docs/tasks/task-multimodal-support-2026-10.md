@@ -1197,6 +1197,16 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
   - **Served:** the LibriSpeech clip and the three tone clips, `--backend metal` in both arms, the tower on Metal against
     `-vision-device cpu`. Identical replies, or a first divergence at a near-tie.
   - **Serve uses the device tower only under `--backend metal`;** `-vision-device cpu` keeps it on the CPU.
+  - **Read 15:45-15:48 PDT: PASS** (`s2-towers` at `38a593c7`).
+    - **Tower:** `metal/gemma4_audio_e2b_test.go`. Worst soft-token cosine 1.000000000 (short, mid, LibriSpeech) and
+      0.999999999 (long). The 12 blocks take 70-179 ms on Metal against 239-702 ms on the CPU for the three longer
+      clips (exploratory).
+    - **Served** (the E2B GGUF with `--vision ~/models/gemma-4-E2B-unq`, both `--backend metal`, the tower on the CPU in
+      one run and on Metal in the other; serve logged "Metal (the conformer blocks ...)"):
+      - LibriSpeech and mid: identical replies (the correct transcription for LibriSpeech);
+      - short and long, the synthetic tones: the replies first differ at token 0, each a near-tie on the CPU-tower
+        arm's probabilities ("Please" against "I", "M" against "Hmm").
+    - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5d/`.
 - **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
   clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
   test clip.
