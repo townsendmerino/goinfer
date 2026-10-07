@@ -15,6 +15,23 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.23.0] — 2026-10-07
+
+### Highlights
+
+- **A single tool no longer traps a client in a loop.** With exactly one tool in `tools` and `tool_choice` auto or absent, the reply was constrained to that tool's call on every turn, including the turn after its result, so a model
+  could never answer. `serve check` reported it as `tools, OpenAI` and it failed on Qwen2.5-7B-Instruct as well as the Coder. Fixed on `/v1/chat/completions` and `/v1/responses`; `required`, a named function and `none` are unchanged.
+- **Image turns on Qwen3.5 are much faster.** On a Qwen3.5-0.8B, time to first token for a 1024x640 image went from 37.5 s to 3.6 s on CUDA (0.3 s for a resent image) and from 38 s to 7.7 s on the CPU backend
+  (4.4 s for a resent image): the prefill is batched, the DeltaNet part runs on all cores bit-identically, a dense hybrid's image turn runs on the CUDA resident, and `serve` caches each image's vision-tower output.
+  Exploratory, one run per cell; the numbers and what each gate does and does not prove are in `docs/measurements/p26*-2026-10-06/`.
+- **`serve -lenient-tool-calls` (off by default).** Reads one fenced JSON call at the end of a reply as a tool call, for the `<tool_call>` families, narrowly and with the arguments checked against the tool's schema. It exists
+  because Qwen2.5-Coder-7B under opencode wrote its edit call that way. A demonstration that ends on one valid call looks the same as a meant call, so use it with a client that confirms before it acts.
+- **EmbeddingGemma 2 takes images and audio** at `/v1/embeddings`, in the same vector space as its text, and runs on the GPU on a Mac.
+- **Qwen3.5+ images from a GGUF `mmproj`** (`--vision mmproj.gguf`), for unsloth's projector files and the `projector` layer Ollama ships with its `qwen3.5` and `qwen3.6` tags.
+- **aikit v1.58.0** in all five modules.
+- **Changes to check before upgrading** (none breaks an API): a Gemma 4 image is now resized with the reference processor's bicubic instead of bilinear, so image replies can differ; a Qwen3.5-family image turn on the CPU is no
+  longer bit-identical to v0.22.0's (a batched matmul reduces in a different order), so a reply can differ in a word at temperature 0; on CUDA a dense hybrid's image turn now runs on the GPU and holds its KV there.
+
 ### Changed — the DeltaNet part of a hybrid's batched prefill runs on all cores, bit-identically (P26c)
 
 A CPU profile of the 11 s, 684-token image prefill on Qwen3.5-0.8B showed 6.8 s of it in the DeltaNet conv, gates and recurrence, run one token at a time on one thread between matmuls that use all sixteen. `deltaNetCoreN` runs them over all the prompt's rows at once with the independent parts in parallel: the conv and q/k normalisation per row, the recurrence with the value heads in parallel (each head still walks its tokens in order), the gated norm per row. Every float operation of every element keeps its order, so the result is **bit-identical** to the per-token loop, recurrent state and conv window included (a test holds exact bit equality). Prefill 11 s to 4.6 s (62 to 149 tokens/s); time to first token for a 1024x640 image on the CPU backend 13.8 s to 7.7 s, and 10.7 s to 4.4 s for a resent image (exploratory, one run per cell; `docs/measurements/p26c-cpu-deltanet-fanout-2026-10-06/`). This speeds every long prompt on a Gated-DeltaNet model on the CPU through the batched forward (the embedding route and the image route), not only images.
