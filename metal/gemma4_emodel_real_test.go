@@ -408,7 +408,14 @@ func g3Model(t *testing.T, giw, tokGGUF, label string, logf func(string, ...any)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no sidecar %s: %v", giw, err)
 	}
-	tk, err := tokenizer.LoadGGUF(tokGGUF)
+	// The tokenizer comes from the GGUF, or for a safetensors checkpoint from its directory's tokenizer.json (S6's E4B).
+	var tk *tokenizer.Tokenizer
+	var err error
+	if strings.HasSuffix(tokGGUF, ".gguf") {
+		tk, err = tokenizer.LoadGGUF(tokGGUF)
+	} else {
+		tk, err = tokenizer.Load(filepath.Join(tokGGUF, "tokenizer.json"))
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,4 +526,39 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 	}
 	t.Logf("E2B embedding row + PLE inputs on the host: mean %.3f ms/token, median %.3f, p90 %.3f over %d tokens (row length %d)",
 		sum/n, sorted[n/2], sorted[n*9/10], n, m.ResidentEmbedLen())
+}
+
+// TestGemma4EModel_realE4BNonInferiority is S6's G-E4B-1 (docs/tasks/task-multimodal-support-2026-10.md, registered
+// before it ran): S1's G3 rule, unchanged, on Gemma 4 E4B (GOINFER_GEMMA4_E4B_GIW, default
+// ~/models/gemma-4-E4B-it.int4.metal.giw, built by prequant -quant int4 -target metal; the tokenizer from
+// ~/models/gemma-4-E4B-it), with Qwen2.5-Coder-1.5B as the reference in the same process.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags goinfer_testhooks -run '^TestGemma4EModel_realE4BNonInferiority$' -v ./metal/
+func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	home, _ := os.UserHomeDir()
+	t0 := time.Now()
+	logf := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[G-E4B-1 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	giw := os.Getenv("GOINFER_GEMMA4_E4B_GIW")
+	if giw == "" {
+		giw = filepath.Join(home, "models", "gemma-4-E4B-it.int4.metal.giw")
+	}
+	qb := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
+	rp, ra, rn := g3Model(t, qb+".int4.metal.giw", qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
+	ep, ea, en := g3Model(t, giw, filepath.Join(home, "models", "gemma-4-E4B-it"), "E4B", logf)
+	refPct, pct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
+	delta := pct - refPct
+	logf("G-E4B-1 non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", pct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
+	switch {
+	case delta < -4.0 || ep <= rp-2:
+		t.Errorf("G-E4B-1 FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
+	case delta < -2.0:
+		t.Errorf("G-E4B-1 AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
+	default:
+		t.Logf("G-E4B-1 PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+	}
 }
