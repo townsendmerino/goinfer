@@ -73,8 +73,9 @@ features). Two load-time notes the taxonomy does not encode:
   rows are one per architecture, not per checkpoint.
 - **Gemma 4's row is generated from a representative that is not an E-model.** The small E-models
   (E2B, E4B: per-layer embeddings, cross-layer shared KV, variable FFN width) carry the
-  `gemma4-e-model` feature, which no backend declares, so they run on the CPU on every backend (a
-  CUDA run prints `cuda does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are
+  `gemma4-e-model` feature, which Metal (S1, 2026-10-06) and CUDA (S1 on CUDA, 2026-10-07) declare and
+  WebGPU does not, so they run resident on Metal and CUDA and on the CPU under WebGPU (a WebGPU run
+  prints `webgpu does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are
   resident as the row says. `DecodePath()` names the gap for a loaded model.
 - **Command-R, Command-R7B (Aya) and GLM-OCR are CUDA-only for a stated reason.** Their rotary
   embedding is GPT-J PAIRWISE (dims 2d, 2d+1); the generic rope kernels on Metal and WebGPU are the

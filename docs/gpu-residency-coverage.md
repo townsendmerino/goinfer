@@ -99,8 +99,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   CPU on WebGPU** — a separate, still-open gap gated by `residentGemma4MoEOK`
   (`decoder/features.go:506`), not `residentPerLayerGeomBackends`; WebGPU implements the dense
   per-layer attention geometry but not the joint dense‖MoE FFN bridge.
-  <br>**Carve-out (N-04, `docs/audit-metal-2026-09-12.md`): the E2B/E4B E-models are CPU-only on
-  EVERY backend, including CUDA and Metal** — the "resident on CUDA and Metal" above describes
+  <br>**Carve-out (N-04, `docs/audit-metal-2026-09-12.md`), updated 2026-10-07: the E2B/E4B E-models
+  were CPU-only on every backend; since S1 (docs/tasks/task-multimodal-support-2026-10.md) they are
+  resident on Metal (2026-10-06) and on CUDA (2026-10-07) and still CPU-only on WebGPU. What follows is
+  the original N-04 record, kept for the reasoning.** — the "resident on CUDA and Metal" above described
   only the dense 12B/26B shape. E2B/E4B add per-layer embeddings (PLE, `hidden_size_per_layer_input
   > 0`), a cross-layer shared-KV pattern, and variable per-layer FFN width; `FeatGemma4EModel`
   (`decoder/features.go:100`) is declared by NO resident backend, so `decodeRunnerEligible` declines

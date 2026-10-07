@@ -34,7 +34,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	fixtures := []string{
 		"../testdata/llama-tiny", "../testdata/phi3-tiny", "../testdata/mistral-tiny-window",
-		"../testdata/gemma3-vl-tiny", "../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-moe-tiny",
+		"../testdata/gemma3-vl-tiny", "../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-moe-tiny", "../testdata/gemma4-emodel-tiny",
 		"../testdata/qwen35-tiny", "../testdata/deepseek-tiny",
 		filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
 		filepath.Join(home, "models", "gemma3-1b-q4_k_m.gguf"),
@@ -71,6 +71,13 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			for s, sl := range slots {
 				var bytes int64
 				for l := range sl.kc {
+					if r.layers[l].kvShared {
+						// An E-model's KV-shared layer holds its source's buffers, not bytes of its own: counted once, at the owner. Assert the alias instead.
+						if sl.kc[l] != sl.kc[r.layers[l].kvSrc] || sl.vc[l] != sl.vc[r.layers[l].kvSrc] {
+							t.Errorf("slot %d layer %d: shared layer does not alias layer %d's buffers", s, l, r.layers[l].kvSrc)
+						}
+						continue
+					}
 					for _, b := range []Buffer{sl.kc[l], sl.vc[l]} {
 						n := int64(b.Len()) * 4 // Len is in f32 elements (r.af)
 						bytes += n

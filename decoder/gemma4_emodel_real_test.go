@@ -38,13 +38,15 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 	t.Logf("E2B resolved: hidden_size_per_layer_input=%d (E-model)", m.w.arch.gemma4.HiddenSizePerLayerInput)
 
 	// Every resident backend without the E-model bridge must report FeatGemma4EModel missing ⇒ decline.
-	for _, be := range []string{"cuda", "webgpu"} {
+	for _, be := range []string{"webgpu"} {
 		missing := m.MissingResidentFeatures(residentBackendFeatures[be])
 		if !slices.Contains(missing, FeatGemma4EModel) {
 			t.Errorf("%s: real E2B is NOT declined for the E-model shape (missing=%v) — it would be admitted and mis-run", be, missing)
 		}
 	}
-	if missing := m.MissingResidentFeatures(residentBackendFeatures["metal"]); slices.Contains(missing, FeatGemma4EModel) {
-		t.Errorf("metal reports the E-model shape missing (missing=%v) although it declares FeatGemma4EModel", missing)
+	for _, be := range []string{"metal", "cuda"} {
+		if missing := m.MissingResidentFeatures(residentBackendFeatures[be]); slices.Contains(missing, FeatGemma4EModel) {
+			t.Errorf("%s reports the E-model shape missing (missing=%v) although it declares FeatGemma4EModel", be, missing)
+		}
 	}
 }

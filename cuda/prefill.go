@@ -499,6 +499,12 @@ func (r *cudaResident) prefillStaticDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
+	if r.eModel {
+		// A Gemma 4 E-model needs its per-layer embedding tail, KV sharing and per-layer FFN width in the batched pass, which has none of them: the
+		// row copy in prefillCore would silently drop the PLE tail (copy of `hidden` floats per row), and its scratch is sized to the model-level
+		// width. Decline by name; every caller falls back to the sequential decode path, which has all three.
+		return fmt.Errorf("cuda prefill: Gemma 4 E-model (per-layer embeddings, KV-shared layers, per-layer FFN width) has no batched prefill: %w", errPrefillDeclined)
+	}
 	if r.actG32 {
 		// The batched quantizers and GEMMs read one activation scale per row; per-32 prompts take
 		// the sequential decode path, which runs the per-32 kernels.

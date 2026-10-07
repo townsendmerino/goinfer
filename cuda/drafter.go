@@ -87,6 +87,9 @@ type drafterLayer struct {
 // and the failure mode is a drafter that runs and drafts noise. docs/spec/08 records that exact
 // shape of bug costing a full measurement round.
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
+	if r.eModel {
+		return nil, fmt.Errorf("cuda drafter: the target is a Gemma 4 E-model, whose verify pass needs the batched prefill it declines (per-layer embeddings, shared KV, per-layer FFN width)")
+	}
 	if r.actG32 {
 		return nil, fmt.Errorf("cuda drafter: the target uses per-32 activation quantization, which the drafter's batched kernels do not implement")
 	}

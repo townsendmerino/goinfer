@@ -107,6 +107,9 @@ func (m *Model) cudaKVBytes(ctx int) int64 {
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var perPos int64
 	for l := range nLayers {
+		if m.KVSrcAtResident(l) != l {
+			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (cuda/backend.go, S1 on CUDA)
+		}
 		kvDim := int64(a.kvDimAt(l)) // 0 for a no-attention-KV layer; the latent width on MLA
 		if a.mla != nil {
 			perPos += kvDim * 4 // one latent row per position

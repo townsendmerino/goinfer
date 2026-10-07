@@ -59,7 +59,7 @@ func (r *cudaResident) graphsTenancySafe() (reason string, ok bool) {
 // churn absent at startup — that is graphsTenancySafe's job. Leaves r.graphs=true on success; the
 // caller disables graphs on error. The pos-0 K/V it writes is overwritten by the first real prefill.
 func (r *cudaResident) graphsSelfTest() error {
-	emb := make([]float32, r.hidden)
+	emb := make([]float32, r.embLen) // an E-model's row carries the PLE tail: non-zero, so a stale or mis-strided tail shows as a replay-vs-live divergence
 	for i := range emb {
 		emb[i] = float32((i%13)-6) * 0.05 // deterministic, non-trivial
 	}

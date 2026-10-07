@@ -239,6 +239,9 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 	var perPos int64
 	for i := range layers {
+		if layers[i].kvShared {
+			continue // aliases its source's cache: no bytes of its own
+		}
 		if layers[i].isMLA {
 			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
 		} else {
@@ -450,6 +453,13 @@ type cudaLayer struct {
 	// ffnI: this layer's dense FFN width (g.N), 0 on a layer with no dense FFN. Every dense-FFN launch reads it, not r.inter, because an E-model's
 	// layers differ (S1 on CUDA).
 	ffnI int
+	// PLE branch (Gemma 4 E-model): the per-layer input gate [P x hidden], projection [hidden x P] and the post-norm weight [hidden]. Zero otherwise.
+	pleGate, pleProj cudaWQ
+	postPLENorm      Buffer
+	// kvShared / kvSrc (Gemma 4 E-models, num_kv_shared_layers): this layer owns no K/V. It projects Q only, rotates only Q, and attends over
+	// layer kvSrc's cache, which r.kc[l]/r.vc[l] alias (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md). kEqV and vNorm are false on it.
+	kvShared bool
+	kvSrc    int
 	// vNorm: scale-less v_norm on this layer's V before it is stored. HF and the CPU apply it on EVERY Gemma 4 layer
 	// that owns its K/V, K=V or not (S1.0, docs/tasks/task-multimodal-support-2026-10.md); here only kEqV layers did
 	// until 2026-10-07, so every sliding layer of the resident 12B/26B/31B missed it. Implies kEqV or a real v_proj.
@@ -550,6 +560,11 @@ type cudaResident struct {
 	knob func(name string) (string, bool)
 
 	hidden, nLayers, inter, vocab int
+	// Gemma 4 E-model (S1 on CUDA): pleP is the per-layer-embedding width (0 otherwise), embLen the length of every embedding row a forward
+	// takes (hidden, or hidden+nLayers*pleP), pleG the PLE gate's output scratch. r.x is embLen floats; the PLE inputs are its tail.
+	pleP, embLen int
+	pleG         Buffer
+	eModel       bool // pleP > 0 or any KV-shared layer: the batched prefill, drafters and LoRA decline it by name
 	// nH (query-head count) is the ONE model-level attention dimension — constant across a
 	// family's layers (Gemma 4 is 16 query heads in both variants), so GQA still tracks
 	// per-layer nKV via nH/Ly.nKV. hd/nKV/qDim/kvDim/rhalf are DELIBERATELY per-layer only
@@ -2285,6 +2300,10 @@ func (r *cudaResident) VerifyPath() (bool, string) {
 // view at the matching byte offset, the same mechanism Forward's own checkCap(pos, ...) already
 // treats as a normal position, just never called with a nonzero base until now.
 func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
+	if r.layers[layer].kvShared {
+		// Its r.kc/r.vc ARE its source's buffers: an upload here would overwrite the source layer's cache with another layer's rows.
+		return fmt.Errorf("cuda: UploadKV to layer %d, which shares layer %d's KV cache (Gemma 4 E-model): upload the owning layer", layer, r.layers[layer].kvSrc)
+	}
 	kvDim := r.layers[layer].kvDim
 	if kvDim > 0 {
 		if e := r.checkCap(base, len(keys)/kvDim); e != nil {
@@ -3225,19 +3244,22 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		} else if e := r.doG(Ly.q, r.aq, r.aSc, qb, r.qB, 0); e != nil {
 			return e
 		}
-		if err := r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0); err != nil {
-			return err
-		}
-		if Ly.kEqV {
-			// K=V: vB is the RAW (pre-norm) k projection, which v_norm consumes below. It used to be projected a second time from the same inputs (one more kvDim x hidden
-			// weight read per K=V layer per token); a copy of kB is bit-identical, and a launch like every other op here, so it records into the CUDA graph and is ordered on this stream
-			// between the projection and qk_norm (which rewrites kB in place), exactly where the second projection sat.
-			if err := r.copyF32(r.kB, r.vB, Ly.kvDim); err != nil {
+		// A K/V-shared layer (Gemma 4 E-model) has no k_proj and no v_proj: K/V come from its source layer's cache.
+		if !Ly.kvShared {
+			if err := r.doG(Ly.k, r.aq, r.aSc, kb, r.kB, 0); err != nil {
 				return err
 			}
-		} else {
-			if err := r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0); err != nil {
-				return err
+			if Ly.kEqV {
+				// K=V: vB is the RAW (pre-norm) k projection, which v_norm consumes below. It used to be projected a second time from the same inputs (one more kvDim x hidden
+				// weight read per K=V layer per token); a copy of kB is bit-identical, and a launch like every other op here, so it records into the CUDA graph and is ordered on this stream
+				// between the projection and qk_norm (which rewrites kB in place), exactly where the second projection sat.
+				if err := r.copyF32(r.kB, r.vB, Ly.kvDim); err != nil {
+					return err
+				}
+			} else {
+				if err := r.doG(Ly.v, r.aq, r.aSc, vb, r.vB, 0); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -3281,9 +3303,14 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		if r.qkNormWhole {
 			qkNH, qkNKV, qkHD = 1, 1, r.nH*Ly.hd
 		}
+		kNormW := Ly.kNorm
+		if Ly.kvShared {
+			// Q only: nKV=0 launches no K blocks, and a shared layer has no k_norm weight to bind (an empty Buffer is a nil deref).
+			qkNKV, kNormW = 0, Ly.qNorm
+		}
 		if e := r.launch(r.fQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: 1, GridZ: 1,
 			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
-			Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(Ly.kNorm),
+			Arg(r.qB), Arg(r.kB), Arg(Ly.qNorm), Arg(kNormW),
 			gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
 			gpu.ArgValue(r.eps), gpu.ArgValue(addOne)); e != nil {
 			return e
@@ -3581,12 +3608,36 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
 			return err
 		}
+		if r.pleP > 0 && !g4SkipPLEForTest {
+			// Gemma 4 E-model per-layer embedding branch (decoder/forward_gemma4.go: gate on the RAW residual, geluTanh(gate)*this layer's input,
+			// projection, post-norm, residual add), between the FFN residual and the layer scalar. Existing launches only: quant_vec, the GEMV,
+			// glu_quant with a GELU-tanh act (0) and the layer's slice of the row's tail as its `up`, the GEMV, the post-norm, the add.
+			if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); e != nil {
+				return e
+			}
+			if e := r.doG(Ly.pleGate, r.mq, r.mSc, nullBias, r.pleG, 0); e != nil {
+				return e
+			}
+			if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.pleG), Arg(r.x), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden+(l+pleLayerShiftForTest)*r.pleP)), gpu.ArgValue(int32(r.pleP)),
+				gpu.ArgValue(int32(0)), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
+				return e
+			}
+			if e := r.doG(Ly.pleProj, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
+				return e
+			}
+			if e := r.normF32(r.dO, Ly.postPLENorm); e != nil {
+				return e
+			}
+			if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); e != nil {
+				return e
+			}
+		}
 		// Gemma 4 dense per-layer output scalar (forward_gemma4.go's own `if lw.LayerScalar != 0
 		// { h *= lw.LayerScalar }`, applied AFTER the MLP residual add — matches CPU's order
-		// exactly since this dense tail has no PLE branch yet). 0 (the default for every
+		// exactly: on an E-model it follows the PLE branch above). 0 (the default for every
 		// non-gemma4 family, and Gemma4DenseLayerScalarAtResident's own "skip" sentinel) never
 		// launches the kernel.
-		if Ly.layerScalar != 0 {
+		if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
 			if err := r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))); err != nil {
 				return err
 			}
@@ -3689,6 +3740,11 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	// skips the division entirely: attnTempOrigMaxPos is 0 for those families, and pos/0 would
 	// poison Q with NaN otherwise.
 	qTempScale := r.qTempScaleAt(pos)
+	if r.pleP > 0 && len(emb) != r.embLen {
+		// An E-model row is [hidden ‖ nLayers*P]. A short row would leave the PLE tail stale from the previous token, and a plain hidden-sized
+		// row (what every other model passes) would silently read the previous token's inputs: refuse by length, here, for every entry point.
+		return fmt.Errorf("cuda: Gemma 4 E-model embedding row has %d floats, want %d (hidden %d + %d layers x PLE width %d)", len(emb), r.embLen, r.hidden, r.nLayers, r.pleP)
+	}
 	if e := gpu.Upload(r.x, emb); e != nil {
 		return e
 	}
@@ -3803,9 +3859,15 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 // four buffers pointed at the sequence's row and its slot bound, so every row gets exactly its own decode's kernels.
 func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempScale float32) error {
 	// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
-	if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
+	// A KV-shared layer (Gemma 4 E-model) rotates Q only: nKV=0 leaves rope_kv's K and V work empty, so nothing is stored
+	// through the alias into its source's cache. The attention launches below keep the real Ly.nKV, which is how they read it.
+	ropeNKV := Ly.nKV
+	if Ly.kvShared && !g4KeepSharedKVStoreForTest {
+		ropeNKV = 0
+	}
+	if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+ropeNKV*Ly.rhalf+ropeNKV*(Ly.hd-2*Ly.rhalf), 256),
 		Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
-		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(Ly.hd)),
 		gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
 		gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
 		return err
@@ -4302,3 +4364,16 @@ func fusedG32Shmem(H int) uint32 { return uint32((H + 256 + H/4 + 2*(H/32)) * 4)
 // g4DropVNormForTest re-drops S1.0's Gemma 4 v_norm on the layers that are not K=V, so a gate can show the fix is what
 // moved the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test seam; never in production.
 var g4DropVNormForTest bool
+
+// pleLayerShiftForTest shifts every PLE input slice by this many layers (G2c defect 8: the per-layer offset off by one). 0 in production; set only by a test seam.
+var pleLayerShiftForTest int
+
+// S1-on-CUDA test seams (G2c planted defects, docs/tasks/task-multimodal-support-2026-10.md): each re-plants one defect so a gate can show it turns
+// G1c red. All false in production; only tests set them.
+var (
+	g4SkipPLEForTest           bool // (1) the PLE branch skipped
+	g4KVSrcOffForTest          bool // (3) a shared layer's source one owning layer of its type off
+	g4OneFFNWidthForTest       bool // (4) every dense layer takes layer 0's FFN width
+	g4DropLayerScalarForTest   bool // (6) the dense layer scalar dropped
+	g4KeepSharedKVStoreForTest bool // (5) a shared layer's K/V store NOT skipped (rope_kv keeps the real nKV)
+)

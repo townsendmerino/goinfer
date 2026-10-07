@@ -588,6 +588,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// joint end-to-end gate (TestGLMResidentParity), and declaring partial rotary before the
 	// shared expert existed would have admitted glm onto a path no model could exercise.
 	"cuda": {
+		FeatGemma4EModel:      true, // Gemma 4 E2B/E4B on CUDA (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md): the PLE branch in segBFFN, KV-shared layers aliasing their source cache, per-layer FFN widths
 		FeatQKNorm:            true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
 		FeatSlidingWindow:     true, // attention `window` uniform, per-layer via LayerIsLocalResident
 		FeatPartialRotary:     true, // rope_kv rhalf = rotaryDim/2 + un-rotated tail cached (GLM/Phi)

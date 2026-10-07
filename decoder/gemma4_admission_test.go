@@ -60,18 +60,18 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 		t.Error("webgpu admits gemma4_text (enable_moe_block) but lacks its Gemma kernels — the feature gate must refuse it")
 	}
 
-	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by Metal alone, which
-	// implements all three since S1 (docs/tasks/task-multimodal-support-2026-10.md). CUDA and WebGPU have none of it,
-	// so admitting the model there would silently skip PLE and mis-run: their feature gate must refuse it.
+	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by Metal (S1) and CUDA (S1 on CUDA,
+	// docs/tasks/task-multimodal-support-2026-10.md), which implement all three. WebGPU has none of it, so admitting the model there
+	// would silently skip PLE and mis-run: its feature gate must refuse it.
 	e := denseArch()
 	e.gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape
-	if !ResidentEligible(e, "metal") {
-		t.Errorf("metal declines a Gemma-4 E-model although it declares FeatGemma4EModel (missing %v)", missingFeatures(e.residentFeatures(), residentBackendFeatures["metal"]))
-	}
-	for _, be := range []string{"cuda", "webgpu"} {
-		if ResidentEligible(e, be) {
-			t.Errorf("%s: admits a Gemma-4 E-model (PLE hidden_size_per_layer_input>0) — the bridge skips the PLE branch and would mis-run", be)
+	for _, be := range []string{"metal", "cuda"} {
+		if !ResidentEligible(e, be) {
+			t.Errorf("%s declines a Gemma-4 E-model although it declares FeatGemma4EModel (missing %v)", be, missingFeatures(e.residentFeatures(), residentBackendFeatures[be]))
 		}
+	}
+	if ResidentEligible(e, "webgpu") {
+		t.Error("webgpu: admits a Gemma-4 E-model (PLE hidden_size_per_layer_input>0) — the bridge skips the PLE branch and would mis-run")
 	}
 
 	// The MoE variant is inert to the variable too. This used to assert the OPPOSITE — that env-off

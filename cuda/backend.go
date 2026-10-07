@@ -124,6 +124,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	H, nLayers, nH, _, _, I, vocab := m.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
+	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (ResidentEmbedLen):
+	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail (S1 on CUDA).
+	pleP := m.Gemma4PLEDimResident()
+	if want := H + nLayers*pleP; pleP > 0 && m.ResidentEmbedLen() != want {
+		return declined(fmt.Errorf("gemma4 E-model: the decoder's resident embedding row is %d floats, but hidden+layers*P is %d", m.ResidentEmbedLen(), want))
+	}
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
 	// sharedUngated picks which shared-expert combine runs: GLM/DeepSeek add the shared output
@@ -180,6 +186,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
 	type hlayer struct {
 		q, k, v, o, g, u, d       hostW
+		pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch (S1 on CUDA); zero unless pleP > 0
+		postPLENorm               []float32 // the PLE branch's post-norm weight [hidden]
 		qb, kb, vb                []float32
 		ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
 		preNorm, postNorm         []float32
@@ -369,9 +377,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			hl.mlaWUK, hl.mlaWUV = wuk, wuv
 		default:
-			proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
-			if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
-				proj = append(proj, projEnt{&hl.v, &lw.VProj})
+			if m.KVSrcAtResident(l) != l {
+				// A KV-shared layer (Gemma 4 E-model) carries only Q and O: its K/V are its source layer's.
+				proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.o, &lw.OProj}}
+			} else {
+				proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
+				if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
+					proj = append(proj, projEnt{&hl.v, &lw.VProj})
+				}
 			}
 		}
 		if hl.g4moe {
@@ -406,6 +419,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					dst *hostW
 					src *linalg.WeightMat
 				}{&hl.d, &lw.DownProj})
+		}
+		if pleP > 0 {
+			if lw.PLEGate.Rows() != pleP || lw.PLEProj.Rows() != H || len(lw.PostPLENorm) != H {
+				return declined(fmt.Errorf("layer %d: PLE weights are not the expected shape (gate rows %d want %d, proj rows %d want %d, post-norm %d want %d)",
+					l, lw.PLEGate.Rows(), pleP, lw.PLEProj.Rows(), H, len(lw.PostPLENorm), H))
+			}
+			proj = append(proj, projEnt{&hl.pleGate, &lw.PLEGate}, projEnt{&hl.pleProj, &lw.PLEProj})
+			hl.postPLENorm = lw.PostPLENorm
 		}
 		for _, p := range proj {
 			hw, e := packWeight(p.src)
@@ -595,6 +616,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					return declined(fmt.Errorf("layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, nH, nKVL))
 				}
 				wantQ, wantK = nH*hdL, nKVL*hdL
+			}
+			if m.KVSrcAtResident(l) != l {
+				wantK = 0 // a KV-shared layer has no k_norm either
 			}
 			if len(hl.qNorm) != wantQ || len(hl.kNorm) != wantK {
 				return declined(fmt.Errorf("layer %d: arch claims QK-norm but QNorm/KNorm are not the expected width (want %d/%d, got %d/%d)",
@@ -1469,7 +1493,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.invF = r.up32(h.invFreq)
 				L.mscale = float32(m.RopeMscaleLayer(l))
 			} else {
-				L.q, L.k, L.o = r.upW(h.q), r.upW(h.k), r.upW(h.o) // v below (K=V layers have none)
+				L.q, L.o = r.upW(h.q), r.upW(h.o)
+				if m.KVSrcAtResident(l) == l {
+					L.k = r.upW(h.k) // a KV-shared layer has no k_proj; v below (K=V layers have none)
+				}
 				L.invF = r.up32(h.invFreq)
 				L.mscale = float32(m.RopeMscaleLayer(l)) // YaRN attention_factor; 1.0 for every family without it
 				L.qGate = h.qGate
@@ -1479,6 +1506,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// Alloc(0) is an error rather than a harmless no-op.
 				L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
 				L.ffnI = L.g.N
+				if g4OneFFNWidthForTest && l > 0 {
+					L.ffnI = r.layers[0].ffnI
+				}
+				if pleP > 0 {
+					L.pleGate, L.pleProj, L.postPLENorm = r.upW(h.pleGate), r.upW(h.pleProj), r.up32(h.postPLENorm)
+				}
 				// Gemma 4's per-layer output scalar (out = h*layerScalar, applied after the dense
 				// MLP residual add). A real, always-present multiply for every dense gemma4 layer
 				// (defaults to 1 when the checkpoint's tensor is absent, decoder/weights.go), NOT
@@ -1503,7 +1536,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.ob, L.hasOBias = r.up32(h.ob), true
 			}
 			if r.qkNorm && !h.isDeltaNet && !h.isMLA {
-				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)
+				L.qNorm = r.up32(h.qNorm)
+				if len(h.kNorm) > 0 { // empty on a KV-shared layer, and Alloc(0) is an error
+					L.kNorm = r.up32(h.kNorm)
+				}
 			}
 			if h.isMoE {
 				L.isMoE = true
@@ -1554,12 +1590,31 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.layers[l] = L
 				continue
 			}
-			L.kEqV = m.VFromKResident(l)
+			if src := m.KVSrcAtResident(l); src != l {
+				if g4KVSrcOffForTest {
+					// G2c defect (3): the source one OWNING layer of the same attention type earlier (when there is one).
+					for j := src - 1; j >= 0; j-- {
+						if m.KVSrcAtResident(j) == j && m.HeadDimAtResident(j) == m.HeadDimAtResident(src) {
+							src = j
+							break
+						}
+					}
+				}
+				// Gemma 4 E-model KV sharing: this layer reads layer src's cache and owns no K/V. The geometry must be the
+				// source's, or its attention would index the aliased buffers with the wrong stride.
+				so := &r.layers[src]
+				if src > l || so.kvShared || so.hd != L.hd || so.nKV != L.nKV || so.kvDim != L.kvDim {
+					return fmt.Errorf("cuda: layer %d shares layer %d's KV cache but its geometry (hd %d, nKV %d, kvDim %d) is not an owning layer's (hd %d, nKV %d, kvDim %d)",
+						l, src, L.hd, L.nKV, L.kvDim, so.hd, so.nKV, so.kvDim)
+				}
+				L.kvShared, L.kvSrc = true, src
+			}
+			L.kEqV = m.VFromKResident(l) && !L.kvShared
 			// Gemma 4 applies v_norm on every layer that owns its K/V (S1.0); K=V layers always did. g4DropVNormForTest
 			// re-drops it on the non-K=V layers so a test can reproduce the before-fix numbers.
-			L.vNorm = L.kEqV || (isGemma4 && !g4DropVNormForTest)
-			if !L.kEqV {
-				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k
+			L.vNorm = !L.kvShared && (L.kEqV || (isGemma4 && !g4DropVNormForTest))
+			if !L.kEqV && !L.kvShared {
+				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
 			}
 			// Per-layer rope-table invariant (9a-P2, the live version of ropeResidentCompatible):
 			// rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
@@ -1625,7 +1680,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if !r.isMLA && maxQDim != nH*maxHd {
 			return fmt.Errorf("cuda: scratch maxQDim=%d != nH*maxHd=%d*%d=%d — per-layer geometry inconsistent with the accessors", maxQDim, nH, maxHd, nH*maxHd)
 		}
-		r.x, r.aSc, r.aq = r.af(H), r.af(r.actScaleLen(H)), r.ai(H/4)
+		// r.x carries the embedding row: for an E-model that is [hidden ‖ nLayers*P PLE inputs], uploaded in ONE copy, and each layer's
+		// PLE branch reads its slice with an element offset (glu_quant's uOff), so no buffer view is needed. Every other model: hidden floats.
+		r.pleP, r.embLen = pleP, H+nLayers*pleP
+		r.eModel = pleP > 0
+		for l := range r.layers {
+			r.eModel = r.eModel || r.layers[l].kvShared
+		}
+		r.x, r.aSc, r.aq = r.af(r.embLen), r.af(r.actScaleLen(H)), r.ai(H/4)
+		if pleP > 0 {
+			r.pleG = r.af(pleP)
+		}
 		qBufDim := maxQDim
 		if r.isMLA {
 			qBufDim = nH * r.mlaQKHead
@@ -1661,7 +1726,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
 				return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
 			}
+			if r.layers[l].kvShared {
+				continue // aliased below, once every owning layer has its buffers
+			}
 			r.kc[l], r.vc[l] = r.af(r.ctxCap*r.layers[l].kvDim), r.af(r.ctxCap*r.layers[l].kvDim)
+		}
+		// A KV-shared layer's cache IS its source's: every launch indexes r.kc[l]/r.vc[l], so aliasing the buffers needs no launch-site
+		// change (the device teardown is ledger-based, so a buffer held twice is released once). UploadKV refuses these layers by name.
+		for l := range r.layers {
+			if r.layers[l].kvShared {
+				r.kc[l], r.vc[l] = r.kc[r.layers[l].kvSrc], r.vc[r.layers[l].kvSrc]
+			}
 		}
 		// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (checkKVFits granted
 		// r.kvSlotsN of the request). Slot 0 is the set above; UseKVSlot rebinds r.kc/r.vc.
@@ -1671,11 +1746,19 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			for s := 1; s < n; s++ {
 				b := cudaKVSlot{kc: make([]Buffer, nLayers), vc: make([]Buffer, nLayers)}
 				for l := range nLayers {
+					if r.layers[l].kvShared {
+						continue // aliased to its source's slot buffers below
+					}
 					if r.kc[l].Len() > 0 {
 						b.kc[l] = r.af(r.kc[l].Len())
 					}
 					if r.vc[l].Len() > 0 {
 						b.vc[l] = r.af(r.vc[l].Len())
+					}
+				}
+				for l := range nLayers {
+					if r.layers[l].kvShared {
+						b.kc[l], b.vc[l] = b.kc[r.layers[l].kvSrc], b.vc[r.layers[l].kvSrc]
 					}
 				}
 				r.kvSlotBufs[s] = b

@@ -427,7 +427,9 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			// 2026-10-01: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
 			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the
 			// real Aya/R7B gate. metal and webgpu do NOT declare either.
-			FeatPairwiseRoPE, FeatPairwiseMRoPE},
+			// 2026-10-07: FeatGemma4EModel (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md): the PLE branch from existing
+			// kernels, KV-shared layers aliasing their source's cache, per-layer FFN widths; G1c/G2c on the tiny E-model, graphs bit-exact.
+			FeatPairwiseRoPE, FeatPairwiseMRoPE, FeatGemma4EModel},
 		// G6 (docs/tasks/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
 		// already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
 		// wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
