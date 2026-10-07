@@ -17,7 +17,7 @@ func (f *fakeResidentEnc) EnableResident() error { f.calls++; return f.err }
 // startup: loadVisionTower returned the EnableResident error and the model already loaded on the GPU was thrown away. The attach
 // is now a warning, and the tower runs on the CPU path EnableResident leaves intact.
 func TestEnableResidentTower(t *testing.T) {
-	for _, backend := range []string{"cuda", "webgpu"} {
+	for _, backend := range []string{"cuda", "webgpu", "metal"} {
 		t.Run(backend+"/fails", func(t *testing.T) {
 			var warn strings.Builder
 			enc := &fakeResidentEnc{err: errors.New("out of memory")}
@@ -39,11 +39,28 @@ func TestEnableResidentTower(t *testing.T) {
 		})
 	}
 	// Any other backend never asks for a resident tower (and so never warns about not getting one).
-	for _, backend := range []string{"cpu", "metal", "auto", ""} {
+	for _, backend := range []string{"cpu", "auto", ""} {
 		var warn strings.Builder
 		enc := &fakeResidentEnc{err: errors.New("must not be called")}
 		if enableResidentTower(enc, backend, &warn) || enc.calls != 0 || warn.Len() != 0 {
 			t.Errorf("backend %q: resident=true, or EnableResident called %d times, or warned %q", backend, enc.calls, warn.String())
 		}
+	}
+}
+
+// -require-backend turns a failed device attach into a refusal (S3), on every device backend; without it, the warning above.
+func TestAttachResidentTower_require(t *testing.T) {
+	for _, backend := range []string{"cuda", "webgpu", "metal"} {
+		var warn strings.Builder
+		ok, err := attachResidentTower("Gemma 3 SigLIP", &fakeResidentEnc{err: errors.New("declined")}, backend, true, &warn)
+		if ok || err == nil || !strings.Contains(err.Error(), "-require-backend") || !strings.Contains(err.Error(), "declined") {
+			t.Errorf("%s: a failed attach under -require-backend: ok %v, err %v", backend, ok, err)
+		}
+		if warn.Len() != 0 {
+			t.Errorf("%s: a refusal must not also warn: %q", backend, warn.String())
+		}
+	}
+	if ok, err := attachResidentTower("x", &fakeResidentEnc{err: errors.New("must not be called")}, "cpu", true, nil); ok || err != nil {
+		t.Errorf("the CPU never attaches, require or not: ok %v, err %v", ok, err)
 	}
 }

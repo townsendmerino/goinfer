@@ -1159,16 +1159,12 @@ func (s *server) loadVisionTower(cfg config) error {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend), cfg.towerBackend(), cfg.requireBE)
+		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.towerBackend()), cfg.towerBackend(), cfg.requireBE)
 	}
 	mt := visionModelType(dir)
-	// -vision-device cpu keeps EVERY tower on the CPU, Gemma 3's resident SigLIP encoder included: towerBackend() is "cpu" under it, and the int8 default and
-	// the resident attach below both key on it, not on the model's own backend. Until 2026-10-07 this branch used cfg.load.Backend for both, so a
-	// `--backend cuda -vision-device cpu` Gemma 3 still ran an int8 resident tower (found by G-S3c on CUDA, where the CPU arms ran f32 on the CPU).
-	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.load.Backend)
-	if cfg.towerBackend() == "cpu" {
-		int8Tower = towerInt8(mt, cfg.visionQuant, "cpu")
-	}
+	// cfg.towerBackend(), not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
+	// --backend cuda or webgpu too (it used to load int8 and attach the device tower whatever the flag said).
+	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.towerBackend())
 	if mt == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
@@ -1189,7 +1185,10 @@ func (s *server) loadVisionTower(cfg config) error {
 	// tower's own leak/threading bugs are fixed (cuda/vision_encoder.go) — cuda/vision_register.go
 	// already registered its factory with vision.RegisterResident via cuda/cmd/serve's blank
 	// import; this gate was the only thing that never called EnableResident() for it.
-	residentOK := cfg.towerBackend() != "cpu" && enableResidentTower(enc, cfg.load.Backend, os.Stderr)
+	residentOK, err := attachResidentTower("Gemma 3 SigLIP", enc, cfg.towerBackend(), cfg.requireBE, os.Stderr)
+	if err != nil {
+		return err
+	}
 	proj, err := multimodal.LoadProjector(dir)
 	if err != nil {
 		return fmt.Errorf("load vision projector (%s): %w", dir, err)
@@ -1208,15 +1207,15 @@ func (s *server) loadVisionTower(cfg config) error {
 			vq = "int8"
 		}
 		if residentOK {
-			vq = "int8/" + cfg.load.Backend + "-resident"
+			vq += "/" + cfg.towerBackend() + "-resident"
 		}
 		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
 	}
 	return nil
 }
 
-// towerInt8 says whether a vision tower loads with int8 matmul weights. Only Gemma 3's SigLIP tower has a resident GPU encoder, and
-// that encoder needs int8 (W8A8), so --backend webgpu/cuda implies int8 for it even without --vision-quant. Every other tower
+// towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP tower's resident GPU encoders on CUDA and
+// WebGPU need int8 (W8A8), so --backend webgpu/cuda implies int8 for it even without --vision-quant; Metal's (S3) is float32. Every other tower
 // (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only whatever the backend: it gets int8 only when asked for. The old rule forced int8
 // on three of them under cuda/webgpu, which bought no speed (the CPU int8 tower is not faster) and cost fidelity: measured 2026-10-02
 // against each tower's own f32 on the same image, relative L2 0.21 (Qwen2.5-VL), 0.14 (Qwen3.5-0.8B), 0.31 (Gemma 4), per-token
@@ -1232,19 +1231,30 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	return backend == "webgpu" || backend == "cuda"
 }
 
-// enableResidentTower attaches the device-resident vision tower when the backend is webgpu or cuda and reports whether it is
-// attached. A failed attach (no VRAM left for the tower, a build without the backend) is a warning, not an error: it used to abort
-// serve startup and throw away the model already loaded on the GPU, but EnableResident leaves the CPU path intact, so the tower
-// runs there (slower) and the banner does not claim "-resident".
+// enableResidentTower attaches the device-resident vision tower when the backend is webgpu, cuda or metal and reports whether it
+// is attached. A failed attach (no VRAM left for the tower, a build without the backend) is a warning, not an error: it used to
+// abort serve startup and throw away the model already loaded on the GPU, but EnableResident leaves the CPU path intact, so the
+// tower runs there (slower) and the banner does not claim "-resident". Metal's towers (SigLIP and Qwen2.5-VL, S3) are float32
+// and decline an int8 tower, which lands here as that warning.
 func enableResidentTower(enc interface{ EnableResident() error }, backend string, warn io.Writer) bool {
-	if backend != "webgpu" && backend != "cuda" {
-		return false
+	ok, _ := attachResidentTower("", enc, backend, false, warn)
+	return ok
+}
+
+// attachResidentTower is enableResidentTower with -require-backend: under it a failed attach on a device backend refuses
+// startup instead of falling back to the CPU tower, as planGridTower does for the Qwen3.5+ and GLM-OCR towers.
+func attachResidentTower(family string, enc interface{ EnableResident() error }, backend string, require bool, warn io.Writer) (bool, error) {
+	if backend != "webgpu" && backend != "cuda" && backend != "metal" {
+		return false, nil
 	}
 	if err := enc.EnableResident(); err != nil {
+		if require {
+			return false, fmt.Errorf("-require-backend: the %s tower could not start on %s: %w", family, backend, err)
+		}
 		fmt.Fprintf(warn, "warning: the resident GPU vision tower could not be enabled (%v); images will run through the CPU tower (slower)\n", err)
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 // visionModelType returns dir/config.json's model_type ("" if absent/unreadable) —
@@ -1284,8 +1294,18 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 	if err != nil {
 		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
 	}
-	where, err := qwenTowerPlacement(backend, int8Tower, require, enc.EnableResident, os.Stderr)
-	if err != nil {
+	// Metal's tower (S3) attaches through attachResidentTower; CUDA's (aikit's gpu/qwencuda, S4: G-S4q correct at real size and 1.6-2.7x the CPU tower)
+	// through qwenTowerPlacement, which names every CPU fallback; every other backend runs the CPU tower.
+	where := "CPU"
+	if backend == "metal" {
+		ok, err := attachResidentTower("Qwen2.5-VL", enc, backend, require, os.Stderr)
+		if err != nil {
+			return err
+		}
+		if ok {
+			where = "Metal"
+		}
+	} else if where, err = qwenTowerPlacement(backend, int8Tower, require, enc.EnableResident, os.Stderr); err != nil {
 		return err
 	}
 	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
@@ -1303,7 +1323,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 		if lm.qwenImgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
-		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (%s; merge %d, image-pad id %d) from %s\n", lm.name, where, lm.qwenMerge, lm.qwenImgTok, dir)
+		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d, tower on %s) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, where, dir)
 	}
 	return nil
 }
