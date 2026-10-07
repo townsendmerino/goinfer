@@ -1,0 +1,22 @@
+{
+ "model_type": "glm_ocr",
+ "vision_config": {
+  "depth": 2,
+  "hidden_size": 128,
+  "intermediate_size": 256,
+  "num_heads": 2,
+  "in_channels": 3,
+  "patch_size": 4,
+  "spatial_merge_size": 2,
+  "temporal_patch_size": 2,
+  "out_hidden_size": 192,
+  "rms_norm_eps": 1e-05,
+  "attention_bias": true,
+  "hidden_act": "silu",
+  "model_type": "glm_ocr_vision",
+  "rope_parameters": {
+   "rope_theta": 10000.0,
+   "rope_type": "axial"
+  }
+ }
+}

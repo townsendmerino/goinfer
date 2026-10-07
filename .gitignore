@@ -49,6 +49,10 @@ demo/chat/dist/
 # and able to fail".
 !testdata/glm-ocr-tiny/
 !testdata/glm-ocr-tiny/model.safetensors
+# EXCEPTION: glm-ocr-vision-tiny is aikit's tiny GLM-OCR tower (1.6 MB, a copy of aikit's testdata fixture), committed
+# so S2's Metal GLM-OCR tower gate (metal/grid_vision_test.go) runs without an aikit checkout beside this one.
+!testdata/glm-ocr-vision-tiny/
+!testdata/glm-ocr-vision-tiny/model.safetensors
 # EXCEPTION: lfm2-tiny is a 708 KB deterministic random-weight conv/attention hybrid
 # (scripts/pin_lfm2_tiny.py). Committed on purpose so the LFM2/LFM2.5 forward-parity gate
 # is a real T1 — runnable in CI without a per-machine asset — rather than a golden that
