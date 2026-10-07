@@ -1170,7 +1170,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		int8Tower = towerInt8(mt, cfg.visionQuant, "cpu")
 	}
 	if mt == "qwen2_5_vl" {
-		return s.loadQwenVisionTower(dir, int8Tower)
+		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "qwen3_5" || mt == "qwen3_5_moe" {
 		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
@@ -1279,10 +1279,14 @@ func (s *server) soleModelSource(cfg config) string {
 // encoder; preprocessing + m-RoPE are Qwen-specific (the image path branches on
 // qwenEnc). Image placeholders use <|image_pad|>, expanded per image to the merged
 // patch count.
-func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
+func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string, require bool) error {
 	enc, err := vision.LoadQwenVisionEncoder(dir, int8Tower)
 	if err != nil {
 		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
+	}
+	where, err := qwenTowerPlacement(backend, int8Tower, require, enc.EnableResident, os.Stderr)
+	if err != nil {
+		return err
 	}
 	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
 	if err != nil {
@@ -1299,7 +1303,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 		if lm.qwenImgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
-		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, dir)
+		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (%s; merge %d, image-pad id %d) from %s\n", lm.name, where, lm.qwenMerge, lm.qwenImgTok, dir)
 	}
 	return nil
 }
@@ -1825,4 +1829,28 @@ func visionPathError(dir string) error {
 		return nil // a GGUF mmproj: loadVision routes it (Qwen3.5+ only, P8b), with its own refusals
 	}
 	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
+}
+
+// qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/tasks/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
+// tower under --backend cuda when the binary registers one (cuda/vision_towers.go imports it) and the tower is float32 (G-S4q: correct at real size, 1.6-2.7x the
+// CPU tower); the CPU everywhere else, with the reason named. -require-backend turns each CPU fallback under cuda into a refusal. -vision-device cpu arrives
+// here as backend "cpu". Metal has no Qwen2.5-VL device tower yet (the owner's rebuild on the Metal base is the Mac's), so only cuda asks for one.
+func qwenTowerPlacement(backend string, int8Tower, require bool, attach func() error, warn io.Writer) (string, error) {
+	if backend != "cuda" {
+		return "CPU", nil
+	}
+	if int8Tower {
+		if require {
+			return "", fmt.Errorf("-require-backend: the Qwen2.5-VL CUDA tower is float32; -vision-quant int8 keeps it on the CPU")
+		}
+		return "CPU (-vision-quant int8; the CUDA tower is float32)", nil
+	}
+	if err := attach(); err != nil {
+		if require {
+			return "", fmt.Errorf("-require-backend: the Qwen2.5-VL tower could not start on cuda: %w", err)
+		}
+		fmt.Fprintf(warn, "vision: the Qwen2.5-VL tower runs on the CPU: cuda declined it: %v\n", err)
+		return "CPU (cuda declined)", nil
+	}
+	return "CUDA", nil
 }
