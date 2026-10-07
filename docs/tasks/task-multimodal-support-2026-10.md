@@ -269,6 +269,24 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
   - **PASS:** identical tokens, or a first divergence at a near-tie, on every prompt; and teacher-forced argmax
     agreement >= 99% over all positions.
   - **Ambiguous (parked for the owner):** 97-99%. **Fail:** under 97%.
+  - **G3's prompt set and procedure, fixed 2026-10-06 before any G3 run.** The model is
+    `~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf` (local disk), loaded `Quant: int4` twice: once for the CPU,
+    once for Metal's resident (each from its own sidecar of that GGUF). Each prompt is one user turn rendered by the
+    GGUF's own chat template (`chat.Detect`), no system message, BOS added by the tokenizer. The eight prompts:
+    1. `Explain why the sky is blue in two sentences.`
+    2. `Write a haiku about autumn leaves.`
+    3. `What is 17 multiplied by 23? Show your work.`
+    4. `Translate "Where is the train station?" into French and German.`
+    5. `List three differences between Python and Go.`
+    6. `Summarize the plot of Romeo and Juliet in one paragraph.`
+    7. `Write a Go function that reverses a string.`
+    8. `What are the main causes of inflation?`
+    - **Free-running:** each side prefills token by token and decodes 32 greedy tokens (no early stop on EOS). Same
+      tokens, or a first divergence where the CPU's logit gap between its top-1 and Metal's pick is under 3% of
+      |top-1| (the two-geometry rule), passes that prompt.
+    - **Teacher-forced:** the CPU's sequence (prompt + its 32 tokens) is fed to Metal from a reset cache; agreement is
+      Metal's argmax equal to the CPU's at every position that predicts a next token, pooled over the eight prompts.
+    - Memory: Metal's own fit guard (`residentFitsMemory`) must admit the model; the test refuses otherwise.
 - **G4, real E2B image chat:**
   - The F2b request through the Metal serve binary, resident decode against CPU decode.
   - **PASS:** identical reply, or a first divergence at a near-tie.
