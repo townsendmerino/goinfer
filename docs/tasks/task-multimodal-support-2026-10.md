@@ -1287,6 +1287,34 @@ prompt prefills token by token on the GPU too. Both backends decline E-models fr
   (CPU prefill and upload; sequential resident), interleaved. Default on if G-S9a and G-S9b pass, since the change is
   bit-identical (the 4b precedent); the night grade turns it off below 1.00x.
 
+**S9 on Metal, results (2026-10-07, Mac):**
+- **The code:** `metal/prefill_emodel.go`.
+  - `PrefillLast` takes a dense Gemma 4 E-model through a layer-major pass: per layer, one command buffer encodes
+    decode's own `encodeLayerWith` once per row, each row on its own residual, PLE inputs and position uniforms.
+  - `GenerateGemma4VL`'s E-model branch builds the resident rows and prefills there (`gemma4VLResidentPrefill`), with
+    `gemma4ResidentMediaRow` building the image and audio positions: the feature unscaled, PLE from PAD. A decline
+    keeps the CPU prefill and upload.
+  - Serve's log line names where the prefill ran. E-model text prompts reach the pass through the decoder's existing
+    `residentPrefillSeed`, unchanged.
+- **G-S9a: PASS, bit-identical in all four cases.** On the tiny E-model, the last row's logits plus the next 8 decode
+  steps are equal bit for bit to the sequential loop's, for text only and with 12 image rows, at 18 and 293 rows (past
+  one 256-row chunk). `metal/gemma4_emodel_s9_test.go`.
+- **G-S9b: PASS, all four defects red at the first step:** (1) PLE inputs shifted one row, max |diff| 0.904; (2) PLE
+  dropped, 1.19; (3) one position late, 1.41; (4) rows reversed within a layer, 0.906.
+- **G-S9c, read 13:00-13:01 PDT: PASS.** The serve binary was built from `s2-towers` with `main` merged
+  (`6e4449ae`), which has `-vision-device`. The model was the E2B GGUF with `--vision ~/models/gemma-4-E2B-unq`, using
+  table.png, `-vision-device cpu` and `--embed-int4=false` on every arm.
+  - The Metal arm reported `prefill path: layer-major on decode's kernels (... a Gemma 4 E-model, S9)` and logged
+    "decoded 32 tokens on the resident path (prefill resident)". The CPU arms prefilled on the CPU.
+  - The replies agree for 17 tokens. At token 17 the CPU reference picks " for" at 0.388, with Metal's "." at 0.339
+    there: a near-tie. The second CPU run is byte-identical to the first.
+  - Request time (exploratory; the tower on the CPU in every arm, by the gate's design): Metal 12.1 s, CPU 14.5 and
+    12.9 s. The tower is most of that; the night record separates prefill from tower.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s9-gs9c/`.
+- **Still owed for S9:** the night speed record (image-turn and 512-token text TTFT, the pass against the old path),
+  and CUDA's half (nobara).
+
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
