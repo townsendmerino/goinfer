@@ -2084,6 +2084,18 @@ func (r *cudaResident) checkKVFits() error {
 	}
 	// r.extraBytes reserves room for a companion attach (--drafter) coming after this build —
 	// see the field's own doc comment. 0 for every load without one, so this is unchanged then.
+	if !r.ctxExplicit && r.ctxCap > cudaCtxCapDefault {
+		// An unpinned context that even ONE slot of KV overshoots (by the build's own scratch, which ctxForSlots cannot see) gives up positions, never
+		// below cudaCtxCapDefault, instead of declining the whole resident path to the CPU with a log line. R19 (639e646c) raised the candidate to 16384
+		// and says it is "shrunk to what the card holds", but only the multi-slot arm below did that; on the 8 GB card a plain decoder.Load of a 7B
+		// (16000 positions, 1.84 GB of KV against 1.80 GB free) or of Gemma-3 (11800, 3.29 GB against 3.35 GB free, less the 384 MB margin) fell to the
+		// CPU. Found by the 2026-10-07 night gate: five heavy-tier tests failed on it. serve never saw it (it plans its own context).
+		if c, ok := trimUnpinnedCtx(r.ctxCap, need, int64(free), r.extraBytes, ctxCapMarginBytes); ok {
+			fmt.Fprintf(os.Stderr, "cuda: resident context %d, trimmed from %d at the build, so one KV slot fits beside the weights (%.0f MB free, less %.0f MB reserved)\n",
+				c, r.ctxCap, float64(free)/(1<<20), float64(r.extraBytes+ctxCapMarginBytes)/(1<<20))
+			r.ctxCap, need = c, kvBytesForCap(c, r.layers)
+		}
+	}
 	if need+r.extraBytes+ctxCapMarginBytes <= int64(free) {
 		// MC1: as many of the requested KV slots as fit the same budget, each another `need`.
 		reserve := r.extraBytes + ctxCapMarginBytes
@@ -4377,3 +4389,21 @@ var (
 	g4DropLayerScalarForTest   bool // (6) the dense layer scalar dropped
 	g4KeepSharedKVStoreForTest bool // (5) a shared layer's K/V store NOT skipped (rope_kv keeps the real nKV)
 )
+
+// trimUnpinnedCtx is the positions an UNPINNED resident context gives up so that one KV slot (need bytes at ctxCap positions, linear in positions) fits
+// beside the weights: free VRAM less extra (a companion attach) and margin. ok is false when it already fits, or when the fit would fall below
+// cudaCtxCapDefault (then the caller declines as before).
+func trimUnpinnedCtx(ctxCap int, need, free, extra, margin int64) (c int, ok bool) {
+	if ctxCap <= 0 || need+extra+margin <= free {
+		return ctxCap, false
+	}
+	perPos := need / int64(ctxCap)
+	if perPos <= 0 {
+		return ctxCap, false
+	}
+	c = int((free - extra - margin) / perPos)
+	if c >= cudaCtxCapDefault && c < ctxCap {
+		return c, true
+	}
+	return ctxCap, false
+}

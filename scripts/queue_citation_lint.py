@@ -240,8 +240,22 @@ def sibling_repos():
     return out
 
 
+# The variables through which git pins a command to ONE repository whatever its cwd. A git hook exports GIT_DIR for the
+# repository being pushed (from a worktree, as an absolute path), and the lookups below name OTHER repositories (the
+# aikit checkout) by cwd alone, so an inherited GIT_DIR silently searches goinfer for aikit's SHAs and reports them as
+# not resolving. Measured 2026-10-07: a push from a goinfer worktree was refused on two aikit SHAs (`ada417e`'s E6
+# citation) that the same lint, run by hand in the same worktree, resolved green.
+_GIT_REPO_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+                  "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX")
+
+
+def _repo_env() -> dict:
+    """The environment for a git command that names its repository by cwd."""
+    return {k: v for k, v in os.environ.items() if k not in _GIT_REPO_VARS}
+
+
 def _commit_count(repo: str) -> str:
-    r = subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True, text=True, cwd=repo)
+    r = subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True, text=True, cwd=repo, env=_repo_env())
     return r.stdout.strip() or "?"
 
 
@@ -254,7 +268,7 @@ def subject_of(sha: str):
     """
     for repo in sibling_repos():
         probe = subprocess.run(["git", "rev-parse", "--git-dir"],
-                               capture_output=True, text=True, cwd=repo)
+                               capture_output=True, text=True, cwd=repo, env=_repo_env())
         if probe.returncode != 0:
             raise SearchError(f"{repo}: not a usable git repository ({probe.stderr.strip()})")
         # A SHALLOW clone cannot answer this question at all. It holds one commit, so every cited
@@ -266,7 +280,7 @@ def subject_of(sha: str):
         # this function already makes, applied to the one case that actually shipped: the lint ran
         # in CI under a depth-1 checkout and main was red for 15 consecutive runs.
         shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"],
-                                 capture_output=True, text=True, cwd=repo)
+                                 capture_output=True, text=True, cwd=repo, env=_repo_env())
         if shallow.stdout.strip() == "true":
             raise SearchError(
                 f"{repo}: SHALLOW clone — it contains {_commit_count(repo)} commit(s), so no "
@@ -278,7 +292,7 @@ def subject_of(sha: str):
                 f"  Locally: git fetch --unshallow")
         r = subprocess.run(
             ["git", "log", "-1", "--format=%s", sha],
-            capture_output=True, text=True, cwd=repo,
+            capture_output=True, text=True, cwd=repo, env=_repo_env(),
         )
         if r.returncode == 0:
             # RESOLVING IS NOT ENOUGH — the commit must be REACHABLE FROM A REF.
@@ -299,12 +313,12 @@ def subject_of(sha: str):
             # another branch or a tag and must still pass.
             reach = subprocess.run(
                 ["git", "merge-base", "--is-ancestor", sha, "HEAD"],
-                capture_output=True, text=True, cwd=repo,
+                capture_output=True, text=True, cwd=repo, env=_repo_env(),
             )
             if reach.returncode != 0:
                 anyref = subprocess.run(
                     ["git", "for-each-ref", "--contains", sha, "--format=%(refname)"],
-                    capture_output=True, text=True, cwd=repo,
+                    capture_output=True, text=True, cwd=repo, env=_repo_env(),
                 )
                 refs = [r for r in anyref.stdout.split() if r]
                 if not refs:

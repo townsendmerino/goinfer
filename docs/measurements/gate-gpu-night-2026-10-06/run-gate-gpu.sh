@@ -21,6 +21,21 @@ git fetch -q origin || echo "warning: git fetch failed; testing the local $REV"
 [ -d "$WT" ] && git worktree remove --force "$WT"
 git worktree add -q --detach "$WT" "$REV" || { echo "FATAL: cannot check out $REV"; exit 2; }
 n=0
+# Untracked, NOT-ignored fixture DIRECTORIES (testdata/gemma4-emodel-tiny: only its *.safetensors is gitignored, its config.json is not) are linked whole and
+# FIRST. Linking just the ignored files made a directory holding model.safetensors and no config.json, which a dir-only existence check takes for a fixture
+# (the 2026-10-07 night run: 13 E-model tests failed on it). They are named in provenance.txt so a run on a tree with stray untracked directories says so.
+linkedDirs=""
+for d in testdata decoder/testdata; do
+  while IFS= read -r p; do
+    case "$p" in */) ;; *) continue;; esac
+    p=${p%/}
+    [ -e "$WT/$p" ] && continue
+    mkdir -p "$(dirname "$WT/$p")"
+    ln -s "$SRC/$p" "$WT/$p"
+    linkedDirs="$linkedDirs $p"
+    n=$((n + 1))
+  done < <(git ls-files --others --exclude-standard --directory "$d")
+done
 for d in testdata decoder/testdata; do
   while IFS= read -r p; do
     p=${p%/}
@@ -36,8 +51,13 @@ for d in testdata decoder/testdata; do
   done < <(git ls-files --others --ignored --exclude-standard --directory "$d")
 done
 cd "$WT" || exit 2
+# The linked untracked directories would make the gate call the worktree DIRTY (its verdict then reads INCONCLUSIVE: "does not describe a committed state").
+# They are fixtures, not edits, so this process (and only it: the env is not exported to anything else) ignores exactly those paths.
+EXC="$LOG/linked-untracked.exclude"; : > "$EXC"
+for p in $linkedDirs; do echo "$p" >> "$EXC"; done
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0="$EXC"
 go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"; exit 2; }
-{ echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $n gitignored entries symlinked from $SRC"
+{ echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $n entries symlinked from $SRC (untracked directories linked whole:${linkedDirs:- none})"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "heavy:    $([ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ] && echo SKIPPED || echo on)"; } | tee "$LOG/provenance.txt"
 go run ./cmd/gate gpu -logdir "$LOG" 2>&1 | tee "$LOG/gate-gpu.log"
