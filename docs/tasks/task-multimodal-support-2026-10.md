@@ -665,6 +665,51 @@ in the tree.
 - **Speed (night):** the tower per image on both boxes, against the CPU tower.
 - **Size:** L.
 
+**S2 Gate 0, the desk map (2026-10-07, Mac, aikit at v1.58.0 + 2 test-only commits):**
+- **Neither tower has a device seam.** `vision.Qwen3VisionEncoder` (`vision/qwen3_encoder.go`) and
+  `vision.GlmOcrVisionEncoder` (`vision/glm_ocr_encoder.go`) keep every field unexported, with no `Weights()` and no
+  public tail; their tails (`merge`, `downsample`) are unexported. goinfer calls `enc.Forward` from `lm.qwenForward`
+  (`internal/serveapp/vision_serve.go`); no backend reaches either loader. aikit's `gpu/qwenmetal` and `gpu/qwencuda`
+  serve Qwen2.5-VL only (window plan, RMSNorm hard-coded at 1e-6) and are not reused.
+- **Qwen3 (Qwen3.5+ tower), per block:** LayerNorm with weight and bias, eps 1e-6 (f64 accumulation); fused biased qkv
+  `[3][heads][hd]`; 2-D RoPE, theta 1e4, `[row·f, col·f]` then `cat(row,row)`, NeoX rotate-half over the full head;
+  full attention per image frame, scale `1/sqrt(hd)`; biased proj, residual; LayerNorm, biased fc1, GELU-tanh, biased fc2,
+  residual. Before the blocks: a biased patch-embed matmul over `C·T·P·P`, plus a learned 48x48 position table
+  interpolated bilinearly (align_corners=True, f32 coordinates, clamped taps, a fixed tap order). After: the merger
+  (LayerNorm eps 1e-6; m² patches concatenated **patch-major**; fc1, **erf** GELU, fc2). Real tower
+  (`~/models/qwen3.5-0.8b`): 12 layers, hidden 768, 12 heads x 64, patch 16, merge 2, out 1024.
+- **GLM-OCR, per block:** RMSNorm (weight only, eps 1e-5); fused biased qkv, then **per-head RMSNorm on q and k before
+  RoPE**; the same RoPE and attention; biased proj; RMSNorm; SiLU-gated MLP with biases. No position table. After the
+  last block: post RMSNorm, a downsample conv done as a matmul over **channel-major** groups (`x[g][c·m²+j]`, the
+  opposite of Qwen3's merger layout), then proj (no bias), LayerNorm eps 1e-5, erf GELU, SiLU-gated MLP. Real tower
+  (`~/models/glm-ocr`): 24 layers, hidden 1024, 16 heads x 64, patch 14, merge 2, out 1536.
+- **What Metal already has:** goinfer's tower base (`eg2Ops`: f32 GEMM, RMSNorm, per-head norm, rotate-half RoPE,
+  attention built from matmuls in 256-row blocks, never T²) and aikit `gpu.ViT` (LayerNorm with bias, biased GEMM
+  epilogues, GELU tanh and erf, SiLU-mul). **New:** an attention scale (the base hard-codes 1.0; Gemma 4 needs none), and
+  Qwen3's interpolated position table, which depends only on the grid, so the host computes it with aikit's own code.
+- **Split, mirroring Gemma 4:** aikit exports the f32 weights (aliasing, refusing a quantized tower) and a public tail
+  that takes the last block's output; goinfer runs the patch embed and the blocks on the device; the merger (Qwen3) or
+  post-norm, downsample and merger (GLM) stay aikit's on the host, as `FinishHidden` does for Gemma 4.
+
+**S2 steps:** S2.0 the aikit exports (a local branch; released with the cycle's batch). S2.1 a backend-neutral tower
+seam in goinfer's `multimodal` for both towers (Gemma 4's registry is the model). S2.2 the Qwen3 tower on Metal. S2.3 the
+GLM-OCR tower on Metal. S2.4 serve: `--backend metal` picks the device tower, with named CPU fallbacks (int8 tower, not
+registered, declined). The CUDA twins are nobara's, after S2.4, against the same gates.
+
+**S2 gates, written 2026-10-07 before any S2 code or measurement:**
+- **G-S2a, the exports:** in aikit, the exported weights plus the public tail reproduce `Forward` exactly (bit-identical:
+  the same CPU code in a different order of calls) on the tiny towers (`qwen35vl-vision-tiny`, `glm-ocr-vision-tiny`),
+  with norms and the position table randomised first (the all-ones trap); a quantized tower's export errors.
+- **G-S2b, the device towers against aikit's CPU tower:** every merged token at cosine >= 0.9999, on the tiny towers at
+  three grid sizes, and on the real towers (`qwen3.5-0.8b`, `glm-ocr`) on the four repo images F2a uses plus GLM-OCR's
+  three O3 documents at the default cap. Ambiguous (parked): a worst token in 0.999-0.9999.
+- **G-S2c, planted defects, each red on G-S2b's tiny-tower check:** (1) the attention scale dropped; (2) RoPE's row and
+  column halves swapped; (3) Qwen3's position table added at a transposed grid; (4) GLM's per-head q/k norm skipped;
+  (5) the patch-embed bias dropped. A defect that stays green means the fixture is degenerate along that axis.
+- **G-S2d, served:** one image request per family through the Metal serve binary (qwen3.5-0.8b and glm-ocr), the tower
+  on Metal against the tower on the CPU: identical reply text, or a first divergence at a near-tie under the G1 rule.
+- **Speed (night):** tower time per image, Metal against CPU, on the same images. A record.
+
 ### S3 — Gemma 3 and Qwen2.5-VL on Metal: run what exists, then put the towers on the GPU
 
 - **First, run it.** Metal's `UploadKV` and `ForwardMRoPE` tests have never been run, and no image turn has ever run on
