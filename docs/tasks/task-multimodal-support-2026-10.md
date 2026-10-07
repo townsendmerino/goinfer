@@ -272,7 +272,9 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
   - **G3's prompt set and procedure, fixed 2026-10-06 before any G3 run.** The model is
     `~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf` (local disk), loaded `Quant: int4` twice: once for the CPU,
     once for Metal's resident (each from its own sidecar of that GGUF). Each prompt is one user turn rendered by the
-    GGUF's own chat template (`chat.Detect`), no system message, BOS added by the tokenizer. The eight prompts:
+    GGUF's own chat template (`chat.Detect`), no system message, encoded as the chat CLI does with a template
+    (`Encode(prompt, false)`: the template writes its own `<bos>`; corrected 2026-10-06 before any run, the first wording
+    said the tokenizer adds it, which would have doubled it). The eight prompts:
     1. `Explain why the sky is blue in two sentences.`
     2. `Write a haiku about autumn leaves.`
     3. `What is 17 multiplied by 23? Show your work.`
