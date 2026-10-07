@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"sync/atomic"
@@ -218,19 +219,91 @@ func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 	}
 }
 
-// TestGenerateGemma4VL_sequentialPathNeverTouchesResident confirms the resident bridge is
-// gated on UseBidirectionalAttention, not attempted incidentally: an E2B/E4B-class checkpoint
-// (use_bidirectional_attention unset) must never call UploadKV or Forward even when a resident
-// backend is attached, since resident CUDA has no cross-layer-KV-sharing/PLE implementation for
-// that class at all (a decode-side gap this bridge deliberately does not paper over).
-func TestGenerateGemma4VL_sequentialPathNeverTouchesResident(t *testing.T) {
+// TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers is the gitignored gemma4-vl-tiny fixture's check of the
+// S1.8 contract (docs/tasks/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class
+// (this one has KV-shared layers) with a resident attached uploads its CPU prefill's K/V for the layers that own it,
+// never a KV-shared one, then decodes resident. Until S1.8 the bridge was gated on UseBidirectionalAttention and this
+// test asserted it was never touched; Metal now runs E-models, so that premise changed (nobara caught the stale test,
+// 2026-10-07: CI skips it, the fixture being gitignored). The same contract runs on a committed-path fixture in
+// TestGenerateGemma4VL_eModelDecodesResident.
+func TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers(t *testing.T) {
 	m, g := loadGemma4VLTinySequential(t)
+	if m.w.arch.gemma4.SharedKVLayers == 0 && m.w.arch.gemma4.HiddenSizePerLayerInput == 0 {
+		t.Fatal("gemma4-vl-tiny is no longer E-model-shaped; this test's premise needs re-reading")
+	}
+	features := func() ([]float32, error) { return g.ImageFeatures, nil }
+	assertEModelResidentDecode(t, m, g.InputIDs, g.ImageTokenStart, g.NImageTokens, features)
+}
+
+// TestGenerateGemma4VL_eModelDecodesResident is S1.8's contract on the tiny E-model fixture (PLE, two KV-shared
+// layers), with synthetic image features: the image turn's CPU prefill uploads K/V for the four owning layers only and
+// decode runs resident (Generation.DecodeResident).
+func TestGenerateGemma4VL_eModelDecodesResident(t *testing.T) {
+	if _, err := os.Stat(gemma4EModelDir); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_gemma4_emodel_tiny.py", gemma4EModelDir)
+	}
+	m, err := Load(gemma4EModelDir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	ids, pos, n, features := syntheticGemma4Image(m)
+	assertEModelResidentDecode(t, m, ids, pos, n, features)
+}
+
+// TestGenerateGemma4VL_causalNonEModelStaysOnCPU keeps the original test's intent for the class it still covers: a
+// causal Gemma 4 that is NOT an E-model decodes an image turn on the CPU even with a resident attached (S1.8 widened
+// the gate to E-models only; widening it further is untested on CUDA).
+func TestGenerateGemma4VL_causalNonEModelStaysOnCPU(t *testing.T) {
+	const dir = "../testdata/gemma4-dense-twogeom-tiny"
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no fixture (%s)", dir)
+	}
+	m, err := Load(dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if g4 := m.w.arch.gemma4; g4.SharedKVLayers != 0 || g4.HiddenSizePerLayerInput != 0 || m.w.Cfg.UseBidirectionalAttention != "" {
+		t.Fatal("the two-geometry fixture is no longer a causal non-E Gemma 4")
+	}
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
+	ids, pos, n, features := syntheticGemma4Image(m)
+	stream, gen := m.GenerateGemma4VL(context.Background(), ids, pos, n, 0, features, 4, SamplingParams{Temperature: 0})
+	var got []int
+	for id := range stream {
+		got = append(got, id)
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("no tokens")
+	}
+	if len(rf.uploadKVs) != 0 || rf.forwards != 0 || gen.DecodeResident {
+		t.Errorf("a causal non-E Gemma 4 touched the resident: %d uploads, %d forwards, DecodeResident=%v", len(rf.uploadKVs), rf.forwards, gen.DecodeResident)
+	}
+}
 
-	const maxNew = 4
-	features := func() ([]float32, error) { return g.ImageFeatures, nil }
-	stream, gen := m.GenerateGemma4VL(context.Background(), g.InputIDs, g.ImageTokenStart, g.NImageTokens, 0, features, maxNew, SamplingParams{Temperature: 0})
+// syntheticGemma4Image is a small prompt with a 4-token image block of deterministic features, for the resident-bridge
+// contract tests (which check where K/V goes and where decode runs, not what the image says).
+func syntheticGemma4Image(m *Model) (ids []int, pos, n int, features func() ([]float32, error)) {
+	H := m.w.arch.HiddenDim
+	ids = []int{2, 10, 11, 0, 0, 0, 0, 12, 13}
+	pos, n = 3, 4
+	feats := make([]float32, n*H)
+	for i := range feats {
+		feats[i] = float32((i*37)%101-50) / 100
+	}
+	return ids, pos, n, func() ([]float32, error) { return feats, nil }
+}
+
+func assertEModelResidentDecode(t *testing.T, m *Model, ids []int, imgPos, imgLen int, features func() ([]float32, error)) {
+	t.Helper()
+	rf := &fakeResident{vocab: m.w.arch.VocabSize}
+	m.resident = rf
+	stream, gen := m.GenerateGemma4VL(context.Background(), ids, imgPos, imgLen, 0, features, 4, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range stream {
 		got = append(got, id)
@@ -239,14 +312,24 @@ func TestGenerateGemma4VL_sequentialPathNeverTouchesResident(t *testing.T) {
 		t.Fatalf("GenerateGemma4VL: %v", err)
 	}
 	if len(got) == 0 {
-		t.Fatal("GenerateGemma4VL streamed no tokens")
+		t.Fatal("no tokens")
 	}
-	if len(rf.uploadKVs) != 0 {
-		t.Errorf("UploadKV called %d times for a sequential (non-bidirectional) checkpoint, want 0", len(rf.uploadKVs))
+	if !gen.DecodeResident || rf.forwards == 0 {
+		t.Errorf("an E-model image turn did not decode resident: DecodeResident=%v, %d resident forwards", gen.DecodeResident, rf.forwards)
 	}
-	if rf.forwards != 0 {
-		t.Errorf("resident Forward called %d times for a sequential (non-bidirectional) checkpoint, want 0", rf.forwards)
+	var owning, uploaded []int
+	for l := range m.w.arch.NumLayers {
+		if m.w.arch.gemma4KVSrcAt(l) == l {
+			owning = append(owning, l)
+		}
 	}
+	for _, c := range rf.uploadKVs {
+		uploaded = append(uploaded, c.layer)
+	}
+	if fmt.Sprint(uploaded) != fmt.Sprint(owning) {
+		t.Errorf("UploadKV went to layers %v, want exactly the K/V-owning layers %v (never a KV-shared one)", uploaded, owning)
+	}
+	t.Logf("uploaded layers %v; %d resident forwards for %d tokens", uploaded, rf.forwards, len(got))
 }
 
 // TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse is M-07's own gate, at the unit
