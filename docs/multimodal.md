@@ -998,6 +998,12 @@ the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads fo
   unreachable on every shipped checkpoint (Gemma 3's block is 256 against a 1024 window; Qwen2.5-VL has no window), so the
   default here is a refusal at the chokepoint, not a fix: a forward that would need it errors by name. A tiny test drives it.
   No parity hash moves. An owner can ask for the real fix instead.
+  **F3 read 2026-10-06: DONE.**
+  - `GenerateVL` refuses an image block longer than the sliding window, by name, before the tower runs
+    (`checkImageBlockFitsWindow`, `decoder/generate_vl.go`).
+  - `TestGenerateVL_refusesImageBlockLongerThanWindow` drives it through `GenerateVL` on the tiny Gemma 3 VL model,
+    with the window one token under the block: refused, no tokens, tower not run. At the block's own length it serves.
+  - The other `GenerateVL` tests and `TestParityManifest_fresh` stay green; no hash moved.
 - **F4 — P11's one-page audio comparison**, now that P7's audio tower exists: desk work, recorded in this doc.
 - **F5 — P8b, GGUF `mmproj` for the Qwen3.5+ tower.** aikit gains a tower loader from a tensor source (new API: the towers
   load from a safetensors directory today), and goinfer reads the three container layouts §P8a's prior-art sweep found:
