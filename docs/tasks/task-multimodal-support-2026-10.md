@@ -1275,6 +1275,14 @@ prompt prefills token by token on the GPU too. Both backends decline E-models fr
   - The Metal arm must report its image prefill resident.
   - Identical reply, or a first divergence at a near-tie under the log-probability definition. The CPU repeat must be
     byte-identical.
+- **G-S9b amended 2026-10-07, after writing the pass and before any measurement:**
+  - **The row-order item was wrong.** Within a layer each row writes its own K/V and later rows attend to it, so rows
+    encoded out of order DO share state: a row would read keys not yet written. Reversing the order is therefore a
+    planted defect that must go RED, not a control that stays green.
+  - **"A KV-shared layer storing its own K/V" is replaced by "every row one position late".** The first needs a change
+    inside decode's shared kernels, which the pass does not own; the second is the pass's own state.
+  - **The defects as run:** (1) each row's PLE inputs bound to the next row's; (2) the PLE term dropped (zero inputs);
+    (3) every row one position late; (4) rows encoded in reverse order within a layer. Each must turn G-S9a red.
 - **Speed (night):** E2B image-turn TTFT and a 512-token text prompt's TTFT, the layer-major pass against today's path
   (CPU prefill and upload; sequential resident), interleaved. Default on if G-S9a and G-S9b pass, since the change is
   bit-identical (the 4b precedent); the night grade turns it off below 1.00x.
