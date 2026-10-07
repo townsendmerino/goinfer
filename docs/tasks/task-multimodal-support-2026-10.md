@@ -1419,7 +1419,28 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     | qwen25vl_preprocess_image.png | 14x20 | 0.999999891 | 0.999999995 | 1.000000000 / 0.999999996 / 0.999999998 |
     | glm_ocr/formula.png | 76x62 | 0.999999739 | 0.999999988 | 1.000000000 / 0.999999871 / 0.999999932 |
     | glm_ocr/table.png | 56x76 | 0.999999562 | 0.999999999 | 1.000000000 / 0.999999999 / 0.999999997 |
-- **Next: the decoder's DeepStack injection** (G-S10c), then serve.
+- **The decoder's DeepStack (main, `84cc5aae`):**
+  - The KV cache carries a prefill's DeepStack sets. The batched layer loop adds set l to the image positions after
+    layer l (`addDeepstack`, unit-tested on batch offsets).
+  - `GenerateQwenVLDeepstack` takes them; `GenerateQwenVL` is its no-DeepStack case.
+  - A resident m-RoPE prefill (CUDA's) is not offered a DeepStack turn, since it cannot inject.
+- **Serve (`s2-towers`, `8a6bc27a`; needs the aikit branch):**
+  - A `qwen3_vl` checkpoint takes the Qwen3.5+ tower path, DeepStack required; a `qwen3_5` config declaring it is
+    refused.
+  - The tower runs on the CPU by name: no device tower carries DeepStack yet, and `-require-backend` refuses on Metal.
+  - The features are one flat vector (the merged rows, then each set), so the image cache keeps them whole; serve splits
+    them for the decoder.
+- **G-S10c: PASS** (nobara, 15:14-15:16 PDT, under the timing lock).
+  - The setup: `scripts/pin_qwen3vl_image_real.py` (transformers 5.12, float32, HF's own processor and chat template:
+    table.png, 1083 ids with 1064 image tokens, grid 56x76). Then `TestQwen3VLImageReal` on those ids and pixel values:
+    aikit's tower with DeepStack, goinfer's float32 prefill with the production fast-attention setting.
+  - **Result:** last-position cosine 1.000000, argmax 86608 equal to HF's, and argmax agreement over the 15 text
+    positions after the image 15/15. The test's open loop equals `prefillLogitsQwenVL` itself.
+  - **Planted defects, all red:**
+    1. DeepStack not added: cosine 0.982867, argmax kept;
+    2. added one layer late: 0.987967;
+    3. added to the text positions too: −0.135, argmax changed.
+- **Next: G-S10d,** a served request, Metal against the CPU. It needs the 2B checkpoint on the Mac.
 
 ### S11 — Several images per message
 
