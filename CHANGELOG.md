@@ -38,6 +38,12 @@ or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resi
 (1.000000000 end to end on the same twelve cases; about 1.2-2.0 s an image against 5.1-5.8 s for the CPU tower, an
 exploratory read), through a weights export new in aikit.
 
+### Changed — aikit v1.58.0
+
+All five modules require aikit v1.58.0, which carries the pieces the entries below use: the Gemma 4 tower export, the
+`audio` package, the reference bicubic resize and the Qwen3.5+ mmproj loader. Text paths are unchanged: the forward
+goldens passed and only the parity manifest's dependency hashes moved.
+
 ### Added — Qwen3.5+ images from a GGUF `mmproj` (`--vision mmproj.gguf`)
 
 `--vision` takes a llama.cpp vision projector file beside a Qwen3.5 or 3.6 GGUF model: unsloth's mmproj files, or the
