@@ -1,0 +1,10 @@
+=== RUN   TestGemma4_26B_s10Grade
+    gemma4_26b_s10grade_test.go:97: prompt 1: 38 positions
+    gemma4_26b_s10grade_test.go:97: prompt 2: 36 positions
+    gemma4_26b_s10grade_test.go:97: prompt 3: 43 positions
+    gemma4_26b_s10grade_test.go:100: fixed     mean Metal-vs-CPU cosine 0.990848, argmax agreement 82/117
+    gemma4_26b_s10grade_test.go:100: drop-both mean Metal-vs-CPU cosine 0.940854, argmax agreement 71/117
+    gemma4_26b_s10grade_test.go:105: S1.0 26B re-check PASS
+--- PASS: TestGemma4_26B_s10Grade (158.26s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	158.307s
