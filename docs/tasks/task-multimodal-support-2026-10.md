@@ -1025,6 +1025,29 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
     32-token reply ("This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025." and the start of the next sentence). The logs name each arm
     (`tower on CPU` / `tower on CUDA`, `decode path: cuda-resident (int4)`, `decoded 32 tokens on the resident path`); the image encode took 2.34 s with the tower on CUDA and 4.45-4.47 s
     on the CPU. The default KV plan was not used, for the reason recorded under G-S4q (the tower needs VRAM the resident decoder would take); step 4 is the reserve for that.
+- **S4 step 3 read 2026-10-07 on nobara (`s2-towers`, commit `d7955399`; not on `main`): the Qwen3.5+ and GLM-OCR towers on CUDA PASS G-S2b, G-S2c and G-S2d.** Raw:
+  `docs/measurements/multimodal-support-2026-10/s4-grid-cuda/` (`gates-tiny.log`, `real.log`, `served/`).
+  - **The build:** `cuda/grid_vision.go`, registered as multimodal's "cuda" Qwen3 and GLM-OCR towers, on the CUDA tower base, with aikit's own scaled attention called once per image frame
+    (the frame is the segment) and separate q, k and v (GLM-OCR norms q and k per head before RoPE, which aikit's fused-qkv kernels cannot do), plus one new kernel, `tower_rope_half`
+    (NeoX rotate-half on a separate buffer, bit for bit against Go). The base's attention cap of 12288 patches now applies only where the query-tiled kernel does not.
+  - **G-S2b, tiny towers (norms randomised through the export's aliasing slices), four grid sets including a two-image batch:** Qwen3.5 and GLM-OCR both worst merged-token cosine
+    **1.000000000**.
+  - **G-S2c, planted defects, each alone red.** Metal's five reproduce Metal's recorded readings to the digit (Qwen3.5: scale 0.974966, RoPE 0.996732, position grid 0.994887, patch bias
+    0.993714; GLM-OCR: scale 0.126404, RoPE 0.698253, q/k norm 0.118984, patch bias 0.531329), which is the strongest cross-check available between the two backends. CUDA's new one,
+    **every frame of a batch attending across the boundary**, reads 0.986906 (Qwen3.5) and 0.457776 (GLM-OCR). The other CUDA-specific entries of Gate 0 are covered elsewhere: the bias dropped in
+    the tiled GEMM branch by the base's GEMM-branch test (shown red by a mutant; these tiny towers' patch dims are multiples of 16 and never take that branch, as predicted), stale scratch
+    across sizes and determinism and the ledger after `Close` by `TestGridVisionCUDA_scratchDeterminismClose`.
+  - **G-S2b, real towers (`~/models/qwen3.5-0.8b` at serve's 1024-token cap; `~/models/glm-ocr` at its default 4.8 MP ceiling), nine images, every merged token against aikit's CPU Forward:**
+    Qwen3.5 worst cosine **0.999999763, 0.999999999, 0.999999964, 0.999999989**; GLM-OCR **0.999999175, 0.999999999, 0.999996380, 0.999999195, 0.999999049** (the four F2a images, then the three
+    O3 documents: formula, table, invoice; the table and formula are shared). All over 0.9999.
+  - **G-S2d, served (`--backend cuda`, decode `cuda-resident (int4)`, tower on CUDA against `-vision-device cpu`, a second CPU-tower run as the control, `--kv-sessions 1 -ctx 4096`):**
+    the CPU-tower control is byte-identical to the first CPU-tower run for both families. Tower on CUDA against the CPU tower: the replies differ, **at near-ties under the registered rule**:
+    Qwen3.5 first differs at generated token 3 (CPU-tower ' **' 0.546, CUDA-tower ' a' 0.314; p(other) >= half p(top) = 0.273: True), GLM-OCR at token 1 (' table' 0.561, ' image' 0.439;
+    0.280: True). The towers' features differ by about 1e-6 (cosine 0.999999+), so a near-tie flipping is expected, and the rule exists for it. The logs name each arm (`tower (CPU)` /
+    `tower (CUDA)`); no `declined` line appears, so the CUDA arms did run the tower on CUDA. Image encode, exploratory: Qwen3.5 5.17 s (CUDA) against 6.05 s (CPU); GLM-OCR 26.0 s (CUDA).
+  - **Speed, exploratory and honest:** the CUDA towers are only **1.2-1.5x** the CPU towers (real Qwen3.5 3.2-5.2 s against 4.0-6.2 s; GLM-OCR at 1-1.6 K merged tokens 14-36 s against 20-43 s; the figures
+    include aikit's host tail). That is a correct baseline and not a fast tower: the f32 GEMMs and aikit's scalar query-tiled attention are the cost, and Gemma 4's tower (2.2 s against 4.4 s)
+    is better only because it has fewer patches. A faster attention and GEMM are Gate 0's step 6, to be decided by the speed record (queued separately), not claimed here.
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any

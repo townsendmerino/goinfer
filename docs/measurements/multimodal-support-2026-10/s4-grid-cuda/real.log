@@ -1,0 +1,17 @@
+=== RUN   TestGridVisionCUDA_real
+=== RUN   TestGridVisionCUDA_real/qwen3
+[S4 real qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999763; tower CUDA 3.169s, CPU 4.031s (exploratory)
+[S4 real qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999999; tower CUDA 51ms, CPU 189ms (exploratory)
+[S4 real qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999964; tower CUDA 5.152s, CPU 6.178s (exploratory)
+[S4 real qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999989; tower CUDA 4.792s, CPU 5.681s (exploratory)
+=== RUN   TestGridVisionCUDA_real/glm-ocr
+[S4 real glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): worst token cosine 0.999999175; tower CUDA 14.237s, CPU 20.297s (exploratory)
+[S4 real glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): worst token cosine 0.999999999; tower CUDA 36ms, CPU 151ms (exploratory)
+[S4 real glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): worst token cosine 0.999996380; tower CUDA 31.218s, CPU 38.747s (exploratory)
+[S4 real glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): worst token cosine 0.999999195; tower CUDA 25.012s, CPU 32.111s (exploratory)
+[S4 real glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): worst token cosine 0.999999049; tower CUDA 35.589s, CPU 43.163s (exploratory)
+--- PASS: TestGridVisionCUDA_real (273.18s)
+    --- PASS: TestGridVisionCUDA_real/qwen3 (30.27s)
+    --- PASS: TestGridVisionCUDA_real/glm-ocr (242.90s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	273.233s
