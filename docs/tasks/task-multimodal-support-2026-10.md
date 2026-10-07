@@ -742,6 +742,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - **Status: near-tie by every measure serve exposes; the registered form is not computed.** The rule compares that
     gap with 3% of the raw top-1 logit, which log-probabilities hide; it passes for any top-1 logit above 7. Accepting
     it on that basis, or building an in-process replay that reads the raw logit, is the owner's call.
+  - **Owner decision 2026-10-07: accepted as a near-tie. G-S2d: PASS for both families.**
   - Raw: `docs/measurements/multimodal-support-2026-10/s2-gs2d-run2/` (serve logs, replies, top-3 logprobs per token).
 
 ### S3 — Gemma 3 and Qwen2.5-VL on Metal: run what exists, then put the towers on the GPU
