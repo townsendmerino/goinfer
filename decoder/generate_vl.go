@@ -262,6 +262,18 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 // (P9a): the fast path below is gated on ResidentMRoPE support too, for the
 // identical reason.
 func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	return m.GenerateQwenVLDeepstack(ctx, ids, imgPos, imgLen, imgHash, func() ([]float32, [][]float32, error) {
+		f, err := features()
+		return f, nil, err
+	}, gridTHW, merge, imageToken, maxTokens, sp)
+}
+
+// GenerateQwenVLDeepstack is GenerateQwenVL for a tower that also returns DeepStack sets (Qwen3-VL; S10 of
+// docs/tasks/task-multimodal-support-2026-10.md): features returns the merged rows and, per early decoder layer, a set
+// of imgLen rows the prefill adds to the image positions' hidden state after that layer. nil sets are GenerateQwenVL.
+// The sets touch only the prefill; a resident whose m-RoPE prefill cannot inject them (CUDA's) is not offered it, and
+// the CPU prefill carries them before the usual upload.
+func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, [][]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
 	go func() {
@@ -329,7 +341,10 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 			atomic.StoreInt32(&m.resBusy, 0)
 		}
 
-		feats, err := features()
+		feats, deep, err := features()
+		if err == nil {
+			err = m.checkDeepstack(deep, imgLen)
+		}
 		if err != nil {
 			g.err = err
 			return
@@ -355,7 +370,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 			hp, isHP := m.resident.(ResidentHybridMRoPEPrefill)
 			hybridOK = isHP && hp.HybridMRoPEPrefill()
 		}
-		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) {
+		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) && deep == nil { // no resident prefill injects DeepStack
 			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
 				if recurrent {
 					m.residentForgetIDs()
@@ -395,7 +410,11 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		}
 
 		cache := m.NewCache(len(ids) + maxTokens)
+		if deep != nil {
+			cache.deepstack = &deepstackRows{start: imgPos, n: imgLen, rows: deep}
+		}
 		logits, err := m.prefillLogitsQwenVL(ctx, ids, feats, imgPos, imgLen, mropePos, cache)
+		cache.deepstack = nil // the prefill's alone; nothing after it may see the sets
 		if err != nil {
 			g.err = err
 			return
@@ -459,6 +478,19 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
 	if w := m.w.arch.SlidingWindow; w > 0 && imgLen > w {
 		return fmt.Errorf("decoder: an image block of %d tokens is longer than this model's %d-token sliding window, which the bidirectional image mask does not support (docs/multimodal.md F3)", imgLen, w)
+	}
+	return nil
+}
+
+// checkDeepstack validates GenerateQwenVLDeepstack's sets: at most one per decoder layer, each imgLen rows of hidden.
+func (m *Model) checkDeepstack(deep [][]float32, imgLen int) error {
+	if len(deep) > m.w.arch.NumLayers {
+		return fmt.Errorf("decoder: %d DeepStack sets for %d layers", len(deep), m.w.arch.NumLayers)
+	}
+	for l, set := range deep {
+		if len(set) != imgLen*m.w.arch.HiddenDim {
+			return fmt.Errorf("decoder: DeepStack set %d has %d values, want %d x %d", l, len(set), imgLen, m.w.arch.HiddenDim)
+		}
 	}
 	return nil
 }
