@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,8 +66,18 @@ func (s *server) loadEmbeddingGemma2(cfg config) error {
 			s.embedWidths = append(s.embedWidths, w)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type; images resized %s) in %s\n",
-		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), e.ImageResizeMode(), time.Since(t0).Round(time.Millisecond))
+	tower, atower := "CPU", "CPU"
+	if a := e.Accelerator(); a != nil && slices.Contains(embeddinggemma2.VisionAccelerators(), a.Name()) {
+		tower = a.Name()
+	}
+	if a := e.Accelerator(); a != nil && slices.Contains(embeddinggemma2.AudioAccelerators(), a.Name()) {
+		atower = a.Name()
+	}
+	e.OnTowerLoad(func(kind, device string, took time.Duration) {
+		fmt.Fprintf(os.Stderr, "EmbeddingGemma 2 %s tower loaded on %s in %s\n", kind, device, took.Round(time.Millisecond))
+	})
+	fmt.Fprintf(os.Stderr, "loaded embedding model %q (EmbeddingGemma 2, dim %d, f32, %s, dimensions %v, %d task prompts; no prompt unless the request names one with task or input_type; images resized %s, image tower on %s and audio tower on %s, each loaded on first use) in %s\n",
+		name, s.embedDim, where, s.embedWidths, len(e.PromptNames()), e.ImageResizeMode(), tower, atower, time.Since(t0).Round(time.Millisecond))
 	return nil
 }
 

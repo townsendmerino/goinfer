@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 )
 
@@ -83,6 +84,11 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 	g := &Generation{}
 	go func() {
 		defer close(out)
+
+		if err := m.checkImageBlockFitsWindow(imgLen); err != nil {
+			g.err = err
+			return
+		}
 
 		// P9a fast path: peek the resident KV for a full-image reuse before touching the
 		// tower or the CPU prefill. Held only long enough to check+use; released either way.
@@ -441,4 +447,18 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		}
 	}()
 	return out, g
+}
+
+// checkImageBlockFitsWindow refuses an image block longer than the sliding window (docs/multimodal.md,
+// "Finishing this doc", F3). The bidirectional image-block mask this path uses (KVCache.attendHi, and the resident
+// image prefill that mirrors it) bounds a sliding layer's keys by the query's own window and never extends it back
+// to the block's start, so a block longer than the window would under-attend its own image. No shipped checkpoint
+// reaches it (Gemma 3's block is 256 tokens against a 1024 window; Qwen2.5-VL has no window, and its image tokens are
+// causal anyway); Gemma 4's own path applies the correction and does not come here. A refusal by name instead of a
+// quietly wrong answer.
+func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
+	if w := m.w.arch.SlidingWindow; w > 0 && imgLen > w {
+		return fmt.Errorf("decoder: an image block of %d tokens is longer than this model's %d-token sliding window, which the bidirectional image mask does not support (docs/multimodal.md F3)", imgLen, w)
+	}
+	return nil
 }

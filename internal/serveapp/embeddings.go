@@ -105,24 +105,32 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inputs, err := parseEmbedInput(req.Input)
-	var imageItems []embedItem // set only when the request carries an image (Phase V)
+	var mediaItems []embedItem // set only when the request carries an image (Phase V) or audio (Phase A)
 	if err != nil {
 		items, ierr := parseEmbedItems(req.Input)
 		if ierr != nil {
 			writeErr(w, http.StatusBadRequest, ierr.Error())
 			return
 		}
-		if n, has := embedHasImages(items); has {
+		if ni, na := embedMedia(items); ni+na > 0 {
 			_, okT := s.embed.(taskEmbedder)
-			if _, ok := s.embed.(imageEmbedder); !ok || !okT {
+			_, okI := s.embed.(imageEmbedder)
+			_, okA := s.embed.(audioEmbedder)
+			switch {
+			case ni > 0 && (!okI || !okT):
 				writeErr(w, http.StatusBadRequest, fmt.Sprintf("model %q takes no image input", s.embedID))
 				return
-			}
-			if n > maxEmbedImages {
-				writeErr(w, http.StatusBadRequest, fmt.Sprintf("too many images: %d (max %d per request)", n, maxEmbedImages))
+			case na > 0 && (!okA || !okT):
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("model %q takes no audio input", s.embedID))
+				return
+			case ni > maxEmbedImages:
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("too many images: %d (max %d per request)", ni, maxEmbedImages))
+				return
+			case na > maxEmbedAudio:
+				writeErr(w, http.StatusBadRequest, fmt.Sprintf("too many audio clips: %d (max %d per request)", na, maxEmbedAudio))
 				return
 			}
-			imageItems = items
+			mediaItems = items
 		}
 		inputs = make([]string, len(items))
 		for i, it := range items {
@@ -179,8 +187,10 @@ func (s *server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	// count-only tokenize pass (countEmbedTokens).
 	var vecs [][]float32
 	var promptTokens int
-	if imageItems != nil {
-		vecs, promptTokens, err = encodeImageItems(s.embed.(imageEmbedder), te, imageItems, task)
+	if mediaItems != nil {
+		ie, _ := s.embed.(imageEmbedder)
+		ae, _ := s.embed.(audioEmbedder)
+		vecs, promptTokens, err = encodeMediaItems(ie, ae, te, mediaItems, task)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, "encode: "+err.Error())
 			return

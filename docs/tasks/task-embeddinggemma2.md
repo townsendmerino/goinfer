@@ -380,8 +380,8 @@ parts, mixed with strings; inline base64 only; one image per input, text after i
 (`internal/serveapp/embeddings_images.go`, tests in `embeddings_images_test.go`). Through the Metal serve binary on the
 real checkpoint, the table image read cosine 0.999683 alone and 0.999713 with text against sentence-transformers,
 matching the gate's CPU figures. The reference's bicubic resize is in and the default since the same day (R1/R2 below:
-pixels bit-identical, every case 1.000000000), bilinear selectable. Open: text before an image, several images in one
-input, and the bicubic in aikit for Gemma 4.
+pixels bit-identical, every case 1.000000000), bilinear selectable, and the tower runs on Metal with the encoder (Phase
+VM below). Open: text before an image, several images in one input, and the bicubic in aikit for Gemma 4.
 
 **Gate 0 (read from the real checkpoint, transformers 5.19.0 and sentence-transformers 6.1.0):**
 - The composite forward runs the vision tower and `embed_vision` (`Gemma4Model.get_image_features`), then
@@ -457,11 +457,200 @@ env read). Gates, on the same four images and 12 cases as V1-V4:
   `serve --embed-image-resize bilinear`).
 - A checkpoint-free test holds it in CI: `TestResizeBicubic_matchesTorchvision` against torchvision 0.29.1's output
   for seeded noise and gradients over downscales, upscales, mixed and single-axis resizes (12 cases, every value
-  equal; `testdata/embeddinggemma2-resize/golden.json`, `scripts/pin_embeddinggemma2_resize.py`). Planted defects
-  (no rounding offset, a = -0.75, no antialias widening) each turn it red, 12, 12 and 10 cases (the two upscales do
-  not antialias). `TestPreprocessBicubic_layout` checks the patch layout and positions against aikit's on an image
-  neither resizes.
+  equal). Planted defects (no rounding offset, a = -0.75, no antialias widening) each turn it red, 12, 12 and 10 cases
+  (the two upscales do not antialias). A layout test checks the patch layout and positions against bilinear on an
+  image neither resizes.
+- **Moved to aikit 2026-10-06** (`docs/multimodal.md`, "Finishing this doc", F1): the resize is aikit's
+  `vision.ResizeBicubicAA` and `Gemma4Preprocess`'s default now, and the two tests, the golden and its pin script went
+  with it (aikit's `TestResizeBicubicAA_matchesTorchvision`, `TestGemma4PreprocessResize_layout`; the same three
+  defects red there). `embeddinggemma2/preprocess.go` keeps only the option. Re-read through aikit, `TestReal_vision`:
+  R1 0 pixels differ on all four images, R2 12 of 12 at 1.000000000.
 - Preprocessing, exploratory: bicubic 13-45 ms an image, bilinear 6-20 ms, beside a tower of about 5 s on the CPU.
+
+## Phase VM — the vision tower on Metal, planned and pre-registered 2026-10-06
+
+The owner, 2026-10-06: vision for EmbeddingGemma 2 working on the GPU first, then audio. After Phase V the tower is
+the cost of an image embedding: about 5 s on the CPU against about 0.5 s for the encoder after it.
+
+- **Weights (owner's choice): an aikit export.** `vision.Gemma4Encoder` keeps its weights unexported; aikit gains a
+  `Gemma4Encoder.Weights()` export, as SigLIP's `GPUWeights` is, in f32 with each projection's clip bounds and the
+  standardize buffers. One loader, and Gemma 4's own image input can take the same Metal tower later. It needs an
+  aikit tag before goinfer's commits that use it can be pushed; until then the work runs through `go.work` against the
+  aikit checkout.
+- **The tower here:** 16 layers, hidden 768, 12 heads of 64, MLP 3072, about 2,300-2,520 patches an image,
+  `use_clipped_linears` false, `standardize` false. About 0.73 TFLOP of projections and MLP and 0.29 of attention an
+  image: at the f32 GEMM's measured rate (about 1 TFLOP/s on this Mac) an estimate of about 1 s, to be measured.
+- **What runs on the GPU, float32:** the patch-embed GEMM and the two position tables' adds; per layer the four
+  RMSNorms (the Gemma 4 kind, `w`), the q/k/v projections, q and k norms with weights and v without, the 2-D axial
+  RoPE from the CPU's own tables, full bidirectional attention at scale 1.0 as Phase M's GEMM blocks (no window, one
+  head per KV head), the output projection, the gated GELU-tanh MLP, and every projection's input and output clamp
+  when the checkpoint has finite bounds. The 3x3 average pool, the √hidden scale, standardize, the unscaled RMSNorm
+  and the projection to 512 run on the host at first (under 1% of the FLOPs).
+- **Seam:** a tower accelerator beside the encoder's (`embeddinggemma2.RegisterVisionAccelerator`, or the existing
+  registration widened), registered by goinfer/metal; `UseAccelerator("metal")` moves both; the CPU tower stays the
+  fallback, and serve's startup line says where the tower runs.
+- **Gates, written before any measurement:**
+  - **VM1, tiny (the committed `testdata/gemma4-vision-tiny`, finite clip bounds on):** the Metal tower against
+    aikit's CPU tower, cosine >= 0.9999 on every soft token, at attention block sizes that do and do not divide the
+    patch count.
+  - **VM2, real tower:** fed HF's own pixels (the Phase V artifacts), the Metal tower against HF's image features,
+    cosine >= 0.9999 on every soft token of all four images (V2's bar).
+  - **VM3, end to end:** the Metal tower and the Metal encoder with the bicubic resize, every one of the 12 cases at
+    cosine >= 0.9999 with sentence-transformers. In [0.999, 0.9999): ambiguous, parked for the owner. Under 0.999:
+    fails.
+  - **VM4, planted defects, each red on VM1:** the RoPE axes swapped, the position tables swapped, v given q's norm
+    weight, the attention scale 1/sqrt(64) instead of 1, the clamps skipped.
+  - Speed against the CPU tower on the four images is a record, not a gate: exploratory by day, a timed read on the
+    night queue.
+
+**Status 2026-10-06: BUILT, VM1-VM4 passed; on by default where the encoder runs on Metal.** aikit gained
+`Gemma4Encoder.Weights()`, `Gemma4RopeTables` and `FinishHidden` on a local branch (`gemma4-tower-export`, not yet
+tagged; this tree's gitignored `go.work` uses the aikit checkout until it is). `metal/gemma4_vision.go` is the tower;
+`embeddinggemma2.RegisterVisionAccelerator` the seam; `UseAccelerator("metal")` moves both; serve says where the
+tower runs at startup and again when the first image loads it. Read 2026-10-06, 15:13-15:19 PDT:
+- **VM1: PASS**, worst soft-token cosine **1.000000000** in all 12 cases (18, 54 and 135 patches, raster and
+  shuffled, blocks of 256, 6 and 5), the tiny tower's clip bounds on and its position tables and norm weights
+  randomised. The fixture's own tables and norm weights are all ones, which hid two of the planted defects until they
+  were randomised (a swapped table read 1.000000000; v given q's norm weight was invisible).
+- **VM2: PASS**, the Metal tower on HF's own pixels against HF's image features: worst soft-token cosine 0.999999999
+  or better on every image (against the CPU tower, 0.999999997 or better).
+- **VM3: PASS**, end to end with the bicubic resize, the Metal tower and the Metal encoder: **1.000000000** in all 12
+  cases. Through the Metal serve binary, the table image read 1.000000000 alone and with text.
+- **VM4: PASS**, each planted defect red on VM1: the RoPE axes swapped (12 of 12 cases), the position tables swapped
+  (12), v given q's norm weight (12), the attention scale 1/sqrt(head dim) (12), and the clamps skipped (the test's
+  own control, 0.947).
+- **Speed, exploratory** (by day, Metal and CPU towers alternated per image in one process, not a speed result): 1.22-1.98 s
+  an image on Metal against 5.11-5.75 s on the CPU tower. A timed read belongs on the night queue. Raw:
+  `docs/measurements/embeddinggemma2-2026-10-06/metal-vm-gates.txt`.
+- The aikit export's own test (`TestGemma4Weights_reproduceForward`) builds a tower from the export alone and matches
+  `Forward` at 1.000000000; a dropped clamp, an unnormalised v, swapped tables and the wrong RoPE theta turn it red.
+- **Not done:** Gemma 4's own image input still runs aikit's CPU tower (the Metal one takes the same export, so
+  wiring it is small); the tower's weights are held twice (aikit's f32 copy and the GPU's), about 0.6 GB extra.
+
+## Phase A — audio (CPU first, then Metal), planned and pre-registered 2026-10-06
+
+The owner, 2026-10-06: audio after vision, on Metal, and aikit tagged once at the end (everything stays on the local
+branch `eg2-gpu-multimodal` and aikit's `gemma4-tower-export` until then). `gemma4_audio` is the tower Gemma 4
+E2B/E4B use too, so it is built once, in aikit beside the vision tower, as P7's audio half
+(`docs/multimodal.md`), and wired here first.
+
+**Gate 0, read 2026-10-06** (transformers 5.19.0, the real checkpoint's header; the full spec with file:line
+citations, and the probes behind it, are `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/`):
+- **Features:** 16 kHz mono float. 160 zeros of left pad, 320-sample frames at hop 160, periodic Hann (applied in
+  f32), a 512-point rFFT, magnitude (not power), a 128-bin HTK mel bank with no norm (its filter 0 is all zero), then
+  `ln(mel + 0.001)`. Truncated at 30 s. `T_valid = (N - 161) // 160 + 1` frames.
+- **Tower:** two 3x3 stride-2 convs (1→128→32 channels, each a bias-free LayerNorm with eps 1e-6, then ReLU),
+  flattened `f*32 + c` and projected 1024 → 1024. Then 12 conformer blocks, each:
+  - FFN, residual 0.5;
+  - chunked local attention: 8 heads of 128; keys at distance 0..11 only; relative-position keys from a [sin ‖ cos]
+    table; queries scaled by `128^-0.5 / ln 2 · softplus(per_dim_scale)`, keys by `ln(1+e)/ln 2`; a softcap of 50
+    before a -1e9 mask;
+  - a GLU, then a causal depthwise conv of kernel 5 (left pad 4);
+  - another FFN, residual 0.5;
+  - a closing RMSNorm (`x·w`).
+
+  Every linear but the relative-key and input projections is a ClippableLinear with finite, asymmetric BF16 bounds,
+  and 107 of the 120 clamp on a chirp. Then `output_proj` 1024 → 1536 with bias, an unweighted RMSNorm, and
+  1536 → 512.
+- **Tokens:** `ceil(ceil(T_valid/2)/2)` soft tokens (1 s → 25; at most 750 at 30 s; the config's 280 feeds only a
+  vLLM helper), laid out `<bos>` [prompt] `<|audio>` (256000) n x `<|audio|>` (258881) `<audio|>` (258883) [text]
+  `<eos>`. Probed through sentence-transformers. The rows are spliced in unscaled, as images are.
+- **Traps the gates below are built against:**
+  - The reference must be pinned with sdpa: eager inverts the audio mask, cosine 0.82.
+  - Clips under 13 tokens (about 0.5 s) never reach the window's edge, so the 0..11 window needs clips of 2 s or
+    more.
+  - A random-init tower has ±inf clip bounds and all-ones norms (the fixture trap Phase VM met), so the tiny fixture
+    sets them.
+  - The checkpoint is BF16; the reference runs in f32 (BF16 against f32 reads 0.99933).
+
+**Where:** aikit `audio` (new): `Gemma4AudioFeatures` (waveform → log-mel) and `Gemma4AudioEncoder`
+(`LoadGemma4AudioEncoder`, `Forward` → soft tokens at the text width), with a weights export like the vision tower's
+for the Metal port. goinfer: `Encoder.EnableAudio`, `EmbedAudio` (16 kHz mono samples, or a 16-bit PCM WAV at
+16 kHz; any other rate is refused, not resampled), serve's `{"audio": ...}` input, then
+`metal/gemma4_audio.go`.
+
+**Gates, written before any measurement.** The reference is `scripts/pin_embeddinggemma2_audio.py`, which uses
+sentence-transformers in f32 with sdpa asserted, the non-persistent buffers and three loaded clip scalars checked
+against the header, and per-stage tensors stored gzipped. The clips are three 16-bit 16 kHz WAVs it generates from a
+seed (chirp, tones and noise) and commits: 0.37 s (9 tokens, under the window), 2.37 s (59), and 7.83 s (not aligned
+to 128 or 160 samples). Each is embedded as audio alone, with the `query` prompt, and followed by text: 9 cases.
+- **A1, features:** the Go log-mel's `T_valid` equals HF's, and its max |diff| from HF's features is <= 1e-4 on every
+  clip. The value is reported; HF's own f32/f64 mix is the floor.
+- **A2, the tower in stages,** fed HF's own features: cosine >= 0.9999 on every soft token at every stage (after the
+  subsampler, after each of the 12 blocks, the tower's output, the embedder's output). The first stage under the bar
+  is named.
+- **A2t, tiny (CI):** a committed random `gemma4_audio` tower with finite asymmetric clip bounds, random norm weights
+  and `per_dim_scale`, the same stages at cosine >= 0.9999, on clips long enough for the window to bind.
+- **A3, ids:** every case's ids equal sentence-transformers'.
+- **A4, end to end:** every case's embedding is at cosine >= 0.9999 with sentence-transformers'. In [0.999, 0.9999):
+  ambiguous, parked for the owner. Under 0.999: fails.
+- **A5, planted defects, each red on A2 (2.37 s or 7.83 s):** the window admitting distance 12; the flatten
+  `c*32 + f`; the clamps skipped; `per_dim_scale` used without softplus; the depthwise conv centred instead of
+  causal.
+- **Then on Metal (AM):**
+  - **AM1:** the Metal tower against the CPU tower, cosine >= 0.9999 on every soft token, on A2t and on the three
+    real clips.
+  - **AM2:** end to end with the Metal tower and encoder, every case >= 0.9999.
+  - **AM3:** A5's defects planted in the Metal kernels, each red.
+  - Speed against the CPU tower is a record, not a gate: exploratory by day, timed at night.
+
+**Status 2026-10-06: the CPU half is BUILT, and A1-A5 and A2t passed; it is served at `/v1/embeddings`.**
+- **Code:** aikit `audio` (on the local branch; `Gemma4Features`, `LoadGemma4AudioEncoder`, `ForwardStages`).
+  `embeddinggemma2/audio.go` (`EnableAudio`, `EmbedAudio`, `DecodeWAV`). The image and audio layouts now share one
+  tokenizer and splice.
+- **The reference:** `scripts/pin_embeddinggemma2_audio.py` passed all its sanity checks: sdpa, the inverse
+  timescales, the softcap, and three clip scalars and a `per_dim_scale` against the header. The clips are 9, 59 and
+  196 soft tokens. Read 2026-10-06, 16:09 PDT, on the CPU in float32 (raw:
+  `docs/measurements/embeddinggemma2-2026-10-06/audio-gates.txt`):
+- **A1: PASS.** The valid-frame counts equal HF's (36, 236, 783), and the log-mel max |diff| is 2.4e-7 to 4.8e-7.
+- **A2: PASS.** From HF's features, every stage (subsampler, 12 blocks, tower, embedder) is at worst-row cosine
+  1.000000 on every clip; max |diff| is at most 1.3e-3 at a block and 1.1e-4 at the embedder.
+- **A3: PASS**, all 9 cases' ids. **A4: PASS**, all 9 at cosine **1.000000000**.
+- **A2t: PASS.** On the tiny tower (`testdata/gemma4-audio-tiny`, its bounds binding in 15 of 20 projections, a
+  1.3 s clip of 33 soft tokens), every stage is at 1.000000000 and the log-mel within 4.8e-7. This one runs in CI.
+- **A5: PASS**, each defect red on the real gate (and on A2t):
+  - the window admitting distance 12: red on the 2.37 s and 7.83 s clips from block 0, not on the 0.37 s one, as Gate
+    0 predicted;
+  - the flatten `c*32 + f`: red at the subsampler;
+  - the clamps skipped: red from block 0, end to end 0.86-0.99;
+  - `per_dim_scale` without softplus: red from block 0;
+  - a centred conv: red from block 0.
+  The first try at the clamp defect was a broken mutation, not a gate miss: it prefixed `false &&` to an
+  `a || b` condition, which still clamped, and read "no effect". Fixed and re-run, it is strongly red.
+- **Serve:**
+  - Shapes: `{"audio": <a data: URI or base64 of a WAV>, "text": ...}` or the OpenAI part
+    `{"type": "input_audio", "input_audio": {"data", "format": "wav"}}`, mixed with images and strings.
+  - The WAV: 16-bit PCM, mono, 16 kHz, at most 30 s. Anything else is a 400, never resampled or cut; the reference
+    truncates at 30 s, silently.
+  - Limits: one image or one clip per input, 16 clips per request. The tower loads on first use and says so.
+  - Through the Metal serve binary, both longer clips in all three shapes read 1.000000000.
+- **Speed, exploratory** (by day, not a result): the CPU tower takes 0.27, 0.23 and 0.67 s on the three clips, with
+  under a second end to end for the 7.83 s clip. That is much less than the image tower's 5 s, so AM matters less here
+  than VM did.
+
+**Status 2026-10-06: AM BUILT, and AM1-AM3 passed; the audio tower runs on Metal with the encoder.**
+- **Code:** `metal/gemma4_audio.go` runs the 12 blocks with aikit's GEMMs and RMSNorm, the vision tower's clamps, and
+  kernels of its own:
+  - SiLU, the weighted residual, the GLU, the causal depthwise conv and the q/k scales;
+  - a sliding-window attention kernel, one threadgroup per query and head.
+
+  The subsampler, `output_proj` and the embedder stay on the host (aikit's `Subsample`, `FinishBlocks`). The seam is
+  `embeddinggemma2.RegisterAudioAccelerator`, and `UseAccelerator("metal")` moves it. Serve's startup line and the
+  first audio request say where it runs.
+- **Read 2026-10-06, 16:24 PDT** (raw: `docs/measurements/embeddinggemma2-2026-10-06/metal-am-gates.txt`):
+  - **AM1: PASS.** On the tiny tower, 1.000000000 against both the CPU tower and transformers. On the real clips,
+    0.999999999 or better against the CPU tower.
+  - **AM2: PASS**, all 9 cases at **1.000000000**. Through the Metal serve binary, the long clip with text read
+    1.000000000.
+  - **AM3: PASS**, each defect planted in the Metal path red on the tiny gate:
+    - the window one narrower: 0.99595 (one wider cannot be planted here: the relative-key table holds 12 rows);
+    - the clamps skipped: 0.97305;
+    - no softplus: 0.99965;
+    - a centred conv: 0.99696.
+
+    The flatten is host-side, aikit's, and covered by A5.
+- **Speed, exploratory** (by day, not a result): the Metal tower takes 71 and 176 ms against the CPU's 232 and 766 ms
+  on the 2.37 s and 7.83 s clips. The 0.37 s clip reads 165 against 73 ms, the first Metal call.
 
 ## Phase 2 — the other four modalities, later and only on P7's back
 

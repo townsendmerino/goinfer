@@ -1,0 +1,21 @@
+=== RUN   TestG4VMetal_realParity
+    gemma4_vision_real_test.go:102: tower on metal, encoder on metal, resize bicubic
+    gemma4_vision_real_test.go:130: gemma3_preprocess_image    2304 patches: VM2 worst soft-token cosine 1.000000000 against HF (0.999999997 against the CPU tower); tower Metal 1.222s, CPU 5.193s (exploratory)
+    gemma4_vision_real_test.go:130: qwen25vl_preprocess_image  2340 patches: VM2 worst soft-token cosine 1.000000000 against HF (0.999999999 against the CPU tower); tower Metal 1.946s, CPU 5.109s (exploratory)
+    gemma4_vision_real_test.go:130: formula                    2430 patches: VM2 worst soft-token cosine 0.999999999 against HF (0.999999997 against the CPU tower); tower Metal 1.919s, CPU 5.672s (exploratory)
+    gemma4_vision_real_test.go:130: table                      2394 patches: VM2 worst soft-token cosine 1.000000000 against HF (1.000000000 against the CPU tower); tower Metal 1.977s, CPU 5.753s (exploratory)
+    gemma4_vision_real_test.go:169: item  0 testdata/gemma3_preprocess_image.png   prompt ""     text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  1 testdata/gemma3_preprocess_image.png   prompt "query" text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  2 testdata/gemma3_preprocess_image.png   prompt ""     text true : VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  3 testdata/qwen25vl_preprocess_image.png prompt ""     text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  4 testdata/qwen25vl_preprocess_image.png prompt "query" text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  5 testdata/qwen25vl_preprocess_image.png prompt ""     text true : VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  6 testdata/glm_ocr/formula.png           prompt ""     text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  7 testdata/glm_ocr/formula.png           prompt "query" text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  8 testdata/glm_ocr/formula.png           prompt ""     text true : VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item  9 testdata/glm_ocr/table.png             prompt ""     text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item 10 testdata/glm_ocr/table.png             prompt "query" text false: VM3 cosine 1.000000000
+    gemma4_vision_real_test.go:169: item 11 testdata/glm_ocr/table.png             prompt ""     text true : VM3 cosine 1.000000000
+--- PASS: TestG4VMetal_realParity (43.55s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	44.422s
