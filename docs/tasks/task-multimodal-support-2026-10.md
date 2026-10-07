@@ -1119,6 +1119,24 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
   agreement. A spoken clip is an owed extra, if one with a known license can be committed.
 - **Speed (night):** tower time per clip, CPU against Metal's accelerator; TTFT of the served turn. A record.
 
+**S5 progress (2026-10-07, Mac):**
+- **G-S5a: PASS.** `multimodal/gemma4_audio_e2b_real_test.go`, E2B's tower and `embed_audio` through aikit, against
+  `scripts/pin_gemma4_e2b_audio.py`. The reference was built on this Mac with transformers 5.16.1: tower and embedder
+  only, float32, sdpa, every load check passing. E2B's upstream `processor_config.json` (saved as
+  `testdata/gemma4-e2b-audio/processor_config.json`) equals the extractor's defaults field for field, and it caps a
+  clip at 750 soft tokens (30 s at 40 ms per token).
+
+  | clip | samples | frames (HF) | soft tokens (HF) | worst stage cosine | largest max abs diff |
+  |---|---|---|---|---|---|
+  | short | 5,920 | 36 (36) | 9 (9) | 1.000000 at every stage | 2.4e-4 |
+  | mid | 37,920 | 236 (236) | 59 (59) | 1.000000 at every stage | 7.2e-4 |
+  | long | 125,317 | 783 (783) | 196 (196) | 1.000000 at every stage | 1.3e-3 (block 11) |
+
+  aikit's own log-mel is within 4.8e-7 of HF's, and the soft tokens from it match HF's embedder at cosine 1.000000000.
+  The tower takes about 1 s for the 7.8 s clip on the CPU (exploratory).
+- **WAV decoding moved to `multimodal.DecodeWAV`** for serve's chat route; `embeddinggemma2.DecodeWAV` stays as a
+  wrapper. `multimodal.Gemma4AudioBlock` builds the placeholder run.
+
 ### S6 — Coverage that is cheap once the above exists
 
 - **Qwen3.5+ MoE images:** never run. On nobara, at night; the checkpoint's tower is in the archive, so it is copied to
