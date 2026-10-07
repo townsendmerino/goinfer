@@ -813,6 +813,14 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     Metal request is not the same computation as `--backend cpu` (its int4 layout differs). A separate finding, to be
     understood.
   - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3c/` (serve logs, replies, top-3 logprobs per token).
+- **Owner decision 2026-10-07: the proposal is accepted.** Both towers get rebuilt on goinfer's Metal tower base, from new
+  aikit float32 exports (SigLIP, Qwen2.5-VL) on the same unreleased `s2-tower-exports` branch; the `visionmetal` real-size
+  defect is reported to aikit. G-S3a's bars apply unchanged to the rebuilt towers, then G-S3b.
+- **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
+  definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
+  `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
+  byte-identical to the first). It answers whether Qwen2.5-VL's first-token divergence is Metal's alone: CUDA runs its own
+  resident m-RoPE prefill, while Metal runs the CPU prefill and then `UploadKV`. It does not stand in for Metal's G-S3c.
 
 ### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
 
@@ -821,6 +829,18 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 - **Qwen2.5-VL:** wire aikit's tagged `gpu/qwencuda` (a require plus `EnableResident`).
 - **Gates:** as S2, on nobara.
 - **Size:** M (Gemma 4), S-M (Qwen2.5-VL).
+
+**S4 and S2's CUDA twins, combined (2026-10-07):** CUDA has no tower base yet (Gemma 3's SigLIP is goinfer's own,
+`cuda/vision_encoder.go`, built on aikit's CUDA ViT ops; nothing else), so the Gemma 4 port is the base, and S2's Qwen3.5+
+and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara-s2-s4-cuda-towers-2026-10-07.md`.
+- **G-S4q, aikit's `gpu/qwencuda` at real size, registered 2026-10-07 before it runs:** G-S3a's test shape and bars on
+  CUDA (f32 both, every soft token at cosine >= 0.9999 on the four F2a images; 0.999-0.9999 parked), times exploratory.
+  It decides S4's Qwen2.5-VL route: correct and faster than the CPU tower → wire it, as written above; wrong, or not
+  faster → build it on the CUDA base, as Metal now will. The Metal twin was correct and no faster.
+- **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
+  Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
+  the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
+  CUDA-specific planted defects into this doc before the CUDA tower code.
 
 ### S5 — Gemma 4 E2B/E4B audio into the model
 
