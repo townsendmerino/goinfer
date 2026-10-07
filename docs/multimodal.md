@@ -965,6 +965,29 @@ the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads fo
   - **F1c:** Gemma 4's processor: aikit's pixels equal transformers' `Gemma4ImageProcessor`'s (processor only, no model) on
     four images of different aspect ratios, none of them already at their target size: 0 values differ.
   - **F1d, on nobara:** Gemma 4 E2B's real image gate (P7 Phase E) re-run with the new default; it must pass its existing bar.
+
+  **F1 read 2026-10-06: PASS** (aikit `eddf5f2`, `f312a17`; goinfer `c2a9fa6a`, `1a86c6c2`).
+  - **F1a:** 12 of 12 torchvision cases exact in aikit, and the three defects red (12, 12 and 10 cases).
+  - **F1b:** EmbeddingGemma 2 through aikit's resize: 0 pixels differ, and 12 of 12 at 1.000000000.
+  - **F1c:** Gemma 4's pixels equal transformers' on all four images, at the float32 bit as well as in uint8.
+  - **F1d:** passes on the exact pixels: "...a solid, bright red.<channel|>Red".
+
+  **The road to F1d is worth keeping.** Its first run on the bicubic default **failed**: the reply opened "Thinking
+  Process:" and spent its 32 tokens before naming the colour. nobara's main passed ("...a solid, bright red color..."),
+  and the branch with bilinear passed with a third, different reply. The solid image's pixels were identical as uint8
+  under both resamplers, so the difference was below a byte. It was the [0, 1] rescale:
+  - transformers multiplies the float32 pixel by `float32(1/255)`;
+  - aikit's new path divided by 255, and its bilinear path divides in float64;
+  - those differ by one ulp on 126 of the 256 byte values.
+
+  With the multiply made exact, EmbeddingGemma 2's pixel max |diff| against HF went from 5.96e-8 to 0, and F1d passed.
+  Two lessons:
+  - F1c's first form hashed the pixels as uint8, which could not see this. It hashes the float32 bytes too now, and a
+    division turns it red on all four images.
+  - This gate's greedy 32-token reply swings on one-ulp input differences. A pass or fail there says the path works,
+    not that two paths agree; F1c is the exactness gate.
+
+  Raw: `docs/measurements/multimodal-finish-2026-10-06/f1d-*.log`.
 - **F2 — Gemma 4's own images on the Metal tower.** The tower registration in `embeddinggemma2` moves to a neutral package both
   use, and serve's Gemma 4 image path uses it when the backend is Metal. Gates, on the Mac, E2B (**blocked on disk**):
   - **F2a:** the Metal tower against aikit's CPU tower, every soft token at cosine >= 0.9999 on the gate images.

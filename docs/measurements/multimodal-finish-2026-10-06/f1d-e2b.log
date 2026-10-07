@@ -1,0 +1,8 @@
+=== RUN   TestGemma4VLReal_E2B
+loaded Gemma 4 vision tower for "gemma4-real-vl" (max 280 soft tokens/image, soft-token id 258880) from /home/francis/models/gemma-4-E2B-unq
+    gemma4_vl_real_test.go:149: E2B real VL answer: "Thinking Process:\n\n1.  **Analyze the image:** The image provided is a solid block of color.\n2.  **Identify the color:** The"
+    gemma4_vl_real_test.go:151: answer does not name the image's actual color (red): "Thinking Process:\n\n1.  **Analyze the image:** The image provided is a solid block of color.\n2.  **Identify the color:** The"
+--- FAIL: TestGemma4VLReal_E2B (134.98s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	136.248s
+FAIL
