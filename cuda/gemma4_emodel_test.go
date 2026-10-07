@@ -62,7 +62,12 @@ type eModelG1 struct {
 	ffnFirst, ffnWide int
 }
 
-func runEModelG1(t *testing.T) eModelG1 {
+func runEModelG1(t *testing.T) eModelG1 { return runEModelG1Mode(t, false) }
+
+// runEModelG1Mode is G1c with the resident's logits taken either from token-by-token Forward (batched=false, S1) or from ONE batched PrefillLastN over the
+// whole prompt (batched=true, S9 on CUDA part A's G2p), so the same grade and the same planted defects apply to both paths. The batched run asserts it
+// really took the batched pass: PrefillPath says batched and passPromptLen, written only by prefillCore, holds the prompt length afterwards.
+func runEModelG1Mode(t *testing.T, batched bool) eModelG1 {
 	t.Helper()
 	requireEModelFixture(t)
 	prompt := eModelPrompt(t)
@@ -100,6 +105,25 @@ func runEModelG1(t *testing.T) eModelG1 {
 	}
 	defer mcF.Close()
 
+	var batchedL [][]float32
+	if batched {
+		if ok, why := r.PrefillPath(); !ok {
+			t.Fatalf("batched prefill declines the E-model: %s", why)
+		}
+		embs := make([][]float32, len(prompt))
+		for i, tok := range prompt {
+			embs[i] = mg.EmbedResidentForTest(tok)
+		}
+		r.Reset()
+		r.passPromptLen = 0
+		var err error
+		if batchedL, err = r.PrefillLastN(embs, 0); err != nil {
+			t.Fatalf("PrefillLastN: %v", err)
+		}
+		if r.passPromptLen != len(prompt) {
+			t.Fatalf("passPromptLen = %d after PrefillLastN, want %d: the batched pass did not run (vacuous)", r.passPromptLen, len(prompt))
+		}
+	}
 	c4, cF := mc4.NewCache(len(prompt)), mcF.NewCache(len(prompt))
 	var sumG, sumC float64
 	for i, tok := range prompt {
@@ -111,11 +135,16 @@ func runEModelG1(t *testing.T) eModelG1 {
 		if err != nil {
 			t.Fatalf("cpu f32 pos %d: %v", i, err)
 		}
-		gpuL, err := r.Forward(mg.EmbedResidentForTest(tok), i)
-		if err != nil {
-			t.Fatalf("cuda pos %d: %v", i, err)
+		var gpuL []float32
+		if batched {
+			gpuL = batchedL[i]
+		} else {
+			var err error
+			if gpuL, err = r.Forward(mg.EmbedResidentForTest(tok), i); err != nil {
+				t.Fatalf("cuda pos %d: %v", i, err)
+			}
+			gpuL = append([]float32(nil), gpuL...)
 		}
-		gpuL = append([]float32(nil), gpuL...)
 		res.cuda = append(res.cuda, gpuL)
 		cm, _ := cosMaxAbs(cpu4, gpuL)
 		cc, _ := cosMaxAbs(cpuF, cpu4)
@@ -169,10 +198,30 @@ func TestGemma4EModel_cudaResidentParity(t *testing.T) {
 // (on Metal it is a byte-for-byte no-op and cannot go red). On CUDA it DOES go red (2026-10-07: mean cosine 0.763998 against 0.999931 clean), because
 // the shared layer's K/V scratch holds another layer's data and the store writes it through the alias into the source's cache; so it is a gate here.
 func TestGemma4EModel_plantedDefects(t *testing.T) {
-	defects := []struct {
-		name string
-		set  func(bool)
-	}{
+	for _, d := range eModelDefects() {
+		t.Run(d.name, func(t *testing.T) {
+			d.set(true)
+			defer d.set(false)
+			g := runEModelG1(t)
+			ok, why := g.pass()
+			t.Logf("G2c %s: G1c %s %s (mean cosine %.6f, exact argmax %d/%d, gaps>3%% %d)", d.name, map[bool]string{true: "GREEN", false: "RED"}[ok], why, g.meanCUDA, g.exact, g.n, g.gaps3)
+			if ok {
+				t.Errorf("planted defect %s left G1c green — the fixture cannot see it", d.name)
+			}
+		})
+	}
+}
+
+// eModelDefect is one of S1's eight planted defects: set(true) plants it, set(false) removes it.
+type eModelDefect struct {
+	name string
+	set  func(bool)
+}
+
+// eModelDefects is the list G2c plants through the sequential path and S9's G2p plants through the batched one: the same seams, so a defect the batched path
+// ignored (not implementing the thing it perturbs) would stay green there.
+func eModelDefects() []eModelDefect {
+	return []eModelDefect{
 		{"(1) PLE branch skipped", func(on bool) { g4SkipPLEForTest = on }},
 		{"(2) PLE token-identity term zeroed", decoder.SetGemma4PLEDropTokenForTest},
 		{"(3) shared-KV source one owning layer off", func(on bool) { g4KVSrcOffForTest = on }},
@@ -187,18 +236,6 @@ func TestGemma4EModel_plantedDefects(t *testing.T) {
 				pleLayerShiftForTest = 0
 			}
 		}},
-	}
-	for _, d := range defects {
-		t.Run(d.name, func(t *testing.T) {
-			d.set(true)
-			defer d.set(false)
-			g := runEModelG1(t)
-			ok, why := g.pass()
-			t.Logf("G2c %s: G1c %s %s (mean cosine %.6f, exact argmax %d/%d, gaps>3%% %d)", d.name, map[bool]string{true: "GREEN", false: "RED"}[ok], why, g.meanCUDA, g.exact, g.n, g.gaps3)
-			if ok {
-				t.Errorf("planted defect %s left G1c green — the fixture cannot see it", d.name)
-			}
-		})
 	}
 }
 
@@ -226,8 +263,7 @@ func eModelGreedy(t *testing.T, m *decoder.Model, prompt []int, n int) []int {
 }
 
 // TestGemma4EModel_declinesAndFallbacks is G2c's decline check: every path that cannot carry an E-model's per-layer embeddings, shared KV and per-layer FFN
-// width refuses by NAME (never a silent truncation), and a greedy generation through the sequential fallbacks (the batched prefill declined) takes the
-// same tokens as the CPU's.
+// width refuses by NAME (never a silent truncation), and a greedy generation (batched prompt prefill, then resident decode) takes the same tokens as the CPU's.
 func TestGemma4EModel_declinesAndFallbacks(t *testing.T) {
 	requireEModelFixture(t)
 	mg, err := decoder.Load(eModelDir, decoder.Options{Backend: "cuda", Quant: "int4"})
@@ -239,12 +275,16 @@ func TestGemma4EModel_declinesAndFallbacks(t *testing.T) {
 	if !ok {
 		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
 	}
-	// The batched prefill declines, by name.
-	if err := r.prefillStaticDecline(); err == nil || !errors.Is(err, errPrefillDeclined) || !strings.Contains(err.Error(), "E-model") {
-		t.Errorf("prefillStaticDecline = %v, want an errPrefillDeclined naming the E-model", err)
+	// Text prompts batch (S9 on CUDA part A); what cannot is refused by name: an image block and an MC3 step decline, a hidden-sized row is refused by length.
+	if err := r.prefillStaticDecline(); err != nil {
+		t.Errorf("prefillStaticDecline = %v, want nil: an E-model batches text prompts", err)
 	}
-	if _, err := r.PrefillLast(context.Background(), [][]float32{mg.EmbedResidentForTest(1), mg.EmbedResidentForTest(2)}, 0); err == nil || !errors.Is(err, errPrefillDeclined) {
-		t.Errorf("PrefillLast on an E-model = %v, want errPrefillDeclined", err)
+	two := [][]float32{mg.EmbedResidentForTest(1), mg.EmbedResidentForTest(2)}
+	if _, err := r.PrefillImageLast(context.Background(), two, 0, 0, 1); err == nil || !errors.Is(err, errPrefillDeclined) || !strings.Contains(err.Error(), "E-model") {
+		t.Errorf("PrefillImageLast on an E-model = %v, want an errPrefillDeclined naming the E-model", err)
+	}
+	if _, err := r.PrefillLast(context.Background(), [][]float32{make([]float32, r.hidden), make([]float32, r.hidden)}, 0); err == nil || !strings.Contains(err.Error(), "embedding row") {
+		t.Errorf("PrefillLast with hidden-sized rows = %v, want a row-length refusal", err)
 	}
 	// A drafter and a LoRA adapter refuse, by name.
 	if _, err := r.AttachDrafter(nil); err == nil || !strings.Contains(err.Error(), "E-model") {
@@ -261,7 +301,7 @@ func TestGemma4EModel_declinesAndFallbacks(t *testing.T) {
 	if err := r.UploadKV(4, 0, make([]float32, r.layers[4].kvDim), make([]float32, r.layers[4].kvDim)); err == nil || !strings.Contains(err.Error(), "shares layer") {
 		t.Errorf("UploadKV to a shared layer = %v, want a named refusal", err)
 	}
-	// Greedy tokens through the sequential fallbacks equal the CPU's on the same weights.
+	// Greedy tokens (batched prefill, then decode) equal the CPU's on the same weights.
 	mc, err := decoder.Load(eModelDir, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load (cpu): %v", err)

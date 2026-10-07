@@ -499,12 +499,6 @@ func (r *cudaResident) prefillStaticDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
-	if r.eModel {
-		// A Gemma 4 E-model needs its per-layer embedding tail, KV sharing and per-layer FFN width in the batched pass, which has none of them: the
-		// row copy in prefillCore would silently drop the PLE tail (copy of `hidden` floats per row), and its scratch is sized to the model-level
-		// width. Decline by name; every caller falls back to the sequential decode path, which has all three.
-		return fmt.Errorf("cuda prefill: Gemma 4 E-model (per-layer embeddings, KV-shared layers, per-layer FFN width) has no batched prefill: %w", errPrefillDeclined)
-	}
 	if r.actG32 {
 		// The batched quantizers and GEMMs read one activation scale per row; per-32 prompts take
 		// the sequential decode path, which runs the per-32 kernels.
@@ -683,9 +677,15 @@ func nonBatchableKind(Ly *cudaLayer) string {
 	// decode's launches on exactly decode's weights, so whatever kind decode accepts, it accepts
 	// here. Only the M-wide GEMVs (bGemvB, int4/int8 only) constrain anything, and those are the
 	// attention projections plus a dense layer's gate/up/down.
-	ws := []cudaWQ{Ly.q, Ly.k, Ly.o}
-	if !Ly.kEqV {
-		ws = append(ws, Ly.v)
+	ws := []cudaWQ{Ly.q, Ly.o}
+	if !Ly.kvShared { // a KV-shared layer (Gemma 4 E-model) has no k_proj or v_proj: it attends over its source's cache
+		ws = append(ws, Ly.k)
+		if !Ly.kEqV {
+			ws = append(ws, Ly.v)
+		}
+	}
+	if Ly.pleGate.N > 0 || Ly.pleProj.N > 0 { // the E-model per-layer embedding branch runs through the batched GEMVs too
+		ws = append(ws, Ly.pleGate, Ly.pleProj)
 	}
 	if Ly.isDeltaNet {
 		// A Gated-DeltaNet layer has no q/k/v/o; prefillDeltaNetRows binds these five instead.
@@ -851,6 +851,19 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, nil, e
 	}
+	if r.eModel {
+		// Gemma 4 E-model (S9 on CUDA, part A): text prompts batch. What stays sequential, by name: a step (MC3 rows are per-sequence decode tokens whose PLE
+		// tails and KV slots the step path does not stage), an image block (part B), and m-RoPE (no E-model has it).
+		if rows != nil || imgEnd > imgStart || mropePos != nil {
+			return nil, nil, fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no MC3 step, image block or m-RoPE yet): %w", errPrefillDeclined)
+		}
+		for m, e := range embeddings {
+			if len(e) != r.embLen {
+				// An E-model row is [hidden ‖ nLayers*P] (launchToken refuses the same by length): a hidden-sized row would be read as a full one with a short tail.
+				return nil, nil, fmt.Errorf("cuda prefill: Gemma 4 E-model embedding row %d has %d floats, want %d (hidden %d + %d layers x PLE width %d)", m, len(e), r.embLen, r.hidden, r.nLayers, r.pleP)
+			}
+		}
+	}
 	if rows != nil {
 		// A step: each row is one decode token at its own position, and its attention is decode's (whose own launch
 		// checks the shared-memory limit per row), so the whole-pass checks below do not apply.
@@ -909,6 +922,12 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		r.dnet != nil
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
+	if r.eModel {
+		// An E-model's dense layers differ in width (double-wide FFNs in the KV-shared tail): the M-row scratch is the widest, each layer's launches take its own (ffnI).
+		for l := range r.layers {
+			inter = max(inter, r.layers[l].ffnI)
+		}
+	}
 
 	var outs [][]float32
 	var ids []int
@@ -972,6 +991,22 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			sbB = af(M * hidden)
 		}
 		residMN := uint32((M*hidden + 255) / 256)
+		// Gemma 4 E-model per-layer embedding inputs: pleB holds every row's tail REORDERED to [layer][row][P], so layer l's slice is one contiguous
+		// [M, P] operand (glu_quant_batched's `up`, row stride P), and pleGB is the gate GEMV's [M, P] output.
+		var pleB, pleGB Buffer
+		if r.pleP > 0 {
+			P := r.pleP
+			pleHost := make([]float32, r.nLayers*M*P)
+			for m, e := range embeddings {
+				for l := 0; l < r.nLayers; l++ {
+					copy(pleHost[(l*M+m)*P:(l*M+m+1)*P], e[hidden+l*P:hidden+(l+1)*P])
+				}
+			}
+			pleB, pleGB = af(len(pleHost)), af(M*P)
+			if e := gpu.Upload(pleB, pleHost); e != nil {
+				return e
+			}
+		}
 
 		// Upload the M embeddings contiguously as xB[M, hidden] (already FeatEmbedScale-scaled by the
 		// caller, exactly as Forward/ForwardNoLogits receive them).
@@ -1010,7 +1045,17 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			Ly := &r.layers[l]
 			// PER-LAYER, read here and bound below — never L0's hoisted and assumed uniform.
 			hd, nKV, qDim, rhalf := Ly.hd, Ly.nKV, Ly.qDim, Ly.rhalf
-			ropeN := r.nH*rhalf + nKV*rhalf + nKV*(hd-2*rhalf)
+			// A KV-shared layer rotates Q only (nKV=0 leaves rope_kv's K and V work empty, so nothing is stored through the alias into its source's cache), as
+			// decodeAttnGap does. The attention launch keeps the real nKV, which is how it reads the source's cache.
+			ropeNKV := nKV
+			if Ly.kvShared && !g4KeepSharedKVStoreForTest {
+				ropeNKV = 0
+			}
+			ropeN := r.nH*rhalf + ropeNKV*rhalf + ropeNKV*(hd-2*rhalf)
+			ffn := inter
+			if r.eModel {
+				ffn = Ly.ffnI
+			}
 			qb, kb, vb := ArgNull(), ArgNull(), ArgNull()
 			if Ly.hasBias {
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
@@ -1054,10 +1099,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				} else if e := r.bGemvB(Ly.q, aqB, aScB, qb, qBb, M, 0); e != nil {
 					return e
 				}
-				if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
+				if Ly.kvShared {
+					// No k_proj and no v_proj: K/V are the source layer's, already in the aliased cache.
+				} else if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
 					return e
-				}
-				if Ly.kEqV {
+				} else if Ly.kEqV {
 					// K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the V buffer here and normalize it
 					// below, before rope_kv_batched rotates k. Mirrors segA's decode path op for op. It used to project k a SECOND time "because decode does": decode now copies too
 					// (R-23, docs/tasks/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
@@ -1081,8 +1127,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					if r.qkNormWhole {
 						qkNH, qkNKV, qkHD = 1, 1, r.nH*hd
 					}
+					kNormW := Ly.kNorm
+					if Ly.kvShared {
+						// Q only: nKV=0 launches no K blocks, and a shared layer has no k_norm weight to bind (an empty Buffer is a nil deref).
+						qkNKV, kNormW = 0, Ly.qNorm
+					}
 					if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
-						Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(Ly.kNorm),
+						Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(kNormW),
 						gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
 						gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
 						return e
@@ -1117,7 +1168,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 					ropeArgs := []gpu.KernelArg{
 						Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
-						gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+						gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(hd)),
 						gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
 						gpu.ArgValue(Ly.mscale),
 					}
@@ -1374,7 +1425,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				r.profToc(gemvCat, t)
 				t = r.profTic()
 				if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-					Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
+					Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
 					gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
 					return e
 				}
@@ -1393,6 +1444,35 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
 						return e
 					}
+					if r.pleP > 0 && !g4SkipPLEForTest {
+						// Gemma 4 E-model per-layer embedding branch, segBFFN's own order over M rows (cuda/resident.go): quantize the RAW residual, the gate GEMV,
+						// geluTanh(gate) * this layer's slice of the row tails (glu_quant_batched act 0 with pleB's contiguous [M, P] slice as `up`), the projection
+						// GEMV, the post-norm, the residual add. All existing batched kernels. A pleLayerShiftForTest defect reads another layer's slice (modulo
+						// the layer count here: decode reads past the row, which has no batched twin).
+						P, pl := r.pleP, ((l+pleLayerShiftForTest)%r.nLayers+r.nLayers)%r.nLayers
+						if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+						if e := r.bGemvB(Ly.pleGate, mqB, mScB, ArgNull(), pleGB, M, 0); e != nil {
+							return e
+						}
+						if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+							Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
+							gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+						if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+							return e
+						}
+						if e := r.bNormF32B(sbB, Ly.postPLENorm, hidden, M); e != nil {
+							return e
+						}
+						if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+							Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+							return e
+						}
+					}
 					// Gemma 4 dense per-layer output scalar — segB's sequential-decode twin (the
 					// decode path's own fix, cuda/resident.go). fScaleVec is a pure elementwise
 					// dst[i]*=s with no per-row structure, so it batches over the flattened
@@ -1400,7 +1480,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					// (while segB had it) is exactly what TestPrefillNonUniform_bitIdentical exists
 					// to catch: batched prefill and sequential decode diverging on a real per-layer
 					// value, not agreeing on a shared no-op.
-					if Ly.layerScalar != 0 {
+					if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
 						if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 							Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
 							return e
