@@ -183,6 +183,26 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
       (`seqs.json`, `logits-fixed.f32`, `logits-drop-both.f32`, 117 MB each) is in the Mac's
       `~/goinfer-bench/s10-26b/run-2026-10-06/`, not committed; the grading half is nobara's (`docs/prompts/nobara-s1-2026-10-07.md`).
       Raw log: `docs/measurements/multimodal-support-2026-10/s10-26b-dump-night.log`.
+- **S1.0's 26B re-check, graded 2026-10-07 on nobara: PASS.** The Mac's dump (Metal, `gemma4-26b-int4-v14st.metal.giw`, 117
+  positions over three prompts, both arms' dump runs `--- PASS`, swap flat, the kill-watch silent; provenance in the dump
+  directory, binary at `b1e7c9f6`) was graded against the CPU 26B forward over the same sequences, from the same `.giw`
+  (`TestGemma4_26B_s10Grade`, 158 s, CPU, from the archive: a correctness run).
+
+  | arm | mean Metal-vs-CPU logit cosine | argmax agreement |
+  |---|---|---|
+  | fixes in | **0.990848** | 82/117 |
+  | `GOINFER_S10_DROP=both` (fixes dropped) | 0.940854 | 71/117 |
+
+  - **PASS (S1.0's rule):** with the fixes in, neither number is lower than with them dropped; both are higher (+0.050 in
+    mean cosine, +11 positions in argmax). Only `v_norm` can move on the 26B (all its layers are MoE, whose join already
+    applied its own layer scalar), so this is the `v_norm` fix on a real checkpoint.
+  - **A caveat the rule does not test:** 70% argmax agreement (82/117) is low next to the 94-95% the dense models score
+    in G3, even with the fix. This pairs Metal's W4A8 MoE against the CPU's int4 MoE over 117 positions of a 26B whose
+    router flips top-k under tiny input noise (memory: a bit-identical router still flips 779 of 3200 decisions under ~0.5%
+    noise), so I expect it is that floor and not a defect, but this run does not separate the two: it has no
+    near-tie rule and no per-position margins. If the owner wants that, it is a follow-up with the G1 near-tie rule over
+    these logits.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-26b-grade.log`. The 245 MB dump itself is not committed.
 - **S1.0, the `v_norm` fix on CUDA and WebGPU, read 2026-10-07 on nobara (RTX 2070 SUPER, driver 595.91.07): PASS.**
   - **The fix:** every Gemma 4 layer that owns its K/V now applies the scale-less `v_norm`, K=V or not. CUDA: a per-layer
     `vNorm` flag (`cuda/backend.go`), the decode launch in `segA` and the batched-prefill launch in `cuda/prefill.go`
