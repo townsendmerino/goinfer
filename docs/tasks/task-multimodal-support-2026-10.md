@@ -843,6 +843,42 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - A defect that stays green means the fixture is degenerate along that axis. That gets recorded, and the check is
     rerun on a fixture or grid that can see the defect, before any result is read.
   - **Then G-S3b, as registered.**
+- **G-S3a for the rebuilt towers, read 2026-10-07 on the Mac (`s2-towers` at `77f20330`, aikit `s2-tower-exports` at
+  `d7d5cf9`): PASS, tiny and real.**
+  - **The code:** `metal/vl_towers.go`. Both towers run on the S2 base (`metal/grid_vision.go`, which gains tower kinds:
+    no RoPE, windowed segments, a fixed position table, and a block split across command buffers when its segments would
+    overflow the scalar arena). They register through aikit's own seams (`vision.RegisterResident`,
+    `vision.RegisterQwenResident`); aikit's `gpu/visionmetal` and `gpu/qwenmetal` are no longer imported. aikit gains
+    SigLIP's float32 export (`Encoder.Weights`, `FinishHidden`), its recomposition bit-exact on the tiny tower.
+  - **Tiny: both towers exact (worst token 1.000000000).** The first run left five of the seven planted defects green,
+    because the tiny fixtures are degenerate: every bias is zero, and Qwen2.5-VL's q/k/v and output projections are at
+    init scale (0.02), so attention is nearly uniform and adds little to the residual. As registered, the fixture was
+    sharpened before reading anything: random biases, q/k scaled by 6 (SigLIP) or 12 (Qwen2.5-VL), and v and the output
+    projection scaled by 8 (Qwen2.5-VL), through the aliasing exports, which the CPU tower reads too. Then every defect
+    is red:
+
+    | defect | SigLIP | Qwen2.5-VL |
+    |---|---|---|
+    | (1) attention scale dropped | 0.998501 | 0.629849 |
+    | (2) RoPE halves swapped | — | 0.750730 |
+    | (3) whole-frame attention in the windowed blocks | — | 0.789726 |
+    | (4) window reordering skipped | — | 0.726768 |
+    | (5) position table dropped | 0.745353 | — |
+    | (6) patch-embed bias dropped | 0.762383 | — |
+
+  - **Real, the four F2a images, attached through `EnableResident` as serve attaches them:**
+
+    | image | SigLIP worst token | Metal / CPU tower | Qwen2.5-VL grid | worst token | Metal / CPU tower |
+    |---|---|---|---|---|---|
+    | gemma3_preprocess_image.png | 0.999999928 | 9.2 / 26.1 s | 64x64 | 0.999996659 | 8.9 / 22.1 s |
+    | qwen25vl_preprocess_image.png | 0.999999972 | 9.5 / 28.4 s | 4x6 | 0.999999999 | 1.8 / 0.9 s |
+    | glm_ocr/formula.png | 0.999998073 | 9.6 / 25.8 s | 86x72 | 0.999999651 | 15.1 / 34.9 s |
+    | glm_ocr/table.png | 0.999999857 | 9.6 / 26.6 s | 64x86 | 0.999999464 | 14.4 / 31.1 s |
+
+    Times are exploratory: one reading each, by day, a compile running beside one of them. SigLIP's Metal tower is about
+    2.8x the CPU tower here; aikit's was wrong and ~73 s. Qwen2.5-VL's is 2.1-2.5x on the large images, and slower on
+    the tiny 4x6 one, where per-window dispatch overhead dominates. Raw:
+    `docs/measurements/multimodal-support-2026-10/s3-gs3a-rebuilt-real.log`.
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
