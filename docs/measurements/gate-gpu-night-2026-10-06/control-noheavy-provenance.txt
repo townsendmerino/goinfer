@@ -1,0 +1,7 @@
+rev:      bd865480c3e469c251a33a9a38a5dc36adaf6890 (origin/main)
+started:  2026-10-06 18:23:46 PDT
+fixtures: 59 gitignored entries symlinked from /home/francis/mycode/goinfer
+go:       go version go1.27.0 linux/amd64
+gpu:      NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 468 MiB
+heavy:    SKIPPED
+finished: 2026-10-06 18:28:54 PDT rc=0

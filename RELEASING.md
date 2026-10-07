@@ -90,6 +90,8 @@ survives to a tag unless caught here.
    (`go test ./decoder -run HardwareMatrix -update`).
    **If this release changes which backends the startup self-test covers, or which adapters it skips,** edit its three statements by hand (the matrix test does not see them): the self-test paragraph in `docs/server.md`,
    "What it has been run on" in `README.md`, and the same section in `site/internal/site/templates/download.html`. The site's output check requires that section to exist, not what it says about coverage.
+8. **The GPU gate, on BOTH boxes** (§C1-M on the Mac, §C1-C on the Linux box): `go run ./cmd/gate gpu`, the same command, a different backend. Neither is run by CI. v0.21.0 and v0.22.0 had the Metal run and no
+   recorded CUDA one. Queue the CUDA run at night (about 83 minutes) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `metal/`, `cuda/`, `gpu/` or `decoder/` changed since.
 
 ## The two-step tag (post-M-19)
 
@@ -395,6 +397,37 @@ re-bake was only legitimate if **`gemma4-dense-scaled` entries moved** (it has
 exactly that shape (`160dc3f`'s own commit message has the diff), and `TestMetalSnapshotGolden`
 has been green on the Mac since. Re-confirmed green again 2026-09-06
 (`docs/measurements/parity-sweep-metal-2026-09-06.md`'s companion `cmd/gate gpu` run).
+
+## §C1-C — the CUDA device gate (manual, the other half of the same command)
+
+**CI cannot run this one either, for the other reason: it has no GPU.** `ci.yml` only BUILDS and VETS under `-tags cuda`; every CUDA correctness claim rests on a human running the gate on the Linux/NVIDIA box.
+It is the SAME command as §C1-M and was left unnamed here. v0.21.0 and v0.22.0 were tagged with a recorded Metal run and no recorded CUDA one (found 2026-10-06, `docs/queue-release.md` R1), so this
+section exists to stop that happening a third time.
+
+**The exact command**, on the Linux box with the checkpoints in `$HOME/models` and an IDLE GPU (it refuses to run beside a stray goinfer process):
+
+```
+go run ./cmd/gate gpu                              # auto-detects cuda
+GOINFER_GATE_BACKEND=cuda go run ./cmd/gate gpu    # explicit
+```
+
+**As a night job** (the timing lock, an idle GPU and ~83 minutes rule out running it by day): `docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh` tests a detached worktree of `origin/main` with the
+gitignored fixtures linked in and a `go.work` (the cuda module must build against THIS tree's root, not the last published tag), counts a missing PASS verdict as a failure, and writes `provenance.txt`
+and the log to `~/goinfer-logs/gate-gpu-night-<date>/`. Queue it with `python3 scripts/night.py add gate-gpu-cuda --est 90 --by "<who>, <release>" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh`.
+
+**What it costs, measured:** everything outside the heavy real-model tier took **4 min 54 s** on 2026-10-06; the heavy tier (`GOINFER_HEAVY_TESTS=1`, set by the gate itself) measured **78 min** on 2026-09-28. The whole run is
+about 83 minutes. `GOINFER_GATE_SKIP_HEAVY=1` skips the heavy tier and is for CONTROLS of the plumbing, never for a tag.
+
+**What green means — all four, or it is not green:**
+
+1. **All 10 declared check groups report a verdict** (`cleangpu seam suite parity heavy graphsforced cgofree ptx webgpu repo`; read the current list in `cmd/gate/gpu.go`, which this file must not restate). A group that
+   emits nothing is itself a FAIL (audit G-01).
+2. **Zero FAIL**, and the verdict line names the commit; a dirty tree is a PROVENANCE failure.
+3. **The heavy tier ran.** A SKIP IS NOT A PASS: with `GOINFER_GATE_SKIP_HEAVY` the verdict can read PASS while the 26B expert streaming, the real-weight GEMV parity, the resident spec-serve and the bandwidth benchmarks
+   did NOT run, and the gate lists that under "this gate does NOT cover". For a tag that list must not contain the heavy tier, unless an exception is written down in the tag's record.
+4. **The log is archived, not `mktemp`'d**: commit it (or paste it) with the tag record, as for §C1-M.
+
+**Both halves are owed at a tag:** run §C1-M on the Mac and this on the Linux box, at the same commit or at commits that differ by nothing in `metal/`, `cuda/`, `gpu/` and `decoder/`, and record both.
 
 ## Test hooks build tag (`goinfer_testhooks`)
 
