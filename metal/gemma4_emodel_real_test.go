@@ -398,3 +398,77 @@ func TestG3Calibration_qwen15b(t *testing.T) {
 	logf("calibration (Qwen2.5-Coder-1.5B, template %s): %d/%d prompts pass the free-run rule; teacher-forced agreement %d/%d = %.2f%% (reported, not graded)",
 		tmpl.Name(), pass, len(g3Prompts), agree, n, 100*float64(agree)/float64(n))
 }
+
+// g3Model loads one Metal sidecar twice (Metal resident + CPU), at G3's pinned context, and runs g3Run on it.
+func g3Model(t *testing.T, giw, tokGGUF, label string, logf func(string, ...any)) (pass, agree, n int) {
+	t.Helper()
+	if strings.HasPrefix(giw, "/Volumes/") || strings.HasPrefix(giw, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", giw)
+	}
+	if _, err := os.Stat(giw); err != nil {
+		t.Skipf("no sidecar %s: %v", giw, err)
+	}
+	tk, err := tokenizer.LoadGGUF(tokGGUF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := decoder.Options{Quant: "int4", ResidentContext: 512}
+	mg, err := decoder.Load(giw, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	if why := residentMemoryDecline(mg); why != "" {
+		t.Fatalf("%s: Metal's fit guard declines it: %s", label, why)
+	}
+	r, err := buildResident(mg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	mc, err := decoder.Load(giw, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close()
+	logf("%s: loaded (template %s)", label, tmpl.Name())
+	pass, agree, n = g3Run(t, tk, tmpl, r, mg, mc, logf)
+	logf("%s: %d/%d prompts pass the free-run rule; teacher-forced agreement %d/%d = %.2f%%", label, pass, len(g3Prompts), agree, n, 100*float64(agree)/float64(n))
+	return pass, agree, n
+}
+
+// TestGemma4EModel_realE2BNonInferiority is G3 as re-registered (docs/tasks/task-multimodal-support-2026-10.md, owner
+// decision 2026-10-06): in one process, g3Run on Qwen2.5-Coder-1.5B (whose Metal path is validated: the reference),
+// then on E2B. PASS: E2B's teacher-forced agreement >= the reference's - 2.0 points and its free-run passes >= the
+// reference's - 1; 2.0-4.0 points below is ambiguous (parked); worse, or free-run passes 2+ short, fails.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 12m -tags goinfer_testhooks -run '^TestGemma4EModel_realE2BNonInferiority$' -v ./metal/
+func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	home, _ := os.UserHomeDir()
+	t0 := time.Now()
+	logf := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[G3ni %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	qb := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
+	rp, ra, rn := g3Model(t, qb+".int4.metal.giw", qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
+	eb := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it")
+	ep, ea, en := g3Model(t, eb+".int4.metal.giw", eb+".gguf", "E2B", logf)
+	refPct, e2bPct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
+	delta := e2bPct - refPct
+	logf("G3 non-inferiority: E2B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e2bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
+	switch {
+	case delta < -4.0 || ep <= rp-2:
+		t.Errorf("G3 FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
+	case delta < -2.0:
+		t.Errorf("G3 AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
+	default:
+		t.Logf("G3 PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+	}
+}

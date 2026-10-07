@@ -318,7 +318,7 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
       94.22%.** A known-good Metal path fails G3's bands by the same margin, so the 99%/97% bands were set without
       calibrating the instrument: Metal's W4A8 (per-tensor int8 activations, f16 scales) against the CPU's int4 path
       flips about 5-6% of argmax positions on these prompts, mostly at near-ties.
-    - **Status: G3 FAIL as registered; parked for the owner.** Not re-graded. One candidate re-registration, for the
+    - **Status: G3 FAIL as first registered; the owner re-registered it (below), and it passes that.** Not re-graded under the first rule. One candidate re-registration, for the
       owner to accept or reject: non-inferiority against the calibration (E2B's agreement at least the validated
       model's minus a stated margin, measured in the same session), plus the free-run rule.
     - Raw: `g3-run2.log`, `g3-control.log`, `g3-localize.log`, `g3-calibration-qwen15b.log` in
@@ -334,6 +334,10 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
       - 1.
     - **Ambiguous (parked for the owner):** agreement 2.0-4.0 points below the reference, free-run condition met.
     - **FAIL:** agreement more than 4.0 points below the reference, or E2B's free-run passes 2 or more short.
+  - **G3 read 2026-10-06 21:17 PDT on the Mac (M1 Pro), the re-registered rule: PASS.** Reference Qwen2.5-Coder-1.5B
+    7/8 prompts, 375/398 = 94.22%; E2B 7/8 prompts, 413/435 = 94.94%; delta **+0.72 points** against the -2.0 margin,
+    free-run passes equal. Both numbers reproduce the earlier runs exactly (the procedure is deterministic). Raw:
+    `docs/measurements/multimodal-support-2026-10/g3-noninferiority.log`.
 - **G4, real E2B image chat:**
   - The F2b request through the Metal serve binary, resident decode against CPU decode.
   - **PASS:** identical reply, or a first divergence at a near-tie.
