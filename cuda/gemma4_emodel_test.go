@@ -40,15 +40,14 @@ func eModelPrompt(t *testing.T) []int {
 // eModelG1 is the measurement G1c grades (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"): the CUDA resident against the CPU, int4 on
 // both sides, teacher-forced over eModelPrompt, plus the CPU's own int4-vs-f32 agreement for the envelope.
 type eModelG1 struct {
-	n, exact, gaps3    int
-	worstTie           float64
-	meanCUDA, meanCPU  float64
-	minCUDA            float64
-	firstHardPos       int
-	cuda               [][]float32 // the resident's logits per position, for the bit-identity check on defect (5)
-	pleP, shared       int
-	ffnFirst, ffnWide  int
-	resident, cpuInt4v bool
+	n, exact, gaps3   int
+	worstTie          float64
+	meanCUDA, meanCPU float64
+	minCUDA           float64
+	firstHardPos      int
+	cuda              [][]float32 // the resident's logits per position, for the bit-identity check on defect (5)
+	pleP, shared      int
+	ffnFirst, ffnWide int
 }
 
 func runEModelG1(t *testing.T) eModelG1 {

@@ -122,8 +122,8 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaRe
 }
 
 // g3Model loads one GGUF as a CUDA resident and on the CPU, both int4 at G3's pinned 512-token context, and runs g3Run. Table precision is the
-// confound Metal's G3 run 1 fell into (its CPU arm loaded a sidecar whose embedding/LM-head/PLE tables were int4 against Metal's int8), so it is
-// applied up front: the CPU side loads the CUDA side's own sidecar when the CPU can read it, and the log names every file each side read.
+// confound Metal's G3 run 1 fell into (its CPU arm loaded a sidecar whose embedding/LM-head/PLE tables were int4 against Metal's int8), so both
+// sides load the same GGUF with the same Options.
 func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass, agree, n int) {
 	t.Helper()
 	if strings.HasPrefix(gguf, "/srv/models") || strings.HasPrefix(gguf, "/Volumes/") {
@@ -152,25 +152,15 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 	if !ok {
 		t.Fatalf("%s: no CUDA resident: %s", label, mg.ResidentDecline())
 	}
-	base := strings.TrimSuffix(gguf, ".gguf")
-	sidecars, _ := filepath.Glob(base + ".int4*.giw")
-	logf("%s: CUDA resident built (template %s, P=%d, hidden %d, %d layers); sidecars on disk next to the GGUF: %v", label, tmpl.Name(), r.pleP, r.hidden, r.nLayers, sidecars)
-	cpuSrc := gguf
-	for _, s := range sidecars {
-		if strings.Contains(s, ".cuda.giw") {
-			cpuSrc = s
-		}
-	}
-	mc, err := decoder.Load(cpuSrc, opts)
+	// The CPU loads the SAME file with the SAME options, so both sides hold the same quantization of every table. (G3c run 1, 2026-10-07, let the CPU
+	// read the CUDA e4h sidecar while the CUDA side loaded the GGUF with Options.EmbedInt4 unset: an int4 head against an int8 pin, the confound
+	// Metal's G3 run 1 fell into. It was caught in the log before anything was recorded and is superseded; see the task doc.)
+	mc, err := decoder.Load(gguf, opts)
 	if err != nil {
-		logf("%s: the CPU could not read %s (%v); loading the GGUF instead", label, cpuSrc, err)
-		cpuSrc = gguf
-		if mc, err = decoder.Load(cpuSrc, opts); err != nil {
-			t.Fatalf("%s: load (cpu): %v", label, err)
-		}
+		t.Fatalf("%s: load (cpu): %v", label, err)
 	}
 	defer mc.Close()
-	logf("%s: CPU side loaded from %s", label, cpuSrc)
+	logf("%s: CUDA resident built (template %s, P=%d, hidden %d, %d layers); both sides loaded %s with %+v (EmbedInt4=%v on both)", label, tmpl.Name(), r.pleP, r.hidden, r.nLayers, gguf, opts, opts.EmbedInt4)
 	pass, agree, n = g3Run(t, tk, tmpl, r, mg, mc, logf)
 	logf("%s: %d/%d prompts pass the free-run rule; teacher-forced agreement %d/%d = %.2f%%", label, pass, len(g3Prompts), agree, n, 100*float64(agree)/float64(n))
 	return pass, agree, n

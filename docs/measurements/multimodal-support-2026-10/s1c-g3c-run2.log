@@ -1,0 +1,106 @@
+=== RUN   TestGemma4EModel_realE2BNonInferiority
+[G3c    8.3s] reference Qwen2.5-Coder-1.5B: CUDA resident built (template chatml, P=0, hidden 1536, 28 layers); both sides loaded /home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf with {noSelfTest:false Backend: Quant:int4 LoRA: KVPrecision: MoECacheExperts:false MoECacheSlots:0 KVQuant: StreamWeights:false WeightCacheBytes:0 AcceptSlowMoE:false MoEPager: Knobs:<nil> EmbedInt4:false ResidentContext:512 DisableFit:false ExtraResidentBytes:0 ExtraResidentKVPerPosition:0 ExactPrefill:false ResidentKVSlots:0 ResidentKVSlotsDefault:false ResidentPrefillChunk:0 CPUBatchDecode:0 ActQuantGroup:0 LoadAbort:<nil> BackendAuto:false} (EmbedInt4=false on both)
+[G3c   11.7s]     disagree: prompt 1 pos 22 (generated) CPU gap 0.18%
+[G3c   12.0s]     disagree: prompt 1 pos 29 (generated) CPU gap 0.96%
+[G3c   13.0s] prompt 1 (19 prompt tokens): first divergence at generated token 4, CPU gap 0.18%; teacher-forced 48/50; pass=true
+    cpu:  "The sky is blue because of the scattering of light by air molecules. When sunlight passes through the Earth's atmosphere, it is scattered in all directions. Some of"
+    cuda: "The sky is blue due to the scattering of light by air molecules and particles in the atmosphere. When sunlight passes through the Earth's atmosphere, it is scattered in"
+[G3c   15.6s]     disagree: prompt 2 pos 9 (prompt) CPU gap 2.58%
+[G3c   16.8s]     disagree: prompt 2 pos 33 (generated) CPU gap 3.31%
+[G3c   17.3s]     disagree: prompt 2 pos 44 (generated) CPU gap 2.98%
+[G3c   17.4s] prompt 2 (16 prompt tokens): first divergence at generated token 18, CPU gap 3.31%; teacher-forced 44/47; pass=false
+    cpu:  "Leaves fall,  \nAutumn's breath,  \nSilent whispers.<|im_end|>\n<|endoftext|>**Question**: What is the purpose of the haiku provided?<|im_end|>"
+    cuda: "Leaves fall,  \nAutumn's breath,  \nSilent whispers.<|im_end|>\n<|endoftext|>Human beings are often compared to animals in terms of their physical attributes and"
+[G3c   20.5s]     disagree: prompt 3 pos 11 (prompt) CPU gap 0.84%
+[G3c   21.1s]     disagree: prompt 3 pos 23 (generated) CPU gap 1.43%
+[G3c   22.4s]     disagree: prompt 3 pos 50 (generated) CPU gap 1.15%
+[G3c   22.5s] prompt 3 (23 prompt tokens): first divergence at generated token 1, CPU gap 1.43%; teacher-forced 51/54; pass=true
+    cpu:  "To solve the problem of multiplying 17 by 23, we can use the distributive property of multiplication over addition. This method allows us to break"
+    cuda: "To find the product of 17 and 23, we can use the distributive property of multiplication over addition. This means we can break down the"
+[G3c   25.2s]     disagree: prompt 4 pos 4 (prompt) CPU gap 0.07%
+[G3c   25.8s]     disagree: prompt 4 pos 16 (prompt) CPU gap 2.01%
+[G3c   27.5s]     disagree: prompt 4 pos 51 (generated) CPU gap 0.15%
+[G3c   27.5s] prompt 4 (21 prompt tokens): first divergence at generated token 31, CPU gap 0.15%; teacher-forced 49/52; pass=true
+    cpu:  "In French, it would be \"Où est la gare de train ?\" In German, it would be \"Wo ist die Bahnhof des Tre"
+    cuda: "In French, it would be \"Où est la gare de train ?\" In German, it would be \"Wo ist die Bahnhof des Tr"
+[G3c   29.9s]     disagree: prompt 5 pos 3 (prompt) CPU gap 0.98%
+[G3c   30.1s]     disagree: prompt 5 pos 9 (prompt) CPU gap 0.38%
+[G3c   30.2s]     disagree: prompt 5 pos 11 (prompt) CPU gap 0.78%
+[G3c   31.0s]     disagree: prompt 5 pos 27 (generated) CPU gap 0.05%
+[G3c   31.9s] prompt 5 (16 prompt tokens): first divergence at generated token 12, CPU gap 0.05%; teacher-forced 43/47; pass=true
+    cpu:  "Python and Go are both popular programming languages, but they have several differences. Here are three of the most significant differences between Python and Go:\n\n1. Syntax:"
+    cuda: "Python and Go are both popular programming languages, but they have some differences in terms of syntax, performance, and use cases. Here are three differences between Python and"
+[G3c   34.8s]     disagree: prompt 6 pos 8 (prompt) CPU gap 0.52%
+[G3c   35.9s]     disagree: prompt 6 pos 30 (generated) CPU gap 0.39%
+[G3c   36.5s]     disagree: prompt 6 pos 44 (generated) CPU gap 3.19%
+[G3c   36.9s] prompt 6 (21 prompt tokens): first divergence at generated token 10, CPU gap 0.39%; teacher-forced 49/52; pass=true
+    cpu:  "Romeo and Juliet, a tragic love story set in Verona, Italy, is a classic tale of forbidden love, betrayal, and death. The story"
+    cuda: "Romeo and Juliet, a tragic love story, centers on two young lovers who are destined to die due to their love for each other. The plot revolves"
+[G3c   39.7s]     disagree: prompt 7 pos 11 (prompt) CPU gap 0.53%
+[G3c   41.5s] prompt 7 (18 prompt tokens): identical; teacher-forced 48/49; pass=true
+    cpu:  "```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n// ReverseString takes a string as input and returns its reverse.\n// Example usage:\n// >>> Reverse"
+    cuda: "```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n// ReverseString takes a string as input and returns its reverse.\n// Example usage:\n// >>> Reverse"
+[G3c   44.3s]     disagree: prompt 8 pos 10 (prompt) CPU gap 0.30%
+[G3c   44.5s]     disagree: prompt 8 pos 14 (prompt) CPU gap 7.68%
+[G3c   44.6s]     disagree: prompt 8 pos 18 (generated) CPU gap 2.46%
+[G3c   44.7s]     disagree: prompt 8 pos 20 (generated) CPU gap 0.79%
+[G3c   46.0s]     disagree: prompt 8 pos 46 (generated) CPU gap 0.61%
+[G3c   46.0s] prompt 8 (16 prompt tokens): first divergence at generated token 3, CPU gap 2.46%; teacher-forced 42/47; pass=true
+    cpu:  "Inflation is caused by several factors, including:\n\n1. Increase in the supply of goods and services: When the supply of goods and services increases, the demand"
+    cuda: "Inflation is a general increase in the prices of goods and services in an economy. The main causes of inflation include:\n\n1. Increase in demand for goods and"
+[G3c   46.0s] reference Qwen2.5-Coder-1.5B: 7/8 prompts pass the free-run rule; teacher-forced agreement 374/398 = 93.97%
+[G3c   65.2s] E2B: CUDA resident built (template gemma4, P=256, hidden 1536, 35 layers); both sides loaded /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf with {noSelfTest:false Backend: Quant:int4 LoRA: KVPrecision: MoECacheExperts:false MoECacheSlots:0 KVQuant: StreamWeights:false WeightCacheBytes:0 AcceptSlowMoE:false MoEPager: Knobs:<nil> EmbedInt4:false ResidentContext:512 DisableFit:false ExtraResidentBytes:0 ExtraResidentKVPerPosition:0 ExactPrefill:false ResidentKVSlots:0 ResidentKVSlotsDefault:false ResidentPrefillChunk:0 CPUBatchDecode:0 ActQuantGroup:0 LoadAbort:<nil> BackendAuto:false} (EmbedInt4=false on both)
+[G3c   70.5s]     disagree: prompt 1 pos 6 (prompt) CPU gap 0.23%
+[G3c   70.6s]     disagree: prompt 1 pos 7 (prompt) CPU gap 1.03%
+[G3c   71.0s]     disagree: prompt 1 pos 11 (prompt) CPU gap 0.40%
+[G3c   71.5s]     disagree: prompt 1 pos 17 (prompt) CPU gap 0.03%
+[G3c   74.8s] prompt 1 (23 prompt tokens): identical; teacher-forced 50/54; pass=true
+    cpu:  "The user wants a two-sentence explanation for why the sky is blue.\n\n1.  **Identify the core phenomenon:** Rayleigh scattering.\n2.  "
+    cuda: "The user wants a two-sentence explanation for why the sky is blue.\n\n1.  **Identify the core phenomenon:** Rayleigh scattering.\n2.  "
+[G3c   84.5s] prompt 2 (21 prompt tokens): identical; teacher-forced 52/52; pass=true
+    cpu:  "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a haiku about autumn leaves.\n2.  **Define Haiku Structure:**"
+    cuda: "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a haiku about autumn leaves.\n2.  **Define Haiku Structure:**"
+[G3c   90.5s]     disagree: prompt 3 pos 8 (prompt) CPU gap 0.33%
+[G3c   91.5s]     disagree: prompt 3 pos 19 (prompt) CPU gap 3.25%
+[G3c   91.8s]     disagree: prompt 3 pos 22 (prompt) CPU gap 7.00%
+[G3c   92.1s]     disagree: prompt 3 pos 26 (prompt) CPU gap 0.85%
+[G3c   94.0s]     disagree: prompt 3 pos 47 (generated) CPU gap 1.13%
+[G3c   95.1s] prompt 3 (28 prompt tokens): first divergence at generated token 20, CPU gap 1.13%; teacher-forced 54/59; pass=true
+    cpu:  "To find the product of 17 and 23, I will use the standard multiplication algorithm (or distributive property).\n\n**Method 1: Standard"
+    cuda: "To find the product of 17 and 23, I will use the standard multiplication algorithm.\n\n**Problem:** $17 \\times 2"
+[G3c  101.3s]     disagree: prompt 4 pos 12 (prompt) CPU gap 0.41%
+[G3c  105.3s] prompt 4 (26 prompt tokens): identical; teacher-forced 56/57; pass=true
+    cpu:  "The user wants to translate the English phrase \"Where is the train station?\" into French and German.\n\n1.  **French translation:**\n    *   "
+    cuda: "The user wants to translate the English phrase \"Where is the train station?\" into French and German.\n\n1.  **French translation:**\n    *   "
+[G3c  114.7s] prompt 5 (21 prompt tokens): identical; teacher-forced 52/52; pass=true
+    cpu:  "Here's a thinking process to arrive at the suggested differences:\n\n1.  **Analyze the Request:** The user wants three differences between Python and Go ("
+    cuda: "Here's a thinking process to arrive at the suggested differences:\n\n1.  **Analyze the Request:** The user wants three differences between Python and Go ("
+[G3c  121.5s]     disagree: prompt 6 pos 18 (prompt) CPU gap 2.10%
+[G3c  122.0s]     disagree: prompt 6 pos 24 (generated) CPU gap 4.25%
+[G3c  124.9s]     disagree: prompt 6 pos 55 (generated) CPU gap 1.60%
+[G3c  124.9s] prompt 6 (25 prompt tokens): first divergence at generated token 0, CPU gap 4.25%; teacher-forced 53/56; pass=false
+    cpu:  "The user wants a one-paragraph summary of the plot of *Romeo and Juliet*.\n\n1.  **Identify the core elements:** Romeo and Juliet, intense"
+    cuda: "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a one-paragraph summary of the plot of *Romeo and Juliet*.\n\n2."
+[G3c  131.5s]     disagree: prompt 7 pos 20 (prompt) CPU gap 0.00%
+[G3c  131.6s]     disagree: prompt 7 pos 21 (generated) CPU gap 2.50%
+[G3c  133.1s]     disagree: prompt 7 pos 37 (generated) CPU gap 2.03%
+[G3c  133.2s]     disagree: prompt 7 pos 38 (generated) CPU gap 1.02%
+[G3c  133.9s]     disagree: prompt 7 pos 46 (generated) CPU gap 0.18%
+[G3c  134.4s]     disagree: prompt 7 pos 52 (generated) CPU gap 2.18%
+[G3c  134.4s] prompt 7 (22 prompt tokens): first divergence at generated token 0, CPU gap 2.50%; teacher-forced 47/53; pass=true
+    cpu:  "The user wants a Go function that reverses a given string.\n\nI need to consider different ways to achieve this in Go:\n\n1.  **Using built"
+    cuda: "Thinking Process:\n\n1.  **Understand the Goal:** The request is to write a Go function that reverses a given string.\n\n2.  **Analyze"
+[G3c  139.8s]     disagree: prompt 8 pos 7 (prompt) CPU gap 2.55%
+[G3c  140.1s]     disagree: prompt 8 pos 10 (prompt) CPU gap 1.07%
+[G3c  141.0s]     disagree: prompt 8 pos 20 (generated) CPU gap 1.62%
+[G3c  142.9s]     disagree: prompt 8 pos 40 (generated) CPU gap 1.70%
+[G3c  143.6s]     disagree: prompt 8 pos 48 (generated) CPU gap 4.60%
+[G3c  143.9s] prompt 8 (21 prompt tokens): first divergence at generated token 0, CPU gap 1.62%; teacher-forced 47/52; pass=true
+    cpu:  "The user is asking for the main causes of inflation. I need to provide a comprehensive answer covering the key economic drivers of price increases.\n\nHere's a"
+    cuda: "Inflation is a complex economic phenomenon, and its causes are rarely singular. They generally fall into several major categories: demand-pull, cost-push, and monetary"
+[G3c  143.9s] E2B: 7/8 prompts pass the free-run rule; teacher-forced agreement 411/435 = 94.48%
+[G3c  144.0s] G3c non-inferiority: E2B 94.48% (7/8 prompts) vs reference 93.97% (7/8 prompts): delta +0.51 points
+    gemma4_emodel_real_test.go:193: G3c PASS: delta +0.51 points (margin -2.0), free-run 7 vs reference 7
+--- PASS: TestGemma4EModel_realE2BNonInferiority (144.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	144.118s

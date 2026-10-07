@@ -9,7 +9,7 @@ from the code and not run. Nothing here was executed except reading files and th
    and are missed by the loose existing bars:
    - **(a) Metal never applies the per-layer output scalar on DENSE Gemma 4 layers.** It applies it only inside the
      g4moe join (`metal/gemma4_moe.go:718`). The CUDA fix (`0907f07c`, which also added `KVSrcAtResident`) wired dense
-     layers on CUDA (`cuda/backend.go:1488`), and WebGPU wires them too (`gpu/residency.go:649`). Metal has no other
+     layers on CUDA (`cuda/backend.go:1522`), and WebGPU wires them too (`gpu/residency.go:649`). Metal has no other
      `LayerScalar` reference outside `embeddinggemma2.go`/`gemma4_moe.go`. `encodeLayerResidualWith`'s dense tail
      ends at the down-proj and residual add (`metal/model.go:2854-2985`). Every E2B layer is dense, so this is
      mandatory for S1.
@@ -261,7 +261,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 - **Tests pinning the E-model decline** (update these on declare):
   - `decoder/gemma4_admission_test.go:62-73`.
   - `decoder/gemma4_emodel_real_test.go:40-49`.
-  - `decoder/features_test.go:539-541`, the derivation table, which stays valid.
+  - `decoder/features_test.go:541-543`, the derivation table, which stays valid.
   - The generated hardware matrix (`decoder/hardware_matrix_test.go`).
 
 ---
@@ -417,7 +417,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 | Real E2B GGUF CPU vs HF bf16, argmax + sample cosine ≥ 0.98 | `decoder/gemma4_parity_test.go:16-70`, golden `testdata/gemma4_forward_golden.json` ("The capital of France is", argmax 7001) | heavy; `~/models/gemma-4-E2B_q4_0-it.gguf` present on the Mac |
 | Real E2B config/load | `decoder/gemma4_load_test.go:16,94` | heavy |
 | Real E2B declines resident | `decoder/gemma4_emodel_real_test.go:15-50` | invert for metal on declare |
-| Synthetic E-model admission | `decoder/gemma4_admission_test.go:62-73`; derivation `decoder/features_test.go:539-541` | update metal |
+| Synthetic E-model admission | `decoder/gemma4_admission_test.go:62-73`; derivation `decoder/features_test.go:541-543` | update metal |
 | kvSrc map | `decoder/gemma4_kvsrc_test.go:14-90` | reuse |
 | Shared-KV-only tiny (PLE-free): `gemma4-vl-tiny`, 4 layers, `num_kv_shared_layers=2`, K=V globals | `scripts/pin_gemma4_vl_tiny.py:36-56`; tests `decoder/gemma4_vl_test.go:24,96` | gitignored (`.gitignore:213`), **absent on the Mac**; regen needs `~/.venv-vl` |
 | E2B vision tower on Metal | `metal/gemma4_vision_e2b_real_test.go:21` | tower only |
@@ -492,13 +492,13 @@ Pin the fixture like `pin_gemma4_vl_tiny.py`, with these settings:
   regenerate it and pin the transformers version: memory notes 5.12 vs 5.15 differences, and the local venv has 5.12.
 
 **CUDA, briefly (later):**
-- Same model-level `r.inter` (`cuda/resident.go:3046, 3454-3493`).
+- Same model-level `r.inter` (`cuda/resident.go:3068, 3454-3493`).
 - `v_norm` only on kEqV (as of 2026-10-06; every K/V-owning Gemma 4 layer since 2026-10-07, see the S1.0 block of the task doc).
-- No PLE (`cuda/resident.go:3577` comment says "no PLE branch yet").
-- Projections are built for every layer (`cuda/backend.go:372-375`), so a shared layer's empty K/V would fail or be
+- No PLE (as of 2026-10-06 the dense tail's comment said "no PLE branch yet"; the PLE branch landed 2026-10-07, see the S1-on-CUDA block of the task doc).
+- Projections are built for every layer (`cuda/backend.go:384-387`), so a shared layer's empty K/V would fail or be
   zero.
 - `KVSrcAtResident` is unused.
-- The dense layer scalar IS wired (`cuda/backend.go:1488`).
+- The dense layer scalar IS wired (`cuda/backend.go:1522`).
 - `residentHostSideBytes` already treats both PLE tables as host-side, while the recommended Metal design uploads
   `PerLayerModelProj` only if step S1.5b moves it on-device.
 

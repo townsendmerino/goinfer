@@ -149,7 +149,10 @@ func TestGemma4DenseScaled_webgpuParity(t *testing.T) {
 	if minCos < 0.9 {
 		t.Errorf("minCosine %.6f < 0.9 — the scaled-dense resident forward diverges from CPU (v_norm on the sliding layers? S1.0)", minCos)
 	}
-	if exact < 16 {
-		t.Errorf("exact-argmax %d/%d < 16/16", exact, len(prompt))
+	if exact < 15 {
+		// 15 of 16 is the pre-S1.0 bar, restored 2026-10-07: the 16/16 this line asked for was one device's reading (RTX 2070 SUPER, Vulkan). The
+		// Apple GPU's WebGPU reads 15/16 with the fix, and 15/16 without it, so an argmax count is a near-tie flip and not the discriminating metric.
+		// pos0 and minCosine above carry the fix's signature: with v_norm re-dropped they fail on both devices.
+		t.Errorf("exact-argmax %d/%d < 15/16", exact, len(prompt))
 	}
 }

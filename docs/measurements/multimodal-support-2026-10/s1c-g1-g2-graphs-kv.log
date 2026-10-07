@@ -1,0 +1,234 @@
+=== RUN   TestGemma4EModel_cudaResidentParity
+    gemma4_emodel_test.go:152:   pos  0 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:152:   pos  1 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=157
+    gemma4_emodel_test.go:152:   pos  2 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:152:   pos  3 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:152:   pos  4 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=9
+    gemma4_emodel_test.go:152:   pos  5 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=16
+    gemma4_emodel_test.go:152:   pos  6 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=111
+    gemma4_emodel_test.go:152:   pos  7 CUDA-vs-CPUint4 0.999913 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=174
+    gemma4_emodel_test.go:152:   pos  8 CUDA-vs-CPUint4 0.999884 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:152:   pos  9 CUDA-vs-CPUint4 0.999867 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:152:   pos 10 CUDA-vs-CPUint4 0.999869 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=64
+    gemma4_emodel_test.go:152:   pos 11 CUDA-vs-CPUint4 0.999346 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=135
+    gemma4_emodel_test.go:152:   pos 12 CUDA-vs-CPUint4 0.999881 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=254
+    gemma4_emodel_test.go:152:   pos 13 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:152:   pos 14 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=244
+    gemma4_emodel_test.go:152:   pos 15 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:152:   pos 16 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=4
+    gemma4_emodel_test.go:152:   pos 17 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:152: E-model G1c: exact-argmax 18/18 gaps>3%=0 worstNearTie=0.00% | mean CUDA-vs-CPUint4 0.999931 (min 0.999346), mean CPUint4-vs-f32 0.777674
+--- PASS: TestGemma4EModel_cudaResidentParity (1.35s)
+=== RUN   TestGemma4EModel_plantedDefects
+=== RUN   TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.577576 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=209
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.526666 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=137
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.506138 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=165
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.256713 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.456320 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=139
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.360872 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=189
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.242791 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=142
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.352842 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=130
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.342495 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=130
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.471692 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=136
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.316232 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=33
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.191139 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=208
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.349080 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=218
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.354455 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=162
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.468575 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=91
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.352955 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=34
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.223884 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=197
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.331068 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 2/18 gaps>3%=16 worstNearTie=147.07% | mean CUDA-vs-CPUint4 0.371194 (min 0.191139), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (1) PLE branch skipped: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.371194, exact argmax 2/18, gaps>3% 16)
+=== RUN   TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.989083 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.988484 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=157
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.942506 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=95
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.981263 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.976931 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=138
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.987553 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=233
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.917319 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=198
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.950979 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=174
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.981699 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=84
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.982116 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=83
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.974228 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=202
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.977467 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=135
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.960541 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=254
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.937798 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.981360 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=79
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.985770 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.907543 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=4
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.969465 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 10/18 gaps>3%=6 worstNearTie=15.41% | mean CUDA-vs-CPUint4 0.966228 (min 0.907543), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (2) PLE token-identity term zeroed: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.966228, exact argmax 10/18, gaps>3% 6)
+=== RUN   TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.894710 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=245
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.893650 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=145
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.940121 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.912939 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.934873 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=160
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.920315 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=132
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.874013 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=40
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.874867 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=221
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.926069 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=56
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.886489 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.880291 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=64
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.835746 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=152
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.895305 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=111
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.874704 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.893989 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=79
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.911639 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.757010 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=247
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.871947 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 7/18 gaps>3%=9 worstNearTie=23.84% | mean CUDA-vs-CPUint4 0.887704 (min 0.757010), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (3) shared-KV source one owning layer off: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.887704, exact argmax 7/18, gaps>3% 9)
+=== RUN   TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.970805 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.970353 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=218
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.966702 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.959212 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.955309 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=9
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.958759 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=16
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.897608 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=198
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.915001 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=245
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.977957 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=86
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.966802 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=227
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.947183 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=83
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.912961 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=23
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.963804 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=139
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.951822 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.961913 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=155
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.970340 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.928866 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=195
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.963605 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 8/18 gaps>3%=6 worstNearTie=48.27% | mean CUDA-vs-CPUint4 0.952167 (min 0.897608), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (4) one FFN width for the model: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.952167, exact argmax 8/18, gaps>3% 6)
+=== RUN   TestGemma4EModel_plantedDefects/(5)_K/V_store_not_skipped_on_a_shared_layer
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.976362 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.918949 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=218
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.881091 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=95
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.803065 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.833532 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=149
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.804821 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=74
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.563669 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=58
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.721778 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=221
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.706141 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=56
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.724801 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=151
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.816286 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=176
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.692679 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=3
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.816609 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=254
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.736193 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.719394 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=50
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.710794 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=139
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.557601 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=247
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.768193 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 5/18 gaps>3%=11 worstNearTie=64.45% | mean CUDA-vs-CPUint4 0.763998 (min 0.557601), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (5) K/V store not skipped on a shared layer: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.763998, exact argmax 5/18, gaps>3% 11)
+=== RUN   TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.990894 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=245
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.991770 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=218
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.981576 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.989984 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.988808 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=9
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.989331 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=16
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.969614 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=198
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.980541 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=174
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.985455 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=215
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.953389 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.965496 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=202
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.958204 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=135
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.966450 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=208
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.954453 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.953863 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=106
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.954910 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.941790 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=4
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.979909 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=253
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 10/18 gaps>3%=6 worstNearTie=20.45% | mean CUDA-vs-CPUint4 0.972024 (min 0.941790), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (6) layer scalar dropped: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.972024, exact argmax 10/18, gaps>3% 6)
+=== RUN   TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.999831 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.972183 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=157
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.953150 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.972799 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.891851 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=138
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.941960 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=40
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.891130 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=198
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.877058 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=45
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.958059 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.910705 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.952508 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=64
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.914727 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=70
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.837214 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=132
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.861152 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=188
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.942991 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=244
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.968295 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.766989 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=137
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.953569 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 10/18 gaps>3%=8 worstNearTie=41.27% | mean CUDA-vs-CPUint4 0.920343 (min 0.766989), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (7) v_norm dropped on non-K=V layers: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.920343, exact argmax 10/18, gaps>3% 8)
+=== RUN   TestGemma4EModel_plantedDefects/(8)_PLE_per-layer_input_offset_off_by_one_layer
+    gemma4_emodel_test.go:186:   pos  0 CUDA-vs-CPUint4 0.498708 | CPUint4-vs-f32 0.938245  argmax cpu=241 cuda=253
+    gemma4_emodel_test.go:186:   pos  1 CUDA-vs-CPUint4 0.191407 | CPUint4-vs-f32 0.931850  argmax cpu=157 cuda=61
+    gemma4_emodel_test.go:186:   pos  2 CUDA-vs-CPUint4 0.151058 | CPUint4-vs-f32 0.917966  argmax cpu=114 cuda=192
+    gemma4_emodel_test.go:186:   pos  3 CUDA-vs-CPUint4 0.178571 | CPUint4-vs-f32 0.887119  argmax cpu=100 cuda=188
+    gemma4_emodel_test.go:186:   pos  4 CUDA-vs-CPUint4 0.187913 | CPUint4-vs-f32 0.807881  argmax cpu=9 cuda=139
+    gemma4_emodel_test.go:186:   pos  5 CUDA-vs-CPUint4 0.198785 | CPUint4-vs-f32 0.761593  argmax cpu=16 cuda=137
+    gemma4_emodel_test.go:186:   pos  6 CUDA-vs-CPUint4 0.075581 | CPUint4-vs-f32 0.671393  argmax cpu=111 cuda=46
+    gemma4_emodel_test.go:186:   pos  7 CUDA-vs-CPUint4 0.138315 | CPUint4-vs-f32 0.741180  argmax cpu=174 cuda=63
+    gemma4_emodel_test.go:186:   pos  8 CUDA-vs-CPUint4 0.263591 | CPUint4-vs-f32 0.702948  argmax cpu=36 cuda=16
+    gemma4_emodel_test.go:186:   pos  9 CUDA-vs-CPUint4 0.294052 | CPUint4-vs-f32 0.833518  argmax cpu=129 cuda=24
+    gemma4_emodel_test.go:186:   pos 10 CUDA-vs-CPUint4 0.256539 | CPUint4-vs-f32 0.765440  argmax cpu=64 cuda=160
+    gemma4_emodel_test.go:186:   pos 11 CUDA-vs-CPUint4 0.038201 | CPUint4-vs-f32 0.705251  argmax cpu=135 cuda=167
+    gemma4_emodel_test.go:186:   pos 12 CUDA-vs-CPUint4 0.231225 | CPUint4-vs-f32 0.737938  argmax cpu=254 cuda=218
+    gemma4_emodel_test.go:186:   pos 13 CUDA-vs-CPUint4 0.044688 | CPUint4-vs-f32 0.715922  argmax cpu=140 cuda=22
+    gemma4_emodel_test.go:186:   pos 14 CUDA-vs-CPUint4 0.353847 | CPUint4-vs-f32 0.712079  argmax cpu=244 cuda=208
+    gemma4_emodel_test.go:186:   pos 15 CUDA-vs-CPUint4 0.227464 | CPUint4-vs-f32 0.829195  argmax cpu=15 cuda=110
+    gemma4_emodel_test.go:186:   pos 16 CUDA-vs-CPUint4 0.090987 | CPUint4-vs-f32 0.553311  argmax cpu=4 cuda=14
+    gemma4_emodel_test.go:186:   pos 17 CUDA-vs-CPUint4 0.074212 | CPUint4-vs-f32 0.785304  argmax cpu=36 cuda=240
+    gemma4_emodel_test.go:186: E-model G1c: exact-argmax 0/18 gaps>3%=18 worstNearTie=141.10% | mean CUDA-vs-CPUint4 0.194175 (min 0.038201), mean CPUint4-vs-f32 0.777674
+    gemma4_emodel_test.go:188: G2c (8) PLE per-layer input offset off by one layer: G1c RED argmax diverges by more than 3% (not a near-tie) (mean cosine 0.194175, exact argmax 0/18, gaps>3% 18)
+--- PASS: TestGemma4EModel_plantedDefects (2.74s)
+    --- PASS: TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped (0.33s)
+    --- PASS: TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed (0.36s)
+    --- PASS: TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off (0.34s)
+    --- PASS: TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model (0.34s)
+    --- PASS: TestGemma4EModel_plantedDefects/(5)_K/V_store_not_skipped_on_a_shared_layer (0.33s)
+    --- PASS: TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped (0.34s)
+    --- PASS: TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers (0.34s)
+    --- PASS: TestGemma4EModel_plantedDefects/(8)_PLE_per-layer_input_offset_off_by_one_layer (0.35s)
+=== RUN   TestGemma4Graphs_bitExact_emodel
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:103: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_emodel (0.68s)
+=== RUN   TestGemma4EModel_declinesAndFallbacks
+goinfer: batched prefill declined for a 12-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: Gemma 4 E-model (per-layer embeddings, KV-shared layers, per-layer FFN width) has no batched prefill: cuda prefill: batched path declined (arch/geometry)
+    gemma4_emodel_test.go:264: greedy 8 tokens: cuda [135 140 34 79 153 107 36 32], cpu [135 140 34 79 153 107 36 32]
+--- PASS: TestGemma4EModel_declinesAndFallbacks (0.35s)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/llama-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny
+    kvbytes_agreement_test.go:56: not CUDA-resident: every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2)
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+=== RUN   TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf
+--- PASS: TestResidentKVBytes_matchesCUDAAllocation (7.77s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/llama-tiny (0.25s)
+    --- SKIP: TestResidentKVBytes_matchesCUDAAllocation/phi3-tiny (0.00s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/mistral-tiny-window (0.24s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-vl-tiny (0.24s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-dense-twogeom-tiny (0.27s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-moe-tiny (0.29s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma4-emodel-tiny (0.26s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen35-tiny (0.22s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/deepseek-tiny (0.30s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.42s)
+    --- PASS: TestResidentKVBytes_matchesCUDAAllocation/gemma3-1b-q4_k_m.gguf (3.29s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	12.971s

@@ -74,7 +74,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   deliberate "show the off-by-default state" choice `hardware-matrix.md`'s own footnote makes
   for Nemotron-H's int4-vs-int8 policy, just not footnoted for Granite the same way. Both
   Granite-4.0-H and Nemotron-H need `FeatSSM`, which only WebGPU declares
-  (`decoder/features.go:731`); with the flag set, the same arch-level gate that admits
+  (`decoder/features.go:732`); with the flag set, the same arch-level gate that admits
   Nemotron-H's Mamba-2 engine on WebGPU should admit Granite-4.0-H's too — not independently
   verified here beyond the arch gate itself, flagged rather than asserted. Not a code finding:
   the generator is working as designed, showing the real default state.
@@ -83,10 +83,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 
 - **MLA family** — DeepSeek-V2, DeepSeek-V3, Kimi K2: resident on WebGPU, CPU on CUDA and Metal.
   Both decline on the same missing feature, `FeatMLA`, declared only for webgpu
-  (`decoder/features.go:731`). Named reuse path already scoped:
+  (`decoder/features.go:732`). Named reuse path already scoped:
   [docs/completed/task-mla-cuda-residency.md](completed/task-mla-cuda-residency.md).
 - **Nemotron-H** — resident on WebGPU (default-on, int4), CPU on CUDA and Metal. Declines there
-  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:731`, webgpu
+  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:732`, webgpu
   only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
   (`gpu/mamba2.go`), so this is a port, not a new design.
 - **Gemma 4 dense** — resident on CUDA, Metal, and (as of 2026-09-17) WebGPU too: WebGPU's
@@ -117,7 +117,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   pairwise kernels (`cuda/rope_pairwise.cu`) and declares `FeatPairwiseRoPE`; Metal and WebGPU do not, so
   Metal now declines these families to the CPU path with a reason naming the feature. The record is
   `docs/measurements/cuda-pairwise-rope-2026-10-01.md`. Original text, for the feature list it describes: resident on CUDA and Metal, CPU on WebGPU. Missing
-  `FeatLayerNorm` (declared `decoder/features.go:706` for cuda, `decoder/features.go:810` for
+  `FeatLayerNorm` (declared `decoder/features.go:707` for cuda, `decoder/features.go:811` for
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
@@ -127,22 +127,22 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   of the CPU decode after the image was never measured (the task's own note said to measure it first; it may be cheap enough to leave). GLM-OCR's task record is `docs/completed/task-glm-ocr-2026-10.md`.
 - **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
-  declared `decoder/features.go:689` for cuda, `decoder/features.go:820` for metal) and
+  declared `decoder/features.go:690` for cuda, `decoder/features.go:821` for metal) and
   `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
-  `decoder/features.go:694` for cuda, `decoder/features.go:820` for metal), neither declared on
+  `decoder/features.go:695` for cuda, `decoder/features.go:821` for metal), neither declared on
   webgpu.
 - **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
-  `decoder/features.go:675` for cuda, `decoder/features.go:820` for metal, absent from webgpu) —
+  `decoder/features.go:676` for cuda, `decoder/features.go:821` for metal, absent from webgpu) —
   some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
-  `decoder/features.go:683` for cuda, `decoder/features.go:820` for metal, absent from webgpu) —
+  `decoder/features.go:684` for cuda, `decoder/features.go:821` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the
   backends that have it.
 - **GPT-2** — resident on Metal ONLY, CPU on both WebGPU and CUDA (not just WebGPU — the one
   family here where the gap isn't purely "WebGPU is behind"). Needs `FeatLayerNorm`,
   `FeatNonGatedMLP`, `FeatLearnedPos`, `FeatOutBias`. Metal declares all four
-  (`decoder/features.go:810-774`). CUDA declares `FeatLayerNorm` (`decoder/features.go:706`,
-  added for Command-R) and `FeatOutBias` (`decoder/features.go:694`, added for gpt-oss) but not
+  (`decoder/features.go:811-775`). CUDA declares `FeatLayerNorm` (`decoder/features.go:707`,
+  added for Command-R) and `FeatOutBias` (`decoder/features.go:695`, added for gpt-oss) but not
   `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
 - **Qwen2.5-VL / Qwen3-VL on Metal support full multimodal resident decode via `decoder.ResidentMRoPE`
   and `UploadKV`.** Metal resident implements `ForwardMRoPE` (`metal/backend.go`, `metal/model.go`)
