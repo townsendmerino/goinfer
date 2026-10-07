@@ -752,7 +752,6 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_kvsrc_test.go:14` | goinfer | `func TestGemma4KVSrcAt_handDerived(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_load_test.go:16` | goinfer | `func TestGemma4Config_realGGUF(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_parity_test.go:16` | goinfer | `func TestGemma4_logitParity(t *testing.T) {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_vl_resident_test.go:225` | goinfer | `// that class at all (a decode-side gap this bridge deliberately does not paper over).` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_vl_test.go:24` | goinfer | `func TestGemma4VL_textParity(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_gemma4_vl.go:47` | goinfer | `if i >= imgPos && i < imgPos+imgLen {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_gemma4_vl.go:9` | goinfer | `// prefillLogitsGemma4VL sequentially prefills a Gemma 4 multimodal prompt — ids` |

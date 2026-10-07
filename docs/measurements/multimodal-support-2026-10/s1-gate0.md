@@ -242,7 +242,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 - **GenerateGemma4VL uses resident decode only when `bidirectional`** (the gate in `GenerateGemma4VL`, `decoder/generate_gemma4_vl.go`, as of 2026-10-06; S1.8 admits E-models too).
   That covers 26B/31B: CPU prefill → `residentUploadPrefill` → `m.resident.Forward(m.embedResident(next), gpuPos)`
   (:169-194). E2B never touches the resident, and `TestGenerateGemma4VL_sequentialPathNeverTouchesResident`
-  (`decoder/gemma4_vl_resident_test.go:225`) pins that.
+  (`TestGenerateGemma4VL_sequentialPathNeverTouchesResident`, as of 2026-10-06) pinned that; S1.8 changed the contract and the test was replaced on 2026-10-07.
 
 ### 2.5 Feature declaration and admission
 
