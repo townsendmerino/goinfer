@@ -28,8 +28,9 @@ const (
 )
 
 // TestIsQwen35VisionDir: auto-discovery must recognise a Qwen3.5 checkpoint that carries a usable
-// tower and stay SILENT (false, not an error) on everything else, so a text-only copy or a
-// Qwen3-VL DeepStack checkpoint never fails serve's startup.
+// tower and stay SILENT (false, not an error) on everything else, so a text-only copy never fails serve's startup.
+// Since S10 a Qwen3-VL checkpoint (model_type qwen3_vl, DeepStack required) is a Qwen tower too; a DeepStack list
+// under qwen3_5, or none under qwen3_vl, is a mismatched config and is not.
 func TestIsQwen35VisionDir(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -41,7 +42,9 @@ func TestIsQwen35VisionDir(t *testing.T) {
 		{"text-only copy: no vision_config", `{"model_type":"qwen3_5"}`, q35Pre, false},
 		{"text-only copy: no preprocessor_config.json", q35Conf, "", false},
 		{"Qwen2.5-VL-style preprocessor (min_pixels keys) is not a Qwen3.5 tower", q35Conf, `{"min_pixels":3136,"max_pixels":100,"patch_size":14,"temporal_patch_size":2,"merge_size":2,"image_mean":[0.5,0.5,0.5],"image_std":[0.5,0.5,0.5]}`, false},
-		{"DeepStack tower (Qwen3-VL proper) is refused", `{"model_type":"qwen3_5","vision_config":{"depth":27,"deepstack_visual_indexes":[8,16,24]}}`, q35Pre, false},
+		{"a qwen3_5 config declaring DeepStack is refused", `{"model_type":"qwen3_5","vision_config":{"depth":27,"deepstack_visual_indexes":[8,16,24]}}`, q35Pre, false},
+		{"Qwen3-VL proper, with DeepStack (S10)", `{"model_type":"qwen3_vl","vision_config":{"depth":24,"deepstack_visual_indexes":[5,11,17]}}`, q35Pre, true},
+		{"a qwen3_vl config without DeepStack is refused", `{"model_type":"qwen3_vl","vision_config":{"depth":24,"deepstack_visual_indexes":[]}}`, q35Pre, false},
 		{"another family", `{"model_type":"qwen2_5_vl","vision_config":{"depth":32}}`, q35Pre, false},
 		{"no config.json", "", q35Pre, false},
 	} {
@@ -82,5 +85,25 @@ func TestSetupQwen35Vision(t *testing.T) {
 	}
 	if _, _, err := setupQwen35Vision(writeQwen35Dir(t, `{"model_type":"qwen3_5"}`, q35Pre), false); err == nil {
 		t.Error("a text-only directory was accepted as a vision tower")
+	}
+}
+
+// TestSetupQwen3VL_deepstack: a Qwen3-VL directory's tower records its DeepStack set count (the features then carry that
+// many sets after the merged rows, and serve splits them), and a Qwen3.5 one records none.
+func TestSetupQwen3VL_deepstack(t *testing.T) {
+	vl := writeQwen35Dir(t, `{"model_type":"qwen3_vl","vision_config":{"depth":24,"deepstack_visual_indexes":[5,11,17]}}`, q35Pre)
+	tower, _, err := setupQwen35Vision(vl, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tower.deep != 3 {
+		t.Errorf("Qwen3-VL tower: %d DeepStack sets, want 3", tower.deep)
+	}
+	q35, _, err := setupQwen35Vision(writeQwen35Dir(t, q35Conf, q35Pre), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q35.deep != 0 {
+		t.Errorf("Qwen3.5 tower: %d DeepStack sets, want 0", q35.deep)
 	}
 }

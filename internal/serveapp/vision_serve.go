@@ -43,6 +43,7 @@ type visionInput struct {
 	imgPos, imgLen int
 	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
 	qwen           bool
+	deepSets       int  // Qwen3-VL (S10): features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
 }
 
@@ -208,13 +209,14 @@ func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns 
 	imgHash := multimodal.HashImageBytes(img.data)
 	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
 	hiddenDim := lm.model.Config().HiddenDim
+	deepSets := lm.qwenDeepstackSets() // Qwen3-VL (S10): the features carry this many DeepStack sets after the merged rows
 	features := func() ([]float32, error) {
 		feats, err := lm.qwenForward(pv, grid)
 		if err != nil {
 			return nil, fmt.Errorf("qwen vision encoder: %w", err)
 		}
-		if len(feats) != n*hiddenDim {
-			return nil, fmt.Errorf("qwen encoder emitted %d features, want %d", len(feats), n*hiddenDim)
+		if len(feats) != n*hiddenDim*(1+deepSets) {
+			return nil, fmt.Errorf("qwen encoder emitted %d features, want %d (%d rows x %d, %d DeepStack sets)", len(feats), n*hiddenDim*(1+deepSets), n, hiddenDim, deepSets)
 		}
 		return feats, nil
 	}
@@ -232,7 +234,16 @@ func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns 
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
 	}
-	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true, deepSets: deepSets}, nil
+}
+
+// qwenDeepstackSets is how many DeepStack sets this model's Qwen tower returns after its merged rows: the Qwen3-VL
+// tower's deepstack_visual_indexes, 0 for every other tower.
+func (lm *loadedModel) qwenDeepstackSets() int {
+	if lm.qwen3 != nil {
+		return lm.qwen3.deep
+	}
+	return 0
 }
 
 // glmOcrVisionPrompt is the GLM-OCR image path: smart-resize preprocess (halved pixel bounds) -> the tower (the merged rows

@@ -1687,7 +1687,20 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	defer cancel()
 	var stream <-chan int
 	var gen *decoder.Generation
-	if vi.qwen {
+	if vi.qwen && vi.deepSets > 0 { // Qwen3-VL (S10): split the flat features into the merged rows and the DeepStack sets
+		n := vi.imgLen * lm.model.Config().HiddenDim
+		stream, gen = lm.model.GenerateQwenVLDeepstack(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, func() ([]float32, [][]float32, error) {
+			flat, err := vi.features()
+			if err != nil {
+				return nil, nil, err
+			}
+			deep := make([][]float32, vi.deepSets)
+			for l := range deep {
+				deep[l] = flat[(l+1)*n : (l+2)*n]
+			}
+			return flat[:n], deep, nil
+		}, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+	} else if vi.qwen {
 		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else if vi.gemma4 {
 		stream, gen = lm.model.GenerateGemma4VL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)

@@ -1168,7 +1168,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	if mt == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
-	if mt == "qwen3_5" || mt == "qwen3_5_moe" {
+	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" { // qwen3_vl: the same tower plus DeepStack (S10)
 		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "glm_ocr" {
