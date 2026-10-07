@@ -732,6 +732,17 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 - **G-S2d amendment, after run 1, before the graded Qwen run:** both arms run `--backend metal`; the CPU-tower arm adds
   serve's new `-vision-device cpu` (a real flag: it keeps the tower on the CPU while the model keeps its backend), so only
   the tower differs. Pass rule unchanged.
+- **G-S2d run 2, Qwen3.5-0.8B, both arms `--backend metal` (decode `metal-resident (int4)` in both), the CPU-tower arm
+  with `-vision-device cpu`:** the replies differ.
+  - Tower on Metal: "...region (thousands)**, which presents...". Tower on the CPU: "...region (in thousands)**.\n\nIt
+    presents...". Every token before generated token 14 agrees, each at p ~ 1.000.
+  - At token 14 both arms sit on a coin flip: the CPU-tower arm picks "in" at p 0.545 with "th" at 0.442; the Metal-tower
+    arm picks "th" at 0.579 with "in" at 0.403. The CPU-tower arm's gap between its token and the Metal arm's is 0.21 in
+    logits.
+  - **Status: near-tie by every measure serve exposes; the registered form is not computed.** The rule compares that
+    gap with 3% of the raw top-1 logit, which log-probabilities hide; it passes for any top-1 logit above 7. Accepting
+    it on that basis, or building an in-process replay that reads the raw logit, is the owner's call.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s2-gs2d-run2/` (serve logs, replies, top-3 logprobs per token).
 
 ### S3 — Gemma 3 and Qwen2.5-VL on Metal: run what exists, then put the towers on the GPU
 
