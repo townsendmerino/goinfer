@@ -2,7 +2,7 @@
 """F1c of docs/multimodal.md "Finishing this doc": transformers' Gemma4ImageProcessor (defaults: max_soft_tokens 280,
 resample=3, torchvision backend), processor only, on four repo images that are not at their target size. Records each
 image's patch count, positions, and the SHA-256 of its valid patches as uint8 (round(x*255), row-major patches,
-(row, col, channel) within one), so aikit's vision.Gemma4Preprocess is held to it bit for bit without committing
+(row, col, channel) within one) and as float32 little-endian (which also holds the [0, 1] rescale to the bit), so aikit's vision.Gemma4Preprocess is held to it bit for bit without committing
 megabytes of pixels.
 
 Run: python3 scripts/pin_gemma4_preprocess_pixels.py --out testdata/gemma4-preprocess-pixels.json
@@ -41,7 +41,8 @@ def main():
         if np.abs(u8.astype(np.float32) / 255 - pv).max() > 1e-6:
             raise SystemExit(f"{path}: pixels are not k/255")
         out["images"].append({"path": path, "w": img.width, "h": img.height, "n_patches": int(len(pos)),
-                              "positions": pos.astype(int).tolist(), "sha256": hashlib.sha256(u8.tobytes()).hexdigest()})
+                              "positions": pos.astype(int).tolist(), "sha256": hashlib.sha256(u8.tobytes()).hexdigest(),
+                              "sha256_f32": hashlib.sha256(pv.astype("<f4").tobytes()).hexdigest()})
         print(f"{path}: {img.width}x{img.height}, {len(pos)} patches")
     with open(a.out, "w") as f:
         json.dump(out, f)
