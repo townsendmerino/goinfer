@@ -40,7 +40,7 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no model at %s", path)
 	}
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(path, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestAttnBlockFull_cost(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no model at %s", path)
 	}
-	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(path, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

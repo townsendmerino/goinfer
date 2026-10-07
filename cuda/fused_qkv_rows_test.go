@@ -149,7 +149,7 @@ func TestFusedQKVRowsBench(t *testing.T) {
 		t.Skipf("load: %v", err)
 	}
 	defer m.Close()
-	rf := m.ResidentForwardForTest().(*cudaResident)
+	rf := mustResident(t, m)
 	for _, g := range fusedQKVBenchGeoms {
 		t.Logf("GEOM %s", g.name)
 		for _, rpw := range fusedQKVBenchRPWs {
@@ -285,7 +285,7 @@ func TestFusedGUBench(t *testing.T) {
 		t.Skipf("load: %v", err)
 	}
 	defer m.Close()
-	rf := m.ResidentForwardForTest().(*cudaResident)
+	rf := mustResident(t, m)
 	for _, g := range fusedGUBenchGeoms {
 		for _, rpw := range fusedGUBenchRPWs {
 			fusedGURun(t, rf, g.H, g.I, rpw, 15, 1)

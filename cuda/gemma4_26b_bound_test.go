@@ -40,7 +40,7 @@ func TestGemma4_26B_1bBound(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 
 	// one real forward to populate the buffers the branches read (activation, norms, router inputs)
 	if _, err := r.Forward(mc.EmbedResidentForTest(1), 0); err != nil {

@@ -28,7 +28,7 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 	if r.bAttnBM128hd64 == (Pipeline{}) || r.bAttnBM128hd128 == (Pipeline{}) {
 		t.Skip("tile pipelines not loaded (set GOINFER_CUDA_FAST_PREFILL=1)")
 	}

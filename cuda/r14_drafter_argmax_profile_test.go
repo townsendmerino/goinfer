@@ -26,12 +26,12 @@ func TestR14DrafterArgmaxProfile(t *testing.T) {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
 	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
-	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 	dr, err := decoder.LoadDFlashDrafter(ddir)
 	if err != nil {
 		t.Fatalf("load drafter: %v", err)

@@ -45,7 +45,7 @@ func TestSplitKVCrossover(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	rf := mc.ResidentForwardForTest().(*cudaResident)
+	rf := mustResident(t, mc)
 	_, _, _, _, _, _, vocab := mc.Dims()
 	emb := func(i int) []float32 { return mc.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
 

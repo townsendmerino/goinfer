@@ -43,7 +43,7 @@ func TestBatchedVsDecodeGap(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	rf := mc.ResidentForwardForTest().(*cudaResident)
+	rf := mustResident(t, mc)
 	_, _, _, _, _, _, vocab := mc.Dims()
 	emb := func(id int) []float32 { return mc.EmbedResidentForTest(((id % vocab) + vocab) % vocab) }
 

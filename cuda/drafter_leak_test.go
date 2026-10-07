@@ -34,7 +34,7 @@ func TestResidentDrafter_fuseContextReleasesScratch(t *testing.T) {
 	if _, err := os.Stat(tgt); err != nil {
 		t.Skipf("no target at %s", tgt)
 	}
-	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load target: %v", err)
 	}

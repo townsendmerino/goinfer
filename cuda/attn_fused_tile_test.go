@@ -39,7 +39,7 @@ func tileBitIdentical(t *testing.T, armID, bm int) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 	if r.bAttnFused64 == (Pipeline{}) || r.bAttnBM32x64hd64 == (Pipeline{}) || r.bAttnBM32x64hd128 == (Pipeline{}) || r.bAttnBM128hd128 == (Pipeline{}) {
 		t.Skip("attn_fused tile pipelines not loaded (set GOINFER_CUDA_FAST_PREFILL=1)")
 	}

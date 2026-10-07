@@ -39,7 +39,7 @@ func TestDecodeAttn2048Probe(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	rf := mc.ResidentForwardForTest().(*cudaResident)
+	rf := mustResident(t, mc)
 	_, _, _, _, _, _, vocab := mc.Dims()
 
 	const N = 2048

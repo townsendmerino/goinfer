@@ -46,7 +46,7 @@ func TestGraphsDecodeSpeedup(t *testing.T) {
 			t.Fatalf("load: %v", err)
 		}
 		defer mc.Close()
-		rf := mc.ResidentForwardForTest().(*cudaResident)
+		rf := mustResident(t, mc)
 		if rf.graphs != graphs {
 			t.Fatalf("graphs=%v requested, resident has %v", graphs, rf.graphs)
 		}

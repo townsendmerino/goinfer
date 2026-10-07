@@ -45,7 +45,7 @@ func TestResidentDrafter_fuseParity(t *testing.T) {
 	if _, err := os.Stat(tgt); err != nil {
 		t.Skipf("no target at %s", tgt)
 	}
-	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load target: %v", err)
 	}
@@ -146,12 +146,12 @@ func TestResidentDrafter_extendContext(t *testing.T) {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
 	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
-	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load target: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 	dr, err := decoder.LoadDFlashDrafter(ddir)
 	if err != nil {
 		t.Fatalf("load drafter: %v", err)
@@ -275,12 +275,12 @@ func TestResidentDrafter_blockParity(t *testing.T) {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
 	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
-	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load target: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 	dr, err := decoder.LoadDFlashDrafter(ddir)
 	if err != nil {
 		t.Fatalf("load drafter: %v", err)
@@ -364,12 +364,12 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
 	}
-	mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+	mc, err := decoder.Load(tgt, fourBLoadOpts())
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
-	r := mc.ResidentForwardForTest().(*cudaResident)
+	r := mustResident(t, mc)
 	_, _, _, _, _, _, vocab := mc.Dims()
 	taps := []int{1, 9, 17, 25, 33}
 	const M = 6
