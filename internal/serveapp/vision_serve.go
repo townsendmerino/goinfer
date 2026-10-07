@@ -3,6 +3,7 @@ package serveapp
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -160,7 +161,33 @@ func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error)
 	if lm.qwen3 != nil {
 		return lm.qwen3.features(pv, grid)
 	}
-	return lm.qwenEnc.Forward(pv, [][3]int{grid})
+	return lm.qwenForwardWithFallback(pv, grid)
+}
+
+// qwenForwardWithFallback is the Qwen2.5-VL ViT with the device-memory fallback: on a device allocation failure it closes the resident tower (the encoder then runs aikit's
+// CPU path) and runs the image again there.
+func (lm *loadedModel) qwenForwardWithFallback(pv []float32, grid [3]int) ([]float32, error) {
+	lm.qwenDevMu.Lock()
+	defer lm.qwenDevMu.Unlock()
+	out, err := recoverDeviceTower("Qwen2.5-VL", func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
+	if err == nil || !lm.qwenEnc.ResidentEnabled() || !isDeviceMemoryError(err) {
+		return out, err
+	}
+	fmt.Fprintf(os.Stderr, "vision: the Qwen2.5-VL tower ran out of device memory (%v); it runs on the CPU from now on\n", err)
+	lm.qwenEnc.Close()
+	return recoverDeviceTower("Qwen2.5-VL", func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
+}
+
+// recoverDeviceTower runs a vision tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
+// resident decoder has taken its VRAM, and aikit's Qwen2.5-VL tower panics on an allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it: unrecovered, one big
+// image killed the whole server (found by the S4 default-plan run, 2026-10-07). The request fails with the reason; the server and the other requests live.
+func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []float32, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = nil, fmt.Errorf("the %s vision tower failed on the device (%v): the image needs more VRAM than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu", family, r)
+		}
+	}()
+	return fn()
 }
 
 // qwenVisionPrompt is the Qwen2.5-VL and Qwen3.5+ image path: smart-resize preprocess → ViT +

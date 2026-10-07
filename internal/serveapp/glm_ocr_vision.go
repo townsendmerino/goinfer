@@ -37,6 +37,7 @@ type glmOcrTower struct {
 	once  sync.Once
 	enc   *vision.GlmOcrVisionEncoder
 	acc   multimodal.GridTowerAccelerator // nil: aikit's CPU tower
+	fb    deviceFallback                  // serializes the accelerator and falls back to the CPU on a device memory failure
 	err   error
 }
 
@@ -61,7 +62,9 @@ func (g *glmOcrTower) features(pv []float32, grid [3]int) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	return multimodal.GlmOcrTowerFeatures(enc, g.acc, pv, [][3]int{grid})
+	return g.fb.run("GLM-OCR", &g.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+		return multimodal.GlmOcrTowerFeatures(enc, acc, pv, [][3]int{grid})
+	})
 }
 
 // isGlmOcrVisionDir reports whether dir is a GLM-OCR checkpoint that carries a usable vision tower: model_type glm_ocr, a

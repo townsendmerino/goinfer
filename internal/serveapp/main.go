@@ -1472,6 +1472,8 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		// total, and who multiplies it by what.
 		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
 	}
+	// A CUDA vision tower loads after this model and claims VRAM too (tower_reserve.go): price it the same way, so the KV plan leaves room for it.
+	opts.ExtraResidentBytes += towerReserve(cfg, spec.path)
 
 	// Resolve, sidecar / streaming transcode, tokenizer, swap-guarded load, the one automatic
 	// streaming retry on a dense fit decline, and the .giw quant check: the path chat and fit share
