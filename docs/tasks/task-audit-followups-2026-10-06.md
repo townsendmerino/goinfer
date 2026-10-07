@@ -73,7 +73,7 @@ shows the pin's effect on a Metal plan.
 
 - **The claim:** `decoder/fitguard.go` prices KV from `opts.KVPrecision == "f16"` (`:393`, `:820`), so a default
   Metal load (no `-kv`) would be priced at 4 bytes an element while Metal always allocates f16 (2 bytes).
-- **What was checked:** Metal's own resident guard prices f16, the only KV it ships (`metal/backend.go:311`). Not
+- **What was checked:** Metal's own resident guard prices f16, the only KV it ships (`metal/backend.go:316`). Not
   yet checked: whether the decoder's host guard also runs for a Metal-resident load, and with which options, so the
   double-pricing may or may not happen. If it does, it refuses or caps large-context Metal loads that would fit; it
   never lets an oversize load through.
