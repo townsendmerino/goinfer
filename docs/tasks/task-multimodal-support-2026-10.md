@@ -1144,6 +1144,38 @@ prompt prefills token by token on the GPU too. Both backends decline E-models fr
 - **Speed (night):** image-turn TTFT and text-prompt TTFT on E2B, batched against sequential, on both boxes.
 - **Size:** M-L per backend.
 
+#### S9 on CUDA, part A (text prompts) — plan registered 2026-10-07 on nobara, before any code
+
+Part A is the text-prompt path (`PrefillLast`, `PrefillLastN`, `HiddenLast`, `ResidualAll`, `PrefillSeedArgmax`, and the chunked driver under them). Part B, the Gemma 4 image turn
+(today `GenerateGemma4VL`: CPU prefill, then `UploadKV`), is registered separately once A is read, because it adds a decoder-side entry point and the image rows' PLE tails.
+
+- **What changes** (`cuda/prefill.go` only, plus the decline text; no kernel, no PTX): the E-model decline in `prefillStaticDecline` goes. `prefillCore` stages each row's `[hidden ‖ L*P]`
+  as the hidden part into `xB` and the tail reordered to `[layer][row][P]`, so a layer's slice is contiguous and `glu_quant`'s batched twin reads it as the `up` operand;
+  scratch is sized to the widest layer's FFN (`ffnI`) and each layer's launches take its own; a KV-shared layer skips the K/V projections, the K half of qk-norm, v_norm and the
+  K/V store (`nKV=0` in the rope launch, as decode's `decodeAttnGap` does) and attends over its source's aliased cache; the PLE branch (quant, gate GEMV, GELU-tanh x tail,
+  projection GEMV, post-norm, residual add) runs between the FFN residual and the layer scalar, the order decode uses. `nonBatchableKind` stops demanding a K/V weight of a shared
+  layer. The batched path reads the SAME test seams decode does (`g4SkipPLEForTest`, `g4KVSrcOffForTest`, `g4OneFFNWidthForTest`, `g4DropLayerScalarForTest`,
+  `g4KeepSharedKVStoreForTest`, `pleLayerShiftForTest`, `g4DropVNormForTest`), so one flag plants a defect in both.
+- **Gates (written before the code; the first two are tests on `testdata/gemma4-emodel-tiny`, window 4, P=32, 2 shared layers, FFN 256/512):**
+  - **G1p, batched against sequential, same resident.** Last-row logits of `PrefillLast` over 96 random-ish rows and over the golden's 18-position prompt: bit-identical
+    (`!=` count 0), as `TestPrefillNonUniform_bitIdentical` demands of the K=V shape. Every row of `PrefillLastN` (the exact-kernel tail) bit-identical to the sequential
+    `Forward` at that position. The chunked driver at chunk 5 and 7 (not divisors of 18 or 96) bit-identical to the unchunked pass. **Non-vacuity:** the test asserts
+    `PrefillPath()` says batched, that `passPromptLen` was set by the call (it is written only in `prefillCore`), and the E-model shape (P=32, 2 shared, FFN 256 and 512).
+    If a fast lever (`attn_fused`, the MMA GEMM) makes `PrefillLast` differ from decode on this fixture, the bar for that tail alone is cosine >= 0.99999 and an identical argmax or
+    a near-tie within 3% (S1's rule), recorded as a departure with the measured digits; the exact tails stay bit-identical.
+  - **G2p, planted defects through the batched path.** The batched all-rows logits graded against the CPU int4 reference with G1c's rule (every argmax identical or a near-tie;
+    mean CUDA-vs-CPU cosine at least the CPU's own int4-vs-f32 mean). Unplanted: must pass. Each of the seven seams above planted in turn: each must turn it red
+    (a seam the batched path ignores would not, which is what the gate is for). Mutants on the new code itself, run and shown red before the gate counts: (a) the PLE tail not
+    reordered per layer, (b) the shared layers' K/V stored through the alias, (c) the layer-0 FFN width used for every layer.
+  - **G3p, served, real `gemma-4-E2B`** (`~/models`, never `/srv/models`): a ~300-token text prompt and a ~2,700-token one, `--backend cuda`, greedy, against a binary built from
+    `origin/main` before this change (the sequential arm: there is deliberately no env knob to switch batched prefill off). The log line must read `prefill path: batched`, and
+    the two replies must be identical or differ first at a near-tie under the registered rule (p(other) >= half p(top)).
+- **Speed (night, a record with no bar; exploratory by day):** TTFT at ~300 and ~2,700 tokens, batched against the pre-change binary, both interleaved in one session
+  under the timing lock (`BENCH_RUNS` per the harness defaults). Expectation, not a bar: well over 2x at 2,700 tokens (the sequential path is about one decode step per token).
+  **Pre-registered kill:** if batched TTFT at 300 tokens is not below sequential, the decline is restored and the change parks; correctness gates alone do not ship a slower path.
+- **Day / night:** the code, G1p, G2p and the vets are day work (seconds each on the tiny fixture); G3p's two requests are a few minutes (exploratory by day, then queued);
+  the speed record and `gate gpu` go on tonight's queue. Estimated by-day wall: build + tiny gates about 5 minutes; G3p about 6 minutes.
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
