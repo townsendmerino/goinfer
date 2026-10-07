@@ -830,6 +830,31 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
   byte-identical to the first). It answers whether Qwen2.5-VL's first-token divergence is Metal's alone: CUDA runs its own
   resident m-RoPE prefill, while Metal runs the CPU prefill and then `UploadKV`. It does not stand in for Metal's G-S3c.
+- **G-S3c on CUDA, read 2026-10-07 on nobara (RTX 2070 SUPER, driver 595.91.07; `cuda/cmd/serve` built from `s2-towers` @ `29dece6c`, `-tags cuda`; int4; greedy):**
+  Qwen2.5-VL reads clean; Gemma 3 diverges at a late token, outside the near-tie definition. Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3c-cuda/`.
+  - **Qwen2.5-VL-3B (arms `cpu`, `cuda`, `cpu`, tower on the CPU in all three): all three replies are identical** ("Quarterly unit sales by region
+    (thousands)"; the CUDA arm against the CPU arm, and the second CPU run against the first). Decode paths as asked: `cpu (int4)` (canonical layout),
+    `cuda-resident (int4)` with CUDA's batched resident prefill, `cpu (int4)`. **CUDA does not reproduce Metal's first-token divergence** ("Table" against
+    "Quarter"), so Metal's `UploadKV` prefill-then-upload route is the suspect, not the image prompt or the m-RoPE positions as the resident paths see them.
+    (Whole-request wall, exploratory: CPU 55.6 s, CUDA 22.2 s.)
+  - **Gemma 3 4B, first run: void as a CUDA comparison, for two reasons the log shows.** (1) The `cuda` arm's resident build failed on a device allocation
+    (`requested cuda -> running on cpu`; 4 KV slots planned at a 4141-position context, then a 17 MB scratch buffer did not fit), so that arm decoded on the
+    CPU; (2) **`-vision-device cpu` was not honored for Gemma 3's SigLIP tower**: the generic branch of `loadVisionTower` keyed the tower's int8 default and its
+    resident attach on the model's own backend, so the `cuda` arm ran an int8 resident tower while the CPU arms ran f32 on the CPU. That run's difference
+    (token 3, ' quarterly' p 0.777 against ' a' 0.223) is therefore confounded twice. It is, though, the same shape as the Mac's separate observation that a
+    CPU decode after a declined GPU request differs from `--backend cpu` (the declined arm's log line has no `int4 layout: canonical` marker).
+  - **Gemma 3 4B, second run (valid): `GS3C_EXTRA="--kv-sessions 1"`, the flag fixed on the branch** (`internal/serveapp/main.go`: under `-vision-device cpu` the
+    int8 default and the resident attach use the CPU, as `towerBackend()` says; until now this branch used `cfg.load.Backend`). All three arms load the same
+    `encoder f32` tower on the CPU; decode paths `cpu (int4)`, **`cuda-resident (int4)`**, `cpu (int4)`.
+    - **CUDA against CPU: first differing generated token 10, CPU ' region' 0.711, CUDA ' geographic' 0.287; near-tie (p(other) >= half p(top) = 0.356): False.**
+      Registered rule: not a near-tie. **The second CPU run is byte-identical to the first** (determinism control holds).
+    - **How to read it:** the divergence is at the 10th generated token, not the first, with the alternative at p 0.29. That is the size of an ordinary int4 W4A8
+      (CUDA) against int4 (CPU) disagreement; the Mac's G3 calibration found a validated Metal model at 94% teacher-forced agreement, and E2B on CUDA reads
+      94.5%. It is NOT shown to be a defect, and the near-tie definition here is stricter than G3's logit-gap rule. A text-only control (the same prompt
+      without the image, CUDA against CPU) or a teacher-forced run over the image turn would separate "decoder noise" from "image path"; not run.
+  - **Two findings for the Mac and the branch:** (a) the `-vision-device cpu` fix above is on `s2-towers` (not pushed); (b) Gemma 3 4B with four KV slots does not
+    fit the 8 GB card at serve's default and falls back to the CPU (it fits with `--kv-sessions 1`); pre-existing, not touched here.
+  - **What changed in the script:** `run-gs3c-served.sh` takes `GS3C_EXTRA` (extra serve flags for every arm), backward compatible.
 
 ### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
 
