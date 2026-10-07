@@ -871,6 +871,24 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
   CUDA (f32 both, every soft token at cosine >= 0.9999 on the four F2a images; 0.999-0.9999 parked), times exploratory.
   It decides S4's Qwen2.5-VL route: correct and faster than the CPU tower → wire it, as written above; wrong, or not
   faster → build it on the CUDA base, as Metal now will. The Metal twin was correct and no faster.
+  - **G-S4q read 2026-10-07 on nobara (RTX 2070 SUPER; `s2-towers` @ `29dece6c`, aikit `s2-tower-exports`; Qwen2.5-VL f32 both sides): aikit's `gpu/qwencuda`
+    is CORRECT at real size and faster than the CPU tower. Verdict by the registered rule: wire it, as S4 says.** Raw and the test sources (kept as `.go.txt`
+    so `go build ./...` does not compile them from `docs/`): `docs/measurements/multimodal-support-2026-10/s4-gs4q/`.
+    - **Correctness:** the tiny towers at 1.000000000 (both grids). The real Qwen2.5-VL-3B on the four F2a images, every soft token against aikit's CPU tower:
+      worst token cosine **0.999997994, 0.999999994, 0.999999901, 0.999999942**: all over the 0.9999 bar.
+    - **Time, exploratory (the first run, the Qwen subtest alone on the box):** tower on CUDA against the CPU tower, by grid: [1 64 64] 7.97 s against 15.17 s;
+      [1 4 6] 51 ms against 140 ms; [1 86 72] 15.29 s against 24.40 s; [1 64 86] 12.70 s against 21.28 s, so 1.6x to 2.7x. (The second run's times, 16.9 / 0.118 / 32.4 /
+      26.9 s against 28.7 / 0.142 / 43.2 / 41.0 s, were taken while the SigLIP package ran in parallel on the same GPU and CPU and are not to be used.) 8-15 s for a
+      large grid is faster than the CPU but not fast.
+    - **aikit's `gpu/visioncuda` (SigLIP), the information item: WRONG at real size, like its Metal twin.** On the four images, worst token cosine **0.245, 0.269,
+      0.097, 0.281**, with 4094 to 4096 of the 4096 tokens under 0.9999 (its tiny parity test passes). Times were taken under the parallel-run contention above, so
+      they say nothing about speed (17-34 s on the CUDA tower against 21-37 s on the CPU's). For the aikit defect report together with the Metal reading.
+    - **A trap that nearly made this reading wrong:** aikit's `visioncuda` and goinfer's own `cuda.VisionEncoder` (`cuda/vision_register.go`, Gemma 3's CUDA tower)
+      both register through the one global `vision.RegisterResident`, and the LAST registration wins. Inside package `cuda`, goinfer's registers last, so a SigLIP
+      test there measures goinfer's tower: `*cuda.VisionEncoder` was the attached type, with per-token cosines mostly 0.99+ against the CPU int8 tower but 4065 of 4096
+      tokens under 0.999 and outliers as low as 0.18 on high-norm tokens (rows of norm 16 against 2-3). The first run's "siglip" lines are that tower, and the test
+      now asserts the attached type. aikit's tower is read in its own package (`cuda/s4siglip`), which imports nothing from goinfer's `cuda`. goinfer's own tower is
+      not gated here and the numbers above are not a verdict on it; the served Gemma 3 image replies with it were sensible.
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
