@@ -1357,29 +1357,30 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 // tower (-vision-quant int8) stays on the CPU; a tower that fails to start falls back to the CPU with the reason,
 // unless -require-backend asks for a refusal. Other backends run it on the CPU.
 func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
-	if backend != "metal" {
+	name, ok := deviceTowerName(backend)
+	if !ok {
 		return nil, "CPU", nil
 	}
 	if int8Tower {
 		if require {
-			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 Metal tower is float32; -vision-quant int8 keeps it on the CPU")
+			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 %s tower is float32; -vision-quant int8 keeps it on the CPU", name)
 		}
-		return nil, "CPU (-vision-quant int8; the Metal tower is float32)", nil
+		return nil, "CPU (-vision-quant int8; the " + name + " tower is float32)", nil
 	}
-	if !slices.Contains(multimodal.Gemma4Towers(), "metal") {
+	if !slices.Contains(multimodal.Gemma4Towers(), backend) {
 		if require {
-			return nil, "", fmt.Errorf("-require-backend: this binary has no Metal Gemma 4 tower")
+			return nil, "", fmt.Errorf("-require-backend: this binary has no %s Gemma 4 tower", name)
 		}
-		return nil, "CPU (no Metal tower in this binary)", nil
+		return nil, "CPU (no " + name + " tower in this binary)", nil
 	}
-	t, err := multimodal.NewGemma4Tower("metal", enc)
+	t, err := multimodal.NewGemma4Tower(backend, enc)
 	if err != nil {
 		if require {
-			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 tower could not start on Metal: %w", err)
+			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 tower could not start on %s: %w", name, err)
 		}
-		return nil, "CPU (Metal declined: " + err.Error() + ")", nil
+		return nil, "CPU (" + name + " declined: " + err.Error() + ")", nil
 	}
-	return t, "Metal", nil
+	return t, name, nil
 }
 
 // splitShardSuffix is a split GGUF's first-shard suffix, "-00001-of-00004.gguf".

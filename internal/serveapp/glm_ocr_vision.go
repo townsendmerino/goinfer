@@ -188,26 +188,39 @@ type gridTowerPlan struct {
 	require       bool
 }
 
+// deviceTowerName is the banner's word for a backend that can host a device vision tower ("Metal", "CUDA"), and false for every other backend (the CPU).
+// S4 (docs/tasks/task-multimodal-support-2026-10.md) made the placement rules backend-generic: Metal's towers and CUDA's follow the same plan.
+func deviceTowerName(backend string) (string, bool) {
+	switch backend {
+	case "metal":
+		return "Metal", true
+	case "cuda":
+		return "CUDA", true
+	}
+	return "", false
+}
+
 // planGridTower decides at startup, before the tower's weights load, where a grid tower runs, by the rules
-// chooseGemma4Tower uses: the Metal tower under --backend metal when this binary registers one and the tower is
+// chooseGemma4Tower uses: the device tower under --backend metal or cuda when this binary registers one for that backend and the tower is
 // float32; the CPU otherwise, with the reason. -require-backend turns each CPU fallback into a refusal.
 func planGridTower(family string, registered []string, int8Tower bool, backend string, require bool) (gridTowerPlan, error) {
-	if backend != "metal" {
+	name, ok := deviceTowerName(backend)
+	if !ok {
 		return gridTowerPlan{where: "CPU"}, nil
 	}
 	if int8Tower {
 		if require {
-			return gridTowerPlan{}, fmt.Errorf("-require-backend: the %s Metal tower is float32; -vision-quant int8 keeps it on the CPU", family)
+			return gridTowerPlan{}, fmt.Errorf("-require-backend: the %s %s tower is float32; -vision-quant int8 keeps it on the CPU", family, name)
 		}
-		return gridTowerPlan{where: "CPU (-vision-quant int8; the Metal tower is float32)"}, nil
+		return gridTowerPlan{where: "CPU (-vision-quant int8; the " + name + " tower is float32)"}, nil
 	}
-	if !slices.Contains(registered, "metal") {
+	if !slices.Contains(registered, backend) {
 		if require {
-			return gridTowerPlan{}, fmt.Errorf("-require-backend: this binary has no Metal %s tower", family)
+			return gridTowerPlan{}, fmt.Errorf("-require-backend: this binary has no %s %s tower", name, family)
 		}
-		return gridTowerPlan{where: "CPU (no Metal tower in this binary)"}, nil
+		return gridTowerPlan{where: "CPU (no " + name + " tower in this binary)"}, nil
 	}
-	return gridTowerPlan{device: "metal", where: "Metal", require: require}, nil
+	return gridTowerPlan{device: backend, where: name, require: require}, nil
 }
 
 // started settles the plan once the tower's weights are loaded: the accelerator, or the CPU with a note when the device
