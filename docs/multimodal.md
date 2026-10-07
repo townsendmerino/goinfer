@@ -224,8 +224,9 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    Qwen-VL, the most-pulled VL line, is still text-only here. **CORRECTED 2026-10-02: Qwen2.5-VL
    has served images since P5; "Qwen-VL" here meant Qwen3-VL, which is still its text decoder only (Qwen3.5+ images shipped as P8a). Vision is five families now.**
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
-   reads neither half of that pair for vision. **(2026-10-06: still open, but explained to users: serve refuses an mmproj handed to
-   `-vision` with a reason, and `pull` notes it. Being built as P8b, §"Finishing this doc".)**
+   reads neither half of that pair for vision. **(2026-10-06: DONE for Qwen3.5+, P8b: `--vision <mmproj>.gguf` beside a Qwen3.5+
+   GGUF model, unsloth's files and Ollama's projector blobs both, bit for bit with the safetensors tower; §"Finishing this doc",
+   F5. Other families' mmproj files are refused by name.)**
 4. **Image turns defeat prefix reuse and the fit guard.** Agent harnesses with screenshots are the
    multimodal use case that matters, and both of the pieces built for agent loops skip them. **(2026-10-06: mostly DONE.** Prefix
    reuse over an image block shipped as P9(a), 2026-09-08, measured 159.98x; the fit guard prices towers since P9(b). Not covered:
@@ -930,6 +931,29 @@ number is published without provenance.
   own; that is a positioning call for the roadmap, and this doc records the technical cost of each
   branch. Speech synthesis and image generation stay out of scope: different model classes, no
   overlap with the descriptor pattern.
+  **Written 2026-10-06 (F4):** `docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`, a desk read
+  from primary sources (HF configs and cards, transformers' modeling code, papers), with unverified points marked.
+  What it found:
+  - **The front end is the first fork.** Whisper, Voxtral, Qwen3-ASR and Qwen3-Omni all use transformers'
+    `WhisperFeatureExtractor`, which differs from aikit's Gemma log-mel at every stage: a 400-point FFT, power not
+    magnitude, Slaney mel with area norm, log10 with a clamp, the last frame dropped. So a second, Whisper-style front
+    end (S) is shared by four families.
+  - **Voxtral's encoder is Whisper large-v3's**, and its decoder is `llama`.
+  - **The cheapest ASR-grade audio-in is Qwen3-ASR** (0.6B/1.7B, Apache-2.0): its decoder is `qwen3` at full parity,
+    and audio arrives through the soft-token splice goinfer already has, so the new work is an encoder and a projector
+    (M).
+  - **Pure-Go Whisper** needs a cross-attention decoder (a new model class, M) and Whisper's decode policy
+    (timestamps, long-form windows, temperature fallback; M-L). Short-form greedy turbo is about M; product-grade
+    Whisper is L, mostly the decode policy.
+
+  Options, as costs, not a decision (the owner's):
+  - **(a)** stop at Gemma 4 (parked item 1);
+  - **(b)** the Whisper front end plus Qwen3-ASR (S + M);
+  - **(c)** the front end plus the Whisper encoder (S + S-M; buys Voxtral), with the decoder and policy after it for
+    pure-Go Whisper (M + M-L);
+  - **(d)** Voxtral Realtime (L), only if streaming is the product.
+
+  The front end is no-regret under (b) or (c).
 
 **Order.** P6 → P7 (image, then audio) → P9 (a, b, c, d) → P8 → P10 → P11. P6 first because it is
 a week of kernel plumbing that makes every later phase measurable at a usable speed; P7 before P8
@@ -1004,7 +1028,8 @@ the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads fo
   - `TestGenerateVL_refusesImageBlockLongerThanWindow` drives it through `GenerateVL` on the tiny Gemma 3 VL model,
     with the window one token under the block: refused, no tokens, tower not run. At the block's own length it serves.
   - The other `GenerateVL` tests and `TestParityManifest_fresh` stay green; no hash moved.
-- **F4 — P11's one-page audio comparison**, now that P7's audio tower exists: desk work, recorded in this doc.
+- **F4 — P11's one-page audio comparison**, now that P7's audio tower exists: desk work, recorded in this doc. **DONE 2026-10-06**:
+  §P11 above, and the full page in `docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`.
 - **F5 — P8b, GGUF `mmproj` for the Qwen3.5+ tower.** aikit gains a tower loader from a tensor source (new API: the towers
   load from a safetensors directory today), and goinfer reads the three container layouts §P8a's prior-art sweep found:
   unsloth's `mmproj-*.gguf` (split patch conv, fused QKV), Ollama's monolithic `qwen3.5` blob (`qwen35.vision.*`, unfused
@@ -1046,6 +1071,35 @@ the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads fo
       The bar stays 0.9999 for all; a nonzero diff on an exact container is investigated, not passed silently.
     - **The image budget** comes from the Qwen3.5 family's own `preprocessor_config.json` values (identical on 0.8B,
       9B and 35B, per P8a Phase 0), since the GGUF carries none, under the same serve cap.
+
+  **F5 read 2026-10-06, on nobara: PASS. P8b is DONE for Qwen3.5+.**
+
+  What was built:
+  - aikit: `vision.LoadQwen3VisionEncoderMMProj` and `ReadQwen3MMProjConfig`, on a new `TensorSource` seam that the
+    safetensors loader now uses too; GGUF BF16 in `embed`.
+  - goinfer: `--vision <mmproj>.gguf` beside a Qwen3.5+ model, and the Qwen3.5 GGUF text config carrying its m-RoPE
+    split.
+
+  Results (raw: `docs/measurements/multimodal-finish-2026-10-06/f5*.log`):
+  - **F5a:** on the three P8a images, the unsloth F32 and BF16 files and Ollama's 0.8B projector blob give the
+    safetensors tower's features **bit for bit** (max |diff| 0), as the amendment predicted. The F16 file is at cosine
+    0.999999999 or better (max |diff| at most 6.9e-5). Ollama's 9B projector against the 9B checkpoint is also bit for
+    bit.
+  - **F5b:** the Q8_0 text GGUF with the BF16 mmproj tower gives the same 32 tokens as with the safetensors tower, on
+    all three images.
+    - Its first run stopped earlier: goinfer refused the image turn because its Qwen3.5 GGUF loader dropped
+      `rope.dimension_sections` (deliberately, for text).
+    - The loader carries it now (`ggufMRopeJSON`). Text is unchanged: the split is unused without image positions,
+      and the parity refresh's 33 goldens passed.
+  - **F5c:** each refusal is unit-tested on built mmproj headers: a Gemma 3 projector, a non-mmproj file, another
+    size's width, a non-Qwen3.5 model. Served on nobara:
+    - the 9B projector beside the 0.8B model is refused at startup ("emits 4096 wide and the model's hidden width is
+      1024");
+    - with the matching projector, a real image is answered in 3.8 s ("a colorful abstract composition featuring
+      geometric shapes...").
+  - **F5d:** a transposed position table (0.184) and Q/K swapped in the fused QKV (0.190) are red on the cosine bar. The
+    patch-conv halves swapped is red only on the exactness check (max |diff| 1.5e-5, cosine 1.000000000): for a still
+    image HF feeds the same frame to both temporal halves, so the swap only reorders a sum. It would matter for video.
 
 **Parked until after the tag, in this order** (each line: what, size, where):
 1. Gemma 4 E2B/E4B **audio into the model** (P7's audio half): aikit's `audio` loader probably loads E2B unchanged (not run);

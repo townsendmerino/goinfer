@@ -38,6 +38,16 @@ or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resi
 (1.000000000 end to end on the same twelve cases; about 1.2-2.0 s an image against 5.1-5.8 s for the CPU tower, an
 exploratory read), through a weights export new in aikit.
 
+### Added — Qwen3.5+ images from a GGUF `mmproj` (`--vision mmproj.gguf`)
+
+`--vision` takes a llama.cpp vision projector file beside a Qwen3.5 or 3.6 GGUF model: unsloth's mmproj files, or the
+`projector` layer Ollama ships with every `qwen3.5` and `qwen3.6` tag. The tower loads from it on the first image. On
+Qwen3.5-0.8B the F32 and BF16 files and Ollama's blob give the checkpoint tower's features bit for bit (F16 within 7e-5).
+A Q8_0 text model answers the same 32 tokens with either tower, and Ollama's 9B projector matches the 9B checkpoint
+bit for bit. Startup refuses another family's projector, another model size's, or an mmproj beside a model that is
+not Qwen3.5+, each by name. Qwen3.5 GGUF text models now carry their m-RoPE split, which an image turn needs; text is
+unchanged. `docs/multimodal.md`, P8b.
+
 ### Changed — Gemma 4 images are resized like the reference processor
 
 Gemma 4's image input now resizes with the reference processor's resampler: torchvision's antialiased bicubic, through
