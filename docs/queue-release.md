@@ -151,6 +151,12 @@ splitting the cell per gate, so one slow checkpoint cannot starve the rest.
 **R1 · The v0.14.0 pre-tag CUDA gate is RED — two failures, classified, neither caused by this
 release** — `linux`, **decision owed before the tag**
 
+**UPDATE 2026-10-06 (R1 is v0.14.0's history; what a later release needs is below).** The command this entry names, `scripts/gpu_gate.sh`, was replaced on 2026-08-21 by `go run ./cmd/gate gpu` (E8 step 3). **No CUDA run of it was
+recorded for v0.21.0 or v0.22.0**: RELEASING.md §C1-M names the Metal device gate and the v0.21.0 Metal record says "CUDA is the other box's run", but nothing names the CUDA half, so it was never asked for. **Cost, measured:**
+the whole gate minus the heavy real-model tier took **4 min 54 s** on 2026-10-06 and passed at 70455093 (10 groups declared and reported; 11 pass, 2 skip, 0 fail; the skips are the heavy tier and 21 darwin-only CI steps;
+`docs/measurements/gate-gpu-noheavy-2026-10-06/`). The heavy tier (`GOINFER_HEAVY_TESTS=1`, real models, set by the gate itself) was measured at **78 min on 2026-09-28**, so the full gate is about 83 min: a night job (it holds
+the timing lock, needs an idle GPU, and the by-day limit is 10 min). Skip the tier with `GOINFER_GATE_SKIP_HEAVY=1`. **Owed:** a full run at the next tag, and a line in RELEASING.md for it beside §C1-M.
+
 `scripts/gpu_gate.sh` at `f7d8dd9`: **9 groups declared / 9 reported, 9 pass, 1 skip, 2 fail** →
 `FAIL — cuda on Linux @ f7d8dd9. Do not tag.` Both failures were run down rather than retried, and
 they are different animals.

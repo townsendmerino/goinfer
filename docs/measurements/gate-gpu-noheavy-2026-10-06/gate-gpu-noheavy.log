@@ -1,0 +1,71 @@
+
+== provenance ==
+  repo        70455093
+  date (UTC)  2026-10-07T01:15:46Z
+  host        Linux x86_64
+  backend     cuda
+  models      /home/francis/models
+  webgpu      adapter present (backend=vulkan)
+  gpu         NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB
+
+== 0. clean GPU ==
+  processes holding the GPU:
+    1755, 16 MiB, /usr/bin/kwin_wayland
+  PASS  no stray goinfer processes (468 MiB in use by others)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==
+  PASS  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	12.379s
+      skipped within it: 4 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestAttnBatchedBandwidth
+        · TestClefFidelityCUDA_run
+        · TestGemvRNBandwidth
+        · TestResidentSpecServe
+
+== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==
+   ... cuda-parity: 1m0s elapsed, 182 tests finished, last: TestGemma4MoE_cacheExpertsBitExact_tiny | in flight: TestGemma4MoE_cacheReuse_tiny (0s)
+   ... cuda-parity: 2m0s elapsed, 252 tests finished, last: TestCUDAKVSlots_buildTrimsTheContext/unpinned:_trimmed_to_fit_all_4 | in flight: TestCUDAKVSlots_buildTrimsTheContext (3s)
+  PASS  resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)
+      ok  	github.com/townsendmerino/goinfer/cuda	158.770s
+
+== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; measured 78 min on 2026-09-28) ==
+  SKIP  heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert
+        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks
+
+== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==
+  PASS  graphs replay == live launches, FORCED capture (7 tests, 0 skipped)
+
+== 3. cgo-free (the whole premise — verify, never assume) ==
+  PASS  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+  PASS  32/32 PTX regenerate byte-identically at their recorded NVRTC
+
+== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==
+  PASS  webgpu suite (backend=vulkan)
+      ok  	github.com/townsendmerino/goinfer/gpu	40.032s
+  PASS  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	29.381s
+
+== 5. repo hygiene (derived from .github/workflows/ci.yml) ==
+  PASS    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  SKIP  21 darwin-only CI hygiene step(s) — wrong platform for this host
+  PASS  9 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+== verdict ==
+  check groups: 10 declared -> 10 reported   |   verdicts within them: 11 pass, 2 skip, 0 fail
+  of which: kernel-level suite = reported   |   resident PARITY gates (forward asserted) = reported
+
+  Skipped — a skip is not a pass; this gate does NOT cover:
+    - SKIPPED: heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert
+        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks
+    - graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).
+    - SKIPPED: 21 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  PASS — cuda on Linux @ 70455093 (2026-10-07T01:20:36Z)
+  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.
