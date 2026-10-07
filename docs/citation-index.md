@@ -683,11 +683,11 @@ supports.
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:782` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:1135` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
-| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:311` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
+| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:316` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2644` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
-| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:385` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1358` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:1270` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
+| `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:389` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1421` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:1306` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:645` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_real.py:65` | goinfer | `m = SentenceTransformer(model_dir, model_kwargs={"dtype": torch.float32}, device="cpu")` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_tiny.py:66` | goinfer | `cfg._attn_implementation = "eager"` |
@@ -773,8 +773,8 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/kvcache.go:89` | goinfer | `// manualPos decouples pos from Append's last-layer trigger. Gemma 4's last` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/model.go:1571` | goinfer | `func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int, hasAdap` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/model.go:1612` | goinfer | `var logits []float32` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:361` | goinfer | `RMSAddOne:     false,` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:367` | goinfer | `// learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:365` | goinfer | `RMSAddOne:     false,` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:371` | goinfer | `// learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1531` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:50` | goinfer | `type ResidentForward interface {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:543` | goinfer | `func (m *Model) residentAdmission() string {` |
@@ -785,7 +785,6 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:945` | goinfer | `a := m.w.arch` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residentneed.go:46` | goinfer | `func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weightbytes.go:184` | goinfer | `func (m *Model) ResidentHostCopyBytes(slots int) int64 {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weights.go:1159` | goinfer | `return nil, fmt.Errorf("gemma4: this checkpoint has per-layer-embedding (PLE) inputs (hi` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weights.go:897` | goinfer | `// Cross-layer KV sharing (num_kv_shared_layers, P7): the last N layers carry` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|embeddinggemma2/model.go:306` | goinfer | `anchor: func (m *Model) forwardEmbeds(x []float32, T int, keepLayers bool) ([]float32, [` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|gpu/residency.go:649` | goinfer | `layerScalar: m.Gemma4DenseLayerScalarAtResident(i),` |
@@ -859,11 +858,11 @@ supports.
 | `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:320` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
 | `docs/multimodal.md|cuda/resident.go:2172` | goinfer | `// common case folded in.` |
 | `docs/multimodal.md|decoder/attention.go:157` | goinfer | `ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta,` |
-| `docs/multimodal.md|decoder/config.go:1367` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
+| `docs/multimodal.md|decoder/config.go:1430` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/generate_vl.go:285` | goinfer | `recurrent := m.hasRecurrentState()` |
 | `docs/multimodal.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
-| `docs/multimodal.md|decoder/registry.go:1660` | goinfer | `arch.Name = "qwen3_vl"` |
+| `docs/multimodal.md|decoder/registry.go:1664` | goinfer | `arch.Name = "qwen3_vl"` |
 | `docs/multimodal.md|decoder/resident_reuse.go:129` | goinfer | `anchor: func (m *Model) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []re` |
 | `docs/multimodal.md|decoder/rope.go:338` | goinfer | `func mropePositions(ids []int, imageToken int, grids [][3]int, merge int) ([][3]int, err` |
 | `docs/multimodal.md|decoder/weights.go:494` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
@@ -877,7 +876,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf.go:756` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:2271` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
-| `docs/ollama-chase.md|decoder/registry.go:1730` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
+| `docs/ollama-chase.md|decoder/registry.go:1734` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:1531` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:792` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
@@ -906,7 +905,7 @@ supports.
 | `docs/queue-engineering.md|metal/model.go:1771` | goinfer | `r.ensureBatchCap(16)` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:950` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1419` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |
-| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:3062` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
+| `docs/scoping-qwen38-flash-next.md|decoder/registry.go:3066` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:53` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:496` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:503` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
@@ -918,7 +917,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/gguf.go:756` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/spec/09-mtp-heads.md|decoder/model.go:1324` | goinfer | `// Derived from the dispatch table's Captures bit rather than re-listed: the families wh` |
-| `docs/spec/09-mtp-heads.md|decoder/registry.go:1730` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
+| `docs/spec/09-mtp-heads.md|decoder/registry.go:1734` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |

@@ -782,7 +782,7 @@ number is published without provenance.
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
      generic attention makes (`decoder/attention.go:157`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`decoder/registry.go:1660`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:1664`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
@@ -1152,7 +1152,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 *(June 2026's survey, kept as the design record. Some `file:line` references below now point elsewhere; 2026-10-06 found
 `decoder/weights.go:494` and `decoder/gguf_qwen35.go:77` no longer at what they describe.)*
 
-- **VL config flattening** — `decoder/config.go:1367` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1430` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

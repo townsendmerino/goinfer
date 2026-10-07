@@ -77,7 +77,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
   - `tok = PerLayerTokenEmbed.Row(pleTokenID) × √P`, shape `[L·P]` (:81-85).
   - `ctx = PerLayerModelProj · h` (`[L·P × H]`, :87), then `× 1/√H` (:88-91), then per layer an RMSNorm over its
     P-segment with the shared weight `PerLayerProjNorm` (:95). This is `normalize(arch, …)`. `arch.RMSAddOne` is
-    false for gemma4 (`decoder/registry.go:361`).
+    false for gemma4 (`decoder/registry.go:365`).
   - `perLayer[l] = (tok[l] + ctx[l]) × 1/√2` (:92-99). Matches HF `project_per_layer_inputs`
     (`TF/models/gemma4/modeling_gemma4.py:1781-1811`).
   - `pleTokenID` is the token id for text. At an image/audio position it is **`arch.gemma4.PadTokenID`**: in the
@@ -101,7 +101,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
   - Shared layer: no projection, no append.
   - Attention over `cache.Keys(kvSrc(l))` from `cache.WindowStart(pos, global)` (:180-186), where `global` is THIS
     layer's type, which equals the source's type by construction. Scale is `arch.AttnScale = 1.0`
-    (`decoder/registry.go:367-369`).
+    (`decoder/registry.go:371-373`).
   - o_proj → `PostAttnNorm` (sandwich) → residual add (:188-190).
 - **Dense FFN**, at the **per-layer width** `ffn = arch.ffnAt(l)` (:146, `decoder/arch.go:611-616`):
   - pre-MLP norm.
