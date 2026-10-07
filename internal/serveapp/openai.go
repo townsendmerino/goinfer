@@ -22,6 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -155,6 +156,10 @@ type loadedModel struct {
 	gemma4AudioOnce sync.Once
 	gemma4Audio     *audio.Gemma4AudioEncoder
 	gemma4AudioErr  error
+	// gemma4AudioDevice is "metal" when the tower's conformer blocks run on Metal (G-S5d, EmbeddingGemma 2's accelerator),
+	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
+	gemma4AudioDevice string
+	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
 }
 
 // cachedTokenBytes returns the constraint masker's token→bytes table, built once per model

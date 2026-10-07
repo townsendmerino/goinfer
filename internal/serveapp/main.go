@@ -48,6 +48,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
@@ -1375,7 +1376,11 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 				return fmt.Errorf("audio: %s has an audio tower but its tokenizer has no %q token", dir, multimodal.Gemma4AudioSoftToken)
 			}
 			lm.gemma4AudioDir, lm.gemma4AudioTok = dir, id
-			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, CPU) from %s\n", lm.name, id, dir)
+			where := "CPU"
+			if backend == "metal" && slices.Contains(embeddinggemma2.AudioAccelerators(), "metal") { // G-S5d: the blocks on Metal
+				lm.gemma4AudioDevice, where = "metal", "Metal (the conformer blocks; subsample and tail on the CPU)"
+			}
+			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, %s) from %s\n", lm.name, id, where, dir)
 		}
 	}
 	return nil

@@ -11,6 +11,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -338,9 +339,34 @@ func (lm *loadedModel) gemma4AudioEncoder() (*audio.Gemma4AudioEncoder, error) {
 		lm.gemma4Audio, lm.gemma4AudioErr = audio.LoadGemma4AudioEncoder(lm.gemma4AudioDir)
 		if lm.gemma4AudioErr == nil {
 			fmt.Fprintf(os.Stderr, "audio: loaded the Gemma 4 audio tower for %q in %s\n", lm.name, time.Since(t0).Round(time.Millisecond))
+			if lm.gemma4AudioDevice != "" {
+				acc, err := embeddinggemma2.NewAudioAccelerator(lm.gemma4AudioDevice, lm.gemma4Audio)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "audio: the %s audio tower declined (%v); the tower runs on the CPU\n", lm.gemma4AudioDevice, err)
+				} else {
+					lm.gemma4AudioAcc = acc
+				}
+			}
 		}
 	})
 	return lm.gemma4Audio, lm.gemma4AudioErr
+}
+
+// gemma4AudioForward is the audio tower: the conformer blocks on the accelerator when there is one (G-S5d), between
+// aikit's Subsample and FinishBlocks on the host; otherwise aikit's CPU Forward.
+func (lm *loadedModel) gemma4AudioForward(enc *audio.Gemma4AudioEncoder, mel []float32, T int) ([]float32, error) {
+	if lm.gemma4AudioAcc == nil {
+		return enc.Forward(mel, T)
+	}
+	h, n, err := enc.Subsample(mel, T)
+	if err != nil {
+		return nil, err
+	}
+	hb, err := lm.gemma4AudioAcc.Blocks(h, n)
+	if err != nil {
+		return nil, err
+	}
+	return enc.FinishBlocks(hb, n)
 }
 
 // gemma4AudioMaxSoftTokens is the processor's cap on one clip's soft tokens (E2B's processor_config.json,
@@ -381,7 +407,7 @@ func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns
 		if err != nil {
 			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
 		}
-		feats, err := enc.Forward(mel, T)
+		feats, err := lm.gemma4AudioForward(enc, mel, T)
 		if err != nil {
 			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
 		}
