@@ -341,6 +341,7 @@ type config struct {
 	noSelfTest      bool          // -no-selftest: skip the startup self-tests (H2)
 	visionMaxPixels int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
 	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	visionDevice    string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu"
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
@@ -415,6 +416,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
+	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision tower runs: auto (default: on the --backend's GPU when this binary has a tower there, else the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend)")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
@@ -1107,7 +1109,20 @@ func (s *server) loadAdapters(cfg config) error {
 // tower (auto-discovery). A multimodal tower only makes sense for a single model,
 // so it errors if -vision is set with a model zoo. Absent a tower it is a no-op:
 // text-only serving is unchanged.
+// towerBackend is the backend a device vision tower is chosen for: the model's own, unless -vision-device cpu keeps the
+// tower on the CPU (S2, docs/tasks/task-multimodal-support-2026-10.md: it also isolates the tower in a served comparison,
+// with the language model on the same backend in both arms).
+func (cfg config) towerBackend() string {
+	if cfg.visionDevice == "cpu" {
+		return "cpu"
+	}
+	return cfg.load.Backend
+}
+
 func (s *server) loadVisionTower(cfg config) error {
+	if cfg.visionDevice != "auto" && cfg.visionDevice != "cpu" {
+		return fmt.Errorf("-vision-device %q: want auto or cpu", cfg.visionDevice)
+	}
 	dir := cfg.visionPath
 	if dir == "" {
 		// Auto-discover: a single --model dir that holds a vision tower — either the
@@ -1144,7 +1159,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend))
+		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend), cfg.towerBackend(), cfg.requireBE)
 	}
 	mt := visionModelType(dir)
 	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.load.Backend)
@@ -1152,13 +1167,13 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadQwenVisionTower(dir, int8Tower)
 	}
 	if mt == "qwen3_5" || mt == "qwen3_5_moe" {
-		return s.loadQwen35VisionTower(dir, int8Tower)
+		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "glm_ocr" {
-		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels)
+		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "gemma4" {
-		return s.loadGemma4VisionTower(dir, int8Tower, cfg.load.Backend, cfg.requireBE)
+		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
 	enc, err := vision.LoadEncoder(dir, int8Tower)
 	if err != nil {

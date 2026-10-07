@@ -155,18 +155,10 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 // Qwen3.5+ tower or the GLM-OCR tower (both loaded on first use). glmOcrVisionPrompt (glm_ocr_vision.go) calls it too.
 func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error) {
 	if lm.glm != nil {
-		enc, err := lm.glm.encoder()
-		if err != nil {
-			return nil, err
-		}
-		return enc.Forward(pv, [][3]int{grid})
+		return lm.glm.features(pv, grid)
 	}
 	if lm.qwen3 != nil {
-		enc, err := lm.qwen3.encoder()
-		if err != nil {
-			return nil, err
-		}
-		return enc.Forward(pv, [][3]int{grid})
+		return lm.qwen3.features(pv, grid)
 	}
 	return lm.qwenEnc.Forward(pv, [][3]int{grid})
 }

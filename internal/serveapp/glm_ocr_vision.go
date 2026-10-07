@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/aikit/vision"
@@ -24,15 +25,18 @@ import (
 //     does and an image that does not fit the context is refused by name (imageFitsContext), never truncated.
 //
 // The tower stays f32 unless -vision-quant int8 is given: serve's usual "a GPU backend implies an int8 tower" rule is for
-// the resident GPU encoders, and the GLM tower is CPU-only (and its int8 form is not gated on the real checkpoint).
+// the resident GPU encoders. Under --backend metal the f32 tower runs on Metal (S2, planGridTower); its int8 form is not
+// gated on the real checkpoint.
 
 // glmOcrTower is a GLM-OCR vision tower that loads on first use; safe for concurrent callers, a failed load is
 // remembered rather than retried on every request.
 type glmOcrTower struct {
 	dir   string
 	quant bool
+	plan  gridTowerPlan // where the tower runs (S2): the device it is built on at first use
 	once  sync.Once
 	enc   *vision.GlmOcrVisionEncoder
+	acc   multimodal.GridTowerAccelerator // nil: aikit's CPU tower
 	err   error
 }
 
@@ -41,9 +45,23 @@ func (g *glmOcrTower) encoder() (*vision.GlmOcrVisionEncoder, error) {
 		g.enc, g.err = vision.LoadGlmOcrVisionEncoder(g.dir, g.quant)
 		if g.err != nil {
 			g.err = fmt.Errorf("load glm-ocr vision tower (%s): %w", g.dir, g.err)
+			return
+		}
+		if g.plan.device != "" {
+			acc, err := multimodal.NewGlmOcrTower(g.plan.device, g.enc)
+			g.acc, g.err = g.plan.started("GLM-OCR", acc, err)
 		}
 	})
 	return g.enc, g.err
+}
+
+// features runs the tower (on its device when the plan put it there) and aikit's tail: the merged image embeddings.
+func (g *glmOcrTower) features(pv []float32, grid [3]int) ([]float32, error) {
+	enc, err := g.encoder()
+	if err != nil {
+		return nil, err
+	}
+	return multimodal.GlmOcrTowerFeatures(enc, g.acc, pv, [][3]int{grid})
 }
 
 // isGlmOcrVisionDir reports whether dir is a GLM-OCR checkpoint that carries a usable vision tower: model_type glm_ocr, a
@@ -90,9 +108,12 @@ func setupGlmOcrVision(dir string, int8Tower bool, maxPixels int) (*glmOcrTower,
 
 // loadGlmOcrVisionTower attaches a GLM-OCR tower to the single loaded model. Everything checkable without the tower's
 // weights is checked here, at startup; the weights load on first image.
-func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int) error {
+func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int, backend string, require bool) error {
 	tower, pp, err := setupGlmOcrVision(dir, int8Tower, maxPixels)
 	if err != nil {
+		return err
+	}
+	if tower.plan, err = planGridTower("GLM-OCR", multimodal.GlmOcrTowers(), int8Tower, backend, require); err != nil {
 		return err
 	}
 	for _, lm := range s.models {
@@ -110,8 +131,8 @@ func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int
 		if int8Tower {
 			q = "int8"
 		}
-		fmt.Fprintf(os.Stderr, "GLM-OCR vision for %q: tower (%s, CPU) loads on first image (merge %d, image id %d, pixel budget %d..%d px = at most %d image tokens) from %s\n",
-			lm.name, q, lm.qwenMerge, lm.qwenImgTok, pp.MinPixels, pp.MaxPixels, pp.MaxPixels/(pp.PatchSize*pp.PatchSize*pp.MergeSize*pp.MergeSize), dir)
+		fmt.Fprintf(os.Stderr, "GLM-OCR vision for %q: tower (%s, %s) loads on first image (merge %d, image id %d, pixel budget %d..%d px = at most %d image tokens) from %s\n",
+			lm.name, q, tower.plan.where, lm.qwenMerge, lm.qwenImgTok, pp.MinPixels, pp.MaxPixels, pp.MaxPixels/(pp.PatchSize*pp.PatchSize*pp.MergeSize*pp.MergeSize), dir)
 	}
 	return nil
 }
@@ -158,4 +179,47 @@ func (lm *loadedModel) glmOcrExtractionTurn(rf *respFormat, turns []chat.Turn) e
 	}
 	turns[idx].Content, _ = multimodal.GlmOcrExtractionText(turns[idx].Content, tmpl)
 	return nil
+}
+
+// gridTowerPlan is where a Qwen3.5+ or GLM-OCR tower will run (S2 of docs/tasks/task-multimodal-support-2026-10.md):
+// device is the registered accelerator to build at first use ("" = aikit's CPU tower), where the banner's word for it.
+type gridTowerPlan struct {
+	device, where string
+	require       bool
+}
+
+// planGridTower decides at startup, before the tower's weights load, where a grid tower runs, by the rules
+// chooseGemma4Tower uses: the Metal tower under --backend metal when this binary registers one and the tower is
+// float32; the CPU otherwise, with the reason. -require-backend turns each CPU fallback into a refusal.
+func planGridTower(family string, registered []string, int8Tower bool, backend string, require bool) (gridTowerPlan, error) {
+	if backend != "metal" {
+		return gridTowerPlan{where: "CPU"}, nil
+	}
+	if int8Tower {
+		if require {
+			return gridTowerPlan{}, fmt.Errorf("-require-backend: the %s Metal tower is float32; -vision-quant int8 keeps it on the CPU", family)
+		}
+		return gridTowerPlan{where: "CPU (-vision-quant int8; the Metal tower is float32)"}, nil
+	}
+	if !slices.Contains(registered, "metal") {
+		if require {
+			return gridTowerPlan{}, fmt.Errorf("-require-backend: this binary has no Metal %s tower", family)
+		}
+		return gridTowerPlan{where: "CPU (no Metal tower in this binary)"}, nil
+	}
+	return gridTowerPlan{device: "metal", where: "Metal", require: require}, nil
+}
+
+// started settles the plan once the tower's weights are loaded: the accelerator, or the CPU with a note when the device
+// declined (an error under -require-backend).
+func (p *gridTowerPlan) started(family string, acc multimodal.GridTowerAccelerator, err error) (multimodal.GridTowerAccelerator, error) {
+	if err == nil {
+		return acc, nil
+	}
+	if p.require {
+		return nil, fmt.Errorf("-require-backend: the %s tower could not start on %s: %w", family, p.device, err)
+	}
+	fmt.Fprintf(os.Stderr, "vision: the %s tower runs on the CPU: %s declined it: %v\n", family, p.device, err)
+	p.where = "CPU (" + p.device + " declined)"
+	return nil, nil
 }
