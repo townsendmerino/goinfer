@@ -1,0 +1,35 @@
+{
+ "model": "gemma-4-E2B-unq",
+ "transformers": "5.16.1",
+ "torch": "2.14.0",
+ "attn_implementation": "sdpa",
+ "text_hidden": 1536,
+ "audio_hidden": 1024,
+ "layers": 12,
+ "clips": [
+  {
+   "name": "short",
+   "path": "testdata/embeddinggemma2-audio/short.wav",
+   "samples": 5920,
+   "sha256": "f5686676ec0d8dd9af620bf2b7a7ca64aa971d1550f30494dc7d60c46dc731cd",
+   "t_valid": 36,
+   "n_soft": 9
+  },
+  {
+   "name": "mid",
+   "path": "testdata/embeddinggemma2-audio/mid.wav",
+   "samples": 37920,
+   "sha256": "df4fee163f05d57d7442e5ac25713635082fed7e9453b82696ce1e488d672c2f",
+   "t_valid": 236,
+   "n_soft": 59
+  },
+  {
+   "name": "long",
+   "path": "testdata/embeddinggemma2-audio/long.wav",
+   "samples": 125317,
+   "sha256": "6853844c10fda3826b3eb29f7fabd6bf3cfe4185b35cc02d4d1d0f83cb2661f5",
+   "t_valid": 783,
+   "n_soft": 196
+  }
+ ]
+}

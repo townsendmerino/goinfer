@@ -1366,8 +1366,29 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.Gemma4ImageSoftToken)
 		}
 		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d, tower on %s) from %s\n", lm.name, lm.gemma4MaxSoft, lm.gemma4ImgTok, where, dir)
+		// S5: a checkpoint with an audio_config also takes audio clips; its tower loads on the first one.
+		if hasAudioConfig(dir) {
+			id, ok := lm.tk.TokenID(multimodal.Gemma4AudioSoftToken)
+			if !ok {
+				return fmt.Errorf("audio: %s has an audio tower but its tokenizer has no %q token", dir, multimodal.Gemma4AudioSoftToken)
+			}
+			lm.gemma4AudioDir, lm.gemma4AudioTok = dir, id
+			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, CPU) from %s\n", lm.name, id, dir)
+		}
 	}
 	return nil
+}
+
+// hasAudioConfig reports whether dir/config.json carries an audio_config (a Gemma 4 checkpoint with an audio tower).
+func hasAudioConfig(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return false
+	}
+	var c struct {
+		Audio json.RawMessage `json:"audio_config"`
+	}
+	return json.Unmarshal(raw, &c) == nil && len(c.Audio) > 0 && string(c.Audio) != "null"
 }
 
 // chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal and this binary registers a Metal

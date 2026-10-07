@@ -7,10 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/townsendmerino/aikit/audio"
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+	"os"
 )
 
 // imageSoftToken is the Gemma 3 image placeholder token; the per-image block and
@@ -113,6 +115,12 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 	}
 	if lm.qwenEnc != nil || lm.qwen3 != nil {
 		return lm.qwenVisionPrompt(tm, system, turns, idx, img)
+	}
+	if img.audio {
+		if !lm.audioCapable() {
+			return visionInput{}, fmt.Errorf("this model has no audio tower")
+		}
+		return lm.gemma4AudioPrompt(tm, system, turns, idx, img)
 	}
 	if lm.gemma4Enc != nil {
 		return lm.gemma4VisionPrompt(tm, system, turns, idx, img)
@@ -286,6 +294,78 @@ func (lm *loadedModel) gemma4VisionPrompt(tm *chat.Template, system string, turn
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, gemma4: true}, nil
 }
 
+// gemma4AudioEncoder is the audio tower, loaded on the first clip (aikit's gemma4_audio, CPU, float32).
+func (lm *loadedModel) gemma4AudioEncoder() (*audio.Gemma4AudioEncoder, error) {
+	lm.gemma4AudioOnce.Do(func() {
+		t0 := time.Now()
+		lm.gemma4Audio, lm.gemma4AudioErr = audio.LoadGemma4AudioEncoder(lm.gemma4AudioDir)
+		if lm.gemma4AudioErr == nil {
+			fmt.Fprintf(os.Stderr, "audio: loaded the Gemma 4 audio tower for %q in %s\n", lm.name, time.Since(t0).Round(time.Millisecond))
+		}
+	})
+	return lm.gemma4Audio, lm.gemma4AudioErr
+}
+
+// gemma4AudioMaxSoftTokens is the processor's cap on one clip's soft tokens (E2B's processor_config.json,
+// audio_seq_length: 750, 30 s at 40 ms per token). A longer clip is refused rather than cut.
+const gemma4AudioMaxSoftTokens = 750
+
+// gemma4AudioMaxSeconds is the same cap in seconds of 16 kHz audio.
+const gemma4AudioMaxSeconds = 30
+
+// gemma4AudioPrompt is the Gemma 4 audio path (S5): the WAV (16 kHz mono 16-bit PCM) through aikit's log-mel and the
+// audio tower (embed_audio baked in) → the prompt with the audio block, <|audio> + n x <|audio|> + <audio|>, before the
+// user's text, as HF's processor writes it (no newline on either side). The run is generated through GenerateGemma4VL,
+// which splices any media run the same way: rows unscaled, PAD for PLE's token-identity term.
+func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, clip imageRef) (visionInput, error) {
+	samples, err := multimodal.DecodeWAV(clip.data)
+	if err != nil {
+		return visionInput{}, err
+	}
+	// Checked on the samples, not the soft-token count: the extractor itself stops at 30 s, so a longer clip would
+	// otherwise be cut without a word.
+	if len(samples) > gemma4AudioMaxSeconds*audio.Gemma4SampleRate {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s the model reads", float64(len(samples))/audio.Gemma4SampleRate, gemma4AudioMaxSeconds)
+	}
+	mel, T, err := audio.Gemma4Features(samples)
+	if err != nil {
+		return visionInput{}, fmt.Errorf("audio features: %w", err)
+	}
+	n := audio.Gemma4SoftTokens(T)
+	if n > gemma4AudioMaxSoftTokens {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the 30 s (%d soft tokens) the model reads", float64(len(samples))/16000, gemma4AudioMaxSoftTokens)
+	}
+	if n <= 0 {
+		return visionInput{}, fmt.Errorf("the audio clip is too short (%d samples)", len(samples))
+	}
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		enc, err := lm.gemma4AudioEncoder()
+		if err != nil {
+			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
+		}
+		feats, err := enc.Forward(mel, T)
+		if err != nil {
+			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
+		}
+		if len(feats) != n*hiddenDim {
+			return nil, fmt.Errorf("gemma4 audio tower emitted %d values, want %d x %d", len(feats), n, hiddenDim)
+		}
+		return feats, nil
+	}
+	block := multimodal.Gemma4AudioBlock(n)
+	turns[idx].Content = block + turns[idx].Content
+	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
+	pos, ln := multimodal.FindImageRun(ids, lm.gemma4AudioTok)
+	if ln != n {
+		return visionInput{}, fmt.Errorf("audio placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", ln, n)
+	}
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: ln, gemma4: true}, nil
+}
+
 // serveVisionChat handles an OpenAI /v1/chat/completions request that carries an
 // image. The image runs through the tower, the prompt is assembled with the
 // image block, and generation goes through the multimodal path (driveVL, which
@@ -297,7 +377,12 @@ func (s *server) serveVisionChat(w http.ResponseWriter, r *http.Request, req cha
 
 // serveVisionChatWith runs the multimodal generation. Reached ONLY through withModel (liveness RLock held).
 func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req chatReq, imgs []imageRef, lm *loadedModel) {
-	if !lm.visionCapable() {
+	if imgs[0].audio {
+		if !lm.audioCapable() {
+			writeErr(w, http.StatusBadRequest, "this model has no audio tower (audio input needs a Gemma 4 checkpoint with an audio_config, e.g. E2B or E4B)")
+			return
+		}
+	} else if !lm.visionCapable() {
 		writeErr(w, http.StatusBadRequest, "this model has no vision tower (start with --vision <dir> to enable image input)")
 		return
 	}

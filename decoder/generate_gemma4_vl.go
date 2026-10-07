@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 )
@@ -131,6 +132,16 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			return
 		}
 		bidirectional := m.w.Cfg.UseBidirectionalAttention != ""
+		eModel := m.w.arch.gemma4.HiddenSizePerLayerInput > 0 || m.w.arch.gemma4.SharedKVLayers > 0
+		// S9 (docs/tasks/task-multimodal-support-2026-10.md): an E-model's image turn prefills on the resident when the
+		// backend takes it (Metal's layer-major pass), from the rows the CPU path would run: a text position's resident
+		// embedding ([h ‖ PLE]), an image position's projected feature, unscaled, with PLE from PAD's token identity. A
+		// decline falls through to the CPU prefill and upload below, unchanged.
+		if eModel && !bidirectional {
+			if done := m.gemma4VLResidentPrefill(ctx, out, g, ids, feats, imgPos, imgLen, imgHash, maxTokens, sp); done {
+				return
+			}
+		}
 		cache := m.NewCache(len(ids) + maxTokens)
 		var logits []float32
 		if bidirectional {
@@ -146,7 +157,6 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 		useGPU := false
 		gpuPos := 0
 		committed := false
-		eModel := m.w.arch.gemma4.HiddenSizePerLayerInput > 0 || m.w.arch.gemma4.SharedKVLayers > 0
 		if (bidirectional || eModel) && m.tryClaimResident() {
 			// The resident cache is about to hold THIS turn's content. If decode
 			// completes naturally, residentCommitIDs below records it and this
@@ -197,4 +207,70 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 		}
 	}()
 	return out, g
+}
+
+// gemma4VLResidentPrefill is GenerateGemma4VL's resident image prefill for an E-model (S9): the whole prompt through the
+// backend's Prefiller, then resident decode. It reports whether it ran the turn (true: the generation is done, g holds
+// its result); false means the backend has no prefill, the resident is busy, or the prefill declined, and the caller
+// runs the CPU path. A cancelled prefill is not a decline: it ends the turn.
+func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *Generation, ids []int, feats []float32, imgPos, imgLen int, imgHash uint64, maxTokens int, sp SamplingParams) bool {
+	pf, ok := m.resident.(Prefiller)
+	if !ok || m.knobs.get(knobBatchedPrefill) == "0" || !m.tryClaimResident() {
+		return false
+	}
+	hidden := m.w.arch.HiddenDim
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		if i >= imgPos && i < imgPos+imgLen {
+			rows[i] = m.gemma4ResidentMediaRow(feats[(i-imgPos)*hidden : (i-imgPos+1)*hidden])
+			continue
+		}
+		rows[i] = m.embedResident(id)
+	}
+	m.residentForgetIDs() // the prefill overwrites the resident cache from position 0
+	logits, err := pf.PrefillLast(ctx, rows, 0)
+	if err != nil {
+		atomic.StoreInt32(&m.resBusy, 0)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			g.err = err
+			return true
+		}
+		return false
+	}
+	g.ImgPrefillResident, g.DecodeResident = true, true
+	gpuPos := len(ids)
+	if capper, ok := m.resident.(ResidentCapped); ok {
+		if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+			maxTokens = ctxCap - gpuPos
+			g.BudgetClamped = true
+		}
+	}
+	g.Budget = maxTokens
+	sampler := NewSampler(sp)
+	sampler.Observe(ids...)
+	generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+		l, err := m.resident.Forward(m.embedResident(next), gpuPos)
+		gpuPos++
+		return l, err
+	})
+	if g.err == nil {
+		m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+	} else {
+		m.residentForgetIDs()
+	}
+	atomic.StoreInt32(&m.resBusy, 0)
+	return true
+}
+
+// gemma4ResidentMediaRow is the resident row for one image or audio position of a Gemma 4 E-model: the projected
+// feature, unscaled (as the CPU's prefillLogitsGemma4VL splices it), then for an E-model the PLE inputs from PAD's token
+// identity (as runLayersGemma4FromEmbed computes them).
+func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
+	hidden := m.w.arch.HiddenDim
+	row := make([]float32, m.ResidentEmbedLen())
+	copy(row[:hidden], feature)
+	if len(row) > hidden {
+		m.gemma4PLEInputs(row[:hidden], m.w.arch.gemma4.PadTokenID, row[hidden:])
+	}
+	return row
 }

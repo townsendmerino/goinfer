@@ -14,10 +14,11 @@ import (
 // supplied bytes (a `--allow-image-urls` opt-in can come later). Decoded bytes
 // flow to the same vision pipeline (preprocess → encoder → projector).
 
-// imageRef is one decoded inline image from a request content part.
+// imageRef is one decoded inline media item from a request content part: an image, or (audio set) an audio clip.
 type imageRef struct {
-	mediaType string // e.g. "image/png" (informational; preprocess sniffs the real format)
-	data      []byte // raw image bytes (base64 already decoded)
+	mediaType string // e.g. "image/png" (informational; preprocess sniffs the real format), "audio/wav"
+	data      []byte // raw bytes (base64 already decoded)
+	audio     bool   // an OpenAI input_audio part (S5 of docs/tasks/task-multimodal-support-2026-10.md): a WAV for Gemma 4's audio tower
 }
 
 // contentPart is one element of an OpenAI chat message's content array.
@@ -27,6 +28,10 @@ type contentPart struct {
 	ImageURL *struct {
 		URL string `json:"url"`
 	} `json:"image_url"`
+	InputAudio *struct {
+		Data   string `json:"data"`   // base64 (bare, or a data: URI)
+		Format string `json:"format"` // "wav" (the only one taken)
+	} `json:"input_audio"`
 }
 
 // contentPartsText returns a chat message's text: the plain-string content, or
@@ -70,6 +75,14 @@ func contentPartsImages(raw json.RawMessage) ([]imageRef, error) {
 	}
 	var out []imageRef
 	for _, p := range parts {
+		if p.Type == "input_audio" {
+			ref, err := decodeInputAudio(p.InputAudio)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, ref)
+			continue
+		}
 		if p.Type != "image_url" || p.ImageURL == nil {
 			continue
 		}
@@ -80,6 +93,35 @@ func contentPartsImages(raw json.RawMessage) ([]imageRef, error) {
 		out = append(out, ref)
 	}
 	return out, nil
+}
+
+// decodeInputAudio decodes an OpenAI input_audio part: base64 data (bare, or a data: URI) in format "wav" (or unset).
+// Its content (16 kHz mono 16-bit PCM, the length cap) is checked where the clip is used.
+func decodeInputAudio(ia *struct {
+	Data   string `json:"data"`
+	Format string `json:"format"`
+}) (imageRef, error) {
+	if ia == nil || ia.Data == "" {
+		return imageRef{}, fmt.Errorf("input_audio needs data")
+	}
+	if ia.Format != "" && ia.Format != "wav" {
+		return imageRef{}, fmt.Errorf("input_audio format %q: only wav (16 kHz mono 16-bit PCM) is taken", ia.Format)
+	}
+	var data []byte
+	if strings.HasPrefix(ia.Data, "data:") {
+		ref, err := decodeDataURI(ia.Data)
+		if err != nil {
+			return imageRef{}, fmt.Errorf("input_audio: %w", err)
+		}
+		data = ref.data
+	} else {
+		d, err := base64.StdEncoding.DecodeString(strings.TrimSpace(ia.Data))
+		if err != nil {
+			return imageRef{}, fmt.Errorf("input_audio data is neither a data: URI nor valid base64: %w", err)
+		}
+		data = d
+	}
+	return imageRef{mediaType: "audio/wav", data: data, audio: true}, nil
 }
 
 // decodeDataURI parses a base64 data: URI ("data:<media>;base64,<payload>") into

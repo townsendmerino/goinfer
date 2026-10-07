@@ -1,0 +1,46 @@
+=== arm 0 12:15:04
+[layout] table.png grid [1 64 86], 1376 image tokens at 15, prompt 1406 tokens
+[layout] HF golden top-3: " a" p 0.884 (lp -0.123), " the" p 0.029 (lp -3.553), "<|im_end|>" p 0.017 (lp -4.093)
+[layout] int8 weight-only (control): decode path cpu (int8)
+[layout] int8 weight-only (control), HF golden image: KL(HF||this) 0.02651 nats, cosine 0.999176, top-3 " a" p 0.831 (lp -0.185), "<|im_end|>" p 0.062 (lp -2.788), " the" p 0.030 (lp -3.498)
+[layout] int8 weight-only (control), table.png token 0: top-3 "Quarter" p 0.508 (lp -0.677), "Table" p 0.241 (lp -1.422), "quarter" p 0.088 (lp -2.431)
+--- PASS: TestQwen25VLLayoutSplit (52.17s)
+=== arm 1 12:15:57
+[layout] table.png grid [1 64 86], 1376 image tokens at 15, prompt 1406 tokens
+[layout] HF golden top-3: " a" p 0.884 (lp -0.123), " the" p 0.029 (lp -3.553), "<|im_end|>" p 0.017 (lp -4.093)
+[layout] row4, int8 head: decode path cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+[layout] row4, int8 head, HF golden image: KL(HF||this) 0.03841 nats, cosine 0.989407, top-3 " a" p 0.798 (lp -0.225), " an" p 0.047 (lp -3.061), " the" p 0.036 (lp -3.333)
+[layout] row4, int8 head, table.png token 0: top-3 "Quarter" p 0.629 (lp -0.464), "This" p 0.156 (lp -1.860), "Table" p 0.100 (lp -2.299)
+[layout] table.png token 0: KL(int8||row4, int8 head) 0.30681 nats
+--- PASS: TestQwen25VLLayoutSplit (25.81s)
+=== arm 2 12:16:23
+[layout] table.png grid [1 64 86], 1376 image tokens at 15, prompt 1406 tokens
+[layout] HF golden top-3: " a" p 0.884 (lp -0.123), " the" p 0.029 (lp -3.553), "<|im_end|>" p 0.017 (lp -4.093)
+[layout] canonical, int8 head: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]
+[layout] canonical, int8 head, HF golden image: KL(HF||this) 0.03841 nats, cosine 0.989407, top-3 " a" p 0.798 (lp -0.225), " an" p 0.047 (lp -3.061), " the" p 0.036 (lp -3.333)
+[layout] canonical, int8 head, table.png token 0: top-3 "Quarter" p 0.629 (lp -0.464), "This" p 0.156 (lp -1.860), "Table" p 0.100 (lp -2.299)
+[layout] table.png token 0: KL(int8||row4, int8 head) 0.30681 nats
+[layout] table.png token 0: KL(int8||canonical, int8 head) 0.30681 nats
+--- PASS: TestQwen25VLLayoutSplit (31.10s)
+=== arm 3 12:16:54
+[layout] table.png grid [1 64 86], 1376 image tokens at 15, prompt 1406 tokens
+[layout] HF golden top-3: " a" p 0.884 (lp -0.123), " the" p 0.029 (lp -3.553), "<|im_end|>" p 0.017 (lp -4.093)
+[layout] row4, int4 head (serve --backend cpu): decode path cpu (int4) [int4 layout: canonical+row4 (down); row4-only (embed, gate/up, qkv)]
+[layout] row4, int4 head (serve --backend cpu), HF golden image: KL(HF||this) 0.13439 nats, cosine 0.981929, top-3 " a" p 0.868 (lp -0.142), " two" p 0.043 (lp -3.147), " an" p 0.021 (lp -3.848)
+[layout] row4, int4 head (serve --backend cpu), table.png token 0: top-3 "Quarter" p 0.705 (lp -0.349), "Table" p 0.167 (lp -1.793), "quarter" p 0.031 (lp -3.476)
+[layout] table.png token 0: KL(int8||row4, int8 head) 0.30681 nats
+[layout] table.png token 0: KL(int8||canonical, int8 head) 0.30681 nats
+[layout] table.png token 0: KL(int8||row4, int4 head (serve --backend cpu)) 0.12366 nats
+--- PASS: TestQwen25VLLayoutSplit (27.79s)
+=== arm 4 12:17:22
+[layout] table.png grid [1 64 86], 1376 image tokens at 15, prompt 1406 tokens
+[layout] HF golden top-3: " a" p 0.884 (lp -0.123), " the" p 0.029 (lp -3.553), "<|im_end|>" p 0.017 (lp -4.093)
+[layout] canonical, int4 head (serve --backend metal's CPU side): decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv); canonical+row4 (embed)]
+[layout] canonical, int4 head (serve --backend metal's CPU side), HF golden image: KL(HF||this) 0.13439 nats, cosine 0.981929, top-3 " a" p 0.868 (lp -0.142), " two" p 0.043 (lp -3.147), " an" p 0.021 (lp -3.848)
+[layout] canonical, int4 head (serve --backend metal's CPU side), table.png token 0: top-3 "Quarter" p 0.705 (lp -0.349), "Table" p 0.167 (lp -1.793), "quarter" p 0.031 (lp -3.476)
+[layout] table.png token 0: KL(int8||row4, int8 head) 0.30681 nats
+[layout] table.png token 0: KL(int8||canonical, int8 head) 0.30681 nats
+[layout] table.png token 0: KL(int8||row4, int4 head (serve --backend cpu)) 0.12366 nats
+[layout] table.png token 0: KL(int8||canonical, int4 head (serve --backend metal's CPU side)) 0.12366 nats
+--- PASS: TestQwen25VLLayoutSplit (33.32s)
+done 12:17:55
