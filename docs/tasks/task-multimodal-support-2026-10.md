@@ -466,6 +466,99 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
       Metal token (21.7 ms): not where the time goes.
     - Raw: `docs/measurements/multimodal-support-2026-10/s19-e2b-speed-night.log` (and `s19-bench-e2b.json`).
 
+**S1 on CUDA: plan and gates, written 2026-10-07 on nobara before any CUDA E-model code or measurement.** A desk map of the CUDA
+resident against Metal's version (every claim checked against the tree at `24c16cf2`; one research pass, no run) fixes the
+plan. Where it says INFERRED, the step names the fallback and what decides it.
+
+- **What is already known, from the code:**
+  - **No new CUDA kernel and no PTX regeneration for PLE.** `glu_quant` computes `act(g[k]) * u[k]` plus int8 quant with
+    separate `g`/`u` pointers and offsets (`cuda/glue.cu`), and `ACT_GELU_TANH` is 0. The PLE multiply is
+    `glu_quant(g=pleG, u=pleIn, uOff=l*P, I=P, act=0)`; every other PLE step reuses an existing launch (`quant_vec`, `doG`
+    for the gate and projection, `normF32`, the residual add, `scale_vec`). The audited glue/moe/gemv_fwd PTX trio stays
+    pinned at NVRTC 12.6.85, untouched. If a kernel turns out to be needed after all, its PTX is regenerated at the pinned
+    NVRTC and that is recorded here before the gate that depends on it.
+  - **No new kernel for shared KV.** `rope_kv` with `nKV=0` rotates Q only and skips the K/V store; `fused_rms_qkv` with
+    `kvDim=0` never reads Wk/Wv; `qk_norm` with `nKV=0` launches no K blocks.
+  - **Three silent failures if E-models were admitted unchanged** (so the steps below remove them in the same change, not
+    afterwards): (i) scratch is sized from the model-level FFN width (`FFNPerLayer[0]`, 6144 on E2B) while 20 layers are 12288,
+    so `fused_rms_gu` and `glu_quant` would write past `gO`/`uO`/`dq`, a device-memory overrun and not a decline; (ii) the
+    batched prefill copies each row with `copy(xhost[m*hidden:(m+1)*hidden], e)`, which silently drops a PLE tail; (iii)
+    `BuildResident` packs and validates K/V and K-norm weights that a shared layer does not have (it already errors on them, so
+    today CUDA declines E-models by naming the missing feature).
+- **Steps, in order. Each is one commit, and each is checked on the tiny fixture before the next starts:**
+  - **C0, the fixture on this box.** `testdata/gemma4-emodel-tiny` is gitignored and absent here. Regenerate it with
+    `scripts/pin_gemma4_emodel_tiny.py` (`~/.venv-vl`, transformers 5.16.1 as the golden records) and require it to match
+    `testdata/fixture_identity.json` and `TestGemma4EModel_safetensorsParity` on the CPU (cosine >= 0.99999 at every position, as
+    S1.1). If it does not reproduce, stop and say so: every CUDA reading below is against that fixture.
+  - **C1, per-layer FFN width.** Gate/up scratch, `glu_quant` scratch and the launches take `Ly.g.N` / `Ly.d.K` per layer, scratch
+    sized to the widest layer. Byte-identical for every non-E-model: the device baselines (`prefill_tails_baseline.json`,
+    `keqv_copy_baseline.json`) and the Gemma 4 / dense parity tests must not move.
+  - **C2, shared KV.** A KV-shared layer (`Ly.kvShared`, `Ly.kvSrc` from `KVSrcAtResident`) leaves its own `r.kc[l]`/`r.vc[l]` and
+    every MC1 slot's zero-valued, projects Q only (unfused and fused), runs `qk_norm` and `rope_kv` with `nKV=0`, skips `v_norm`
+    and the K/V store, and attends over its source's cache at every launch site (split-KV, flash-decode, decode attention). Its
+    `kEqV` and `vNorm` are false (checked before the source's). `UploadKV` refuses a shared layer by name. `kvBytesForCap` and
+    `decoder.cudaKVBytes` stop pricing it, together, and `TestResidentKVBytes_matchesCUDAAllocation` and
+    `kvbytes_agreement_test.go` gain the E-model fixture. The build refuses a shared layer whose geometry differs from its
+    source's (as Metal does). Aliasing the buffers (Metal's choice) is the fallback only if a launch site cannot be made to
+    resolve the source.
+  - **C3, PLE.** The resident row is `H + L*P` long; `launchToken` (the funnel every single-token entry point goes through)
+    refuses any other length by name. The tail lives in `r.x`'s own allocation (`pleIn = r.x.At(H*4)`) so the existing upload
+    carries it; if that does not work on the device, a second buffer and a second upload (INFERRED either way, the first run
+    decides, and the choice is recorded). Per layer, after the FFN residual and before the layer scalar: `quant_vec` of the raw
+    residual, the PLE gate GEMV, `glu_quant` (GELU-tanh times this layer's input), the projection GEMV, `normF32` with the post
+    norm, the residual add. It sits in `segB`, so CUDA graphs capture it; every operand is a fixed-address buffer and `l*P` is a
+    per-layer argument. `graphsSelfTest`'s hidden-sized row becomes the augmented length with a non-zero tail.
+  - **C4, declines.** `prefillStaticDecline` declines E-models by name (so every batched entry point, MC3 `StepBatch`,
+    `ForwardN`'s batched arm and `PrefillPath` report it and the sequential fallbacks take over); `AttachDrafter` refuses an
+    E-model target by name; a LoRA adapter on an E-model is declined by name (its `r.inter` K is wrong on wide layers, and nothing
+    verifies it). Each decline has a test that asserts the named reason.
+  - **C5, declare it.** `FeatGemma4EModel` goes into CUDA's feature set only once C1-C4 pass; WebGPU keeps declining. The
+    admission tests, `docs/hardware-matrix.md` (generated), `docs/multimodal.md` and `docs/gpu-residency-coverage.md` move with it.
+- **Gates (CUDA's G1-G4, registered now; each reads the resident against the CPU on the same weights):**
+  - **G1c, the tiny E-model, every position, int4 on both sides** (the golden's prompt and continuation, 18 positions). Metal's
+    G1 rule unchanged: a first mismatch is benign only where the CPU's gap between its top-1 and the resident's pick is under 3% of
+    |top-1|; PASS when every mismatch is benign and the mean CUDA-vs-CPU(int4) cosine is at least the mean CPU(int4)-vs-CPU(f32)
+    cosine. The test first asserts the resident took the shape (PLE width, two shared layers, the two FFN widths).
+    The minimum cosine is reported. After the first reading a separate recorded amendment may TIGHTEN the bars between the
+    planted-defect and clean readings, as S1.0 did; they are never loosened.
+  - **G2c, planted defects, each alone red on G1c:** (1) PLE skipped; (2) PLE token-identity term zeroed (the decoder seam);
+    (3) the shared-KV source one owning layer off; (4) one FFN width for the model; (6) the layer scalar dropped; (7) `v_norm`
+    dropped on non-K=V layers; and, CUDA-specific, (8) the PLE per-layer input offset off by one layer (`uOff` = `(l+1)*P`).
+    Defect (5), the K/V store not skipped on a shared layer, is registered with its outcome open: on Metal it is a byte-for-byte
+    no-op and is checked as such. On CUDA the shared layer's `kB`/`vB` scratch may hold a different layer's K/V (layer 5 is
+    full-attention with source layer 2 while the scratch holds layer 3's sliding K/V), so it may go red here. Either way it is
+    recorded: red means it is a gate; green means a bit-identity check like Metal's (`..._sharedStoreIsNoOp`) replaces it, and that
+    is stated as a mechanism with its evidence, not as a pass. A defect that stays green otherwise means the fixture is degenerate
+    on that axis: fix the fixture, not the bar.
+  - **G2c-graphs and accounting, same fixture:** a graphs-on run is bit-identical to a graphs-off run (a prompt longer than the
+    sliding window, non-zero PLE tail, `GOINFER_CUDA_GRAPHS_UNSAFE` because this box's DEFAULT compute mode declines graphs); the
+    KV bytes the planner prices equal the bytes allocated; every decline in C4 returns its named reason and a greedy generation
+    through the sequential fallbacks equals the CPU's tokens.
+  - **G3c, real E2B text.** Metal's re-registered G3 rule, adopted unchanged and written before any CUDA run: one test process
+    runs the eight G3 prompts x 32 greedy tokens (same prompts, same free-run and teacher-forced procedure, 512-token pinned
+    context) first on Qwen2.5-Coder-1.5B on CUDA (its CUDA path is validated; the reference), then on E2B. **PASS:** E2B's
+    teacher-forced agreement >= the reference's - 2.0 points and its free-run prompt passes >= the reference's - 1. **Ambiguous
+    (parked for the owner):** 2.0-4.0 points below, free-run met. **FAIL:** more than 4.0 below, or 2 or more free-run passes short.
+    Lessons from Metal's G3 run 1 are applied up front, not as an amendment: both sides run the SAME table precision (the CPU arm
+    loads the sidecar matching CUDA's embedding/LM-head and PLE table precision, and the log prints each side's), and a control arm
+    (CPU against CPU across the two sidecars, reported, not graded) states how much table precision alone moves the number. Model:
+    `~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf` (local disk), int4. The fit guard must admit it on the 8 GB card or the
+    test refuses.
+  - **G4c, real E2B image chat through the CUDA serve binary.** F2b's request (`testdata/glm_ocr/table.png`, "What does this image
+    show? Answer briefly.", `max_tokens` 32, temperature 0), `--vision ~/models/gemma-4-E2B-unq`; resident arm `--backend cuda`, CPU
+    arm `--backend cpu`, one binary built at the commit under test. The resident arm must report the CUDA-resident decode path at
+    load and "decoded N tokens on the resident path" for the turn, or the run is void. **PASS:** identical reply, or a first
+    divergence replayed on the CPU at a near-tie (gap under 3%). The tower stays on the CPU (S4 is separate).
+- **Speed (night, a record, no bar):** E2B decode tokens per second, CUDA resident against CPU, same-session interleaved through
+  `bench_peer.py` (goinfer only, the `E2B` model entry, depth 128), plus the host's PLE milliseconds per token under the timing
+  lock. Queued after G3c/G4c pass; nothing is quoted before then.
+- **By day / by night:** C0-C5, G1c, G2c, the graphs and accounting checks and G4c are seconds to a few minutes: by day. G3c loads
+  E2B twice and runs about 870 teacher-forced positions on the CPU: a guess of 5-10 minutes (no per-position time measured yet), restated
+  from a measured time before it starts and queued if it exceeds 10. The speed record is a night job.
+- **Open on purpose (INFERRED in the desk map, decided by the first run, each recorded where it is decided):** the `r.x` tail
+  against a second upload; whether `gemv_w4a8` handles the fixture's PLE projection at K=32; whether defect (5) is detectable
+  on CUDA; whether LoRA touches an E-model at all (declined by name regardless).
+
 ### S2 — GPU towers for Qwen3.5+ and GLM-OCR
 
 On CUDA, after P26b, the Qwen3.5 tower is about 3.3 of the 3.6 s a new image costs. GLM-OCR's tower is the slowest one
