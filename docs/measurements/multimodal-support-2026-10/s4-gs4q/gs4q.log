@@ -1,0 +1,33 @@
+=== RUN   TestS4Towers_tiny
+=== RUN   TestS4Towers_tiny/siglip
+[S4 G-S4q] siglip-tiny: worst token cosine 0.999760752
+=== RUN   TestS4Towers_tiny/qwen2.5-vl
+[S4 G-S4q] qwen25vl-tiny [1 8 8]: worst token cosine 1.000000000
+[S4 G-S4q] qwen25vl-tiny [1 12 16]: worst token cosine 1.000000000
+--- PASS: TestS4Towers_tiny (0.33s)
+    --- PASS: TestS4Towers_tiny/siglip (0.32s)
+    --- PASS: TestS4Towers_tiny/qwen2.5-vl (0.01s)
+=== RUN   TestS4Towers_real
+=== RUN   TestS4Towers_real/qwen2.5-vl
+[S4 real qwen2.5-vl] gemma3_preprocess_image.png    grid [1 64 64]: tower CUDA 7.968s, CPU 15.174s (exploratory)
+[S4 G-S4q] qwen25vl-3b gemma3_preprocess_image.png: worst token cosine 0.999997994
+[S4 real qwen2.5-vl] qwen25vl_preprocess_image.png  grid [1 4 6]: tower CUDA 51ms, CPU 140ms (exploratory)
+[S4 G-S4q] qwen25vl-3b qwen25vl_preprocess_image.png: worst token cosine 0.999999994
+[S4 real qwen2.5-vl] glm_ocr/formula.png            grid [1 86 72]: tower CUDA 15.288s, CPU 24.399s (exploratory)
+[S4 G-S4q] qwen25vl-3b glm_ocr/formula.png: worst token cosine 0.999999901
+[S4 real qwen2.5-vl] glm_ocr/table.png              grid [1 64 86]: tower CUDA 12.702s, CPU 21.276s (exploratory)
+[S4 G-S4q] qwen25vl-3b glm_ocr/table.png: worst token cosine 0.999999942
+=== RUN   TestS4Towers_real/siglip
+[S4 real siglip] gemma3_preprocess_image.png    tower CUDA 4.173s, CPU 20.847s (exploratory)
+[S4 G-S4q] gemma-3-4b-it gemma3_preprocess_image.png: worst token cosine -0.013383257
+[S4 real siglip] qwen25vl_preprocess_image.png  tower CUDA 4.162s, CPU 20.753s (exploratory)
+[S4 G-S4q] gemma-3-4b-it qwen25vl_preprocess_image.png: worst token cosine 0.020579984
+[S4 real siglip] glm_ocr/formula.png            tower CUDA 4.147s, CPU 20.85s (exploratory)
+[S4 G-S4q] gemma-3-4b-it glm_ocr/formula.png: worst token cosine 0.093035243
+[S4 real siglip] glm_ocr/table.png              tower CUDA 4.169s, CPU 20.986s (exploratory)
+[S4 G-S4q] gemma-3-4b-it glm_ocr/table.png: worst token cosine 0.313541748
+--- PASS: TestS4Towers_real (203.18s)
+    --- PASS: TestS4Towers_real/qwen2.5-vl (100.50s)
+    --- PASS: TestS4Towers_real/siglip (102.68s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	203.613s

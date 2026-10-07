@@ -10,6 +10,7 @@
 #   (G-S3b: metal:cpu,metal:auto); a repeated arm runs again as a control (its files get a numeric suffix).
 # Example (nobara): run-gs3c-served.sh ~/goinfer-bench/s3/serve-cuda ~/goinfer-logs/s3c-cuda cpu,cuda,cpu \
 #                     ~/models/qwen25vl-3b-instruct ~/models/gemma-3-4b-it
+# GS3C_EXTRA adds serve flags to EVERY arm (e.g. "--kv-sessions 1" so a 4B model fits the 8 GB card; added 2026-10-07 by nobara).
 # Run from the repo root (it reads testdata/). Checkpoints come from ~/models, never the archive.
 set -euo pipefail
 BIN=$1 OUT=$2 ARMS=$3; shift 3
@@ -32,8 +33,8 @@ for dir in "$@"; do
     lab=$base n=2
     while [[ " ${labels[*]-} " == *" $lab "* ]]; do lab=$base$n; n=$((n+1)); done
     labels+=("$lab")
-    echo "[$(date '+%H:%M:%S')] $fam: arm $lab (--backend $be -vision-device $vd)"
-    "$BIN" --model "$dir" --backend "$be" -vision-device "$vd" --addr 127.0.0.1:$PORT >"$OUT/gs3c-$fam-$lab.log" 2>&1 </dev/null &
+    echo "[$(date '+%H:%M:%S')] $fam: arm $lab (--backend $be -vision-device $vd ${GS3C_EXTRA:-})"
+    "$BIN" --model "$dir" --backend "$be" -vision-device "$vd" ${GS3C_EXTRA:-} --addr 127.0.0.1:$PORT >"$OUT/gs3c-$fam-$lab.log" 2>&1 </dev/null &
     pid=$!
     for _ in $(seq 1 600); do
       curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:$PORT/v1/models 2>/dev/null | grep -q 200 && break
