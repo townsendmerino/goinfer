@@ -1180,6 +1180,15 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
   audio." through `run-gs5c-served.sh` (`GS5C_CLIPS`), arms `cpu`, `metal`, `cpu`, `--embed-int4=false` on all.
   Recorded, no bar: the transcription and its word error rate against LibriSpeech's transcript. Graded by G-S5c's rule:
   Metal against the CPU, identical or a near-tie at the first difference, and the CPU repeat byte-identical.
+  - **Read 15:34 PDT: PASS.**
+    - All three arms answer "Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.",
+      byte-identical (Metal against the CPU, and the CPU repeat).
+    - Against LibriSpeech's "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL"
+      the word error rate is 0, counting "Mr." as "MISTER" and ignoring case and punctuation.
+    - The Metal arm prefilled AND decoded on the resident ("prefill resident": S9's pass carries audio rows exactly as
+      it carries image rows).
+    - 163 prompt tokens; request time 7.7 s on Metal against 9.3-10.3 s on the CPU (exploratory).
+    - Raw: `docs/measurements/multimodal-support-2026-10/s5-speech/`.
 - **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
   clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
   test clip.
