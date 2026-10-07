@@ -799,7 +799,20 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     (`metal/s3_towers_test.go` on `s2-towers`). Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3a-real.log`.
   - **Proposed, for the owner:** build both towers on goinfer's own Metal tower base, as S2 did for Qwen3.5 and GLM-OCR
     (its kernels pass at real size and run 2-4x the CPU), from new aikit float32 exports added to the same unreleased
-    batch; and report the `visionmetal` real-size defect to aikit. G-S3b and G-S3c wait for that decision.
+    batch; and report the `visionmetal` real-size defect to aikit. G-S3b waits for that decision.
+- **G-S3c, read 2026-10-07 11:35 PDT on the Mac (serve binary from `s2-towers`, the tower on the CPU in every arm,
+  table.png, 32 greedy tokens): Qwen2.5-VL FAIL; Gemma 3 not reached.**
+  - **Qwen2.5-VL-3B, `metal-resident (int4)` against `cpu (int4)`: the replies differ from the first token.** Metal
+    "Table 2. Quarterly unit sales by region (thousands)"; CPU "Quarterly unit sales by region (thousands)". At token 0
+    the CPU arm picks "Quarter" at p 0.728 with "Table" at 0.208, under half its top: **not a near-tie, so G-S3c fails for
+    Qwen2.5-VL.** The first token comes from the prefill, so the Metal image turn computes something the CPU does not
+    on the real checkpoint (the tiny fixture's first token matched). To be traced.
+  - **Gemma 3 4B: Metal declined the resident** (it needs 5.15 GB against a 4.20 GB budget on this 16 GB Mac), so both
+    arms decoded on the CPU and G-S3c did not reach Metal. The two CPU arms still differ at token 7, not as a near-tie
+    (the `--backend cpu` arm puts the other arm's token at p 0.284 against its top 0.687): a CPU decode after a declined
+    Metal request is not the same computation as `--backend cpu` (its int4 layout differs). A separate finding, to be
+    understood.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3c/` (serve logs, replies, top-3 logprobs per token).
 
 ### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
 
