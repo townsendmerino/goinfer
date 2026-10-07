@@ -161,7 +161,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 	budgetBytes = int64(float64(avail) * fitMemFraction)
 	// A resident holds its own KV: its capacity, at the precision its backend allocates (Metal: f16 whatever -kv says).
 	// Pricing it at the CPU's per-request ceiling over the model's whole window overstated E2B's Metal KV ~50x (A3,
-	// docs/tasks/task-audit-followups-2026-10-06.md).
+	// docs/completed/task-audit-followups-2026-10-06.md).
 	if capper, ok := m.resident.(ResidentCapped); ok && m.be != nil {
 		if c := capper.ContextCap(); c > 0 {
 			return c, m.ResidentKVBytes(m.be.Name(), c, m.kvF16, m.kvI8), weightBytes, budgetBytes, true

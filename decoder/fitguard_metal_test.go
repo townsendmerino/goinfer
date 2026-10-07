@@ -30,7 +30,7 @@ func a3Config(modelType string) *Config {
 	return &c
 }
 
-// TestKVPricingFor_pricesWhatTheBackendAllocates is A3 (docs/tasks/task-audit-followups-2026-10-06.md): a load that
+// TestKVPricingFor_pricesWhatTheBackendAllocates is A3 (docs/completed/task-audit-followups-2026-10-06.md): a load that
 // will be Metal-resident is priced at Metal's f16 KV for MetalCtxDefault positions (a caller's pin wins, the model's
 // window caps), whatever -kv says; every other load keeps the CPU's per-request ceiling.
 func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {

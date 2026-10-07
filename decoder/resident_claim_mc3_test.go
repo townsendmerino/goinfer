@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// A1 (docs/tasks/task-audit-followups-2026-10-06.md): every exclusive resident claim must refuse while an MC3
+// A1 (docs/completed/task-audit-followups-2026-10-06.md): every exclusive resident claim must refuse while an MC3
 // generation holds a batch place. MC3's own claim reads resBusy but never sets it, so a bare CAS on resBusy succeeds
 // mid-batch; these tests go through the two callers that used one (GenerateSpeculative and BlockSpec.generate), not
 // through tryClaimResident, whose own test passing is what let the callers drift.

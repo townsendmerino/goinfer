@@ -898,7 +898,7 @@ type kvPrice struct {
 }
 
 // kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what
-// the load will actually allocate (A3, docs/tasks/task-audit-followups-2026-10-06.md).
+// the load will actually allocate (A3, docs/completed/task-audit-followups-2026-10-06.md).
 //
 //   - A load that will be Metal-resident — Metal compiled in, the resolved backend, and the architecture inside Metal's
 //     feature gate — holds f16 KV (the only KV Metal ships) for MetalCtxDefault positions unless the caller pinned a
