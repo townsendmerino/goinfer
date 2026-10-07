@@ -34,7 +34,7 @@
 >   int8 under those backends, which measured not faster and far from f32 (`docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). On CPU and Metal every tower is f32 unless asked.
 > - **Decoder.** Gemma 3 and Qwen2.5-VL decode resident after an image on every backend that has `UploadKV` and `ForwardMRoPE` (CUDA, WebGPU, Metal); only CUDA also has a
 >   resident image prefill (`ResidentImagePrefill`, `ResidentMRoPEPrefill`), the others prefill the image on the CPU and upload the KV. Gemma 4 26B/31B uses the same bridge
->   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:285`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
+>   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:297`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
 >   resident on CUDA only (pairwise rope); on WebGPU it runs the staged path, on Metal the CPU.
 > - **Release binaries.** `goinfer-serve-linux-{amd64,arm64}` is built from `cuda/cmd/serve` with `CGO_ENABLED=0 -tags cuda`: **CUDA is cgo-free, so a downloaded Linux
 >   binary on an NVIDIA box does Gemma 3 images with the resident tower** (run: `encoder int8/cuda-resident`, 4.9 s for a cold image). The darwin binaries carry Metal (no tower,
@@ -782,7 +782,7 @@ number is published without provenance.
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
      generic attention makes (`decoder/attention.go:157`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`decoder/registry.go:1664`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:1667`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`

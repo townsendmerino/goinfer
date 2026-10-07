@@ -119,7 +119,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
 - The MoE variant (`lw.gemma4moe != nil`) replaces the FFN, PLE and scalar tail with `gemma4MoEFFN` (:193-198). It is
   PLE-free and not relevant to E2B.
 - **After the layers:** `cache.Advance()` (:245). gemma4 uses `manualPos`, because the last layer is shared and never
-  appends (`decoder/kvcache.go:89-93`). The final norm + LM head + softcap 30 run in the caller (:25-26).
+  appends (`decoder/kvcache.go:94-98`). The final norm + LM head + softcap 30 run in the caller (:25-26).
 - **No AltUp, no LAuReL.** `grep -i 'altup|laurel'` hits only `decoder/registry.go` (a family list). The Gemma-3n
   extras are absent from Gemma 4 and from goinfer's forward.
 
@@ -137,8 +137,8 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 
 ### 1.4 CPU KV cache for gemma4
 
-- Append-forever, with no rings: gemma4 is listed as keeping append-forever (`decoder/kvcache.go:71-78`).
-- A shared layer never appends, so `stride[l]=0` (`decoder/kvcache.go:63-68`).
+- Append-forever, with no rings: gemma4 is listed as keeping append-forever (`decoder/kvcache.go:76-83`).
+- A shared layer never appends, so `stride[l]=0` (`decoder/kvcache.go:68-73`).
 - `LayerKV(l)` returns nothing for it, and `residentUploadPrefill` skips it via `len(k)==0`
   (`decoder/generate_vl_resident.go:20-34`).
 
