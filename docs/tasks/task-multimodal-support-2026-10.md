@@ -797,7 +797,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 
   | tower | tiny | real, worst token over four images | time per image, Metal vs CPU (exploratory) |
   |---|---|---|---|
-  | SigLIP (Gemma 3), `visionmetal`, int8 both | 1.000000000 | **0.180-0.461: wrong** | ~73 s vs ~17 s |
+  | SigLIP (Gemma 3), `visionmetal`, int8 both | 1.000000000 | **0.180-0.461: wrong** (withdrawn as a defect 2026-10-07; see below) | ~73 s vs ~17 s |
   | Qwen2.5-VL, `qwenmetal`, f32 both | 1.000000000 | 0.999995874 or better | 22-47 s vs 23-37 s |
 
   - The Metal SigLIP tower agrees exactly at the tiny fixture's size (hidden 32, 16 patches) and breaks at Gemma 3's
@@ -809,6 +809,14 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - **Proposed, for the owner:** build both towers on goinfer's own Metal tower base, as S2 did for Qwen3.5 and GLM-OCR
     (its kernels pass at real size and run 2-4x the CPU), from new aikit float32 exports added to the same unreleased
     batch; and report the `visionmetal` real-size defect to aikit. G-S3b waits for that decision.
+  - **Correction, 2026-10-07: there is no `visionmetal` real-size defect.** Both arms here were int8, and SigLIP's int8
+    tower is itself far from its f32 tower at real size. Against the f32 CPU tower:
+    - the CPU int8 tower's worst token is 0.012-0.172 and the Metal one's 0.027-0.110;
+    - both have relative L2 0.16-0.52.
+
+    The two int8 towers go wrong on the same tokens and disagree there, which is the 0.180-0.461 above, reproduced exactly.
+    The record is `docs/measurements/siglip-int8-fidelity-2026-10-07.md`. Nothing was reported to aikit. The rebuild stands,
+    since the rebuilt tower is f32. The record's open question is serve's int8 SigLIP tower under cuda and webgpu.
 - **G-S3c, read 2026-10-07 11:35 PDT on the Mac (serve binary from `s2-towers`, the tower on the CPU in every arm,
   table.png, 32 greedy tokens): Qwen2.5-VL FAIL; Gemma 3 not reached.**
   - **Qwen2.5-VL-3B, `metal-resident (int4)` against `cpu (int4)`: the replies differ from the first token.** Metal

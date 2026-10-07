@@ -1,0 +1,83 @@
+//go:build darwin
+
+package visionmetal
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/aikit/vision"
+)
+
+// A throwaway record (goinfer docs/measurements/siglip-int8-fidelity-2026-10-07): Gemma 3's SigLIP tower with int8
+// (W8A8) matmul weights, on the CPU and on Metal (this package), each against the SAME tower with f32 weights on the CPU,
+// on the four images goinfer's F2a uses. Per-token cosine (mean, worst), relative L2, and int8 CPU against int8 Metal.
+func TestZZSiglipInt8Record(t *testing.T) {
+	dir, imgs := os.Getenv("ZZ_SIGLIP"), os.Getenv("ZZ_IMAGES")
+	if dir == "" || imgs == "" {
+		t.Skip("ZZ_SIGLIP, ZZ_IMAGES")
+	}
+	f32, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, _ := vision.LoadEncoder(dir, true)
+	m, _ := vision.LoadEncoder(dir, true)
+	if err := m.EnableResident(); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	hidden := f32.Cfg.HiddenSize
+	stats := func(a, ref []float32) (mean, worst, rel float64) {
+		worst = 2
+		n := len(ref) / hidden
+		var num, den float64
+		for i := range n {
+			c := cosine(a[i*hidden:(i+1)*hidden], ref[i*hidden:(i+1)*hidden])
+			mean += c / float64(n)
+			worst = math.Min(worst, c)
+		}
+		for i := range ref {
+			d := float64(a[i] - ref[i])
+			num += d * d
+			den += float64(ref[i]) * float64(ref[i])
+		}
+		return mean, worst, math.Sqrt(num / den)
+	}
+	fmt.Fprintf(os.Stderr, "| image | arm | per-token cosine, mean | worst | relative L2 |\n|---|---|---|---|---|\n")
+	for _, name := range []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"} {
+		raw, err := os.ReadFile(filepath.Join(imgs, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pv, err := vision.Preprocess(raw, vision.Gemma3())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t0 := time.Now()
+		ref, err := f32.Forward(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cq, err := q.Forward(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mq, err := m.Forward(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, arm := range []struct {
+			name   string
+			a, ref []float32
+		}{{"int8 CPU vs f32 CPU", cq, ref}, {"int8 Metal vs f32 CPU", mq, ref}, {"int8 Metal vs int8 CPU", mq, cq}} {
+			mean, worst, rel := stats(arm.a, arm.ref)
+			fmt.Fprintf(os.Stderr, "| %s | %s | %.5f | %.5f | %.4f |\n", name, arm.name, mean, worst, rel)
+		}
+		fmt.Fprintf(os.Stderr, "  (%s: %.0f s, not a timing)\n", name, time.Since(t0).Seconds())
+	}
+}

@@ -42,4 +42,4 @@ Cost: the f32 tower holds more host memory than the int8 one.
 
 ## Not covered
 
-Other images; Qwen3.5-9B and the other Gemma 4 sizes; the text the decoder produces from int8 versus f32 features; the dense Qwen3.5 sizes at 1,024 tokens (the serve cap).
+Gemma 3's SigLIP tower, the one tower still int8 under cuda/webgpu: measured 2026-10-07 on the Mac in `siglip-int8-fidelity-2026-10-07.md` (relative L2 0.16-0.52, worst token 0.01-0.17). Other images; Qwen3.5-9B and the other Gemma 4 sizes; the text the decoder produces from int8 versus f32 features; the dense Qwen3.5 sizes at 1,024 tokens (the serve cap).
