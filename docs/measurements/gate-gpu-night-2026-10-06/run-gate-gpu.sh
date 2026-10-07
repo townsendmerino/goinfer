@@ -51,6 +51,11 @@ for d in testdata decoder/testdata; do
   done < <(git ls-files --others --ignored --exclude-standard --directory "$d")
 done
 cd "$WT" || exit 2
+# The linked untracked directories would make the gate call the worktree DIRTY (its verdict then reads INCONCLUSIVE: "does not describe a committed state").
+# They are fixtures, not edits, so this process (and only it: the env is not exported to anything else) ignores exactly those paths.
+EXC="$LOG/linked-untracked.exclude"; : > "$EXC"
+for p in $linkedDirs; do echo "$p" >> "$EXC"; done
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0="$EXC"
 go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"; exit 2; }
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $n entries symlinked from $SRC (untracked directories linked whole:${linkedDirs:- none})"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
