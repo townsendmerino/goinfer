@@ -167,6 +167,17 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     (same M1 Pro, macOS 26.6.2).
   - **Raw:** `docs/measurements/multimodal-support-2026-10/s10-*.log`.
   - **Still owed:** the 26B on Metal (night queue), and the same `v_norm` fix on CUDA and WebGPU (nobara).
+  - **The 26B re-check's design, fixed 2026-10-06 before it runs.** Every 26B Metal parity test compares against a CPU
+    26B forward, which the Mac must not run (the M26 rule: Metal only, paged, guards on). So it is split across the
+    two machines:
+    - **Mac, night queue** (`run-s10-26b-dump.sh`, `TestGemma4_26B_s10Dump`): Metal's full logits at every position of
+      three G3 prompts plus 16 greedy tokens, in two arms — fixes in, then `GOINFER_S10_DROP=both` teacher-forced over the
+      same sequences — under the swap kill-watch. A load-and-run smoke passed by day (24 positions, RSS 3.8 GB).
+    - **nobara, afterwards:** the CPU 26B forward over the same sequences, from the same `.int4.metal.giw`, is the
+      reference for both arms.
+    - **PASS (S1.0's rule):** with the fixes in, neither the mean Metal-vs-CPU logit cosine nor the argmax agreement
+      over all positions is lower than with them dropped. Only `v_norm` can move on the 26B: its layers are all MoE,
+      and the MoE join already applied its own layer scalar.
 - **S1.1, the fixture and safetensors PLE loading, done 2026-10-06 on the Mac.** No bar was pre-registered for this
   step; it builds what G1 runs on. It was held to the f32 tiny-golden convention (`gemma4_moe_forward_test.go`):
   argmax equal and cosine >= 0.99999 against HF, here at every position rather than only the last.
