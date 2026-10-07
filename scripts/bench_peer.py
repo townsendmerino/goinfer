@@ -90,6 +90,9 @@ MLX_MODELS = {
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
     "1.5B": (os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "q15"),
+    # E2B added 2026-10-06 for S1.9 of docs/tasks/task-multimodal-support-2026-10.md: goinfer's own Metal-resident vs
+    # CPU decode record (BENCH_ENGINES=goinfer). The peer tag is a placeholder: no peer row is taken for it yet.
+    "E2B":  (os.path.expanduser("~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf"), "e2b-none"),
     # 7B added 2026-08-22. Both other rows are TINY, and this repo has already been burned by
     # that exactly once: CUDA graphs measured 1.4-1.7x on a small model and 1.01x at real size,
     # because CPU dispatch overlaps GPU compute once the model is big enough. A peer number

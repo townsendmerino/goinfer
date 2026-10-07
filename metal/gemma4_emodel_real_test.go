@@ -472,3 +472,51 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 		t.Logf("G3 PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
 	}
 }
+
+// TestGemma4EModel_realE2BPLEHostCost is S1.9's host-side record (docs/tasks/task-multimodal-support-2026-10.md): the
+// milliseconds embedResidentInto spends per token on E2B, i.e. the embedding row plus the PLE inputs the CPU computes
+// (the per-layer token row and the [L·P x H] projection) before every resident step. A record, not a gate; timed, so
+// it runs on the night queue under the timing lock.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -run '^TestGemma4EModel_realE2BPLEHostCost$' -v ./metal/
+func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	home, _ := os.UserHomeDir()
+	giw := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it.int4.metal.giw")
+	if _, err := os.Stat(giw); err != nil {
+		t.Skipf("no sidecar: %v", err)
+	}
+	m, err := decoder.Load(giw, decoder.Options{Quant: "int4", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	const warm, n = 32, 512
+	ids := make([]int, warm+n)
+	for i := range ids {
+		ids[i] = 1000 + (i*7919)%200000 // spread over the vocabulary, deterministic
+	}
+	for _, id := range ids[:warm] {
+		m.EmbedResidentForTest(id)
+	}
+	per := make([]float64, n)
+	for i, id := range ids[warm:] {
+		t0 := time.Now()
+		m.EmbedResidentForTest(id)
+		per[i] = float64(time.Since(t0).Microseconds()) / 1000
+	}
+	sum := 0.0
+	for _, v := range per {
+		sum += v
+	}
+	sorted := append([]float64(nil), per...)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j] < sorted[j-1]; j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+	t.Logf("E2B embedding row + PLE inputs on the host: mean %.3f ms/token, median %.3f, p90 %.3f over %d tokens (row length %d)",
+		sum/n, sorted[n/2], sorted[n*9/10], n, m.ResidentEmbedLen())
+}
