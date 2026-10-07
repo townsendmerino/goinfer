@@ -289,6 +289,21 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     - **Teacher-forced:** the CPU's sequence (prompt + its 32 tokens) is fed to Metal from a reset cache; agreement is
       Metal's argmax equal to the CPU's at every position that predicts a next token, pooled over the eight prompts.
     - Memory: Metal's own fit guard (`residentFitsMemory`) must admit the model; the test refuses otherwise.
+  - **G3 run 1, 2026-10-06 20:53 PDT, on the Mac: FAIL as registered, with a confound in the procedure.**
+    - Free-running: 7/8 prompts pass (prompt 3 first diverges at generated token 19, CPU gap 3.61%; 5, 6, 7, 8 diverge
+      at near-ties of 2.03%, 0.34%, 1.55%, 1.13%). Teacher-forced agreement 409/435 = **94.02%**, under the 97% fail line.
+      Metal's text is coherent throughout and tracks the CPU's.
+    - **The confound:** the run met the load-time fit guard by loading each side's pre-built sidecar, and the CPU's is
+      the `e4h` one: its embedding/LM-head and PLE token tables are int4 (the CPU default since 2026-09-28; the loader's
+      own help puts it at ~2.3 pts top-1), while Metal's sidecar keeps them at the int8 pin. So the run compared two
+      different quantizations of the logit-critical tables, not Metal against the CPU on the same weights, which is what
+      "both int4 from the same GGUF" was written to mean.
+    - Raw: `docs/measurements/multimodal-support-2026-10/g3-run1-e4h-cpu.log`.
+  - **G3 amendment, after run 1 (flagged for the owner, since it follows a failing run):** both sides load the same
+    sidecar, Metal's (`.int4.metal.giw`, int8-pinned tables); nothing else changes — prompts, rule and bands stand. A
+    control arm, reported and not graded, runs the same teacher-forced comparison CPU against CPU across the two
+    sidecars (int8 tables against `e4h`), to measure how much of run 1's 94.02% the table precision alone explains.
+    Run 2's verdict stands as the G3 reading only if the owner accepts this amendment.
 - **G4, real E2B image chat:**
   - The F2b request through the Metal serve binary, resident decode against CPU decode.
   - **PASS:** identical reply, or a first divergence at a near-tie.
