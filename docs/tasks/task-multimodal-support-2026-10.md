@@ -1471,11 +1471,33 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
   - **Planted defect:** the taps taken one block late; it must go red on the tiny tower.
   - **Then G-S10d's served check again,** with the tower on Metal against `-vision-device cpu`, both `--backend metal`:
     identical replies or a first divergence at a near-tie.
-- **S10 Qwen3-VL: G-S10a-d all PASS.** Owed, none of them gates:
-  - goinfer's own preprocessing against HF's processor for Qwen3-VL. G-S10c fed both sides HF's pixel values, and
-    serve uses the Qwen3.5 preprocessing path.
-  - A device tower with DeepStack, on Metal (S2's base plus the DeepStack mergers) and CUDA.
-  - The serve log calls the tower "Qwen3.5 vision"; it is cosmetic.
+- **G-S10e: PASS** (Mac, 15:39-15:43 PDT; `s2-towers` at `aec3ccec`, aikit `5db4ce6`).
+  - **The code:** the Metal grid tower taps the DeepStack blocks (`HiddenTaps`, read where `run` ends each block's
+    command buffer). aikit's host tails (`FinishHidden`, the new `DeepstackFromHidden`) make the merged rows and the
+    sets (`multimodal.Qwen3TowerFeaturesDeepstack`). Serve runs a Qwen3-VL tower on a device only if that tower can tap;
+    otherwise the CPU, by name, or an error under `-require-backend` (`TestQwen3VLTower_needsTaps`, red without the
+    check).
+  - **Tiny** (`testdata/qwen3vl-vision-tiny`, copied from aikit): merged rows and both sets at 1.000000000 on two grid
+    sets. The planted taps-one-block-late defect is refused (the last tap falls past the 2-block tower), which is red.
+  - **Real 2B, four F2a images at serve's cap:** worst 0.999997916 (formula.png's second set); every other output
+    0.99999990 or better. The planted defect on the 14x20 image: sets at 0.574, 0.293 and 0.661, red.
+  - **Served, `--backend metal` in every arm:** the tower on Metal against `-vision-device cpu`, twice: byte-identical
+    replies ("Table 2. Quarterly unit sales by region (thousands)"). Request time 19.2 s against 31.3-41.3 s with the
+    tower on the CPU (exploratory, one reading each).
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10e/`.
+- **The owed preprocessing record, read 15:30 PDT:** `multimodal/qwen3vl_preprocess_real_test.go` (goinfer's
+  QwenPreprocess with Qwen3-VL's own, uncapped config against transformers' `Qwen2VLImageProcessor` pixel values from
+  G-S10b's run). The grids are equal on all four images. The pixels are identical on the two that need no resize; on
+  the two resized ones the largest difference is 0.00784 (one 8-bit level, 2/255 in [-1, 1]), the mean 2e-6 and 9e-6,
+  and the worst patch cosine 0.999998.
+- **aikit's qwenmetal allocation fix (nobara's df1a98f, merged into the local branch as 97cc578):**
+  `TestQwenMetal_allocationFailureIsAnErrorAndTheEncoderRecovers` passes on the Mac, with the full qwenmetal suite. A
+  2.5 TB scratch request came back as "MTLBuffer allocation failed ... out of memory", and the encoder recovered.
+- **S10 Qwen3-VL: G-S10a-e all PASS.** Owed, none of them gates:
+  - ~~goinfer's preprocessing against HF's~~ (done, above).
+  - ~~A device tower with DeepStack on Metal~~ (G-S10e). CUDA's twin (nobara): its grid tower implements
+    `multimodal.GridTowerTapper`, the same `run`-loop tap.
+  - ~~The serve log's "Qwen3.5 vision"~~ (now "Qwen3-VL vision").
   - The MoE variants.
 
 ### S11 — Several images per message
