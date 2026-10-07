@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -192,4 +193,45 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 	default:
 		t.Logf("G3c PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
 	}
+}
+
+// TestGemma4EModel_realE2BPLEHostCost is S1's speed record on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"): the milliseconds
+// embedResidentInto spends per token on E2B, i.e. the embedding row plus the PLE inputs the CPU computes before every resident step. A record, not a
+// gate; timed, so it runs on the night queue under the timing lock.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -c -tags 'cuda goinfer_testhooks' -o cuda.test ./cuda/ && GOINFER_HEAVY_TESTS=1 ./cuda.test -test.run '^TestGemma4EModel_realE2BPLEHostCost$' -test.v
+func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
+	requireHeavyModel(t)
+	home, _ := os.UserHomeDir()
+	gguf := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no E2B GGUF: %v", err)
+	}
+	m, err := decoder.Load(gguf, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	const warm, n = 32, 512
+	ids := make([]int, warm+n)
+	for i := range ids {
+		ids[i] = 1000 + (i*7919)%200000 // spread over the vocabulary, deterministic
+	}
+	for _, id := range ids[:warm] {
+		m.EmbedResidentForTest(id)
+	}
+	per := make([]float64, n)
+	for i, id := range ids[warm:] {
+		t0 := time.Now()
+		m.EmbedResidentForTest(id)
+		per[i] = float64(time.Since(t0).Microseconds()) / 1000
+	}
+	sum := 0.0
+	for _, v := range per {
+		sum += v
+	}
+	sorted := append([]float64(nil), per...)
+	sort.Float64s(sorted)
+	t.Logf("E2B embedding row + PLE inputs on the host: mean %.3f ms/token, median %.3f, p90 %.3f over %d tokens (row length %d)",
+		sum/float64(n), sorted[n/2], sorted[n*9/10], n, len(m.EmbedResidentForTest(ids[0])))
 }
