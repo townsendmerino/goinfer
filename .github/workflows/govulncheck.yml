@@ -3,8 +3,21 @@ name: govulncheck
 # Reachability-filtered vulnerability scan of the pure-Go serve/decode binary — the
 # artifact the project's pitch is about ("one static binary you scp and run offline").
 # For an air-gapped deployment, "no known vulnerability is reachable from this binary"
-# is part of the deployment claim, not just hygiene, so it gates per-PR AND runs weekly
-# to catch vulnerabilities DISCLOSED after a release without a code change.
+# is part of the deployment claim, not just hygiene.
+#
+# WHEN IT RUNS (changed 2026-10-06; it used to run on every push and was ~43% of this repo's
+# workflow runs, four jobs each, one on macOS, and in a four-day sample its per-push run found
+# no vulnerability: four failures in 113 pushes, all inside one 36-minute window with no failed
+# job recorded, then green on the next push with no fix in between):
+#   - NIGHTLY (08:00 UTC): the database moves without any code change, so a vulnerability
+#     disclosed after a release is caught within a day. This used to be weekly.
+#   - on any go.mod / go.sum change in any module, on main AND on a PR: the only pushes that
+#     change what a dependency or the Go toolchain version is (`go-version-file: go.mod`).
+#   - on every v* tag: the release moment, where "nothing reachable is known vulnerable" is the claim.
+#   - on a change to this file, and by hand.
+# WHAT THIS GIVES UP, stated rather than hidden: reachability depends on our CODE as well as our
+# dependencies, so a push that starts calling an ALREADY-known-vulnerable function, with no go.mod
+# change, is now caught by the next nightly run rather than by that push.
 #
 # govulncheck does call-graph reachability by default: it reports only vulnerabilities
 # in functions actually reachable from the build targets, so the signal is low-noise —
@@ -20,9 +33,22 @@ name: govulncheck
 on:
   push:
     branches: [main]
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "**/go.mod"
+      - "**/go.sum"
+      - ".github/workflows/govulncheck.yml"
+    tags: ["v*"] # path filters are not evaluated for tag pushes: a release tag always scans
   pull_request:
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "**/go.mod"
+      - "**/go.sum"
+      - ".github/workflows/govulncheck.yml"
   schedule:
-    - cron: "0 8 * * 1" # Mondays, 08:00 UTC — newly-disclosed vulns, no code change needed
+    - cron: "0 8 * * *" # nightly, 08:00 UTC — newly-disclosed vulns, no code change needed
   workflow_dispatch:
 
 permissions:
