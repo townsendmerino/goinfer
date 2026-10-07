@@ -1007,6 +1007,24 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
     close, and a factory that errors (never panics) under allocation failure, with serve naming the CPU fallback and `-require-backend` refusing it.
   - **Build order:** serve plumbing made backend-generic; the tower base; the Gemma 4 tower; the Qwen3.5 and GLM-OCR towers; the VRAM reserve; the speed record (queued, not
     started); and only if that says so, a faster attention.
+- **S4 steps 0-2 read 2026-10-07 on nobara (`s2-towers`; not on `main`): the tower base and the Gemma 4 tower on CUDA PASS.** Raw: `docs/measurements/multimodal-support-2026-10/s4-gemma4-cuda/`.
+  - **Step 0, serve:** `planGridTower` and `chooseGemma4Tower` are backend-generic (Metal and CUDA, each checked against the registry for its own backend, the fallback named with
+    that backend's word); the table row that pinned CUDA to the CPU is replaced by CUDA cases, and `chooseGemma4Tower` has a placement test for the first time.
+  - **Step 1, the base** (`cuda/tower_base.cu` and `.go`; six small kernels in their own module, NVRTC 12.9.86, FMA-linted; an executor goroutine that owns the device; a launch
+    helper with an error latch; GEMM, bias and bias+residual plan selection that handles a K that is not a multiple of 16): every GEMM branch against float64 (the register kernel on
+    aligned shapes, the bias kernel at any M, the tiled kernel plus `add_bias` at K = 1176 and K = 20), the norms, the six kernels **bit for bit** against Go's float32 arithmetic,
+    and attention at scale 1.0 and 1/sqrt(hd). The tiled-branch bias test was shown red by a mutant (bias dropped on that branch: the output was wrong by 60% of its scale).
+    aikit's own attention kernel is used as it is (np <= 12288), so Metal's matmul-blocked attention was not needed for a correct baseline.
+  - **Step 2, the Gemma 4 tower** (`cuda/gemma4_vision.go`, registered as multimodal's "cuda" tower), tiny tower with finite clip bounds and random position tables and norms:
+    worst soft-token cosine **1.000000000** on all four grids (18, 54 and 135 patches; raster and shuffled). **Planted defects, each alone red** (worst cosine): clamps skipped 0.938,
+    position x/y swapped 0.147, value norm weighted 0.829, attention scale 1/sqrt(hd) 0.533, position tables skipped -0.529, RoPE skipped 0.292. Large-small-large on one tower and
+    two identical runs: bit-identical; a short patch buffer and an out-of-table position return errors; after `Close` the device ledger is empty.
+  - **Real E2B (F2a on CUDA), every soft token against aikit's CPU tower, the four images (2304-2430 patches): worst cosine 1.000000000 on all four.** Tower CUDA 2.15-2.38 s against the
+    CPU's 4.19-4.50 s (exploratory; the CUDA figure includes aikit's host tail).
+  - **Served (the G-S2d shape; `--backend cuda`, E2B decoding resident, `--kv-sessions 1 -ctx 4096`):** tower on CUDA, tower on the CPU, and a second CPU-tower run give an identical
+    32-token reply ("This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025." and the start of the next sentence). The logs name each arm
+    (`tower on CPU` / `tower on CUDA`, `decode path: cuda-resident (int4)`, `decoded 32 tokens on the resident path`); the image encode took 2.34 s with the tower on CUDA and 4.45-4.47 s
+    on the CPU. The default KV plan was not used, for the reason recorded under G-S4q (the tower needs VRAM the resident decoder would take); step 4 is the reserve for that.
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
