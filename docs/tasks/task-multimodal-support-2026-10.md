@@ -1311,8 +1311,16 @@ prompt prefills token by token on the GPU too. Both backends decline E-models fr
   - Request time (exploratory; the tower on the CPU in every arm, by the gate's design): Metal 12.1 s, CPU 14.5 and
     12.9 s. The tower is most of that; the night record separates prefill from tower.
   - Raw: `docs/measurements/multimodal-support-2026-10/s9-gs9c/`.
-- **Still owed for S9:** the night speed record (image-turn and 512-token text TTFT, the pass against the old path),
-  and CUDA's half (nobara).
+- **Exploratory smoke of the speed script, one pass by day (13:03 PDT; not a result, the night record decides):**
+  `run-s9-speed.sh` with `PASSES=1`. Image-turn TTFT 16.5 s on the old path against 10.8 s on the pass (1.53x). The
+  ~512-token text TTFT was 11.0 s against 10.8 s (1.02x).
+  - The image turn gains because its prefill leaves the CPU.
+  - A text prompt barely moves, because both paths run decode's GEMV kernels once per row, about 20 ms a token on
+    E2B. The pass only removes the per-token submit-and-wait.
+  - **A real text-prefill win for E-models needs the f16-MMA pass to learn Gemma 4's per-layer geometry** (head size
+    256 and 512 by layer, the PLE block, shared K/V), which it declines today for every dense Gemma 4. That is a
+    further S9 step, noted here and not started.
+- **Still owed for S9:** the night speed record (`s9-speed`, queued tonight on the Mac) and CUDA's half (nobara).
 
 
 ### S10 — Towers for the families that have none
