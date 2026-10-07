@@ -639,8 +639,17 @@ plan. Where it says INFERRED, the step names the fallback and what decides it.
     - **E4B** was not run (no checkpoint on either box). The code path is the same shape, and nothing was measured on it.
     - **TTFT:** a long prompt prefills token by token (the batched prefill declines E-models), so time to first token on a long prompt is slow. The
       vision tower is still on the CPU (4.5 s here; S4).
-    - **The heavy tier** (`gate gpu`) has not run on this tree; tonight's queued `gate-gpu-cuda` is the first run that exercises the rest of the CUDA suite
-      with C1-C5 in.
+    - **The heavy tier** (`gate gpu`) has not completed on this tree. The first night run (2026-10-07, stopped by the owner at minute 35 of the heavy
+      tier, `~/goinfer-logs/gate-gpu-night-2026-10-07/`) was red for three reasons, none a defect in the E-model path, all fixed and pushed:
+      (1) **my** helper `mustResident` sat in a file tagged `cuda` alone but called a test hook, so the no-testhooks cuda test package did not build
+      (group 2a; present since f95fabfd, invisible to CI, which cannot build cuda tests); (2) the gate's pinned worktree linked only the gitignored weights
+      of `testdata/gemma4-emodel-tiny`, leaving `model.safetensors` without `config.json`, so 13 E-model tests failed to load (the script now links untracked
+      fixture directories whole and excludes them from the dirty-tree check); (3) an **unpinned default resident context** that one KV slot overshoots by the
+      build's own scratch declined the resident path to the CPU (`TestB2DenseFlagship` and four Gemma-3 tests; R19 raised the default to 16384 and says it
+      is "shrunk to what the card holds", but only the multi-slot arm did), now trimmed to fit with a floor of 4096. The six tests pass again and the full
+      non-heavy cuda suite is green. A control run with the heavy tier skipped (`GOINFER_GATE_SKIP_HEAVY=1`, pinned worktree of `6ceb11a6`) reads
+      **PASS, 10 of 10 groups**, with the E-model tests running in 2b and 2d. The rest of the heavy tier (about 40 of 78 minutes were never reached) is
+      re-queued for the owner to start.
   - **`gate quick` over the change (18 min, `~/goinfer-logs/gate-quick-s1c.log`): 2085 passed, 0 failed, 429 skipped; lint 16 of 17.** The one red lint step was
     `staticcheck` on `./cuda/...`: two unused fields (`resident`, `cpuInt4v`) I left in the new `gemma4_emodel_test.go`, the dead-field class CLAUDE.md warns
     about. Removed; `staticcheck` for `-tags 'cuda goinfer_testhooks'` and `-tags 'gpu goinfer_testhooks'` re-run clean, the full gate not repeated.
