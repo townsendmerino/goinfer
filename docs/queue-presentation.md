@@ -93,6 +93,12 @@ which is what a competing browser demo's own prominence invites.
 **U5 · README restructure — already substantially shorter than the premise this was filed
 against; the front-loading question is still open** — README, **OPEN, filed 2026-09-15**
 
+**UPDATE 2026-10-06 (re-measured; the figures below were stale).** `wc -l README.md` reads **400** (377 when this was last measured, 878 when filed), and the paragraph below that says the
+front page "front-loads install instructions, a quantization guide, and a model-family table" no longer describes it. The README now runs: the pitch and four bullets, the goinfer.dev link row, the
+demo GIF, then the JSON-schema example (the hook the item asked for), then `## Use it as a library`, then `## Or run it as a binary` with the download command (line ~96), with `## Which quantization` at
+line ~239; and the model-family table is not in the README at all (a page per family lives at goinfer.dev/models, generated from the capability matrix). So the order this item wanted is mostly in
+place. What is still open is length alone: 400 lines against a ~150-line front page is about 2.7x, and whether length is the right measure now that the first screen does its job. Still no task doc.
+
 `README.md` is currently **377 lines**, not the 878 this item was originally filed against — no
 restructure commit or brief doc was found in the tree to account for the difference (`git log
 --oneline -- README.md` shows no such restructure among its recent history), so the 878 figure
@@ -150,6 +156,12 @@ decided.
 **U9 · The book — publish standalone, or keep as GitHub Pages only** — docs/book/, **DECISION
 PENDING, filed 2026-09-15**
 
+**UPDATE 2026-10-06 (the hosting half is decided; the premise below is stale).** The owner decided on 2026-09-29 for one host (`docs/tasks/task-site-2026-09.md` S5): the book is built and served by
+`site.yml` at **https://goinfer.dev/book/**, which `README.md` and `docs/README.md` link. The sentence below that it is "served at `townsendmerino.github.io/goinfer/` via `book-pages.yml`" is out of
+date: that address now serves a one-file redirect stub (`.github/workflows/book-pages.yml`), kept because every released binary's web UI and the v0.19.0 and v0.20.0 release notes link to it and
+switching Pages off would turn those into 404s. Both addresses returned 200 on 2026-10-06. The book is unchanged in shape (eleven numbered chapters, `12-glossary.md`, the figures). **What is still
+open** is only the second half of the question: independent reach (a publishing platform, syndication), which nobody has decided.
+
 [`docs/book/`](book/) holds twelve files — eleven numbered chapters
 (`01-text-becomes-numbers.md` through `11-knowing-youre-right.md`) plus
 [`12-glossary.md`](book/12-glossary.md) — written for Go engineers new to ML, each chapter tied to
@@ -162,6 +174,15 @@ be shared independently of whether anyone runs the engine.
 
 **U10 · Model registry and short names — no doc written yet; the underlying data already exists**
 — pull / docs, **OPEN, filed 2026-09-15**
+
+**UPDATE 2026-10-06 (the registry this item proposes already existed when it was filed).** `pull/registry.go` landed on 2026-09-06 (5919c00b, with the capability-matrix design below, nine days before this
+entry) and the README documents it: `goinfer-chat pull qwen2.5-coder-0.5b` takes a short name, `goinfer-chat models` lists the recommended checkpoints, and goinfer.dev/models has a page per family. Each
+of the item's three asks is met: the registry is derived from `docs/capability-matrix.json` (a checkpoint lives on its family's matrix row, and `TestRegistry_everyEntryTracesToItsFamily` fails on one that
+names a family not there); there is no CDN (every entry points at Hugging Face and carries a sha256 the fetch verifies); and each entry fixes one quant with a recorded `good_for`, `needs` and a `tools`
+column taken from a real `serve check` run. So the opening sentence below ("requires an owner/repo and a quant choice today", "no doc") is wrong. **What is actually open is coverage:** of the 40
+families in the matrix, **5** have a short-name checkpoint on 2026-10-06 (`gemma-4-26b-a4b`, `phi3-mini-4k`, `qwen2.5-coder-0.5b`, `gpt-oss-20b`, `granite-4.0-h-tiny`; count them with
+`jq '[.[]|select(.checkpoint)]|length' docs/capability-matrix.json`), the other 35 are reached only through `owner/repo:quant`, and there is no written rule for when a family earns an entry beyond
+"a recorded `serve check` run for its `tools` column". Extending it is per-family work (pick a published GGUF, pin its sha256, run `serve check` against it), not design work.
 
 `goinfer-chat pull` requires an owner/repo and a quant choice today. No `docs/task-model-registry.md`
 or equivalent was found in the tree — this item's own premise that "doc written" applies does not
