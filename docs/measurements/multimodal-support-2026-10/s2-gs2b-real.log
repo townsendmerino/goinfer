@@ -1,0 +1,13 @@
+[S2 real qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999212; tower Metal 1.228s, CPU 4.724s (exploratory)
+[S2 real qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999999; tower Metal 100ms, CPU 208ms (exploratory)
+[S2 real qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999953; tower Metal 3.077s, CPU 7.001s (exploratory)
+[S2 real qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999990; tower Metal 1.841s, CPU 6.284s (exploratory)
+[S2 real glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): worst token cosine 0.999997288; tower Metal 5.956s, CPU 22.804s (exploratory)
+[S2 real glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): worst token cosine 1.000000000; tower Metal 157ms, CPU 313ms (exploratory)
+[S2 real glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): worst token cosine 0.999991618; tower Metal 12.637s, CPU 42.268s (exploratory)
+[S2 real glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): worst token cosine 0.999999836; tower Metal 9.567s, CPU 35.814s (exploratory)
+[S2 real glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): worst token cosine 0.999999654; tower Metal 12.324s, CPU 48.943s (exploratory)
+--- PASS: TestGridVisionMetal_real (220.02s)
+    --- PASS: TestGridVisionMetal_real/qwen3 (25.29s)
+    --- PASS: TestGridVisionMetal_real/glm-ocr (194.73s)
+ok  	github.com/townsendmerino/goinfer/metal	220.928s

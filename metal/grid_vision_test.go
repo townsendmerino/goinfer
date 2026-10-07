@@ -3,9 +3,14 @@
 package metal
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -178,5 +183,106 @@ func gvCheck(t *testing.T, c gvCase) {
 				t.Errorf("%s: planted defect %s left the bar green (worst %.9f): the fixture cannot see it (G-S2c)", c.name, d, wd)
 			}
 		}
+	}
+}
+
+// TestGridVisionMetal_real is G-S2b on the real towers (~/models/qwen3.5-0.8b, ~/models/glm-ocr; never the archive),
+// through serve's own preprocessing and caps: the four images F2a uses for both towers, plus GLM-OCR's three O3
+// documents. Every merged token at cosine >= 0.9999 against aikit's CPU Forward; a worst token in 0.999-0.9999 is
+// ambiguous (parked). Times are exploratory. Heavy: GOINFER_HEAVY_TESTS=1.
+func TestGridVisionMetal_real(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1 (loads the real towers)")
+	}
+	home, _ := os.UserHomeDir()
+	images := []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"}
+	type fam struct {
+		name, dir string
+		extra     []string
+		run       func(t *testing.T, dir string) (pp multimodal.QwenPreprocessConfig, cpu, dev func([]float32, [][3]int) ([]float32, error), out int)
+	}
+	fams := []fam{
+		{"qwen3", filepath.Join(home, "models", "qwen3.5-0.8b"), nil,
+			func(t *testing.T, dir string) (multimodal.QwenPreprocessConfig, func([]float32, [][3]int) ([]float32, error), func([]float32, [][3]int) ([]float32, error), int) {
+				pp, err := multimodal.LoadQwen3PreprocessConfig(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if limit := 1024 * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit { // serve's qwen3MaxImageTokens
+					pp.MaxPixels = limit
+				}
+				enc, err := vision.LoadQwen3VisionEncoder(dir, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				acc, err := newQwen3VAccel(enc)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return pp, enc.Forward, func(px []float32, g [][3]int) ([]float32, error) {
+					return multimodal.Qwen3TowerFeatures(enc, acc, px, g)
+				}, enc.Cfg.OutHiddenSize
+			}},
+		{"glm-ocr", filepath.Join(home, "models", "glm-ocr"), []string{"glm_ocr/invoice.png"},
+			func(t *testing.T, dir string) (multimodal.QwenPreprocessConfig, func([]float32, [][3]int) ([]float32, error), func([]float32, [][3]int) ([]float32, error), int) {
+				pp, err := multimodal.LoadGlmOcrPreprocessConfig(dir) // serve's default: the model's own pixel ceiling
+				if err != nil {
+					t.Fatal(err)
+				}
+				enc, err := vision.LoadGlmOcrVisionEncoder(dir, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				acc, err := newGlmOcrVAccel(enc)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return pp, enc.Forward, func(px []float32, g [][3]int) ([]float32, error) {
+					return multimodal.GlmOcrTowerFeatures(enc, acc, px, g)
+				}, enc.Cfg.OutHiddenSize
+			}},
+	}
+	for _, f := range fams {
+		t.Run(f.name, func(t *testing.T) {
+			if strings.HasPrefix(f.dir, "/Volumes/") || strings.HasPrefix(f.dir, "/srv/models") {
+				t.Fatalf("%s is on the archive (CLAUDE.md)", f.dir)
+			}
+			if _, err := os.Stat(f.dir); err != nil {
+				t.Skipf("no %s: %v", f.dir, err)
+			}
+			pp, cpu, dev, out := f.run(t, f.dir)
+			for _, img := range append(append([]string(nil), images...), f.extra...) {
+				data, err := os.ReadFile(filepath.Join("../testdata", img))
+				if err != nil {
+					t.Fatal(err)
+				}
+				px, grid, err := multimodal.QwenPreprocess(data, pp)
+				if err != nil {
+					t.Fatal(err)
+				}
+				g := [][3]int{grid}
+				t0 := time.Now()
+				want, err := cpu(px, g)
+				tc := time.Since(t0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t0 = time.Now()
+				got, err := dev(px, g)
+				tm := time.Since(t0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				w := gvWorst(t, got, want, out)
+				fmt.Fprintf(os.Stderr, "[S2 real %s] %-30s grid %v (%d merged): worst token cosine %.9f; tower Metal %s, CPU %s (exploratory)\n",
+					f.name, img, grid, len(want)/out, w, tm.Round(time.Millisecond), tc.Round(time.Millisecond))
+				switch {
+				case w < 0.999:
+					t.Errorf("%s %s: worst token cosine %.9f under 0.999 (G-S2b FAIL)", f.name, img, w)
+				case w < 0.9999:
+					t.Errorf("%s %s: worst token cosine %.9f in 0.999-0.9999 (G-S2b ambiguous, parked)", f.name, img, w)
+				}
+			}
+		})
 	}
 }
