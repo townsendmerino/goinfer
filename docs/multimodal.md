@@ -1020,6 +1020,33 @@ the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads fo
   - **F5d:** each loader's planted defect (the QKV split order, the patch-conv halves swapped, the position table transposed)
     turns F5a red.
 
+  **F5 Phase 0, read 2026-10-06** (real headers; range requests for unsloth's `Qwen3.5-0.8B-GGUF` and Ollama's registry
+  blobs; files then fetched to nobara's `~/models/mmproj`):
+  - **One layout, not three.** The monolithic Ollama blob of 2026-09-30 is gone: every Ollama `qwen3.5`
+    (0.8b, 2b, 9b/latest) and `qwen3.6` tag now ships a separate `projector` layer, in the same llama.cpp `clip` mmproj
+    layout as unsloth's files.
+  - **The layout:** `general.architecture` is `clip` and `clip.projector_type` is `qwen3vl_merger`.
+    - `v.blk.N.{ln1,ln2,attn_qkv,attn_out,ffn_up,ffn_down}`, with QKV fused as in HF.
+    - The patch conv is split into `v.patch_embd.weight` and `.weight.1` (the two temporal halves), plus
+      `v.patch_embd.bias` and `v.position_embd.weight`.
+    - The merger is `v.post_ln`, `mm.0`, `mm.2`.
+    - `clip.vision.is_deepstack_layers` is all false.
+    - There are no image-budget keys (min/max pixels).
+  - **Dtypes:**
+    - unsloth: F32, F16 or BF16 matrices, everything else F32;
+    - Ollama: BF16 matrices, with F32 biases, norms, patch conv and position table.
+    - aikit's GGUF reader had no BF16, so it gains one.
+  - **Amendments, written before any F5 measurement:**
+    - **F5b is pinned:** the same text GGUF (unsloth's `Qwen3.5-0.8B-Q8_0`) with the tower from the mmproj, against
+      the same text GGUF with the tower from the safetensors directory, on the three P8a images: identical 32 greedy
+      tokens. A divergence at a step whose top-1/top-2 gap is under 0.02 parks, as in G2. (Read literally, "the
+      safetensors path" would compare Q8_0 text with HF's f32 text, which tests the text quant, not the mmproj.)
+    - **Expected exactness:** the 0.8B checkpoint is BF16, so the F32 and BF16 containers, Ollama's included, carry
+      identical weights, and their towers should match the safetensors tower bit for bit (max |diff| 0). F16 is lossy.
+      The bar stays 0.9999 for all; a nonzero diff on an exact container is investigated, not passed silently.
+    - **The image budget** comes from the Qwen3.5 family's own `preprocessor_config.json` values (identical on 0.8B,
+      9B and 35B, per P8a Phase 0), since the GGUF carries none, under the same serve cap.
+
 **Parked until after the tag, in this order** (each line: what, size, where):
 1. Gemma 4 E2B/E4B **audio into the model** (P7's audio half): aikit's `audio` loader probably loads E2B unchanged (not run);
    the decoder splice, the prompt layout and `input_audio` on chat. M-L, nobara.
