@@ -1398,6 +1398,28 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
   section only when the type said `mrope`. Text never sees it (every position's three components are equal), but an
   image prompt would have been rotated as plain RoPE. The section is now taken whenever it is present.
   `TestQwen3VL_mropeSectionFromRopeScaling` pins it with the real config's shape: red before the fix, green after.
+- **aikit DeepStack (local branch `s2-tower-exports`, 14f4b7c..45b93dd, not pushed):**
+  - The Qwen3 tower loads the DeepStack mergers (the post-shuffle LayerNorm) and returns their rows beside the main
+    ones (`ForwardDeepstack`). `Forward` is unchanged for every caller.
+  - The device export (`Weights`) refuses a DeepStack tower, so S2's Metal tower declines it rather than drop the rows.
+  - The load refusal of DeepStack itself is gone; malformed index lists are still refused.
+- **G-S10b: PASS, tiny and real.**
+  - **Tiny** (aikit's `TestQwen3Deepstack_tiny`, a committed fixture pinned by `scripts/pin_qwen3vl_vision_tiny.py`:
+    DeepStack at blocks 0 and 1, every norm randomised, two images): the main rows and both DeepStack sets match
+    transformers at worst cosine 1.000000000. The planted defect (the post-shuffle norm dropped) is red at 0.888 and
+    0.823.
+  - **Real** (nobara, 15:03 PDT, under the timing lock, aikit's `TestQwen3VisionEncoder_realDeepstack` against
+    `scripts/pin_qwen3vl_tower_real.py`'s artifacts: HF's own pixel values, every stage hooked): every stage of all
+    four F2a images at worst cosine >= 0.9999 (the embed, all 24 blocks, the merger, the three DeepStack sets at blocks
+    5, 11 and 17).
+
+    | image | grid | worst stage | merged | DeepStack 0 / 1 / 2 |
+    |---|---|---|---|---|
+    | gemma3_preprocess_image.png | 56x56 | 0.999995237 | 0.999999901 | 1.000000000 / 0.999999803 / 0.999999813 |
+    | qwen25vl_preprocess_image.png | 14x20 | 0.999999891 | 0.999999995 | 1.000000000 / 0.999999996 / 0.999999998 |
+    | glm_ocr/formula.png | 76x62 | 0.999999739 | 0.999999988 | 1.000000000 / 0.999999871 / 0.999999932 |
+    | glm_ocr/table.png | 56x76 | 0.999999562 | 0.999999999 | 1.000000000 / 0.999999999 / 0.999999997 |
+- **Next: the decoder's DeepStack injection** (G-S10c), then serve.
 
 ### S11 — Several images per message
 
