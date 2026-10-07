@@ -141,6 +141,7 @@ type loadedModel struct {
 	// (vision.Gemma4Preprocess's maxSoftTokens); the actual per-image token count
 	// is data-dependent and computed per request via multimodal.Gemma4PooledTokens.
 	gemma4Enc     *vision.Gemma4Encoder
+	gemma4Tower   multimodal.Gemma4TowerAccelerator // nil: the CPU tower (F2, docs/multimodal.md)
 	gemma4MaxSoft int
 	gemma4ImgTok  int // <|image|> id
 }

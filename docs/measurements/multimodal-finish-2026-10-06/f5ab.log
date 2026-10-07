@@ -1,0 +1,20 @@
+=== RUN   TestQwen35VLReal_mmproj
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-F32.gguf     image A: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-F32.gguf     image B: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-F32.gguf     image C: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-BF16.gguf    image A: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-BF16.gguf    image B: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-BF16.gguf    image C: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-ollama-projector.gguf       image A: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-ollama-projector.gguf       image B: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-ollama-projector.gguf       image C: worst merged-token cosine 1.000000000, max|diff| 0
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-F16.gguf     image A: worst merged-token cosine 1.000000000, max|diff| 3.58e-05
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-F16.gguf     image B: worst merged-token cosine 1.000000000, max|diff| 1.34e-05
+    qwen35vl_mmproj_real_test.go:101: F5a qwen3.5-0.8b-unsloth-mmproj-F16.gguf     image C: worst merged-token cosine 0.999999999, max|diff| 6.87e-05
+    qwen35vl_mmproj_real_test.go:143: F5b image A: Q8_0 text + mmproj tower vs + safetensors tower: 32 tokens, identical true
+    qwen35vl_mmproj_real_test.go:143: F5b image B: Q8_0 text + mmproj tower vs + safetensors tower: 32 tokens, identical true
+    qwen35vl_mmproj_real_test.go:143: F5b image C: Q8_0 text + mmproj tower vs + safetensors tower: 32 tokens, identical true
+    qwen35vl_mmproj_real_test.go:180: F5a 9B Ollama projector vs the 9B checkpoint, image A: worst cosine 1.000000000, max|diff| 0
+--- PASS: TestQwen35VLReal_mmproj (53.03s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	53.099s

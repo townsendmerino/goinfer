@@ -171,13 +171,61 @@ type eg2Layer struct {
 	plePostNorm                        Buffer
 }
 
+// eg2Ops is what the text encoder and the vision tower (gemma4_vision.go) share: the device, a queue, aikit's ViT
+// kernels, this file's pipelines and the scalar arena.
+type eg2Ops struct {
+	d     *Device
+	q     Queue
+	vit   gpu.ViT
+	p     eg2Pipes
+	arena Buffer // one scalar per 256-byte slot, so no two dispatches in a command buffer share one
+	slot  int
+	eps   float32
+}
+
+// eg2AttnBufs are attention's inputs, scratch and output: q, k, v [T, heads, hd]; their head-major copies; a block's
+// scores and transposed values and output; ctx [T, nH*hd].
+type eg2AttnBufs struct{ q, k, v, qh, kh, vh, sc, vt, ob, ctx Buffer }
+
+// newEG2Ops opens the device and compiles this file's kernels with extra (more kernels in the same precise library),
+// whose pipelines it builds into more, by kernel name.
+func newEG2Ops(extra string, more map[string]*Pipeline) (eg2Ops, error) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		return eg2Ops{}, fmt.Errorf("metal: %w", err)
+	}
+	vit, err := d.NewViT()
+	if err != nil {
+		return eg2Ops{}, err
+	}
+	lib, err := d.CompileLibraryPrecise(eg2MSL+extra, MSL3_1)
+	if err != nil {
+		return eg2Ops{}, fmt.Errorf("metal: compile the EmbeddingGemma 2 kernels: %w", err)
+	}
+	o := eg2Ops{d: d, q: d.NewCommandQueue(), vit: vit}
+	for _, b := range []struct {
+		name string
+		dst  *Pipeline
+	}{{"eg2_gelu_mul", &o.p.geluMul}, {"eg2_gelu_mul_ple", &o.p.geluMulPLE}, {"eg2_add", &o.p.add},
+		{"eg2_add_scale", &o.p.addScale}, {"eg2_rope", &o.p.rope}, {"eg2_headmajor", &o.p.headMajor},
+		{"eg2_vt_block", &o.p.vtBlock}, {"eg2_softmax_rows", &o.p.softmax}, {"eg2_scatter_head", &o.p.scatter}} {
+		if *b.dst, err = d.NewComputePipeline(lib, b.name); err != nil {
+			return eg2Ops{}, err
+		}
+	}
+	for name, dst := range more {
+		if *dst, err = d.NewComputePipeline(lib, name); err != nil {
+			return eg2Ops{}, err
+		}
+	}
+	o.arena = d.NewBufferBytes(eg2ArenaSlots * 256)
+	return o, nil
+}
+
 // eg2Accel is the Metal accelerator. One forward at a time (mu): its scratch and scalar arena are shared.
 type eg2Accel struct {
-	mu        sync.Mutex
-	d         *Device
-	q         Queue
-	vit       gpu.ViT
-	p         eg2Pipes
+	mu sync.Mutex
+	eg2Ops
 	cfg       embeddinggemma2.Config
 	embed     []float32
 	pleProj   Buffer // scaled by hidden^-0.5 at upload, as the CPU scales the product
@@ -189,8 +237,6 @@ type eg2Accel struct {
 	ropes     map[eg2RopeKey][2]Buffer // immutable cos/sin tables, by input length, head dim and theta
 	cap       int                      // scratch rows allocated
 	scr       eg2Scratch
-	arena     Buffer // one scalar per 256-byte slot, so no two dispatches in a command buffer share one
-	slot      int
 }
 
 type eg2Scratch struct{ x, xn, q, k, v, ctx, o, g, u, f, gg, pr, ple, out, qh, kh, vh, sc, vt, ob Buffer }
@@ -203,31 +249,15 @@ type eg2RopeKey struct {
 const eg2ArenaSlots = 1 << 14
 
 func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
-	d, err := CreateSystemDefaultDevice()
-	if err != nil {
-		return nil, fmt.Errorf("metal: %w", err)
-	}
-	vit, err := d.NewViT()
+	ops, err := newEG2Ops("", nil)
 	if err != nil {
 		return nil, err
 	}
-	lib, err := d.CompileLibraryPrecise(eg2MSL, MSL3_1)
-	if err != nil {
-		return nil, fmt.Errorf("metal: compile the EmbeddingGemma 2 kernels: %w", err)
-	}
-	a := &eg2Accel{d: d, q: d.NewCommandQueue(), vit: vit, ropes: map[eg2RopeKey][2]Buffer{}}
-	for _, b := range []struct {
-		name string
-		dst  *Pipeline
-	}{{"eg2_gelu_mul", &a.p.geluMul}, {"eg2_gelu_mul_ple", &a.p.geluMulPLE}, {"eg2_add", &a.p.add},
-		{"eg2_add_scale", &a.p.addScale}, {"eg2_rope", &a.p.rope}, {"eg2_headmajor", &a.p.headMajor},
-		{"eg2_vt_block", &a.p.vtBlock}, {"eg2_softmax_rows", &a.p.softmax}, {"eg2_scatter_head", &a.p.scatter}} {
-		if *b.dst, err = d.NewComputePipeline(lib, b.name); err != nil {
-			return nil, err
-		}
-	}
+	d := ops.d
+	a := &eg2Accel{eg2Ops: ops, ropes: map[eg2RopeKey][2]Buffer{}}
 	w := m.Weights()
 	a.cfg, a.embed = w.Config, w.Embed
+	a.eps = float32(a.cfg.RMSNormEps)
 	for _, ly := range w.Layers {
 		if ly.HeadDim > 512 {
 			return nil, fmt.Errorf("metal: EmbeddingGemma 2 head dim %d, over the attention kernel's 512", ly.HeadDim)
@@ -251,7 +281,6 @@ func newEG2Accel(m *embeddinggemma2.Model) (*eg2Accel, error) {
 			gate: up(ly.Gate), up: up(ly.Up), down: up(ly.Down), postFFNorm: up(ly.PostFFNorm), pleGate: up(ly.PLEGate),
 			pleProj: up(ly.PLEProj), plePostNorm: up(ly.PLEPostNorm)})
 	}
-	a.arena = d.NewBufferBytes(eg2ArenaSlots * 256)
 	return a, nil
 }
 
@@ -260,7 +289,7 @@ func (a *eg2Accel) Name() string { return "metal" }
 func (a *eg2Accel) Close() error { return nil }
 
 // u32 and f32 write one scalar into its own arena slot and return the slot to bind.
-func (a *eg2Accel) u32(v uint32) Buffer {
+func (a *eg2Ops) u32(v uint32) Buffer {
 	if a.slot >= eg2ArenaSlots {
 		panic("metal: EmbeddingGemma 2 scalar arena exhausted")
 	}
@@ -269,7 +298,7 @@ func (a *eg2Accel) u32(v uint32) Buffer {
 	a.slot++
 	return b
 }
-func (a *eg2Accel) f32(v float32) Buffer { return a.u32(math.Float32bits(v)) }
+func (a *eg2Ops) f32(v float32) Buffer { return a.u32(math.Float32bits(v)) }
 
 func (a *eg2Accel) grow(T int) {
 	if T <= a.cap {
@@ -290,13 +319,13 @@ func (a *eg2Accel) grow(T int) {
 	a.cap = T
 }
 
-func (a *eg2Accel) gemm(e *Encoder, A, B, C Buffer, M, N, K int) {
+func (a *eg2Ops) gemm(e *Encoder, A, B, C Buffer, M, N, K int) {
 	p, gx, gy, tgx, tgy := a.vit.GEMMF32Plan(M, N, K)
 	e.Dispatch2D(p, gx, gy, tgx, tgy, A, B, C, a.u32(uint32(M)), a.u32(uint32(N)), a.u32(uint32(K)))
 }
 
-func (a *eg2Accel) rms(e *Encoder, x, w, out Buffer, rows, dim int) {
-	e.Dispatch(a.vit.RMSNorm, rows*256, 256, x, w, out, a.u32(uint32(rows)), a.u32(uint32(dim)), a.f32(float32(a.cfg.RMSNormEps)))
+func (a *eg2Ops) rms(e *Encoder, x, w, out Buffer, rows, dim int) {
+	e.Dispatch(a.vit.RMSNorm, rows*256, 256, x, w, out, a.u32(uint32(rows)), a.u32(uint32(dim)), a.f32(a.eps))
 }
 
 // Forward runs the encoder over ids (see embeddinggemma2.Accelerator): the embedding gather on the host, then
@@ -360,7 +389,8 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 		if ly.w.Full {
 			win = 0
 		}
-		a.attention(e, T, hd, nKV, win)
+		a.attention(e, eg2AttnBufs{q: s.q, k: s.k, v: s.v, qh: s.qh, kh: s.kh, vh: s.vh, sc: s.sc, vt: s.vt, ob: s.ob, ctx: s.ctx},
+			T, c.Heads, hd, nKV, win)
 		a.gemm(e, s.ctx, ly.o, s.o, T, H, qd)
 		a.rms(e, s.o, ly.postAttnNorm, s.o, T, H)
 		e.Dispatch(a.p.add, T*H, 256, s.x, s.o, a.u32(uint32(T*H)))
@@ -397,12 +427,11 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 	return append([]float32(nil), s.out.Floats()[:T*E]...), layers, nil
 }
 
-// attention is one layer's bidirectional grouped-query attention over s.q/s.k/s.v into s.ctx, as matmuls: q, k and v
+// attention is one layer's bidirectional grouped-query attention over b.q/b.k/b.v into b.ctx, as matmuls: q, k and v
 // laid out head-major, then for each block of eg2Block query rows the scores Q·Kᵀ over only the keys the block can
 // reach (the window plus the block on a sliding layer), a windowed row softmax, and the output scores × V against the
 // block's values transposed (the GEMM is A·Bᵀ, so V must be [hd, keys]). Memory is a block's scores, never T x T.
-func (a *eg2Accel) attention(e *Encoder, T, hd, nKV int, win uint32) {
-	s, nH := &a.scr, a.cfg.Heads
+func (a *eg2Ops) attention(e *Encoder, s eg2AttnBufs, T, nH, hd, nKV int, win uint32) {
 	e.Dispatch(a.p.headMajor, T*nH*hd, 256, s.q, s.qh, a.u32(uint32(T)), a.u32(uint32(nH)), a.u32(uint32(hd)))
 	e.Dispatch(a.p.headMajor, T*nKV*hd, 256, s.k, s.kh, a.u32(uint32(T)), a.u32(uint32(nKV)), a.u32(uint32(hd)))
 	e.Dispatch(a.p.headMajor, T*nKV*hd, 256, s.v, s.vh, a.u32(uint32(T)), a.u32(uint32(nKV)), a.u32(uint32(hd)))

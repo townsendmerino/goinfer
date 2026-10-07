@@ -269,7 +269,7 @@ func (lm *loadedModel) gemma4VisionPrompt(tm *chat.Template, system string, turn
 	n := multimodal.Gemma4PooledTokens(positionIDs, lm.gemma4Enc.Cfg.PoolingKernelSize)
 	hiddenDim := lm.model.Config().HiddenDim
 	features := func() ([]float32, error) {
-		feats, err := lm.gemma4Enc.Forward(patches, positionIDs)
+		feats, err := multimodal.Gemma4TowerFeatures(lm.gemma4Enc, lm.gemma4Tower, patches, positionIDs)
 		if err != nil {
 			return nil, fmt.Errorf("gemma4 vision encoder: %w", err)
 		}

@@ -26,16 +26,21 @@ const qwen3MaxImageTokens = 1024
 // qwen3Tower is a Qwen3.5+ vision tower that loads on first use. encoder() is safe for concurrent
 // callers; a failed load is remembered rather than retried on every request.
 type qwen3Tower struct {
-	dir   string
-	quant bool
-	once  sync.Once
-	enc   *vision.Qwen3VisionEncoder
-	err   error
+	dir    string
+	mmproj bool // dir is a GGUF mmproj file, not a checkpoint directory (P8b)
+	quant  bool
+	once   sync.Once
+	enc    *vision.Qwen3VisionEncoder
+	err    error
 }
 
 func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
 	q.once.Do(func() {
-		q.enc, q.err = vision.LoadQwen3VisionEncoder(q.dir, q.quant)
+		if q.mmproj {
+			q.enc, q.err = vision.LoadQwen3VisionEncoderMMProj(q.dir, q.quant)
+		} else {
+			q.enc, q.err = vision.LoadQwen3VisionEncoder(q.dir, q.quant)
+		}
 		if q.err != nil {
 			q.err = fmt.Errorf("load qwen3.5 vision tower (%s): %w", q.dir, q.err)
 		}
@@ -94,6 +99,45 @@ func (s *server) loadQwen35VisionTower(dir string, int8Tower bool) error {
 	if err != nil {
 		return err
 	}
+	return s.attachQwen35Tower(tower, pp, dir)
+}
+
+// setupQwen35MMProj is setupQwen35Vision for a GGUF mmproj (P8b, docs/multimodal.md F5): the projector must be a
+// Qwen3.5+ one (qwen3vl_merger, aikit's refusals), its output width the text model's hidden width, and the text model a
+// Qwen3.5+ one; the preprocessing is the family's own config (an mmproj carries none), under the same serve cap.
+func setupQwen35MMProj(path, modelType string, textHidden int, int8Tower bool) (*qwen3Tower, multimodal.QwenPreprocessConfig, error) {
+	if modelType != "qwen3_5" && modelType != "qwen3_5_moe" {
+		return nil, multimodal.QwenPreprocessConfig{}, fmt.Errorf("-vision %s: a GGUF mmproj is supported for Qwen3.5+ models only; the model is %q", path, modelType)
+	}
+	vc, err := vision.ReadQwen3MMProjConfig(path)
+	if err != nil {
+		return nil, multimodal.QwenPreprocessConfig{}, fmt.Errorf("-vision %s: %w", path, err)
+	}
+	if vc.OutHiddenSize != textHidden {
+		return nil, multimodal.QwenPreprocessConfig{}, fmt.Errorf("-vision %s: the projector emits %d wide and the model's hidden width is %d: this mmproj belongs to another model size", path, vc.OutHiddenSize, textHidden)
+	}
+	pp := multimodal.Qwen35FamilyPreprocessConfig()
+	if limit := qwen3MaxImageTokens * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit {
+		pp.MaxPixels = limit
+	}
+	return &qwen3Tower{dir: path, mmproj: true, quant: int8Tower}, pp, nil
+}
+
+// loadQwen35MMProj attaches a Qwen3.5+ tower from a GGUF mmproj to the single loaded model.
+func (s *server) loadQwen35MMProj(path string, int8Tower bool) error {
+	for _, lm := range s.models {
+		c := lm.model.Config()
+		tower, pp, err := setupQwen35MMProj(path, c.ModelType, c.HiddenDim, int8Tower)
+		if err != nil {
+			return err
+		}
+		return s.attachQwen35Tower(tower, pp, path)
+	}
+	return fmt.Errorf("-vision %s: no model is loaded", path)
+}
+
+// attachQwen35Tower wires a (not yet loaded) Qwen3.5+ tower and its preprocessing into every loaded model.
+func (s *server) attachQwen35Tower(tower *qwen3Tower, pp multimodal.QwenPreprocessConfig, dir string) error {
 	for _, lm := range s.models {
 		lm.qwen3 = tower
 		lm.qwenPP = pp

@@ -1,0 +1,16 @@
+=== RUN   TestG4AMetal_realParity
+    gemma4_audio_real_test.go:97: short   9 soft tokens: AM1 worst soft-token cosine 1.000000000 against the CPU tower; tower Metal 165ms, CPU 73ms (exploratory)
+    gemma4_audio_real_test.go:97: mid    59 soft tokens: AM1 worst soft-token cosine 1.000000000 against the CPU tower; tower Metal 71ms, CPU 232ms (exploratory)
+    gemma4_audio_real_test.go:97: long  196 soft tokens: AM1 worst soft-token cosine 0.999999999 against the CPU tower; tower Metal 176ms, CPU 766ms (exploratory)
+    gemma4_audio_real_test.go:125: item 0 short prompt ""     text false: AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 1 short prompt "query" text false: AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 2 short prompt ""     text true : AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 3 mid   prompt ""     text false: AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 4 mid   prompt "query" text false: AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 5 mid   prompt ""     text true : AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 6 long  prompt ""     text false: AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 7 long  prompt "query" text false: AM2 cosine 1.000000000
+    gemma4_audio_real_test.go:125: item 8 long  prompt ""     text true : AM2 cosine 1.000000000
+--- PASS: TestG4AMetal_realParity (8.10s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	8.722s

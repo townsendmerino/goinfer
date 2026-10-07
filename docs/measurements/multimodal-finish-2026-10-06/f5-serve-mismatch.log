@@ -1,0 +1,11 @@
+stream-weights: transcoding qwen3.5-0.8b-unsloth-Qwen3.5-0.8B-Q8_0.gguf → qwen3.5-0.8b-unsloth-Qwen3.5-0.8B-Q8_0.int4.e4h.cpu-amd64.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (418 MB) in 10s
+swap guard (load): not armed for /home/francis/models/mmproj/qwen3.5-0.8b-unsloth-Qwen3.5-0.8B-Q8_0.int4.e4h.cpu-amd64.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+loaded "qwen3.5-0.8b-unsloth-Qwen3.5-0.8B-Q8_0": 24-layer model (vocab 248320) in 5ms [chat: chatml, thinking: template default off, serving template, tools: goinfer's own form (-tool-format template for the model's own)]
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: 262144 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 262144-token cap needs 6.0 GB KV (weights 0.4 GB, budget 40.8 GB, 34.8 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+-vision /home/francis/models/mmproj/qwen3.5-9b-ollama-projector.gguf: the projector emits 4096 wide and the model's hidden width is 1024: this mmproj belongs to another model size

@@ -110,13 +110,17 @@ func (m *Model) Weights() Weights {
 func RopeTables(T, hd int, theta float64) (cos, sin []float32) { return ropeTables(T, hd, theta) }
 
 // UseAccelerator makes the encoder run its forward on the named accelerator; Embed and the aikit methods then use it,
-// and the CPU forward is no longer called. It returns the accelerator, or an error leaving the CPU path in place.
+// and the CPU forward is no longer called. The vision tower, loaded or not yet, runs on a tower accelerator of the same
+// name when one is registered (RegisterVisionAccelerator). It returns the accelerator, or an error leaving the CPU path
+// in place.
 func (e *Encoder) UseAccelerator(name string) (Accelerator, error) {
 	a, err := e.m.NewAccelerator(name)
 	if err != nil {
 		return nil, err
 	}
 	e.accel = a
+	e.bindVisionAccel() // towers already loaded move too
+	e.bindAudioAccel()
 	return a, nil
 }
 

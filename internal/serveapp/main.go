@@ -35,6 +35,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1142,6 +1143,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	if len(cfg.models) != 1 {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
+	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
+		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend))
+	}
 	mt := visionModelType(dir)
 	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.load.Backend)
 	if mt == "qwen2_5_vl" {
@@ -1154,7 +1158,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels)
 	}
 	if mt == "gemma4" {
-		return s.loadGemma4VisionTower(dir, int8Tower)
+		return s.loadGemma4VisionTower(dir, int8Tower, cfg.load.Backend, cfg.requireBE)
 	}
 	enc, err := vision.LoadEncoder(dir, int8Tower)
 	if err != nil {
@@ -1290,7 +1294,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 // vision path either way: aikit's Gemma4Encoder has no EnableResident method
 // (unlike vision.Encoder), so --backend webgpu has no effect on this tower
 // beyond the optional int8 CPU weight format.
-func (s *server) loadGemma4VisionTower(dir string, int8Tower bool) error {
+func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend string, require bool) error {
 	for _, lm := range s.models {
 		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" && bd != "vision" {
 			return fmt.Errorf("gemma4 vision: %q sets use_bidirectional_attention=%q, not the supported %q value; GenerateGemma4VL only implements the E2B/E4B-class causal case (unset) and the 26B-A4B/31B-class %q blockwise case", lm.name, bd, "vision", "vision")
@@ -1304,8 +1308,12 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool) error {
 	if err != nil {
 		return fmt.Errorf("gemma4 vision preprocessor config (%s): %w", dir, err)
 	}
+	tower, where, err := chooseGemma4Tower(enc, int8Tower, backend, require)
+	if err != nil {
+		return err
+	}
 	for _, lm := range s.models {
-		lm.gemma4Enc = enc
+		lm.gemma4Enc, lm.gemma4Tower = enc, tower
 		lm.gemma4MaxSoft = pp.MaxSoftTokens
 		lm.gemma4ImgTok = -1
 		if id, ok := lm.tk.TokenID(multimodal.Gemma4ImageSoftToken); ok {
@@ -1314,9 +1322,39 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool) error {
 		if lm.gemma4ImgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.Gemma4ImageSoftToken)
 		}
-		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d) from %s\n", lm.name, lm.gemma4MaxSoft, lm.gemma4ImgTok, dir)
+		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d, tower on %s) from %s\n", lm.name, lm.gemma4MaxSoft, lm.gemma4ImgTok, where, dir)
 	}
 	return nil
+}
+
+// chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal and this binary registers a Metal
+// tower (docs/multimodal.md, "Finishing this doc", F2), and says where it runs. The Metal tower is float32, so an int8
+// tower (-vision-quant int8) stays on the CPU; a tower that fails to start falls back to the CPU with the reason,
+// unless -require-backend asks for a refusal. Other backends run it on the CPU.
+func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
+	if backend != "metal" {
+		return nil, "CPU", nil
+	}
+	if int8Tower {
+		if require {
+			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 Metal tower is float32; -vision-quant int8 keeps it on the CPU")
+		}
+		return nil, "CPU (-vision-quant int8; the Metal tower is float32)", nil
+	}
+	if !slices.Contains(multimodal.Gemma4Towers(), "metal") {
+		if require {
+			return nil, "", fmt.Errorf("-require-backend: this binary has no Metal Gemma 4 tower")
+		}
+		return nil, "CPU (no Metal tower in this binary)", nil
+	}
+	t, err := multimodal.NewGemma4Tower("metal", enc)
+	if err != nil {
+		if require {
+			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 tower could not start on Metal: %w", err)
+		}
+		return nil, "CPU (Metal declined: " + err.Error() + ")", nil
+	}
+	return t, "Metal", nil
 }
 
 // splitShardSuffix is a split GGUF's first-shard suffix, "-00001-of-00004.gguf".
@@ -1763,7 +1801,7 @@ func visionPathError(dir string) error {
 		return nil
 	}
 	if strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return fmt.Errorf("-vision %s: a GGUF mmproj file is not supported yet — -vision takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md", dir)
+		return nil // a GGUF mmproj: loadVision routes it (Qwen3.5+ only, P8b), with its own refusals
 	}
 	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
 }

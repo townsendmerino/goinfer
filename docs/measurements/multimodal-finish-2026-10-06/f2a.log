@@ -1,0 +1,9 @@
+=== RUN   TestG4VMetal_gemma4E2B
+    gemma4_vision_e2b_real_test.go:41: E2B tower: hidden 768, 16 layers, clipped true, standardize false, text width 1536
+    gemma4_vision_e2b_real_test.go:68: gemma3_preprocess_image.png      2304 patches: worst soft-token cosine 1.000000000; tower Metal 1.324s, CPU 5.76s (exploratory)
+    gemma4_vision_e2b_real_test.go:68: qwen25vl_preprocess_image.png    2340 patches: worst soft-token cosine 1.000000000; tower Metal 2.247s, CPU 5.341s (exploratory)
+    gemma4_vision_e2b_real_test.go:68: glm_ocr/formula.png              2430 patches: worst soft-token cosine 1.000000000; tower Metal 2.169s, CPU 5.858s (exploratory)
+    gemma4_vision_e2b_real_test.go:68: glm_ocr/table.png                2394 patches: worst soft-token cosine 1.000000000; tower Metal 2.325s, CPU 6.396s (exploratory)
+--- PASS: TestG4VMetal_gemma4E2B (33.10s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	33.735s

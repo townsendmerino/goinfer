@@ -1,0 +1,6 @@
+=== RUN   TestGemma4VLReal_E2B
+loaded Gemma 4 vision tower for "gemma4-real-vl" (max 280 soft tokens/image, soft-token id 258880) from /home/francis/models/gemma-4-E2B-unq
+    gemma4_vl_real_test.go:149: E2B real VL answer: "```json\n{\n  \"color\": \"red\"\n}\n```"
+--- PASS: TestGemma4VLReal_E2B (108.04s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	108.689s

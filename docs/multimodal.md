@@ -1,6 +1,6 @@
 # Multimodal (vision-language) for goinfer — plan
 
-> **Status (2026-10-02, audited: `docs/measurements/multimodal-audit-2026-10-02.md`): five families read images, and the GPU story differs by family and by backend.
+> **Status (2026-10-02, audited: `docs/measurements/multimodal-audit-2026-10-02.md`; table and bullets brought up to date 2026-10-06, see "2026-10-06" notes): five families read images, and the GPU story differs by family and by backend.
 > Everything below §"2026-09 update" is the June plan kept as the design record; it describes an earlier, narrower state than this block.**
 > The per-family, per-backend table below replaces the 2026-09-15 paragraph (M-54), which is kept further down with each wrong sentence corrected in place.
 > Every cell carries a label in the audit record: **run** = run on `nobara-pc` on 2026-10-02 (CUDA and WebGPU only), **read** = read from code and never run
@@ -14,10 +14,10 @@
 > | | CPU | CUDA | Metal | WebGPU |
 > |---|---|---|---|---|
 > | **Gemma 3** | CPU / CPU | **resident tower (goinfer's own) / resident decode** (run) | CPU / resident decode through the `UploadKV` bridge (read) | resident tower / resident decode (run) |
-> | **Gemma 4 E2B, E4B** | CPU / CPU | CPU (int8) / **CPU, the whole model** (run) | CPU / CPU (read) | CPU (int8) / CPU (read) |
-> | **Gemma 4 26B-A4B, 31B** | CPU / CPU | CPU (int8) / CPU prefill, then resident decode (26B run; 31B unverified) | CPU / bridge (read) | CPU (int8) / unverified |
-> | **Qwen2.5-VL** | CPU / CPU | CPU (int8) / resident m-RoPE prefill and decode (run) | CPU / bridge decode (read) | CPU (int8) / bridge decode (run) |
-> | **Qwen3.5+ dense** | CPU / CPU | CPU (int8) / **CPU prefill and CPU decode** (run) | CPU / CPU (read) | CPU (int8) / CPU (read) |
+> | **Gemma 4 E2B, E4B** | CPU / CPU | CPU / **CPU, the whole model** (run) | CPU / CPU (read) | CPU / CPU (read) |
+> | **Gemma 4 26B-A4B, 31B** | CPU / CPU | CPU / CPU prefill, then resident decode (26B run; 31B unverified) | CPU / bridge (read) | CPU / CPU: WebGPU declines Gemma 4 MoE, `gpu/residency.go` (26B, read); 31B unverified |
+> | **Qwen2.5-VL** | CPU / CPU | CPU / resident m-RoPE prefill and decode (run) | CPU / bridge decode (read) | CPU / bridge decode (run) |
+> | **Qwen3.5+ dense** | CPU / CPU | CPU / **resident image prefill and decode** since 2026-10-06, P26b (run) | CPU / CPU (read) | CPU / CPU (read) |
 > | **GLM-OCR** | CPU (f32) / CPU | CPU (f32) / resident decode (run) | CPU (f32) / CPU (read) | CPU (f32) / staged, no resident KV (run) |
 >
 > The CPU column: tiny-fixture tests ran today (41 top-level `--- PASS`, 0 skipped); the real-checkpoint CPU results are recorded (Gemma 3 31.3 s/image 2026-09-08, Gemma 4
@@ -25,14 +25,16 @@
 >
 > - **Tower.** Only Gemma 3's tower ever runs on a GPU, on CUDA and WebGPU. aikit now ships `gpu/qwencuda`, `gpu/qwenmetal`, `gpu/visioncuda` and `gpu/visionmetal`
 >   (and a Qwen resident seam), but **goinfer imports none of them** and serve calls `EnableResident` in exactly one place (`internal/serveapp/main.go`, the Gemma 3
->   tower, on `--backend cuda|webgpu`). So the Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR towers are CPU towers on every backend, and **Metal runs no tower at all**
->   (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal tower was not wired; the 2026-09-30 audit found that unchanged).
+>   tower, on `--backend cuda|webgpu`). So the Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR towers are CPU towers on every backend, and **no generative family's tower runs
+>   on Metal** (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal SigLIP tower was not wired; the 2026-09-30 audit found that unchanged). **2026-10-06:** Metal does
+>   run a Gemma 4 vision tower and the `gemma4_audio` tower now, goinfer's own (`metal/gemma4_vision.go`, `metal/gemma4_audio.go`), but only for EmbeddingGemma 2's embeddings
+>   (`docs/tasks/task-embeddinggemma2.md`, Phases VM and A). Wiring the vision one to Gemma 4's own image input is in "Finishing this doc" below.
 > - **int8.** `--backend cuda|webgpu` makes Gemma 3's tower int8 whatever `-vision-quant` says, because only its resident tower has a GPU path and that path needs int8 (`towerInt8` in
 >   `internal/serveapp/main.go`). Every other tower (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`; until 2026-10-02 the first three were forced to
 >   int8 under those backends, which measured not faster and far from f32 (`docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). On CPU and Metal every tower is f32 unless asked.
 > - **Decoder.** Gemma 3 and Qwen2.5-VL decode resident after an image on every backend that has `UploadKV` and `ForwardMRoPE` (CUDA, WebGPU, Metal); only CUDA also has a
 >   resident image prefill (`ResidentImagePrefill`, `ResidentMRoPEPrefill`), the others prefill the image on the CPU and upload the KV. Gemma 4 26B/31B uses the same bridge
->   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:279`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
+>   after a CPU bidirectional prefill. **Qwen3.5+ is CPU prefill and CPU decode, except on CUDA for the dense hybrids** (since 2026-10-06, P26): a recurrent family refuses every resident REUSE branch and the UploadKV bridge (`decoder/generate_vl.go:285`), but a resident that declares `ResidentHybridMRoPEPrefill` (the CUDA one, dense hybrids only; an MoE hybrid stays on the CPU) runs the image prefill and the decode on the GPU. A repeat of the same image re-prefills (on the GPU, a fraction of a second) and, since the serve feature cache, no longer re-runs the tower. On the CPU the prefill is batched (`runLayersQwen35N`), about 3x faster than the old per-token loop. **Gemma 4 E2B/E4B are CPU for the whole model** on every backend (no backend declares `gemma4-e-model`). GLM-OCR is
 >   resident on CUDA only (pairwise rope); on WebGPU it runs the staged path, on Metal the CPU.
 > - **Release binaries.** `goinfer-serve-linux-{amd64,arm64}` is built from `cuda/cmd/serve` with `CGO_ENABLED=0 -tags cuda`: **CUDA is cgo-free, so a downloaded Linux
 >   binary on an NVIDIA box does Gemma 3 images with the resident tower** (run: `encoder int8/cuda-resident`, 4.9 s for a cold image). The darwin binaries carry Metal (no tower,
@@ -49,8 +51,9 @@
 >   Gemma 3's two CUDA decoder gates used to skip silently on an 8 GB box (the unpinned 16k-position context did not fit); they pin a 1024-position context now and ran 2026-10-02
 >   (resident decode vs CPU after a real image: cosine 0.998271; resident image prefill vs CPU: 0.996878; both argmax-identical).
 >
-> No audio in, no video, no image out. (The audit did not cover `serve check`, the fit guard, the recommendation registry or the cold-user protocol; see the correction to the old
-> sentence about them below.) The next program is §"2026-09 update" below.
+> No audio into a generative model, no video, no image out. (**2026-10-06:** EmbeddingGemma 2 takes audio and images at `/v1/embeddings`; Gemma 4's own audio input is
+> P7's audio half, below.) The audit did not cover `serve check`, the fit guard, the recommendation registry or the cold-user protocol; see the correction to the old
+> sentence about them below. The next program is §"2026-09 update" below; what is left of it, and the order, is §"Finishing this doc (2026-10-06)" at the end of it.
 >
 > **The 2026-09-15 paragraph (M-54) as it stood, each wrong sentence corrected in place (2026-10-02):**
 >
@@ -65,7 +68,7 @@
 > regardless of which family.~~ **WRONG: only WebGPU needs cgo. The Linux release binary is `CGO_ENABLED=0` and carries the CUDA tower; it is the macOS and Windows binaries, and every family
 > but Gemma 3, that run the tower at CPU speed.** CPU tower cost is ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in `docs/benchmarks.md` — flat vs. the
 > pre-measurement baseline, not a regression) *(still the recorded CPU figure)*. No audio in, no video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
-> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/servecheck/check.go:391`; the registry and the cold-user protocol still have none)*.
+> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/servecheck/check.go:391`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/tasks/task-first-hour.md`, run 2026-10-05)*.
 >
 > **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** GLM-OCR reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded on the first image)
 > feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered
@@ -121,7 +124,7 @@ Three things that make the June plan's assumptions stale, in the direction of *m
 
 ### The gaps, ranked by who hits them
 
-0. **RESOLVED 2026-09-08 (CUDA + WebGPU; Metal deferred).** `GenerateVL`/`GenerateQwenVL` used to
+0. **RESOLVED 2026-09-08 (CUDA + WebGPU; Metal: built 2026-09-17, never run — see the 2026-10-02 correction below).** `GenerateVL`/`GenerateQwenVL` used to
    be stateless and CPU-only by design (`decoder/generate_vl.go`'s old doc comments; the premise
    was inherited, not re-derived, when V-11 fixed the race around it — `docs/completed/review-2026-09-04.md`)
    — they never touched `m.resident` at all, so on a GPU box an image turn ran the WHOLE turn on
@@ -198,7 +201,8 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    blocked regardless of the floor (chunk N's in-block rows need chunk N+1's not-yet-computed K/V
    at every layer — no pass ordering can supply that). Remaining out of scope: `attn_fused` L2 for
    image blocks (as above), Metal/WebGPU.
-1. **A downloaded binary cannot use the GPU for images** (Metal has no vision tower yet; CUDA's
+1. **A downloaded binary cannot use the GPU for images** — as of 2026-10-06 the accurate title is **only Gemma 3 has a GPU tower
+   in a generative path** (Metal has no generative-family vision tower yet; CUDA's
    and WebGPU's are both cgo — reached only via each backend's own submodule build, `cuda/cmd/serve`
    / `-tags gpu`, never the pure-Go root binary a release download is). **CORRECTED 2026-10-02: CUDA is
    not cgo.** The Linux release binary is `cuda/cmd/serve` built `CGO_ENABLED=0 -tags cuda`, so it carries the resident Gemma 3
@@ -208,7 +212,7 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    `EnableResident()` into its load path, 2026-09-15 — see §P6's own CUDA entry below, which was
    itself stale on exactly this point. Every Mac and every Linux release-binary user still gets
    ~minutes per image; a `-tags cuda`/`-tags gpu` self-build on Linux does not.
-2. **Vision is one family.** ~~Gemma 4 — the family most of the resident work went into — is
+2. **DONE: vision is five families** (2026-10-06 status; the entry is kept as written). **Vision is one family.** ~~Gemma 4 — the family most of the resident work went into — is
    text-only here~~ **CLOSED for CPU serving 2026-09-09/10 (P7 Phases B+C): Gemma 4 E2B/E4B
    (Phase B) AND 26B-A4B/31B (Phase C, the bidirectional-block-attention case) now serve real
    images, CPU-only, both gated at cosine 1.0 on real end-to-end fixtures** — see §P7 below for
@@ -220,11 +224,17 @@ Three things that make the June plan's assumptions stale, in the direction of *m
    Qwen-VL, the most-pulled VL line, is still text-only here. **CORRECTED 2026-10-02: Qwen2.5-VL
    has served images since P5; "Qwen-VL" here meant Qwen3-VL, which is still its text decoder only (Qwen3.5+ images shipped as P8a). Vision is five families now.**
 3. **No GGUF `mmproj`.** Ollama/llama.cpp users have their VL models as GGUF + mmproj; goinfer
-   reads neither half of that pair for vision.
+   reads neither half of that pair for vision. **(2026-10-06: DONE for Qwen3.5+, P8b: `--vision <mmproj>.gguf` beside a Qwen3.5+
+   GGUF model, unsloth's files and Ollama's projector blobs both, bit for bit with the safetensors tower; §"Finishing this doc",
+   F5. Other families' mmproj files are refused by name.)**
 4. **Image turns defeat prefix reuse and the fit guard.** Agent harnesses with screenshots are the
-   multimodal use case that matters, and both of the pieces built for agent loops skip them.
+   multimodal use case that matters, and both of the pieces built for agent loops skip them. **(2026-10-06: mostly DONE.** Prefix
+   reuse over an image block shipped as P9(a), 2026-09-08, measured 159.98x; the fit guard prices towers since P9(b). Not covered:
+   the recurrent Qwen3.5+ families, by design (state cannot be rewound to an image boundary), and Gemma 4, which commits its image
+   block but has no reuse fast path; that one is below.)
 5. **No audio in.** Gemma 4's audio encoder makes this a tower port on a family already resident,
-   not a new architecture.
+   not a new architecture. **(2026-10-06: the tower is built** — aikit `audio`, gated at 1.000000000 on EmbeddingGemma 2, on the CPU
+   and Metal. Gemma 4 E2B/E4B's own audio input to the model is not wired; see P7's audio half.)
 
 ### The program — P6 to P11, each independently shippable, each with a gate that can fail
 
@@ -374,8 +384,8 @@ number is published without provenance.
   **Phase A (vision, image path, CPU) DONE, 2026-09-09 — the "gemma4" plain family
   (E2B/E4B/26B-A4B/31B), NOT `gemma4_unified`.** New `vision.Gemma4Encoder` +
   `vision.Gemma4Preprocess` in aikit (`~/mycode/aikit/aikit/vision/gemma4_encoder.go`,
-  `gemma4_preprocess.go` — aikit v1.38.0+, not yet released as a tagged version; goinfer's
-  `go.work` points at the local checkout for now). Every load-bearing detail was checked against
+  `gemma4_preprocess.go` — aikit v1.38.0+; released and pinned since, so the old note about `go.work` pointing at a local
+  checkout no longer applies). Every load-bearing detail was checked against
   the REAL E2B-it safetensors header, not assumed from source reading alone — this caught two
   things a source-only read would have missed: `use_clipped_linears=true` on the real checkpoint
   (genuine finite per-tensor clamp bounds like `[-6.375,6.3125]` on every attention/MLP projection,
@@ -426,8 +436,13 @@ number is published without provenance.
   **EmbeddingGemma 2 now has the reference's resize** (`embeddinggemma2/preprocess.go`, default since 2026-10-06):
   torchvision's antialiased bicubic on uint8, bit-identical to it on the four gate images and twelve synthetic cases,
   which brought its image embeddings to 1.000000000. It lives in goinfer, not aikit, so Gemma 4's image input still
-  resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both.
-  Video (Phase C in the roadmap above) and audio (Phase D/E) remain untouched. **Audio has a second consumer queued:**
+  resizes bilinearly; moving it into aikit's `Gemma4Preprocess` would serve both. **A Metal Gemma 4 tower exists
+  too** (`metal/gemma4_vision.go`, 2026-10-06, from aikit's `Gemma4Encoder.Weights()` export), so far used only by
+  EmbeddingGemma 2; Gemma 4's own image input could take it the same way.
+  **Audio's tower is built (2026-10-06):** aikit `audio` runs `gemma4_audio` (the log-mel and the conformer) and
+  matches transformers on EmbeddingGemma 2 at 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A). Gemma 4
+  E2B/E4B declare the same `gemma4_audio` tower, but it has not been run against their checkpoints (their widths,
+  e.g. the embedder's output, are unread); that, the decoder-side splice and the audio prompt layout are what is left. Video (Phase C in the roadmap above) remains untouched. **Audio had a second consumer queued:**
   EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
   from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.
 
@@ -844,13 +859,17 @@ number is published without provenance.
   identical on all three images, worst-row tower cosine 0.999999987 on the third), and aikit v1.52.0 is tagged and pinned by all five modules. Still open (as of this record; resident image prefill and decode for the dense hybrids on CUDA landed 2026-10-06, `docs/measurements/p26b-cuda-hybrid-image-prefill-2026-10-06/`): resident image decode (a recurrent family
   refuses every resident branch, so Qwen3.5+ images are CPU prefill and CPU decode on every backend, run on CUDA 2026-10-02), the MoE checkpoint (serve accepts the model type; no image has
   been run through it), resize fidelity, and the think-block decision. The gates ran f32, and since 2026-10-02 so does serve unless `-vision-quant int8` is given.
-  **P8a STATUS 2026-09-30 (local commits, NOT pushed).** G0 (tower vs HF), G0b (preprocessing), G1 (tiny fixture),
+  **2026-10-06: the think-block decision is DONE** (`docs/tasks/task-qwen35-think-prompt-2026-09.md`: decided and built 2026-09-30, serve's default is
+  `-thinking template`). Left of that list: the MoE checkpoint, and resize fidelity (§"Finishing this doc").
+  **P8a STATUS 2026-09-30 (pushed since, `bfd7b554`; the "Open" list below is superseded by the UPDATE above).** G0 (tower vs HF), G0b (preprocessing), G1 (tiny fixture),
   G3 (text path byte-identical), G2 (0.8B, 3 images, 32 tokens) and G4 (serve) all met on the 0.8B; results in
   `docs/measurements/p8a-qwen35-vl-2026-09/{g0-g0b-results,g1-g4-results}.md`, bars and two amendments in
   `preregistration.md`. Open: the 9B leg (night job `run-g2-9b.sh`), aikit tag + five-module pin bump (perfgate is a
   night item), resident image decode, the MoE checkpoint, resize fidelity, and an owner decision on Qwen3.5's
   generation-prompt think block (finding 1 in the results).
-- **P9 · Image turns in the agent loop.** (a) Prefix reuse over image blocks: an image's embedding
+- **P9 · Image turns in the agent loop.** **(2026-10-06: (a), (b) and (c) are DONE.** (a) and (c) shipped in `3a1af8b7`,
+  2026-09-08, and (a) measured 159.98x in `a27a9014`; the doc never marked them. (d) is no longer blocked, below.)
+  (a) Prefix reuse over image blocks: an image's embedding
   block is a pure function of its bytes and the tower, so key the resident bookkeeping on a hash of
   the image bytes standing in for a token id at each placeholder position — a reused prefix with an
   unchanged image is then exactly the text case, and a changed image invalidates from its first
@@ -894,6 +913,9 @@ number is published without provenance.
   no recommendation, not better. A real fix needs either a new safetensors-directory download mode
   in `pull`, or GGUF `mmproj` support landing first (P8b) so a GGUF-based recommendation would mean
   something. Left as a named, tracked gap rather than a hollow entry.
+  **2026-10-06: unblocked.** `pull` fetches `hf:<repo>:safetensors` directories since `20e113ba` (2026-10-03). What is left is the
+  registry's schema (one `File` per family row) and which checkpoint to recommend; that is an owner decision, listed in
+  §"Finishing this doc".
 - **P10 · Breadth on the small end.** LFM2.5-VL-3B (SigLIP2 on `lfm2`), Ministral 3's Pixtral tower
   (the `ministral3` decoder exists; the tower is in the same checkpoint), North Micro Vision 2.4B.
   Each is a tower descriptor + projector on a decoder already at parity; do them in that order,
@@ -909,6 +931,29 @@ number is published without provenance.
   own; that is a positioning call for the roadmap, and this doc records the technical cost of each
   branch. Speech synthesis and image generation stay out of scope: different model classes, no
   overlap with the descriptor pattern.
+  **Written 2026-10-06 (F4):** `docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`, a desk read
+  from primary sources (HF configs and cards, transformers' modeling code, papers), with unverified points marked.
+  What it found:
+  - **The front end is the first fork.** Whisper, Voxtral, Qwen3-ASR and Qwen3-Omni all use transformers'
+    `WhisperFeatureExtractor`, which differs from aikit's Gemma log-mel at every stage: a 400-point FFT, power not
+    magnitude, Slaney mel with area norm, log10 with a clamp, the last frame dropped. So a second, Whisper-style front
+    end (S) is shared by four families.
+  - **Voxtral's encoder is Whisper large-v3's**, and its decoder is `llama`.
+  - **The cheapest ASR-grade audio-in is Qwen3-ASR** (0.6B/1.7B, Apache-2.0): its decoder is `qwen3` at full parity,
+    and audio arrives through the soft-token splice goinfer already has, so the new work is an encoder and a projector
+    (M).
+  - **Pure-Go Whisper** needs a cross-attention decoder (a new model class, M) and Whisper's decode policy
+    (timestamps, long-form windows, temperature fallback; M-L). Short-form greedy turbo is about M; product-grade
+    Whisper is L, mostly the decode policy.
+
+  Options, as costs, not a decision (the owner's):
+  - **(a)** stop at Gemma 4 (parked item 1);
+  - **(b)** the Whisper front end plus Qwen3-ASR (S + M);
+  - **(c)** the front end plus the Whisper encoder (S + S-M; buys Voxtral), with the decoder and policy after it for
+    pure-Go Whisper (M + M-L);
+  - **(d)** Voxtral Realtime (L), only if streaming is the product.
+
+  The front end is no-regret under (b) or (c).
 
 **Order.** P6 → P7 (image, then audio) → P9 (a, b, c, d) → P8 → P10 → P11. P6 first because it is
 a week of kernel plumbing that makes every later phase measurable at a usable speed; P7 before P8
@@ -924,6 +969,175 @@ current binary, paired against the previous phase, and retires the June figures 
 fetching (still an SSRF primitive; still a flag with the `--allow-admin` posture if ever), and any
 tower that is not on a decoder already at parity.
 
+### Finishing this doc (2026-10-06), planned and pre-registered before any of it runs
+
+The owner, 2026-10-06, after EmbeddingGemma 2's audio: finish this doc, then tag aikit once, then merge the GPU branch
+(`eg2-gpu-multimodal`). Scope, by the owner's choice: the doc's stale claims corrected (done in this edit, from a verified
+inventory of every item against the code), the small builds below, **and P8b (GGUF `mmproj`)**, all before the single aikit
+tag. The bicubic resize moves into aikit (owner). The large builds are parked after the tag, in the order at the end.
+
+**Constraint found 2026-10-06:** the Mac has 3.4 GiB free (the data volume is 100% full). Anything that needs a new checkpoint on
+the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads for P8b fit.
+
+- **F1 — the reference resize for Gemma 4, in aikit.** `embeddinggemma2/preprocess.go`'s bit-exact torchvision antialiased
+  bicubic moves into aikit `vision` and becomes `Gemma4Preprocess`'s default (bilinear stays selectable). EmbeddingGemma 2 and
+  Gemma 4's own image input then share it. Gates:
+  - **F1a:** aikit's resize equals torchvision 0.29.1's on the 12 synthetic cases (`testdata/embeddinggemma2-resize/golden.json`
+    moved to aikit's testdata), every value. Three planted defects (no rounding offset, a = -0.75, no antialias widening) red.
+  - **F1b:** EmbeddingGemma 2's `TestReal_vision` through aikit's resize: R1 (0 pixels differ) and R2 (12 of 12 at
+    1.000000000) as before.
+  - **F1c:** Gemma 4's processor: aikit's pixels equal transformers' `Gemma4ImageProcessor`'s (processor only, no model) on
+    four images of different aspect ratios, none of them already at their target size: 0 values differ.
+  - **F1d, on nobara:** Gemma 4 E2B's real image gate (P7 Phase E) re-run with the new default; it must pass its existing bar.
+
+  **F1 read 2026-10-06: PASS** (aikit `eddf5f2`, `f312a17`; goinfer `c2a9fa6a`, `1a86c6c2`).
+  - **F1a:** 12 of 12 torchvision cases exact in aikit, and the three defects red (12, 12 and 10 cases).
+  - **F1b:** EmbeddingGemma 2 through aikit's resize: 0 pixels differ, and 12 of 12 at 1.000000000.
+  - **F1c:** Gemma 4's pixels equal transformers' on all four images, at the float32 bit as well as in uint8.
+  - **F1d:** passes on the exact pixels: "...a solid, bright red.<channel|>Red".
+
+  **The road to F1d is worth keeping.** Its first run on the bicubic default **failed**: the reply opened "Thinking
+  Process:" and spent its 32 tokens before naming the colour. nobara's main passed ("...a solid, bright red color..."),
+  and the branch with bilinear passed with a third, different reply. The solid image's pixels were identical as uint8
+  under both resamplers, so the difference was below a byte. It was the [0, 1] rescale:
+  - transformers multiplies the float32 pixel by `float32(1/255)`;
+  - aikit's new path divided by 255, and its bilinear path divides in float64;
+  - those differ by one ulp on 126 of the 256 byte values.
+
+  With the multiply made exact, EmbeddingGemma 2's pixel max |diff| against HF went from 5.96e-8 to 0, and F1d passed.
+  Two lessons:
+  - F1c's first form hashed the pixels as uint8, which could not see this. It hashes the float32 bytes too now, and a
+    division turns it red on all four images.
+  - This gate's greedy 32-token reply swings on one-ulp input differences. A pass or fail there says the path works,
+    not that two paths agree; F1c is the exactness gate.
+
+  Raw: `docs/measurements/multimodal-finish-2026-10-06/f1d-*.log`.
+- **F2 — Gemma 4's own images on the Metal tower.** The tower registration in `embeddinggemma2` moves to a neutral package both
+  use, and serve's Gemma 4 image path uses it when the backend is Metal. Gates, on the Mac, E2B (**blocked on disk**):
+  - **F2a:** the Metal tower against aikit's CPU tower, every soft token at cosine >= 0.9999 on the gate images.
+  - **F2b:** a served E2B image request on the Metal binary gives the same 32 greedy tokens as with the CPU tower.
+  - **F2c:** the VM1 tiny gate stays green, and a `standardize` checkpoint path (26B's) is exercised by a tiny fixture with
+    `standardize=true`, at cosine >= 0.9999; dropping the standardize step turns it red.
+
+  **F2 read 2026-10-06, on the Mac: PASS** (after the disk was cleared and E2B pulled).
+  - **The seam:** the Gemma 4 tower registry moved to `multimodal` (`RegisterGemma4Tower`, `Gemma4TowerFeatures`);
+    EmbeddingGemma 2's names are aliases of it.
+  - **Serve:** with `--backend metal`, Gemma 4's image path uses the Metal tower. It falls back to the CPU with the
+    reason, or refuses under `--require-backend`, and an int8 tower stays on the CPU.
+  - **F2a:** E2B's real tower (clipped, no standardize) on Metal against aikit's CPU tower: worst soft-token cosine
+    1.000000000 on all four images. Exploratory: 1.3-2.3 s on Metal against 5.3-6.4 s on the CPU.
+  - **F2b:** the same E2B image request through the Metal serve binary gives an identical 32-token reply with the tower
+    on Metal and on the CPU. E2B decodes on the CPU either way (no backend declares `gemma4-e-model`).
+  - **F2c:** VM1 green; aikit's export test checks `standardize` through `FinishHidden`, against `Forward`, and on
+    versus off differ.
+    - This runs where aikit's tiny Gemma 4 fixture is present. It is gitignored there, so it runs locally, not in
+      aikit's CI.
+
+  Raw: `docs/measurements/multimodal-finish-2026-10-06/f2*.log`.
+- **F3 — `attendHi`** (P7 Phase C, found and not fixed): an image block longer than the sliding window under-attends. It is
+  unreachable on every shipped checkpoint (Gemma 3's block is 256 against a 1024 window; Qwen2.5-VL has no window), so the
+  default here is a refusal at the chokepoint, not a fix: a forward that would need it errors by name. A tiny test drives it.
+  No parity hash moves. An owner can ask for the real fix instead.
+  **F3 read 2026-10-06: DONE.**
+  - `GenerateVL` refuses an image block longer than the sliding window, by name, before the tower runs
+    (`checkImageBlockFitsWindow`, `decoder/generate_vl.go`).
+  - `TestGenerateVL_refusesImageBlockLongerThanWindow` drives it through `GenerateVL` on the tiny Gemma 3 VL model,
+    with the window one token under the block: refused, no tokens, tower not run. At the block's own length it serves.
+  - The other `GenerateVL` tests and `TestParityManifest_fresh` stay green; no hash moved.
+- **F4 — P11's one-page audio comparison**, now that P7's audio tower exists: desk work, recorded in this doc. **DONE 2026-10-06**:
+  §P11 above, and the full page in `docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`.
+- **F5 — P8b, GGUF `mmproj` for the Qwen3.5+ tower.** aikit gains a tower loader from a tensor source (new API: the towers
+  load from a safetensors directory today), and goinfer reads the three container layouts §P8a's prior-art sweep found:
+  unsloth's `mmproj-*.gguf` (split patch conv, fused QKV), Ollama's monolithic `qwen3.5` blob (`qwen35.vision.*`, unfused
+  q/k/v, the patch conv whole), and Ollama's separate projector blob. Phase 0 first: each layout's real header read and
+  recorded before any loader is written. The merger runs erf (HF), not llama.cpp's tanh. Gates:
+  - **F5a:** for each layout, the tower loaded from GGUF matches the tower loaded from the same size's safetensors on the
+    P8a images, every soft token at cosine >= 0.9999 (the GGUF matrices are F16 or BF16, so not bit-identical by
+    construction; the record names each layout's dtype).
+  - **F5b:** end to end on the 0.8B, a text GGUF plus its `mmproj` serves the three P8a images with the same 32 greedy tokens
+    as the safetensors path (G2's bar).
+  - **F5c:** a mismatched `mmproj` (another family's projector, or a text width that does not match) is refused by name,
+    never run.
+  - **F5d:** each loader's planted defect (the QKV split order, the patch-conv halves swapped, the position table transposed)
+    turns F5a red.
+
+  **F5 Phase 0, read 2026-10-06** (real headers; range requests for unsloth's `Qwen3.5-0.8B-GGUF` and Ollama's registry
+  blobs; files then fetched to nobara's `~/models/mmproj`):
+  - **One layout, not three.** The monolithic Ollama blob of 2026-09-30 is gone: every Ollama `qwen3.5`
+    (0.8b, 2b, 9b/latest) and `qwen3.6` tag now ships a separate `projector` layer, in the same llama.cpp `clip` mmproj
+    layout as unsloth's files.
+  - **The layout:** `general.architecture` is `clip` and `clip.projector_type` is `qwen3vl_merger`.
+    - `v.blk.N.{ln1,ln2,attn_qkv,attn_out,ffn_up,ffn_down}`, with QKV fused as in HF.
+    - The patch conv is split into `v.patch_embd.weight` and `.weight.1` (the two temporal halves), plus
+      `v.patch_embd.bias` and `v.position_embd.weight`.
+    - The merger is `v.post_ln`, `mm.0`, `mm.2`.
+    - `clip.vision.is_deepstack_layers` is all false.
+    - There are no image-budget keys (min/max pixels).
+  - **Dtypes:**
+    - unsloth: F32, F16 or BF16 matrices, everything else F32;
+    - Ollama: BF16 matrices, with F32 biases, norms, patch conv and position table.
+    - aikit's GGUF reader had no BF16, so it gains one.
+  - **Amendments, written before any F5 measurement:**
+    - **F5b is pinned:** the same text GGUF (unsloth's `Qwen3.5-0.8B-Q8_0`) with the tower from the mmproj, against
+      the same text GGUF with the tower from the safetensors directory, on the three P8a images: identical 32 greedy
+      tokens. A divergence at a step whose top-1/top-2 gap is under 0.02 parks, as in G2. (Read literally, "the
+      safetensors path" would compare Q8_0 text with HF's f32 text, which tests the text quant, not the mmproj.)
+    - **Expected exactness:** the 0.8B checkpoint is BF16, so the F32 and BF16 containers, Ollama's included, carry
+      identical weights, and their towers should match the safetensors tower bit for bit (max |diff| 0). F16 is lossy.
+      The bar stays 0.9999 for all; a nonzero diff on an exact container is investigated, not passed silently.
+    - **The image budget** comes from the Qwen3.5 family's own `preprocessor_config.json` values (identical on 0.8B,
+      9B and 35B, per P8a Phase 0), since the GGUF carries none, under the same serve cap.
+
+  **F5 read 2026-10-06, on nobara: PASS. P8b is DONE for Qwen3.5+.**
+
+  What was built:
+  - aikit: `vision.LoadQwen3VisionEncoderMMProj` and `ReadQwen3MMProjConfig`, on a new `TensorSource` seam that the
+    safetensors loader now uses too; GGUF BF16 in `embed`.
+  - goinfer: `--vision <mmproj>.gguf` beside a Qwen3.5+ model, and the Qwen3.5 GGUF text config carrying its m-RoPE
+    split.
+
+  Results (raw: `docs/measurements/multimodal-finish-2026-10-06/f5*.log`):
+  - **F5a:** on the three P8a images, the unsloth F32 and BF16 files and Ollama's 0.8B projector blob give the
+    safetensors tower's features **bit for bit** (max |diff| 0), as the amendment predicted. The F16 file is at cosine
+    0.999999999 or better (max |diff| at most 6.9e-5). Ollama's 9B projector against the 9B checkpoint is also bit for
+    bit.
+  - **F5b:** the Q8_0 text GGUF with the BF16 mmproj tower gives the same 32 tokens as with the safetensors tower, on
+    all three images.
+    - Its first run stopped earlier: goinfer refused the image turn because its Qwen3.5 GGUF loader dropped
+      `rope.dimension_sections` (deliberately, for text).
+    - The loader carries it now (`ggufMRopeJSON`). Text is unchanged: the split is unused without image positions,
+      and the parity refresh's 33 goldens passed.
+  - **F5c:** each refusal is unit-tested on built mmproj headers: a Gemma 3 projector, a non-mmproj file, another
+    size's width, a non-Qwen3.5 model. Served on nobara:
+    - the 9B projector beside the 0.8B model is refused at startup ("emits 4096 wide and the model's hidden width is
+      1024");
+    - with the matching projector, a real image is answered in 3.8 s ("a colorful abstract composition featuring
+      geometric shapes...").
+  - **F5d:** a transposed position table (0.184) and Q/K swapped in the fused QKV (0.190) are red on the cosine bar. The
+    patch-conv halves swapped is red only on the exactness check (max |diff| 1.5e-5, cosine 1.000000000): for a still
+    image HF feeds the same frame to both temporal halves, so the swap only reorders a sum. It would matter for video.
+
+**Parked until after the tag, in this order** (each line: what, size, where):
+1. Gemma 4 E2B/E4B **audio into the model** (P7's audio half): aikit's `audio` loader probably loads E2B unchanged (not run);
+   the decoder splice, the prompt layout and `input_audio` on chat. M-L, nobara.
+2. Safetensors PLE loading for Gemma 4 E2B/E4B (still refused at `decoder/weights.go`), so one HF directory serves text,
+   images and audio. M, nobara.
+3. Gemma 4 image prefix reuse (it commits the block and never reads it back). S-M, nobara.
+4. Qwen3.5+ resize fidelity, reusing F1's resize (Qwen's `qwenBicubicU8` is the right kernel family, not bit-exact). S, Mac.
+5. Run Metal's never-run `UploadKV`/`ForwardMRoPE` tests and one served Gemma 3 / Qwen2.5-VL image turn on the Mac. S, needs
+   disk for the checkpoints.
+6. aikit's tagged `gpu/qwencuda` for Qwen2.5-VL's tower on CUDA, then a crossover measurement at night. S-M, nobara.
+7. Metal SigLIP (Gemma 3) via aikit's `gpu/visionmetal` (M-15). M, Mac, a night crossover.
+8. Images through the Qwen3.5 MoE (never run). M, nobara, night.
+9. GPU towers for Qwen3.5 (now the whole cost of a new image on CUDA after P26b), GLM-OCR, and Gemma 4 on CUDA. L, new
+   aikit API for the first two, so the next aikit release.
+10. P10's towers (LFM2.5-VL, Pixtral, North), Gemma 3 pan-and-scan, video. L each.
+
+**Owner decisions this leaves open** (none blocks F1-F5): the registry's VL checkpoint (P9(d)); downloading E4B and 31B to
+validate them, or scoping the claim to E2B/26B; several images per message, and video, build or park; WebGPU's cold-vs-reused
+difference at temperature 0, accept or fix; retiring the tower-in-`.giw` idea (int8 towers measured not faster) and the WebGPU
+tiled-attention follow-up.
+
 ## Framing
 
 Add image→text (VLM) inference while preserving goinfer's invariants: pure Go /
@@ -932,6 +1146,9 @@ the same moat as text: land one family end-to-end through the descriptor
 pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
+
+*(June 2026's survey, kept as the design record. Some `file:line` references below now point elsewhere; 2026-10-06 found
+`decoder/weights.go:494` and `decoder/gguf_qwen35.go:77` no longer at what they describe.)*
 
 - **VL config flattening** — `decoder/config.go:1367` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
@@ -1025,7 +1242,7 @@ Pin each stage against HF, committed KB-scale goldens:
 ## Phasing (June 2026 — P0–P5; the 2026-09 program continues at P6)
 
 (✅ P0–P4 done — P0–P3 through `9412e4e`, P4 + the resident GPU encoder pushed;
-**P5 open**.)
+**P5 open** as of June. 2026-10-06: P5's Qwen2.5-VL half shipped; its mmproj half became P8b.)
 
 - ✅ **P0 — scope + harness**: first family (see §1); HF reference + pin scripts;
   tiny synthetic VL checkpoint (mirrors the qwen35-tiny approach); **pin

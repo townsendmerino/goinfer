@@ -184,7 +184,8 @@ func TestResolve_callsResolveOfflineBeforeCheckAccess(t *testing.T) {
 	}
 }
 
-// R22: an mmproj file sits among a model repo's quants; it is named, not guessed from the quant.
+// R22: an mmproj file sits among a model repo's quants; it is named, not guessed from the quant, and the note says
+// what loads it (a Qwen3.5+ one, P8b) and what does not.
 func TestMMProj(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -205,7 +206,7 @@ func TestMMProj(t *testing.T) {
 		}
 	}
 	n := MMProjNote("mmproj-x.gguf")
-	for _, want := range []string{"vision projector", "cannot load GGUF mmproj", "--vision", "directory with a vision tower"} {
+	for _, want := range []string{"vision projector", "--vision mmproj-x.gguf", "Qwen3.5+", "not supported yet", "config.json and safetensors"} {
 		if !strings.Contains(n, want) {
 			t.Errorf("the note lacks %q: %s", want, n)
 		}

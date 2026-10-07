@@ -77,9 +77,10 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 			cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")
 		}
 	}
-	// rope_parameters: the text decoder uses standard partial-rotary RoPE (the
-	// mrope sections are image/video-only and unused here). Synthesize the flat
-	// form parseRopeFlat expects from the GGUF rope metadata.
+	// rope_parameters: the text decoder uses standard partial-rotary RoPE; the m-RoPE
+	// split (rope.dimension_sections) is carried too, so an image turn can rotate image
+	// tokens by (t, h, w) (ggufMRopeJSON). Synthesize the flat form parseRopeFlat and
+	// parseMRopeFlat expect from the GGUF rope metadata.
 	base := 1e7
 	if b, ok := g.Float("qwen35moe.rope.freq_base"); ok {
 		base = b
@@ -89,7 +90,7 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 		partial = float64(dc) / float64(headDim)
 	}
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
-		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`, base, partial))
+		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g%s}`, base, partial, ggufMRopeJSON(g, "qwen35moe")))
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -163,11 +164,13 @@ func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
 	if dc := u("rope.dimension_count"); dc > 0 && headDim > 0 {
 		partial = float64(dc) / float64(headDim)
 	}
-	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split and is deliberately IGNORED: for
-	// TEXT the three position components are identical, so interleaved m-RoPE reduces exactly to
-	// standard partial RoPE (verified against modeling_qwen3_5.py during the safetensors bring-up).
+	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split. For TEXT the three position
+	// components are identical, so interleaved m-RoPE reduces exactly to standard partial RoPE
+	// (verified against modeling_qwen3_5.py during the safetensors bring-up) and ropeAt never reads
+	// the split without image positions; it is carried (ggufMRopeJSON) so a GGUF text model can take
+	// an image turn with an mmproj tower (P8b, docs/multimodal.md F5), as the safetensors config does.
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
-		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g}`, base, partial))
+		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g%s}`, base, partial, ggufMRopeJSON(g, "qwen35")))
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -212,4 +215,17 @@ func reorderVHeads(src []float32, lead, outer, inner, hd, trail int) []float32 {
 // (numKHeads, numVPerK) factors swapped.
 func untileVHeads(src []float32, lead, numKHeads, numVPerK, hd, trail int) []float32 {
 	return reorderVHeads(src, lead, numVPerK, numKHeads, hd, trail)
+}
+
+// ggufMRopeJSON is the rope_parameters fragment for a Qwen3.5+ GGUF's m-RoPE split, read from
+// <arch>.rope.dimension_sections (llama.cpp writes four, the fourth 0): `,"mrope_section":[a,b,c],
+// "mrope_interleaved":true`, the form a Qwen3.5 safetensors config carries (every Qwen3.5/3.6
+// checkpoint has mrope_interleaved true). Empty when the key is absent or not three nonnegative
+// sections and a zero, so such a model stays text-only and an image turn is refused by name.
+func ggufMRopeJSON(g *embed.GGUFFile, arch string) string {
+	sec := ggufIntArray(g.Metadata[arch+".rope.dimension_sections"])
+	if len(sec) != 4 || sec[0] < 0 || sec[1] < 0 || sec[2] < 0 || sec[3] != 0 || sec[0]+sec[1]+sec[2] == 0 {
+		return ""
+	}
+	return fmt.Sprintf(`,"mrope_section":[%d,%d,%d],"mrope_interleaved":true`, sec[0], sec[1], sec[2])
 }
