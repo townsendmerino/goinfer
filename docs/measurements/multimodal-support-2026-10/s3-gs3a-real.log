@@ -1,0 +1,19 @@
+[S3 real siglip] gemma3_preprocess_image.png    tower Metal 1m12.898s, CPU 16.4s (exploratory)
+[S3 G-S3a] gemma-3-4b-it gemma3_preprocess_image.png: worst token cosine 0.181292739
+[S3 real siglip] qwen25vl_preprocess_image.png  tower Metal 1m15.638s, CPU 18.248s (exploratory)
+[S3 G-S3a] gemma-3-4b-it qwen25vl_preprocess_image.png: worst token cosine 0.337823442
+[S3 real siglip] glm_ocr/formula.png            tower Metal 1m12.864s, CPU 16.89s (exploratory)
+[S3 G-S3a] gemma-3-4b-it glm_ocr/formula.png: worst token cosine 0.180429891
+[S3 real siglip] glm_ocr/table.png              tower Metal 1m13.211s, CPU 16.622s (exploratory)
+[S3 G-S3a] gemma-3-4b-it glm_ocr/table.png: worst token cosine 0.461142064
+[S3 real qwen2.5-vl] gemma3_preprocess_image.png    grid [1 64 64]: tower Metal 22.207s, CPU 22.955s (exploratory)
+[S3 G-S3a] qwen25vl-3b gemma3_preprocess_image.png: worst token cosine 0.999995874
+[S3 real qwen2.5-vl] qwen25vl_preprocess_image.png  grid [1 4 6]: tower Metal 1.29s, CPU 1.06s (exploratory)
+[S3 G-S3a] qwen25vl-3b qwen25vl_preprocess_image.png: worst token cosine 0.999999999
+[S3 real qwen2.5-vl] glm_ocr/formula.png            grid [1 86 72]: tower Metal 47.35s, CPU 37.448s (exploratory)
+[S3 G-S3a] qwen25vl-3b glm_ocr/formula.png: worst token cosine 0.999999932
+[S3 real qwen2.5-vl] glm_ocr/table.png              grid [1 64 86]: tower Metal 37.983s, CPU 31.456s (exploratory)
+[S3 G-S3a] qwen25vl-3b glm_ocr/table.png: worst token cosine 0.999999310
+--- FAIL: TestS3Towers_real (574.89s)
+    --- FAIL: TestS3Towers_real/siglip (364.36s)
+    --- PASS: TestS3Towers_real/qwen2.5-vl (210.53s)

@@ -639,8 +639,17 @@ plan. Where it says INFERRED, the step names the fallback and what decides it.
     - **E4B** was not run (no checkpoint on either box). The code path is the same shape, and nothing was measured on it.
     - **TTFT:** a long prompt prefills token by token (the batched prefill declines E-models), so time to first token on a long prompt is slow. The
       vision tower is still on the CPU (4.5 s here; S4).
-    - **The heavy tier** (`gate gpu`) has not run on this tree; tonight's queued `gate-gpu-cuda` is the first run that exercises the rest of the CUDA suite
-      with C1-C5 in.
+    - **The heavy tier** (`gate gpu`) has not completed on this tree. The first night run (2026-10-07, stopped by the owner at minute 35 of the heavy
+      tier, `~/goinfer-logs/gate-gpu-night-2026-10-07/`) was red for three reasons, none a defect in the E-model path, all fixed and pushed:
+      (1) **my** helper `mustResident` sat in a file tagged `cuda` alone but called a test hook, so the no-testhooks cuda test package did not build
+      (group 2a; present since f95fabfd, invisible to CI, which cannot build cuda tests); (2) the gate's pinned worktree linked only the gitignored weights
+      of `testdata/gemma4-emodel-tiny`, leaving `model.safetensors` without `config.json`, so 13 E-model tests failed to load (the script now links untracked
+      fixture directories whole and excludes them from the dirty-tree check); (3) an **unpinned default resident context** that one KV slot overshoots by the
+      build's own scratch declined the resident path to the CPU (`TestB2DenseFlagship` and four Gemma-3 tests; R19 raised the default to 16384 and says it
+      is "shrunk to what the card holds", but only the multi-slot arm did), now trimmed to fit with a floor of 4096. The six tests pass again and the full
+      non-heavy cuda suite is green. A control run with the heavy tier skipped (`GOINFER_GATE_SKIP_HEAVY=1`, pinned worktree of `6ceb11a6`) reads
+      **PASS, 10 of 10 groups**, with the E-model tests running in 2b and 2d. The rest of the heavy tier (about 40 of 78 minutes were never reached) is
+      re-queued for the owner to start.
   - **`gate quick` over the change (18 min, `~/goinfer-logs/gate-quick-s1c.log`): 2085 passed, 0 failed, 429 skipped; lint 16 of 17.** The one red lint step was
     `staticcheck` on `./cuda/...`: two unused fields (`resident`, `cpuInt4v`) I left in the new `gemma4_emodel_test.go`, the dead-field class CLAUDE.md warns
     about. Removed; `staticcheck` for `-tags 'cuda goinfer_testhooks'` and `-tags 'gpu goinfer_testhooks'` re-run clean, the full gate not repeated.
@@ -710,6 +719,41 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   on Metal against the tower on the CPU: identical reply text, or a first divergence at a near-tie under the G1 rule.
 - **Speed (night):** tower time per image, Metal against CPU, on the same images. A record.
 
+**S2 progress, 2026-10-07 (Mac), on goinfer branch `s2-towers` over aikit's unreleased `s2-tower-exports`:**
+- **G-S2a: PASS.** aikit's exports recompose `Embed` and `Forward` bit for bit on both tiny towers, norms and the
+  position table randomised (`TestQwen3Export_recomposesForward`, `TestGlmOcrExport_recomposesForward`); dropping GLM's
+  post-norm from the tail turns it red.
+- **G-S2b, tiny towers: PASS**, worst merged-token cosine 1.000000000 for both over four grid sets (three sizes and a
+  two-image batch). **G-S2c: PASS**, every planted defect red: Qwen3.5 (scale 0.975, RoPE halves 0.997, transposed
+  position grid 0.995, patch bias 0.994), GLM-OCR (scale 0.126, RoPE 0.698, q/k norm 0.119, patch bias 0.531). The GLM
+  gate uses aikit's tiny GLM tower, copied into goinfer's testdata (goinfer's own `glm-ocr-tiny` has no vision weights).
+- **G-S2b, real towers: PASS**, nine image/tower pairs through serve's preprocessing and caps: Qwen3.5-0.8B worst token
+  0.999999212, GLM-OCR worst 0.999991618 (`formula.png`). Exploratory times: Metal 2-4x the CPU tower (GLM-OCR invoice
+  12.3 s against 48.9 s; Qwen3.5 on the 896² image 1.2 s against 4.7 s). Raw: `s2-gs2b-real.log` on the branch.
+- **G-S2d run 1 (serve binary at the branch's `fac4aa52` plus the serve wiring), table.png, 32 greedy tokens:**
+  - **GLM-OCR: PASS**, byte-identical replies. Both arms decode on the CPU (Metal does not run GLM-OCR's decoder), so
+    only the tower differed. Time to first token 16.5 s against 39.2 s (exploratory).
+  - **Qwen3.5-0.8B: confounded, not graded.** Under `--backend metal` the 0.8B also decodes on Metal, so the two arms
+    differed in the decoder as well as the tower. The replies agree for their first 15 tokens, then the Metal arm wrote
+    "," where the CPU arm wrote "." — the kind of flip Metal-vs-CPU decode makes about 5% of the time (G3), which says
+    nothing about the tower. The registered procedure did not hold the decoder fixed; GLM only did so by accident.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s2-gs2d-run1/`.
+- **G-S2d amendment, after run 1, before the graded Qwen run:** both arms run `--backend metal`; the CPU-tower arm adds
+  serve's new `-vision-device cpu` (a real flag: it keeps the tower on the CPU while the model keeps its backend), so only
+  the tower differs. Pass rule unchanged.
+- **G-S2d run 2, Qwen3.5-0.8B, both arms `--backend metal` (decode `metal-resident (int4)` in both), the CPU-tower arm
+  with `-vision-device cpu`:** the replies differ.
+  - Tower on Metal: "...region (thousands)**, which presents...". Tower on the CPU: "...region (in thousands)**.\n\nIt
+    presents...". Every token before generated token 14 agrees, each at p ~ 1.000.
+  - At token 14 both arms sit on a coin flip: the CPU-tower arm picks "in" at p 0.545 with "th" at 0.442; the Metal-tower
+    arm picks "th" at 0.579 with "in" at 0.403. The CPU-tower arm's gap between its token and the Metal arm's is 0.21 in
+    logits.
+  - **Status: near-tie by every measure serve exposes; the registered form is not computed.** The rule compares that
+    gap with 3% of the raw top-1 logit, which log-probabilities hide; it passes for any top-1 logit above 7. Accepting
+    it on that basis, or building an in-process replay that reads the raw logit, is the owner's call.
+  - **Owner decision 2026-10-07: accepted as a near-tie. G-S2d: PASS for both families.**
+  - Raw: `docs/measurements/multimodal-support-2026-10/s2-gs2d-run2/` (serve logs, replies, top-3 logprobs per token).
+
 ### S3 — Gemma 3 and Qwen2.5-VL on Metal: run what exists, then put the towers on the GPU
 
 - **First, run it.** Metal's `UploadKV` and `ForwardMRoPE` tests have never been run, and no image turn has ever run on
@@ -721,6 +765,72 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - Gate them like S2, and run a night crossover against the CPU tower.
 - **Size:** S to run, M to wire.
 
+**S3 progress and gates (2026-10-07, Mac):**
+- **Run it, part 1: done on what is local.** Metal's `UploadKV` and `ForwardMRoPE` tests ran for the first time and pass
+  (5/5 on `llama-tiny` and on the real Qwen2.5-Coder-1.5B). `TestVLImageTurn_metalResident` runs the first image turns on a
+  Mac's GPU, from the tiny fixtures: Gemma 3 and Qwen2.5-VL decode `metal-resident` after their CPU prefill (8/8 and 6/8
+  tokens agree with the CPU decoder; agreement is the served gate's question). The real checkpoints (`gemma-3-4b-it`,
+  `qwen25vl-3b-instruct`) are downloading from Hugging Face into `~/models`; the archive has no Qwen2.5-VL, and nobara
+  held its timing lock.
+- **The wiring:** goinfer's `metal` module imports aikit's tagged `gpu/visionmetal` (SigLIP) and `gpu/qwenmetal`
+  (Qwen2.5-VL); serve's `enableResidentTower` admits `metal`. SigLIP's Metal tower is int8 (it needs `LoadEncoder`
+  quant=true, as on CUDA and WebGPU), so `towerInt8` treats Metal like them for that family; Qwen2.5-VL stays f32 (its
+  export carries both). `-vision-device cpu` keeps either on the CPU, f32 by default.
+- **Near-tie, defined for served comparisons (serve exposes log-probabilities, not logits; G-S2d):** at the first differing
+  token, the reference arm's probability of the other arm's token is at least half its own top token's probability, read
+  from serve's `top_logprobs`.
+- **S3 gates, written 2026-10-07 before any S3 tower code or measurement:**
+  - **G-S3a, device tower against aikit's CPU tower at the same quantization** (SigLIP int8 both, Qwen2.5-VL f32 both):
+    every soft token at cosine >= 0.9999, on the tiny towers (`siglip-tiny`, `qwen25vl-tiny`) and on the real towers on the
+    four images F2a uses; the encoder must report the resident attached. Ambiguous (parked): a worst token in
+    0.999-0.9999.
+  - **G-S3b, served, the tower isolated:** one image request per family through the Metal serve binary, both arms
+    `--backend metal`; the reference arm adds `-vision-device cpu` (and `-vision-quant int8` for Gemma 3, matching the
+    device tower). Identical reply, or a first divergence at a near-tie.
+  - **G-S3c, served, the decoder (part 1's "against the CPU decoder"):** both arms with the tower on the CPU
+    (`-vision-device cpu`): `--backend metal` against `--backend cpu`. Identical reply, or a first divergence at a near-tie.
+  - **Speed (night):** tower time per image, Metal against CPU, and TTFT of the served turn. A record.
+- **The wiring needed new aikit tags.** `gpu/visionmetal` and `gpu/qwenmetal` v0.1.0 date from 2026-08-12 and do not build
+  against `gpu` v0.33.5; aikit's current source does. So the S3 tower work moved to the `s2-towers` branch (whose go.work
+  uses the local aikit), with S2's release batch.
+- **G-S3a, read 2026-10-07 11:30 PDT on the Mac: tiny PASS, real FAIL for SigLIP, real PASS for Qwen2.5-VL.**
+
+  | tower | tiny | real, worst token over four images | time per image, Metal vs CPU (exploratory) |
+  |---|---|---|---|
+  | SigLIP (Gemma 3), `visionmetal`, int8 both | 1.000000000 | **0.180-0.461: wrong** | ~73 s vs ~17 s |
+  | Qwen2.5-VL, `qwenmetal`, f32 both | 1.000000000 | 0.999995874 or better | 22-47 s vs 23-37 s |
+
+  - The Metal SigLIP tower agrees exactly at the tiny fixture's size (hidden 32, 16 patches) and breaks at Gemma 3's
+    (hidden 1152, 4,096 patches), so aikit's own tiny parity test could not see it. It is also four times slower than the
+    CPU.
+  - The Metal Qwen2.5-VL tower is correct but no faster than the CPU, and slower on the larger images.
+  - **Neither is wired into serve:** the wiring commit is reverted on the branch; the test stays as the evidence
+    (`metal/s3_towers_test.go` on `s2-towers`). Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3a-real.log`.
+  - **Proposed, for the owner:** build both towers on goinfer's own Metal tower base, as S2 did for Qwen3.5 and GLM-OCR
+    (its kernels pass at real size and run 2-4x the CPU), from new aikit float32 exports added to the same unreleased
+    batch; and report the `visionmetal` real-size defect to aikit. G-S3b waits for that decision.
+- **G-S3c, read 2026-10-07 11:35 PDT on the Mac (serve binary from `s2-towers`, the tower on the CPU in every arm,
+  table.png, 32 greedy tokens): Qwen2.5-VL FAIL; Gemma 3 not reached.**
+  - **Qwen2.5-VL-3B, `metal-resident (int4)` against `cpu (int4)`: the replies differ from the first token.** Metal
+    "Table 2. Quarterly unit sales by region (thousands)"; CPU "Quarterly unit sales by region (thousands)". At token 0
+    the CPU arm picks "Quarter" at p 0.728 with "Table" at 0.208, under half its top: **not a near-tie, so G-S3c fails for
+    Qwen2.5-VL.** The first token comes from the prefill, so the Metal image turn computes something the CPU does not
+    on the real checkpoint (the tiny fixture's first token matched). To be traced.
+  - **Gemma 3 4B: Metal declined the resident** (it needs 5.15 GB against a 4.20 GB budget on this 16 GB Mac), so both
+    arms decoded on the CPU and G-S3c did not reach Metal. The two CPU arms still differ at token 7, not as a near-tie
+    (the `--backend cpu` arm puts the other arm's token at p 0.284 against its top 0.687): a CPU decode after a declined
+    Metal request is not the same computation as `--backend cpu` (its int4 layout differs). A separate finding, to be
+    understood.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3c/` (serve logs, replies, top-3 logprobs per token).
+- **Owner decision 2026-10-07: the proposal is accepted.** Both towers get rebuilt on goinfer's Metal tower base, from new
+  aikit float32 exports (SigLIP, Qwen2.5-VL) on the same unreleased `s2-tower-exports` branch; the `visionmetal` real-size
+  defect is reported to aikit. G-S3a's bars apply unchanged to the rebuilt towers, then G-S3b.
+- **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
+  definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
+  `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
+  byte-identical to the first). It answers whether Qwen2.5-VL's first-token divergence is Metal's alone: CUDA runs its own
+  resident m-RoPE prefill, while Metal runs the CPU prefill and then `UploadKV`. It does not stand in for Metal's G-S3c.
+
 ### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
 
 - **Gemma 4:** port `metal/gemma4_vision.go` to `cuda/`. The registration seam is already backend-neutral
@@ -728,6 +838,18 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 - **Qwen2.5-VL:** wire aikit's tagged `gpu/qwencuda` (a require plus `EnableResident`).
 - **Gates:** as S2, on nobara.
 - **Size:** M (Gemma 4), S-M (Qwen2.5-VL).
+
+**S4 and S2's CUDA twins, combined (2026-10-07):** CUDA has no tower base yet (Gemma 3's SigLIP is goinfer's own,
+`cuda/vision_encoder.go`, built on aikit's CUDA ViT ops; nothing else), so the Gemma 4 port is the base, and S2's Qwen3.5+
+and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara-s2-s4-cuda-towers-2026-10-07.md`.
+- **G-S4q, aikit's `gpu/qwencuda` at real size, registered 2026-10-07 before it runs:** G-S3a's test shape and bars on
+  CUDA (f32 both, every soft token at cosine >= 0.9999 on the four F2a images; 0.999-0.9999 parked), times exploratory.
+  It decides S4's Qwen2.5-VL route: correct and faster than the CPU tower → wire it, as written above; wrong, or not
+  faster → build it on the CUDA base, as Metal now will. The Metal twin was correct and no faster.
+- **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
+  Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
+  the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
+  CUDA-specific planted defects into this doc before the CUDA tower code.
 
 ### S5 — Gemma 4 E2B/E4B audio into the model
 

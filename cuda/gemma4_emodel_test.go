@@ -19,6 +19,18 @@ const (
 	eModelGolden = "../testdata/gemma4_emodel_tiny_golden.json"
 )
 
+// requireEModelFixture skips unless the tiny E-model checkpoint is complete. The directory is not gitignored as a whole (only *.safetensors is), so a
+// pinned worktree that symlinks just the ignored weights (run-gate-gpu.sh) holds a directory with model.safetensors and no config.json: present, and
+// unloadable. A dir-only check turns that into a failure; the first 2026-10-07 night gate run hit exactly that.
+func requireEModelFixture(t testing.TB) {
+	t.Helper()
+	for _, f := range []string{"config.json", "model.safetensors"} {
+		if _, err := os.Stat(eModelDir + "/" + f); err != nil {
+			t.Skipf("no complete fixture (%s/%s: %v) — run scripts/pin_gemma4_emodel_tiny.py", eModelDir, f, err)
+		}
+	}
+}
+
 // eModelPrompt is the golden's prompt followed by its greedy continuation: 18 positions, so the KV-shared layers attend over history well past the
 // sliding window (4).
 func eModelPrompt(t *testing.T) []int {
@@ -52,9 +64,7 @@ type eModelG1 struct {
 
 func runEModelG1(t *testing.T) eModelG1 {
 	t.Helper()
-	if _, err := os.Stat(eModelDir); err != nil {
-		t.Skipf("no fixture (%s) — run scripts/pin_gemma4_emodel_tiny.py", eModelDir)
-	}
+	requireEModelFixture(t)
 	prompt := eModelPrompt(t)
 	mg, err := decoder.Load(eModelDir, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
@@ -196,6 +206,7 @@ func TestGemma4EModel_plantedDefects(t *testing.T) {
 // DEFAULT compute mode declines graphs) the E-model's decode is byte-identical to the live launches over 40 positions, past the sliding window, with the
 // PLE tail of every row non-zero. The PLE branch sits in segB, so a mis-captured offset or a stale tail shows here as a replay-vs-live divergence.
 func TestGemma4Graphs_bitExact_emodel(t *testing.T) {
+	requireEModelFixture(t)
 	t.Setenv("GOINFER_CUDA_GRAPHS_UNSAFE", "1")
 	graphsBitExact(t, eModelDir, false)
 }
@@ -218,9 +229,7 @@ func eModelGreedy(t *testing.T, m *decoder.Model, prompt []int, n int) []int {
 // width refuses by NAME (never a silent truncation), and a greedy generation through the sequential fallbacks (the batched prefill declined) takes the
 // same tokens as the CPU's.
 func TestGemma4EModel_declinesAndFallbacks(t *testing.T) {
-	if _, err := os.Stat(eModelDir); err != nil {
-		t.Skipf("no fixture (%s)", eModelDir)
-	}
+	requireEModelFixture(t)
 	mg, err := decoder.Load(eModelDir, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load: %v", err)

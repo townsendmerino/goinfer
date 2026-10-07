@@ -279,5 +279,35 @@ def _git_commit_all(repo, msg):
                            capture_output=True, text=True, check=True).stdout.strip()
 
 
+
+class TestHookGitDirDoesNotRedirectSiblingLookups(unittest.TestCase):
+    """A git hook exports GIT_DIR for the repository being pushed (absolute, from a worktree). subject_of names the repo
+       it searches by cwd, so an inherited GIT_DIR made it search the PUSHING repo for another repo's SHA and report it
+       as not resolving: the pre-push hook refused a push from a goinfer worktree on two aikit SHAs (2026-10-07)."""
+
+    def test_sha_in_sibling_resolves_under_a_foreign_git_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            a, b = os.path.join(td, "a"), os.path.join(td, "b")
+            for r in (a, b):
+                os.makedirs(r)
+                _git(r, "init", "-q")
+                _git(r, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "in " + os.path.basename(r))
+            sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=b, capture_output=True, text=True,
+                                 check=True).stdout.strip()
+            orig = qcl.sibling_repos
+            saved = os.environ.get("GIT_DIR")
+            qcl.sibling_repos = lambda: [b]
+            os.environ["GIT_DIR"] = os.path.join(a, ".git")
+            try:
+                got = qcl.subject_of(sha)
+            finally:
+                qcl.sibling_repos = orig
+                if saved is None:
+                    os.environ.pop("GIT_DIR", None)
+                else:
+                    os.environ["GIT_DIR"] = saved
+            self.assertTrue(isinstance(got, str) and got.endswith("in b"), f"subject_of = {got!r}, want the sibling's subject")
+
+
 if __name__ == "__main__":
     unittest.main()

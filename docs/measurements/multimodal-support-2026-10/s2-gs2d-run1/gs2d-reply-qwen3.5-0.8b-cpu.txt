@@ -1,0 +1,3 @@
+This image shows **Table 2: Quarterly unit sales by region (thousands)**.
+
+It presents quarterly sales data for five regions (North, South, East
