@@ -323,6 +323,17 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
       model's minus a stated margin, measured in the same session), plus the free-run rule.
     - Raw: `g3-run2.log`, `g3-control.log`, `g3-localize.log`, `g3-calibration-qwen15b.log` in
       `docs/measurements/multimodal-support-2026-10/`.
+  - **G3 re-registered (owner decision, 2026-10-06), written before the run that grades it.** Disclosed: the rule was
+    written after the owner and I had seen run 2 (94.94%) and the calibration (94.22%); the run below re-measures both.
+    - **Instrument:** one test process (`TestGemma4EModel_realE2BNonInferiority`) runs `g3Run` (unchanged: the same
+      eight prompts, both sides on one Metal sidecar, int4, a 512-token pinned context) first on Qwen2.5-Coder-1.5B,
+      whose Metal path is validated (the reference), then on E2B.
+    - **Margin:** 2.0 percentage points of teacher-forced agreement, about two binomial standard errors at ~435
+      positions and p near 0.94.
+    - **PASS:** E2B agreement >= reference agreement - 2.0 points, and E2B's free-run prompt passes >= the reference's
+      - 1.
+    - **Ambiguous (parked for the owner):** agreement 2.0-4.0 points below the reference, free-run condition met.
+    - **FAIL:** agreement more than 4.0 points below the reference, or E2B's free-run passes 2 or more short.
 - **G4, real E2B image chat:**
   - The F2b request through the Metal serve binary, resident decode against CPU decode.
   - **PASS:** identical reply, or a first divergence at a near-tie.
