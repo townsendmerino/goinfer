@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -378,19 +379,11 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	if budget < 0 {
 		budget = 0
 	}
-	pinned := opts.ResidentContext > 0
-	effCtx := opts.ResidentContext
-	switch {
-	case pinned:
-		if cfg.MaxPositions > 0 && effCtx > cfg.MaxPositions {
-			effCtx = cfg.MaxPositions
-		}
-	case cfg.MaxPositions > 0:
-		effCtx = cfg.MaxPositions
-	default:
+	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling (A3)
+	if !ok {
 		return 0, nil // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
-	kvF16, kvI8 := opts.KVPrecision == "f16", opts.KVQuant == "i8"
+	pinned, effCtx, kvF16, kvI8 := p.pinned, p.ctx, p.kvF16, p.kvI8
 	needAt := func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget }
 	need := needAt(effCtx)
 	if need <= budget {
@@ -886,20 +879,80 @@ func FitDescribe(path string, opts Options) (string, error) {
 func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	f.cfg = cfg
 	f.denseStreamable = denseStreamable(cfg)
-	f.pinned = opts.ResidentContext > 0
-	switch {
-	case f.pinned:
-		f.effCtx = opts.ResidentContext
-		if cfg.MaxPositions > 0 && f.effCtx > cfg.MaxPositions {
-			f.effCtx = cfg.MaxPositions // a pin past the model's own window prices no higher than the window
-		}
-	case cfg.MaxPositions > 0:
-		f.effCtx = cfg.MaxPositions // R13: the worst case a real request can reach, unpinned
-	default:
+	p, ok := kvPricingFor(cfg, opts)
+	f.pinned = p.pinned
+	if !ok {
 		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
 	}
+	f.effCtx, f.kvF16, f.kvI8 = p.ctx, p.kvF16, p.kvI8
 	f.kvBytes = estimateKVBytes(cfg, f.effCtx, f.kvF16, f.kvI8)
 	return f
+}
+
+// kvPrice is the KV a host fit guard prices: the context, whether the caller pinned it, and the precision.
+type kvPrice struct {
+	ctx         int
+	pinned      bool
+	kvF16, kvI8 bool
+	metalSizing bool // priced as the Metal resident will allocate, not at the CPU's per-request ceiling
+}
+
+// kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what
+// the load will actually allocate (A3, docs/completed/task-audit-followups-2026-10-06.md).
+//
+//   - A load that will be Metal-resident — Metal compiled in, the resolved backend, and the architecture inside Metal's
+//     feature gate — holds f16 KV (the only KV Metal ships) for MetalCtxDefault positions unless the caller pinned a
+//     context, clamped to the model's window. Until 2026-10-07 the guards priced it at Options.KVPrecision (f32 unless
+//     -kv f16) over the model's whole window: on Gemma 4 E2B, 3.6 GB against the ~75 MB the resident holds, enough to
+//     refuse or pin down a load that fits.
+//   - Every other load keeps the old pricing: the CPU allocates KV per request, at Options.KVPrecision, up to the
+//     window, and that ceiling is what a long request reaches (R13).
+//
+// A Metal resident that then declines for memory falls back to the CPU, whose per-request KV this no longer prices at
+// load. The weights term is unchanged by that fallback, and serve's -require-backend refuses rather than fall back.
+//
+// ok is false when nothing is pinned and the model's own maximum is unknown: nothing to price.
+func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
+	p.pinned = opts.ResidentContext > 0
+	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
+	if metalWillBeResident(cfg, opts) {
+		p.metalSizing, p.kvF16 = true, true
+		p.ctx = MetalCtxDefault
+		if p.pinned {
+			p.ctx = opts.ResidentContext
+		}
+		if cfg.MaxPositions > 0 && p.ctx > cfg.MaxPositions {
+			p.ctx = cfg.MaxPositions
+		}
+		return p, true
+	}
+	switch {
+	case p.pinned:
+		p.ctx = opts.ResidentContext
+		if cfg.MaxPositions > 0 && p.ctx > cfg.MaxPositions {
+			p.ctx = cfg.MaxPositions // a pin past the model's own window prices no higher than the window
+		}
+	case cfg.MaxPositions > 0:
+		p.ctx = cfg.MaxPositions // R13: the worst case a real request can reach, unpinned
+	default:
+		return p, false
+	}
+	return p, true
+}
+
+// metalWillBeResident reports whether this load will build a Metal resident, as far as load time can tell: Metal is
+// compiled into this binary, it is the resolved backend, and the architecture passes Metal's feature gate (the check
+// metal/backend.go applies first). Resolved on a copy of cfg: resolveArchitecture may backfill fields.
+func metalWillBeResident(cfg *Config, opts Options) bool {
+	if opts.Backend != "metal" || !slices.Contains(CompiledBackends(), "metal") {
+		return false
+	}
+	c := *cfg
+	arch, _, err := resolveArchitecture(&c)
+	if err != nil {
+		return false
+	}
+	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) == 0
 }
 
 // smallerFittingContext solves for the largest context ≤ f.effCtx whose weights+KV fit the

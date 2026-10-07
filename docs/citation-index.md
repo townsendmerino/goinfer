@@ -940,13 +940,13 @@ supports.
 | `docs/tasks/task-actquant-pergroup-2026-09.md|decoder/features.go:382` | goinfer | `if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && backend == "cuda") {` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:122` | goinfer | `if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQu` |
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:199` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/blockspec.go:229` | goinfer | `if !m.tryClaimResident() {` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/mc3_batch.go:158` | goinfer | `func (b *residentBatcher) claim(resBusy *int32) bool {` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/model.go:1737` | goinfer | `func (m *Model) tryClaimResident() bool {` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/model.go:610` | goinfer | `if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|decoder/speculative.go:137` | goinfer | `if target.tryClaimResident() {` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|internal/loadflags/loadflags.go:65` | goinfer | `fs.StringVar(&f.KV, "kv", "f32", kvHelp+per("kv"))` |
-| `docs/tasks/task-audit-followups-2026-10-06.md|metal/backend.go:316` | goinfer | `// (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled` |
+| `docs/completed/task-audit-followups-2026-10-06.md|decoder/blockspec.go:229` | goinfer | `if !m.tryClaimResident() {` |
+| `docs/completed/task-audit-followups-2026-10-06.md|decoder/mc3_batch.go:158` | goinfer | `func (b *residentBatcher) claim(resBusy *int32) bool {` |
+| `docs/completed/task-audit-followups-2026-10-06.md|decoder/model.go:1737` | goinfer | `func (m *Model) tryClaimResident() bool {` |
+| `docs/completed/task-audit-followups-2026-10-06.md|decoder/model.go:610` | goinfer | `if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {` |
+| `docs/completed/task-audit-followups-2026-10-06.md|decoder/speculative.go:137` | goinfer | `if target.tryClaimResident() {` |
+| `docs/completed/task-audit-followups-2026-10-06.md|internal/loadflags/loadflags.go:65` | goinfer | `fs.StringVar(&f.KV, "kv", "f32", kvHelp+per("kv"))` |
+| `docs/completed/task-audit-followups-2026-10-06.md|metal/backend.go:316` | goinfer | `// (f16 KV — the only path this backend ships; the f32 KV kernels exist but are compiled` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:313` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:220` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:155` | goinfer | `// chat-template string; if that's empty, it falls back to the special-token` |

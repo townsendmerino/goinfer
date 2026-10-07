@@ -417,8 +417,13 @@ func quantLabel(q string) string {
 // (the plain CPU backend implements none of wantsCanonicalInt4's interfaces, so it
 // never needs canonical either way) and matches what a real cpu-arm64-target
 // bundle is actually loaded with in production.
+//
+// ResidentContext 1: the check runs no request, so it allocates no KV. Unpinned, the host fit guard priced it at the
+// CPU's per-request ceiling (f32 over the model's whole window) and, on every sidecar check of a big-window model,
+// printed a "context capped" line belonging to no real load; under tight memory it could refuse the check outright
+// (A3, docs/completed/task-audit-followups-2026-10-06.md).
 func selfCheck(path string) error {
-	m, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
+	m, err := decoder.Load(path, decoder.Options{Backend: "cpu", ResidentContext: 1})
 	if err != nil {
 		return err
 	}
