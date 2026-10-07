@@ -46,6 +46,15 @@ or on twelve synthetic cases pinned from torchvision); `serve --embed-image-resi
 (1.000000000 end to end on the same twelve cases; about 1.2-2.0 s an image against 5.1-5.8 s for the CPU tower, an
 exploratory read), through a weights export new in aikit.
 
+### Changed — aikit v1.59.0
+
+- **All five modules require aikit v1.59.0.** It carries the float32 tower exports the rebuilt Metal towers use (SigLIP,
+  Qwen3.5+/Qwen3-VL, GLM-OCR) and Qwen3-VL's DeepStack.
+- **`cuda` requires `gpu/qwencuda` v0.1.1.** In v0.1.0, an image too large for the memory beside the decoder killed the
+  process; in v0.1.1 it is an error.
+- **This branch builds from published tags again.** Its `go.work` no longer names the local aikit.
+- **Text paths are unchanged.** The forward goldens passed, and only the parity manifest's dependency hashes moved.
+
 ### Changed — aikit v1.58.0
 
 All five modules require aikit v1.58.0, which carries the pieces the entries below use: the Gemma 4 tower export, the
