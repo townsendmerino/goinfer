@@ -1,7 +1,7 @@
 # Task — follow-ups from the 2026-10-06 external quality audit
 
-**Status:** FILED 2026-10-06, not started (owner: "file stuff that's real and needs fixing as a task, we can start
-that after 22").
+**Status: DONE 2026-10-07, archived.** A1 fixed, A2 closed as filed in error, A3 fixed (below). Filed 2026-10-06
+(owner: "file stuff that's real and needs fixing as a task, we can start that after 22").
 **Source:** an external audit ("Comprehensive Quality Audit: goinfer Code, Architecture, and Performance",
 Antigravity, 2026-10-06, taken at `0937d069`, before the v0.21.0 tag), pasted into a Mac session. Its 33 findings
 were checked against the tree at v0.21.0 / v0.22.0's release commit; this file keeps the ones that are real and need
@@ -55,6 +55,33 @@ to the sequential fallback, so declining there would change nothing. The origina
   `vocab` floats per prompt.
 
 ### A3 · To confirm first: does the host-RAM fit guard price Metal's KV at f32? (audit 1.2, filed as High)
+
+**Status 2026-10-07: FIXED.** Measured first, on the real Gemma 4 E2B (`~/models/gemma-4-e2b-gguf`, int4, Metal serve),
+which S1 (`docs/tasks/task-multimodal-support-2026-10.md`) made Metal-resident:
+- **The overcharge was real:** G4's Metal load printed "fit: 131072-token cap needs 3.6 GB KV … 0.6 GB left" while
+  Metal held 4,096 positions of f16 (about 0.1 GB). On a busier Mac that load would have been refused, or pinned
+  below Metal's default (the guard's floor is 2,048).
+- **The "pin raises Metal's context" half was already closed** by T0.4 (`0fbe2c2c`): a guard pin is recorded as not
+  caller-pinned, and Metal takes an unpinned request as a ceiling, `min(req, 4096)`.
+- **The fix:**
+  - `kvPricingFor` (`decoder/fitguard.go`) is now what both host guards price: a load that will be Metal-resident
+    (Metal compiled in, the resolved backend, the architecture inside Metal's feature gate) at f16 for
+    `MetalCtxDefault` positions unless the caller pinned one, capped at the model's window. Every other load keeps the
+    CPU's per-request ceiling.
+  - `FitBudgetSummary`, the banner's "fit:" line, reports a resident's real capacity and KV.
+  - prequant's `selfCheck`, which loads a fresh sidecar on the CPU only to verify it and allocates no KV, pins a
+    1-token context. Unpinned, it was the load printing a "context capped" line on every Metal serve start of a
+    big-window model.
+- **Residual, stated:** a Metal resident that then declines for memory falls back to the CPU, whose per-request KV is
+  no longer priced at load. The weights term is unchanged by that fallback, and `-require-backend` refuses rather than
+  fall back.
+- **Tests:** `TestKVPricingFor_pricesWhatTheBackendAllocates`, `TestKVPricingFor_metalNotCompiledKeepsCPUPricing`,
+  and `TestGuardGIWFit_metalNotOverchargedByCPUPricing`: the same tight memory pins a CPU load and leaves a Metal one
+  alone. With the Metal branch disabled, the first and third go red.
+- **After, on the same E2B Metal serve load:** no "context capped" line; "context: 4096 tokens … KV f16"; "fit:
+  4096-token cap needs 0.1 GB KV (… 2.8 GB left)".
+
+The original filing follows.
 
 **Status 2026-10-06: CONFIRMED by reading, and wider than the audit said; the fix needs a design choice.** Both host
 guards run for every backend (`guardGIWFit` at `decoder/model.go:610`, `guardFit` at `:705`; neither checks the
