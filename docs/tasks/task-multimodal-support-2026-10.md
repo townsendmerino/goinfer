@@ -188,6 +188,14 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
   - **`gate quick` over the change:** 2100 tests passed, 41 forward goldens green; the one red was
     `TestParityManifest_fresh`, cleared by the goldens-gated `scripts/refresh_parity_hashes.sh`
     (`docs/measurements/multimodal-support-2026-10/s11-gate-quick.log`).
+- **S1.2, the resident embedding row, done 2026-10-06 on the Mac.**
+  - The CPU's per-position PLE-input code moved verbatim into `Model.gemma4PLEInputs`; the CPU forward and
+    `embedResidentInto` both call it. For an E-model the resident row is `[h || L*P PLE inputs]`,
+    `ResidentEmbedLen()` long; for every other model it is H, as before.
+  - **Check:** `TestGemma4EModel_residentEmbedRow`. The head equals the scaled embedding exactly, and the tail matches
+    HF's own `get_per_layer_inputs` + `project_per_layer_inputs` (now recorded by the pin script; the checkpoint
+    re-pinned byte-identical) to max |diff| 1.19e-6 over all 12 positions. A reused buffer gives the same row.
+  - The Metal entries still accept only H, so they refuse an E-model row until S1.5 reads the tail.
 - **G1, tiny E-model, Metal resident against the CPU, every position, int4 on both sides:**
   - argmax identical, a first divergence where the CPU's top-1/top-2 margin is under 3% counting as a near-tie (the
     two-geometry rule);
@@ -202,6 +210,16 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
   - (7) `v_norm` dropped on non-K=V layers.
 
   A defect that stays green means the fixture is degenerate along that axis. Fix the fixture, not the bar.
+
+  **G2 amendment, 2026-10-06, before any G2 run (a mechanism, not a reading):** the second half of (2), the
+  1/sqrt(2) dropped, cannot go red on logits for any checkpoint. The factor multiplies the whole per-layer input;
+  the PLE branch is linear in that input (gelu(gate.h) x input, then a projection) and ends in
+  `post_per_layer_input_norm`, an RMSNorm, which removes a uniform scale except through its eps. Measured on the CPU
+  against HF while building S1.2: dropping it moves the worst logit cosine from 1.00000000 to 0.99998923. So that
+  half is checked where it is visible, on the embedding row's PLE tail against HF's own per-layer inputs
+  (`TestGemma4EModel_residentEmbedRow`, red at max |diff| 1.02 with it dropped), and G2's (2) keeps only "the
+  token-identity term zeroed". This is the axis being invisible by construction, not the fixture being degenerate,
+  so the rule above does not apply to it.
 - **G3, real E2B text:**
   - 8 fixed prompts x 32 greedy tokens, Metal resident against the CPU, both int4 from the same GGUF.
   - **PASS:** identical tokens, or a first divergence at a near-tie, on every prompt; and teacher-forced argmax

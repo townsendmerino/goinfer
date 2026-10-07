@@ -15,7 +15,7 @@ from the code and not run. Nothing here was executed except reading files and th
      mandatory for S1.
    - **(b) No resident backend applies the scale-less `v_norm` on a NON-K=V layer.** HF applies
      `value_states = self.v_norm(value_states)` on EVERY non-shared layer (transformers 5.12
-     `TF/models/gemma4/modeling_gemma4.py:1247-1254`), and the CPU reference does too, unconditionally (`decoder/forward_gemma4.go:172`).
+     `TF/models/gemma4/modeling_gemma4.py:1247-1254`), and the CPU reference does too, unconditionally (`decoder/forward_gemma4.go:150`).
      Metal ran `v_norm` only `if g.kEqV` (in `metal/model.go`'s attention encode, before S1.0's fix in c12e2778). CUDA
      is the same (`cuda/resident.go:3285`). E2B has `attention_k_eq_v=False` (real `config.json`), so `kEqV` is false
      on every layer (`decoder/residency.go:892-900`), and **no E2B layer would get `v_norm`**. The same gap affects the
@@ -31,9 +31,10 @@ from the code and not run. Nothing here was executed except reading files and th
    so a PLE fixture needs either that loader (Phase 4 work) or a GGUF writer. Today the only E-model on the Mac is the
    real `~/models/gemma-4-E2B_q4_0-it.gguf`, which is present.
 3. **The bridge problem is the token id.** PLE's token-identity term needs the token id
-   (`decoder/forward_gemma4.go:81`). Every resident entry point carries only `embedding []float32`
+   (the token-table row read inline in `runLayersGemma4FromEmbed` as of 2026-10-06; S1.2 moved it into
+   `Model.gemma4PLEInputs`). Every resident entry point carries only `embedding []float32`
    (`decoder/residency.go:50-87`, `metal/backend.go:537-556`). Recommended: an "augmented embedding row" built in
-   `embedResidentInto` (`decoder/residency.go:1531`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
+   `embedResidentInto` (`decoder/residency.go:1535`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
    computed host-side by the exact CPU code (bit-identical PLE inputs). Metal already has strict length checks to
    extend (`metal/backend.go:539,592`, `metal/model.go:3309`). Details in §3.1.
 4. **The whole per-layer PLE branch can be built from kernels Metal already has:** `quant_vec`, `gemv_w4a8_sa`,
@@ -71,9 +72,10 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
 ### 1.2 Forward, one token: `runLayersGemma4` → `runLayersGemma4FromEmbed`
 
 - **Embedding:** `h = Embed[id] × √hidden` (`decoder/forward_gemma4.go:29-40`). The resident twin is
-  `embedResidentInto` (`decoder/residency.go:1531-1558`).
+  `embedResidentInto` (`decoder/residency.go:1535-1562`).
 - **PLE inputs**, computed once per token from the INITIAL scaled embedding, before layer 0
-  (`decoder/forward_gemma4.go:76-101`):
+  (inline in `runLayersGemma4FromEmbed` as of 2026-10-06, which the bare line numbers in this list refer to; S1.2
+  moved the block verbatim into `Model.gemma4PLEInputs`):
   - `tok = PerLayerTokenEmbed.Row(pleTokenID) × √P`, shape `[L·P]` (:81-85).
   - `ctx = PerLayerModelProj · h` (`[L·P × H]`, :87), then `× 1/√H` (:88-91), then per layer an RMSNorm over its
     P-segment with the shared weight `PerLayerProjNorm` (:95). This is `normalize(arch, …)`. `arch.RMSAddOne` is
@@ -83,12 +85,12 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
   - `pleTokenID` is the token id for text. At an image/audio position it is **`arch.gemma4.PadTokenID`**: in the
     sequential path at `decoder/generate_gemma4_vl.go:47-60`, and per row in the batched path at
     `decoder/forward_gemma4_batched.go:99-103`. Doc and HF verification: `decoder/forward_gemma4.go:50-57`.
-- **Shared KV source map** (`decoder/forward_gemma4.go:103-122`): with `firstShared = L - SharedKVLayers`, a layer
+- **Shared KV source map** (`decoder/forward_gemma4.go:81-100`): with `firstShared = L - SharedKVLayers`, a layer
   `l ≥ firstShared` uses the LAST non-shared layer of the SAME type (sliding vs full). The standalone twin is
   `Architecture.gemma4KVSrcAt` (`decoder/arch.go:786-805`), exported as `Model.KVSrcAtResident`
   (`decoder/residency.go:921`), pinned by `decoder/gemma4_kvsrc_test.go:14`. For E2B, sliding layers 15+ read
   layer 13 and full layers read layer 14. Nothing outside decoder calls `KVSrcAtResident` yet (grep).
-- **Per-layer attention** (`decoder/forward_gemma4.go:141-190`):
+- **Per-layer attention** (`decoder/forward_gemma4.go:120-168`, the body of the layer loop):
   - pre-attn RMSNorm.
   - Q = QProj → per-head `q_norm` → RoPE, with the per-type table: local base 10k full-rotary, global base 1e6
     "proportional", where the first `GlobalRotaryDim/2` frequencies are real and the tail is zero (`gemma4InvFreq`,
@@ -282,7 +284,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 
 **Recommended split.**
 - **Host side, in the decoder:** the whole per-token PLE input `perLayer[L·P]`, computed by the **same code** as the
-  CPU (`decoder/forward_gemma4.go:79-101`). Refactor that block into one helper, e.g. `m.gemma4PLEInputs(h, pleTokenID, dst)`,
+  CPU (inline in `runLayersGemma4FromEmbed` as of 2026-10-06; S1.2 made it `Model.gemma4PLEInputs`). Refactor that block into one helper, e.g. `m.gemma4PLEInputs(h, pleTokenID, dst)`,
   called by runLayersGemma4FromEmbed, runLayersGemma4FromEmbedN (per row), and the resident path.
   - The PLE inputs are then bit-identical to the reference, which removes one parity variable.
   - It keeps the 262144×8960 token table (2.35 G entries: ~2.35 GB int8) **on the host**. It is mmap-aliased from a

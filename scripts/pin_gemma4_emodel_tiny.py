@@ -22,8 +22,8 @@ layer_scalar at identity, so a bug that skips one would not move the golden. str
 overrides them from a SEPARATE seeded generator (the linear weights and inputs stay
 bit-identical). The PLE norms are included; v_norm has no weight.
 
-The golden holds the logits at EVERY prompt position (teacher-forced, one HF forward) and a
-greedy continuation. CPU fp32; HF is the oracle.
+The golden holds the logits at EVERY prompt position (teacher-forced, one HF forward), HF's own
+per-layer inputs at each position, and a greedy continuation. CPU fp32; HF is the oracle.
 
     python3 scripts/pin_gemma4_emodel_tiny.py
     -> testdata/gemma4_emodel_tiny_golden.json  (+ testdata/gemma4-emodel-tiny/)
@@ -96,6 +96,10 @@ def main():
     with torch.no_grad():
         ids = torch.tensor([PROMPT], dtype=torch.long)
         all_logits = model(ids, use_cache=False).logits[0].float()
+        # HF's own PLE inputs per position ([len(PROMPT), L, P]) — the oracle for the [h || PLE] row a GPU
+        # backend receives (S1.2), independent of goinfer's gemma4PLEInputs.
+        emb = lm.embed_tokens(ids)
+        ple = lm.project_per_layer_inputs(emb, lm.get_per_layer_inputs(ids, emb))[0].float()
         cur, cont = list(PROMPT), []
         for _ in range(N_NEW):
             nxt = int(model(torch.tensor([cur], dtype=torch.long), use_cache=False).logits[0, -1].argmax())
@@ -113,6 +117,7 @@ def main():
         "prompt_ids": PROMPT,
         "argmax": [int(r.argmax()) for r in all_logits],
         "logits": [r.tolist() for r in all_logits],  # [len(PROMPT), vocab]
+        "ple_inputs": [r.flatten().tolist() for r in ple],  # [len(PROMPT), L*P]
         "n_new": N_NEW,
         "continuation_ids": cont,
     }

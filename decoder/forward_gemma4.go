@@ -73,31 +73,9 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 	localInv := gemma4InvFreq(arch.HeadDim, arch.HeadDim, arch.RoPELocalBase)
 	globalInv := gemma4InvFreq(g4.GlobalHeadDim, g4.GlobalRotaryDim, arch.RoPEGlobalBase)
 
-	// Per-Layer-Embedding inputs: (token_identity + context_aware) / √2, shaped
-	// [NumLayers, pleDim]. token_identity = per_layer_token_embd[id] × √pleDim;
-	// context_aware = norm( per_layer_model_proj(inputs_embeds) × hidden^-0.5 ).
 	perLayer := make([]float32, arch.NumLayers*pleDim)
 	if pleDim > 0 {
-		m.w.PerLayerTokenEmbed.Row(pleTokenID, perLayer)
-		tScale := float32(math.Sqrt(float64(pleDim)))
-		for i := range perLayer {
-			perLayer[i] *= tScale
-		}
-		ctxAware := make([]float32, arch.NumLayers*pleDim)
-		matmul(be, &m.w.PerLayerModelProj, h, ctxAware, 1)
-		cScale := float32(1.0 / math.Sqrt(float64(hidden)))
-		for i := range ctxAware {
-			ctxAware[i] *= cScale
-		}
-		inv2 := float32(1.0 / math.Sqrt2)
-		for l := 0; l < arch.NumLayers; l++ {
-			row := ctxAware[l*pleDim : (l+1)*pleDim]
-			normalize(arch, row, m.w.PerLayerProjNorm, nil, pleDim) // RMSNorm over pleDim
-			pl := perLayer[l*pleDim : (l+1)*pleDim]
-			for i := range pl {
-				pl[i] = (pl[i] + row[i]) * inv2
-			}
-		}
+		m.gemma4PLEInputs(h, pleTokenID, perLayer)
 	}
 
 	// Cross-layer KV sharing: layers ≥ firstShared reuse the KV of the last
@@ -347,6 +325,37 @@ func gemma4Attend(q, ctx, keys, vals []float32, nH, nKV, hd, start, nKeys int, s
 		for g := range group {
 			qhead := kvh*group + g
 			copy(ctx[qhead*hd:qhead*hd+hd], cs[g*hd:g*hd+hd])
+		}
+	}
+}
+
+// gemma4PLEInputs writes one position's Per-Layer-Embedding inputs into dst ([NumLayers*pleDim]):
+// (token_identity + context_aware) / √2, where token_identity = per_layer_token_embd[pleTokenID] × √pleDim and
+// context_aware = RMSNorm per layer segment of ( per_layer_model_proj(h) × hidden^-0.5 ). h is the position's
+// inputs_embeds (already × EmbedScale). The CPU forward and the resident embedding (embedResidentInto, which hands
+// a GPU backend [h ‖ these]) both call it, so the two cannot compute PLE differently. S1.2,
+// docs/tasks/task-multimodal-support-2026-10.md.
+func (m *Model) gemma4PLEInputs(h []float32, pleTokenID int, dst []float32) {
+	arch := m.w.arch
+	pleDim := arch.gemma4.HiddenSizePerLayerInput
+	m.w.PerLayerTokenEmbed.Row(pleTokenID, dst)
+	tScale := float32(math.Sqrt(float64(pleDim)))
+	for i := range dst {
+		dst[i] *= tScale
+	}
+	ctxAware := make([]float32, arch.NumLayers*pleDim)
+	matmul(m.be, &m.w.PerLayerModelProj, h, ctxAware, 1)
+	cScale := float32(1.0 / math.Sqrt(float64(arch.HiddenDim)))
+	for i := range ctxAware {
+		ctxAware[i] *= cScale
+	}
+	inv2 := float32(1.0 / math.Sqrt2)
+	for l := 0; l < arch.NumLayers; l++ {
+		row := ctxAware[l*pleDim : (l+1)*pleDim]
+		normalize(arch, row, m.w.PerLayerProjNorm, nil, pleDim) // RMSNorm over pleDim
+		pl := dst[l*pleDim : (l+1)*pleDim]
+		for i := range pl {
+			pl[i] = (pl[i] + row[i]) * inv2
 		}
 	}
 }

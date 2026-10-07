@@ -1528,14 +1528,20 @@ func (m *Model) embedIsTableRow() bool {
 // result synchronously before requesting the next one — the resident decode loop's actual shape
 // (embed → Forward → discard, one token at a time) — never where more than one live embedding
 // must exist at once.
+//
+// A Gemma 4 E-model's row is [h ‖ PLE inputs], ResidentEmbedLen() long: the per-layer inputs need the token id,
+// which the resident interface does not carry, so the host computes them here with the CPU's own helper
+// (gemma4PLEInputs) and the backend reads them from the row's tail (S1.2, docs/tasks/task-multimodal-support-2026-10.md).
 func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 	hidden := m.w.arch.HiddenDim
-	var h []float32
-	if cap(dst) >= hidden {
-		h = dst[:hidden]
+	n := m.ResidentEmbedLen()
+	var row []float32
+	if cap(dst) >= n {
+		row = dst[:n]
 	} else {
-		h = make([]float32, hidden)
+		row = make([]float32, n)
 	}
+	h := row[:hidden]
 	m.w.Embed.Row(id, h)
 	// Gemma's √hidden embedding multiplier (Architecture.EmbedScale), mirroring runLayers.
 	// Applied here rather than on the GPU so the resident stream starts where the CPU's does.
@@ -1552,7 +1558,30 @@ func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 			h[i] *= g.EmbMul
 		}
 	}
-	return h
+	if n > hidden {
+		m.gemma4PLEInputs(h, id, row[hidden:])
+	}
+	return row
+}
+
+// ResidentEmbedLen is the length of every embedding row a ResidentForward receives: HiddenDim, or for a Gemma 4
+// E-model HiddenDim + NumLayers*HiddenSizePerLayerInput (the PLE inputs embedResidentInto appends). A backend checks
+// each row against this, never against HiddenDim alone.
+func (m *Model) ResidentEmbedLen() int {
+	n := m.w.arch.HiddenDim
+	if g4 := m.w.arch.gemma4; g4 != nil {
+		n += m.w.arch.NumLayers * g4.HiddenSizePerLayerInput
+	}
+	return n
+}
+
+// Gemma4PLEDimResident is a Gemma 4 E-model's per-layer input width (hidden_size_per_layer_input), 0 for every
+// other model. The layer's slice of an embedding row's PLE tail is [HiddenDim + l*P, HiddenDim + (l+1)*P).
+func (m *Model) Gemma4PLEDimResident() int {
+	if g4 := m.w.arch.gemma4; g4 != nil {
+		return g4.HiddenSizePerLayerInput
+	}
+	return 0
 }
 
 // SandwichNormResident reports whether the arch uses Gemma's 4-norm sandwich — extra norms

@@ -740,14 +740,11 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/features.go:529` | goinfer | `func (m *Model) HasPerLayerGeometry() bool {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/features.go:561` | goinfer | `var residentBackendFeatures = map[string]map[ResidentFeature]bool{` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/features_test.go:536` | goinfer | `{"gemma4-e-model-ple", func(a *Architecture) { a.gemma4 = &gemma4Params{HiddenSizePerLay` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:103` | goinfer | `// Cross-layer KV sharing: layers ≥ firstShared reuse the KV of the last` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:141` | goinfer | `for l := 0; l < arch.NumLayers; l++ {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:172` | goinfer | `rmsNormNoWeight(v, nKV, hd, arch.NormEps) // V: scale-less v_norm, no RoPE` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:120` | goinfer | `lw := &m.w.Layers[l]` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:150` | goinfer | `rmsNormNoWeight(v, nKV, hd, arch.NormEps) // V: scale-less v_norm, no RoPE` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:50` | goinfer | `// pleTokenID selects which token id's per-layer embedding feeds PLE's` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:76` | goinfer | `// Per-Layer-Embedding inputs: (token_identity + context_aware) / √2, shaped` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:79` | goinfer | `perLayer := make([]float32, arch.NumLayers*pleDim)` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:81` | goinfer | `m.w.PerLayerTokenEmbed.Row(pleTokenID, perLayer)` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:81` | goinfer | `// Cross-layer KV sharing: layers ≥ firstShared reuse the KV of the last` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4_batched.go:67` | goinfer | `func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4_batched.go:99` | goinfer | `for row := range K {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_admission_test.go:62` | goinfer | `anchor: func TestGemma4Admission_unconditional(t *testing.T) {` |
@@ -775,7 +772,7 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/model.go:1612` | goinfer | `var logits []float32` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:365` | goinfer | `RMSAddOne:     false,` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:371` | goinfer | `// learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1531` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1535` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:50` | goinfer | `type ResidentForward interface {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:543` | goinfer | `func (m *Model) residentAdmission() string {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:592` | goinfer | `case a.gemma4 != nil:` |
@@ -877,7 +874,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:2271` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1734` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1531` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/ollama-chase.md|decoder/residency.go:1535` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:792` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:2462` | goinfer | `func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {` |

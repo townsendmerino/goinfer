@@ -211,7 +211,7 @@
       "own": [
         "decoder/forward_gemma4.go"
       ],
-      "deps_hash": "sha256:9e6ad56c2dec04ce84cd622c77b925dad7d9126dc33f2d4b834b487b7bc78693",
+      "deps_hash": "sha256:575d6b9b7ddd64fd5c1a95f0ca03f8b9f3358f6aa25cda63dee18a57b6131bcf",
       "status": "validated",
       "validated_at": "310a2e44",
       "date": "2026-09-28",

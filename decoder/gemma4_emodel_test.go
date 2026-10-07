@@ -156,3 +156,71 @@ func TestGemma4GlobalGeometry(t *testing.T) {
 		}
 	}
 }
+
+// TestGemma4EModel_residentEmbedRow is S1.2's check: the row a GPU backend receives for an E-model is
+// [h ‖ PLE inputs], ResidentEmbedLen() long, where h is the scaled token embedding and the tail matches HF's own
+// per-layer inputs (get_per_layer_inputs + project_per_layer_inputs, recorded by the pin script) at every prompt
+// position. The oracle is HF, not gemma4PLEInputs, so a helper that drifted from the CPU forward's old inline code
+// would show here even though both goinfer paths now share it. The reuse path (a caller-owned buffer)
+// must produce the same row.
+func TestGemma4EModel_residentEmbedRow(t *testing.T) {
+	raw, err := os.ReadFile(gemma4EModelGolden)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skip("no golden — run scripts/pin_gemma4_emodel_tiny.py")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		PromptIDs []int       `json:"prompt_ids"`
+		PLEInputs [][]float64 `json:"ple_inputs"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatal(err)
+	}
+	if len(g.PLEInputs) != len(g.PromptIDs) {
+		t.Fatalf("golden has %d ple_inputs rows for %d prompt ids — re-run the pin script", len(g.PLEInputs), len(g.PromptIDs))
+	}
+	if _, err := os.Stat(gemma4EModelDir); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no tiny checkpoint (%s) — run scripts/pin_gemma4_emodel_tiny.py", gemma4EModelDir)
+	}
+	requireFixtureIdentity(t, gemma4EModelDir)
+	m, err := Load(gemma4EModelDir, Options{Quant: "f32"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+	H := m.w.arch.HiddenDim
+	LP := m.w.arch.NumLayers * m.Gemma4PLEDimResident()
+	if LP != 6*32 || m.ResidentEmbedLen() != H+LP {
+		t.Fatalf("ResidentEmbedLen %d, PLE %d; want %d + %d", m.ResidentEmbedLen(), LP, H, 6*32)
+	}
+	var scratch []float32
+	worst := 0.0
+	for p, id := range g.PromptIDs {
+		row := m.embedResident(id)
+		if len(row) != H+LP {
+			t.Fatalf("pos %d: row length %d, want %d", p, len(row), H+LP)
+		}
+		h := make([]float32, H)
+		m.w.Embed.Row(id, h)
+		for i := range h {
+			if want := h[i] * float32(m.w.arch.EmbedScale); row[i] != want {
+				t.Fatalf("pos %d: row[%d] = %v, want the scaled embedding %v", p, i, row[i], want)
+			}
+		}
+		for i, want := range g.PLEInputs[p] {
+			worst = math.Max(worst, math.Abs(float64(row[H+i])-want))
+		}
+		scratch = m.embedResidentInto(id, scratch)
+		for i := range row {
+			if scratch[i] != row[i] {
+				t.Fatalf("pos %d: embedResidentInto with a reused buffer differs at %d", p, i)
+			}
+		}
+	}
+	t.Logf("PLE tail vs HF over %d positions: max |diff| %.3g", len(g.PromptIDs), worst)
+	if worst > 1e-4 {
+		t.Errorf("PLE tail max |diff| %.3g vs HF, want <= 1e-4 (f32)", worst)
+	}
+}
