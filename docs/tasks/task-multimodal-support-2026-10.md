@@ -304,6 +304,25 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     control arm, reported and not graded, runs the same teacher-forced comparison CPU against CPU across the two
     sidecars (int8 tables against `e4h`), to measure how much of run 1's 94.02% the table precision alone explains.
     Run 2's verdict stands as the G3 reading only if the owner accepts this amendment.
+  - **G3 run 2, 2026-10-06 20:56 PDT (amended procedure): FAIL as registered.** 7/8 prompts pass (prompt 3 first
+    diverges at generated token 19, CPU gap 5.91%); teacher-forced agreement 413/435 = **94.94%**. Deterministic: a
+    re-run that logs each disagreement gives the same 413/435. Of the 22 disagreements, 16 are near-ties under 3% and
+    6 exceed it (7.63, 5.91, 4.00, 3.52, 3.49%), four of those six at prompt positions.
+    - **Control (CPU int8 tables vs CPU e4h tables, same procedure): 93.56%.** A table-precision change alone, on the
+      CPU, disagrees as often as Metal does: run 1's confound was real but was not what failed it.
+    - **Localization (exploratory), the residual after every layer, Metal vs CPU, at three positions including the
+      worst (prompt 6 pos 18):** smooth drift from 1.00000 at layer 0 to 0.986-0.999 at layer 34; no layer drops more
+      than ~0.002, and nothing changes at layer 15 (the first KV-shared layer) or any PLE layer. That is the shape of
+      accumulated quantization noise, not of a defect.
+    - **Calibration (exploratory, the same `g3Run` on Qwen2.5-Coder-1.5B, whose Metal path is validated): 7/8 prompts,
+      94.22%.** A known-good Metal path fails G3's bands by the same margin, so the 99%/97% bands were set without
+      calibrating the instrument: Metal's W4A8 (per-tensor int8 activations, f16 scales) against the CPU's int4 path
+      flips about 5-6% of argmax positions on these prompts, mostly at near-ties.
+    - **Status: G3 FAIL as registered; parked for the owner.** Not re-graded. One candidate re-registration, for the
+      owner to accept or reject: non-inferiority against the calibration (E2B's agreement at least the validated
+      model's minus a stated margin, measured in the same session), plus the free-run rule.
+    - Raw: `g3-run2.log`, `g3-control.log`, `g3-localize.log`, `g3-calibration-qwen15b.log` in
+      `docs/measurements/multimodal-support-2026-10/`.
 - **G4, real E2B image chat:**
   - The F2b request through the Metal serve binary, resident decode against CPU decode.
   - **PASS:** identical reply, or a first divergence at a near-tie.
