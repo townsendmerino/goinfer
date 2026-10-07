@@ -1155,6 +1155,29 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
     ~/models/gemma-4-E2B-unq --backend cpu`, the mid clip, "Describe this audio briefly.": "The audio appears to be a
     sound effect of a door slamming." in 4.3 s, 75 prompt tokens. The safetensors load alone was refused by the fit
     guard beside the owner's session.
+- **G-S5c, read 2026-10-07 12:49-12:51 PDT on the Mac: PASS.**
+  - The setup: `run-gs5c-served.sh`, a serve binary built from `main` at `ec97c37b` plus the serve audio change
+    (committed as `d499cb30`). The model is `--model ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision
+    ~/models/gemma-4-E2B-unq`, with `--embed-int4=false` on every arm. "Transcribe this audio.", 32 greedy tokens.
+    Arms: `cpu`, `metal`, then `cpu` again. The Metal arm decoded `metal-resident (int4)`, "on the resident path", for
+    every clip.
+
+    | clip | prompt tokens | Metal against CPU | second CPU run against the first |
+    |---|---|---|---|
+    | short | 25 | first differs at token 1: CPU "'" 0.435, Metal's " need" 0.298 there, a near-tie | identical |
+    | mid | 75 | first differs at token 2: CPU " Trans" 0.125, Metal's " I" 0.105 there, a near-tie | identical |
+    | long | 212 | identical | identical |
+
+  - The replies are E2B declining or murmuring ("I'm sorry, I cannot transcribe the audio.", "Mmm."). That is right for
+    synthetic tones with no speech, and content is not graded. A spoken clip with a known license is still owed for a
+    real transcription.
+  - Request times (exploratory, the tower on the CPU, loaded on the first clip): CPU 2.2-6.5 s, Metal 3.3-8.7 s. Metal
+    is slower here because every one of these is a cold image-turn prefill on the CPU plus an upload. Batched E-model
+    prefill is S9's work.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5c/`.
+- **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
+  clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
+  test clip.
 
 ### S6 — Coverage that is cheap once the above exists
 
