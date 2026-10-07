@@ -1,0 +1,6 @@
+
+> build · qwen2.5-7b-instruct-q4_k_m
+
+• fix bug in calc.go Explore Agent
+✓ fix bug in calc.go Explore Agent
+Replace the `add` function in `calc.go` with the provided code and save the file. If you need instructions, I can guide you through it.

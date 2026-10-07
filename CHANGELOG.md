@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — `serve check`'s `stop sequences` row no longer fails on models that handle stop sequences correctly
+
+The row asked a model to answer the bare line `Count: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10.` with a stop at `5`. Qwen2.5-Coder-7B ("The count is now 10.") and the Gemma-4 26B ("The total count is…") never counted, so the row printed `FAIL` on a first run against a popular model. The prompt now says what to write (`Count from 1 to 10, separated by commas, and write nothing else.`). The row still fails a stop string that leaks and a reply that never reaches the stop. Checked on the 26B and Qwen2.5-7B-Instruct, both pass.
+
 ### Changed — the DeltaNet part of a hybrid's batched prefill runs on all cores, bit-identically (P26c)
 
 A CPU profile of the 11 s, 684-token image prefill on Qwen3.5-0.8B showed 6.8 s of it in the DeltaNet conv, gates and recurrence, run one token at a time on one thread between matmuls that use all sixteen. `deltaNetCoreN` runs them over all the prompt's rows at once with the independent parts in parallel: the conv and q/k normalisation per row, the recurrence with the value heads in parallel (each head still walks its tokens in order), the gated norm per row. Every float operation of every element keeps its order, so the result is **bit-identical** to the per-token loop, recurrent state and conv window included (a test holds exact bit equality). Prefill 11 s to 4.6 s (62 to 149 tokens/s); time to first token for a 1024x640 image on the CPU backend 13.8 s to 7.7 s, and 10.7 s to 4.4 s for a resent image (exploratory, one run per cell; `docs/measurements/p26c-cpu-deltanet-fanout-2026-10-06/`). This speeds every long prompt on a Gated-DeltaNet model on the CPU through the batched forward (the embedding route and the image route), not only images.

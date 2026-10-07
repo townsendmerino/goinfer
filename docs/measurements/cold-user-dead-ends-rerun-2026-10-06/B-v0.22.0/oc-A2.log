@@ -1,0 +1,11 @@
+
+> build · qwen2.5-7b-instruct-q4_k_m
+
+$ grep -nR "error in calculation" calc.go
+(no output)
+
+No errors related to calculations were found in `calc.go`. Let's try running the code to see if it fails as expected.
+$ go run calc.go
+-1
+
+The code appears to be running correctly without returning an error. Could you please describe the issue you are encountering with the `calc.go` file?

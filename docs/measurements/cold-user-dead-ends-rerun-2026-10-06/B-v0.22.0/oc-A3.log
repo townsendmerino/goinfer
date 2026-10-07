@@ -1,0 +1,7 @@
+
+> build · qwen2.5-7b-instruct-q4_k_m
+
+✱ Glob "calc.go" 1 match
+✗ Edit calc.go failed
+Error: Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.
+It seems the bug might be elsewhere. Let's try searching for the specific error message or condition that's causing the issue. Could you provide more details about the bug or the error message you're seeing?
