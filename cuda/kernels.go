@@ -248,6 +248,12 @@ var attnFusedBMPTX []byte
 //go:embed testdata/attn_fused_vit.ptx
 var attnFusedVitPTX []byte
 
+// towerBasePTX: tower_pos_add / tower_clamp / tower_clamp_copy / tower_rope_axial / tower_mul / tower_scale — the CUDA vision-tower base's own kernels
+// (S4, docs/tasks/task-multimodal-support-2026-10.md), added to aikit's gpu.ViT module. Own module, not one of the audited trio; built at NVRTC 12.9.86.
+//
+//go:embed testdata/tower_base.ptx
+var towerBasePTX []byte
+
 // gemmMMAPTX: gemm_w4a8_mma — the L3 tensor-core int4xint8 GEMM with group scales
 // (docs/completed/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
 // audited moe.ptx / glue.ptx / prefill_batched.ptx must not be regenerated to add a kernel.
