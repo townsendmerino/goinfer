@@ -1185,6 +1185,21 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
   `~/models` for anything timed.
 - **Gemma 4 E4B and 31B:** download and validate (owner, 2026-10-07). E4B through S1's E-model gates on both GPU
   backends; the 31B through the 26B's (bidirectional image prefill, the S1.0 re-check shape). Disk first on both boxes.
+- **Gemma 4 E4B on Metal, gates registered 2026-10-07 before any E4B measurement:**
+  - **The checkpoint:** `google/gemma-4-E4B-it`, downloaded to `~/models/gemma-4-E4B-it` (15 GB, 2026-10-07): 42
+    layers, hidden 2560, 18 KV-shared layers, PLE width 256, an audio tower. Metal reads it from an int4 Metal sidecar
+    (`prequant -quant int4 -target metal`, int8 embedding table: Metal's resident needs it), built at night. Building
+    it by day goes through the load's fit guard, which E2B's safetensors already failed beside the owner's session.
+  - **G-E4B-1, S1's G3 as re-registered for E2B, unchanged:** teacher-forced agreement of the Metal resident against
+    the CPU on the same sidecar, over G3's prompts, against the validated Qwen2.5-Coder-1.5B's in the same process.
+    PASS at >= the reference's - 2.0 points with free-run passes >= the reference's - 1; 2.0-4.0 points below
+    ambiguous (parked); worse fails.
+  - **G-E4B-2, served:** G4's image request and G-S5c's three audio clips through one Metal serve binary,
+    `--backend metal` against `--backend cpu`, `--embed-int4=false` and `-vision-device cpu` on every arm, plus a
+    second CPU run. Identical replies, or a first divergence at a near-tie; the CPU repeat byte-identical; a Metal arm
+    not decoding resident voids that reading.
+  - **The 31B** (`google/gemma-4-31B-it`, 62.6 GB) is downloading on nobara. It is too large for this Mac by any
+    path, so its gates (the 26B's shape) are nobara's.
 - **EmbeddingGemma 2 on CUDA:** text, image and audio. Optional. The Metal kernels show the shapes; the work is a CUDA
   twin.
 - **WebGPU:** moved to its own phase, S12 (owner: invest, 2026-10-07).
