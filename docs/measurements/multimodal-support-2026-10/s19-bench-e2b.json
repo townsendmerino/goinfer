@@ -1,0 +1,239 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-10-07T05:10:08Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "2b63667e",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/Users/francistownsend-merino/ollama-0325/bin/ollama",
+   "version": null
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/s19/serve-metal",
+    "mtime": "2026-10-07T04:42:10Z"
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/s19/serve-metal",
+    "mtime": "2026-10-07T04:42:10Z"
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   0.869140625,
+   1.7412109375,
+   2.28955078125
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cpu",
+  "model": "E2B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   37.91700258600126,
+   37.98999693030389
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.95947265625,
+    1.7451171875,
+    2.28759765625
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.3,
+    "busy_pct": 4.1
+   }
+  },
+  "secs": 38.0,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    37.98573123202949,
+    37.99952600382587,
+    38.00602018202024,
+    37.9789244090528,
+    37.8218534809991,
+    37.82280242369693,
+    37.96500635725915,
+    37.756156599126506,
+    37.9987295729453,
+    37.93755304067143,
+    37.81911283417308,
+    37.995306315052446,
+    38.01880201646784,
+    37.93903994187333,
+    38.07907582629357,
+    38.13235589495413
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cpu (int4) [int4 layout: row4-only (down, embed, gate/up, qkv)]",
+   "rss_peak_kb": 1471856,
+   "phases": {
+    "start_to_listening_s": 0.51,
+    "warmup_s": 6.93,
+    "runs_wall_s": 27.48,
+    "decode_timed_s": 26.56,
+    "prefill_and_request_s": 0.93,
+    "teardown_s": 3.02
+   }
+  },
+  "mean": 38.0,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "E2B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   46.094034741826285,
+   46.09935954050183
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.5712890625,
+    1.83056640625,
+    2.29541015625
+   ],
+   "gpu": null,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.3,
+    "busy_pct": 9.5
+   }
+  },
+  "secs": 31.5,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    46.22013168121067,
+    46.44216609422763,
+    46.16426412401826,
+    45.909784360568324,
+    46.09845485735915,
+    46.03697742478785,
+    46.01378642258098,
+    45.86671296985741,
+    46.23696683766214,
+    46.69840861060748,
+    45.91268959902143,
+    46.24358496453818,
+    45.97904997493204,
+    45.64663347022887,
+    46.256166049123145,
+    45.821376817901374
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "metal-resident (int4)",
+   "rss_peak_kb": 396752,
+   "phases": {
+    "start_to_listening_s": 1.52,
+    "warmup_s": 4.36,
+    "runs_wall_s": 22.64,
+    "decode_timed_s": 21.87,
+    "prefill_and_request_s": 0.77,
+    "teardown_s": 3.01
+   }
+  },
+  "mean": 46.1,
+  "spread": 0.0
+ }
+]
