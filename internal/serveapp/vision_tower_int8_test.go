@@ -2,8 +2,7 @@ package serveapp
 
 import "testing"
 
-// Which towers load int8: the resident-capable Gemma 3 tower under a GPU backend, Metal included since S3 (the device SigLIP
-// towers need int8), and any tower when asked for.
+// Which towers load int8: the resident-capable Gemma 3 tower under a GPU backend (it needs int8), and any tower when asked for.
 // The CPU-only towers never get int8 as a side effect of the backend (measured lossy and not faster: see towerInt8).
 func TestTowerInt8(t *testing.T) {
 	cpuOnly := []string{"qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "gemma4", "glm_ocr"}
@@ -18,7 +17,7 @@ func TestTowerInt8(t *testing.T) {
 		}
 	}
 	for _, mt := range []string{"gemma3", ""} {
-		for be, want := range map[string]bool{"webgpu": true, "cuda": true, "metal": true, "cpu": false, "auto": false} { // metal since S3
+		for be, want := range map[string]bool{"webgpu": true, "cuda": true, "cpu": false, "auto": false, "metal": false} {
 			if got := towerInt8(mt, "", be); got != want {
 				t.Errorf("gemma3 tower (%q) on %s: int8 = %v, want %v", mt, be, got, want)
 			}

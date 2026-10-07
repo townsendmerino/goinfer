@@ -1162,9 +1162,9 @@ func (s *server) loadVisionTower(cfg config) error {
 		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend), cfg.towerBackend(), cfg.requireBE)
 	}
 	mt := visionModelType(dir)
-	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.towerBackend())
+	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.load.Backend)
 	if mt == "qwen2_5_vl" {
-		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend())
+		return s.loadQwenVisionTower(dir, int8Tower)
 	}
 	if mt == "qwen3_5" || mt == "qwen3_5_moe" {
 		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
@@ -1183,7 +1183,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// tower's own leak/threading bugs are fixed (cuda/vision_encoder.go) — cuda/vision_register.go
 	// already registered its factory with vision.RegisterResident via cuda/cmd/serve's blank
 	// import; this gate was the only thing that never called EnableResident() for it.
-	residentOK := enableResidentTower(enc, cfg.towerBackend(), os.Stderr)
+	residentOK := enableResidentTower(enc, cfg.load.Backend, os.Stderr)
 	proj, err := multimodal.LoadProjector(dir)
 	if err != nil {
 		return fmt.Errorf("load vision projector (%s): %w", dir, err)
@@ -1223,7 +1223,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "gemma4", "glm_ocr":
 		return false
 	}
-	return backend == "webgpu" || backend == "cuda" || backend == "metal" // the device SigLIP towers are int8 (S3 adds Metal's)
+	return backend == "webgpu" || backend == "cuda"
 }
 
 // enableResidentTower attaches the device-resident vision tower when the backend is webgpu or cuda and reports whether it is
@@ -1231,7 +1231,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 // serve startup and throw away the model already loaded on the GPU, but EnableResident leaves the CPU path intact, so the tower
 // runs there (slower) and the banner does not claim "-resident".
 func enableResidentTower(enc interface{ EnableResident() error }, backend string, warn io.Writer) bool {
-	if backend != "webgpu" && backend != "cuda" && backend != "metal" {
+	if backend != "webgpu" && backend != "cuda" {
 		return false
 	}
 	if err := enc.EnableResident(); err != nil {
@@ -1273,16 +1273,10 @@ func (s *server) soleModelSource(cfg config) string {
 // encoder; preprocessing + m-RoPE are Qwen-specific (the image path branches on
 // qwenEnc). Image placeholders use <|image_pad|>, expanded per image to the merged
 // patch count.
-func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string) error {
+func (s *server) loadQwenVisionTower(dir string, int8Tower bool) error {
 	enc, err := vision.LoadQwenVisionEncoder(dir, int8Tower)
 	if err != nil {
 		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
-	}
-	// S3 (docs/tasks/task-multimodal-support-2026-10.md): aikit's qwenmetal tower, which the metal module imports. No CUDA or
-	// WebGPU binary registers a Qwen2.5-VL tower, so only Metal asks for one (elsewhere the call would only warn).
-	where := "CPU"
-	if backend == "metal" && enableResidentTower(enc, backend, os.Stderr) {
-		where = "Metal"
 	}
 	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
 	if err != nil {
@@ -1299,7 +1293,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string)
 		if lm.qwenImgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
-		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (%s; merge %d, image-pad id %d) from %s\n", lm.name, where, lm.qwenMerge, lm.qwenImgTok, dir)
+		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, dir)
 	}
 	return nil
 }

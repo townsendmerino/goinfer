@@ -17,7 +17,7 @@ func (f *fakeResidentEnc) EnableResident() error { f.calls++; return f.err }
 // startup: loadVisionTower returned the EnableResident error and the model already loaded on the GPU was thrown away. The attach
 // is now a warning, and the tower runs on the CPU path EnableResident leaves intact.
 func TestEnableResidentTower(t *testing.T) {
-	for _, backend := range []string{"cuda", "webgpu", "metal"} { // metal since S3 (aikit's visionmetal / qwenmetal)
+	for _, backend := range []string{"cuda", "webgpu"} {
 		t.Run(backend+"/fails", func(t *testing.T) {
 			var warn strings.Builder
 			enc := &fakeResidentEnc{err: errors.New("out of memory")}
@@ -39,7 +39,7 @@ func TestEnableResidentTower(t *testing.T) {
 		})
 	}
 	// Any other backend never asks for a resident tower (and so never warns about not getting one).
-	for _, backend := range []string{"cpu", "auto", ""} {
+	for _, backend := range []string{"cpu", "metal", "auto", ""} {
 		var warn strings.Builder
 		enc := &fakeResidentEnc{err: errors.New("must not be called")}
 		if enableResidentTower(enc, backend, &warn) || enc.calls != 0 || warn.Len() != 0 {
