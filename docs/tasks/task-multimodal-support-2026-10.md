@@ -989,6 +989,24 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
     gap, not a tower defect, and it applies to goinfer's own Gemma 3 SigLIP tower too; not fixed here.
   - **The script:** `run-gs3c-served.sh` sets `-vision-device` per arm as `<backend>:<auto|cpu>` (plain `<backend>` means the CPU tower); the Mac added the same thing
     at the same time, and the merge kept its spelling. These runs were made with an earlier `+` spelling of it (labels `cuda_cpu`, `cuda_auto`), which is equivalent.
+- **S4 Gate 0 for the CUDA towers, read 2026-10-07 (nobara), before any CUDA tower code:** the desk map is
+  `docs/measurements/multimodal-support-2026-10/s4-gate0-cuda-towers.md`. In short:
+  - **Reuse is large.** aikit's `gpu.ViT` already has the f32 GEMMs with bias and bias-plus-residual epilogues, LayerNorm, RMSNorm, GELU tanh and erf, SiLU-mul,
+    a NeoX RoPE and scaled, per-segment attention kernels; aikit's `qwencuda` is a correct template for the Qwen3.5 and GLM-OCR block loop. New small CUDA kernels
+    are needed only for Gemma 4 (axial RoPE, ClippableLinear clamps, gelu·mul, position add). No audited PTX is touched; the new kernels are a new `.cu`.
+  - **Not portable:** Metal's scalar-arena launch trick (CUDA takes scalars as launch arguments), so the base brings its own launch helper with an error latch.
+  - **The tiny fixtures do not reach the production GEMM branches** (real GLM-OCR's patch embed has K = 1176, not a multiple of 16; real np is rarely a multiple of 64),
+    which is aikit `visioncuda`'s failure class. The real-size gates are therefore mandatory, and per-branch GEMM tests at real shapes are added.
+  - **VRAM:** all three towers fit in f32 beside a small decoder at modest sizes (Gemma 4 E2B ~0.7 GB, Qwen3.5-0.8B ~0.35 GB, GLM-OCR ~1.6 GB weights, plus scratch that
+    scales with the image: ~2 GB for GLM-OCR at its 4.8 MP ceiling). The planner's drafter reserve (`ExtraResidentBytes`) can carry a tower estimate with no change in `cuda/`.
+  - **CUDA-specific planted defects, registered now for G-S2c (they are in addition to Metal's, which port directly):** (a) the bias dropped only in the tiled-fallback GEMM
+    branch (K not a multiple of 16), seen only by a real-shape GEMM test or a real tower; (b) padded attention keys not masked (if the matmul-blocked attention is used);
+    (c) all patches of a two-image batch in one attention segment; (d) stale scratch across sizes (large, small, large grid on one accelerator); (e) for Gemma 4, the
+    position x and y swapped, the value norm weighted instead of unweighted, and the attention scale changed from 1.0. Each must turn its gate red; a defect that stays
+    green means the fixture is degenerate along that axis (fix the fixture, not the bar). Controls that are not defects: two identical runs bit-identical, a leak test after
+    close, and a factory that errors (never panics) under allocation failure, with serve naming the CPU fallback and `-require-backend` refusing it.
+  - **Build order:** serve plumbing made backend-generic; the tower base; the Gemma 4 tower; the Qwen3.5 and GLM-OCR towers; the VRAM reserve; the speed record (queued, not
+    started); and only if that says so, a faster attention.
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
