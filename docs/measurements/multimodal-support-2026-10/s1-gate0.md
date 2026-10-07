@@ -239,7 +239,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:938,999`), and `StepBatch` (MC3,
     `metal/batch.go:912`, which declines Gemma).
 - **UploadKV** (`metal/backend.go:1092-`): writes host K/V rows at `base*kvDim`, f16 or int8.
-- **GenerateGemma4VL uses resident decode only when `bidirectional`** (`decoder/generate_gemma4_vl.go:140,156`).
+- **GenerateGemma4VL uses resident decode only when `bidirectional`** (the gate in `GenerateGemma4VL`, `decoder/generate_gemma4_vl.go`, as of 2026-10-06; S1.8 admits E-models too).
   That covers 26B/31B: CPU prefill → `residentUploadPrefill` → `m.resident.Forward(m.embedResident(next), gpuPos)`
   (:169-194). E2B never touches the resident, and `TestGenerateGemma4VL_sequentialPathNeverTouchesResident`
   (`decoder/gemma4_vl_resident_test.go:225`) pins that.
@@ -400,7 +400,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
     and every embedding comes from `embedResident`, so it carries PLE.
   - Nothing else in the decoder needs to know.
 - **Image:**
-  - Change the gate at `decoder/generate_gemma4_vl.go:156` from `bidirectional && tryClaimResident()` to also admit
+  - Change the gate in `GenerateGemma4VL` (as of 2026-10-06; done by S1.8) from `bidirectional && tryClaimResident()` to also admit
     the sequential class when the resident declared the E-model feature.
   - The sequential CPU prefill → `residentUploadPrefill` already skips shared layers.
   - Decode then uses `m.resident.Forward(m.embedResident(next), gpuPos)`, which carries the token's PLE tail.

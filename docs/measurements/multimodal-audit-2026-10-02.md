@@ -95,7 +95,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | CPU | CPU bidirectional batched prefill (`runLayersGemma4FromEmbedN`), CPU decode | recorded 2026-09-10 (Phase E, real 26B-A4B on the CPU: "Blue."); tiny fixtures verified-run (T7) |
-| CUDA | CPU, int8 | CPU bidirectional prefill, then `residentUploadPrefill` and **resident decode** (`decoder/generate_gemma4_vl.go:156-169`) | 26B-A4B **verified-run** served (P7 run 2: `cuda-resident (int4)`, correct reply, 68.5 s cold; run 1 anomaly noted) and the bridge on a **synthetic scaled** fixture (T5). 31B: no checkpoint on this box, **unverified** |
+| CUDA | CPU, int8 | CPU bidirectional prefill, then `residentUploadPrefill` and **resident decode** (`decoder/generate_gemma4_vl.go:150-157`) | 26B-A4B **verified-run** served (P7 run 2: `cuda-resident (int4)`, correct reply, 68.5 s cold; run 1 anomaly noted) and the bridge on a **synthetic scaled** fixture (T5). 31B: no checkpoint on this box, **unverified** |
 | Metal | CPU | the same generic bridge; resident Gemma 4 is a matrix claim (`docs/hardware-matrix.md`) | read-from-code; unverified end to end |
 | WebGPU | CPU | the same bridge; the 2026-09-17 commit message `26f64807` says Gemma 4 + MoE stays CPU-only on WebGPU, the matrix says resident | **unverified** (the two disagree and I did not settle it) |
 
@@ -138,7 +138,7 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 
-All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1677-1681`), and the Anthropic `image` block goes through
+All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1678-1682`), and the Anthropic `image` block goes through
 the same `driveVL`; the Anthropic surface was **not run** here.
 
 ## Claims in the docs that were wrong
@@ -151,7 +151,7 @@ Line numbers into `docs/multimodal.md` below are the file's numbers **before** t
 | 2 | "CUDA resident-serves Gemma 3's tower ... 1.58x, 41.3 s -> 26.1 s" as the current figure | `multimodal.md` status; `docs/server.md` vision paragraph | superseded 2026-09-21: the fused attention is the default, 26.0 s -> 4.1 s/image (6.4x); 1.58x is the 2026-09-08 first version. `GOINFER_CUDA_VISION_ATTN=exact` gives the old 26 s |
 | 3 | "the cgo-free release binaries still have no GPU vision for any family ... a downloaded `goinfer-serve` does every image at CPU speed regardless of which family" | `multimodal.md` status and gap 1 (line 157) | **false for CUDA**: the CUDA backend is cgo-free (`CGO_ENABLED=0`, B1) and the Linux release binary carries the resident SigLIP tower (P1: `encoder int8/cuda-resident`, 4.9 s cold image on Gemma 3). True for the macOS and Windows binaries, and for every family but Gemma 3 |
 | 4 | "Both CUDA's and WebGPU's resident towers need cgo" | `multimodal.md` status; `docs/ARCHITECTURE.md` is silent | only WebGPU needs cgo (B1, B3). CUDA opens `libcuda` at run time |
-| 5 | "Gemma 4's `GenerateGemma4VL` is CPU-only v1 with no resident decode bridge at all" | `multimodal.md` status | the bridge exists since P7 Phase D (2026-09-10) for 26B-A4B and 31B (`decoder/generate_gemma4_vl.go:156-169`); only E2B/E4B are CPU for the whole turn, and that is not a vision gap (no backend implements the E-model features) |
+| 5 | "Gemma 4's `GenerateGemma4VL` is CPU-only v1 with no resident decode bridge at all" | `multimodal.md` status | the bridge exists since P7 Phase D (2026-09-10) for 26B-A4B and 31B (`decoder/generate_gemma4_vl.go:150-157`); only E2B/E4B are CPU for the whole turn, and that is not a vision gap (no backend implements the E-model features) |
 | 6 | "Qwen2.5-VL's and Gemma 4's own towers stay CPU-only (no `EnableResident` path yet)" | `multimodal.md` status | **still true of what ships**, but the reason changed: aikit has had a Qwen seam and `qwencuda`/`qwenmetal` modules since, and goinfer does not import them (`task-aikit-boundary-2026-09.md:33`). Gemma 4 and Qwen3.5+ and GLM-OCR towers have no resident seam in aikit at all |
 | 7 | "`--backend webgpu`/`--backend cuda` force the int8 tower regardless of `-vision-quant`" (stated for every family) | `docs/server.md` | true for Gemma 3, Qwen2.5-VL, Qwen3.5+ and Gemma 4; **not** for GLM-OCR (`internal/serveapp/main.go`). For the three that have no resident tower the rule produces a CPU int8 tower, which the comment "needed for the resident GPU matmul weights" does not cover |
 | 8 | "Metal has no vision tower for any family yet" | `multimodal.md` status | true of the **tower**. Not true of Metal image turns generally: Metal has had a real `UploadKV` and `ForwardMRoPE` since 2026-09-17 (`26f64807`), so the CPU-prefill-then-resident-decode bridge is available there (read-from-code, unrun) |
