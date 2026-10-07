@@ -183,6 +183,48 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
       (`seqs.json`, `logits-fixed.f32`, `logits-drop-both.f32`, 117 MB each) is in the Mac's
       `~/goinfer-bench/s10-26b/run-2026-10-06/`, not committed; the grading half is nobara's (`docs/prompts/nobara-s1-2026-10-07.md`).
       Raw log: `docs/measurements/multimodal-support-2026-10/s10-26b-dump-night.log`.
+- **S1.0, the `v_norm` fix on CUDA and WebGPU, read 2026-10-07 on nobara (RTX 2070 SUPER, driver 595.91.07): PASS.**
+  - **The fix:** every Gemma 4 layer that owns its K/V now applies the scale-less `v_norm`, K=V or not. CUDA: a per-layer
+    `vNorm` flag (`cuda/backend.go`), the decode launch in `segA` and the batched-prefill launch in `cuda/prefill.go`
+    now key on it, and the unit weight is allocated when any layer has it. WebGPU: `runLayer.vNorm`, and a non-K=V
+    layer runs the existing `vNorm` shader on its `v_proj` output into a fresh buffer (one buffer cannot be both the
+    shader's read and write binding), after the LoRA hooks. The test seam `GOINFER_S10_DROP=vnorm|both` re-drops it on
+    both backends. The dense layer scalar was already right on both, as the brief said.
+  - **The readings,** each test's own metric, before (`v_norm` dropped) → after:
+
+    | test | before | after |
+    |---|---|---|
+    | CUDA scaled dense, pos0 / mean | 0.996182 / 0.910545 | **1.000000 / 0.999634** (argmax 15/16 → 16/16) |
+    | CUDA two-geometry, min | 0.977972 (max abs 0.20) | **0.999942** (max abs 0.012) |
+    | CUDA scaled MoE, pos0 / mean | 0.998601 / 0.960917 | **1.000000 / 0.996078** |
+    | CUDA tiny MoE resident, pos0 / mean | 0.999581 / 0.947512 | **1.000000 / 1.000000** |
+    | CUDA MoE localize, worst decision (wgt, x1, x2) | 0.999731, 0.999125, 0.999387 | **1.000000** on all three |
+    | WebGPU two-geometry, min | 0.977930 (max abs 0.20) | **1.000000** (max abs 1.8e-07) |
+    | WebGPU scaled dense, pos0 / min | 0.996182 / 0.800099 | **1.000000 / 0.975300** (argmax 15/16 → 16/16) |
+
+    - **PASS (S1.0's rule):** no metric moved the wrong way, and re-dropping the fix through the seam reproduces every
+      before-fix number exactly (the same digits, on the same binary).
+    - **The recorded device baselines moved, on the Gemma 4 rows only.** `cuda/testdata/prefill_tails_baseline.json`
+      and `keqv_copy_baseline.json` are bit patterns recorded from before earlier changes; with `v_norm` re-dropped both
+      tests pass against the old files (15 tail outputs and 4 runs bit-identical), so the fix is exactly what moved them,
+      and they were re-recorded. The `qwen3moe-tiny-k3` rows did not change.
+  - **The amendment** (separate commit; each bar sits between its before and after readings, none loosened):
+
+    | bar | old | new |
+    |---|---|---|
+    | CUDA scaled dense pos0 / mean | 0.97 / relation to the int4-vs-f32 floor only | 0.999 / 0.99 added |
+    | CUDA two-geometry min | 0.97 | 0.995 |
+    | CUDA scaled MoE pos0 / mean | 0.97 / floor only | 0.9995 / 0.98 added |
+    | CUDA tiny MoE resident pos0 / mean | 0.97 / floor only | 0.9999 / 0.99 added |
+    | CUDA MoE localize, each branch | 0.99 | 0.9999 |
+    | WebGPU two-geometry min | 0.97 | 0.995 |
+    | WebGPU scaled dense pos0 / min / argmax | 0.97 / none / 15 of 16 | 0.999 / 0.9 / 16 of 16 |
+
+    Under the new bars the fixed code passes all seven tests and `v_norm` re-dropped fails all seven
+    (`s10-cuda-amended-*.log`, `s10-gpu-*.log`).
+  - **Not covered:** the real 26B/31B on CUDA (the dump grading below is the Metal side), and the CUDA/WebGPU
+    batched-prefill path is exercised through the prefill baselines and the two-geometry/MoE tests, not a separate
+    before/after pair. Raw: `docs/measurements/multimodal-support-2026-10/s10-cuda-*.log`, `s10-gpu-*.log`.
 - **S1.1, the fixture and safetensors PLE loading, done 2026-10-06 on the Mac.** No bar was pre-registered for this
   step; it builds what G1 runs on. It was held to the f32 tiny-golden convention (`gemma4_moe_forward_test.go`):
   argmax equal and cosine >= 0.99999 against HF, here at every position rather than only the last.

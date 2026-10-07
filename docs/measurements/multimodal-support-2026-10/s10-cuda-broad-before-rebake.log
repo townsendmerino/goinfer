@@ -1,0 +1,275 @@
+=== RUN   TestGemma4_26B_1bBound
+    gemma4_26b_bound_test.go:26: GOINFER_HEAVY_TESTS unset — real 26B micro-bench
+--- SKIP: TestGemma4_26B_1bBound (0.00s)
+=== RUN   TestGemma4_26B_cache_B
+    gemma4_26b_cache_test.go:48: ISOLATED-RUN: the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone
+    gemma4_26b_cache_test.go:50: GOINFER_HEAVY_TESTS unset — real 26B decode
+--- SKIP: TestGemma4_26B_cache_B (0.00s)
+=== RUN   TestGemma4DenseScaled_residentParity
+    gemma4_dense_scaled_test.go:80: CUDA-resident vs CPU-int4 (both W4A8), DENSE: 204/4096 bit-identical (4.980%); of the 3892 differing — ULP distance median 277252, p99 12374574, max 27812617; max relative gap 2
+    gemma4_dense_scaled_test.go:80: CUDA-resident vs CPU-int4 (both W4A8), DENSE: of 204 bit-identical, 0 are the ARGMAX (0 of 16 positions) and 204 are elsewhere — e.g. pos0/logit0=0, pos0/logit2=-0.12001249, pos0/logit4=0.12999159, pos0/logit6=0.52921367
+    gemma4_dense_scaled_test.go:100:   pos  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.936364  argmax cuda=1 cpu4=1
+    gemma4_dense_scaled_test.go:100:   pos  1  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.877579  argmax cuda=7 cpu4=7
+    gemma4_dense_scaled_test.go:100:   pos  2  CUDA-vs-CPUint4 0.999839 | CPUint4-vs-f32 0.703074  argmax cuda=42 cpu4=42
+    gemma4_dense_scaled_test.go:100:   pos  3  CUDA-vs-CPUint4 0.999691 | CPUint4-vs-f32 0.795401  argmax cuda=100 cpu4=100
+    gemma4_dense_scaled_test.go:100:   pos  4  CUDA-vs-CPUint4 0.999757 | CPUint4-vs-f32 0.780281  argmax cuda=5 cpu4=5
+    gemma4_dense_scaled_test.go:100:   pos  5  CUDA-vs-CPUint4 0.999692 | CPUint4-vs-f32 0.650814  argmax cuda=200 cpu4=200
+    gemma4_dense_scaled_test.go:100:   pos  6  CUDA-vs-CPUint4 0.999480 | CPUint4-vs-f32 0.474604  argmax cuda=66 cpu4=66
+    gemma4_dense_scaled_test.go:100:   pos  7  CUDA-vs-CPUint4 0.999491 | CPUint4-vs-f32 0.599060  argmax cuda=88 cpu4=88
+    gemma4_dense_scaled_test.go:100:   pos  8  CUDA-vs-CPUint4 0.999823 | CPUint4-vs-f32 0.760080  argmax cuda=3 cpu4=3
+    gemma4_dense_scaled_test.go:100:   pos  9  CUDA-vs-CPUint4 0.999682 | CPUint4-vs-f32 0.595479  argmax cuda=71 cpu4=71
+    gemma4_dense_scaled_test.go:100:   pos 10  CUDA-vs-CPUint4 0.999730 | CPUint4-vs-f32 0.624923  argmax cuda=128 cpu4=128
+    gemma4_dense_scaled_test.go:100:   pos 11  CUDA-vs-CPUint4 0.999658 | CPUint4-vs-f32 0.612793  argmax cuda=9 cpu4=9
+    gemma4_dense_scaled_test.go:100:   pos 12  CUDA-vs-CPUint4 0.998431 | CPUint4-vs-f32 0.445382  argmax cuda=250 cpu4=250
+    gemma4_dense_scaled_test.go:100:   pos 13  CUDA-vs-CPUint4 0.999520 | CPUint4-vs-f32 0.544460  argmax cuda=17 cpu4=17
+    gemma4_dense_scaled_test.go:100:   pos 14  CUDA-vs-CPUint4 0.999755 | CPUint4-vs-f32 0.473474  argmax cuda=60 cpu4=60
+    gemma4_dense_scaled_test.go:100:   pos 15  CUDA-vs-CPUint4 0.999587 | CPUint4-vs-f32 0.482937  argmax cuda=200 cpu4=200
+    gemma4_dense_scaled_test.go:104: scaled dense (256-local): pos0=1.000000 exact-argmax 16/16 | mean CUDA-vs-CPUint4=0.999634  CPUint4-vs-f32=0.647294 (min floor 0.4454)
+--- PASS: TestGemma4DenseScaled_residentParity (2.35s)
+=== RUN   TestGemma4Graphs_bitExact_tiny
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    gemma4_graphs_test.go:75: CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS), so the graphs-ON arm would run the LIVE path and this gate would compare live-vs-live and pass having asserted nothing. admitGraphs only promotes under EXCLUSIVE_PROCESS/MPS tenancy; set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force capture and make this gate mean something (docs/cuda-graphs-investigation.md §5.1)
+--- SKIP: TestGemma4Graphs_bitExact_tiny (0.62s)
+=== RUN   TestGemma4Graphs_bitExact_tinyCache
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    gemma4_graphs_test.go:75: CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS), so the graphs-ON arm would run the LIVE path and this gate would compare live-vs-live and pass having asserted nothing. admitGraphs only promotes under EXCLUSIVE_PROCESS/MPS tenancy; set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force capture and make this gate mean something (docs/cuda-graphs-investigation.md §5.1)
+--- SKIP: TestGemma4Graphs_bitExact_tinyCache (0.63s)
+=== RUN   TestGemma4Graphs_bitExact_tinyCacheReuse
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    gemma4_graphs_test.go:75: CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS), so the graphs-ON arm would run the LIVE path and this gate would compare live-vs-live and pass having asserted nothing. admitGraphs only promotes under EXCLUSIVE_PROCESS/MPS tenancy; set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force capture and make this gate mean something (docs/cuda-graphs-investigation.md §5.1)
+--- SKIP: TestGemma4Graphs_bitExact_tinyCacheReuse (0.62s)
+=== RUN   TestGemma4Graphs_sameModelUnderLoad
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    gemma4_graphs_test.go:139: CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS) — this replay-vs-live test needs a captured graph, which admitGraphs only promotes under EXCLUSIVE_PROCESS/MPS tenancy; set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force it (docs/cuda-graphs-investigation.md §5.1)
+--- SKIP: TestGemma4Graphs_sameModelUnderLoad (0.30s)
+=== RUN   TestGemma4Graphs_offVsOffControl
+    gemma4_graphs_test.go:208: control: two graphs-OFF runs BIT-IDENTICAL (40 pos) — the live forward is deterministic under this load
+--- PASS: TestGemma4Graphs_offVsOffControl (0.39s)
+=== RUN   TestGemma4Graphs_bitExact_scaled
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    gemma4_graphs_test.go:75: CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS), so the graphs-ON arm would run the LIVE path and this gate would compare live-vs-live and pass having asserted nothing. admitGraphs only promotes under EXCLUSIVE_PROCESS/MPS tenancy; set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force capture and make this gate mean something (docs/cuda-graphs-investigation.md §5.1)
+--- SKIP: TestGemma4Graphs_bitExact_scaled (10.63s)
+=== RUN   TestGemma4MoE_cacheExpertsBitExact_tiny
+    gemma4_moe_cache_test.go:104: C′ VRAM expert cache (16 pos, ../testdata/gemma4-moe-tiny): DMA'd-into-slots == fully-resident, BIT-IDENTICAL — unmodified kernel, no moe.ptx change
+--- PASS: TestGemma4MoE_cacheExpertsBitExact_tiny (0.65s)
+=== RUN   TestGemma4MoE_cacheReuse_tiny
+    gemma4_moe_cache_test.go:104: C′ VRAM expert cache (16 pos, ../testdata/gemma4-moe-tiny): DMA'd-into-slots == fully-resident, BIT-IDENTICAL — unmodified kernel, no moe.ptx change
+--- PASS: TestGemma4MoE_cacheReuse_tiny (0.63s)
+=== RUN   TestGemma4MoE_cacheExpertsBitExact_scaled
+    gemma4_moe_cache_test.go:104: C′ VRAM expert cache (16 pos, ../testdata/gemma4-moe-scaled): DMA'd-into-slots == fully-resident, BIT-IDENTICAL — unmodified kernel, no moe.ptx change
+--- PASS: TestGemma4MoE_cacheExpertsBitExact_scaled (10.97s)
+=== RUN   TestGemma4MoE_cacheReuse_scaled
+    gemma4_moe_cache_test.go:104: C′ VRAM expert cache (16 pos, ../testdata/gemma4-moe-scaled): DMA'd-into-slots == fully-resident, BIT-IDENTICAL — unmodified kernel, no moe.ptx change
+--- PASS: TestGemma4MoE_cacheReuse_scaled (10.84s)
+=== RUN   TestGemma4MoE_localize
+    gemma4_moe_localize_test.go:77:   rn   decision 0: cosine 0.995279 maxAbs 3.4021e+00 (UNSCALED vs scaled — not gated; wgt subsumes it)
+    gemma4_moe_localize_test.go:77:   rn   decision 1: cosine 0.996056 maxAbs 2.8185e+00 (UNSCALED vs scaled — not gated; wgt subsumes it)
+    gemma4_moe_localize_test.go:83:   wgt  decision 0: cosine 1.000000 maxAbs 0.0000e+00
+    gemma4_moe_localize_test.go:83:   wgt  decision 1: cosine 1.000000 maxAbs 8.9407e-08
+    gemma4_moe_localize_test.go:83:   x1   decision 0: cosine 1.000000 maxAbs 2.3842e-07
+    gemma4_moe_localize_test.go:83:   x1   decision 1: cosine 1.000000 maxAbs 2.3842e-07
+    gemma4_moe_localize_test.go:83:   x2   decision 0: cosine 1.000000 maxAbs 4.7684e-07
+    gemma4_moe_localize_test.go:83:   x2   decision 1: cosine 1.000000 maxAbs 4.7684e-07
+--- PASS: TestGemma4MoE_localize (0.36s)
+=== RUN   TestGemma4MoE_residentParity
+    gemma4_moe_resident_test.go:109:   pos  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.959299  argmax cuda=216 cpu4=216
+    gemma4_moe_resident_test.go:109:   pos  1  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.844263  argmax cuda=53 cpu4=53
+    gemma4_moe_resident_test.go:109:   pos  2  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.929546  argmax cuda=200 cpu4=200
+    gemma4_moe_resident_test.go:109:   pos  3  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.835283  argmax cuda=100 cpu4=100
+    gemma4_moe_resident_test.go:109:   pos  4  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.867449  argmax cuda=42 cpu4=42
+    gemma4_moe_resident_test.go:109:   pos  5  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.812191  argmax cuda=200 cpu4=200
+    gemma4_moe_resident_test.go:109:   pos  6  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.796415  argmax cuda=111 cpu4=111
+    gemma4_moe_resident_test.go:109:   pos  7  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.892650  argmax cuda=88 cpu4=88
+    gemma4_moe_resident_test.go:109:   pos  8  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.796966  argmax cuda=3 cpu4=3
+    gemma4_moe_resident_test.go:109:   pos  9  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.949942  argmax cuda=71 cpu4=71
+    gemma4_moe_resident_test.go:109:   pos 10  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.956080  argmax cuda=99 cpu4=99
+    gemma4_moe_resident_test.go:109:   pos 11  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.951915  argmax cuda=161 cpu4=161
+    gemma4_moe_resident_test.go:109:   pos 12  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.826231  argmax cuda=150 cpu4=150
+    gemma4_moe_resident_test.go:109:   pos 13  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.848051  argmax cuda=243 cpu4=243
+    gemma4_moe_resident_test.go:109:   pos 14  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.834741  argmax cuda=87 cpu4=87
+    gemma4_moe_resident_test.go:109:   pos 15  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.944177  argmax cuda=104 cpu4=104
+    gemma4_moe_resident_test.go:165: routing agreement: resident idx == CPU-int4 idx at ALL 32 decisions — pure accumulation, no flip
+    gemma4_moe_resident_test.go:179: gemma4 MoE resident (16 pos): pos0=1.000000 | mean CUDA-vs-CPUint4=1.000000  CPUint4-vs-f32=0.877825
+--- PASS: TestGemma4MoE_residentParity (0.36s)
+=== RUN   TestGemma4MoEScaled_residentParity
+    gemma4_moe_scaled_parity_test.go:105: CUDA-resident vs CPU-int4 (both W4A8): 7799/65536 bit-identical (11.900%); of the 57737 differing — ULP distance median 347325, p99 16793125, max 32378440; max relative gap 2
+    gemma4_moe_scaled_parity_test.go:105: CUDA-resident vs CPU-int4 (both W4A8): of 7799 bit-identical, 4 are the ARGMAX (4 of 16 positions) and 7795 are elsewhere — e.g. pos0/logit0=0, pos0/logit242=-2.4532218, pos0/logit249=1.3819482, pos0/logit444=-0.14598069
+    gemma4_moe_scaled_parity_test.go:118:   pos  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.982128  argmax cuda=1 cpu4=1
+    gemma4_moe_scaled_parity_test.go:118:   pos  1  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.924675  argmax cuda=7 cpu4=7
+    gemma4_moe_scaled_parity_test.go:118:   pos  2  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.860228  argmax cuda=42 cpu4=42
+    gemma4_moe_scaled_parity_test.go:118:   pos  3  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.835798  argmax cuda=100 cpu4=100
+    gemma4_moe_scaled_parity_test.go:118:   pos  4  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.881269  argmax cuda=5 cpu4=5
+    gemma4_moe_scaled_parity_test.go:118:   pos  5  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.834674  argmax cuda=200 cpu4=200
+    gemma4_moe_scaled_parity_test.go:118:   pos  6  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.761099  argmax cuda=13 cpu4=13
+    gemma4_moe_scaled_parity_test.go:118:   pos  7  CUDA-vs-CPUint4 0.998825 | CPUint4-vs-f32 0.829675  argmax cuda=88 cpu4=88
+    gemma4_moe_scaled_parity_test.go:118:   pos  8  CUDA-vs-CPUint4 0.989348 | CPUint4-vs-f32 0.879102  argmax cuda=3 cpu4=3
+    gemma4_moe_scaled_parity_test.go:118:   pos  9  CUDA-vs-CPUint4 0.999474 | CPUint4-vs-f32 0.820934  argmax cuda=71 cpu4=71
+    gemma4_moe_scaled_parity_test.go:118:   pos 10  CUDA-vs-CPUint4 0.990085 | CPUint4-vs-f32 0.794231  argmax cuda=128 cpu4=128
+    gemma4_moe_scaled_parity_test.go:118:   pos 11  CUDA-vs-CPUint4 0.995061 | CPUint4-vs-f32 0.821690  argmax cuda=9 cpu4=9
+    gemma4_moe_scaled_parity_test.go:118:   pos 12  CUDA-vs-CPUint4 0.998406 | CPUint4-vs-f32 0.835054  argmax cuda=250 cpu4=250
+    gemma4_moe_scaled_parity_test.go:118:   pos 13  CUDA-vs-CPUint4 0.991228 | CPUint4-vs-f32 0.850292  argmax cuda=17 cpu4=17
+    gemma4_moe_scaled_parity_test.go:118:   pos 14  CUDA-vs-CPUint4 0.982402 | CPUint4-vs-f32 0.762965  argmax cuda=60 cpu4=60
+    gemma4_moe_scaled_parity_test.go:118:   pos 15  CUDA-vs-CPUint4 0.992413 | CPUint4-vs-f32 0.800594  argmax cuda=200 cpu4=200
+    gemma4_moe_scaled_parity_test.go:122: scaled MoE (hidden 2816, moe_inter 704, 32 experts top-8, 4 layers): pos0=1.000000 exact-argmax 16/16 | mean CUDA-vs-CPUint4=0.996078  CPUint4-vs-f32=0.842150
+--- PASS: TestGemma4MoEScaled_residentParity (10.63s)
+=== RUN   TestGemma4Router_residentIdxParity
+    gemma4_router_parity_test.go:150: router idx parity: 16/16 decisions bit-equal (CPU f32 router vs resident gemv_f32_f32, pure f32, no activation quant) — routing retired from the resident suspect list at any expert count
+--- PASS: TestGemma4Router_residentIdxParity (0.27s)
+=== RUN   TestGemma4_perExpertScaleFold
+    gemma4_router_parity_test.go:212: per-expert-scale fold: [0.6 0.4] * scale[[2 0]] = [1.2 0.6] (matches CPU)
+--- PASS: TestGemma4_perExpertScaleFold (0.20s)
+=== RUN   TestGemma4Expert_geluTanhChain
+    gemma4_router_parity_test.go:340: single-expert gelu-tanh chain vs CPU: cosine=1.000000 | SiLU control=0.996205
+--- PASS: TestGemma4Expert_geluTanhChain (0.22s)
+=== RUN   TestGemma4_rmsnormNW_scaleVec
+    gemma4_router_parity_test.go:442: rmsnorm_nw + scale_vec vs CPU: maxRelErr=0.00e+00, input preserved
+--- PASS: TestGemma4_rmsnormNW_scaleVec (0.19s)
+=== RUN   TestGemma4DenseTwoGeom_residentParity
+    gemma4_twogeom_parity_test.go:69:   pos  0 cosine 1.000000 maxAbs 5.9605e-08  argmax cpu=183 cuda=183
+    gemma4_twogeom_parity_test.go:69:   pos  1 cosine 1.000000 maxAbs 1.1921e-07  argmax cpu=7 cuda=7
+    gemma4_twogeom_parity_test.go:69:   pos  2 cosine 1.000000 maxAbs 1.1921e-07  argmax cpu=42 cuda=42
+    gemma4_twogeom_parity_test.go:69:   pos  3 cosine 1.000000 maxAbs 2.3842e-07  argmax cpu=107 cuda=107
+    gemma4_twogeom_parity_test.go:69:   pos  4 cosine 1.000000 maxAbs 1.7881e-07  argmax cpu=5 cuda=5
+    gemma4_twogeom_parity_test.go:69:   pos  5 cosine 1.000000 maxAbs 2.3842e-07  argmax cpu=179 cuda=179
+    gemma4_twogeom_parity_test.go:69:   pos  6 cosine 1.000000 maxAbs 5.9605e-08  argmax cpu=13 cuda=13
+    gemma4_twogeom_parity_test.go:69:   pos  7 cosine 0.999942 maxAbs 1.1968e-02  argmax cpu=67 cuda=67
+    gemma4_twogeom_parity_test.go:83: two-geometry K=V resident parity: minCosine=0.999942 maxAbs=1.1968e-02 exact-argmax 8/8
+--- PASS: TestGemma4DenseTwoGeom_residentParity (0.34s)
+=== RUN   TestGemma4VLResident_bidirParity
+    gemma4_vl_resident_parity_test.go:127: CUDA-resident vs CPU-int4 (both W4A8), bidirectional-block prefill -> decode: 96/1536 bit-identical (6.250%); of the 1440 differing — ULP distance median 529230, p99 16490018, max 29072863; max relative gap 1.95
+    gemma4_vl_resident_parity_test.go:127: CUDA-resident vs CPU-int4 (both W4A8), bidirectional-block prefill -> decode: of 96 bit-identical, 1 are the ARGMAX (1 of 6 positions) and 95 are elsewhere — e.g. pos0/logit0=0, pos0/logit3=0.27080372, pos0/logit10=-0.6885479, pos0/logit11=-0.4754066
+    gemma4_vl_resident_parity_test.go:147:   decode step  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.719528  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  1  CUDA-vs-CPUint4 0.999950 | CPUint4-vs-f32 0.734166  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  2  CUDA-vs-CPUint4 0.997704 | CPUint4-vs-f32 0.720813  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  3  CUDA-vs-CPUint4 0.994976 | CPUint4-vs-f32 0.690634  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  4  CUDA-vs-CPUint4 0.997142 | CPUint4-vs-f32 0.617150  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:147:   decode step  5  CUDA-vs-CPUint4 0.998495 | CPUint4-vs-f32 0.670450  argmax cuda=5 cpu4=5
+    gemma4_vl_resident_parity_test.go:151: bidirectional-prefill resident bridge (256-local/512-global, K=V): pos0(decode-step-0)=1.000000 exact-argmax 6/6 | mean CUDA-vs-CPUint4=0.998045  CPUint4-vs-f32=0.692124 (min floor 0.6171)
+--- PASS: TestGemma4VLResident_bidirParity (1.53s)
+=== RUN   TestGemma4Graphs_locateDivergence
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    graph_locate_test.go:20: CUDA graphs not admitted on this box (DEFAULT compute mode, no MPS) — locating replay divergence needs a captured graph, only promoted under EXCLUSIVE_PROCESS/MPS tenancy; set GOINFER_CUDA_GRAPHS_UNSAFE=1 to force it (docs/cuda-graphs-investigation.md §5.1)
+--- SKIP: TestGemma4Graphs_locateDivergence (0.31s)
+=== RUN   TestGraphsSafeGate
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+    graphs_safe_test.go:45: DEFAULT box, GRAPHS=1: tenancy UNSAFE (compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)) → graphs DECLINED (live path) ✓
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    graphs_safe_test.go:54: UNSAFE override: graphs FORCED on + startup self-test bit-exact ✓
+--- PASS: TestGraphsSafeGate (0.27s)
+=== RUN   TestGraphsDecodeSpeedup
+    graphs_speed_test.go:23: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestGraphsDecodeSpeedup (0.00s)
+=== RUN   TestGraphsDecode26B
+    graphs_speed_test.go:99: set GOINFER_HEAVY_TESTS=1 (loads the real 26B four times)
+--- SKIP: TestGraphsDecode26B (0.00s)
+=== RUN   TestKEqVCopy_bitIdenticalToTheDoubleProjection
+    keqv_copy_test.go:203: gemma4-dense-scaled graphs=off: 2 K=V layers; decode cc6d7865313d.. tokens [120 120 120 120 120 120 120 120]; prefill c0a527a252b6.. tokens [120 120 120 120 120 120 120 120]
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    keqv_copy_test.go:203: gemma4-dense-scaled graphs=on: 2 K=V layers; decode cc6d7865313d.. tokens [120 120 120 120 120 120 120 120]; prefill c0a527a252b6.. tokens [120 120 120 120 120 120 120 120]
+    keqv_copy_test.go:221: gemma4-dense-scaled graphs=off DIFFERS from the pre-change baseline recorded at f7497c2c:
+          decode  cc6d7865313dec82a9741368616564b13545bd24bf9e1fd8060536482eaa4b0a vs b354d08ceccdf0d0e7dbfae985c30be9fbcbe383b72ba3ac12f694f346192e83
+          prefill c0a527a252b62a292c13daaf4c98aeaedbf900ebc9eb6b7a041f76a30c56f621 vs 26787c4d3500bfee3030dd4390975e82ca1b46c20486bec022d51f45942ae6bf
+          tokens  [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120] / [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120]
+    keqv_copy_test.go:221: gemma4-dense-scaled graphs=on DIFFERS from the pre-change baseline recorded at f7497c2c:
+          decode  cc6d7865313dec82a9741368616564b13545bd24bf9e1fd8060536482eaa4b0a vs b354d08ceccdf0d0e7dbfae985c30be9fbcbe383b72ba3ac12f694f346192e83
+          prefill c0a527a252b62a292c13daaf4c98aeaedbf900ebc9eb6b7a041f76a30c56f621 vs 26787c4d3500bfee3030dd4390975e82ca1b46c20486bec022d51f45942ae6bf
+          tokens  [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120] / [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120]
+    keqv_copy_test.go:203: gemma4-moe-scaled graphs=off: 1 K=V layers; decode 641f91547d8d.. tokens [120 120 120 120 120 120 120 120]; prefill 02738f3ac722.. tokens [120 120 120 120 120 120 120 120]
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    keqv_copy_test.go:203: gemma4-moe-scaled graphs=on: 1 K=V layers; decode 641f91547d8d.. tokens [120 120 120 120 120 120 120 120]; prefill 02738f3ac722.. tokens [120 120 120 120 120 120 120 120]
+    keqv_copy_test.go:221: gemma4-moe-scaled graphs=off DIFFERS from the pre-change baseline recorded at f7497c2c:
+          decode  641f91547d8dbafe806b3103d70dc6eb5a7203860cbca5c928b78a452b7aae4d vs 40c3b9c0403b44e03f6f2d9f6c8659cb40d0a264da7e9d4e978d67ecc84b1c33
+          prefill 02738f3ac722e411c1cc22e08ad0d0e4e79804055444ed321b9cb28050a6bb28 vs 18b563fbf946ea401fa9e1ef351f57abd00fab820388851b00937d5a8ca4aff2
+          tokens  [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120] / [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120]
+    keqv_copy_test.go:221: gemma4-moe-scaled graphs=on DIFFERS from the pre-change baseline recorded at f7497c2c:
+          decode  641f91547d8dbafe806b3103d70dc6eb5a7203860cbca5c928b78a452b7aae4d vs 40c3b9c0403b44e03f6f2d9f6c8659cb40d0a264da7e9d4e978d67ecc84b1c33
+          prefill 02738f3ac722e411c1cc22e08ad0d0e4e79804055444ed321b9cb28050a6bb28 vs 18b563fbf946ea401fa9e1ef351f57abd00fab820388851b00937d5a8ca4aff2
+          tokens  [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120] / [120 120 120 120 120 120 120 120] vs [120 120 120 120 120 120 120 120]
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    keqv_copy_test.go:196: gemma4-moe-kv-tiny (graphs=off): NOT CUDA-resident here, so it cannot exercise the resident K=V branch and is not a gate
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    keqv_copy_test.go:196: gemma4-moe-kv-tiny (graphs=on): NOT CUDA-resident here, so it cannot exercise the resident K=V branch and is not a gate
+    keqv_copy_test.go:244: compared 4 runs with the baseline recorded at f7497c2c: bit-identical
+--- FAIL: TestKEqVCopy_bitIdenticalToTheDoubleProjection (11.52s)
+=== RUN   TestKVOnlyPrefill_byteIdentical_tiny
+    kvonly_prefill_test.go:54: KV-only prefill == full-logits prefill: 24 tokens byte-identical
+--- PASS: TestKVOnlyPrefill_byteIdentical_tiny (0.69s)
+=== RUN   TestMoEExpertMajorGemma4CUDA_bitIdentical
+    moe_expert_major_gemma4_test.go:91: gemma4 expert-major bit-identical to the per-row path on all 256 logits
+--- PASS: TestMoEExpertMajorGemma4CUDA_bitIdentical (0.62s)
+=== RUN   TestPrefillNonUniform_bitIdentical
+[nonuniform] layers=12 non-uniform-vs-L0=2 kEqV=2 (L0 hd=256 kvDim=512)
+[nonuniform] 0/256 logits differ (max |diff| 0)
+--- PASS: TestPrefillNonUniform_bitIdentical (0.92s)
+=== RUN   TestPrefillTails_bitIdenticalToTheRecordedBaseline
+    prefill_tails_identity_test.go:165: gemma4-dense-scaled PrefillLast+decode   a4ae7110352345dc
+    prefill_tails_identity_test.go:165: gemma4-dense-scaled PrefillLastN         23582069bf4deaa5
+    prefill_tails_identity_test.go:165: gemma4-dense-scaled PrefillLastNArgmax   [1 7 42 100 5 20
+    prefill_tails_identity_test.go:165: gemma4-dense-scaled HiddenLast           a98b5d207121a7ea
+    prefill_tails_identity_test.go:165: gemma4-dense-scaled ResidualAll          33a6886fc95a3918
+    prefill_tails_identity_test.go:176: gemma4-dense-scaled ResidualAll DIFFERS from the pre-change baseline recorded at 1fa90543: 33a6886fc95a39186b23dc1073c010d7863533a10612fa955f72f91d99cb1107 vs c9a0d088bdb5add8eaae1dbb55230436a9c2b98b7cc575397087a20aca7b81a2
+    prefill_tails_identity_test.go:176: gemma4-dense-scaled PrefillLast+decode DIFFERS from the pre-change baseline recorded at 1fa90543: a4ae7110352345dcc2b1f62c73da238ee607acb3a50400f51e3800f8dd373162 vs c11d7b680a3b13c7525249de86f15000a134855ec337bb0be0c91a1e0fcd4f0b
+    prefill_tails_identity_test.go:176: gemma4-dense-scaled PrefillLastN DIFFERS from the pre-change baseline recorded at 1fa90543: 23582069bf4deaa5ff123cf4a45d52db837a955c3303c68f00e05d6092fc3468 vs 02dd9b93bc4f2c2b259d64b842e2975aba0a7d54cad3b2b23dd290c5fbd31c68
+    prefill_tails_identity_test.go:176: gemma4-dense-scaled PrefillLastNArgmax DIFFERS from the pre-change baseline recorded at 1fa90543: [1 7 42 100 5 200 66 88 3 71 128 9 250 17 60 200 4 33 206 120] vs [1 7 42 100 5 200 9 88 3 71 128 9 250 17 60 200 4 33 91 120]
+    prefill_tails_identity_test.go:176: gemma4-dense-scaled HiddenLast DIFFERS from the pre-change baseline recorded at 1fa90543: a98b5d207121a7eaab5ad13b8c250dbaf5a67e80c79157a8c5b9694331358b18 vs b8192e7f7aff86d84717b4320a498eafd7c580fbffcbf1cefd6189ba27aa967b
+    prefill_tails_identity_test.go:165: gemma4-moe-scaled ResidualAll          d85a3d0f49d1e690
+    prefill_tails_identity_test.go:165: gemma4-moe-scaled PrefillLast+decode   f27e51b7756e828a
+    prefill_tails_identity_test.go:165: gemma4-moe-scaled PrefillLastN         94306276eb07d3c3
+    prefill_tails_identity_test.go:165: gemma4-moe-scaled PrefillLastNArgmax   [1 7 42 100 5 20
+    prefill_tails_identity_test.go:165: gemma4-moe-scaled HiddenLast           f652972d4e52a701
+    prefill_tails_identity_test.go:176: gemma4-moe-scaled HiddenLast DIFFERS from the pre-change baseline recorded at 1fa90543: f652972d4e52a7011726f9065c14202b89b1c9c0c86d18f9b7e815679ec3057d vs 82fdca801d7d3dce222923b21a4e126b3e39c9144d7fcb4f20ceb17531ab1388
+    prefill_tails_identity_test.go:176: gemma4-moe-scaled ResidualAll DIFFERS from the pre-change baseline recorded at 1fa90543: d85a3d0f49d1e690232b5026aa26ee5cd839f3e9c8680a57a021ae8f2075f7e6 vs dde94c2022e992aca96ded37b22ab0d2f76c26bc5f947f5224fed23b2584d203
+    prefill_tails_identity_test.go:176: gemma4-moe-scaled PrefillLast+decode DIFFERS from the pre-change baseline recorded at 1fa90543: f27e51b7756e828aa54bb038f267749e74698924315bbbc1d69d893602426f7d vs 22d5c669996786ad1affc0051b15f101970b456ed56972dec199d384c975485f
+    prefill_tails_identity_test.go:176: gemma4-moe-scaled PrefillLastN DIFFERS from the pre-change baseline recorded at 1fa90543: 94306276eb07d3c30a638b7c725b9b2c33871c4c6079b4d9cc60fe50e51b0065 vs f7eb8bf5d14b159003f97d53e7c7a17b8ff789fb5afc1baea1eede8f0d00477c
+    prefill_tails_identity_test.go:165: qwen3moe-tiny-k3 HiddenLast           49a4564a2ba42039
+    prefill_tails_identity_test.go:165: qwen3moe-tiny-k3 ResidualAll          f92a137e4a87cc75
+    prefill_tails_identity_test.go:165: qwen3moe-tiny-k3 PrefillLast+decode   96f18e78b8f4f111
+    prefill_tails_identity_test.go:165: qwen3moe-tiny-k3 PrefillLastN         27799ed915176f43
+    prefill_tails_identity_test.go:165: qwen3moe-tiny-k3 PrefillLastNArgmax   [139 88 295 295 
+    prefill_tails_identity_test.go:198: compared 15 tail outputs with the baseline recorded at 1fa90543: bit-identical
+--- FAIL: TestPrefillTails_bitIdenticalToTheRecordedBaseline (6.23s)
+=== RUN   TestPrefillPath_int8Batched
+    prefillpath_test.go:51: reason: batched (weight-stationary CUDA passes of up to 512 rows)
+--- PASS: TestPrefillPath_int8Batched (0.00s)
+=== RUN   TestPrefillPath_nativeDeclinesNamed
+    prefillpath_test.go:66: reason: sequential — batched prefill needs int4 or int8 projections (f32 weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt
+--- PASS: TestPrefillPath_nativeDeclinesNamed (0.00s)
+=== RUN   TestPrefillPath_int4Batched
+--- PASS: TestPrefillPath_int4Batched (0.00s)
+=== RUN   TestPrefillPath_matchesPrefillCore
+=== RUN   TestPrefillPath_matchesPrefillCore/int4
+=== RUN   TestPrefillPath_matchesPrefillCore/int8
+=== RUN   TestPrefillPath_matchesPrefillCore/kernels-unavailable
+=== RUN   TestPrefillPath_matchesPrefillCore/moe
+=== RUN   TestPrefillPath_matchesPrefillCore/gemma4moe
+=== RUN   TestPrefillPath_matchesPrefillCore/non-uniform
+=== RUN   TestPrefillPath_matchesPrefillCore/k-eq-v-no-vnorm
+=== RUN   TestPrefillPath_matchesPrefillCore/deltanet-with-projections
+=== RUN   TestPrefillPath_matchesPrefillCore/mixed-quant-layer1
+=== RUN   TestPrefillPath_matchesPrefillCore/postOnly
+=== RUN   TestPrefillPath_matchesPrefillCore/qkNormWhole
+=== RUN   TestPrefillPath_matchesPrefillCore/layerNorm-parallelBlock
+--- PASS: TestPrefillPath_matchesPrefillCore (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/int4 (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/int8 (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/kernels-unavailable (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/moe (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/gemma4moe (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/non-uniform (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/k-eq-v-no-vnorm (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/deltanet-with-projections (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/mixed-quant-layer1 (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/postOnly (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/qkNormWhole (0.00s)
+    --- PASS: TestPrefillPath_matchesPrefillCore/layerNorm-parallelBlock (0.00s)
+=== RUN   TestPrefillPath_mixedInt4Int8Batches
+--- PASS: TestPrefillPath_mixedInt4Int8Batches (0.00s)
+=== RUN   TestPrefillPath_deltaNetBindsItsOwnProjections
+--- PASS: TestPrefillPath_deltaNetBindsItsOwnProjections (0.00s)
+=== RUN   TestPrefillPath_seamGuardsAreMoEOnly
+--- PASS: TestPrefillPath_seamGuardsAreMoEOnly (0.00s)
+=== RUN   TestPrefillPath_normPlacementsBatch
+--- PASS: TestPrefillPath_normPlacementsBatch (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	73.398s
+FAIL

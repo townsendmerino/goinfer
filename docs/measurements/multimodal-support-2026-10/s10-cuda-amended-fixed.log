@@ -1,0 +1,85 @@
+=== RUN   TestGemma4DenseScaled_residentParity
+    gemma4_dense_scaled_test.go:80: CUDA-resident vs CPU-int4 (both W4A8), DENSE: 204/4096 bit-identical (4.980%); of the 3892 differing — ULP distance median 277252, p99 12374574, max 27812617; max relative gap 2
+    gemma4_dense_scaled_test.go:80: CUDA-resident vs CPU-int4 (both W4A8), DENSE: of 204 bit-identical, 0 are the ARGMAX (0 of 16 positions) and 204 are elsewhere — e.g. pos0/logit0=0, pos0/logit2=-0.12001249, pos0/logit4=0.12999159, pos0/logit6=0.52921367
+    gemma4_dense_scaled_test.go:100:   pos  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.936364  argmax cuda=1 cpu4=1
+    gemma4_dense_scaled_test.go:100:   pos  1  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.877579  argmax cuda=7 cpu4=7
+    gemma4_dense_scaled_test.go:100:   pos  2  CUDA-vs-CPUint4 0.999839 | CPUint4-vs-f32 0.703074  argmax cuda=42 cpu4=42
+    gemma4_dense_scaled_test.go:100:   pos  3  CUDA-vs-CPUint4 0.999691 | CPUint4-vs-f32 0.795401  argmax cuda=100 cpu4=100
+    gemma4_dense_scaled_test.go:100:   pos  4  CUDA-vs-CPUint4 0.999757 | CPUint4-vs-f32 0.780281  argmax cuda=5 cpu4=5
+    gemma4_dense_scaled_test.go:100:   pos  5  CUDA-vs-CPUint4 0.999692 | CPUint4-vs-f32 0.650814  argmax cuda=200 cpu4=200
+    gemma4_dense_scaled_test.go:100:   pos  6  CUDA-vs-CPUint4 0.999480 | CPUint4-vs-f32 0.474604  argmax cuda=66 cpu4=66
+    gemma4_dense_scaled_test.go:100:   pos  7  CUDA-vs-CPUint4 0.999491 | CPUint4-vs-f32 0.599060  argmax cuda=88 cpu4=88
+    gemma4_dense_scaled_test.go:100:   pos  8  CUDA-vs-CPUint4 0.999823 | CPUint4-vs-f32 0.760080  argmax cuda=3 cpu4=3
+    gemma4_dense_scaled_test.go:100:   pos  9  CUDA-vs-CPUint4 0.999682 | CPUint4-vs-f32 0.595479  argmax cuda=71 cpu4=71
+    gemma4_dense_scaled_test.go:100:   pos 10  CUDA-vs-CPUint4 0.999730 | CPUint4-vs-f32 0.624923  argmax cuda=128 cpu4=128
+    gemma4_dense_scaled_test.go:100:   pos 11  CUDA-vs-CPUint4 0.999658 | CPUint4-vs-f32 0.612793  argmax cuda=9 cpu4=9
+    gemma4_dense_scaled_test.go:100:   pos 12  CUDA-vs-CPUint4 0.998431 | CPUint4-vs-f32 0.445382  argmax cuda=250 cpu4=250
+    gemma4_dense_scaled_test.go:100:   pos 13  CUDA-vs-CPUint4 0.999520 | CPUint4-vs-f32 0.544460  argmax cuda=17 cpu4=17
+    gemma4_dense_scaled_test.go:100:   pos 14  CUDA-vs-CPUint4 0.999755 | CPUint4-vs-f32 0.473474  argmax cuda=60 cpu4=60
+    gemma4_dense_scaled_test.go:100:   pos 15  CUDA-vs-CPUint4 0.999587 | CPUint4-vs-f32 0.482937  argmax cuda=200 cpu4=200
+    gemma4_dense_scaled_test.go:104: scaled dense (256-local): pos0=1.000000 exact-argmax 16/16 | mean CUDA-vs-CPUint4=0.999634  CPUint4-vs-f32=0.647294 (min floor 0.4454)
+--- PASS: TestGemma4DenseScaled_residentParity (2.33s)
+=== RUN   TestGemma4MoE_localize
+    gemma4_moe_localize_test.go:77:   rn   decision 0: cosine 0.995279 maxAbs 3.4021e+00 (UNSCALED vs scaled — not gated; wgt subsumes it)
+    gemma4_moe_localize_test.go:77:   rn   decision 1: cosine 0.996056 maxAbs 2.8185e+00 (UNSCALED vs scaled — not gated; wgt subsumes it)
+    gemma4_moe_localize_test.go:83:   wgt  decision 0: cosine 1.000000 maxAbs 0.0000e+00
+    gemma4_moe_localize_test.go:83:   wgt  decision 1: cosine 1.000000 maxAbs 8.9407e-08
+    gemma4_moe_localize_test.go:83:   x1   decision 0: cosine 1.000000 maxAbs 2.3842e-07
+    gemma4_moe_localize_test.go:83:   x1   decision 1: cosine 1.000000 maxAbs 2.3842e-07
+    gemma4_moe_localize_test.go:83:   x2   decision 0: cosine 1.000000 maxAbs 4.7684e-07
+    gemma4_moe_localize_test.go:83:   x2   decision 1: cosine 1.000000 maxAbs 4.7684e-07
+--- PASS: TestGemma4MoE_localize (0.32s)
+=== RUN   TestGemma4MoE_residentParity
+    gemma4_moe_resident_test.go:109:   pos  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.959299  argmax cuda=216 cpu4=216
+    gemma4_moe_resident_test.go:109:   pos  1  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.844263  argmax cuda=53 cpu4=53
+    gemma4_moe_resident_test.go:109:   pos  2  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.929546  argmax cuda=200 cpu4=200
+    gemma4_moe_resident_test.go:109:   pos  3  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.835283  argmax cuda=100 cpu4=100
+    gemma4_moe_resident_test.go:109:   pos  4  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.867449  argmax cuda=42 cpu4=42
+    gemma4_moe_resident_test.go:109:   pos  5  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.812191  argmax cuda=200 cpu4=200
+    gemma4_moe_resident_test.go:109:   pos  6  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.796415  argmax cuda=111 cpu4=111
+    gemma4_moe_resident_test.go:109:   pos  7  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.892650  argmax cuda=88 cpu4=88
+    gemma4_moe_resident_test.go:109:   pos  8  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.796966  argmax cuda=3 cpu4=3
+    gemma4_moe_resident_test.go:109:   pos  9  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.949942  argmax cuda=71 cpu4=71
+    gemma4_moe_resident_test.go:109:   pos 10  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.956080  argmax cuda=99 cpu4=99
+    gemma4_moe_resident_test.go:109:   pos 11  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.951915  argmax cuda=161 cpu4=161
+    gemma4_moe_resident_test.go:109:   pos 12  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.826231  argmax cuda=150 cpu4=150
+    gemma4_moe_resident_test.go:109:   pos 13  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.848051  argmax cuda=243 cpu4=243
+    gemma4_moe_resident_test.go:109:   pos 14  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.834741  argmax cuda=87 cpu4=87
+    gemma4_moe_resident_test.go:109:   pos 15  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.944177  argmax cuda=104 cpu4=104
+    gemma4_moe_resident_test.go:165: routing agreement: resident idx == CPU-int4 idx at ALL 32 decisions — pure accumulation, no flip
+    gemma4_moe_resident_test.go:179: gemma4 MoE resident (16 pos): pos0=1.000000 | mean CUDA-vs-CPUint4=1.000000  CPUint4-vs-f32=0.877825
+--- PASS: TestGemma4MoE_residentParity (0.41s)
+=== RUN   TestGemma4MoEScaled_residentParity
+    gemma4_moe_scaled_parity_test.go:105: CUDA-resident vs CPU-int4 (both W4A8): 7799/65536 bit-identical (11.900%); of the 57737 differing — ULP distance median 347325, p99 16793125, max 32378440; max relative gap 2
+    gemma4_moe_scaled_parity_test.go:105: CUDA-resident vs CPU-int4 (both W4A8): of 7799 bit-identical, 4 are the ARGMAX (4 of 16 positions) and 7795 are elsewhere — e.g. pos0/logit0=0, pos0/logit242=-2.4532218, pos0/logit249=1.3819482, pos0/logit444=-0.14598069
+    gemma4_moe_scaled_parity_test.go:118:   pos  0  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.982128  argmax cuda=1 cpu4=1
+    gemma4_moe_scaled_parity_test.go:118:   pos  1  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.924675  argmax cuda=7 cpu4=7
+    gemma4_moe_scaled_parity_test.go:118:   pos  2  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.860228  argmax cuda=42 cpu4=42
+    gemma4_moe_scaled_parity_test.go:118:   pos  3  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.835798  argmax cuda=100 cpu4=100
+    gemma4_moe_scaled_parity_test.go:118:   pos  4  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.881269  argmax cuda=5 cpu4=5
+    gemma4_moe_scaled_parity_test.go:118:   pos  5  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.834674  argmax cuda=200 cpu4=200
+    gemma4_moe_scaled_parity_test.go:118:   pos  6  CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.761099  argmax cuda=13 cpu4=13
+    gemma4_moe_scaled_parity_test.go:118:   pos  7  CUDA-vs-CPUint4 0.998825 | CPUint4-vs-f32 0.829675  argmax cuda=88 cpu4=88
+    gemma4_moe_scaled_parity_test.go:118:   pos  8  CUDA-vs-CPUint4 0.989348 | CPUint4-vs-f32 0.879102  argmax cuda=3 cpu4=3
+    gemma4_moe_scaled_parity_test.go:118:   pos  9  CUDA-vs-CPUint4 0.999474 | CPUint4-vs-f32 0.820934  argmax cuda=71 cpu4=71
+    gemma4_moe_scaled_parity_test.go:118:   pos 10  CUDA-vs-CPUint4 0.990085 | CPUint4-vs-f32 0.794231  argmax cuda=128 cpu4=128
+    gemma4_moe_scaled_parity_test.go:118:   pos 11  CUDA-vs-CPUint4 0.995061 | CPUint4-vs-f32 0.821690  argmax cuda=9 cpu4=9
+    gemma4_moe_scaled_parity_test.go:118:   pos 12  CUDA-vs-CPUint4 0.998406 | CPUint4-vs-f32 0.835054  argmax cuda=250 cpu4=250
+    gemma4_moe_scaled_parity_test.go:118:   pos 13  CUDA-vs-CPUint4 0.991228 | CPUint4-vs-f32 0.850292  argmax cuda=17 cpu4=17
+    gemma4_moe_scaled_parity_test.go:118:   pos 14  CUDA-vs-CPUint4 0.982402 | CPUint4-vs-f32 0.762965  argmax cuda=60 cpu4=60
+    gemma4_moe_scaled_parity_test.go:118:   pos 15  CUDA-vs-CPUint4 0.992413 | CPUint4-vs-f32 0.800594  argmax cuda=200 cpu4=200
+    gemma4_moe_scaled_parity_test.go:122: scaled MoE (hidden 2816, moe_inter 704, 32 experts top-8, 4 layers): pos0=1.000000 exact-argmax 16/16 | mean CUDA-vs-CPUint4=0.996078  CPUint4-vs-f32=0.842150
+--- PASS: TestGemma4MoEScaled_residentParity (10.84s)
+=== RUN   TestGemma4DenseTwoGeom_residentParity
+    gemma4_twogeom_parity_test.go:69:   pos  0 cosine 1.000000 maxAbs 5.9605e-08  argmax cpu=183 cuda=183
+    gemma4_twogeom_parity_test.go:69:   pos  1 cosine 1.000000 maxAbs 1.1921e-07  argmax cpu=7 cuda=7
+    gemma4_twogeom_parity_test.go:69:   pos  2 cosine 1.000000 maxAbs 1.1921e-07  argmax cpu=42 cuda=42
+    gemma4_twogeom_parity_test.go:69:   pos  3 cosine 1.000000 maxAbs 2.3842e-07  argmax cpu=107 cuda=107
+    gemma4_twogeom_parity_test.go:69:   pos  4 cosine 1.000000 maxAbs 1.7881e-07  argmax cpu=5 cuda=5
+    gemma4_twogeom_parity_test.go:69:   pos  5 cosine 1.000000 maxAbs 2.3842e-07  argmax cpu=179 cuda=179
+    gemma4_twogeom_parity_test.go:69:   pos  6 cosine 1.000000 maxAbs 5.9605e-08  argmax cpu=13 cuda=13
+    gemma4_twogeom_parity_test.go:69:   pos  7 cosine 0.999942 maxAbs 1.1968e-02  argmax cpu=67 cuda=67
+    gemma4_twogeom_parity_test.go:83: two-geometry K=V resident parity: minCosine=0.999942 maxAbs=1.1968e-02 exact-argmax 8/8
+--- PASS: TestGemma4DenseTwoGeom_residentParity (0.40s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	14.344s

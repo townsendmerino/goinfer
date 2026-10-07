@@ -82,13 +82,14 @@ func TestGemma4MoE_localize(t *testing.T) {
 			c, m := cosMaxAbs(cpu[k], res[k])
 			t.Logf("  %-4s decision %d: cosine %.6f maxAbs %.4e", name, k, c, m)
 			if c < floor {
-				t.Errorf("%s decision %d cosine %.6f < %.2f — the resident %s branch diverges from CPU", name, k, c, floor, name)
+				t.Errorf("%s decision %d cosine %.6f < %.4f — the resident %s branch diverges from CPU", name, k, c, floor, name)
 			}
 		}
 	}
-	assertBranch("wgt", cpuWts, resWgt, 0.99)
-	assertBranch("x1", cpuX1, resX1, 0.99)
-	assertBranch("x2", cpuX2, resX2, 0.99)
+	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. Worst decision before the fix: wgt 0.999731, x1 0.999125, x2 0.999387; after: 1.000000 on all three.
+	assertBranch("wgt", cpuWts, resWgt, 0.9999)
+	assertBranch("x1", cpuX1, resX1, 0.9999)
+	assertBranch("x2", cpuX2, resX2, 0.9999)
 }
 
 func cosMaxAbs(a, b []float32) (cos, maxAbs float64) {

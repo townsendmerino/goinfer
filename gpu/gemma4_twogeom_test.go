@@ -88,8 +88,9 @@ func TestGemma4DenseTwoGeom_residentParity(t *testing.T) {
 		t.Logf("  pos %2d cosine %.6f maxAbs %.4e argmax cpu=%d webgpu=%d", i, c, m, argmax(cpuL), argmax(gpuL))
 	}
 	t.Logf("webgpu two-geometry K=V resident parity: minCosine=%.6f maxAbs=%.4e exact-argmax %d/%d", minCos, maxMaxAbs, exact, len(twoGeomPrompt))
-	if minCos < 0.97 {
-		t.Errorf("minCosine %.6f < 0.97 — the resident two-geometry/K=V forward diverges from CPU", minCos)
+	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977930 -> 1.000000.
+	if minCos < 0.995 {
+		t.Errorf("minCosine %.6f < 0.995 — the resident two-geometry/K=V forward diverges from CPU", minCos)
 	}
 }
 
@@ -141,10 +142,14 @@ func TestGemma4DenseScaled_webgpuParity(t *testing.T) {
 		t.Logf("  pos %2d  cosine %.6f maxAbs %.4e argmax cpu=%d webgpu=%d", i, c, m, argmax(cpuL), argmax(gpuL))
 	}
 	t.Logf("scaled dense (256-local / 512-global, 12 layers): minCosine=%.6f exact-argmax %d/%d pos0=%.6f", minCos, exact, len(prompt), c0)
-	if c0 < 0.97 {
-		t.Errorf("pos-0 cosine %.6f < 0.97 — the 256-local/512-global resident geometry diverges at first token", c0)
+	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300, exact-argmax 15/16 -> 16/16.
+	if c0 < 0.999 {
+		t.Errorf("pos-0 cosine %.6f < 0.999 — the 256-local/512-global resident geometry diverges at first token", c0)
 	}
-	if exact < 15 {
-		t.Errorf("exact-argmax %d/%d < 15/16", exact, len(prompt))
+	if minCos < 0.9 {
+		t.Errorf("minCosine %.6f < 0.9 — the scaled-dense resident forward diverges from CPU (v_norm on the sliding layers? S1.0)", minCos)
+	}
+	if exact < 16 {
+		t.Errorf("exact-argmax %d/%d < 16/16", exact, len(prompt))
 	}
 }

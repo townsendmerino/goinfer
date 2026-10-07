@@ -123,9 +123,13 @@ func TestGemma4MoEScaled_residentParity(t *testing.T) {
 		"exact-argmax %d/%d | mean CUDA-vs-CPUint4=%.6f  CPUint4-vs-f32=%.6f",
 		pos0, exact, len(prompt), meanCuda, meanCpu)
 
-	if pos0 < 0.97 {
-		t.Errorf("pos-0 CUDA-vs-CPUint4 %.6f < 0.97 — the resident MoE forward diverges from CPU at "+
+	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.998601 -> 1.000000, run mean 0.960917 -> 0.996078.
+	if pos0 < 0.9995 {
+		t.Errorf("pos-0 CUDA-vs-CPUint4 %.6f < 0.9995 — the resident MoE forward diverges from CPU at "+
 			"the first token, at the real per-expert row geometry", pos0)
+	}
+	if meanCuda < 0.98 {
+		t.Errorf("mean CUDA-vs-CPUint4 %.6f < 0.98 — the resident MoE forward diverges from CPU (v_norm on the sliding layers? S1.0)", meanCuda)
 	}
 	if meanCuda < meanCpu {
 		t.Errorf("mean CUDA-vs-CPUint4 %.6f < mean CPUint4-vs-f32 %.6f — the resident path diverges "+

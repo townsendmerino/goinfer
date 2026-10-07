@@ -1,0 +1,32 @@
+=== RUN   TestGemma4DenseTwoGeom_residentParity
+    gemma4_twogeom_test.go:88:   pos  0 cosine 0.982804 maxAbs 1.9203e-01 argmax cpu=183 webgpu=183
+    gemma4_twogeom_test.go:88:   pos  1 cosine 0.983170 maxAbs 1.9950e-01 argmax cpu=7 webgpu=7
+    gemma4_twogeom_test.go:88:   pos  2 cosine 0.993198 maxAbs 1.1670e-01 argmax cpu=42 webgpu=42
+    gemma4_twogeom_test.go:88:   pos  3 cosine 0.994788 maxAbs 1.0905e-01 argmax cpu=107 webgpu=107
+    gemma4_twogeom_test.go:88:   pos  4 cosine 0.992303 maxAbs 1.2264e-01 argmax cpu=5 webgpu=5
+    gemma4_twogeom_test.go:88:   pos  5 cosine 0.992295 maxAbs 1.0754e-01 argmax cpu=179 webgpu=179
+    gemma4_twogeom_test.go:88:   pos  6 cosine 0.977930 maxAbs 1.9985e-01 argmax cpu=13 webgpu=13
+    gemma4_twogeom_test.go:88:   pos  7 cosine 0.992291 maxAbs 1.4145e-01 argmax cpu=67 webgpu=67
+    gemma4_twogeom_test.go:90: webgpu two-geometry K=V resident parity: minCosine=0.977930 maxAbs=1.9985e-01 exact-argmax 8/8
+--- PASS: TestGemma4DenseTwoGeom_residentParity (1.76s)
+=== RUN   TestGemma4DenseScaled_webgpuParity
+    gemma4_twogeom_test.go:141:   pos  0  cosine 0.996182 maxAbs 2.2442e-01 argmax cpu=1 webgpu=1
+    gemma4_twogeom_test.go:141:   pos  1  cosine 0.985843 maxAbs 3.5715e-01 argmax cpu=7 webgpu=7
+    gemma4_twogeom_test.go:141:   pos  2  cosine 0.967206 maxAbs 4.3543e-01 argmax cpu=42 webgpu=42
+    gemma4_twogeom_test.go:141:   pos  3  cosine 0.970200 maxAbs 4.7747e-01 argmax cpu=100 webgpu=100
+    gemma4_twogeom_test.go:141:   pos  4  cosine 0.980768 maxAbs 3.5305e-01 argmax cpu=5 webgpu=5
+    gemma4_twogeom_test.go:141:   pos  5  cosine 0.933203 maxAbs 6.8640e-01 argmax cpu=200 webgpu=200
+    gemma4_twogeom_test.go:141:   pos  6  cosine 0.868079 maxAbs 8.5692e-01 argmax cpu=66 webgpu=9
+    gemma4_twogeom_test.go:141:   pos  7  cosine 0.878694 maxAbs 9.2429e-01 argmax cpu=88 webgpu=88
+    gemma4_twogeom_test.go:141:   pos  8  cosine 0.895138 maxAbs 1.0441e+00 argmax cpu=3 webgpu=3
+    gemma4_twogeom_test.go:141:   pos  9  cosine 0.942044 maxAbs 6.5272e-01 argmax cpu=71 webgpu=71
+    gemma4_twogeom_test.go:141:   pos 10  cosine 0.800099 maxAbs 1.2345e+00 argmax cpu=128 webgpu=128
+    gemma4_twogeom_test.go:141:   pos 11  cosine 0.865987 maxAbs 1.0253e+00 argmax cpu=9 webgpu=9
+    gemma4_twogeom_test.go:141:   pos 12  cosine 0.877320 maxAbs 1.1143e+00 argmax cpu=250 webgpu=250
+    gemma4_twogeom_test.go:141:   pos 13  cosine 0.883039 maxAbs 1.2169e+00 argmax cpu=17 webgpu=17
+    gemma4_twogeom_test.go:141:   pos 14  cosine 0.809880 maxAbs 1.1272e+00 argmax cpu=60 webgpu=60
+    gemma4_twogeom_test.go:141:   pos 15  cosine 0.917652 maxAbs 8.5425e-01 argmax cpu=200 webgpu=200
+    gemma4_twogeom_test.go:143: scaled dense (256-local / 512-global, 12 layers): minCosine=0.800099 exact-argmax 15/16 pos0=0.996182
+--- PASS: TestGemma4DenseScaled_webgpuParity (0.74s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	2.568s

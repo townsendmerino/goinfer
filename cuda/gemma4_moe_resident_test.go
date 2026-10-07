@@ -180,9 +180,13 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		pos0, meanCuda, meanCpu)
 
 	// ---- gates ----
-	if pos0 < 0.97 {
-		t.Errorf("pos-0 cosine %.6f < 0.97 — kernel divergence at the first token (GOINFER_G4_CAPTURE / "+
+	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.999581 -> 1.000000, run mean 0.947512 -> 1.000000.
+	if pos0 < 0.9999 {
+		t.Errorf("pos-0 cosine %.6f < 0.9999 — kernel divergence at the first token (GOINFER_G4_CAPTURE / "+
 			"TestGemma4MoE_localize to localize)", pos0)
+	}
+	if meanCuda < 0.99 {
+		t.Errorf("mean CUDA-vs-CPUint4 %.6f < 0.99 — the resident path diverges from CPU (v_norm on the sliding layers? S1.0)", meanCuda)
 	}
 	// CALIBRATED, RUN-LEVEL. A per-position CUDA ≥ CPUint4-vs-f32 gate is too literal: the two curves
 	// measure DIFFERENT perturbations (CUDA differs from CPU only in W4A8 activation rounding; the
