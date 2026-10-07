@@ -1,0 +1,19 @@
+swap guard (load): not armed for /home/francis/models/qwen2.5-7b-instruct-q4_k_m.int4.e4h.cuda.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+cuda: 1 resident KV slots of 4 requested — each costs 1792 MB of KV at the resident context 16384, and free VRAM beside the weights (2962 MB, less 384 MB reserved) allows 1
+loaded "qwen2.5-7b-instruct-q4_k_m": 28-layer model (vocab 152064) in 11.959s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 16384 tokens (--ctx; model maximum 32768) · KV f32
+  fit: 16384-token cap needs 1.8 GB KV (weights 4.0 GB, budget 40.6 GB, 38.8 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"qwen2.5-7b-instruct-q4_k_m" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18084 [chat:[qwen2.5-7b-instruct-q4_k_m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 3.41 GB swap-used
+
+shutting down…

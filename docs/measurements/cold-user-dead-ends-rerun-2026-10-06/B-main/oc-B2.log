@@ -1,0 +1,6 @@
+
+> build · qwen2.5-7b-instruct-q4_k_m
+
+✗ Read src/utils/calc.go failed
+Error: File not found: /tmp/claude-1000/scen/projB/src/utils/calc.go
+The file `calc.go` could not be found at the expected path. Please ensure the file path is correct and try again. If the file is in a different location, provide the correct path.

@@ -1,0 +1,13 @@
+goinfer check → http://127.0.0.1:18085
+
+models list ...............  ok    1 model · cuda-resident (int4)
+chat, streamed ............  ok    TTFT 0.59s · 32.7 tok/s · usage present
+tools, OpenAI .............  ok    call get_weather({"city":"Paris"}) → result → answer in 2 turns
+tools, harness-scale ......  ok    call get_weather({"city":"Paris"}) among 12 tools
+structured output .........  ok    {"type":"integer"} → 366
+stop sequences ............  FAIL  the reply never reached the stop sequence, so this proves nothing about it: "The total count is **10**."
+count_tokens ..............  ok    28 tokens, matches usage
+vision ....................  skip  no vision tower loaded (start the server with --vision <dir> to check this row)
+long prompt (~2000 words) .  ok    TTFT 35.42s · usage present
+
+1 of 9 checks FAILED
