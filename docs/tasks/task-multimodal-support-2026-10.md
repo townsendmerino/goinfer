@@ -355,6 +355,14 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     - **PASS:** identical reply text. A divergence passes only as a near-tie: the CPU's sequence is replayed in-process
       to the first differing token and the CPU's logit gap between its token and the resident's must be under 3% of
       |top-1| (the G1/G3 rule).
+  - **G4 read 2026-10-06 21:30 PDT on the Mac (M1 Pro), `metal/cmd/serve` at `3f198af6`: PASS.**
+    - Resident arm: `decode path: metal-resident (int4)`, tower on Metal, "vision: decoded 32 tokens on the resident path".
+    - CPU arm: `decode path: cpu (int4)`, tower on the CPU, "on the cpu path". (Serve's CPU arm loads its `e4h` sidecar,
+      int4 embedding/LM-head tables against Metal's int8; the replies matched regardless.)
+    - Both replies, byte-identical: "This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the
+      fiscal year 2025 (FY2025". Wall time 15.3 s and 14.9 s per request (exploratory: each is dominated by the
+      286-token CPU prefill and the tower).
+    - Raw: `g4-serve-{metal,cpu}.log`, `g4-reply-{metal,cpu}.txt` in `docs/measurements/multimodal-support-2026-10/`.
 - **Speed (night):** E2B decode tokens per second, resident against CPU, same-session interleaved, plus the host's
   PLE milliseconds per token. A record; not a gate.
 
