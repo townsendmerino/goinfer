@@ -1076,6 +1076,49 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
 - **Faster with S1:** it is CPU decode until S1 lands.
 - **Size:** M-L.
 
+**S5 Gate 0, the desk map (2026-10-07, Mac):**
+- **The tower is ready in aikit.** `audio.LoadGemma4AudioEncoder` reads E2B's names (it detects the `model.` prefix) and
+  applies `embed_audio` (an unweighted RMSNorm, then the projection to the text width, 1536 for E2B), so it emits soft
+  tokens in the text space. `audio.Gemma4Features` is the log-mel extractor and `Gemma4SoftTokens` the count. Both are
+  in production already for EmbeddingGemma 2, whose tower is the same `gemma4_audio` architecture, gated against HF at
+  per-stage soft-token cosine >= 0.9999 (`embeddinggemma2/audio_real_test.go`). Metal has a tower accelerator for it
+  (`metal/gemma4_audio.go`, EmbeddingGemma 2's), for later speed. E2B's tower: 12 layers, hidden 1024, 8 heads,
+  output 1536.
+- **The decoder splice already does what S5 asks.** `prefillLogitsGemma4VL` replaces a run of positions with projected
+  rows, unscaled, and feeds PLE the pad token's id at those positions (HF's multimodal forward substitutes PAD before
+  PLE's token-identity term). It keys on positions, not on the image token's id, so an audio run uses it unchanged. S1's
+  resident decode follows it as for an image. E2B and E4B are causal (`use_bidirectional_attention` unset), so no mask
+  question arises.
+- **The prompt:** HF's processor (`processing_gemma4.py`, `replace_audio_token`) emits `<|audio>` + n x `<|audio|>` +
+  `<audio|>` (ids 256000, 258881, 258883) with no newline on either side, as Gemma 4's image block. n is the feature
+  mask after two stride-2 convolutions, which `Gemma4SoftTokens` mirrors.
+- **Serve:** no audio input on `/v1/chat/completions` yet. The embeddings route already takes audio for EmbeddingGemma
+  2 (`internal/serveapp/embeddings*.go`, WAV decoding in `embeddinggemma2/audio.go`); the chat route gains
+  `input_audio` content parts (OpenAI's shape: base64 `data` plus `format`), WAV only to start.
+- **References:** this Mac has transformers 5.16.1, but E2B in float32 is about 20 GB, too big here. The tower plus
+  `embed_audio` alone (about 1.2 GB in float32) is not. nobara has 62 GB and transformers 5.12 (`~/.venv-vl`); E2B's
+  config was written by 5.6.2 (`global_head_dim`), which 5.12 reads.
+
+**S5 gates, written 2026-10-07 before any S5 code or measurement:**
+- **G-S5a, the tower on E2B's own weights against HF:** every stage (after the subsampler, each block, the tower, the
+  embedder) at soft-token cosine >= 0.9999 on the three EmbeddingGemma 2 clips (`testdata/embeddinggemma2-audio/`,
+  short, mid and long), aikit's log-mel and HF's both fed; the first stage under the bar is named. HF's reference
+  builds only `Gemma4AudioModel` and the embedder from the checkpoint, float32, sdpa (eager inverts the audio mask), with
+  the same load checks EmbeddingGemma 2's pin script makes. Ambiguous (parked): a worst stage in 0.999-0.9999.
+- **G-S5b, the full model on an audio prompt against HF `Gemma4ForConditionalGeneration` (float32, on nobara):** the
+  goinfer CPU prefill in float32 (`Quant: ""`) at every position of the prompt; the audio block plus a text
+  instruction. PASS: last-position logit cosine >= 0.999 and argmax equal, and per-position argmax agreement >= 95% over
+  the text positions after the block.
+  - Planted defects, each red: (1) the audio rows multiplied by the embed scale; (2) PLE's token-identity term from the
+    audio token's id instead of PAD; (3) the `<|audio>`/`<audio|>` delimiters dropped from the ids.
+  - int4 (serve's default) is reported beside it, not graded.
+- **G-S5c, served:** one transcription-style request ("Transcribe this audio.") per clip through the Metal serve binary,
+  `--backend cpu` against `--backend metal` with every load flag held equal (`--embed-int4=false` on both, the G-S3c
+  lesson). Identical replies, or a first divergence at a near-tie under the log-probability definition; a Metal arm
+  not decoding resident voids that reading. The clips are synthetic tones, so the reply's content is not graded, only
+  agreement. A spoken clip is an owed extra, if one with a known license can be committed.
+- **Speed (night):** tower time per clip, CPU against Metal's accelerator; TTFT of the served turn. A record.
+
 ### S6 — Coverage that is cheap once the above exists
 
 - **Qwen3.5+ MoE images:** never run. On nobara, at night; the checkpoint's tower is in the archive, so it is copied to
