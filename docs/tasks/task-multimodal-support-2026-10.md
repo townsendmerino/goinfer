@@ -879,6 +879,38 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     2.8x the CPU tower here; aikit's was wrong and ~73 s. Qwen2.5-VL's is 2.1-2.5x on the large images, and slower on
     the tiny 4x6 one, where per-window dispatch overhead dominates. Raw:
     `docs/measurements/multimodal-support-2026-10/s3-gs3a-rebuilt-real.log`.
+- **G-S3b, read 2026-10-07 12:00-12:04 PDT on the Mac** (serve binary from `s2-towers` at `0c66b18b`, table.png, 32 greedy
+  tokens, both arms `--backend metal`, the tower on Metal against `-vision-device cpu`; `run-gs3c-served.sh` with arms
+  `metal:auto,metal:cpu`): **Qwen2.5-VL PASS; Gemma 3 FAIL as registered, its control owed.**
+  - **Qwen2.5-VL-3B: byte-identical replies** ("Table 2. Quarterly unit sales by region (thousands)"). Decoder
+    `metal-resident (int4)` in both arms, the tower on Metal in one. Request time 38.1 s against 53.1 s (exploratory).
+  - **Gemma 3 4B: the replies differ at generated token 10,** " presented" against " broken". The Metal-tower arm puts
+    " broken" at p 0.195 against its top 0.795: not a near-tie. Both arms decoded on the CPU (Metal declined the decoder
+    for memory again, 5.15 GB against a 4.3-4.9 GB budget) on the same load, so only the tower differed, and the tower
+    matched the CPU tower to a worst token of 0.999999857 on this very image (G-S3a).
+  - **That size of flip from that size of perturbation is surprising, so nothing is concluded yet.** The determinism
+    control (the CPU-tower arm twice; the Metal-tower arm twice) was attempted at 12:04 and 12:05. Both times serve's
+    fit guard refused to load the 4B: 7.6-7.9 GB was available by then, against the 5.9 GB it needs at a 70% margin. It
+    is owed on a quieter machine. If the CPU-tower arm repeats itself byte for byte, the next step is the perturbation
+    control: CPU-tower features plus random noise of the Metal tower's size. Shipped path is not ground truth (R2): an
+    int4 W4A8 decoder quantizes activations per tensor, so a 1e-7 perturbation can cross an int8 rounding and change a
+    choice the reference itself makes with p 0.8.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3b/`.
+- **G-S3c's failure, analysed 2026-10-07 (no new measurement): the two arms run different CPU kernels, so the gate does
+  not isolate Metal.**
+  - Metal has no resident m-RoPE prefill (only CUDA implements `PrefillMRoPELast`). So a Qwen2.5-VL image turn under
+    `--backend metal` prefills on the CPU and `UploadKV`s, and **its first token comes from the CPU prefill**, as the
+    `--backend cpu` arm's does.
+  - The two CPU prefills still differ: the load keys the int4 layout on `Options.Backend` (`wantsCanonicalInt4`,
+    `wantsRow4Fallback` in `decoder/weightmat.go`). Under `metal` the CPU holds canonical int4 and no row4; under `cpu`
+    it holds the arm64 row4 repack only, for embed, gate/up and qkv (the serve logs' `int4 layout` line). Different
+    kernels, different rounding.
+  - With both arms' towers on the CPU in float32 (the same features), the token-0 split ("Table" against "Quarter")
+    can only come from that layout difference, not from Metal. Gemma 3's G-S3c is the same thing measured directly:
+    both arms decoded wholly on the CPU (Metal declined) and still differed beyond a near-tie.
+  - **Proposed, for the owner:** re-register G-S3c so the reference shares Metal's CPU-side layout. For example, the
+    `--backend metal` load with its resident detached, through a test hook, against the same load decoding on Metal.
+    Then the gate grades Metal's decode and nothing else. Until then G-S3c stands as FAIL, as registered.
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
