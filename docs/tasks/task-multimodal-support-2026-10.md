@@ -897,7 +897,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     choice the reference itself makes with p 0.8.
   - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3b/`.
 - **G-S3c's failure, analysed 2026-10-07 (no new measurement): the two arms run different CPU kernels, so the gate does
-  not isolate Metal.**
+  not isolate Metal. REFUTED the same day by measurement; see "G-S3c root cause, in progress" below.**
   - Metal has no resident m-RoPE prefill (only CUDA implements `PrefillMRoPELast`). So a Qwen2.5-VL image turn under
     `--backend metal` prefills on the CPU and `UploadKV`s, and **its first token comes from the CPU prefill**, as the
     `--backend cpu` arm's does.
@@ -911,6 +911,43 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - **Proposed, for the owner:** re-register G-S3c so the reference shares Metal's CPU-side layout. For example, the
     `--backend metal` load with its resident detached, through a test hook, against the same load decoding on Metal.
     Then the gate grades Metal's decode and nothing else. Until then G-S3c stands as FAIL, as registered.
+- **Owner, 2026-10-07: re-register, but root-cause G-S3c and Gemma 3's G-S3b divergence first.**
+- **G-S3c root cause, in progress (2026-10-07, Mac, by day; in-process, one load per process to fit beside the owner's
+  session):**
+  - **The layout analysis above is wrong.** `decoder/qwen25vl_layout_split_real_test.go` runs `prefillLogitsQwenVL`, the
+    CPU prefill whose logits pick the first token, on table.png with serve's prompt, under each load. The towers ran
+    float32 on the CPU, cached once.
+
+    | load | HF golden image: KL(HF || this) | table.png token 0, top-3 |
+    |---|---|---|
+    | int8 weight-only (control) | 0.02651 | "Quarter" 0.508, "Table" 0.241, "quarter" 0.088 |
+    | int4 row4, int8 head | 0.03841 | "Quarter" 0.629, "This" 0.156, "Table" 0.100 |
+    | int4 canonical, int8 head | 0.03841 | identical to row4 |
+    | int4 row4, int4 head (serve's `--backend cpu`) | 0.13439 | "Quarter" 0.705, "Table" 0.167, "quarter" 0.031 |
+    | int4 canonical, int4 head (serve's `--backend metal` CPU side) | 0.13439 | identical to row4 |
+
+    **Canonical and row4 give the same logits.** And with serve's settings, the CPU prefill of a `--backend metal` load
+    says "Quarter", not the "Table" the served Metal arm wrote.
+  - **In a binary with Metal it is the same,** as long as the resident is not built. `metal/qwen25vl_prefill_split_test.go`
+    reproduces that prefill bit for bit (151936 of 151936 logits) under `--backend metal` and `--backend cpu`. But both
+    times the resident build was declined for memory: 3.61-3.70 GB needed against a 3.38-3.68 GB budget. So **the served
+    "Table" needs the resident to exist.** Something about a built Metal resident changes the first token. The obvious
+    suspects are ruled out by reading:
+    - `prefillLogitsQwenVL` and its LM head run on the CPU (Metal's backend implements no staged int4 matmul);
+    - the f16-MMA pass is resident-only;
+    - the KV precision is resident-only;
+    - fast attention is on in both arms;
+    - `int4BufA` copies the weights rather than rewriting them.
+    The next measurement, the same test with the resident built, needs about 5.5 GB free on the Mac.
+  - **Side readings worth keeping:** on a real image, the int4 head (EmbedInt4, serve's default) costs 3.5x the KL of the
+    int8 head against HF (0.134 against 0.038). And the int8 control itself puts token 0 at 0.508 against 0.241: the
+    choice is fragile at any precision.
+- **G-S3b's Gemma 3 divergence, in progress:** phase 1 (`metal/gemma3_tower_dump_test.go` on `s2-towers`) dumped both
+  towers' projected features for table.png. They differ by at most 7.92e-5 relative L2 per soft token (worst cosine
+  0.999999997). Phase 2 (`decoder/gemma3_tower_sensitivity_real_test.go`) teacher-forces the int4 decoder along the
+  CPU-tower arm's greedy path with the Metal-tower features, and with three random perturbations of the same per-token
+  size. It needs the 4B, which this Mac's guard refuses while the owner's session runs (6.7 GB available, 6.2 GB
+  needed at a 70% margin).
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
