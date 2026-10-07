@@ -6,7 +6,7 @@
 # differing token and the near-tie read (the reference arm's p(other token) >= half its own top token's p).
 #
 # Usage: run-gs3c-served.sh <serve binary> <out dir> <arm>[,<arm>...] <model dir>...
-#   an arm is a --backend value; a repeated value runs again as a control (its files get a numeric suffix).
+#   an arm is a --backend value (tower on the CPU), or <backend>+<auto|cpu> to set -vision-device too; a repeated arm runs again as a control (files get a numeric suffix).
 # Example (nobara): run-gs3c-served.sh ~/goinfer-bench/s3/serve-cuda ~/goinfer-logs/s3c-cuda cpu,cuda,cpu \
 #                     ~/models/qwen25vl-3b-instruct ~/models/gemma-3-4b-it
 # GS3C_EXTRA adds serve flags to EVERY arm (e.g. "--kv-sessions 1" so a 4B model fits the 8 GB card; added 2026-10-07 by nobara).
@@ -24,12 +24,14 @@ IFS=, read -r -a arms <<<"$ARMS"
 for dir in "$@"; do
   fam=$(basename "$dir")
   labels=()
-  for be in "${arms[@]}"; do
-    lab=$be n=2
+  for arm in "${arms[@]}"; do
+    # an arm is "<backend>" (tower on the CPU, G-S3c) or "<backend>+<auto|cpu>" (the tower's device too, G-S4 served: cuda+cpu against cuda+auto)
+    be=${arm%%+*}; vd=cpu; [ "$be" != "$arm" ] && vd=${arm#*+}
+    lab=${arm//+/_} n=2
     while [[ " ${labels[*]-} " == *" $lab "* ]]; do lab=$be$n; n=$((n+1)); done
     labels+=("$lab")
-    echo "[$(date '+%H:%M:%S')] $fam: arm $lab (--backend $be)"
-    "$BIN" --model "$dir" --backend "$be" -vision-device cpu ${GS3C_EXTRA:-} --addr 127.0.0.1:$PORT >"$OUT/gs3c-$fam-$lab.log" 2>&1 </dev/null &
+    echo "[$(date '+%H:%M:%S')] $fam: arm $lab (--backend $be -vision-device $vd)"
+    "$BIN" --model "$dir" --backend "$be" -vision-device "$vd" ${GS3C_EXTRA:-} --addr 127.0.0.1:$PORT >"$OUT/gs3c-$fam-$lab.log" 2>&1 </dev/null &
     pid=$!
     for _ in $(seq 1 600); do
       curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:$PORT/v1/models 2>/dev/null | grep -q 200 && break

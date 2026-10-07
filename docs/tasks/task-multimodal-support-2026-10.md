@@ -889,6 +889,19 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
       tokens under 0.999 and outliers as low as 0.18 on high-norm tokens (rows of norm 16 against 2-3). The first run's "siglip" lines are that tower, and the test
       now asserts the attached type. aikit's tower is read in its own package (`cuda/s4siglip`), which imports nothing from goinfer's `cuda`. goinfer's own tower is
       not gated here and the numbers above are not a verdict on it; the served Gemma 3 image replies with it were sensible.
+  - **Wired (2026-10-07, on `s2-towers`, commit `e5e5dbdf`; not on `main`):** `cuda/vision_towers.go` imports `gpu/qwencuda` (and deliberately not `visioncuda`);
+    serve's `qwenTowerPlacement` attaches it under `--backend cuda` for a float32 tower, names every CPU fallback (`-vision-quant int8`, "cuda declined"), and
+    `-require-backend` refuses them; `-vision-device cpu` keeps the tower on the CPU. `TestQwenTowerPlacement` covers the ten cases.
+  - **Served on Qwen2.5-VL-3B, the G-S2d shape (`--backend cuda`, tower on CUDA against `-vision-device cpu`, a second CPU-tower run as the control):** identical
+    replies in all three ("Quarterly unit sales by region (thousands)"). The log lines say what each arm did: tower `(CPU; ...)`, `(CUDA; ...)`, `(CPU; ...)`,
+    decode `cuda-resident (int4)` throughout. Whole request, exploratory: 22.2 s with the CPU tower, 13.5 s with the CUDA tower.
+    Raw: `docs/measurements/multimodal-support-2026-10/s4-served-qwen/`.
+  - **A limit the first served run found, and it is the card's:** with serve's default KV plan the resident decoder takes all the free VRAM, so the tower's
+    19.6 MB upload failed (`CUDA_ERROR_OUT_OF_MEMORY`) and the tower ran on the CPU: the log said `CPU (cuda declined)` and the reply was still identical, so a
+    run on the default plan reads as a pass for the wrong reason. The comparison above needed `--kv-sessions 1 -ctx 4096`. The resident KV planner reserves
+    for a drafter (`extraBytes`) but not for a vision tower, so on an 8 GB card a device tower and a default-planned decoder do not coexist. That is a planner
+    gap, not a tower defect, and it applies to goinfer's own Gemma 3 SigLIP tower too; not fixed here.
+  - **The script:** `run-gs3c-served.sh` arms may now be `<backend>+<auto|cpu>` to set `-vision-device` per arm (plain `<backend>` still means the CPU tower).
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any

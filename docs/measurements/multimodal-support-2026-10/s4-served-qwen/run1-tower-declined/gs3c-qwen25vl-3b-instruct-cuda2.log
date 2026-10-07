@@ -1,0 +1,20 @@
+swap guard (load): not armed for /home/francis/models/qwen25vl-3b-instruct — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+loaded "qwen25vl-3b-instruct": 36-layer model (vocab 151936) in 13.812s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 16384 tokens (backend default; model maximum 128000 — raise with --ctx) · KV f32
+  fit: 16384-token cap needs 1.1 GB KV (weights 1.6 GB, budget 39.3 GB, 38.2 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+loaded Qwen2.5-VL vision tower for "qwen25vl-3b-instruct" (CPU; merge 2, image-pad id 151655) from /home/francis/models/qwen25vl-3b-instruct
+"qwen25vl-3b-instruct" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18454 [chat:[qwen25vl-3b-instruct]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 62.5 MiB (text) / 94.5 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 3.90 GB swap-used
+vision: encoded a 59792-byte image in 21.358s (sha256 d4352b06); a resend of it will skip this
+
+shutting down…
