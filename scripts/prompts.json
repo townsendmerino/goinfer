@@ -149,6 +149,12 @@
   "tokens": 8031,
   "words": 8000
  },
+ "E2B:128": {
+  "format": "essay-v2",
+  "text": "the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press.",
+  "tokens": 129,
+  "words": 97
+ },
  "G20:128": {
   "format": "essay-v2",
   "text": "the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the the\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press.",

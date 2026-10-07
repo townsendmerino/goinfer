@@ -365,6 +365,14 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     - Raw: `g4-serve-{metal,cpu}.log`, `g4-reply-{metal,cpu}.txt` in `docs/measurements/multimodal-support-2026-10/`.
 - **Speed (night):** E2B decode tokens per second, resident against CPU, same-session interleaved, plus the host's
   PLE milliseconds per token. A record; not a gate.
+  - **S1.9's procedure, fixed 2026-10-06 before the run:** `docs/measurements/multimodal-support-2026-10/run-s19-speed.sh`
+    on the Mac's night queue, from binaries pre-built at `888d1d4f` (`~/goinfer-bench/s19/`).
+    - `bench_peer.py`, goinfer only, model `E2B` (added to its table; depth-128 prompt calibrated to 129 tokens),
+      Phase A at one depth, backends `cpu` and `metal` from the one serve binary, the harness's defaults (64 tokens x 8
+      completions x 2 runs, greedy, instant idle gate).
+    - The host's per-token cost of the embedding row plus PLE inputs (`TestGemma4EModel_realE2BPLEHostCost`, 512
+      tokens after 32 warm-up), under the timing lock.
+    - Recorded as numbers with their provenance; no bar.
 
 ### S2 — GPU towers for Qwen3.5+ and GLM-OCR
 
