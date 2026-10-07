@@ -630,7 +630,10 @@ plan. Where it says INFERRED, the step names the fallback and what decides it.
     a start of the next sentence. The CUDA reply differs from the Metal run's ("... fiscal year 2025 (FY2025"), which is a different backend's quantization
     on the same prompt; the gate compares each backend to the CPU. Raw: `s1c-g4c.sh`, `s1c-g4c-serve-{cuda,cpu}.log`, `s1c-g4c-reply-{cuda,cpu}.txt`.
   - **Not done, and not claimed:**
-    - **The speed record** (E2B decode, CUDA against CPU, same-session interleaved, plus the PLE host cost) is a night job, not yet queued or run.
+    - **The speed record** (E2B decode, CUDA against CPU, same-session interleaved, plus the PLE host cost) is queued for tonight as `s1c-e2b-speed`
+      (`run-s1c-speed.sh`, pre-built binaries at `928f9a41`, est 30 min, the harness defaults, no bar) and has not been read. One exploratory smoke of the
+      script (`BENCH_RUNS=1`, 2.5 min, not a result and not to be quoted) showed the plumbing works end to end: both cells passed the token gate, and the
+      host's embedding row plus PLE inputs cost 0.33 ms/token (Metal's reading on its own CPU: 0.315).
     - **E4B** was not run (no checkpoint on either box). The code path is the same shape, and nothing was measured on it.
     - **TTFT:** a long prompt prefills token by token (the batched prefill declines E-models), so time to first token on a long prompt is slow. The
       vision tower is still on the CPU (4.5 s here; S4).
