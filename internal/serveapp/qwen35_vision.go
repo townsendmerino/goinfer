@@ -51,6 +51,12 @@ func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
 		}
 		if q.plan.device != "" {
 			acc, err := multimodal.NewQwen3Tower(q.plan.device, q.enc)
+			if err == nil && q.deep > 0 { // Qwen3-VL: the device tower must tap the DeepStack blocks (G-S10e)
+				if _, ok := acc.(multimodal.GridTowerTapper); !ok {
+					_ = acc.Close()
+					acc, err = nil, fmt.Errorf("the %s tower cannot tap the DeepStack blocks", q.plan.device)
+				}
+			}
 			q.acc, q.err = q.plan.started("Qwen3.5", acc, err)
 		}
 	})
@@ -64,14 +70,16 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 		return nil, err
 	}
 	if q.deep > 0 { // Qwen3-VL: the merged rows, then each DeepStack set, one flat vector (the feature cache stores it whole)
-		merged, deep, err := enc.ForwardDeepstack(pv, [][3]int{grid})
-		if err != nil {
-			return nil, err
-		}
-		for _, d := range deep {
-			merged = append(merged, d...)
-		}
-		return merged, nil
+		return q.fb.run("Qwen3-VL", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+			merged, deep, err := multimodal.Qwen3TowerFeaturesDeepstack(enc, acc, pv, [][3]int{grid})
+			if err != nil {
+				return nil, err
+			}
+			for _, d := range deep {
+				merged = append(merged, d...)
+			}
+			return merged, nil
+		})
 	}
 	return q.fb.run("Qwen3.5", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 		return multimodal.Qwen3TowerFeatures(enc, acc, pv, [][3]int{grid})
@@ -149,13 +157,6 @@ func (s *server) loadQwen35VisionTower(dir string, int8Tower bool, backend strin
 	tower, pp, err := setupQwen35Vision(dir, int8Tower)
 	if err != nil {
 		return err
-	}
-	if tower.deep > 0 { // Qwen3-VL: no device tower carries DeepStack yet (aikit's export refuses it), so the CPU, by name
-		if backend == "metal" && require {
-			return fmt.Errorf("-require-backend: the Qwen3-VL tower (DeepStack) has no Metal tower yet; it runs on the CPU")
-		}
-		tower.plan = gridTowerPlan{where: "CPU (DeepStack: no device tower yet)"}
-		return s.attachQwen35Tower(tower, pp, dir)
 	}
 	if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, require); err != nil {
 		return err

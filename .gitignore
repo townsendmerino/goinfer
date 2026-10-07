@@ -53,6 +53,10 @@ demo/chat/dist/
 # so S2's Metal GLM-OCR tower gate (metal/grid_vision_test.go) runs without an aikit checkout beside this one.
 !testdata/glm-ocr-vision-tiny/
 !testdata/glm-ocr-vision-tiny/model.safetensors
+# EXCEPTION: qwen3vl-vision-tiny is aikit's tiny Qwen3-VL tower with DeepStack (about 1 MB, a copy of aikit's fixture,
+# pinned by scripts/pin_qwen3vl_vision_tiny.py), committed so G-S10e's Metal check runs without an aikit checkout.
+!testdata/qwen3vl-vision-tiny/
+!testdata/qwen3vl-vision-tiny/model.safetensors
 # EXCEPTION: lfm2-tiny is a 708 KB deterministic random-weight conv/attention hybrid
 # (scripts/pin_lfm2_tiny.py). Committed on purpose so the LFM2/LFM2.5 forward-parity gate
 # is a real T1 — runnable in CI without a per-machine asset — rather than a golden that

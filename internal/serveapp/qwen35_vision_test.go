@@ -3,7 +3,11 @@ package serveapp
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 func writeQwen35Dir(t *testing.T, config, pre string) string {
@@ -105,5 +109,39 @@ func TestSetupQwen3VL_deepstack(t *testing.T) {
 	}
 	if q35.deep != 0 {
 		t.Errorf("Qwen3.5 tower: %d DeepStack sets, want 0", q35.deep)
+	}
+}
+
+// fakeGridTower is a device tower that cannot tap blocks (no HiddenTaps).
+type fakeGridTower struct{ closed bool }
+
+func (f *fakeGridTower) Name() string                                  { return "fake" }
+func (f *fakeGridTower) Hidden([]float32, [][3]int) ([]float32, error) { return nil, nil }
+func (f *fakeGridTower) Close() error                                  { f.closed = true; return nil }
+
+// TestQwen3VLTower_needsTaps (G-S10e): a Qwen3-VL tower whose planned device tower cannot tap the DeepStack blocks runs
+// on the CPU, says why, and closes the device tower; under -require-backend it is an error instead. A device tower that
+// could not tap would otherwise return the merged rows and silently lose the DeepStack sets.
+func TestQwen3VLTower_needsTaps(t *testing.T) {
+	const dir = "../../testdata/qwen3vl-vision-tiny"
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	fake := &fakeGridTower{}
+	multimodal.RegisterQwen3Tower("fake-notap", func(*vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) { return fake, nil })
+	t.Cleanup(func() { multimodal.UnregisterQwen3Tower("fake-notap") })
+	for _, require := range []bool{false, true} {
+		fake.closed = false
+		q := &qwen3Tower{dir: dir, deep: 2, plan: gridTowerPlan{device: "fake-notap", where: "fake", require: require}}
+		_, err := q.encoder()
+		switch {
+		case require && err == nil:
+			t.Error("-require-backend: a non-tapping device tower was accepted for a DeepStack tower")
+		case !require && (err != nil || q.acc != nil || !strings.Contains(q.plan.where, "CPU")):
+			t.Errorf("without -require-backend: err %v, device tower kept %v, where %q; want the CPU", err, q.acc != nil, q.plan.where)
+		}
+		if !fake.closed {
+			t.Errorf("require %v: the refused device tower was not closed", require)
+		}
 	}
 }

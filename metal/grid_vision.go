@@ -86,6 +86,7 @@ type gridVAccel struct {
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows, SigLIP's table; nil otherwise
 	ropeTables     func([][3]int) (cos, sin []float32) // Qwen3, GLM-OCR (Qwen2.5-VL's come from its window plan)
 	planted        gvDefect                            // test seam: G-S2c's planted defects
+	tap            func(bi, n int)                     // HiddenTaps: called after block bi\'s command buffer, with the residual\'s live length
 	cap, segCap    int
 	x, xn, pt, pos Buffer
 	q, k, v, ctx   Buffer
@@ -100,6 +101,7 @@ type gridVAccel struct {
 type gvDefect struct {
 	noScale, swapRope, transposePos, noQKNorm, noPatchBias bool
 	noWindows, noWindowOrder, noPosEmbed                   bool // G-S3a's (3), (4) and (5)
+	tapShift                                               int  // G-S10e: DeepStack taps read this many blocks late
 }
 
 func (a *gridVAccel) Name() string { return "metal" }
@@ -238,6 +240,37 @@ func (a *gridVAccel) norm(e *Encoder, x, w, b, out Buffer, rows int) {
 func (a *gridVAccel) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.hiddenLocked(pixels, gridTHW)
+}
+
+// HiddenTaps is Hidden plus the outputs of the given blocks, in that order (multimodal.GridTowerTapper): Qwen3-VL's
+// DeepStack taps (S10, G-S10e). Each tap is the residual right after its block, read where run ends that block's
+// command buffer.
+func (a *gridVAccel) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) ([]float32, [][]float32, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	taps := make([][]float32, len(blocks))
+	a.tap = func(bi, n int) {
+		for k, b := range blocks {
+			if b+a.planted.tapShift == bi { // G-S10e's planted defect shifts the tap a block late
+				taps[k] = append([]float32(nil), a.x.Floats()[:n]...)
+			}
+		}
+	}
+	defer func() { a.tap = nil }()
+	h, err := a.hiddenLocked(pixels, gridTHW)
+	if err != nil {
+		return nil, nil, err
+	}
+	for k, t := range taps {
+		if t == nil {
+			return nil, nil, fmt.Errorf("metal: DeepStack tap %d (block %d) was not reached in %d blocks", k, blocks[k], len(a.blocks))
+		}
+	}
+	return h, taps, nil
+}
+
+func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32, error) {
 	segs := vision.VisionSegments(gridTHW)
 	np := segs[len(segs)-1]
 	if np == 0 || len(pixels) != np*a.patchDim {
@@ -384,11 +417,17 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 			if err := flush(); err != nil {
 				return nil, err
 			}
+			if a.tap != nil {
+				a.tap(bi, np*H)
+			}
 		}
 	}
 	e.End()
 	if err := e.Err(); err != nil {
 		return nil, err
+	}
+	if a.tap != nil && len(a.blocks) > 0 {
+		a.tap(len(a.blocks)-1, np*H)
 	}
 	a.slot = 0
 	return append([]float32(nil), a.x.Floats()[:np*H]...), nil
