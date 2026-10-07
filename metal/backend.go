@@ -745,6 +745,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if a.g4LayerMajor() || a.moeLayerMajor() {
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a paged MoE)"
 	}
+	if a.emodelLayerMajor() {
+		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
+	}
 	if a.r.kvI8 {
 		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
 	}
@@ -794,7 +797,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// 4b (docs/tasks/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
 	// layer on decode's own kernels, bit-identical to the sequential loop, so neither the floor nor --exact-prefill
 	// applies. Behind g4LayerMajorOn until graded.
-	if a.g4LayerMajor() || a.moeLayerMajor() {
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
 		if e := a.checkCap(startPos, len(embeddings)); e != nil {
 			return nil, e
 		}
@@ -802,7 +805,14 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 			a.Reset() // a fresh sequence, as Forward at position 0 does (it zeroes a DeltaNet's state)
 		}
 		var lg []float32
-		if a.g4LayerMajor() {
+		if a.emodelLayerMajor() { // S9: a Gemma 4 E-model, layer by layer on decode's kernels (prefill_emodel.go)
+			for _, e := range embeddings {
+				if len(e) != a.embLen() {
+					return nil, fmt.Errorf("metal: an E-model prefill row of %d values, want %d ([h | L*P])", len(e), a.embLen())
+				}
+			}
+			lg = a.r.prefillEModel(embeddings, startPos, true)
+		} else if a.g4LayerMajor() {
 			lg = a.r.prefillG4Paged(embeddings, startPos, true)
 		} else {
 			lg = a.r.prefillMoEPaged(embeddings, startPos, true)

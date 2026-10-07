@@ -1699,7 +1699,11 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		if gen.DecodeResident {
 			where = "resident"
 		}
-		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path\n", n, where)
+		prefill := "cpu"
+		if gen.ImgPrefillResident { // S9: the image turn's prefill ran on the resident too
+			prefill = "resident"
+		}
+		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path (prefill %s)\n", n, where, prefill)
 	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {

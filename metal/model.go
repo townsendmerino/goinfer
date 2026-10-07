@@ -197,6 +197,7 @@ type resident struct {
 	pPLEGeluMul              Pipeline
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
+	emodelLayerMajorRuns     int // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
 	uPleP                    Buffer
 	g4VNorm                  bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
 	pSA, pSABias, pSAResid   Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)

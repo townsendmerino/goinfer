@@ -58,6 +58,12 @@ func (m *Model) FinalNormForTest(h []float32) []float32 {
 
 func (m *Model) EmbedResidentForTest(id int) []float32 { return m.embedResident(id) }
 
+// Gemma4ResidentMediaRowForTest is gemma4ResidentMediaRow: the resident row GenerateGemma4VL's E-model resident prefill
+// builds for an image or audio position (S9).
+func (m *Model) Gemma4ResidentMediaRowForTest(feature []float32) []float32 {
+	return m.gemma4ResidentMediaRow(feature)
+}
+
 // ForwardForTest / EmbedResidentForTest are CPU-reference seams for the gpu-package
 // resident parity gates (which can't be in package decoder — import cycle via gpu).
 // ForwardForTest is the CPU per-token logits; EmbedResidentForTest is the resident
