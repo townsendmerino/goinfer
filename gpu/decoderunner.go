@@ -208,6 +208,9 @@ type runLayer struct {
 	ghd, gnKV, ghalf int
 	gKEqV            bool
 	layerScalar      float32 // Gemma 4 dense per-layer output scalar (1 if absent/unscaled)
+	// vNorm: a Gemma 4 layer that owns its K/V but is NOT K=V takes the scale-less v_norm on its v_proj output, as HF and the
+	// CPU do on every K/V-owning layer (S1.0, docs/tasks/task-multimodal-support-2026-10.md). K=V layers always had it (gKEqV).
+	vNorm bool
 
 	// MoE (Lever C3c, Mixtral-class): when isMoE, this layer's FFN is a sparse
 	// mixture of experts instead of the dense gate/up/down above. router scores all
@@ -1299,6 +1302,14 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 					loraHook{afterIdx: after, layer: i, kind: loraV, aq: aq, ascale: as, dst: v, k: hidden},
 				)
 			}
+			if lw.vNorm && !lw.gKEqV {
+				// Gemma 4, a layer with a real v_proj (S1.0): scale-less v_norm of the v_proj output, after the LoRA hooks above
+				// (they splice in after the base projection) and before the KV store. The shader reads src and writes dst, and one
+				// buffer cannot be bound as both, so it writes a fresh buffer, as the K=V branch does.
+				vn := storF(g.kvDim)
+				vNorm(v, vn, g.nKV, g.hd)
+				v = vn
+			}
 			if lw.qGate { // attn_output_gate: q_proj emitted [query ‖ gate] per head
 				q, aGate = qSplit(q, nH*g.hd, g.hd)
 			}
@@ -1845,3 +1856,7 @@ type dnetRunParams struct {
 	stateElems int // nv*hv*hk, the per-layer recurrent state
 	eps        float32
 }
+
+// g4DropVNormForTest re-drops S1.0's Gemma 4 v_norm on the layers that are not K=V, so a gate can show the fix is what moved
+// the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test seam; never in production.
+var g4DropVNormForTest bool

@@ -446,7 +446,11 @@ type cudaLayer struct {
 	// kEqV (attention_k_eq_v, Gemma 4 global layers): this layer has NO v_proj — V is
 	// v_norm(the raw pre-RoPE k_proj output), stored un-rotated in its OWN vCache (NOT aliased
 	// to kCache; kvDim is NOT halved). launchToken derives V from k before rope_kv mutates it.
-	kEqV              bool
+	kEqV bool
+	// vNorm: scale-less v_norm on this layer's V before it is stored. HF and the CPU apply it on EVERY Gemma 4 layer
+	// that owns its K/V, K=V or not (S1.0, docs/tasks/task-multimodal-support-2026-10.md); here only kEqV layers did
+	// until 2026-10-07, so every sliding layer of the resident 12B/26B/31B missed it. Implies kEqV or a real v_proj.
+	vNorm             bool
 	preNorm, postNorm Buffer
 	// Gemma sandwich norms (absent unless NormSandwich4): applied to the SUBLAYER OUTPUT before
 	// the residual add, not to a GEMV input.
@@ -563,7 +567,7 @@ type cudaResident struct {
 	qTempRowsB   Buffer
 	qTempRowsCap int
 	qTempRowsKey [2]int
-	vNormUnit    Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm for K=V layers. nil unless any layer is kEqV.
+	vNormUnit    Buffer // [maxHd] of 1.0 — unit weight so qk_norm (x*inv*w, addOne=0) computes scale-less v_norm (Gemma 4: every layer with vNorm). nil unless any layer has vNorm.
 	qkNorm       bool   // arch needs per-head Q/K RMSNorm before RoPE
 	qkNormWhole  bool   // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
 	rmsAddOne    bool   // (1+w) offset — false for Qwen3/Llama
@@ -3282,7 +3286,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			return e
 		}
 	}
-	if Ly.kEqV { // scale-less v_norm(raw k in vB), BEFORE rope_kv rotates k
+	if Ly.vNorm { // scale-less v_norm on vB (the raw k copy on a K=V layer, the v_proj output otherwise), BEFORE rope_kv rotates k
 		if err := r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
 			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 			Arg(r.vB), Arg(r.vB), Arg(r.vNormUnit), Arg(r.vNormUnit),
@@ -4285,3 +4289,7 @@ const fusedG32MaxHidden = 1536
 // fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:
 // normed[H] | red[256] | aq[H/4] int32 | aS[2·H/32].
 func fusedG32Shmem(H int) uint32 { return uint32((H + 256 + H/4 + 2*(H/32)) * 4) }
+
+// g4DropVNormForTest re-drops S1.0's Gemma 4 v_norm on the layers that are not K=V, so a gate can show the fix is what
+// moved the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test seam; never in production.
+var g4DropVNormForTest bool

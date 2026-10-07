@@ -1,12 +1,12 @@
 {
  "device": "NVIDIA GeForce RTX 2070 SUPER",
  "driver": "595.91.07",
- "recorded_at_commit": "f7497c2c",
+ "recorded_at_commit": "3c1a368b",
  "note": "Hashes of every decode logit and greedy token, and of PrefillLast, on a CUDA resident with K=V layers, recorded BEFORE R-23 replaced the second k projection with a copy. Device-specific: compared only on the same device and driver.",
  "fixtures": {
   "gemma4-dense-scaled": {
    "graphs=off": {
-    "decode_logits_sha256": "b354d08ceccdf0d0e7dbfae985c30be9fbcbe383b72ba3ac12f694f346192e83",
+    "decode_logits_sha256": "cc6d7865313dec82a9741368616564b13545bd24bf9e1fd8060536482eaa4b0a",
     "greedy_tokens": [
      120,
      120,
@@ -17,7 +17,7 @@
      120,
      120
     ],
-    "prefill_logits_sha256": "26787c4d3500bfee3030dd4390975e82ca1b46c20486bec022d51f45942ae6bf",
+    "prefill_logits_sha256": "c0a527a252b62a292c13daaf4c98aeaedbf900ebc9eb6b7a041f76a30c56f621",
     "prefill_greedy_tokens": [
      120,
      120,
@@ -30,7 +30,7 @@
     ]
    },
    "graphs=on": {
-    "decode_logits_sha256": "b354d08ceccdf0d0e7dbfae985c30be9fbcbe383b72ba3ac12f694f346192e83",
+    "decode_logits_sha256": "cc6d7865313dec82a9741368616564b13545bd24bf9e1fd8060536482eaa4b0a",
     "greedy_tokens": [
      120,
      120,
@@ -41,7 +41,7 @@
      120,
      120
     ],
-    "prefill_logits_sha256": "26787c4d3500bfee3030dd4390975e82ca1b46c20486bec022d51f45942ae6bf",
+    "prefill_logits_sha256": "c0a527a252b62a292c13daaf4c98aeaedbf900ebc9eb6b7a041f76a30c56f621",
     "prefill_greedy_tokens": [
      120,
      120,
@@ -57,7 +57,7 @@
   "gemma4-moe-kv-tiny": {},
   "gemma4-moe-scaled": {
    "graphs=off": {
-    "decode_logits_sha256": "40c3b9c0403b44e03f6f2d9f6c8659cb40d0a264da7e9d4e978d67ecc84b1c33",
+    "decode_logits_sha256": "641f91547d8dbafe806b3103d70dc6eb5a7203860cbca5c928b78a452b7aae4d",
     "greedy_tokens": [
      120,
      120,
@@ -68,7 +68,7 @@
      120,
      120
     ],
-    "prefill_logits_sha256": "18b563fbf946ea401fa9e1ef351f57abd00fab820388851b00937d5a8ca4aff2",
+    "prefill_logits_sha256": "02738f3ac722e411c1cc22e08ad0d0e4e79804055444ed321b9cb28050a6bb28",
     "prefill_greedy_tokens": [
      120,
      120,
@@ -81,7 +81,7 @@
     ]
    },
    "graphs=on": {
-    "decode_logits_sha256": "40c3b9c0403b44e03f6f2d9f6c8659cb40d0a264da7e9d4e978d67ecc84b1c33",
+    "decode_logits_sha256": "641f91547d8dbafe806b3103d70dc6eb5a7203860cbca5c928b78a452b7aae4d",
     "greedy_tokens": [
      120,
      120,
@@ -92,7 +92,7 @@
      120,
      120
     ],
-    "prefill_logits_sha256": "18b563fbf946ea401fa9e1ef351f57abd00fab820388851b00937d5a8ca4aff2",
+    "prefill_logits_sha256": "02738f3ac722e411c1cc22e08ad0d0e4e79804055444ed321b9cb28050a6bb28",
     "prefill_greedy_tokens": [
      120,
      120,

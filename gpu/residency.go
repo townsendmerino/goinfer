@@ -647,6 +647,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			isLocal:     m.LayerIsLocalResident(i),     // sliding-window layer (Lever C6)
 			ropeScale:   float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale (Lever C7)
 			layerScalar: m.Gemma4DenseLayerScalarAtResident(i),
+			vNorm:       m.IsGemma4Resident() && !g4DropVNormForTest,
 		}
 		if lhd != hd || lnKV != nKV || lrhalf != half || kEqV {
 			rl.ghd = lhd

@@ -1554,6 +1554,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				continue
 			}
 			L.kEqV = m.VFromKResident(l)
+			// Gemma 4 applies v_norm on every layer that owns its K/V (S1.0); K=V layers always did. g4DropVNormForTest
+			// re-drops it on the non-K=V layers so a test can reproduce the before-fix numbers.
+			L.vNorm = L.kEqV || (isGemma4 && !g4DropVNormForTest)
 			if !L.kEqV {
 				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k
 			}
@@ -1681,10 +1684,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)
 		}
 		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(r.actScaleLen(maxQDim)), r.ai(maxQDim/4)
-		// K=V (attention_k_eq_v) layers derive V = v_norm(k) by reusing qk_norm with a UNIT weight
-		// [maxHd] (so x*inv*w = x*inv, scale-less; addOne=0). Allocate it only when needed.
+		// v_norm (Gemma 4: every K/V-owning layer; K=V layers also derive V = v_norm(k)) reuses qk_norm with a UNIT
+		// weight [maxHd] (so x*inv*w = x*inv, scale-less; addOne=0). Allocate it only when needed.
 		for l := range r.layers {
-			if r.layers[l].kEqV {
+			if r.layers[l].vNorm {
 				ones := make([]float32, maxHd)
 				for i := range ones {
 					ones[i] = 1.0

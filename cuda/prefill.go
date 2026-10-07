@@ -554,8 +554,8 @@ func (r *cudaResident) prefillStaticDecline() error {
 		// v_norm over it BEFORE rope rotates k. Both kernels already take an M dimension, so this
 		// costs no new kernel — but it does need the unit-weight buffer segA uses, which is
 		// allocated only when some layer is kEqV. Refuse rather than bind a null weight.
-		if Ly.kEqV && r.vNormUnit == (Buffer{}) {
-			return fmt.Errorf("cuda prefill: K=V layer at %d but no v_norm unit weight: %w", l, errPrefillDeclined)
+		if Ly.vNorm && r.vNormUnit == (Buffer{}) {
+			return fmt.Errorf("cuda prefill: v_norm layer at %d but no v_norm unit weight: %w", l, errPrefillDeclined)
 		}
 		if k := nonBatchableKind(Ly); k != "" {
 			return fmt.Errorf("cuda prefill: %s weight at layer %d needs the sequential path: %w", k, l, errPrefillDeclined)
@@ -1083,8 +1083,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 					r.profToc(glueCat, t)
 				}
-				if Ly.kEqV {
-					// Scale-less v_norm over the raw k sitting in vBb, BEFORE rope rotates k — segA's
+				if Ly.vNorm {
+					// Scale-less v_norm over vBb (the raw k on a K=V layer, the v_proj output otherwise), BEFORE rope rotates k — segA's
 					// decode launch with an M dimension added. nH=0 makes qk_norm_batched treat every
 					// block as a K-head (base = v + m*kvDim + h*hd), and vNormUnit is a unit weight so
 					// addOne=0 gives a pure RMS scale with no learned gain.
