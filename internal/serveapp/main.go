@@ -1294,8 +1294,8 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 	if err != nil {
 		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
 	}
-	// Only Metal registers a Qwen2.5-VL device tower (S3); CUDA and WebGPU binaries have none (S4's G-S4q decides CUDA's), so
-	// asking there would only print a warning on every start.
+	// Metal's tower (S3) attaches through attachResidentTower; CUDA's (aikit's gpu/qwencuda, S4: G-S4q correct at real size and 1.6-2.7x the CPU tower)
+	// through qwenTowerPlacement, which names every CPU fallback; every other backend runs the CPU tower.
 	where := "CPU"
 	if backend == "metal" {
 		ok, err := attachResidentTower("Qwen2.5-VL", enc, backend, require, os.Stderr)
@@ -1305,6 +1305,8 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 		if ok {
 			where = "Metal"
 		}
+	} else if where, err = qwenTowerPlacement(backend, int8Tower, require, enc.EnableResident, os.Stderr); err != nil {
+		return err
 	}
 	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
 	if err != nil {
@@ -1396,29 +1398,30 @@ func hasAudioConfig(dir string) bool {
 // tower (-vision-quant int8) stays on the CPU; a tower that fails to start falls back to the CPU with the reason,
 // unless -require-backend asks for a refusal. Other backends run it on the CPU.
 func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
-	if backend != "metal" {
+	name, ok := deviceTowerName(backend)
+	if !ok {
 		return nil, "CPU", nil
 	}
 	if int8Tower {
 		if require {
-			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 Metal tower is float32; -vision-quant int8 keeps it on the CPU")
+			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 %s tower is float32; -vision-quant int8 keeps it on the CPU", name)
 		}
-		return nil, "CPU (-vision-quant int8; the Metal tower is float32)", nil
+		return nil, "CPU (-vision-quant int8; the " + name + " tower is float32)", nil
 	}
-	if !slices.Contains(multimodal.Gemma4Towers(), "metal") {
+	if !slices.Contains(multimodal.Gemma4Towers(), backend) {
 		if require {
-			return nil, "", fmt.Errorf("-require-backend: this binary has no Metal Gemma 4 tower")
+			return nil, "", fmt.Errorf("-require-backend: this binary has no %s Gemma 4 tower", name)
 		}
-		return nil, "CPU (no Metal tower in this binary)", nil
+		return nil, "CPU (no " + name + " tower in this binary)", nil
 	}
-	t, err := multimodal.NewGemma4Tower("metal", enc)
+	t, err := multimodal.NewGemma4Tower(backend, enc)
 	if err != nil {
 		if require {
-			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 tower could not start on Metal: %w", err)
+			return nil, "", fmt.Errorf("-require-backend: the Gemma 4 tower could not start on %s: %w", name, err)
 		}
-		return nil, "CPU (Metal declined: " + err.Error() + ")", nil
+		return nil, "CPU (" + name + " declined: " + err.Error() + ")", nil
 	}
-	return t, "Metal", nil
+	return t, name, nil
 }
 
 // splitShardSuffix is a split GGUF's first-shard suffix, "-00001-of-00004.gguf".
@@ -1490,6 +1493,8 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		// total, and who multiplies it by what.
 		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
 	}
+	// A CUDA vision tower loads after this model and claims VRAM too (tower_reserve.go): price it the same way, so the KV plan leaves room for it.
+	opts.ExtraResidentBytes += towerReserve(cfg, spec.path)
 
 	// Resolve, sidecar / streaming transcode, tokenizer, swap-guarded load, the one automatic
 	// streaming retry on a dense fit decline, and the .giw quant check: the path chat and fit share
@@ -1868,4 +1873,28 @@ func visionPathError(dir string) error {
 		return nil // a GGUF mmproj: loadVision routes it (Qwen3.5+ only, P8b), with its own refusals
 	}
 	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
+}
+
+// qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/tasks/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
+// tower under --backend cuda when the binary registers one (cuda/vision_towers.go imports it) and the tower is float32 (G-S4q: correct at real size, 1.6-2.7x the
+// CPU tower); the CPU everywhere else, with the reason named. -require-backend turns each CPU fallback under cuda into a refusal. -vision-device cpu arrives
+// here as backend "cpu". Metal has no Qwen2.5-VL device tower yet (the owner's rebuild on the Metal base is the Mac's), so only cuda asks for one.
+func qwenTowerPlacement(backend string, int8Tower, require bool, attach func() error, warn io.Writer) (string, error) {
+	if backend != "cuda" {
+		return "CPU", nil
+	}
+	if int8Tower {
+		if require {
+			return "", fmt.Errorf("-require-backend: the Qwen2.5-VL CUDA tower is float32; -vision-quant int8 keeps it on the CPU")
+		}
+		return "CPU (-vision-quant int8; the CUDA tower is float32)", nil
+	}
+	if err := attach(); err != nil {
+		if require {
+			return "", fmt.Errorf("-require-backend: the Qwen2.5-VL tower could not start on cuda: %w", err)
+		}
+		fmt.Fprintf(warn, "vision: the Qwen2.5-VL tower runs on the CPU: cuda declined it: %v\n", err)
+		return "CPU (cuda declined)", nil
+	}
+	return "CUDA", nil
 }

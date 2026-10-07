@@ -1056,6 +1056,100 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
       tokens under 0.999 and outliers as low as 0.18 on high-norm tokens (rows of norm 16 against 2-3). The first run's "siglip" lines are that tower, and the test
       now asserts the attached type. aikit's tower is read in its own package (`cuda/s4siglip`), which imports nothing from goinfer's `cuda`. goinfer's own tower is
       not gated here and the numbers above are not a verdict on it; the served Gemma 3 image replies with it were sensible.
+  - **Wired (2026-10-07, on `s2-towers`, commit `e5e5dbdf`; not on `main`):** `cuda/vision_towers.go` imports `gpu/qwencuda` (and deliberately not `visioncuda`);
+    serve's `qwenTowerPlacement` attaches it under `--backend cuda` for a float32 tower, names every CPU fallback (`-vision-quant int8`, "cuda declined"), and
+    `-require-backend` refuses them; `-vision-device cpu` keeps the tower on the CPU. `TestQwenTowerPlacement` covers the ten cases.
+  - **Served on Qwen2.5-VL-3B, the G-S2d shape (`--backend cuda`, tower on CUDA against `-vision-device cpu`, a second CPU-tower run as the control):** identical
+    replies in all three ("Quarterly unit sales by region (thousands)"). The log lines say what each arm did: tower `(CPU; ...)`, `(CUDA; ...)`, `(CPU; ...)`,
+    decode `cuda-resident (int4)` throughout. Whole request, exploratory: 22.2 s with the CPU tower, 13.5 s with the CUDA tower.
+    Raw: `docs/measurements/multimodal-support-2026-10/s4-served-qwen/`.
+  - **A limit the first served run found, and it is the card's:** with serve's default KV plan the resident decoder takes all the free VRAM, so the tower's
+    19.6 MB upload failed (`CUDA_ERROR_OUT_OF_MEMORY`) and the tower ran on the CPU: the log said `CPU (cuda declined)` and the reply was still identical, so a
+    run on the default plan reads as a pass for the wrong reason. The comparison above needed `--kv-sessions 1 -ctx 4096`. The resident KV planner reserves
+    for a drafter (`extraBytes`) but not for a vision tower, so on an 8 GB card a device tower and a default-planned decoder do not coexist. That is a planner
+    gap, not a tower defect, and it applies to goinfer's own Gemma 3 SigLIP tower too; not fixed here.
+  - **The script:** `run-gs3c-served.sh` sets `-vision-device` per arm as `<backend>:<auto|cpu>` (plain `<backend>` means the CPU tower); the Mac added the same thing
+    at the same time, and the merge kept its spelling. These runs were made with an earlier `+` spelling of it (labels `cuda_cpu`, `cuda_auto`), which is equivalent.
+- **S4 Gate 0 for the CUDA towers, read 2026-10-07 (nobara), before any CUDA tower code:** the desk map is
+  `docs/measurements/multimodal-support-2026-10/s4-gate0-cuda-towers.md`. In short:
+  - **Reuse is large.** aikit's `gpu.ViT` already has the f32 GEMMs with bias and bias-plus-residual epilogues, LayerNorm, RMSNorm, GELU tanh and erf, SiLU-mul,
+    a NeoX RoPE and scaled, per-segment attention kernels; aikit's `qwencuda` is a correct template for the Qwen3.5 and GLM-OCR block loop. New small CUDA kernels
+    are needed only for Gemma 4 (axial RoPE, ClippableLinear clamps, gelu·mul, position add). No audited PTX is touched; the new kernels are a new `.cu`.
+  - **Not portable:** Metal's scalar-arena launch trick (CUDA takes scalars as launch arguments), so the base brings its own launch helper with an error latch.
+  - **The tiny fixtures do not reach the production GEMM branches** (real GLM-OCR's patch embed has K = 1176, not a multiple of 16; real np is rarely a multiple of 64),
+    which is aikit `visioncuda`'s failure class. The real-size gates are therefore mandatory, and per-branch GEMM tests at real shapes are added.
+  - **VRAM:** all three towers fit in f32 beside a small decoder at modest sizes (Gemma 4 E2B ~0.7 GB, Qwen3.5-0.8B ~0.35 GB, GLM-OCR ~1.6 GB weights, plus scratch that
+    scales with the image: ~2 GB for GLM-OCR at its 4.8 MP ceiling). The planner's drafter reserve (`ExtraResidentBytes`) can carry a tower estimate with no change in `cuda/`.
+  - **CUDA-specific planted defects, registered now for G-S2c (they are in addition to Metal's, which port directly):** (a) the bias dropped only in the tiled-fallback GEMM
+    branch (K not a multiple of 16), seen only by a real-shape GEMM test or a real tower; (b) padded attention keys not masked (if the matmul-blocked attention is used);
+    (c) all patches of a two-image batch in one attention segment; (d) stale scratch across sizes (large, small, large grid on one accelerator); (e) for Gemma 4, the
+    position x and y swapped, the value norm weighted instead of unweighted, and the attention scale changed from 1.0. Each must turn its gate red; a defect that stays
+    green means the fixture is degenerate along that axis (fix the fixture, not the bar). Controls that are not defects: two identical runs bit-identical, a leak test after
+    close, and a factory that errors (never panics) under allocation failure, with serve naming the CPU fallback and `-require-backend` refusing it.
+  - **Build order:** serve plumbing made backend-generic; the tower base; the Gemma 4 tower; the Qwen3.5 and GLM-OCR towers; the VRAM reserve; the speed record (queued, not
+    started); and only if that says so, a faster attention.
+- **S4 steps 0-2 read 2026-10-07 on nobara (`s2-towers`; not on `main`): the tower base and the Gemma 4 tower on CUDA PASS.** Raw: `docs/measurements/multimodal-support-2026-10/s4-gemma4-cuda/`.
+  - **Step 0, serve:** `planGridTower` and `chooseGemma4Tower` are backend-generic (Metal and CUDA, each checked against the registry for its own backend, the fallback named with
+    that backend's word); the table row that pinned CUDA to the CPU is replaced by CUDA cases, and `chooseGemma4Tower` has a placement test for the first time.
+  - **Step 1, the base** (`cuda/tower_base.cu` and `.go`; six small kernels in their own module, NVRTC 12.9.86, FMA-linted; an executor goroutine that owns the device; a launch
+    helper with an error latch; GEMM, bias and bias+residual plan selection that handles a K that is not a multiple of 16): every GEMM branch against float64 (the register kernel on
+    aligned shapes, the bias kernel at any M, the tiled kernel plus `add_bias` at K = 1176 and K = 20), the norms, the six kernels **bit for bit** against Go's float32 arithmetic,
+    and attention at scale 1.0 and 1/sqrt(hd). The tiled-branch bias test was shown red by a mutant (bias dropped on that branch: the output was wrong by 60% of its scale).
+    aikit's own attention kernel is used as it is (np <= 12288), so Metal's matmul-blocked attention was not needed for a correct baseline.
+  - **Step 2, the Gemma 4 tower** (`cuda/gemma4_vision.go`, registered as multimodal's "cuda" tower), tiny tower with finite clip bounds and random position tables and norms:
+    worst soft-token cosine **1.000000000** on all four grids (18, 54 and 135 patches; raster and shuffled). **Planted defects, each alone red** (worst cosine): clamps skipped 0.938,
+    position x/y swapped 0.147, value norm weighted 0.829, attention scale 1/sqrt(hd) 0.533, position tables skipped -0.529, RoPE skipped 0.292. Large-small-large on one tower and
+    two identical runs: bit-identical; a short patch buffer and an out-of-table position return errors; after `Close` the device ledger is empty.
+  - **Real E2B (F2a on CUDA), every soft token against aikit's CPU tower, the four images (2304-2430 patches): worst cosine 1.000000000 on all four.** Tower CUDA 2.15-2.38 s against the
+    CPU's 4.19-4.50 s (exploratory; the CUDA figure includes aikit's host tail).
+  - **Served (the G-S2d shape; `--backend cuda`, E2B decoding resident, `--kv-sessions 1 -ctx 4096`):** tower on CUDA, tower on the CPU, and a second CPU-tower run give an identical
+    32-token reply ("This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025." and the start of the next sentence). The logs name each arm
+    (`tower on CPU` / `tower on CUDA`, `decode path: cuda-resident (int4)`, `decoded 32 tokens on the resident path`); the image encode took 2.34 s with the tower on CUDA and 4.45-4.47 s
+    on the CPU. The default KV plan was not used, for the reason recorded under G-S4q (the tower needs VRAM the resident decoder would take); step 4 is the reserve for that.
+- **S4 step 3 read 2026-10-07 on nobara (`s2-towers`, commit `d7955399`; not on `main`): the Qwen3.5+ and GLM-OCR towers on CUDA PASS G-S2b, G-S2c and G-S2d.** Raw:
+  `docs/measurements/multimodal-support-2026-10/s4-grid-cuda/` (`gates-tiny.log`, `real.log`, `served/`).
+  - **The build:** `cuda/grid_vision.go`, registered as multimodal's "cuda" Qwen3 and GLM-OCR towers, on the CUDA tower base, with aikit's own scaled attention called once per image frame
+    (the frame is the segment) and separate q, k and v (GLM-OCR norms q and k per head before RoPE, which aikit's fused-qkv kernels cannot do), plus one new kernel, `tower_rope_half`
+    (NeoX rotate-half on a separate buffer, bit for bit against Go). The base's attention cap of 12288 patches now applies only where the query-tiled kernel does not.
+  - **G-S2b, tiny towers (norms randomised through the export's aliasing slices), four grid sets including a two-image batch:** Qwen3.5 and GLM-OCR both worst merged-token cosine
+    **1.000000000**.
+  - **G-S2c, planted defects, each alone red.** Metal's five reproduce Metal's recorded readings to the digit (Qwen3.5: scale 0.974966, RoPE 0.996732, position grid 0.994887, patch bias
+    0.993714; GLM-OCR: scale 0.126404, RoPE 0.698253, q/k norm 0.118984, patch bias 0.531329), which is the strongest cross-check available between the two backends. CUDA's new one,
+    **every frame of a batch attending across the boundary**, reads 0.986906 (Qwen3.5) and 0.457776 (GLM-OCR). The other CUDA-specific entries of Gate 0 are covered elsewhere: the bias dropped in
+    the tiled GEMM branch by the base's GEMM-branch test (shown red by a mutant; these tiny towers' patch dims are multiples of 16 and never take that branch, as predicted), stale scratch
+    across sizes and determinism and the ledger after `Close` by `TestGridVisionCUDA_scratchDeterminismClose`.
+  - **G-S2b, real towers (`~/models/qwen3.5-0.8b` at serve's 1024-token cap; `~/models/glm-ocr` at its default 4.8 MP ceiling), nine images, every merged token against aikit's CPU Forward:**
+    Qwen3.5 worst cosine **0.999999763, 0.999999999, 0.999999964, 0.999999989**; GLM-OCR **0.999999175, 0.999999999, 0.999996380, 0.999999195, 0.999999049** (the images in order: the Gemma 3 preprocess image, the Qwen2.5-VL one, then
+    GLM-OCR's formula and table, and for GLM-OCR also its invoice: Qwen3.5 has four, GLM-OCR five). All over 0.9999.
+  - **G-S2d, served (`--backend cuda`, decode `cuda-resident (int4)`, tower on CUDA against `-vision-device cpu`, a second CPU-tower run as the control, `--kv-sessions 1 -ctx 4096`):**
+    the CPU-tower control is byte-identical to the first CPU-tower run for both families. Tower on CUDA against the CPU tower: the replies differ, **at near-ties under the registered rule**:
+    Qwen3.5 first differs at generated token 3 (CPU-tower ' **' 0.546, CUDA-tower ' a' 0.314; p(other) >= half p(top) = 0.273: True), GLM-OCR at token 1 (' table' 0.561, ' image' 0.439;
+    0.280: True). The towers' features differ by about 1e-6 (cosine 0.999999+), so a near-tie flipping is expected, and the rule exists for it. The logs name each arm (`tower (CPU)` /
+    `tower (CUDA)`); no `declined` line appears, so the CUDA arms did run the tower on CUDA. Image encode, exploratory: Qwen3.5 5.17 s (CUDA) against 6.05 s (CPU); GLM-OCR 26.0 s (CUDA).
+  - **Speed, exploratory and honest:** the CUDA towers are only **1.2-1.5x** the CPU towers (real Qwen3.5 3.2-5.2 s against 4.0-6.2 s; GLM-OCR at 1-1.6 K merged tokens 14-36 s against 20-43 s; the figures
+    include aikit's host tail). That is a correct baseline and not a fast tower: the f32 GEMMs and aikit's scalar query-tiled attention are the cost, and Gemma 4's tower (2.2 s against 4.4 s)
+    is better only because it has fewer patches. A faster attention and GEMM are Gate 0's step 6, to be decided by the speed record (queued separately), not claimed here.
+- **S4 step 4 read 2026-10-07 (`s2-towers`, commit `5970cfa4`; not on `main`): the VRAM reserve and a graceful fallback.** Raw: `docs/measurements/multimodal-support-2026-10/s4-grid-cuda/default-plan/`
+  (`s4-reserve-g4`, `s4-reserve-grid`, `s4-reserve-q25-i`).
+  - **The reserve:** serve prices a CUDA tower into `Options.ExtraResidentBytes` (the field the resident plan already reads for a drafter) from the checkpoint's `vision_config`: float32
+    weights plus peak scratch at the family's largest image, 0.86 GB for Gemma 4 E2B, 0.67 GB for Qwen3.5-0.8B, 2.4 GB for GLM-OCR (scratch priced at about 1.5 MP, not its 4.8 MP ceiling,
+    whose 4.15 GB took GLM-OCR's CUDA context from 16384 to 4931 positions), and about 3.4 GB for Qwen2.5-VL (8192 patches). Zero unless the tower will really run on CUDA. It is an
+    estimate and a ceiling the KV context gives way to: on the default plan the E2B kept 16384 positions and 4 conversations, GLM-OCR's context became 5046 (4931 after the trim), Qwen2.5-VL's 6160.
+  - **What it fixed:** on the default plan the Qwen2.5-VL tower used to be declined at attach (`CUDA_ERROR_OUT_OF_MEMORY`) and run on the CPU; with the reserve it attaches on CUDA.
+  - **What it did not fix, found by running it:** a 5504-patch image still missed the budget on the 3B Qwen2.5-VL (2.5 GB of tower weights beside a 3B decoder on an 8 GB card), and **aikit's
+    `gpu/qwencuda` panics on that allocation failure instead of returning it, which killed the whole server** (an unrecovered panic on the request goroutine). Two guards now stand in front of it:
+    `recoverDeviceTower` turns a device-tower panic into an error that names the cause and the way out, and `deviceFallback` (and, for Qwen2.5-VL, `qwenForwardWithFallback`) closes a device
+    tower that ran out of memory so its VRAM comes back, and runs that image and every later one on the CPU tower. On the default plan the same request now returns the CPU tower's identical reply
+    (22.3 s encode, the CPU's time) with the log line `the Qwen2.5-VL tower ran out of device memory ...; it runs on the CPU from now on`. For the aikit defect report: `qwencuda` should return
+    allocation failures from `ForwardViT`, not panic.
+  - **Default-plan served runs, tower on CUDA against `-vision-device cpu`:** Gemma 4 E2B identical (tower encode 2.3 s against 4.5 s); Qwen3.5-0.8B and GLM-OCR differ at near-ties as before
+    (token 3, p(other) >= half p(top): True; token 1, same), the towers on CUDA, no fallback needed; Qwen2.5-VL identical via the fallback above.
+  - **A test-harness trap found on the way:** `run-gs3c-served.sh` left its server running on the GPU when a request failed (`set -e`), so the next run tested the stray server and held 7 GB;
+    it now stops the arm's server on any failure. The three strays were found by name (`pgrep -x`) and stopped.
+- **S4 step 5, the speed record, is queued for tonight as `s4-tower-speed`** (`run-s4-tower-speed.sh`: Gemma 4 E2B, Qwen3.5, GLM-OCR and aikit's Qwen2.5-VL tower against the CPU towers, three passes
+  under the timing lock, a pre-built test binary at `5970cfa4`, estimate 30 min). One pass was smoke-tested by day (6 min 44 s; exploratory, not a result). Nothing is quoted from it yet.
+- **S4 status, 2026-10-07:** steps 0-5 done (step 6, a faster attention and GEMM, waits for the record). Everything is committed on `s2-towers` in `~/wt/goinfer-s2` and **not pushed** (the branch is pushed
+  only on the owner's word, and it needs aikit's unreleased `s2-tower-exports`); the Mac's commits on the same branch were merged in. `main` has only the records.
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any

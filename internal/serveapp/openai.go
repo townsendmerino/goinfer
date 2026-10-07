@@ -123,6 +123,7 @@ type loadedModel struct {
 	// (no separate projector); preprocessing + m-RoPE are Qwen-specific, so the image
 	// path branches on qwenEnc != nil.
 	qwenEnc    *vision.QwenVisionEncoder
+	qwenDevMu  sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
 	qwenPP     multimodal.QwenPreprocessConfig
 	qwenMerge  int // spatial_merge_size
 	qwenImgTok int // <|image_pad|> id

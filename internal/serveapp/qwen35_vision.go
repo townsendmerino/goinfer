@@ -33,6 +33,7 @@ type qwen3Tower struct {
 	once   sync.Once
 	enc    *vision.Qwen3VisionEncoder
 	acc    multimodal.GridTowerAccelerator // nil: aikit's CPU tower
+	fb     deviceFallback                  // serializes the accelerator and falls back to the CPU on a device memory failure
 	err    error
 }
 
@@ -61,7 +62,9 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	return multimodal.Qwen3TowerFeatures(enc, q.acc, pv, [][3]int{grid})
+	return q.fb.run("Qwen3.5", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+		return multimodal.Qwen3TowerFeatures(enc, acc, pv, [][3]int{grid})
+	})
 }
 
 // isQwen35VisionDir reports whether dir is a Qwen3.5+ checkpoint that carries a usable vision tower:
