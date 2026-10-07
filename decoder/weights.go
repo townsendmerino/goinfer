@@ -1024,9 +1024,8 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// branch), plus — when enable_moe_block — the MoE sub-block (own router/
 		// experts/norms). layer_scalar is a per-layer output multiplier. This owns
 		// gemma4's FFN load because its MoE shape doesn't fit the generic Router/
-		// Experts path below. (PLE is loaded by the shared code above via the
-		// model-level PerLayer tensors; the per-layer inp_gate/proj come from the
-		// GGUF path — the safetensors E-models with PLE are Phase 4.)
+		// Experts path below. The PLE branch's per-layer tensors load here too; the
+		// model-level PLE inputs load once, before the layer loop.
 		if arch.gemma4 != nil {
 			// Per-layer FFN width: arch.gemma4.FFNPerLayer is seeded (safetensors
 			// checkpoints) below, right before this loop starts, from each layer's own
@@ -1046,6 +1045,17 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 				l.LayerScalar = ls[0]
 			} else {
 				l.LayerScalar = 1
+			}
+			if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+				if l.PLEGate, err = loadProj(tn(i, "per_layer_input_gate.weight"), pleDim, hd, false); err != nil {
+					return err
+				}
+				if l.PLEProj, err = loadProj(tn(i, "per_layer_projection.weight"), hd, pleDim, false); err != nil {
+					return err
+				}
+				if l.PostPLENorm, err = st.TensorF32(tn(i, "post_per_layer_input_norm.weight"), hd); err != nil {
+					return err
+				}
 			}
 			if arch.MoE != nil {
 				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, skipRow4); err != nil {
@@ -1143,20 +1153,46 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// rule guessed from the KV-shared boundary, which is correlated on this one
 	// checkpoint but not something the config asserts holds in general.
 	if arch.gemma4 != nil {
-		// Per-Layer-Embedding (PLE) inputs are NOT loaded anywhere in this (safetensors)
-		// function — only decoder/gguf.go's loader populates PerLayerTokenEmbed/
-		// PerLayerModelProj/PerLayerProjNorm and each layer's PLEGate/PLEProj (a
-		// pre-existing, documented gap: "the safetensors E-models with PLE are Phase 4",
-		// this function's own comment a few lines below, predating P7). Left unloaded,
-		// runLayersGemma4FromEmbed's PLE branch (pleDim>0) panics deep in rmsNorm on a
-		// nil PerLayerProjNorm — found only now because P7's real-checkpoint vision gate
-		// is the first thing to run a real safetensors E-model checkpoint (which has PLE)
-		// through this loader's forward path at all. Refusing loudly here, at load time,
-		// turns that into a clear error instead of a crash on the first generation —
-		// implementing safetensors PLE loading itself is real, separate work (Phase 4),
-		// out of scope for P7.
-		if arch.gemma4.HiddenSizePerLayerInput > 0 {
-			return nil, fmt.Errorf("gemma4: this checkpoint has per-layer-embedding (PLE) inputs (hidden_size_per_layer_input=%d); safetensors PLE loading is not implemented yet (GGUF loads it; see decoder/weights.go's gemma4 FFN-loading comment)", arch.gemma4.HiddenSizePerLayerInput)
+		// Per-Layer-Embedding (PLE) model-level inputs (S1.1, docs/tasks/task-multimodal-support-2026-10.md).
+		// Until 2026-10-06 this loader refused a PLE checkpoint outright: only GGUF loaded them, and a
+		// safetensors E-model left them nil and crashed in runLayersGemma4FromEmbed's rmsNorm. The same
+		// three tensors GGUF loads, at the same precisions: the token table with the embedding policy
+		// (streamed a row at a time — E2B's is [262144, 8960], 9.4 GB as f32), the projection as a
+		// plain matmul weight, the norm as-is (safetensors norms carry the HF convention already;
+		// GGUF's vnorm has to undo llama.cpp's baked +1, this path does not).
+		if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+			pleVocab := arch.gemma4.VocabSizePerLayerInput
+			if pleVocab == 0 {
+				pleVocab = cfg.VocabSize
+			}
+			// The forward indexes the table by the main-vocab token id (forward_gemma4.go), with no
+			// HF-style "ids past vocab_size_per_layer_input read row 0" mask, so a smaller table would
+			// read past its end. Every released E-model has the two equal.
+			if pleVocab != cfg.VocabSize {
+				return nil, fmt.Errorf("gemma4: vocab_size_per_layer_input %d != vocab_size %d is not supported", pleVocab, cfg.VocabSize)
+			}
+			pleTotal := cfg.NumLayers * pleDim
+			name := mp("model.embed_tokens_per_layer.weight")
+			t, terr := st.Tensor(name)
+			if terr != nil {
+				return nil, terr
+			}
+			if len(t.Shape) != 2 || t.Shape[0] != pleVocab || t.Shape[1] != pleTotal {
+				return nil, fmt.Errorf("gemma4: %q shape %v, want [%d %d]", name, t.Shape, pleVocab, pleTotal)
+			}
+			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, func(r int, dst []float32) error {
+				row, rerr := t.SubF32(r*pleTotal, pleTotal)
+				copy(dst, row)
+				return rerr
+			}); err != nil {
+				return nil, err
+			}
+			if w.PerLayerModelProj, err = loadProj(mp("model.per_layer_model_projection.weight"), pleTotal, hd, false); err != nil {
+				return nil, err
+			}
+			if w.PerLayerProjNorm, err = st.TensorF32(mp("model.per_layer_projection_norm.weight"), pleDim); err != nil {
+				return nil, err
+			}
 		}
 		ffnPerLayer := make([]int, cfg.NumLayers)
 		varies := false

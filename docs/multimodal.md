@@ -509,7 +509,9 @@ number is published without provenance.
   `~/models/gemma-4-26b-a4b-it/config.json`: `hidden_size_per_layer_input: 0` — **26B-A4B has no
   PLE at all**, so the safetensors refusal never fires for it; only E2B/E4B need PLE. Implementing
   safetensors PLE loading remains real, separate, undone work, and now GGUF's already-working PLE
-  loader means it doesn't even block E2B validation — see Phase E below.
+  loader means it doesn't even block E2B validation — see Phase E below. **DONE 2026-10-06:** the
+  safetensors loader loads PLE (S1.1 of docs/tasks/task-multimodal-support-2026-10.md), gated
+  against HF on a tiny E-model fixture at every position.
 
   **What Phase B does NOT include**: an HTTP-level integration smoke test through `vision_serve.go`'s
   actual splice/encode path (the decoder-level gate above proves the numerics; the HTTP wiring

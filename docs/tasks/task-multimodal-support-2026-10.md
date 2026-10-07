@@ -167,6 +167,27 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     (same M1 Pro, macOS 26.6.2).
   - **Raw:** `docs/measurements/multimodal-support-2026-10/s10-*.log`.
   - **Still owed:** the 26B on Metal (night queue), and the same `v_norm` fix on CUDA and WebGPU (nobara).
+- **S1.1, the fixture and safetensors PLE loading, done 2026-10-06 on the Mac.** No bar was pre-registered for this
+  step; it builds what G1 runs on. It was held to the f32 tiny-golden convention (`gemma4_moe_forward_test.go`):
+  argmax equal and cosine >= 0.99999 against HF, here at every position rather than only the last.
+  - **The loader:** `decoder/weights.go` loads the model-level PLE tensors (the token table streamed a row at a time,
+    as GGUF does) and each layer's gate, projection and post norm. It refused any PLE checkpoint before.
+  - **The fixture:** `scripts/pin_gemma4_emodel_tiny.py` → `testdata/gemma4-emodel-tiny` (gitignored, 9.4 MB, so
+    fingerprinted in `testdata/fixture_identity.json`) and `testdata/gemma4_emodel_tiny_golden.json`.
+    - Six layers `[s, s, f, s, s, f]`, PLE P=32, the last two layers KV-shared (layer 4 reads 3; layer 5 reads 2, not
+      the layer before it), double-wide FFN on those two.
+    - One KV head, head_dim 32 local and 64 global, `k_eq_v` off, prompt 12 against a sliding window of 4.
+    - All 42 norm weights and the 6 layer scalars are drawn away from identity.
+  - **A loader gap found on the way:** transformers 5.16 writes `per_layer_config` (`{"2": {"head_dim": 64}}`) in
+    place of `global_head_dim`, so a checkpoint saved by it loaded every layer at the local geometry. goinfer now
+    reads that map and refuses overrides it cannot represent (`Config.gemma4GlobalGeometry`).
+  - **Result:** `TestGemma4EModel_safetensorsParity`, worst cosine 1.00000000 over all 12 positions, argmax 12/12,
+    6-token greedy continuation identical.
+  - **Can it go red:** scaling the PLE projection norm by 1.3 → worst 0.9977; scaling the post-PLE norm by 1.3 →
+    0.959 with an argmax flip at position 1.
+  - **`gate quick` over the change:** 2100 tests passed, 41 forward goldens green; the one red was
+    `TestParityManifest_fresh`, cleared by the goldens-gated `scripts/refresh_parity_hashes.sh`
+    (`docs/measurements/multimodal-support-2026-10/s11-gate-quick.log`).
 - **G1, tiny E-model, Metal resident against the CPU, every position, int4 on both sides:**
   - argmax identical, a first divergence where the CPU's top-1/top-2 margin is under 3% counting as a near-tie (the
     two-geometry rule);

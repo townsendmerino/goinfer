@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"slices"
+	"strconv"
 )
 
 // gemma4BidirectionalAttention is Config.UseBidirectionalAttention's type — see
@@ -302,6 +303,10 @@ type Config struct {
 	GlobalHeadDim    int  `json:"global_head_dim"`
 	NumGlobalKVHeads int  `json:"num_global_key_value_heads"`
 	AttentionKEqV    bool `json:"attention_k_eq_v"`
+	// PerLayerConfig is how transformers >= 5.16 serializes the two fields above: a map from layer
+	// index to that layer's overrides ({"2": {"head_dim": 64}}), with global_head_dim and
+	// num_global_key_value_heads no longer written. Read by gemma4GlobalGeometry.
+	PerLayerConfig json.RawMessage `json:"per_layer_config,omitempty"`
 
 	// Gemma 4 E-model extras. SharedKVLayers: the last N layers carry no k/v
 	// projection and reuse the KV of the last non-shared layer of their type
@@ -1255,6 +1260,64 @@ func (c *Config) gemma4PartialRotary() float64 {
 		return 0
 	}
 	return rp["full_attention"].PartialRotaryFactor
+}
+
+// gemma4GlobalGeometry returns the full-attention layers' head_dim and KV-head count. The flat
+// global_head_dim / num_global_key_value_heads win when present (every released checkpoint and every
+// config written before transformers 5.16). A config saved by 5.16 or later carries per_layer_config
+// instead, so a re-saved checkpoint would otherwise read 0 and load every layer at the local geometry
+// (found 2026-10-06 pinning gemma4-emodel-tiny: a shape error on layer 2's q_proj). goinfer has exactly
+// two attention geometries, so the overrides must name only full-attention layers and agree with each
+// other; anything else is refused rather than half-applied.
+func (c *Config) gemma4GlobalGeometry() (headDim, kvHeads int, err error) {
+	headDim, kvHeads = c.GlobalHeadDim, c.NumGlobalKVHeads
+	if len(c.PerLayerConfig) == 0 || string(c.PerLayerConfig) == "null" {
+		return headDim, kvHeads, nil
+	}
+	var pl map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(c.PerLayerConfig, &pl); err != nil {
+		return 0, 0, fmt.Errorf("decoder(gemma4): per_layer_config: %w", err)
+	}
+	var hd, kv int
+	for k, ov := range pl {
+		i, aerr := strconv.Atoi(k)
+		if aerr != nil || i < 0 || i >= c.NumLayers {
+			return 0, 0, fmt.Errorf("decoder(gemma4): per_layer_config key %q is not a layer index", k)
+		}
+		if !c.IsGlobalLayer(i) {
+			return 0, 0, fmt.Errorf("decoder(gemma4): per_layer_config overrides sliding layer %d; only full-attention overrides are supported", i)
+		}
+		for f, raw := range ov {
+			var v int
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return 0, 0, fmt.Errorf("decoder(gemma4): per_layer_config[%d].%s: %w", i, f, err)
+			}
+			var dst *int
+			switch f {
+			case "head_dim":
+				dst = &hd
+			case "num_key_value_heads":
+				dst = &kv
+			default:
+				return 0, 0, fmt.Errorf("decoder(gemma4): per_layer_config[%d] overrides %q, which is not supported", i, f)
+			}
+			if *dst != 0 && *dst != v {
+				return 0, 0, fmt.Errorf("decoder(gemma4): per_layer_config gives full-attention layers different %s (%d and %d)", f, *dst, v)
+			}
+			*dst = v
+		}
+	}
+	if headDim == 0 {
+		headDim = hd
+	} else if hd != 0 && hd != headDim {
+		return 0, 0, fmt.Errorf("decoder(gemma4): global_head_dim %d disagrees with per_layer_config head_dim %d", headDim, hd)
+	}
+	if kvHeads == 0 {
+		kvHeads = kv
+	} else if kv != 0 && kv != kvHeads {
+		return 0, 0, fmt.Errorf("decoder(gemma4): num_global_key_value_heads %d disagrees with per_layer_config num_key_value_heads %d", kvHeads, kv)
+	}
+	return headDim, kvHeads, nil
 }
 
 // gemma4RopeBases returns the (local, global) RoPE base wavelengths. Gemma 4's real

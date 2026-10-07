@@ -27,7 +27,7 @@ from the code and not run. Nothing here was executed except reading files and th
      comes from.
 2. **No tiny E-model fixture exists, and none can be loaded today.** Every `testdata/gemma4-*` config has
    `hidden_size_per_layer_input=0`, and only the gitignored, absent `gemma4-vl-tiny` has `num_kv_shared_layers=2`
-   (`scripts/pin_gemma4_vl_tiny.py:52-54`). Safetensors PLE loading is refused outright (`decoder/weights.go:1159`),
+   (`scripts/pin_gemma4_vl_tiny.py:52-54`). Safetensors PLE loading is refused outright, by the safetensors loader's gemma4 branch in `decoder/weights.go` (as of 2026-10-06, before S1.1 replaced the refusal),
    so a PLE fixture needs either that loader (Phase 4 work) or a GGUF writer. Today the only E-model on the Mac is the
    real `~/models/gemma-4-E2B_q4_0-it.gguf`, which is present.
 3. **The bridge problem is the token id.** PLE's token-identity term needs the token id
@@ -155,7 +155,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 - **Safetensors:**
   - shared-KV skip (`decoder/weights.go:897-915`).
   - FFNPerLayer discovery, recorded only when it varies (:1160-1183).
-  - **PLE refused**: `decoder/weights.go:1159`.
+  - **PLE refused**: the safetensors loader's gemma4 branch in `decoder/weights.go` (as of 2026-10-06, before S1.1 replaced the refusal).
 
 ---
 
@@ -423,7 +423,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 | **Tiny E-model with PLE + shared KV + varying FFN** | none | **must be built (S1.1)** |
 
 Building the tiny E-model fixture requires either:
-- **safetensors PLE loading.** That means implementing the tensors refused at `decoder/weights.go:1159`; the HF
+- **safetensors PLE loading.** That means implementing the tensors refused by the safetensors loader's gemma4 branch in `decoder/weights.go` (as of 2026-10-06, before S1.1 replaced the refusal); the HF
   names are at `TF/models/gemma4/modeling_gemma4.py:1371-1378, 1600-1613`.
 - **or a tiny GGUF writer.**
 
