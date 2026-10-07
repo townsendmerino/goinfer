@@ -1,0 +1,195 @@
+# Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
+
+**Status: PLANNED 2026-10-06. Nothing below has started.** Each phase writes its own gates into this doc, and commits
+them, before its first measurement (CLAUDE.md, "Pre-registration").
+
+The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was finished and aikit v1.58.0 shipped:
+"we want better overall support." Three axes:
+- **Which models** take images and audio.
+- **Which backends** run them on the GPU (CPU, CUDA, Metal, WebGPU).
+- **Whether they are fast enough** to use interactively.
+
+The last phase puts the answer where users look first, the README, with a check that keeps it true.
+
+## Where it stands (2026-10-06)
+
+"Tower / decoder": where the image or audio encoder runs, then where the language model runs after it.
+
+| | CPU | CUDA | Metal | WebGPU |
+|---|---|---|---|---|
+| Gemma 3 | CPU / CPU | GPU / GPU | CPU / GPU (read, never run) | GPU / GPU |
+| Gemma 4 E2B, E4B | CPU / CPU | CPU / CPU | GPU / CPU | CPU / CPU |
+| Gemma 4 26B, 31B | CPU / CPU | CPU / GPU | GPU (checked on E2B only) / GPU (read) | CPU / CPU |
+| Qwen2.5-VL | CPU / CPU | CPU / GPU | CPU / GPU (read, never run) | CPU / GPU |
+| Qwen3.5+ dense | CPU / CPU | CPU / GPU | CPU / CPU | CPU / CPU |
+| GLM-OCR | CPU / CPU | CPU / GPU | CPU / CPU | CPU / staged |
+| EmbeddingGemma 2 (text, image, audio) | CPU | CPU | GPU | CPU |
+
+**Gaps in coverage:**
+- **Models:**
+  - Qwen3.5+ MoE images have never been run.
+  - Gemma 4 E4B and 31B were never validated (no checkpoint on either box).
+  - Qwen3-VL is text only.
+  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower.
+- **Audio** is EmbeddingGemma 2's embeddings only. Gemma 4 E2B/E4B audio into the model is not wired, though its tower
+  (aikit `audio`) exists.
+- **Release binaries:** WebGPU needs cgo and is in no release binary.
+
+**Speed** (the most recent read of each, exploratory unless marked):
+- **Usable:**
+  - Gemma 3 on CUDA: a 4.1 s tower (recorded 2026-09-21).
+  - Qwen3.5 on CUDA: 3.6 s for a new image, 0.3 s to resend one.
+  - EmbeddingGemma 2 on Metal: 1.2-2 s an image, 70-180 ms an audio clip.
+  - The Gemma 4 tower on Metal: 1.3-2.3 s.
+- **Slow:**
+  - Gemma 4 E2B image chat on a Mac: 14-16 s for 32 tokens, mostly CPU decode.
+  - Qwen3.5 on the CPU: 7.7 s TTFT on a new image.
+- **Very slow:**
+  - Gemma 3's CPU tower: 31 s (recorded 2026-09-08).
+  - GLM-OCR's tower: 29 s at 1 MP, minutes at its full size.
+
+## Rules for every phase
+
+- **Gates first.** Each phase writes its gates here and commits them before measuring.
+  - The correctness bar is the one its neighbours use: bit-identical where the arithmetic allows; otherwise cosine
+    >= 0.9999 per row against the CPU path or HF, with an ambiguous band parked for the owner.
+  - Plus identical greedy tokens on a served request where a decoder is involved.
+  - Plus planted defects that turn the gate red. Randomise any tiny fixture whose weights are all ones (memory:
+    gemma4-vision-tiny); check one-ulp effects at the float level, not only in uint8 (F1 of `docs/multimodal.md`).
+- **Speed** is a record, not a gate, unless the phase pre-registers a bar. By day it is exploratory and labelled so;
+  timed A/Bs and peer comparisons go on the night queue (CLAUDE.md, "Run budget").
+- **aikit:** new API is batched into one release per cycle. A phase that needs it develops against a local aikit branch
+  in a separate worktree and does not push goinfer main until the tag exists (the 2026-10-06 pattern: memory
+  eg2-gpu-branch-worktree).
+- **Checkpoints** come from `~/models` (`models-pull`), never the archive, for anything timed. The Mac has about 26 GB
+  free after the 2026-10-06 cleanup, so a large download needs space first.
+
+## Phases, in order of payoff
+
+### S1 — Gemma 4 E2B/E4B decode on the GPU (Metal, then CUDA)
+
+The largest single speedup. It is not only for images: E2B/E4B text is CPU-only on every backend today. No backend
+declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to the CPU rather than silently drop:
+- **PLE:** a per-layer input embedding.
+- **Shared KV:** later layers reuse an earlier layer's keys and values.
+- **A per-layer FFN width.**
+
+`docs/tasks/task-gpu-paths-2026-09.md` lists the gap. This task builds it, and that row points here once started.
+
+- **Metal first.** EmbeddingGemma 2's Metal encoder already runs a PLE block (`metal/embeddinggemma2.go`,
+  `eg2_gelu_mul_ple`).
+  - Shared KV is resident-cache indexing: a layer reads another layer's slot.
+  - Per-layer FFN width is per-layer scratch sizing.
+  - Then the resident decode bridge for E-models, and image turns through it (`GenerateGemma4VL`).
+- **Gates to write before starting:**
+  - Resident against CPU logits on the tiny E-model fixture, every position, with PLE, shared KV and the varying FFN
+    width all exercised.
+  - Real E2B text: identical 32 greedy tokens against the CPU on a fixed prompt set.
+  - Real E2B image chat: identical served replies against the CPU decoder (the F2b shape).
+  - Planted defects: PLE skipped, the shared-KV source layer off by one, one FFN width.
+- **Speed (night):** E2B decode tokens per second, resident against CPU, same-session interleaved.
+- **Size:** M-L per backend. No aikit API expected.
+
+### S2 — GPU towers for Qwen3.5+ and GLM-OCR
+
+On CUDA, after P26b, the Qwen3.5 tower is about 3.3 of the 3.6 s a new image costs. GLM-OCR's tower is the slowest one
+in the tree.
+
+- **Approach:** the Gemma 4 Metal tower's.
+  - aikit exports the tower's float32 weights (a `Weights()` for `Qwen3VisionEncoder` and `GlmOcrVisionEncoder`; new
+    aikit API, next release).
+  - goinfer runs the blocks on the device.
+  - aikit's tail (merger, projection) stays shared, like `FinishHidden`.
+  - Metal and CUDA. The attention blocks, GEMMs and norms from `metal/gemma4_vision.go` largely carry over. Qwen's
+    2-D RoPE and its bilinear position-table interpolation are new kernels.
+- **Gates to write before starting:**
+  - Device tower against aikit's CPU tower, every merged token at cosine >= 0.9999, on the P8a images and on GLM-OCR's
+    O3 documents.
+  - Served replies identical against the CPU tower.
+  - Planted defects in the new kernels.
+- **Speed (night):** the tower per image on both boxes, against the CPU tower.
+- **Size:** L.
+
+### S3 — Gemma 3 and Qwen2.5-VL on Metal: run what exists, then put the towers on the GPU
+
+- **First, run it.** Metal's `UploadKV` and `ForwardMRoPE` tests have never been run, and no image turn has ever run on
+  a Mac (`docs/measurements/multimodal-audit-2026-10-02.md`).
+  - Pull `gemma-3-4b-it` and `qwen2.5-vl-3b` (disk first).
+  - Run those tests, and one served image turn per family against the CPU decoder.
+- **Then the towers.** aikit ships `gpu/visionmetal` (SigLIP) and `gpu/qwenmetal`, tagged and unused by goinfer.
+  - Wire them through `EnableResident` (M-15 of `docs/audit-metal-2026-09-12.md`).
+  - Gate them like S2, and run a night crossover against the CPU tower.
+- **Size:** S to run, M to wire.
+
+### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
+
+- **Gemma 4:** port `metal/gemma4_vision.go` to `cuda/`. The registration seam is already backend-neutral
+  (`multimodal.RegisterGemma4Tower`).
+- **Qwen2.5-VL:** wire aikit's tagged `gpu/qwencuda` (a require plus `EnableResident`).
+- **Gates:** as S2, on nobara.
+- **Size:** M (Gemma 4), S-M (Qwen2.5-VL).
+
+### S5 — Gemma 4 E2B/E4B audio into the model
+
+aikit's `audio` package probably loads E2B's tower unchanged (its config and tensor names were checked on nobara,
+2026-10-06; the load was not run). What is left:
+- the decoder splice: audio rows unscaled, and PAD for PLE's token-identity term;
+- the prompt layout: `<|audio>` n x `<|audio|>` `<audio|>`;
+- `input_audio` parts on `/v1/chat/completions`, mirroring the embeddings route.
+
+- **Gates:**
+  - The tower's stages against HF on E2B's own weights, on a fixed clip.
+  - The full-model logits on an audio prompt against HF `Gemma4ForConditionalGeneration`.
+  - A served transcription-style request.
+- **Faster with S1:** it is CPU decode until S1 lands.
+- **Size:** M-L.
+
+### S6 — Coverage that is cheap once the above exists
+
+- **Qwen3.5+ MoE images:** never run. On nobara, at night; the checkpoint's tower is in the archive, so it is copied to
+  `~/models` for anything timed.
+- **Gemma 4 E4B and 31B:** download and validate, or scope the support claim to E2B/26B. Owner decision.
+- **EmbeddingGemma 2 on CUDA:** text, image and audio. Optional. The Metal kernels show the shapes; the work is a CUDA
+  twin.
+- **WebGPU:** Gemma 4 and Qwen3.5 there stay CPU unless the owner wants WebGPU invested in. It is in no release binary.
+  Owner decision.
+
+### S7 — Measure every cell, once, at night
+
+One night job per box re-measures each table cell on the current binary, with each figure's provenance:
+- per-image (and per-clip) time;
+- TTFT;
+- decode tokens per second after the image.
+
+It replaces the scattered and stale figures above: the 31 s, 29 s and 4.1 s, and the June ones.
+
+- **Speed bar:** a cell is "usable" when a new image's TTFT is under 5 s at the default image budget, on the box's best
+  backend. That bar is a proposal for the owner to confirm before S7 runs.
+- **Output:** a dated record in `docs/measurements/`. S8 reads its numbers.
+
+### S8 — The support table in the README, kept true
+
+- **The README** gains a short "Images and audio" section: one compact table (family by backend, a check or "CPU"),
+  one line on speed with a link, and the models that are not supported yet.
+- **The full table** lives in `docs/multimodal.md`'s status block (tower and decoder per cell, with the S7 figures).
+- **A drift check,** so neither goes stale silently: a test that reads both tables and checks each claim the code can
+  answer.
+  - A GPU-tower cell needs the tower registered for that backend (e.g. `multimodal.Gemma4Towers()` in a `metal`
+    build).
+  - A GPU-decoder cell needs a backend to declare the family's resident features.
+  - A model listed as supported needs a serve loader.
+
+  A cell the code cannot answer (a speed figure) carries a date instead.
+- **Size:** S, once S7 has numbers.
+
+## Decisions for the owner (none blocks S1)
+
+- P11's audio options (`docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`):
+  - stop at Gemma 4;
+  - a Whisper-style front end plus Qwen3-ASR;
+  - plus a Whisper encoder (which serves Voxtral), toward pure-Go Whisper;
+  - or Voxtral Realtime.
+- Several images per message (today a 400).
+- Which VL checkpoint `pull` recommends per box class (P9(d)).
+- The S7 speed bar.
+- WebGPU's future for multimodal.
