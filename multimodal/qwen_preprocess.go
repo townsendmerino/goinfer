@@ -111,6 +111,46 @@ func LoadQwen3PreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 	if err != nil {
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): read preprocessor_config: %w", err)
 	}
+	return ParseQwen3PreprocessConfig(raw)
+}
+
+// qwen35FamilyPreprocessorJSON is the preprocessor_config.json every Qwen3.5/3.6 checkpoint ships, byte for byte (the
+// same MD5 on Qwen3.5-0.8B, Qwen3.5-9B and Qwen3.6-35B-A3B, read 2026-10-06). A GGUF mmproj carries no pixel budget
+// (docs/multimodal.md P8b, F5 Phase 0), so a tower loaded from one takes the family's own processor config from here.
+const qwen35FamilyPreprocessorJSON = `{
+    "size": {
+        "longest_edge": 16777216,
+        "shortest_edge": 65536
+    },
+    "patch_size": 16,
+    "temporal_patch_size": 2,
+    "merge_size": 2,
+    "image_mean": [
+        0.5,
+        0.5,
+        0.5
+    ],
+    "image_std": [
+        0.5,
+        0.5,
+        0.5
+    ],
+    "processor_class": "Qwen3VLProcessor",
+    "image_processor_type": "Qwen2VLImageProcessorFast"
+}`
+
+// Qwen35FamilyPreprocessConfig is the Qwen3.5/3.6 checkpoints' own preprocessor config (qwen35FamilyPreprocessorJSON),
+// for a tower that came without one (a GGUF mmproj).
+func Qwen35FamilyPreprocessConfig() QwenPreprocessConfig {
+	cfg, err := ParseQwen3PreprocessConfig([]byte(qwen35FamilyPreprocessorJSON))
+	if err != nil {
+		panic(err) // a constant
+	}
+	return cfg
+}
+
+// ParseQwen3PreprocessConfig is LoadQwen3PreprocessConfig on the file's bytes.
+func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 	var pc struct {
 		Size struct {
 			Shortest int `json:"shortest_edge"`

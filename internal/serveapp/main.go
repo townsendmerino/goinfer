@@ -1142,6 +1142,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	if len(cfg.models) != 1 {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
+	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
+		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend))
+	}
 	mt := visionModelType(dir)
 	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.load.Backend)
 	if mt == "qwen2_5_vl" {
@@ -1763,7 +1766,7 @@ func visionPathError(dir string) error {
 		return nil
 	}
 	if strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return fmt.Errorf("-vision %s: a GGUF mmproj file is not supported yet — -vision takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md", dir)
+		return nil // a GGUF mmproj: loadVision routes it (Qwen3.5+ only, P8b), with its own refusals
 	}
 	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
 }

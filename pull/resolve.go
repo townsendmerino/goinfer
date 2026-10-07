@@ -163,9 +163,8 @@ func ResolveVerbose(ctx context.Context, spec string) (string, error) {
 }
 
 // IsMMProj reports whether a repo file is a llama.cpp-style multimodal projector (`mmproj-*.gguf`): the vision half of a GGUF model,
-// shipped as a second file. goinfer cannot load one yet (docs/multimodal.md, "No GGUF mmproj"), but a model repo lists it beside
-// the quants, so `pull` would fetch it without a word and `--vision <it>` then failed with a file-system error (R22,
-// docs/tasks/task-first-hour.md).
+// shipped as a second file. A model repo lists it beside the quants, so `pull` says what it is (R22, docs/tasks/task-first-hour.md):
+// goinfer loads a Qwen3.5+ one with `--vision` (P8b, docs/multimodal.md); other families' are not supported yet.
 func IsMMProj(name string) bool {
 	base := strings.ToLower(name)
 	if i := strings.LastIndex(base, "/"); i >= 0 {
@@ -179,6 +178,7 @@ func MMProjNote(name string) string {
 	if !IsMMProj(name) {
 		return ""
 	}
-	return "note: " + name + " is a vision projector (mmproj), not a model, and goinfer cannot load GGUF mmproj files yet — " +
-		"`--vision` takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md."
+	return "note: " + name + " is a vision projector (mmproj), not a model: `--vision " + name + "` loads it beside a Qwen3.5+ " +
+		"GGUF model; other families' mmproj files are not supported yet (their --vision takes a directory with config.json and " +
+		"safetensors). See docs/multimodal.md."
 }

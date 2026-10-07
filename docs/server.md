@@ -375,6 +375,16 @@ decoder's embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s we
 dropped/pasted image too, for Gemma 3 only. Qwen3-VL is its text decoder only (no tower), and a
 `mistral3` checkpoint's tower is ignored: an image on either is a 400 "this model has no vision tower".
 
+**GGUF `mmproj` (Qwen3.5+).** `--vision` also takes a llama.cpp vision projector file beside a Qwen3.5 or 3.6 GGUF
+model: one of unsloth's mmproj files (F32, F16 or BF16), or the `projector` layer Ollama ships with every `qwen3.5` and `qwen3.6`
+tag (a blob under `~/.ollama/models/blobs/`). For example, `go run ./cmd/serve --model Qwen3.5-0.8B-Q8_0.gguf --vision
+mmproj-BF16.gguf`. The tower loads from it on the first image and runs exactly as the checkpoint's own does: on the
+0.8B the F32 and BF16 files and Ollama's blob give the safetensors tower's features bit for bit (the F16 file within
+7e-5), and a Q8_0 text model gives the same 32-token answers with either tower (`docs/multimodal.md`, P8b / F5). The
+image budget is the Qwen3.5 checkpoints' own (an mmproj carries none), under the same 1,024-token cap. Startup refuses
+an mmproj that is not a Qwen3.5+ projector (another family's, such as Gemma 3's), one whose output width is another
+model size's, and any mmproj beside a model that is not Qwen3.5+.
+
 *Rewritten 2026-10-02 from an audit of the tree and a run on the CUDA box (`docs/measurements/multimodal-audit-2026-10-02.md`; the previous text of this paragraph said "SigLIP
 path, CPU-heavy, 31.3 s" and "`--backend webgpu`/`--backend cuda` force the int8 tower", both true only of Gemma 3 on some backends). **Every Metal statement below is read from code; no Mac
 was available.** Per family:*
@@ -385,7 +395,7 @@ was available.** Per family:*
 | **Gemma 4 E2B, E4B** | CPU, f32 unless `-vision-quant int8` | **CPU for the whole model on every backend** (no backend implements the E-model features) |
 | **Gemma 4 26B-A4B, 31B** | CPU, f32 unless `-vision-quant int8` | CPU bidirectional prefill, then resident decode through the bridge (26B-A4B run on CUDA; 31B unverified; Metal and WebGPU unverified) |
 | **Qwen2.5-VL** | CPU, f32 unless `-vision-quant int8`: aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
-| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image | **CPU prefill and CPU decode on every backend** (a recurrent family refuses every resident branch), so a repeated image re-runs the tower |
+| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image; from a checkpoint directory or a GGUF `mmproj` (below) | **CUDA: resident image prefill and decode** since 2026-10-06 (P26b; dense only); every other backend: CPU prefill and CPU decode (a recurrent family refuses the other resident branches); a repeated image does not re-run the tower (the feature cache) |
 | **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
 
 **The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. `--backend cuda` and `--backend webgpu` (including `--backend auto` when it
