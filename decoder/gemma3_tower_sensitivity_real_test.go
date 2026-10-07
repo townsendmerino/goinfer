@@ -66,7 +66,8 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := Load(dir, Options{Backend: backend, Quant: "int4", EmbedInt4: true, ResidentContext: 4096})
+	// EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the G-S3b arms' own decoder.
+	m, err := Load(dir, Options{Backend: backend, Quant: "int4", EmbedInt4: false, ResidentContext: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}

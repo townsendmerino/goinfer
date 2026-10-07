@@ -938,16 +938,60 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     - the KV precision is resident-only;
     - fast attention is on in both arms;
     - `int4BufA` copies the weights rather than rewriting them.
-    The next measurement, the same test with the resident built, needs about 5.5 GB free on the Mac.
+    The next measurement, the same test with the resident built, needs about 5.5 GB free on the Mac. (Correction, the same
+    hour: this paragraph's inference is void. The test's own `--backend cpu`-equivalent arm gives "Quarter" at 0.705,
+    where the served `--backend cpu` arm gave 0.728, so its hand-built prompt is not serve's and its arms cannot be set
+    beside the served ones. The served control below settles it.)
   - **Side readings worth keeping:** on a real image, the int4 head (EmbedInt4, serve's default) costs 3.5x the KL of the
     int8 head against HF (0.134 against 0.038). And the int8 control itself puts token 0 at 0.508 against 0.241: the
     choice is fragile at any precision.
+- **G-S3c ROOT CAUSE, found 2026-10-07 12:26-12:30 PDT by served controls: serve's `--embed-int4` default differs by
+  backend, so the two arms ran different embedding/LM-head precisions. Metal was never compared.**
+  - `internal/loadflags`' `embedInt4()` turns the int4 embedding table off under `--backend metal`, because Metal's
+    resident does not accept an int4 table, and leaves it on elsewhere. Qwen2.5-VL-3B (and Gemma 3) tie the embedding
+    to the LM head, so the CPU arm decoded with an int4 head and the Metal arm with an int8 one.
+  - **Proof, through the same serve binary, flipping only that flag** (table.png, tower on the CPU; raw in
+    `docs/measurements/multimodal-support-2026-10/s3-gs3c-rootcause/`):
+
+    | arm | table | token 0 | reply |
+    |---|---|---|---|
+    | `--backend cpu` (default) | int4 | "Quarter" 0.728, "Table" 0.208 | "Quarterly unit sales by region (thousands)" |
+    | `--backend cpu --embed-int4=false` | int8 | **"Table" 0.573**, "Quarter" 0.230 | "Table 2. Quarterly unit sales…" |
+    | `--backend metal` (default), resident declined for memory | int8 | "Table" 0.573, "Quarter" 0.230 | "Table 2. Quarterly unit sales…" |
+    | `--backend metal --embed-int4` (resident declined: int4 table) | int4 | **"Quarter" 0.728**, "Table" 0.208 | "Quarterly unit sales…" |
+
+    The numbers swap exactly with the flag, and the `--backend metal` arm says "Table" with no resident at all. **So the
+    Metal arm's "Table" is the int8-head answer, not a Metal effect.** It is also the higher-precision one: on the HF
+    golden, the int8 head sits at KL 0.038 from HF against the int4 head's 0.134 (the table above).
+  - **Two explanations recorded earlier today were wrong and are withdrawn:**
+    - mine, that the CPU int4 layout differed by backend (canonical and row4 give identical logits);
+    - nobara's G-S3c-on-CUDA note, that "Metal's `UploadKV` prefill-then-upload route is the suspect". CUDA matched the
+      CPU because CUDA keeps the int4 table on both arms, not because Metal's upload is at fault.
+  - **The same default explains G-S3c's Gemma 3 observation** ("a CPU decode after a declined Metal request is not the
+    same computation as `--backend cpu`"): Gemma 3 ties its head too, and that pair also differed in the table's
+    precision. Its layout explanation is withdrawn with mine. Not yet re-measured with the flag held fixed (step A of
+    tonight's job).
+  - **A finding beyond S3:** an operator moving between `--backend cpu` and `--backend metal` gets a different model on
+    tied-head families. The int4 head measured 3.5x the int8 head's KL to HF on a real image. That is a quality question
+    about the `--embed-int4` default (docs/quantization.md), raised here, not decided here.
+- **G-S3c, re-registered 2026-10-07 before it runs (owner: "re-register sounds good", after the root cause):** the same
+  request, image, near-tie definition and pass rule. Every arm holds every load flag equal: `-vision-device cpu` and
+  `--embed-int4=false` on all of them (the int8 table Metal's resident needs; the more faithful one). Arms: `--backend
+  metal`, `--backend cpu`, and `--backend cpu` again as a determinism control (byte-identical required). **A
+  `--backend metal` arm whose decode path is not `metal-resident` voids that family's reading**; it is not a FAIL.
+  Qwen2.5-VL and Gemma 3. Queued as step A of `run-s3-rootcause-night.sh`, because both residents need memory the Mac
+  lacks by day.
 - **G-S3b's Gemma 3 divergence, in progress:** phase 1 (`metal/gemma3_tower_dump_test.go` on `s2-towers`) dumped both
   towers' projected features for table.png. They differ by at most 7.92e-5 relative L2 per soft token (worst cosine
   0.999999997). Phase 2 (`decoder/gemma3_tower_sensitivity_real_test.go`) teacher-forces the int4 decoder along the
   CPU-tower arm's greedy path with the Metal-tower features, and with three random perturbations of the same per-token
   size. It needs the 4B, which this Mac's guard refuses while the owner's session runs (6.7 GB available, 6.2 GB
   needed at a 70% margin).
+  Both G-S3b arms were `--backend metal`, so both had the int8 table: the `--embed-int4` difference above does not apply
+  to G-S3b, and its question stays open. Phase 2 loads with the int8 table to match. Tonight's job runs:
+  - step B, the determinism controls (each tower arm twice);
+  - step C, phase 2.
+  (`docs/measurements/multimodal-support-2026-10/run-s3-rootcause-night.sh`, pinned binaries in `~/goinfer-bench/s3/`.)
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
