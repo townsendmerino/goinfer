@@ -134,11 +134,11 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 
 | family | what happens | verdict |
 |---|---|---|
-| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1112-1131`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
+| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1113-1132`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 
-All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1676-1680`), and the Anthropic `image` block goes through
+All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1677-1681`), and the Anthropic `image` block goes through
 the same `driveVL`; the Anthropic surface was **not run** here.
 
 ## Claims in the docs that were wrong
