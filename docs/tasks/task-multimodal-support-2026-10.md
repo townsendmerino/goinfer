@@ -1234,6 +1234,51 @@ prompt prefills token by token on the GPU too. Both backends decline E-models fr
 - **Speed (night):** image-turn TTFT and text-prompt TTFT on E2B, batched against sequential, on both boxes.
 - **Size:** M-L per backend.
 
+**S9 Gate 0 on Metal, the desk map (2026-10-07, Mac):**
+- **Today an E-model never prefills in a batch on Metal.** The f16-MMA pass (`PrefillLast`) declines every dense Gemma
+  4, because its head size varies by layer (`prefillOK` checks `HasPerLayerGeometry`). So a text prompt prefills one
+  token at a time on the GPU, and an image turn (`GenerateGemma4VL`'s E-model branch) prefills on the CPU, then
+  `UploadKV`s and decodes resident.
+- **A bit-identical batched route already exists for the paged 26B:** `prefillG4Paged`
+  (`metal/prefill_g4paged.go`, 4b of task-m26-mac). It runs layer by layer: one command buffer per layer encodes
+  decode's own kernels once per prompt row, with each row's own residual and position uniforms. So the K/V and the last
+  row's logits equal the sequential loop's bit for bit, and the per-token submit-and-wait trips go away. Its dense
+  layers already take the plain `encodeLayerWith` path.
+- **An E-model row adds two things to that per-row state:**
+  - the PLE input `pleIn` (`[L·P]`, about 35 KB on E2B, which `encodePLE` reads from the resident's field, as decode
+    stages it from the row's tail, `loadEmb`);
+  - nothing for KV-shared layers. They read their source layer's cache at keys up to the row's position, and the
+    layer-major order fills every row of the source layer first.
+  Per-layer FFN widths are already in decode's layer encode.
+- **The image turn:** the decoder can build the resident rows itself:
+  - text rows from `embedResident` (`[h ‖ PLE]`);
+  - image rows as the projected feature followed by `gemma4PLEInputs(feature, PAD)`, the CPU's own rule.
+  It then calls `PrefillLast`. A decline keeps today's CPU prefill and upload, unchanged.
+- **CUDA's half is nobara's** (its batched prefill declines E-models by name too, S1's C-steps), against the same gates.
+
+**S9 gates on Metal, written 2026-10-07 before any S9 code or measurement:**
+- **G-S9a, bit-identity:** on `gemma4-emodel-tiny`, the layer-major pass against the sequential resident loop (the same
+  rows through `Forward` one at a time).
+  - Two prompts: text only, and one carrying a run of image rows (random features, PAD in PLE).
+  - The last row's logits must be bit-identical, and so must the next 8 decode steps' logits from the prefilled cache
+    (which checks every layer's K/V, shared layers included).
+  - Prompt lengths below and above one chunk boundary.
+  - No tolerance band: the construction is exact, so any difference is a defect.
+- **G-S9b, the planted defects through the pass:**
+  - S1's G2 E-model defects that the prefill touches, each injected into the layer-major path and each red against
+    G-S9a's sequential reference: the PLE input of one row bound to another row's; the PLE term dropped; a KV-shared
+    layer storing its own K/V.
+  - Also the row order within a layer reversed, which must still be green: the encoder keeps rows apart, and a red
+    there would mean rows share state they should not.
+- **G-S9c, served:** G4's request (E2B, table.png, 32 greedy tokens, the GGUF with `--vision ~/models/gemma-4-E2B-unq`).
+  - Arms: `--backend metal` against `--backend cpu`, `--embed-int4=false` on both (G-S3c's lesson).
+  - The Metal arm must report its image prefill resident.
+  - Identical reply, or a first divergence at a near-tie under the log-probability definition. The CPU repeat must be
+    byte-identical.
+- **Speed (night):** E2B image-turn TTFT and a 512-token text prompt's TTFT, the layer-major pass against today's path
+  (CPU prefill and upload; sequential resident), interleaved. Default on if G-S9a and G-S9b pass, since the change is
+  bit-identical (the 4b precedent); the night grade turns it off below 1.00x.
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
