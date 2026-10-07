@@ -742,6 +742,10 @@ func (r *cudaResident) fusedAttnNote() string {
 	if !r.fastAttn && !r.fastGemm {
 		return ""
 	}
+	if r.eModel {
+		// prefillCore forces the exact kernels for an E-model at every length; saying "fused" here would be the untestable promise this note avoids.
+		return "; exact kernels (the fast levers are not fidelity-gated on Gemma 4 E-models)"
+	}
 	if !r.fastAttn {
 		return "; weight term: gemm_w4a8_mma (L3) where M>=" + strconv.Itoa(gemmMMAMinRows) +
 			"; attention: attn_batched (exact)"
