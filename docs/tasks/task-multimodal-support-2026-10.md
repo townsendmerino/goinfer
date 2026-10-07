@@ -1,7 +1,9 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: PLANNED 2026-10-06. Nothing below has started.** Each phase writes its own gates into this doc, and commits
-them, before its first measurement (CLAUDE.md, "Pre-registration").
+**Status: ACTIVE.** S1 is done on Metal and CUDA (2026-10-07; Metal and CUDA speed records taken or queued); S2 onward
+not started. The phases were extended on 2026-10-07 (S9-S14, owner decisions below), and the order they run in is in
+"Order of work". Each phase writes its own gates into this doc, and commits them, before its first measurement
+(CLAUDE.md, "Pre-registration").
 
 The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was finished and aikit v1.58.0 shipped:
 "we want better overall support." Three axes:
@@ -11,14 +13,14 @@ The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was fini
 
 The last phase puts the answer where users look first, the README, with a check that keeps it true.
 
-## Where it stands (2026-10-06)
+## Where it stands (2026-10-06; the E2B/E4B row updated 2026-10-07 for S1)
 
 "Tower / decoder": where the image or audio encoder runs, then where the language model runs after it.
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
 | Gemma 3 | CPU / CPU | GPU / GPU | CPU / GPU (read, never run) | GPU / GPU |
-| Gemma 4 E2B, E4B | CPU / CPU | CPU / GPU (since 2026-10-07, S1 on CUDA) | GPU / CPU | CPU / CPU |
+| Gemma 4 E2B, E4B | CPU / CPU | CPU / GPU (since 2026-10-07, S1 on CUDA) | GPU / GPU (since 2026-10-06, S1) | CPU / CPU |
 | Gemma 4 26B, 31B | CPU / CPU | CPU / GPU | GPU (checked on E2B only) / GPU (read) | CPU / CPU |
 | Qwen2.5-VL | CPU / CPU | CPU / GPU | CPU / GPU (read, never run) | CPU / GPU |
 | Qwen3.5+ dense | CPU / CPU | CPU / GPU | CPU / CPU | CPU / CPU |
@@ -64,7 +66,7 @@ The last phase puts the answer where users look first, the README, with a check 
 - **Checkpoints** come from `~/models` (`models-pull`), never the archive, for anything timed. The Mac has about 26 GB
   free after the 2026-10-06 cleanup, so a large download needs space first.
 
-## Phases, in order of payoff
+## Phases (numbered as added; the order they run in is "Order of work", below)
 
 ### S1 — Gemma 4 E2B/E4B decode on the GPU (Metal, then CUDA)
 
@@ -701,11 +703,11 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
 
 - **Qwen3.5+ MoE images:** never run. On nobara, at night; the checkpoint's tower is in the archive, so it is copied to
   `~/models` for anything timed.
-- **Gemma 4 E4B and 31B:** download and validate, or scope the support claim to E2B/26B. Owner decision.
+- **Gemma 4 E4B and 31B:** download and validate (owner, 2026-10-07). E4B through S1's E-model gates on both GPU
+  backends; the 31B through the 26B's (bidirectional image prefill, the S1.0 re-check shape). Disk first on both boxes.
 - **EmbeddingGemma 2 on CUDA:** text, image and audio. Optional. The Metal kernels show the shapes; the work is a CUDA
   twin.
-- **WebGPU:** Gemma 4 and Qwen3.5 there stay CPU unless the owner wants WebGPU invested in. It is in no release binary.
-  Owner decision.
+- **WebGPU:** moved to its own phase, S12 (owner: invest, 2026-10-07).
 
 ### S7 — Measure every cell, once, at night
 
@@ -735,14 +737,86 @@ It replaces the scattered and stale figures above: the 31 s, 29 s and 4.1 s, and
   A cell the code cannot answer (a speed figure) carries a date instead.
 - **Size:** S, once S7 has numbers.
 
-## Decisions for the owner (none blocks S1)
+### S9 — Batched E-model prefill on Metal and CUDA, image turns included
 
-- P11's audio options (`docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`):
-  - stop at Gemma 4;
-  - a Whisper-style front end plus Qwen3-ASR;
-  - plus a Whisper encoder (which serves Voxtral), toward pure-Go Whisper;
-  - or Voxtral Realtime.
-- Several images per message (today a 400).
+Added 2026-10-07. Once S1 put E2B/E4B decode on the GPU, prefill became the cost: an E2B image turn on the Mac is about
+15 s for 32 tokens (G4), most of it the ~286 image and prompt tokens prefilling one at a time on the CPU, and a text
+prompt prefills token by token on the GPU too. Both backends decline E-models from every batched prefill path by name
+(S1's explicit declines), and only CUDA's bidirectional 26B/31B class runs its image prefill on the GPU.
+
+- **What it needs:** the batched prefill paths learn the E-model shape S1 taught the decode step: the per-row PLE tail
+  (each row's `[h || L*P]`, image rows with PAD's token-identity term), KV-shared layers that store nothing and read
+  their source's rows, per-layer FFN widths. Then the image turn's prefill runs resident instead of on the CPU plus an
+  `UploadKV`.
+- **Gates to write before starting:** batched against sequential resident prefill on the tiny E-model, every position
+  (bit-identical where the kernels allow, else the S1 near-tie rule); S1's planted defects through the batched path; G4's
+  served image request with the prefill resident, reply identical to the CPU's.
+- **Speed (night):** image-turn TTFT and text-prompt TTFT on E2B, batched against sequential, on both boxes.
+- **Size:** M-L per backend.
+
+### S10 — Towers for the families that have none
+
+Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
+
+- **Pattern:** the Gemma 4 and Qwen ones: the tower in aikit (batched into the cycle's one release), the decoder splice
+  and prompt layout in goinfer, then serve. One sub-phase per family, in order of what users ask for; each starts with
+  a desk map of its HF processor (image budget, special tokens, position scheme).
+- **Gates, per family, before starting it:** the tower's stages against HF on the real checkpoint; full-model logits on an
+  image prompt against HF; a served request.
+- **Size:** M each.
+
+### S11 — Several images per message
+
+Added 2026-10-07. Today a second image in one message is a 400.
+
+- **What it needs:** prompt layout with several image blocks per family, the resident image-block bookkeeping
+  (`residentImageBlock`, prefix reuse) for more than one block, and serve's request parsing.
+- **Gates:** two-image prompts against HF on a tiny fixture per family; served two-image requests; prefix reuse refusing a
+  changed second image.
+- **Size:** S-M.
+
+### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
+
+WebGPU today: Gemma 3 GPU/GPU, Qwen2.5-VL decode on the GPU, GLM-OCR staged, Gemma 4 and Qwen3.5 on the CPU, and no
+release binary (it needs cgo).
+
+- **What it needs:** Gemma 4 resident decode on WebGPU (its Gemma kernels: sandwich norms, the two geometries, K=V, the
+  S1.0 fixes it already has), then the E-model shape (S1's three parts), then the towers that S2/S4 put on Metal and CUDA,
+  and the release-binary question (a cgo build per platform, or a documented build-it-yourself).
+- **Gates:** the S1/S2 gates, run on WebGPU; written per sub-phase before it starts.
+- **Size:** L.
+
+### S13 — Against the peers
+
+Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another engine.
+
+- **What:** one night per box, `bench_peer.py`, the S7 cells against llama.cpp (and MLX on the Mac) on the same image
+  and prompt, same-session interleaved; reported, not gated, unless a bar is registered first.
+- **Size:** S-M (mostly harness: the vision peer path exists for SigLIP only).
+
+### S14 — Speech beyond Gemma 4 (last, after S12)
+
+The owner put this last, after the WebGPU work. It starts with the choice P11 left open
+(`docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`): a Whisper-style front end plus Qwen3-ASR; a
+Whisper encoder (which serves Voxtral), toward pure-Go Whisper; or Voxtral Realtime. Gates are written once the family
+is chosen.
+
+## Order of work (owner, 2026-10-07)
+
+S2, S3, S4 (towers), S5 (Gemma 4 audio), S9 (batched E-model prefill), S6 (coverage, with E4B and 31B validated), S10
+(new towers), S11 (several images), S12 (WebGPU), S7 (measure every cell), S13 (peers), S8 (the README table), S14
+(speech). S8's drift check keeps the README true through S14, which updates the table as part of its own work.
+
+## Decisions for the owner
+
+**Decided 2026-10-07:**
+- **Video:** deferred; no phase.
+- **Gemma 4 E4B and 31B:** download and validate (S6), not a narrowed claim.
+- **WebGPU:** invest in it for multimodal (S12).
+- **Speech:** last (S14), after the WebGPU work; the family is chosen when it starts.
+
+**Still open:**
+
+- S14's speech family (P11's options; decided when S14 starts).
 - Which VL checkpoint `pull` recommends per box class (P9(d)).
 - The S7 speed bar.
-- WebGPU's future for multimodal.
