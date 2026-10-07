@@ -710,6 +710,29 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   on Metal against the tower on the CPU: identical reply text, or a first divergence at a near-tie under the G1 rule.
 - **Speed (night):** tower time per image, Metal against CPU, on the same images. A record.
 
+**S2 progress, 2026-10-07 (Mac), on goinfer branch `s2-towers` over aikit's unreleased `s2-tower-exports`:**
+- **G-S2a: PASS.** aikit's exports recompose `Embed` and `Forward` bit for bit on both tiny towers, norms and the
+  position table randomised (`TestQwen3Export_recomposesForward`, `TestGlmOcrExport_recomposesForward`); dropping GLM's
+  post-norm from the tail turns it red.
+- **G-S2b, tiny towers: PASS**, worst merged-token cosine 1.000000000 for both over four grid sets (three sizes and a
+  two-image batch). **G-S2c: PASS**, every planted defect red: Qwen3.5 (scale 0.975, RoPE halves 0.997, transposed
+  position grid 0.995, patch bias 0.994), GLM-OCR (scale 0.126, RoPE 0.698, q/k norm 0.119, patch bias 0.531). The GLM
+  gate uses aikit's tiny GLM tower, copied into goinfer's testdata (goinfer's own `glm-ocr-tiny` has no vision weights).
+- **G-S2b, real towers: PASS**, nine image/tower pairs through serve's preprocessing and caps: Qwen3.5-0.8B worst token
+  0.999999212, GLM-OCR worst 0.999991618 (`formula.png`). Exploratory times: Metal 2-4x the CPU tower (GLM-OCR invoice
+  12.3 s against 48.9 s; Qwen3.5 on the 896² image 1.2 s against 4.7 s). Raw: `s2-gs2b-real.log` on the branch.
+- **G-S2d run 1 (serve binary at the branch's `fac4aa52` plus the serve wiring), table.png, 32 greedy tokens:**
+  - **GLM-OCR: PASS**, byte-identical replies. Both arms decode on the CPU (Metal does not run GLM-OCR's decoder), so
+    only the tower differed. Time to first token 16.5 s against 39.2 s (exploratory).
+  - **Qwen3.5-0.8B: confounded, not graded.** Under `--backend metal` the 0.8B also decodes on Metal, so the two arms
+    differed in the decoder as well as the tower. The replies agree for their first 15 tokens, then the Metal arm wrote
+    "," where the CPU arm wrote "." — the kind of flip Metal-vs-CPU decode makes about 5% of the time (G3), which says
+    nothing about the tower. The registered procedure did not hold the decoder fixed; GLM only did so by accident.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s2-gs2d-run1/`.
+- **G-S2d amendment, after run 1, before the graded Qwen run:** both arms run `--backend metal`; the CPU-tower arm adds
+  serve's new `-vision-device cpu` (a real flag: it keeps the tower on the CPU while the model keeps its backend), so only
+  the tower differs. Pass rule unchanged.
+
 ### S3 — Gemma 3 and Qwen2.5-VL on Metal: run what exists, then put the towers on the GPU
 
 - **First, run it.** Metal's `UploadKV` and `ForwardMRoPE` tests have never been run, and no image turn has ever run on
