@@ -2,56 +2,31 @@ package embeddinggemma2
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The vision tower on another device (Phase VM, docs/tasks/task-embeddinggemma2.md: Metal). A VisionAccelerator runs
 // the tower's patch embed and every encoder layer from aikit's export (vision.Gemma4Encoder.Weights); the pool and the
 // projection after them stay aikit's (FinishHidden), shared with the CPU tower.
 
-// VisionAccelerator runs the Gemma 4 tower up to its pool on another device.
-type VisionAccelerator interface {
-	Name() string
-	// Hidden is the last encoder layer's output [len(pos), hidden] for patches [len(pos), 3*16*16] in [0, 1] at
-	// their (x, y) positions; patches is not modified.
-	Hidden(patches []float32, pos [][2]int) ([]float32, error)
-	Close() error
-}
+// VisionAccelerator runs the Gemma 4 tower up to its pool on another device. The registry is multimodal's since
+// 2026-10-06 (F2 of docs/multimodal.md), shared with Gemma 4's own image input; these names stay as aliases.
+type VisionAccelerator = multimodal.Gemma4TowerAccelerator
 
-var visAccels = map[string]func(*vision.Gemma4Encoder) (VisionAccelerator, error){}
-
-// RegisterVisionAccelerator makes a tower accelerator available by name, from a backend module's init (as
-// RegisterAccelerator does for the text encoder). UseAccelerator with the same name moves the tower too.
+// RegisterVisionAccelerator is multimodal.RegisterGemma4Tower. UseAccelerator with the same name moves the tower too.
 func RegisterVisionAccelerator(name string, factory func(*vision.Gemma4Encoder) (VisionAccelerator, error)) {
-	accelMu.Lock()
-	defer accelMu.Unlock()
-	visAccels[name] = factory
+	multimodal.RegisterGemma4Tower(name, factory)
 }
 
-// VisionAccelerators lists the registered tower accelerator names, sorted.
-func VisionAccelerators() []string {
-	accelMu.Lock()
-	defer accelMu.Unlock()
-	var n []string
-	for k := range visAccels {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
-}
+// VisionAccelerators lists the registered tower accelerator names, sorted (multimodal.Gemma4Towers).
+func VisionAccelerators() []string { return multimodal.Gemma4Towers() }
 
-// NewVisionAccelerator builds the named tower accelerator over a loaded tower (float32, LoadGemma4Encoder
-// quant=false).
+// NewVisionAccelerator builds the named tower accelerator over a loaded tower (multimodal.NewGemma4Tower).
 func NewVisionAccelerator(name string, enc *vision.Gemma4Encoder) (VisionAccelerator, error) {
-	accelMu.Lock()
-	f, ok := visAccels[name]
-	accelMu.Unlock()
-	if !ok {
-		return nil, fmt.Errorf("embeddinggemma2: no %q vision accelerator in this binary (registered: %v)", name, VisionAccelerators())
-	}
-	return f(enc)
+	return multimodal.NewGemma4Tower(name, enc)
 }
 
 // bindVisionAccel puts a loaded tower on the encoder's accelerator when one of the same name is registered for the
@@ -66,10 +41,7 @@ func (e *Encoder) bindVisionAccel() {
 		v.accel, v.device = nil, ""
 	}
 	name := e.accel.Name()
-	accelMu.Lock()
-	_, ok := visAccels[name]
-	accelMu.Unlock()
-	if !ok {
+	if !slices.Contains(multimodal.Gemma4Towers(), name) {
 		v.device = "CPU (no " + name + " tower in this binary)"
 		return
 	}

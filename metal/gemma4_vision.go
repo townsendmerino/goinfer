@@ -8,18 +8,18 @@ import (
 	"sync"
 
 	"github.com/townsendmerino/aikit/vision"
-	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Gemma 4 vision tower on Metal (Phase VM, docs/tasks/task-embeddinggemma2.md): aikit's Gemma4Encoder.Forward up
 // to its pool, in float32, from aikit's export (Gemma4Encoder.Weights). The patch embed and the 16 layers run here,
 // with the text encoder's GEMMs, RMSNorm and attention blocks (eg2Ops, embeddinggemma2.go: full attention, scale 1.0,
 // one head per KV head), plus the position-table add, the ClippableLinear clamps and the axial 2-D RoPE below. The
-// pool and the projection after them stay aikit's (FinishHidden), on the host. Registered as the "metal" tower
-// accelerator, so an EmbeddingGemma 2 encoder on Metal runs its tower here too.
+// pool and the projection after them stay aikit's (FinishHidden), on the host. Registered as multimodal's "metal" Gemma 4
+// tower, so Gemma 4's own image input (serve, --backend metal) and an EmbeddingGemma 2 encoder on Metal both run it.
 
 func init() {
-	embeddinggemma2.RegisterVisionAccelerator("metal", func(enc *vision.Gemma4Encoder) (embeddinggemma2.VisionAccelerator, error) {
+	multimodal.RegisterGemma4Tower("metal", func(enc *vision.Gemma4Encoder) (multimodal.Gemma4TowerAccelerator, error) {
 		return newG4VAccel(enc)
 	})
 }

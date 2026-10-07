@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 type fakeText struct{ name string }
@@ -31,10 +32,8 @@ func TestBindVisionAccel(t *testing.T) {
 	RegisterVisionAccelerator("fake-ok", func(*vision.Gemma4Encoder) (VisionAccelerator, error) { return fakeTower{&closed}, nil })
 	RegisterVisionAccelerator("fake-no", func(*vision.Gemma4Encoder) (VisionAccelerator, error) { return nil, errors.New("no device") })
 	defer func() {
-		accelMu.Lock()
-		delete(visAccels, "fake-ok")
-		delete(visAccels, "fake-no")
-		accelMu.Unlock()
+		multimodal.UnregisterGemma4Tower("fake-ok")
+		multimodal.UnregisterGemma4Tower("fake-no")
 	}()
 	e := &Encoder{vis: &visionTower{}}
 	e.bindVisionAccel()

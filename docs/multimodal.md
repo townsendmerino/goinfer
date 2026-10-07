@@ -1018,6 +1018,22 @@ the Mac (F2's Gemma 4 E2B, about 10 GB) waits for space. Small GGUF downloads fo
   - **F2b:** a served E2B image request on the Metal binary gives the same 32 greedy tokens as with the CPU tower.
   - **F2c:** the VM1 tiny gate stays green, and a `standardize` checkpoint path (26B's) is exercised by a tiny fixture with
     `standardize=true`, at cosine >= 0.9999; dropping the standardize step turns it red.
+
+  **F2 read 2026-10-06, on the Mac: PASS** (after the disk was cleared and E2B pulled).
+  - **The seam:** the Gemma 4 tower registry moved to `multimodal` (`RegisterGemma4Tower`, `Gemma4TowerFeatures`);
+    EmbeddingGemma 2's names are aliases of it.
+  - **Serve:** with `--backend metal`, Gemma 4's image path uses the Metal tower. It falls back to the CPU with the
+    reason, or refuses under `--require-backend`, and an int8 tower stays on the CPU.
+  - **F2a:** E2B's real tower (clipped, no standardize) on Metal against aikit's CPU tower: worst soft-token cosine
+    1.000000000 on all four images. Exploratory: 1.3-2.3 s on Metal against 5.3-6.4 s on the CPU.
+  - **F2b:** the same E2B image request through the Metal serve binary gives an identical 32-token reply with the tower
+    on Metal and on the CPU. E2B decodes on the CPU either way (no backend declares `gemma4-e-model`).
+  - **F2c:** VM1 green; aikit's export test checks `standardize` through `FinishHidden`, against `Forward`, and on
+    versus off differ.
+    - This runs where aikit's tiny Gemma 4 fixture is present. It is gitignored there, so it runs locally, not in
+      aikit's CI.
+
+  Raw: `docs/measurements/multimodal-finish-2026-10-06/f2*.log`.
 - **F3 — `attendHi`** (P7 Phase C, found and not fixed): an image block longer than the sliding window under-attends. It is
   unreachable on every shipped checkpoint (Gemma 3's block is 256 against a 1024 window; Qwen2.5-VL has no window), so the
   default here is a refusal at the chokepoint, not a fix: a forward that would need it errors by name. A tiny test drives it.

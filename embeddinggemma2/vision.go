@@ -120,16 +120,7 @@ func (e *Encoder) featuresFrom(patches []float32, pos [][2]int) ([]float32, int,
 // featuresOn runs the tower on a (nil: the CPU), then aikit's tail.
 func (e *Encoder) featuresOn(a VisionAccelerator, patches []float32, pos [][2]int) ([]float32, int, error) {
 	n := multimodal.Gemma4PooledTokens(pos, e.vis.enc.Cfg.PoolingKernelSize)
-	var feats []float32
-	var err error
-	if a != nil {
-		var h []float32
-		if h, err = a.Hidden(patches, pos); err == nil {
-			feats, err = e.vis.enc.FinishHidden(h, pos)
-		}
-	} else {
-		feats, err = e.vis.enc.Forward(patches, pos)
-	}
+	feats, err := multimodal.Gemma4TowerFeatures(e.vis.enc, a, patches, pos)
 	if err != nil {
 		return nil, 0, fmt.Errorf("embeddinggemma2: vision tower: %w", err)
 	}

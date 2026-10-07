@@ -87,7 +87,7 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 		}
 	}
 	s := &server{models: map[string]*loadedModel{lm.name: lm}}
-	if err := s.loadGemma4VisionTower(visionDir, false); err != nil {
+	if err := s.loadGemma4VisionTower(visionDir, false, "", false); err != nil {
 		t.Fatalf("loadGemma4VisionTower(%s): %v", visionDir, err)
 	}
 	return lm
