@@ -145,7 +145,7 @@ is.
     closure (`decoder/weights.go:764`), and the GDN projections are loaded outside it.
   - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:353`) refuses every own-forward
     family by design.
-- **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:587`) reports
+- **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:592`) reports
   inexact on any partial rewind when the model has recurrent state, and `.giw-kv` snapshots skip
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
@@ -941,7 +941,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 contract) · `decoder/arch.go:959` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:701`, `:744`
-(merge-at-load) · `decoder/kvcache.go:587` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
+(merge-at-load) · `decoder/kvcache.go:592` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:37`, `:536`, `:538` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/serveapp/main.go:703` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·

@@ -113,7 +113,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | aikit `Qwen3VisionEncoder` on the CPU, **loaded on the first image**, f32 unless the flag, at most 1024 merged tokens per image (`internal/serveapp/qwen35_vision.go:24,83`) | CPU, one token at a time (the Gated-DeltaNet recurrence has no batched form) | **recorded 2026-09-30**: 0.8B 32/32 tokens identical to HF f32 on three images (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`) and **9B 32/32 on three images** (night run `~/goinfer-logs/night/runs/2026-09-30/p8a-g2-9b.log`, `--- PASS: TestQwen35VLReal_G2_9B (767.58s)`). The old "9B leg open" text is stale |
-| CUDA | CPU, **int8** by the rule (the 0.8B/9B gates ran f32; I found no int8 gate for this tower) | **CPU prefill and CPU decode**: every resident branch is refused for a recurrent family (`decoder/generate_vl.go:285-287,349,400`) | **verified-run** (P3: reuse 0, 7.0 s, the tower reruns on a repeat; `TestGenerateQwenVL_recurrentTakesNoResidentBranch` T7) |
+| CUDA | CPU, **int8** by the rule (the 0.8B/9B gates ran f32; I found no int8 gate for this tower) | **CPU prefill and CPU decode**: every resident branch is refused for a recurrent family (`decoder/generate_vl.go:297-299,364,419`) | **verified-run** (P3: reuse 0, 7.0 s, the tower reruns on a repeat; `TestGenerateQwenVL_recurrentTakesNoResidentBranch` T7) |
 | Metal | CPU | CPU (the refusal is in `decoder/`, not backend-specific) | read-from-code |
 | WebGPU | CPU, int8 | CPU, same | read-from-code |
 

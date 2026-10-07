@@ -743,6 +743,9 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		} else {
 			addResidual(h, mlpOut)
 		}
+		if ds := cache.deepstack; ds != nil && l < len(ds.rows) {
+			addDeepstack(h, ds, l, startPos, K, hidden)
+		}
 		// Read-only hidden-state seam (05), batched: copy all K rows of this layer's
 		// output when requested. captured[ci] holds [K*hidden]. nil ⇒ zero overhead.
 		if cache.captureLayers != nil {
@@ -1757,4 +1760,17 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 		return nil, err
 	}
 	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+}
+
+// addDeepstack adds DeepStack set l to the rows of h ([K*hidden], positions startPos..startPos+K) that fall in the image
+// run (S10): HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l], after decoder layer l.
+func addDeepstack(h []float32, ds *deepstackRows, l, startPos, K, hidden int) {
+	set := ds.rows[l]
+	for p := max(ds.start, startPos); p < min(ds.start+ds.n, startPos+K); p++ {
+		dst := h[(p-startPos)*hidden : (p-startPos+1)*hidden]
+		src := set[(p-ds.start)*hidden : (p-ds.start+1)*hidden]
+		for j := range dst {
+			dst[j] += src[j]
+		}
+	}
 }

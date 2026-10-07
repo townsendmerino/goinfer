@@ -58,6 +58,11 @@ type KVCache struct {
 	imgBlocks  [][2]int // multimodal: position ranges [start,end) that attend bidirectionally (image blocks); nil = all-causal
 	mropePos   [][3]int // Qwen2.5-VL m-RoPE: per-sequence-position (t,h,w) rotary positions; nil = scalar RoPE. Indexed by absolute sequence position. (P5)
 	mropeDelta int      // m-RoPE position delta: decode positions past the prefill are scalar seqPos+mropeDelta (the image compresses positions, so delta is usually negative). (P5)
+	// deepstack is Qwen3-VL's DeepStack for the prefill that carries it (S10, docs/tasks/task-multimodal-support-2026-10.md):
+	// after decoder layer l, for l < len(rows), rows[l] ([n*hidden], one row per image position) is ADDED to the hidden
+	// state at the image positions [start, start+n), as HF's _deepstack_process does. nil for every other prefill; a
+	// decode step never touches it (a decode position is never an image position).
+	deepstack *deepstackRows
 
 	keys [][]float32 // per layer, appended [pos*kvDim] (global / append-forever layers)
 	vals [][]float32
@@ -840,4 +845,10 @@ func (c *KVCache) attendHi(pos int) int {
 		}
 	}
 	return pos
+}
+
+// deepstackRows is KVCache.deepstack: the image run's absolute start, its length and one [n*hidden] set per early layer.
+type deepstackRows struct {
+	start, n int
+	rows     [][]float32
 }

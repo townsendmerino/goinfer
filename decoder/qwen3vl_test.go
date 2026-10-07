@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"reflect"
@@ -157,5 +158,30 @@ func TestMropeComponentInterleaved_differsFromChunked(t *testing.T) {
 	if !differs {
 		t.Fatal("mropeComponentInterleaved and mropeComponent agree on every index for section [4,2,2] — " +
 			"this test cannot distinguish the two formulas, fix the fixture")
+	}
+}
+
+// TestQwen3VL_mropeSectionFromRopeScaling: the released Qwen3-VL checkpoints mark m-RoPE with rope_scaling
+// {mrope_interleaved: true, mrope_section: [...], rope_type: "default"}, not type "mrope". The section must still be
+// read (S10: G-S10a's load of Qwen3-VL-2B-Instruct printed MRopeSection=[], which an image prompt would rotate as plain
+// RoPE). The tiny fixture's config is the base, its rope fields replaced by the real checkpoint's shape.
+func TestQwen3VL_mropeSectionFromRopeScaling(t *testing.T) {
+	const ckpt = "../testdata/qwen3vl-tiny"
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no checkpoint at %s", ckpt)
+	}
+	cfg, err := loadConfig(os.DirFS(ckpt), "config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RopeParameters = nil // the released checkpoint has none: rope_theta sits at the text config's top level
+	cfg.RoPEGlobalBase = 5e6
+	cfg.RopeScaling = json.RawMessage(`{"mrope_interleaved": true, "mrope_section": [24, 20, 20], "rope_type": "default"}`)
+	arch, _, err := qwen3_vlArchitecture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(arch.MRopeSection) != "[24 20 20]" || !arch.MRopeInterleaved {
+		t.Errorf("MRopeSection %v (interleaved %v), want [24 20 20] interleaved", arch.MRopeSection, arch.MRopeInterleaved)
 	}
 }
