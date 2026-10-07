@@ -88,7 +88,7 @@ resident cache rather than moving prefill itself onto the resident runners. Net 
 one this item asked for — a Gemma 3 / Qwen2.5-VL image turn's text decode no longer runs at CPU
 speed on a GPU box.
 
-**Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:18–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
+**Where (as of the original 2026-09-08 draft, now historical).** `decoder/generate_vl.go:19–30`: `GenerateVL` (and `GenerateQwenVL`) are "stateless and
 CPU-only by design — never touches m.resident at all". `internal/serveapp/openai.go:1633–1077`
 (`driveVL`) is the only caller from serve; `prepare()` is told `residentPath=false` for vision
 (`internal/serveapp/openai.go:1114–663`).
