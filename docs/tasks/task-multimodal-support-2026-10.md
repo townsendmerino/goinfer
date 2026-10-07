@@ -1349,6 +1349,44 @@ Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image 
   image prompt against HF; a served request.
 - **Size:** M each.
 
+**S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
+P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
+owner's choice is that decision. The dev checkpoint is `Qwen/Qwen3-VL-2B-Instruct`, downloaded on nobara (`~/models/
+qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
+
+**Gate 0, the desk map (2026-10-07, from transformers 5.16.1's `modeling_qwen3_vl.py` and aikit's source):**
+- **The tower is S2's Qwen3.5 tower plus DeepStack.** It has the same patch embed, interpolated learned position table,
+  2-D RoPE, blocks and merger. In addition, at `deepstack_visual_indexes` a separate merger (`use_postshuffle_norm=True`:
+  the LayerNorm after the merge-unit shuffle, not before) turns that block's output into one feature row per merged
+  token. The tower returns the main merged rows plus one DeepStack list per index.
+- **aikit refuses a DeepStack tower at load, by name** (`Qwen3EncoderConfig.DeepstackVisualIndexes`, pinned by
+  `TestQwen3VisionEncoder_refusesWhatItCannotRun`). It needs the extra mergers and a forward that returns their outputs:
+  new aikit API for the cycle's release.
+- **The decoder:** after decoder layer i, for i < len(DeepStack), the i-th DeepStack rows are ADDED to the hidden state
+  at the image positions (`_deepstack_process`). Every other family here splices once before layer 0. goinfer has the
+  text decoder (`qwen3_vlArchitecture`, P8 Phase 0) and its interleaved m-RoPE (`MRopeInterleaved`, shared with
+  Qwen3.5), but no additive per-layer hook.
+- **Where the injection applies:** only in the prompt's prefill. A decode step is never an image position. So the CPU
+  prefill carries the hook, and Metal's existing CPU-prefill-then-`UploadKV` route decodes unchanged. CUDA's resident
+  m-RoPE prefill must decline a DeepStack model until it learns the hook.
+- **Serve:** a `qwen3_vl` model type routes to the Qwen tower path, as Qwen2.5-VL and Qwen3.5 do, with the DeepStack
+  rows carried beside the merged rows.
+- **The text gate written in P8 Phase 0 and never run** (`decoder/qwen3vl_real_test.go`, `GOINFER_QWEN3VL_2B`) runs
+  first, on nobara: the decoder must be right before images are added to it.
+
+**S10 Qwen3-VL gates, written 2026-10-07 before any S10 code or measurement:**
+- **G-S10a, the text decoder:** `qwen3vl_real_test.go` as written in P8 Phase 0, on nobara.
+- **G-S10b, the tower against HF on the real 2B:** every stage (the patch embed with position rows, each block, the
+  merger, each DeepStack merger) at soft-token cosine >= 0.9999 on the four F2a images. HF's tower is run alone, float32;
+  0.999-0.9999 is ambiguous (parked). Plus aikit's own tiny-tower check, with norms randomised and the DeepStack merger's
+  post-shuffle norm dropped as a planted defect that must go red.
+- **G-S10c, the full model on an image prompt against HF `Qwen3VLForConditionalGeneration` (float32, nobara):**
+  goinfer's float32 CPU prefill, with the same pass bar as G-S5b: last-position cosine >= 0.999, argmax equal, argmax
+  agreement >= 95% over the text positions after the image. Planted defects, each red: (1) the DeepStack features not
+  added; (2) added at the wrong layers (shifted by one); (3) added to the text positions too.
+- **G-S10d, served:** one image request through serve, `--backend cpu` against `--backend metal` (the CPU prefill and
+  upload) with every load flag equal, plus a CPU repeat. Identical replies, or a first divergence at a near-tie.
+
 ### S11 — Several images per message
 
 Added 2026-10-07. Today a second image in one message is a 400.
