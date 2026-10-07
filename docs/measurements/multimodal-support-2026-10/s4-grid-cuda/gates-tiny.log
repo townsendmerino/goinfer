@@ -1,0 +1,49 @@
+=== RUN   TestGridVisionCUDA_matchesCPU
+=== RUN   TestGridVisionCUDA_matchesCPU/qwen3
+    grid_vision_test.go:173: Qwen3.5: worst merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:181: Qwen3.5 planted noScale: worst 0.974966
+    grid_vision_test.go:181: Qwen3.5 planted swapRope: worst 0.996732
+    grid_vision_test.go:181: Qwen3.5 planted transposePos: worst 0.994887
+    grid_vision_test.go:181: Qwen3.5 planted noPatchBias: worst 0.993714
+    grid_vision_test.go:181: Qwen3.5 planted oneSegment: worst 0.986906
+=== RUN   TestGridVisionCUDA_matchesCPU/glm-ocr
+    grid_vision_test.go:173: GLM-OCR: worst merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:181: GLM-OCR planted noScale: worst 0.126404
+    grid_vision_test.go:181: GLM-OCR planted swapRope: worst 0.698253
+    grid_vision_test.go:181: GLM-OCR planted noQKNorm: worst 0.118984
+    grid_vision_test.go:181: GLM-OCR planted noPatchBias: worst 0.531329
+    grid_vision_test.go:181: GLM-OCR planted oneSegment: worst 0.457776
+--- PASS: TestGridVisionCUDA_matchesCPU (0.70s)
+    --- PASS: TestGridVisionCUDA_matchesCPU/qwen3 (0.41s)
+    --- PASS: TestGridVisionCUDA_matchesCPU/glm-ocr (0.28s)
+=== RUN   TestGridVisionCUDA_scratchDeterminismClose
+=== RUN   TestGridVisionCUDA_scratchDeterminismClose/qwen3
+=== RUN   TestGridVisionCUDA_scratchDeterminismClose/glm-ocr
+--- PASS: TestGridVisionCUDA_scratchDeterminismClose (0.45s)
+    --- PASS: TestGridVisionCUDA_scratchDeterminismClose/qwen3 (0.23s)
+    --- PASS: TestGridVisionCUDA_scratchDeterminismClose/glm-ocr (0.23s)
+=== RUN   TestTowerBase_gemmBranches
+    tower_base_test.go:154: M=128 N=128 K=64: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:154: M=100 N=70 K=48: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:154: M=37 N=50 K=1176: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:154: M=5 N=9 K=20: gemm, gemmBias and gemmBiasAdd match float64
+    tower_base_test.go:154: M=2520 N=192 K=768: gemm, gemmBias and gemmBiasAdd match float64
+--- PASS: TestTowerBase_gemmBranches (0.92s)
+=== RUN   TestTowerBase_normsAndActivations
+--- PASS: TestTowerBase_normsAndActivations (0.22s)
+=== RUN   TestTowerBase_kernels
+=== RUN   TestTowerBase_kernels/clamp
+=== RUN   TestTowerBase_kernels/posAdd
+=== RUN   TestTowerBase_kernels/ropeAxial
+=== RUN   TestTowerBase_kernels/ropeHalf
+=== RUN   TestTowerBase_kernels/mulAndScale
+--- PASS: TestTowerBase_kernels (0.19s)
+    --- PASS: TestTowerBase_kernels/clamp (0.00s)
+    --- PASS: TestTowerBase_kernels/posAdd (0.00s)
+    --- PASS: TestTowerBase_kernels/ropeAxial (0.00s)
+    --- PASS: TestTowerBase_kernels/ropeHalf (0.00s)
+    --- PASS: TestTowerBase_kernels/mulAndScale (0.00s)
+=== RUN   TestTowerBase_attention
+--- PASS: TestTowerBase_attention (8.79s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	11.310s
