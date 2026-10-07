@@ -1120,7 +1120,7 @@ func (cfg config) towerBackend() string {
 }
 
 func (s *server) loadVisionTower(cfg config) error {
-	if cfg.visionDevice != "auto" && cfg.visionDevice != "cpu" {
+	if cfg.visionDevice != "" && cfg.visionDevice != "auto" && cfg.visionDevice != "cpu" { // "" (a config built without flags) is auto
 		return fmt.Errorf("-vision-device %q: want auto or cpu", cfg.visionDevice)
 	}
 	dir := cfg.visionPath
