@@ -825,6 +825,24 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 - **Owner decision 2026-10-07: the proposal is accepted.** Both towers get rebuilt on goinfer's Metal tower base, from new
   aikit float32 exports (SigLIP, Qwen2.5-VL) on the same unreleased `s2-tower-exports` branch; the `visionmetal` real-size
   defect is reported to aikit. G-S3a's bars apply unchanged to the rebuilt towers, then G-S3b.
+- **G-S3a for the rebuilt towers, registered 2026-10-07 before their code runs:**
+  - **Bars unchanged:** every soft token at cosine >= 0.9999 against aikit's CPU tower, on the tiny towers and on the four
+    F2a images at real size; 0.999-0.9999 ambiguous (parked).
+  - **One amendment: SigLIP is float32 on both sides,** not int8. The rebuilt tower runs float32 GEMMs, from aikit's new
+    float32 export (`Encoder.Weights`, `FinishHidden`), so serve loads Gemma 3's tower float32 for it, as it already does
+    on the CPU. Qwen2.5-VL stays float32 on both sides, from aikit's existing `GPUWeights` (its float32 form),
+    `BuildWindowPlan` and `MergeHidden`.
+  - **The tiny checks randomise every norm first** (the all-ones trap).
+  - **Planted defects, each one alone, must turn the tiny check red:**
+    1. the attention scale dropped (both towers);
+    2. RoPE's row and column halves swapped (Qwen2.5-VL);
+    3. every block attending its whole image instead of its windows (Qwen2.5-VL);
+    4. the window reordering skipped, on the way in and on the way out (Qwen2.5-VL);
+    5. the position table dropped (SigLIP);
+    6. the patch-embed bias dropped (SigLIP).
+  - A defect that stays green means the fixture is degenerate along that axis. That gets recorded, and the check is
+    rerun on a fixture or grid that can see the defect, before any result is read.
+  - **Then G-S3b, as registered.**
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
