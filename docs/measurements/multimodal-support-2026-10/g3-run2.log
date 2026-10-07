@@ -1,0 +1,56 @@
+=== RUN   TestGemma4EModel_realE2BText
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[G3    0.3s] E2B resident on Metal: template gemma4, P=256, 20 KV-shared layers, FFN 6144 / 12288
+[G3    0.4s] both loads done
+[G3    4.1s]     disagree: prompt 1 pos 6 (prompt) CPU gap 0.23%
+[G3    4.1s]     disagree: prompt 1 pos 7 (prompt) CPU gap 0.22%
+[G3    4.4s]     disagree: prompt 1 pos 11 (prompt) CPU gap 0.40%
+[G3    4.7s]     disagree: prompt 1 pos 17 (prompt) CPU gap 0.03%
+[G3    5.0s]     disagree: prompt 1 pos 21 (prompt) CPU gap 1.36%
+[G3    6.9s] prompt 1 (23 prompt tokens): identical; teacher-forced 49/54; pass=true
+    cpu:   "The user wants a two-sentence explanation for why the sky is blue.\n\n1.  **Identify the core phenomenon:** Rayleigh scattering.\n2.  "
+    metal: "The user wants a two-sentence explanation for why the sky is blue.\n\n1.  **Identify the core phenomenon:** Rayleigh scattering.\n2.  "
+[G3   10.7s]     disagree: prompt 2 pos 10 (prompt) CPU gap 2.23%
+[G3   13.2s] prompt 2 (21 prompt tokens): identical; teacher-forced 51/52; pass=true
+    cpu:   "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a haiku about autumn leaves.\n2.  **Define Haiku Structure:**"
+    metal: "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a haiku about autumn leaves.\n2.  **Define Haiku Structure:**"
+[G3   17.2s]     disagree: prompt 3 pos 7 (prompt) CPU gap 0.29%
+[G3   17.3s]     disagree: prompt 3 pos 8 (prompt) CPU gap 0.40%
+[G3   19.6s]     disagree: prompt 3 pos 46 (generated) CPU gap 5.91%
+[G3   20.3s] prompt 3 (28 prompt tokens): first divergence at generated token 19, CPU gap 5.91%; teacher-forced 56/59; pass=false
+    cpu:   "To find the product of 17 and 23, I will use the standard multiplication algorithm.\n\n**Problem:** $17 \\times 2"
+    metal: "To find the product of 17 and 23, I will use the standard multiplication method (long multiplication or the distributive property).\n\n**Method "
+[G3   24.5s]     disagree: prompt 4 pos 12 (prompt) CPU gap 0.41%
+[G3   24.8s]     disagree: prompt 4 pos 17 (prompt) CPU gap 0.70%
+[G3   25.7s]     disagree: prompt 4 pos 32 (generated) CPU gap 2.83%
+[G3   27.1s] prompt 4 (26 prompt tokens): first divergence at generated token 7, CPU gap 2.83%; teacher-forced 54/57; pass=true
+    cpu:   "The user wants to translate the English phrase \"Where is the train station?\" into French and German.\n\n1.  **French translation:**\n    *   "
+    metal: "The user wants to translate the English sentence \"Where is the train station?\" into French and German.\n\n1.  **French translation:**\n    *   "
+[G3   30.7s]     disagree: prompt 5 pos 7 (prompt) CPU gap 4.00%
+[G3   33.3s] prompt 5 (21 prompt tokens): identical; teacher-forced 51/52; pass=true
+    cpu:   "Here's a thinking process to arrive at the suggested differences:\n\n1.  **Analyze the Request:** The user wants three differences between Python and Go."
+    metal: "Here's a thinking process to arrive at the suggested differences:\n\n1.  **Analyze the Request:** The user wants three differences between Python and Go."
+[G3   37.8s]     disagree: prompt 6 pos 18 (prompt) CPU gap 7.63%
+[G3   40.1s] prompt 6 (25 prompt tokens): identical; teacher-forced 55/56; pass=true
+    cpu:   "The user wants a one-paragraph summary of the plot of *Romeo and Juliet*.\n\n1.  **Identify the core elements:** Romeo and Juliet, fe"
+    metal: "The user wants a one-paragraph summary of the plot of *Romeo and Juliet*.\n\n1.  **Identify the core elements:** Romeo and Juliet, fe"
+[G3   43.8s]     disagree: prompt 7 pos 8 (prompt) CPU gap 3.49%
+[G3   44.0s]     disagree: prompt 7 pos 11 (prompt) CPU gap 3.52%
+[G3   44.6s]     disagree: prompt 7 pos 21 (generated) CPU gap 0.21%
+[G3   46.1s]     disagree: prompt 7 pos 47 (generated) CPU gap 0.26%
+[G3   46.4s] prompt 7 (22 prompt tokens): first divergence at generated token 0, CPU gap 0.21%; teacher-forced 49/53; pass=true
+    cpu:   "Thinking Process:\n\n1.  **Understand the Goal:** The request is to write a Go function that reverses a given string.\n2.  **Analyze"
+    metal: "The user wants a Go function that reverses a given string.\n\nI need to provide a Go function that takes a string as input and returns the reversed string."
+[G3   50.2s]     disagree: prompt 8 pos 10 (prompt) CPU gap 1.07%
+[G3   50.8s]     disagree: prompt 8 pos 20 (generated) CPU gap 1.62%
+[G3   52.2s]     disagree: prompt 8 pos 43 (generated) CPU gap 1.06%
+[G3   52.6s]     disagree: prompt 8 pos 50 (generated) CPU gap 0.45%
+[G3   52.7s] prompt 8 (21 prompt tokens): first divergence at generated token 0, CPU gap 1.62%; teacher-forced 48/52; pass=true
+    cpu:   "The user is asking for the main causes of inflation. I need to provide a comprehensive answer covering the primary drivers of price increases in an economy.\n\nHere'"
+    metal: "Inflation is a complex economic phenomenon, and its causes are rarely singular. They usually stem from imbalances between the supply of goods and services and the demand for those goods"
+[G3   52.7s] G3: 7/8 prompts pass the free-run rule; teacher-forced agreement 413/435 = 94.94%
+    gemma4_emodel_real_test.go:189: G3 FAIL: 7/8 prompts pass, agreement 94.94%
+--- FAIL: TestGemma4EModel_realE2BText (52.68s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	53.206s
+FAIL

@@ -1,0 +1,14 @@
+=== RUN   TestGemma4EModel_realE2BTableControl
+[G3 control] prompt 1: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 48/54
+[G3 control] prompt 2: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 50/52
+[G3 control] prompt 3: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 55/59
+[G3 control] prompt 4: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 55/57
+[G3 control] prompt 5: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 49/52
+[G3 control] prompt 6: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 53/56
+[G3 control] prompt 7: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 51/53
+[G3 control] prompt 8: CPU int8 tables vs CPU int4 (e4h) tables, teacher-forced 46/52
+    gemma4_emodel_real_test.go:261: G3 control: CPU int8-pinned tables vs CPU e4h tables, teacher-forced agreement 407/435 = 93.56% (reported, not graded)
+--- PASS: TestGemma4EModel_realE2BTableControl (27.68s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	28.130s
+exit 0

@@ -62,6 +62,9 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 		if dnetOK && m.Qwen35LinearLayer(l) {
 			continue // no KV cache on a linear-attention layer (metal/model.go leaves r.kc[l]/r.vc[l] zero)
 		}
+		if m.KVSrcAtResident(l) != l {
+			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (metal/model.go, S1.4)
+		}
 		nKV := int64(m.KVHeadsAtResident(l))
 		kvDim := nKV * int64(m.HeadDimAtResident(l))
 		if i8 {

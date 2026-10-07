@@ -448,3 +448,7 @@ func SetProbeGPUConfigMutatorForTest(mutate func(name string, cfg []byte) []byte
 
 // ResetSelfTestCachesForTest clears the per-(backend, quant) probe cache and the recorded results, so a test sees a first-use probe.
 func ResetSelfTestCachesForTest() { resetSelfTestCaches() }
+
+// SetGemma4PLEDropTokenForTest plants S1's G2 defect (2): the resident embedding row's PLE inputs lose their
+// token-identity term (docs/tasks/task-multimodal-support-2026-10.md). The CPU forward is unaffected.
+func SetGemma4PLEDropTokenForTest(on bool) { gemma4PLEDropTokenForTest = on }

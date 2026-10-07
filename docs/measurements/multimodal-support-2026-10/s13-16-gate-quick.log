@@ -1,0 +1,233 @@
+[1m== quick provenance ==[0m
+  repo        05fa8227 +dirty
+  date (UTC)  2026-10-07T03:38:34Z
+  host        Darwin arm64
+  base        -files (no git diff)
+  changed     14 file(s)
+  count       cached: an unchanged test binary with unchanged inputs replays (TE7(b))
+  jobs        4 at once (device cells one at a time; checkpoint-loading cells alone)
+  timing lock free
+  run dir     /var/folders/m1/sxl522hn2wgbq5rqcxf2dx8m0000gn/T/gate-quick-20261006-203833-2105226003
+  started     20:38:33 PDT
+  NOTE: working tree DIRTY — this verdict does not describe a committed state.
+
+[1m== selection ==[0m
+  changed:
+    decoder/features.go
+    decoder/features_test.go
+    decoder/gemma4_admission_test.go
+    decoder/gemma4_emodel_real_test.go
+    decoder/generate_vl_resident.go
+    decoder/residency.go
+    decoder/residentneed.go
+    decoder/testhooks.go
+    metal/backend.go
+    metal/batch.go
+    metal/gumbel_sample.go
+    metal/kernels.go
+    metal/model.go
+    metal/gemma4_emodel_test.go
+  AFFECTED — the test binary compiles the change, so it re-runs (23):
+    cmd/serve                    imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    cuda                         imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    decoder                      compiles decoder/features.go; compiles decoder/features_test.go; +6 more
+    demo/agent/agent             imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    examples/confidence          imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    examples/embed               imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    examples/invoice             imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    examples/structured          imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    gpu                          imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/chatapp             imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/clef                imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/decide              imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/decidecmd           imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/fitcmd              imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/hwreport            imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/loadflags           imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/modelload           imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/prequant            imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/serveapp            imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/servecheck          imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    internal/swapguard           imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+    metal                        imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +9 more
+    pull                         imports decoder (decoder/features.go); imports decoder (decoder/generate_vl_resident.go); +3 more
+  OBSERVERS — can read the change as data; the test cache re-runs them if they did (5):
+    chat                         enumerates directories (chat_test.go:40)
+    cmd/gate                     enumerates directories (composition.go:107)
+    internal/cliutil             enumerates directories (cliutil_test.go:94)
+    internal/hwcensus            enumerates directories (census_test.go:150)
+    internal/prezerolint         enumerates directories (prezero_test.go:225)
+  CACHE-CHECKED (9) — no link found; kept, and replayed by the test cache unless an input changed:
+    constrain embeddinggemma2 internal/batchio internal/confidence internal/fidelity internal/giw
+    internal/pullcmd multimodal tokenizer
+  FORCED -count=1 — read outside their module root, which the test cache does not re-check (3):
+    cuda                         names decoder/features.go outside its module root: decoder/features.go; names decoder/generate_vl_resident.go outside its module root: decoder/generate_vl_resident.go; +4 more
+    gpu                          names decoder/features.go outside its module root: decoder/features.go; names decoder/residency.go outside its module root: decoder/residency.go; +4 more
+    metal                        names decoder/features.go outside its module root: decoder/features.go; reads "../" outside its module root: decoder/features_test.go; +6 more
+  forward goldens: not triggered (no parity shared-set file changed)
+  split cells (so the rest of the package can stay cached, or run beside others): chat [checkpoint] (3 of 77 tests), cmd/gate [checkpoint] (3 of 103 tests), constrain [checkpoint] (2 of 74 tests), decoder [walkers] (8 of 1012 tests), decoder [checkpoint] (119 of 1012 tests), gpu [checkpoint] (26 of 198 tests), internal/chatapp [checkpoint] (5 of 40 tests), internal/serveapp [checkpoint] (14 of 390 tests), metal [checkpoint] (122 of 423 tests), pull [checkpoint] (1 of 57 tests), tokenizer [checkpoint] (2 of 41 tests)
+  run ALONE, nothing beside them (they load a real checkpoint): chat [checkpoint], cmd/gate [checkpoint], constrain [checkpoint], decoder [checkpoint], demo/agent/agent, embeddinggemma2, examples/confidence, examples/invoice, examples/structured, gpu [checkpoint], internal/chatapp [checkpoint], internal/clef, internal/decide, internal/modelload, internal/prequant, internal/serveapp [checkpoint], metal [checkpoint], multimodal, pull [checkpoint], tokenizer [checkpoint]
+  [33mNOT RUNNABLE HERE[0m: cuda — module cuda builds only on linux (this host is darwin/arm64)
+== quick: 64 job(s), started 20:38:33 — progress every 30s ==
+   [1/64] PASS    staticcheck canary                    100ms
+   [2/64] PASS    gofmt metal                           100ms
+   [3/64] PASS    gofmt root                            200ms
+   [4/64] PASS    build root                             1.8s
+   [5/64] PASS    vet root -tags goinfer_testhooks       2.4s
+   [6/64] PASS    vet root -tags 'realckpt goinfer_testhooks' (linux/amd64)     4.9s
+   [7/64] PASS    vet gpu -tags 'gpu goinfer_testhooks'     4.5s
+   [8/64] PASS    build cuda -tags 'cuda goinfer_testhooks' (linux/amd64)     2.5s
+   [9/64] PASS    build gpu -tags 'gpu goinfer_testhooks'     6.1s
+   [10/64] PASS    vet cuda -tags 'cuda goinfer_testhooks' (linux/amd64)     1.4s
+   [11/64] PASS    vet metal                              1.6s
+   [12/64] PASS    build metal                            2.3s
+   [13/64] PASS    vet metal -tags goinfer_testhooks      1.5s
+   [14/64] PASS    vet demo/agent                        800ms
+   [15/64] PASS    build demo/agent                       1.5s
+   [16/64] PASS    staticcheck metal -tags goinfer_testhooks     2.6s
+   [17/64] PASS    staticcheck root (linux/amd64)        11.9s
+   ... quick: 31s elapsed (started 20:38:33), 17/64 jobs done; running: cmd/gate 18s, decoder 19s, internal/serveapp 18s, metal 19s; expect done ~20:42:14 (from the last run's per-cell times)
+   [18/64] PASS    internal/serveapp                       20s  327 pass  53 skip  0 fail
+   [19/64] PASS    internal/swapguard                     6.6s  3 pass  0 skip  0 fail
+   [20/64] PASS    cmd/gate                              32.4s  93 pass  7 skip  0 fail
+   [21/64] PASS    internal/chatapp                       5.7s  33 pass  0 skip  0 fail
+   [22/64] CACHED  cmd/serve                             400ms  1 pass  0 skip  0 fail
+   [23/64] CACHED  chat                                  100ms  73 pass  3 skip  0 fail
+   [24/64] CACHED  constrain                             100ms  76 pass  0 skip  0 fail
+   [25/64] PASS    internal/fitcmd                       900ms  11 pass  0 skip  0 fail
+   [26/64] CACHED  internal/fidelity                     100ms  8 pass  0 skip  0 fail
+   [27/64] PASS    internal/servecheck                   900ms  25 pass  0 skip  0 fail
+   [28/64] PASS    internal/hwcensus                     800ms  2 pass  0 skip  0 fail
+   [29/64] PASS    pull                                   3.4s  55 pass  1 skip  0 fail
+   [30/64] CACHED  tokenizer                             100ms  31 pass  9 skip  0 fail
+   [31/64] PASS    internal/hwreport                     800ms  4 pass  0 skip  0 fail
+   [32/64] PASS    internal/prezerolint                     1s  2 pass  0 skip  0 fail
+   [33/64] CACHED  examples/embed                        300ms  1 pass  1 skip  0 fail
+   [34/64] PASS    internal/decidecmd                    800ms  3 pass  0 skip  0 fail
+   [35/64] CACHED  internal/pullcmd                      200ms  5 pass  0 skip  0 fail
+   [36/64] CACHED  internal/batchio                      100ms  6 pass  0 skip  0 fail
+   [37/64] CACHED  internal/giw                          100ms  12 pass  1 skip  0 fail
+   [38/64] CACHED  internal/confidence                   100ms  2 pass  0 skip  0 fail
+   [39/64] CACHED  internal/cliutil                      100ms  6 pass  0 skip  0 fail
+   [40/64] CACHED  internal/loadflags                    300ms  10 pass  0 skip  0 fail
+   ... quick: 1m1s elapsed (started 20:38:33), 40/64 jobs done; running: decoder 49s, metal 49s; expect done ~20:42:14 (from the last run's per-cell times)
+   ... quick: 1m31s elapsed (started 20:38:33), 40/64 jobs done; running: decoder 1m19s, metal 1m19s; expect done ~20:42:14 (from the last run's per-cell times)
+   ... quick: 2m1s elapsed (started 20:38:33), 40/64 jobs done; running: decoder 1m49s, metal 1m49s; expect done ~20:42:27 (from the last run's per-cell times)
+   ... quick: 2m31s elapsed (started 20:38:33), 40/64 jobs done; running: decoder 2m19s, metal 2m19s; expect done ~20:42:42 (from the last run's per-cell times)
+   [41/64] PASS    decoder                             2m29.5s  695 pass  115 skip  0 fail
+   [42/64] PASS    decoder [walkers]                      5.1s  8 pass  0 skip  0 fail
+   ... quick: 3m1s elapsed (started 20:38:33), 42/64 jobs done; running: metal 2m49s; expect done ~20:43:00 (from the last run's per-cell times)
+   ... quick: 3m31s elapsed (started 20:38:33), 42/64 jobs done; running: metal 3m19s; expect done ~20:43:23 (from the last run's per-cell times)
+   [43/64] PASS    metal                               3m30.5s  248 pass  53 skip  0 fail
+   ... quick: 4m1s elapsed (started 20:38:33), 43/64 jobs done; running: decoder [checkpoint] 19s; expect done ~20:44:55 (from the last run's per-cell times)
+   ... quick: 4m31s elapsed (started 20:38:33), 43/64 jobs done; running: decoder [checkpoint] 49s; expect done ~20:44:55 (from the last run's per-cell times)
+   ... quick: 5m1s elapsed (started 20:38:33), 43/64 jobs done; running: decoder [checkpoint] 1m19s; expect done ~20:44:55 (from the last run's per-cell times)
+   ... quick: 5m31s elapsed (started 20:38:33), 43/64 jobs done; running: decoder [checkpoint] 1m49s; expect done ~20:44:55 (from the last run's per-cell times)
+   ... quick: 6m1s elapsed (started 20:38:33), 43/64 jobs done; running: decoder [checkpoint] 2m19s; expect done ~20:45:16 (from the last run's per-cell times)
+   [44/64] PASS    decoder [checkpoint]                2m42.2s  70 pass  40 skip  0 fail
+   ... quick: 6m31s elapsed (started 20:38:33), 44/64 jobs done; running: gpu 7s; expect done ~20:46:05 (from the last run's per-cell times)
+   ... quick: 7m1s elapsed (started 20:38:33), 44/64 jobs done; running: gpu 37s; expect done ~20:46:05 (from the last run's per-cell times)
+   ... quick: 7m31s elapsed (started 20:38:33), 44/64 jobs done; running: gpu 1m7s; expect done ~20:46:24 (from the last run's per-cell times)
+   [45/64] PASS    gpu                                  1m7.4s  124 pass  48 skip  0 fail
+   ... quick: 8m1s elapsed (started 20:38:33), 45/64 jobs done; running: metal [checkpoint] 29s; expect done ~20:46:55 (from the last run's per-cell times)
+   [46/64] PASS    metal [checkpoint]                    50.2s  30 pass  92 skip  0 fail
+   [47/64] PASS    internal/serveapp [checkpoint]         5.2s  9 pass  2 skip  0 fail
+   [48/64] CACHED  multimodal                            100ms  22 pass  0 skip  0 fail
+   [49/64] CACHED  examples/confidence                   300ms  1 pass  0 skip  0 fail
+   [50/64] CACHED  examples/structured                   200ms  2 pass  0 skip  0 fail
+   [51/64] PASS    internal/decide                        2.3s  21 pass  1 skip  0 fail
+   ... quick: 8m31s elapsed (started 20:38:33), 51/64 jobs done; running: internal/clef 1s; expect done ~20:47:07 (from the last run's per-cell times)
+   [52/64] PASS    internal/clef                          1.4s  18 pass  4 skip  0 fail
+   [53/64] ALLSKIP gpu [checkpoint]                       1.2s  0 pass  26 skip  0 fail
+   [54/64] PASS    internal/prequant                     900ms  27 pass  4 skip  0 fail
+   [55/64] CACHED  demo/agent/agent                      500ms  13 pass  0 skip  0 fail
+   [56/64] PASS    internal/modelload                    800ms  7 pass  0 skip  0 fail
+   [57/64] CACHED  chat [checkpoint]                     100ms  3 pass  0 skip  0 fail
+   [58/64] PASS    internal/chatapp [checkpoint]         700ms  4 pass  1 skip  0 fail
+   [59/64] PASS    pull [checkpoint]                     700ms  1 pass  0 skip  0 fail
+   [60/64] CACHED  embeddinggemma2                       100ms  7 pass  0 skip  0 fail
+   [61/64] CACHED  tokenizer [checkpoint]                100ms  2 pass  0 skip  0 fail
+   [62/64] CACHED  examples/invoice                      300ms  1 pass  1 skip  0 fail
+   [63/64] PASS    cmd/gate [checkpoint]                 500ms  3 pass  0 skip  0 fail
+   [64/64] CACHED  constrain [checkpoint]                100ms  0 pass  2 skip  0 fail
+
+[1m== lint ==[0m
+  [32mPASS[0m  staticcheck canary                                              100ms   must print U1000, or no staticcheck result above means anything
+  [32mPASS[0m  gofmt root                                           1043 files  200ms   lint: gofmt -l .
+  [32mPASS[0m  gofmt metal                                          315 files  100ms   lint: gofmt -l .
+  [32mPASS[0m  build root                                           21 pkgs     1.8s   root-darwin / lint: go build ./...
+  [32mPASS[0m  vet root -tags goinfer_testhooks                     21 pkgs     2.4s   root-darwin: go vet -tags goinfer_testhooks ./...
+  [32mPASS[0m  vet root -tags 'realckpt goinfer_testhooks' (linux/amd64) 21 pkgs     4.9s   lint: go vet -tags 'realckpt goinfer_testhooks' ./... (a superset of lint's plain vet)
+  [32mPASS[0m  staticcheck root (linux/amd64)                       1 pkgs     11.9s   lint: staticcheck ./...
+  [32mPASS[0m  build gpu -tags 'gpu goinfer_testhooks'              3 pkgs      6.1s   gpu-darwin: go build -tags 'gpu goinfer_testhooks' ./gpu/...
+  [32mPASS[0m  vet gpu -tags 'gpu goinfer_testhooks'                3 pkgs      4.5s   gpu-darwin: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
+  [32mPASS[0m  build cuda -tags 'cuda goinfer_testhooks' (linux/amd64) 3 pkgs      2.5s   cuda: CGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/...
+  [32mPASS[0m  vet cuda -tags 'cuda goinfer_testhooks' (linux/amd64) 3 pkgs      1.4s   cuda: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+  [32mPASS[0m  build metal                                          3 pkgs      2.3s   metal-darwin: go build ./metal/...
+  [32mPASS[0m  vet metal                                            3 pkgs      1.6s   metal-darwin: go vet ./metal/...
+  [32mPASS[0m  vet metal -tags goinfer_testhooks                    3 pkgs      1.5s   metal-darwin: go vet -tags goinfer_testhooks ./metal/...
+  [32mPASS[0m  staticcheck metal -tags goinfer_testhooks            1 pkgs      2.6s   (not in CI) staticcheck -tags goinfer_testhooks ./metal/...
+  [32mPASS[0m  build demo/agent                                     3 pkgs      1.5s   gpu: go build ./demo/agent/...
+  [32mPASS[0m  vet demo/agent                                       3 pkgs     800ms   (not in CI) go vet ./demo/agent/...
+
+[1m== tests ==[0m
+  [32mCACHED [0m chat                               observer        100ms    73 pass    3 skip   0 fail
+  [32mCACHED [0m chat [checkpoint]                  observer        100ms     3 pass    0 skip   0 fail
+  [32mPASS   [0m cmd/gate                           observer        32.4s    93 pass    7 skip   0 fail
+  [32mPASS   [0m cmd/gate [checkpoint]              observer        500ms     3 pass    0 skip   0 fail
+  [32mCACHED [0m cmd/serve                          affected        400ms     1 pass    0 skip   0 fail
+  [32mCACHED [0m constrain                          cache-checked   100ms    76 pass    0 skip   0 fail
+  [32mCACHED [0m constrain [checkpoint]             cache-checked   100ms     0 pass    2 skip   0 fail
+  [32mPASS   [0m decoder                            affected      2m29.5s   695 pass  115 skip   0 fail
+  [32mPASS   [0m decoder [checkpoint]               affected      2m42.2s    70 pass   40 skip   0 fail
+  [32mPASS   [0m decoder [walkers]                  affected         5.1s     8 pass    0 skip   0 fail
+  [32mCACHED [0m demo/agent/agent                   affected        500ms    13 pass    0 skip   0 fail
+  [32mCACHED [0m embeddinggemma2                    cache-checked   100ms     7 pass    0 skip   0 fail
+  [32mCACHED [0m examples/confidence                affected        300ms     1 pass    0 skip   0 fail
+  [32mCACHED [0m examples/embed                     affected        300ms     1 pass    1 skip   0 fail
+  [32mCACHED [0m examples/invoice                   affected        300ms     1 pass    1 skip   0 fail
+  [32mCACHED [0m examples/structured                affected        200ms     2 pass    0 skip   0 fail
+  [32mPASS   [0m gpu                                affected       1m7.4s   124 pass   48 skip   0 fail
+  [33mALLSKIP[0m gpu [checkpoint]                   affected         1.2s     0 pass   26 skip   0 fail
+  [32mCACHED [0m internal/batchio                   cache-checked   100ms     6 pass    0 skip   0 fail
+  [32mPASS   [0m internal/chatapp                   affected         5.7s    33 pass    0 skip   0 fail
+  [32mPASS   [0m internal/chatapp [checkpoint]      affected        700ms     4 pass    1 skip   0 fail
+  [32mPASS   [0m internal/clef                      affected         1.4s    18 pass    4 skip   0 fail
+  [32mCACHED [0m internal/cliutil                   observer        100ms     6 pass    0 skip   0 fail
+  [32mCACHED [0m internal/confidence                cache-checked   100ms     2 pass    0 skip   0 fail
+  [32mPASS   [0m internal/decide                    affected         2.3s    21 pass    1 skip   0 fail
+  [32mPASS   [0m internal/decidecmd                 affected        800ms     3 pass    0 skip   0 fail
+  [32mCACHED [0m internal/fidelity                  cache-checked   100ms     8 pass    0 skip   0 fail
+  [32mPASS   [0m internal/fitcmd                    affected        900ms    11 pass    0 skip   0 fail
+  [32mCACHED [0m internal/giw                       cache-checked   100ms    12 pass    1 skip   0 fail
+  [32mPASS   [0m internal/hwcensus                  observer        800ms     2 pass    0 skip   0 fail
+  [32mPASS   [0m internal/hwreport                  affected        800ms     4 pass    0 skip   0 fail
+  [32mCACHED [0m internal/loadflags                 affected        300ms    10 pass    0 skip   0 fail
+  [32mPASS   [0m internal/modelload                 affected        800ms     7 pass    0 skip   0 fail
+  [32mPASS   [0m internal/prequant                  affected        900ms    27 pass    4 skip   0 fail
+  [32mPASS   [0m internal/prezerolint               observer           1s     2 pass    0 skip   0 fail
+  [32mCACHED [0m internal/pullcmd                   cache-checked   200ms     5 pass    0 skip   0 fail
+  [32mPASS   [0m internal/serveapp                  affected          20s   327 pass   53 skip   0 fail
+  [32mPASS   [0m internal/serveapp [checkpoint]     affected         5.2s     9 pass    2 skip   0 fail
+  [32mPASS   [0m internal/servecheck                affected        900ms    25 pass    0 skip   0 fail
+  [32mPASS   [0m internal/swapguard                 affected         6.6s     3 pass    0 skip   0 fail
+  [32mPASS   [0m metal                              affected      3m30.5s   248 pass   53 skip   0 fail
+  [32mPASS   [0m metal [checkpoint]                 affected        50.2s    30 pass   92 skip   0 fail
+  [32mCACHED [0m multimodal                         cache-checked   100ms    22 pass    0 skip   0 fail
+  [32mPASS   [0m pull                               affected         3.4s    55 pass    1 skip   0 fail
+  [32mPASS   [0m pull [checkpoint]                  affected        700ms     1 pass    0 skip   0 fail
+  [32mCACHED [0m tokenizer                          cache-checked   100ms    31 pass    9 skip   0 fail
+  [32mCACHED [0m tokenizer [checkpoint]             cache-checked   100ms     2 pass    0 skip   0 fail
+  [33mNOT RUN[0m cuda                               module cuda builds only on linux (this host is darwin/arm64)
+
+[1m== verdict ==[0m
+  tests    PASSED 2105   SKIPPED 464   FAILED 0   (top-level tests; a skip is not a pass)
+  cells    48: 26 ran, 21 replayed from the test cache, 1 not runnable on this host
+  skips    missing-fixture 43, missing-golden 9, heavy-model 244, integration-env 128, other 40
+  lint     17 step(s): 17 pass, 0 fail
+  goldens  not triggered
+  wall     8m38s (20:38:33 → 20:47:11)
+  [33mNOT COVERED on this host[0m: 1 cell(s) of module(s) that do not build here — run quick on a box that builds them.
+  [33mUNVERIFIED[0m: affected cell(s) in which every test skipped: gpu [checkpoint]
+  [32mGREEN — 2105 tests passed (464 skipped)[0m
+exit 0

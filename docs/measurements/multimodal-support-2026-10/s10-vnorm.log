@@ -1,0 +1,63 @@
+=== RUN   TestGemma4DenseScaled_metalParity
+    gemma4_dense_scaled_test.go:95:   pos  0  Metal-vs-CPUint4 0.996436 | CPUint4-vs-f32 0.936365  argmax metal=1 cpu4=1
+    gemma4_dense_scaled_test.go:95:   pos  1  Metal-vs-CPUint4 0.986421 | CPUint4-vs-f32 0.877579  argmax metal=7 cpu4=7
+    gemma4_dense_scaled_test.go:95:   pos  2  Metal-vs-CPUint4 0.928573 | CPUint4-vs-f32 0.703074  argmax metal=42 cpu4=42
+    gemma4_dense_scaled_test.go:95:   pos  3  Metal-vs-CPUint4 0.953784 | CPUint4-vs-f32 0.795401  argmax metal=100 cpu4=100
+    gemma4_dense_scaled_test.go:95:   pos  4  Metal-vs-CPUint4 0.945084 | CPUint4-vs-f32 0.780281  argmax metal=5 cpu4=5
+    gemma4_dense_scaled_test.go:95:   pos  5  Metal-vs-CPUint4 0.928382 | CPUint4-vs-f32 0.650813  argmax metal=200 cpu4=200
+    gemma4_dense_scaled_test.go:95:   pos  6  Metal-vs-CPUint4 0.839422 | CPUint4-vs-f32 0.474604  argmax metal=13 cpu4=66
+    gemma4_dense_scaled_test.go:95:   pos  7  Metal-vs-CPUint4 0.881231 | CPUint4-vs-f32 0.599062  argmax metal=88 cpu4=88
+    gemma4_dense_scaled_test.go:95:   pos  8  Metal-vs-CPUint4 0.887023 | CPUint4-vs-f32 0.760084  argmax metal=3 cpu4=3
+    gemma4_dense_scaled_test.go:95:   pos  9  Metal-vs-CPUint4 0.878682 | CPUint4-vs-f32 0.595481  argmax metal=71 cpu4=71
+    gemma4_dense_scaled_test.go:95:   pos 10  Metal-vs-CPUint4 0.901571 | CPUint4-vs-f32 0.624925  argmax metal=128 cpu4=128
+    gemma4_dense_scaled_test.go:95:   pos 11  Metal-vs-CPUint4 0.836619 | CPUint4-vs-f32 0.612792  argmax metal=9 cpu4=9
+    gemma4_dense_scaled_test.go:95:   pos 12  Metal-vs-CPUint4 0.844635 | CPUint4-vs-f32 0.445377  argmax metal=250 cpu4=250
+    gemma4_dense_scaled_test.go:95:   pos 13  Metal-vs-CPUint4 0.922726 | CPUint4-vs-f32 0.544460  argmax metal=17 cpu4=17
+    gemma4_dense_scaled_test.go:95:   pos 14  Metal-vs-CPUint4 0.858667 | CPUint4-vs-f32 0.473476  argmax metal=60 cpu4=60
+    gemma4_dense_scaled_test.go:95:   pos 15  Metal-vs-CPUint4 0.907027 | CPUint4-vs-f32 0.482932  argmax metal=200 cpu4=200
+    gemma4_dense_scaled_test.go:99: scaled dense (256-local, 12 layers): pos0=0.996436 exact-argmax 15/16 | mean Metal-vs-CPUint4=0.906018  CPUint4-vs-f32=0.647294 (min floor 0.4454)
+--- PASS: TestGemma4DenseScaled_metalParity (0.87s)
+=== RUN   TestGemma4MoE_localize
+    gemma4_moe_parity_test.go:73: after layer 0: cosine 0.999740 maxAbs 1.3644e-01
+    gemma4_moe_parity_test.go:73: after layer 1: cosine 0.999644 maxAbs 2.5228e-01
+    gemma4_moe_parity_test.go:78: gemma4 MoE localize: worst layer 1 cosine 0.999644 over 2 layers
+--- PASS: TestGemma4MoE_localize (0.06s)
+=== RUN   TestGemma4MoE_residentParity
+    gemma4_moe_parity_test.go:126:   pos  0 cosine 0.999626 maxAbs 2.7075e-02 argmax cpu=216 metal=216
+    gemma4_moe_parity_test.go:126:   pos  1 cosine 0.997161 maxAbs 7.7923e-02 argmax cpu=53 metal=53
+    gemma4_moe_parity_test.go:126:   pos  2 cosine 0.978678 maxAbs 2.0948e-01 argmax cpu=200 metal=200
+    gemma4_moe_parity_test.go:126:   pos  3 cosine 0.958904 maxAbs 2.6943e-01 argmax cpu=100 metal=100
+    gemma4_moe_parity_test.go:126:   pos  4 cosine 0.970187 maxAbs 2.2561e-01 argmax cpu=42 metal=42
+    gemma4_moe_parity_test.go:126:   pos  5 cosine 0.940105 maxAbs 2.9120e-01 argmax cpu=200 metal=200
+    gemma4_moe_parity_test.go:126:   pos  6 cosine 0.981587 maxAbs 2.0925e-01 argmax cpu=111 metal=111
+    gemma4_moe_parity_test.go:126:   pos  7 cosine 0.872764 maxAbs 4.9020e-01 argmax cpu=88 metal=88
+    gemma4_moe_parity_test.go:128: gemma4 dense‖MoE resident parity: exact-argmax 8/8 gaps>3%=0 worstNearTie=0.00% minCosine=0.872764 maxAbs=4.9020e-01
+--- PASS: TestGemma4MoE_residentParity (0.07s)
+=== RUN   TestGemma4TwoGeom_localize
+    gemma4_twogeom_test.go:92: layer 0 (LOCAL hd=16, real V — geometry seam): cosine 0.987958 maxAbs 8.1817e-01
+    gemma4_twogeom_test.go:93: layer 1 (GLOBAL hd=512, K=V — v_norm(raw k)) : cosine 0.982502 maxAbs 1.2885e+00
+--- PASS: TestGemma4TwoGeom_localize (0.05s)
+=== RUN   TestGemma4TwoGeom_f16ScaleConfound
+    gemma4_twogeom_test.go:164:   pos  0 cosine 0.983110 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  1 cosine 0.983233 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  2 cosine 0.992819 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  3 cosine 0.994975 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  4 cosine 0.992783 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  5 cosine 0.992276 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  6 cosine 0.989594 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  7 cosine 0.992645 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:166: f16-scale-matched minCosine = 0.983110 — vs ~0.9806 against the f32-scale CPU: the group-scale representation is ~0 of the gap; the residual is the broader resident quant path (f16 KV / int8 act)
+--- PASS: TestGemma4TwoGeom_f16ScaleConfound (0.06s)
+=== RUN   TestGemma4TwoGeom_residentParity
+    gemma4_twogeom_test.go:216:   pos  0 cosine 0.983110 maxAbs 1.8962e-01 argmax cpu=183 metal=183
+    gemma4_twogeom_test.go:216:   pos  1 cosine 0.983233 maxAbs 1.9293e-01 argmax cpu=7 metal=7
+    gemma4_twogeom_test.go:216:   pos  2 cosine 0.992819 maxAbs 1.2841e-01 argmax cpu=42 metal=42
+    gemma4_twogeom_test.go:216:   pos  3 cosine 0.994975 maxAbs 9.5467e-02 argmax cpu=107 metal=107
+    gemma4_twogeom_test.go:216:   pos  4 cosine 0.992783 maxAbs 1.1899e-01 argmax cpu=5 metal=5
+    gemma4_twogeom_test.go:216:   pos  5 cosine 0.992276 maxAbs 1.0862e-01 argmax cpu=179 metal=179
+    gemma4_twogeom_test.go:216:   pos  6 cosine 0.989594 maxAbs 1.5498e-01 argmax cpu=13 metal=13
+    gemma4_twogeom_test.go:216:   pos  7 cosine 0.992645 maxAbs 1.3634e-01 argmax cpu=67 metal=67
+    gemma4_twogeom_test.go:218: two-geometry K=V resident parity: exact-argmax 8/8 gaps>3%=0 worstNearTie=0.00% minCosine=0.983110 maxAbs=1.9293e-01
+--- PASS: TestGemma4TwoGeom_residentParity (0.06s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	1.530s

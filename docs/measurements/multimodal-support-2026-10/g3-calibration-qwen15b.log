@@ -1,0 +1,53 @@
+=== RUN   TestG3Calibration_qwen15b
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[G3cal    5.7s]     disagree: prompt 1 pos 27 (generated) CPU gap 0.20%
+[G3cal    5.9s]     disagree: prompt 1 pos 33 (generated) CPU gap 1.50%
+[G3cal    6.3s]     disagree: prompt 1 pos 45 (generated) CPU gap 0.94%
+[G3cal    6.5s] prompt 1 (19 prompt tokens): first divergence at generated token 9, CPU gap 0.20%; teacher-forced 47/50; pass=true
+    cpu:   "The sky is blue due to the scattering of blue light by air molecules. The blue light is scattered more easily than other colors, which causes the sky to appear"
+    metal: "The sky is blue due to the scattering of light by air molecules and tiny particles in the atmosphere. The blue color is caused by the absorption of shorter wavelengths of"
+[G3cal    8.4s]     disagree: prompt 2 pos 7 (prompt) CPU gap 0.64%
+[G3cal    9.5s]     disagree: prompt 2 pos 35 (generated) CPU gap 2.48%
+[G3cal    9.7s]     disagree: prompt 2 pos 41 (generated) CPU gap 0.20%
+[G3cal    9.8s]     disagree: prompt 2 pos 43 (generated) CPU gap 1.87%
+[G3cal    9.9s] prompt 2 (16 prompt tokens): first divergence at generated token 20, CPU gap 2.48%; teacher-forced 43/47; pass=true
+    cpu:   "Leaves fall, a soft dance,\nAutumn's breath, a gentle sigh,\nPeace in the air.<|im_end|>\n<|endoftext|>Humanity's journey,\nThrough the"
+    metal: "Leaves fall, a soft dance,\nAutumn's breath, a gentle sigh,\nPeace in the changing light.<|im_end|>\n<|endoftext|>**Question**: What is the"
+[G3cal   12.2s]     disagree: prompt 3 pos 11 (prompt) CPU gap 0.69%
+[G3cal   12.6s]     disagree: prompt 3 pos 23 (generated) CPU gap 1.06%
+[G3cal   13.7s] prompt 3 (23 prompt tokens): first divergence at generated token 1, CPU gap 1.06%; teacher-forced 52/54; pass=true
+    cpu:   "To solve the problem of multiplying 17 by 23, we can use the distributive property of multiplication over addition. This method allows us to break"
+    metal: "To find the product of 17 and 23, we can use the distributive property of multiplication over addition. This property allows us to break down"
+[G3cal   15.8s]     disagree: prompt 4 pos 4 (prompt) CPU gap 2.02%
+[G3cal   16.7s]     disagree: prompt 4 pos 29 (generated) CPU gap 1.43%
+[G3cal   17.5s] prompt 4 (21 prompt tokens): first divergence at generated token 9, CPU gap 1.43%; teacher-forced 50/52; pass=true
+    cpu:   "In French, \"Where is the train station? \" is translated as \"Où est la gare de train? \". In German, it is \"Wo"
+    metal: "In French, \"Where is the train station?\" is \"Où est la gare de train?\". In German, it is \"Wo ist die Bah"
+[G3cal   19.4s]     disagree: prompt 5 pos 4 (prompt) CPU gap 0.41%
+[G3cal   19.6s]     disagree: prompt 5 pos 9 (prompt) CPU gap 0.45%
+[G3cal   20.2s]     disagree: prompt 5 pos 27 (generated) CPU gap 0.31%
+[G3cal   20.9s] prompt 5 (16 prompt tokens): first divergence at generated token 12, CPU gap 0.31%; teacher-forced 44/47; pass=true
+    cpu:   "Python and Go are both popular programming languages, but they have several differences. Here are three of the most significant differences between Python and Go:\n\n1. Syntax:"
+    metal: "Python and Go are both popular programming languages, but they have some differences in terms of syntax, performance, and features. Here are three differences between Python and Go"
+[G3cal   23.1s]     disagree: prompt 6 pos 8 (prompt) CPU gap 1.27%
+[G3cal   24.3s]     disagree: prompt 6 pos 41 (generated) CPU gap 3.76%
+[G3cal   24.7s] prompt 6 (21 prompt tokens): first divergence at generated token 21, CPU gap 3.76%; teacher-forced 50/52; pass=false
+    cpu:   "Romeo and Juliet, a tragic love story, is set in Verona, Italy, during the Renaissance period. The plot revolves around two young lovers,"
+    metal: "Romeo and Juliet, a tragic love story, is set in Verona, Italy, during the late 15th century. The story revolves around"
+[G3cal   26.9s]     disagree: prompt 7 pos 11 (prompt) CPU gap 0.33%
+[G3cal   27.1s]     disagree: prompt 7 pos 17 (generated) CPU gap 0.12%
+[G3cal   28.2s] prompt 7 (18 prompt tokens): first divergence at generated token 0, CPU gap 0.12%; teacher-forced 47/49; pass=true
+    cpu:   "```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n// ReverseString takes a string as input and returns its reverse.\n// Example usage:\n// >>> Reverse"
+    metal: "Certainly! Below is a simple Go function that takes a string as input and returns its reverse:\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n//"
+[G3cal   30.3s]     disagree: prompt 8 pos 8 (prompt) CPU gap 0.85%
+[G3cal   30.3s]     disagree: prompt 8 pos 10 (prompt) CPU gap 6.21%
+[G3cal   30.5s]     disagree: prompt 8 pos 14 (prompt) CPU gap 3.52%
+[G3cal   31.1s]     disagree: prompt 8 pos 30 (generated) CPU gap 1.87%
+[G3cal   31.7s]     disagree: prompt 8 pos 46 (generated) CPU gap 0.13%
+[G3cal   31.7s] prompt 8 (16 prompt tokens): first divergence at generated token 15, CPU gap 1.87%; teacher-forced 42/47; pass=true
+    cpu:   "Inflation is caused by several factors, including:\n\n1. Increase in the supply of goods and services: When the supply of goods and services increases, the demand"
+    metal: "Inflation is caused by several factors, including:\n\n1. Increase in the money supply: When the government increases the money supply, it can lead to inflation because"
+[G3cal   31.7s] calibration (Qwen2.5-Coder-1.5B, template chatml): 7/8 prompts pass the free-run rule; teacher-forced agreement 375/398 = 94.22% (reported, not graded)
+--- PASS: TestG3Calibration_qwen15b (31.67s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	32.198s

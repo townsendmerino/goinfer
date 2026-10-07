@@ -317,9 +317,13 @@ func gemma3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 // The forward pass (runLayersGemma4) consumes the per-layer deltas; E2B/E4B and
 // the 12B dense (K=V) variants are parity-gated against the HF bf16 oracle.
 func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	globalHeadDim, globalKVHeads, err := cfg.gemma4GlobalGeometry()
+	if err != nil {
+		return nil, nil, err
+	}
 	globalRotary := 0
-	if prf := cfg.gemma4PartialRotary(); prf > 0 && cfg.GlobalHeadDim > 0 {
-		globalRotary = int(prf * float64(cfg.GlobalHeadDim))
+	if prf := cfg.gemma4PartialRotary(); prf > 0 && globalHeadDim > 0 {
+		globalRotary = int(prf * float64(globalHeadDim))
 	}
 	// The real unified 26B keeps the RoPE bases nested in rope_parameters (no top-level
 	// rope_theta / rope_local_base_freq); resolve them so the frequencies aren't 0/NaN.
@@ -378,8 +382,8 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		FinalLogitSoftcap: cfg.FinalLogitSoftcap,
 		MoE:               moe, // nil for the dense E2B/E4B/12B variants (byte-unchanged)
 		gemma4: &gemma4Params{
-			GlobalHeadDim:           cfg.GlobalHeadDim,
-			NumGlobalKVHeads:        cfg.NumGlobalKVHeads,
+			GlobalHeadDim:           globalHeadDim,
+			NumGlobalKVHeads:        globalKVHeads,
 			GlobalRotaryDim:         globalRotary,
 			KVShared:                cfg.AttentionKEqV,
 			SharedKVLayers:          cfg.SharedKVLayers,

@@ -509,7 +509,9 @@ number is published without provenance.
   `~/models/gemma-4-26b-a4b-it/config.json`: `hidden_size_per_layer_input: 0` — **26B-A4B has no
   PLE at all**, so the safetensors refusal never fires for it; only E2B/E4B need PLE. Implementing
   safetensors PLE loading remains real, separate, undone work, and now GGUF's already-working PLE
-  loader means it doesn't even block E2B validation — see Phase E below.
+  loader means it doesn't even block E2B validation — see Phase E below. **DONE 2026-10-06:** the
+  safetensors loader loads PLE (S1.1 of docs/tasks/task-multimodal-support-2026-10.md), gated
+  against HF on a tiny E-model fixture at every position.
 
   **What Phase B does NOT include**: an HTTP-level integration smoke test through `vision_serve.go`'s
   actual splice/encode path (the decoder-level gate above proves the numerics; the HTTP wiring
@@ -780,12 +782,12 @@ number is published without provenance.
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
      generic attention makes (`decoder/attention.go:157`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`decoder/registry.go:1660`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:1664`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
      (`cuda/resident.go:2172`), the WebGPU `residentDecoder` (`gpu/residency.go:1249`) and `metalResident`
-     (`metal/backend.go:537`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     (`metal/backend.go:542`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
      has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
      `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
      `residentUploadPrefill` (`decoder/generate_vl_resident.go:20`) copies only layers whose
@@ -1150,7 +1152,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 *(June 2026's survey, kept as the design record. Some `file:line` references below now point elsewhere; 2026-10-06 found
 `decoder/weights.go:494` and `decoder/gguf_qwen35.go:77` no longer at what they describe.)*
 
-- **VL config flattening** — `decoder/config.go:1367` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1430` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

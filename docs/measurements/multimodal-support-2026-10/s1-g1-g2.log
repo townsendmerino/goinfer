@@ -1,0 +1,198 @@
+=== RUN   TestGemma4EModel_metalResidentParity
+    gemma4_emodel_test.go:149:   pos  0 Metal-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=241
+    gemma4_emodel_test.go:149:   pos  1 Metal-vs-CPUint4 0.999795 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=157
+    gemma4_emodel_test.go:149:   pos  2 Metal-vs-CPUint4 0.999514 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=114
+    gemma4_emodel_test.go:149:   pos  3 Metal-vs-CPUint4 0.999597 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:149:   pos  4 Metal-vs-CPUint4 0.999803 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=9
+    gemma4_emodel_test.go:149:   pos  5 Metal-vs-CPUint4 0.999166 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=16
+    gemma4_emodel_test.go:149:   pos  6 Metal-vs-CPUint4 0.999201 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=111
+    gemma4_emodel_test.go:149:   pos  7 Metal-vs-CPUint4 0.996275 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=174
+    gemma4_emodel_test.go:149:   pos  8 Metal-vs-CPUint4 0.998449 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:149:   pos  9 Metal-vs-CPUint4 0.999159 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=129
+    gemma4_emodel_test.go:149:   pos 10 Metal-vs-CPUint4 0.998202 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=64
+    gemma4_emodel_test.go:149:   pos 11 Metal-vs-CPUint4 0.997828 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=135
+    gemma4_emodel_test.go:149:   pos 12 Metal-vs-CPUint4 0.997578 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=254
+    gemma4_emodel_test.go:149:   pos 13 Metal-vs-CPUint4 0.995866 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:149:   pos 14 Metal-vs-CPUint4 0.999013 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=244
+    gemma4_emodel_test.go:149:   pos 15 Metal-vs-CPUint4 0.999298 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:149:   pos 16 Metal-vs-CPUint4 0.997475 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=4
+    gemma4_emodel_test.go:149:   pos 17 Metal-vs-CPUint4 0.996953 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:149: E-model G1: exact-argmax 17/18 gaps>3%=0 worstNearTie=0.32% | mean Metal-vs-CPUint4 0.998510 (min 0.995866), mean CPUint4-vs-f32 0.777695
+--- PASS: TestGemma4EModel_metalResidentParity (0.14s)
+=== RUN   TestGemma4EModel_plantedDefects
+=== RUN   TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped
+    gemma4_emodel_test.go:173:   pos  0 Metal-vs-CPUint4 0.578422 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=209
+    gemma4_emodel_test.go:173:   pos  1 Metal-vs-CPUint4 0.523124 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=137
+    gemma4_emodel_test.go:173:   pos  2 Metal-vs-CPUint4 0.505978 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=233
+    gemma4_emodel_test.go:173:   pos  3 Metal-vs-CPUint4 0.246506 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:173:   pos  4 Metal-vs-CPUint4 0.452767 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=139
+    gemma4_emodel_test.go:173:   pos  5 Metal-vs-CPUint4 0.373759 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=189
+    gemma4_emodel_test.go:173:   pos  6 Metal-vs-CPUint4 0.249027 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=142
+    gemma4_emodel_test.go:173:   pos  7 Metal-vs-CPUint4 0.360178 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=130
+    gemma4_emodel_test.go:173:   pos  8 Metal-vs-CPUint4 0.342288 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=130
+    gemma4_emodel_test.go:173:   pos  9 Metal-vs-CPUint4 0.486122 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=136
+    gemma4_emodel_test.go:173:   pos 10 Metal-vs-CPUint4 0.326907 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=33
+    gemma4_emodel_test.go:173:   pos 11 Metal-vs-CPUint4 0.189760 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=208
+    gemma4_emodel_test.go:173:   pos 12 Metal-vs-CPUint4 0.345049 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=218
+    gemma4_emodel_test.go:173:   pos 13 Metal-vs-CPUint4 0.373345 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=162
+    gemma4_emodel_test.go:173:   pos 14 Metal-vs-CPUint4 0.472053 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=91
+    gemma4_emodel_test.go:173:   pos 15 Metal-vs-CPUint4 0.360279 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=34
+    gemma4_emodel_test.go:173:   pos 16 Metal-vs-CPUint4 0.223141 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=146
+    gemma4_emodel_test.go:173:   pos 17 Metal-vs-CPUint4 0.335770 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173: E-model G1: exact-argmax 2/18 gaps>3%=16 worstNearTie=147.07% | mean Metal-vs-CPUint4 0.374693 (min 0.189760), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:175: G2 (1) PLE branch skipped: G1 RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed
+    gemma4_emodel_test.go:173:   pos  0 Metal-vs-CPUint4 0.989083 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=241
+    gemma4_emodel_test.go:173:   pos  1 Metal-vs-CPUint4 0.987806 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=157
+    gemma4_emodel_test.go:173:   pos  2 Metal-vs-CPUint4 0.941653 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=95
+    gemma4_emodel_test.go:173:   pos  3 Metal-vs-CPUint4 0.980438 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:173:   pos  4 Metal-vs-CPUint4 0.976295 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=138
+    gemma4_emodel_test.go:173:   pos  5 Metal-vs-CPUint4 0.987493 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=233
+    gemma4_emodel_test.go:173:   pos  6 Metal-vs-CPUint4 0.922459 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=198
+    gemma4_emodel_test.go:173:   pos  7 Metal-vs-CPUint4 0.955762 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=174
+    gemma4_emodel_test.go:173:   pos  8 Metal-vs-CPUint4 0.982280 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=84
+    gemma4_emodel_test.go:173:   pos  9 Metal-vs-CPUint4 0.981996 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=83
+    gemma4_emodel_test.go:173:   pos 10 Metal-vs-CPUint4 0.978146 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=129
+    gemma4_emodel_test.go:173:   pos 11 Metal-vs-CPUint4 0.972871 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=135
+    gemma4_emodel_test.go:173:   pos 12 Metal-vs-CPUint4 0.943611 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=208
+    gemma4_emodel_test.go:173:   pos 13 Metal-vs-CPUint4 0.936012 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:173:   pos 14 Metal-vs-CPUint4 0.981540 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=79
+    gemma4_emodel_test.go:173:   pos 15 Metal-vs-CPUint4 0.985761 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:173:   pos 16 Metal-vs-CPUint4 0.908491 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=4
+    gemma4_emodel_test.go:173:   pos 17 Metal-vs-CPUint4 0.969843 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173: E-model G1: exact-argmax 9/18 gaps>3%=7 worstNearTie=20.45% | mean Metal-vs-CPUint4 0.965641 (min 0.908491), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:175: G2 (2) PLE token-identity term zeroed: G1 RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off
+    gemma4_emodel_test.go:173:   pos  0 Metal-vs-CPUint4 0.894710 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=245
+    gemma4_emodel_test.go:173:   pos  1 Metal-vs-CPUint4 0.894449 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=145
+    gemma4_emodel_test.go:173:   pos  2 Metal-vs-CPUint4 0.939755 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=114
+    gemma4_emodel_test.go:173:   pos  3 Metal-vs-CPUint4 0.912009 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:173:   pos  4 Metal-vs-CPUint4 0.935666 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=160
+    gemma4_emodel_test.go:173:   pos  5 Metal-vs-CPUint4 0.920410 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=132
+    gemma4_emodel_test.go:173:   pos  6 Metal-vs-CPUint4 0.877780 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=40
+    gemma4_emodel_test.go:173:   pos  7 Metal-vs-CPUint4 0.873051 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=221
+    gemma4_emodel_test.go:173:   pos  8 Metal-vs-CPUint4 0.923373 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=56
+    gemma4_emodel_test.go:173:   pos  9 Metal-vs-CPUint4 0.881930 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=129
+    gemma4_emodel_test.go:173:   pos 10 Metal-vs-CPUint4 0.883501 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=64
+    gemma4_emodel_test.go:173:   pos 11 Metal-vs-CPUint4 0.824305 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=152
+    gemma4_emodel_test.go:173:   pos 12 Metal-vs-CPUint4 0.889873 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=111
+    gemma4_emodel_test.go:173:   pos 13 Metal-vs-CPUint4 0.889397 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:173:   pos 14 Metal-vs-CPUint4 0.895692 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=79
+    gemma4_emodel_test.go:173:   pos 15 Metal-vs-CPUint4 0.911322 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:173:   pos 16 Metal-vs-CPUint4 0.750826 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=247
+    gemma4_emodel_test.go:173:   pos 17 Metal-vs-CPUint4 0.869012 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173: E-model G1: exact-argmax 7/18 gaps>3%=9 worstNearTie=23.84% | mean Metal-vs-CPUint4 0.887059 (min 0.750826), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:175: G2 (3) shared-KV source one owning layer off: G1 RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model
+    gemma4_emodel_test.go:173:   pos  0 Metal-vs-CPUint4 0.854026 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=241
+    gemma4_emodel_test.go:173:   pos  1 Metal-vs-CPUint4 0.897386 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=145
+    gemma4_emodel_test.go:173:   pos  2 Metal-vs-CPUint4 0.883965 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=233
+    gemma4_emodel_test.go:173:   pos  3 Metal-vs-CPUint4 0.876350 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:173:   pos  4 Metal-vs-CPUint4 0.852907 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=138
+    gemma4_emodel_test.go:173:   pos  5 Metal-vs-CPUint4 0.833045 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=167
+    gemma4_emodel_test.go:173:   pos  6 Metal-vs-CPUint4 0.814553 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=62
+    gemma4_emodel_test.go:173:   pos  7 Metal-vs-CPUint4 0.790874 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=140
+    gemma4_emodel_test.go:173:   pos  8 Metal-vs-CPUint4 0.875621 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=130
+    gemma4_emodel_test.go:173:   pos  9 Metal-vs-CPUint4 0.876380 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=83
+    gemma4_emodel_test.go:173:   pos 10 Metal-vs-CPUint4 0.881150 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=39
+    gemma4_emodel_test.go:173:   pos 11 Metal-vs-CPUint4 0.826165 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=208
+    gemma4_emodel_test.go:173:   pos 12 Metal-vs-CPUint4 0.849770 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=111
+    gemma4_emodel_test.go:173:   pos 13 Metal-vs-CPUint4 0.835850 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:173:   pos 14 Metal-vs-CPUint4 0.809146 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=155
+    gemma4_emodel_test.go:173:   pos 15 Metal-vs-CPUint4 0.811476 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:173:   pos 16 Metal-vs-CPUint4 0.810593 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=4
+    gemma4_emodel_test.go:173:   pos 17 Metal-vs-CPUint4 0.844718 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173: E-model G1: exact-argmax 7/18 gaps>3%=11 worstNearTie=52.19% | mean Metal-vs-CPUint4 0.845776 (min 0.790874), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:175: G2 (4) one FFN width for the model: G1 RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped
+    gemma4_emodel_test.go:173:   pos  0 Metal-vs-CPUint4 0.990553 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=245
+    gemma4_emodel_test.go:173:   pos  1 Metal-vs-CPUint4 0.991838 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=218
+    gemma4_emodel_test.go:173:   pos  2 Metal-vs-CPUint4 0.982650 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=114
+    gemma4_emodel_test.go:173:   pos  3 Metal-vs-CPUint4 0.990111 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:173:   pos  4 Metal-vs-CPUint4 0.990010 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=9
+    gemma4_emodel_test.go:173:   pos  5 Metal-vs-CPUint4 0.988893 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=16
+    gemma4_emodel_test.go:173:   pos  6 Metal-vs-CPUint4 0.966680 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=111
+    gemma4_emodel_test.go:173:   pos  7 Metal-vs-CPUint4 0.978590 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=174
+    gemma4_emodel_test.go:173:   pos  8 Metal-vs-CPUint4 0.983754 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=215
+    gemma4_emodel_test.go:173:   pos  9 Metal-vs-CPUint4 0.940709 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=129
+    gemma4_emodel_test.go:173:   pos 10 Metal-vs-CPUint4 0.959226 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=202
+    gemma4_emodel_test.go:173:   pos 11 Metal-vs-CPUint4 0.957843 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=135
+    gemma4_emodel_test.go:173:   pos 12 Metal-vs-CPUint4 0.946020 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=208
+    gemma4_emodel_test.go:173:   pos 13 Metal-vs-CPUint4 0.957005 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:173:   pos 14 Metal-vs-CPUint4 0.959580 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=106
+    gemma4_emodel_test.go:173:   pos 15 Metal-vs-CPUint4 0.947137 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:173:   pos 16 Metal-vs-CPUint4 0.939336 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=4
+    gemma4_emodel_test.go:173:   pos 17 Metal-vs-CPUint4 0.978690 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173: E-model G1: exact-argmax 12/18 gaps>3%=4 worstNearTie=20.45% | mean Metal-vs-CPUint4 0.969368 (min 0.939336), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:175: G2 (6) layer scalar dropped: G1 RED argmax diverges by more than 3% (not a near-tie)
+=== RUN   TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers
+    gemma4_emodel_test.go:173:   pos  0 Metal-vs-CPUint4 0.999834 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=241
+    gemma4_emodel_test.go:173:   pos  1 Metal-vs-CPUint4 0.971695 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=157
+    gemma4_emodel_test.go:173:   pos  2 Metal-vs-CPUint4 0.954612 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=114
+    gemma4_emodel_test.go:173:   pos  3 Metal-vs-CPUint4 0.974363 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:173:   pos  4 Metal-vs-CPUint4 0.906887 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=138
+    gemma4_emodel_test.go:173:   pos  5 Metal-vs-CPUint4 0.941144 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=40
+    gemma4_emodel_test.go:173:   pos  6 Metal-vs-CPUint4 0.907289 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=198
+    gemma4_emodel_test.go:173:   pos  7 Metal-vs-CPUint4 0.890594 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=45
+    gemma4_emodel_test.go:173:   pos  8 Metal-vs-CPUint4 0.962121 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173:   pos  9 Metal-vs-CPUint4 0.907053 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=129
+    gemma4_emodel_test.go:173:   pos 10 Metal-vs-CPUint4 0.951313 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=64
+    gemma4_emodel_test.go:173:   pos 11 Metal-vs-CPUint4 0.913010 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=70
+    gemma4_emodel_test.go:173:   pos 12 Metal-vs-CPUint4 0.829677 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=132
+    gemma4_emodel_test.go:173:   pos 13 Metal-vs-CPUint4 0.849302 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=14
+    gemma4_emodel_test.go:173:   pos 14 Metal-vs-CPUint4 0.940637 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=244
+    gemma4_emodel_test.go:173:   pos 15 Metal-vs-CPUint4 0.969117 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:173:   pos 16 Metal-vs-CPUint4 0.770646 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=137
+    gemma4_emodel_test.go:173:   pos 17 Metal-vs-CPUint4 0.947341 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:173: E-model G1: exact-argmax 9/18 gaps>3%=8 worstNearTie=66.90% | mean Metal-vs-CPUint4 0.921480 (min 0.770646), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:175: G2 (7) v_norm dropped on non-K=V layers: G1 RED argmax diverges by more than 3% (not a near-tie)
+--- PASS: TestGemma4EModel_plantedDefects (0.45s)
+    --- PASS: TestGemma4EModel_plantedDefects/(1)_PLE_branch_skipped (0.07s)
+    --- PASS: TestGemma4EModel_plantedDefects/(2)_PLE_token-identity_term_zeroed (0.08s)
+    --- PASS: TestGemma4EModel_plantedDefects/(3)_shared-KV_source_one_owning_layer_off (0.08s)
+    --- PASS: TestGemma4EModel_plantedDefects/(4)_one_FFN_width_for_the_model (0.07s)
+    --- PASS: TestGemma4EModel_plantedDefects/(6)_layer_scalar_dropped (0.08s)
+    --- PASS: TestGemma4EModel_plantedDefects/(7)_v_norm_dropped_on_non-K=V_layers (0.07s)
+=== RUN   TestGemma4EModel_sharedStoreIsNoOp
+    gemma4_emodel_test.go:191:   pos  0 Metal-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=241
+    gemma4_emodel_test.go:191:   pos  1 Metal-vs-CPUint4 0.999795 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=157
+    gemma4_emodel_test.go:191:   pos  2 Metal-vs-CPUint4 0.999514 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=114
+    gemma4_emodel_test.go:191:   pos  3 Metal-vs-CPUint4 0.999597 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:191:   pos  4 Metal-vs-CPUint4 0.999803 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=9
+    gemma4_emodel_test.go:191:   pos  5 Metal-vs-CPUint4 0.999166 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=16
+    gemma4_emodel_test.go:191:   pos  6 Metal-vs-CPUint4 0.999201 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=111
+    gemma4_emodel_test.go:191:   pos  7 Metal-vs-CPUint4 0.996275 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=174
+    gemma4_emodel_test.go:191:   pos  8 Metal-vs-CPUint4 0.998449 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:191:   pos  9 Metal-vs-CPUint4 0.999159 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=129
+    gemma4_emodel_test.go:191:   pos 10 Metal-vs-CPUint4 0.998202 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=64
+    gemma4_emodel_test.go:191:   pos 11 Metal-vs-CPUint4 0.997828 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=135
+    gemma4_emodel_test.go:191:   pos 12 Metal-vs-CPUint4 0.997578 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=254
+    gemma4_emodel_test.go:191:   pos 13 Metal-vs-CPUint4 0.995866 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:191:   pos 14 Metal-vs-CPUint4 0.999013 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=244
+    gemma4_emodel_test.go:191:   pos 15 Metal-vs-CPUint4 0.999298 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:191:   pos 16 Metal-vs-CPUint4 0.997475 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=4
+    gemma4_emodel_test.go:191:   pos 17 Metal-vs-CPUint4 0.996953 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:191: E-model G1: exact-argmax 17/18 gaps>3%=0 worstNearTie=0.32% | mean Metal-vs-CPUint4 0.998510 (min 0.995866), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:194:   pos  0 Metal-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.938245  argmax cpu=241 metal=241
+    gemma4_emodel_test.go:194:   pos  1 Metal-vs-CPUint4 0.999795 | CPUint4-vs-f32 0.931850  argmax cpu=157 metal=157
+    gemma4_emodel_test.go:194:   pos  2 Metal-vs-CPUint4 0.999514 | CPUint4-vs-f32 0.917966  argmax cpu=114 metal=114
+    gemma4_emodel_test.go:194:   pos  3 Metal-vs-CPUint4 0.999597 | CPUint4-vs-f32 0.887118  argmax cpu=100 metal=100
+    gemma4_emodel_test.go:194:   pos  4 Metal-vs-CPUint4 0.999803 | CPUint4-vs-f32 0.807881  argmax cpu=9 metal=9
+    gemma4_emodel_test.go:194:   pos  5 Metal-vs-CPUint4 0.999166 | CPUint4-vs-f32 0.761593  argmax cpu=16 metal=16
+    gemma4_emodel_test.go:194:   pos  6 Metal-vs-CPUint4 0.999201 | CPUint4-vs-f32 0.671393  argmax cpu=111 metal=111
+    gemma4_emodel_test.go:194:   pos  7 Metal-vs-CPUint4 0.996275 | CPUint4-vs-f32 0.741181  argmax cpu=174 metal=174
+    gemma4_emodel_test.go:194:   pos  8 Metal-vs-CPUint4 0.998449 | CPUint4-vs-f32 0.702948  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:194:   pos  9 Metal-vs-CPUint4 0.999159 | CPUint4-vs-f32 0.833518  argmax cpu=129 metal=129
+    gemma4_emodel_test.go:194:   pos 10 Metal-vs-CPUint4 0.998202 | CPUint4-vs-f32 0.765440  argmax cpu=64 metal=64
+    gemma4_emodel_test.go:194:   pos 11 Metal-vs-CPUint4 0.997828 | CPUint4-vs-f32 0.705251  argmax cpu=135 metal=135
+    gemma4_emodel_test.go:194:   pos 12 Metal-vs-CPUint4 0.997578 | CPUint4-vs-f32 0.737938  argmax cpu=254 metal=254
+    gemma4_emodel_test.go:194:   pos 13 Metal-vs-CPUint4 0.995866 | CPUint4-vs-f32 0.715923  argmax cpu=140 metal=140
+    gemma4_emodel_test.go:194:   pos 14 Metal-vs-CPUint4 0.999013 | CPUint4-vs-f32 0.712461  argmax cpu=155 metal=244
+    gemma4_emodel_test.go:194:   pos 15 Metal-vs-CPUint4 0.999298 | CPUint4-vs-f32 0.829194  argmax cpu=15 metal=15
+    gemma4_emodel_test.go:194:   pos 16 Metal-vs-CPUint4 0.997475 | CPUint4-vs-f32 0.553311  argmax cpu=4 metal=4
+    gemma4_emodel_test.go:194:   pos 17 Metal-vs-CPUint4 0.996953 | CPUint4-vs-f32 0.785304  argmax cpu=36 metal=36
+    gemma4_emodel_test.go:194: E-model G1: exact-argmax 17/18 gaps>3%=0 worstNearTie=0.32% | mean Metal-vs-CPUint4 0.998510 (min 0.995866), mean CPUint4-vs-f32 0.777695
+    gemma4_emodel_test.go:202: shared-layer store kept: logits bit-identical to the clean run over 18 positions
+--- PASS: TestGemma4EModel_sharedStoreIsNoOp (0.15s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	1.097s

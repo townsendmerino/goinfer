@@ -45,7 +45,7 @@ func (r *resident) SampleAvailable() bool {
 func (r *resident) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	copy(r.x.Floats(), embedding)
+	r.loadEmb(embedding)
 	r.addLearnedPos(pos)
 	invT := float32(1 / temperature)
 	if math.IsInf(float64(invT), 0) { // absurdly small temperature: greedy, exactly as the host does

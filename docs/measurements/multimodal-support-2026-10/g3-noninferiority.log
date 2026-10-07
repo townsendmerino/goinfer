@@ -1,0 +1,106 @@
+=== RUN   TestGemma4EModel_realE2BNonInferiority
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[G3ni    1.0s] reference Qwen2.5-Coder-1.5B: loaded (template chatml)
+[G3ni    5.9s]     disagree: prompt 1 pos 27 (generated) CPU gap 0.20%
+[G3ni    6.2s]     disagree: prompt 1 pos 33 (generated) CPU gap 1.50%
+[G3ni    6.6s]     disagree: prompt 1 pos 45 (generated) CPU gap 0.94%
+[G3ni    6.8s] prompt 1 (19 prompt tokens): first divergence at generated token 9, CPU gap 0.20%; teacher-forced 47/50; pass=true
+    cpu:   "The sky is blue due to the scattering of blue light by air molecules. The blue light is scattered more easily than other colors, which causes the sky to appear"
+    metal: "The sky is blue due to the scattering of light by air molecules and tiny particles in the atmosphere. The blue color is caused by the absorption of shorter wavelengths of"
+[G3ni    8.8s]     disagree: prompt 2 pos 7 (prompt) CPU gap 0.64%
+[G3ni    9.9s]     disagree: prompt 2 pos 35 (generated) CPU gap 2.48%
+[G3ni   10.1s]     disagree: prompt 2 pos 41 (generated) CPU gap 0.20%
+[G3ni   10.2s]     disagree: prompt 2 pos 43 (generated) CPU gap 1.87%
+[G3ni   10.3s] prompt 2 (16 prompt tokens): first divergence at generated token 20, CPU gap 2.48%; teacher-forced 43/47; pass=true
+    cpu:   "Leaves fall, a soft dance,\nAutumn's breath, a gentle sigh,\nPeace in the air.<|im_end|>\n<|endoftext|>Humanity's journey,\nThrough the"
+    metal: "Leaves fall, a soft dance,\nAutumn's breath, a gentle sigh,\nPeace in the changing light.<|im_end|>\n<|endoftext|>**Question**: What is the"
+[G3ni   12.8s]     disagree: prompt 3 pos 11 (prompt) CPU gap 0.69%
+[G3ni   13.2s]     disagree: prompt 3 pos 23 (generated) CPU gap 1.06%
+[G3ni   14.5s] prompt 3 (23 prompt tokens): first divergence at generated token 1, CPU gap 1.06%; teacher-forced 52/54; pass=true
+    cpu:   "To solve the problem of multiplying 17 by 23, we can use the distributive property of multiplication over addition. This method allows us to break"
+    metal: "To find the product of 17 and 23, we can use the distributive property of multiplication over addition. This property allows us to break down"
+[G3ni   16.7s]     disagree: prompt 4 pos 4 (prompt) CPU gap 2.02%
+[G3ni   17.7s]     disagree: prompt 4 pos 29 (generated) CPU gap 1.43%
+[G3ni   18.5s] prompt 4 (21 prompt tokens): first divergence at generated token 9, CPU gap 1.43%; teacher-forced 50/52; pass=true
+    cpu:   "In French, \"Where is the train station? \" is translated as \"Où est la gare de train? \". In German, it is \"Wo"
+    metal: "In French, \"Where is the train station?\" is \"Où est la gare de train?\". In German, it is \"Wo ist die Bah"
+[G3ni   20.5s]     disagree: prompt 5 pos 4 (prompt) CPU gap 0.41%
+[G3ni   20.7s]     disagree: prompt 5 pos 9 (prompt) CPU gap 0.45%
+[G3ni   21.4s]     disagree: prompt 5 pos 27 (generated) CPU gap 0.31%
+[G3ni   22.2s] prompt 5 (16 prompt tokens): first divergence at generated token 12, CPU gap 0.31%; teacher-forced 44/47; pass=true
+    cpu:   "Python and Go are both popular programming languages, but they have several differences. Here are three of the most significant differences between Python and Go:\n\n1. Syntax:"
+    metal: "Python and Go are both popular programming languages, but they have some differences in terms of syntax, performance, and features. Here are three differences between Python and Go"
+[G3ni   24.5s]     disagree: prompt 6 pos 8 (prompt) CPU gap 1.27%
+[G3ni   25.8s]     disagree: prompt 6 pos 41 (generated) CPU gap 3.76%
+[G3ni   26.2s] prompt 6 (21 prompt tokens): first divergence at generated token 21, CPU gap 3.76%; teacher-forced 50/52; pass=false
+    cpu:   "Romeo and Juliet, a tragic love story, is set in Verona, Italy, during the Renaissance period. The plot revolves around two young lovers,"
+    metal: "Romeo and Juliet, a tragic love story, is set in Verona, Italy, during the late 15th century. The story revolves around"
+[G3ni   28.5s]     disagree: prompt 7 pos 11 (prompt) CPU gap 0.33%
+[G3ni   28.7s]     disagree: prompt 7 pos 17 (generated) CPU gap 0.12%
+[G3ni   29.9s] prompt 7 (18 prompt tokens): first divergence at generated token 0, CPU gap 0.12%; teacher-forced 47/49; pass=true
+    cpu:   "```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n// ReverseString takes a string as input and returns its reverse.\n// Example usage:\n// >>> Reverse"
+    metal: "Certainly! Below is a simple Go function that takes a string as input and returns its reverse:\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n)\n\n//"
+[G3ni   32.0s]     disagree: prompt 8 pos 8 (prompt) CPU gap 0.85%
+[G3ni   32.1s]     disagree: prompt 8 pos 10 (prompt) CPU gap 6.21%
+[G3ni   32.2s]     disagree: prompt 8 pos 14 (prompt) CPU gap 3.52%
+[G3ni   32.8s]     disagree: prompt 8 pos 30 (generated) CPU gap 1.87%
+[G3ni   33.4s]     disagree: prompt 8 pos 46 (generated) CPU gap 0.13%
+[G3ni   33.4s] prompt 8 (16 prompt tokens): first divergence at generated token 15, CPU gap 1.87%; teacher-forced 42/47; pass=true
+    cpu:   "Inflation is caused by several factors, including:\n\n1. Increase in the supply of goods and services: When the supply of goods and services increases, the demand"
+    metal: "Inflation is caused by several factors, including:\n\n1. Increase in the money supply: When the government increases the money supply, it can lead to inflation because"
+[G3ni   33.4s] reference Qwen2.5-Coder-1.5B: 7/8 prompts pass the free-run rule; teacher-forced agreement 375/398 = 94.22%
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[G3ni   34.2s] E2B: loaded (template gemma4)
+[G3ni   39.8s]     disagree: prompt 1 pos 6 (prompt) CPU gap 0.23%
+[G3ni   39.9s]     disagree: prompt 1 pos 7 (prompt) CPU gap 0.22%
+[G3ni   40.1s]     disagree: prompt 1 pos 11 (prompt) CPU gap 0.40%
+[G3ni   40.5s]     disagree: prompt 1 pos 17 (prompt) CPU gap 0.03%
+[G3ni   40.7s]     disagree: prompt 1 pos 21 (prompt) CPU gap 1.36%
+[G3ni   42.8s] prompt 1 (23 prompt tokens): identical; teacher-forced 49/54; pass=true
+    cpu:   "The user wants a two-sentence explanation for why the sky is blue.\n\n1.  **Identify the core phenomenon:** Rayleigh scattering.\n2.  "
+    metal: "The user wants a two-sentence explanation for why the sky is blue.\n\n1.  **Identify the core phenomenon:** Rayleigh scattering.\n2.  "
+[G3ni   46.8s]     disagree: prompt 2 pos 10 (prompt) CPU gap 2.23%
+[G3ni   49.3s] prompt 2 (21 prompt tokens): identical; teacher-forced 51/52; pass=true
+    cpu:   "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a haiku about autumn leaves.\n2.  **Define Haiku Structure:**"
+    metal: "Thinking Process:\n\n1.  **Analyze the Request:** The user wants a haiku about autumn leaves.\n2.  **Define Haiku Structure:**"
+[G3ni   53.5s]     disagree: prompt 3 pos 7 (prompt) CPU gap 0.29%
+[G3ni   53.5s]     disagree: prompt 3 pos 8 (prompt) CPU gap 0.40%
+[G3ni   55.9s]     disagree: prompt 3 pos 46 (generated) CPU gap 5.91%
+[G3ni   56.7s] prompt 3 (28 prompt tokens): first divergence at generated token 19, CPU gap 5.91%; teacher-forced 56/59; pass=false
+    cpu:   "To find the product of 17 and 23, I will use the standard multiplication algorithm.\n\n**Problem:** $17 \\times 2"
+    metal: "To find the product of 17 and 23, I will use the standard multiplication method (long multiplication or the distributive property).\n\n**Method "
+[G3ni   61.0s]     disagree: prompt 4 pos 12 (prompt) CPU gap 0.41%
+[G3ni   61.3s]     disagree: prompt 4 pos 17 (prompt) CPU gap 0.70%
+[G3ni   62.2s]     disagree: prompt 4 pos 32 (generated) CPU gap 2.83%
+[G3ni   63.8s] prompt 4 (26 prompt tokens): first divergence at generated token 7, CPU gap 2.83%; teacher-forced 54/57; pass=true
+    cpu:   "The user wants to translate the English phrase \"Where is the train station?\" into French and German.\n\n1.  **French translation:**\n    *   "
+    metal: "The user wants to translate the English sentence \"Where is the train station?\" into French and German.\n\n1.  **French translation:**\n    *   "
+[G3ni   67.5s]     disagree: prompt 5 pos 7 (prompt) CPU gap 4.00%
+[G3ni   70.3s] prompt 5 (21 prompt tokens): identical; teacher-forced 51/52; pass=true
+    cpu:   "Here's a thinking process to arrive at the suggested differences:\n\n1.  **Analyze the Request:** The user wants three differences between Python and Go."
+    metal: "Here's a thinking process to arrive at the suggested differences:\n\n1.  **Analyze the Request:** The user wants three differences between Python and Go."
+[G3ni   75.0s]     disagree: prompt 6 pos 18 (prompt) CPU gap 7.63%
+[G3ni   77.2s] prompt 6 (25 prompt tokens): identical; teacher-forced 55/56; pass=true
+    cpu:   "The user wants a one-paragraph summary of the plot of *Romeo and Juliet*.\n\n1.  **Identify the core elements:** Romeo and Juliet, fe"
+    metal: "The user wants a one-paragraph summary of the plot of *Romeo and Juliet*.\n\n1.  **Identify the core elements:** Romeo and Juliet, fe"
+[G3ni   81.0s]     disagree: prompt 7 pos 8 (prompt) CPU gap 3.49%
+[G3ni   81.2s]     disagree: prompt 7 pos 11 (prompt) CPU gap 3.52%
+[G3ni   81.8s]     disagree: prompt 7 pos 21 (generated) CPU gap 0.21%
+[G3ni   83.4s]     disagree: prompt 7 pos 47 (generated) CPU gap 0.26%
+[G3ni   83.8s] prompt 7 (22 prompt tokens): first divergence at generated token 0, CPU gap 0.21%; teacher-forced 49/53; pass=true
+    cpu:   "Thinking Process:\n\n1.  **Understand the Goal:** The request is to write a Go function that reverses a given string.\n2.  **Analyze"
+    metal: "The user wants a Go function that reverses a given string.\n\nI need to provide a Go function that takes a string as input and returns the reversed string."
+[G3ni   87.7s]     disagree: prompt 8 pos 10 (prompt) CPU gap 1.07%
+[G3ni   88.3s]     disagree: prompt 8 pos 20 (generated) CPU gap 1.62%
+[G3ni   89.7s]     disagree: prompt 8 pos 43 (generated) CPU gap 1.06%
+[G3ni   90.1s]     disagree: prompt 8 pos 50 (generated) CPU gap 0.45%
+[G3ni   90.2s] prompt 8 (21 prompt tokens): first divergence at generated token 0, CPU gap 1.62%; teacher-forced 48/52; pass=true
+    cpu:   "The user is asking for the main causes of inflation. I need to provide a comprehensive answer covering the primary drivers of price increases in an economy.\n\nHere'"
+    metal: "Inflation is a complex economic phenomenon, and its causes are rarely singular. They usually stem from imbalances between the supply of goods and services and the demand for those goods"
+[G3ni   90.2s] E2B: 7/8 prompts pass the free-run rule; teacher-forced agreement 413/435 = 94.94%
+[G3ni   90.2s] G3 non-inferiority: E2B 94.94% (7/8 prompts) vs reference 94.22% (7/8 prompts): delta +0.72 points
+    gemma4_emodel_real_test.go:472: G3 PASS: delta +0.72 points (margin -2.0), free-run 7 vs reference 7
+--- PASS: TestGemma4EModel_realE2BNonInferiority (90.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	90.871s
+exit 0
