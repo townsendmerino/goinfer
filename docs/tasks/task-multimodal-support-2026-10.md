@@ -1175,6 +1175,11 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
     is slower here because every one of these is a cold image-turn prefill on the CPU plus an upload. Batched E-model
     prefill is S9's work.
   - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5c/`.
+- **S5's spoken clip, registered 2026-10-07 before it ran:** `testdata/speech/librispeech-1272-128104-0000.wav`
+  (LibriSpeech dev-clean, CC BY 4.0, 5.9 s, attribution in the directory's README), served to E2B with "Transcribe this
+  audio." through `run-gs5c-served.sh` (`GS5C_CLIPS`), arms `cpu`, `metal`, `cpu`, `--embed-int4=false` on all.
+  Recorded, no bar: the transcription and its word error rate against LibriSpeech's transcript. Graded by G-S5c's rule:
+  Metal against the CPU, identical or a near-tie at the first difference, and the CPU repeat byte-identical.
 - **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
   clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
   test clip.
