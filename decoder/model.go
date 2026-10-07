@@ -2484,8 +2484,12 @@ type Generation struct {
 	// real-checkpoint gate asserting end-to-end correctness needs this to confirm the fast path
 	// actually fired rather than passing vacuously via the (already-correct) fallback.
 	ImgPrefillResident bool
-	Spec               *SpecStats
-	OptFwd             *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
+	// DecodeResident reports whether a multimodal turn's DECODE ran on the resident after its CPU prefill was
+	// uploaded (GenerateGemma4VL's bridge). Diagnostic, for the same reason as ImgPrefillResident: S1's G4
+	// (docs/tasks/task-multimodal-support-2026-10.md) must show the image turn decoded resident, not on the CPU.
+	DecodeResident bool
+	Spec           *SpecStats
+	OptFwd         *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
 	// TopKServed / TopKFallbacks count decode steps sampled from the device top-K row and the steps where
 	// K could not prove it held the retained set (the full row was read instead). Both 0 unless the
 	// device top-K fast path was active; served/(served+fallbacks) is the fast path's hit rate.

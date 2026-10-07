@@ -8,6 +8,7 @@ import (
 	"maps"
 	"math/rand"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -1681,6 +1682,13 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
+	if vi.gemma4 { // S1 G4 evidence (docs/tasks/task-multimodal-support-2026-10.md): where this image turn decoded
+		where := "cpu"
+		if gen.DecodeResident {
+			where = "resident"
+		}
+		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path\n", n, where)
+	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {
 		finish = "cancelled"

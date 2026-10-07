@@ -106,20 +106,13 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 // per-token path either way — a decode token is never "inside" the image
 // block again, so no masking distinction applies post-prefill.
 //
-// Resident GPU decode (gap 0, docs/multimodal.md) is wired for the
-// bidirectional (26B-A4B/31B, use_bidirectional_attention: "vision") class
-// only: those checkpoints have SharedKVLayers==0 and are exactly the shape
-// resident CUDA decode already admits unconditionally for plain text
-// (decoder/residency.go's decodeRunnerEligible), so a CPU prefill's KV
-// uploads cleanly via the same generic residentUploadPrefill bridge
-// Gemma3/Qwen's own GenerateVL uses. E2B/E4B (SharedKVLayers>0, PLE) are NOT
-// attempted here even though this function reaches them too: resident CUDA
-// decode has no cross-layer-KV-sharing or PLE implementation at all and
-// declines admission outright regardless of vision (a decode-side gap, not a
-// vision gap — see TestGemma4EModel_realDeclinesResident) — attempting the
-// bridge there would be a dead branch, so it is gated on
-// UseBidirectionalAttention explicitly rather than relying on that decline
-// incidentally.
+// Resident GPU decode (gap 0, docs/multimodal.md): when the model has a resident, the CPU prefill's KV is
+// uploaded through the generic residentUploadPrefill bridge (the one Gemma 3/Qwen's GenerateVL use) and decode
+// runs resident. That was gated on UseBidirectionalAttention (the 26B-A4B/31B class) until no backend could run an
+// E2B/E4B; since S1 (docs/tasks/task-multimodal-support-2026-10.md) Metal does — the bridge skips KV-shared layers,
+// which own no KV, and embedResident carries the PLE inputs — so the E-model class is admitted too. CUDA and WebGPU
+// still decline the E-model shape at load, so only Metal reaches this with one. A causal, non-E Gemma 4 keeps
+// decoding on the CPU after an image, as before: widening to it is untested on CUDA.
 //
 // `imgHash`, `imgPos` and `imgLen` are also what the resident commit below records as this
 // turn's residentImageBlock, so a later turn's prefix scan (residentReuseLen) can tell this
@@ -153,7 +146,8 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 		useGPU := false
 		gpuPos := 0
 		committed := false
-		if bidirectional && m.tryClaimResident() {
+		eModel := m.w.arch.gemma4.HiddenSizePerLayerInput > 0 || m.w.arch.gemma4.SharedKVLayers > 0
+		if (bidirectional || eModel) && m.tryClaimResident() {
 			// The resident cache is about to hold THIS turn's content. If decode
 			// completes naturally, residentCommitIDs below records it and this
 			// defer's forget is skipped (committed=true); any other exit (error,
@@ -168,6 +162,7 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			}()
 			if uerr := m.residentUploadPrefill(cache); uerr == nil {
 				useGPU = true
+				g.DecodeResident = true
 				gpuPos = len(ids)
 				if capper, ok := m.resident.(ResidentCapped); ok {
 					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
