@@ -1,0 +1,68 @@
+=== night job s10-26b-dump
+=== cmd      bash docs/measurements/multimodal-support-2026-10/run-s10-26b-dump.sh
+=== cwd      /Users/francistownsend-merino/tmcode/goinfer
+=== rev      queued at b1e7c9f6, now 2b63667e
+=== host     macbookpro.lan
+=== est      15.0 min, timeout 35.0 min
+=== by       Claude, S1.0 26B re-check
+=== doc      docs/tasks/task-multimodal-support-2026-10.md
+=== START    2026-10-06 22:16:25 PDT  loadavg 1.60
+binary:   /Users/francistownsend-merino/goinfer-bench/s10-26b/metal.test (rev b1e7c9f6)
+started:  2026-10-06 22:16:25 PDT
+vm.swapusage: total = 3072.00M  used = 1359.19M  free = 1712.81M  (encrypted)
+/dev/disk3s5   460Gi   429Gi   7.4Gi    99%    3.8M   77M    5%   /System/Volumes/Data
+== fixed: start 22:16:25
+22:16:25 killwatch: baseline swap-used 1359.19MB; kill at +1024MB, tick rule 200MB x2 (0=off), poll 2s, pid 2543
+22:16:25 t+0s swap_used=1359.19MB delta=+0MB tick=0MB rss=32KB free_disk=7G
+22:16:27 t+2s swap_used=1359.19MB delta=+0MB tick=0MB rss=1001376KB free_disk=7G
+22:16:29 t+4s swap_used=1359.19MB delta=+0MB tick=0MB rss=2216928KB free_disk=7G
+22:16:31 t+6s swap_used=1359.19MB delta=+0MB tick=0MB rss=3221568KB free_disk=7G
+22:16:33 t+8s swap_used=1359.19MB delta=+0MB tick=0MB rss=3852448KB free_disk=7G
+22:16:35 t+10s swap_used=1359.19MB delta=+0MB tick=0MB rss=4602592KB free_disk=7G
+22:16:37 t+12s swap_used=1359.19MB delta=+0MB tick=0MB rss=3359456KB free_disk=7G
+22:16:39 t+14s swap_used=1359.19MB delta=+0MB tick=0MB rss=3410688KB free_disk=7G
+22:16:41 t+16s swap_used=1359.19MB delta=+0MB tick=0MB rss=5379440KB free_disk=7G
+22:16:43 t+18s swap_used=1359.19MB delta=+0MB tick=0MB rss=5673760KB free_disk=7G
+22:16:45 t+20s swap_used=1359.19MB delta=+0MB tick=0MB rss=5802720KB free_disk=7G
+22:16:47 t+22s swap_used=1359.19MB delta=+0MB tick=0MB rss=5889632KB free_disk=7G
+22:16:49 t+24s swap_used=1359.19MB delta=+0MB tick=0MB rss=5984272KB free_disk=7G
+22:16:51 killwatch: pid 2543 exited on its own, stopping watch
+[26B fixed   11.9s] loaded: metal-resident (int4), paged 46 slots/layer, RSS 3281 MB
+[26B fixed   17.1s] prompt 1: 38 positions dumped, RSS 5525 MB
+[26B fixed   20.5s] prompt 2: 36 positions dumped, RSS 5684 MB
+[26B fixed   24.6s] prompt 3: 43 positions dumped, RSS 5864 MB
+[26B fixed   24.6s] done
+--- PASS: TestGemma4_26B_s10Dump (24.64s)
+== drop-both: start 22:16:51
+22:16:51 killwatch: baseline swap-used 1359.19MB; kill at +1024MB, tick rule 200MB x2 (0=off), poll 2s, pid 3142
+22:16:51 t+0s swap_used=1359.19MB delta=+0MB tick=0MB rss=12288KB free_disk=7G
+22:16:54 t+3s swap_used=1359.19MB delta=+0MB tick=0MB rss=1436880KB free_disk=7G
+22:16:56 t+5s swap_used=1359.19MB delta=+0MB tick=0MB rss=2827024KB free_disk=7G
+22:16:58 t+7s swap_used=1359.19MB delta=+0MB tick=0MB rss=4167072KB free_disk=7G
+22:17:00 t+9s swap_used=1359.19MB delta=+0MB tick=0MB rss=3150224KB free_disk=7G
+22:17:02 t+11s swap_used=1359.19MB delta=+0MB tick=0MB rss=3178656KB free_disk=7G
+22:17:04 t+13s swap_used=1359.19MB delta=+0MB tick=0MB rss=5993808KB free_disk=7G
+22:17:06 t+15s swap_used=1359.19MB delta=+0MB tick=0MB rss=6568528KB free_disk=7G
+22:17:08 t+17s swap_used=1359.19MB delta=+0MB tick=0MB rss=6778016KB free_disk=7G
+22:17:10 t+19s swap_used=1359.19MB delta=+0MB tick=0MB rss=6869488KB free_disk=7G
+22:17:12 killwatch: pid 3142 exited on its own, stopping watch
+[26B drop-both    8.4s] loaded: metal-resident (int4), paged 56 slots/layer, RSS 2967 MB
+[26B drop-both   13.4s] prompt 1: 38 positions dumped, RSS 6313 MB
+[26B drop-both   16.4s] prompt 2: 36 positions dumped, RSS 6618 MB
+[26B drop-both   20.0s] prompt 3: 43 positions dumped, RSS 6667 MB
+[26B drop-both   20.0s] done
+--- PASS: TestGemma4_26B_s10Dump (20.04s)
+total 479280
+drwxr-xr-x  10 francistownsend-merino  staff        320 Oct  6 22:17 .
+drwxr-xr-x   5 francistownsend-merino  staff        160 Oct  6 22:16 ..
+-rw-r--r--   1 francistownsend-merino  staff        989 Oct  6 22:17 drop-both-killwatch.log
+-rw-r--r--   1 francistownsend-merino  staff        945 Oct  6 22:17 drop-both.log
+-rw-r--r--   1 francistownsend-merino  staff       1232 Oct  6 22:16 fixed-killwatch.log
+-rw-r--r--   1 francistownsend-merino  staff        925 Oct  6 22:16 fixed.log
+-rw-r--r--   1 francistownsend-merino  staff  122683392 Oct  6 22:17 logits-drop-both.f32
+-rw-r--r--   1 francistownsend-merino  staff  122683392 Oct  6 22:16 logits-fixed.f32
+-rw-r--r--   1 francistownsend-merino  staff        287 Oct  6 22:16 provenance.txt
+-rw-r--r--   1 francistownsend-merino  staff        803 Oct  6 22:16 seqs.json
+finished: 2026-10-06 22:17:12 PDT rc=0
+
+=== END      2026-10-06 22:17:12 PDT  rc=0

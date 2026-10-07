@@ -178,6 +178,11 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     - **PASS (S1.0's rule):** with the fixes in, neither the mean Metal-vs-CPU logit cosine nor the argmax agreement
       over all positions is lower than with them dropped. Only `v_norm` can move on the 26B: its layers are all MoE,
       and the MoE join already applied its own layer scalar.
+    - **Mac half done, night queue 2026-10-06 22:16 PDT (binary at `b1e7c9f6`):** both arms PASS, 117 positions each
+      over three prompts, paged (46 and 56 slots/layer), peak RSS 5.9 / 6.7 GB, swap flat under the kill-watch. The dump
+      (`seqs.json`, `logits-fixed.f32`, `logits-drop-both.f32`, 117 MB each) is in the Mac's
+      `~/goinfer-bench/s10-26b/run-2026-10-06/`, not committed; the grading half is nobara's (`docs/prompts/nobara-s1-2026-10-07.md`).
+      Raw log: `docs/measurements/multimodal-support-2026-10/s10-26b-dump-night.log`.
 - **S1.1, the fixture and safetensors PLE loading, done 2026-10-06 on the Mac.** No bar was pre-registered for this
   step; it builds what G1 runs on. It was held to the f32 tiny-golden convention (`gemma4_moe_forward_test.go`):
   argmax equal and cosine >= 0.99999 against HF, here at every position rather than only the last.
@@ -384,6 +389,20 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     - The host's per-token cost of the embedding row plus PLE inputs (`TestGemma4EModel_realE2BPLEHostCost`, 512
       tokens after 32 warm-up), under the timing lock.
     - Recorded as numbers with their provenance; no bar.
+  - **S1.9 recorded, Mac night queue 2026-10-06 22:10 PDT (M1 Pro, macOS 26.6.2, AC power, binaries at `888d1d4f`,
+    model `~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf`, int4, greedy, depth 128 (129 prompt tokens), 64 tokens x
+    8 completions x 2 runs per cell, instant idle gate, no thermal warning):**
+
+    | backend | decode tok/s (runs) | decode path | peak RSS |
+    |---|---|---|---|
+    | CPU | 38.0 (37.92, 37.99) | `cpu (int4)`, row4 layout, `e4h` sidecar | 1.40 GiB |
+    | Metal resident | 46.1 (46.09, 46.10) | `metal-resident (int4)` | 0.38 GiB |
+
+    - Metal resident is 1.21x the CPU on E2B decode. A record, not a gate. The CPU arm runs its own sidecar (int4
+      embedding/LM-head tables), the shipped default for each backend.
+    - The host's embedding row + PLE inputs: mean 0.315 ms/token (median 0.304, p90 0.347, 512 tokens), about 1.5% of a
+      Metal token (21.7 ms): not where the time goes.
+    - Raw: `docs/measurements/multimodal-support-2026-10/s19-e2b-speed-night.log` (and `s19-bench-e2b.json`).
 
 ### S2 — GPU towers for Qwen3.5+ and GLM-OCR
 
