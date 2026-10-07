@@ -1136,6 +1136,25 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
   The tower takes about 1 s for the 7.8 s clip on the CPU (exploratory).
 - **WAV decoding moved to `multimodal.DecodeWAV`** for serve's chat route; `embeddinggemma2.DecodeWAV` stays as a
   wrapper. `multimodal.Gemma4AudioBlock` builds the placeholder run.
+- **G-S5b: harness built, queued on nobara's night queue** (`s5b-e2b-audio`, about 20 min,
+  `run-s5b-nobara.sh`; the binary built there from a bundle of this Mac's local commits, in a separate worktree,
+  `~/wt/goinfer-s5`). The ids come from goinfer's built-in Gemma 4 template (`chat.Gemma4()`), because E2B's
+  safetensors directory carries none. Serve with the GGUF uses the GGUF's own template, which ends the prompt
+  differently (75 tokens against 79). G-S5b compares the same ids on both sides, so that does not touch it. The mid
+  clip leaves 15 text positions after the audio block, so the registered ">= 95% agreement" means all 15.
+- **Serve takes audio on `/v1/chat/completions`:**
+  - The request: an OpenAI `input_audio` part (base64 or a data: URI, `format` wav), 16 kHz mono 16-bit PCM, at most
+    30 s. A longer clip is refused by name: the extractor itself stops at 30 s, so a soft-token cap alone would have
+    cut it silently. An earlier message's clip is replaced by a note, as an earlier image is, counted in the same
+    `X-Goinfer-Images-Omitted` header.
+  - The model: a Gemma 4 checkpoint whose config has an `audio_config` turns audio on at load (the log says so). The
+    tower loads on the first clip (1.7 s here) and runs on the CPU. The turn goes through `GenerateGemma4VL`,
+    streaming and logprobs included.
+  - A model without the tower answers 400 by name.
+  - Exploratory smoke, 12:47 PDT: `--model ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision
+    ~/models/gemma-4-E2B-unq --backend cpu`, the mid clip, "Describe this audio briefly.": "The audio appears to be a
+    sound effect of a door slamming." in 4.3 s, 75 prompt tokens. The safetensors load alone was refused by the fit
+    guard beside the owner's session.
 
 ### S6 — Coverage that is cheap once the above exists
 

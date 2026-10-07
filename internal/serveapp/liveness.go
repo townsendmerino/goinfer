@@ -138,6 +138,7 @@ func (lm *loadedModel) closeEntryNatives() {
 	// field is already live (main.go's loadGemma4VisionTower, vision_serve.go's Forward path)
 	// and just needed the same nil-out vproj already gets.
 	lm.gemma4Enc = nil
+	lm.gemma4Audio = nil // plain weights, no native Close (S5)
 }
 
 // startDrain runs the DETACHED phase of unload. The entry is already unpublished (Phase 1). On a bare
