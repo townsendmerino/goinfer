@@ -447,6 +447,9 @@ type cudaLayer struct {
 	// v_norm(the raw pre-RoPE k_proj output), stored un-rotated in its OWN vCache (NOT aliased
 	// to kCache; kvDim is NOT halved). launchToken derives V from k before rope_kv mutates it.
 	kEqV bool
+	// ffnI: this layer's dense FFN width (g.N), 0 on a layer with no dense FFN. Every dense-FFN launch reads it, not r.inter, because an E-model's
+	// layers differ (S1 on CUDA).
+	ffnI int
 	// vNorm: scale-less v_norm on this layer's V before it is stored. HF and the CPU apply it on EVERY Gemma 4 layer
 	// that owns its K/V, K=V or not (S1.0, docs/tasks/task-multimodal-support-2026-10.md); here only kEqV layers did
 	// until 2026-10-07, so every sliding layer of the resident 12B/26B/31B missed it. Implies kEqV or a real v_proj.
@@ -3453,25 +3456,31 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	// have a real Ly.postNorm/postMLPNorm (required non-empty / never populated respectively in
 	// BuildResident — see its DeltaNet-continue comment), so it must take the normal branches.
 	postOnlyHere := r.postOnly && !Ly.isDeltaNet
+	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md), and the
+	// scratch is sized to the widest layer, so every launch below takes the layer's width and never the model-level r.inter.
+	ffnI := Ly.ffnI
+	if ffnI == 0 {
+		ffnI = r.inter
+	}
 	// Dense MLP (whole): no readback gap, so segC is nil for this layer.
 	if r.fuseQKV {
-		cfg := LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1,
+		cfg := LaunchConfig{GridX: uint32((2*ffnI + 63) / 64), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 		// Rows-per-warp variant (fused_gu_rows.cu) for the geometries measured to win; bit-identical to the original (TestFusedGURowsBitIdentical).
-		rpw := r.waveRowsPerWarp(2*r.inter, int(cfg.SharedMemBytes))
+		rpw := r.waveRowsPerWarp(2*ffnI, int(cfg.SharedMemBytes))
 		if rpw == 0 {
-			rpw = fusedGURowsPerWarp(r.hidden, r.inter) // device shape unread: the measured-geometry table
+			rpw = fusedGURowsPerWarp(r.hidden, ffnI) // device shape unread: the measured-geometry table
 		}
 		if rpw != 8 && r.fGURows != (Pipeline{}) {
 			rcfg := cfg
-			rcfg.GridX = uint32((2*r.inter + 8*rpw - 1) / (8 * rpw))
+			rcfg.GridX = uint32((2*ffnI + 8*rpw - 1) / (8 * rpw))
 			if e := r.launch(r.fGURows, rcfg,
 				Arg(x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
 				gpu.ArgValue(r.addOneArg()),
 				Arg(Ly.g.W), Arg(Ly.g.ws16),
 				Arg(Ly.u.W), Arg(Ly.u.ws16),
-				gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), gpu.ArgValue(int32(rpw)),
+				gpu.ArgValue(int32(ffnI)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), gpu.ArgValue(int32(rpw)),
 				Arg(r.gO), Arg(r.uO)); e != nil {
 				return e
 			}
@@ -3480,21 +3489,21 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			gpu.ArgValue(r.addOneArg()),
 			Arg(Ly.g.W), Arg(Ly.g.ws16),
 			Arg(Ly.u.W), Arg(Ly.u.ws16),
-			gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+			gpu.ArgValue(int32(ffnI)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
 			Arg(r.gO), Arg(r.uO)); e != nil {
 			return e
 		}
 	} else if r.fuseG32 && !postOnlyHere {
 		// Per-32 twin of fGU (fused_rms_gu_g32): bit-identical to the unfused chain below.
-		rpw := fusedGURowsPerWarp(r.hidden, r.inter)
-		cfg := LaunchConfig{GridX: uint32((2*r.inter + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1,
+		rpw := fusedGURowsPerWarp(r.hidden, ffnI)
+		cfg := LaunchConfig{GridX: uint32((2*ffnI + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: fusedG32Shmem(r.hidden)}
 		if e := r.launch(r.fGUg32, cfg,
 			Arg(x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
 			gpu.ArgValue(r.addOneArg()),
 			Arg(Ly.g.W), wkScale(Ly.g), gpu.ArgValue(wkCode(Ly.g.kind)),
 			Arg(Ly.u.W), wkScale(Ly.u), gpu.ArgValue(wkCode(Ly.u.kind)),
-			gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(rpw)),
+			gpu.ArgValue(int32(ffnI)), gpu.ArgValue(int32(rpw)),
 			Arg(r.gO), Arg(r.uO)); e != nil {
 			return e
 		}
@@ -3543,7 +3552,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 	}
-	if err := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
+	if err := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffnI)),
 		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
 	}
@@ -3554,7 +3563,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		if r.loraLayers != nil {
 			// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
 			// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
-			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, r.inter, r.dO); e != nil {
+			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, ffnI, r.dO); e != nil {
 				return e
 			}
 		}
@@ -3587,7 +3596,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 		if r.loraLayers != nil {
-			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, r.inter, x); e != nil {
+			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, ffnI, x); e != nil {
 				return e
 			}
 		}

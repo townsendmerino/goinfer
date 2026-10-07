@@ -1478,6 +1478,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// A routed layer has no dense FFN to upload: its hostW's are empty, and
 				// Alloc(0) is an error rather than a harmless no-op.
 				L.g, L.u, L.d = r.upW(h.g), r.upW(h.u), r.upW(h.d)
+				L.ffnI = L.g.N
 				// Gemma 4's per-layer output scalar (out = h*layerScalar, applied after the dense
 				// MLP residual add). A real, always-present multiply for every dense gemma4 layer
 				// (defaults to 1 when the checkpoint's tensor is absent, decoder/weights.go), NOT
@@ -1715,9 +1716,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// tiny qwen3_5_moe fixture does NOT reproduce it either: it carries intermediate_size 128
 		// because HF's config defaults one in, so the fixture is less pure-MoE than the model it
 		// stands for. That is a fixture-fidelity gap, recorded rather than silently fixed here.
-		if I > 0 {
-			r.gO, r.uO = r.af(I), r.af(I)
-			r.dSc, r.dScr, r.dq = r.af(r.actScaleLen(I)), r.af(I), r.ai(I/4)
+		// Scratch is sized to the WIDEST dense layer: an E-model's layers differ and the launches take each layer's own width (cudaLayer.ffnI).
+		maxI := I
+		for l := range r.layers {
+			maxI = max(maxI, r.layers[l].ffnI)
+		}
+		if maxI > 0 {
+			r.gO, r.uO = r.af(maxI), r.af(maxI)
+			r.dSc, r.dScr, r.dq = r.af(r.actScaleLen(maxI)), r.af(maxI), r.ai(maxI/4)
 		} else if !isMoE {
 			return fmt.Errorf("cuda: intermediate_size is 0 on a DENSE model — no FFN to run")
 		}
