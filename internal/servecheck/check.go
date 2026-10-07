@@ -264,11 +264,15 @@ func (c *Client) Structured(ctx context.Context, model string) Result {
 // corrupted text rather than as a bug here. It also checks that the count actually REACHED the
 // stop ("4" before "5"). A reply that never gets there, such as "Sure, I can count.", contains no
 // "5" either, and used to pass (audit-2026-09-10 G-12).
+//
+// The prompt says what to write, not just "Count: 1, 2, ...": with the bare list, Qwen2.5-Coder-7B
+// answered "The count is now 10." and the Gemma-4 26B "The total count is…" (2026-10-06). Neither
+// is a stop bug, and both FAILED this row on a model that handles stop sequences correctly.
 func (c *Client) Stop(ctx context.Context, model string) Result {
 	res := Result{Name: "stop sequences"}
 	body := map[string]any{
 		"model": model, "temperature": 0, "max_tokens": 64,
-		"messages": []map[string]string{{"role": "user", "content": "Count: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10."}},
+		"messages": []map[string]string{{"role": "user", "content": "Count from 1 to 10, separated by commas, and write nothing else."}},
 		"stop":     []string{"5"},
 	}
 	resp, err := c.do(ctx, http.MethodPost, "/v1/chat/completions", body)
