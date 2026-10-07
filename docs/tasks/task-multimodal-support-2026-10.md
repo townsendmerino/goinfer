@@ -825,6 +825,92 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 - **Owner decision 2026-10-07: the proposal is accepted.** Both towers get rebuilt on goinfer's Metal tower base, from new
   aikit float32 exports (SigLIP, Qwen2.5-VL) on the same unreleased `s2-tower-exports` branch; the `visionmetal` real-size
   defect is reported to aikit. G-S3a's bars apply unchanged to the rebuilt towers, then G-S3b.
+- **G-S3a for the rebuilt towers, registered 2026-10-07 before their code runs:**
+  - **Bars unchanged:** every soft token at cosine >= 0.9999 against aikit's CPU tower, on the tiny towers and on the four
+    F2a images at real size; 0.999-0.9999 ambiguous (parked).
+  - **One amendment: SigLIP is float32 on both sides,** not int8. The rebuilt tower runs float32 GEMMs, from aikit's new
+    float32 export (`Encoder.Weights`, `FinishHidden`), so serve loads Gemma 3's tower float32 for it, as it already does
+    on the CPU. Qwen2.5-VL stays float32 on both sides, from aikit's existing `GPUWeights` (its float32 form),
+    `BuildWindowPlan` and `MergeHidden`.
+  - **The tiny checks randomise every norm first** (the all-ones trap).
+  - **Planted defects, each one alone, must turn the tiny check red:**
+    1. the attention scale dropped (both towers);
+    2. RoPE's row and column halves swapped (Qwen2.5-VL);
+    3. every block attending its whole image instead of its windows (Qwen2.5-VL);
+    4. the window reordering skipped, on the way in and on the way out (Qwen2.5-VL);
+    5. the position table dropped (SigLIP);
+    6. the patch-embed bias dropped (SigLIP).
+  - A defect that stays green means the fixture is degenerate along that axis. That gets recorded, and the check is
+    rerun on a fixture or grid that can see the defect, before any result is read.
+  - **Then G-S3b, as registered.**
+- **G-S3a for the rebuilt towers, read 2026-10-07 on the Mac (`s2-towers` at `77f20330`, aikit `s2-tower-exports` at
+  `d7d5cf9`): PASS, tiny and real.**
+  - **The code:** `metal/vl_towers.go`. Both towers run on the S2 base (`metal/grid_vision.go`, which gains tower kinds:
+    no RoPE, windowed segments, a fixed position table, and a block split across command buffers when its segments would
+    overflow the scalar arena). They register through aikit's own seams (`vision.RegisterResident`,
+    `vision.RegisterQwenResident`); aikit's `gpu/visionmetal` and `gpu/qwenmetal` are no longer imported. aikit gains
+    SigLIP's float32 export (`Encoder.Weights`, `FinishHidden`), its recomposition bit-exact on the tiny tower.
+  - **Tiny: both towers exact (worst token 1.000000000).** The first run left five of the seven planted defects green,
+    because the tiny fixtures are degenerate: every bias is zero, and Qwen2.5-VL's q/k/v and output projections are at
+    init scale (0.02), so attention is nearly uniform and adds little to the residual. As registered, the fixture was
+    sharpened before reading anything: random biases, q/k scaled by 6 (SigLIP) or 12 (Qwen2.5-VL), and v and the output
+    projection scaled by 8 (Qwen2.5-VL), through the aliasing exports, which the CPU tower reads too. Then every defect
+    is red:
+
+    | defect | SigLIP | Qwen2.5-VL |
+    |---|---|---|
+    | (1) attention scale dropped | 0.998501 | 0.629849 |
+    | (2) RoPE halves swapped | — | 0.750730 |
+    | (3) whole-frame attention in the windowed blocks | — | 0.789726 |
+    | (4) window reordering skipped | — | 0.726768 |
+    | (5) position table dropped | 0.745353 | — |
+    | (6) patch-embed bias dropped | 0.762383 | — |
+
+  - **Real, the four F2a images, attached through `EnableResident` as serve attaches them:**
+
+    | image | SigLIP worst token | Metal / CPU tower | Qwen2.5-VL grid | worst token | Metal / CPU tower |
+    |---|---|---|---|---|---|
+    | gemma3_preprocess_image.png | 0.999999928 | 9.2 / 26.1 s | 64x64 | 0.999996659 | 8.9 / 22.1 s |
+    | qwen25vl_preprocess_image.png | 0.999999972 | 9.5 / 28.4 s | 4x6 | 0.999999999 | 1.8 / 0.9 s |
+    | glm_ocr/formula.png | 0.999998073 | 9.6 / 25.8 s | 86x72 | 0.999999651 | 15.1 / 34.9 s |
+    | glm_ocr/table.png | 0.999999857 | 9.6 / 26.6 s | 64x86 | 0.999999464 | 14.4 / 31.1 s |
+
+    Times are exploratory: one reading each, by day, a compile running beside one of them. SigLIP's Metal tower is about
+    2.8x the CPU tower here; aikit's was wrong and ~73 s. Qwen2.5-VL's is 2.1-2.5x on the large images, and slower on
+    the tiny 4x6 one, where per-window dispatch overhead dominates. Raw:
+    `docs/measurements/multimodal-support-2026-10/s3-gs3a-rebuilt-real.log`.
+- **G-S3b, read 2026-10-07 12:00-12:04 PDT on the Mac** (serve binary from `s2-towers` at `0c66b18b`, table.png, 32 greedy
+  tokens, both arms `--backend metal`, the tower on Metal against `-vision-device cpu`; `run-gs3c-served.sh` with arms
+  `metal:auto,metal:cpu`): **Qwen2.5-VL PASS; Gemma 3 FAIL as registered, its control owed.**
+  - **Qwen2.5-VL-3B: byte-identical replies** ("Table 2. Quarterly unit sales by region (thousands)"). Decoder
+    `metal-resident (int4)` in both arms, the tower on Metal in one. Request time 38.1 s against 53.1 s (exploratory).
+  - **Gemma 3 4B: the replies differ at generated token 10,** " presented" against " broken". The Metal-tower arm puts
+    " broken" at p 0.195 against its top 0.795: not a near-tie. Both arms decoded on the CPU (Metal declined the decoder
+    for memory again, 5.15 GB against a 4.3-4.9 GB budget) on the same load, so only the tower differed, and the tower
+    matched the CPU tower to a worst token of 0.999999857 on this very image (G-S3a).
+  - **That size of flip from that size of perturbation is surprising, so nothing is concluded yet.** The determinism
+    control (the CPU-tower arm twice; the Metal-tower arm twice) was attempted at 12:04 and 12:05. Both times serve's
+    fit guard refused to load the 4B: 7.6-7.9 GB was available by then, against the 5.9 GB it needs at a 70% margin. It
+    is owed on a quieter machine. If the CPU-tower arm repeats itself byte for byte, the next step is the perturbation
+    control: CPU-tower features plus random noise of the Metal tower's size. Shipped path is not ground truth (R2): an
+    int4 W4A8 decoder quantizes activations per tensor, so a 1e-7 perturbation can cross an int8 rounding and change a
+    choice the reference itself makes with p 0.8.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3b/`.
+- **G-S3c's failure, analysed 2026-10-07 (no new measurement): the two arms run different CPU kernels, so the gate does
+  not isolate Metal.**
+  - Metal has no resident m-RoPE prefill (only CUDA implements `PrefillMRoPELast`). So a Qwen2.5-VL image turn under
+    `--backend metal` prefills on the CPU and `UploadKV`s, and **its first token comes from the CPU prefill**, as the
+    `--backend cpu` arm's does.
+  - The two CPU prefills still differ: the load keys the int4 layout on `Options.Backend` (`wantsCanonicalInt4`,
+    `wantsRow4Fallback` in `decoder/weightmat.go`). Under `metal` the CPU holds canonical int4 and no row4; under `cpu`
+    it holds the arm64 row4 repack only, for embed, gate/up and qkv (the serve logs' `int4 layout` line). Different
+    kernels, different rounding.
+  - With both arms' towers on the CPU in float32 (the same features), the token-0 split ("Table" against "Quarter")
+    can only come from that layout difference, not from Metal. Gemma 3's G-S3c is the same thing measured directly:
+    both arms decoded wholly on the CPU (Metal declined) and still differed beyond a near-tie.
+  - **Proposed, for the owner:** re-register G-S3c so the reference shares Metal's CPU-side layout. For example, the
+    `--backend metal` load with its resident detached, through a test hook, against the same load decoding on Metal.
+    Then the gate grades Metal's decode and nothing else. Until then G-S3c stands as FAIL, as registered.
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
@@ -901,7 +987,8 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
     run on the default plan reads as a pass for the wrong reason. The comparison above needed `--kv-sessions 1 -ctx 4096`. The resident KV planner reserves
     for a drafter (`extraBytes`) but not for a vision tower, so on an 8 GB card a device tower and a default-planned decoder do not coexist. That is a planner
     gap, not a tower defect, and it applies to goinfer's own Gemma 3 SigLIP tower too; not fixed here.
-  - **The script:** `run-gs3c-served.sh` arms may now be `<backend>+<auto|cpu>` to set `-vision-device` per arm (plain `<backend>` still means the CPU tower).
+  - **The script:** `run-gs3c-served.sh` sets `-vision-device` per arm as `<backend>:<auto|cpu>` (plain `<backend>` means the CPU tower); the Mac added the same thing
+    at the same time, and the merge kept its spelling. These runs were made with an earlier `+` spelling of it (labels `cuda_cpu`, `cuda_auto`), which is equivalent.
 - **The CUDA towers' gates are G-S2b, G-S2c and G-S2d's, unchanged, on CUDA;** the Gemma 4 CUDA tower's are Metal's
   Gemma 4 tower gates (`metal/gemma4_vision_test.go`: every soft token at cosine >= 0.9999 against aikit's CPU Forward,
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
