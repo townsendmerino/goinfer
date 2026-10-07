@@ -1269,6 +1269,28 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
     is slower here because every one of these is a cold image-turn prefill on the CPU plus an upload. Batched E-model
     prefill is S9's work.
   - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5c/`.
+- **S5's spoken clip, registered 2026-10-07 before it ran:** `testdata/speech/librispeech-1272-128104-0000.wav`
+  (LibriSpeech dev-clean, CC BY 4.0, 5.9 s, attribution in the directory's README), served to E2B with "Transcribe this
+  audio." through `run-gs5c-served.sh` (`GS5C_CLIPS`), arms `cpu`, `metal`, `cpu`, `--embed-int4=false` on all.
+  Recorded, no bar: the transcription and its word error rate against LibriSpeech's transcript. Graded by G-S5c's rule:
+  Metal against the CPU, identical or a near-tie at the first difference, and the CPU repeat byte-identical.
+  - **Read 15:34 PDT: PASS.**
+    - All three arms answer "Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.",
+      byte-identical (Metal against the CPU, and the CPU repeat).
+    - Against LibriSpeech's "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL"
+      the word error rate is 0, counting "Mr." as "MISTER" and ignoring case and punctuation.
+    - The Metal arm prefilled AND decoded on the resident ("prefill resident": S9's pass carries audio rows exactly as
+      it carries image rows).
+    - 163 prompt tokens; request time 7.7 s on Metal against 9.3-10.3 s on the CPU (exploratory).
+    - Raw: `docs/measurements/multimodal-support-2026-10/s5-speech/`.
+- **G-S5d, E2B's audio tower on Metal, registered 2026-10-07 before its code:** EmbeddingGemma 2's Metal audio
+  accelerator (`metal/gemma4_audio.go`, generic over aikit's `Gemma4AudioEncoder`) runs E2B's 12 conformer blocks;
+  aikit's `Subsample` and `FinishBlocks` stay on the host.
+  - **Bar:** the soft tokens at worst-row cosine >= 0.9999 against aikit's CPU `Forward`, on the three EmbeddingGemma 2
+    clips and the LibriSpeech clip; 0.999-0.9999 ambiguous (parked).
+  - **Served:** the LibriSpeech clip and the three tone clips, `--backend metal` in both arms, the tower on Metal against
+    `-vision-device cpu`. Identical replies, or a first divergence at a near-tie.
+  - **Serve uses the device tower only under `--backend metal`;** `-vision-device cpu` keeps it on the CPU.
 - **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
   clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
   test clip.
@@ -1513,7 +1535,72 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     | qwen25vl_preprocess_image.png | 14x20 | 0.999999891 | 0.999999995 | 1.000000000 / 0.999999996 / 0.999999998 |
     | glm_ocr/formula.png | 76x62 | 0.999999739 | 0.999999988 | 1.000000000 / 0.999999871 / 0.999999932 |
     | glm_ocr/table.png | 56x76 | 0.999999562 | 0.999999999 | 1.000000000 / 0.999999999 / 0.999999997 |
-- **Next: the decoder's DeepStack injection** (G-S10c), then serve.
+- **The decoder's DeepStack (main, `84cc5aae`):**
+  - The KV cache carries a prefill's DeepStack sets. The batched layer loop adds set l to the image positions after
+    layer l (`addDeepstack`, unit-tested on batch offsets).
+  - `GenerateQwenVLDeepstack` takes them; `GenerateQwenVL` is its no-DeepStack case.
+  - A resident m-RoPE prefill (CUDA's) is not offered a DeepStack turn, since it cannot inject.
+- **Serve (`s2-towers`, `8a6bc27a`; needs the aikit branch):**
+  - A `qwen3_vl` checkpoint takes the Qwen3.5+ tower path, DeepStack required; a `qwen3_5` config declaring it is
+    refused.
+  - The tower runs on the CPU by name: no device tower carries DeepStack yet, and `-require-backend` refuses on Metal.
+  - The features are one flat vector (the merged rows, then each set), so the image cache keeps them whole; serve splits
+    them for the decoder.
+- **G-S10c: PASS** (nobara, 15:14-15:16 PDT, under the timing lock).
+  - The setup: `scripts/pin_qwen3vl_image_real.py` (transformers 5.12, float32, HF's own processor and chat template:
+    table.png, 1083 ids with 1064 image tokens, grid 56x76). Then `TestQwen3VLImageReal` on those ids and pixel values:
+    aikit's tower with DeepStack, goinfer's float32 prefill with the production fast-attention setting.
+  - **Result:** last-position cosine 1.000000, argmax 86608 equal to HF's, and argmax agreement over the 15 text
+    positions after the image 15/15. The test's open loop equals `prefillLogitsQwenVL` itself.
+  - **Planted defects, all red:**
+    1. DeepStack not added: cosine 0.982867, argmax kept;
+    2. added one layer late: 0.987967;
+    3. added to the text positions too: −0.135, argmax changed.
+- **G-S10d, read 15:18-15:19 PDT on the Mac: PASS.**
+  - The setup: a serve binary from `s2-towers` at `8a6bc27a`. Qwen3-VL-2B was copied from nobara to
+    `~/models/qwen3-vl-2b-instruct` over the LAN. table.png, 32 greedy tokens, `--embed-int4=false` and
+    `-vision-device cpu` on every arm; arms `cpu`, `metal` (`metal-resident (int4)`), then `cpu` again.
+  - **All three replies are byte-identical:** "Table 2. Quarterly unit sales by region (thousands)". The tower ran on
+    the CPU in every arm, reported as such ("CPU (DeepStack: no device tower yet)").
+  - Request times, exploratory: 25.8-27.9 s, most of it the CPU tower.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10d/`.
+- **G-S10e, the Qwen3-VL tower on Metal with DeepStack, registered 2026-10-07 before its code:** S2's Metal grid tower
+  returns the block outputs at the DeepStack indexes ("taps"); aikit's exported host tails turn them into the DeepStack
+  sets, as `FinishHidden` turns the last one into the merged rows.
+  - **Bar:** G-S2b's, unchanged. The merged rows and each DeepStack set at worst-row cosine >= 0.9999 against aikit's
+    CPU `ForwardDeepstack`, on the tiny DeepStack tower (norms randomised) and on Qwen3-VL-2B's four F2a images;
+    0.999-0.9999 ambiguous (parked).
+  - **Planted defect:** the taps taken one block late; it must go red on the tiny tower.
+  - **Then G-S10d's served check again,** with the tower on Metal against `-vision-device cpu`, both `--backend metal`:
+    identical replies or a first divergence at a near-tie.
+- **G-S10e: PASS** (Mac, 15:39-15:43 PDT; `s2-towers` at `aec3ccec`, aikit `5db4ce6`).
+  - **The code:** the Metal grid tower taps the DeepStack blocks (`HiddenTaps`, read where `run` ends each block's
+    command buffer). aikit's host tails (`FinishHidden`, the new `DeepstackFromHidden`) make the merged rows and the
+    sets (`multimodal.Qwen3TowerFeaturesDeepstack`). Serve runs a Qwen3-VL tower on a device only if that tower can tap;
+    otherwise the CPU, by name, or an error under `-require-backend` (`TestQwen3VLTower_needsTaps`, red without the
+    check).
+  - **Tiny** (`testdata/qwen3vl-vision-tiny`, copied from aikit): merged rows and both sets at 1.000000000 on two grid
+    sets. The planted taps-one-block-late defect is refused (the last tap falls past the 2-block tower), which is red.
+  - **Real 2B, four F2a images at serve's cap:** worst 0.999997916 (formula.png's second set); every other output
+    0.99999990 or better. The planted defect on the 14x20 image: sets at 0.574, 0.293 and 0.661, red.
+  - **Served, `--backend metal` in every arm:** the tower on Metal against `-vision-device cpu`, twice: byte-identical
+    replies ("Table 2. Quarterly unit sales by region (thousands)"). Request time 19.2 s against 31.3-41.3 s with the
+    tower on the CPU (exploratory, one reading each).
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10e/`.
+- **The owed preprocessing record, read 15:30 PDT:** `multimodal/qwen3vl_preprocess_real_test.go` (goinfer's
+  QwenPreprocess with Qwen3-VL's own, uncapped config against transformers' `Qwen2VLImageProcessor` pixel values from
+  G-S10b's run). The grids are equal on all four images. The pixels are identical on the two that need no resize; on
+  the two resized ones the largest difference is 0.00784 (one 8-bit level, 2/255 in [-1, 1]), the mean 2e-6 and 9e-6,
+  and the worst patch cosine 0.999998.
+- **aikit's qwenmetal allocation fix (nobara's df1a98f, merged into the local branch as 97cc578):**
+  `TestQwenMetal_allocationFailureIsAnErrorAndTheEncoderRecovers` passes on the Mac, with the full qwenmetal suite. A
+  2.5 TB scratch request came back as "MTLBuffer allocation failed ... out of memory", and the encoder recovered.
+- **S10 Qwen3-VL: G-S10a-e all PASS.** Owed, none of them gates:
+  - ~~goinfer's preprocessing against HF's~~ (done, above).
+  - ~~A device tower with DeepStack on Metal~~ (G-S10e). CUDA's twin (nobara): its grid tower implements
+    `multimodal.GridTowerTapper`, the same `run`-loop tap.
+  - ~~The serve log's "Qwen3.5 vision"~~ (now "Qwen3-VL vision").
+  - The MoE variants.
 
 ### S11 — Several images per message
 

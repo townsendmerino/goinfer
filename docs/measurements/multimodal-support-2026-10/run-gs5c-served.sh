@@ -6,6 +6,7 @@
 # near-tie read (the reference's p(other token) >= half its own top token's p).
 #
 # Usage: run-gs5c-served.sh <serve binary> <out dir> <arm>[,<arm>...] -- <serve model flags...>
+#   GS5C_CLIPS=<wav>[,<wav>...] replaces the three default clips (e.g. testdata/speech/librispeech-1272-128104-0000.wav).
 #   an arm is a --backend value; a repeated arm runs again as a control (its files get a numeric suffix).
 # Example: run-gs5c-served.sh ./serve ~/goinfer-logs/gs5c cpu,metal,cpu -- \
 #            --model ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision ~/models/gemma-4-E2B-unq
@@ -33,10 +34,13 @@ for be in "${arms[@]}"; do
   done
   grep -E "decode path|audio input" "$OUT/serve-$lab.log" | cut -c1-200 || true
   python3 - "$OUT" "$lab" "$PORT" <<'EOF'
-import base64, json, sys, time, urllib.request
+import base64, json, os, sys, time, urllib.request
 out, lab, port = sys.argv[1:4]
-for clip in ["short", "mid", "long"]:
-    wav = base64.b64encode(open(f"testdata/embeddinggemma2-audio/{clip}.wav", "rb").read()).decode()
+clips = [c for c in os.environ.get("GS5C_CLIPS", "").split(",") if c] or [
+    f"testdata/embeddinggemma2-audio/{c}.wav" for c in ["short", "mid", "long"]]
+for path in clips:
+    clip = os.path.basename(path).removesuffix(".wav")
+    wav = base64.b64encode(open(path, "rb").read()).decode()
     body = {"messages": [{"role": "user", "content": [
         {"type": "input_audio", "input_audio": {"data": wav, "format": "wav"}},
         {"type": "text", "text": "Transcribe this audio."}]}],
@@ -54,9 +58,10 @@ EOF
   kill $pid; wait $pid 2>/dev/null || true; sleep 2
 done
 python3 - "$OUT" "${labels[@]}" <<'EOF'
-import json, math, sys
+import json, math, os, sys
 out, ref, *others = sys.argv[1:]
-for clip in ["short", "mid", "long"]:
+clips = [os.path.basename(c).removesuffix(".wav") for c in os.environ.get("GS5C_CLIPS", "").split(",") if c] or ["short", "mid", "long"]
+for clip in clips:
     rd = json.load(open(f"{out}/logprobs-{clip}-{ref}.json"))
     for o in others:
         if open(f"{out}/reply-{clip}-{ref}.txt").read() == open(f"{out}/reply-{clip}-{o}.txt").read():
