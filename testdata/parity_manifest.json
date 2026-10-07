@@ -787,7 +787,7 @@
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go"
       ],
-      "deps_hash": "sha256:bc264fd8b74f0e610e83fd6f64635a34b3a2dc24423f4b2d242868d0bb85ef7f",
+      "deps_hash": "sha256:681f7990018ae55fc3d1725360a203c157b7a634cc7529866fe16882638efabf",
       "status": "validated",
       "validated_at": "7b50947a",
       "date": "2026-10-05",
