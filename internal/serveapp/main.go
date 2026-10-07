@@ -1159,10 +1159,12 @@ func (s *server) loadVisionTower(cfg config) error {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
 	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() && strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.load.Backend), cfg.towerBackend(), cfg.requireBE)
+		return s.loadQwen35MMProj(dir, towerInt8("qwen3_5", cfg.visionQuant, cfg.towerBackend()), cfg.towerBackend(), cfg.requireBE)
 	}
 	mt := visionModelType(dir)
-	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.load.Backend)
+	// cfg.towerBackend(), not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
+	// --backend cuda or webgpu too (it used to load int8 and attach the device tower whatever the flag said).
+	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.towerBackend())
 	if mt == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower)
 	}
@@ -1183,7 +1185,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// tower's own leak/threading bugs are fixed (cuda/vision_encoder.go) — cuda/vision_register.go
 	// already registered its factory with vision.RegisterResident via cuda/cmd/serve's blank
 	// import; this gate was the only thing that never called EnableResident() for it.
-	residentOK := enableResidentTower(enc, cfg.load.Backend, os.Stderr)
+	residentOK := enableResidentTower(enc, cfg.towerBackend(), os.Stderr)
 	proj, err := multimodal.LoadProjector(dir)
 	if err != nil {
 		return fmt.Errorf("load vision projector (%s): %w", dir, err)
@@ -1202,7 +1204,7 @@ func (s *server) loadVisionTower(cfg config) error {
 			vq = "int8"
 		}
 		if residentOK {
-			vq = "int8/" + cfg.load.Backend + "-resident"
+			vq = "int8/" + cfg.towerBackend() + "-resident"
 		}
 		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
 	}
