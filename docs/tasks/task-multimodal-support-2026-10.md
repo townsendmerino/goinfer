@@ -756,6 +756,32 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - Gate them like S2, and run a night crossover against the CPU tower.
 - **Size:** S to run, M to wire.
 
+**S3 progress and gates (2026-10-07, Mac):**
+- **Run it, part 1: done on what is local.** Metal's `UploadKV` and `ForwardMRoPE` tests ran for the first time and pass
+  (5/5 on `llama-tiny` and on the real Qwen2.5-Coder-1.5B). `TestVLImageTurn_metalResident` runs the first image turns on a
+  Mac's GPU, from the tiny fixtures: Gemma 3 and Qwen2.5-VL decode `metal-resident` after their CPU prefill (8/8 and 6/8
+  tokens agree with the CPU decoder; agreement is the served gate's question). The real checkpoints (`gemma-3-4b-it`,
+  `qwen25vl-3b-instruct`) are downloading from Hugging Face into `~/models`; the archive has no Qwen2.5-VL, and nobara
+  held its timing lock.
+- **The wiring:** goinfer's `metal` module imports aikit's tagged `gpu/visionmetal` (SigLIP) and `gpu/qwenmetal`
+  (Qwen2.5-VL); serve's `enableResidentTower` admits `metal`. SigLIP's Metal tower is int8 (it needs `LoadEncoder`
+  quant=true, as on CUDA and WebGPU), so `towerInt8` treats Metal like them for that family; Qwen2.5-VL stays f32 (its
+  export carries both). `-vision-device cpu` keeps either on the CPU, f32 by default.
+- **Near-tie, defined for served comparisons (serve exposes log-probabilities, not logits; G-S2d):** at the first differing
+  token, the reference arm's probability of the other arm's token is at least half its own top token's probability, read
+  from serve's `top_logprobs`.
+- **S3 gates, written 2026-10-07 before any S3 tower code or measurement:**
+  - **G-S3a, device tower against aikit's CPU tower at the same quantization** (SigLIP int8 both, Qwen2.5-VL f32 both):
+    every soft token at cosine >= 0.9999, on the tiny towers (`siglip-tiny`, `qwen25vl-tiny`) and on the real towers on the
+    four images F2a uses; the encoder must report the resident attached. Ambiguous (parked): a worst token in
+    0.999-0.9999.
+  - **G-S3b, served, the tower isolated:** one image request per family through the Metal serve binary, both arms
+    `--backend metal`; the reference arm adds `-vision-device cpu` (and `-vision-quant int8` for Gemma 3, matching the
+    device tower). Identical reply, or a first divergence at a near-tie.
+  - **G-S3c, served, the decoder (part 1's "against the CPU decoder"):** both arms with the tower on the CPU
+    (`-vision-device cpu`): `--backend metal` against `--backend cpu`. Identical reply, or a first divergence at a near-tie.
+  - **Speed (night):** tower time per image, Metal against CPU, and TTFT of the served turn. A record.
+
 ### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
 
 - **Gemma 4:** port `metal/gemma4_vision.go` to `cuda/`. The registration seam is already backend-neutral
