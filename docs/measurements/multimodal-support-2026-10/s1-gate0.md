@@ -17,7 +17,7 @@ from the code and not run. Nothing here was executed except reading files and th
      `value_states = self.v_norm(value_states)` on EVERY non-shared layer (transformers 5.12
      `TF/models/gemma4/modeling_gemma4.py:1247-1254`), and the CPU reference does too, unconditionally (`decoder/forward_gemma4.go:150`).
      Metal ran `v_norm` only `if g.kEqV` (in `metal/model.go`'s attention encode, before S1.0's fix in c12e2778). CUDA
-     is the same (`cuda/resident.go:3285`). E2B has `attention_k_eq_v=False` (real `config.json`), so `kEqV` is false
+     was the same (the `v_norm` launch in `segA`, as of 2026-10-06; WebGPU too; both fixed 2026-10-07, see the S1.0 block of the task doc). E2B has `attention_k_eq_v=False` (real `config.json`), so `kEqV` is false
      on every layer (`decoder/residency.go:892-900`), and **no E2B layer would get `v_norm`**. The same gap affects the
      already-shipped 12B/26B/31B **sliding** layers on all three GPU backends. INFERRED: the sandwich post-attention
      RMSNorm partly hides it, because a uniform V scale cancels exactly and a per-(pos, head) scale does not. That
@@ -492,9 +492,9 @@ Pin the fixture like `pin_gemma4_vl_tiny.py`, with these settings:
   regenerate it and pin the transformers version: memory notes 5.12 vs 5.15 differences, and the local venv has 5.12.
 
 **CUDA, briefly (later):**
-- Same model-level `r.inter` (`cuda/resident.go:3042, 3454-3493`).
-- `v_norm` only on kEqV (`cuda/resident.go:3285`).
-- No PLE (`cuda/resident.go:3573` comment says "no PLE branch yet").
+- Same model-level `r.inter` (`cuda/resident.go:3046, 3454-3493`).
+- `v_norm` only on kEqV (as of 2026-10-06; every K/V-owning Gemma 4 layer since 2026-10-07, see the S1.0 block of the task doc).
+- No PLE (`cuda/resident.go:3577` comment says "no PLE branch yet").
 - Projections are built for every layer (`cuda/backend.go:372-375`), so a shared layer's empty K/V would fail or be
   zero.
 - `KVSrcAtResident` is unused.
