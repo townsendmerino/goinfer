@@ -183,3 +183,31 @@ func TestGemma4EModelPrefill_plantedDefects(t *testing.T) {
 		})
 	}
 }
+
+// TestGemma4EModelPrefill_exactKernelsAboveTheFloor is the guard for what the first served G3p read found (docs/tasks/task-multimodal-support-2026-10.md): the
+// fast prefill levers engage above a 512-row prompt floor and are not bit-identical to decode, and they have no fidelity evidence on an E-model. With the floor
+// moved to 0 ("fast at any length", GOINFER_CUDA_FAST_PREFILL_FLOOR) an E-model's PrefillLast must therefore still be bit-identical to the sequential path, and
+// must launch none of the fast kernels. The tiny gates above never saw this: their prompts are far under the floor, which is how the real 2,170-token prompt
+// was the first to differ.
+func TestGemma4EModelPrefill_exactKernelsAboveTheFloor(t *testing.T) {
+	mg, r := loadEModelResident(t)
+	decoder.SetKnobEnvForTest(t, mg, "GOINFER_CUDA_FAST_PREFILL_FLOOR", "0")
+	if !r.fastAttn && !r.fastGemm {
+		t.Skip("neither fast lever is enabled on this resident: nothing to keep off")
+	}
+	const n = 96
+	rows := eModelRows(t, mg, n)
+	seq := seqLogits(t, r, rows)
+	r.Reset()
+	before := r.fastAttnLaunches + r.fastGemmLaunches
+	l, err := r.PrefillLast(context.Background(), rows, 0)
+	if err != nil {
+		t.Fatalf("PrefillLast: %v", err)
+	}
+	if got := r.fastAttnLaunches + r.fastGemmLaunches - before; got != 0 {
+		t.Errorf("%d fast-kernel launches on an E-model's batched prefill, want 0", got)
+	}
+	if d, f := countDiff(l, seq[n-1]); d != 0 {
+		t.Errorf("last-row logits with the floor at 0: %d differ from sequential (first at %d: %v vs %v)", d, f, l[f], seq[n-1][f])
+	}
+}

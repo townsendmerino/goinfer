@@ -919,7 +919,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		// Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after
 		// token — measured on Qwen3.5-9B, 561 tokens: cosine 0.994 and different greedy continuations with them,
 		// bit-identical to decode without (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
-		r.dnet != nil
+		r.dnet != nil ||
+		// Gemma 4 E-model (S9 on CUDA part A): the fast levers have no fidelity evidence on this family, and the first served read showed it. On the real E2B, a
+		// 2,170-token prompt above the 512-row floor took the fast kernels and first differed from the sequential path at generated token 10 (' and' 0.19 against
+		// ' issues' 0.19, the latter outside the sequential top 3: not a near-tie under the registered rule), while the same prompt on the exact kernels matched
+		// the sequential path in every logprob (docs/tasks/task-multimodal-support-2026-10.md, G3p). So an E-model batches on the exact kernels, bit-identical to
+		// decode at every length, until the levers pass a fidelity gate of their own.
+		r.eModel
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 	if r.eModel {
