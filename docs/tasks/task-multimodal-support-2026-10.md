@@ -90,6 +90,65 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
 - **Speed (night):** E2B decode tokens per second, resident against CPU, same-session interleaved.
 - **Size:** M-L per backend. No aikit API expected.
 
+**S1 Gate 0, read 2026-10-06** (a desk map with file:line citations:
+`docs/measurements/multimodal-support-2026-10/s1-gate0.md`).
+- **Two existing bugs in shipped Gemma 4 GPU decode**, each checked against the code and against transformers 5.19
+  before this was written:
+  - **(a) Metal never applies the per-layer output scalar on a dense Gemma 4 layer.** It does so only in the MoE join
+    (`metal/gemma4_moe.go`). CUDA and WebGPU apply it on dense layers.
+  - **(b) No GPU backend applies `v_norm` on a layer that owns its own `v_proj`.**
+    - HF applies the scale-less `v_norm` on every layer that owns its K/V (`modeling_gemma4.py`), and so does
+      goinfer's CPU path (`decoder/forward_gemma4.go`).
+    - Metal and CUDA apply it only on K=V layers, and WebGPU has only a K=V kernel.
+    - This affects the sliding layers of the 12B/26B/31B now running resident, and would affect every E2B layer.
+  - **Why the gates missed both:** they are loose (pos0 >= 0.97 on the scaled dense test, a 0.90 backstop on the
+    two-geometry test, 0.88 on the 26B), and the post-attention norm partly hides a V scale.
+- **What the E-model needs on Metal:**
+  - **PLE** needs the token id, which the resident interface does not carry. Plan: the host computes the per-layer
+    inputs with the CPU's own code and appends them to the embedding row (`[H || L*P]`), with strict length checks at
+    every Metal entry. The per-layer branch is built from kernels Metal already has.
+  - **Shared KV** is buffer aliasing (Metal's KV is linear). The traps: the K/V store must be skipped on shared layers,
+    the slot copies, `UploadKV`, and the KV-memory estimate.
+  - **The per-layer FFN width:** Metal sizes one width for the model, from layer 0 (6144). E2B's 20 shared layers are
+    12288, so admitting E2B as it stands would overflow the gate/up scratch silently.
+  - **The fixture:** no tiny E-model fixture exists, and safetensors PLE loading is refused, so one is built first
+    (S1.1).
+
+**S1 gates, written 2026-10-06 before any S1 measurement:**
+- **S1.0, the two fixes, on Metal:**
+  - Gemma 4's resident-vs-CPU parity tests (the scaled dense and two-geometry fixtures) are read before and after the
+    fix, with each test's own metrics.
+  - **PASS:** no metric moves the wrong way after the fix, and re-dropping each fix through a test seam reproduces
+    its before-fix numbers.
+  - Each existing bar is then tightened in a separate, recorded amendment. The fix is the mechanism; the new bar sits
+    between the before and after readings. The bars are never loosened.
+  - The 26B is re-checked on the night queue.
+  - CUDA's and WebGPU's `v_norm` fix runs as its own pass on nobara, under the same rule, before S1 reaches CUDA.
+- **G1, tiny E-model, Metal resident against the CPU, every position, int4 on both sides:**
+  - argmax identical, a first divergence where the CPU's top-1/top-2 margin is under 3% counting as a near-tie (the
+    two-geometry rule);
+  - and mean Metal-vs-CPU(int4) cosine >= mean CPU(int4)-vs-CPU(f32) cosine (the scaled-dense envelope).
+- **G2, planted defects, each red on G1:**
+  - (1) the PLE branch skipped;
+  - (2) PLE's token-identity term zeroed, or its 1/sqrt(2) dropped;
+  - (3) the shared-KV source one layer off;
+  - (4) one FFN width for the model;
+  - (5) the K/V store not skipped on a shared layer;
+  - (6) the layer scalar dropped;
+  - (7) `v_norm` dropped on non-K=V layers.
+
+  A defect that stays green means the fixture is degenerate along that axis. Fix the fixture, not the bar.
+- **G3, real E2B text:**
+  - 8 fixed prompts x 32 greedy tokens, Metal resident against the CPU, both int4 from the same GGUF.
+  - **PASS:** identical tokens, or a first divergence at a near-tie, on every prompt; and teacher-forced argmax
+    agreement >= 99% over all positions.
+  - **Ambiguous (parked for the owner):** 97-99%. **Fail:** under 97%.
+- **G4, real E2B image chat:**
+  - The F2b request through the Metal serve binary, resident decode against CPU decode.
+  - **PASS:** identical reply, or a first divergence at a near-tie.
+- **Speed (night):** E2B decode tokens per second, resident against CPU, same-session interleaved, plus the host's
+  PLE milliseconds per token. A record; not a gate.
+
 ### S2 — GPU towers for Qwen3.5+ and GLM-OCR
 
 On CUDA, after P26b, the Qwen3.5 tower is about 3.3 of the 3.6 s a new image costs. GLM-OCR's tower is the slowest one
