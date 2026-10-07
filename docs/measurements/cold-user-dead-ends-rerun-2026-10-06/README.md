@@ -24,7 +24,7 @@ nobara-pc: Ryzen 7 3700X, 62 GB, RTX 2070 SUPER 8 GB, driver 595.91.07, `-backen
 | ready | 42 s (sidecar already built by the other run) | **118 s** cold, of which the one-time transcode 1 min 6 s |
 | decode path / VRAM | `cuda-resident (int4)`; "C′ cache: 64 slots/layer would need 6.5 GB but only 3.9 GB free, capping to 33 (3.4 GB)" | the same |
 | chat | TTFT 1.05 s, ~26 chunks/s then 34 | TTFT 1.02 s, the same |
-| `serve check` | 8 of 9 | 8 of 9 |
+| `serve check` | 7 pass, 1 skip (vision), 1 FAIL (`stop sequences`) | 7 pass, 1 skip (vision), 1 FAIL (`stop sequences`) |
 | **the server's own swap** (`VmSwap` of its process, 0.5 s samples) | peak **35 MB** | peak **0 MB** |
 | system-wide swap-used growth / pswpout during the run | +157 MB / 171 MB | +646 MB / 0.9 MB |
 | MemAvailable minimum | 42.6 GB | 42.5 GB |
