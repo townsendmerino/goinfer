@@ -781,6 +781,25 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - **G-S3c, served, the decoder (part 1's "against the CPU decoder"):** both arms with the tower on the CPU
     (`-vision-device cpu`): `--backend metal` against `--backend cpu`. Identical reply, or a first divergence at a near-tie.
   - **Speed (night):** tower time per image, Metal against CPU, and TTFT of the served turn. A record.
+- **The wiring needed new aikit tags.** `gpu/visionmetal` and `gpu/qwenmetal` v0.1.0 date from 2026-08-12 and do not build
+  against `gpu` v0.33.5; aikit's current source does. So the S3 tower work moved to the `s2-towers` branch (whose go.work
+  uses the local aikit), with S2's release batch.
+- **G-S3a, read 2026-10-07 11:30 PDT on the Mac: tiny PASS, real FAIL for SigLIP, real PASS for Qwen2.5-VL.**
+
+  | tower | tiny | real, worst token over four images | time per image, Metal vs CPU (exploratory) |
+  |---|---|---|---|
+  | SigLIP (Gemma 3), `visionmetal`, int8 both | 1.000000000 | **0.180-0.461: wrong** | ~73 s vs ~17 s |
+  | Qwen2.5-VL, `qwenmetal`, f32 both | 1.000000000 | 0.999995874 or better | 22-47 s vs 23-37 s |
+
+  - The Metal SigLIP tower agrees exactly at the tiny fixture's size (hidden 32, 16 patches) and breaks at Gemma 3's
+    (hidden 1152, 4,096 patches), so aikit's own tiny parity test could not see it. It is also four times slower than the
+    CPU.
+  - The Metal Qwen2.5-VL tower is correct but no faster than the CPU, and slower on the larger images.
+  - **Neither is wired into serve:** the wiring commit is reverted on the branch; the test stays as the evidence
+    (`metal/s3_towers_test.go` on `s2-towers`). Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3a-real.log`.
+  - **Proposed, for the owner:** build both towers on goinfer's own Metal tower base, as S2 did for Qwen3.5 and GLM-OCR
+    (its kernels pass at real size and run 2-4x the CPU), from new aikit float32 exports added to the same unreleased
+    batch; and report the `visionmetal` real-size defect to aikit. G-S3b and G-S3c wait for that decision.
 
 ### S4 — CUDA towers for Gemma 4 and Qwen2.5-VL
 
