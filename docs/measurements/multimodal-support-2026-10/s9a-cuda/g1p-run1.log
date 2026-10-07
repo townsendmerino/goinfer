@@ -1,0 +1,8 @@
+=== RUN   TestGemma4EModelPrefill_batchedBitIdentical
+=== RUN   TestGemma4EModelPrefill_batchedBitIdentical/18rows
+=== RUN   TestGemma4EModelPrefill_batchedBitIdentical/96rows
+--- PASS: TestGemma4EModelPrefill_batchedBitIdentical (2.11s)
+    --- PASS: TestGemma4EModelPrefill_batchedBitIdentical/18rows (1.48s)
+    --- PASS: TestGemma4EModelPrefill_batchedBitIdentical/96rows (0.63s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	2.150s

@@ -1,0 +1,18 @@
+bin: /home/francis/goinfer-bench/s9a (new rev 698e8a31, old rev 928f9a41)
+model: /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf
+rounds=1 reps=1
+started: 2026-10-07 16:44:27 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 1.74 1.94 1.17 2/844 902698
+[16:44:27] round 1 arm new
+   new 270 tok: 0.44
+   new 2170 tok: 3.70
+[16:44:38] round 1 arm old
+   old 270 tok: 3.14
+   old 2170 tok: 25.11
+== ~270 prompt tokens (median of the reps, per round; ratio = old / new)
+   round 1: new 0.44s (min 0.44 max 0.44)  old 3.14s (min 3.14 max 3.14)  ratio 7.14x  tokens new=270 old=270
+== ~2170 prompt tokens (median of the reps, per round; ratio = old / new)
+   round 1: new 3.70s (min 3.70 max 3.70)  old 25.11s (min 25.11 max 25.11)  ratio 6.78x  tokens new=2173 old=2173
+kill rule: PASS
+finished: 2026-10-07 16:45:12 PDT

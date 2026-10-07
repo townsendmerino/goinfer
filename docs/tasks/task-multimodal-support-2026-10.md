@@ -1176,6 +1176,41 @@ Part A is the text-prompt path (`PrefillLast`, `PrefillLastN`, `HiddenLast`, `Re
 - **Day / night:** the code, G1p, G2p and the vets are day work (seconds each on the tiny fixture); G3p's two requests are a few minutes (exploratory by day, then queued);
   the speed record and `gate gpu` go on tonight's queue. Estimated by-day wall: build + tiny gates about 5 minutes; G3p about 6 minutes.
 
+- **S9 on CUDA part A read 2026-10-07 on nobara (commits `2ef038a0`, `6abcd5cb`, `698e8a31`; local, not pushed): G1p, G2p and G3p PASS; one registered gate failed first and led to a departure.**
+  Raw: `docs/measurements/multimodal-support-2026-10/s9a-cuda/` (`g1p-run1.log`, `g2p-run1.log.gz`, `cuda-prefill-subset.log.gz`, `g3p/`, `g3p-exact-levers-off/`, `g3p-run1-fastlevers-FAIL/`, `speed-smoke/`).
+  - **What was built, as registered** (`cuda/prefill.go`, no kernel, no PTX): the E-model decline is gone; `prefillCore` stages each row's hidden part into `xB` and the PLE tails reordered
+    `[layer][row][P]`; a KV-shared layer skips the K/V projections, the K half of qk-norm and the K/V store (`nKV=0` in the rope launch) and attends over its source's aliased cache; scratch
+    is the widest layer's FFN and each layer's launches take its own `ffnI`; the PLE branch (quant, gate GEMV, GELU-tanh x the layer's tail slice through `glu_quant_batched`, projection GEMV,
+    post-norm, add) runs between the FFN residual and the layer scalar; `nonBatchableKind` stops demanding a K/V weight of a shared layer and checks the PLE pair. The batched path reads the
+    same eight test seams as decode. What still declines, by name: an MC3 step, an image block, m-RoPE (part B), and a hidden-sized row is refused by length.
+  - **G1p, batched against sequential on the same resident, PASS bit-identical (zero differing logits) on every cut:** `PrefillLastN` every row, `PrefillLast`'s last row, chunk 5 and chunk 7,
+    and 6 decode tokens after the batched pass, at 18 rows and at 96. Non-vacuity asserted in the test: `PrefillPath` says batched, `passPromptLen` (written only in `prefillCore`) equals the
+    prompt length after the call, and the fixture has P=32, 2 shared layers, FFN 256/512. The existing non-E bit-identity tests still pass (`TestPrefillNonUniform_bitIdentical`,
+    `TestPrefillMoE_bitIdentical`, `TestPrefillTails_bitIdenticalToTheRecordedBaseline`; 57 PASS and no FAIL over the prefill/E-model/Gemma 4 subset, the skips being asset-gated).
+  - **G2p, the eight S1 planted defects through the batched path, PASS.** Unplanted: GREEN, mean CUDA-vs-CPU-int4 cosine 0.999931 against the CPU's own int4-vs-f32 mean 0.777674, 18/18 exact
+    argmax (the same digits as sequential G1c). Planted, each alone RED: (1) PLE skipped 0.371194 (2/18); (2) token-identity term zeroed 0.966228 (10/18); (3) shared-KV source off 0.887704 (7/18);
+    (4) one FFN width 0.938942 (12/18); (5) K/V store not skipped 0.905355 (6/18); (6) layer scalar dropped 0.972024 (10/18); (7) v_norm dropped 0.920343 (10/18); (8) PLE layer offset 0.179992 (0/18).
+    Mutants on the new code, run and shown red: (a) the tails staged `[row][layer]` instead of `[layer][row]`: 255 of 255 logits differ at position 0 and in every cut of G1p; (b) the K/V store
+    through the alias is defect (5) above; (c) layer 0's FFN width for every layer: G1p and G2p red.
+  - **G3p, served, real `gemma-4-E2B_q4_0-it.gguf` from `~/models`, `--backend cuda`, greedy, batched (`6abcd5cb`) against the pre-change binary (`928f9a41`, sequential), cold prompts of 267 and 2,170 tokens:
+    PASS on the second registered run; the first FAILED.** The startup line read `prefill path: batched` on the new arm and `sequential — Gemma 4 E-model ... has no batched prefill` on the old one.
+    - *First run (fast levers at their default, above the 512-row floor):* the 267-token prompt was identical in the reply and every logprob; the **2,170-token prompt first differed at generated
+      token 10** (sequential ' and' 0.190, batched ' issues' 0.193; ' issues' was outside the sequential top 3, whose third is 0.130), which is **not a near-tie under the registered rule**. That is a FAIL as
+      registered (`g3p-run1-fastlevers-FAIL/`).
+    - *Diagnosis:* the same two arms with `GOINFER_CUDA_FAST_PREFILL=0` (`g3p-exact-levers-off/`) matched in the reply and in every logprob at both sizes, so the batched pass itself is correct and the
+      difference is the fast levers (`attn_fused`, the MMA GEMM), which engage only above the 512-row floor, are cosine-close and not bit-identical to decode, and have never had a fidelity gate on an
+      E-model. The tiny gates could not see it: their prompts are far under the floor.
+    - *Departure from the plan, mechanism stated:* an E-model's batched prefill now runs the exact kernels at every length (`forceExactKernels`, `6abcd5cb`), and the startup line says so. No bar moved;
+      the lever is parked until it passes a fidelity gate of its own. The guard `TestGemma4EModelPrefill_exactKernelsAboveTheFloor` moves the floor to 0 and requires bit-identity to sequential and zero
+      fast-kernel launches; shown red by removing the forcing (52 fast launches, 255 of 255 logits differ).
+    - *Second run, final code, defaults:* both sizes IDENTICAL in the reply and in every logprob (`g3p/`).
+  - **Speed, EXPLORATORY (single samples on a box that was also building; not quotable, the night record is queued as `s9a-e2b-prefill-ttft`, 15 min, 3 alternating rounds x 5 cold requests per size, with the
+    registered kill rule):** time to first content chunk, exact kernels: 0.41 s against 3.04 s at 267 tokens and 3.72 s against 24.56 s at 2,170 (about 7x and 6.6x); the one-cell script smoke read 0.44 / 3.14 s and
+    3.70 / 25.11 s. With the fast levers on (the failed first run): 0.62 / 3.03 s and 2.43 / 24.97 s, so exactness costs about 1.5x of the batched TTFT at 2,170 tokens, which is what a lever fidelity gate for
+    E-models would win back.
+  - **Not done:** part B (the Gemma 4 image turn, still CPU prefill plus `UploadKV`); an E-model fidelity gate for the fast levers; E4B (no checkpoint); the Metal half of S9 (the Mac's); `gate gpu` over this tree
+    (tonight's queue has it); the commits are local.
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).

@@ -1,0 +1,21 @@
+new: /home/francis/goinfer-bench/s9a/serve-cuda-new (2ef038a0)
+old: /home/francis/goinfer-bench/s1c/serve-cuda (928f9a41)
+model: /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf
+started: 2026-10-07 16:36:22 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 0.22 0.58 0.39 1/839 898426
+[new]   decode path: cuda-resident (int4)
+[new]   prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+[new] 300: prompt_tokens=267 ttft=0.62s (exploratory) reply='This text presents a series of observations and reports from a harbour'
+[new] 2700: prompt_tokens=2170 ttft=2.43s (exploratory) reply='This text is a collection of reports detailing various operational iss'
+[old]   decode path: cuda-resident (int4)
+[old]   prefill path: sequential — Gemma 4 E-model (per-layer embeddings, KV-shared layers, per-layer FFN width) has no batched prefill (slower TTFT: one forward per prompt token)
+[old] 300: prompt_tokens=267 ttft=3.03s (exploratory) reply='This text presents a series of observations and reports from a harbour'
+[old] 2700: prompt_tokens=2170 ttft=24.97s (exploratory) reply='This text is a collection of reports detailing various operational and'
+== 300: prompt_tokens new=267 old=267  TTFT(exploratory) new=0.62s old=3.03s
+   streamed reply identical: True
+   non-streamed reply and logprobs: IDENTICAL
+== 2700: prompt_tokens new=2170 old=2170  TTFT(exploratory) new=2.43s old=24.97s
+   streamed reply identical: False
+   first differing generated token 10: old ' and' (p=0.190) new ' issues' (p=0.000); near-tie (p(other) >= half p(top)): False
+G3p: FAIL
