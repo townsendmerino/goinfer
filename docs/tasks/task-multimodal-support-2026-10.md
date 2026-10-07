@@ -341,6 +341,20 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
 - **G4, real E2B image chat:**
   - The F2b request through the Metal serve binary, resident decode against CPU decode.
   - **PASS:** identical reply, or a first divergence at a near-tie.
+  - **G4's procedure, fixed 2026-10-06 before any G4 run.**
+    - **What changes first:** E2B's image turns did not reach the resident at all: `GenerateGemma4VL` bridged a CPU
+      prefill to resident decode only for the bidirectional 26B/31B class. The gate now also admits the E-model class
+      (only Metal has a resident for it), and `Generation.DecodeResident` plus one serve log line ("vision: decoded N
+      tokens on the resident path") say where a turn decoded. A causal non-E Gemma 4 is unchanged.
+    - **Request:** F2b's (`testdata/glm_ocr/table.png`, "What does this image show? Answer briefly.", `max_tokens` 32,
+      temperature 0), `--model ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision ~/models/gemma-4-E2B-unq`.
+    - **Arms:** one `metal/cmd/serve` binary built at the commit under test. The resident arm, `--backend metal`, must
+      report the resident decode path at load and "on the resident path" for the turn, or the run is void. The CPU arm
+      is `--backend cpu`; F2a/F2b showed the two towers agree (cosine 1.000000000) and give identical replies, so the
+      arms differ in decode.
+    - **PASS:** identical reply text. A divergence passes only as a near-tie: the CPU's sequence is replayed in-process
+      to the first differing token and the CPU's logit gap between its token and the resident's must be under 3% of
+      |top-1| (the G1/G3 rule).
 - **Speed (night):** E2B decode tokens per second, resident against CPU, same-session interleaved, plus the host's
   PLE milliseconds per token. A record; not a gate.
 
