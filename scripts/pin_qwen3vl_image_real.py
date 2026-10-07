@@ -36,8 +36,9 @@ def main():
     enc = proc(text=[text], images=[Image.open(a.image).convert("RGB")], return_tensors="pt")
     model = Qwen3VLForConditionalGeneration.from_pretrained(model_dir, dtype=torch.float32, attn_implementation="sdpa").eval()
     with torch.no_grad():
-        o = model(input_ids=enc["input_ids"], attention_mask=enc["attention_mask"], pixel_values=enc["pixel_values"].float(),
-                  image_grid_thw=enc["image_grid_thw"])
+        kw = dict(enc)  # every processor output, mm_token_type_ids included (transformers needs it for the m-RoPE positions)
+        kw["pixel_values"] = enc["pixel_values"].float()
+        o = model(**kw)
     logits = o.logits[0].float()
     ids = enc["input_ids"][0].tolist()
     itok = model.config.image_token_id
