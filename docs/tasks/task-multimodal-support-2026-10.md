@@ -1189,6 +1189,14 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
       it carries image rows).
     - 163 prompt tokens; request time 7.7 s on Metal against 9.3-10.3 s on the CPU (exploratory).
     - Raw: `docs/measurements/multimodal-support-2026-10/s5-speech/`.
+- **G-S5d, E2B's audio tower on Metal, registered 2026-10-07 before its code:** EmbeddingGemma 2's Metal audio
+  accelerator (`metal/gemma4_audio.go`, generic over aikit's `Gemma4AudioEncoder`) runs E2B's 12 conformer blocks;
+  aikit's `Subsample` and `FinishBlocks` stay on the host.
+  - **Bar:** the soft tokens at worst-row cosine >= 0.9999 against aikit's CPU `Forward`, on the three EmbeddingGemma 2
+    clips and the LibriSpeech clip; 0.999-0.9999 ambiguous (parked).
+  - **Served:** the LibriSpeech clip and the three tone clips, `--backend metal` in both arms, the tower on Metal against
+    `-vision-device cpu`. Identical replies, or a first divergence at a near-tie.
+  - **Serve uses the device tower only under `--backend metal`;** `-vision-device cpu` keeps it on the CPU.
 - **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
   clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
   test clip.
