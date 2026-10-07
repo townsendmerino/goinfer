@@ -122,6 +122,11 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		return nil, false, decoder.DeclineResident("metal: %v", e)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
+	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
+		_ = res.Close()
+		b.resident = nil
+		return nil, false, decoder.DeclineResident("metal: resident takes %d-float embedding rows, the decoder builds %d", got, want)
+	}
 	if res.w8 || res.w8Attn {
 		b.resident.quant = m.Quant()
 	}
@@ -535,8 +540,8 @@ func (a *metalResident) ContextCap() int { return a.ctxCap() }
 // KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
 // block needs them to differ. Forward itself is ForwardMRoPE(pos, pos).
 func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
-	if len(embedding) != a.hidden {
-		return nil, fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
+	if len(embedding) != a.embLen() {
+		return nil, fmt.Errorf("metal: embedding len %d != %d (hidden %d + PLE inputs)", len(embedding), a.embLen(), a.hidden)
 	}
 	if e := a.checkCap(pos, 1); e != nil {
 		return nil, e
@@ -569,7 +574,19 @@ var _ decoder.ResidentSample = (*metalResident)(nil)
 func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.SampleAvailable() }
 
 func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
+	if len(embedding) != a.embLen() {
+		return 0, fmt.Errorf("metal: embedding len %d != %d (hidden %d + PLE inputs)", len(embedding), a.embLen(), a.hidden)
+	}
 	return a.r.ForwardSample(embedding, pos, temperature, seed, draw)
+}
+
+// embLen is every embedding row's length: hidden, or for a Gemma 4 E-model hidden + L·P PLE inputs (S1.5), the
+// decoder's ResidentEmbedLen. Derived from the resident, so a test-built metalResident gets it right too.
+func (a *metalResident) embLen() int {
+	if a.r == nil {
+		return a.hidden
+	}
+	return a.r.H + a.r.nL*a.r.pleP
 }
 
 // ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY its
@@ -588,8 +605,8 @@ func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature 
 // ForwardEmbNoLogitsPipe runs the synchronous paged forward with its final norm and LM head skipped
 // (pagedNoHead): the same layers and K/V, without the head (task-m26-mac-2026-10.md).
 func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
-	if len(embedding) != a.hidden {
-		return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
+	if len(embedding) != a.embLen() {
+		return fmt.Errorf("metal: embedding len %d != %d (hidden %d + PLE inputs)", len(embedding), a.embLen(), a.hidden)
 	}
 	if e := a.checkCap(pos, 1); e != nil {
 		return e
@@ -939,8 +956,8 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	}
 	var out []float32
 	for i, emb := range embeddings {
-		if len(emb) != a.hidden {
-			return nil, fmt.Errorf("metal: embedding[%d] len %d != hidden %d", i, len(emb), a.hidden)
+		if len(emb) != a.embLen() {
+			return nil, fmt.Errorf("metal: embedding[%d] len %d != %d (hidden %d + PLE inputs)", i, len(emb), a.embLen(), a.hidden)
 		}
 		// G18: an abandoned client otherwise leaves the whole sequence streaming through the
 		// device with nothing watching — same discipline as residentPrefillSeed's sequential loop.
@@ -996,8 +1013,8 @@ func (a *metalResident) ResidualAll(ctx context.Context, embeddings [][]float32,
 	}
 	out := make([][]float32, 0, len(embeddings))
 	for i, emb := range embeddings {
-		if len(emb) != a.hidden {
-			return nil, fmt.Errorf("metal: embedding[%d] len %d != hidden %d", i, len(emb), a.hidden)
+		if len(emb) != a.embLen() {
+			return nil, fmt.Errorf("metal: embedding[%d] len %d != %d (hidden %d + PLE inputs)", i, len(emb), a.embLen(), a.hidden)
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -1027,8 +1044,9 @@ func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]floa
 	if len(embeddings) == 0 {
 		return nil, nil
 	}
-	// Fall back to sequential loop for paged MoE where per-layer host interaction is required.
-	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
+	// Fall back to sequential loop for paged MoE where per-layer host interaction is required, and for a Gemma 4
+	// E-model, whose PLE inputs ForwardBatch's layer-major encode has no per-row buffer for (S1.5).
+	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) || a.r.pleP > 0 {
 		out := make([][]float32, len(embeddings))
 		for i, emb := range embeddings {
 			l, err := a.Forward(emb, startPos+i)
@@ -1080,6 +1098,10 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	}
 	if a.r.kc[layer] == (Buffer{}) {
 		return nil // recurrent DeltaNet layer with no attention KV cache
+	}
+	if a.r.layers[layer].kvShared {
+		// S1.4: its kc/vc alias the source layer's cache; writing here would overwrite the source's rows.
+		return fmt.Errorf("metal: UploadKV layer %d owns no KV (it reads layer %d's)", layer, a.r.layers[layer].kvSrc)
 	}
 	g := a.r.layers[layer].geom
 	if g == nil {

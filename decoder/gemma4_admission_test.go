@@ -60,13 +60,15 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 		t.Error("webgpu admits gemma4_text (enable_moe_block) but lacks its Gemma kernels — the feature gate must refuse it")
 	}
 
-	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is DECLINED on
-	// every resident backend EVEN with the bring-up gate ON — none implements the PLE branch, and
-	// admitting it would silently skip PLE and mis-run (FeatGemma4EModel, declared by no backend).
-	// The arch predicate can pass (a gemma4); the per-backend feature gate is what refuses.
+	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by Metal alone, which
+	// implements all three since S1 (docs/tasks/task-multimodal-support-2026-10.md). CUDA and WebGPU have none of it,
+	// so admitting the model there would silently skip PLE and mis-run: their feature gate must refuse it.
 	e := denseArch()
 	e.gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape
-	for _, be := range []string{"cuda", "metal", "webgpu"} {
+	if !ResidentEligible(e, "metal") {
+		t.Errorf("metal declines a Gemma-4 E-model although it declares FeatGemma4EModel (missing %v)", missingFeatures(e.residentFeatures(), residentBackendFeatures["metal"]))
+	}
+	for _, be := range []string{"cuda", "webgpu"} {
 		if ResidentEligible(e, be) {
 			t.Errorf("%s: admits a Gemma-4 E-model (PLE hidden_size_per_layer_input>0) — the bridge skips the PLE branch and would mis-run", be)
 		}

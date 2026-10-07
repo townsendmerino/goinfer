@@ -195,7 +195,51 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
   - **Check:** `TestGemma4EModel_residentEmbedRow`. The head equals the scaled embedding exactly, and the tail matches
     HF's own `get_per_layer_inputs` + `project_per_layer_inputs` (now recorded by the pin script; the checkpoint
     re-pinned byte-identical) to max |diff| 1.19e-6 over all 12 positions. A reused buffer gives the same row.
-  - The Metal entries still accept only H, so they refuse an E-model row until S1.5 reads the tail.
+  - Metal reads the tail since S1.5 (below).
+- **S1.3–S1.6, the E-model on Metal, done 2026-10-06 on the Mac.**
+  - **S1.3, per-layer FFN width:** each dense layer carries its width and uniform (`residLayer.ffnI`/`uFFNI`); the
+    gate|up and down scratch is sized to the widest layer, and the R18 row picks and the staged-down guard hold for
+    every width. Byte-identical for every other model: the Metal snapshot golden still matches 10/10.
+  - **S1.4, shared KV:** a KV-shared layer (`residLayer.kvShared`) projects Q only, runs `qk_norm` and RoPE over the Q
+    heads, skips `v_norm` and the K/V store, and attends over its source's cache, which `r.kc[l]`/`r.vc[l]` and every
+    MC1 slot alias. Its geometry must equal its source's or the build refuses. `UploadKV` refuses a shared layer, the
+    decoder's prefill bridge skips it, and `ResidentKVBytes` no longer prices one.
+  - **S1.5, the PLE branch:** `encodePLE` after the FFN residual and before the layer scalar: `quant_vec` of the raw
+    residual, the PLE gate GEMV, a new `ple_gelu_mul` (the clamped `glu_act` GELU-tanh times this layer's input),
+    `quant_vec`, the projection GEMV, `rmsnorm_f32` with the post norm, the residual add. Every entry point stages the
+    row through one `loadEmb` and checks its length against `H + L*P` (`metalResident.embLen`, refused at build if it
+    differs from the decoder's `ResidentEmbedLen`). `ForwardN` runs an E-model token by token; `ForwardSample` gained
+    the length check the others had.
+  - **S1.6:** Metal declares `FeatGemma4EModel`; CUDA and WebGPU still decline it (admission tests updated). The f16
+    prefill declines it (not in `prefillFeatures`), and the MC3 batched step declines it by name.
+  - **G1, read 2026-10-06 on the Mac (M1 Pro): PASS.** 18 positions (the golden's prompt and continuation), int4 both
+    sides: argmax 17/18 exact, the one mismatch a 0.32% near-tie, no gap over 3%; mean Metal-vs-CPU(int4) cosine
+    0.998510 (min 0.995866) against the CPU's own int4-vs-f32 0.777695 (`TestGemma4EModel_metalResidentParity`).
+  - **G2, same run: PASS for the six defects that can be seen.** Each alone turns G1 red on the argmax rule:
+
+    | defect | exact argmax | gaps > 3% | mean cosine |
+    |---|---|---|---|
+    | (1) PLE branch skipped | 2/18 | 16 | 0.374693 |
+    | (2) token-identity term zeroed (resident row only) | 9/18 | 7 | 0.965641 |
+    | (3) shared-KV source one owning layer off (layer 4 reads 1, not 3) | 7/18 | 9 | 0.887059 |
+    | (4) one FFN width for the model | 7/18 | 11 | 0.845776 |
+    | (6) layer scalar dropped | 12/18 | 4 | 0.969368 |
+    | (7) `v_norm` dropped on non-K=V layers | 9/18 | 8 | 0.921480 |
+
+    Note the mean-cosine envelope alone would have passed every one of them (all above 0.777695); the argmax rule
+    caught them. On this fixture the envelope is a crater detector, not a sensitive one.
+
+  **G2 amendment, 2026-10-06, after the G2 run (a mechanism, stated with its evidence):** defect (5), the K/V store not
+  skipped on a shared layer, is a byte-for-byte no-op in this design, so no fixture can turn it red. A shared layer's
+  Q-only GEMV writes only the Q region of the qkv scratch; its K/V slots still hold what its source (the last owning
+  layer of that attention type) stored earlier in the same token, because the other type's writes end below that slot
+  (fixture: sliding writes floats 0-191, the global K slot starts at 256; E2B: 0-2559 against 4096). The unskipped
+  store re-writes the source's own bytes. Measured: with it planted, Metal's logits are bit-identical to the clean
+  run at all 18 positions. That bit-identity is now the check (`TestGemma4EModel_sharedStoreIsNoOp`): if a layout
+  change ever breaks it, an unskipped store would corrupt the source cache, and that test goes red first. The skip
+  stays in production. This is flagged for the owner, since it was decided after the run.
+  - **Raw:** `docs/measurements/multimodal-support-2026-10/s1-g1-g2.log` (G1, G2 and the no-op check) and
+    `s13-16-gate-quick.log` (`gate quick` over the change: 2105 passed, 0 failed, lint 17/17).
 - **G1, tiny E-model, Metal resident against the CPU, every position, int4 on both sides:**
   - argmax identical, a first divergence where the CPU's top-1/top-2 margin is under 3% counting as a near-tie (the
     two-geometry rule);

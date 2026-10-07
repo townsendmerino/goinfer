@@ -456,6 +456,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 		// FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo Hybrid), FeatParallelBlock +
 		// FeatLogitScale (Cohere/Command-R + Cohere2/Command-R7B, the last row — reusing GPT-2's
 		// layernorm_quant and Gemma's softcap-shaped host readback respectively, no new kernel).
+		// S1 (docs/tasks/task-multimodal-support-2026-10.md) adds FeatGemma4EModel: encodePLE (ple_gelu_mul plus
+		// existing kernels), KV-shared layers aliasing their source's cache, per-layer FFN widths.
 		"metal": {
 			FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm,
 			FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap,
@@ -463,6 +465,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatDeltaNet,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatParallelBlock, FeatLogitScale,
+			FeatGemma4EModel,
 		},
 	}
 	for be, exp := range want {

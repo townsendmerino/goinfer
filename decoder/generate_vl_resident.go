@@ -19,6 +19,9 @@ import (
 // written them.
 func (m *Model) residentUploadPrefill(cache *KVCache) error {
 	for l := 0; l < m.w.arch.NumLayers; l++ {
+		if m.w.arch.gemma4KVSrcAt(l) != l {
+			continue // a Gemma 4 E-model KV-shared layer owns no KV: the resident reads its source's (S1.4)
+		}
 		k, v, base := cache.LayerKV(l)
 		if len(k) == 0 {
 			continue // a layer with nothing live yet (shouldn't happen post-prefill, but not fatal)

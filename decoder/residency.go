@@ -1559,10 +1559,25 @@ func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 		}
 	}
 	if n > hidden {
-		m.gemma4PLEInputs(h, id, row[hidden:])
+		tail := row[hidden:]
+		m.gemma4PLEInputs(h, id, tail)
+		if gemma4PLEDropTokenForTest {
+			// G2 defect (2), resident row only: take the token-identity term back out, leaving context_aware/√2.
+			tok := make([]float32, len(tail))
+			m.w.PerLayerTokenEmbed.Row(id, tok)
+			sc := float32(math.Sqrt(float64(m.w.arch.gemma4.HiddenSizePerLayerInput)) / math.Sqrt2)
+			for i := range tail {
+				tail[i] -= tok[i] * sc
+			}
+		}
 	}
 	return row
 }
+
+// gemma4PLEDropTokenForTest is S1's G2 planted defect (2) (docs/tasks/task-multimodal-support-2026-10.md): the
+// token-identity term missing from the resident row's PLE inputs, which G1 (resident against the CPU) must catch.
+// Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
+var gemma4PLEDropTokenForTest bool
 
 // ResidentEmbedLen is the length of every embedding row a ResidentForward receives: HiddenDim, or for a Gemma 4
 // E-model HiddenDim + NumLayers*HiddenSizePerLayerInput (the PLE inputs embedResidentInto appends). A backend checks

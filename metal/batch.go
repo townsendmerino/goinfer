@@ -313,6 +313,8 @@ func (r *resident) batchIneligible() string {
 		return "KV slots that are not one f16 allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
+	case r.pleP > 0:
+		return "a Gemma 4 E-model (per-row PLE inputs, KV-shared layers, per-layer FFN widths)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"

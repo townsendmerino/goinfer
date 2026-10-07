@@ -166,7 +166,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:356` declines it before features are consulted |
 | Llama 4 | own forward, not bridged | same | `decoder/residency.go:354` |
 | Ling 3.0 | `FeatKDA` | same | not on any backend |
-| Gemma 4 E2B/E4B | `FeatGemma4EModel` | same | PLE + shared-KV + per-layer FFN — not on any backend; the 26B/31B are resident |
+| Gemma 4 E2B/E4B | `FeatGemma4EModel` | same | PLE + shared-KV + per-layer FFN — Metal since 2026-10-06 (tiny-fixture G1/G2; the real-E2B gates are owed), CUDA and WebGPU not yet: `docs/tasks/task-multimodal-support-2026-10.md` S1; the 26B/31B are resident |
 
 The first five rows are each one small kernel or a wiring change on backends that already run the
 rest of the family, and the tiny-oracle fixtures from docs/completed/task-families-2026-09.md are the gates. Do
