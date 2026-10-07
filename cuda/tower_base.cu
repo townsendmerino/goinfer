@@ -74,3 +74,23 @@ extern "C" __global__ void tower_scale(float* __restrict__ x, long n, float s)
     long g = (long)blockIdx.x * blockDim.x + threadIdx.x;
     if (g < n) x[g] = __fmul_rn(x[g], s);
 }
+
+// NeoX rotate-half RoPE in place over x [T, heads, hd] from the tables cos/sin [T, hd] (aikit's Qwen3 / GLM-OCR RopeTables, rows cat(f, f)): pairs (d, d + hd/2)
+// across the whole head, as aikit's rope_qk does on its fused qkv, here on a separate q or k buffer (GLM-OCR norms q and k per head before RoPE, so they cannot
+// stay fused). n = T * heads * hd/2.
+extern "C" __global__ void tower_rope_half(float* __restrict__ x, const float* __restrict__ cs, const float* __restrict__ sn,
+                                           int heads, int hd, long n)
+{
+    long g = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (g >= n) return;
+    int half_ = hd / 2;
+    int d = (int)(g % half_);
+    long th = g / half_;
+    long t = th / heads;
+    float* r = x + th * hd;
+    const float* c = cs + t * hd;
+    const float* s = sn + t * hd;
+    float a = r[d], b = r[d + half_];
+    r[d] = __fsub_rn(__fmul_rn(a, c[d]), __fmul_rn(b, s[d]));
+    r[d + half_] = __fadd_rn(__fmul_rn(b, c[d + half_]), __fmul_rn(a, s[d + half_]));
+}

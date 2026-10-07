@@ -289,6 +289,34 @@ func TestTowerBase_kernels(t *testing.T) {
 		}
 	})
 
+	t.Run("ropeHalf", func(t *testing.T) {
+		const heads, hd = 3, 16
+		T := rows
+		x := tbRand(rng, T*heads*hd, 1)
+		cs, sn := tbRand(rng, T*hd, 1), tbRand(rng, T*hd, 1)
+		xb, cb, sb := ops.upload(t, x), ops.upload(t, cs), ops.upload(t, sn)
+		ops.mustRun(t, func() { ops.ropeHalfTo(xb, cb, sb, T, heads, hd) })
+		got := ops.download(t, xb, len(x))
+		want := append([]float32(nil), x...)
+		half := hd / 2
+		for tt := range T {
+			for h := range heads {
+				r := want[(tt*heads+h)*hd:]
+				c, s := cs[tt*hd:], sn[tt*hd:]
+				for d := range half {
+					a, b := r[d], r[d+half]
+					r[d] = a*c[d] - b*s[d]
+					r[d+half] = b*c[d+half] + a*s[d+half]
+				}
+			}
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("element %d: %v want %v", i, got[i], want[i])
+			}
+		}
+	})
+
 	t.Run("mulAndScale", func(t *testing.T) {
 		x, u := tbRand(rng, n, 1), tbRand(rng, n, 1)
 		xb, ub := ops.upload(t, x), ops.upload(t, u)
@@ -306,7 +334,7 @@ func TestTowerBase_kernels(t *testing.T) {
 func TestTowerBase_attention(t *testing.T) {
 	ops := newTestTower(t, 8)
 	rng := rand.New(rand.NewSource(4))
-	for _, c := range []struct{ np, nH, hd int }{{37, 2, 16}, {200, 3, 64}} {
+	for _, c := range []struct{ np, nH, hd int }{{37, 2, 16}, {200, 3, 64}, {3200, 2, 64}} { // 3200 patches takes the query-tiled kernel
 		hidden := c.nH * c.hd
 		q, k, v := tbRand(rng, c.np*hidden, 1), tbRand(rng, c.np*hidden, 1), tbRand(rng, c.np*hidden, 1)
 		qb, kb, vb := ops.upload(t, q), ops.upload(t, k), ops.upload(t, v)
@@ -355,8 +383,8 @@ func TestTowerBase_attention(t *testing.T) {
 			})
 		}
 	}
-	// An image past the kernel's shared-memory row is refused by name.
-	if err := ops.attention(Buffer{}, Buffer{}, Buffer{}, Buffer{}, 13000, 2, 64, 1); err == nil {
-		t.Error("an attention over 13000 patches must be refused")
+	// An image past the untiled kernel's shared-memory row with a head dim that has no tiled kernel is refused by name (hd 64 takes the tiled kernel instead).
+	if err := ops.attention(Buffer{}, Buffer{}, Buffer{}, Buffer{}, 13000, 2, 200, 1); err == nil {
+		t.Error("an attention over 13000 patches at head dim 200 must be refused")
 	}
 }

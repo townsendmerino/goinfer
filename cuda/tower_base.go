@@ -23,7 +23,7 @@ type towerOps struct {
 	q   Queue
 	vit gpu.ViT
 
-	posAdd, clamp, clampCopy, ropeAxial, mul, scale Pipeline
+	posAdd, clamp, clampCopy, ropeAxial, ropeHalf, mul, scale Pipeline
 
 	zeroBias Buffer // zeros, as long as the widest bias-free projection: lets gemm run the register-blocked bias kernel at any M
 
@@ -61,7 +61,7 @@ func newTowerOps(maxN int) (t *towerOps, err error) {
 			name string
 			dst  *Pipeline
 		}{{"tower_pos_add", &t.posAdd}, {"tower_clamp", &t.clamp}, {"tower_clamp_copy", &t.clampCopy},
-			{"tower_rope_axial", &t.ropeAxial}, {"tower_mul", &t.mul}, {"tower_scale", &t.scale}} {
+			{"tower_rope_axial", &t.ropeAxial}, {"tower_rope_half", &t.ropeHalf}, {"tower_mul", &t.mul}, {"tower_scale", &t.scale}} {
 			if *b.dst, e = t.dev.NewComputePipeline(lib, b.name); e != nil {
 				return fmt.Errorf("cuda tower: pipeline %s: %w", b.name, e)
 			}
@@ -233,13 +233,21 @@ func (t *towerOps) ropeAxialTo(x, cs, sn Buffer, T, heads, hd int) {
 	t.launch(t.ropeAxial, gpu.Grid1D(n, 256), Arg(x), Arg(cs), Arg(sn), i32(int32(heads)), i32(int32(hd)), i64(int64(n)))
 }
 
+// ropeHalfTo is the NeoX rotate-half RoPE in place over x [T, heads, hd] from cos/sin [T, hd] (Qwen3.5 and GLM-OCR's tables).
+func (t *towerOps) ropeHalfTo(x, cs, sn Buffer, T, heads, hd int) {
+	n := T * heads * hd / 2
+	t.launch(t.ropeHalf, gpu.Grid1D(n, 256), Arg(x), Arg(cs), Arg(sn), i32(int32(heads)), i32(int32(hd)), i64(int64(n)))
+}
+
 // attention is aikit's bidirectional multi-head self-attention over np patches, q/k/v/out all [np, nH*hd] with the heads in place, at the given scale. The
-// score row lives in shared memory (np*4 bytes), so np is capped (48 KB by default, np <= 12288); a larger image is refused by name, not truncated.
+// untiled kernel keeps a score row in shared memory (np*4 bytes, np <= 12288 at 48 KB) and the tiled one (from np 3072, hd <= 128) does not; an image neither can
+// take is refused by name, not truncated.
 func (t *towerOps) attention(q, k, v, out Buffer, np, nH, hd int, scale float32) error {
-	if np > 12288 {
-		return fmt.Errorf("cuda tower: %d patches exceed the attention kernel's shared-memory row (12288)", np)
-	}
 	p, cfg := t.vit.AttentionPlan(np, nH, hd)
+	if p != t.vit.AttentionTiled && np > 12288 {
+		// the untiled kernel keeps a score row in shared memory; the query-tiled online-softmax kernel (taken from np 3072 when the head dim allows) does not
+		return fmt.Errorf("cuda tower: %d patches exceed the attention kernel's shared-memory row (12288) and the head dim %d has no tiled kernel", np, hd)
+	}
 	t.launch(p, cfg, Arg(q), Arg(k), Arg(v), Arg(out), i32(int32(np)), i32(int32(nH)), i32(int32(hd)), f32v(scale))
 	return nil
 }
