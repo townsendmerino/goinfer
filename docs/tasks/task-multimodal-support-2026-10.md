@@ -1462,6 +1462,15 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     the CPU in every arm, reported as such ("CPU (DeepStack: no device tower yet)").
   - Request times, exploratory: 25.8-27.9 s, most of it the CPU tower.
   - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10d/`.
+- **G-S10e, the Qwen3-VL tower on Metal with DeepStack, registered 2026-10-07 before its code:** S2's Metal grid tower
+  returns the block outputs at the DeepStack indexes ("taps"); aikit's exported host tails turn them into the DeepStack
+  sets, as `FinishHidden` turns the last one into the merged rows.
+  - **Bar:** G-S2b's, unchanged. The merged rows and each DeepStack set at worst-row cosine >= 0.9999 against aikit's
+    CPU `ForwardDeepstack`, on the tiny DeepStack tower (norms randomised) and on Qwen3-VL-2B's four F2a images;
+    0.999-0.9999 ambiguous (parked).
+  - **Planted defect:** the taps taken one block late; it must go red on the tiny tower.
+  - **Then G-S10d's served check again,** with the tower on Metal against `-vision-device cpu`, both `--backend metal`:
+    identical replies or a first divergence at a near-tie.
 - **S10 Qwen3-VL: G-S10a-d all PASS.** Owed, none of them gates:
   - goinfer's own preprocessing against HF's processor for Qwen3-VL. G-S10c fed both sides HF's pixel values, and
     serve uses the Qwen3.5 preprocessing path.
