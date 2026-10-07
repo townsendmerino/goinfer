@@ -1440,7 +1440,20 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     1. DeepStack not added: cosine 0.982867, argmax kept;
     2. added one layer late: 0.987967;
     3. added to the text positions too: −0.135, argmax changed.
-- **Next: G-S10d,** a served request, Metal against the CPU. It needs the 2B checkpoint on the Mac.
+- **G-S10d, read 15:18-15:19 PDT on the Mac: PASS.**
+  - The setup: a serve binary from `s2-towers` at `8a6bc27a`. Qwen3-VL-2B was copied from nobara to
+    `~/models/qwen3-vl-2b-instruct` over the LAN. table.png, 32 greedy tokens, `--embed-int4=false` and
+    `-vision-device cpu` on every arm; arms `cpu`, `metal` (`metal-resident (int4)`), then `cpu` again.
+  - **All three replies are byte-identical:** "Table 2. Quarterly unit sales by region (thousands)". The tower ran on
+    the CPU in every arm, reported as such ("CPU (DeepStack: no device tower yet)").
+  - Request times, exploratory: 25.8-27.9 s, most of it the CPU tower.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10d/`.
+- **S10 Qwen3-VL: G-S10a-d all PASS.** Owed, none of them gates:
+  - goinfer's own preprocessing against HF's processor for Qwen3-VL. G-S10c fed both sides HF's pixel values, and
+    serve uses the Qwen3.5 preprocessing path.
+  - A device tower with DeepStack, on Metal (S2's base plus the DeepStack mergers) and CUDA.
+  - The serve log calls the tower "Qwen3.5 vision"; it is cosmetic.
+  - The MoE variants.
 
 ### S11 — Several images per message
 
