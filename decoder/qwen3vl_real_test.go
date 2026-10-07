@@ -14,15 +14,14 @@ package decoder
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
 func TestQwen3VLReal_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_QWEN3VL_2B")
-	const golden = "../testdata/qwen3vl_real_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/qwen3vl_real_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_qwen3vl_real.py", err)
 	}

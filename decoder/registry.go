@@ -1646,7 +1646,10 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		if err := json.Unmarshal(cfg.RopeScaling, &rs); err != nil {
 			return nil, nil, fmt.Errorf("decoder(qwen3_vl): parse rope_scaling: %w", err)
 		}
-		if rs.Type == "mrope" || rs.RopeType == "mrope" {
+		// The released Qwen3-VL checkpoints write rope_scaling {mrope_interleaved: true, mrope_section: [24, 20, 20],
+		// rope_type: "default"}: m-RoPE is marked by the section being there, not by the type (S10, found by G-S10a's
+		// load printing MRopeSection=[] on Qwen3-VL-2B-Instruct). A section present is taken whatever the type says.
+		if rs.Type == "mrope" || rs.RopeType == "mrope" || len(rs.MRopeSection) > 0 {
 			if section == nil {
 				section = rs.MRopeSection
 			}

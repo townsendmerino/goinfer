@@ -1387,6 +1387,18 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
 - **G-S10d, served:** one image request through serve, `--backend cpu` against `--backend metal` (the CPU prefill and
   upload) with every load flag equal, plus a CPU repeat. Identical replies, or a first divergence at a near-tie.
 
+**S10 Qwen3-VL progress (2026-10-07):**
+- **G-S10a: PASS** (nobara, 14:36, `~/wt/goinfer-s5`, under the timing lock). `scripts/pin_qwen3vl_real.py` ran in
+  `~/.venv-vl` (transformers 5.12) on `~/models/qwen3-vl-2b-instruct`, then `TestQwen3VLReal_gate`: logit cosine
+  1.000000, argmax 12095 equal, the 6-token greedy continuation identical (" Paris, and the capital of"). P8 Phase 0's
+  gate, written 2026-09-08 and never run, has now run. The golden is committed as `qwen3vl_real_golden.json.gz` (3.0
+  MB of JSON, 1.3 MB gzipped).
+- **A defect the run surfaced, fixed:** the load printed `MRopeSection=[]`. The released checkpoint writes `rope_scaling
+  {mrope_interleaved: true, mrope_section: [24, 20, 20], rope_type: "default"}`, and `qwen3_vlArchitecture` took the
+  section only when the type said `mrope`. Text never sees it (every position's three components are equal), but an
+  image prompt would have been rotated as plain RoPE. The section is now taken whenever it is present.
+  `TestQwen3VL_mropeSectionFromRopeScaling` pins it with the real config's shape: red before the fix, green after.
+
 ### S11 — Several images per message
 
 Added 2026-10-07. Today a second image in one message is a 400.
