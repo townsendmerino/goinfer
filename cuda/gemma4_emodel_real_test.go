@@ -122,7 +122,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaRe
 	return passPrompts, agree, positions
 }
 
-// g3Model loads one GGUF as a CUDA resident and on the CPU, both int4 at G3's pinned 512-token context, and runs g3Run. Table precision is the
+// g3Model loads one GGUF (or, for the E4B, one Hugging Face directory) as a CUDA resident and on the CPU, both int4 at G3's pinned 512-token context, and runs g3Run. Table precision is the
 // confound Metal's G3 run 1 fell into (its CPU arm loaded a sidecar whose embedding/LM-head/PLE tables were int4 against Metal's int8), so both
 // sides load the same GGUF with the same Options.
 func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass, agree, n int) {
@@ -130,10 +130,16 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 	if strings.HasPrefix(gguf, "/srv/models") || strings.HasPrefix(gguf, "/Volumes/") {
 		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", gguf)
 	}
-	if _, err := os.Stat(gguf); err != nil {
-		t.Skipf("no GGUF %s: %v", gguf, err)
+	fi, err := os.Stat(gguf)
+	if err != nil {
+		t.Skipf("no checkpoint %s: %v", gguf, err)
 	}
-	tk, err := tokenizer.LoadGGUF(gguf)
+	var tk *tokenizer.Tokenizer
+	if fi.IsDir() { // a Hugging Face directory (the E4B): the tokenizer, and the chat template with it, from its tokenizer.json
+		tk, err = tokenizer.Load(filepath.Join(gguf, "tokenizer.json"))
+	} else {
+		tk, err = tokenizer.LoadGGUF(gguf)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,4 +240,30 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 	sort.Float64s(sorted)
 	t.Logf("E2B embedding row + PLE inputs on the host: mean %.3f ms/token, median %.3f, p90 %.3f over %d tokens (row length %d)",
 		sum/float64(n), sorted[n/2], sorted[n*9/10], n, len(m.EmbedResidentForTest(ids[0])))
+}
+
+// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1 (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara", registered 2026-10-08 before any run): G3c's procedure and rule, unchanged, on Gemma 4 E4B loaded from its
+// safetensors directory by both sides.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BNonInferiority$' -v ./cuda/
+func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
+	requireHeavyModel(t)
+	home, _ := os.UserHomeDir()
+	t0 := time.Now()
+	logf := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[G-E4B-C1 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	rp, ra, rn := g3Model(t, filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "reference Qwen2.5-Coder-1.5B", logf)
+	ep, ea, en := g3Model(t, filepath.Join(home, "models", "gemma-4-E4B-it"), "E4B", logf)
+	refPct, e4bPct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
+	delta := e4bPct - refPct
+	logf("G-E4B-C1 non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
+	switch {
+	case delta < -4.0 || ep <= rp-2:
+		t.Errorf("G-E4B-C1 FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
+	case delta < -2.0:
+		t.Errorf("G-E4B-C1 AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
+	default:
+		t.Logf("G-E4B-C1 PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+	}
 }

@@ -3356,6 +3356,21 @@ CUDA's twin of the Mac's G-S10e (the tower) and S16 step 2 (the prefill).
   - **Decision for the owner (the Mac's precedent for a parked or failed reading: re-registering the bar is the owner's):** (a) keep it off; (b) turn it on for image runs of 512 rows or more, where all three images pass and where the CPU prefill costs seconds, and leave small images (84 rows is about a
     second on the CPU) on the CPU path; (c) re-register the control as 12 prompts per length (the minimum of more prompts is a lower, steadier bar) and re-read the control only. (b) and (c) each need to be registered before they are applied to any reading.
 
+#### S6 on nobara, registered 2026-10-08 before any run
+
+- **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
+  - **G-E4B-C1, S1's G3c on CUDA:** in one process, `g3Run` on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E4B loaded from the safetensors directory by both sides with the same `Options` (int4, context 512, `EmbedInt4` unset on both: table precision is the confound Metal's and CUDA's first G3 runs fell into).
+    PASS: E4B's teacher-forced agreement at least the reference's minus 2.0 points and its free-run passes at least the reference's minus 1; 2.0-4.0 points below is ambiguous (parked for the owner); worse, or free-run passes 2 or more short, fails. The harness is E2B's (`g3Model`) taking a directory: the tokenizer and template from the directory's `tokenizer.json`.
+  - **G-E4B-C2, served:** G4's image request and G-S5c's three audio clips through one CUDA serve binary, `--backend cuda` against `--backend cpu`, `-vision-device cpu` and `--embed-int4=false` on every arm, plus a second CPU run. Identical replies, or a first divergence at a near-tie (p(other) at least half p(top)); the CPU repeat byte-identical;
+    a CUDA arm not decoding resident voids that reading. If the 8 GB card cannot hold E4B's resident, that is the finding and is reported with the plan line.
+  - **Planted defects:** none new; the E-model defects (S1's eight) are shape-independent and were shown red on the tiny fixture. E4B adds no new mechanism beyond its width.
+  - **Prediction:** the E4B's weights at int4 are about 2.5 GB resident, so it fits beside a context-512 plan; I expect G-E4B-C1 to land near E2B's delta (S1 on CUDA) and make no stronger claim.
+- **Qwen3.5+ MoE images (never run on any box).** Qwen3.6-35B-A3B (`qwen3.6-35b-a3b`, in the archive; the text decoder is `~/models/qwen3.6-35b-a3b-int4.giw` on the NVMe). The tower's weights are copied to `~/models` for anything timed. A hybrid with MoE layers is not claimed by CUDA's resident m-RoPE prefill ("no MoE hybrid image gate exists"), so the image turn prefills on the CPU.
+  - **What is gated:** the tower (G-S2b's bar, the CUDA Qwen3 tower against aikit's CPU encoder, merged rows at worst-row cosine >= 0.9999, on the real checkpoint's four F2a images at serve's cap) and a served image request, `-vision-device auto` against `cpu`, identical reply or a near-tie first divergence. There is no HF anchor for the 35B on this box (70 GB of bf16 does not fit in 62 GB of RAM); the claim is "runs, and the CUDA tower is the CPU tower", not "matches HF".
+  - **Night work** (a 35B image turn prefills on the CPU, minutes).
+- **Gemma 4 31B (`~/models/gemma-4-31B-it`, 59 GB, downloaded).** Dense, 60 layers, hidden 5376: about 17 GB at int4, so it cannot be GPU-resident on the 8 GB card, and a float32 or bf16 HF reference does not fit in 62 GB of RAM. So the 26B's shape (a CPU forward as the reference for a GPU arm) does not apply: there is no GPU arm and no oracle here.
+  What can be gated is stated as a question for the owner, not decided here: (a) a CPU smoke plus an internal int4-against-int8int8 consistency on the same checkpoint and a served image and text request read for coherence, claimed as exactly that; (b) an HF bf16 oracle with disk offload (hours, night); (c) defer. Nothing is run for the 31B until this is decided.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
