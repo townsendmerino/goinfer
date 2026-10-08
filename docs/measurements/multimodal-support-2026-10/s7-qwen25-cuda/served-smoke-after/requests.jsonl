@@ -1,0 +1,4 @@
+{"cell": "qwen2.5-vl-3b", "engine": "goinfer-fix", "round": 1, "req": 0, "warmup": true, "media_index": 0, "time": "2026-10-08T08:47:19", "ttft_s": 2.499960691027809, "text": "The image is a blurred and abstract representation"}
+{"cell": "qwen2.5-vl-3b", "engine": "goinfer-fix", "round": 1, "req": 1, "warmup": false, "media_index": 1, "time": "2026-10-08T08:47:22", "ttft_s": 2.471009625005536, "text": "The image is a blurred and abstract representation"}
+{"cell": "qwen2.5-vl-3b", "engine": "goinfer-fix", "round": 1, "req": 2, "warmup": false, "media_index": 2, "time": "2026-10-08T08:47:24", "ttft_s": 2.4577436390100047, "text": "This image is a gradient background with a"}
+{"cell": "qwen2.5-vl-3b", "engine": "goinfer-fix", "round": 1, "req": 3, "warmup": false, "media_index": 3, "time": "2026-10-08T08:47:27", "ttft_s": 2.462376468000002, "text": "This image is a solid color image with"}

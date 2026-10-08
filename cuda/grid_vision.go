@@ -37,6 +37,7 @@ const (
 	gridQwen3  gridKind = iota // LayerNorm, GELU-tanh MLP, interpolated position rows, one segment per frame
 	gridGlmOcr                 // RMSNorm, per-head q/k RMSNorm, SiLU-gated MLP, no position table, one segment per frame
 	gridSiglip                 // Gemma 3's SigLIP: LayerNorm, GELU-tanh MLP, a fixed position table, NO RoPE, one segment over every patch (siglip_vision.go)
+	gridQwen25                 // Qwen2.5-VL: RMSNorm, biased split q/k/v, RoPE from the window plan, SiLU-gated biased MLP, window and full-frame segments (qwen25_vision.go)
 )
 
 type gridProj struct {
@@ -57,6 +58,7 @@ type gridDefect struct {
 	noScale, swapRope, transposePos, noQKNorm, noPatchBias bool
 	oneSegment                                             bool // every frame of a batch attends over every frame (the segment boundaries ignored)
 	noPosEmbed                                             bool // SigLIP: the position table not added
+	noWindows, noWindowOrder                               bool // Qwen2.5-VL: every block attends its whole frame / the window reordering skipped
 }
 
 type gridTower struct {
@@ -201,7 +203,7 @@ func (a *gridTower) linearAdd(x Buffer, p *gridProj, resid, tmp Buffer, rows int
 
 // norm is the block's norm: LayerNorm with bias (Qwen3) or the weight-only RMSNorm (GLM-OCR).
 func (a *gridTower) norm(x, w, b, out Buffer, rows int) {
-	if a.kind == gridGlmOcr {
+	if a.kind == gridGlmOcr || a.kind == gridQwen25 {
 		a.ops.rms(x, w, out, rows, a.hidden, a.eps)
 		return
 	}

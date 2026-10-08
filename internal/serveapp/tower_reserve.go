@@ -77,8 +77,7 @@ func towerVRAMEstimate(mt string, d towerDims, maxPixels int) int64 {
 		// about 1.5 MP and let a larger image fall back to the CPU tower (deviceFallback) instead.
 		np = min(px, 1_500_000) / (d.patch * d.patch)
 	case "qwen2_5_vl":
-		mlpMats = 3
-		np = 8192 // about 1.6 MP; aikit's tower sizes its scratch per call and its default ceiling (65536 patches) cannot be reserved, so a larger image fails by name (recoverDeviceTower)
+		return qwen25VLTowerEstimate(d)
 	default:
 		return 0
 	}
@@ -158,4 +157,22 @@ var cudaTowerRegistered = func(mt string) bool {
 		return true // aikit's qwencuda registers through the vision package, not multimodal's registry; a cuda binary imports it
 	}
 	return false
+}
+
+// qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (cuda/qwen25_vision.go), calibrated to a measurement and not derived (S7 on CUDA's fix, 2026-10-08). On the 8 GB card the tower's weights took
+// 2758 MiB, 337 MiB over the arithmetic size (about 570 separate buffers, each rounded by the allocator); the first image's scratch is np * (7 hidden + 2 padded intermediate + patch dim + 2 head dim) * 4 bytes, 270 MiB at
+// 4096 patches; and the resident build's own scratch beyond the plan's reading was 535 MiB against the 384 MiB margin, so the tower, loaded after it, found 169 MiB free and its first scratch allocation failed. The
+// ceiling stays 8192 patches (about 1.6 MP); a larger image falls back to the CPU tower by name (deviceFallback). The 256 MiB is slack for that margin overshoot, not for the tower's own needs.
+func qwen25VLTowerEstimate(d towerDims) int64 {
+	const (
+		np          = 8192
+		allocExtra  = 337 << 20 // weights' allocator overhead, measured
+		marginSlack = 256 << 20 // the build's scratch beyond the plan's reading, measured 535 MiB against the 384 MiB margin
+	)
+	h, i := int64(d.hidden), (int64(d.inter)+63)/64*64 // the tower pads the intermediate width to a multiple of 64
+	patchIn := int64(d.inChan * d.temporal * d.patch * d.patch)
+	hd := h / 16 // Qwen2.5-VL's 16 heads
+	params := int64(d.layers)*(4*h*h+3*h*i) + patchIn*h
+	scratch := int64(np) * (7*h + 2*i + patchIn + 2*hd) * 4
+	return params*4 + allocExtra + scratch + marginSlack
 }

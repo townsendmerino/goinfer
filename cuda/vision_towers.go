@@ -2,8 +2,6 @@
 
 package cuda
 
-// aikit's CUDA Qwen2.5-VL tower (S4 of docs/tasks/task-multimodal-support-2026-10.md): importing it is the opt-in. gpu/qwencuda plugs into
-// vision.RegisterQwenResident, so serve's loadQwenVisionTower can attach it under --backend cuda (G-S4q: correct at real size, 1.6-2.7x the CPU tower).
-// aikit's gpu/visioncuda (SigLIP) is deliberately NOT imported: it is wrong at real size (G-S4q), and it would also race goinfer's own SigLIP tower
-// (cuda/vision_register.go) for the one global vision.RegisterResident hook, where the last registration wins.
-import _ "github.com/townsendmerino/aikit/gpu/qwencuda"
+// Qwen2.5-VL's vision tower on CUDA is goinfer's own (qwen25_vision.go, on the tower base with the fused attention), registered through vision.RegisterQwenResident from this package. aikit's gpu/qwencuda is NOT imported
+// any more: it carried aikit's unfused attention (7.97 s on the 896x896 image against this tower's), and at serve's defaults on the 8 GB card its scratch allocation failed beside the decoder (S7, 2026-10-07). Its
+// allocation-failure fix (v0.1.1) stays in aikit. aikit's gpu/visioncuda (SigLIP) is likewise not imported: it is wrong at real size (G-S4q), and cuda/vision_register.go owns the one global vision.RegisterResident hook.

@@ -1653,6 +1653,28 @@ the three timed requests is under 5.0 s). What differs is the box: the RTX 2070 
 - **By-day smokes of the harness on this box (18:50 and 19:11 PDT, exploratory and not quotable):** one goinfer cell (Qwen3.5-0.8B, TTFT 3.6 s on a fresh image), the Ollama arm (`gemma3:4b`, 1.6 s on a fresh image, 7.9 s on its
   first request) and the llama.cpp arm (Gemma 3 4B with its mmproj, 0.94 s) all ran end to end through `vision_ttft.py` under the timing lock.
 
+#### S7 on CUDA, the Qwen2.5-VL fix, read 2026-10-08 (nobara; commit follows this record)
+
+Registered above ("S7 on CUDA, the fix", before any code). Raw: `docs/measurements/multimodal-support-2026-10/s7-qwen25-cuda/`.
+- **Built as registered:** `cuda/qwen25_vision.go` (Metal's port on the tower base, from aikit's `GPUWeights`, `BuildWindowPlan` and `MergeHidden`; the fused attention per window and per frame segment), the `gridQwen25` kind, and the two planted-defect switches. aikit's
+  `gpu/qwencuda` is no longer imported by the cuda package or by the G-S4q test (which now grades whatever `EnableResident` attaches, goinfer's tower, and says so).
+- **G-S3a on CUDA PASS.** Tiny (`qwen25vl-tiny`, sharpened as Metal's check, grids 8x8, 12x16 and a two-image batch): worst token cosine **1.000000000**; the four registered defects each red: (1) attention scale dropped 0.629849, (2) RoPE halves swapped 0.750730,
+  (3) every block attending its whole frame 0.789727, (4) window reordering skipped 0.726768. Real `qwen25vl-3b-instruct`, the four F2a images, attached through `EnableResident` with the attached type asserted: worst token **0.999997532, 0.999999995,
+  0.999999803, 0.999999762**. An int8-loaded encoder is refused by name (`TestQwen25CUDA_int8Declines`).
+- **The first speed read MISSED its band and tripped the kill line, and was re-opened, not tuned:** 4.04 s on the 896x896 image against the registered 1.7-2.6 s ("a tower over 4 s ... means the plan is wrong and is re-opened"). The step 0 profile of this tower
+  (`TestS17ProfileQwen25CUDA`) said why: **GEMM was 92% of 3.8 s at 1.82 TFLOPS** (the other towers' GEMMs run at 3.5), attention only 4.5% (the fused kernel is fine on 64-patch windows). Qwen2.5-VL-3B's intermediate size is 3420, and 3420 % 16 = 12 sends the down
+  projection and the biased epilogue through the tiled GEMM. Fix: the intermediate width is zero-padded to 3456 (gate/up rows and biases, down's columns), which is the same arithmetic (silu(0) x 0 = 0 exactly). Then **1.80 s, GEMM 3.52 TFLOPS**, cosines unchanged.
+- **Speed after the fix, against the registered bands** (the real-size test, host tail included): 896x896 image (64x64 grid) **2.05 s** (band 1.7-2.6 s; aikit's 7.97 s); formula.png (86x72) **3.18 s** (band 2.5-3.8 s; aikit's 15.3 s); table.png (64x86) 2.83 s. 3.9x and 4.8x aikit's.
+- **Served, S7's cell at serve's defaults on the 8 GB card (exploratory smoke by day; the night re-read is queued as `s7-nobara-2`):** TTFT **2.46 s** (three timed requests, 2.458-2.471 s) against 15.64 s, under the 5 s bar; the tower on CUDA (2.0 s per image),
+  decode `cuda-resident`, context 5057 across 4 KV slots. The registered prediction was 3-4 s; it came in better.
+- **The default plan still failed after the tower was fast, and the cause is accounting, measured:** the first served run fell back to the CPU tower again (a 20 MB scratch allocation failed). With `nvidia-smi` through the run: 467 MiB idle; 4858 MiB after the decoder and its KV; 7616 MiB with the
+  tower's weights, leaving **169 MiB free** against about 270 MiB for the first image's scratch. Three facts, none of them a tower defect: (1) the card has a constant ~407 MiB the driver hides (8192 MiB total, 7785 usable), which the plan's driver-reported free already
+  accounts for; (2) the resident build allocated **535 MiB** of its own scratch after the plan's reading, against the plan's 384 MiB margin (the same class as `TestResidentDenseBytes_matchesCUDADevice`'s 421 MiB overshoot on the 7B, which fails at the session-start baseline too);
+  (3) the tower's weights took **337 MiB more than their arithmetic size** (about 570 buffers, each rounded by the allocator). The tower base's own context costs 2 MiB (`TestTowerOps_contextVRAM`): the second-context theory was checked and is wrong.
+  `towerVRAMEstimate` for `qwen2_5_vl` is now calibrated to those measurements (`qwen25VLTowerEstimate`: 3.73 GB at the 8192-patch ceiling, including 256 MiB of slack for the margin overshoot), bounded in `TestTowerVRAMEstimate`.
+- **Not done:** the other towers' estimates were not re-measured against `nvidia-smi` (Gemma 4, Qwen3.5, GLM-OCR and the Gemma 3 pair fit at defaults in the first night's S7, so none is known to be short); the margin overshoot itself (535 against 384 MiB for this model) is the open
+  Plan-accounting item behind the heavy-tier failures, and the slack here is a local cover for it, not that fix.
+
 #### S13-lite, the float32 arm, registered 2026-10-08 before it runs (nobara)
 
 The cell is last night's S13-lite, unchanged (Gemma 3 4B, `testdata/gemma3_preprocess_image.png`, a new image every request, 3 rounds of one warm-up and three timed requests per engine, the engine order rotated each round, one server at

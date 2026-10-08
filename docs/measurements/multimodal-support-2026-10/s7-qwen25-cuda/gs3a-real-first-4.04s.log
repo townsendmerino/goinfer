@@ -1,0 +1,8 @@
+=== RUN   TestQwen25CUDA_real
+[S7 CUDA G-S3a real] gemma3_preprocess_image.png    grid [1 64 64]: worst token cosine 0.999997532; tower CUDA 4.039s, CPU 15.289s (exploratory)
+[S7 CUDA G-S3a real] qwen25vl_preprocess_image.png  grid [1 4 6]: worst token cosine 0.999999995; tower CUDA 55ms, CPU 140ms (exploratory)
+[S7 CUDA G-S3a real] glm_ocr/formula.png            grid [1 86 72]: worst token cosine 0.999999803; tower CUDA 6.251s, CPU 24.675s (exploratory)
+[S7 CUDA G-S3a real] glm_ocr/table.png              grid [1 64 86]: worst token cosine 0.999999762; tower CUDA 5.497s, CPU 21.545s (exploratory)
+--- PASS: TestQwen25CUDA_real (82.84s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	83.169s

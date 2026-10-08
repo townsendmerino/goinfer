@@ -6,8 +6,6 @@ github.com/townsendmerino/aikit v1.59.0 h1:gqCidd5BeshM9xE2BvBgGnGwGahv9rWrvySO5
 github.com/townsendmerino/aikit v1.59.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit/gpu v0.33.5 h1:25cPfdw0nGjtSwEV/iaRZMYrKd0o/ShsYXMrg01CCS0=
 github.com/townsendmerino/aikit/gpu v0.33.5/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
-github.com/townsendmerino/aikit/gpu/qwencuda v0.1.1 h1:T19uZXZp78PSqDqhgXmCZbB0ANoMdwIWkXi5dSI7XZQ=
-github.com/townsendmerino/aikit/gpu/qwencuda v0.1.1/go.mod h1:9prtM6EKQ47APZQCpLXD9pZ9p3mK8bgnHSLHeC1/FoY=
 github.com/townsendmerino/aikit/gpu/visioncuda v0.1.0 h1:FEh0HRb5R5XqVDVsgfPLira+m/b/5+wYP/Cdimzf9Cc=
 github.com/townsendmerino/aikit/gpu/visioncuda v0.1.0/go.mod h1:vSvahafYPAs9wO/KQDzXztROS776CUSDEnGayhNENUg=
 github.com/townsendmerino/goinfer v0.22.0 h1:/p5BkfewnCxR0ABKZ3EQ2EGdjCrjfFfRmZTWaPriTq4=

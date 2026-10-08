@@ -3,9 +3,13 @@
 package cuda
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
@@ -387,4 +391,21 @@ func TestTowerBase_attention(t *testing.T) {
 	if err := ops.attention(Buffer{}, Buffer{}, Buffer{}, Buffer{}, 13000, 2, 200, 1); err == nil {
 		t.Error("an attention over 13000 patches at head dim 200 must be refused")
 	}
+}
+
+// TestTowerOps_contextVRAM measures what a tower base's own CUDA context and kernel modules cost before any weights (S7 on CUDA's fix: the Qwen2.5-VL tower's reserve covered its weights and scratch but the card was
+// still ~400 MiB short at the first image, a gap that fits a second context). Free VRAM through the driver before and after newTowerOps, and after one tiny launch. A record; asserts only that it can read the figure.
+func TestTowerOps_contextVRAM(t *testing.T) {
+	free := func() float64 {
+		b, ok := decoder.FreeBytesFor("cuda")
+		if !ok {
+			t.Skip("no free-VRAM reading")
+		}
+		return float64(b) / (1 << 20)
+	}
+	f0 := free()
+	ops := newTestTower(t, 64)
+	f1 := free()
+	_ = ops
+	fmt.Fprintf(os.Stderr, "[S7 CUDA tower base VRAM] free before %.0f MiB, after newTowerOps (context + ViT module + tower_base module) %.0f MiB: the base holds %.0f MiB before any weight\n", f0, f1, f0-f1)
 }

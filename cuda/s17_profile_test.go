@@ -328,3 +328,40 @@ func TestS17LeverA_wholeTower(t *testing.T) {
 		ab(fmt.Sprintf("glm-ocr 896x896 %v", grid), tw.ops, func() ([]float32, error) { return tw.Hidden(px, g) })
 	})
 }
+
+// TestS17ProfileQwen25CUDA is the step 0 profile of the Qwen2.5-VL tower on the tower base (S7 on CUDA's fix): the first real read missed its registered band (4.04 s on the 896x896 image against 1.7-2.6 s), so the class split
+// says where the time is. Heavy; run alone.
+func TestS17ProfileQwen25CUDA(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	newTestTower(t, 64)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "qwen25vl-3b-instruct")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s: %v", dir, err)
+	}
+	enc, err := vision.LoadQwenVisionEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw, err := newQwen25Tower(enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tw.Close()
+	pp, err := multimodal.LoadQwenPreprocessConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile("../testdata/gemma3_preprocess_image.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	px, grid, err := multimodal.QwenPreprocess(data, pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := [][3]int{grid}
+	s17Profile(t, fmt.Sprintf("qwen2.5-vl 896x896 %v", grid), tw.g.ops, func() ([]float32, error) { return tw.ForwardViT(px, g) })
+}
