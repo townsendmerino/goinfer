@@ -43,6 +43,9 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 		t.Fatal(err)
 	}
 	arms := []string{"fixed", "drop-both"}
+	if _, err := os.Stat(filepath.Join(dir, "logits-cuda.f32")); err == nil {
+		arms = append(arms, "cuda") // nobara's CUDA resident over the same sequences and .giw (cuda TestGemma4_26B_s10DumpCUDA): the third arm that separates a Metal-specific divergence from a shared one
+	}
 	files := map[string]*os.File{}
 	for _, a := range arms {
 		f, err := os.Open(filepath.Join(dir, "logits-"+a+".f32"))

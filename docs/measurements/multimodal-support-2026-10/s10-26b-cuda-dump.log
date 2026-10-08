@@ -1,0 +1,10 @@
+=== RUN   TestGemma4_26B_s10DumpCUDA
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.6 GB free — capping to 30 (3.1 GB)
+    gemma4_26b_s10dump_cuda_test.go:52: loaded gemma4-26b-int4-v14st.metal.giw on CUDA in 58s
+    gemma4_26b_s10dump_cuda_test.go:80: prompt 1: 38 positions
+    gemma4_26b_s10dump_cuda_test.go:80: prompt 2: 36 positions
+    gemma4_26b_s10dump_cuda_test.go:80: prompt 3: 43 positions
+    gemma4_26b_s10dump_cuda_test.go:82: wrote 117 positions of logits-cuda.f32 in 1m2s
+--- PASS: TestGemma4_26B_s10DumpCUDA (63.03s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	63.714s

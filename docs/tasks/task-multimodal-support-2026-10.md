@@ -252,6 +252,20 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     path against the CPU's, or the CPU reference itself being the less accurate side there (nothing here compares either to transformers on the 26B). The test that separates them is the CUDA 26B (the C' streaming
     resident, this card) against the same CPU forward on the same sequences: if CUDA agrees with the CPU at these positions the divergence is Metal-specific; if CUDA diverges the same way, the CPU or a shared stage is the
     suspect. That is a new 26B run, which this read was told not to make, so it is proposed and not done.
+- **S1.0's 26B: the separating run, CUDA over the same sequences, 2026-10-07 evening on nobara (the owner approved it).** `TestGemma4_26B_s10DumpCUDA` (the C' streaming resident, 117 positions in 1 min 2 s, the same
+  `.int4.metal.giw` read locally, `GOINFER_MOE_CACHE_EXPERTS=1`) wrote `logits-cuda.f32` beside the Mac's dumps, and the CPU grade took it as a third arm. Raw: `s10-26b-cuda-dump.log`, `s10-26b-cuda-grade.log.gz`.
+  - **CUDA against the CPU reads like Metal against the CPU:** mean cosine **0.990481** (Metal 0.990848), argmax agreement **85/117** (Metal 82/117); of CUDA's 32 disagreements 3 are G1 near-ties and 4 are G3 near-ties
+    (Metal: 0 and 1). By position, CUDA-vs-CPU / Metal-vs-CPU mean cosine: position 0 **1.000000 / 0.978072**; 1-3 0.957641 / 0.963993; 4-11 0.990761 / 0.991282; 12 onward 0.993694 / 0.994177. Argmax disagreements in the first
+    12 positions: CUDA 20 of 36, Metal 21 of 36; from position 12: 12 of 81 and 14 of 81.
+  - **The two GPU backends disagree with each other as much as either does with the CPU:** Metal against CUDA, mean cosine 0.989909, argmax agreement **79/117** (positions 4-11: 9 of 24; from 12: 67 of 81), 38
+    disagreements of which 4 are within the G1 near-tie band. So the early-position disagreement is **not Metal-specific and not the CPU being the odd one out**: three independent implementations (the CPU's int4, Metal's
+    W4A8, CUDA's W4A8) pairwise disagree at the same positions to about the same degree.
+  - **What this supports and what it does not.** It fits the noise-floor reading the first record doubted, but through a different door than margins: a MoE router flip changes which experts run and moves the logits by a
+    lot, not by a near-tie's amount, so "not near-ties" and "router noise" are compatible. It does **not** establish it: no router decision was compared here. The test that would is the router's top-k per layer per
+    position on the CPU and on a GPU backend (the CPU has a router capture seam); that is the next step if the owner wants the cause and not only the localization.
+  - **One thing is Metal's alone, visible only now:** at **position 0** CUDA matches the CPU to cosine 1.000000 while Metal reads 0.978072 (all three prompts share their first token, so it is one position), and Metal's
+    argmax there disagrees with both. Two independent implementations agreeing exactly on the first position makes Metal's first-token logits the suspect. That is a lead for the Mac, not a diagnosis.
+  - **The dump files** (`logits-cuda.f32`, 122 MB) sit beside the Mac's in `~/goinfer-bench/s10-26b/` on nobara, uncommitted like the others.
 - **S1.0, the `v_norm` fix on CUDA and WebGPU, read 2026-10-07 on nobara (RTX 2070 SUPER, driver 595.91.07): PASS.**
   - **The fix:** every Gemma 4 layer that owns its K/V now applies the scale-less `v_norm`, K=V or not. CUDA: a per-layer
     `vNorm` flag (`cuda/backend.go`), the decode launch in `segA` and the batched-prefill launch in `cuda/prefill.go`
