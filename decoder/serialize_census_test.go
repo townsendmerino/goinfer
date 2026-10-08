@@ -142,6 +142,7 @@ var censusExcluded = map[string]string{
 	"gemma4-dense-scaled":  "449 MB. gemma4's per-layer state (PLE, the dense‖MoE sub-block, two-geometry head dims) is covered by four other gemma4 fixtures on the list.",
 	"mellum-mellum2-slice": "4.0 GB — a real-weight 4-layer slice. Measured: still running after 90s while all 29 listed fixtures together take 0.27s. mellum's per-layer fields are the generic set.",
 	"siglip-tiny":          "a vision encoder, not a decoder — Load refuses it, so there are no LayerWeights to census.",
+	"glm-ocr-vision-tiny":  "a GLM-OCR vision encoder (the S2 tower fixture), not a decoder — decoder.Load never builds LayerWeights from it, same as siglip-tiny and gemma4-vision-tiny. Its gates are multimodal/grid_towers and the Metal and CUDA tower tests (docs/tasks/task-multimodal-support-2026-10.md, S2).",
 	"gemma4-vision-tiny":   "a vision encoder (Gemma4VisionModel), not a decoder — same as siglip-tiny: no LayerWeights to census.",
 	"gemma4-audio-tiny":    "an audio encoder (Gemma4AudioModel, gemma4_audio), loaded by aikit's audio package, never by decoder.Load — no LayerWeights to census, same as gemma4-vision-tiny. Its gate is embeddinggemma2/audio_tiny_test.go (docs/tasks/task-embeddinggemma2.md, Phase A gate A2t).",
 	"embeddinggemma2-tiny": "a bidirectional text encoder (EmbeddingGemma 2), loaded by the embeddinggemma2 package, never by decoder.Load — so no LayerWeights to census and no .giw to round-trip. Its own gates are embeddinggemma2/model_test.go (docs/tasks/task-embeddinggemma2.md, Gate 1).",
