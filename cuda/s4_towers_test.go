@@ -80,6 +80,7 @@ var s4Images = []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_imag
 
 func s4QwenPair(t *testing.T, dir string) (cpu, dev *vision.QwenVisionEncoder) {
 	t.Helper()
+	newTestTower(t, 64) // skips without a CUDA device (CI's cuda job has none); with one, a failed attach below is a real failure
 	var err error
 	if cpu, err = vision.LoadQwenVisionEncoder(dir, false); err != nil {
 		t.Fatal(err)
