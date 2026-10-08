@@ -53,6 +53,10 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 		t.Fatal(err)
 	}
 	const merge, steps = 2, 8
+	prompt := os.Getenv("GOINFER_S10H_PROMPT") // G-S10i: the served request's text; the default is the gate's (G-S10h)
+	if prompt == "" {
+		prompt = "Describe this image."
+	}
 	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +76,8 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 	if limit := 1024 * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit { // serve's cap
 		pp.MaxPixels = limit
 	}
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "cuda", ResidentContext: 2048})
+	embed4 := os.Getenv("GOINFER_S10H_EMBED4") == "1" // serve's --embed-int4 defaults to true with --quant int4; Options' zero value is false
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "cuda", ResidentContext: 2048, EmbedInt4: embed4})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -100,7 +105,7 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 		}
 		nImg := grid[0] * grid[1] * grid[2] / (merge * merge)
 		pre, _ := tk.Encode("<|im_start|>user\n<|vision_start|>", false)
-		post, _ := tk.Encode("<|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n", false)
+		post, _ := tk.Encode("<|vision_end|>"+prompt+"<|im_end|>\n<|im_start|>assistant\n", false)
 		ids := append(append([]int{}, pre...), make([]int, nImg)...)
 		for k := range nImg {
 			ids[len(pre)+k] = imgTok
@@ -161,7 +166,7 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 			worst = math.Min(worst, dsCosine(off[k], on[k]))
 		}
 		hb("%s: INSTRUMENT CHECK (i) off-against-on worst cosine %.4f over %d rows", tag, worst, n)
-		meta, _ := json.Marshal(map[string]any{"image": name, "n": n, "start": start, "nImg": nImg, "grid": grid, "ids": ids, "teacher": teacher[:steps], "vocab": len(off[0]), "steps": steps + 1})
+		meta, _ := json.Marshal(map[string]any{"image": name, "n": n, "start": start, "nImg": nImg, "grid": grid, "ids": ids, "teacher": teacher[:steps], "vocab": len(off[0]), "steps": steps + 1, "prompt": prompt, "embedInt4": embed4})
 		for suffix, v := range map[string][]float32{"px": px, "off": flat(off), "on": flat(on)} {
 			if err := writeF32(filepath.Join(out, tag+"."+suffix+".f32"), v); err != nil {
 				t.Fatal(err)

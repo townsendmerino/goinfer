@@ -1,0 +1,6 @@
+[G-S10h] gemma3_preprocess_image.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9809 over 803 rows
+[G-S10h] qwen25vl_preprocess_image.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9748 over 89 rows
+[G-S10h] formula.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9631 over 1034 rows
+[G-S10h] table.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9706 over 991 rows
+--- PASS: TestS10DeepstackPrefillCUDA_anchorDump (94.09s)
+ok  	github.com/townsendmerino/goinfer/cuda	94.193s

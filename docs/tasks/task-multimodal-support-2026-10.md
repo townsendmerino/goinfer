@@ -3446,6 +3446,25 @@ G-S10h used the gate's prompt ("Describe this image."), not the one on which the
 - **Prediction, written now:** the sign of the mean delta will match G-S10h's (positive, +0.005 to +0.015), and one of the larger images will again carry a negative step-0 delta below -0.01; I put the chance of a PASS under 30%. On the served split I expect HF's log-odds to be nearer the on arm's, because the on arm moved the first token toward 'Table' and the table image is the one where the on arm was closer to HF; that is a guess and could be wrong.
 - **Cost, tier:** day, ~3 minutes (dump 95 s, HF 1 min).
 
+#### G-S10i read 2026-10-08: AMBIGUOUS as registered, and the instrument turned out not to be the served configuration; the path stays OFF (raw `docs/measurements/multimodal-support-2026-10/s10-cuda/gs10i-*`)
+
+- **Reading, by the rule registered above (unchanged from G-S10h): AMBIGUOUS.** 36 pairs, **mean delta -0.00450** (inside [-0.005, -0.002)), step-0 deltas **-0.0105 (896²), -0.0123 (4x6), -0.0116 (formula), -0.0024 (table)**: no step-0 delta under -0.02 (so not FAIL), but three under -0.01 and the mean under -0.002 (so not PASS).
+
+  | image | rows | mean delta (on - off) | steps where on is closer | step-0 delta | KL(HF‖off) step 0 | KL(HF‖on) step 0 |
+  |---|---|---|---|---|---|---|
+  | 896² | 803 | -0.0006 | 3/9 | -0.0105 | 1.5255 | 1.4180 |
+  | 4x6 | 89 | -0.0114 | 1/9 | -0.0123 | 0.0996 | 0.3336 |
+  | formula | 1034 | -0.0027 | 4/9 | -0.0116 | 0.3704 | 0.6635 |
+  | table | 991 | -0.0033 | 3/9 | -0.0024 | 0.8925 | 2.0298 |
+
+  On this prompt "off" is the closer arm on average and on three of four images at step 0 in KL; the opposite sign from G-S10h's mean (+0.0088). My prediction (same sign as G-S10h, a PASS under 30%) held for the PASS part and missed the sign.
+- **Instrument checks.** (iv) held: the hand-built ids equal the checkpoint's chat template's rendering on all four images (803, 89, 1034, 991 tokens). (i): the off-against-on worst cosines are 0.9809 / 0.9748 / 0.9631 / 0.9706 (the new reference for this prompt). (iii) as registered (table.png): holds. Reported beyond it: on the 896² image HF's step-0 argmax (362) is in neither arm's top-3 (both arms 32), and on table.png HF's is 86608 ('Quarter') against both arms' 2556 ('Table').
+- **The served split, as registered: not explained, and the reason is below.** On table.png at step 0, ln(p('Quarter')/p('Table')): HF **+1.69** (0.702 / 0.129), off **-0.92** (0.142 / 0.358), on **-3.05** (0.030 / 0.626). Off is nearer HF's; I expected on. But the dump's off-arm probabilities (0.142 / 0.358) are not the served off arm's (0.4115 / 0.1117, the same table image with 991 prompt tokens in both).
+- **Post-hoc finding, not registered, about the instrument:** the dump loads the model with `Options{Quant: "int4"}`, and serve's `--embed-int4` defaults to TRUE with `--quant int4` (`docs/flags.md`), so the dump's token-embedding/LM-head table was at the int8 pin and the served one at int4. **G-S10h and G-S10i therefore compared two arms that were not the served configuration** (the arm-against-arm real gate, G-S10g, is unaffected: both its arms share the load).
+  A diagnostic dump with `EmbedInt4` on (`gs10i-embed4-dump-diagnostic.log`; the Go side only, no HF run, nothing graded) moves the table.png first-token probabilities toward the served ones but does not reproduce them: off Quarter 0.305 / Table 0.164, on 0.246 / 0.202, against served 0.4115 / 0.1117 and 0.190 / 0.236. Something further differs between the dump and serve (the tower's features come from the CPU encoder in the dump and the CUDA tower in serve, at about 1e-6, which I do not expect to move a probability this much; I have not found the rest).
+  The lesson that stands without any further run: this first-token pair is highly sensitive to a table-precision change (Quarter 0.14 -> 0.30 on the off arm), so a 0.4 against 0.1 split between two prefills is within what a quantisation choice alone does, and neither anchor can rank the prefills until the instrument is the served configuration.
+- **Outcome.** AMBIGUOUS: the path stays OFF. By the registration, no third anchor is run on my own motion. A corrected-configuration anchor (EmbedInt4 on, and the dump reproducing the served probabilities first, as a registered instrument check) is a new registration that lifts my own "no third anchor" rule, so it is the owner's call.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
