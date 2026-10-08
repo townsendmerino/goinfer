@@ -30,6 +30,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/townsendmerino/aikit v1.59.0 h1:gqCidd5BeshM9xE2BvBgGnGwGahv9rWrvySO5ekAUz4=
 github.com/townsendmerino/aikit v1.59.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
+github.com/townsendmerino/aikit v1.60.0 h1:CMnS8/ev5Dew4DTVJ9ss+x1kQcW+V1HC0pP2GzR+SCs=
+github.com/townsendmerino/aikit v1.60.0/go.mod h1:HKA6IMr1YvzbCOgusf1zio9uo29Js+xCuOhB0eKtdWA=
 github.com/townsendmerino/goinfer v0.22.0 h1:/p5BkfewnCxR0ABKZ3EQ2EGdjCrjfFfRmZTWaPriTq4=
 github.com/townsendmerino/goinfer v0.22.0/go.mod h1:GoDnQkbzz+rycZWq36RPqRuqzAn4ni2q603Y4EhN0UM=
 github.com/townsendmerino/goinfer/gpu v0.22.0 h1:Yek0z8ygflsOLVAMLXf6nfYqhGXWShHhIeCq1i3P6m0=
