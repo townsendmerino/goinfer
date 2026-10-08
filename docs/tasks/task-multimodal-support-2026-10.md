@@ -51,7 +51,8 @@ The last phase puts the answer where users look first, the README, with a check 
   - Several images per message (S11) and video (S15) are not supported.
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
-  - Serve accepts only 16 kHz mono WAV (resampling is S5's follow-up).
+  - Chat audio takes 16-bit WAV at any rate, mono or stereo (G-S5e). EmbeddingGemma 2's audio embeddings still take 16 kHz
+    mono only.
   - E4B audio rides on S6.
   - G-S5b, the HF anchor for audio into the model, has no result yet.
 - **Precision:** under `--backend cuda|webgpu`, serve gives Gemma 3 an int8 SigLIP tower. At real size that tower is
@@ -1371,8 +1372,7 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
 - **S5 status, 2026-10-07 evening: G-S5a, G-S5c, the spoken clip (LibriSpeech, word error rate 0) and G-S5d (E2B's
   audio tower on Metal, on `s2-towers`) PASS on the Mac; G-S5b (the HF anchor for audio into the model) is queued on
   nobara and has no result yet.** Owed: the speed record (tower per clip, CPU against Metal). Resampling for WAVs that
-  are not 16 kHz mono (S5's follow-up, G-S5e above) read FAIL against scipy's resampler and is not wired in; the
-  owner decides.
+  are not 16 kHz mono (S5's follow-up) passed G-S5e with option (b) and is wired into chat audio.
 
 - **S5's follow-up: audio at any rate and channel count. G-S5e, registered 2026-10-07 evening before any resampler
   code.**
@@ -1444,6 +1444,34 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
       `resample_poly`), then a fresh reading;
     - (c) leave serve 16 kHz-only.
   - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5e/`.
+- **Owner decision 2026-10-07 evening: option (b).** goinfer's resampler is to match scipy's `resample_poly` filter exactly:
+  - up and down reduced by their gcd;
+  - the cutoff 1/max(up, down) of the upsampled Nyquist, by `firwin` with unit DC gain;
+  - a Kaiser window with β = 5.0;
+  - 20·max(up, down) + 1 taps, centred, times up;
+  - zero padding, and an output length of ceil(n·up/down).
+
+  **Registered before the run, with the bar unchanged:**
+  - **The prediction:** with that filter, goinfer reproduces scipy's worst-token and mean cosine within 1e-4 on both
+    clips (44.1 kHz mono, 48 kHz stereo). Then G-S5e passes as registered.
+  - **The check of the filter itself:** a committed scipy golden, the resampled output of a deterministic signal at
+    44.1 kHz and at 48 kHz, which goinfer must match to 1e-6 per sample.
+  - **If it still fails:** stop and report. No further change to the resampler.
+- **G-S5e, read 2026-10-07 17:52-17:55 PDT with option (b): PASS, and the prediction held exactly.**
+  - **The filter:** goinfer's `Resample` matches `resample_poly` to 3e-8 per sample at 44.1, 48, 22.05 and 8 kHz
+    (`TestResample_matchesResamplePoly`, scipy 1.16.3), which is float32 rounding.
+  - **Through the E2B tower** (`s5-gs5e/run3-resample-poly.log`), goinfer's worst-token and mean cosines equal scipy's to
+    six decimals:
+    - 44.1 kHz mono: 0.617187 / 0.978763;
+    - 48 kHz stereo: 0.619399 / 0.978813.
+  - **Planted defects, both still red:** the wrong rate, mean 0.302; the left channel alone, mean 0.827.
+  - **Served:** serve's audio path now decodes with `DecodeWAVAnyRate`.
+    - On the CPU, the original, the 44.1 kHz clip and the 48 kHz stereo clip all transcribe to the identical, correct
+      text ("Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.").
+    - A second CPU run is byte-identical.
+    - Raw: `s5-gs5e/served/`.
+  - **The scope:** chat audio for Gemma 4 (E2B, and E4B through the same path). EmbeddingGemma 2's audio embeddings keep
+    `DecodeWAV`, 16 kHz mono only, since G-S5e did not read their tower.
 
 ### S6 — Coverage that is cheap once the above exists
 

@@ -96,7 +96,7 @@ func contentPartsImages(raw json.RawMessage) ([]imageRef, error) {
 }
 
 // decodeInputAudio decodes an OpenAI input_audio part: base64 data (bare, or a data: URI) in format "wav" (or unset).
-// Its content (16 kHz mono 16-bit PCM, the length cap) is checked where the clip is used.
+// Its content (16-bit PCM; any rate and up to 8 channels, brought to 16 kHz mono; the length cap) is checked where the clip is used.
 func decodeInputAudio(ia *struct {
 	Data   string `json:"data"`
 	Format string `json:"format"`
@@ -105,7 +105,7 @@ func decodeInputAudio(ia *struct {
 		return imageRef{}, fmt.Errorf("input_audio needs data")
 	}
 	if ia.Format != "" && ia.Format != "wav" {
-		return imageRef{}, fmt.Errorf("input_audio format %q: only wav (16 kHz mono 16-bit PCM) is taken", ia.Format)
+		return imageRef{}, fmt.Errorf("input_audio format %q: only wav (16-bit PCM) is taken", ia.Format)
 	}
 	var data []byte
 	if strings.HasPrefix(ia.Data, "data:") {

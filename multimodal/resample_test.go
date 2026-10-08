@@ -3,7 +3,9 @@ package multimodal
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -59,44 +61,47 @@ func TestResample_passthroughAndLength(t *testing.T) {
 	if y := Resample(x, 16000, 16000); &y[0] != &x[0] {
 		t.Error("equal rates must return the input itself")
 	}
-	for _, c := range []struct{ from, n, want int }{{44100, 44100, 16000}, {48000, 4801, 1600}, {8000, 100, 200}, {22050, 7, 5}} {
-		if got := len(Resample(make([]float32, c.n), c.from, 16000)); got != c.want {
+	for _, c := range []struct{ from, n, want int }{{44100, 44100, 16000}, {48000, 4801, 1601}, {8000, 100, 200}, {22050, 7, 6}} {
+		if got := len(Resample(make([]float32, c.n), c.from, 16000)); got != c.want { // ceil(n·up/down), as resample_poly
 			t.Errorf("%d samples at %d Hz: %d out, want %d", c.n, c.from, got, c.want)
 		}
 	}
 }
 
-// In the passband a tone comes through at its amplitude and phase; above the 16 kHz Nyquist it is gone; DC has unit gain.
-func TestResample_toneAliasDC(t *testing.T) {
-	for _, from := range []int{44100, 48000, 22050, 8000, 96000, 44056} { // 44056: a rate with no small common factor (the direct, untabled path for up*taps over the cap is exercised below)
-		n := from // one second
-		x := sine(n, from, 1000, 0.5)
-		y := Resample(x, from, 16000)
-		want := sine(len(y), 16000, 1000, 0.5)
+// TestResample_matchesResamplePoly is G-S5e option (b)'s filter check: scipy.signal.resample_poly's output on a deterministic
+// signal (a 440 Hz and a 7.9 kHz tone, a 12 kHz one above the output's Nyquist, noise) at 44.1, 48, 22.05 and 8 kHz, pinned
+// by scripts/pin_resample_poly_golden.py. Every sample within 1e-6.
+func TestResample_matchesResamplePoly(t *testing.T) {
+	raw, err := os.ReadFile("../testdata/resample_poly_golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		Scipy string
+		Cases []struct {
+			Rate int
+			X, Y []float64
+		}
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range g.Cases {
+		x := make([]float32, len(c.X))
+		for i, v := range c.X {
+			x[i] = float32(v)
+		}
+		y := Resample(x, c.Rate, 16000)
+		if len(y) != len(c.Y) {
+			t.Fatalf("%d Hz: %d samples, scipy %d", c.Rate, len(y), len(c.Y))
+		}
 		worst := 0.0
-		for i := 200; i < len(y)-200; i++ { // away from the edges, where the kernel runs off the signal
-			worst = math.Max(worst, math.Abs(float64(y[i]-want[i])))
+		for i := range y {
+			worst = math.Max(worst, math.Abs(float64(y[i])-c.Y[i]))
 		}
-		if worst > 2e-3 {
-			t.Errorf("%d Hz -> 16 kHz, a 1 kHz tone: max error %.2e against the ideal tone", from, worst)
-		}
-		if from > 24000 {
-			z := Resample(sine(n, from, 12000, 0.5), from, 16000) // 12 kHz: above the output's Nyquist
-			var e float64
-			for i := 200; i < len(z)-200; i++ {
-				e = math.Max(e, math.Abs(float64(z[i])))
-			}
-			if e > 5e-4 { // about -60 dB against the 0.5 input
-				t.Errorf("%d Hz -> 16 kHz, a 12 kHz tone: residual %.2e, want it filtered out", from, e)
-			}
-		}
-		dc := make([]float32, n)
-		for i := range dc {
-			dc[i] = 0.25
-		}
-		d := Resample(dc, from, 16000)
-		if v := d[len(d)/2]; math.Abs(float64(v)-0.25) > 1e-6 {
-			t.Errorf("%d Hz: DC 0.25 came out %v", from, v)
+		t.Logf("%d Hz -> 16 kHz: %d samples, max |diff| against scipy %s's resample_poly %.2e", c.Rate, len(y), g.Scipy, worst)
+		if worst > 1e-6 {
+			t.Errorf("%d Hz: max |diff| %.2e against resample_poly, over 1e-6", c.Rate, worst)
 		}
 	}
 }
@@ -156,21 +161,5 @@ func TestDecodeWAV_resamplesAndDownmixes(t *testing.T) {
 	}
 	if _, err := DecodeWAVAnyRate(wavBytes(mono, 1, 1000, false)); err == nil {
 		t.Error("a 1 kHz WAV was taken")
-	}
-}
-
-// A rate pair whose polyphase table would pass resampleMaxTable computes its kernel per sample; it must agree with the
-// tabled path's arithmetic exactly.
-func TestResample_untabledPathMatches(t *testing.T) {
-	x := sine(3000, 47999, 900, 0.5) // gcd(47999, 16000) = 1: 16000 phases
-	tabled := Resample(x, 47999, 16000)
-	save := resampleMaxTableVar
-	resampleMaxTableVar = 0
-	direct := Resample(x, 47999, 16000)
-	resampleMaxTableVar = save
-	for i := range tabled {
-		if tabled[i] != direct[i] {
-			t.Fatalf("sample %d: tabled %v, direct %v", i, tabled[i], direct[i])
-		}
 	}
 }

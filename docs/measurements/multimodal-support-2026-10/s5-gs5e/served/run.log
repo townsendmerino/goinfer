@@ -1,0 +1,22 @@
+[17:54:17] arm cpu (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+Gemma 4 audio input on for "gemma-4-E2B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+  cpu librispeech-1272-128104-0000 (8.5s, 163 prompt tokens): 'Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.'
+  cpu librispeech-1272-128104-0000-44k1 (5.2s, 163 prompt tokens): 'Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.'
+  cpu librispeech-1272-128104-0000-48k-stereo (5.4s, 163 prompt tokens): 'Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.'
+  vision: decoded 20 tokens on the cpu path (prefill cpu)
+  vision: decoded 20 tokens on the cpu path (prefill cpu)
+  vision: decoded 20 tokens on the cpu path (prefill cpu)
+[17:54:41] arm cpu2 (--backend cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+Gemma 4 audio input on for "gemma-4-E2B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, CPU) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+  cpu2 librispeech-1272-128104-0000 (6.4s, 163 prompt tokens): 'Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.'
+  cpu2 librispeech-1272-128104-0000-44k1 (5.2s, 163 prompt tokens): 'Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.'
+  cpu2 librispeech-1272-128104-0000-48k-stereo (5.1s, 163 prompt tokens): 'Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.'
+  vision: decoded 20 tokens on the cpu path (prefill cpu)
+  vision: decoded 20 tokens on the cpu path (prefill cpu)
+  vision: decoded 20 tokens on the cpu path (prefill cpu)
+reference arm cpu
+librispeech-1272-128104-0000: cpu2 against cpu: IDENTICAL replies
+librispeech-1272-128104-0000-44k1: cpu2 against cpu: IDENTICAL replies
+librispeech-1272-128104-0000-48k-stereo: cpu2 against cpu: IDENTICAL replies
