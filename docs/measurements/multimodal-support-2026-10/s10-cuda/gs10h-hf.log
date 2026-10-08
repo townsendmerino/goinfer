@@ -1,0 +1,22 @@
+[G-S10h hf      0s] loading float32 model
+[G-S10h hf      2s] loaded; torch threads 8
+[G-S10h hf      2s] no processor: 
+[G-S10h hf      2s] gemma3_preprocess_image.png: HF float32 forward, 806 tokens
+[G-S10h hf     17s] gemma3_preprocess_image.png: done in 15s, logits (806, 151936)
+[G-S10h hf     17s] gemma3_preprocess_image.png: cos(off,HF) 0.9177 0.9365 0.9290 0.9607 0.9607 0.9240 0.9503 0.9749 0.9814
+[G-S10h hf     17s] gemma3_preprocess_image.png: cos(on ,HF) 0.8815 0.9335 0.9340 0.9665 0.9704 0.9300 0.9560 0.9727 0.9782  step-0 delta -0.0362  KL off 0.0587 on 0.0724  off-vs-on worst 0.9680
+[G-S10h hf     17s] qwen25vl_preprocess_image.png: HF float32 forward, 92 tokens
+[G-S10h hf     19s] qwen25vl_preprocess_image.png: done in 2s, logits (92, 151936)
+[G-S10h hf     19s] qwen25vl_preprocess_image.png: cos(off,HF) 0.9302 0.9307 0.8952 0.7862 0.9095 0.8609 0.9598 0.9703 0.9802
+[G-S10h hf     19s] qwen25vl_preprocess_image.png: cos(on ,HF) 0.9304 0.9568 0.9233 0.8965 0.9185 0.8934 0.9551 0.9709 0.9793  step-0 delta +0.0001  KL off 0.0033 on 0.0009  off-vs-on worst 0.9624
+[G-S10h hf     19s] formula.png: HF float32 forward, 1037 tokens
+[G-S10h hf     37s] formula.png: done in 18s, logits (1037, 151936)
+[G-S10h hf     37s] formula.png: cos(off,HF) 0.9055 0.8596 0.7881 0.9291 0.9697 0.9758 0.9584 0.9649 0.9653
+[G-S10h hf     37s] formula.png: cos(on ,HF) 0.9085 0.8978 0.7532 0.8895 0.9659 0.9670 0.9517 0.9496 0.9713  step-0 delta +0.0030  KL off 0.0632 on 0.0801  off-vs-on worst 0.9819
+[G-S10h hf     37s] table.png: HF float32 forward, 994 tokens
+[G-S10h hf     55s] table.png: done in 19s, logits (994, 151936)
+[G-S10h hf     56s] table.png: cos(off,HF) 0.9025 0.7971 0.6713 0.7364 0.8978 0.8202 0.8283 0.9327 0.9094
+[G-S10h hf     56s] table.png: cos(on ,HF) 0.9175 0.8232 0.6229 0.8129 0.9322 0.8529 0.8422 0.9485 0.9342  step-0 delta +0.0150  KL off 0.0454 on 0.0122  off-vs-on worst 0.9741
+[G-S10h hf     56s] READING: 36 pairs, mean delta +0.00882, step-0 deltas [-0.0362, 0.0001, 0.003, 0.015] -> FAIL
+[G-S10h hf     56s] table.png step-0 probabilities: {"Quarter": {"hf": 1.182566360013318e-14, "off": 1.2551501847809296e-12, "on": 3.77535263703107e-13}, "Table": {"hf": 8.26902730163054e-07, "off": 8.102709030079789e-06, "on": 9.112252558761743e-06}}
+[G-S10h hf     56s] instrument (iii) sanity: {'gemma3_preprocess_image.png': True, 'qwen25vl_preprocess_image.png': True, 'formula.png': True, 'table.png': True}

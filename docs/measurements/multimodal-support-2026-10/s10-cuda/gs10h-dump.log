@@ -1,0 +1,18 @@
+[G-S10h] gemma3_preprocess_image.png: tower features and sets (CPU encoder)
+[G-S10h] gemma3_preprocess_image.png: 798 rows; off path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10h] gemma3_preprocess_image.png: on path (the resident DeepStack prefill)
+[G-S10h] gemma3_preprocess_image.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9680 over 798 rows
+[G-S10h] qwen25vl_preprocess_image.png: tower features and sets (CPU encoder)
+[G-S10h] qwen25vl_preprocess_image.png: 84 rows; off path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10h] qwen25vl_preprocess_image.png: on path (the resident DeepStack prefill)
+[G-S10h] qwen25vl_preprocess_image.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9624 over 84 rows
+[G-S10h] formula.png: tower features and sets (CPU encoder)
+[G-S10h] formula.png: 1029 rows; off path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10h] formula.png: on path (the resident DeepStack prefill)
+[G-S10h] formula.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9819 over 1029 rows
+[G-S10h] table.png: tower features and sets (CPU encoder)
+[G-S10h] table.png: 986 rows; off path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10h] table.png: on path (the resident DeepStack prefill)
+[G-S10h] table.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9741 over 986 rows
+--- PASS: TestS10DeepstackPrefillCUDA_anchorDump (94.15s)
+ok  	github.com/townsendmerino/goinfer/cuda	94.226s

@@ -3410,6 +3410,26 @@ Question: of the two prefills that disagree at the served first token (the CPU p
 - **Prediction, written now:** both arms read 0.95-0.99 to HF and the mean delta lies within +-0.003; I do not predict its sign. The batched prefill's own distance from the CPU prefill (0.95-0.99, the control) is the same size as the distance this tests, so an outcome in the AMBIGUOUS band is quite possible.
 - **Cost, tier:** day, in two steps each under ~8 min: the Go dump (four CPU encodes and CPU prefills, ~1 min each, plus the resident arms) and the HF float32 CPU forward (four ~1,000-row prompts on a 2B, a minute or two each).
 
+#### G-S10h read 2026-10-08: FAIL as registered (mean delta +0.0088, one image's step-0 delta -0.0362); the path stays OFF (raw `docs/measurements/multimodal-support-2026-10/s10-cuda/gs10h-*`)
+
+Dump `cuda/s10_anchor_dump_test.go` (94 s), Hugging Face side `scripts/anchor_s10h_hf.py` (transformers 5.15.0, torch CPU, float32, 56 s for all four; my estimate of 5-8 minutes was several times too high). The dump's raw logits (110 MB) stay in `~/goinfer-logs/s10h`, not committed.
+
+- **Instrument checks.** (i) held to four places: the dump's off-against-on worst cosines are 0.9680 / 0.9624 / 0.9819 / 0.9741, the real gate's. (iii) held: HF's step-0 argmax (token 1986) is the argmax of both arms on all four images.
+  **(ii) could not run:** the venv has no torchvision or PIL, so HF's own preprocessing of the images was not compared with the dump's pixels (it was registered as informational; HF was fed the dump's pixels either way). One thing to know about the HF call: transformers 5 needs `mm_token_type_ids` (1 on the image-pad tokens) to compute M-RoPE, which the script passes.
+- **The reading, by the registered rule: FAIL** (checked first: any image's step-0 delta below -0.02). 36 pairs, **mean delta +0.00882** (on closer on average), step-0 deltas **-0.0362** (896²), +0.0001 (4x6), +0.0030 (formula), +0.0150 (table). The 896² image's step 0 alone fails it.
+
+  | image | rows | mean delta (on - off) | steps where on is closer | step-0 delta | KL(HF‖off) step 0 | KL(HF‖on) step 0 |
+  |---|---|---|---|---|---|---|
+  | 896² | 798 | -0.0014 | 5/9 | **-0.0362** | 0.0587 | 0.0724 |
+  | 4x6 | 84 | +0.0224 | 7/9 | +0.0001 | 0.0033 | 0.0009 |
+  | formula | 1029 | -0.0069 | 3/9 | +0.0030 | 0.0632 | 0.0801 |
+  | table | 986 | +0.0212 | 8/9 | +0.0150 | 0.0454 | 0.0122 |
+
+- **What it says.** Neither prefill is the closer one. On is closer on the two images where the text control's distance is largest (4x6, table) and farther on the other two (896², formula); in the middle steps both arms sit at 0.62-0.97 to HF (the int4 error against float32 is shared and large), so deltas of 0.01-0.04 are a fraction of that. The registered prediction (both 0.95-0.99, mean within +-0.003, sign not predicted) was WRONG in size:
+  the cosines to HF reach 0.62-0.80 at some teacher-forced steps on table.png, and the mean delta is +0.0088. The step-0 argmax agrees everywhere; no arm picks a different first token from HF's on these prompts.
+- **What it does not say.** The probabilities printed for 'Quarter' and 'Table' on table.png (HF 1e-14 and 8e-7) are for the gate's prompt, "Describe this image.", which is not the prompt of the served check ("What does this image show? Answer briefly."), where those two tokens split 0.41/0.11 and 0.24/0.19. So this anchor does not answer the served split directly. I did not re-run it on the served prompt: a new anchor after a FAIL is a new registration, and it is the owner's call whether to open one.
+- **Outcome.** Option 3's reading is FAIL, so option 2 (enable) is not taken; `cudaDeepstackPrefillOn` stays false. No bar was moved.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
