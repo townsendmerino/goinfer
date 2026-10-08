@@ -59,6 +59,8 @@ type gridDefect struct {
 	oneSegment                                             bool // every frame of a batch attends over every frame (the segment boundaries ignored)
 	noPosEmbed                                             bool // SigLIP: the position table not added
 	noWindows, noWindowOrder                               bool // Qwen2.5-VL: every block attends its whole frame / the window reordering skipped
+	tapShift                                               int  // Qwen3-VL (G-S10f): every DeepStack tap taken this many blocks late
+	tapReverse                                             bool // Qwen3-VL (G-S10f): the taps handed back in reverse order
 }
 
 type gridTower struct {
@@ -214,15 +216,47 @@ func (a *gridTower) norm(x, w, b, out Buffer, rows int) {
 func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	out, _, err := a.hiddenLocked(pixels, gridTHW, nil)
+	return out, err
+}
+
+// HiddenTaps is Hidden plus the outputs of the given blocks, in that order (multimodal.GridTowerTapper): Qwen3-VL's DeepStack taps (S10, G-S10f). Each tap is the residual right after its block,
+// read by finishing the queue there and downloading it, which stalls the stream once per tap (three for Qwen3-VL-2B).
+func (a *gridTower) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) ([]float32, [][]float32, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for k, b := range blocks {
+		if b < 0 || b >= len(a.blocks) {
+			return nil, nil, fmt.Errorf("cuda: DeepStack tap %d asks for block %d of %d", k, b, len(a.blocks))
+		}
+	}
+	out, taps, err := a.hiddenLocked(pixels, gridTHW, blocks)
+	if err != nil {
+		return nil, nil, err
+	}
+	for k, t := range taps {
+		if t == nil {
+			return nil, nil, fmt.Errorf("cuda: DeepStack tap %d (block %d) was not reached in %d blocks", k, blocks[k], len(a.blocks))
+		}
+	}
+	if a.planted.tapReverse {
+		for i, j := 0, len(taps)-1; i < j; i, j = i+1, j-1 {
+			taps[i], taps[j] = taps[j], taps[i]
+		}
+	}
+	return out, taps, nil
+}
+
+func (a *gridTower) hiddenLocked(pixels []float32, gridTHW [][3]int, tapBlocks []int) ([]float32, [][]float32, error) {
 	segs := vision.VisionSegments(gridTHW)
 	np := segs[len(segs)-1]
 	if np == 0 || len(pixels) != np*a.patchDim {
-		return nil, fmt.Errorf("cuda: %d pixel values for %d patches of %d", len(pixels), np, a.patchDim)
+		return nil, nil, fmt.Errorf("cuda: %d pixel values for %d patches of %d", len(pixels), np, a.patchDim)
 	}
 	hd := a.hd
 	cos, sin := a.ropeTables(gridTHW)
 	if len(cos) != np*hd || len(sin) != np*hd {
-		return nil, fmt.Errorf("cuda: rope tables %d/%d for %d patches of head_dim %d", len(cos), len(sin), np, hd)
+		return nil, nil, fmt.Errorf("cuda: rope tables %d/%d for %d patches of head_dim %d", len(cos), len(sin), np, hd)
 	}
 	if a.planted.swapRope { // the row and column quarters swapped within each half of the cat(f, f) row
 		cos, sin = append([]float32(nil), cos...), append([]float32(nil), sin...)
@@ -248,13 +282,14 @@ func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error
 			}
 		}
 		if pe = a.posEmbeds(g); len(pe) != np*a.hidden {
-			return nil, fmt.Errorf("cuda: %d position values for %d patches of %d", len(pe), np, a.hidden)
+			return nil, nil, fmt.Errorf("cuda: %d position values for %d patches of %d", len(pe), np, a.hidden)
 		}
 	}
 	if a.planted.oneSegment {
 		segs = []int{0, np}
 	}
 	var out []float32
+	taps := make([][]float32, len(tapBlocks))
 	err := a.ops.do(func() error {
 		defer a.ops.releaseScratch()
 		o := a.ops
@@ -323,6 +358,17 @@ func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error
 				o.geluTanh(f1, np*I)
 				a.linearAdd(f1, &b.fc2, x, tmp, np)
 			}
+			for k, tb := range tapBlocks { // G-S10f: the residual right after this block, for Qwen3-VL's DeepStack
+				if tb+a.planted.tapShift == bi {
+					if e := o.finish(); e != nil {
+						return e
+					}
+					taps[k] = make([]float32, np*H)
+					if e := gpu.Download(x, taps[k]); e != nil {
+						return e
+					}
+				}
+			}
 		}
 		if e := o.finish(); e != nil {
 			return e
@@ -331,7 +377,7 @@ func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error
 		return gpu.Download(x, out)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("cuda: vision tower: %w", err)
+		return nil, nil, fmt.Errorf("cuda: vision tower: %w", err)
 	}
-	return out, nil
+	return out, taps, nil
 }
