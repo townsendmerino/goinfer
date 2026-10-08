@@ -238,7 +238,7 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
-`internal/prequant/prequant.go:227`) or by the dense fit-guard auto-retry
+`internal/prequant/prequant.go:229`) or by the dense fit-guard auto-retry
 (then in serve; since 2026-09-24 in the shared loader, `internal/modelload/modelload.go:177`); `chat` and `fit`
 (`internal/fitcmd/fit.go:107`) loaded direct and had no streaming flag at all. (serve, chat and fit now share one load
 path, `internal/modelload`.) **Rule (Mac, 1.5B and

@@ -25,7 +25,7 @@ Runner finished. Started 2026-10-07 20:30 PDT, deadline 06:30, ended 00:15 (3 h 
 ```
       | github.com/townsendmerino/goinfer/gpu.(*Context).Close(0x3cdafd84ce08)
       | github.com/townsendmerino/goinfer/gpu.TestRMSNormBatched_parity(0x3cdafd7ca488)
-      | 	/home/francis/goinfer-bench/gate-gpu-night-wt/gpu/prefillrunner_batched_test.go:164 +0x18d4
+      | 	the gate worktree gpu/prefillrunner_batched_test.go, line 164 +0x18d4
       | FAIL	github.com/townsendmerino/goinfer/gpu	600.446s
 
 [1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
@@ -55,7 +55,7 @@ finished: 2026-10-07 22:41:49 PDT rc=1
 ```
       | github.com/townsendmerino/goinfer/gpu.(*Context).Close(0x3cdafd84ce08)
       | github.com/townsendmerino/goinfer/gpu.TestRMSNormBatched_parity(0x3cdafd7ca488)
-      | 	/home/francis/goinfer-bench/gate-gpu-night-wt/gpu/prefillrunner_batched_test.go:164 +0x18d4
+      | 	the gate worktree gpu/prefillrunner_batched_test.go, line 164 +0x18d4
       | FAIL	github.com/townsendmerino/goinfer/gpu	600.446s
 
 [1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
