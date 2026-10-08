@@ -29,8 +29,11 @@ type qwen3Tower struct {
 	dir    string
 	mmproj bool // dir is a GGUF mmproj file, not a checkpoint directory (P8b)
 	quant  bool
+	plan   gridTowerPlan // where the tower runs (S2): the device it is built on at first use
 	once   sync.Once
 	enc    *vision.Qwen3VisionEncoder
+	acc    multimodal.GridTowerAccelerator // nil: aikit's CPU tower
+	fb     deviceFallback                  // serializes the accelerator and falls back to the CPU on a device memory failure
 	err    error
 }
 
@@ -43,9 +46,25 @@ func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
 		}
 		if q.err != nil {
 			q.err = fmt.Errorf("load qwen3.5 vision tower (%s): %w", q.dir, q.err)
+			return
+		}
+		if q.plan.device != "" {
+			acc, err := multimodal.NewQwen3Tower(q.plan.device, q.enc)
+			q.acc, q.err = q.plan.started("Qwen3.5", acc, err)
 		}
 	})
 	return q.enc, q.err
+}
+
+// features runs the tower (on its device when the plan put it there) and aikit's merger: the merged image embeddings.
+func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
+	enc, err := q.encoder()
+	if err != nil {
+		return nil, err
+	}
+	return q.fb.run("Qwen3.5", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+		return multimodal.Qwen3TowerFeatures(enc, acc, pv, [][3]int{grid})
+	})
 }
 
 // isQwen35VisionDir reports whether dir is a Qwen3.5+ checkpoint that carries a usable vision tower:
@@ -94,9 +113,12 @@ func setupQwen35Vision(dir string, int8Tower bool) (*qwen3Tower, multimodal.Qwen
 // loadQwen35VisionTower attaches a Qwen3.5+ tower to the single loaded model. Everything that can be
 // checked without reading the tower's weights is checked here, at startup, so a bad -vision dir fails
 // loudly now rather than at the first image; the weights themselves load on first use.
-func (s *server) loadQwen35VisionTower(dir string, int8Tower bool) error {
+func (s *server) loadQwen35VisionTower(dir string, int8Tower bool, backend string, require bool) error {
 	tower, pp, err := setupQwen35Vision(dir, int8Tower)
 	if err != nil {
+		return err
+	}
+	if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, require); err != nil {
 		return err
 	}
 	return s.attachQwen35Tower(tower, pp, dir)
@@ -124,11 +146,14 @@ func setupQwen35MMProj(path, modelType string, textHidden int, int8Tower bool) (
 }
 
 // loadQwen35MMProj attaches a Qwen3.5+ tower from a GGUF mmproj to the single loaded model.
-func (s *server) loadQwen35MMProj(path string, int8Tower bool) error {
+func (s *server) loadQwen35MMProj(path string, int8Tower bool, backend string, require bool) error {
 	for _, lm := range s.models {
 		c := lm.model.Config()
 		tower, pp, err := setupQwen35MMProj(path, c.ModelType, c.HiddenDim, int8Tower)
 		if err != nil {
+			return err
+		}
+		if tower.plan, err = planGridTower("Qwen3.5", multimodal.Qwen3Towers(), int8Tower, backend, require); err != nil {
 			return err
 		}
 		return s.attachQwen35Tower(tower, pp, path)
@@ -149,7 +174,7 @@ func (s *server) attachQwen35Tower(tower *qwen3Tower, pp multimodal.QwenPreproce
 		if lm.qwenImgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
-		fmt.Fprintf(os.Stderr, "Qwen3.5 vision for %q: tower loads on first image (merge %d, image-pad id %d, <= %d tokens/image) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, qwen3MaxImageTokens, dir)
+		fmt.Fprintf(os.Stderr, "Qwen3.5 vision for %q: tower (%s) loads on first image (merge %d, image-pad id %d, <= %d tokens/image) from %s\n", lm.name, tower.plan.where, lm.qwenMerge, lm.qwenImgTok, qwen3MaxImageTokens, dir)
 	}
 	return nil
 }
