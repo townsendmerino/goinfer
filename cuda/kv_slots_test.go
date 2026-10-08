@@ -600,3 +600,63 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 		})
 	}
 }
+
+// TestCUDAKVSlots_oomKeepsTheSlotsThatFit is S18's CUDA gate (docs/tasks/task-multimodal-support-2026-10.md, "G-S18a"): when the device runs out of memory allocating a later KV slot (checkKVFits sizes the
+// count against the free VRAM read before the build's own scratch, with the margin the only slack, so on the 8 GB card Gemma 3 4B's four slots fit with 1.2 MB to spare and the last one misses by the scratch),
+// the resident keeps the slots that fit instead of declining to the CPU. Three slots requested, the seam fails slot 2: the model stays CUDA-resident with two, no device buffer leaks (the ledger equals a
+// plain two-slot build's), and both granted slots decode the same tokens as a plain two-slot build's. The control, no seam: all three slots. Without the recover the build declines and this goes red.
+func TestCUDAKVSlots_oomKeepsTheSlotsThatFit(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "mistral-tiny-window")
+	requireDeviceAndFixture(t, dir)
+	load := func(slots, failAt int) (*decoder.Model, *cudaResident) {
+		kvSlotAllocFailAtForTest = failAt
+		defer func() { kvSlotAllocFailAtForTest = 0 }()
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: slots})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("not CUDA-resident with %d slots requested (seam at %d): %s", slots, failAt, m.ResidentDecline())
+		}
+		return m, r
+	}
+	gen := func(m *decoder.Model) []int {
+		ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 8, decoder.SamplingParams{})
+		var ids []int
+		for id := range ch {
+			ids = append(ids, id)
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("generate: %v", err)
+		}
+		return ids
+	}
+	m3, r3 := load(3, 0)
+	if got := m3.ResidentKVSlots(); got != 3 {
+		t.Fatalf("control: ResidentKVSlots() = %d, want 3", got)
+	}
+	_ = r3
+	m3.Close()
+
+	m2, r2 := load(2, 0)
+	want := gen(m2)
+	a2, _ := r2.dev.LedgerLen()
+	m2.Close()
+
+	md, rd := load(3, 2) // three requested, slot 2 fails
+	defer md.Close()
+	if got := md.ResidentKVSlots(); got != 2 {
+		t.Fatalf("degraded: ResidentKVSlots() = %d, want 2 (the slots that fit)", got)
+	}
+	if n := len(rd.kvSlotBufs); n != 2 {
+		t.Fatalf("degraded: %d slot buffer sets, want 2", n)
+	}
+	if ad, _ := rd.dev.LedgerLen(); ad != a2 {
+		t.Errorf("degraded build holds %d device allocations, a plain two-slot build %d: the partial slot leaked", ad, a2)
+	}
+	if got := gen(md); !slices.Equal(got, want) {
+		t.Errorf("degraded build generated %v, a plain two-slot build %v", got, want)
+	}
+}

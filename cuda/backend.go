@@ -1744,22 +1744,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.kvSlotBufs = make([]cudaKVSlot, n)
 			r.kvSlotBufs[0] = cudaKVSlot{r.kc, r.vc}
 			for s := 1; s < n; s++ {
-				b := cudaKVSlot{kc: make([]Buffer, nLayers), vc: make([]Buffer, nLayers)}
-				for l := range nLayers {
-					if r.layers[l].kvShared {
-						continue // aliased to its source's slot buffers below
-					}
-					if r.kc[l].Len() > 0 {
-						b.kc[l] = r.af(r.kc[l].Len())
-					}
-					if r.vc[l].Len() > 0 {
-						b.vc[l] = r.af(r.vc[l].Len())
-					}
-				}
-				for l := range nLayers {
-					if r.layers[l].kvShared {
-						b.kc[l], b.vc[l] = b.kc[r.layers[l].kvSrc], b.vc[r.layers[l].kvSrc]
-					}
+				b, ok := r.allocKVSlot(s, nLayers)
+				if !ok {
+					// S18 (docs/tasks/task-multimodal-support-2026-10.md): checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with
+					// the margin as the only slack (Gemma 3 4B on the 8 GB card: four slots fit with 1.2 MB to spare), so the last slot can miss by the scratch. Keep the
+					// slots that fit instead of dropping the whole resident to the CPU; the first slot is the build's own and still declines.
+					fmt.Fprintf(os.Stderr, "cuda: %d of %d resident KV slots granted: the device ran out of memory allocating slot %d beside the build's own scratch\n", s, n, s+1)
+					r.kvSlotsN, r.kvSlotBufs = s, r.kvSlotBufs[:s]
+					break
 				}
 				r.kvSlotBufs[s] = b
 			}

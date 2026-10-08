@@ -269,6 +269,49 @@ func kvSlotsFit(want int, free, perSlot, reserve int64) int {
 // cudaKVSlot is one resident KV slot's per-layer buffers (MC1). A DeltaNet layer has none; an MLA layer has only kc.
 type cudaKVSlot struct{ kc, vc []Buffer }
 
+// kvSlotAllocFailAtForTest, when > 0, makes allocKVSlot fail as a device OOM at that slot index (S18's test seam; zero in production).
+var kvSlotAllocFailAtForTest int
+
+// allocKVSlot allocates slot s's per-layer K/V buffers as copies of slot 0's shapes. A device allocation failure (aikit's MustBuf panics on OOM, "device allocation failed") is
+// recovered into ok=false with the partial slot released, so the caller can keep the slots that fit; any other panic is re-raised.
+func (r *cudaResident) allocKVSlot(s, nLayers int) (b cudaKVSlot, ok bool) {
+	var own []Buffer
+	defer func() {
+		if v := recover(); v != nil {
+			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+				panic(v)
+			}
+			for _, o := range own {
+				r.dev.ReleaseBuf(o)
+			}
+			b, ok = cudaKVSlot{}, false
+		}
+	}()
+	if kvSlotAllocFailAtForTest == s {
+		panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+	}
+	b = cudaKVSlot{kc: make([]Buffer, nLayers), vc: make([]Buffer, nLayers)}
+	for l := range nLayers {
+		if r.layers[l].kvShared {
+			continue // aliased to its source's slot buffers below
+		}
+		if r.kc[l].Len() > 0 {
+			b.kc[l] = r.af(r.kc[l].Len())
+			own = append(own, b.kc[l])
+		}
+		if r.vc[l].Len() > 0 {
+			b.vc[l] = r.af(r.vc[l].Len())
+			own = append(own, b.vc[l])
+		}
+	}
+	for l := range nLayers {
+		if r.layers[l].kvShared {
+			b.kc[l], b.vc[l] = b.kc[r.layers[l].kvSrc], b.vc[r.layers[l].kvSrc]
+		}
+	}
+	return b, true
+}
+
 // cudaFreeVRAM is the free-VRAM probe checkKVFits prices the resident KV (every slot) against. A variable so
 // TestCUDAKVSlots_pricedAgainstWhatIsLeft can stub it.
 var cudaFreeVRAM = func(r *cudaResident) (uint64, error) {

@@ -2382,6 +2382,25 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - Measured by day on the Mac (G-S18a's Mac half is a served correctness check, not timed); nobara owns the CUDA
     half.
 
+- **S18 on CUDA, read 2026-10-07 evening on nobara (the 8 GB card): G-S18a PASS, G-S18c PASS, G-S18b by tests. Raw:** `docs/measurements/multimodal-support-2026-10/s18-cuda/`.
+  - **The root cause was not only the unpriced tower.** With serve's defaults Gemma 3 4B's resident build failed on `CUDA_ERROR_OUT_OF_MEMORY` for a 16,961,536-byte buffer, which is one layer's KV at 4141 positions
+    (4141 x 1024 x 4 bytes). The plan chose that context so that four slots fit: 4 x 1,153,384,448 B of KV against 4,614,782,976 B of budget, **1.2 MB of slack**, with the build's own scratch (34-120 MB, `ctxForSlots`'
+    own comment) allocated before the KV, so the last slot missed and the whole resident dropped to the CPU (decode on the CPU, the int8 tower still loading on CUDA: 21.6 s for the served request).
+  - **The change (CUDA):** (1) the extra KV slots degrade instead of declining: `allocKVSlot` recovers a device OOM, releases the partial slot and keeps the slots that fit (`cuda/backend.go`, `cuda/resident.go`); the first
+    slot is the build's own and still declines. (2) `towerReserve` prices the int8 Gemma 3 device tower (the shipped default) at `towerInt8VRAMEstimate`, calibrated to the 558 MiB it measured on the card (`TestSiglipCUDA_int8VRAM`;
+    the formula gives 575 MiB); every other int8 tower is the CPU's and stays at zero.
+  - **G-S18a, the CUDA cell, PASS.** With no sizing flags Gemma 3 4B on the 8 GB card is `decode path: cuda-resident (int4)` with `encoder int8/cuda-resident`: context 4096 (the floor, from a requested 15709), **3 of the 4 requested KV
+    slots** ("free VRAM beside the weights 4785 MB, less 959 MB reserved"), and the served image request's 32 logprob records are **identical** to the same request with the hand-set `--kv-sessions 1 -ctx 4096`
+    (`default/` against `handset/`; each pair of runs also has its determinism control IDENTICAL). The 32-token request took 5.2 s (tower and decode included) against 21.6 s on the CPU decoder before.
+  - **G-S18c PASS:** `TestTowerReserve_everyDeviceTower`, a table over five families x `-vision-quant` x four backends: nonzero exactly for the device towers (every family in float32 on CUDA; Gemma 3 also int8), zero where the
+    tower is the CPU's; shown red by pricing int8 at zero (today's behaviour: Gemma 3 under cuda, default and int8, read 0). The kernel of the first fix has its own gate, `TestCUDAKVSlots_oomKeepsTheSlotsThatFit`: three slots
+    requested, the allocation of slot 2 failed by a test seam, the resident stays CUDA with two, the device ledger equals a plain two-slot build's (no leak), the two slots decode the plain build's tokens; red without the
+    recovery (the build declines).
+  - **G-S18b:** no plan arithmetic changed; the degrade path runs only on an OOM, and the reserve change touches only a Gemma 3 tower on CUDA. The existing plan and slot tests (`TestResolveCtxCapFit_*`, `TestCUDAKVSlots_*`,
+    `TestKVSlotsFit`) and the full serve suite pass. The bench set's text models were not re-planned on the card by day.
+  - **Not done:** the registered banner wording ("KV plan: 1 conversation x 8192 positions (reduced from 4 x 16384 to leave 1.1 GB for the vision tower)"). The CUDA planner already prints what it chose and why
+    (the context floor line, the slots-granted line with the reserve), but not in that shape and not from serve; a unified serve banner is shared with the Mac's Metal cell. The Metal half of G-S18a is the Mac's.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

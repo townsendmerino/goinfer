@@ -110,21 +110,16 @@ func towerReserve(cfg config, modelPath string) int64 {
 	}
 	mt := visionModelType(dir)
 	if towerInt8(mt, cfg.visionQuant, "cuda") {
+		// Gemma 3's SigLIP is the one family with an int8 DEVICE tower on CUDA (the shipped default, and `-vision-quant int8`); every other int8 tower is the CPU's and holds no VRAM. It used to be
+		// priced at zero, so the default plan took every free byte and the tower then loaded beside a decoder with nothing left (S18, G-S18c).
+		if mt == "gemma3" {
+			if d, ok := readTowerDims(dir); ok {
+				return towerInt8VRAMEstimate(d)
+			}
+		}
 		return 0
 	}
-	registered := false
-	switch mt {
-	case "gemma4":
-		registered = slices.Contains(multimodal.Gemma4Towers(), "cuda")
-	case "qwen3_5", "qwen3_5_moe":
-		registered = slices.Contains(multimodal.Qwen3Towers(), "cuda")
-	case "glm_ocr":
-		registered = slices.Contains(multimodal.GlmOcrTowers(), "cuda")
-	case "gemma3":
-		registered = true // cuda/vision_register.go's factory builds the float32 SigLIP tower for a float32 encoder (this branch is only reached when the tower is float32)
-	case "qwen2_5_vl":
-		registered = true // aikit's qwencuda registers through the vision package, not multimodal's registry; a cuda binary imports it
-	}
+	registered := cudaTowerRegistered(mt)
 	if !registered {
 		return 0
 	}
@@ -133,4 +128,34 @@ func towerReserve(cfg config, modelPath string) int64 {
 		return 0
 	}
 	return towerVRAMEstimate(mt, d, cfg.visionMaxPixels)
+}
+
+// towerInt8VRAMEstimate is the Gemma 3 W8A8 SigLIP tower's footprint on the device: the block weights at one byte, the patch embed and position table in float32, and the fixed scratch (about nine
+// hidden-wide float32 buffers per patch). Calibrated against a measurement, not derived: the tower held 558 MiB of the 8 GB card after attaching and after a forward (cuda TestSiglipCUDA_int8VRAM,
+// 2026-10-07), against 575 MiB from this formula.
+func towerInt8VRAMEstimate(d towerDims) int64 {
+	h, i := int64(d.hidden), int64(d.inter)
+	side := int64(d.imageSize) / int64(max(d.patch, 1))
+	np := side * side
+	weights := int64(d.layers) * (4*h*h + 2*h*i)
+	f32 := (int64(3*d.patch*d.patch)*h + np*h) * 4
+	return weights + f32 + np*4*9*h
+}
+
+// cudaTowerRegistered says whether this binary registers a CUDA device tower for the model type: the registries are filled by a cuda build's blank import, so a plain build (and a unit test) sees none. A variable
+// so G-S18c's table test can stand in for a cuda build.
+var cudaTowerRegistered = func(mt string) bool {
+	switch mt {
+	case "gemma3":
+		return true // cuda/vision_register.go's factory builds the SigLIP tower (float32, or the int8 one) for either encoder
+	case "gemma4":
+		return slices.Contains(multimodal.Gemma4Towers(), "cuda")
+	case "qwen3_5", "qwen3_5_moe":
+		return slices.Contains(multimodal.Qwen3Towers(), "cuda")
+	case "glm_ocr":
+		return slices.Contains(multimodal.GlmOcrTowers(), "cuda")
+	case "qwen2_5_vl":
+		return true // aikit's qwencuda registers through the vision package, not multimodal's registry; a cuda binary imports it
+	}
+	return false
 }

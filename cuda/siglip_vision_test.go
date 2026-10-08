@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // G-S3a on CUDA for the float32 SigLIP tower (the S4 addendum, docs/tasks/task-multimodal-support-2026-10.md): the CUDA tower against aikit's CPU tower, both float32,
@@ -361,4 +362,48 @@ func TestSiglipCUDA_speed(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "[S4 siglip speed] %-28s round %d: CPU f32 %.2fs | CUDA f32 %.2fs | CUDA int8 %.2fs\n", img, r, a.Seconds(), b.Seconds(), c.Seconds())
 		}
 	}
+}
+
+// TestSiglipCUDA_int8VRAM measures what the shipped default's int8 SigLIP tower claims on the device (S18's G-S18c needs the figure to price it): free VRAM before the encoder attaches, after it attaches, and after
+// one forward (the peak, since scratch may be allocated lazily). Heavy; a record.
+func TestSiglipCUDA_int8VRAM(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	newTestTower(t, 64)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s: %v", dir, err)
+	}
+	q, err := vision.LoadEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	free := func() float64 {
+		b, ok := decoder.FreeBytesFor("cuda")
+		if !ok {
+			t.Skip("no free-VRAM reading")
+		}
+		return float64(b) / (1 << 20)
+	}
+	f0 := free()
+	if err := q.EnableResident(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(q.Close)
+	f1 := free()
+	data, err := os.ReadFile("../testdata/" + sigImages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pv, err := vision.Preprocess(data, vision.Gemma3())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Forward(pv.Data); err != nil {
+		t.Fatal(err)
+	}
+	f2 := free()
+	fmt.Fprintf(os.Stderr, "[S18 int8 tower VRAM] free before %.0f MiB, after attach %.0f MiB (tower holds %.0f MiB), after one forward %.0f MiB (%.0f MiB held in all)\n", f0, f1, f0-f1, f2, f0-f2)
 }
