@@ -2778,6 +2778,25 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
 
   - **Kill line and instrument as registered above.**
 
+- **S17's Metal lever B, the f32-input kernel's design, amended 2026-10-08 before its tower A/B runs.**
+  - **Why:** a kernel-only probe of the design registered above (one GEMM, SigLIP's shape 4096x4352x1152, in one
+    process; direction only, not a record) found it slower than aikit's `gemm_f32_sg_big` (1.19 TFLOPS):
+
+    | design | TFLOPS |
+    |---|---|
+    | the 32x32-per-simdgroup staged kernel, f16 weights | 0.22 |
+    | the same with direct loads | 0.08 (register spill) |
+    | 16x32 per simdgroup, direct loads | 1.53 |
+    | 64x64 tiles over 16 simdgroups of 16x16, K steps of 32 staged as float4 | **2.22** |
+
+  - **The kernel now:** `tower_gemm_w16` (f16 weights widened at staging) and `tower_gemm_w32` (f32 weights), both in
+    the 2.22 TFLOPS shape with edge guards and the bias fused.
+    - The probe: 2.02-2.03 TFLOPS (1.70x aikit), and 1.98 on SigLIP's unaligned 4304-wide K (1.75x).
+    - The kernel gate: w32 4.04e-7 against 1e-5; w16 1.99e-4 against 1e-3; every planted defect red.
+    - **Production uses w16:** f16 weights hold the tower bars (the run above) and halve the weight memory.
+  - **The kernel ratio, 1.7-1.75x, is inside the registered k_G (1.5-2.2).** The bands and the kill line stand as
+    re-registered above. The tower bars are re-run on this kernel before the A/B.
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
