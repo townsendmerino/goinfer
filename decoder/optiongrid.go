@@ -112,11 +112,17 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		"(knobs.go); each knob is an environment read listed in testdata/env_reads.txt and owned there")),
 
 	"Quant": ogFill(map[ogPath]ogCell{
-		pathCPUDecode:       ogTestedBy("TestDecodeParityInt4"),
-		pathCPUBatchPrefill: ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
-		pathSpecVerify:      ogDeclinedAt("SpecDecodeConflict", "TestSpecDecodeConflict_refusesStagedWebGPUInt4"),
+		pathCPUDecode:        ogTestedBy("TestDecodeParityInt4"),
+		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
+		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
+		pathSessionLifecycle: ogTestedBy("TestOptionPath_sessionSnapshot"),
+		pathSpecVerify:       ogDeclinedAt("SpecDecodeConflict", "TestSpecDecodeConflict_refusesStagedWebGPUInt4"),
 	}, ogUntestedCell()),
 	"EmbedInt4": ogFill(map[ogPath]ogCell{
+		// TestOptionPath_cpuBatchedPrefill's sequential reference is this path (runLayers per token); a defect
+		// planted in the decode-only embedding lookup turns it red.
+		pathCPUDecode:        ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
+		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("a weight format; the session's cache does not depend on it"),
@@ -124,6 +130,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
 		pathCPUDecode:        ogTestedBy("TestActQuantGroup_perModel"),
 		pathResidentDecode:   ogTestedBy("TestActGroup_phi3ResidentMatchesCPU"),
+		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("an activation-quantization setting; the session's cache does not depend on it"),
@@ -131,9 +138,11 @@ var ogGrid = map[string]map[ogPath]ogCell{
 
 	"KVQuant": ogMerge(
 		map[ogPath]ogCell{
-			pathCPUDecode:        ogUntestedCell(),                               // TestKVI8_genParity sets m.kvI8 itself, not through Options
+			// TestOptionPath_cpuBatchedPrefill's sequential reference is this path; a defect planted in the decode-only
+			// int8 attention branch turns it red. (TestKVI8_genParity sets m.kvI8 itself, not through Options.)
+			pathCPUDecode:        ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"), // TestKVI8_batchedPrefill sets m.kvI8 itself
-			pathCPUBatchDecode:   ogUntestedCell(),
+			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchCacheEligible", "TestCPUBatch_ineligibleCachesBypass"),
 			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogTestedBy("TestKVI8_snapshotRoundtrip"),
 		},
@@ -242,7 +251,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathCPUBatchPrefill:  ogNACell("a decode setting"),
 			pathCPUBatchDecode:   ogTestedBy("TestEnableCPUBatch_policy"),
 			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
-			pathSessionLifecycle: ogUntestedCell(),
+			pathSessionLifecycle: ogTestedBy("TestOptionPath_sessionSnapshot"),
 		},
 	),
 }
@@ -250,4 +259,4 @@ var ogGrid = map[string]map[ogPath]ogCell{
 // optionGridUntestedCeiling is the ratchet: the number of ogUntested cells may not rise above it,
 // and when it falls the constant must be lowered to match (TestOptionGrid_ratchet), so a cell
 // that gains a test cannot quietly lose it again.
-const optionGridUntestedCeiling = 47
+const optionGridUntestedCeiling = 39

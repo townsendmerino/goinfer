@@ -6,8 +6,8 @@
 > put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
 > 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 built the same day
 > as two registries (§4.1 state × lifecycle, behaviour-changing where a cell was unsafe; §4.2 options × paths, a
-> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 47 option
-> cells admitted untested (57 at build; 10 moved to tested the same day), the work list.
+> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 39 option
+> cells admitted untested (57 at build; 18 moved out the same day), the work list.
 
 ## 1. The class, and why it keeps coming back
 
@@ -194,9 +194,9 @@ the bullets below on one point: cells do not "start declined" — they start hon
   `TestKVI8_batchedPrefill` set the internal `kvI8` themselves; the Metal int8-KV parity tests drive kernels;
   `TestMC5_prefillChunkInvariance` chunks `PrefillLast` itself and never sets `ResidentPrefillChunk`. Each of those
   shows the path works, not that the option reaches it.
-- **Where it stands: 47 cells admitted untested, 15 tested, 2 declined** (KVPrecision at Metal's `PrefillPath`, Quant
-  int4 at `SpecDecodeConflict`). 57 at build; ten moved to tested on 2026-10-08 by two table-driven tests on the
-  committed llama-tiny, so they run in CI:
+- **Where it stands: 39 cells admitted untested, 22 tested, 3 declined** (KVPrecision at Metal's `PrefillPath`, Quant
+  int4 at `SpecDecodeConflict`, KVQuant at `cpuBatchCacheEligible`). 57 at build; 18 moved out on 2026-10-08 by
+  table-driven tests on the committed llama-tiny, so they run in CI. First round, ten cells:
   - `TestOptionPath_cpuBatchedPrefill` (CPU batched prefill × Quant, KVQuant, ActQuantGroup, ExactPrefill, EmbedInt4):
     a Session's batched prefill must leave the same K/V, bit for bit, and pick the same first token as the per-token
     prefill on the same model.
@@ -212,6 +212,19 @@ the bullets below on one point: cells do not "start declined" — they start hon
     positions past plain decode, holding greedy tokens it never emitted (2 here). Its tokens and cache agree, it
     snapshots, and the next turn reuses the shared prefix.
 
+  - Second round, eight cells. `TestOptionPath_cpuBatchedDecode` (CPU batched decode × Quant, ActQuantGroup,
+    EmbedInt4): concurrent generations with CPUBatchDecode on must each match the same generation alone on a
+    batching-off model, tokens and K/V, with a control that batched steps of two or more ran. `TestOptionPath_sessionSnapshot`
+    (session reuse and snapshot × Quant, CPUBatchDecode): a session snapshotted after one turn, restored and continued
+    must reuse its whole stored prefix and match an uninterrupted session, tokens and K/V. KVQuant × CPU batched decode
+    is a decline, not a gap: `cpuBatchCacheEligible` keeps int8 caches out of the batcher, and
+    `TestCPUBatch_ineligibleCachesBypass` already held it. KVQuant and EmbedInt4 × CPU decode are booked to
+    `TestOptionPath_cpuBatchedPrefill`, whose sequential reference is the decode path; each was booked only after a
+    defect planted in the decode-only code (the int8 attention branch; the int4 embedding lookup) turned it red.
+    Other planted defects, each red: every M>1 W8A8 matmul ignoring ActQuantGroup (batched decode); the batched
+    step's fused int4 q‖k‖v given the wrong group; a restore dropping its last stored position.
+  - Left for later: the MoE paging options (MoEPager, StreamWeights, WeightCacheBytes; 12 cells) need a paged MoE
+    fixture built in the test, and the GPU columns need Metal or CUDA hardware.
 - **What fails closed:** a new `Options` field until it is classified on every path
   (`TestOptionGrid_everyOptionClassified`); a cell naming a test or decline that does not exist in any module
   (`TestOptionGrid_cellsCarryEvidence`); a rise in the untested count, or a fall not booked into the ceiling
