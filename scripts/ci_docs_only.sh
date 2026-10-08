@@ -12,7 +12,8 @@
 #  2. A docs file that Go code READS is not "docs-only", whatever its path. Measured 2026-09-22
 #     over the 30 most recent commits on main: 11 were docs-only by rule 1, and 4 of those touched
 #     a file a test reads -- env-vars.md (TestEnvVars_docAndCodeAgree), benchmarks.md
-#     (cuda/spec_noncopy_lane_test.go), audit-metal-2026-09-12.md (metal/moe_expert_reuse_probe_test.go).
+#     (cuda/spec_noncopy_lane_test.go; it reads a frozen copy since 2026-10-08, so benchmarks.md left the
+#     --selfcheck list below), audit-metal-2026-09-12.md (metal/moe_expert_reuse_probe_test.go).
 #     477da08a is the precedent: a docs-only fix to env-vars.md flipped a test from red to green,
 #     so skipping `test` on a "docs-only" push would have left main red with nothing watching.
 #     Detection is DYNAMIC, not a curated list (a list drifts as tests are added): a changed file's
@@ -39,7 +40,7 @@ selfcheck() {
   # Every entry here is a docs/ file a test READS today (see the header). If detection stops
   # seeing one, the gate has silently widened; fail loudly.
   local ok=0
-  for b in env-vars.md capability-matrix.json hardware-matrix.md api-tiers.md benchmarks.md audit-metal-2026-09-12.md; do
+  for b in env-vars.md capability-matrix.json hardware-matrix.md api-tiers.md audit-metal-2026-09-12.md; do
     if ! read_by_go "$b"; then
       echo "ci_docs_only: SELF-CHECK FAILED: '$b' is read by a Go test but the read-detection no longer sees it" >&2
       ok=1
