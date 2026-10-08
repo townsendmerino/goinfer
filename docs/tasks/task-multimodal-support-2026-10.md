@@ -3120,6 +3120,55 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Not done:** the registered banner wording ("KV plan: 1 conversation x 8192 positions (reduced from 4 x 16384 to leave 1.1 GB for the vision tower)"). The CUDA planner already prints what it chose and why
     (the context floor line, the slots-granted line with the reserve), but not in that shape and not from serve; a unified serve banner is shared with the Mac's Metal cell. The Metal half of G-S18a is the Mac's.
 
+- **S18 on the Mac: the design amended and its gates registered 2026-10-08, before any code (owner: "sidecar for dirs
+  too").**
+  - **Why the registered change cannot pass alone.** Gemma 3 4B from its safetensors directory prices about 5.15 GB on
+    Metal:
+    - about 1.7 GB of int4 layers on the device;
+    - the same again as the heap host copy, because a safetensors load quantizes into the heap, and Metal's unified
+      memory then holds both;
+    - about 1.2 GB of int8 LM head and embedding;
+    - 0.53 GB of KV at the 4096 default (34 layers x 4 KV heads x 256 x 2 x f16 = 136 KB a position).
+
+    Shrinking the context or the slot count saves at most about 0.45 GB, which leaves about 4.7 GB against a live budget
+    of 4.2-4.9 GB (G-S3b, G-S3c, S7). The load guard read 3.9 GB at 14:05 today. Metal's guard does not price the
+    tower at all: `towerReserve` is CUDA-only, and Metal never reads `ExtraResidentBytes`.
+  - **The lever: a `.giw` sidecar for a safetensors directory too.** A `.gguf` on darwin already loads through its
+    sidecar (S1, `prequant.DefaultToSidecar`). The weights are then mmap aliases, which the guard prices once (M-24's
+    exemption in `ResidentHostCopyBytes`). That takes about 1.7 GB off the need.
+  - **The change, four parts:**
+    1. **The sidecar for a directory,** where `DefaultToSidecar` holds (darwin, linux) and no `-direct-load`:
+       - `modelload.Load` resolves a safetensors directory to `<dir>.<quant>.<target>.giw` through
+         `prequant.EnsureCachedGIW`, which already transcodes a directory (`transcodeDir`).
+       - Not for a `--lora` load (the merge needs the safetensors base), and not for `--quant q4k` (no `.giw` form).
+       - A transcode that fails falls back to the direct load with a one-line note, never a refused start.
+       - Freshness for a directory: the sidecar must be newer than every regular file in the directory, not just the
+         directory's own mtime.
+       - The disk check for a directory: a projection from the safetensors files' sizes at the quant, not the
+         directory entry's 4 KB.
+    2. **Metal prices the tower.** `towerReserve` returns the Metal tower's resident bytes when the tower runs on Metal,
+       and Metal's guard (`residentNeedBytes`, so also `metalKVSlots`) adds `ExtraResidentBytes`. The figure comes from
+       the tower's dims at the precision Metal uploads, calibrated against a measured RSS delta by day (below).
+    3. **The context before the decline.** If an unpinned build still prices over the budget, the context halves from
+       4096 down to a floor of 2048 before the guard declines. An explicit `-ctx` is never shrunk.
+    4. **The banner:** serve prints one line naming the KV plan and why it shrank, as registered, when part 3 or the
+       slot count reduced it.
+  - **Gates (G-S18a as registered, plus Mac-side additions):**
+    - **G-S18a, the Mac cell:** `serve --model ~/models/gemma-3-4b-it --backend metal`, no sizing flags. The decode path
+      is `metal-resident` and the tower is on Metal. One served image turn (`table.png`, 32 greedy tokens, top-3
+      logprobs) whose reply is identical to the same request with hand-set flags (`--model <the sidecar> -ctx 2048
+      -kv-sessions 1`). By day, a served correctness check, not timed. It is recorded with the live budget it ran
+      under, because the budget moves with the owner's load.
+    - **G-S18d, the directory sidecar, by tests:** on a tiny safetensors fixture, a directory loads through a sidecar
+      built once; the second load reuses it; CPU logits through the sidecar are bit-identical to the direct load's;
+      `-direct-load` and `--lora` stay direct; a touched safetensors file makes the sidecar stale. Red on today's code
+      (it loads the directory directly).
+    - **G-S18c-Mac, the reserve:** `towerReserve` is nonzero for every family with a Metal device tower under `metal`,
+      zero under `-vision-device cpu`. The Metal guard's need grows by exactly the reserve. Gemma 3's figure is within
+      ±25% of the RSS delta its tower load measures on the Mac.
+    - **G-S18b-Mac, no regression:** for the bench set's text models, the Metal plan's context and slot count are never
+      lower than today's (the sidecar can only lower the need). The `prequant` and `modelload` suites pass.
+  - **Cost:** one transcode of Gemma 3 4B (minutes, about 2.4 GB of disk; 10 GB free at registration).
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).
