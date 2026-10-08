@@ -1,7 +1,8 @@
 # Vetted-checkpoint peer cells, MacBook (pre-registered 2026-10-07)
 
-**Status: PRE-REGISTERED 2026-10-07, before any timed run.** One cell is queued: the 26B on Metal (night job
-`peer-vetted-mac`). The other two Mac cells are blocked, for the reasons below. Results and verdicts go below *Results*.
+**Status: PRE-REGISTERED 2026-10-07, before any timed run.** Two cells are queued (night job `peer-vetted-mac`): the
+26B on Metal, and gpt-oss on Metal (added by the amendment below, still before any timed run). Phi-3 at q4k on Metal is
+blocked, for the reason below. Results and verdicts go below *Results*.
 A bar that turns out wrong gets a dated amendment with its mechanism, not an edit.
 
 **Question.** goinfer.dev/models has empty Metal speed cells for three vetted checkpoints. The Mac fills them on Metal
@@ -13,7 +14,7 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
 | cell | checkpoint (docs/capability-matrix.json) | state |
 |---|---|---|
 | M1 | Phi-3 mini 4k at `--quant q4k` on Metal | **BLOCKED: a code fix, the owner's call** (below) |
-| M2 | gpt-oss 20B MXFP4 on Metal | **BLOCKED: disk** (below) |
+| M2 | gpt-oss 20B MXFP4 (sha256 `27cd6c43…`) on Metal | **QUEUED** (amendment below; it was blocked by disk at first) |
 | M3 | Gemma 4 26B-A4B, the QAT `gemma-4-26B_q4_0-it.gguf` (sha256 `3eca3b8f…`), on Metal | **QUEUED** |
 
 - **M1, Phi-3 at q4k on Metal: Metal declines q4k.** `decoder/residency.go`:
@@ -29,6 +30,30 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
     this machine. Per the plan, it is not scheduled before a one-prompt load confirms it.
   - Unblocked by freeing about 27 GB (regenerable sidecars and the build cache, listed for the owner). Then it gets
     the same smoke, and an amendment here before it is queued.
+
+### Amendment, 2026-10-07 18:30 PDT, before any timed run: M2 unblocked
+
+- **Disk:** the owner freed about 27 GB of regenerable sidecars and the build cache.
+- **The file and the tag:**
+  - The vetted gpt-oss file was copied from nobara: sha256 `27cd6c43…`, matching the matrix.
+  - Ollama's `g20` is nobara's manifest with its model blob hard-linked to that file. `gguf_same_weights.py`: SAME
+    WEIGHTS, one inode.
+- **The by-day smoke, untimed, swap kill-watch at +1 GB:**
+  - a one-time 11.8 GB sidecar (`gpt-oss-20b-MXFP4.int4.metal.giw`);
+  - decode `metal-resident (int4mix→int4, no Metal int8 GEMV kernel)`: goinfer's default int4mix becomes int4 on
+    Metal, which is disclosed on the cell;
+  - a correct reply, and swap +0 MB.
+- **One registered difference from M3: no `-require-backend` on M2.**
+  - **The reason:** with that flag the load refused, because gpt-oss's prefill is sequential on Metal (the batched
+    prefill implements neither its attention sink nor its clamped SwiGLU).
+  - **The precedent:** the 2026-09-29 sweep left the flag off its decode cells for the same reason (Phi-3 on CUDA): a
+    sequential prefill does not touch a decode-only rate.
+  - **What still guards the cell:**
+    - the harness's decode-path gate (anything but `metal-resident` is refused);
+    - the swap void (any growth);
+    - the +1 GB kill.
+- **The cell:** M2 runs as M3 does otherwise (depth 128, greedy, 3 runs, context 2048, `-moe-cache-experts`, Ollama
+  `g20` at its defaults), under the same rules, bands and GOINFER-ALONE rule.
 
 ## Cell M3, as it runs
 
@@ -73,7 +98,7 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
 - **A VOID cell** stays "not measured", with its reason.
 - **A loss stays a loss.**
 
-**Cost.** Night only: one cell, two engines, about 10 minutes of cells and loads. Queued at 25 minutes.
+**Cost.** Night only: two cells (M3, then M2), two engines each, about 20-25 minutes of cells and loads. Queued at 40 minutes (25 before the amendment).
 
 ## Results
 
