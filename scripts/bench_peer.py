@@ -145,6 +145,11 @@ MODELS = {
     # boxes, a plain -backend cpu load needs no -stream-weights and is NOT the paging path that
     # made that run slow -- it is goinfer's normal, fully-supported code path for this family.
     "G20": (os.path.expanduser("~/models/gpt-oss-20b-MXFP4.gguf"), "g20"),
+    # G26Q added 2026-10-07 (docs/measurements/peer-vetted-2026-10-07-*.md): the VETTED Gemma 4 26B-A4B, the QAT
+    # gemma-4-26B_q4_0-it.gguf named by docs/capability-matrix.json (sha256 3eca3b8f...), loaded by BOTH engines: goinfer
+    # reads this file and Ollama's tag g4-26b is it (its model blob IS this file's sha256; gguf_same_weights.py: SAME
+    # WEIGHTS). Its own key so cell c's M26 (the requantized Q4_K_M peer file + goinfer's .giw) keeps its history.
+    "G26Q": (os.path.expanduser("~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf"), "g4-26b"),
 }
 
 # MoE cells whose VRAM footprint exceeds this box's 8 GB card: goinfer needs -moe-cache-experts
@@ -157,7 +162,7 @@ MODELS = {
 # for those two, not just changed -- "cannot apply to the prequantized .giw bundle ... baked at
 # int4mix"); G20 has no such bundle and takes the harness's normal `-quant int4` unmodified (see
 # the MODELS/G20 comment above) while still needing everything else in this set.
-MOE_MODELS = {"M35", "M26", "G20"}
+MOE_MODELS = {"M35", "M26", "G20", "G26Q"}
 
 # goinfer's OWN path for the MOE_MODELS set, distinct from MODELS[key][0] above (which is the
 # Q4_K_M GGUF ollama/llama-server load). goinfer runs its native kind-4 .giw bundle instead --
@@ -521,6 +526,71 @@ def _group_rss_kb(pgid):
             total += rss
             seen = True
     return total if seen else None
+
+def swap_used_mb():
+    """System swap in use, MB: darwin's sysctl vm.swapusage, Linux's /proc/meminfo. None where neither reads."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=5).stdout
+            m = re.search(r"used = ([0-9.]+)M", out)
+            return float(m.group(1)) if m else None
+        mi = dict(l.split(":", 1) for l in open("/proc/meminfo"))
+        return (int(mi["SwapTotal"].split()[0]) - int(mi["SwapFree"].split()[0])) / 1024
+    except Exception:
+        return None
+
+
+class SwapWatch:
+    """Swap growth over one cell, from a baseline taken before its server starts (peer-vetted 2026-10-07: "any swap
+    growth voids that engine's arm"). Polls system swap every POLL_S on a thread; the peak growth goes in the cell's
+    counts. BENCH_SWAP_VOID_MB (unset: off, the old behaviour) voids a cell whose peak growth exceeds it, 0 meaning any
+    growth. BENCH_SWAP_KILL_MB (unset: off) also kills the server's process group the moment growth passes it, so a
+    runaway load is stopped, not just recorded (the Mac's 2026-09-04/05 swap spiral; scripts/swap_killwatch.sh is the
+    out-of-process twin)."""
+    POLL_S = 1.0
+
+    def __init__(self):
+        self.base = swap_used_mb()
+        self.peak = 0.0
+        self.killed = None
+        self.pgid = None
+        kill = os.environ.get("BENCH_SWAP_KILL_MB", "").strip()
+        self.kill_mb = float(kill) if kill else None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.is_set():
+            now = swap_used_mb()
+            if self.base is not None and now is not None:
+                self.peak = max(self.peak, now - self.base)
+                if self.kill_mb is not None and self.peak > self.kill_mb and self.pgid and not self.killed:
+                    self.killed = f"swap grew +{self.peak:.0f} MB (> {self.kill_mb:.0f}); server killed"
+                    try:
+                        os.killpg(self.pgid, signal.SIGKILL)
+                    except Exception:
+                        pass
+            self._stop.wait(self.POLL_S)
+
+    def start(self, pid):
+        self.pgid = os.getpgid(pid)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        if self._thread.is_alive():
+            self._thread.join(timeout=5)
+        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed}
+
+    def void_reason(self):
+        lim = os.environ.get("BENCH_SWAP_VOID_MB", "").strip()
+        if self.killed:
+            return self.killed
+        if lim and self.peak > float(lim):
+            return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
+        return None
+
 
 class RSSSampler:
     """Peak SUM-OF-GROUP RSS, polled on a background thread while a cell's completions run.
@@ -1061,6 +1131,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     # still lands in the record.
     phases = {}
     t_cell = time.time()
+    swap = SwapWatch()   # baseline before the server starts: the load is where swap grows
     try:
         if engine in ("goinfer", "goinfer_old"):
             # MOE_MODELS: `-moe-cache-experts` is added for every model in this set so a >8GB-VRAM
@@ -1078,7 +1149,9 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # with per-32 activations on Metal). Every other value is passed through as before.
             _q = GOINFER_QUANT_OVERRIDE.get(model_key, "int4")
             quant_args = [] if (has_own_bundle or _q == "default") else ["-quant", _q]
-            moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend == "cuda") else []
+            # Metal too since 2026-10-07 (peer-vetted): a 12-14 GB MoE on a 16 GB Mac runs paged (the M26 day-use rule in
+            # docs/tasks/task-m26-mac-2026-10.md), as the 8 GB card does; both are disclosed on the cell.
+            moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend in ("cuda", "metal")) else []
             # "goinfer_old" picks SERVE_OLD instead of SERVE -- same flags, same port (the two never
             # run concurrently: run_cell always tears one engine down before the next starts), a
             # DIFFERENT binary built from a named prior commit. Empty SERVE_OLD entry -> Popen raises
@@ -1166,11 +1239,13 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # real readiness check here, not just a connectable-socket one.
             port, url, parse, mk = MPORT, f"http://127.0.0.1:{MPORT}/v1/chat/completions", \
                 parse_openai, (lambda: mlx_payload(mlx_path, prompt, cfg))
+        if proc is not None:
+            swap.start(proc.pid)
         ready = wait_llamacpp_ready(port, timeout=load_timeout) if engine == "llamacpp" \
             else wait_port(port, timeout=load_timeout)
         phases["start_to_listening_s"] = round(time.time() - t_cell, 2)
         if not ready:
-            return None, "server did not come up", None
+            return None, swap.void_reason() or "server did not come up", {"swap": swap.stop()}
         if engine in ("goinfer", "goinfer_old"):
             decode_path = decode_path_since(serve_log_path, log_offset)
             bad = decode_path_mismatch(decode_path, backend)
@@ -1229,15 +1304,19 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         ratio = (tok_total / chunk_total) if chunk_total else None
         rss_peak_kb = rss.stop()
         ngen = gen_params()[0]
-        return run_rates, None, {"tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio,
+        swap_stats = swap.stop()
+        if (why := swap.void_reason()):
+            return None, why, {"swap": swap_stats, "decode_path": decode_path, "rss_peak_kb": rss_peak_kb}
+        return run_rates, None, {"swap": swap_stats, "tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio,
                                  "completion_rates": comp_rates, "ngen": ngen,
                                  "completion_tokens": comp_tokens, "warmup_tokens": warm[4],
                                  "token_gate": token_gate(comp_tokens, ngen),
                                  "decode_path": decode_path,
                                  "rss_peak_kb": rss_peak_kb, "phases": phases}
     except Exception as e:
-        return None, str(e), None
+        return None, swap.void_reason() or str(e), {"swap": swap.stop()}
     finally:
+        swap.stop()
         t_down = time.time()
         if proc:
             try:
