@@ -165,6 +165,11 @@ options AND the kinds of state; limits stay out of step 2.** What that changes i
   cold prefill per stored session, since snapshots are a regenerable cache. The name is the identity, so an adapter
   reloaded under the same name with different weights across a restart is not caught. Four planted defects (restore
   drops the adapter, writer drops it, an unloaded adapter accepted, `kvAdapter` not restored) each turned a test red.
+  Driven end to end by two more: `TestSession_snapshotAdapterContinuation` (a real compute-time adapter through the
+  forward; the restored cache must match a never-snapshotted session's, compared on K/V because the synthetic model's
+  greedy tokens are the same under every adapter) and `TestSessionLRU_restoreBindsTheLRUsAdapter` (serve's
+  `save`/`load`; red with the old `bindAdapter`). Dropping the adapter on restore is caught by the first only: serve
+  rebinds the LRU's adapter itself, so at that level it is redundant.
 - **Tests** (`decoder/cachestate_test.go`): the registration test over `KVCache`'s fields; every cell declared and
   within what its path can do; `holdsState` knows every kind; the grid's recurrent row equals `hasRecurrentState()`;
   rewind, snapshot and speculative-rollback cells checked on every own-forward family's real cache and by properties

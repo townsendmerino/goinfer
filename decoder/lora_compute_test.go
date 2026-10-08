@@ -61,15 +61,14 @@ func TestLoRACompute_matchesMerge(t *testing.T) {
 	}
 }
 
-// TestLoRACompute_forwardParity loads one synthetic llama base two ways — adapter
-// MERGED at load vs the same adapter applied at COMPUTE time on the immutable base
-// — and asserts the last-position prefill logits match (argmax + tight cosine).
-// The adapter targets attention (q,v) and the MLP (gate,down), so it exercises both
-// causalAttention's and gatedMLP's wiring, plus the forced-sequential prefill path.
-func TestLoRACompute_forwardParity(t *testing.T) {
+// loraFixture writes the synthetic llama base TestLoRACompute_forwardParity uses and returns its
+// directory, with a function that writes an adapter for it (targets q, v, gate, down; r=2,
+// alpha=4). Different seeds give adapters with different weights.
+func loraFixture(t *testing.T) (base string, writeAdapter func(seed int) string) {
+	t.Helper()
 	const hidden, heads, headDim, inter, vocab, layers = 8, 2, 4, 16, 16, 2
 	qDim := heads * headDim // 8
-	base := t.TempDir()
+	base = t.TempDir()
 	cfg := `{"model_type":"llama","vocab_size":16,"hidden_size":8,"num_hidden_layers":2,
 		"num_attention_heads":2,"num_key_value_heads":2,"head_dim":4,"intermediate_size":16,
 		"max_position_embeddings":128,"rms_norm_eps":1e-6,"rope_theta":10000}`
@@ -102,26 +101,40 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 	}
 	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
 
-	// Adapter on q,v,gate,down across both layers; r=2, alpha=4 → scale 2.
-	const r = 2
-	adapter := t.TempDir()
-	if err := os.WriteFile(filepath.Join(adapter, "adapter_config.json"),
-		[]byte(`{"r":2,"lora_alpha":4}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	at := map[string]stTensor{}
-	pfx := "base_model.model.model.layers."
-	for l := range layers {
-		add := func(mod string, inDim, outDim int) {
-			at[pfx+itoa(l)+mod+".lora_A.weight"] = stTensor{[]int{r, inDim}, fill(r*inDim, 100+l)}
-			at[pfx+itoa(l)+mod+".lora_B.weight"] = stTensor{[]int{outDim, r}, fill(outDim*r, 200+l)}
+	writeAdapter = func(seed int) string {
+		// Adapter on q,v,gate,down across both layers; r=2, alpha=4 → scale 2.
+		const r = 2
+		adapter := t.TempDir()
+		if err := os.WriteFile(filepath.Join(adapter, "adapter_config.json"),
+			[]byte(`{"r":2,"lora_alpha":4}`), 0o644); err != nil {
+			t.Fatal(err)
 		}
-		add(".self_attn.q_proj", hidden, qDim)
-		add(".self_attn.v_proj", hidden, qDim)
-		add(".mlp.gate_proj", hidden, inter)
-		add(".mlp.down_proj", inter, hidden)
+		at := map[string]stTensor{}
+		pfx := "base_model.model.model.layers."
+		for l := range layers {
+			add := func(mod string, inDim, outDim int) {
+				at[pfx+itoa(l)+mod+".lora_A.weight"] = stTensor{[]int{r, inDim}, fill(r*inDim, seed+100+l)}
+				at[pfx+itoa(l)+mod+".lora_B.weight"] = stTensor{[]int{outDim, r}, fill(outDim*r, seed+200+l)}
+			}
+			add(".self_attn.q_proj", hidden, qDim)
+			add(".self_attn.v_proj", hidden, qDim)
+			add(".mlp.gate_proj", hidden, inter)
+			add(".mlp.down_proj", inter, hidden)
+		}
+		writeSafetensors(t, filepath.Join(adapter, "adapter_model.safetensors"), at)
+		return adapter
 	}
-	writeSafetensors(t, filepath.Join(adapter, "adapter_model.safetensors"), at)
+	return base, writeAdapter
+}
+
+// TestLoRACompute_forwardParity loads one synthetic llama base two ways — adapter
+// MERGED at load vs the same adapter applied at COMPUTE time on the immutable base
+// — and asserts the last-position prefill logits match (argmax + tight cosine).
+// The adapter targets attention (q,v) and the MLP (gate,down), so it exercises both
+// causalAttention's and gatedMLP's wiring, plus the forced-sequential prefill path.
+func TestLoRACompute_forwardParity(t *testing.T) {
+	base, writeAdapter := loraFixture(t)
+	adapter := writeAdapter(0)
 
 	be, _ := NewBackend("")
 	newModel := func(lo *loraAdapter) *Model {
