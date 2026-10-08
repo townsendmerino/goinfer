@@ -1822,7 +1822,7 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
   | cell | TTFT (median of 3) | bar | what the log says |
   |---|---|---|---|
   | Gemma 3 4B | not a cell | n/a | refused by the fit guard (5.9 GB needed against a 5.2 GB budget, 7.5 GB available at 23:04) |
-  | Gemma 4 E2B, image | **6.20 s** | no | `metal-resident (int4)`, tower on Metal (1.12 s per image); about 5 s of the TTFT is outside the tower, unexplained |
+  | Gemma 4 E2B, image | **6.20 s** | no | `metal-resident (int4)`, tower on Metal (1.12 s per image); about 5 s of the TTFT is the prefill (explained below) |
   | Gemma 4 E2B, audio | 3.20 s | yes | `metal-resident (int4)`, audio tower on Metal (0.16-0.17 s per clip) |
   | Qwen3.5-0.8B | 4.48 s | yes | `metal-resident (int4)`, tower on Metal (1.16 s) |
   | Qwen3-VL-2B | **8.97 s** | no | `metal-resident (int4)`, tower on Metal (3.75-4.14 s) |
@@ -1831,6 +1831,15 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
   | Gemma 4 E4B | not run | n/a | conditional on `s6-e4b`'s sidecar, which was not built |
 
   - **Where the time goes:** the towers explain Qwen2.5-VL, GLM-OCR and most of Qwen3-VL. That is S17's target.
+  - **E2B's other 5 s, explained 2026-10-08 by day** (exploratory: one served E2B on Metal at HEAD, streamed):
+    - **The text-only prompt:** a fresh ~290-token prompt took 6.24 s to its first token. The same prompt again, with
+      its prefix reused, took 0.16 s.
+    - **Decode:** about 42 tok/s (about 24 ms a token).
+    - **The image turn:** 6.42 s, of which the tower is 1.34 s.
+    - **So:** the prefill costs about one decode step per prompt row (~290 rows at ~21 ms). That is S9's layer-major
+      pass, which runs every row through decode's GEMV kernels: bit-identical, but with no batching. Not a defect.
+    - **The fix is S9 step 2,** the f16-MMA batched prefill taught Gemma 4's per-layer geometry. It would bring this
+      cell to about the tower's time plus a batched prefill.
   - **Not measured:** decode tokens per second after the image (`max_tokens` is 8), as on nobara.
   - **A log nit:** the audio cell's serve log says "encoded a ...-byte image" for each WAV clip.
 
