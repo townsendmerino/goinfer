@@ -327,3 +327,22 @@ func TestGridVisionCUDA_real(t *testing.T) {
 		})
 	}
 }
+
+// TestGridVisionCUDA_fusedAttentionKernelDefects: S17 lever A's kernel defects at the TOWER level on the one tiny tower whose head dim (64) takes the fused kernel (GLM-OCR's; the other tiny towers' head
+// dims 8 and 16 fall back to aikit's attention). The unplanted tower meets the bar, and each kernel defect alone breaks it. At real size the same is checked in siglip_vision_test.go.
+func TestGridVisionCUDA_fusedAttentionKernelDefects(t *testing.T) {
+	c := gridGlmCase(t)
+	defer func() { towerAttnDefect = 0 }()
+	if w := c.worstOver(t, 11); w < 0.9999 {
+		t.Fatalf("the unplanted GLM-OCR tiny tower with the fused kernel reads %.9f, under the bar", w)
+	}
+	for d, name := range map[int]string{1: "no rescale when the running max moves", 2: "key mask one past the segment", 3: "V tile read one key late"} {
+		towerAttnDefect = d
+		w := c.worstOver(t, 11)
+		towerAttnDefect = 0
+		fmt.Fprintf(os.Stderr, "[S17 lever A] GLM-OCR tiny tower, kernel defect (%d) %s: worst token cosine %.6f\n", d, name, w)
+		if w >= 0.9999 {
+			t.Errorf("kernel defect (%d) %s left the tiny GLM-OCR tower at %.9f: the fixture cannot see it", d, name, w)
+		}
+	}
+}

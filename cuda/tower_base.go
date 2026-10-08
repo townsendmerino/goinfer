@@ -27,9 +27,10 @@ type towerOps struct {
 
 	zeroBias Buffer // zeros, as long as the widest bias-free projection: lets gemm run the register-blocked bias kernel at any M
 
-	scratch []Buffer   // per-call buffers, released by releaseScratch
-	err     error      // the first launch error of the current call
-	prof    *towerProf // S17 step 0's class profile; nil in production (tower_prof.go)
+	scratch []Buffer         // per-call buffers, released by releaseScratch
+	err     error            // the first launch error of the current call
+	prof    *towerProf       // S17 step 0's class profile; nil in production (tower_prof.go)
+	ownAttn map[int]Pipeline // S17 lever A's fused attention by head dim (64, 72, 80); a head dim not in it takes aikit's kernel
 
 	reqCh chan func() error
 	ackCh chan error
@@ -66,6 +67,14 @@ func newTowerOps(maxN int) (t *towerOps, err error) {
 			if *b.dst, e = t.dev.NewComputePipeline(lib, b.name); e != nil {
 				return fmt.Errorf("cuda tower: pipeline %s: %w", b.name, e)
 			}
+		}
+		t.ownAttn = map[int]Pipeline{}
+		for _, hd := range []int{64, 72, 80} {
+			p, e := t.dev.NewComputePipeline(lib, fmt.Sprintf("tower_attn_hd%d", hd))
+			if e != nil {
+				return fmt.Errorf("cuda tower: pipeline tower_attn_hd%d: %w", hd, e)
+			}
+			t.ownAttn[hd] = p
 		}
 		t.zeroBias = gpu.NewBufferOf(t.dev, make([]float32, max(maxN, 1)))
 		return nil
@@ -264,6 +273,12 @@ func (t *towerOps) ropeHalfTo(x, cs, sn Buffer, T, heads, hd int) {
 func (t *towerOps) attention(q, k, v, out Buffer, np, nH, hd int, scale float32) error {
 	t.cls(clsAttn)
 	t.profAttn(np, nH, hd)
+	if p, ok := t.ownAttn[hd]; ok && !towerAttnAikit {
+		// S17 lever A: the fused float32 kernel (tower_base.cu). No score row in shared memory, so no np ceiling; 64 queries per block, one block per head.
+		cfg := LaunchConfig{GridX: uint32((np + 63) / 64), GridY: uint32(nH), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		t.launch(p, cfg, Arg(q), Arg(k), Arg(v), Arg(out), i32(int32(np)), i32(int32(nH)), f32v(scale*1.4426950408889634), i32(int32(towerAttnDefect)))
+		return nil
+	}
 	p, cfg := t.vit.AttentionPlan(np, nH, hd)
 	if p != t.vit.AttentionTiled && np > 12288 {
 		// the untiled kernel keeps a score row in shared memory; the query-tiled online-softmax kernel (taken from np 3072 when the head dim allows) does not
@@ -272,3 +287,10 @@ func (t *towerOps) attention(q, k, v, out Buffer, np, nH, hd int, scale float32)
 	t.launch(p, cfg, Arg(q), Arg(k), Arg(v), Arg(out), i32(int32(np)), i32(int32(nH)), i32(int32(hd)), f32v(scale))
 	return nil
 }
+
+// towerAttnAikit routes the towers back to aikit's attention kernel (the A/B arm of S17 lever A's whole-tower comparison and the fallback's own test); towerAttnDefect plants the fused kernel's
+// defects for its tests (1: no rescale when the running max moves; 2: the key mask one past the segment). Both are zero in production.
+var (
+	towerAttnAikit  bool
+	towerAttnDefect int
+)

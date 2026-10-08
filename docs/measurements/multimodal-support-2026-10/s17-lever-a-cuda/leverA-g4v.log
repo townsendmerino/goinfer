@@ -1,0 +1,28 @@
+=== RUN   TestG4VCUDA_matchesCPU
+    gemma4_vision_test.go:139: tiny tower: hidden 32, 2 layers, 4 heads of 8, MLP 64, pool 3
+    gemma4_vision_test.go:144:  18 patches (shuffled false): worst soft-token cosine 1.000000000 over 2
+    gemma4_vision_test.go:144:  54 patches (shuffled true): worst soft-token cosine 1.000000000 over 6
+    gemma4_vision_test.go:144: 135 patches (shuffled false): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:144: 135 patches (shuffled true): worst soft-token cosine 1.000000000 over 15
+--- PASS: TestG4VCUDA_matchesCPU (0.39s)
+=== RUN   TestG4VCUDA_scratchAcrossSizesAndDeterminism
+--- PASS: TestG4VCUDA_scratchAcrossSizesAndDeterminism (0.21s)
+=== RUN   TestG4VCUDA_plantedDefects
+    gemma4_vision_test.go:205: planted defect clamps skipped               worst soft-token cosine 0.937679420
+    gemma4_vision_test.go:205: planted defect position x and y swapped     worst soft-token cosine 0.147396345
+    gemma4_vision_test.go:205: planted defect v norm weighted              worst soft-token cosine 0.829414531
+    gemma4_vision_test.go:205: planted defect attention scale 1/sqrt(hd)   worst soft-token cosine 0.533246779
+    gemma4_vision_test.go:205: planted defect position tables skipped      worst soft-token cosine -0.528504812
+    gemma4_vision_test.go:205: planted defect RoPE skipped                 worst soft-token cosine 0.291581446
+--- PASS: TestG4VCUDA_plantedDefects (0.27s)
+=== RUN   TestG4VCUDA_closeAndErrors
+--- PASS: TestG4VCUDA_closeAndErrors (0.21s)
+=== RUN   TestG4VCUDA_gemma4E2B
+    gemma4_vision_test.go:263: E2B tower: hidden 768, 16 layers, clipped true, standardize false, text width 1536
+    gemma4_vision_test.go:290: gemma3_preprocess_image.png      2304 patches: worst soft-token cosine 1.000000000; tower CUDA 450ms, CPU 4.294s (exploratory)
+    gemma4_vision_test.go:290: qwen25vl_preprocess_image.png    2340 patches: worst soft-token cosine 1.000000000; tower CUDA 469ms, CPU 4.368s (exploratory)
+    gemma4_vision_test.go:290: glm_ocr/formula.png              2430 patches: worst soft-token cosine 1.000000000; tower CUDA 495ms, CPU 4.62s (exploratory)
+    gemma4_vision_test.go:290: glm_ocr/table.png                2394 patches: worst soft-token cosine 1.000000000; tower CUDA 478ms, CPU 4.529s (exploratory)
+--- PASS: TestG4VCUDA_gemma4E2B (20.99s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	22.131s

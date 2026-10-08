@@ -202,3 +202,125 @@ func TestS17ProfileCUDA(t *testing.T) {
 		s17Profile(t, fmt.Sprintf("glm-ocr %s (grid %v)", imgs[0], grid), tw.ops, func() ([]float32, error) { return tw.Hidden(px, g) })
 	})
 }
+
+// TestS17LeverA_wholeTower is S17 lever A's registered instrument (TE5(b)): the whole tower with the fused attention against the same tower on aikit's kernel, in one process, interleaved per round
+// (fused, aikit, fused, aikit, ...), the ratio formed per round; then the fused tower's per-class profile. Towers: SigLIP float32, Qwen3.5-0.8B on glm_ocr/formula.png, GLM-OCR on the 896x896 image.
+// Heavy; run alone. SIGLIP_SPEED_ROUNDS sets the rounds (default 3).
+func TestS17LeverA_wholeTower(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	newTestTower(t, 64)
+	rounds := 3
+	if v := os.Getenv("SIGLIP_SPEED_ROUNDS"); v != "" {
+		fmt.Sscan(v, &rounds)
+	}
+	home, _ := os.UserHomeDir()
+	read := func(img string) []byte {
+		data, err := os.ReadFile(filepath.Join("../testdata", img))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	dir := func(name string) string {
+		d := filepath.Join(home, "models", name)
+		if _, err := os.Stat(d); err != nil {
+			t.Skipf("no %s: %v", d, err)
+		}
+		return d
+	}
+	defer func() { towerAttnAikit = false }()
+	ab := func(name string, ops *towerOps, fwd func() ([]float32, error)) {
+		t.Helper()
+		var fused, aik []float64
+		for r := 1; r <= rounds+1; r++ { // round 1 is the warm-up of both arms
+			var tf, ta time.Duration
+			for _, own := range []bool{true, false} {
+				towerAttnAikit = !own
+				t0 := time.Now()
+				if _, err := fwd(); err != nil {
+					t.Fatal(err)
+				}
+				if own {
+					tf = time.Since(t0)
+				} else {
+					ta = time.Since(t0)
+				}
+			}
+			towerAttnAikit = false
+			if r > 1 {
+				fused, aik = append(fused, tf.Seconds()), append(aik, ta.Seconds())
+				fmt.Fprintf(os.Stderr, "[S17 lever A A/B] %s round %d: fused %.3fs | aikit %.3fs | %.2fx\n", name, r-1, tf.Seconds(), ta.Seconds(), ta.Seconds()/tf.Seconds())
+			}
+		}
+		s17Profile(t, name+" (fused)", ops, fwd)
+	}
+	t.Run("siglip-f32", func(t *testing.T) {
+		enc, err := vision.LoadEncoder(dir("gemma-3-4b-it"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tw, err := newSiglipTower(enc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tw.Close()
+		pv, err := vision.Preprocess(read("gemma3_preprocess_image.png"), vision.Gemma3())
+		if err != nil {
+			t.Fatal(err)
+		}
+		patches, err := enc.GridPatches(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ab("siglip-f32", tw.g.ops, func() ([]float32, error) { return tw.hidden(patches) })
+	})
+	t.Run("qwen3.5-0.8b", func(t *testing.T) {
+		d := dir("qwen3.5-0.8b")
+		pp, err := multimodal.LoadQwen3PreprocessConfig(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if limit := 1024 * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit {
+			pp.MaxPixels = limit
+		}
+		enc, err := vision.LoadQwen3VisionEncoder(d, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tw, err := newQwen3Tower(enc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tw.Close()
+		px, grid, err := multimodal.QwenPreprocess(read("glm_ocr/formula.png"), pp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := [][3]int{grid}
+		ab(fmt.Sprintf("qwen3.5-0.8b formula.png %v", grid), tw.ops, func() ([]float32, error) { return tw.Hidden(px, g) })
+	})
+	t.Run("glm-ocr", func(t *testing.T) {
+		d := dir("glm-ocr")
+		pp, err := multimodal.LoadGlmOcrPreprocessConfig(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		enc, err := vision.LoadGlmOcrVisionEncoder(d, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tw, err := newGlmOcrTower(enc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tw.Close()
+		px, grid, err := multimodal.QwenPreprocess(read("gemma3_preprocess_image.png"), pp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := [][3]int{grid}
+		ab(fmt.Sprintf("glm-ocr 896x896 %v", grid), tw.ops, func() ([]float32, error) { return tw.Hidden(px, g) })
+	})
+}

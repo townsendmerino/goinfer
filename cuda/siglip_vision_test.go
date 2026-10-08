@@ -407,3 +407,64 @@ func TestSiglipCUDA_int8VRAM(t *testing.T) {
 	f2 := free()
 	fmt.Fprintf(os.Stderr, "[S18 int8 tower VRAM] free before %.0f MiB, after attach %.0f MiB (tower holds %.0f MiB), after one forward %.0f MiB (%.0f MiB held in all)\n", f0, f1, f0-f1, f2, f0-f2)
 }
+
+// TestSiglipCUDA_fusedAttentionKernelDefectsReal: S17 lever A's kernel defects at real size, on the SigLIP tower (head dim 72, 4096 patches, 27 layers): each alone drops the worst token cosine under the bar.
+func TestSiglipCUDA_fusedAttentionKernelDefectsReal(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	newTestTower(t, 64)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s: %v", dir, err)
+	}
+	cpu, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dev.EnableResident(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(dev.Close)
+	siglipAttachedTower(t, dev)
+	data, err := os.ReadFile("../testdata/" + sigImages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pv, err := vision.Preprocess(data, vision.Gemma3())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := cpu.Forward(pv.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { towerAttnDefect = 0 }()
+	if got, err := dev.Forward(pv.Data); err != nil {
+		t.Fatal(err)
+	} else if w := gridWorst(t, got, want, cpu.Cfg.HiddenSize); w < 0.9999 {
+		t.Fatalf("the unplanted fused-kernel tower reads %.9f, under the bar", w)
+	}
+	for _, c := range []struct {
+		d       int
+		name    string
+		visible bool // whether real size can see it: defect 2 adds one zero-score zero-value key, 1/4097 of the weight over 4096 keys
+	}{{1, "no rescale when the running max moves", true}, {2, "key mask one past the segment", false}, {3, "V tile read one key late", true}} {
+		towerAttnDefect = c.d
+		got, err := dev.Forward(pv.Data)
+		towerAttnDefect = 0
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := gridWorst(t, got, want, cpu.Cfg.HiddenSize)
+		fmt.Fprintf(os.Stderr, "[S17 lever A] real SigLIP, kernel defect (%d) %s: worst token cosine %.6f (visible at real size: %v)\n", c.d, c.name, w, c.visible)
+		if c.visible && w >= 0.9999 {
+			t.Errorf("kernel defect (%d) %s left the real SigLIP tower at %.9f: the test cannot see it", c.d, c.name, w)
+		}
+	}
+}
