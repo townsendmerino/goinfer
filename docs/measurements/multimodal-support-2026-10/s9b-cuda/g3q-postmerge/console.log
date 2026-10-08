@@ -1,0 +1,22 @@
+new: /home/francis/goinfer-bench/s9b/serve-cuda-new (5792b9f3)
+old: /home/francis/goinfer-bench/s9b/serve-cuda-old (f1b593d0)
+model: /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf
+started: 2026-10-07 17:26:08 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 1.85 2.59 2.89 2/839 951052
+== new: image prefill resident line present: True (want True); decode on the resident path: True
+   first differing generated token 17: reference ' for' (p=0.428), this arm '.' (p=0.281); near-tie (p(other) >= half p(top)): True
+== new-ctl: image prefill resident line present: False (want False); decode on the resident path: True
+   32 tokens, reply IDENTICAL to the reference
+== new-auto: image prefill resident line present: True (want True); decode on the resident path: True
+   first differing generated token 27: reference '\n\n' (p=0.591), this arm ' It' (p=0.303); near-tie (p(other) >= half p(top)): True
+G3q: PASS
+-- old:
+  cuda (24.6s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025.\n\nIt provides a breakdown'
+-- new:
+  cuda (5.8s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)**.\n\nIt presents sales data for different regions (North, South, East'
+-- new-ctl:
+  cuda (24.5s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025.\n\nIt provides a breakdown'
+-- new-auto:
+  cuda-towerauto (3.6s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025. It provides sales data broken'
+finished: 2026-10-07 17:27:40 PDT rc=0

@@ -1493,6 +1493,8 @@ different rows.
     a near-tie, True). *New with `GOINFER_BATCHED_PREFILL=0` (same-binary control):* IDENTICAL to the reference, 32 tokens, so the new path declining reproduces today's behaviour exactly. *New, tower on CUDA:* first
     differs at token 27 ('\n\n' 0.591 against ' It' 0.303; near-tie True), with the tower's own ~1e-6 feature difference on top. The logs show the resident-prefill line on the two new arms and not on the control, and
     decode on the resident path on all of them. The reply differs from the CPU-prefill one only where GPU int4 and CPU int4 arithmetic differ, which G1c already bounds; it is not bit-identical by design.
+  - **G3q again on the merged tree (`5792b9f3`, `g3q-postmerge/`, released aikit v1.59.0 pins):** the same four arms read the same: new first differs at token 17 (near-tie True), the same-binary control IDENTICAL, new with the
+    CUDA tower first differs at token 27 (near-tie True); G3q PASS. Wall times 24.6 s (before), 5.8 s, 3.6 s.
   - **Speed, EXPLORATORY (single samples; not quotable; the night record is queued as `s9b-e2b-image-ttft`, 20 min, 3 interleaved rounds x 4 requests, four arms, with the registered kill rule):** wall time of the whole
     32-token image request: 24.7 s before (CPU tower, CPU prefill), 5.8 s with resident prefill (CPU tower), 3.7 s with resident prefill and the CUDA tower. The one-cell smoke of the night script (max_tokens=1,
     1 round, 2 requests): first request 4.97 s against 23.58 s (CPU tower) and 2.83 s against 21.54 s (CUDA tower); the second request, with the tower's features cached, 0.47 s against 19.08 s and 0.45 s against 19.00 s.

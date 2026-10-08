@@ -1,0 +1,6 @@
+[17:26:08] gemma-4-E2B_q4_0-it.gguf: arm cuda (--backend cuda -vision-device cpu --kv-sessions 1 -ctx 4096 --vision /home/francis/models/gemma-4-E2B-unq)
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); exact kernels (the fast levers are not fidelity-gated on Gemma 4 E-models)
+loaded Gemma 4 vision tower for "gemma-4-E2B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on CPU) from /home/francis/models/gemma-4-E2B-unq
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cuda (24.6s): 'This image shows **Table 2: Quarterly unit sales by region (in thousands)** for the fiscal year FY2025.\n\nIt provides a breakdown'
