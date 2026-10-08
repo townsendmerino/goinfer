@@ -1653,6 +1653,21 @@ the three timed requests is under 5.0 s). What differs is the box: the RTX 2070 
 - **By-day smokes of the harness on this box (18:50 and 19:11 PDT, exploratory and not quotable):** one goinfer cell (Qwen3.5-0.8B, TTFT 3.6 s on a fresh image), the Ollama arm (`gemma3:4b`, 1.6 s on a fresh image, 7.9 s on its
   first request) and the llama.cpp arm (Gemma 3 4B with its mmproj, 0.94 s) all ran end to end through `vision_ttft.py` under the timing lock.
 
+#### S13-lite, the float32 arm, registered 2026-10-08 before it runs (nobara)
+
+The cell is last night's S13-lite, unchanged (Gemma 3 4B, `testdata/gemma3_preprocess_image.png`, a new image every request, 3 rounds of one warm-up and three timed requests per engine, the engine order rotated each round, one server at
+a time, every engine on CUDA at its defaults, `vision_ttft.py`), with one more goinfer arm. `run-s13lite-f32-nobara.sh`, night queue `s13lite-f32-nobara`, estimated 20 minutes, queued at 30.
+- **The engines (four):** goinfer at serve's defaults (the int8 device tower), repeated as this run's control; **goinfer with `-vision-quant f32`** (the float32 SigLIP tower on the tower base); Ollama 0.32.5 `gemma3:4b` (the same blob);
+  llama.cpp 427291b with ggml-org's Q4_K_M and mmproj. goinfer is `serve-cuda-s18` at `cb242e92`, the build last night used.
+- **Why:** last night's goinfer arm (4.61 s) is 4.1 s of int8 tower, and the float32 tower measured 2.07 s on its own (S4 addendum, S17 lever A). Whether Gemma 3's CUDA default should be float32 is the owner's open decision; this puts the
+  served TTFT of both next to each other and next to the two peers, on the same box in the same session.
+- **The reading (reported, not gated):** the median of the nine timed TTFTs per engine against the 5 s bar, and the ratios goinfer-f32 / goinfer, goinfer-f32 / Ollama and goinfer-f32 / llama.cpp. **Control:** the default arm should land within
+  3% of last night's 4.61 s; if it does not, the box was not in the same state and the f32 arm is read with that caveat.
+- **For the owner's decision, the evidence rule written before the numbers:** float32 is eligible to become the CUDA default for Gemma 3 if its median TTFT is under the 5 s bar and not above the int8 arm's. That makes it eligible, not decided;
+  the reply-fidelity half of the evidence is G-S3b/G-S3d (identical reply for float32; the int8 default's reply differs at a non-near-tie token).
+- **Prediction, written 2026-10-08 in last night's record and not changed since:** the float32 arm at about 2.5 s (the tower's 2.07 s plus a prefill of about 0.4 s). **Disclosure:** one by-day smoke of this arm (2 requests, exploratory, not quotable)
+  was run before this registration was written; it read 2.41 s and confirmed `-vision-quant f32` logs `encoder f32/cuda-resident` beside `decode path: cuda-resident (int4)`.
+
 #### Night 2026-10-07 on nobara, read 2026-10-08 (the queue started 20:30 PDT and ended 00:15; raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-07-nobara/`)
 
 Eleven entries, nine ok. Every ok job ran well inside its estimate (S7 in 5 minutes against 60, S13-lite in 4 against 55): the estimates were conservative, and the logs show real cells, not early exits. The one failure is the GPU gate (below). The S7/S13-lite
