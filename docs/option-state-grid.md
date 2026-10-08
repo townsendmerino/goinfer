@@ -7,23 +7,23 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 ## Load options × execution paths
 
 **tested** names a test that drives the option through the path; **declined** names the function where the path refuses it;
-**untested** runs today with no test that drives it (57 cells; `TestOptionGrid_ratchet` lets that number only fall);
+**untested** runs today with no test that drives it (47 cells; `TestOptionGrid_ratchet` lets that number only fall);
 **n/a**: the option does not reach the path (reasons below the table).
 
 | option | CPU decode | CPU batched prefill | CPU batched decode | GPU resident decode | GPU resident prefill | speculative verify | session reuse and snapshot |
 |---|---|---|---|---|---|---|---|
-| `ActQuantGroup` | tested: `TestActQuantGroup_perModel` | untested | untested | tested: `TestActGroup_phi3ResidentMatchesCPU` | untested | untested | n/a |
+| `ActQuantGroup` | tested: `TestActQuantGroup_perModel` | tested: `TestOptionPath_cpuBatchedPrefill` | untested | tested: `TestActGroup_phi3ResidentMatchesCPU` | untested | tested: `TestOptionPath_specVerify` | n/a |
 | `Backend` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
-| `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | untested | untested |
-| `EmbedInt4` | untested | untested | untested | untested | untested | untested | n/a |
-| `ExactPrefill` | n/a | untested | n/a | n/a | untested | untested | n/a |
+| `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | untested |
+| `EmbedInt4` | untested | tested: `TestOptionPath_cpuBatchedPrefill` | untested | untested | untested | tested: `TestOptionPath_specVerify` | n/a |
+| `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | untested | tested: `TestOptionPath_specVerify` | n/a |
 | `KVPrecision` | n/a | n/a | n/a | untested | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | untested | untested |
-| `KVQuant` | untested | untested | untested | n/a | n/a | untested | tested: `TestKVI8_snapshotRoundtrip` |
+| `KVQuant` | untested | tested: `TestOptionPath_cpuBatchedPrefill` | untested | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `MoECacheSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `MoEPager` | untested | untested | untested | n/a | n/a | untested | n/a |
-| `Quant` | tested: `TestDecodeParityInt4` | untested | untested | untested | untested | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | untested |
+| `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | untested | untested | untested | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | untested |
 | `ResidentContext` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `ResidentKVSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | untested | untested | n/a |

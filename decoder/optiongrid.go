@@ -113,24 +113,28 @@ var ogGrid = map[string]map[ogPath]ogCell{
 
 	"Quant": ogFill(map[ogPath]ogCell{
 		pathCPUDecode:       ogTestedBy("TestDecodeParityInt4"),
-		pathCPUBatchPrefill: ogUntestedCell(), // TestInt4_forwardParity runs runLayers per token: decode, not forwardN
+		pathCPUBatchPrefill: ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathSpecVerify:      ogDeclinedAt("SpecDecodeConflict", "TestSpecDecodeConflict_refusesStagedWebGPUInt4"),
 	}, ogUntestedCell()),
 	"EmbedInt4": ogFill(map[ogPath]ogCell{
+		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
+		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("a weight format; the session's cache does not depend on it"),
 	}, ogUntestedCell()),
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
 		pathCPUDecode:        ogTestedBy("TestActQuantGroup_perModel"),
 		pathResidentDecode:   ogTestedBy("TestActGroup_phi3ResidentMatchesCPU"),
+		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
+		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("an activation-quantization setting; the session's cache does not depend on it"),
 	}, ogUntestedCell()),
 
 	"KVQuant": ogMerge(
 		map[ogPath]ogCell{
-			pathCPUDecode:        ogUntestedCell(), // TestKVI8_genParity sets m.kvI8 itself, not through Options
-			pathCPUBatchPrefill:  ogUntestedCell(), // TestKVI8_batchedPrefill likewise
+			pathCPUDecode:        ogUntestedCell(),                               // TestKVI8_genParity sets m.kvI8 itself, not through Options
+			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"), // TestKVI8_batchedPrefill sets m.kvI8 itself
 			pathCPUBatchDecode:   ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
+			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogTestedBy("TestKVI8_snapshotRoundtrip"),
 		},
 		ogResidentNA("the CPU KV cache's precision (\"selects the CPU KV cache storage precision\"); a resident uses KVPrecision"),
@@ -224,11 +228,11 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	),
 	"ExactPrefill": map[ogPath]ogCell{
 		pathCPUDecode:        ogNACell("selects how a prompt is ingested; decode is one token"),
-		pathCPUBatchPrefill:  ogUntestedCell(),
+		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathCPUBatchDecode:   ogNACell("selects how a prompt is ingested; decode is one token"),
 		pathResidentDecode:   ogNACell("selects how a prompt is ingested; decode is one token"),
 		pathResidentPrefill:  ogUntestedCell(),
-		pathSpecVerify:       ogUntestedCell(),
+		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("selects prefill numerics; a session's reuse rules do not depend on them"),
 	},
 	"CPUBatchDecode": ogMerge(
@@ -237,7 +241,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathCPUDecode:        ogNACell("selects whether decode joins a batch; a single generation is unaffected"),
 			pathCPUBatchPrefill:  ogNACell("a decode setting"),
 			pathCPUBatchDecode:   ogTestedBy("TestEnableCPUBatch_policy"),
-			pathSpecVerify:       ogUntestedCell(),
+			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogUntestedCell(),
 		},
 	),
@@ -246,4 +250,4 @@ var ogGrid = map[string]map[ogPath]ogCell{
 // optionGridUntestedCeiling is the ratchet: the number of ogUntested cells may not rise above it,
 // and when it falls the constant must be lowered to match (TestOptionGrid_ratchet), so a cell
 // that gains a test cannot quietly lose it again.
-const optionGridUntestedCeiling = 57
+const optionGridUntestedCeiling = 47

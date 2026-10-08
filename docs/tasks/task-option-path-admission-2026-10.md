@@ -6,8 +6,8 @@
 > put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
 > 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 built the same day
 > as two registries (§4.1 state × lifecycle, behaviour-changing where a cell was unsafe; §4.2 options × paths, a
-> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 57 option
-> cells admitted untested, the work list.
+> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 47 option
+> cells admitted untested (57 at build; 10 moved to tested the same day), the work list.
 
 ## 1. The class, and why it keeps coming back
 
@@ -194,8 +194,24 @@ the bullets below on one point: cells do not "start declined" — they start hon
   `TestKVI8_batchedPrefill` set the internal `kvI8` themselves; the Metal int8-KV parity tests drive kernels;
   `TestMC5_prefillChunkInvariance` chunks `PrefillLast` itself and never sets `ResidentPrefillChunk`. Each of those
   shows the path works, not that the option reaches it.
-- **Where it stands: 57 cells admitted untested, 5 tested, 2 declined** (KVPrecision at Metal's `PrefillPath`, Quant
-  int4 at `SpecDecodeConflict`). That count is the work list; the generated page shows which cells.
+- **Where it stands: 47 cells admitted untested, 15 tested, 2 declined** (KVPrecision at Metal's `PrefillPath`, Quant
+  int4 at `SpecDecodeConflict`). 57 at build; ten moved to tested on 2026-10-08 by two table-driven tests on the
+  committed llama-tiny, so they run in CI:
+  - `TestOptionPath_cpuBatchedPrefill` (CPU batched prefill × Quant, KVQuant, ActQuantGroup, ExactPrefill, EmbedInt4):
+    a Session's batched prefill must leave the same K/V, bit for bit, and pick the same first token as the per-token
+    prefill on the same model.
+  - `TestOptionPath_specVerify` (speculative verify × ActQuantGroup, CPUBatchDecode, EmbedInt4, ExactPrefill,
+    KVQuant): Session n-gram speculative decoding must emit plain greedy's tokens and leave the same K/V, with the
+    production n-gram drafter and with a drafter built so every block is partly rejected (on this model the n-gram
+    drafter's blocks are mostly accepted, so it alone never exercised the rollback). Tokens alone were too coarse:
+    greedy picks on a model this small do not move under a small numeric error.
+  - Each case first checks that its option took hold on the loaded model. Planted defects, each red: the speculative
+    rollback skipped; every M>1 W8A8 matmul ignoring ActQuantGroup (K/V off by 0.008); batched prefill ignoring the
+    int8 cache; Load dropping KVQuant.
+  - Observed, not a defect: a speculative block accepted past maxTokens stays committed, so the session ends a few
+    positions past plain decode, holding greedy tokens it never emitted (2 here). Its tokens and cache agree, it
+    snapshots, and the next turn reuses the shared prefix.
+
 - **What fails closed:** a new `Options` field until it is classified on every path
   (`TestOptionGrid_everyOptionClassified`); a cell naming a test or decline that does not exist in any module
   (`TestOptionGrid_cellsCarryEvidence`); a rise in the untested count, or a fall not booked into the ceiling
