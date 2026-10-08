@@ -29,13 +29,15 @@ func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 		}},
 		{name: "EmbedInt4 (int4)", opts: Options{Quant: "int4", EmbedInt4: true}, effect: ogDiffersFromPlain},
 	}
-	const nConv, maxTok = 3, 12
+	const nConv, maxTok = 4, 32
 	prompts := make([][]int, nConv)
 	for c := range prompts {
 		prompts[c] = []int{1, 2, 3, (c*17 + 5) % 256, (c*29 + 9) % 256}
 	}
 	// run generates every conversation on m, concurrently or one after another, and returns each
-	// session's emitted tokens and final K/V.
+	// session's emitted tokens and final K/V. Concurrent runs start together behind a barrier: the
+	// batcher joins only generations decoding at the same moment, and on a model this small one can
+	// otherwise finish before the next has started (it did on CI's linux-arm64 runner).
 	run := func(t *testing.T, m *Model, concurrent bool) ([][]int, [][]float32) {
 		toks, kv := make([][]int, nConv), make([][]float32, nConv)
 		one := func(c int) {
@@ -56,10 +58,12 @@ func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 			return toks, kv
 		}
 		var wg sync.WaitGroup
+		start := make(chan struct{})
 		for c := range nConv {
 			wg.Add(1)
-			go func() { defer wg.Done(); one(c) }()
+			go func() { defer wg.Done(); <-start; one(c) }()
 		}
+		close(start)
 		wg.Wait()
 		return toks, kv
 	}
@@ -76,17 +80,27 @@ func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 			if !m.EnableCPUBatch(nConv) {
 				t.Fatalf("EnableCPUBatch declined: %v", m.cpuBatchModelEligible())
 			}
-			gotToks, gotKV := run(t, m, true)
-			for cv := range nConv {
-				if !slices.Equal(gotToks[cv], wantToks[cv]) {
-					t.Errorf("conversation %d: batched %v, alone %v", cv, gotToks[cv], wantToks[cv])
+			// Every attempt is checked for correctness; attempts repeat only until the control shows a
+			// batched step ran, since whether the generations overlap is up to the scheduler.
+			const attempts = 5
+			for a := 1; ; a++ {
+				gotToks, gotKV := run(t, m, true)
+				for cv := range nConv {
+					if !slices.Equal(gotToks[cv], wantToks[cv]) {
+						t.Errorf("attempt %d conversation %d: batched %v, alone %v", a, cv, gotToks[cv], wantToks[cv])
+					}
+					if d := ogMaxDiff(gotKV[cv], wantKV[cv]); d != 0 {
+						t.Errorf("attempt %d conversation %d: batched K/V differs from alone by %g", a, cv, d)
+					}
 				}
-				if d := ogMaxDiff(gotKV[cv], wantKV[cv]); d != 0 {
-					t.Errorf("conversation %d: batched K/V differs from alone by %g", cv, d)
+				st := m.CPUBatchStats()
+				if st.Steps > 0 && st.StepTokens >= 2*st.Steps {
+					break
 				}
-			}
-			if st := m.CPUBatchStats(); st.Steps == 0 || st.StepTokens < 2*st.Steps {
-				t.Errorf("no batched step of two or more sequences ran (%d steps, %d tokens)", st.Steps, st.StepTokens)
+				if a == attempts {
+					t.Fatalf("no batched step of two or more sequences ran in %d attempts (%d steps, %d tokens)",
+						attempts, st.Steps, st.StepTokens)
+				}
 			}
 		})
 	}
