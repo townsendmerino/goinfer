@@ -1223,6 +1223,34 @@ and GLM-OCR towers follow on it, as Metal's did. One brief: `docs/prompts/nobara
   the shuffled and clamp controls) plus a served Gemma 4 image turn as in G-S2d. nobara writes its desk map and any
   CUDA-specific planted defects into this doc before the CUDA tower code.
 
+#### S4 addendum: a float32 SigLIP tower on the CUDA tower base (the Mac's audit item, nobara 1) — registered 2026-10-07 evening, before any code
+
+Why: under `--backend cuda` serve gives Gemma 3 an int8 SigLIP tower by default (`towerInt8`; `cuda/vision_encoder.go` is int8 by construction). `docs/measurements/siglip-int8-fidelity-2026-10-07.md` puts int8 SigLIP at relative L2
+0.16-0.52 from float32 and a worst token cosine of 0.01-0.17. Metal's SigLIP was rebuilt as float32 (S3); CUDA's has not been. This builds the float32 tower, grades it, and measures what the int8 default costs end to end,
+so the owner can decide the default with evidence. **Changing the default is not part of this and waits for the owner.**
+
+- **What changes** (`cuda/` plus one small serve change): a `gridSiglip` kind on the existing tower base (`cuda/grid_vision.go`): aikit's `GridPatches` rows on the host, the patch embed plus the fixed position table, every block over ONE
+  segment of all the patches with no RoPE (LayerNorm with bias, biased separate q/k/v, attention at scale 1/sqrt(head_dim), biased o, GELU-tanh MLP), then aikit's `FinishHidden` (the post-layernorm) on the host; float32 weights from
+  `Encoder.Weights()`. The one global `vision.RegisterResident` factory in `cuda/vision_register.go` dispatches on how the encoder was loaded: a float32 encoder (`Weights()` succeeds) gets this tower, an int8 one gets today's
+  `NewVisionEncoder`, so with no flag nothing changes. Serve cannot currently ask for float32 on CUDA (`towerInt8` returns true for Gemma 3 there whatever `-vision-quant` says, and the flag's default is the string "f32"), so
+  the flag's default becomes unset: unset keeps today's choice, an explicit `-vision-quant f32` now selects the float32 tower on cuda. The tower's VRAM is added to `towerReserve` for the float32 case.
+- **Gates (written before the code; the first is G-S3a's shape and bars from the Metal rebuild, unchanged):**
+  - **G-S3a on CUDA.** Every output token (the `FinishHidden` rows) at cosine >= 0.9999 against aikit's CPU tower, both float32; 0.999-0.9999 is ambiguous and parked. Tiny (`testdata/siglip-tiny`): norms randomised first (the all-ones
+    trap) and the biases and q/k scale sharpened exactly as `metal/s3_towers_test.go` does, because the tiny tower's zero biases and init-scale q/k hid 5 of S3's 7 defects. Each registered planted defect alone must turn it red:
+    (1) the attention scale dropped, (5) the position table dropped, (6) the patch-embed bias dropped (the numbers are S3's). Real (`~/models/gemma-3-4b-it`, never the archive) under `GOINFER_HEAVY_TESTS=1`, on the four F2a images
+    (`gemma3_preprocess_image.png`, `qwen25vl_preprocess_image.png`, `glm_ocr/formula.png`, `glm_ocr/table.png`), attached the way serve attaches it (`EnableResident`), and the test asserts the attached type so that another
+    package's registration cannot satisfy it. Real size matters here beyond the usual reason: head_dim is 72, which no other tower on this base has, and aikit's `visioncuda` read 0.10-0.28 at real size while passing tiny.
+  - **G-S3b on CUDA, served.** `gemma-3-4b-it`, `--backend cuda --kv-sessions 1` (4 KV slots do not fit the 8 GB card beside the tower; known), the `table.png` request, 32 greedy tokens with top-3 logprobs. **Reference arm, named:**
+    `-vision-device cpu -vision-quant f32` (the CPU float32 tower). Arm under test: `-vision-quant f32` with the device tower. Identical reply, or a first divergence at a near-tie under the registered rule (p(other) >= half p(top)),
+    graded against the named reference and never against whichever arm happens to run first (the script is told its reference).
+  - **G-S3d (new), what the int8 default costs end to end.** The same served request with a third arm, the shipped default (no `-vision-quant`: the int8 device tower), graded against the same float32 CPU reference by the same rule,
+    with the reply, the first-divergence token and the number of matched tokens recorded for all three arms; plus, on the four F2a images, the int8 CUDA tower's features against the float32 tower's (relative L2 and worst token
+    cosine), to set beside the fidelity record's 0.16-0.52 and 0.01-0.17. Two images x two arms of text is evidence, not a verdict: it is recorded as what it is.
+  - **Speed (night, a record with no bar):** tower time per image on the four images, float32 CUDA against int8 CUDA against the CPU float32 tower, interleaved under the timing lock. Exploratory by day.
+- **Parked or killed:** a worst token in 0.999-0.9999 on a real image parks the tower (reported, not shipped as a selectable option until understood). A defect that stays green on the tiny tower means the fixture is degenerate
+  on that axis; the check is rerun on a sharper fixture before any result is read.
+- **Day / night:** the tower, the tiny gates and the vets are day work; the real-size gate and the served arms are a few minutes each (G-S3a real about 3, G-S3b/d about 8); the speed record goes on the night queue.
+
 ### S5 — Gemma 4 E2B/E4B audio into the model
 
 aikit's `audio` package probably loads E2B's tower unchanged (its config and tensor names were checked on nobara,
