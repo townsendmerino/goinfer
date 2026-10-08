@@ -1,0 +1,21 @@
+=== RUN   TestS17LeverB_wholeTowerMetal
+| tower | image | rows | old s (3 rounds) | f16 GEMM s (3 rounds) | old/f16 GEMM per round | median | worst row cosine |
+|---|---|---|---|---|---|---|---|
+=== RUN   TestS17LeverB_wholeTowerMetal/siglip
+| SigLIP | gemma3_preprocess_image.png | 4096 | 4.000 / 4.005 / 4.004 | 2.652 / 2.711 / 2.663 | 1.51 / 1.48 / 1.50 | 1.50x | 1.000000000 |
+=== RUN   TestS17LeverB_wholeTowerMetal/qwen2.5-vl
+| Qwen2.5-VL | gemma3_preprocess_image.png | 4096 | 6.145 / 6.165 / 6.209 | 3.469 / 2.968 / 3.428 | 1.77 / 2.08 / 1.81 | 1.81x | 0.999999895 |
+| Qwen2.5-VL | qwen25vl_preprocess_image.png | 24 | 0.167 / 0.089 / 0.085 | 0.089 / 0.077 / 0.076 | 1.88 / 1.16 / 1.13 | 1.16x | 1.000000000 |
+| Qwen2.5-VL | glm_ocr/formula.png | 6192 | 9.326 / 9.475 / 9.440 | 5.222 / 5.177 / 5.182 | 1.79 / 1.83 / 1.82 | 1.82x | 0.999999988 |
+| Qwen2.5-VL | glm_ocr/table.png | 5504 | 8.381 / 8.340 / 8.322 | 4.834 / 4.582 / 4.635 | 1.73 / 1.82 / 1.80 | 1.80x | 0.999999997 |
+=== RUN   TestS17LeverB_wholeTowerMetal/qwen3.5
+| Qwen3.5-0.8B | gemma3_preprocess_image.png | 3136 | 0.729 / 0.701 / 0.775 | 0.547 / 0.494 / 0.541 | 1.33 / 1.42 / 1.43 | 1.42x | 0.999999941 |
+| Qwen3.5-0.8B | qwen25vl_preprocess_image.png | 280 | 0.062 / 0.075 / 0.068 | 0.046 / 0.049 / 0.048 | 1.33 / 1.52 / 1.41 | 1.41x | 1.000000000 |
+| Qwen3.5-0.8B | glm_ocr/formula.png | 4060 | 0.972 / 0.982 / 0.961 | 0.632 / 0.625 / 0.630 | 1.54 / 1.57 / 1.53 | 1.54x | 0.999999996 |
+| Qwen3.5-0.8B | glm_ocr/table.png | 3888 | 0.960 / 0.921 / 0.912 | 0.682 / 0.696 / 0.608 | 1.41 / 1.32 / 1.50 | 1.41x | 0.999999990 |
+--- PASS: TestS17LeverB_wholeTowerMetal (208.45s)
+    --- PASS: TestS17LeverB_wholeTowerMetal/siglip (29.75s)
+    --- PASS: TestS17LeverB_wholeTowerMetal/qwen2.5-vl (157.10s)
+    --- PASS: TestS17LeverB_wholeTowerMetal/qwen3.5 (21.61s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	209.542s
