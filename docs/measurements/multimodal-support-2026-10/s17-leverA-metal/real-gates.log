@@ -1,0 +1,39 @@
+=== RUN   TestGridVisionMetal_real
+=== RUN   TestGridVisionMetal_real/qwen3
+[S2 real qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999136; tower Metal 751ms, CPU 4.767s (exploratory)
+[S2 real qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999999; tower Metal 77ms, CPU 200ms (exploratory)
+[S2 real qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999963; tower Metal 1.078s, CPU 6.874s (exploratory)
+[S2 real qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999988; tower Metal 1.016s, CPU 6.304s (exploratory)
+=== RUN   TestGridVisionMetal_real/glm-ocr
+[S2 real glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): worst token cosine 0.999999475; tower Metal 4.236s, CPU 24.293s (exploratory)
+[S2 real glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): worst token cosine 1.000000000; tower Metal 934ms, CPU 558ms (exploratory)
+[S2 real glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): worst token cosine 0.999999027; tower Metal 7.88s, CPU 1m5.533s (exploratory)
+[S2 real glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): worst token cosine 0.999999730; tower Metal 6.473s, CPU 44.896s (exploratory)
+[S2 real glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): worst token cosine 0.999998650; tower Metal 7.525s, CPU 52.811s (exploratory)
+--- PASS: TestGridVisionMetal_real (240.83s)
+    --- PASS: TestGridVisionMetal_real/qwen3 (21.81s)
+    --- PASS: TestGridVisionMetal_real/glm-ocr (219.02s)
+=== RUN   TestS3Towers_real
+=== RUN   TestS3Towers_real/siglip
+[S3 real siglip] gemma3_preprocess_image.png    tower Metal 4.47s, CPU 25.436s (exploratory)
+[S3 G-S3a] gemma-3-4b-it gemma3_preprocess_image.png: worst token cosine 0.999999951
+[S3 real siglip] qwen25vl_preprocess_image.png  tower Metal 4.747s, CPU 25.723s (exploratory)
+[S3 G-S3a] gemma-3-4b-it qwen25vl_preprocess_image.png: worst token cosine 0.999999962
+[S3 real siglip] glm_ocr/formula.png            tower Metal 4.796s, CPU 27.891s (exploratory)
+[S3 G-S3a] gemma-3-4b-it glm_ocr/formula.png: worst token cosine 0.999999909
+[S3 real siglip] glm_ocr/table.png              tower Metal 4.769s, CPU 26.601s (exploratory)
+[S3 G-S3a] gemma-3-4b-it glm_ocr/table.png: worst token cosine 0.999999919
+=== RUN   TestS3Towers_real/qwen2.5-vl
+[S3 real qwen2.5-vl] gemma3_preprocess_image.png    grid [1 64 64]: tower Metal 14.137s, CPU 32.314s (exploratory)
+[S3 G-S3a] qwen25vl-3b gemma3_preprocess_image.png: worst token cosine 0.999996201
+[S3 real qwen2.5-vl] qwen25vl_preprocess_image.png  grid [1 4 6]: tower Metal 1.339s, CPU 1.388s (exploratory)
+[S3 G-S3a] qwen25vl-3b qwen25vl_preprocess_image.png: worst token cosine 1.000000000
+[S3 real qwen2.5-vl] glm_ocr/formula.png            grid [1 86 72]: tower Metal 11.14s, CPU 40.108s (exploratory)
+[S3 G-S3a] qwen25vl-3b glm_ocr/formula.png: worst token cosine 0.999999068
+[S3 real qwen2.5-vl] glm_ocr/table.png              grid [1 64 86]: tower Metal 9.442s, CPU 32.802s (exploratory)
+[S3 G-S3a] qwen25vl-3b glm_ocr/table.png: worst token cosine 0.999999415
+--- PASS: TestS3Towers_real (286.45s)
+    --- PASS: TestS3Towers_real/siglip (129.76s)
+    --- PASS: TestS3Towers_real/qwen2.5-vl (156.69s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	528.178s

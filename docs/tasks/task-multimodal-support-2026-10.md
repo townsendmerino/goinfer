@@ -2642,6 +2642,54 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **The speed instrument (TE5(b)):** a whole-tower in-process A/B, interleaved in one process, by day. A resolved
     direction may be acted on; an unresolved one goes to the served TTFT gate at night. Ship at >= 1.02x.
 
+- **S17's Metal lever A, read 2026-10-08 by day: all three towers at or above their bands; SHIPPED (default on).**
+  - **What:** `tower_attn_hd{64,72,80}` in `metal/grid_vision.go`, a fused non-causal float32 attention on simdgroup
+    8x8 tiles in R19's shape. Any other head dim keeps `eg2Ops.attention`.
+    - Q is staged with bounds, and K/V in 16-key blocks.
+    - The online softmax runs in exp2, everything in f32.
+  - **The kernel gate** (`TestTowerAttnKernel`, against a float64 softmax(q·kᵀ)·v; bar, set before the first run:
+    every element within 1e-5 of max |v|):
+    - worst 7.05e-7 (hd 64), 7.53e-7 (hd 72), 6.91e-7 (hd 80), over segments of 1 to 1100 rows;
+    - each planted defect is red: the rescale skipped 7.05e-1, the key mask one past 3.41e-3, V one key late 9.76e-1.
+  - **Correctness at real size, unchanged bars (cosine ≥ 0.9999 against the CPU tower), all PASS:**
+    - G-S2b: Qwen3.5 worst 0.999999136, GLM-OCR worst 0.999998650.
+    - G-S3a: SigLIP worst 0.999999909, Qwen2.5-VL worst 0.999996201.
+    - The tiny gates read 1.000000000. GLM-OCR's tiny fixture has head dim 64, so the fused kernel ran there too.
+  - **The speed instrument** (`TestS17LeverA_wholeTowerMetal`, TE5(b)):
+    - one process, the fused arm against the old one (the `oldAttn` seam), interleaved;
+    - per tower and image, one warm-up of each arm, then 3 rounds with the order alternating; wall time;
+    - SigLIP on one image (every image is the same 4096 patches).
+    - **Not idle:** the load average was 8.58 at the start (the owner's machine, by day). The arms are interleaved, so
+      the ratios carry it; the absolute seconds are not a record.
+    - **Raw:** `docs/measurements/multimodal-support-2026-10/s17-leverA-metal/` (`ab.log`, `real-gates.log`).
+
+  | tower | image (rows) | old s | fused s | old/fused per round | median | band |
+  |---|---|---|---|---|---|---|
+  | SigLIP | any (4096) | 9.177 / 9.241 / 9.358 | 4.123 / 4.174 / 4.090 | 2.23 / 2.21 / 2.29 | **2.23x** | 1.7-2.2x |
+  | Qwen2.5-VL | 896² (4096) | 8.136 / 8.248 / 8.253 | 5.281 / 5.235 / 6.066 | 1.54 / 1.58 / 1.36 | **1.54x** | 1.2-1.3x |
+  | Qwen2.5-VL | 4x6 (24) | 0.112 / 0.111 / 0.111 | 0.083 / 0.083 / 0.083 | 1.35 / 1.34 / 1.33 | 1.34x | — |
+  | Qwen2.5-VL | formula.png (6192) | 13.484 / 13.462 / 13.714 | 9.004 / 9.393 / 9.471 | 1.50 / 1.43 / 1.45 | **1.45x** | 1.2-1.3x |
+  | Qwen2.5-VL | table.png (5504) | 11.797 / 11.846 / 11.386 | 8.259 / 7.711 / 8.870 | 1.43 / 1.54 / 1.28 | **1.43x** | 1.2-1.3x |
+  | Qwen3.5-0.8B | 896² (3136) | 1.226 / 1.262 / 1.201 | 0.714 / 0.710 / 0.634 | 1.72 / 1.78 / 1.90 | 1.78x | — |
+  | Qwen3.5-0.8B | 14x20 (280) | 0.086 / 0.089 / 0.090 | 0.062 / 0.063 / 0.065 | 1.39 / 1.42 / 1.40 | 1.40x | — |
+  | Qwen3.5-0.8B | formula.png (4060) | 3.040 / 3.112 / 2.994 | 1.071 / 1.021 / 0.989 | 2.84 / 3.05 / 3.03 | **3.03x** | — |
+  | Qwen3.5-0.8B | table.png (3888) | 1.800 / 1.737 / 1.752 | 1.009 / 0.924 / 0.919 | 1.78 / 1.88 / 1.91 | **1.88x** | 1.6-2.0x |
+
+  - **Every round resolves above 1** (27 of 27), and the two arms' outputs agree to a worst row cosine of 0.9999997.
+    By TE5(b) a resolved direction may be acted on, and every tower is above the 1.02x ship bar: **default on**.
+  - **Above the band, with a mechanism to confirm:** SigLIP (2.23x against 2.2) and Qwen2.5-VL (1.43-1.54x against
+    1.2-1.3).
+    - Qwen2.5-VL's gain is more than removing its whole attention share could give: 27-32% of GPU time caps the gain at
+      about 1.4x.
+    - The bands came from step 0's GPU-time split, while the A/B times wall clock. The old path's host side (thousands
+      of per-window dispatches to encode, and the command-buffer flushes its scalar arena forces) was never in the
+      profile, and the fused path removes most of it.
+    - That is the likely mechanism; it is not verified by a host-time profile.
+  - **Still owed:**
+    - lever B (GEMM, the larger share on Qwen2.5-VL);
+    - the served TTFT cells on this build (S7 and S13-lite at night): S13-lite's goinfer arm was 8.9-9.6 s of
+      SigLIP tower per image.
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common

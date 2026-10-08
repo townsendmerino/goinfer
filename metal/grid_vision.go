@@ -40,6 +40,126 @@ kernel void gv_scale(device float* x [[buffer(0)]], constant uint& n [[buffer(1)
 {
     if (gid < n) x[gid] = x[gid] * s;
 }
+
+// tower_attn_hd{64,72,80}: S17 lever A on Metal (docs/tasks/task-multimodal-support-2026-10.md, "The two Metal levers"):
+// a fused, non-causal, online-softmax float32 attention over one segment, replacing eg2Ops.attention's per-head chain
+// (head-major copies, a GEMM for the scores, a row softmax, a GEMM against V transposed, a scatter). q (already scaled by
+// 1/sqrt(head_dim)), k, v and out are [T, nH*HD] with the heads in place. R19's shape (attention_prefill_steel) in f32:
+// one threadgroup per (head, 32 query rows), 4 simdgroups of 8 rows; each 16-key K/V block is staged once in padded
+// threadgroup memory and read by all 32 rows; O stays in 8x8 float fragments, rescaled in place; the softmax runs in exp2
+// on every lane through the fragment lane map (row fm, columns fn and fn+1). The Q tile is staged with bounds through
+// the same threadgroup memory, so a segment's last block never reads past its rows. dbg plants a defect for the tests
+// (0 in production): 1 skips the rescale when the max moves, 2 lets the key mask run one past the segment, 3 reads V
+// one key late.
+#define TA_BQ 32u
+#define TA_BK 16u
+template <uint HD>
+inline void tower_attn_body(device const float* q, device const float* k, device const float* v, device float* out,
+    uint T, uint nH, uint dbg, threadgroup float* KV, uint tgid, ushort sgid, ushort lane, ushort tid) {
+    constexpr uint LD = HD + 8u;
+    threadgroup float* Ks = KV;
+    threadgroup float* Vs = KV + TA_BK * LD;
+    const uint nRB = (T + TA_BQ - 1u) / TA_BQ;
+    const uint h = tgid / nRB, rb = tgid % nRB;
+    const uint stride = nH * HD;
+    const uint tr0 = rb * TA_BQ, r0 = tr0 + uint(sgid) * 8u;
+    const ushort qid = lane >> 2;
+    const ushort fm = (qid & 4) + ((lane >> 1) & 3);
+    const ushort fn = (qid & 2) * 2 + (lane & 1) * 2;
+    const uint myRow = r0 + fm;
+    device const float* qh = q + h * HD;
+    device const float* kh = k + h * HD;
+    device const float* vh = v + h * HD;
+
+    for (uint idx = tid; idx < TA_BQ * HD / 4u; idx += 128u) { // the Q tile, 32 rows (zero past T), into KV
+        const uint r = idx / (HD / 4u), d4 = (idx % (HD / 4u)) * 4u;
+        const uint row = tr0 + r;
+        *(threadgroup float4*)(KV + r * LD + d4) = row < T ? *(device const float4*)(qh + row * stride + d4) : float4(0.0f);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    simdgroup_float8x8 qT[HD / 8u];
+    for (uint kk = 0; kk < HD / 8u; kk++) simdgroup_load(qT[kk], KV + (uint(sgid) * 8u) * LD + kk * 8u, LD);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    simdgroup_float8x8 oAcc[HD / 8u];
+    for (uint cc = 0; cc < HD / 8u; cc++) oAcc[cc] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    float mRow = -INFINITY, lRow = 0.0f;
+    const float l2e = 1.4426950408889634f;
+    const uint kvalid = dbg == 2u ? T + 1u : T;
+    const bool active = r0 < T;
+    for (uint j0 = 0; j0 < T; j0 += TA_BK) {
+        for (uint idx = tid; idx < TA_BK * HD / 4u; idx += 128u) {
+            const uint key = idx / (HD / 4u), d4 = (idx % (HD / 4u)) * 4u;
+            const uint j = j0 + key, jv = j + (dbg == 3u ? 1u : 0u);
+            *(threadgroup float4*)(Ks + key * LD + d4) = j < T ? *(device const float4*)(kh + j * stride + d4) : float4(0.0f);
+            *(threadgroup float4*)(Vs + key * LD + d4) = jv < T ? *(device const float4*)(vh + jv * stride + d4) : float4(0.0f);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (active) {
+            simdgroup_float8x8 S[2];
+            for (ushort sub = 0; sub < 2; sub++) {
+                S[sub] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+                for (uint kk = 0; kk < HD / 8u; kk++) {
+                    simdgroup_float8x8 kTile;
+                    simdgroup_load(kTile, Ks + (uint(sub) * 8u) * LD + kk * 8u, LD, ulong2(0, 0), true);
+                    simdgroup_multiply_accumulate(S[sub], qT[kk], kTile, S[sub]);
+                }
+            }
+            float s[4];
+            s[0] = S[0].thread_elements()[0] * l2e; s[1] = S[0].thread_elements()[1] * l2e;
+            s[2] = S[1].thread_elements()[0] * l2e; s[3] = S[1].thread_elements()[1] * l2e;
+            if (j0 + TA_BK > kvalid) {
+                const uint js[4] = {j0 + fn, j0 + fn + 1u, j0 + 8u + fn, j0 + 9u + fn};
+                for (ushort e = 0; e < 4; e++) if (js[e] >= kvalid) s[e] = -INFINITY;
+            }
+            float bmax = max(max(s[0], s[1]), max(s[2], s[3]));
+            bmax = max(bmax, simd_shuffle_xor(bmax, 1));
+            bmax = max(bmax, simd_shuffle_xor(bmax, 8));
+            const float mNew = max(mRow, bmax);
+            const float factor = (dbg == 1u) ? 1.0f : ((mRow > -INFINITY) ? exp2(mRow - mNew) : 0.0f);
+            float p[4];
+            for (ushort e = 0; e < 4; e++) p[e] = (s[e] > -INFINITY) ? exp2(s[e] - mNew) : 0.0f;
+            mRow = mNew;
+            float bsum = (p[0] + p[1]) + (p[2] + p[3]);
+            bsum += simd_shuffle_xor(bsum, 1);
+            bsum += simd_shuffle_xor(bsum, 8);
+            lRow = lRow * factor + bsum;
+            simdgroup_float8x8 P[2];
+            P[0].thread_elements()[0] = p[0]; P[0].thread_elements()[1] = p[1];
+            P[1].thread_elements()[0] = p[2]; P[1].thread_elements()[1] = p[3];
+            for (uint cc = 0; cc < HD / 8u; cc++) {
+                oAcc[cc].thread_elements()[0] *= factor;
+                oAcc[cc].thread_elements()[1] *= factor;
+                for (ushort sub = 0; sub < 2; sub++) {
+                    simdgroup_float8x8 vTile;
+                    simdgroup_load(vTile, Vs + (uint(sub) * 8u) * LD + cc * 8u, LD);
+                    simdgroup_multiply_accumulate(oAcc[cc], P[sub], vTile, oAcc[cc]);
+                }
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (myRow < T) {
+        const float inv = lRow > 0.0f ? 1.0f / lRow : 0.0f;
+        device float* o = out + myRow * stride + h * HD + fn;
+        for (uint cc = 0; cc < HD / 8u; cc++) {
+            o[cc * 8u] = oAcc[cc].thread_elements()[0] * inv;
+            o[cc * 8u + 1u] = oAcc[cc].thread_elements()[1] * inv;
+        }
+    }
+}
+#define TOWER_ATTN(HDV) \
+kernel void tower_attn_hd##HDV(device const float* q [[buffer(0)]], device const float* k [[buffer(1)]], \
+    device const float* v [[buffer(2)]], device float* out [[buffer(3)]], constant uint& T [[buffer(4)]], \
+    constant uint& nH [[buffer(5)]], constant uint& dbg [[buffer(6)]], uint tgid [[threadgroup_position_in_grid]], \
+    ushort sgid [[simdgroup_index_in_threadgroup]], ushort lane [[thread_index_in_simdgroup]], \
+    ushort tid [[thread_index_in_threadgroup]]) { \
+    threadgroup float KV[2u * TA_BK * (HDV + 8u)]; \
+    tower_attn_body<HDV>(q, k, v, out, T, nH, dbg, KV, tgid, sgid, lane, tid); \
+}
+TOWER_ATTN(64)
+TOWER_ATTN(72)
+TOWER_ATTN(80)
 `
 
 // gvKind is the tower family; it decides the norm, the MLP, the position term, RoPE and the attention segments.
@@ -76,6 +196,9 @@ type gridVAccel struct {
 	mu sync.Mutex
 	eg2Ops
 	scale          Pipeline
+	fusedAttn      Pipeline // S17 lever A: tower_attn_hd<head_dim>; zero when the head dim has no fused kernel
+	oldAttn        bool     // test seam: run eg2Ops.attention even when fusedAttn exists (the lever's in-process A/B)
+	attnDbg        uint32   // test seam: tower_attn's planted defect (0 in production)
 	kind           gvKind
 	hidden, inter  int
 	heads, hd      int
@@ -129,7 +252,12 @@ func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64)
 	}
 	a := &gridVAccel{kind: kind, hidden: hidden, inter: inter, heads: heads, hd: hidden / heads, patchDim: patchDim}
 	var err error
-	a.eg2Ops, err = newEG2Ops(gvMSL, map[string]*Pipeline{"gv_scale": &a.scale})
+	more := map[string]*Pipeline{"gv_scale": &a.scale}
+	switch a.hd {
+	case 64, 72, 80: // S17 lever A's fused attention; any other head dim keeps eg2Ops.attention
+		more[fmt.Sprintf("tower_attn_hd%d", a.hd)] = &a.fusedAttn
+	}
+	a.eg2Ops, err = newEG2Ops(gvMSL, more)
 	if err != nil {
 		return nil, err
 	}
@@ -442,6 +570,11 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 				if err := flush(); err != nil {
 					return nil, err
 				}
+			}
+			if a.fusedAttn != (Pipeline{}) && !a.oldAttn {
+				e.Dispatch(a.fusedAttn, nH*((T+31)/32)*128, 128, a.q.At(off), a.k.At(off), a.v.At(off), a.ctx.At(off),
+					a.u32(uint32(T)), a.u32(uint32(nH)), a.u32(a.attnDbg))
+				continue
 			}
 			a.attention(e, eg2AttnBufs{q: a.q.At(off), k: a.k.At(off), v: a.v.At(off), qh: a.qh, kh: a.kh, vh: a.vh,
 				sc: a.sc, vt: a.vt, ob: a.ob, ctx: a.ctx.At(off)}, T, nH, hd, nH, 0)
