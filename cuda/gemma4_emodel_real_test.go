@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -265,5 +266,209 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 		t.Errorf("G-E4B-C1 AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
 	default:
 		t.Logf("G-E4B-C1 PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
+	}
+}
+
+// TestGemma4EModel_realE4BAnchorDump is an EXPLORATORY dump, not a gate. G-E4B-C1 failed (CUDA against the CPU: 87.59% teacher-forced, 3/8 free-run passes, against the E2B's 94.48% and 7/8), and a G3 comparison
+// of two int4 implementations cannot say which of them, if either, is wrong. This writes, for the CPU's own greedy sequence on each of G3's prompts, both arms' top-8 (id, logit) at every position, so that an HF
+// float32 forward over the SAME ids (scripts/anchor_e4b_hf.py) can say, at every position where the arms disagree, which one HF sides with. Output: $E4B_ANCHOR_DIR (default ~/goinfer-logs/e4b-anchor/dump.json).
+func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
+	requireHeavyModel(t)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-4-E4B-it")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s", dir)
+	}
+	outDir := os.Getenv("E4B_ANCHOR_DIR")
+	if outDir == "" {
+		outDir = filepath.Join(home, "goinfer-logs", "e4b-anchor")
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := decoder.Options{Quant: "int4", ResidentContext: 512}
+	gopts := opts
+	gopts.Backend = "cuda"
+	mg, err := decoder.Load(dir, gopts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mg.Close()
+	r, ok := mg.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("no CUDA resident: %s", mg.ResidentDecline())
+	}
+	mc, err := decoder.Load(dir, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close()
+	type top struct {
+		IDs    []int     `json:"ids"`
+		Logits []float32 `json:"logits"`
+	}
+	topK := func(l []float32, k int) top {
+		idx := make([]int, len(l))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+		o := top{IDs: idx[:k], Logits: make([]float32, k)}
+		for i, id := range o.IDs {
+			o.Logits[i] = l[id]
+		}
+		return o
+	}
+	type promptDump struct {
+		Prompt    string `json:"prompt"`
+		PromptLen int    `json:"prompt_len"`
+		Ids       []int  `json:"ids"`
+		CPU       []top  `json:"cpu"`
+		CUDA      []top  `json:"cuda"`
+	}
+	var all []promptDump
+	t0 := time.Now()
+	for pi, text := range g3Prompts {
+		ids, err := tk.Encode(tmpl.Render("", []chat.Turn{{Role: "user", Content: text}}), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := len(ids) + g3NewTokens
+		cc := mc.NewCache(n)
+		seq := append([]int(nil), ids...)
+		var cpuTop []top
+		for i := 0; i < n-1; i++ {
+			l, err := mc.ForwardForTest(seq[i], cc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cpuTop = append(cpuTop, topK(l, 8))
+			if i >= len(ids)-1 {
+				seq = append(seq, argmaxF(l))
+			}
+		}
+		r.Reset()
+		var gpuTop []top
+		for i := 0; i < n-1; i++ {
+			l, err := r.Forward(mg.EmbedResidentForTest(seq[i]), i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gpuTop = append(gpuTop, topK(l, 8))
+		}
+		all = append(all, promptDump{Prompt: text, PromptLen: len(ids), Ids: seq, CPU: cpuTop, CUDA: gpuTop})
+		fmt.Fprintf(os.Stderr, "[E4B anchor %6.1fs] prompt %d/%d dumped (%d positions)\n", time.Since(t0).Seconds(), pi+1, len(g3Prompts), n-1)
+	}
+	raw, err := json.Marshal(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "dump.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGemma4EModel_realE4BF32Dump is an EXPLORATORY follow-up to TestGemma4EModel_realE4BAnchorDump, not a gate. The anchor read both int4 arms about 77% from HF float32 (CPU 77.70%, CUDA 77.01%) against 87.59% from each other, which a shared
+// deviation or plain int4 sensitivity could both produce. This removes quantization: goinfer's CPU forward in float32 (Options.Quant "f32") teacher-forced over the SAME ids, written in the dump's shape so scripts/anchor_e4b_hf.py can
+// compare it with HF float32. If the implementation is right, float32 against float32 is near-identical; if it is not, the gap is the bug.
+func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
+	requireHeavyModel(t)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-4-E4B-it")
+	outDir := os.Getenv("E4B_ANCHOR_DIR")
+	if outDir == "" {
+		outDir = filepath.Join(home, "goinfer-logs", "e4b-anchor")
+	}
+	raw, err := os.ReadFile(filepath.Join(outDir, "dump.json"))
+	if err != nil {
+		t.Skipf("no int4 dump to take the ids from: %v", err)
+	}
+	type top struct {
+		IDs    []int     `json:"ids"`
+		Logits []float32 `json:"logits"`
+	}
+	type promptDump struct {
+		Prompt    string `json:"prompt"`
+		PromptLen int    `json:"prompt_len"`
+		Ids       []int  `json:"ids"`
+		CPU       []top  `json:"cpu"`
+		CUDA      []top  `json:"cuda"`
+	}
+	var in []promptDump
+	if err := json.Unmarshal(raw, &in); err != nil {
+		t.Fatal(err)
+	}
+	mc, err := decoder.Load(dir, decoder.Options{Quant: "f32", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mc.Close()
+	topK := func(l []float32, k int) top {
+		idx := make([]int, len(l))
+		for i := range idx {
+			idx[i] = i
+		}
+		sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+		o := top{IDs: idx[:k], Logits: make([]float32, k)}
+		for i, id := range o.IDs {
+			o.Logits[i] = l[id]
+		}
+		return o
+	}
+	t0 := time.Now()
+	for pi := range in {
+		d := &in[pi]
+		cc := mc.NewCache(len(d.Ids))
+		var tops []top
+		for i := 0; i < len(d.Ids)-1; i++ {
+			l, err := mc.ForwardForTest(d.Ids[i], cc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tops = append(tops, topK(l, 8))
+		}
+		d.CPU, d.CUDA = tops, tops // the script reads both fields; here both are goinfer's float32 CPU
+		fmt.Fprintf(os.Stderr, "[E4B f32 %6.1fs] prompt %d/%d (%d positions)\n", time.Since(t0).Seconds(), pi+1, len(in), len(tops))
+	}
+	out, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "dump-f32.json"), out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGemma4EModel_realE4BQATNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara", re-registered 2026-10-08 before any run on this file): G3c, unchanged in procedure, rule and reference, on Google's
+// quantization-aware-trained E4B GGUF, the equivalent of the E2B file G3c used. The plain bf16 checkpoint (TestGemma4EModel_realE4BNonInferiority) failed for the checkpoint's sake, not the implementation's.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BQATNonInferiority$' -v ./cuda/
+func TestGemma4EModel_realE4BQATNonInferiority(t *testing.T) {
+	requireHeavyModel(t)
+	home, _ := os.UserHomeDir()
+	t0 := time.Now()
+	logf := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[G-E4B-C1b %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	rp, ra, rn := g3Model(t, filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "reference Qwen2.5-Coder-1.5B", logf)
+	ep, ea, en := g3Model(t, filepath.Join(home, "models", "gemma-4-e4b-gguf", "gemma-4-E4B_q4_0-it.gguf"), "E4B (QAT q4_0)", logf)
+	refPct, e4bPct := 100*float64(ra)/float64(rn), 100*float64(ea)/float64(en)
+	delta := e4bPct - refPct
+	logf("G-E4B-C1b non-inferiority: E4B %.2f%% (%d/%d prompts) vs reference %.2f%% (%d/%d prompts): delta %+.2f points", e4bPct, ep, len(g3Prompts), refPct, rp, len(g3Prompts), delta)
+	switch {
+	case delta < -4.0 || ep <= rp-2:
+		t.Errorf("G-E4B-C1b FAIL: delta %+.2f points, free-run %d vs reference %d", delta, ep, rp)
+	case delta < -2.0:
+		t.Errorf("G-E4B-C1b AMBIGUOUS (parked for the owner): delta %+.2f points", delta)
+	default:
+		t.Logf("G-E4B-C1b PASS: delta %+.2f points (margin -2.0), free-run %d vs reference %d", delta, ep, rp)
 	}
 }

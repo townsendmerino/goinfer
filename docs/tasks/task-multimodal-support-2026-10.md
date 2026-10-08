@@ -3371,6 +3371,20 @@ CUDA's twin of the Mac's G-S10e (the tower) and S16 step 2 (the prefill).
 - **Gemma 4 31B (`~/models/gemma-4-31B-it`, 59 GB, downloaded).** Dense, 60 layers, hidden 5376: about 17 GB at int4, so it cannot be GPU-resident on the 8 GB card, and a float32 or bf16 HF reference does not fit in 62 GB of RAM. So the 26B's shape (a CPU forward as the reference for a GPU arm) does not apply: there is no GPU arm and no oracle here.
   What can be gated is stated as a question for the owner, not decided here: (a) a CPU smoke plus an internal int4-against-int8int8 consistency on the same checkpoint and a served image and text request read for coherence, claimed as exactly that; (b) an HF bf16 oracle with disk offload (hours, night); (c) defer. Nothing is run for the 31B until this is decided.
 
+#### S6 on nobara, G-E4B-C1 read 2026-10-08: FAIL as registered, root-caused to the checkpoint and not to the implementation; the gate is re-registered on the right one (raw `docs/measurements/multimodal-support-2026-10/s6-e4b/`)
+
+- **The reading (`g-e4b-c1-plain-bf16.log`, 217 s):** `google/gemma-4-E4B-it` (the plain bf16 checkpoint) loaded by both sides at int4, context 512: E4B teacher-forced agreement 381/435 = **87.59%**, 3 of 8 prompts through the free-run rule; the reference (Qwen2.5-Coder-1.5B) 374/398 = 93.97%, 7 of 8. Delta
+  **-6.38 points** and free-run 3 against 7: FAIL under the rule (worse than -4.0, or 2 or more free-run passes short). For comparison the E2B read 94.48%, 7 of 8 (+0.51).
+- **What it is not: an implementation defect.** Two cuts, both exploratory (`TestGemma4EModel_realE4BAnchorDump`, `TestGemma4EModel_realE4BF32Dump`, `scripts/anchor_e4b_hf.py`; transformers 5.15.0 in `~/g4venv`, the E4B in float32, the same 435 ids teacher-forced):
+  - **goinfer's CPU in float32 against HF float32: 435 of 435 argmax positions identical (100%).** The E-model implementation (PLE, KV sharing, the two geometries, K=V, the layer scalars) is right on the real E4B.
+  - **At int4, each arm is about equally far from HF:** goinfer CPU 77.70% (338/435), CUDA 77.01% (335/435); where the two disagree (54 positions) HF sides with the CPU at 16, with CUDA at 13 and with neither at 25. CUDA is not the odd one out. The two int4 implementations scatter around HF
+    and around each other (87.59%) far more than the E2B's do.
+- **The cause, as far as the evidence goes:** the E2B gates (S1, G3c) ran Google's QUANTIZATION-AWARE-TRAINED `gemma-4-E2B_q4_0-it.gguf`, whose weights were trained to survive 4 bits. The E4B I downloaded and gated was the plain bf16 checkpoint, which goinfer quantizes after the fact. I did not run the plain
+  E2B bf16 at int4 to show the same drop there, so "post-hoc int4 of a non-QAT checkpoint is lossy at this size" is the explanation that fits and is not proven. The registration named `~/models/gemma-4-E4B-it` for a gate whose intent (S1's) is the QAT analogue: that was my error, disclosed here.
+- **Re-registration, before any run on the QAT file (the bar, the procedure and the reference are unchanged; only the checkpoint is the E2B gate's equivalent):** **G-E4B-C1b** is G3c on `google/gemma-4-E4B-it-qat-q4_0-gguf` (`gemma-4-E4B_q4_0-it.gguf`, 5.15 GB), loaded by both sides as a GGUF exactly as the E2B file is, with the same rule: teacher-forced agreement at least
+  the reference's minus 2.0 points and free-run passes at least the reference's minus 1; 2.0-4.0 points below parked; worse fails. **G-E4B-C2** (served, image and three audio clips, CUDA against CPU) runs with that GGUF as `--model` and the QAT-unquantized safetensors (`google/gemma-4-E4B-it-qat-q4_0-unquantized`) as `-vision`, the E2B layout.
+  **Prediction:** near E2B's delta (the same QAT recipe, a wider model); I will not claim more. The plain-bf16 FAIL above stays recorded as it is.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

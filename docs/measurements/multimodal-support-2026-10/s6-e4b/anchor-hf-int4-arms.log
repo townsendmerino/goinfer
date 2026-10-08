@@ -1,0 +1,17 @@
+loading /home/francis/models/gemma-4-E4B-it
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/2076 [00:00<?, ?it/s]Loading weights:   6%|▌         | 119/2076 [00:00<00:01, 1135.39it/s]Loading weights:  12%|█▏        | 246/2076 [00:00<00:01, 1175.58it/s]Loading weights:  18%|█▊        | 364/2076 [00:00<00:01, 1155.40it/s]Loading weights:  23%|██▎       | 480/2076 [00:00<00:01, 1040.56it/s]Loading weights:  28%|██▊       | 586/2076 [00:00<00:01, 925.40it/s] Loading weights:  34%|███▍      | 716/2076 [00:00<00:01, 1033.49it/s]Loading weights:  40%|███▉      | 823/2076 [00:03<00:10, 117.41it/s] Loading weights:  53%|█████▎    | 1092/2076 [00:03<00:04, 233.79it/s]Loading weights:  59%|█████▉    | 1226/2076 [00:03<00:03, 263.17it/s]Loading weights:  64%|██████▍   | 1331/2076 [00:04<00:02, 284.95it/s]Loading weights:  68%|██████▊   | 1416/2076 [00:04<00:02, 299.14it/s]Loading weights:  78%|███████▊  | 1610/2076 [00:04<00:01, 454.08it/s]Loading weights:  87%|████████▋ | 1801/2076 [00:04<00:00, 621.85it/s]Loading weights:  98%|█████████▊| 2034/2076 [00:04<00:00, 867.51it/s]Loading weights: 100%|██████████| 2076/2076 [00:04<00:00, 438.38it/s]
+prompt 1: 54 positions, goinfer cpu!=cuda at 6
+prompt 2: 52 positions, goinfer cpu!=cuda at 7
+prompt 3: 59 positions, goinfer cpu!=cuda at 4
+prompt 4: 57 positions, goinfer cpu!=cuda at 9
+prompt 5: 52 positions, goinfer cpu!=cuda at 10
+prompt 6: 56 positions, goinfer cpu!=cuda at 6
+prompt 7: 53 positions, goinfer cpu!=cuda at 8
+prompt 8: 52 positions, goinfer cpu!=cuda at 4
+
+OVERALL over 435 positions
+  cpu==cuda          381/435 = 87.59%
+  hf==goinfer cpu    338/435 = 77.70%
+  hf==goinfer cuda   335/435 = 77.01%
+WHERE cpu!=cuda (54 positions): HF sides with cpu 16, with cuda 13, with neither 25
