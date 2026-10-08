@@ -2252,6 +2252,21 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **Cost:** SigLIP about 10 s a forward x 4 images x 4, Qwen2.5-VL 2-15 s x 4 x 4, Qwen3.5 under 2 s; about 8
       minutes in all.
     - **CUDA's twin** is nobara's, by the same split (`cudaEventRecord` per class).
+  - **Step 0's instrument on CUDA, registered 2026-10-07 evening (nobara) before it runs** (TE11):
+    - **Tier and stopping rule:** by day, a profile and not a speed claim, fixed: per tower and image one warm-up, then 3 unprofiled forwards (the wall) and 3 profiled ones, the median per kernel class reported.
+    - **The towers:** the three that run on goinfer's CUDA tower base: SigLIP float32 (4096 patches whatever the image, so one image, `gemma3_preprocess_image.png`), Qwen3.5-0.8B on the four F2a images at serve's
+      1024-token cap, and GLM-OCR on that same one image. **Qwen2.5-VL is not profiled:** it is aikit's `gpu/qwencuda`, which owns its queue, and a per-class split would be an aikit change; its row stays
+      the Metal one and S4 step 3's whole-tower figure.
+    - **The instrument:** with profiling on, `towerOps` drains the queue (`Queue.Sync`) at every change of kernel class and attributes the host time since the previous drain to the class that was running: GEMM (with
+      its bias and add epilogues), attention, norm (LayerNorm, RMSNorm), and elementwise (RoPE, the activations, adds, scales). aikit's `Event` has no elapsed-time call, so this is a wall-clock split with the queue
+      drained at each boundary, not `cudaEventElapsedTime`; the launch latency of the first kernel after a drain is inside the class. With profiling off nothing changes: the hook is nil.
+    - **Validity checks, recorded with the result:** (1) the profiled output equals the unprofiled one bit for bit; (2) the profiled total is within +10% of the unprofiled wall (the drains add bubbles; over that the
+      profile is marked untrustworthy and said so); (3) the three profiled reads of a class agree within 5%.
+    - **Also reported:** each class's share, and the achieved rate against the card's fp32 peak (about 9.1 TFLOPS on the RTX 2070 SUPER at boost): GEMM FLOPs from the shapes (2*M*N*K), attention's as
+      4*np^2*head_dim*heads (QK^T and PV), so each lever's band has a share and a headroom.
+    - **A prediction, written before the read and not a bar:** attention dominates SigLIP on CUDA as it does on Metal (more than half of its time), the GEMMs run well under half of the fp32 peak, and norms and
+      elementwise are a few percent. A result that contradicts it is recorded as such.
+    - **Cost:** SigLIP about 18 s x 7 forwards, Qwen3.5 under 4 s x 4 images x 7, GLM-OCR about 25 s x 7; about 7 minutes in all.
   - **Step 0 on Metal, read 2026-10-07 18:56-19:03 PDT: the time is GEMMs and attention; norms and elementwise are ~1%.**
     - **The run:** `s2-towers` at `9b7da484`, `TestS17Profile`.
     - **Its validity:**
