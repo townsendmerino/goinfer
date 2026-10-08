@@ -248,9 +248,10 @@ type cudaDeepPlan struct {
 	sets     [][]float32
 }
 
-// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, OFF until G-S10g passes (docs/tasks/task-multimodal-support-2026-10.md, "S10 on CUDA"): three of the four real images pass and
-// one is parked. While it is off a Qwen3-VL image turn takes the CPU prefill and the upload, as before. The gates turn it on; production does not.
-var cudaDeepstackPrefillOn = false
+// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill. It was OFF until G-S10g passed (docs/tasks/task-multimodal-support-2026-10.md, "S10 on CUDA" and "G-S10g, the owner's decision (c)"):
+// the first reading had three of four real images passing and the 84-row one parked, and the owner's decision (c) re-read that image against a 12-prompt text control (PASS, 2026-10-08), after which the path is ON for every image size.
+// Turning it off (the speed test and any A/B do) makes a Qwen3-VL image turn take the CPU prefill and the upload, as it did before.
+var cudaDeepstackPrefillOn = true
 
 // deepDefectForTest is G-S10g's planted-defect seam (S16's list): 0 none, 1 the sets not added, 2 each set one layer late, 3 the sets added to the text rows too.
 var deepDefectForTest int
@@ -265,7 +266,7 @@ const (
 // as the CPU prefill does. Only plain dense layers are claimed: a layer with an MoE, DeltaNet or Gemma 4 branch declines, and the turn keeps the CPU prefill and upload, as before.
 func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
 	if !cudaDeepstackPrefillOn {
-		return nil, fmt.Errorf("cuda prefill: the resident DeepStack prefill is off until G-S10g passes on every image (one is parked): %w", errPrefillDeclined)
+		return nil, fmt.Errorf("cuda prefill: the resident DeepStack prefill is switched off: %w", errPrefillDeclined)
 	}
 	if imgLen <= 0 || len(deep) == 0 || len(deep) > r.nLayers {
 		return nil, fmt.Errorf("cuda prefill: %d DeepStack sets over %d image rows for %d layers: %w", len(deep), imgLen, r.nLayers, errPrefillDeclined)
