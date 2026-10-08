@@ -233,7 +233,6 @@ func TestS17LeverA_wholeTower(t *testing.T) {
 	defer func() { towerAttnAikit = false }()
 	ab := func(name string, ops *towerOps, fwd func() ([]float32, error)) {
 		t.Helper()
-		var fused, aik []float64
 		for r := 1; r <= rounds+1; r++ { // round 1 is the warm-up of both arms
 			var tf, ta time.Duration
 			for _, own := range []bool{true, false} {
@@ -250,7 +249,6 @@ func TestS17LeverA_wholeTower(t *testing.T) {
 			}
 			towerAttnAikit = false
 			if r > 1 {
-				fused, aik = append(fused, tf.Seconds()), append(aik, ta.Seconds())
 				fmt.Fprintf(os.Stderr, "[S17 lever A A/B] %s round %d: fused %.3fs | aikit %.3fs | %.2fx\n", name, r-1, tf.Seconds(), ta.Seconds(), ta.Seconds()/tf.Seconds())
 			}
 		}
