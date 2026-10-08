@@ -11,8 +11,9 @@ Needs GOINFER_QWEN3VL_2B (testdata/assets.json) — pull with:
     models-pull qwen3vl-2b-instruct   (or download Qwen/Qwen3-VL-2B-Instruct directly)
 
     ~/.venv-vl/bin/python scripts/pin_qwen3vl_real.py
-    -> testdata/qwen3vl_real_golden.json   (committed; weights are NOT)
+    -> testdata/qwen3vl_real_golden.json.gz   (committed; weights are NOT)
 """
+import gzip
 import json
 import os
 
@@ -21,7 +22,7 @@ from transformers import AutoTokenizer, Qwen3VLForConditionalGeneration
 
 CKPT = os.environ.get("GOINFER_QWEN3VL_2B", os.path.expanduser("~/models/qwen3vl-2b-instruct"))
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "qwen3vl_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "qwen3vl_real_golden.json.gz")  # over 1 MB: gzip (the repo's golden rule)
 PROMPT = "The capital of France is"
 N_NEW = 6
 
@@ -49,7 +50,7 @@ def main():
         continuation_text=tok.decode(cont),
     )
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(g, open(OUT, "w"))
+    json.dump(g, gzip.open(OUT, "wt"))
     print(f"argmax={g['argmax']} cont={cont!r} -> {g['continuation_text']!r}")
     print("saved", OUT)
 

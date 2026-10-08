@@ -797,7 +797,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
 
   | tower | tiny | real, worst token over four images | time per image, Metal vs CPU (exploratory) |
   |---|---|---|---|
-  | SigLIP (Gemma 3), `visionmetal`, int8 both | 1.000000000 | **0.180-0.461: wrong** | ~73 s vs ~17 s |
+  | SigLIP (Gemma 3), `visionmetal`, int8 both | 1.000000000 | **0.180-0.461: wrong** (withdrawn as a defect 2026-10-07; see below) | ~73 s vs ~17 s |
   | Qwen2.5-VL, `qwenmetal`, f32 both | 1.000000000 | 0.999995874 or better | 22-47 s vs 23-37 s |
 
   - The Metal SigLIP tower agrees exactly at the tiny fixture's size (hidden 32, 16 patches) and breaks at Gemma 3's
@@ -809,6 +809,14 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - **Proposed, for the owner:** build both towers on goinfer's own Metal tower base, as S2 did for Qwen3.5 and GLM-OCR
     (its kernels pass at real size and run 2-4x the CPU), from new aikit float32 exports added to the same unreleased
     batch; and report the `visionmetal` real-size defect to aikit. G-S3b waits for that decision.
+  - **Correction, 2026-10-07: there is no `visionmetal` real-size defect.** Both arms here were int8, and SigLIP's int8
+    tower is itself far from its f32 tower at real size. Against the f32 CPU tower:
+    - the CPU int8 tower's worst token is 0.012-0.172 and the Metal one's 0.027-0.110;
+    - both have relative L2 0.16-0.52.
+
+    The two int8 towers go wrong on the same tokens and disagree there, which is the 0.180-0.461 above, reproduced exactly.
+    The record is `docs/measurements/siglip-int8-fidelity-2026-10-07.md`. Nothing was reported to aikit. The rebuild stands,
+    since the rebuilt tower is f32. The record's open question is serve's int8 SigLIP tower under cuda and webgpu.
 - **G-S3c, read 2026-10-07 11:35 PDT on the Mac (serve binary from `s2-towers`, the tower on the CPU in every arm,
   table.png, 32 greedy tokens): Qwen2.5-VL FAIL; Gemma 3 not reached.**
   - **Qwen2.5-VL-3B, `metal-resident (int4)` against `cpu (int4)`: the replies differ from the first token.** Metal
@@ -897,7 +905,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     choice the reference itself makes with p 0.8.
   - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3b/`.
 - **G-S3c's failure, analysed 2026-10-07 (no new measurement): the two arms run different CPU kernels, so the gate does
-  not isolate Metal.**
+  not isolate Metal. REFUTED the same day by measurement; see "G-S3c root cause, in progress" below.**
   - Metal has no resident m-RoPE prefill (only CUDA implements `PrefillMRoPELast`). So a Qwen2.5-VL image turn under
     `--backend metal` prefills on the CPU and `UploadKV`s, and **its first token comes from the CPU prefill**, as the
     `--backend cpu` arm's does.
@@ -911,6 +919,87 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
   - **Proposed, for the owner:** re-register G-S3c so the reference shares Metal's CPU-side layout. For example, the
     `--backend metal` load with its resident detached, through a test hook, against the same load decoding on Metal.
     Then the gate grades Metal's decode and nothing else. Until then G-S3c stands as FAIL, as registered.
+- **Owner, 2026-10-07: re-register, but root-cause G-S3c and Gemma 3's G-S3b divergence first.**
+- **G-S3c root cause, in progress (2026-10-07, Mac, by day; in-process, one load per process to fit beside the owner's
+  session):**
+  - **The layout analysis above is wrong.** `decoder/qwen25vl_layout_split_real_test.go` runs `prefillLogitsQwenVL`, the
+    CPU prefill whose logits pick the first token, on table.png with serve's prompt, under each load. The towers ran
+    float32 on the CPU, cached once.
+
+    | load | HF golden image: KL(HF || this) | table.png token 0, top-3 |
+    |---|---|---|
+    | int8 weight-only (control) | 0.02651 | "Quarter" 0.508, "Table" 0.241, "quarter" 0.088 |
+    | int4 row4, int8 head | 0.03841 | "Quarter" 0.629, "This" 0.156, "Table" 0.100 |
+    | int4 canonical, int8 head | 0.03841 | identical to row4 |
+    | int4 row4, int4 head (serve's `--backend cpu`) | 0.13439 | "Quarter" 0.705, "Table" 0.167, "quarter" 0.031 |
+    | int4 canonical, int4 head (serve's `--backend metal` CPU side) | 0.13439 | identical to row4 |
+
+    **Canonical and row4 give the same logits.** And with serve's settings, the CPU prefill of a `--backend metal` load
+    says "Quarter", not the "Table" the served Metal arm wrote.
+  - **In a binary with Metal it is the same,** as long as the resident is not built. `metal/qwen25vl_prefill_split_test.go`
+    reproduces that prefill bit for bit (151936 of 151936 logits) under `--backend metal` and `--backend cpu`. But both
+    times the resident build was declined for memory: 3.61-3.70 GB needed against a 3.38-3.68 GB budget. So **the served
+    "Table" needs the resident to exist.** Something about a built Metal resident changes the first token. The obvious
+    suspects are ruled out by reading:
+    - `prefillLogitsQwenVL` and its LM head run on the CPU (Metal's backend implements no staged int4 matmul);
+    - the f16-MMA pass is resident-only;
+    - the KV precision is resident-only;
+    - fast attention is on in both arms;
+    - `int4BufA` copies the weights rather than rewriting them.
+    The next measurement, the same test with the resident built, needs about 5.5 GB free on the Mac. (Correction, the same
+    hour: this paragraph's inference is void. The test's own `--backend cpu`-equivalent arm gives "Quarter" at 0.705,
+    where the served `--backend cpu` arm gave 0.728, so its hand-built prompt is not serve's and its arms cannot be set
+    beside the served ones. The served control below settles it.)
+  - **Side readings worth keeping:** on a real image, the int4 head (EmbedInt4, serve's default) costs 3.5x the KL of the
+    int8 head against HF (0.134 against 0.038). And the int8 control itself puts token 0 at 0.508 against 0.241: the
+    choice is fragile at any precision.
+- **G-S3c ROOT CAUSE, found 2026-10-07 12:26-12:30 PDT by served controls: serve's `--embed-int4` default differs by
+  backend, so the two arms ran different embedding/LM-head precisions. Metal was never compared.**
+  - `internal/loadflags`' `embedInt4()` turns the int4 embedding table off under `--backend metal`, because Metal's
+    resident does not accept an int4 table, and leaves it on elsewhere. Qwen2.5-VL-3B (and Gemma 3) tie the embedding
+    to the LM head, so the CPU arm decoded with an int4 head and the Metal arm with an int8 one.
+  - **Proof, through the same serve binary, flipping only that flag** (table.png, tower on the CPU; raw in
+    `docs/measurements/multimodal-support-2026-10/s3-gs3c-rootcause/`):
+
+    | arm | table | token 0 | reply |
+    |---|---|---|---|
+    | `--backend cpu` (default) | int4 | "Quarter" 0.728, "Table" 0.208 | "Quarterly unit sales by region (thousands)" |
+    | `--backend cpu --embed-int4=false` | int8 | **"Table" 0.573**, "Quarter" 0.230 | "Table 2. Quarterly unit sales…" |
+    | `--backend metal` (default), resident declined for memory | int8 | "Table" 0.573, "Quarter" 0.230 | "Table 2. Quarterly unit sales…" |
+    | `--backend metal --embed-int4` (resident declined: int4 table) | int4 | **"Quarter" 0.728**, "Table" 0.208 | "Quarterly unit sales…" |
+
+    The numbers swap exactly with the flag, and the `--backend metal` arm says "Table" with no resident at all. **So the
+    Metal arm's "Table" is the int8-head answer, not a Metal effect.** It is also the higher-precision one: on the HF
+    golden, the int8 head sits at KL 0.038 from HF against the int4 head's 0.134 (the table above).
+  - **Two explanations recorded earlier today were wrong and are withdrawn:**
+    - mine, that the CPU int4 layout differed by backend (canonical and row4 give identical logits);
+    - nobara's G-S3c-on-CUDA note, that "Metal's `UploadKV` prefill-then-upload route is the suspect". CUDA matched the
+      CPU because CUDA keeps the int4 table on both arms, not because Metal's upload is at fault.
+  - **The same default explains G-S3c's Gemma 3 observation** ("a CPU decode after a declined Metal request is not the
+    same computation as `--backend cpu`"): Gemma 3 ties its head too, and that pair also differed in the table's
+    precision. Its layout explanation is withdrawn with mine. Not yet re-measured with the flag held fixed (step A of
+    tonight's job).
+  - **A finding beyond S3:** an operator moving between `--backend cpu` and `--backend metal` gets a different model on
+    tied-head families. The int4 head measured 3.5x the int8 head's KL to HF on a real image. That is a quality question
+    about the `--embed-int4` default (docs/quantization.md), raised here, not decided here.
+- **G-S3c, re-registered 2026-10-07 before it runs (owner: "re-register sounds good", after the root cause):** the same
+  request, image, near-tie definition and pass rule. Every arm holds every load flag equal: `-vision-device cpu` and
+  `--embed-int4=false` on all of them (the int8 table Metal's resident needs; the more faithful one). Arms: `--backend
+  metal`, `--backend cpu`, and `--backend cpu` again as a determinism control (byte-identical required). **A
+  `--backend metal` arm whose decode path is not `metal-resident` voids that family's reading**; it is not a FAIL.
+  Qwen2.5-VL and Gemma 3. Queued as step A of `run-s3-rootcause-night.sh`, because both residents need memory the Mac
+  lacks by day.
+- **G-S3b's Gemma 3 divergence, in progress:** phase 1 (`metal/gemma3_tower_dump_test.go` on `s2-towers`) dumped both
+  towers' projected features for table.png. They differ by at most 7.92e-5 relative L2 per soft token (worst cosine
+  0.999999997). Phase 2 (`decoder/gemma3_tower_sensitivity_real_test.go`) teacher-forces the int4 decoder along the
+  CPU-tower arm's greedy path with the Metal-tower features, and with three random perturbations of the same per-token
+  size. It needs the 4B, which this Mac's guard refuses while the owner's session runs (6.7 GB available, 6.2 GB
+  needed at a 70% margin).
+  Both G-S3b arms were `--backend metal`, so both had the int8 table: the `--embed-int4` difference above does not apply
+  to G-S3b, and its question stays open. Phase 2 loads with the int8 table to match. Tonight's job runs:
+  - step B, the determinism controls (each tower arm twice);
+  - step C, phase 2.
+  (`docs/measurements/multimodal-support-2026-10/run-s3-rootcause-night.sh`, pinned binaries in `~/goinfer-bench/s3/`.)
 - **G-S3c on CUDA, a cross-check, registered 2026-10-07 before it runs (nobara):** the same two requests, rule and near-tie
   definition as G-S3c, one serve binary built from `s2-towers` with `-tags cuda`, both arms `-vision-device cpu`:
   `--backend cuda` against `--backend cpu`, plus a second `--backend cpu` run as a determinism control (its reply must be
@@ -1089,12 +1178,162 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
 - **Faster with S1:** it is CPU decode until S1 lands.
 - **Size:** M-L.
 
+**S5 Gate 0, the desk map (2026-10-07, Mac):**
+- **The tower is ready in aikit.** `audio.LoadGemma4AudioEncoder` reads E2B's names (it detects the `model.` prefix) and
+  applies `embed_audio` (an unweighted RMSNorm, then the projection to the text width, 1536 for E2B), so it emits soft
+  tokens in the text space. `audio.Gemma4Features` is the log-mel extractor and `Gemma4SoftTokens` the count. Both are
+  in production already for EmbeddingGemma 2, whose tower is the same `gemma4_audio` architecture, gated against HF at
+  per-stage soft-token cosine >= 0.9999 (`embeddinggemma2/audio_real_test.go`). Metal has a tower accelerator for it
+  (`metal/gemma4_audio.go`, EmbeddingGemma 2's), for later speed. E2B's tower: 12 layers, hidden 1024, 8 heads,
+  output 1536.
+- **The decoder splice already does what S5 asks.** `prefillLogitsGemma4VL` replaces a run of positions with projected
+  rows, unscaled, and feeds PLE the pad token's id at those positions (HF's multimodal forward substitutes PAD before
+  PLE's token-identity term). It keys on positions, not on the image token's id, so an audio run uses it unchanged. S1's
+  resident decode follows it as for an image. E2B and E4B are causal (`use_bidirectional_attention` unset), so no mask
+  question arises.
+- **The prompt:** HF's processor (`processing_gemma4.py`, `replace_audio_token`) emits `<|audio>` + n x `<|audio|>` +
+  `<audio|>` (ids 256000, 258881, 258883) with no newline on either side, as Gemma 4's image block. n is the feature
+  mask after two stride-2 convolutions, which `Gemma4SoftTokens` mirrors.
+- **Serve:** no audio input on `/v1/chat/completions` yet. The embeddings route already takes audio for EmbeddingGemma
+  2 (`internal/serveapp/embeddings*.go`, WAV decoding in `embeddinggemma2/audio.go`); the chat route gains
+  `input_audio` content parts (OpenAI's shape: base64 `data` plus `format`), WAV only to start.
+- **References:** this Mac has transformers 5.16.1, but E2B in float32 is about 20 GB, too big here. The tower plus
+  `embed_audio` alone (about 1.2 GB in float32) is not. nobara has 62 GB and transformers 5.12 (`~/.venv-vl`); E2B's
+  config was written by 5.6.2 (`global_head_dim`), which 5.12 reads.
+
+**S5 gates, written 2026-10-07 before any S5 code or measurement:**
+- **G-S5a, the tower on E2B's own weights against HF:** every stage (after the subsampler, each block, the tower, the
+  embedder) at soft-token cosine >= 0.9999 on the three EmbeddingGemma 2 clips (`testdata/embeddinggemma2-audio/`,
+  short, mid and long), aikit's log-mel and HF's both fed; the first stage under the bar is named. HF's reference
+  builds only `Gemma4AudioModel` and the embedder from the checkpoint, float32, sdpa (eager inverts the audio mask), with
+  the same load checks EmbeddingGemma 2's pin script makes. Ambiguous (parked): a worst stage in 0.999-0.9999.
+- **G-S5b, the full model on an audio prompt against HF `Gemma4ForConditionalGeneration` (float32, on nobara):** the
+  goinfer CPU prefill in float32 (`Quant: ""`) at every position of the prompt; the audio block plus a text
+  instruction. PASS: last-position logit cosine >= 0.999 and argmax equal, and per-position argmax agreement >= 95% over
+  the text positions after the block.
+  - Planted defects, each red: (1) the audio rows multiplied by the embed scale; (2) PLE's token-identity term from the
+    audio token's id instead of PAD; (3) the `<|audio>`/`<audio|>` delimiters dropped from the ids.
+  - int4 (serve's default) is reported beside it, not graded.
+- **G-S5c, served:** one transcription-style request ("Transcribe this audio.") per clip through the Metal serve binary,
+  `--backend cpu` against `--backend metal` with every load flag held equal (`--embed-int4=false` on both, the G-S3c
+  lesson). Identical replies, or a first divergence at a near-tie under the log-probability definition; a Metal arm
+  not decoding resident voids that reading. The clips are synthetic tones, so the reply's content is not graded, only
+  agreement. A spoken clip is an owed extra, if one with a known license can be committed.
+- **Speed (night):** tower time per clip, CPU against Metal's accelerator; TTFT of the served turn. A record.
+
+**S5 progress (2026-10-07, Mac):**
+- **G-S5a: PASS.** `multimodal/gemma4_audio_e2b_real_test.go`, E2B's tower and `embed_audio` through aikit, against
+  `scripts/pin_gemma4_e2b_audio.py`. The reference was built on this Mac with transformers 5.16.1: tower and embedder
+  only, float32, sdpa, every load check passing. E2B's upstream `processor_config.json` (saved as
+  `testdata/gemma4-e2b-audio/processor_config.json`) equals the extractor's defaults field for field, and it caps a
+  clip at 750 soft tokens (30 s at 40 ms per token).
+
+  | clip | samples | frames (HF) | soft tokens (HF) | worst stage cosine | largest max abs diff |
+  |---|---|---|---|---|---|
+  | short | 5,920 | 36 (36) | 9 (9) | 1.000000 at every stage | 2.4e-4 |
+  | mid | 37,920 | 236 (236) | 59 (59) | 1.000000 at every stage | 7.2e-4 |
+  | long | 125,317 | 783 (783) | 196 (196) | 1.000000 at every stage | 1.3e-3 (block 11) |
+
+  aikit's own log-mel is within 4.8e-7 of HF's, and the soft tokens from it match HF's embedder at cosine 1.000000000.
+  The tower takes about 1 s for the 7.8 s clip on the CPU (exploratory).
+- **WAV decoding moved to `multimodal.DecodeWAV`** for serve's chat route; `embeddinggemma2.DecodeWAV` stays as a
+  wrapper. `multimodal.Gemma4AudioBlock` builds the placeholder run.
+- **G-S5b: harness built, queued on nobara's night queue** (`s5b-e2b-audio`, about 20 min,
+  `run-s5b-nobara.sh`; the binary built there from a bundle of this Mac's local commits, in a separate worktree,
+  `~/wt/goinfer-s5`). The ids come from goinfer's built-in Gemma 4 template (`chat.Gemma4()`), because E2B's
+  safetensors directory carries none. Serve with the GGUF uses the GGUF's own template, which ends the prompt
+  differently (75 tokens against 79). G-S5b compares the same ids on both sides, so that does not touch it. The mid
+  clip leaves 15 text positions after the audio block, so the registered ">= 95% agreement" means all 15.
+- **Serve takes audio on `/v1/chat/completions`:**
+  - The request: an OpenAI `input_audio` part (base64 or a data: URI, `format` wav), 16 kHz mono 16-bit PCM, at most
+    30 s. A longer clip is refused by name: the extractor itself stops at 30 s, so a soft-token cap alone would have
+    cut it silently. An earlier message's clip is replaced by a note, as an earlier image is, counted in the same
+    `X-Goinfer-Images-Omitted` header.
+  - The model: a Gemma 4 checkpoint whose config has an `audio_config` turns audio on at load (the log says so). The
+    tower loads on the first clip (1.7 s here) and runs on the CPU. The turn goes through `GenerateGemma4VL`,
+    streaming and logprobs included.
+  - A model without the tower answers 400 by name.
+  - Exploratory smoke, 12:47 PDT: `--model ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision
+    ~/models/gemma-4-E2B-unq --backend cpu`, the mid clip, "Describe this audio briefly.": "The audio appears to be a
+    sound effect of a door slamming." in 4.3 s, 75 prompt tokens. The safetensors load alone was refused by the fit
+    guard beside the owner's session.
+- **G-S5c, read 2026-10-07 12:49-12:51 PDT on the Mac: PASS.**
+  - The setup: `run-gs5c-served.sh`, a serve binary built from `main` at `ec97c37b` plus the serve audio change
+    (committed as `d499cb30`). The model is `--model ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision
+    ~/models/gemma-4-E2B-unq`, with `--embed-int4=false` on every arm. "Transcribe this audio.", 32 greedy tokens.
+    Arms: `cpu`, `metal`, then `cpu` again. The Metal arm decoded `metal-resident (int4)`, "on the resident path", for
+    every clip.
+
+    | clip | prompt tokens | Metal against CPU | second CPU run against the first |
+    |---|---|---|---|
+    | short | 25 | first differs at token 1: CPU "'" 0.435, Metal's " need" 0.298 there, a near-tie | identical |
+    | mid | 75 | first differs at token 2: CPU " Trans" 0.125, Metal's " I" 0.105 there, a near-tie | identical |
+    | long | 212 | identical | identical |
+
+  - The replies are E2B declining or murmuring ("I'm sorry, I cannot transcribe the audio.", "Mmm."). That is right for
+    synthetic tones with no speech, and content is not graded. A spoken clip with a known license is still owed for a
+    real transcription.
+  - Request times (exploratory, the tower on the CPU, loaded on the first clip): CPU 2.2-6.5 s, Metal 3.3-8.7 s. Metal
+    is slower here because every one of these is a cold image-turn prefill on the CPU plus an upload. Batched E-model
+    prefill is S9's work.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5c/`.
+- **S5's spoken clip, registered 2026-10-07 before it ran:** `testdata/speech/librispeech-1272-128104-0000.wav`
+  (LibriSpeech dev-clean, CC BY 4.0, 5.9 s, attribution in the directory's README), served to E2B with "Transcribe this
+  audio." through `run-gs5c-served.sh` (`GS5C_CLIPS`), arms `cpu`, `metal`, `cpu`, `--embed-int4=false` on all.
+  Recorded, no bar: the transcription and its word error rate against LibriSpeech's transcript. Graded by G-S5c's rule:
+  Metal against the CPU, identical or a near-tie at the first difference, and the CPU repeat byte-identical.
+  - **Read 15:34 PDT: PASS.**
+    - All three arms answer "Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.",
+      byte-identical (Metal against the CPU, and the CPU repeat).
+    - Against LibriSpeech's "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL"
+      the word error rate is 0, counting "Mr." as "MISTER" and ignoring case and punctuation.
+    - The Metal arm prefilled AND decoded on the resident ("prefill resident": S9's pass carries audio rows exactly as
+      it carries image rows).
+    - 163 prompt tokens; request time 7.7 s on Metal against 9.3-10.3 s on the CPU (exploratory).
+    - Raw: `docs/measurements/multimodal-support-2026-10/s5-speech/`.
+- **G-S5d, E2B's audio tower on Metal, registered 2026-10-07 before its code:** EmbeddingGemma 2's Metal audio
+  accelerator (`metal/gemma4_audio.go`, generic over aikit's `Gemma4AudioEncoder`) runs E2B's 12 conformer blocks;
+  aikit's `Subsample` and `FinishBlocks` stay on the host.
+  - **Bar:** the soft tokens at worst-row cosine >= 0.9999 against aikit's CPU `Forward`, on the three EmbeddingGemma 2
+    clips and the LibriSpeech clip; 0.999-0.9999 ambiguous (parked).
+  - **Served:** the LibriSpeech clip and the three tone clips, `--backend metal` in both arms, the tower on Metal against
+    `-vision-device cpu`. Identical replies, or a first divergence at a near-tie.
+  - **Serve uses the device tower only under `--backend metal`;** `-vision-device cpu` keeps it on the CPU.
+  - **Read 15:45-15:48 PDT: PASS** (`s2-towers` at `38a593c7`).
+    - **Tower:** `metal/gemma4_audio_e2b_test.go`. Worst soft-token cosine 1.000000000 (short, mid, LibriSpeech) and
+      0.999999999 (long). The 12 blocks take 70-179 ms on Metal against 239-702 ms on the CPU for the three longer
+      clips (exploratory).
+    - **Served** (the E2B GGUF with `--vision ~/models/gemma-4-E2B-unq`, both `--backend metal`, the tower on the CPU in
+      one run and on Metal in the other; serve logged "Metal (the conformer blocks ...)"):
+      - LibriSpeech and mid: identical replies (the correct transcription for LibriSpeech);
+      - short and long, the synthetic tones: the replies first differ at token 0, each a near-tie on the CPU-tower
+        arm's probabilities ("Please" against "I", "M" against "Hmm").
+    - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5d/`.
+- **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
+  clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
+  test clip.
+
 ### S6 — Coverage that is cheap once the above exists
 
 - **Qwen3.5+ MoE images:** never run. On nobara, at night; the checkpoint's tower is in the archive, so it is copied to
   `~/models` for anything timed.
 - **Gemma 4 E4B and 31B:** download and validate (owner, 2026-10-07). E4B through S1's E-model gates on both GPU
   backends; the 31B through the 26B's (bidirectional image prefill, the S1.0 re-check shape). Disk first on both boxes.
+- **Gemma 4 E4B on Metal, gates registered 2026-10-07 before any E4B measurement:**
+  - **The checkpoint:** `google/gemma-4-E4B-it`, downloaded to `~/models/gemma-4-E4B-it` (15 GB, 2026-10-07): 42
+    layers, hidden 2560, 18 KV-shared layers, PLE width 256, an audio tower. Metal reads it from an int4 Metal sidecar
+    (`prequant -quant int4 -target metal`, int8 embedding table: Metal's resident needs it), built at night. Building
+    it by day goes through the load's fit guard, which E2B's safetensors already failed beside the owner's session.
+  - **G-E4B-1, S1's G3 as re-registered for E2B, unchanged:** teacher-forced agreement of the Metal resident against
+    the CPU on the same sidecar, over G3's prompts, against the validated Qwen2.5-Coder-1.5B's in the same process.
+    PASS at >= the reference's - 2.0 points with free-run passes >= the reference's - 1; 2.0-4.0 points below
+    ambiguous (parked); worse fails.
+  - **G-E4B-2, served:** G4's image request and G-S5c's three audio clips through one Metal serve binary,
+    `--backend metal` against `--backend cpu`, `--embed-int4=false` and `-vision-device cpu` on every arm, plus a
+    second CPU run. Identical replies, or a first divergence at a near-tie; the CPU repeat byte-identical; a Metal arm
+    not decoding resident voids that reading.
+  - **The 31B** (`google/gemma-4-31B-it`, 62.6 GB) is downloading on nobara. It is too large for this Mac by any
+    path, so its gates (the 26B's shape) are nobara's.
 - **EmbeddingGemma 2 on CUDA:** text, image and audio. Optional. The Metal kernels show the shapes; the work is a CUDA
   twin.
 - **WebGPU:** moved to its own phase, S12 (owner: invest, 2026-10-07).
@@ -1237,10 +1476,10 @@ different rows.
 
 - **S9 on CUDA part B read 2026-10-07 on nobara (commit `e6d18adb`; local, not pushed): G1q, G2q and G3q PASS.**
   Raw: `docs/measurements/multimodal-support-2026-10/s9b-cuda/` (`partb-g1q-g2q-run1.log.gz`, `partb-generate-run1.log`, `g3q/`, `speed-smoke/`).
-  - **Built as registered** (`decoder/generate_gemma4_vl.go`; no backend code): for an E-model with a causal image block, `GenerateGemma4VL` claims the resident, builds the prompt's rows (text rows as
+  - **Built as registered, then merged onto the Mac's equal** (`decoder/generate_gemma4_vl.go`; no backend code; the Mac's S9 on Metal, `1e2f40db`, landed the same decoder path - `gemma4VLResidentPrefill` and `gemma4ResidentMediaRow` - while this was being built, and the merge took its structure and kept this session's row-builder seam `gemma4EModelImageRows`, its argument checks and the G2q defect hook on top; G1q, G2q and the flow test pass on the merged tree): for an E-model with a causal image block, `GenerateGemma4VL` claims the resident, builds the prompt's rows (text rows as
     `embedResident`; an image row's hidden part is the projected feature as-is and its tail is `gemma4PLEInputs(feature, PadTokenID)`), takes the logits from `PrefillLast(ctx, rows, 0)` and decodes resident from
     `len(ids)`; the CPU prefill, the CPU cache and the upload bridge are skipped. A decline or any non-cancel error forgets the half-written prefill, releases the claim and falls through to the unchanged CPU prefill + upload.
-    Serve logs `vision: image prefill ran resident (batched)` when it ran. The bidirectional class (26B/31B) is untouched; a backend whose resident declines the E-model batched pass (Metal today) falls through.
+    Serve logs `vision: decoded N tokens on the resident path (prefill resident)` when it ran (the Mac's wording; this session's own first line was dropped in the merge). The bidirectional class (26B/31B) is untouched; a backend whose resident declines the E-model batched pass falls through.
   - **G1q PASS.** On the tiny E-model with synthetic features, the image block at the start, in the middle and at the end of the 18-position prompt (6 soft tokens): the resident's batched last-position logits on the
     built rows against the CPU forward (`prefillLogitsGemma4VL`), cosine **1.000000 / 1.000000 / 1.000000** (the CPU's own int4-vs-f32 cosine at those positions 0.805, 0.763, 0.901), argmax identical in all three,
     and bit-identical to the same rows run one token at a time on the same resident. Non-vacuity as in G1p (`passPromptLen`).
@@ -1257,8 +1496,97 @@ different rows.
   - **Speed, EXPLORATORY (single samples; not quotable; the night record is queued as `s9b-e2b-image-ttft`, 20 min, 3 interleaved rounds x 4 requests, four arms, with the registered kill rule):** wall time of the whole
     32-token image request: 24.7 s before (CPU tower, CPU prefill), 5.8 s with resident prefill (CPU tower), 3.7 s with resident prefill and the CUDA tower. The one-cell smoke of the night script (max_tokens=1,
     1 round, 2 requests): first request 4.97 s against 23.58 s (CPU tower) and 2.83 s against 21.54 s (CUDA tower); the second request, with the tower's features cached, 0.47 s against 19.08 s and 0.45 s against 19.00 s.
-  - **Not done:** Metal's half (the batched E-model pass is the Mac's S9; the decoder side is backend-generic and falls through until then); E4B (no checkpoint); the bidirectional class is out of scope; an image turn
+  - **Not done:** Metal's half (the Mac's S9, recorded above); E4B (no checkpoint on this box); the bidirectional class is out of scope; an image turn
     whose prompt exceeds the resident context cap declines to the CPU path (by the existing cap check inside the batched pass).
+
+**S9 Gate 0 on Metal, the desk map (2026-10-07, Mac):**
+- **Today an E-model never prefills in a batch on Metal.** The f16-MMA pass (`PrefillLast`) declines every dense Gemma
+  4, because its head size varies by layer (`prefillOK` checks `HasPerLayerGeometry`). So a text prompt prefills one
+  token at a time on the GPU, and an image turn (`GenerateGemma4VL`'s E-model branch) prefills on the CPU, then
+  `UploadKV`s and decodes resident.
+- **A bit-identical batched route already exists for the paged 26B:** `prefillG4Paged`
+  (`metal/prefill_g4paged.go`, 4b of task-m26-mac). It runs layer by layer: one command buffer per layer encodes
+  decode's own kernels once per prompt row, with each row's own residual and position uniforms. So the K/V and the last
+  row's logits equal the sequential loop's bit for bit, and the per-token submit-and-wait trips go away. Its dense
+  layers already take the plain `encodeLayerWith` path.
+- **An E-model row adds two things to that per-row state:**
+  - the PLE input `pleIn` (`[L·P]`, about 35 KB on E2B, which `encodePLE` reads from the resident's field, as decode
+    stages it from the row's tail, `loadEmb`);
+  - nothing for KV-shared layers. They read their source layer's cache at keys up to the row's position, and the
+    layer-major order fills every row of the source layer first.
+  Per-layer FFN widths are already in decode's layer encode.
+- **The image turn:** the decoder can build the resident rows itself:
+  - text rows from `embedResident` (`[h ‖ PLE]`);
+  - image rows as the projected feature followed by `gemma4PLEInputs(feature, PAD)`, the CPU's own rule.
+  It then calls `PrefillLast`. A decline keeps today's CPU prefill and upload, unchanged.
+- **CUDA's half is nobara's** (its batched prefill declines E-models by name too, S1's C-steps), against the same gates.
+
+**S9 gates on Metal, written 2026-10-07 before any S9 code or measurement:**
+- **G-S9a, bit-identity:** on `gemma4-emodel-tiny`, the layer-major pass against the sequential resident loop (the same
+  rows through `Forward` one at a time).
+  - Two prompts: text only, and one carrying a run of image rows (random features, PAD in PLE).
+  - The last row's logits must be bit-identical, and so must the next 8 decode steps' logits from the prefilled cache
+    (which checks every layer's K/V, shared layers included).
+  - Prompt lengths below and above one chunk boundary.
+  - No tolerance band: the construction is exact, so any difference is a defect.
+- **G-S9b, the planted defects through the pass:**
+  - S1's G2 E-model defects that the prefill touches, each injected into the layer-major path and each red against
+    G-S9a's sequential reference: the PLE input of one row bound to another row's; the PLE term dropped; a KV-shared
+    layer storing its own K/V.
+  - Also the row order within a layer reversed, which must still be green: the encoder keeps rows apart, and a red
+    there would mean rows share state they should not.
+- **G-S9c, served:** G4's request (E2B, table.png, 32 greedy tokens, the GGUF with `--vision ~/models/gemma-4-E2B-unq`).
+  - Arms: `--backend metal` against `--backend cpu`, `--embed-int4=false` on both (G-S3c's lesson).
+  - The Metal arm must report its image prefill resident.
+  - Identical reply, or a first divergence at a near-tie under the log-probability definition. The CPU repeat must be
+    byte-identical.
+- **G-S9b amended 2026-10-07, after writing the pass and before any measurement:**
+  - **The row-order item was wrong.** Within a layer each row writes its own K/V and later rows attend to it, so rows
+    encoded out of order DO share state: a row would read keys not yet written. Reversing the order is therefore a
+    planted defect that must go RED, not a control that stays green.
+  - **"A KV-shared layer storing its own K/V" is replaced by "every row one position late".** The first needs a change
+    inside decode's shared kernels, which the pass does not own; the second is the pass's own state.
+  - **The defects as run:** (1) each row's PLE inputs bound to the next row's; (2) the PLE term dropped (zero inputs);
+    (3) every row one position late; (4) rows encoded in reverse order within a layer. Each must turn G-S9a red.
+- **Speed (night):** E2B image-turn TTFT and a 512-token text prompt's TTFT, the layer-major pass against today's path
+  (CPU prefill and upload; sequential resident), interleaved. Default on if G-S9a and G-S9b pass, since the change is
+  bit-identical (the 4b precedent); the night grade turns it off below 1.00x.
+
+**S9 on Metal, results (2026-10-07, Mac):**
+- **The code:** `metal/prefill_emodel.go`.
+  - `PrefillLast` takes a dense Gemma 4 E-model through a layer-major pass: per layer, one command buffer encodes
+    decode's own `encodeLayerWith` once per row, each row on its own residual, PLE inputs and position uniforms.
+  - `GenerateGemma4VL`'s E-model branch builds the resident rows and prefills there (`gemma4VLResidentPrefill`), with
+    `gemma4ResidentMediaRow` building the image and audio positions: the feature unscaled, PLE from PAD. A decline
+    keeps the CPU prefill and upload.
+  - Serve's log line names where the prefill ran. E-model text prompts reach the pass through the decoder's existing
+    `residentPrefillSeed`, unchanged.
+- **G-S9a: PASS, bit-identical in all four cases.** On the tiny E-model, the last row's logits plus the next 8 decode
+  steps are equal bit for bit to the sequential loop's, for text only and with 12 image rows, at 18 and 293 rows (past
+  one 256-row chunk). `metal/gemma4_emodel_s9_test.go`.
+- **G-S9b: PASS, all four defects red at the first step:** (1) PLE inputs shifted one row, max |diff| 0.904; (2) PLE
+  dropped, 1.19; (3) one position late, 1.41; (4) rows reversed within a layer, 0.906.
+- **G-S9c, read 13:00-13:01 PDT: PASS.** The serve binary was built from `s2-towers` with `main` merged
+  (`6e4449ae`), which has `-vision-device`. The model was the E2B GGUF with `--vision ~/models/gemma-4-E2B-unq`, using
+  table.png, `-vision-device cpu` and `--embed-int4=false` on every arm.
+  - The Metal arm reported `prefill path: layer-major on decode's kernels (... a Gemma 4 E-model, S9)` and logged
+    "decoded 32 tokens on the resident path (prefill resident)". The CPU arms prefilled on the CPU.
+  - The replies agree for 17 tokens. At token 17 the CPU reference picks " for" at 0.388, with Metal's "." at 0.339
+    there: a near-tie. The second CPU run is byte-identical to the first.
+  - Request time (exploratory; the tower on the CPU in every arm, by the gate's design): Metal 12.1 s, CPU 14.5 and
+    12.9 s. The tower is most of that; the night record separates prefill from tower.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s9-gs9c/`.
+- **Exploratory smoke of the speed script, one pass by day (13:03 PDT; not a result, the night record decides):**
+  `run-s9-speed.sh` with `PASSES=1`. Image-turn TTFT 16.5 s on the old path against 10.8 s on the pass (1.53x). The
+  ~512-token text TTFT was 11.0 s against 10.8 s (1.02x).
+  - The image turn gains because its prefill leaves the CPU.
+  - A text prompt barely moves, because both paths run decode's GEMV kernels once per row, about 20 ms a token on
+    E2B. The pass only removes the per-token submit-and-wait.
+  - **A real text-prefill win for E-models needs the f16-MMA pass to learn Gemma 4's per-layer geometry** (head size
+    256 and 512 by layer, the PLE block, shared K/V), which it declines today for every dense Gemma 4. That is a
+    further S9 step, noted here and not started.
+- **Still owed for S9:** the night speed record (`s9-speed`, queued tonight on the Mac) and CUDA's half (nobara).
+
 
 ### S10 — Towers for the families that have none
 
@@ -1270,6 +1598,143 @@ Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image 
 - **Gates, per family, before starting it:** the tower's stages against HF on the real checkpoint; full-model logits on an
   image prompt against HF; a served request.
 - **Size:** M each.
+
+**S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
+P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
+owner's choice is that decision. The dev checkpoint is `Qwen/Qwen3-VL-2B-Instruct`, downloaded on nobara (`~/models/
+qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
+
+**Gate 0, the desk map (2026-10-07, from transformers 5.16.1's `modeling_qwen3_vl.py` and aikit's source):**
+- **The tower is S2's Qwen3.5 tower plus DeepStack.** It has the same patch embed, interpolated learned position table,
+  2-D RoPE, blocks and merger. In addition, at `deepstack_visual_indexes` a separate merger (`use_postshuffle_norm=True`:
+  the LayerNorm after the merge-unit shuffle, not before) turns that block's output into one feature row per merged
+  token. The tower returns the main merged rows plus one DeepStack list per index.
+- **aikit refuses a DeepStack tower at load, by name** (`Qwen3EncoderConfig.DeepstackVisualIndexes`, pinned by
+  `TestQwen3VisionEncoder_refusesWhatItCannotRun`). It needs the extra mergers and a forward that returns their outputs:
+  new aikit API for the cycle's release.
+- **The decoder:** after decoder layer i, for i < len(DeepStack), the i-th DeepStack rows are ADDED to the hidden state
+  at the image positions (`_deepstack_process`). Every other family here splices once before layer 0. goinfer has the
+  text decoder (`qwen3_vlArchitecture`, P8 Phase 0) and its interleaved m-RoPE (`MRopeInterleaved`, shared with
+  Qwen3.5), but no additive per-layer hook.
+- **Where the injection applies:** only in the prompt's prefill. A decode step is never an image position. So the CPU
+  prefill carries the hook, and Metal's existing CPU-prefill-then-`UploadKV` route decodes unchanged. CUDA's resident
+  m-RoPE prefill must decline a DeepStack model until it learns the hook.
+- **Serve:** a `qwen3_vl` model type routes to the Qwen tower path, as Qwen2.5-VL and Qwen3.5 do, with the DeepStack
+  rows carried beside the merged rows.
+- **The text gate written in P8 Phase 0 and never run** (`decoder/qwen3vl_real_test.go`, `GOINFER_QWEN3VL_2B`) runs
+  first, on nobara: the decoder must be right before images are added to it.
+
+**S10 Qwen3-VL gates, written 2026-10-07 before any S10 code or measurement:**
+- **G-S10a, the text decoder:** `qwen3vl_real_test.go` as written in P8 Phase 0, on nobara.
+- **G-S10b, the tower against HF on the real 2B:** every stage (the patch embed with position rows, each block, the
+  merger, each DeepStack merger) at soft-token cosine >= 0.9999 on the four F2a images. HF's tower is run alone, float32;
+  0.999-0.9999 is ambiguous (parked). Plus aikit's own tiny-tower check, with norms randomised and the DeepStack merger's
+  post-shuffle norm dropped as a planted defect that must go red.
+- **G-S10c, the full model on an image prompt against HF `Qwen3VLForConditionalGeneration` (float32, nobara):**
+  goinfer's float32 CPU prefill, with the same pass bar as G-S5b: last-position cosine >= 0.999, argmax equal, argmax
+  agreement >= 95% over the text positions after the image. Planted defects, each red: (1) the DeepStack features not
+  added; (2) added at the wrong layers (shifted by one); (3) added to the text positions too.
+- **G-S10d, served:** one image request through serve, `--backend cpu` against `--backend metal` (the CPU prefill and
+  upload) with every load flag equal, plus a CPU repeat. Identical replies, or a first divergence at a near-tie.
+
+**S10 Qwen3-VL progress (2026-10-07):**
+- **G-S10a: PASS** (nobara, 14:36, `~/wt/goinfer-s5`, under the timing lock). `scripts/pin_qwen3vl_real.py` ran in
+  `~/.venv-vl` (transformers 5.12) on `~/models/qwen3-vl-2b-instruct`, then `TestQwen3VLReal_gate`: logit cosine
+  1.000000, argmax 12095 equal, the 6-token greedy continuation identical (" Paris, and the capital of"). P8 Phase 0's
+  gate, written 2026-09-08 and never run, has now run. The golden is committed as `qwen3vl_real_golden.json.gz` (3.0
+  MB of JSON, 1.3 MB gzipped).
+- **A defect the run surfaced, fixed:** the load printed `MRopeSection=[]`. The released checkpoint writes `rope_scaling
+  {mrope_interleaved: true, mrope_section: [24, 20, 20], rope_type: "default"}`, and `qwen3_vlArchitecture` took the
+  section only when the type said `mrope`. Text never sees it (every position's three components are equal), but an
+  image prompt would have been rotated as plain RoPE. The section is now taken whenever it is present.
+  `TestQwen3VL_mropeSectionFromRopeScaling` pins it with the real config's shape: red before the fix, green after.
+- **aikit DeepStack (local branch `s2-tower-exports`, 14f4b7c..45b93dd, not pushed):**
+  - The Qwen3 tower loads the DeepStack mergers (the post-shuffle LayerNorm) and returns their rows beside the main
+    ones (`ForwardDeepstack`). `Forward` is unchanged for every caller.
+  - The device export (`Weights`) refuses a DeepStack tower, so S2's Metal tower declines it rather than drop the rows.
+  - The load refusal of DeepStack itself is gone; malformed index lists are still refused.
+- **G-S10b: PASS, tiny and real.**
+  - **Tiny** (aikit's `TestQwen3Deepstack_tiny`, a committed fixture pinned by `scripts/pin_qwen3vl_vision_tiny.py`:
+    DeepStack at blocks 0 and 1, every norm randomised, two images): the main rows and both DeepStack sets match
+    transformers at worst cosine 1.000000000. The planted defect (the post-shuffle norm dropped) is red at 0.888 and
+    0.823.
+  - **Real** (nobara, 15:03 PDT, under the timing lock, aikit's `TestQwen3VisionEncoder_realDeepstack` against
+    `scripts/pin_qwen3vl_tower_real.py`'s artifacts: HF's own pixel values, every stage hooked): every stage of all
+    four F2a images at worst cosine >= 0.9999 (the embed, all 24 blocks, the merger, the three DeepStack sets at blocks
+    5, 11 and 17).
+
+    | image | grid | worst stage | merged | DeepStack 0 / 1 / 2 |
+    |---|---|---|---|---|
+    | gemma3_preprocess_image.png | 56x56 | 0.999995237 | 0.999999901 | 1.000000000 / 0.999999803 / 0.999999813 |
+    | qwen25vl_preprocess_image.png | 14x20 | 0.999999891 | 0.999999995 | 1.000000000 / 0.999999996 / 0.999999998 |
+    | glm_ocr/formula.png | 76x62 | 0.999999739 | 0.999999988 | 1.000000000 / 0.999999871 / 0.999999932 |
+    | glm_ocr/table.png | 56x76 | 0.999999562 | 0.999999999 | 1.000000000 / 0.999999999 / 0.999999997 |
+- **The decoder's DeepStack (main, `84cc5aae`):**
+  - The KV cache carries a prefill's DeepStack sets. The batched layer loop adds set l to the image positions after
+    layer l (`addDeepstack`, unit-tested on batch offsets).
+  - `GenerateQwenVLDeepstack` takes them; `GenerateQwenVL` is its no-DeepStack case.
+  - A resident m-RoPE prefill (CUDA's) is not offered a DeepStack turn, since it cannot inject.
+- **Serve (`s2-towers`, `8a6bc27a`; needs the aikit branch):**
+  - A `qwen3_vl` checkpoint takes the Qwen3.5+ tower path, DeepStack required; a `qwen3_5` config declaring it is
+    refused.
+  - The tower runs on the CPU by name: no device tower carries DeepStack yet, and `-require-backend` refuses on Metal.
+  - The features are one flat vector (the merged rows, then each set), so the image cache keeps them whole; serve splits
+    them for the decoder.
+- **G-S10c: PASS** (nobara, 15:14-15:16 PDT, under the timing lock).
+  - The setup: `scripts/pin_qwen3vl_image_real.py` (transformers 5.12, float32, HF's own processor and chat template:
+    table.png, 1083 ids with 1064 image tokens, grid 56x76). Then `TestQwen3VLImageReal` on those ids and pixel values:
+    aikit's tower with DeepStack, goinfer's float32 prefill with the production fast-attention setting.
+  - **Result:** last-position cosine 1.000000, argmax 86608 equal to HF's, and argmax agreement over the 15 text
+    positions after the image 15/15. The test's open loop equals `prefillLogitsQwenVL` itself.
+  - **Planted defects, all red:**
+    1. DeepStack not added: cosine 0.982867, argmax kept;
+    2. added one layer late: 0.987967;
+    3. added to the text positions too: −0.135, argmax changed.
+- **G-S10d, read 15:18-15:19 PDT on the Mac: PASS.**
+  - The setup: a serve binary from `s2-towers` at `8a6bc27a`. Qwen3-VL-2B was copied from nobara to
+    `~/models/qwen3-vl-2b-instruct` over the LAN. table.png, 32 greedy tokens, `--embed-int4=false` and
+    `-vision-device cpu` on every arm; arms `cpu`, `metal` (`metal-resident (int4)`), then `cpu` again.
+  - **All three replies are byte-identical:** "Table 2. Quarterly unit sales by region (thousands)". The tower ran on
+    the CPU in every arm, reported as such ("CPU (DeepStack: no device tower yet)").
+  - Request times, exploratory: 25.8-27.9 s, most of it the CPU tower.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10d/`.
+- **G-S10e, the Qwen3-VL tower on Metal with DeepStack, registered 2026-10-07 before its code:** S2's Metal grid tower
+  returns the block outputs at the DeepStack indexes ("taps"); aikit's exported host tails turn them into the DeepStack
+  sets, as `FinishHidden` turns the last one into the merged rows.
+  - **Bar:** G-S2b's, unchanged. The merged rows and each DeepStack set at worst-row cosine >= 0.9999 against aikit's
+    CPU `ForwardDeepstack`, on the tiny DeepStack tower (norms randomised) and on Qwen3-VL-2B's four F2a images;
+    0.999-0.9999 ambiguous (parked).
+  - **Planted defect:** the taps taken one block late; it must go red on the tiny tower.
+  - **Then G-S10d's served check again,** with the tower on Metal against `-vision-device cpu`, both `--backend metal`:
+    identical replies or a first divergence at a near-tie.
+- **G-S10e: PASS** (Mac, 15:39-15:43 PDT; `s2-towers` at `aec3ccec`, aikit `5db4ce6`).
+  - **The code:** the Metal grid tower taps the DeepStack blocks (`HiddenTaps`, read where `run` ends each block's
+    command buffer). aikit's host tails (`FinishHidden`, the new `DeepstackFromHidden`) make the merged rows and the
+    sets (`multimodal.Qwen3TowerFeaturesDeepstack`). Serve runs a Qwen3-VL tower on a device only if that tower can tap;
+    otherwise the CPU, by name, or an error under `-require-backend` (`TestQwen3VLTower_needsTaps`, red without the
+    check).
+  - **Tiny** (`testdata/qwen3vl-vision-tiny`, copied from aikit): merged rows and both sets at 1.000000000 on two grid
+    sets. The planted taps-one-block-late defect is refused (the last tap falls past the 2-block tower), which is red.
+  - **Real 2B, four F2a images at serve's cap:** worst 0.999997916 (formula.png's second set); every other output
+    0.99999990 or better. The planted defect on the 14x20 image: sets at 0.574, 0.293 and 0.661, red.
+  - **Served, `--backend metal` in every arm:** the tower on Metal against `-vision-device cpu`, twice: byte-identical
+    replies ("Table 2. Quarterly unit sales by region (thousands)"). Request time 19.2 s against 31.3-41.3 s with the
+    tower on the CPU (exploratory, one reading each).
+  - Raw: `docs/measurements/multimodal-support-2026-10/s10-gs10e/`.
+- **The owed preprocessing record, read 15:30 PDT:** `multimodal/qwen3vl_preprocess_real_test.go` (goinfer's
+  QwenPreprocess with Qwen3-VL's own, uncapped config against transformers' `Qwen2VLImageProcessor` pixel values from
+  G-S10b's run). The grids are equal on all four images. The pixels are identical on the two that need no resize; on
+  the two resized ones the largest difference is 0.00784 (one 8-bit level, 2/255 in [-1, 1]), the mean 2e-6 and 9e-6,
+  and the worst patch cosine 0.999998.
+- **aikit's qwenmetal allocation fix (nobara's df1a98f, merged into the local branch as 97cc578):**
+  `TestQwenMetal_allocationFailureIsAnErrorAndTheEncoderRecovers` passes on the Mac, with the full qwenmetal suite. A
+  2.5 TB scratch request came back as "MTLBuffer allocation failed ... out of memory", and the encoder recovered.
+- **S10 Qwen3-VL: G-S10a-e all PASS.** Owed, none of them gates:
+  - ~~goinfer's preprocessing against HF's~~ (done, above).
+  - ~~A device tower with DeepStack on Metal~~ (G-S10e). CUDA's twin (nobara): its grid tower implements
+    `multimodal.GridTowerTapper`, the same `run`-loop tap.
+  - ~~The serve log's "Qwen3.5 vision"~~ (now "Qwen3-VL vision").
+  - The MoE variants.
 
 ### S11 — Several images per message
 

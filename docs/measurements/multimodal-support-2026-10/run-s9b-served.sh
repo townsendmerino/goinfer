@@ -35,7 +35,7 @@ ref = one("old", None); ok = ref is not None
 if ref is None: print("!! no reference logprobs")
 for run, want_resident in (("new", True), ("new-ctl", False), ("new-auto", True)):
     lp, lg = one(run, None), log(run)
-    resident = "image prefill ran resident (batched)" in lg
+    resident = "(prefill resident)" in lg
     dec = "decoded" in lg and "resident path" in lg
     print(f"== {run}: image prefill resident line present: {resident} (want {want_resident}); decode on the resident path: {dec}")
     if resident != want_resident or not dec: ok = False

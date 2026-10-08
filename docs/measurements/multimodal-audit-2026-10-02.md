@@ -78,14 +78,14 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 |---|---|---|---|
 | CPU | CPU SigLIP, f32 unless `--vision-quant int8`; 31.3 s/image | CPU | read-from-code (`internal/serveapp/main.go`); tower time recorded 2026-09-08 (`docs/benchmarks.md` §A "Vision tower CPU prefill"), not re-measured; tiny-fixture parity verified-run (T7: `TestGemma3VL_imageParity`) |
 | CUDA | **goinfer's own resident CUDA tower** (`cuda/vision_encoder.go`, registered at `cuda/vision_register.go:13`; not aikit's `visioncuda`), int8, `EnableResident` called (`internal/serveapp/main.go`). **4.1 s/image** with the fused attention that is default since 2026-09-21 (26.0 s with `GOINFER_CUDA_VISION_ATTN=exact`) | resident: `PrefillImageLast` (`cuda/prefill.go:174`, tried first at `decoder/generate_vl.go:159`) when the prompt fits one pass, else CPU prefill then `UploadKV` (`:210`); decode `cuda-resident (int4)` | tower + serving **verified-run** (B1, P1, T1); the two decoder cosine gates **skipped today** (T4), so their figures (decode-step cosine 0.998167, prefill cosine 0.997042, decode 13.26x, prefill 22.27x) are **recorded 2026-09-08** (`docs/benchmarks.md` "Vision-language resident decode (gap 0)"); tower speed **recorded 2026-09-21** (`docs/measurements/vision-tower-mma-2026-09-21.md`, the owner's default override is `docs/tasks/red-october.md` R8) |
-| Metal | **CPU**: nothing on Metal registers a vision tower (`metal/` has no `RegisterResident`; `internal/serveapp/main.go` is webgpu/cuda only) and aikit's `gpu/visionmetal` is not imported (B2). f32 unless the flag | resident-capable: Metal has `UploadKV` and `ForwardMRoPE` (`metal/backend.go:1092,526`) but no `PrefillImageLast`, so CPU prefill then `UploadKV` then Metal decode | **read-from-code**, never run on a Mac in any record I found (`docs/benchmarks.md` "Not yet measured: CUDA is the only backend measured") |
+| Metal | **CPU**: nothing on Metal registers a vision tower (`metal/` has no `RegisterResident`; `internal/serveapp/main.go` is webgpu/cuda only) and aikit's `gpu/visionmetal` is not imported (B2). f32 unless the flag | resident-capable: Metal has `UploadKV` and `ForwardMRoPE` (`metal/backend.go:1102,526`) but no `PrefillImageLast`, so CPU prefill then `UploadKV` then Metal decode | **read-from-code**, never run on a Mac in any record I found (`docs/benchmarks.md` "Not yet measured: CUDA is the only backend measured") |
 | WebGPU | resident WebGPU tower (`gpu/vision_register.go:11`), int8, `EnableResident` called; recorded 18.8 s/image, ~9x, 2026-06-11 (a pre-re-anchor row, "the absolute 18.8 s is not current", `docs/legacy-benchmarks.md`); today's cold request took 27.4 s end to end (exploratory) | resident (`gpu/residency.go:1429` `UploadKV`; no `PrefillImageLast`): `webgpu:vulkan-resident (int4)` | **verified-run** (P8, T9) with `--ctx 4096`; at the default context an 8 GB card aborts startup (below) |
 
 ### Gemma 4, E2B and E4B (`use_bidirectional_attention` unset)
 
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
-| CPU | CPU `Gemma4Encoder`, f32 unless the flag | CPU, one token at a time (`decoder/generate_gemma4_vl.go:28-66`) | recorded 2026-09-10 (Phase E, real E2B, `docs/multimodal.md`); tiny fixtures verified-run (T7) |
+| CPU | CPU `Gemma4Encoder`, f32 unless the flag | CPU, one token at a time (`decoder/generate_gemma4_vl.go:29-67`) | recorded 2026-09-10 (Phase E, real E2B, `docs/multimodal.md`); tiny fixtures verified-run (T7) |
 | CUDA | CPU, **int8** (the rule above; the encoder has no resident seam) | **CPU, the whole model**: `cuda does not implement [gemma4-e-model]` | **verified-run** (P4: 25.3 s per 336x336 image, no reuse) |
 | Metal | CPU, int8 only by flag | CPU: no backend declares `FeatGemma4EModel` (`decoder/features.go:100,268`; a grep of `cuda/ gpu/ metal/` finds no declaration) | read-from-code |
 | WebGPU | CPU, int8 | CPU, same reason | read-from-code |
@@ -95,7 +95,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | CPU | CPU bidirectional batched prefill (`runLayersGemma4FromEmbedN`), CPU decode | recorded 2026-09-10 (Phase E, real 26B-A4B on the CPU: "Blue."); tiny fixtures verified-run (T7) |
-| CUDA | CPU, int8 | CPU bidirectional prefill, then `residentUploadPrefill` and **resident decode** (`decoder/generate_gemma4_vl.go:150-157`) | 26B-A4B **verified-run** served (P7 run 2: `cuda-resident (int4)`, correct reply, 68.5 s cold; run 1 anomaly noted) and the bridge on a **synthetic scaled** fixture (T5). 31B: no checkpoint on this box, **unverified** |
+| CUDA | CPU, int8 | CPU bidirectional prefill, then `residentUploadPrefill` and **resident decode** (`decoder/generate_gemma4_vl.go:160-167`) | 26B-A4B **verified-run** served (P7 run 2: `cuda-resident (int4)`, correct reply, 68.5 s cold; run 1 anomaly noted) and the bridge on a **synthetic scaled** fixture (T5). 31B: no checkpoint on this box, **unverified** |
 | Metal | CPU | the same generic bridge; resident Gemma 4 is a matrix claim (`docs/hardware-matrix.md`) | read-from-code; unverified end to end |
 | WebGPU | CPU | the same bridge; the 2026-09-17 commit message `26f64807` says Gemma 4 + MoE stays CPU-only on WebGPU, the matrix says resident | **unverified** (the two disagree and I did not settle it) |
 
@@ -105,7 +105,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 |---|---|---|---|
 | CPU | CPU `QwenVisionEncoder` | CPU | recorded; tiny fixtures verified-run (T7) |
 | CUDA | **CPU**, int8 by the rule. aikit now has the seam (`vision/qwen_resident.go:38,44`) and the module (`gpu/qwencuda`), but **goinfer registers no Qwen factory and imports neither** (B1; `docs/tasks/task-aikit-boundary-2026-09.md:33`), and serve never calls `EnableResident` on it | resident m-RoPE prefill (`cuda/prefill.go:227`) then `ForwardMRoPE` decode (`cuda/resident.go:2207`), else CPU prefill + `UploadKV`; 3.86x decode recorded 2026-09-08 | **verified-run** (P2, T2, T3: real 3B checkpoint, cosine 0.998644 prefill, 1.000000 decode step, reuse 165) |
-| Metal | CPU (`gpu/qwenmetal` exists, not imported, B2) | `ForwardMRoPE` + `UploadKV` exist (`metal/backend.go:542,984`); no m-RoPE prefill kernel, so CPU prefill then bridge | read-from-code |
+| Metal | CPU (`gpu/qwenmetal` exists, not imported, B2) | `ForwardMRoPE` + `UploadKV` exist (`metal/backend.go:542,994`); no m-RoPE prefill kernel, so CPU prefill then bridge | read-from-code |
 | WebGPU | CPU, int8 | `ForwardMRoPE` + `UploadKV` (`gpu/residency.go:1250,1428`), CPU prefill then bridge | **verified-run** (P9: reuse 165; T9 primitives cosine 1.0). At temperature 0 the cold and the reused turn give different text, every time (a CPU-prefill versus GPU-last-token arithmetic gap; item 8 below) |
 
 ### Qwen3.5+ (`qwen3_5` dense; `qwen3_5_moe`)
@@ -113,11 +113,11 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | aikit `Qwen3VisionEncoder` on the CPU, **loaded on the first image**, f32 unless the flag, at most 1024 merged tokens per image (`internal/serveapp/qwen35_vision.go:24,83`) | CPU, one token at a time (the Gated-DeltaNet recurrence has no batched form) | **recorded 2026-09-30**: 0.8B 32/32 tokens identical to HF f32 on three images (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`) and **9B 32/32 on three images** (night run `~/goinfer-logs/night/runs/2026-09-30/p8a-g2-9b.log`, `--- PASS: TestQwen35VLReal_G2_9B (767.58s)`). The old "9B leg open" text is stale |
-| CUDA | CPU, **int8** by the rule (the 0.8B/9B gates ran f32; I found no int8 gate for this tower) | **CPU prefill and CPU decode**: every resident branch is refused for a recurrent family (`decoder/generate_vl.go:285-287,349,400`) | **verified-run** (P3: reuse 0, 7.0 s, the tower reruns on a repeat; `TestGenerateQwenVL_recurrentTakesNoResidentBranch` T7) |
+| CUDA | CPU, **int8** by the rule (the 0.8B/9B gates ran f32; I found no int8 gate for this tower) | **CPU prefill and CPU decode**: every resident branch is refused for a recurrent family (`decoder/generate_vl.go:297-299,364,419`) | **verified-run** (P3: reuse 0, 7.0 s, the tower reruns on a repeat; `TestGenerateQwenVL_recurrentTakesNoResidentBranch` T7) |
 | Metal | CPU | CPU (the refusal is in `decoder/`, not backend-specific) | read-from-code |
 | WebGPU | CPU, int8 | CPU, same | read-from-code |
 
-**MoE sizes (`qwen3_5_moe`) are unverified.** Serve's auto-discovery accepts the model type (`internal/serveapp/qwen35_vision.go:74-80`, and a `qwen3_5_moe` row in `TestIsQwen35VisionDir`), but
+**MoE sizes (`qwen3_5_moe`) are unverified.** Serve's auto-discovery accepts the model type (`internal/serveapp/qwen35_vision.go:55-61`, and a `qwen3_5_moe` row in `TestIsQwen35VisionDir`), but
 no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last and separately"; the tiny `qwen3_5_moe` fixture is text-only), the capability matrix says modality
 `text` for it, and the Ollama-coverage notes say "dense sizes only". The supported claim stays dense (0.8B and 9B gated).
 
@@ -134,11 +134,11 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 
 | family | what happens | verdict |
 |---|---|---|
-| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1128-1147`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
+| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1113-1132`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 
-All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1679-1683`), and the Anthropic `image` block goes through
+All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1690-1694`), and the Anthropic `image` block goes through
 the same `driveVL`; the Anthropic surface was **not run** here.
 
 ## Claims in the docs that were wrong
@@ -151,7 +151,7 @@ Line numbers into `docs/multimodal.md` below are the file's numbers **before** t
 | 2 | "CUDA resident-serves Gemma 3's tower ... 1.58x, 41.3 s -> 26.1 s" as the current figure | `multimodal.md` status; `docs/server.md` vision paragraph | superseded 2026-09-21: the fused attention is the default, 26.0 s -> 4.1 s/image (6.4x); 1.58x is the 2026-09-08 first version. `GOINFER_CUDA_VISION_ATTN=exact` gives the old 26 s |
 | 3 | "the cgo-free release binaries still have no GPU vision for any family ... a downloaded `goinfer-serve` does every image at CPU speed regardless of which family" | `multimodal.md` status and gap 1 (line 157) | **false for CUDA**: the CUDA backend is cgo-free (`CGO_ENABLED=0`, B1) and the Linux release binary carries the resident SigLIP tower (P1: `encoder int8/cuda-resident`, 4.9 s cold image on Gemma 3). True for the macOS and Windows binaries, and for every family but Gemma 3 |
 | 4 | "Both CUDA's and WebGPU's resident towers need cgo" | `multimodal.md` status; `docs/ARCHITECTURE.md` is silent | only WebGPU needs cgo (B1, B3). CUDA opens `libcuda` at run time |
-| 5 | "Gemma 4's `GenerateGemma4VL` is CPU-only v1 with no resident decode bridge at all" | `multimodal.md` status | the bridge exists since P7 Phase D (2026-09-10) for 26B-A4B and 31B (`decoder/generate_gemma4_vl.go:150-157`); only E2B/E4B are CPU for the whole turn, and that is not a vision gap (no backend implements the E-model features) |
+| 5 | "Gemma 4's `GenerateGemma4VL` is CPU-only v1 with no resident decode bridge at all" | `multimodal.md` status | the bridge exists since P7 Phase D (2026-09-10) for 26B-A4B and 31B (`decoder/generate_gemma4_vl.go:160-167`); only E2B/E4B are CPU for the whole turn, and that is not a vision gap (no backend implements the E-model features) |
 | 6 | "Qwen2.5-VL's and Gemma 4's own towers stay CPU-only (no `EnableResident` path yet)" | `multimodal.md` status | **still true of what ships**, but the reason changed: aikit has had a Qwen seam and `qwencuda`/`qwenmetal` modules since, and goinfer does not import them (`task-aikit-boundary-2026-09.md:33`). Gemma 4 and Qwen3.5+ and GLM-OCR towers have no resident seam in aikit at all |
 | 7 | "`--backend webgpu`/`--backend cuda` force the int8 tower regardless of `-vision-quant`" (stated for every family) | `docs/server.md` | true for Gemma 3, Qwen2.5-VL, Qwen3.5+ and Gemma 4; **not** for GLM-OCR (`internal/serveapp/main.go`). For the three that have no resident tower the rule produces a CPU int8 tower, which the comment "needed for the resident GPU matmul weights" does not cover |
 | 8 | "Metal has no vision tower for any family yet" | `multimodal.md` status | true of the **tower**. Not true of Metal image turns generally: Metal has had a real `UploadKV` and `ForwardMRoPE` since 2026-09-17 (`26f64807`), so the CPU-prefill-then-resident-decode bridge is available there (read-from-code, unrun) |

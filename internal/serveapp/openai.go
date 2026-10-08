@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/townsendmerino/aikit/audio"
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/aikit/vision"
@@ -146,6 +147,14 @@ type loadedModel struct {
 	gemma4Tower   multimodal.Gemma4TowerAccelerator // nil: the CPU tower (F2, docs/multimodal.md)
 	gemma4MaxSoft int
 	gemma4ImgTok  int // <|image|> id
+	// Gemma 4 audio (S5 of docs/tasks/task-multimodal-support-2026-10.md): set when the checkpoint has an audio_config.
+	// The tower loads on the first audio request (gemma4AudioEncoder), so a server that never hears audio never pays
+	// its memory. gemma4AudioTok is <|audio|>.
+	gemma4AudioDir  string
+	gemma4AudioTok  int
+	gemma4AudioOnce sync.Once
+	gemma4Audio     *audio.Gemma4AudioEncoder
+	gemma4AudioErr  error
 }
 
 // cachedTokenBytes returns the constraint masker's token→bytes table, built once per model
@@ -274,6 +283,9 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n,
 		cpuBatched: cpuBatched}, cfg)
 }
+
+// audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower).
+func (lm *loadedModel) audioCapable() bool { return lm.gemma4AudioDir != "" }
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
@@ -1688,10 +1700,11 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		if gen.DecodeResident {
 			where = "resident"
 		}
-		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path\n", n, where)
-		if gen.ImgPrefillResident { // S9 part B: the image turn's prefill ran as one batched pass on the resident (otherwise the CPU prefilled and uploaded)
-			fmt.Fprintf(os.Stderr, "vision: image prefill ran resident (batched)\n")
+		prefill := "cpu"
+		if gen.ImgPrefillResident { // S9: the image turn's prefill ran on the resident too
+			prefill = "resident"
 		}
+		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path (prefill %s)\n", n, where, prefill)
 	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {

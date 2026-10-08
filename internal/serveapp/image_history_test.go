@@ -44,7 +44,7 @@ func TestOmitChatHistoryImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(imgs) != 1 || string(imgs[0].data) != "second" {
-		t.Fatalf("after omission the vision path would see %d image(s) %q, want exactly the newest", len(imgs), imgs)
+		t.Fatalf("after omission the vision path would see %d image(s) %v, want exactly the newest", len(imgs), imgs)
 	}
 	if got := msgs[0].text(); !strings.Contains(got, "what is this?") || !strings.Contains(got, olderImageNote) {
 		t.Errorf("the earlier turn's text = %q, want its words plus the omission note", got)
@@ -65,7 +65,7 @@ func TestOmitChatHistoryImages(t *testing.T) {
 		t.Errorf("three turns: omitted %d, want 2", n)
 	}
 	if imgs, _ := chatImages(three); len(imgs) != 1 || string(imgs[0].data) != "c" {
-		t.Errorf("three turns: kept %q", imgs)
+		t.Errorf("three turns: kept %v", imgs)
 	}
 
 	// Two images in the SAME (latest) message are the caller's explicit request: nothing is omitted, and the guard still sees two.

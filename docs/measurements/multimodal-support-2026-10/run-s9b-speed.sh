@@ -55,7 +55,7 @@ json.dump({"times_s": ts}, open(f"{out}/r{rnd}-{lab}.json", "w"))
 PY
     rc=$?; kill $pid 2>/dev/null; wait $pid 2>/dev/null; pid=
     [ $rc -eq 0 ] || { echo "!! client failed (round $round arm $lab)" >&2; exit 1; }
-    if [ "$bin" = new ] && ! grep -q "image prefill ran resident" "$OUT/serve-r$round-$lab.log"; then echo "!! the new arm never logged a resident image prefill: the comparison would be vacuous" >&2; exit 1; fi
+    if [ "$bin" = new ] && ! grep -q "(prefill resident)" "$OUT/serve-r$round-$lab.log"; then echo "!! the new arm never logged a resident image prefill: the comparison would be vacuous" >&2; exit 1; fi
   done
 done
 python3 - "$OUT" "$ROUNDS" <<'PY'

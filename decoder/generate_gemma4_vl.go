@@ -133,58 +133,31 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 		}
 		bidirectional := m.w.Cfg.UseBidirectionalAttention != ""
 		eModel := m.w.arch.gemma4.HiddenSizePerLayerInput > 0 || m.w.arch.gemma4.SharedKVLayers > 0
-		var cache *KVCache
+		// S9 (docs/tasks/task-multimodal-support-2026-10.md): an E-model's image turn prefills on the resident when the
+		// backend takes it (Metal's layer-major pass), from the rows the CPU path would run: a text position's resident
+		// embedding ([h ‖ PLE]), an image position's projected feature, unscaled, with PLE from PAD's token identity. A
+		// decline falls through to the CPU prefill and upload below, unchanged.
+		if eModel && !bidirectional {
+			if done := m.gemma4VLResidentPrefill(ctx, out, g, ids, feats, imgPos, imgLen, imgHash, maxTokens, sp); done {
+				return
+			}
+		}
+		cache := m.NewCache(len(ids) + maxTokens)
 		var logits []float32
+		if bidirectional {
+			logits, err = m.prefillLogitsGemma4VLBidirectional(ctx, ids, feats, imgPos, imgLen, cache)
+		} else {
+			logits, err = m.prefillLogitsGemma4VL(ctx, ids, feats, imgPos, imgLen, cache)
+		}
+		if err != nil {
+			g.err = err
+			return
+		}
+
 		useGPU := false
 		gpuPos := 0
 		committed := false
-		// Resident image prefill (S9 on CUDA part B): an E-model's image block is attended causally, so the turn is a text-like batched prefill over rows built
-		// here. A decline (no batched E-model prefill on this backend, a prompt past the context cap) or any error but a cancel falls through to the CPU prefill
-		// and upload below, unchanged.
-		residentPrefilled := false
-		if eModel && !bidirectional && m.tryClaimResident() {
-			lg, perr := m.residentGemma4EModelImagePrefill(ctx, ids, feats, imgPos, imgLen)
-			switch {
-			case perr == nil:
-				residentPrefilled, logits = true, lg
-				useGPU, gpuPos = true, len(ids)
-				g.DecodeResident, g.ImgPrefillResident = true, true
-				defer func() {
-					if !committed {
-						m.residentForgetIDs()
-					}
-					atomic.StoreInt32(&m.resBusy, 0)
-				}()
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn (M-02, docs/audit-2026-09-10.md)
-					}
-				}
-			case errors.Is(perr, context.Canceled) || errors.Is(perr, context.DeadlineExceeded):
-				m.residentForgetIDs()
-				atomic.StoreInt32(&m.resBusy, 0)
-				g.err = perr
-				return
-			default:
-				m.residentForgetIDs() // a half-written prefill must not be mistaken for a committed prompt
-				atomic.StoreInt32(&m.resBusy, 0)
-			}
-		}
-		if !residentPrefilled {
-			cache = m.NewCache(len(ids) + maxTokens)
-			if bidirectional {
-				logits, err = m.prefillLogitsGemma4VLBidirectional(ctx, ids, feats, imgPos, imgLen, cache)
-			} else {
-				logits, err = m.prefillLogitsGemma4VL(ctx, ids, feats, imgPos, imgLen, cache)
-			}
-			if err != nil {
-				g.err = err
-				return
-			}
-		}
-
-		if !residentPrefilled && (bidirectional || eModel) && m.tryClaimResident() {
+		if (bidirectional || eModel) && m.tryClaimResident() {
 			// The resident cache is about to hold THIS turn's content. If decode
 			// completes naturally, residentCommitIDs below records it and this
 			// defer's forget is skipped (committed=true); any other exit (error,
@@ -236,29 +209,72 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 	return out, g
 }
 
-// residentGemma4EModelImagePrefill prefills a Gemma 4 E-model image turn on the resident GPU in one batched pass (S9 on CUDA part B,
-// docs/tasks/task-multimodal-support-2026-10.md) and returns the last position's logits. The caller holds the resident claim. Any error is a DECLINE (the
-// caller falls back to the CPU prefill and upload) except a cancel.
-func (m *Model) residentGemma4EModelImagePrefill(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, error) {
-	if m.knobs.get(knobBatchedPrefill) == "0" {
-		return nil, fmt.Errorf("decoder: batched prefill is disabled (%s=0)", knobBatchedPrefill)
-	}
+// gemma4VLResidentPrefill is GenerateGemma4VL's resident image prefill for an E-model (S9): the whole prompt through the
+// backend's Prefiller, then resident decode. It reports whether it ran the turn (true: the generation is done, g holds
+// its result); false means the backend has no prefill, the resident is busy, or the prefill declined, and the caller
+// runs the CPU path. A cancelled prefill is not a decline: it ends the turn.
+func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *Generation, ids []int, feats []float32, imgPos, imgLen int, imgHash uint64, maxTokens int, sp SamplingParams) bool {
 	pf, ok := m.resident.(Prefiller)
-	if !ok {
-		return nil, fmt.Errorf("decoder: the resident has no batched prefill")
+	if !ok || m.knobs.get(knobBatchedPrefill) == "0" || !m.tryClaimResident() {
+		return false
 	}
-	rows, err := m.gemma4EModelImageRows(ids, imageEmbeds, imgPos, imgLen)
+	rows, err := m.gemma4EModelImageRows(ids, feats, imgPos, imgLen)
+	if err != nil { // a malformed image run is the CPU path's to report; it is not this one's to panic on
+		atomic.StoreInt32(&m.resBusy, 0)
+		return false
+	}
+	m.residentForgetIDs() // the prefill overwrites the resident cache from position 0
+	logits, err := pf.PrefillLast(ctx, rows, 0)
 	if err != nil {
-		return nil, err
+		atomic.StoreInt32(&m.resBusy, 0)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			g.err = err
+			return true
+		}
+		return false
 	}
-	return pf.PrefillLast(ctx, rows, 0)
+	g.ImgPrefillResident, g.DecodeResident = true, true
+	gpuPos := len(ids)
+	if capper, ok := m.resident.(ResidentCapped); ok {
+		if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
+			maxTokens = ctxCap - gpuPos
+			g.BudgetClamped = true
+		}
+	}
+	g.Budget = maxTokens
+	sampler := NewSampler(sp)
+	sampler.Observe(ids...)
+	generated := m.vlDecodeLoop(ctx, out, g, sampler, maxTokens, sp, logits, func(next int) ([]float32, error) {
+		l, err := m.resident.Forward(m.embedResident(next), gpuPos)
+		gpuPos++
+		return l, err
+	})
+	if g.err == nil {
+		m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+	} else {
+		m.residentForgetIDs()
+	}
+	atomic.StoreInt32(&m.resBusy, 0)
+	return true
 }
 
-// gemma4EModelImageRows builds the resident rows [hidden || L*P] of an E-model image prompt. A text position is embedResident's row (scaled embedding plus
-// its PLE inputs). An image position's hidden part is the projected feature AS-IS (no embed scale, as prefillLogitsGemma4VL passes it to
-// runLayersGemma4FromEmbed) and its PLE inputs are gemma4PLEInputs of that feature with the checkpoint's PAD token id: the real HF multimodal forward
-// substitutes the pad token's embedding at every image position before computing PLE's token-identity term, not the placeholder's own id.
-func (m *Model) gemma4EModelImageRows(ids []int, imageEmbeds []float32, imgPos, imgLen int) ([][]float32, error) {
+// gemma4ResidentMediaRow is the resident row for one image or audio position of a Gemma 4 E-model: the projected
+// feature, unscaled (as the CPU's prefillLogitsGemma4VL splices it), then for an E-model the PLE inputs from PAD's token
+// identity (as runLayersGemma4FromEmbed computes them).
+func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
+	hidden := m.w.arch.HiddenDim
+	row := make([]float32, m.ResidentEmbedLen())
+	copy(row[:hidden], feature)
+	if len(row) > hidden {
+		m.gemma4PLEInputs(row[:hidden], m.w.arch.gemma4.PadTokenID, row[hidden:])
+	}
+	return row
+}
+
+// gemma4EModelImageRows builds the resident rows of an E-model image prompt: a text position's row is embedResident's ([h ‖ PLE]); an image position's is
+// gemma4ResidentMediaRow of its projected feature. It checks the image run against the prompt and the feature count, and returns an error (a decline) rather
+// than slice out of range. S9 on CUDA part B's G2q plants its defects here through gemma4VLRowsDefectForTest.
+func (m *Model) gemma4EModelImageRows(ids []int, feats []float32, imgPos, imgLen int) ([][]float32, error) {
 	arch := m.w.arch
 	if arch.gemma4 == nil {
 		return nil, fmt.Errorf("decoder: gemma4EModelImageRows on a non-gemma4 model")
@@ -267,12 +283,8 @@ func (m *Model) gemma4EModelImageRows(ids []int, imageEmbeds []float32, imgPos, 
 	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
 		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
 	}
-	if len(imageEmbeds) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens x %d hidden)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
-	}
-	n := m.ResidentEmbedLen()
-	if n <= hidden {
-		return nil, fmt.Errorf("decoder: not an E-model resident row (embed length %d, hidden %d)", n, hidden)
+	if len(feats) != imgLen*hidden {
+		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens x %d hidden)", len(feats), imgLen*hidden, imgLen, hidden)
 	}
 	rows := make([][]float32, len(ids))
 	for i, id := range ids {
@@ -280,24 +292,30 @@ func (m *Model) gemma4EModelImageRows(ids []int, imageEmbeds []float32, imgPos, 
 			rows[i] = m.embedResident(id)
 			continue
 		}
-		row := make([]float32, n)
-		h := row[:hidden]
-		copy(h, imageEmbeds[(i-imgPos)*hidden:(i-imgPos+1)*hidden])
-		tok := arch.gemma4.PadTokenID
+		f := feats[(i-imgPos)*hidden : (i-imgPos+1)*hidden]
 		switch gemma4VLRowsDefectForTest {
 		case 1: // planted: the placeholder's own id instead of the pad id
-			tok = id
+			row := make([]float32, m.ResidentEmbedLen())
+			copy(row[:hidden], f)
+			m.gemma4PLEInputs(row[:hidden], id, row[hidden:])
+			rows[i] = row
 		case 2: // planted: the feature scaled like a token embedding
-			if sc := arch.EmbedScale; sc != 0 && sc != 1 {
-				for k := range h {
-					h[k] *= float32(sc)
-				}
+			sc := float32(1)
+			if e := arch.EmbedScale; e != 0 && e != 1 {
+				sc = float32(e)
 			}
+			g := make([]float32, hidden)
+			for k := range g {
+				g[k] = f[k] * sc
+			}
+			rows[i] = m.gemma4ResidentMediaRow(g)
+		case 3: // planted: the PLE tail left zero
+			row := m.gemma4ResidentMediaRow(f)
+			clear(row[hidden:])
+			rows[i] = row
+		default:
+			rows[i] = m.gemma4ResidentMediaRow(f)
 		}
-		if gemma4VLRowsDefectForTest != 3 { // planted: the tail left zero
-			m.gemma4PLEInputs(h, tok, row[hidden:])
-		}
-		rows[i] = row
 	}
 	return rows, nil
 }

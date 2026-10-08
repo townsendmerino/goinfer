@@ -140,7 +140,7 @@ positions are inherent, not recompute.
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:80-87`) → `KVCache.TruncateTo`
-  (`decoder/kvcache.go:587`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
+  (`decoder/kvcache.go:592`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
   is **inexact** (cold prefill), and `pos == c.pos` is **exact**. An agent turn is `previous prompt +
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
@@ -422,7 +422,7 @@ positions are inherent, not recompute.
   the new part is that a session whose STORED tokens are no longer fully contained in the prompt —
   a stop-string hit's invisible tail, a `max_tokens` cut, or an edited last message — now still
   gets picked and handed to `decoder/session.go`'s `rewindForReuse`, which was already correct and
-  needed no change (confirmed by tracing `internal/serveapp/openai.go:1563`'s
+  needed no change (confirmed by tracing `internal/serveapp/openai.go:1574`'s
   `sess := lm.sessions.acquire(gr.promptIDs)` into the very next `sess.Generate(ctx, gr.promptIDs,
   ...)` call: same prompt both times, so `Generate`'s own `rewindForReuse` independently recomputes
   the true common prefix regardless of what `bestExtend` matched — `bestExtend` only decides WHICH

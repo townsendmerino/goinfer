@@ -1,0 +1,22 @@
+=== RUN   TestZZSiglipInt8Record
+| image | arm | per-token cosine, mean | worst | relative L2 |
+|---|---|---|---|---|
+| gemma3_preprocess_image.png | int8 CPU vs f32 CPU | 0.93484 | 0.06172 | 0.5084 |
+| gemma3_preprocess_image.png | int8 Metal vs f32 CPU | 0.93487 | 0.03450 | 0.5008 |
+| gemma3_preprocess_image.png | int8 Metal vs int8 CPU | 0.99006 | 0.18129 | 0.2064 |
+  (gemma3_preprocess_image.png: 114 s, not a timing)
+| qwen25vl_preprocess_image.png | int8 CPU vs f32 CPU | 0.93391 | 0.01182 | 0.5231 |
+| qwen25vl_preprocess_image.png | int8 Metal vs f32 CPU | 0.93248 | 0.02706 | 0.5218 |
+| qwen25vl_preprocess_image.png | int8 Metal vs int8 CPU | 0.98996 | 0.33782 | 0.1843 |
+  (qwen25vl_preprocess_image.png: 114 s, not a timing)
+| glm_ocr/formula.png | int8 CPU vs f32 CPU | 0.97907 | 0.17155 | 0.2275 |
+| glm_ocr/formula.png | int8 Metal vs f32 CPU | 0.97818 | 0.09285 | 0.2553 |
+| glm_ocr/formula.png | int8 Metal vs int8 CPU | 0.98264 | 0.18043 | 0.2479 |
+  (glm_ocr/formula.png: 115 s, not a timing)
+| glm_ocr/table.png | int8 CPU vs f32 CPU | 0.98711 | 0.11535 | 0.1632 |
+| glm_ocr/table.png | int8 Metal vs f32 CPU | 0.98659 | 0.11001 | 0.1892 |
+| glm_ocr/table.png | int8 Metal vs int8 CPU | 0.99095 | 0.46114 | 0.1511 |
+  (glm_ocr/table.png: 116 s, not a timing)
+--- PASS: TestZZSiglipInt8Record (462.47s)
+PASS
+ok  	github.com/townsendmerino/aikit/gpu/visionmetal	463.190s
