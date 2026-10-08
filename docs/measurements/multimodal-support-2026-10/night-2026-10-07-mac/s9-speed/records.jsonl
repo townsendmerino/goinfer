@@ -1,0 +1,6 @@
+{"arm": "old", "pass": 1, "image_ttft_s": 16.526, "text_ttft_s": 10.847}
+{"arm": "s9", "pass": 1, "image_ttft_s": 10.244, "text_ttft_s": 10.944}
+{"arm": "s9", "pass": 2, "image_ttft_s": 10.282, "text_ttft_s": 10.995}
+{"arm": "old", "pass": 2, "image_ttft_s": 14.669, "text_ttft_s": 10.779}
+{"arm": "old", "pass": 3, "image_ttft_s": 14.643, "text_ttft_s": 10.728}
+{"arm": "s9", "pass": 3, "image_ttft_s": 10.225, "text_ttft_s": 10.945}

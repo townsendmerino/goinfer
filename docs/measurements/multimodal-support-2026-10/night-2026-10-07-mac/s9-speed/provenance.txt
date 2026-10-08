@@ -1,0 +1,5 @@
+binary:   /Users/francistownsend-merino/goinfer-bench/s9/serve-metal (rev 6e4449ae)
+started:  2026-10-07 22:56:59 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+finished: 2026-10-07 22:59:54 PDT rc=0

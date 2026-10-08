@@ -62,7 +62,7 @@ func (g *glmOcrTower) features(pv []float32, grid [3]int) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	return g.fb.run("GLM-OCR", &g.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+	return g.fb.run("GLM-OCR", g.plan.require, &g.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 		return multimodal.GlmOcrTowerFeatures(enc, acc, pv, [][3]int{grid})
 	})
 }

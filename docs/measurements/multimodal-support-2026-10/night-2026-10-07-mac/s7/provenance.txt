@@ -1,0 +1,11 @@
+serve-metal: s2-towers ed8d4756
+started: 2026-10-07 23:04:10 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+23:04  up 13 days, 12:59, 1 user, load averages: 0.97 1.94 3.16
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   127897.
+Pages active:                                 370795.
+Pages inactive:                               340381.
+Pages speculative:                             31661.
+finished: 2026-10-07 23:08:53 PDT rc=0

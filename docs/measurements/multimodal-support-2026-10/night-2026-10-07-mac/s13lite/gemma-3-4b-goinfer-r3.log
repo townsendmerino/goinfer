@@ -1,0 +1,26 @@
+swap guard (load): not armed for /Users/francistownsend-merino/models/gemma-3-4b-it — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+decoder: fit is tight — gemma-3-4b-it needs ~5.6 GB resident at quant int4 + 0.3 GB KV = 5.9 GB; this machine currently has 10.3 GB of memory available (budget 7.2 GB = 70% of that) (81% of budget). This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+metal: 1 resident KV slots of 2 requested — each costs 544 MB of KV at the resident context, and the memory guard allows 1
+loaded "gemma-3-4b-it": 34-layer model (vocab 262208) in 13.626s [chat: gemma3]
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA above 16 prompt tokens; sequential below (§3 floor)
+  context: 4096 tokens (model maximum) · KV f16
+  fit: 4096-token cap needs 0.5 GB KV (weights 2.3 GB, budget 3.9 GB, 3.4 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/metal-resident) from /Users/francistownsend-merino/models/gemma-3-4b-it
+"gemma-3-4b-it" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18620 [chat:[gemma-3-4b-it]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 3.21 GB swap-used
+vision: encoded a 284770-byte image in 9.187s (sha256 934d6fba); a resend of it will skip this
+vision: encoded a 284521-byte image in 9.083s (sha256 49d85a12); a resend of it will skip this
+vision: encoded a 284513-byte image in 9.516s (sha256 d9165dcd); a resend of it will skip this
+vision: encoded a 284319-byte image in 8.888s (sha256 1641c88e); a resend of it will skip this
+
+shutting down…

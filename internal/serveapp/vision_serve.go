@@ -11,6 +11,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -43,6 +44,7 @@ type visionInput struct {
 	imgPos, imgLen int
 	grid           [3]int // Qwen m-RoPE grid (t,h,w in patch units); zero ⇒ Gemma 3
 	qwen           bool
+	deepSets       int  // Qwen3-VL (S10): features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
 }
 
@@ -87,12 +89,14 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 		return vi, err
 	}
 	// One place for every family: the cache sits between the prompt builders and the generate call.
-	return lm.withFeatureCache(vi, img.data), nil
+	return lm.withFeatureCache(vi, img.data, lm.towerFamily(img.audio)), nil
 }
 
-// withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode.
-func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte) visionInput {
-	vi.features = lm.visionFeatureCache().wrap(raw, vi.features)
+// withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode. A miss runs the tower through
+// recoverDeviceTower, so a tower that panics (on any device, for any family) fails the request rather than the server.
+func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte, family string) visionInput {
+	tower := vi.features
+	vi.features = lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 	return vi
 }
 
@@ -171,30 +175,67 @@ func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error)
 	return lm.qwenForwardWithFallback(pv, grid)
 }
 
-// qwenForwardWithFallback is the Qwen2.5-VL ViT with the device-memory fallback: on a device allocation failure it closes the resident tower (the encoder then runs aikit's
-// CPU path) and runs the image again there.
+// qwenForwardWithFallback is the Qwen2.5-VL ViT with the device-memory fallback (qwenDeviceForward).
 func (lm *loadedModel) qwenForwardWithFallback(pv []float32, grid [3]int) ([]float32, error) {
 	lm.qwenDevMu.Lock()
 	defer lm.qwenDevMu.Unlock()
-	out, err := recoverDeviceTower("Qwen2.5-VL", func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
-	if err == nil || !lm.qwenEnc.ResidentEnabled() || !isDeviceMemoryError(err) {
-		return out, err
-	}
-	fmt.Fprintf(os.Stderr, "vision: the Qwen2.5-VL tower ran out of device memory (%v); it runs on the CPU from now on\n", err)
-	lm.qwenEnc.Close()
-	return recoverDeviceTower("Qwen2.5-VL", func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
+	return qwenDeviceForward(lm.qwenEnc, lm.qwenRequire, func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
 }
 
-// recoverDeviceTower runs a vision tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
-// resident decoder has taken its VRAM, and aikit's Qwen2.5-VL tower panics on an allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it: unrecovered, one big
-// image killed the whole server (found by the S4 default-plan run, 2026-10-07). The request fails with the reason; the server and the other requests live.
+// residentTower is the part of aikit's Qwen2.5-VL encoder the fallback uses: whether its device tower is attached, and detaching it.
+type residentTower interface {
+	ResidentEnabled() bool
+	Close()
+}
+
+// qwenDeviceForward runs forward on the Qwen2.5-VL encoder t, a panic becoming an error. On a device allocation failure with the device tower attached it detaches the
+// tower (the encoder then runs aikit's CPU path) and runs the image again there; under require (-require-backend) it fails the request instead and keeps the tower.
+func qwenDeviceForward(t residentTower, require bool, forward func() ([]float32, error)) ([]float32, error) {
+	out, err := recoverDeviceTower("Qwen2.5-VL", forward)
+	if err == nil || !t.ResidentEnabled() || !isDeviceMemoryError(err) {
+		return out, err
+	}
+	if require {
+		return nil, refuseCPUFallback("Qwen2.5-VL", err)
+	}
+	fmt.Fprintf(os.Stderr, "vision: the Qwen2.5-VL tower ran out of device memory (%v); it runs on the CPU from now on\n", err)
+	t.Close()
+	return recoverDeviceTower("Qwen2.5-VL", forward)
+}
+
+// recoverDeviceTower runs a tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
+// resident decoder has taken the device's memory, and aikit's Qwen2.5-VL tower panicked on an allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it:
+// unrecovered, one big image killed the whole server (found by the S4 default-plan run, 2026-10-07). The request fails with the reason; the server and the other requests
+// live. Every tower passes through it: the grid towers inside deviceFallback.run, Qwen2.5-VL inside qwenDeviceForward, and every family's features (Gemma 3's SigLIP,
+// Gemma 4's image and audio towers included) at withFeatureCache.
 func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []float32, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			out, err = nil, fmt.Errorf("the %s vision tower failed on the device (%v): the image needs more VRAM than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu", family, r)
+			hint := ""
+			if isDeviceMemoryError(fmt.Errorf("%v", r)) {
+				hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
+			}
+			out, err = nil, fmt.Errorf("the %s tower failed (%v)%s", family, r, hint)
 		}
 	}()
 	return fn()
+}
+
+// towerFamily names this model's tower for an error message.
+func (lm *loadedModel) towerFamily(audio bool) string {
+	switch {
+	case audio:
+		return "Gemma 4 audio"
+	case lm.glm != nil:
+		return "GLM-OCR"
+	case lm.qwen3 != nil:
+		return "Qwen3.5+ vision"
+	case lm.qwenEnc != nil:
+		return "Qwen2.5-VL"
+	case lm.gemma4Enc != nil:
+		return "Gemma 4 vision"
+	}
+	return "Gemma 3 SigLIP"
 }
 
 // qwenVisionPrompt is the Qwen2.5-VL and Qwen3.5+ image path: smart-resize preprocess → ViT +
@@ -208,13 +249,14 @@ func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns 
 	imgHash := multimodal.HashImageBytes(img.data)
 	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
 	hiddenDim := lm.model.Config().HiddenDim
+	deepSets := lm.qwenDeepstackSets() // Qwen3-VL (S10): the features carry this many DeepStack sets after the merged rows
 	features := func() ([]float32, error) {
 		feats, err := lm.qwenForward(pv, grid)
 		if err != nil {
 			return nil, fmt.Errorf("qwen vision encoder: %w", err)
 		}
-		if len(feats) != n*hiddenDim {
-			return nil, fmt.Errorf("qwen encoder emitted %d features, want %d", len(feats), n*hiddenDim)
+		if len(feats) != n*hiddenDim*(1+deepSets) {
+			return nil, fmt.Errorf("qwen encoder emitted %d features, want %d (%d rows x %d, %d DeepStack sets)", len(feats), n*hiddenDim*(1+deepSets), n, hiddenDim, deepSets)
 		}
 		return feats, nil
 	}
@@ -232,7 +274,16 @@ func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns 
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
 	}
-	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true, deepSets: deepSets}, nil
+}
+
+// qwenDeepstackSets is how many DeepStack sets this model's Qwen tower returns after its merged rows: the Qwen3-VL
+// tower's deepstack_visual_indexes, 0 for every other tower.
+func (lm *loadedModel) qwenDeepstackSets() int {
+	if lm.qwen3 != nil {
+		return lm.qwen3.deep
+	}
+	return 0
 }
 
 // glmOcrVisionPrompt is the GLM-OCR image path: smart-resize preprocess (halved pixel bounds) -> the tower (the merged rows
@@ -327,9 +378,34 @@ func (lm *loadedModel) gemma4AudioEncoder() (*audio.Gemma4AudioEncoder, error) {
 		lm.gemma4Audio, lm.gemma4AudioErr = audio.LoadGemma4AudioEncoder(lm.gemma4AudioDir)
 		if lm.gemma4AudioErr == nil {
 			fmt.Fprintf(os.Stderr, "audio: loaded the Gemma 4 audio tower for %q in %s\n", lm.name, time.Since(t0).Round(time.Millisecond))
+			if lm.gemma4AudioDevice != "" {
+				acc, err := embeddinggemma2.NewAudioAccelerator(lm.gemma4AudioDevice, lm.gemma4Audio)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "audio: the %s audio tower declined (%v); the tower runs on the CPU\n", lm.gemma4AudioDevice, err)
+				} else {
+					lm.gemma4AudioAcc = acc
+				}
+			}
 		}
 	})
 	return lm.gemma4Audio, lm.gemma4AudioErr
+}
+
+// gemma4AudioForward is the audio tower: the conformer blocks on the accelerator when there is one (G-S5d), between
+// aikit's Subsample and FinishBlocks on the host; otherwise aikit's CPU Forward.
+func (lm *loadedModel) gemma4AudioForward(enc *audio.Gemma4AudioEncoder, mel []float32, T int) ([]float32, error) {
+	if lm.gemma4AudioAcc == nil {
+		return enc.Forward(mel, T)
+	}
+	h, n, err := enc.Subsample(mel, T)
+	if err != nil {
+		return nil, err
+	}
+	hb, err := lm.gemma4AudioAcc.Blocks(h, n)
+	if err != nil {
+		return nil, err
+	}
+	return enc.FinishBlocks(hb, n)
 }
 
 // gemma4AudioMaxSoftTokens is the processor's cap on one clip's soft tokens (E2B's processor_config.json,
@@ -371,7 +447,7 @@ func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns
 		if err != nil {
 			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
 		}
-		feats, err := enc.Forward(mel, T)
+		feats, err := lm.gemma4AudioForward(enc, mel, T)
 		if err != nil {
 			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
 		}

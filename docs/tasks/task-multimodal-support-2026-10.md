@@ -69,7 +69,7 @@ The last phase puts the answer where users look first, the README, with a check 
   - The Gemma 4 E2B tower on CUDA: 2.3 s encode.
   - Qwen3.5-0.8B's Metal tower: 1.2 s on an 896x896 image.
 - **Over it:**
-  - Gemma 4 E2B image turn on Metal: TTFT 10.8 s on S9's pass against 16.5 s before (one smoke pass).
+  - Gemma 4 E2B image turn on Metal: TTFT 10.24 s on S9's pass against 14.67 s before (1.43x, the night record; a ~512-token text prompt reads 0.98x; the owner keeps the pass everywhere, 2026-10-08).
   - Gemma 3's Metal tower: 9.2-9.6 s, about 2.8x its 26 s CPU tower.
   - Qwen2.5-VL's Metal tower: 8.9-15.1 s on the large images.
   - Qwen3-VL-2B served on Metal: 19.2 s per request.
@@ -1749,6 +1749,150 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
   A cell the code cannot answer (a speed figure) carries a date instead.
 - **Size:** S, once S7 has numbers.
 
+#### Night 2026-10-07 on the Mac, read 2026-10-08 (raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-07-mac/`)
+
+**The night:** the queue ran 22:23-23:27 PDT, on AC power, with no thermal note recorded.
+- Two jobs started with the load over the settle bar after 300 s: s2-tower-speed at 1.12 and s9-speed at 1.27.
+- **s6-e4b failed:** the fit guard refused its prequant (15.9 GB needed against 7.5 GB available). The E4B sidecar is to
+  be built on nobara instead.
+- **peer-vetted-mac** is recorded in its own file.
+- Each block below is graded against its own registration.
+
+- **S2 tower speed (`s2-tower-speed`, a record with no bar): RECORDED.**
+  - **The run:** `TestGridVisionMetal_real` three times, a pre-built test binary from `s2-towers` at `bec48333`
+    (now on main) over the local aikit at `64bab88`.
+    - The aikit revision is inferred from its reflog and was not recorded by the script. It is in v1.59.0.
+    - The queue rev "36fe0d11 +dirty" is the main tree, which the binary does not depend on.
+  - **What it is:** the pre-lever Metal baseline for S17.
+  - **Correctness held in every pass:** worst token cosine Qwen3.5 0.999999212 and GLM-OCR 0.999991618, G-S2b's
+    readings to the digit.
+
+  | tower | image (merged) | Metal, 3 passes | CPU, 3 passes |
+  |---|---|---|---|
+  | Qwen3.5-0.8B | 896² (784) | 1.162s / 1.177s / 1.258s | 4.367s / 4.466s / 4.506s |
+  | Qwen3.5-0.8B | 14x20 (70) | 98ms / 99ms / 97ms | 205ms / 205ms / 193ms |
+  | Qwen3.5-0.8B | formula.png (1015) | 3.074s / 3.074s / 3.088s | 6.632s / 6.614s / 6.775s |
+  | Qwen3.5-0.8B | table.png (972) | 1.846s / 1.857s / 1.864s | 6.151s / 6.194s / 6.28s |
+  | GLM-OCR | 896² (1024) | 5.692s / 5.817s / 5.78s | 20.79s / 21.379s / 21.627s |
+  | GLM-OCR | 6x8 (12) | 133ms / 129ms / 130ms | 139ms / 151ms / 138ms |
+  | GLM-OCR | formula.png (1548) | 11.836s / 12.551s / 12.611s | 40.512s / 41.666s / 41.647s |
+  | GLM-OCR | table.png (1376) | 8.871s / 9.488s / 9.469s | 33.806s / 35.155s / 34.543s |
+  | GLM-OCR | invoice.png (1656) | 12.072s / 12.627s / 12.432s | 45.434s / 47.202s / 45.456s |
+
+  - **Ratios:** Metal is 2.0-3.8x the CPU on Qwen3.5 and 3.3-3.8x on GLM-OCR, and ties it on the 6x8 grid.
+  - **Formula.png is the attention cost:** on Qwen3.5 it costs 1.66x table.png on Metal for 4% more tokens. That is
+    S17 step 0's attention share (76% at 0.27 TFLOPS).
+  - **Drift:** GLM-OCR's first pass ran 5-7% under passes 2 and 3, probably thermal (not logged); the ratios hold to ±3%.
+
+- **S3 root cause (`s3-rootcause`): G-S3c PASS on both families; the Metal-tower arm is deterministic; the CPU-tower
+  repeat is VOID; phase 2 is VOID (a test bug, fixed).**
+  - **The binaries:** `serve-metal` at `0c66b18b`, `decoder-g3.test` at `6a5d4efb`.
+  - **A, G-S3c re-registered** (arms `=cpu:cpu`, `metal:cpu`, `cpu:cpu`, with `--embed-int4=false` and the tower on the
+    CPU):
+    - **Qwen2.5-VL-3B: PASS.** All three replies identical, "Table 2. Quarterly unit sales by region (thousands)", and
+      the Metal arm decoded `metal-resident (int4)`.
+    - **Gemma 3 4B: PASS.** The first differing generated token is 24: CPU ' along' 0.383 against Metal ' as' 0.375, a
+      near-tie (at least 0.192).
+    - Both CPU repeats are byte-identical.
+    - **So G-S3c's earlier Metal failure was the `--embed-int4` default, as root-caused.**
+  - **B, G-S3b's Gemma 3 controls:**
+    - The Metal-tower arm repeats itself byte for byte (reply and log-probabilities).
+    - **The CPU-tower repeat is VOID:** its resident build was refused 2 s after the previous resident arm exited
+      ("budget 4.92 GB"), so its comparison is a CPU decoder against a Metal one.
+    - **Indirect evidence that the CPU-tower arm repeats,** though not the registered pairing: B's `metal` log-probs are
+      byte-identical to A's, from a separate process, and the refused arm's match A's CPU arm.
+    - **Recorded, not graded, for G-S3b:** on a Metal-resident decoder, the Metal tower against the CPU tower first
+      differs at token 7 (' by' 0.489 against ' for' 0.082), not a near-tie. Token 0's 'The' moves 0.985 → 0.746.
+  - **C, phase 2 sensitivity: VOID.**
+    - **The bug:** `run()` in `decoder/gemma3_tower_sensitivity_real_test.go` kept `m.forward`'s returned slice, which
+      is the cache's reused logits buffer. So steps 1-31 all read the last step's logits, and every arm reported a
+      first argmax change at step 1. Fixed 2026-10-08 (`slices.Clone`).
+    - **A second problem, not fixed:** the test's greedy reference path ("...a table of quarterly unit sales...") is not
+      the served CPU-tower reply (" quarterly" at token 3). Its prompt or features must be checked against serve's
+      before a re-run.
+  - **Next, per the registration:** the perturbation control (phase 2, fixed), and the CPU-tower repeat re-queued with
+    a settle between arms. Both are on the night queue's list, not yet queued.
+
+- **S7 on the Mac (`s7-mac`, a record against the 5 s bar): two of six valid cells under the bar; Gemma 3 4B not
+  loaded.**
+  - **The setup:** `serve-metal` from `s2-towers` at `ed8d4756`, `--backend metal`, serve's defaults, a new image or
+    clip every request, one warm-up and three timed requests, median against 5.0 s. Ran 23:04-23:09 PDT, with load
+    rising from 0.97 to 5.34 over the run.
+
+  | cell | TTFT (median of 3) | bar | what the log says |
+  |---|---|---|---|
+  | Gemma 3 4B | not a cell | n/a | refused by the fit guard (5.9 GB needed against a 5.2 GB budget, 7.5 GB available at 23:04) |
+  | Gemma 4 E2B, image | **6.20 s** | no | `metal-resident (int4)`, tower on Metal (1.12 s per image); about 5 s of the TTFT is outside the tower, unexplained |
+  | Gemma 4 E2B, audio | 3.20 s | yes | `metal-resident (int4)`, audio tower on Metal (0.16-0.17 s per clip) |
+  | Qwen3.5-0.8B | 4.48 s | yes | `metal-resident (int4)`, tower on Metal (1.16 s) |
+  | Qwen3-VL-2B | **8.97 s** | no | `metal-resident (int4)`, tower on Metal (3.75-4.14 s) |
+  | GLM-OCR | **8.32 s** | no | **decoder on the CPU** (`metal does not implement [pairwise-mrope pairwise-rope]`), float32 tower on Metal (5.6 s) |
+  | Qwen2.5-VL-3B | **21.67 s** | no | `metal-resident (int4)`, tower on Metal (7.86-8.59 s, over the bar by itself) |
+  | Gemma 4 E4B | not run | n/a | conditional on `s6-e4b`'s sidecar, which was not built |
+
+  - **Where the time goes:** the towers explain Qwen2.5-VL, GLM-OCR and most of Qwen3-VL. That is S17's target.
+  - **Not measured:** decode tokens per second after the image (`max_tokens` is 8), as on nobara.
+  - **A log nit:** the audio cell's serve log says "encoded a ...-byte image" for each WAV clip.
+
+- **S13-lite on the Mac (`s13lite-mac`, reported, not gated): goinfer 12.81 s, over the 5 s bar; 2.6x Ollama and 2.7x
+  llama.cpp, both under it.**
+  - **The setup:** Gemma 3 4B, Metal, every engine at its defaults, a new image every request, 3 rounds of 1 warm-up and
+    3 timed, engine order rotated. Ran 23:13-23:20 PDT. The float32 arm (`3c55d7f4`) is nobara's and came later.
+
+  | engine | median TTFT (9 timed) | range | under 5 s |
+  |---|---|---|---|
+  | goinfer, `serve-metal` at `ed8d4756` (int4 at load) | **12.81 s** | 12.33-13.58 s | no |
+  | Ollama 0.32.5, `gemma3:4b` | **4.97 s** | 4.961-4.970 s | yes, by 0.03 s |
+  | llama.cpp b10621 (`c1d0e7a00`), Q4_K_M + mmproj-f16 | **4.68 s** | 4.673-4.688 s | yes |
+
+  - **Where goinfer's time goes:** the float32 SigLIP tower on Metal takes 8.9-9.6 s per image. That is S17's gap;
+    lever A is not on this build.
+  - **The decode path:** `metal-resident (int4)` in rounds 1 and 3. Round 2 fell to `cpu (int4)` because the resident
+    memory guard declined by 0.01 GB (5.15 against 5.14 GB). That is serve's default behaviour, so it stays in the
+    median. Without it the median is 13.06 s, and the reading is unchanged.
+  - **For comparison,** nobara's cell read goinfer 4.61 s, Ollama 1.60 s and llama.cpp 0.96 s.
+
+- **S9 speed on the Mac (`s9-speed`, a record; the registered rule turns the pass off below 1.00x): the image turn
+  reads 1.43x, so it stays on; a 512-token text prompt reads 0.98x, under the line.**
+  - **The setup:** `serve-metal` at `6e4449ae`, E2B q4_0 with `-vision-device cpu`, 3 passes with the arm order
+    alternating, under the timing lock. Every server logged the path it was meant to.
+
+  | TTFT | old (s) | S9 pass (s) | old/S9 (medians) | pairs |
+  |---|---|---|---|---|
+  | image turn | 16.526, 14.669, 14.643 (median 14.67) | 10.244, 10.282, 10.225 (median 10.24) | **1.43x** | 3/3 above 1 |
+  | ~512-token text | 10.847, 10.779, 10.728 (median 10.78) | 10.944, 10.995, 10.945 (median 10.95) | **0.98x** | 3/3 below 1 |
+
+  - **Image:** without the CPU tower encode (4.82-4.89 s every time), the part S9 changes goes about 9.8 → 5.4 s.
+    Pass 1's old figure (16.526 s) is a first-server outlier, which also inflated the by-day smoke's 1.53x.
+  - **Text:** the by-day smoke's 1.02x has reversed sign.
+  - **The rule did not name a metric.** Read literally, the text arm trips it, but both turns go through the one
+    `PrefillLast` pass, so turning it off would also drop the image win. **Parked for the owner:**
+    - keep the pass for media turns and decline it for text-only E-model prompts, until S9 step 2 (an f16-MMA E-model
+      pass) replaces the text route; or
+    - keep it everywhere, or turn it off everywhere.
+  - **Owner, 2026-10-08: keep it everywhere.**
+
+- **Owner decisions on this night, 2026-10-08:**
+  - **S9: keep the pass everywhere.** The text prompt's 0.98x does not turn it off. The image turn's 1.43x and the text
+    prompt's 0.98x are recorded as they read.
+  - **S3: queue what the follow-ups need** (below).
+- **S3 follow-ups, registered 2026-10-08 before they run** (`run-s3-followup-night.sh`, night queue `s3-followup`):
+  - **Phase 2, fixed and re-run.** Two fixes in `decoder/gemma3_tower_sensitivity_real_test.go`:
+    - **The logits copy** (above).
+    - **Serve's own prompt encoding:** template segments, the block spliced in as a Special segment, `EncodeSegments`.
+      The hand-written string merged the template's "\n" with the block's "\n\n" into one token: 277 tokens against
+      serve's 278, found 2026-10-08 by encoding both with the tokenizer alone. That is why its greedy path was not
+      serve's.
+    - **Its reference must reproduce G-S3b's served CPU-tower reply on the same decoder** (the day run's `metal:cpu`
+      arm, which decoded `cpu (int4)` with Metal's layout:
+      `docs/measurements/multimodal-support-2026-10/s3-gs3b/gs3c-reply-gemma-3-4b-it-metal.txt`), or the step is VOID.
+    - **The reading is the registered one:** the Metal arm inside the three noise arms (KL and first argmax change)
+      means the decoder's sensitivity, not a tower defect.
+  - **G-S3b's CPU-tower repeat:** two `metal:cpu` arms on the night's `serve-metal` (`0c66b18b`), with a 30 s settle
+    between arms (`GS3C_SETTLE`). Both arms must decode `metal-resident`, or the pair is VOID. PASS: byte-identical
+    replies and log-probabilities.
+  - **Cost:** about 15 minutes, queued at 20.
+
 ### S9 — Batched E-model prefill on Metal and CUDA, image turns included
 
 Added 2026-10-07. Once S1 put E2B/E4B decode on the GPU, prefill became the cost: an E2B image turn on the Mac is about
@@ -2497,6 +2641,99 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     hold 0.9999 keeps f32 accumulation or is dropped. The bar does not move.
   - **The speed instrument (TE5(b)):** a whole-tower in-process A/B, interleaved in one process, by day. A resolved
     direction may be acted on; an unresolved one goes to the served TTFT gate at night. Ship at >= 1.02x.
+
+- **S17's Metal lever A, read 2026-10-08 by day: all three towers at or above their bands; SHIPPED (default on).**
+  - **What:** `tower_attn_hd{64,72,80}` in `metal/grid_vision.go`, a fused non-causal float32 attention on simdgroup
+    8x8 tiles in R19's shape. Any other head dim keeps `eg2Ops.attention`.
+    - Q is staged with bounds, and K/V in 16-key blocks.
+    - The online softmax runs in exp2, everything in f32.
+  - **The kernel gate** (`TestTowerAttnKernel`, against a float64 softmax(q·kᵀ)·v; bar, set before the first run:
+    every element within 1e-5 of max |v|):
+    - worst 7.05e-7 (hd 64), 7.53e-7 (hd 72), 6.91e-7 (hd 80), over segments of 1 to 1100 rows;
+    - each planted defect is red: the rescale skipped 7.05e-1, the key mask one past 3.41e-3, V one key late 9.76e-1.
+  - **Correctness at real size, unchanged bars (cosine ≥ 0.9999 against the CPU tower), all PASS:**
+    - G-S2b: Qwen3.5 worst 0.999999136, GLM-OCR worst 0.999998650.
+    - G-S3a: SigLIP worst 0.999999909, Qwen2.5-VL worst 0.999996201.
+    - The tiny gates read 1.000000000. GLM-OCR's tiny fixture has head dim 64, so the fused kernel ran there too.
+  - **The speed instrument** (`TestS17LeverA_wholeTowerMetal`, TE5(b)):
+    - one process, the fused arm against the old one (the `oldAttn` seam), interleaved;
+    - per tower and image, one warm-up of each arm, then 3 rounds with the order alternating; wall time;
+    - SigLIP on one image (every image is the same 4096 patches).
+    - **Not idle:** the load average was 8.58 at the start (the owner's machine, by day). The arms are interleaved, so
+      the ratios carry it; the absolute seconds are not a record.
+    - **Raw:** `docs/measurements/multimodal-support-2026-10/s17-leverA-metal/` (`ab.log`, `real-gates.log`).
+
+  | tower | image (rows) | old s | fused s | old/fused per round | median | band |
+  |---|---|---|---|---|---|---|
+  | SigLIP | any (4096) | 9.177 / 9.241 / 9.358 | 4.123 / 4.174 / 4.090 | 2.23 / 2.21 / 2.29 | **2.23x** | 1.7-2.2x |
+  | Qwen2.5-VL | 896² (4096) | 8.136 / 8.248 / 8.253 | 5.281 / 5.235 / 6.066 | 1.54 / 1.58 / 1.36 | **1.54x** | 1.2-1.3x |
+  | Qwen2.5-VL | 4x6 (24) | 0.112 / 0.111 / 0.111 | 0.083 / 0.083 / 0.083 | 1.35 / 1.34 / 1.33 | 1.34x | — |
+  | Qwen2.5-VL | formula.png (6192) | 13.484 / 13.462 / 13.714 | 9.004 / 9.393 / 9.471 | 1.50 / 1.43 / 1.45 | **1.45x** | 1.2-1.3x |
+  | Qwen2.5-VL | table.png (5504) | 11.797 / 11.846 / 11.386 | 8.259 / 7.711 / 8.870 | 1.43 / 1.54 / 1.28 | **1.43x** | 1.2-1.3x |
+  | Qwen3.5-0.8B | 896² (3136) | 1.226 / 1.262 / 1.201 | 0.714 / 0.710 / 0.634 | 1.72 / 1.78 / 1.90 | 1.78x | — |
+  | Qwen3.5-0.8B | 14x20 (280) | 0.086 / 0.089 / 0.090 | 0.062 / 0.063 / 0.065 | 1.39 / 1.42 / 1.40 | 1.40x | — |
+  | Qwen3.5-0.8B | formula.png (4060) | 3.040 / 3.112 / 2.994 | 1.071 / 1.021 / 0.989 | 2.84 / 3.05 / 3.03 | **3.03x** | — |
+  | Qwen3.5-0.8B | table.png (3888) | 1.800 / 1.737 / 1.752 | 1.009 / 0.924 / 0.919 | 1.78 / 1.88 / 1.91 | **1.88x** | 1.6-2.0x |
+
+  - **Every round resolves above 1** (27 of 27), and the two arms' outputs agree to a worst row cosine of 0.9999997.
+    By TE5(b) a resolved direction may be acted on, and every tower is above the 1.02x ship bar: **default on**.
+  - **Above the band, with a mechanism to confirm:** SigLIP (2.23x against 2.2) and Qwen2.5-VL (1.43-1.54x against
+    1.2-1.3).
+    - Qwen2.5-VL's gain is more than removing its whole attention share could give: 27-32% of GPU time caps the gain at
+      about 1.4x.
+    - The bands came from step 0's GPU-time split, while the A/B times wall clock. The old path's host side (thousands
+      of per-window dispatches to encode, and the command-buffer flushes its scalar arena forces) was never in the
+      profile, and the fused path removes most of it.
+    - That is the likely mechanism; it is not verified by a host-time profile.
+  - **Still owed:**
+    - lever B (GEMM, the larger share on Qwen2.5-VL);
+    - the served TTFT cells on this build (S7 and S13-lite at night): S13-lite's goinfer arm was 8.9-9.6 s of
+      SigLIP tower per image.
+
+- **S7 and S13-lite on the Mac, re-run on lever A's build, registered 2026-10-08 before they run (owner: "yes queue
+  them").**
+  - **What:** the same scripts, cells, procedure and 5 s bar as the 2026-10-07 night (`run-s7-mac.sh`,
+    `run-s13lite-mac.sh`), unchanged.
+  - **The one difference:** goinfer's binary is `serve-metal` at `92c30640` (lever A, default on), in
+    `~/goinfer-bench/s7-leverA/` (`BIN`), built from a clean worktree.
+  - **Reading:** a record, each cell against its 2026-10-07 reading.
+    - **The prediction, not a bar:** the tower cells (Qwen2.5-VL, Qwen3-VL, GLM-OCR, Qwen3.5, and S13-lite's Gemma 3)
+      fall by about their tower's lever A ratio applied to the tower's share of TTFT.
+    - **Ollama's and llama.cpp's arms** in S13-lite repeat as same-night controls.
+  - **The fit guard stays on.** Gemma 3 4B may be refused again, as S7's cell was on 2026-10-07; a refusal is
+    recorded as such.
+  - **Queue:** `s7-mac-leverA` and `s13lite-mac-leverA`, 20 minutes each (2026-10-07: 5 and 6 minutes).
+
+- **S17's Metal lever B (GEMM): bands re-registered on the post-A baseline, 2026-10-08, before any lever B code runs.**
+  - **Why re-registered:** lever A shipped first, so lever B's A/B measures against today's tower (fused attention),
+    not the pre-A tower its 2026-10-07 bands assumed. The same inputs, re-projected:
+    - step 0's GEMM GPU seconds (unchanged by A);
+    - k_G = 2.3-2.7, unchanged;
+    - the post-A wall times from lever A's A/B, the fused arm's medians.
+  - **The projection:** tower ratio = post-A wall ÷ (post-A wall - GEMM × (1 - 1/k_G)).
+
+  | tower | image | step 0 GEMM GPU s | post-A wall s | band |
+  |---|---|---|---|---|
+  | SigLIP | any | 2.95 | 4.12 | **1.7-1.8x** |
+  | Qwen2.5-VL | 896² | 4.72 | 5.28 | **2.0-2.3x** |
+  | Qwen2.5-VL | formula.png | 7.51 | 9.39 | **1.8-2.0x** |
+  | Qwen2.5-VL | table.png | 6.36 | 8.26 | **1.8-1.9x** |
+  | Qwen3.5-0.8B | table.png | 0.64 | 0.92 | **1.6-1.8x** |
+  | Qwen3.5-0.8B | formula.png | 0.67 | 1.02 | **1.6-1.7x** |
+
+  - **The lever, as registered:**
+    - the projections as f16-input simdgroup-matrix GEMMs with f32 accumulation: weights f16 at upload, activations
+      rounded to f16 as they are staged, the bias fused into the epilogue;
+    - 64x64 output tiles per threadgroup, each simdgroup 32x32;
+    - the patch embedding stays on the f32 GEMM.
+  - **Correctness, unchanged:** G-S2b's and G-S3a's bars (every soft token at cosine >= 0.9999 against the CPU tower)
+    and their planted defects, plus a kernel gate against a float64 reference.
+    - **The kernel bar:** each output within 2e-3 of its row's Σ|a·w|. This is f16 input rounding (about 2^-11 per
+      operand, so about 1e-3 per product), not accumulation.
+    - **If f16 cannot hold the tower bar,** B keeps f32 inputs at a lower k_G, re-registered before that variant runs.
+  - **Kill line:** under 1.02x on any tower, or under its band's low end with no mechanism found: parked.
+  - **The instrument:** lever A's, TE5(b): an in-process whole-tower A/B, interleaved by day, f16 GEMM against the f32
+    GEMM, with lever A on in both arms.
 
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 

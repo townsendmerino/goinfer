@@ -2217,7 +2217,7 @@ bit-exact int8 pin" (decoder/model.go:384-390) and `embeddingWith` agrees (decod
 task-never-swap-2026-09.md:281-283 records an owner decision of 2026-09-28 "to make `--embed-int4` the default", and
 mc3-prefill-attr-2026-09-28.md:27 reads: "Since 9ccf7fb1 the int4-embedding default makes the Metal resident decline to the
 CPU; a cell whose log does not show `decode path: metal-resident` is void." That run passed `-embed-int4=false`
-explicitly. The default itself lives in `loadflags` (internal/serveapp/main.go:181 reads `cfg.load.Options()`), which is not in the
+explicitly. The default itself lives in `loadflags` (internal/serveapp/main.go:182 reads `cfg.load.Options()`), which is not in the
 snapshot. B-N01 reads the same error as "Metal cannot load an `-embed-int4` bundle" and rates it Minor; if the default is
 now on, the same fact is a default-path fallback to CPU for every Metal user.
 Probe: run plain `goinfer serve` on the Mac and read the banner's `decode path:` line. Not settleable statically.
@@ -2470,7 +2470,7 @@ compiler's precise mode defaults contraction to off is not settleable statically
 
 #### E-P09 [P, Minor; possibly Major on the 7B] Default KV slots
 
-`--kv-sessions` defaults to 4 (internal/serveapp/main.go:443), the resident context to 4096 (decoder/fitplan.go:184). A slot is ~117 MB on the 1.5B
+`--kv-sessions` defaults to 4 (internal/serveapp/main.go:444), the resident context to 4096 (decoder/fitplan.go:184). A slot is ~117 MB on the 1.5B
 (concurrency-mc1:24 [rec]); on the 7B it is 28 x 4096 x 512 x 2 x 2 B = 235 MB [cnt], so three extra slots are ~705 MB. `metalKVSlots` clamps the
 count to the memory guard's budget and prints a banner when it does (metal/backend.go:380-420); MC1's clamp path was never exercised
 (concurrency-mc1:58 [rec]). Whether untouched pages of a freshly allocated shared buffer count against resident memory is not settleable
@@ -2507,7 +2507,7 @@ the producing rows kernel is bit-identical. At ~1.3 us each (S3) that is ~0.15 m
 
 #### E-D01 [D, Minor] Stale text
 
-`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:465); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
+`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:466); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
 traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:384-390) against the owner decision recorded at
 task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:3176) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
 (metal/model.go:3367-3377); area B owns that.

@@ -24,9 +24,11 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -76,9 +78,21 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	n := len(cpuF) / hidden
 	fmt.Fprintf(os.Stderr, "[g3] %s on %s: decode path %s; %d soft tokens\n", filepath.Base(dir), backend, m.DecodePath(), n)
 
-	// serve's prompt: Gemma 3's template, the block (with the processor's "\n\n" on both sides, M-38) before the text.
-	text := "<start_of_turn>user\n" + multimodal.Gemma3PromptBlock(n) + "What does this image show? Answer briefly.<end_of_turn>\n<start_of_turn>model\n"
-	ids, err := tk.Encode(text, true)
+	// serve's prompt, built the way serve builds it (internal/serveapp encodeVisionSegments): the model's chat template
+	// rendered as segments, the image block (the processor's "\n\n" on both sides, M-38) spliced in as its own Special
+	// segment, then EncodeSegments. Until 2026-10-08 this hand-wrote the template and encoded it as one string, which merges
+	// the template's "\n" with the block's "\n\n" into one token: 277 tokens against serve's 278, so the greedy reference
+	// was not the served path (the night of 2026-10-07: "...a table of..." where serve says "...quarterly unit sales...").
+	tm, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := multimodal.Gemma3PromptBlock(n)
+	segs, err := multimodal.SpliceImageBlock(tm.RenderSegments("", []chat.Turn{{Role: "user", Content: block + "What does this image show? Answer briefly."}}), block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := tk.EncodeSegments(segs, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +114,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 			t.Fatal(err)
 		}
 		for k := range steps {
-			logits = append(logits, l)
+			logits = append(logits, slices.Clone(l)) // forward returns the cache's reused logits buffer (night 2026-10-07: steps 1-31 all read the last)
 			next := argmax(l)
 			if forced != nil {
 				next = forced[k]
@@ -115,6 +129,19 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	refPath, refLogits := run(cpuF, nil)
 	refText, _ := tk.Decode(refPath)
 	fmt.Fprintf(os.Stderr, "[g3] reference (CPU tower) greedy: %q\n", refText)
+	// GOINFER_G3_SERVED_REPLY names the served CPU-tower arm's reply on this decoder (G-S3b's day run): the reference path
+	// must reproduce it, or the steps below do not measure the served split and the run is void.
+	if f := os.Getenv("GOINFER_G3_SERVED_REPLY"); f != "" {
+		want, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _, _ := strings.Cut(refText, "<end_of_turn>")
+		if w := strings.TrimSpace(string(want)); !strings.HasPrefix(got, w) && !strings.HasPrefix(w, got) {
+			t.Fatalf("VOID: the reference path %q does not reproduce the served reply %q", refText, want)
+		}
+		fmt.Fprintf(os.Stderr, "[g3] the reference path reproduces the served reply (%s)\n", filepath.Base(f))
+	}
 
 	report := func(name string, f []float32) {
 		_, ls := run(f, refPath)

@@ -1,0 +1,31 @@
+swap guard (load): not armed for /Users/francistownsend-merino/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.giw — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+loaded "gemma-4-E2B_q4_0-it": 35-layer model (vocab 262144) in 778ms [chat: gemma4, thinking: template default off, serving template]
+  decode path: metal-resident (int4)
+  prefill path: layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)
+  context: 4096 tokens (backend default; model maximum 131072 — raise with --ctx) · KV f16
+  fit: 4096-token cap needs 0.1 GB KV (weights 3.5 GB, budget 5.5 GB, 5.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions not given: Metal keeps 2 by default, and a memory guard may keep fewer; --kv-sessions 4 asks for 4)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+loaded Gemma 4 vision tower for "gemma-4-E2B_q4_0-it" (max 280 soft tokens/image, soft-token id 258880, tower on Metal) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+Gemma 4 audio input on for "gemma-4-E2B_q4_0-it" (audio-token id 258881; the tower loads on the first clip, Metal (the conformer blocks; subsample and tail on the CPU)) from /Users/francistownsend-merino/models/gemma-4-E2B-unq
+"gemma-4-E2B_q4_0-it" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18610 [chat:[gemma-4-E2B_q4_0-it]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 24.0 MiB (text) / 56.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+audio: loaded the Gemma 4 audio tower for "gemma-4-E2B_q4_0-it" in 1.321s
+swap guard: baseline 2.93 GB swap-used
+vision: encoded a 187404-byte image in 1.648s (sha256 b9a42524); a resend of it will skip this
+vision: decoded 8 tokens on the resident path (prefill resident)
+vision: encoded a 187404-byte image in 173ms (sha256 f358f423); a resend of it will skip this
+vision: decoded 8 tokens on the resident path (prefill resident)
+vision: encoded a 187404-byte image in 156ms (sha256 b239b69e); a resend of it will skip this
+vision: decoded 8 tokens on the resident path (prefill resident)
+vision: encoded a 187404-byte image in 165ms (sha256 7b9f95db); a resend of it will skip this
+vision: decoded 8 tokens on the resident path (prefill resident)
+
+shutting down…

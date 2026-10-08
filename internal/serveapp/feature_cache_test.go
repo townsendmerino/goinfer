@@ -144,11 +144,11 @@ func TestWithFeatureCache_answersBeforeTheTowerRuns(t *testing.T) {
 	towerRan := false
 	vi := visionInput{features: func() ([]float32, error) { towerRan = true; return nil, errors.New("no tower") }}
 
-	got, err := lm.withFeatureCache(vi, raw).features()
+	got, err := lm.withFeatureCache(vi, raw, "test").features()
 	if err != nil || towerRan || !slices.Equal(got, want) {
 		t.Errorf("seeded image: got %v, %v (tower ran: %v), want the cached features", got, err, towerRan)
 	}
-	if _, err := lm.withFeatureCache(vi, []byte("other bytes")).features(); err == nil || !towerRan {
+	if _, err := lm.withFeatureCache(vi, []byte("other bytes"), "test").features(); err == nil || !towerRan {
 		t.Errorf("an unseen image did not reach the tower (err %v, ran %v)", err, towerRan)
 	}
 }

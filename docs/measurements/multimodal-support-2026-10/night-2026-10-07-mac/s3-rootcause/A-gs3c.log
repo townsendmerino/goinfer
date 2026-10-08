@@ -1,0 +1,48 @@
+[22:43:14] qwen25vl-3b-instruct: arm metal (--backend metal -vision-device cpu --embed-int4=false)
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA from 32 prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)
+loaded Qwen2.5-VL vision tower for "qwen25vl-3b-instruct" (merge 2, image-pad id 151655, tower on CPU) from /Users/francistownsend-merino/models/qwen25vl-3b-instruct
+request body cap: 62.5 MiB (text) / 94.5 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  metal (47.1s): 'Table 2. Quarterly unit sales by region (thousands)'
+[22:44:17] qwen25vl-3b-instruct: arm cpu (--backend cpu -vision-device cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+loaded Qwen2.5-VL vision tower for "qwen25vl-3b-instruct" (merge 2, image-pad id 151655, tower on CPU) from /Users/francistownsend-merino/models/qwen25vl-3b-instruct
+"qwen25vl-3b-instruct" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+request body cap: 62.5 MiB (text) / 94.5 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cpu (43.0s): 'Table 2. Quarterly unit sales by region (thousands)'
+[22:45:15] qwen25vl-3b-instruct: arm cpu2 (--backend cpu -vision-device cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+loaded Qwen2.5-VL vision tower for "qwen25vl-3b-instruct" (merge 2, image-pad id 151655, tower on CPU) from /Users/francistownsend-merino/models/qwen25vl-3b-instruct
+"qwen25vl-3b-instruct" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+request body cap: 62.5 MiB (text) / 94.5 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cpu2 (43.4s): 'Table 2. Quarterly unit sales by region (thousands)'
+qwen25vl-3b-instruct: reference arm cpu
+qwen25vl-3b-instruct: metal against cpu: IDENTICAL replies
+qwen25vl-3b-instruct: cpu2 against cpu: IDENTICAL replies
+[22:46:12] gemma-3-4b-it: arm metal (--backend metal -vision-device cpu --embed-int4=false)
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA above 16 prompt tokens; sequential below (§3 floor)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  metal (29.5s): 'The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, as well as a total for all regions'
+[22:47:01] gemma-3-4b-it: arm cpu (--backend cpu -vision-device cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+"gemma-3-4b-it" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cpu (28.8s): 'The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total for all regions.'
+[22:47:48] gemma-3-4b-it: arm cpu2 (--backend cpu -vision-device cpu --embed-int4=false)
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+"gemma-3-4b-it" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cpu2 (28.7s): 'The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total for all regions.'
+gemma-3-4b-it: reference arm cpu
+gemma-3-4b-it: metal against cpu: first differing generated token 24: cpu ' along', metal ' as'
+  cpu top-3: ' along' 0.383, ' as' 0.375, ' and' 0.210
+  near-tie (p(other) >= half p(top) = 0.192): True
+gemma-3-4b-it: cpu2 against cpu: IDENTICAL replies

@@ -35,6 +35,7 @@ type qwen3Tower struct {
 	acc    multimodal.GridTowerAccelerator // nil: aikit's CPU tower
 	fb     deviceFallback                  // serializes the accelerator and falls back to the CPU on a device memory failure
 	err    error
+	deep   int // Qwen3-VL's DeepStack sets (S10); 0 for Qwen3.5+. A DeepStack tower runs on the CPU (no device tower yet)
 }
 
 func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
@@ -50,6 +51,12 @@ func (q *qwen3Tower) encoder() (*vision.Qwen3VisionEncoder, error) {
 		}
 		if q.plan.device != "" {
 			acc, err := multimodal.NewQwen3Tower(q.plan.device, q.enc)
+			if err == nil && q.deep > 0 { // Qwen3-VL: the device tower must tap the DeepStack blocks (G-S10e)
+				if _, ok := acc.(multimodal.GridTowerTapper); !ok {
+					_ = acc.Close()
+					acc, err = nil, fmt.Errorf("the %s tower cannot tap the DeepStack blocks", q.plan.device)
+				}
+			}
 			q.acc, q.err = q.plan.started("Qwen3.5", acc, err)
 		}
 	})
@@ -62,7 +69,19 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	return q.fb.run("Qwen3.5", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+	if q.deep > 0 { // Qwen3-VL: the merged rows, then each DeepStack set, one flat vector (the feature cache stores it whole)
+		return q.fb.run("Qwen3-VL", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+			merged, deep, err := multimodal.Qwen3TowerFeaturesDeepstack(enc, acc, pv, [][3]int{grid})
+			if err != nil {
+				return nil, err
+			}
+			for _, d := range deep {
+				merged = append(merged, d...)
+			}
+			return merged, nil
+		})
+	}
+	return q.fb.run("Qwen3.5", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 		return multimodal.Qwen3TowerFeatures(enc, acc, pv, [][3]int{grid})
 	})
 }
@@ -72,7 +91,8 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 // config LoadQwen3PreprocessConfig accepts. Used for AUTO-discovery only: a stripped text-only copy
 // (no vision_config or no preprocessor_config.json) is simply not a vision model, not an error.
 func isQwen35VisionDir(dir string) bool {
-	if mt := visionModelType(dir); mt != "qwen3_5" && mt != "qwen3_5_moe" {
+	mt := visionModelType(dir)
+	if mt != "qwen3_5" && mt != "qwen3_5_moe" && mt != "qwen3_vl" {
 		return false
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
@@ -85,7 +105,10 @@ func isQwen35VisionDir(dir string) bool {
 			Deepstack []int `json:"deepstack_visual_indexes"`
 		} `json:"vision_config"`
 	}
-	if json.Unmarshal(raw, &c) != nil || c.Vision == nil || c.Vision.Depth <= 0 || len(c.Vision.Deepstack) != 0 {
+	if json.Unmarshal(raw, &c) != nil || c.Vision == nil || c.Vision.Depth <= 0 {
+		return false
+	}
+	if (mt == "qwen3_vl") != (len(c.Vision.Deepstack) > 0) { // Qwen3-VL carries DeepStack (S10); Qwen3.5+ never does
 		return false
 	}
 	_, err = multimodal.LoadQwen3PreprocessConfig(dir)
@@ -107,7 +130,24 @@ func setupQwen35Vision(dir string, int8Tower bool) (*qwen3Tower, multimodal.Qwen
 	if limit := qwen3MaxImageTokens * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit {
 		pp.MaxPixels = limit
 	}
-	return &qwen3Tower{dir: dir, quant: int8Tower}, pp, nil
+	return &qwen3Tower{dir: dir, quant: int8Tower, deep: deepstackSets(dir)}, pp, nil
+}
+
+// deepstackSets is dir's vision_config.deepstack_visual_indexes count (Qwen3-VL), 0 when it has none.
+func deepstackSets(dir string) int {
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return 0
+	}
+	var c struct {
+		Vision struct {
+			Deepstack []int `json:"deepstack_visual_indexes"`
+		} `json:"vision_config"`
+	}
+	if json.Unmarshal(raw, &c) != nil {
+		return 0
+	}
+	return len(c.Vision.Deepstack)
 }
 
 // loadQwen35VisionTower attaches a Qwen3.5+ tower to the single loaded model. Everything that can be
@@ -174,7 +214,11 @@ func (s *server) attachQwen35Tower(tower *qwen3Tower, pp multimodal.QwenPreproce
 		if lm.qwenImgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
-		fmt.Fprintf(os.Stderr, "Qwen3.5 vision for %q: tower (%s) loads on first image (merge %d, image-pad id %d, <= %d tokens/image) from %s\n", lm.name, tower.plan.where, lm.qwenMerge, lm.qwenImgTok, qwen3MaxImageTokens, dir)
+		family := "Qwen3.5"
+		if tower.deep > 0 {
+			family = "Qwen3-VL"
+		}
+		fmt.Fprintf(os.Stderr, "%s vision for %q: tower (%s) loads on first image (merge %d, image-pad id %d, <= %d tokens/image) from %s\n", family, lm.name, tower.plan.where, lm.qwenMerge, lm.qwenImgTok, qwen3MaxImageTokens, dir)
 	}
 	return nil
 }
