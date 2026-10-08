@@ -2555,6 +2555,34 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **Tonight:** step 1 runs a test binary with the control, from a later rev. The served and speed steps keep the
       `a1e007c7` serve binary, where the path was on.
 
+  - **G-S16c on Qwen3-VL-2B under the re-registered bar, read 2026-10-08 by day: PASS on all four images.**
+
+    | image | rows | image worst cosine | the text control's minimum (4 prompts) | argmax |
+    |---|---|---|---|---|
+    | 896² | 798 | 0.9718256 | 0.8745833 | 1 near-tie |
+    | 4x6 | 84 | 0.9776144 | 0.9537060 | 1 near-tie |
+    | formula.png | 1029 | 0.9845718 | 0.9579256 | equal |
+    | table.png | 986 | 0.9864695 | 0.8663697 | equal |
+
+    - **The control's own range (0.87-0.96)** is the shipped f16 prefill's distance from the CPU's int4 prefill on
+      random-token text at these lengths. The image turns sit above its minimum on every image.
+    - **Still owed before Qwen3-VL's path turns on:** the served comparison and the TTFT record (the night's).
+    - **The production switches are per path** (`metalMRoPEPrefillOn` for Qwen2.5-VL, `metalDeepstackPrefillOn` for
+      Qwen3-VL), both off on main.
+  - **The night job, amended 2026-10-08 before it runs:** both models in every step.
+    - **The binaries:** the test binary from main (with the control); the serve binary from a local branch,
+      `s16-night-on`, which is main with both switches on, so the served and speed steps measure the path.
+    - **The verdicts:** a path turns on (a commit on main) only when its model passes G-S16c, the served comparison and
+      the speed rule (>= 1.02x TTFT).
+    - The step 3 band above is Qwen2.5-VL's. **Qwen3-VL's TTFT band, from the same arithmetic:**
+      - S7's cell: 8.97 s TTFT, with a 3.75-4.14 s tower;
+      - on this build the tower is lever A+B's, about 4.0 s / 2.8 ≈ 1.4 s;
+      - the CPU prefill and upload take about 5 s;
+      - S16 prefills about 1,000 rows at 150-250 tok/s, the 1.5B's rate scaled to the 2B: 4.0-6.7 s;
+      - **so TTFT goes about 6.4 → 5.6-8.3 s: 0.8-1.15x.** An honest projection that it may not pay on the 2B. The
+        speed rule decides.
+    - **Cost:** about 50 minutes, queued at 75.
+
   - **S16's night job, registered 2026-10-08 before it runs** (`docs/measurements/multimodal-support-2026-10/s16/
     run-s16-night.sh`, night queue `s16-night`; Qwen2.5-VL-3B, which the fit guard refuses by day):
     1. **G-S16c, real:** `TestS16MRoPEPrefill_real`, the four F2a images, today's path (the upload bridge, Metal decode)

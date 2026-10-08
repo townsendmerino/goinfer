@@ -236,9 +236,9 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `ForwardN` → `ForwardBatch` (`metal/model.go:3603`): layer-major in one command buffer, with per-row `batchX`
     slices and uniforms, and a `len(emb) != r.H` check.
   - `ForwardArgmax(id,pos)` uses `loadEmbedRow` (`metal/model.go:2638-2641`).
-  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:1008,1069`), and `StepBatch` (MC3,
+  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:1009,1070`), and `StepBatch` (MC3,
     `metal/batch.go:914`, which declines Gemma).
-- **UploadKV** (`metal/backend.go:1162-`): writes host K/V rows at `base*kvDim`, f16 or int8.
+- **UploadKV** (`metal/backend.go:1163-`): writes host K/V rows at `base*kvDim`, f16 or int8.
 - **GenerateGemma4VL uses resident decode only when `bidirectional`** (the gate in `GenerateGemma4VL`, `decoder/generate_gemma4_vl.go`, as of 2026-10-06; S1.8 admits E-models too).
   That covers 26B/31B: CPU prefill → `residentUploadPrefill` → `m.resident.Forward(m.embedResident(next), gpuPos)`
   (:169-194). E2B never touches the resident, and `TestGenerateGemma4VL_sequentialPathNeverTouchesResident`
@@ -352,7 +352,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - The **non-contig path (int8 KV, `allocSlots=1`) allocates a fresh `byteBuf` for every layer with a non-zero
     `kc`**, so a shared layer gets its own empty buffer in slots ≥ 1. That is a silent garbage read. Alias in that
     loop explicitly, as `b.kc[l] = b.kc[src]`.
-- **UploadKV** (`metal/backend.go:1162`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
+- **UploadKV** (`metal/backend.go:1163`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
   skips it only because the CPU cache is empty there (`decoder/generate_vl_resident.go:26-28`), and an upload through
   the alias would overwrite the source.
 - **Bookkeeping:**
