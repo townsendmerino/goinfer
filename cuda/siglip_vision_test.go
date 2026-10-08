@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -224,5 +225,140 @@ func TestSiglipCUDA_real(t *testing.T) {
 		}
 		fmt.Fprintf(os.Stderr, "[S4 G-S3a siglip real] %-30s tower CUDA %s, CPU %s (exploratory)\n", img, td.Round(time.Millisecond), tc.Round(time.Millisecond))
 		sigGrade(t, "gemma-3-4b-it "+img, got, want, cpu.Cfg.HiddenSize)
+	}
+}
+
+// TestSiglipCUDA_int8VsFloat32 is G-S3d's feature half (the S4 addendum): the shipped default's tower, the W8A8 *cuda.VisionEncoder on an int8-loaded encoder, against the
+// float32 CPU tower on the four F2a images: relative L2 and worst / mean per-token cosine, to set beside docs/measurements/siglip-int8-fidelity-2026-10-07.md (relative L2 0.16-0.52,
+// worst token 0.01-0.17). A record, not a gate: it asserts only that the int8 tower is what attached. Heavy.
+func TestSiglipCUDA_int8VsFloat32(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1 (loads the real tower twice)")
+	}
+	newTestTower(t, 64)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s: %v", dir, err)
+	}
+	ref, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := vision.LoadEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.EnableResident(); err != nil {
+		t.Fatalf("the int8 CUDA tower did not attach: %v", err)
+	}
+	t.Cleanup(q.Close)
+	if typ := reflect.ValueOf(q).Elem().FieldByName("resident").Elem().Type().String(); !strings.Contains(typ, "VisionEncoder") {
+		t.Fatalf("an int8 encoder attached %s, want the W8A8 *cuda.VisionEncoder", typ)
+	}
+	W := ref.Cfg.HiddenSize
+	for _, img := range sigImages {
+		data, err := os.ReadFile(filepath.Join("../testdata", img))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pv, err := vision.Preprocess(data, vision.Gemma3())
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := ref.Forward(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t0 := time.Now()
+		got, err := q.Forward(pv.Data)
+		td := time.Since(t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var num, den, sumCos float64
+		worst := 1.0
+		n := len(want) / W
+		for i := 0; i < n; i++ {
+			var dot, na, nb float64
+			for j := 0; j < W; j++ {
+				a, b := float64(want[i*W+j]), float64(got[i*W+j])
+				dot += a * b
+				na += a * a
+				nb += b * b
+				num += (a - b) * (a - b)
+				den += a * a
+			}
+			c := dot / (math.Sqrt(na*nb) + 1e-30)
+			sumCos += c
+			worst = math.Min(worst, c)
+		}
+		fmt.Fprintf(os.Stderr, "[S4 G-S3d] %-30s int8 CUDA tower vs float32 CPU: relative L2 %.4f, worst token cosine %.4f, mean token cosine %.4f (int8 tower %s)\n",
+			img, math.Sqrt(num/den), worst, sumCos/float64(n), td.Round(time.Millisecond))
+	}
+}
+
+// TestSiglipCUDA_speed is the S4 addendum's speed record (no bar): Gemma 3's SigLIP tower time per image, the float32 CUDA tower against the int8 CUDA tower against the CPU float32 tower,
+// interleaved per round on the same preprocessed image (SIGLIP_SPEED_ROUNDS, default 3; images: the first and last of the F2a four). Heavy; run under the timing lock (the night script does).
+func TestSiglipCUDA_speed(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	newTestTower(t, 64)
+	rounds := 3
+	if v := os.Getenv("SIGLIP_SPEED_ROUNDS"); v != "" {
+		fmt.Sscan(v, &rounds)
+	}
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no %s: %v", dir, err)
+	}
+	cpu, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f32, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f32.EnableResident(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(f32.Close)
+	siglipAttachedTower(t, f32)
+	i8, err := vision.LoadEncoder(dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := i8.EnableResident(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(i8.Close)
+	for _, img := range []string{sigImages[0], sigImages[3]} {
+		data, err := os.ReadFile(filepath.Join("../testdata", img))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pv, err := vision.Preprocess(data, vision.Gemma3())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, enc := range []*vision.Encoder{f32, i8} { // warm: the first call builds scratch and JITs nothing new, but is not timed
+			if _, err := enc.Forward(pv.Data); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for r := 1; r <= rounds; r++ {
+			tm := func(e *vision.Encoder) time.Duration {
+				t0 := time.Now()
+				if _, err := e.Forward(pv.Data); err != nil {
+					t.Fatal(err)
+				}
+				return time.Since(t0)
+			}
+			a, b, c := tm(cpu), tm(f32), tm(i8)
+			fmt.Fprintf(os.Stderr, "[S4 siglip speed] %-28s round %d: CPU f32 %.2fs | CUDA f32 %.2fs | CUDA int8 %.2fs\n", img, r, a.Seconds(), b.Seconds(), c.Seconds())
+		}
 	}
 }

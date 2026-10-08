@@ -21,6 +21,7 @@ type towerDims struct {
 	posTable                                              int // Gemma 4's two position tables, rows each
 	outputLength                                          int // Gemma 4's default soft-token count
 	pool                                                  int // Gemma 4's pooling kernel
+	imageSize                                             int // Gemma 3's SigLIP image side in pixels
 }
 
 func readTowerDims(dir string) (towerDims, bool) {
@@ -44,7 +45,7 @@ func readTowerDims(dir string) (towerDims, bool) {
 	}
 	d := towerDims{hidden: num("hidden_size", "embed_dim"), inter: num("intermediate_size"), layers: num("num_hidden_layers", "depth"),
 		patch: num("patch_size"), temporal: max(num("temporal_patch_size"), 1), inChan: max(num("in_channels", "num_channels"), 3), merge: max(num("spatial_merge_size"), 1),
-		posTable: num("position_embedding_size"), outputLength: num("default_output_length"), pool: max(num("pooling_kernel_size"), 1)}
+		posTable: num("position_embedding_size"), outputLength: num("default_output_length"), pool: max(num("pooling_kernel_size"), 1), imageSize: num("image_size")}
 	return d, d.hidden > 0 && d.inter > 0 && d.layers > 0 && d.patch > 0
 }
 
@@ -53,6 +54,12 @@ func towerVRAMEstimate(mt string, d towerDims, maxPixels int) int64 {
 	patchIn := d.inChan * d.temporal * d.patch * d.patch
 	var mlpMats, np int
 	switch mt {
+	case "gemma3":
+		// SigLIP: a fixed (image_size / patch)^2 patches, a position table of the same rows, two MLP matrices, biased separate q/k/v/o (the 4*h*h below)
+		patchIn = 3 * d.patch * d.patch
+		mlpMats = 2
+		side := d.imageSize / max(d.patch, 1)
+		np = side * side
 	case "gemma4":
 		patchIn = 3 * d.patch * d.patch
 		mlpMats = 3
@@ -79,6 +86,9 @@ func towerVRAMEstimate(mt string, d towerDims, maxPixels int) int64 {
 	params := int64(d.layers)*(4*h*h+int64(mlpMats)*h*i) + int64(patchIn)*h
 	if mt == "gemma4" {
 		params += 2 * int64(d.posTable) * h
+	}
+	if mt == "gemma3" {
+		params += int64(np) * h // the fixed position table
 	}
 	// scratch: about twelve hidden-wide buffers, two MLP-wide ones, the widest projection's input copy and the pixel rows, per patch
 	scratch := int64(np) * 4 * (12*h + 2*i + max(h, i) + int64(patchIn))
@@ -110,6 +120,8 @@ func towerReserve(cfg config, modelPath string) int64 {
 		registered = slices.Contains(multimodal.Qwen3Towers(), "cuda")
 	case "glm_ocr":
 		registered = slices.Contains(multimodal.GlmOcrTowers(), "cuda")
+	case "gemma3":
+		registered = true // cuda/vision_register.go's factory builds the float32 SigLIP tower for a float32 encoder (this branch is only reached when the tower is float32)
 	case "qwen2_5_vl":
 		registered = true // aikit's qwencuda registers through the vision package, not multimodal's registry; a cuda binary imports it
 	}

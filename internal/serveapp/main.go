@@ -340,7 +340,7 @@ type config struct {
 	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 	noSelfTest      bool          // -no-selftest: skip the startup self-tests (H2)
 	visionMaxPixels int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
-	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	visionQuant     string        // -vision-quant: "" (unset: f32, except Gemma 3 on cuda/webgpu, which stays int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 	visionDevice    string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu"
 	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
@@ -417,7 +417,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
 	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision tower runs: auto (default: on the --backend's GPU when this binary has a tower there, else the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend)")
-	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
+	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere except Gemma 3 under --backend cuda|webgpu, whose default device tower is still int8; an explicit f32 selects the float32 device tower where one exists (CUDA, S4 addendum) and the CPU tower otherwise")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
@@ -1221,8 +1221,13 @@ func (s *server) loadVisionTower(cfg config) error {
 // against each tower's own f32 on the same image, relative L2 0.21 (Qwen2.5-VL), 0.14 (Qwen3.5-0.8B), 0.31 (Gemma 4), per-token
 // cosine mean 0.975 / 0.992 / 0.950 (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). The gates for all of them ran f32.
 func towerInt8(modelType, visionQuant, backend string) bool {
-	if visionQuant == "int8" {
+	switch visionQuant {
+	case "int8":
 		return true
+	case "f32":
+		// Explicit, and the only way to ask for Gemma 3's float32 device tower on CUDA (S4 addendum); unset keeps the old rule below. On webgpu there is no float32
+		// device tower, so the attach declines by name and the CPU tower runs.
+		return false
 	}
 	switch modelType {
 	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "gemma4", "glm_ocr":

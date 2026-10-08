@@ -29,8 +29,8 @@
 >   on Metal** (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal SigLIP tower was not wired; the 2026-09-30 audit found that unchanged). **2026-10-06:** Metal does
 >   run a Gemma 4 vision tower and the `gemma4_audio` tower now, goinfer's own (`metal/gemma4_vision.go`, `metal/gemma4_audio.go`), but only for EmbeddingGemma 2's embeddings
 >   (`docs/tasks/task-embeddinggemma2.md`, Phases VM and A). Wiring the vision one to Gemma 4's own image input is in "Finishing this doc" below.
-> - **int8.** `--backend cuda|webgpu` makes Gemma 3's tower int8 whatever `-vision-quant` says, because only its resident tower has a GPU path and that path needs int8 (`towerInt8` in
->   `internal/serveapp/main.go`). Every other tower (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`; until 2026-10-02 the first three were forced to
+> - **int8.** With `-vision-quant` unset, `--backend cuda|webgpu` makes Gemma 3's tower int8, because that was the only device tower it had (`towerInt8` in `internal/serveapp/main.go`).
+>   An explicit `-vision-quant f32` selects the float32 SigLIP tower on CUDA (S4 addendum, 2026-10-07; the default has not changed, and that decision is the owner's); on webgpu there is no float32 device tower, so it runs on the CPU. Every other tower (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`; until 2026-10-02 the first three were forced to
 >   int8 under those backends, which measured not faster and far from f32 (`docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`). On CPU and Metal every tower is f32 unless asked.
 > - **Decoder.** Gemma 3 and Qwen2.5-VL decode resident after an image on every backend that has `UploadKV` and `ForwardMRoPE` (CUDA, WebGPU, Metal); only CUDA also has a
 >   resident image prefill (`ResidentImagePrefill`, `ResidentMRoPEPrefill`), the others prefill the image on the CPU and upload the KV. Gemma 4 26B/31B uses the same bridge
