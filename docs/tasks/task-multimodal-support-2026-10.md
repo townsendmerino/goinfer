@@ -2130,6 +2130,51 @@ different rows.
   - Its gates are written here before its code. Correctness is S1's G3 shape (teacher-forced agreement against the
     CPU, non-inferior to the validated reference); the speed is a text-prefill A/B at night, shipping at >= 1.02x.
 - **Still owed for S9:** the night speed record (`s9-speed`, queued tonight on the Mac) and CUDA's half (nobara).
+- **S9 step 2 on Metal, the design and gates, registered 2026-10-08 before any code (owner: "S9 step 2 then do S18").**
+  - **Why:** an E2B image cell spends about 5 s in S9's layer-major prefill, which runs every prompt row through decode's
+    GEMV kernels (found by day 2026-10-08, S7's Mac record above).
+  - **The design:** the f16-MMA batched pass learns a Gemma 4 E-model. Every existing family keeps one geometry, so its
+    dispatches are unchanged.
+    - **Per-layer geometry:** a uniform bundle per attention geometry. The head dim (256/512 on E2B), QKV stride, KV
+      width and rotary half are read per layer. Attention takes the fused or steel kernel where the head dim allows
+      (<= 128), the exact kernel otherwise (<= 4,096 keys, checked).
+    - **KV-shared layers** project Q only, skip the K rope and the K/V store, and attend over their source's cache
+      (decode's aliased buffers).
+    - **`v_norm`:** the scale-less norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as decode.
+    - **The per-layer FFN width.**
+    - **The PLE block** after the FFN residual: a gate GEMM (H→P) on the raw residual, `gelu(gate) × the row's own PLE
+      slice`, a projection GEMM (P→H), the post-PLE norm, the residual add.
+    - **The layer scalar** after that.
+    - **Excluded:** K=V layers decline (no gate covers them yet).
+    - **A production switch, off** until the gates below pass. With it off, the S9 layer-major pass keeps the route.
+  - **G-S9c, tiny, by day:** `gemma4-emodel-tiny` (6 layers; head dims 32 and 64; 2 KV-shared layers with their own
+    sources and double FFN width; PLE P=32; layer scalars; `v_norm`).
+    - **The comparison:** the batched pass against the S9 layer-major pass (the validated path, bit-identical to
+      sequential), on one Metal resident. The last prompt row and 8 teacher-forced decode steps.
+    - **The bar:** cosine >= 0.9999, every argmax equal or an R10 near-tie.
+    - **Two prompts:** the 12-token golden prompt, and a synthetic 96-token one, which runs every local layer past its
+      window of 4 and both shared layers over long sources.
+    - **Planted defects, each alone red on at least one prompt:**
+      1. a shared layer stores its K/V (over its source's cache);
+      2. the PLE block skipped;
+      3. each row's PLE inputs taken from the next row;
+      4. the layer scalar dropped;
+      5. `v_norm` dropped;
+      6. every layer's FFN at the first layer's width.
+  - **G-S9d, real E2B, by day if it fits:** S1's G3 shape, on the batched prefill.
+    - **The procedure:** G3's eight prompts, each prefilled by the pass under test, then 32 greedy tokens.
+      - Free run: the reply against the CPU's, by G3's rule.
+      - Teacher-forced: the CPU's 32 tokens through Metal decode after that prefill, argmax agreement over the last
+        prompt row and the 32 generated positions.
+    - **The reference:** the same procedure with the S9 layer-major pass (the shipped path), in the same process.
+    - **PASS:** agreement at least the reference's minus 2.0 points, and free-run passes at least the reference's minus
+      1. **Ambiguous (parked):** 2.0-4.0 points below. **FAIL:** worse.
+  - **Speed, at night:** S9 step 2's registered text-prefill A/B (ship at >= 1.02x), and E2B's image-turn TTFT against
+    the layer-major pass (a record).
+    - **The projection band, written before the run:** the layer-major pass costs about 21 ms a row; the batched pass
+      runs the 1.5B's text prefill at 225-366 tok/s (`docs/benchmarks.md`, 2026-09-18), and E2B is about that size. So
+      an image turn's ~290-row prefill goes 5-6 s → about 0.8-1.3 s, and TTFT 6.4 → about 2.2-2.7 s: **2.4-2.9x**.
+
 
 
 ### S10 — Towers for the families that have none
