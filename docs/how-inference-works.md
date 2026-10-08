@@ -290,7 +290,7 @@ adapter."
 
 ### Two more worth a mention
 
-- **Session prefix reuse** ([decoder/session.go:78-106](../decoder/session.go#L71-L99)) —
+- **Session prefix reuse** ([decoder/session.go:88-116](../decoder/session.go#L71-L99)) —
   in a chat, each new turn shares a long prefix with the last one (the whole
   conversation history). Instead of reprocessing it, the engine keeps the KV
   cache from before and only processes the *new* part. Huge win for chat and

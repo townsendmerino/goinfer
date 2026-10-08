@@ -97,8 +97,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
 | `docs/audit-2026-09-10.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/audit-2026-09-10.md|decoder/kvcache.go:313` | goinfer | `func (r *ring) truncate(p int) bool {` |
-| `docs/audit-2026-09-10.md|decoder/kvcache.go:823` | goinfer | `func (c *KVCache) WindowStart(pos int, global bool) int {` |
-| `docs/audit-2026-09-10.md|decoder/kvsnapshot.go:71` | goinfer | `if c.hasRecurrentState() \|\| len(c.mlaLatent) > 0 {` |
+| `docs/audit-2026-09-10.md|decoder/kvcache.go:826` | goinfer | `func (c *KVCache) WindowStart(pos int, global bool) int {` |
+| `docs/audit-2026-09-10.md|decoder/kvsnapshot.go:75` | goinfer | `if c.holdsStateHandled(lcSnapshot, hRefused) {` |
 | `docs/audit-2026-09-10.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/lora.go:355` | goinfer | `_, hasOwnForward := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/mlp.go:165` | goinfer | `for j, e := range idx {` |
@@ -109,7 +109,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/model.go:1897` | goinfer | `m.residentForgetIDs()` |
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:125` | goinfer | `if m.hasRecurrentState() {` |
 | `docs/audit-2026-09-10.md|decoder/rope.go:168` | goinfer | `anchor: func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale ` |
-| `docs/audit-2026-09-10.md|decoder/session.go:80` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
+| `docs/audit-2026-09-10.md|decoder/session.go:90` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:267` | goinfer | `if needHist {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:111` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
 | `docs/audit-2026-09-10.md|gpu/backend.go:197` | goinfer | `key := &bQ4[0]` |
@@ -678,7 +678,7 @@ supports.
 | `docs/how-inference-works.md|decoder/sampler.go:274` | goinfer | `s.applyLogitBias(work)` |
 | `docs/how-inference-works.md|decoder/sampler.go:280` | goinfer | `info.ID = argmax(work)` |
 | `docs/how-inference-works.md|decoder/sampler.go:281` | goinfer | `} else if s.p.TopK > 0 \|\| s.p.TopP > 0 \|\| s.p.MinP > 0 {` |
-| `docs/how-inference-works.md|decoder/session.go:78` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
+| `docs/how-inference-works.md|decoder/session.go:88` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:335` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
@@ -1064,8 +1064,8 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:72` | goinfer | `// resDrafterSynced identifies which *BlockSpec's own drafter context is currently in sy` |
 | `docs/tasks/task-recompute-audit.md|decoder/moepaging.go:141` | goinfer | `// A kind-4 tensor carries TWO on-disk representations (canonical + row4,` |
 | `docs/tasks/task-recompute-audit.md|decoder/resident_reuse.go:125` | goinfer | `if m.hasRecurrentState() {` |
-| `docs/tasks/task-recompute-audit.md|decoder/session.go:113` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
-| `docs/tasks/task-recompute-audit.md|decoder/session.go:80` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
+| `docs/tasks/task-recompute-audit.md|decoder/session.go:132` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
+| `docs/tasks/task-recompute-audit.md|decoder/session.go:90` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/tasks/task-recompute-audit.md|decoder/speculative.go:137` | goinfer | `if target.tryClaimResident() {` |
 | `docs/tasks/task-recompute-audit.md|internal/serveapp/openai.go:1581` | goinfer | `sess := lm.sessions.acquire(gr.promptIDs)` |
 | `docs/tasks/task-recompute-audit.md|tokenizer/sentencepiece.go:878` | goinfer | `// Decoding prompt+generation together gives the right answer too, by re-decoding the` |
