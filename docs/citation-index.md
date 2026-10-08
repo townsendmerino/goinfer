@@ -706,7 +706,7 @@ supports.
 | `docs/measurements/multimodal-audit-2026-10-02.md|cuda/vision_register.go:13` | goinfer | `vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/capability_matrix_test.go:552` | goinfer | `"qwen3_5_moe":      {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE"` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/features.go:100` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:160` | goinfer | `if (bidirectional \|\| eModel) && m.tryClaimResident() {` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:161` | goinfer | `if (bidirectional \|\| eModel) && m.tryClaimResident() {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:29` | goinfer | `func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbeds []floa` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:159` | goinfer | `if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:297` | goinfer | `recurrent := m.hasRecurrentState()` |
