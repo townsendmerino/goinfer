@@ -27,8 +27,9 @@ type towerOps struct {
 
 	zeroBias Buffer // zeros, as long as the widest bias-free projection: lets gemm run the register-blocked bias kernel at any M
 
-	scratch []Buffer // per-call buffers, released by releaseScratch
-	err     error    // the first launch error of the current call
+	scratch []Buffer   // per-call buffers, released by releaseScratch
+	err     error      // the first launch error of the current call
+	prof    *towerProf // S17 step 0's class profile; nil in production (tower_prof.go)
 
 	reqCh chan func() error
 	ackCh chan error
@@ -137,6 +138,7 @@ func (t *towerOps) launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) {
 
 // finish waits for the queue and returns the call's first error, clearing it.
 func (t *towerOps) finish() error {
+	t.profFlush()
 	if t.err == nil {
 		t.err = t.q.Sync()
 	}
@@ -152,6 +154,8 @@ var i64 = gpu.ArgValue[int64]
 // gemm is out[M,N] = a[M,K] · w[N,K]ᵀ. With K a multiple of 16 it runs the bias kernel with a zero bias, which takes any M and N at the register-blocked
 // speed; otherwise aikit's plan (the register kernel when M and N are multiples of 64, else the tiled one).
 func (t *towerOps) gemm(a, w, out Buffer, M, N, K int) {
+	t.cls(clsGEMM)
+	t.profGEMM(M, N, K)
 	if K%16 == 0 && N <= t.zeroBias.Len() {
 		p, cfg := t.vit.GEMMF32BiasPlan(M, N, K)
 		t.launch(p, cfg, Arg(a), Arg(w), Arg(t.zeroBias), Arg(out), i32(int32(M)), i32(int32(N)), i32(int32(K)))
@@ -163,6 +167,8 @@ func (t *towerOps) gemm(a, w, out Buffer, M, N, K int) {
 
 // gemmBias is out[M,N] = a[M,K] · w[N,K]ᵀ + bias[N]. A K that is not a multiple of 16 (real GLM-OCR's patch embed, K = 1176) takes the tiled GEMM plus add_bias.
 func (t *towerOps) gemmBias(a, w, bias, out Buffer, M, N, K int) {
+	t.cls(clsGEMM)
+	t.profGEMM(M, N, K)
 	if K%16 == 0 {
 		p, cfg := t.vit.GEMMF32BiasPlan(M, N, K)
 		t.launch(p, cfg, Arg(a), Arg(w), Arg(bias), Arg(out), i32(int32(M)), i32(int32(N)), i32(int32(K)))
@@ -175,6 +181,8 @@ func (t *towerOps) gemmBias(a, w, bias, out Buffer, M, N, K int) {
 
 // gemmBiasAdd is resid[M,N] += a[M,K] · w[N,K]ᵀ + bias[N]. A K that is not a multiple of 16 goes through tmp[M*N] and add_vec.
 func (t *towerOps) gemmBiasAdd(a, w, bias, resid, tmp Buffer, M, N, K int) {
+	t.cls(clsGEMM)
+	t.profGEMM(M, N, K)
 	if K%16 == 0 {
 		p, cfg := t.vit.GEMMF32BiasAddPlan(M, N, K)
 		t.launch(p, cfg, Arg(a), Arg(w), Arg(bias), Arg(resid), i32(int32(M)), i32(int32(N)), i32(int32(K)))
@@ -186,55 +194,66 @@ func (t *towerOps) gemmBiasAdd(a, w, bias, resid, tmp Buffer, M, N, K int) {
 
 // rms is out = rmsnorm(x) * w over rows of dim (in place when out is x), eps as given.
 func (t *towerOps) rms(x, w, out Buffer, rows, dim int, eps float32) {
+	t.cls(clsNorm)
 	t.launch(t.vit.RMSNorm, gpu.RowGrid(rows), Arg(x), Arg(w), Arg(out), i32(int32(rows)), i32(int32(dim)), f32v(eps))
 }
 
 // layerNorm is out = layernorm(x) * w + b over rows of dim.
 func (t *towerOps) layerNorm(x, w, b, out Buffer, rows, dim int, eps float32) {
+	t.cls(clsNorm)
 	t.launch(t.vit.LayerNorm, gpu.RowGrid(rows), Arg(x), Arg(w), Arg(b), Arg(out), i32(int32(rows)), i32(int32(dim)), f32v(eps))
 }
 
 func (t *towerOps) addVec(x, y Buffer, n int) {
+	t.cls(clsElem)
 	t.launch(t.vit.AddVec, gpu.Grid1D(n, 256), Arg(x), Arg(y), i32(int32(n)))
 }
 
 func (t *towerOps) geluTanh(x Buffer, n int) {
+	t.cls(clsElem)
 	t.launch(t.vit.GELUTanh, gpu.Grid1D(n, 256), Arg(x), i32(int32(n)))
 }
 
 // mul is x *= u, elementwise.
 func (t *towerOps) mulVec(x, u Buffer, n int) {
+	t.cls(clsElem)
 	t.launch(t.mul, gpu.Grid1D(n, 256), Arg(x), Arg(u), i64(int64(n)))
 }
 
 // scaleVec is x *= s.
 func (t *towerOps) scaleVec(x Buffer, n int, s float32) {
+	t.cls(clsElem)
 	t.launch(t.scale, gpu.Grid1D(n, 256), Arg(x), i64(int64(n)), f32v(s))
 }
 
 // clampInPlace clamps x[:n] to [lo, hi]; clampCopy writes the clamped x into out.
 func (t *towerOps) clampInPlace(x Buffer, n int, lo, hi float32) {
+	t.cls(clsElem)
 	t.launch(t.clamp, gpu.Grid1D(n, 256), Arg(x), i64(int64(n)), f32v(lo), f32v(hi))
 }
 
 func (t *towerOps) clampCopyTo(x, out Buffer, n int, lo, hi float32) {
+	t.cls(clsElem)
 	t.launch(t.clampCopy, gpu.Grid1D(n, 256), Arg(x), Arg(out), i64(int64(n)), f32v(lo), f32v(hi))
 }
 
 // posAddTo is x[i, d] += X[pos[i].x, d] + Y[pos[i].y, d] over rows of width H (pos is [rows, 2] int32).
 func (t *towerOps) posAddTo(x, X, Y, pos Buffer, rows, H int) {
+	t.cls(clsElem)
 	n := rows * H
 	t.launch(t.posAdd, gpu.Grid1D(n, 256), Arg(x), Arg(X), Arg(Y), Arg(pos), i32(int32(H)), i64(int64(n)))
 }
 
 // ropeAxialTo is Gemma 4's axial 2-D RoPE in place over x [T, heads, hd] from cos/sin [T, hd].
 func (t *towerOps) ropeAxialTo(x, cs, sn Buffer, T, heads, hd int) {
+	t.cls(clsElem)
 	n := T * heads * hd / 2
 	t.launch(t.ropeAxial, gpu.Grid1D(n, 256), Arg(x), Arg(cs), Arg(sn), i32(int32(heads)), i32(int32(hd)), i64(int64(n)))
 }
 
 // ropeHalfTo is the NeoX rotate-half RoPE in place over x [T, heads, hd] from cos/sin [T, hd] (Qwen3.5 and GLM-OCR's tables).
 func (t *towerOps) ropeHalfTo(x, cs, sn Buffer, T, heads, hd int) {
+	t.cls(clsElem)
 	n := T * heads * hd / 2
 	t.launch(t.ropeHalf, gpu.Grid1D(n, 256), Arg(x), Arg(cs), Arg(sn), i32(int32(heads)), i32(int32(hd)), i64(int64(n)))
 }
@@ -243,6 +262,8 @@ func (t *towerOps) ropeHalfTo(x, cs, sn Buffer, T, heads, hd int) {
 // untiled kernel keeps a score row in shared memory (np*4 bytes, np <= 12288 at 48 KB) and the tiled one (from np 3072, hd <= 128) does not; an image neither can
 // take is refused by name, not truncated.
 func (t *towerOps) attention(q, k, v, out Buffer, np, nH, hd int, scale float32) error {
+	t.cls(clsAttn)
+	t.profAttn(np, nH, hd)
 	p, cfg := t.vit.AttentionPlan(np, nH, hd)
 	if p != t.vit.AttentionTiled && np > 12288 {
 		// the untiled kernel keeps a score row in shared memory; the query-tiled online-softmax kernel (taken from np 3072 when the head dim allows) does not

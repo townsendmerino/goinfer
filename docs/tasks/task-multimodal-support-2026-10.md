@@ -2267,6 +2267,35 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **A prediction, written before the read and not a bar:** attention dominates SigLIP on CUDA as it does on Metal (more than half of its time), the GEMMs run well under half of the fp32 peak, and norms and
       elementwise are a few percent. A result that contradicts it is recorded as such.
     - **Cost:** SigLIP about 18 s x 7 forwards, Qwen3.5 under 4 s x 4 images x 7, GLM-OCR about 25 s x 7; about 7 minutes in all.
+  - **Step 0 on CUDA, read 2026-10-07 evening on nobara (commit `9bf0e917` + the instrument; `TestS17ProfileCUDA`, 5.4 minutes): attention is 92-95% of the time at 1% of the card's fp32 peak; the GEMMs are 4-7%.**
+    - **Its validity (the registered checks):** the profiled output equals the unprofiled one bit for bit on all 7 runs; the profiled wall is within +0.1% to +0.4% of the unprofiled on every large size
+      (+6.1% on the 14x20 grid, which is dispatch-bound and not a lever's target); a class's three reads spread 0.3-3.1% on the large sizes (4.1% on the small one). Raw:
+      `docs/measurements/multimodal-support-2026-10/s17-step0-cuda/profile.log`. The median of 3 profiled forwards; rates from the shapes against the RTX 2070 SUPER's ~9.1 TFLOPS fp32 peak:
+
+      | tower, image | rows | tower time | GEMM: share, TFLOPS | attention: share, TFLOPS | norm + elementwise |
+      |---|---|---|---|---|---|
+      | SigLIP float32 (every image) | 4096 | 18.03 s | 5.3%, 3.55 | **93.6%, 0.12** | 1.1% |
+      | Qwen3.5-0.8B, 896x896 image | 3136 | 3.10 s | 5.0%, 3.46 | **93.3%, 0.13** | 1.7% |
+      | Qwen3.5-0.8B, formula.png | 4060 | 5.07 s | 4.0%, 3.43 | **94.7%, 0.13** | 1.3% |
+      | Qwen3.5-0.8B, table.png | 3888 | 4.72 s | 4.1%, 3.44 | **94.5%, 0.12** | 1.4% |
+      | GLM-OCR, 896x896 image | 4096 | 14.14 s | 6.7%, 3.49 | **91.8%, 0.13** | 1.5% |
+      | Qwen3.5-0.8B, 14x20 grid | 280 | 0.044 s | 41.5%, 2.63 | 45.5%, 0.14 | 13% |
+
+    - **The prediction held, more strongly than written:** attention is far over half of every large tower, norms and elementwise are 1-2%, and the GEMMs run at 38% of the fp32 peak. aikit's attention
+      (`AttentionTiled` from 3072 patches) runs at 0.12-0.14 TFLOPS in every tower, about 28x below the GEMMs on the same card (3.4-3.6 TFLOPS), so the towers are bound by one kernel, not by arithmetic.
+    - **What it says about the levers:** the GEMMs are not worth work (a 3x faster GEMM buys at most 3.5% of SigLIP's 18 s); attention is the whole gap. S17's CUDA lever is an attention kernel, and it also changes
+      the owner's open Gemma 3 default question: float32 SigLIP is 18 s because of attention, not because float32 is slow.
+    - **Qwen2.5-VL on CUDA** is aikit's `gpu/qwencuda` and was not profiled (its own queue); its row is S4 step 3's whole-tower figure.
+  - **S17's CUDA lever A (attention), bands registered 2026-10-07 evening before any lever code.** The projection is tower = non-attention + attention / k_A, from the rows above.
+    - **What:** a fused, query-tiled online-softmax attention kernel in float32 for the tower base (`cuda/tower_base.cu`, NVRTC), non-causal, per segment, head dims 64, 72, 80 and 128, K/V tiled through shared
+      memory with register-blocked QK^T and PV. It replaces `AttentionPlan` for the towers; the float32 numerics stay (no half precision), so the bars below are the same as before the lever.
+    - **The kernel speedup expected, k_A = 10-25:** from 0.13 TFLOPS to 1.3-3.2, a third to a whole of the 3.5 TFLOPS this card's own tower GEMMs reach on the same base.
+    - **The bands:** SigLIP 6.4-10x (18.0 to 2.8-1.8 s, which is under S7's 5 s bar with the tower alone); Qwen3.5 formula.png 6.8-11x (5.1 to 0.75-0.46 s); GLM-OCR 5.7-8.4x (14.1 to 2.5-1.7 s).
+    - **Correctness first, unchanged bars:** every output token at cosine >= 0.9999 against aikit's CPU tower (G-S3a, G-S2b, G-S2c), the registered planted defects still red, and a new planted defect for the kernel
+      (a softmax scale or a K/V tile boundary off by one) red on the tiny tower and at real size; a kernel test against float64 at the production shapes (head dim 72 at 4096 patches, a ragged tile, a frame batch).
+    - **Kill line:** under 1.02x on any tower, or under the low end of its band with no mechanism found, parks it; a kernel that misses the cosine bar at real size is not shipped however fast.
+    - **Instrument:** an in-process whole-tower A/B, interleaved, by day (TE5(b)), the profile above re-run for the per-class change.
+  - **S17's CUDA lever B (GEMM) is registered as not a lever:** the GEMMs are 4-7% of the tower time, so even an ideal one buys under 7%. Written here so that it is not built by default.
   - **Step 0 on Metal, read 2026-10-07 18:56-19:03 PDT: the time is GEMMs and attention; norms and elementwise are ~1%.**
     - **The run:** `s2-towers` at `9b7da484`, `TestS17Profile`.
     - **Its validity:**

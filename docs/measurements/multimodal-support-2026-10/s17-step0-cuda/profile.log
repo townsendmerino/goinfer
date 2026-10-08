@@ -1,0 +1,40 @@
+=== RUN   TestS17ProfileCUDA
+=== RUN   TestS17ProfileCUDA/siglip-f32
+[S17 CUDA step 0] siglip-f32 (4096 patches): unprofiled wall 18.018s, profiled wall 18.039s (+0.1%), class sum 18.027s; bit-identical true; worst class spread 0.6%
+[S17 CUDA step 0] siglip-f32 (4096 patches):   gemm          0.949s    5.3%, 3.55 TFLOPS (39% of the fp32 peak)
+[S17 CUDA step 0] siglip-f32 (4096 patches):   attention    16.882s   93.6%, 0.12 TFLOPS (1% of the fp32 peak)
+[S17 CUDA step 0] siglip-f32 (4096 patches):   norm          0.041s    0.2%
+[S17 CUDA step 0] siglip-f32 (4096 patches):   elementwise   0.155s    0.9%
+=== RUN   TestS17ProfileCUDA/qwen3.5-0.8b
+[S17 CUDA step 0] qwen3.5-0.8b gemma3_preprocess_image.png (grid [1 56 56]): unprofiled wall 3.117s, profiled wall 3.128s (+0.4%), class sum 3.103s; bit-identical true; worst class spread 0.7%
+[S17 CUDA step 0] qwen3.5-0.8b gemma3_preprocess_image.png (grid [1 56 56]):   gemm          0.156s    5.0%, 3.46 TFLOPS (38% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b gemma3_preprocess_image.png (grid [1 56 56]):   attention     2.894s   93.3%, 0.13 TFLOPS (1% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b gemma3_preprocess_image.png (grid [1 56 56]):   norm          0.012s    0.4%
+[S17 CUDA step 0] qwen3.5-0.8b gemma3_preprocess_image.png (grid [1 56 56]):   elementwise   0.041s    1.3%
+[S17 CUDA step 0] qwen3.5-0.8b qwen25vl_preprocess_image.png (grid [1 14 20]): unprofiled wall 0.045s, profiled wall 0.048s (+6.1%), class sum 0.044s; bit-identical true; worst class spread 4.1%
+[S17 CUDA step 0] qwen3.5-0.8b qwen25vl_preprocess_image.png (grid [1 14 20]):   gemm          0.018s   41.5%, 2.63 TFLOPS (29% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b qwen25vl_preprocess_image.png (grid [1 14 20]):   attention     0.020s   45.5%, 0.14 TFLOPS (2% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b qwen25vl_preprocess_image.png (grid [1 14 20]):   norm          0.002s    3.5%
+[S17 CUDA step 0] qwen3.5-0.8b qwen25vl_preprocess_image.png (grid [1 14 20]):   elementwise   0.004s    9.5%
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/formula.png (grid [1 70 58]): unprofiled wall 5.098s, profiled wall 5.102s (+0.1%), class sum 5.074s; bit-identical true; worst class spread 1.8%
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/formula.png (grid [1 70 58]):   gemm          0.204s    4.0%, 3.43 TFLOPS (38% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/formula.png (grid [1 70 58]):   attention     4.803s   94.7%, 0.13 TFLOPS (1% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/formula.png (grid [1 70 58]):   norm          0.015s    0.3%
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/formula.png (grid [1 70 58]):   elementwise   0.052s    1.0%
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/table.png (grid [1 54 72]): unprofiled wall 4.748s, profiled wall 4.753s (+0.1%), class sum 4.721s; bit-identical true; worst class spread 3.1%
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/table.png (grid [1 54 72]):   gemm          0.195s    4.1%, 3.44 TFLOPS (38% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/table.png (grid [1 54 72]):   attention     4.462s   94.5%, 0.12 TFLOPS (1% of the fp32 peak)
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/table.png (grid [1 54 72]):   norm          0.015s    0.3%
+[S17 CUDA step 0] qwen3.5-0.8b glm_ocr/table.png (grid [1 54 72]):   elementwise   0.050s    1.1%
+=== RUN   TestS17ProfileCUDA/glm-ocr
+[S17 CUDA step 0] glm-ocr gemma3_preprocess_image.png (grid [1 64 64]): unprofiled wall 14.136s, profiled wall 14.158s (+0.2%), class sum 14.139s; bit-identical true; worst class spread 0.3%
+[S17 CUDA step 0] glm-ocr gemma3_preprocess_image.png (grid [1 64 64]):   gemm          0.947s    6.7%, 3.49 TFLOPS (38% of the fp32 peak)
+[S17 CUDA step 0] glm-ocr gemma3_preprocess_image.png (grid [1 64 64]):   attention    12.982s   91.8%, 0.13 TFLOPS (1% of the fp32 peak)
+[S17 CUDA step 0] glm-ocr gemma3_preprocess_image.png (grid [1 64 64]):   norm          0.121s    0.9%
+[S17 CUDA step 0] glm-ocr gemma3_preprocess_image.png (grid [1 64 64]):   elementwise   0.090s    0.6%
+--- PASS: TestS17ProfileCUDA (320.51s)
+    --- PASS: TestS17ProfileCUDA/siglip-f32 (127.38s)
+    --- PASS: TestS17ProfileCUDA/qwen3.5-0.8b (91.64s)
+    --- PASS: TestS17ProfileCUDA/glm-ocr (101.11s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	320.570s

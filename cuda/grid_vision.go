@@ -313,6 +313,7 @@ func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error
 			if a.kind == gridGlmOcr {
 				a.linear(xn, &b.gate, f1, np)
 				a.linear(xn, &b.up, f2, np)
+				o.cls(clsElem)
 				o.launch(o.vit.SiLUMul, gpu.Grid1D(np*I, 256), Arg(f1), Arg(f2), i32(int32(np*I)))
 				a.linearAdd(f1, &b.down, x, tmp, np)
 			} else {
