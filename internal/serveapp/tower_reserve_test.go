@@ -18,6 +18,7 @@ func TestTowerVRAMEstimate(t *testing.T) {
 		{"qwen3.5-0.8b", "qwen3_5", `{"vision_config":{"depth":12,"hidden_size":768,"in_channels":3,"intermediate_size":3072,"patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 0.60, 0.75},
 		{"glm-ocr, ceiling capped to 1.5 MP for the reserve", "glm_ocr", `{"vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 2.3, 2.7},
 		{"qwen2.5-vl-3b (measured 2758 MiB of weights + 270 MiB of scratch per 4096 patches, at the 8192-patch ceiling: 3298 MiB = 3.46 GB)", "qwen2_5_vl", `{"vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 3.40, 3.60},
+		{"qwen3-vl-2b (S10 on CUDA: 1158 MiB of weights resident after an image, the scratch released after each call; this is the peak, 1.21 GB of weights + 0.43 GB of scratch at the 1024-token cap)", "qwen3_vl", `{"vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 1.55, 1.75},
 		{"glm-ocr capped at 1 MP", "glm_ocr", `{"vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 1_000_000, 1.8, 2.2},
 	}
 	for _, c := range cases {

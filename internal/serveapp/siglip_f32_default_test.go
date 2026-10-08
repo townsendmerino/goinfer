@@ -66,6 +66,7 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 		"gemma4":     `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`,
 		"qwen3_5":    `{"model_type":"qwen3_5","vision_config":{"depth":12,"hidden_size":768,"in_channels":3,"intermediate_size":3072,"patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2}}`,
 		"glm_ocr":    `{"model_type":"glm_ocr","vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`,
+		"qwen3_vl":   `{"model_type":"qwen3_vl","vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2}}`, // S10 on CUDA (G-S10f): its tower was never priced
 		"qwen2_5_vl": `{"model_type":"qwen2_5_vl","vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`,
 	}
 	for fam, js := range cfgs {
