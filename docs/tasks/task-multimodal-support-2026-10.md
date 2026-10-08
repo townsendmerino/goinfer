@@ -1619,6 +1619,8 @@ the three timed requests is under 5.0 s). What differs is the box: the RTX 2070 
 - **S7, nobara** (`run-s7-nobara.sh`, night queue `s7-nobara`, estimated 60 min, one warm-up and three timed requests per cell):
   - **The cells:** Gemma 3 4B, Gemma 4 E2B (image, and audio), Qwen2.5-VL-3B, Qwen3.5-0.8B, Qwen3-VL-2B, GLM-OCR. Gemma 4 E4B is not run (no checkpoint on this box).
   - **The binary:** `serve-cuda` built from `main` at `575b4a8c` with the released aikit v1.59.0 pins, pinned in `~/goinfer-bench/s7n/`.
+  - **An S18 'after' cell (added later the same evening):** the Gemma 3 4B cell runs twice, on that binary (the shipped default as it was) and on `serve-cuda-s18` (the same tree plus S18's CUDA fixes), in the same
+    record, so the repair is read next to the problem it fixes.
   - **What the defaults do, found by a by-day look, not a measurement:** Gemma 3 4B's default plan fails the resident build on this card (`CUDA_ERROR_OUT_OF_MEMORY` after the four KV slots), so its decoder runs on
     the CPU while the int8 tower loads on CUDA: S18's gap, as recorded. That cell therefore reads a CPU-decoder TTFT, and is a reading of the shipped default, not of what the card can do (a hand-set
     `--kv-sessions 1` cell is S18's G-S18a comparison, not this one). Every cell records the decode path and where the tower ran from serve's own log lines.
