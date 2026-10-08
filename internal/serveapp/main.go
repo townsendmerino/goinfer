@@ -1216,8 +1216,11 @@ func (s *server) loadVisionTower(cfg config) error {
 }
 
 // towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP tower's resident GPU encoders on CUDA and
-// WebGPU need int8 (W8A8), so --backend webgpu/cuda implies int8 for it even without --vision-quant; Metal's (S3) is float32. Every other tower
-// (Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only whatever the backend: it gets int8 only when asked for. The old rule forced int8
+// WebGPU need int8 (W8A8), so --backend webgpu/cuda implies int8 for it even without --vision-quant; Metal's (S3) is float32. That int8
+// tower is lossy at real size (relative L2 0.16-0.52 against float32: docs/measurements/siglip-int8-fidelity-2026-10-07.md); changing
+// the default is the owner's. Every other tower (Qwen2.5-VL, Qwen3.5+, Qwen3-VL, Gemma 4, GLM-OCR) gets int8 only when asked for, whatever
+// the backend: its device towers are float32, and its gates ran float32. (Qwen3-VL was missing from this list until 2026-10-07, so under
+// cuda/webgpu it got an int8 CPU tower nobody had validated, under a banner naming a -vision-quant the user never passed.) The old rule forced int8
 // on three of them under cuda/webgpu, which bought no speed (the CPU int8 tower is not faster) and cost fidelity: measured 2026-10-02
 // against each tower's own f32 on the same image, relative L2 0.21 (Qwen2.5-VL), 0.14 (Qwen3.5-0.8B), 0.31 (Gemma 4), per-token
 // cosine mean 0.975 / 0.992 / 0.950 (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). The gates for all of them ran f32.
@@ -1226,7 +1229,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 		return true
 	}
 	switch modelType {
-	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "gemma4", "glm_ocr":
+	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "gemma4", "glm_ocr":
 		return false
 	}
 	return backend == "webgpu" || backend == "cuda"
