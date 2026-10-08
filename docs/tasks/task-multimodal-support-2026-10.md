@@ -3392,6 +3392,24 @@ Owner decision 2026-10-08: option (c), first. Written before any run of it.
 - **Open, for the owner:** (1) keep it off; (2) accept the real gate's four PASSes as the bar and read the served check's first-token difference as the text path's own distance from the CPU prefill (then enable; this needs the served rule re-registered with a direction and a band, and I would add the other three images to it first);
   (3) an HF float32 anchor for the image turn's first-token distribution, which says which prefill is closer, so the served difference stops being a tie between two non-reference paths (the 2B fits in RAM at float32: a CPU Hugging Face run, minutes).
 
+#### G-S10h, the HF float32 anchor for the image turn's prefill, registered 2026-10-08 before any run (owner: option 3, then option 2)
+
+Question: of the two prefills that disagree at the served first token (the CPU prefill + upload, "off", and the resident DeepStack prefill, "on"), is "on" at least as close to Hugging Face float32 as "off" is?
+
+- **Method.** Qwen3-VL-2B, the four F2a images at serve's 1,024-row cap, the gate's prompts. A Go dump (heavy test, CUDA) writes, per image, the token ids, the CPU encoder's preprocessed pixels and grid, the teacher tokens (the off path's greedy, as the real gate teacher-forces), and the 9 logit vectors of each arm (the prefill's last row, then 8 teacher-forced decode steps).
+  A Python script on `~/g4venv` (transformers 5.15.0, torch CPU) loads the SAME checkpoint into float32, feeds the SAME ids and pixels with `image_grid_thw` and the teacher tokens appended, and reads its logits at the same 9 positions. HF computes its own m-RoPE positions and DeepStack; nothing of goinfer's enters its side.
+- **Confound, stated now:** both goinfer arms run int4 weights and HF runs float32, so every cosine to HF carries the int4 error, shared by the two arms. The reading is the paired DIFFERENCE between the arms, not either distance alone.
+- **Instrument checks (a failure voids the run):** (i) the dump's off-against-on cosine per step, minimised over steps, reproduces the real gate's recorded worst to four places (0.9680, 0.9624, 0.9819, 0.9741 for 896², 4x6, formula, table); (ii) HF's processor on the same image at the same pixel cap gives the same grid, and its `pixel_values` are reported against the dump's (max abs difference; informational, HF is fed the dump's pixels either way);
+  (iii) HF's step-0 argmax on table.png is a token in the top-3 of at least one arm (a sanity floor against a garbage reference, not a correctness claim).
+- **Reading.** For each (image, step) of the 36 pairs: delta = cos(on, HF) - cos(off, HF).
+  - **"On at least as close" (PASS):** mean delta >= -0.002 AND every image's step-0 delta >= -0.01.
+  - **"On farther" (FAIL):** mean delta < -0.005 OR any image's step-0 delta < -0.02. Checked first.
+  - **Otherwise AMBIGUOUS:** goes to the owner with the numbers.
+  Printed beside the verdict, not graded: each arm's cosine to HF per step; KL(HF || arm) at step 0 per image; HF's probabilities at step 0 for 'Quarter' and 'Table' on table.png (the two tokens the served check split on) next to each arm's.
+- **What a PASS would and would not do.** It would say the served first-token difference is two non-reference paths disagreeing, with "on" no further from HF than "off". It would NOT enable anything: option 2 still needs the served rule re-registered with a direction and a band (and the other three images in it) before it is applied to any reading. A FAIL leaves the path off.
+- **Prediction, written now:** both arms read 0.95-0.99 to HF and the mean delta lies within +-0.003; I do not predict its sign. The batched prefill's own distance from the CPU prefill (0.95-0.99, the control) is the same size as the distance this tests, so an outcome in the AMBIGUOUS band is quite possible.
+- **Cost, tier:** day, in two steps each under ~8 min: the Go dump (four CPU encodes and CPU prefills, ~1 min each, plus the resident arms) and the HF float32 CPU forward (four ~1,000-row prompts on a 2B, a minute or two each).
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
