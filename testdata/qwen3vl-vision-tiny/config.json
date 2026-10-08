@@ -1,7 +1,7 @@
 {
  "model_type": "qwen3_vl",
  "vision_config": {
-  "depth": 2,
+  "depth": 3,
   "hidden_size": 32,
   "intermediate_size": 64,
   "num_heads": 2,
