@@ -3272,6 +3272,20 @@ Exit 0 is not the verdict (the triage and validation scripts exit 0 whatever hap
   (8 cases and the edges) are new and each was shown red by disabling the thing it guards. The whole `internal/serveapp` suite passes, `gofmt`, vet and `staticcheck` are clean, and the flags page and `docs/multimodal.md` say so.
 - **What changes for a user on the 8 GB card:** a new image costs about 2.4 s of TTFT, not 4.6 s, with an exact tower; the default plan holds 2 resident KV slots at the 4096 floor, not 3. Not measured: the float32 tower's load time at startup (2.7 GB of weights more to upload).
 
+#### S7, the third read on nobara, registered 2026-10-08 before it runs
+
+The procedure, cells and 5 s bar of the second read, unchanged (`run-s7-nobara-3.sh`, `vision_ttft.py`, serve's defaults, a new image or clip every request, one warm-up and three timed requests per cell, the box idle under the timing lock), on `serve-cuda-s7r3` built from main
+at `9561da9a`, with one more cell. Night queue `s7-nobara-3`, estimated 12 minutes (the second read took 2).
+- **What changed since the second read:** Gemma 3's CUDA tower defaults to float32 (`dcaa0dd2`), with the pre-load fit check; the Qwen2.5-VL tower estimate lost its 256 MiB slack (`6b4ef501`), so its default context rises from 5057 to about 5967; the plan now prices the driver's allocation
+  rounding (`12b221ed`).
+- **The new cell:** Qwen3-VL-2B (`qwen3-vl-2b-instruct`). S10 is on main, so serve takes its images; CUDA has no DeepStack tap in its tower base and the resident m-RoPE prefill cannot inject DeepStack rows, so this cell reads whatever that path does today.
+- **Predictions, written now:**
+  - Gemma 3 4B: **2.3-2.6 s** (the float32 arm of S13-lite read 2.396 s on the same image; the second read's int8 cell was 4.59 s).
+  - Qwen2.5-VL-3B: **2.3-2.6 s** (second read 2.45 s). Gemma 4 E2B image 0.85, E2B audio 1.48, Qwen3.5-0.8B 0.81, GLM-OCR 2.08: each **within 5%** of the second read, which is the control that the box is in the same state.
+  - Qwen3-VL-2B: **no band; expected over the 5 s bar.** The tower runs on the CPU (the Mac's Metal tower for this model is 19.2 s a request); this cell is the gap the CUDA DeepStack work closes. A request that errors or hangs is itself the finding and is reported as such.
+- **What would be a regression:** any cell whose serve log reads a decode path other than `cuda-resident`, or a CPU tower where the second read had a CUDA one. It is root-caused before any further work.
+- **Not a gate** beyond the 5 s bar per cell; a record that ranks what is left.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

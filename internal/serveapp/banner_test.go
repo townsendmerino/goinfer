@@ -50,7 +50,7 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 		{"resident, -kv-sessions not given, Metal's default 2", true, false, 4, true, 2, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true, kvSlots: tc.kvSlots}, config{kvSessions: tc.kvSessions, kvSessionsSet: !tc.byDefault})
+			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true, kvSlots: tc.kvSlots, decodePath: "metal-resident (int4)"}, config{kvSessions: tc.kvSessions, kvSessionsSet: !tc.byDefault})
 			line := bannerLine(lines, "session reuse:")
 			if line == "" {
 				t.Fatal("no session-reuse line in the banner")
@@ -364,4 +364,64 @@ type decliningBackend struct{ decoder.Backend }
 
 func (b *decliningBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
 	return nil, false, decoder.DeclineResident("no card in this test")
+}
+
+// TestKVPlanLine pins S18's "KV plan" line (docs/tasks/task-multimodal-support-2026-10.md): the resolved slots and positions, and the reasons the banner can state when the plan is less than was asked for.
+func TestKVPlanLine(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		f        bannerFacts
+		cfg      config
+		want     string // "" = no line
+		wantNone bool
+	}{
+		{"a tower held 2.4 GB back and the card allowed 2 of 4 (Gemma 3 4B on the 8 GB card, float32 tower)",
+			bannerFacts{resident: true, kvSlots: 2, ctxWindow: 4096, decodePath: "cuda-resident (int4)", towerReserve: 2_400_000_000}, config{kvSessions: 4},
+			"KV plan: 2 conversations x 4096 positions (4 asked for; 2.4 GB held back for the vision tower)", false},
+		{"one slot", bannerFacts{resident: true, kvSlots: 1, ctxWindow: 4096, decodePath: "cuda-resident (int4)", towerReserve: 959_000_000}, config{kvSessions: 4},
+			"KV plan: 1 conversation x 4096 positions (4 asked for; 1.0 GB held back for the vision tower)", false},
+		{"nothing reduced, no tower: no parenthesis", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 5057, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
+			"KV plan: 4 conversations x 5057 positions", false},
+		{"an explicit -ctx is named", bannerFacts{resident: true, kvSlots: 2, ctxWindow: 8192, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}},
+			"KV plan: 2 conversations x 8192 positions (4 asked for; --ctx 8192)", false},
+		{"not resident: no line", bannerFacts{kvSlots: 0, ctxWindow: 4096, decodePath: "cpu (int4)"}, config{kvSessions: 4}, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := bannerLine(modelBannerFrom(tc.f, tc.cfg), "KV plan:")
+			if tc.wantNone {
+				if got != "" {
+					t.Errorf("a KV plan line on a non-resident model: %q", got)
+				}
+				return
+			}
+			if got != tc.want {
+				t.Errorf("KV plan line = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The session-reuse line used to say "Metal keeps N by default" for a CUDA card's granted count. It names Metal only for a Metal decode path.
+func TestBanner_sessionReuseNamesMetalOnlyOnMetal(t *testing.T) {
+	cfg := config{kvSessions: 4}
+	cuda := bannerLine(modelBannerFrom(bannerFacts{resident: true, hasTemplate: true, kvSlots: 2, decodePath: "cuda-resident (int4)"}, cfg), "session reuse:")
+	if strings.Contains(cuda, "Metal") || !strings.Contains(cuda, "the default asks for 4 and the memory guard allowed 2") {
+		t.Errorf("CUDA session-reuse line = %q", cuda)
+	}
+	metal := bannerLine(modelBannerFrom(bannerFacts{resident: true, hasTemplate: true, kvSlots: 2, decodePath: "metal-resident (int4)"}, cfg), "session reuse:")
+	if !strings.Contains(metal, "Metal keeps 2 by default") {
+		t.Errorf("Metal session-reuse line = %q", metal)
+	}
+}
+
+// A config that declares no maximum (Gemma 3's) must not have the resident capacity called the model maximum.
+func TestBanner_contextWhenTheModelDeclaresNoMaximum(t *testing.T) {
+	unpinned := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 0}, config{}), "context:")
+	if strings.Contains(unpinned, "model maximum") || !strings.Contains(unpinned, "declares no maximum") || !strings.Contains(unpinned, "raise with --ctx") {
+		t.Errorf("unpinned: %q", unpinned)
+	}
+	pinned := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 8192, maxPositions: 0}, config{load: loadflags.Flags{Ctx: 8192}}), "context:")
+	if strings.Contains(pinned, "model maximum") || !strings.Contains(pinned, "--ctx") {
+		t.Errorf("pinned: %q", pinned)
+	}
 }

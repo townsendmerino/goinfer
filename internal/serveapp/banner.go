@@ -62,6 +62,9 @@ type bannerFacts struct {
 	// docs/tasks/task-concurrency-2026-09.md) — 1 for a backend or family without them, 0 off the resident path.
 	kvSlots int
 
+	// towerReserve: the VRAM held back for this model's CUDA vision tower when the resident plan was made (towerReserve; 0 when there is none or it is not CUDA).
+	towerReserve int64
+
 	// concurrent: how many generations of this model run at once (loadedModel.concurrent; MC3c).
 	concurrent int
 
@@ -104,7 +107,9 @@ func factsOf(lm *loadedModel) bannerFacts {
 // for: what it is, where it runs, how much context, whether turns are reused, what it can do.
 // Each line is indented two spaces by the caller to sit under the "loaded ..." line.
 func modelBanner(lm *loadedModel, cfg config) []string {
-	return modelBannerFrom(factsOf(lm), cfg)
+	f := factsOf(lm)
+	f.towerReserve = towerReserve(cfg, lm.source)
+	return modelBannerFrom(f, cfg)
 }
 
 func modelBannerFrom(f bannerFacts, cfg config) []string {
@@ -133,6 +138,11 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		ctxLine += fmt.Sprintf("%d tokens (--ctx; model maximum %d)", f.ctxWindow, f.maxPositions)
 	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions:
 		ctxLine += fmt.Sprintf("%d tokens (backend default; model maximum %d — raise with --ctx)", f.ctxWindow, f.maxPositions)
+	case f.maxPositions == 0 && cfg.load.Ctx > 0:
+		// A config that declares no max_position_embeddings (Gemma 3's does not): the figure is the resident KV capacity, not a model limit, and calling it the maximum was wrong.
+		ctxLine += fmt.Sprintf("%d tokens (--ctx; the model declares no maximum)", f.ctxWindow)
+	case f.maxPositions == 0:
+		ctxLine += fmt.Sprintf("%d tokens (backend default; the model declares no maximum — raise with --ctx)", f.ctxWindow)
 	case cfg.load.Ctx > f.ctxWindow:
 		ctxLine += fmt.Sprintf("%d tokens (model maximum; --ctx %d is above it)", f.ctxWindow, cfg.load.Ctx)
 	default:
@@ -193,15 +203,22 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// continuing conversation prefills only its new suffix, and a DIFFERENT conversation re-prefills
 	// in full. This line used to say every resident turn re-prefilled everything, which stopped being
 	// true when resident reuse shipped (2026-09-03).
+	if f.resident && f.kvSlots > 0 && f.ctxWindow > 0 {
+		out = append(out, kvPlanLine(f, cfg))
+	}
 	switch {
 	case f.resident && f.residentReuseOff:
 		out = append(out, "session reuse: OFF — GOINFER_NO_RESIDENT_REUSE is set, so every turn re-prefills its whole prompt")
 	case f.resident && f.kvSlots > 1:
 		line := fmt.Sprintf("session reuse: on the GPU cache, %d conversations kept resident — each reuses its own prefix; "+
 			"a further one takes the least recently used slot and re-prefills", f.kvSlots)
-		if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet {
+		if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet && strings.HasPrefix(f.decodePath, "metal") {
 			line += fmt.Sprintf(" (--kv-sessions not given: Metal keeps %d by default, and a memory guard may keep fewer; --kv-sessions %d asks for %d)",
 				f.kvSlots, cfg.kvSessions, cfg.kvSessions)
+		} else if cfg.kvSessions > f.kvSlots && !cfg.kvSessionsSet {
+			// Not Metal: this used to print "Metal keeps N by default" for the count a CUDA card had granted.
+			line += fmt.Sprintf(" (--kv-sessions not given: the default asks for %d and the memory guard allowed %d; --kv-sessions %d asks for %d)",
+				cfg.kvSessions, f.kvSlots, cfg.kvSessions, cfg.kvSessions)
 		} else if cfg.kvSessions > f.kvSlots {
 			line += fmt.Sprintf(" (--kv-sessions %d; the memory guard allowed %d)", cfg.kvSessions, f.kvSlots)
 		}
@@ -309,4 +326,29 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 			"and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)", cfg.maxConcurrent)
 	}
 	return ""
+}
+
+// kvPlanLine is S18's "KV plan" line (docs/tasks/task-multimodal-support-2026-10.md): what the resident plan chose and, when it is less than was asked for, why. The numbers are the resolved ones
+// (decoder.Model.ResidentKVSlots and the enforced context window), not the request; the reasons are the ones the banner can state without the planner's own arithmetic: slots asked for beyond
+// those granted, an explicit -ctx, and the VRAM held back for a CUDA vision tower.
+func kvPlanLine(f bannerFacts, cfg config) string {
+	noun := "conversations"
+	if f.kvSlots == 1 {
+		noun = "conversation"
+	}
+	line := fmt.Sprintf("KV plan: %d %s x %d positions", f.kvSlots, noun, f.ctxWindow)
+	var why []string
+	if cfg.kvSessions > f.kvSlots {
+		why = append(why, fmt.Sprintf("%d asked for", cfg.kvSessions))
+	}
+	if cfg.load.Ctx > 0 {
+		why = append(why, fmt.Sprintf("--ctx %d", cfg.load.Ctx))
+	}
+	if f.towerReserve > 0 {
+		why = append(why, fmt.Sprintf("%.1f GB held back for the vision tower", float64(f.towerReserve)/1e9))
+	}
+	if len(why) > 0 {
+		line += " (" + strings.Join(why, "; ") + ")"
+	}
+	return line
 }
