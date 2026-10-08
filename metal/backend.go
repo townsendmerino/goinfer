@@ -946,18 +946,19 @@ func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embedding
 	return a.prefillMRoPE(ctx, embeddings, startPos, mropePos, &prefillDeep{start: imgStart, n: imgLen, sets: deep})
 }
 
-// metalMRoPEPrefillOn turns S16's resident m-RoPE prefill on. OFF until its real-size gate (G-S16c) is graded: the tiny gates
-// pass, but on Qwen3-VL-2B the image turn read 0.972-0.986 against the registered 0.9999 (2026-10-08), which is the same gap
-// Metal's shipped text prefill shows against the CPU prefill (0.977-0.997) and an open bar question for the owner. Off, an
-// image turn takes the CPU prefill and the upload, as before. Tests set it.
-var metalMRoPEPrefillOn = false
+// metalMRoPEPrefillOn and metalDeepstackPrefillOn turn S16's resident m-RoPE prefill on, for a turn without DeepStack sets
+// (Qwen2.5-VL) and with them (Qwen3-VL). Each stays OFF until its model has passed G-S16c (the re-registered bar, owner
+// 2026-10-08), the served comparison and the night TTFT record (ship at >= 1.02x). Off, an image turn takes the CPU prefill
+// and the upload, as before. Qwen3-VL-2B passed G-S16c by day on 2026-10-08; Qwen2.5-VL-3B and both served and speed steps
+// are the night's. Tests set them.
+var metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false
 
 func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep *prefillDeep) ([]float32, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	if !metalMRoPEPrefillOn {
-		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off until its real-size gate is graded (S16); the image prefill runs on the CPU")
+	if on := metalMRoPEPrefillOn; deep != nil && !metalDeepstackPrefillOn || deep == nil && !on {
+		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off for this model until its S16 gates are graded; the image prefill runs on the CPU")
 	}
 	if a.r.mropeAxis == (Buffer{}) {
 		return nil, fmt.Errorf("metal: no m-RoPE axis table for this model; the image prefill runs on the CPU")

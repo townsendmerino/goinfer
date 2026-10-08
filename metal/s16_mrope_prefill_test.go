@@ -40,8 +40,8 @@ import (
 // height and width components swapped; (2) the image rows given 1-D text positions; (3) the text rows after the image
 // given uncompressed (sequence) positions. Defects 4-6 (DeepStack) belong to S16's Qwen3-VL step.
 func TestS16MRoPEPrefill_tiny(t *testing.T) {
-	metalMRoPEPrefillOn = true // the gates test the path production keeps off until G-S16c is graded
-	defer func() { metalMRoPEPrefillOn = false }()
+	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test the paths production keeps off until graded
+	defer func() { metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false }()
 	type golden struct {
 		InputIDs      []int     `json:"input_ids"`
 		ImageToken    int       `json:"image_token_id"`
@@ -240,25 +240,31 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 	}
 }
 
-// TestS16MRoPEPrefill_real is G-S16c's first half (docs/tasks/task-multimodal-support-2026-10.md, S16, registered before
-// any S16 code): Qwen2.5-VL-3B and Qwen3-VL-2B (with its DeepStack sets, S16 step 2) on the four F2a images, the resident
-// m-RoPE prefill against today's path (the upload bridge,
-// then Metal decode, so both arms decode on the same kernels) at G-S16a's bar (the last prompt row and 8 teacher-forced
-// decode steps, cosine >= 0.9999 with an equal argmax). The hybrid branch is kept for when a hybrid is claimed: Qwen3.5's
-// only reference decodes on the CPU, and on image prompts every pair of backends differs there by about 0.9 cosine
-// (2026-10-08), so its per-step bar cannot isolate the prefill; the hybrid is not claimed. Features: Qwen2.5-VL's from the encoder with its Metal tower attached (serve's path), Qwen3.5's
-// from the CPU encoder at serve's 1024-row cap; both arms see the same ones. The prompt is the model's own chat shape
-// with the image placeholder expanded to the image's merged rows. Qwen3-VL (DeepStack) is S16's next step.
+// TestS16MRoPEPrefill_real is G-S16c's first half (docs/tasks/task-multimodal-support-2026-10.md, S16): Qwen2.5-VL-3B and
+// Qwen3-VL-2B (with its DeepStack sets, S16 step 2) on the four F2a images, the resident m-RoPE prefill against today's path
+// (the CPU prefill and upload, then Metal decode, so both arms decode on the same kernels), over the last prompt row and 8
+// teacher-forced decode steps.
 //
-//	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -timeout 30m -run '^TestS16MRoPEPrefill_real$' -v ./metal/
+// The bar, re-registered 2026-10-08 (owner, option a) because Metal's shipped f16 text prefill itself reads 0.977-0.997
+// against the CPU's: non-inferiority to a text control. Per image prompt, four text-only prompts of the same length run
+// the same isolated comparison (the CPU's batched prefill and upload against Metal's batched pass). PASS when the image
+// turn's worst per-step cosine is at least the control's minimum minus 0.005 and every argmax difference is an R10
+// near-tie; PARKED 0.005-0.015 below; FAIL otherwise.
+//
+// Features: Qwen2.5-VL's from the encoder with its Metal tower attached (serve's path), Qwen3-VL's merged features and
+// DeepStack sets from the CPU encoder at serve's 1024-row cap; both arms see the same ones. The prompt is the model's own
+// chat shape with the image placeholder expanded to the image's merged rows. The hybrid branch is kept for when a hybrid
+// is claimed (its only reference decodes on the CPU, so it cannot isolate the prefill; not claimed).
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -timeout 60m -run '^TestS16MRoPEPrefill_real$' -v ./metal/
 func TestS16MRoPEPrefill_real(t *testing.T) {
-	metalMRoPEPrefillOn = true // the gates test the path production keeps off until G-S16c is graded
-	defer func() { metalMRoPEPrefillOn = false }()
+	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test the paths production keeps off until graded
+	defer func() { metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false }()
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
 	home, _ := os.UserHomeDir()
-	const merge, steps, bar = 2, 8, 0.9999
+	const merge, steps = 2, 8
 	for _, fx := range []struct {
 		dir          string
 		hybrid, deep bool
@@ -417,17 +423,76 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 					t.Fatalf("%s: resident m-RoPE prefill: %v", s3Images[ii], err)
 				}
 				got, _ := decode(append([]float32(nil), newLast...), teacher)
-				worst, agree := 1.0, 0
+				worst, ties, real := 1.0, 0, 0
 				for k := range ref {
 					worst = math.Min(worst, cosF(ref[k], got[k]))
-					if argmaxF(ref[k]) == argmaxF(got[k]) {
-						agree++
+					if ra, ga := argmaxF(ref[k]), argmaxF(got[k]); ra != ga {
+						if lp := logSoftmaxF(ref[k]); math.Exp(lp[ga]) >= math.Exp(lp[ra])/2 {
+							ties++
+						} else {
+							real++
+						}
 					}
 				}
-				fmt.Fprintf(os.Stderr, "[S16 G-S16c] %s %s (%d rows, %d image): worst cosine %.7f, argmax %d/%d\n",
-					fx.dir, s3Images[ii], n, nImg, worst, agree, len(ref))
-				if worst < bar || agree != len(ref) {
-					t.Errorf("%s %s: worst cosine %.7f, argmax %d/%d (bar %.4f, every argmax equal)", fx.dir, s3Images[ii], worst, agree, len(ref), bar)
+				// The re-registered bar (owner, 2026-10-08, option a): the same comparison on four text-only prompts of the same
+				// length (the CPU's batched prefill and upload against Metal's batched pass, both decoding on Metal).
+				ctlMin := 1.0
+				for seed := 1; seed <= 4; seed++ {
+					tids := make([]int, n)
+					for i := range tids {
+						tids[i] = 1000 + (i*7919+seed*104729)%50000
+					}
+					tc := m.NewCache(n + steps + 1)
+					tl, err := m.PrefillLogitsForTest(ctx, tids, tc)
+					if err != nil {
+						t.Fatal(err)
+					}
+					a.Reset()
+					if err := m.ResidentUploadPrefillForTest(tc); err != nil {
+						t.Fatal(err)
+					}
+					textDecode := func(first []float32, forced []int) ([][]float32, []int) {
+						out, toks := [][]float32{append([]float32(nil), first...)}, []int{argmaxF(first)}
+						for k := range steps {
+							tok := toks[k]
+							if forced != nil {
+								tok = forced[k]
+							}
+							lg, err := a.Forward(m.EmbedResidentForTest(tok), n+k)
+							if err != nil {
+								t.Fatal(err)
+							}
+							out = append(out, append([]float32(nil), lg...))
+							toks = append(toks, argmaxF(lg))
+						}
+						return out, toks
+					}
+					cRef, cTeach := textDecode(tl, nil)
+					embs := make([][]float32, n)
+					for i, id := range tids {
+						embs[i] = m.EmbedResidentForTest(id)
+					}
+					a.Reset()
+					first, err := a.batchedPrefill(embs, 0, 0, nil, nil)
+					if err != nil {
+						t.Fatalf("control's batched pass: %v", err)
+					}
+					cGot, _ := textDecode(first, cTeach)
+					for k := range cRef {
+						ctlMin = math.Min(ctlMin, cosF(cRef[k], cGot[k]))
+					}
+				}
+				verdict := "PASS"
+				switch {
+				case real > 0 || worst < ctlMin-0.015:
+					verdict = "FAIL"
+				case worst < ctlMin-0.005:
+					verdict = "PARKED"
+				}
+				fmt.Fprintf(os.Stderr, "[S16 G-S16c] %s %s (%d rows, %d image): worst cosine %.7f against the text control's minimum %.7f (4 prompts); argmax: %d near-ties, %d real: %s\n",
+					fx.dir, s3Images[ii], n, nImg, worst, ctlMin, ties, real, verdict)
+				if verdict != "PASS" {
+					t.Errorf("%s %s: %s (worst %.7f, control minimum %.7f, %d non-tie argmax differences)", fx.dir, s3Images[ii], verdict, worst, ctlMin, real)
 				}
 			}
 		})
@@ -446,8 +511,8 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 // argmax difference is read by R10's near-tie rule, as the served gates read one: it counts only when the new token's
 // reference probability is under half the reference's top. Cosine carries the bar.
 func TestS16DeepstackPrefill_tiny(t *testing.T) {
-	metalMRoPEPrefillOn = true // the gates test the path production keeps off until G-S16c is graded
-	defer func() { metalMRoPEPrefillOn = false }()
+	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test the paths production keeps off until graded
+	defer func() { metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false }()
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
 	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
