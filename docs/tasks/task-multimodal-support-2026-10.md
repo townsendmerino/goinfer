@@ -2833,6 +2833,17 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Owed:** the served cells. Tonight's S7 and S13-lite re-runs are on lever A's build (`92c30640`) as registered,
     so lever B's served effect is a later night's.
 
+- **S7 and S13-lite on the Mac, a second pass on levers A and B, registered 2026-10-08 before it runs (owner: "sure
+  queue it").**
+  - **What:** the same scripts, cells, procedure and 5 s bar as lever A's re-run above.
+  - **The one difference:** goinfer's binary is `serve-metal` at `e2910316` (both levers on), in
+    `~/goinfer-bench/s7-leverAB/`.
+  - **Order:** it runs after lever A's pass, the same night. Each cell reads against the 2026-10-07 night and lever A's
+    pass, so B's served effect is the difference between the two passes.
+  - **The same-night controls:** the peers (Ollama, llama.cpp) in S13-lite are re-measured in each pass.
+  - **The fit guard stays on.**
+  - **Queue:** `s7-mac-leverAB` and `s13lite-mac-leverAB`, 20 minutes each.
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
