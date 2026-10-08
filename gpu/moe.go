@@ -386,6 +386,7 @@ func (c *Context) ensureSharedGate() error {
 // ResidentStackedW8A8 holds nE experts' W8A8 weight for ONE projection (gate, up, or
 // down) packed back-to-back in the gemvW8A8 layout, indexable by expert: row (e*N+n).
 type ResidentStackedW8A8 struct {
+	ctx         *Context // see ResidentW4A8.ctx
 	bq, bScales *wgpu.Buffer
 	nE, rows    int
 	cols, kp    int
@@ -396,12 +397,18 @@ type ResidentStackedW8A8 struct {
 
 // Release frees the stacked buffers.
 func (s *ResidentStackedW8A8) Close() error {
-	if s.bq != nil {
-		s.bq.Release()
-	}
-	if s.bScales != nil {
-		s.bScales.Release()
-	}
+	s.ctx.releaseOwned(func() {
+		if s.bq != nil {
+			accountFree(int64(s.bq.GetSize()))
+			s.bq.Release()
+			s.bq = nil // a second Close must not release again
+		}
+		if s.bScales != nil {
+			accountFree(int64(s.bScales.GetSize()))
+			s.bScales.Release()
+			s.bScales = nil
+		}
+	})
 	return nil
 }
 
@@ -432,7 +439,8 @@ func (c *Context) UploadStackedExperts(q8 [][]int8, scales [][]float32, nE, N, K
 		bq.Release()
 		return nil, fmt.Errorf("gpu: stacked expert scales buffer: %w", err)
 	}
-	return &ResidentStackedW8A8{bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp}, nil
+	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
+	return &ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp}, nil
 }
 
 func (c *Context) ensureMoEExpert() error {

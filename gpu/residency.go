@@ -1504,7 +1504,7 @@ func (rd *residentDecoder) Reset() {
 	}
 }
 
-func (rd *residentDecoder) Close() error { rd.release(); return nil }
+func (rd *residentDecoder) Close() error { rd.c.releaseOwned(rd.release); return nil }
 
 func (rd *residentDecoder) release() {
 	// Every KV slot's runner and verify pool (MC1); the bound slot's are rd.runner / rd.batch.

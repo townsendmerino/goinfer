@@ -476,12 +476,14 @@ func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 
 // Release frees the runner's buffers (not the resident weight).
 func (r *GEMVRunner) Close() error {
-	r.aBuf.Release()
-	r.asBuf.Release()
-	r.dstBuf.Release()
-	r.dimsBuf.Release()
-	r.stag.Release()
-	r.bg.Release()
+	r.c.releaseOwned(func() {
+		r.aBuf.Release()
+		r.asBuf.Release()
+		r.dstBuf.Release()
+		r.dimsBuf.Release()
+		r.stag.Release()
+		r.bg.Release()
+	})
 	return nil
 }
 
