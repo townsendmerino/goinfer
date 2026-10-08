@@ -248,10 +248,10 @@ type cudaDeepPlan struct {
 	sets     [][]float32
 }
 
-// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill. It was OFF until G-S10g passed (docs/tasks/task-multimodal-support-2026-10.md, "S10 on CUDA" and "G-S10g, the owner's decision (c)"):
-// the first reading had three of four real images passing and the 84-row one parked, and the owner's decision (c) re-read that image against a 12-prompt text control (PASS, 2026-10-08), after which the path is ON for every image size.
-// Turning it off (the speed test and any A/B do) makes a Qwen3-VL image turn take the CPU prefill and the upload, as it did before.
-var cudaDeepstackPrefillOn = true
+// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, OFF (docs/tasks/task-multimodal-support-2026-10.md, "S10 on CUDA" and "G-S10g, the owner's decision (c)"): the real gate passes on all four
+// images (the 84-row one against a 12-prompt control, 2026-10-08), but the served check, the same image through a binary with it on and one with it off, differed at the first generated token and not at a near-tie
+// read from the off path, so it stays off until the owner decides how to read that. While it is off a Qwen3-VL image turn takes the CPU prefill and the upload, as before. The gates turn it on; production does not.
+var cudaDeepstackPrefillOn = false
 
 // deepDefectForTest is G-S10g's planted-defect seam (S16's list): 0 none, 1 the sets not added, 2 each set one layer late, 3 the sets added to the text rows too.
 var deepDefectForTest int

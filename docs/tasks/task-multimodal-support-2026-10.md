@@ -3376,6 +3376,22 @@ Owner decision 2026-10-08: option (c), first. Written before any run of it.
 - **Cost:** about 2 minutes (one image, 12 CPU prefills of 84 rows at about 1 s each, plus the image arm); by day, quick tier.
 
 
+#### G-S10g, decision (c) read 2026-10-08: the real gate PASSES on all four images; the served check does NOT clear its rule, so the path stays OFF (raw `docs/measurements/multimodal-support-2026-10/s10-cuda/gs10g-control12-4x6.log`, `gs10g-served-*`)
+
+- **The 4x6 image against the 12-prompt control: PASS** (code `a54f1642`'s test; 24 s). Instrument check held: seeds 1-4 reproduced the recorded minima (0.9728 0.9982 0.9980 0.9885). The twelve per-prompt minima: 0.9728 0.9982 0.9980 0.9885 0.9753 **0.9527** 0.9984 0.9944 0.9977 0.9987 0.9984 0.9955.
+  The image turn's worst is 0.9624, against the 12-prompt minimum 0.9527 (bar 0.9527 - 0.005 = 0.9477): PASS, 0 argmax differences. My prediction ("near even") held.
+  **What that does and does not say:** the pass rests on one control prompt, the sixth of twelve, at 0.9527. The image's 0.9624 is below the other eleven prompts' own minima, whose median is 0.9944. The image turn sits in the lower tail of the text path's distribution, not at its centre; it is inside the tail the batched prefill already has on text.
+  The other three images were not re-run (their verdicts cannot get worse against a lower minimum, by construction).
+- **What I did next, and the mistake in it.** The outcome rule I registered said PASS means "enable for all sizes", and I flipped `cudaDeepstackPrefillOn` to true (`a54f1642`). That rule left out G-S10g's own served half, registered at the top of S10: "served, resident prefill on against off, one binary: identical replies or a near-tie first divergence".
+  I then ran it, with TWO binaries because the switch is a variable and not a flag (`serve-cuda-dsoff` at `8ff9a57e`, `serve-cuda-dson` at `a54f1642`; they differ by that one line), Qwen3-VL-2B, table.png, 32 greedy tokens, `run-gs3c-served.sh`, `=cuda:auto,cuda:auto` per binary.
+- **Served, read: NOT a pass by the registered rule.** Each binary's repeat is IDENTICAL. Across them the replies differ at generated token 0, which is the prefill's last-row logits: off (CPU prefill + upload) answers 'Quarterly unit sales by region' (Quarter 0.412, Table 0.112, The 0.099); on answers 'Table 2. Quarterly unit sales by region (thousands)' (Table 0.236, Quarter 0.190, A 0.129).
+  Read from the off path as the reference, p('Table') = 0.112 against half the top's 0.206: **not a near-tie**. Read from the on path it would be (0.190 against 0.118). The registration never named a direction; the only defensible one is the established path (off) as the reference, so that is the reading, and it is chosen before looking for another.
+  This is the same distance the gate measured (step 0 is where table.png read 0.9741 against the CPU prefill), now visible in a served first token. It is also what the text control shows between the batched prefill and the CPU one. I do not know which prefill is the closer to the HF float32 reference on this image; no anchor was run.
+  Exploratory, one sample each: the whole request 15.0 s (off) against 4.3 s (on).
+- **State:** `cudaDeepstackPrefillOn` is back to false (the flip stays in history as `a54f1642`, the revert is the next commit); nothing is pushed. The real test keeps the 12-prompt control and the per-image subtests; its `defer` restores the previous value instead of forcing false.
+- **Open, for the owner:** (1) keep it off; (2) accept the real gate's four PASSes as the bar and read the served check's first-token difference as the text path's own distance from the CPU prefill (then enable; this needs the served rule re-registered with a direction and a band, and I would add the other three images to it first);
+  (3) an HF float32 anchor for the image turn's first-token distribution, which says which prefill is closer, so the served difference stops being a tie between two non-reference paths (the 2B fits in RAM at float32: a CPU Hugging Face run, minutes).
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.

@@ -1,0 +1,22 @@
+=== RUN   TestS10DeepstackPrefillCUDA_real
+=== RUN   TestS10DeepstackPrefillCUDA_real/qwen25vl_preprocess_image.png
+[G-S10g] qwen25vl_preprocess_image.png: tower features and sets (CPU encoder)
+[G-S10g] qwen25vl_preprocess_image.png: 84 rows, 70 image; today's path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10g] qwen25vl_preprocess_image.png: the resident DeepStack prefill
+[G-S10g] qwen25vl_preprocess_image.png: text control 1 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 2 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 3 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 4 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 5 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 6 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 7 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 8 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 9 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 10 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 11 of 12 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 12 of 12 (84 rows)
+[G-S10g] qwen3-vl-2b qwen25vl_preprocess_image.png (84 rows, 70 image, hidden 2048): worst cosine 0.9623958 against the text control's minimum 0.9527231 (12 prompts; each prompt's own minimum [0.9728 0.9982 0.9980 0.9885 0.9753 0.9527 0.9984 0.9944 0.9977 0.9987 0.9984 0.9955]); argmax: 0 near-ties, 0 real: PASS
+--- PASS: TestS10DeepstackPrefillCUDA_real (23.53s)
+    --- PASS: TestS10DeepstackPrefillCUDA_real/qwen25vl_preprocess_image.png (14.50s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	23.617s
