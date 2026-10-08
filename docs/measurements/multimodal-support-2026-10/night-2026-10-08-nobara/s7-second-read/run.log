@@ -1,0 +1,45 @@
+[11:27:23] round 1: gemma-3-4b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s7fix --model /home/francis/models/gemma-3-4b-it --backend cuda --addr 127.0.0.1:18640
+  up in 23 s, model 'gemma-3-4b-it'; load 2.00
+  warm-up 0: TTFT 4.622 s "Here's a description of the image"
+  timed   1: TTFT 4.591 s "Here's a description of the image"
+  timed   2: TTFT 4.585 s "Here's a description of the image"
+  timed   3: TTFT 4.568 s "Here's a description of the image"
+[11:28:08] round 1: gemma-4-e2b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s7fix --model /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /home/francis/models/gemma-4-E2B-unq --backend cuda --addr 127.0.0.1:18640
+  up in 8 s, model 'gemma-4-E2B_q4_0-it'; load 1.92
+  warm-up 0: TTFT 0.976 s 'This image is an **abstract gradient background'
+  timed   1: TTFT 0.846 s 'This image is an abstract gradient with a'
+  timed   2: TTFT 0.877 s 'This image is a **gradient** with'
+  timed   3: TTFT 0.852 s 'This image is an abstract gradient with a'
+[11:28:24] round 1: gemma-4-e2b-audio | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s7fix --model /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /home/francis/models/gemma-4-E2B-unq --backend cuda --addr 127.0.0.1:18640
+  up in 7 s, model 'gemma-4-E2B_q4_0-it'; load 2.04
+  warm-up 0: TTFT 2.493 s 'Mr. Quilter is the apostle of'
+  timed   1: TTFT 1.487 s 'Mr. Quilter is the apostle of'
+  timed   2: TTFT 1.435 s 'Mr. Quilter is the apostle of'
+  timed   3: TTFT 1.477 s 'Mr. Quilter is the apostle of'
+[11:28:42] round 1: qwen2.5-vl-3b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s7fix --model /home/francis/models/qwen25vl-3b-instruct --backend cuda --addr 127.0.0.1:18640
+  up in 19 s, model 'qwen25vl-3b-instruct'; load 3.14
+  warm-up 0: TTFT 2.475 s 'This image is a gradient background with a'
+  timed   1: TTFT 2.453 s 'The image is a solid color image with'
+  timed   2: TTFT 2.452 s 'This image is a gradient background with a'
+  timed   3: TTFT 2.468 s 'This image is a gradient background with a'
+[11:29:15] round 1: qwen3.5-0.8b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s7fix --model /home/francis/models/qwen3.5-0.8b --backend cuda --addr 127.0.0.1:18640
+  up in 8 s, model 'qwen3.5-0.8b'; load 3.17
+  warm-up 0: TTFT 1.346 s 'This image is a digital gradient background,'
+  timed   1: TTFT 0.81 s 'This is a modern, abstract digital background'
+  timed   2: TTFT 0.817 s 'This image is a digital gradient background,'
+  timed   3: TTFT 0.796 s 'This image is a vibrant, abstract digital'
+[11:29:31] round 1: glm-ocr | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s7fix --model /home/francis/models/glm-ocr --backend cuda --addr 127.0.0.1:18640
+  up in 4 s, model 'glm-ocr'; load 2.91
+  warm-up 0: TTFT 4.04 s 'The image is a gradient of colors that'
+  timed   1: TTFT 2.036 s 'The image is a gradient of colors that'
+  timed   2: TTFT 2.08 s 'The image is a gradient of colors that'
+  timed   3: TTFT 2.081 s 'The image is a gradient of colors that'
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-3-4b | goinfer | 3 | 4.59 | yes |
+| gemma-4-e2b | goinfer | 3 | 0.85 | yes |
+| gemma-4-e2b-audio | goinfer | 3 | 1.48 | yes |
+| qwen2.5-vl-3b | goinfer | 3 | 2.45 | yes |
+| qwen3.5-0.8b | goinfer | 3 | 0.81 | yes |
+| glm-ocr | goinfer | 3 | 2.08 | yes |

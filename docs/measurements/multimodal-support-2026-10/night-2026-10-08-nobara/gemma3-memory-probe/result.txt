@@ -1,0 +1,5 @@
+Gemma 3 4B on the 8 GB card, serve main c4c03f00, defaults vs -vision-quant f32. EXPLORATORY, untimed, 2026-10-08 13:24-13:26 PDT, nothing else on the box (nvidia-smi idle 468 MiB).
+[int8] after load: 6955 MiB  | plan: context 4096 (floor), 3 of 4 KV slots, 959 MB reserved | image requests 1, 2: HTTP 200, 276 prompt tokens, used 6955 MiB both times
+[f32]  after load: 7041 MiB  | plan: context 4096 (floor), 2 of 4 KV slots, 2400 MB reserved | image requests 1, 2: HTTP 200, 276 prompt tokens, used 7041 MiB both times
+Reading (an inference from the difference, assuming nothing else differs between the arms): each KV slot is 1088 MB, so the float32 arm holds one slot less and 86 MiB more in total: float32 tower - int8 tower = 86 + 1088 = 1174 MiB.
+With the int8 tower's measured 558 MiB (TestSiglipCUDA_int8VRAM) the float32 tower is about 1.7 GiB, against the 2016 MB (2400 less the 384 MB margin) the plan reserves for it: the reserve is about 280 MiB generous.

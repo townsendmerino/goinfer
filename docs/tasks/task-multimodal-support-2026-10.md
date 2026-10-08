@@ -3131,6 +3131,47 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     harness's cell gate saw the load ("loadavg 5.19 > 1.00, waiting") and held the cell until it fell, so the cells were not started under load, but a compile burst inside a cell would not have been seen. Read
     `peer-vetted-nobara-3` with that in mind (its raw log has the gate lines).
 
+#### Night 2026-10-08 on nobara, graded 2026-10-08 (the queue ran 11:02-11:44 PDT, six jobs, all exit 0; raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-08-nobara/`)
+
+Exit 0 is not the verdict (the triage and validation scripts exit 0 whatever happened, and several jobs finished far under their estimates). Each job's own output was read.
+
+- **S13-lite, the float32 arm, graded against its registration** (`s13lite-f32/`, nine timed requests per engine, order rotated, the same session):
+
+  | engine | median TTFT | min-max | spread |
+  |---|---|---|---|
+  | goinfer, serve's default (int8 tower) | **4.590 s** | 4.570-4.608 | 0.8% |
+  | goinfer `-vision-quant f32` | **2.396 s** | 2.364-2.413 | 2.0% |
+  | Ollama 0.32.5 `gemma3:4b` | 1.583 s | 1.483-1.605 | 7.7% |
+  | llama.cpp 427291b, Q4_K_M + mmproj | 0.951 s | 0.928-0.955 | 2.8% |
+
+  - **Control PASS:** the default arm is 4.590 s against last night's 4.61 s, -0.43% (band 3%).
+  - **Prediction:** about 2.5 s; read 2.396 s, 4.2% under.
+  - **Ratios:** f32 / default 0.522 (1.92x faster); f32 / Ollama 1.51; f32 / llama.cpp 2.52. The default arm is 2.90x Ollama and 4.83x llama.cpp.
+  - **The registered evidence rule is met:** float32's median is under the 5 s bar and not above the int8 arm's, so it is ELIGIBLE to become Gemma 3's CUDA default. The other half is the fidelity record above (G-S3b: float32 reproduces the CPU float32 reference reply exactly;
+    G-S3d: the int8 default's reply diverges at generated token 3, p(other) 0.011 against 0.989, not a near-tie; one image and one prompt, evidence and not a rate). Eligible, not decided: the decision is the owner's.
+  - **Memory, measured this morning because the float32 reserve had only ever been arithmetic** (`gemma3-memory-probe/`, exploratory and untimed, serve main `c4c03f00`): int8 default 6955 MiB used, 3 of 4 KV slots, 959 MB reserved; `-vision-quant f32` 7041 MiB, 2 of 4 slots, 2400 MB
+    reserved; both serve two image requests with no fallback, no growth after the first image. Inference from the difference (one KV slot is 1088 MB; this assumes nothing else differs): the float32 tower is about 1.7 GiB, 1174 MiB more than the int8 tower's measured 558 MiB, so the plan's
+    2016 MB reserve for it is about 280 MiB generous.
+- **S7 second read** (`s7-second-read/`, serve's defaults, a new image or clip every request, median of 3 timed, `serve-cuda-s7fix` at `f3456904`): every cell is under the 5 s bar and every serve log reads `decode path: cuda-resident` with the towers on CUDA, so no cell hides a CPU fallback.
+
+  | cell | first read | second read | note |
+  |---|---|---|---|
+  | Gemma 3 4B | 4.57 s | **4.59 s** | int8 tower; 0.4 s under the bar |
+  | Gemma 4 E2B image | 0.85 s | 0.85 s | |
+  | Gemma 4 E2B audio | 1.48 s | 1.48 s | |
+  | Qwen3.5-0.8B | 0.82 s | 0.81 s | |
+  | GLM-OCR | 2.09 s | 2.08 s | |
+  | Qwen2.5-VL-3B | 15.64 s | **2.45 s** | 6.4x; the tower on CUDA (was on the CPU); the registered prediction was 3-4 s |
+
+  Five cells reproduce the first read to within 1.3% (Qwen3.5 0.82 to 0.81 s is the largest), which is the control; Qwen2.5-VL is the one that changed, by design. Qwen3-VL is still not a cell (S10 is the Mac's). This binary still carries the Qwen2.5-VL tower's 256 MiB slack that was removed the same day (`6b4ef501`); the removal was verified
+  separately by the served probe recorded under "Build-scratch / margin accounting" (`qwen25vl-slack-probe.txt`), not by this run.
+- **`noncopy-fixed-head`: `TestSpecNonCopyLane` PASS in 45 s** (a measurement with no bar; `noncopy-fixed-head.log`). Decode tok/s on the 1.5B, COPY: plain exact 117.8, plain lane 205.9, n-gram spec 297.7, lane + spec 549.3 (lane + spec over exact + spec 1.85x); SUMMARIZE 118.4 / 204.3 / 168.9 / 219.0
+  (acceptance 55% exact, 41% lane); FRESH-essay 117.9 / 206.3 / 108.6 / 188.7 and FRESH-story 117.5 / 205.8 / 110.6 / 205.9, where 0-4% of drafts are accepted and speculation is slower than plain exact (0.92-0.94x) and no better than the plain lane (0.92-1.00x). The speculative arms equal their plain counterparts token for token.
+- **`peer-vetted-nobara-3` (the Mac's job; the Mac grades it; `peer-vetted-3/`).** Cell 2, gpt-oss-20B on CUDA at ctx 2048: goinfer 70.5 / 70.5 / 70.5 against Ollama 26.2 / 26.2 / 26.2 tok/s, paired ratio 2.687x, swap +31.9 MB (goinfer) and 0.0 (Ollama) under the nobara rule, the harness's own outcome **AHEAD**. This
+  is the first valid cell 2 after two VOIDs. Cell 1c (the vetted 26B on the CPU): **VOID again**, goinfer's swap grew +536.6 MB against the 256 MB rule (Ollama's arm 10.7 tok/s, swap +18.1 MB, valid on its own). **A caveat I owe the Mac:** this job was the first thing running when I started compiling on the box. The goinfer arm's
+  recorded machine state at its start was loadavg 0.34, so it began before my first compile, but the arm and that compile are close in time and I cannot show they did not overlap, so I do not claim my work was not a cause. 1c has now been VOID on goinfer's swap growth in all three runs, on the previous two without me, which points at the 26B's own load.
+- **`gpu-release-validate`:** already recorded above (reproducers, suite 144 / 0, ten clean cell runs, planted defect red).
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

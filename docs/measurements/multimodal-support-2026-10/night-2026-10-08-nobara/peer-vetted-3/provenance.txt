@@ -1,0 +1,8 @@
+serve rev 65b2c22a; harness 294936fd
+host nobara-pc Linux 7.2.0-202.nobara.fc44.x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+ollama Warning: client version is 0.32.5
+load 0.28 0.38 0.50
+Swap:          78863        3881       74982
+11fdea29ce39def9502613e3aa1879efdaa9738dff95e0fc1a02a22c9744a0b8  /home/francis/goinfer-bench/peer-vetted-2026-10-07/serve-cuda-65b2c22a
+524b8866fd8e067ba45b4c9875c3c2a3a770d290dd63cd5c83b955d31938469b  /home/francis/goinfer-bench/peer-vetted-2026-10-07/serve-cpu-65b2c22a

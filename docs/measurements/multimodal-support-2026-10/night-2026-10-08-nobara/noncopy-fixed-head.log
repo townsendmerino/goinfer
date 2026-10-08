@@ -1,0 +1,12 @@
+=== RUN   TestSpecNonCopyLane
+[noncopy] COPY      output head: "## TL;DR — filed 2026-08-31, rows updated individually since (each cites its own date)\n\n<!-- OPEN DECISION, "
+[noncopy] COPY      prompt 4911 tok | decode tok/s: P0 117.8  PL 205.9  S0 297.7  SL 549.3 | SL/S0 1.845  S0/P0 2.527  SL/PL 2.668 | S0: 8.42 tok/round, 100% of drafts accepted | SL: 8.42 tok/round, 100% of drafts accepted
+[noncopy] SUMMARIZE output head: "goinfer is a *small-model, short-context, single-request* engine that trades throughput and breadth for a stat"
+[noncopy] SUMMARIZE prompt 4906 tok | decode tok/s: P0 118.4  PL 204.3  S0 168.9  SL 219.0 | SL/S0 1.296  S0/P0 1.427  SL/PL 1.072 | S0: 3.41 tok/round, 55% of drafts accepted | SL: 1.81 tok/round, 41% of drafts accepted
+[noncopy] FRESH-essay output head: "Photosynthesis is a process by which plants convert light energy into chemical energy stored in glucose. The p"
+[noncopy] FRESH-essay prompt 4939 tok | decode tok/s: P0 117.9  PL 206.3  S0 108.6  SL 188.7 | SL/S0 1.737  S0/P0 0.921  SL/PL 0.915 | S0: 1.00 tok/round, 0% of drafts accepted | SL: 1.00 tok/round, 0% of drafts accepted
+[noncopy] FRESH-story output head: "Once upon a time, in a small coastal town, there was a lighthouse keeper named Jack. Jack had a special job - "
+[noncopy] FRESH-story prompt 4936 tok | decode tok/s: P0 117.5  PL 205.8  S0 110.6  SL 205.9 | SL/S0 1.862  S0/P0 0.942  SL/PL 1.000 | S0: 1.01 tok/round, 4% of drafts accepted | SL: 1.12 tok/round, 46% of drafts accepted
+--- PASS: TestSpecNonCopyLane (44.95s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	45.013s

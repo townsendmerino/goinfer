@@ -1,0 +1,61 @@
+=== night job peer-vetted-nobara-3
+=== cmd      bash docs/measurements/peer-vetted-2026-10-07/run-nobara-3.sh
+=== cwd      /home/francis/goinfer-bench/peer-vetted-2026-10-07/jobs-294936fd
+=== rev      queued at 294936fd, now 294936fd
+=== host     nobara-pc
+=== est      25.0 min, timeout 50.0 min
+=== by       Claude (Mac), peer-vetted option (b) (owner, 2026-10-08)
+=== doc      docs/measurements/peer-vetted-2026-10-07-nobara-pc.md
+=== note     cells 1c and 2 under the swap-in rule; results in /home/francis/goinfer-bench/peer-vetted-2026-10-07/results-3
+=== START    2026-10-08 11:02:44 PDT  loadavg 0.28
+serve rev 65b2c22a; harness 294936fd
+host nobara-pc Linux 7.2.0-202.nobara.fc44.x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+ollama Warning: client version is 0.32.5
+load 0.28 0.38 0.50
+Swap:          78863        3881       74982
+11fdea29ce39def9502613e3aa1879efdaa9738dff95e0fc1a02a22c9744a0b8  /home/francis/goinfer-bench/peer-vetted-2026-10-07/serve-cuda-65b2c22a
+524b8866fd8e067ba45b4c9875c3c2a3a770d290dd63cd5c83b955d31938469b  /home/francis/goinfer-bench/peer-vetted-2026-10-07/serve-cpu-65b2c22a
+=== 2026-10-08T18:02:44Z START 1c CPU: G26Q @128
+# preflight OK: gate load · loadavg [0.28466796875, 0.37939453125, 0.4951171875] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 51, 'mem_used_mib': 467, 'mem_total_mib': 8192} · compute apps ['1755, 16 MiB']
+# 2 cells planned, 0 already done
+#   rss_peak = 10.944 GiB (11475248 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "cpu", "model": "G26Q", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": null, "error": "swap grew +536.6 MB during the cell (> 256 MB): void", "machine": {"loadavg": [0.34228515625, 0.39013671875, 0.498046875], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 51, "mem_used_mib": 467, "mem_total_mib": 8192}, "gate": {"kind": "load", "wait_s": 0, "loadavg": 0.34228515625}}, "secs": 308.2, "counts": {"swap": {"swap_base_mb": 3881.046875, "swap_growth_mb": 536.6, "swap_killed": null, "swapin_mb": 2.6}, "decode_path": "cpu (int4) [int4 layout: canonical (down, embed, gate/up, qkv)]", "rss_peak_kb": 11475248}}
+# cell gate: loadavg 5.19 > 1.00, waiting (0/600s)
+# cell gate: loadavg 3.72 > 1.00, waiting (20/600s)
+# cell gate: loadavg 2.74 > 1.00, waiting (40/600s)
+# cell gate: loadavg 1.96 > 1.00, waiting (60/600s)
+# cell gate: loadavg 1.40 > 1.00, waiting (80/600s)
+# cell gate: loadavg 1.00 > 1.00, waiting (100/600s)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 14.735 GiB (15450328 KiB)
+{"phase": "A", "engine": "ollama", "backend": "cpu", "model": "G26Q", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [10.724819647760686, 10.701377076631095, 10.769445523151347], "error": null, "machine": {"loadavg": [0.7177734375, 2.32080078125, 1.56591796875], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 50, "mem_used_mib": 467, "mem_total_mib": 8192}, "gate": {"kind": "load", "wait_s": 120, "loadavg": 0.7177734375}}, "secs": 208.9, "counts": {"swap": {"swap_base_mb": 4296.1484375, "swap_growth_mb": 18.1, "swap_killed": null, "swapin_mb": 0.1}, "tokens": 1536, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [10.697627385293764, 10.78248714419296, 10.76915736961499, 10.685125646590128, 10.767218701750682, 10.565939893019955, 10.758371636725256, 10.772629404897753, 10.345123331063006, 10.673234371122511, 10.745383950038882, 10.752319311850774, 10.771711030276329, 10.778047411096185, 10.77817825645567, 10.76701895114541, 10.765278379203803, 10.768086138276193, 10.766559024677859, 10.767182081918943, 10.769074879076292, 10.767861967775628, 10.77493375003156, 10.776587964250504], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "decode_path": null, "rss_peak_kb": 15450328, "phases": {"start_to_listening_s": 0.51, "warmup_s": 33.75, "runs_wall_s": 171.02, "decode_timed_s": 140.9, "prefill_and_request_s": 30.12, "teardown_s": 3.61}}, "mean": 10.7, "spread": 0.1}
+=== 2026-10-08T18:13:22Z END 1c rc=0 (638s)
+=== waiting for idle: loadavg 6.15
+=== waiting for idle: loadavg 4.41
+=== waiting for idle: loadavg 3.15
+=== waiting for idle: loadavg 2.26
+=== waiting for idle: loadavg 1.62
+=== waiting for idle: loadavg 1.16
+=== waiting for idle: loadavg 0.83
+=== 2026-10-08T18:15:42Z START 2 CUDA: G20 @128, BENCH_CTX=2048
+# preflight OK: gate load · loadavg [0.7275390625, 2.7734375, 2.1904296875] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 51, 'mem_used_mib': 467, 'mem_total_mib': 8192} · compute apps ['1755, 16 MiB']
+# 2 cells planned, 0 already done
+#   tokens/chunks = 4.0000  (1536 tok / 384 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 14.678 GiB (15391460 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "cuda", "model": "G20", "depth": 128, "prompt_tokens": 130, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [70.5334767736813, 70.48927006329052, 70.47750837732781], "error": null, "machine": {"loadavg": [0.7275390625, 2.7734375, 2.1904296875], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 51, "mem_used_mib": 467, "mem_total_mib": 8192}, "gate": {"kind": "load", "wait_s": 0, "loadavg": 0.7275390625}}, "secs": 77.8, "counts": {"swap": {"swap_base_mb": 4151.94921875, "swap_growth_mb": 31.9, "swap_killed": null, "swapin_mb": 0.0}, "tokens": 1536, "chunks": 384, "tokens_per_chunk": 4.0, "completion_rates": [70.51431835095954, 70.56528556776207, 70.57951166476948, 70.48868726360837, 70.74358710274561, 70.52674253241615, 70.50643692135219, 70.34324478583703, 70.56739920998473, 70.05902137609549, 70.50342279732229, 70.51882683385138, 70.6334041904333, 70.54620351146451, 70.62859916183285, 70.45728342533965, 70.54324996492983, 70.67930365643062, 70.36292131706435, 70.35657753369635, 70.4304102540674, 70.59146763196931, 70.36730199392112, 70.48883466654354], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "decode_path": "cuda-resident (int4mix)", "rss_peak_kb": 15391460, "phases": {"start_to_listening_s": 47.04, "warmup_s": 3.41, "runs_wall_s": 23.52, "decode_timed_s": 21.45, "prefill_and_request_s": 2.07, "teardown_s": 3.76}}, "mean": 70.5, "spread": 0.1}
+# cell gate: loadavg 2.07 > 1.00, waiting (0/600s)
+# cell gate: loadavg 1.48 > 1.00, waiting (20/600s)
+# cell gate: loadavg 1.06 > 1.00, waiting (40/600s)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 11.715 GiB (12284480 KiB)
+{"phase": "A", "engine": "ollama", "backend": "cuda", "model": "G20", "depth": 128, "prompt_tokens": 130, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [26.2189190391447, 26.22884791626897, 26.235665655661933], "error": null, "machine": {"loadavg": [0.75830078125, 2.1767578125, 2.05517578125], "gpu": {"driver": "595.91.07", "name": "NVIDIA GeForce RTX 2070 SUPER", "temp_c": 48, "mem_used_mib": 467, "mem_total_mib": 8192}, "gate": {"kind": "load", "wait_s": 60, "loadavg": 0.75830078125}}, "secs": 103.6, "counts": {"swap": {"swap_base_mb": 4183.0390625, "swap_growth_mb": 0.0, "swap_killed": null, "swapin_mb": 0.2}, "tokens": 1536, "chunks": 0, "tokens_per_chunk": null, "completion_rates": [26.179744234734727, 26.198633376779732, 26.246426811032354, 26.258269921799524, 26.226873317619496, 26.18090604719487, 26.21877369150324, 26.241724912493673, 26.24356402853894, 26.138745440274278, 26.19950291431992, 26.23369301594304, 26.23244380622877, 26.28278810661309, 26.246501603821905, 26.25354441441182, 26.214873936822237, 26.252364856526743, 26.22730568701757, 26.225353773253673, 26.248883274163262, 26.233509495963883, 26.254228550142685, 26.22880567140542], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "decode_path": null, "rss_peak_kb": 12284480, "phases": {"start_to_listening_s": 0.51, "warmup_s": 24.85, "runs_wall_s": 75.01, "decode_timed_s": 57.65, "prefill_and_request_s": 17.36, "teardown_s": 3.21}}, "mean": 26.2, "spread": 0.0}
+=== 2026-10-08T18:19:44Z END 2 rc=0 (242s)
+## cpu-g26q.json
+{"file": "cpu-g26q.json", "backend": "cpu", "model": "G26Q", "depth": 128, "config": "greedy", "goinfer": [], "ollama": [10.7, 10.7, 10.8], "decode_path": "cpu (int4) [int4 layout: canonical (down, embed, gate/up, qkv)]", "swap_mb": [536.6, 18.1], "ollama_version": "0.32.5", "ctx_pin": 0, "outcome": "VOID", "why": "goinfer: swap grew +536.6 MB during the cell (> 256 MB): void"}
+## cuda-g20.json
+{"file": "cuda-g20.json", "backend": "cuda", "model": "G20", "depth": 128, "config": "greedy", "goinfer": [70.5, 70.5, 70.5], "ollama": [26.2, 26.2, 26.2], "decode_path": "cuda-resident (int4mix)", "swap_mb": [31.9, 0.0], "ollama_version": "0.32.5", "ctx_pin": 2048, "pairs": [2.69, 2.687, 2.686], "median_r": 2.687, "median_goinfer": 70.5, "median_ollama": 26.2, "spread_g": 0.1, "spread_p": 0.1, "outcome": "AHEAD", "capped": false}
+=== 2026-10-08T18:19:44Z ALL DONE
+
+=== END      2026-10-08 11:19:44 PDT  rc=0
