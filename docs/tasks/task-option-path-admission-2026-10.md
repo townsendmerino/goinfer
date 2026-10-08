@@ -50,6 +50,53 @@ actually recurred.
 
 Deliverable: `docs/measurements/audit-classes-<date>.md`, the per-finding table and the counts.
 
+### 2.1 Counting rules — fixed 2026-10-08, before any finding was classified
+
+The classes and §3's thresholds were fixed on 2026-10-01. Reading the six audits showed three things they leave open:
+which tiers count as "Critical and Major" when an audit files gates, correctness or performance as tiers of their own;
+where the class boundaries fall; and how to treat a finding filed twice. These rules settle them. They were written and
+committed before the first finding was classified, and the verdict is read under them alone.
+
+**Which entries count.** Every entry an audit files in a tier above Minor: release blockers, Critical, "gates that
+cannot fail", Major (the Sep 12 Metal audit's "Performance — Major" included), and correctness. Gates count because
+the critical bar the 08-05 and 09-02 audits state names "a gate that passes when it should fail", and the 09-30 Metal
+register files its gates as Major. Not counted: Minor; performance *observations* filed as their own tier (`P-xx`);
+checked-and-correct, landscape and open-question sections; carry-forward rows. One ID is one finding (the 09-02 G-10
+and 09-10 G-13 "smaller instances" entries count once each).
+
+| audit | counted from | entries |
+|---|---|---|
+| 2026-08-05 | original entries B-01–B-14, C-01–C-31, G-01–G-06, M-01–M-23 (not the consolidated-dispositions re-listing) | 74 |
+| 2026-09-02 | C-01–C-12, G-01–G-10, M-01–M-35 | 57 |
+| 2026-09-10 | `docs/completed/audit-2026-09-10.md`: C-01–C-09, G-01–G-13, M-01–M-58. The live `docs/audit-2026-09-10.md` now holds only Minor findings and adds none | 80 |
+| Metal 2026-09-12 | M-01–M-11 and M-13–M-16 (no M-12 entry exists; the summary's "M-12" points at M-13's subject), C-01–C-06, G-01–G-10 | 31 |
+| Metal 2026-09-30 | the §2 register; A-C01 ≡ F-C01 counted once; the §12 carry-forward rows of Sep 12 IDs not counted again | 23 |
+| **total** | | **265** |
+
+**Where the classes divide.** Tested in the order R, B, N, G, O; the first that fits wins.
+
+- **R** — the defect is in product code, and an option value, family or kind of state that exists is not accounted
+  for by a guard, predicate, dispatch, serializer or lifecycle path. The fix is a registration: add it to a list,
+  predicate or switch, or give it a named decline.
+- **B** — a specific limit in product code (an array or threadgroup size, a kernel capacity, a context or position
+  cap, a byte budget) that a reachable input exceeds with nothing checking it. The fix is a bound check or a decline.
+  Unbounded resource use where the code holds no limit at all is **O**, not B.
+- **N** — a path that does handle the input computes it wrong: arithmetic, indexing, rounding, layout.
+- **G** — the defect is in a test, gate, CI job, or a claim in docs or comments. A test whose hand-written family list
+  is incomplete is G, and is flagged as an *R-shaped gate*.
+- **O** — everything else: performance, API shape, release mechanics, leaks, races and panics not caused by an R or B
+  miss, request-validation and security items, resource exhaustion.
+
+**Withdrawn entries.** An entry its own audit later records as not a defect is listed with the quote and left out of
+both the count and the total.
+
+**Sensitivities, reported beside the verdict and never substituted for it:** (a) without the performance findings;
+(b) with R-shaped gates counted as R; (c) with a defect re-filed by a later audit (the 09-12 Metal entries marked
+"prior audit … open") counted once.
+
+**Procedure.** Two independent classification passes over the same 265 entries, the second blind to the first;
+disagreements are settled by re-reading the entry, and the agreement rate is reported.
+
 ## 3. Pre-registration
 
 - **Build step 2** if R and B together are **at least 25%** of the Critical and Major findings classified, and at
