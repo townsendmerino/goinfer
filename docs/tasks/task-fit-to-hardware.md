@@ -369,7 +369,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:397-301` (the flags the plan subsumes) · `decoder/model.go:314-258`
+`internal/serveapp/main.go:398-302` (the flags the plan subsumes) · `decoder/model.go:314-258`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:117-203` (the guard) ·
 `decoder/weightbytes.go:97` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:187` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
