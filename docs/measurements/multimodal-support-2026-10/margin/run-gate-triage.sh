@@ -11,7 +11,7 @@
 #     the fixed test, a measurement that prints its own numbers. Nothing is graded here: a pass is the test's own "--- PASS" line, a skip or a missing line is a failure of this job.
 #
 # Each revision is tested in its own detached worktree (the tree may move before tonight); the gitignored fixtures are symlinked in from the main checkout, as the gate's night script does.
-# Estimate: ~45 min (setup 2 x ~2 min; the four WebGPU steps <= 4 min each, ~16 min worst; TestSpecNonCopyLane ~10-15 min, -timeout 30m).
+# With TRIAGE_SKIP_WEBGPU=1 only the TestSpecNonCopyLane step runs (~15-20 min). Full estimate: ~45 min (setup 2 x ~2 min; the four WebGPU steps <= 4 min each, ~16 min worst; TestSpecNonCopyLane ~10-15 min, -timeout 30m).
 #   python3 scripts/night.py add gate-triage-webgpu-noncopy --est 45 --by "nobara session, gate triage" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/margin/run-gate-triage.sh
 #   TRIAGE_DRY=1 bash .../run-gate-triage.sh /tmp/somewhere     # plumbing control: worktrees, go.work, compile both test binaries, run nothing
 #   TRIAGE_CONTROL=1 bash .../run-gate-triage.sh /tmp/somewhere # the step mechanism on ONE real step (webgpu-alone-head, -timeout 1m)
@@ -78,11 +78,13 @@ summarize() {
 { echo "head: $HEADREV"; echo "base: $BASEREV"; echo "started: $(date '+%F %T %Z')"; echo "go: $(go version)"
   echo "gpu: $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"; echo "load: $(cat /proc/loadavg)"; } | tee "$LOG/provenance.txt"
 
-mkwt base "$BASEREV" || exit 2
+# TRIAGE_SKIP_WEBGPU=1: only the fixed TestSpecNonCopyLane runs (the WebGPU hang was root-caused and fixed by day on 2026-10-08, gpu.TestContextClose_finalizerRace; its steps would repeat a closed question).
+[ -z "${TRIAGE_SKIP_WEBGPU:-}" ] && { mkwt base "$BASEREV" || exit 2; }
 mkwt head "$HEADREV" || exit 2
 
 if [ -n "${TRIAGE_DRY:-}" ]; then
   for w in base head; do
+    [ -d "$WTDIR/$w" ] || continue
     step "dry-compile-gpu-$w" "$WTDIR/$w" go test -c -o /dev/null -tags 'gpu goinfer_testhooks' ./gpu/
   done
   step "dry-compile-cuda-head" "$WTDIR/head/cuda" go test -c -o /dev/null -tags 'cuda goinfer_testhooks' .
@@ -94,13 +96,15 @@ if [ -n "${TRIAGE_CONTROL:-}" ]; then # the real step mechanism (heartbeat, time
   step "webgpu-alone-head" "$WTDIR/head" go test -count=1 -tags 'gpu goinfer_testhooks' -run '^TestRMSNormBatched_parity$' -v -timeout "${TRIAGE_CONTROL_TIMEOUT:-1m}" ./gpu/
   summarize; echo "control finished: $(date '+%F %T %Z')" | tee -a "$LOG/provenance.txt"; exit 0
 fi
-for w in base head; do
-  step "webgpu-alone-$w" "$WTDIR/$w" go test -count=1 -tags 'gpu goinfer_testhooks' -run '^TestRMSNormBatched_parity$' -v -timeout 4m ./gpu/
-  step "webgpu-cell-$w"  "$WTDIR/$w" go test -count=1 -tags 'gpu goinfer_testhooks' -run "$RUNPAT" -v -timeout 4m ./gpu/
-done
+if [ -z "${TRIAGE_SKIP_WEBGPU:-}" ]; then
+  for w in base head; do
+    step "webgpu-alone-$w" "$WTDIR/$w" go test -count=1 -tags 'gpu goinfer_testhooks' -run '^TestRMSNormBatched_parity$' -v -timeout 4m ./gpu/
+    step "webgpu-cell-$w"  "$WTDIR/$w" go test -count=1 -tags 'gpu goinfer_testhooks' -run "$RUNPAT" -v -timeout 4m ./gpu/
+  done
+fi
 step "noncopy-head" "$WTDIR/head/cuda" env GOINFER_HEAVY_TESTS=1 go test -count=1 -tags 'cuda goinfer_testhooks' -run '^TestSpecNonCopyLane$' -v -timeout 30m .
 
 summarize
 echo "finished: $(date '+%F %T %Z')" | tee -a "$LOG/provenance.txt"
-for w in base head; do git -C "$SRC" worktree remove --force "$WTDIR/$w" 2>/dev/null; done
+for w in base head; do [ -d "$WTDIR/$w" ] && git -C "$SRC" worktree remove --force "$WTDIR/$w" 2>/dev/null; done
 exit 0
