@@ -1,0 +1,42 @@
+{"id": "C-01", "verdict": "AGREE", "to": null, "why": "Adapter state unaccounted for by batched-prefill admission; fix is a named !hasAdapter decline at the chokepoint."}
+{"id": "C-02", "verdict": "AGREE", "to": null, "why": "Reuse predicate never accounted for which adapter built the KV; fix records it and declines on mismatch."}
+{"id": "C-03", "verdict": "AGREE", "to": null, "why": "KDA state missing from Recurrent bit, hasRecurrentState and reset arm; fix registers it in all three."}
+{"id": "C-04", "verdict": "AGREE", "to": null, "why": "layerNorm/parallelBlock family missing from norm dispatch and prefillStaticDecline; fix adds dispatch and decline."}
+{"id": "C-05", "verdict": "AGREE", "to": null, "why": "granite missing from ggufQKPermuted name list; fix adds it to the switch."}
+{"id": "C-06", "verdict": "AGREE", "to": null, "why": "int4 (s.w4) stack unhandled by gpt-oss down dispatch, run as int8 default; fix adds a w4 branch."}
+{"id": "C-07", "verdict": "AGREE", "to": null, "why": "SetAdapter lifecycle never invalidates pre-encoded executor state; state x lifecycle path, borderline with O ordering hazard."}
+{"id": "C-08", "verdict": "AGREE", "to": null, "why": "prefillOK admission ignores MoE paging option; fix adds one predicate term, the rubric's option x batched-path shape."}
+{"id": "C-09", "verdict": "AGREE", "to": null, "why": "Path handles m-RoPE but indexes scale write by rope position: indexing error."}
+{"id": "G-01", "verdict": "AGREE", "to": null, "why": "Staleness gate hashes a hand-typed version that drifted; gate defect."}
+{"id": "G-02", "verdict": "AGREE", "to": null, "why": "Validated family with empty deps set can never restale; gate manifest defect."}
+{"id": "G-03", "verdict": "AGREE", "to": null, "why": "Parity gates skip in CI and FAILs file as FIRST-RUN; gates cannot block."}
+{"id": "G-04", "verdict": "AGREE", "to": null, "why": "Refresh refusal bypassable and -update lacks it; gate/evidence-chain defect."}
+{"id": "G-05", "verdict": "AGREE", "to": null, "why": "Test oracle uses hand-written family lists; G with r_shaped_gate."}
+{"id": "G-06", "verdict": "AGREE", "to": null, "why": "Gates never drive PrefillLast or armed executor; cannot see C-01/C-07."}
+{"id": "G-07", "verdict": "AGREE", "to": null, "why": "Bias-dominated fixture and loose floor cannot see dropped term; gate defect."}
+{"id": "G-08", "verdict": "AGREE", "to": null, "why": "Decision gate silently narrows cells and still prints SHIPS; gate defect."}
+{"id": "G-09", "verdict": "AGREE", "to": null, "why": "PTX freshness check absent/skipped in CI; gate defect."}
+{"id": "G-10", "verdict": "AGREE", "to": null, "why": "Gate cell selector misses seven gate-shaped tests; gate defect."}
+{"id": "G-11", "verdict": "AGREE", "to": null, "why": "FMA lint regex misses reversed MAC; filed against the lint."}
+{"id": "G-12", "verdict": "AGREE", "to": null, "why": "serve check rows do not check what they certify; gate defect."}
+{"id": "G-13", "verdict": "AGREE", "to": null, "why": "Collection of vacuous tests/checks; dominant instances are gate defects."}
+{"id": "M-01", "verdict": "AGREE", "to": null, "why": "residentPath predicate classed adapter routes as staged, skipping the cap guard; R tested before B, both fit."}
+{"id": "M-02", "verdict": "CHANGE", "to": "O", "why": "VL clamp sites simply fail to set Budget/BudgetClamped; fix is two field writes, not a list/predicate registration. Missing propagation."}
+{"id": "M-03", "verdict": "AGREE", "to": null, "why": "Resident context cap exists; draft width exceeds it with no clamp in the loop; fix is a clamp."}
+{"id": "M-04", "verdict": "CHANGE", "to": "O", "why": "Resolved EOS set never propagated into Cfg before serialization; fix is a value write-back, not a registration. Data-propagation defect."}
+{"id": "M-05", "verdict": "AGREE", "to": null, "why": "Base projection dims are a limit; mis-shaped delta exceeds them unchecked; fix is a load-time bound refusal."}
+{"id": "M-06", "verdict": "AGREE", "to": null, "why": "Zero hash 'no claim' case missing from match predicate; fix adds hash != 0 term."}
+{"id": "M-07", "verdict": "AGREE", "to": null, "why": "Gemma4 VL commit never registers its image block in the reuse record its siblings populate."}
+{"id": "M-08", "verdict": "AGREE", "to": null, "why": "Plan admission omits ResidentEligible checks; families/backends fall through to resident default; fix adds predicate."}
+{"id": "M-09", "verdict": "AGREE", "to": null, "why": "Staged webgpu int4 not registered in SpecDecodeConflict; fix adds it to the predicate."}
+{"id": "M-10", "verdict": "AGREE", "to": null, "why": "HiddenLast tail not registered as exact-only in fast-lever predicates; fix adds forceExact term."}
+{"id": "M-11", "verdict": "AGREE", "to": null, "why": "Verify tails not registered as exact-only; same predicate fix; 16 is a perf floor, not a capacity."}
+{"id": "M-12", "verdict": "AGREE", "to": null, "why": "Planner sizing omits checkKVFits margin: sizing arithmetic error."}
+{"id": "M-13", "verdict": "AGREE", "to": null, "why": "Missing write deadline pins worker: hang/resource issue."}
+{"id": "M-14", "verdict": "AGREE", "to": null, "why": "Printed message and docs promise a flag value the parser rejects: rubric's claim example."}
+{"id": "M-15", "verdict": "AGREE", "to": null, "why": "Byte budget exists; tool bytes bypass it unpriced. Request fields are not option/family/state, so not R."}
+{"id": "M-16", "verdict": "AGREE", "to": null, "why": "Template-without-tools state lacks the named 400 decline siblings have; fix is that named decline."}
+{"id": "M-17", "verdict": "CHANGE", "to": "O", "why": "Loader called with empty Options; fix passes cfg.backend and a quant mapping through: missing wiring, not list/predicate registration."}
+{"id": "M-18", "verdict": "AGREE", "to": null, "why": "Dominant defect is a device scratch and stream leak."}
+{"id": "M-19", "verdict": "AGREE", "to": null, "why": "Free RAM measured after load; fix moves the probe earlier; sizing error, N over O."}
+{"id": "M-20", "verdict": "AGREE", "to": null, "why": "Rate denominator includes prefill (arithmetic); double load is the O half."}

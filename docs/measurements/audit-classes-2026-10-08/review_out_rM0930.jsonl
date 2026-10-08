@@ -1,0 +1,23 @@
+{"id": "A-C01", "verdict": "AGREE", "to": null, "why": "prefillOK/PrefillLast never read kvI8 while other batched paths exclude it; fix is a named decline. Corruption caused by the miss stays R."}
+{"id": "F-C02", "verdict": "AGREE", "to": null, "why": "Fixed sc[4096] threadgroup array; reachable nKeys up to 32768 via auto-pin with only ctxCap checked. Fix is a bound decline: B."}
+{"id": "A-P01", "verdict": "AGREE", "to": null, "why": "GEMM tile/threadgroup occupancy at small M; bit-identical speed change only."}
+{"id": "A-P02", "verdict": "AGREE", "to": null, "why": "Floor is a deliberate gate floor; short prompts run the correct sequential path. Performance."}
+{"id": "A-P03", "verdict": "AGREE", "to": null, "why": "Probable latency-bound attention at small M; probe is a rerun, no correctness defect."}
+{"id": "A-P04", "verdict": "AGREE", "to": null, "why": "Synchronous per-token command buffers in HiddenLast; pipelining is pure performance."}
+{"id": "B-P01", "verdict": "AGREE", "to": null, "why": "hd==128 restriction is a recorded scope choice; legacy kernel is correct; fix is a new templated kernel, not a registration."}
+{"id": "B-P02", "verdict": "AGREE", "to": null, "why": "Other G use correct attention_fa by stated scope; fix is new instantiations plus grading, a speed gain."}
+{"id": "B-P03", "verdict": "AGREE", "to": null, "why": "Crossover threshold tuning between two correct kernels; performance."}
+{"id": "B-P04", "verdict": "AGREE", "to": null, "why": "Lane utilisation at specific K; no wrong output or exceeded limit."}
+{"id": "B-P05", "verdict": "AGREE", "to": null, "why": "GEMV bandwidth revisit for down projection; performance."}
+{"id": "C-P01", "verdict": "AGREE", "to": null, "why": "Duplicated scale cache memory footprint, identical output; resource use, O."}
+{"id": "C-C01", "verdict": "AGREE", "to": null, "why": "Plan/guards carry a ceiling for webgpu but not metal and price KV as default f32; fix registers Metal ceiling and f16. Metal itself checks, so not B."}
+{"id": "D-P01", "verdict": "AGREE", "to": null, "why": "Paged MoE decline is named and pinned as intended; sequential is correct. Missing feature/performance."}
+{"id": "D-B01", "verdict": "AGREE", "to": null, "why": "DeltaNet explicitly declined; fix is a new batched kernel, a missing feature for TTFT."}
+{"id": "D-B02", "verdict": "AGREE", "to": null, "why": "Dispatch count, per-layer sync and tile padding are performance."}
+{"id": "D-P04", "verdict": "AGREE", "to": null, "why": "One-thread router top-k is correct but slow; performance."}
+{"id": "D-B03", "verdict": "AGREE", "to": null, "why": "Deliberate MXFP4-to-int4 requant; remedy is a native format feature; memory plus unquantified fidelity, not an arithmetic error."}
+{"id": "E-P01", "verdict": "AGREE", "to": null, "why": "Reusing the exact 8-row step for short prompts is a speed gain; no correctness defect."}
+{"id": "D-G01", "verdict": "AGREE", "to": null, "why": "Default-on lane licensed by a dense-model gate; MoE tests are weak cosine bars without mutations. Gate defect, no list omission."}
+{"id": "F-G01", "verdict": "AGREE", "to": null, "why": "Steel kernel only exercised by log-only, env-gated harnesses; no default assertion. Kernel read found no defect: G."}
+{"id": "F-G02", "verdict": "AGREE", "to": null, "why": "Gates skip by default and invariance record predates steel; gate/record defect."}
+{"id": "F-G03", "verdict": "AGREE", "to": null, "why": "Test claimed to keep ceiling a fact checks only constants and cannot see F-C02; claim/test mismatch, G."}

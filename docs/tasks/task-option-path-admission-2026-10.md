@@ -1,8 +1,10 @@
 # Task: one class of audit finding as a mechanical gate — options × paths, fail closed (2026-10)
 
-> **Status: SCOPED 2026-10-01, not started.** Step 1 is desk work and decides whether step 2 is built (§3). To run
-> after v0.20.0 is tagged, beside `task-library-surface-review-2026-10.md`, since both feed the v1.0 freeze and the
-> review may change which options exist.
+> **Status 2026-10-08: step 1 DONE — BUILD, with a thin margin.** 71 of 261 counted Critical and Major findings are
+> R or B (27.2%), more than three distinct options or families among them; every registered sensitivity clears 25%
+> (narrowest 26.7%). Record: [`audit-classes-2026-10-08.md`](../measurements/audit-classes-2026-10-08.md). Its §3
+> puts one scoping choice to the owner before step 2 starts: options are 22 of the 71, families 20, limits 19 and
+> state kinds 10, so §4 as written covers under a third of the class. Step 2 not started.
 
 ## 1. The class, and why it keeps coming back
 
@@ -107,6 +109,12 @@ disagreements are settled by re-reading the entry, and the agreement rate is rep
   so.
 
 The threshold and the classes are fixed now, before any finding is classified.
+
+**Result (2026-10-08): build.** R + B = 71 of 261 = 27.2% under §2.1's rules; the two blind passes alone read 31.0%,
+and a full review in both directions moved nine R calls out and none in. Sensitivities: 29.9% without performance
+findings, 29.9% with R-shaped gates as R, 26.7% with re-filed defects counted once, 25.6% at the extreme floor of
+dropping every entry that cites an earlier one. Per-finding table and the recurrence lists that size step 2:
+[`audit-classes-2026-10-08.md`](../measurements/audit-classes-2026-10-08.md).
 
 ## 4. Step 2 — fail-closed admission for options × paths (if step 1 clears)
 

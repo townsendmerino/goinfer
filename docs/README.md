@@ -132,7 +132,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
 [`task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) treats the audits'
 findings as a dataset: if "an option or family not registered with a guard" is common enough, it becomes a
-fail-closed options × paths gate. [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
+fail-closed options × paths gate. Step 1 found it is (27.2% of 261 findings, 2026-10-08). [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
 asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
