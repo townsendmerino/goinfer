@@ -2690,6 +2690,20 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - the served TTFT cells on this build (S7 and S13-lite at night): S13-lite's goinfer arm was 8.9-9.6 s of
       SigLIP tower per image.
 
+- **S7 and S13-lite on the Mac, re-run on lever A's build, registered 2026-10-08 before they run (owner: "yes queue
+  them").**
+  - **What:** the same scripts, cells, procedure and 5 s bar as the 2026-10-07 night (`run-s7-mac.sh`,
+    `run-s13lite-mac.sh`), unchanged.
+  - **The one difference:** goinfer's binary is `serve-metal` at `92c30640` (lever A, default on), in
+    `~/goinfer-bench/s7-leverA/` (`BIN`), built from a clean worktree.
+  - **Reading:** a record, each cell against its 2026-10-07 reading.
+    - **The prediction, not a bar:** the tower cells (Qwen2.5-VL, Qwen3-VL, GLM-OCR, Qwen3.5, and S13-lite's Gemma 3)
+      fall by about their tower's lever A ratio applied to the tower's share of TTFT.
+    - **Ollama's and llama.cpp's arms** in S13-lite repeat as same-night controls.
+  - **The fit guard stays on.** Gemma 3 4B may be refused again, as S7's cell was on 2026-10-07; a refusal is
+    recorded as such.
+  - **Queue:** `s7-mac-leverA` and `s13lite-mac-leverA`, 20 minutes each (2026-10-07: 5 and 6 minutes).
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
