@@ -2704,6 +2704,37 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     recorded as such.
   - **Queue:** `s7-mac-leverA` and `s13lite-mac-leverA`, 20 minutes each (2026-10-07: 5 and 6 minutes).
 
+- **S17's Metal lever B (GEMM): bands re-registered on the post-A baseline, 2026-10-08, before any lever B code runs.**
+  - **Why re-registered:** lever A shipped first, so lever B's A/B measures against today's tower (fused attention),
+    not the pre-A tower its 2026-10-07 bands assumed. The same inputs, re-projected:
+    - step 0's GEMM GPU seconds (unchanged by A);
+    - k_G = 2.3-2.7, unchanged;
+    - the post-A wall times from lever A's A/B, the fused arm's medians.
+  - **The projection:** tower ratio = post-A wall ÷ (post-A wall - GEMM × (1 - 1/k_G)).
+
+  | tower | image | step 0 GEMM GPU s | post-A wall s | band |
+  |---|---|---|---|---|
+  | SigLIP | any | 2.95 | 4.12 | **1.7-1.8x** |
+  | Qwen2.5-VL | 896² | 4.72 | 5.28 | **2.0-2.3x** |
+  | Qwen2.5-VL | formula.png | 7.51 | 9.39 | **1.8-2.0x** |
+  | Qwen2.5-VL | table.png | 6.36 | 8.26 | **1.8-1.9x** |
+  | Qwen3.5-0.8B | table.png | 0.64 | 0.92 | **1.6-1.8x** |
+  | Qwen3.5-0.8B | formula.png | 0.67 | 1.02 | **1.6-1.7x** |
+
+  - **The lever, as registered:**
+    - the projections as f16-input simdgroup-matrix GEMMs with f32 accumulation: weights f16 at upload, activations
+      rounded to f16 as they are staged, the bias fused into the epilogue;
+    - 64x64 output tiles per threadgroup, each simdgroup 32x32;
+    - the patch embedding stays on the f32 GEMM.
+  - **Correctness, unchanged:** G-S2b's and G-S3a's bars (every soft token at cosine >= 0.9999 against the CPU tower)
+    and their planted defects, plus a kernel gate against a float64 reference.
+    - **The kernel bar:** each output within 2e-3 of its row's Σ|a·w|. This is f16 input rounding (about 2^-11 per
+      operand, so about 1e-3 per product), not accumulation.
+    - **If f16 cannot hold the tower bar,** B keeps f32 inputs at a lower k_G, re-registered before that variant runs.
+  - **Kill line:** under 1.02x on any tower, or under its band's low end with no mechanism found: parked.
+  - **The instrument:** lever A's, TE5(b): an in-process whole-tower A/B, interleaved by day, f16 GEMM against the f32
+    GEMM, with lever A on in both arms.
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
