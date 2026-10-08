@@ -89,7 +89,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 | deepstack rows | transient | transient | transient | transient | transient |
 | capture rows | transient | transient | transient | transient | transient |
 | tree-verify mask | transient | transient | transient | transient | transient |
-| LoRA adapter binding | kept | kept | caller-bound | cold on mismatch | kept |
+| LoRA adapter binding | kept | kept | persisted | cold on mismatch | kept |
 
 **Reasons.**
 
@@ -146,6 +146,6 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - tree-verify mask × speculative rollback: unset in production (be9aeea8)
 - LoRA adapter binding × partial rewind: the adapter is the stream's binding, not sequence state: positions are rewound under the same projections
 - LoRA adapter binding × full reset: a reset session keeps its adapter; serve's per-adapter session LRUs rely on it
-- LoRA adapter binding × snapshot: not written; the restoring caller rebinds (serve: sessionLRU.bindAdapter, inside a per-adapter fingerprint namespace)
+- LoRA adapter binding × snapshot: format v3 records the adapter name; LoadSession rebinds it, or refuses when the model has not loaded it
 - LoRA adapter binding × session prefix reuse: rewindForReuse goes cold when the bound adapter is not the one the cached prefix was built under
 - LoRA adapter binding × speculative rollback: a rollback stays under the same projections

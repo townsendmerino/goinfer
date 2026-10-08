@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"encoding/binary"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
@@ -30,7 +32,7 @@ var markState = map[cacheState]func(c *KVCache){
 	stateDeepstack:   func(c *KVCache) { c.deepstack = &deepstackRows{} },
 	stateCapture:     func(c *KVCache) { c.captureLayers = []int{0} },
 	stateTree:        func(c *KVCache) { c.treeMask = [][]bool{{true}} },
-	stateAdapter:     func(c *KVCache) { c.lora = &loraRuntime{} },
+	stateAdapter:     func(c *KVCache) { c.lora = &loraRuntime{name: markedAdapter} },
 }
 
 // TestKVCache_everyFieldHasAState is the registration test: a KVCache field lands only with a
@@ -242,6 +244,7 @@ func TestCacheStateGrid_rewindCellsOnRealCaches(t *testing.T) {
 // (positional), TestKVI8_snapshotRoundtrip (int8) and the ring cases in session_test.go.
 func TestCacheStateGrid_snapshotCells(t *testing.T) {
 	m := plainModel(t)
+	m.registerAdapter(markedAdapter, &loraRuntime{name: markedAdapter}) // so a restore can rebind it
 	for _, s := range cacheStates {
 		if s == statePositional || s == stateRing || s == stateInt8KV {
 			continue // need real storage behind the flag; covered by the round-trip tests named above
@@ -337,12 +340,81 @@ func TestSession_adapterSwitchGoesCold(t *testing.T) {
 			}
 		})
 	}
-	t.Run("a restored session adopts the adapter bound before its first turn", func(t *testing.T) {
-		s := warm(nil)
-		s.adapterKnown = false // as LoadSession leaves it: the blob does not record the adapter
-		s.cache.lora = a       // serve's bindAdapter
-		if got := s.rewindForReuse([]int{1, 2, 3, 4}); got != 3 {
-			t.Errorf("reused %d, want 3: the snapshot carries no adapter, so the first binding is adopted", got)
+}
+
+// markedAdapter names the adapter markState binds, so the snapshot cell can register and restore it.
+const markedAdapter = "marked"
+
+// TestSession_snapshotRecordsAdapter is the adapter × snapshot cell end to end (format v3): the blob
+// records the adapter the KV was built under, LoadSession rebinds the model's runtime of that name,
+// and the restored session then reuses its prefix under that adapter and goes cold under any other.
+func TestSession_snapshotRecordsAdapter(t *testing.T) {
+	m := plainModel(t)
+	a, b := &loraRuntime{name: "a"}, &loraRuntime{name: "b"}
+	m.registerAdapter("a", a)
+	m.registerAdapter("b", b)
+	built := func(under *loraRuntime) []byte {
+		s := m.NewSession(8)
+		s.cache.lora = under
+		s.rewindForReuse([]int{1, 2, 3})
+		for l := 0; l < s.cache.numLayers; l++ {
+			for range 3 {
+				s.cache.Append(l, make([]float32, s.cache.kvDim), make([]float32, s.cache.kvDim))
+			}
+		}
+		for range 3 {
+			s.cache.Advance()
+		}
+		s.reconcile([]int{1, 2, 3})
+		blob := s.Snapshot("id")
+		if blob == nil {
+			t.Fatal("Snapshot refused a plain session")
+		}
+		return blob
+	}
+	for _, tc := range []struct {
+		name       string
+		built, now *loraRuntime
+		wantReuse  bool
+	}{
+		{"restored under its own adapter reuses", a, a, true},
+		{"restored base stays base reuses", nil, nil, true},
+		{"restored under another adapter goes cold", a, b, false},
+		{"restored adapter session rebound to base goes cold", a, nil, false},
+		{"restored base session bound to an adapter goes cold", nil, a, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := m.LoadSession(built(tc.built), "id")
+			if err != nil {
+				t.Fatalf("LoadSession: %v", err)
+			}
+			if s.cache.lora != tc.built || s.kvAdapter != tc.built {
+				t.Fatalf("restored adapter %v (KV built under %v), want %v", s.cache.lora, s.kvAdapter, tc.built)
+			}
+			s.cache.lora = tc.now // the caller's binding (serve: sessionLRU.bindAdapter)
+			got := s.rewindForReuse([]int{1, 2, 3, 4})
+			if tc.wantReuse && got != 3 {
+				t.Errorf("reused %d positions, want 3", got)
+			}
+			if !tc.wantReuse && (got != 0 || s.cache.Pos() != 0) {
+				t.Errorf("reused %d positions (cache at %d) of a prefix built under another adapter; want 0 and a cold cache",
+					got, s.cache.Pos())
+			}
+		})
+	}
+	t.Run("an adapter this model has not loaded is refused", func(t *testing.T) {
+		other := plainModel(t)
+		_, err := other.LoadSession(built(a), "id")
+		var se *SnapshotError
+		if !errors.As(err, &se) {
+			t.Fatalf("LoadSession = %v, want a *SnapshotError (the caller then prefills cold)", err)
+		}
+	})
+	t.Run("a v2 blob is refused", func(t *testing.T) {
+		blob := built(nil)
+		binary.LittleEndian.PutUint32(blob[len(kvSnapMagic):], 2)
+		if _, err := m.LoadSession(blob, "id"); err == nil {
+			t.Fatal("a v2 blob, which does not record the adapter, loaded")
 		}
 	})
 }

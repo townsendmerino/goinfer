@@ -158,9 +158,13 @@ options AND the kinds of state; limits stay out of step 2.** What that changes i
   serve was not exposed: it keeps one session LRU per adapter in its own snapshot namespace. (2) Image blocks and m-RoPE
   positions are refused by `Snapshot` and make a partial rewind inexact. Neither is reachable today (VL generations
   use fresh caches); the cells were undeclared, and now fail closed.
-- **One cell is caller-bound, by declaration:** adapter × snapshot. The blob does not record the adapter; a restored
-  session adopts the first one bound (serve rebinds inside a per-adapter fingerprint namespace). Making the blob carry
-  it is a format-version bump, left for the owner.
+- **Adapter × snapshot is persisted (owner decision 2026-10-08).** Snapshot format v3 records the adapter's name;
+  `LoadSession` rebinds the model's adapter of that name, and refuses the blob when the model has not loaded it. A
+  restored session bound to a different adapter goes cold through the reuse check; serve's `bindAdapter` now also
+  clears a base LRU's binding, so a mismatch there goes cold too. v2 blobs are refused by the version guard: a one-time
+  cold prefill per stored session, since snapshots are a regenerable cache. The name is the identity, so an adapter
+  reloaded under the same name with different weights across a restart is not caught. Four planted defects (restore
+  drops the adapter, writer drops it, an unloaded adapter accepted, `kvAdapter` not restored) each turned a test red.
 - **Tests** (`decoder/cachestate_test.go`): the registration test over `KVCache`'s fields; every cell declared and
   within what its path can do; `holdsState` knows every kind; the grid's recurrent row equals `hasRecurrentState()`;
   rewind, snapshot and speculative-rollback cells checked on every own-forward family's real cache and by properties

@@ -37,18 +37,15 @@ type Session struct {
 	// kvAdapter is the compute-time adapter tokens' KV was built under — the cache-state grid's
 	// adapter × prefix-reuse cell (cachestate.go): rewindForReuse goes cold when the adapter bound
 	// now is a different one, instead of projecting a new turn through one fine-tune on top of a
-	// prefix another built. adapterKnown is false for a session LoadSession restored, whose blob
-	// does not record it; the first rewind adopts whatever is bound then (serve rebinds the LRU's
-	// adapter, inside a per-adapter fingerprint namespace, before any generation).
-	kvAdapter    *loraRuntime
-	adapterKnown bool
+	// prefix another built. LoadSession sets it from the snapshot (format v3 records the adapter).
+	kvAdapter *loraRuntime
 }
 
 // NewSession allocates an empty session. capHint pre-sizes the KV cache for an
 // expected max sequence length (0 = grow on demand); the cache persists and is
 // reused across this session's Generate calls.
 func (m *Model) NewSession(capHint int) *Session {
-	return &Session{m: m, cache: m.NewCache(capHint), cleanCache: true, adapterKnown: true}
+	return &Session{m: m, cache: m.NewCache(capHint), cleanCache: true}
 }
 
 // Tokens returns the token sequence currently materialized in the cache (the
@@ -95,9 +92,6 @@ func (s *Session) rewindForReuse(prompt []int) int {
 	s.cleanCache = false
 	if clean {
 		return 0
-	}
-	if !s.adapterKnown {
-		s.kvAdapter, s.adapterKnown = s.cache.lora, true
 	}
 	// The cached prefix was built under a different adapter (or under the base, or the base after an
 	// adapter): the same tokens are different K/V, so nothing is reusable. Cold, as on an inexact rewind.
@@ -156,7 +150,7 @@ func (s *Session) reconcile(seq []int) {
 		return
 	}
 	s.tokens = seq
-	s.kvAdapter, s.adapterKnown = s.cache.lora, true
+	s.kvAdapter = s.cache.lora
 }
 
 // Generate is Model.Generate with cross-call KV reuse. It rewinds the cache to

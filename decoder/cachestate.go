@@ -158,7 +158,7 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 	stateAdapter: {
 		lcRewind:       {hKept, "the adapter is the stream's binding, not sequence state: positions are rewound under the same projections"},
 		lcReset:        {hKept, "a reset session keeps its adapter; serve's per-adapter session LRUs rely on it"},
-		lcSnapshot:     {hCallerBound, "not written; the restoring caller rebinds (serve: sessionLRU.bindAdapter, inside a per-adapter fingerprint namespace)"},
+		lcSnapshot:     {hPersisted, "format v3 records the adapter name; LoadSession rebinds it, or refuses when the model has not loaded it"},
 		lcReuse:        {hColdOnMismatch, "rewindForReuse goes cold when the bound adapter is not the one the cached prefix was built under"},
 		lcSpecRollback: {hKept, "a rollback stays under the same projections"},
 	},
