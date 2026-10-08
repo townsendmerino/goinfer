@@ -98,7 +98,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:438`); a full queue is a 429 on the OpenAI routes and a 529
+  (`internal/serveapp/main.go:439`); a full queue is a 429 on the OpenAI routes and a 529
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:621`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
@@ -524,7 +524,7 @@ The only throughput item, and it is deliberately last.
 
 ## Sources
 
-`internal/serveapp/openai.go:106`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
+`internal/serveapp/openai.go:107`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
 check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
 429) · `internal/loadflags/loadflags.go:70`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:621` (529 on a full queue) · `internal/serveapp/sessions.go:14`

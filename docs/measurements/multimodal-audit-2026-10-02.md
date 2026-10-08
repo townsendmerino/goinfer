@@ -117,7 +117,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | Metal | CPU | CPU (the refusal is in `decoder/`, not backend-specific) | read-from-code |
 | WebGPU | CPU, int8 | CPU, same | read-from-code |
 
-**MoE sizes (`qwen3_5_moe`) are unverified.** Serve's auto-discovery accepts the model type (`internal/serveapp/qwen35_vision.go:74-80`, and a `qwen3_5_moe` row in `TestIsQwen35VisionDir`), but
+**MoE sizes (`qwen3_5_moe`) are unverified.** Serve's auto-discovery accepts the model type (`internal/serveapp/qwen35_vision.go:93-99`, and a `qwen3_5_moe` row in `TestIsQwen35VisionDir`), but
 no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last and separately"; the tiny `qwen3_5_moe` fixture is text-only), the capability matrix says modality
 `text` for it, and the Ollama-coverage notes say "dense sizes only". The supported claim stays dense (0.8B and 9B gated).
 
@@ -134,7 +134,7 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 
 | family | what happens | verdict |
 |---|---|---|
-| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1128-1147`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
+| Qwen3-VL (`qwen3_vl`) | text decoder only: no tower loader matches it (`internal/serveapp/main.go:1129-1148`), `multimodal.LoadProjector` fails on it | read-from-code; no checkpoint on the box |
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 

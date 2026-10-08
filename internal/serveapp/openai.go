@@ -22,6 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -122,11 +123,12 @@ type loadedModel struct {
 	// Qwen2.5-VL vision tower (P5; nil ⇒ Gemma3/text). The merger is in the encoder
 	// (no separate projector); preprocessing + m-RoPE are Qwen-specific, so the image
 	// path branches on qwenEnc != nil.
-	qwenEnc    *vision.QwenVisionEncoder
-	qwenDevMu  sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
-	qwenPP     multimodal.QwenPreprocessConfig
-	qwenMerge  int // spatial_merge_size
-	qwenImgTok int // <|image_pad|> id
+	qwenEnc     *vision.QwenVisionEncoder
+	qwenDevMu   sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
+	qwenRequire bool       // -require-backend: a device-memory failure of the Qwen2.5-VL tower fails the request instead of falling back to the CPU
+	qwenPP      multimodal.QwenPreprocessConfig
+	qwenMerge   int // spatial_merge_size
+	qwenImgTok  int // <|image_pad|> id
 
 	// Qwen3.5+ vision tower (P8a; nil ⇒ not Qwen3.5 / no tower). Shares qwenPP/qwenMerge/qwenImgTok
 	// and the GenerateQwenVL route with the Qwen2.5-VL path above, but the tower itself loads LAZILY
@@ -155,6 +157,10 @@ type loadedModel struct {
 	gemma4AudioOnce sync.Once
 	gemma4Audio     *audio.Gemma4AudioEncoder
 	gemma4AudioErr  error
+	// gemma4AudioDevice is "metal" when the tower's conformer blocks run on Metal (G-S5d, EmbeddingGemma 2's accelerator),
+	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
+	gemma4AudioDevice string
+	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
 }
 
 // cachedTokenBytes returns the constraint masker's token→bytes table, built once per model
@@ -1687,7 +1693,20 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	defer cancel()
 	var stream <-chan int
 	var gen *decoder.Generation
-	if vi.qwen {
+	if vi.qwen && vi.deepSets > 0 { // Qwen3-VL (S10): split the flat features into the merged rows and the DeepStack sets
+		n := vi.imgLen * lm.model.Config().HiddenDim
+		stream, gen = lm.model.GenerateQwenVLDeepstack(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, func() ([]float32, [][]float32, error) {
+			flat, err := vi.features()
+			if err != nil {
+				return nil, nil, err
+			}
+			deep := make([][]float32, vi.deepSets)
+			for l := range deep {
+				deep[l] = flat[(l+1)*n : (l+2)*n]
+			}
+			return flat[:n], deep, nil
+		}, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+	} else if vi.qwen {
 		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else if vi.gemma4 {
 		stream, gen = lm.model.GenerateGemma4VL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)

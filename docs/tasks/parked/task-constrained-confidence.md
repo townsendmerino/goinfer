@@ -637,7 +637,7 @@ schema was never published (D0).
 
 - *(Planned shape; superseded 2026-09-28. `/v1/decisions` and `:batch` were never built: autotrust's schema was never published (D0), and the owner picked the TypeSafe shape, `POST /v1/systemone`, which is what exists.)* `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:703`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:704`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but

@@ -22,6 +22,40 @@ type GridTowerAccelerator interface {
 	Close() error
 }
 
+// GridTowerTapper is a GridTowerAccelerator that can also return chosen blocks' outputs: Qwen3-VL's DeepStack taps
+// (S10). A device tower without it cannot run a DeepStack tower (the sets would be lost).
+type GridTowerTapper interface {
+	HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) (last []float32, taps [][]float32, err error)
+}
+
+// Qwen3TowerFeaturesDeepstack is Qwen3TowerFeatures for a DeepStack tower (Qwen3-VL): the merged rows and each
+// DeepStack set, from acc's taps through aikit's host tails (FinishHidden, DeepstackFromHidden), or aikit's CPU
+// ForwardDeepstack when acc is nil. An accelerator that cannot tap is an error, not a silent loss of the sets.
+func Qwen3TowerFeaturesDeepstack(enc *vision.Qwen3VisionEncoder, acc GridTowerAccelerator, pixels []float32, gridTHW [][3]int) ([]float32, [][]float32, error) {
+	if acc == nil {
+		return enc.ForwardDeepstack(pixels, gridTHW)
+	}
+	tp, ok := acc.(GridTowerTapper)
+	if !ok {
+		return nil, nil, fmt.Errorf("multimodal: the %s tower cannot tap blocks, so it cannot run a DeepStack tower", acc.Name())
+	}
+	last, taps, err := tp.HiddenTaps(pixels, gridTHW, enc.Cfg.DeepstackVisualIndexes)
+	if err != nil {
+		return nil, nil, err
+	}
+	merged, err := enc.FinishHidden(last, gridTHW)
+	if err != nil {
+		return nil, nil, err
+	}
+	deep := make([][]float32, len(taps))
+	for k, h := range taps {
+		if deep[k], err = enc.DeepstackFromHidden(k, h, gridTHW); err != nil {
+			return nil, nil, err
+		}
+	}
+	return merged, deep, nil
+}
+
 // gridTowerRegistry is one encoder type's named device-tower factories.
 type gridTowerRegistry[E any] struct {
 	mu sync.Mutex

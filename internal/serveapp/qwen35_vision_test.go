@@ -3,7 +3,11 @@ package serveapp
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 func writeQwen35Dir(t *testing.T, config, pre string) string {
@@ -28,8 +32,9 @@ const (
 )
 
 // TestIsQwen35VisionDir: auto-discovery must recognise a Qwen3.5 checkpoint that carries a usable
-// tower and stay SILENT (false, not an error) on everything else, so a text-only copy or a
-// Qwen3-VL DeepStack checkpoint never fails serve's startup.
+// tower and stay SILENT (false, not an error) on everything else, so a text-only copy never fails serve's startup.
+// Since S10 a Qwen3-VL checkpoint (model_type qwen3_vl, DeepStack required) is a Qwen tower too; a DeepStack list
+// under qwen3_5, or none under qwen3_vl, is a mismatched config and is not.
 func TestIsQwen35VisionDir(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -41,7 +46,9 @@ func TestIsQwen35VisionDir(t *testing.T) {
 		{"text-only copy: no vision_config", `{"model_type":"qwen3_5"}`, q35Pre, false},
 		{"text-only copy: no preprocessor_config.json", q35Conf, "", false},
 		{"Qwen2.5-VL-style preprocessor (min_pixels keys) is not a Qwen3.5 tower", q35Conf, `{"min_pixels":3136,"max_pixels":100,"patch_size":14,"temporal_patch_size":2,"merge_size":2,"image_mean":[0.5,0.5,0.5],"image_std":[0.5,0.5,0.5]}`, false},
-		{"DeepStack tower (Qwen3-VL proper) is refused", `{"model_type":"qwen3_5","vision_config":{"depth":27,"deepstack_visual_indexes":[8,16,24]}}`, q35Pre, false},
+		{"a qwen3_5 config declaring DeepStack is refused", `{"model_type":"qwen3_5","vision_config":{"depth":27,"deepstack_visual_indexes":[8,16,24]}}`, q35Pre, false},
+		{"Qwen3-VL proper, with DeepStack (S10)", `{"model_type":"qwen3_vl","vision_config":{"depth":24,"deepstack_visual_indexes":[5,11,17]}}`, q35Pre, true},
+		{"a qwen3_vl config without DeepStack is refused", `{"model_type":"qwen3_vl","vision_config":{"depth":24,"deepstack_visual_indexes":[]}}`, q35Pre, false},
 		{"another family", `{"model_type":"qwen2_5_vl","vision_config":{"depth":32}}`, q35Pre, false},
 		{"no config.json", "", q35Pre, false},
 	} {
@@ -82,5 +89,59 @@ func TestSetupQwen35Vision(t *testing.T) {
 	}
 	if _, _, err := setupQwen35Vision(writeQwen35Dir(t, `{"model_type":"qwen3_5"}`, q35Pre), false); err == nil {
 		t.Error("a text-only directory was accepted as a vision tower")
+	}
+}
+
+// TestSetupQwen3VL_deepstack: a Qwen3-VL directory's tower records its DeepStack set count (the features then carry that
+// many sets after the merged rows, and serve splits them), and a Qwen3.5 one records none.
+func TestSetupQwen3VL_deepstack(t *testing.T) {
+	vl := writeQwen35Dir(t, `{"model_type":"qwen3_vl","vision_config":{"depth":24,"deepstack_visual_indexes":[5,11,17]}}`, q35Pre)
+	tower, _, err := setupQwen35Vision(vl, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tower.deep != 3 {
+		t.Errorf("Qwen3-VL tower: %d DeepStack sets, want 3", tower.deep)
+	}
+	q35, _, err := setupQwen35Vision(writeQwen35Dir(t, q35Conf, q35Pre), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q35.deep != 0 {
+		t.Errorf("Qwen3.5 tower: %d DeepStack sets, want 0", q35.deep)
+	}
+}
+
+// fakeGridTower is a device tower that cannot tap blocks (no HiddenTaps).
+type fakeGridTower struct{ closed bool }
+
+func (f *fakeGridTower) Name() string                                  { return "fake" }
+func (f *fakeGridTower) Hidden([]float32, [][3]int) ([]float32, error) { return nil, nil }
+func (f *fakeGridTower) Close() error                                  { f.closed = true; return nil }
+
+// TestQwen3VLTower_needsTaps (G-S10e): a Qwen3-VL tower whose planned device tower cannot tap the DeepStack blocks runs
+// on the CPU, says why, and closes the device tower; under -require-backend it is an error instead. A device tower that
+// could not tap would otherwise return the merged rows and silently lose the DeepStack sets.
+func TestQwen3VLTower_needsTaps(t *testing.T) {
+	const dir = "../../testdata/qwen3vl-vision-tiny"
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	fake := &fakeGridTower{}
+	multimodal.RegisterQwen3Tower("fake-notap", func(*vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) { return fake, nil })
+	t.Cleanup(func() { multimodal.UnregisterQwen3Tower("fake-notap") })
+	for _, require := range []bool{false, true} {
+		fake.closed = false
+		q := &qwen3Tower{dir: dir, deep: 2, plan: gridTowerPlan{device: "fake-notap", where: "fake", require: require}}
+		_, err := q.encoder()
+		switch {
+		case require && err == nil:
+			t.Error("-require-backend: a non-tapping device tower was accepted for a DeepStack tower")
+		case !require && (err != nil || q.acc != nil || !strings.Contains(q.plan.where, "CPU")):
+			t.Errorf("without -require-backend: err %v, device tower kept %v, where %q; want the CPU", err, q.acc != nil, q.plan.where)
+		}
+		if !fake.closed {
+			t.Errorf("require %v: the refused device tower was not closed", require)
+		}
 	}
 }

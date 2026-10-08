@@ -347,7 +347,7 @@ by default (the banner says how to turn it on); which of the five routes a given
 (the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
 implementation of mode 2) · `decoder/model.go:337`, `:193`, `:802` (`Options`, `Load`,
 `Generate`) · `chat/chat.go:155` (`Detect`) · `pull/pull.go` (the library `pull`
-exports) · `internal/serveapp/main.go:403`, `:354`, `:927-932` (`-web`, `-require-backend`, the
+exports) · `internal/serveapp/main.go:404`, `:354`, `:927-932` (`-web`, `-require-backend`, the
 resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
 `docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the
 cache dir, the web UI's contract) · `docs/tasks/parked/task-bindings.md` (what the facade is for downstream) ·

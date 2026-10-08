@@ -124,7 +124,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:1075`).
+assumes (`internal/serveapp/main.go:1076`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -262,7 +262,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 ## Things checked and found fine
 
 - The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1827`), but serve
-  serializes each model's generations (`internal/serveapp/openai.go:80` `turns`), so it never fires
+  serializes each model's generations (`internal/serveapp/openai.go:81` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
 - Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1541`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;

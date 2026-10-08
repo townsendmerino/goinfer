@@ -307,10 +307,10 @@ supports.
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:130` | goinfer | `// embedInt4 is --embed-int4 as the load should see it. The default is on, except on Met` |
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/banner.go:112` | goinfer | `anchor: func modelBannerFrom(f bannerFacts, cfg config) []string {` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:181` | goinfer | `o := cfg.load.Options()` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:187` | goinfer | `o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:443` | goinfer | `fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled ` |
-| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:465` | goinfer | `fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) \| ngram — lossless` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:182` | goinfer | `o := cfg.load.Options()` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:188` | goinfer | `o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:444` | goinfer | `fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled ` |
+| `docs/audit-metal-2026-09-30.md|internal/serveapp/main.go:466` | goinfer | `fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) \| ngram — lossless` |
 | `docs/audit-metal-2026-09-30.md|linalg/quant.go:588` | aikit | `func QuantizeGroupsInt4(w []float32, rows, cols, group int) (packed []byte, scales []flo` |
 | `docs/audit-metal-2026-09-30.md|metal.go:1000` | gpu | `// Consumers that already pin are unaffected: LockOSThread nests. Missed here` |
 | `docs/audit-metal-2026-09-30.md|metal.go:690` | gpu | `// tax finding). The default serial compute encoder inserts barriers between dependent` |
@@ -891,7 +891,7 @@ supports.
 | `docs/queue-engineering.md|internal/giw/bundle.go:170` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:63` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:852` | goinfer | `go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:853` | goinfer | `go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)` |
 | `docs/queue-engineering.md|linalg/quant.go:222` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1982` | goinfer | `r.ensureBatchCap(16)` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:1049` | goinfer | `def gate_cell_idle():` |
@@ -967,7 +967,7 @@ supports.
 | `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:97` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
 | `docs/tasks/task-fit-to-hardware.md|internal/loadflags/loadflags.go:267` | goinfer | `"entrypoints (goinfer/metal/cmd/chat, goinfer/metal/cmd/serve) are darwin-gated and need` |
 | `docs/tasks/task-fit-to-hardware.md|internal/loadflags/loadflags.go:68` | goinfer | `fs.Float64Var(&f.WeightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB ` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:397` | goinfer | `sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:398` | goinfer | `sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:117` | goinfer | `if why := residentMemoryDecline(m); why != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:145` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:466` | goinfer | `"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machi` |
@@ -978,7 +978,7 @@ supports.
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:863` | goinfer | `if err != nil {` |
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
 | `docs/tasks/task-freetoken-techniques.md|decoder/model.go:356` | goinfer | `MoECacheSlots int` |
-| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:292` | goinfer | `func addrIsLoopback(addr string) bool {` |
+| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:293` | goinfer | `func addrIsLoopback(addr string) bool {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:372` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:399` | goinfer | `tail := tailKVOnly` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/embed.go:36` | goinfer | `// guard, as ForwardCapture.` |
@@ -1025,7 +1025,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:667` | goinfer | `type GIWTarget string` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:41` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
-| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:530` | goinfer | `--ctx        KV capacity in positions` |
+| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:531` | goinfer | `--ctx        KV capacity in positions` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:244` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:772` | goinfer | `return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kin` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:687` | goinfer | `if p := m.GiwPath(); p != "" {` |
@@ -1107,12 +1107,12 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:63` | goinfer | `type responseStore struct {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
 | `docs/use-from-go.md|chat/chat.go:114` | goinfer | `// Render builds the complete prompt string (including any leading BOS marker the` |
-| `site/different/REVIEW-08.md|internal/serveapp/main.go:436` | goinfer | `fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at star` |
+| `site/different/REVIEW-08.md|internal/serveapp/main.go:437` | goinfer | `fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at star` |
 | `site/different/REVIEW-10.md|internal/serveapp/batches_http.go:84` | goinfer | `if req.Endpoint != "/v1/chat/completions" {` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:402` | goinfer | `fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir ` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:446` | goinfer | `fs.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests be` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:721` | goinfer | `// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets th` |
-| `site/different/REVIEW-10.md|internal/serveapp/main.go:985` | goinfer | `func newServer(cfg config) (*server, error) {` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:403` | goinfer | `fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir ` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:447` | goinfer | `fs.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests be` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:722` | goinfer | `// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets th` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:986` | goinfer | `func newServer(cfg config) (*server, error) {` |
 | `site/different/REVIEW-11.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
 
 ## Bare file index
