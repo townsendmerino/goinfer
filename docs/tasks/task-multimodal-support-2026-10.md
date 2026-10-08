@@ -3465,6 +3465,22 @@ G-S10h used the gate's prompt ("Describe this image."), not the one on which the
   The lesson that stands without any further run: this first-token pair is highly sensitive to a table-precision change (Quarter 0.14 -> 0.30 on the off arm), so a 0.4 against 0.1 split between two prefills is within what a quantisation choice alone does, and neither anchor can rank the prefills until the instrument is the served configuration.
 - **Outcome.** AMBIGUOUS: the path stays OFF. By the registration, no third anchor is run on my own motion. A corrected-configuration anchor (EmbedInt4 on, and the dump reproducing the served probabilities first, as a registered instrument check) is a new registration that lifts my own "no third anchor" rule, so it is the owner's call.
 
+#### G-S10j, the corrected HF anchor, registered 2026-10-08 before any code or run (owner: option 2 after G-S10i read AMBIGUOUS and showed the dump was not the served configuration)
+
+This lifts my own "no third anchor" rule at the owner's word. It is bounded below so it cannot become a search.
+
+- **Step 1, the instrument gate (nothing is graded until it holds).** The Go dump, loaded as serve loads it, must reproduce the SERVED first-token distribution on table.png with the served prompt, for BOTH arms: the reference is the two serve binaries already pinned (`serve-cuda-dsoff` at `8ff9a57e` = the off path, `serve-cuda-dson` at `a54f1642` = the on path; they differ by one line), each asked for 1 token with the top-5 log-probabilities, `temperature 0`, the same request as the served check (`run-gs3c-served.sh`).
+  Held when, for each arm, every one of that server's top-5 tokens has a dump probability within **0.01 absolute** of the server's. The server's repeat is IDENTICAL to itself (recorded), so the reference is stable; 0.01 is a width for the CUDA tower (server) against the CPU encoder (dump), whose rows agree to 1e-6.
+  The reference numbers are written to a file by a script before the dump is compared, so the comparison cannot be adjusted afterwards.
+- **What may be changed to make the dump match serve:** only the dump's configuration, to be what serve does (every numerics-affecting default of `serve --model <dir> --backend cuda -vision-device auto` that the dump left at the zero value: the embed-int4 table that G-S10i found, then the KV quantisation, the context and any other `decoder.Options` field serve sets). Nothing on the graded side moves.
+- **Cap on the search, fixed now:** three rounds, each a hypothesis about a named configuration field, tested by running the dump and reading the instrument gate. If the gate does not hold after three, **the anchor is VOID and nothing is graded**: the report is "the dump does not reproduce serve and why we do not know", and no further anchor is proposed.
+- **Step 2, only if step 1 holds:** G-S10i's anchor unchanged (the four images, the served prompt, the two arms, the teacher tokens, the HF float32 side, the metric and the rule: FAIL if mean delta < -0.005 or any step-0 delta < -0.02; PASS if mean delta >= -0.002 and every step-0 delta >= -0.01; else AMBIGUOUS), on the corrected dump. Checks (i) (iii) (iv) as before; (iii) is read on every image, not only table.png, and a miss is reported.
+  The step-0 log-odds ln(p('Quarter')/p('Table')) of HF, off and on are printed beside it.
+- **Outcomes, fixed now:** PASS goes to the owner with G-S10h's FAIL and G-S10i's AMBIGUOUS beside it; nothing is enabled from here (the served rule would be re-registered with a direction and a band first). FAIL or AMBIGUOUS leaves the path off, and the DeepStack prefill question is closed for this tranche.
+  Whatever the reading, this is the last anchor of this kind.
+- **Prediction, written now:** the gate holds after the embed-int4 and KV-quant fields (one or two rounds); with the served configuration the mean delta stays within +-0.01 and the verdict is AMBIGUOUS again (probability about 0.5), a PASS about 0.2, a FAIL about 0.3.
+- **Cost, tier:** day. Finding the configuration is the unknown (I estimate under 45 minutes, three dump runs at 95 s each); once it holds, the dump and HF side are ~3 minutes.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
