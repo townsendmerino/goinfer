@@ -1623,16 +1623,19 @@ the three timed requests is under 5.0 s). What differs is the box: the RTX 2070 
     the CPU while the int8 tower loads on CUDA: S18's gap, as recorded. That cell therefore reads a CPU-decoder TTFT, and is a reading of the shipped default, not of what the card can do (a hand-set
     `--kv-sessions 1` cell is S18's G-S18a comparison, not this one). Every cell records the decode path and where the tower ran from serve's own log lines.
   - **Reading:** a record. Its gaps rank S16-S18, and S17's CUDA half has its first number already (the float32 SigLIP tower, 18 s per image; the int8 one 4 s).
-- **S13-lite, nobara** (`run-s13lite-nobara.sh`, night queue `s13lite-nobara`, estimated 45 min): Gemma 3 4B, CUDA, every engine at its defaults, a new image every request, three rounds with the engine order
+- **S13-lite, nobara** (`run-s13lite-nobara.sh`, night queue `s13lite-nobara`, estimated 55 min): Gemma 3 4B, CUDA, every engine at its defaults, a new image every request, three rounds with the engine order
   rotated each round (one server at a time; two 4B servers do not fit the 8 GB card).
   - **The engines:** goinfer as above, `~/models/gemma-3-4b-it` (int4 at load); **Ollama 0.32.5**, `gemma3:4b`, **model blob `sha256:aeda25e63ebd6`, the same blob the Mac's cell reads** (pulled to `~/ollama-0325/models`
     2026-10-07), its own server on 11535.
-  - **llama.cpp is not run on this box, and that is stated here rather than dropped:** there is no `cmake` and no `nvcc` (the CUDA toolkit here has `cuobjdump` and `nvdisasm` only) and no `llama-server` build, and a CUDA build
-    needs a package install that is the owner's to make. The script refuses to run unless `S13_NO_LLAMA=1` is passed, so the missing arm is a stated choice, and adds llama.cpp as the third engine if `LLAMA=` points at a
-    CUDA build with the Mac's GGUF and mmproj. The Mac's llama.cpp cell stands alone for that peer until then.
-  - **The reading:** the median of the nine timed TTFTs per engine against the 5 s bar, and goinfer's ratio to Ollama. Reported, not gated.
-- **By-day smokes of the harness on this box (18:50 PDT, exploratory and not quotable):** one goinfer cell (Qwen3.5-0.8B, TTFT 3.6 s on a fresh image) and the Ollama arm (`gemma3:4b`, 1.6 s on a fresh image, 7.9 s on its
-  first request) both ran end to end through `vision_ttft.py` under the timing lock.
+  - **llama.cpp** (added after a correction, below): `~/mycode/peers/llama.cpp/build/bin/llama-server`, **commit `427291b`** (version string `0.4.0-dev build 1`), built with CUDA for sm_75 (checked: it holds 6.3 GB of
+    the card while serving), with ggml-org's `gemma-3-4b-it-Q4_K_M.gguf` and `mmproj-model-f16.gguf` in `~/models/gemma-3-4b-it-gguf` (the Mac's files; the Q4_K_M is byte-identical to the older
+    `~/models/gemma-3-4b-it-Q4_K_M.gguf`), `-ngl 99`. **This is not the Mac's build** (10621, `c1d0e7a00`): a different commit, so the cross-box reading of the llama.cpp cell carries that difference; each box's own ratio does
+    not. A rebuild at `c1d0e7a00` is possible here (`~/.local/bin/cmake`, `~/cuda-toolkit/bin/nvcc` 12.6) if the owner wants exact parity.
+  - **A correction to this registration's first draft:** it said llama.cpp could not run on this box (no `cmake`, no `nvcc`, no `llama-server`). That came from a search of `PATH` and a shallow `find` that skipped the
+    separate `/home` partition; the checkout, the build, `cmake` and `nvcc` were all under `~`. The script no longer has a "no llama.cpp" switch.
+  - **The reading:** the median of the nine timed TTFTs per engine against the 5 s bar, and goinfer's ratio to each peer. Reported, not gated.
+- **By-day smokes of the harness on this box (18:50 and 19:11 PDT, exploratory and not quotable):** one goinfer cell (Qwen3.5-0.8B, TTFT 3.6 s on a fresh image), the Ollama arm (`gemma3:4b`, 1.6 s on a fresh image, 7.9 s on its
+  first request) and the llama.cpp arm (Gemma 3 4B with its mmproj, 0.94 s) all ran end to end through `vision_ttft.py` under the timing lock.
 
 ### S8 — The support table in the README, kept true
 
