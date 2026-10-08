@@ -1,0 +1,13 @@
+=== RUN   TestS18Int8Tower_real
+[S18 G-S18f     6s] int8 tower attached from a head-only encoder
+[S18 G-S18f    62s] gemma3_preprocess_image.png: the float32 CPU tower
+[S18 G-S18f   110s] qwen25vl_preprocess_image.png: the float32 CPU tower
+[S18 G-S18f   150s] glm_ocr/formula.png: the float32 CPU tower
+[S18 G-S18f   190s] glm_ocr/table.png: the float32 CPU tower
+[S18 G-S18f   235s] gemma3_preprocess_image.png: worst token cosine 0.999999965 against the CPU on the same weights; relative L2 0.0254 against the true float32 tower
+[S18 G-S18f   276s] qwen25vl_preprocess_image.png: worst token cosine 0.999999947 against the CPU on the same weights; relative L2 0.0285 against the true float32 tower
+[S18 G-S18f   314s] glm_ocr/formula.png: worst token cosine 0.999999881 against the CPU on the same weights; relative L2 0.0399 against the true float32 tower
+[S18 G-S18f   356s] glm_ocr/table.png: worst token cosine 0.999999849 against the CPU on the same weights; relative L2 0.0200 against the true float32 tower
+--- PASS: TestS18Int8Tower_real (355.62s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	356.226s

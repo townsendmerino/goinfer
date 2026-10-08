@@ -1,0 +1,7 @@
+=== RUN   TestS18TowerHostMemory
+=== RUN   TestS18TowerHostMemory/int8
+[S18 G-S18h] int8 tower: Go heap peak during the attach +196 MB; phys_footprint +843 MB after one image; host blocks held: false
+--- PASS: TestS18TowerHostMemory (6.12s)
+    --- PASS: TestS18TowerHostMemory/int8 (6.09s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	6.586s

@@ -114,12 +114,19 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
 		return nil, false, cerr
 	}
+	from, _ := resolveMetalCtxCap(m)
 	if why := residentMemoryDecline(m); why != "" {
-		return nil, false, decoder.DeclineResident("%s", why)
+		if !shrinkCtxToFit(m) {
+			return nil, false, decoder.DeclineResident("%s", why)
+		}
 	}
 	res, e := buildResident(m)
 	if e != nil {
+		metalCtxCeiling.Delete(m)
 		return nil, false, decoder.DeclineResident("metal: %v", e)
+	}
+	if _, ok := metalCtxCeiling.Load(m); ok {
+		res.ctxCeilKey = m // the entry lives as long as the resident (resident.Close deletes it)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
 	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
@@ -130,7 +137,56 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	if res.w8 || res.w8Attn {
 		b.resident.quant = m.Quant()
 	}
+	if ctx, _ := resolveMetalCtxCap(m); ctx < from || m.ExtraResidentBytes() > 0 {
+		fmt.Fprint(os.Stderr, metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
+	}
 	return b.resident, true, nil
+}
+
+// metalCtxCeiling is S18's context ceiling per model (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac"):
+// what shrinkCtxToFit lowered an unpinned resident context to, read by resolveMetalCtxCap. A map keyed by the model, so
+// the decoder keeps no backend state.
+var metalCtxCeiling sync.Map // *decoder.Model -> int
+
+// metalCtxFloor is the shortest context shrinkCtxToFit gives a model before the guard declines: an image turn (Gemma 3's
+// 256 soft tokens, a few hundred of text) and some conversation fit.
+const metalCtxFloor = 2048
+
+// shrinkCtxToFit halves an unpinned resident context, down to metalCtxFloor, until the memory guard passes (S18: the
+// context gives way before the resident declines; an explicit -ctx never does). It reports whether one passed; when none
+// does the context is left as it was.
+func shrinkCtxToFit(m *decoder.Model) bool {
+	if m.ResidentContextPinned() {
+		return false
+	}
+	cur, err := resolveMetalCtxCap(m)
+	if err != nil {
+		return false
+	}
+	for cur > metalCtxFloor {
+		cur = max(cur/2, metalCtxFloor)
+		metalCtxCeiling.Store(m, cur)
+		if residentMemoryDecline(m) == "" {
+			return true
+		}
+	}
+	metalCtxCeiling.Delete(m)
+	return false
+}
+
+// metalKVPlanLine is serve's KV plan line (S18's banner): the slots and context the build chose, and what for when it
+// is less than asked or a companion (a vision tower, a drafter) is priced beside it.
+func metalKVPlanLine(slots, ctx, from int, extra int64) string {
+	s := fmt.Sprintf("metal: KV plan: %d conversation(s) x %d positions", slots, ctx)
+	switch {
+	case ctx < from && extra > 0:
+		s += fmt.Sprintf(" (context reduced from %d to leave %.1f GB for the vision tower or drafter)", from, float64(extra)/(1<<30))
+	case ctx < from:
+		s += fmt.Sprintf(" (context reduced from %d to fit this machine's memory)", from)
+	case extra > 0:
+		s += fmt.Sprintf(" (%.1f GB left for the vision tower or drafter)", float64(extra)/(1<<30))
+	}
+	return s + "\n"
 }
 
 // residentMemFraction is the share of physical RAM the WEIGHTS alone may occupy. The remainder
@@ -364,7 +420,10 @@ func residentNeedBytes(m *decoder.Model) int64 {
 	}
 	// decoder.Model.ResidentNeedBytes is also what Plan("metal").NeedBytes() is built from, so `fit`'s
 	// verdict and this guard's decision are the same number by construction.
-	return m.ResidentNeedBytes("metal", metalMoESlotsFromEnv(m), ctxCap, false, false)
+	// S18: plus what a companion will claim beside the resident (a vision tower priced by serve's towerReserve, a
+	// drafter): Metal's "device" memory is the same RAM, and the guard used to see none of it.
+	return m.ResidentNeedBytes("metal", metalMoESlotsFromEnv(m), ctxCap, false, false) +
+		m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(ctxCap)
 }
 
 // residentFitsMemory reports whether this model's weights fit the machine, declining loudly when

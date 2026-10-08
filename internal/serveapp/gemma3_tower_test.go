@@ -3,6 +3,7 @@ package serveapp
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,6 +149,38 @@ func TestResolveGemma3VisionQuant(t *testing.T) {
 				t.Errorf("note printed = %v, want %v (%q)", has, tc.wantNote, note.String())
 			}
 		})
+	}
+	// S18 on the Mac: the same choice on Metal, against its resident budget. The 4B's estimate: 8.6 GB of safetensors at 0.34 is 2.92 GB on the device,
+	// twice that without a sidecar, plus one f16 KV slot at 2048 (0.40), the f16 tower (1.29) and the margin (0.40): about 8.5 GB from a directory with no
+	// sidecar, 5.6 GB with one.
+	oldM := metalFreeBytes
+	t.Cleanup(func() { metalFreeBytes = oldM })
+	for _, tc := range []struct {
+		name     string
+		free     int64
+		probe    bool
+		want     string
+		wantNote bool
+	}{
+		{"a 64 GB Mac (44.8 GB budget): f16", 44_800_000_000, true, "", false},
+		{"the 16 GB Mac (4.2-4.9 GB budget): int8, with a note", 4_600_000_000, true, "int8", true},
+		{"no budget probe: untouched", 0, false, "", false},
+	} {
+		t.Run("metal: "+tc.name, func(t *testing.T) {
+			metalFreeBytes = func() (int64, bool) { return tc.free, tc.probe }
+			var note bytes.Buffer
+			got := resolveGemma3VisionQuant(mk(dir4b, "", "metal"), &note)
+			if got.visionQuant != tc.want {
+				t.Errorf("visionQuant = %q, want %q (note %q)", got.visionQuant, tc.want, note.String())
+			}
+			if has := strings.Contains(note.String(), "using the int8 Metal tower"); has != tc.wantNote {
+				t.Errorf("note printed = %v, want %v (%q)", has, tc.wantNote, note.String())
+			}
+		})
+	}
+	metalFreeBytes = func() (int64, bool) { return 1, true }
+	if got := resolveGemma3VisionQuant(mk(dir4b, "f32", "metal"), io.Discard); got.visionQuant != "f32" {
+		t.Errorf("an explicit f32 on Metal became %q", got.visionQuant)
 	}
 	// other models and several models: untouched
 	cudaFreeBytes = func() (int64, bool) { return 100, true }

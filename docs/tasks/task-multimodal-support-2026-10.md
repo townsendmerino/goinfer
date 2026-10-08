@@ -3265,6 +3265,69 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       during the attach). The CPU fallback still produces the f32 tower's output after a forced device failure.
     - **G-S18a as registered,** read by day after the sidecar is built at night, with whichever tower serve chose,
       named.
+- **S18 on the Mac, the tower, by day 2026-10-08: built; G-S18e, G-S18f, G-S18h and G-S18c-Mac PASS; part 3 built and
+  tested. G-S18g (the served reply) and G-S18a wait on the night and on an aikit release.**
+  - **aikit, local branch `s18-encoder-head` (not pushed; the owner's to push and tag):**
+    - `vision.LoadEncoderHead` (the encoder without its blocks) and `Encoder.ForEachSiglipBlock` (the blocks read
+      one at a time from the checkpoint).
+    - The CPU `Forward`, `Weights` and `GPUWeights` load the blocks on first use, so the CPU path and the CUDA and
+      WebGPU towers are unchanged.
+    - `Quantized` and `HasBlocks` accessors.
+    - `TestLoadEncoderHead_matchesLoadEncoder`: bit-identical to `LoadEncoder` at both precisions, and the streamed
+      blocks equal `Weights()`. The vision suite passes.
+  - **goinfer, local branch `s18-mac-tower`** (needs the aikit release before it can reach `main`; the go.mod still
+    pins v1.59.0):
+    - `tower_gemm_w8` in `metal/grid_vision.go`. `tower_gemm_body` takes the scale under a compile-time flag, so w16
+      and w32 compile as before.
+    - The SigLIP resident streams the blocks for a head-only encoder and keeps uploading in-memory float32 blocks
+      otherwise (the tiny gates sharpen weights through `Weights()`). An encoder loaded with quant=true gets the int8
+      tower.
+    - Serve:
+      - on Metal it loads a head-only encoder;
+      - the unset default is chosen by `resolveGemma3VisionQuantMetal` (f16 when the budget holds the decoder, one
+        KV slot at 2048 and the f16 tower, else int8, with a note);
+      - a failed f16 default attach falls back to the int8 device tower, as on CUDA.
+    - `towerReserve` prices Metal towers (`metalTowerEstimate`). Metal's guard adds `ExtraResidentBytes`, the drafter's
+      included.
+    - `BuildResident` halves an unpinned context to the 2048 floor before it declines (`shrinkCtxToFit`) and prints
+      the KV plan line.
+  - **G-S18e PASS** (`TestTowerGemmKernel/tower_gemm_w8`): worst 3.26e-7 against 1e-5 over 8 shapes. The planted
+    defects read: the bias dropped 1.06e-1, A one column late 2.91e-1, a quarter of each K step skipped 1.08e-1, the
+    next group's scale 6.46e-2.
+    - Found on the way: a `char4` load from an unaligned int8 row (K = 9 or 17) reads the wrong bytes. The int8 path
+      now takes the element path unless K is a multiple of 4.
+  - **G-S18f PASS** (`s18-mac/gs18f-real.log`; tiny `TestS18Int8Tower_tiny`).
+    - On the same rounded weights the Metal int8 tower's worst token is 0.999999965 / 0.999999947 / 0.999999881 /
+      0.999999849 on the four F2a images.
+    - Against the true float32 tower, the relative L2 is 0.0254 / 0.0285 / 0.0399 / 0.0200, the probe's figures
+      exactly, under the 0.06 guard.
+    - Tiny: 1.000000000, with every planted defect red; the scale defect at 0.999829, the narrowest.
+  - **G-S18h PASS** (`s18-mac/gs18h-memory-{f16,int8}.log`, each form in its own process; the first run had both in
+    one process and is `gs18h-memory.log`, which confounds the second form's footprint):
+
+    | tower | Go heap peak during the attach (bar 217 MB) | phys_footprint after one image |
+    |---|---|---|
+    | f16 | 215 MB | 1172 MB |
+    | int8 | 196 MB | 843 MB |
+
+    - The encoder holds no blocks after either attach.
+    - The f16 form's 215 MB against 217 is a narrow pass: one block's float32 plus its f16 copy and GC lag.
+    - The CPU fallback (the device tower detached) matches `LoadEncoder`'s float32 tower bit for bit.
+    - Gemma 3's tower was 3.45 GB before (finding 2 above).
+  - **G-S18c-Mac PASS** (`TestTowerReserve_everyDeviceTower` with Metal rows): nonzero for every Metal device tower,
+    zero for the CPU's. Gemma 3's figures are 1291 MB (f16) and 932 MB (int8) against the measured 1172 and 843, about
+    10% over and inside the ±25% bar. The old code priced every Metal tower at zero, so the Metal rows fail on it.
+  - **Part 3** (`TestS18ShrinkCtxToFit`): with a budget between the 4096 and 2048 needs, an unpinned build goes
+    resident at 2048 and prints "metal: KV plan: 1 conversation(s) x 2048 positions (context reduced from 4096 ...)".
+    An explicit `-ctx 4096` still declines, and the ceiling's entry goes with the resident.
+    - The test probes with a Metal load: a CPU load prices more, since it keeps arm64-repacked weights.
+  - **The arithmetic for G-S18a now:** the decoder through the sidecar is about 2.9 GB plus KV (to be measured), and
+    the int8 tower 0.84 GB, so about 4.0 GB at a 2048 context, against a 4.2-4.9 GB budget.
+  - **Owed:**
+    - the aikit release, then the `go.mod` bump and the merge to `main`;
+    - G-S18g (the served reply, int8 tower against f16 on the same decoder: night);
+    - the one-time Gemma 3 sidecar (night: the heap load is refused by day);
+    - G-S18a by day after both.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

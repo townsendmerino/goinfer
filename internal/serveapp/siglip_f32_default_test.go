@@ -58,9 +58,10 @@ func TestTowerReserve_gemma3(t *testing.T) {
 // TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/tasks/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under its backend, int8 included, and
 // zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Red on the code before S18 for Gemma 3 under cuda, where the shipped default (the int8 device tower) was priced at zero.
 func TestTowerReserve_everyDeviceTower(t *testing.T) {
-	old := cudaTowerRegistered // stand in for a cuda build, whose blank import fills the tower registries
+	old, oldM := cudaTowerRegistered, metalTowerRegistered // stand in for cuda and metal builds, whose imports fill the tower registries
 	cudaTowerRegistered = func(string) bool { return true }
-	t.Cleanup(func() { cudaTowerRegistered = old })
+	metalTowerRegistered = func(string) bool { return true }
+	t.Cleanup(func() { cudaTowerRegistered, metalTowerRegistered = old, oldM })
 	cfgs := map[string]string{
 		"gemma3":     `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`,
 		"gemma4":     `{"model_type":"gemma4","vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`,
@@ -79,7 +80,8 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 				c.load.Backend = backend
 				got := towerReserve(c, dir)
 				// a device tower on CUDA: every family in float32; Gemma 3 also as the int8 device tower (the shipped default and -vision-quant int8)
-				wantDevice := backend == "cuda" && (towerInt8(fam, quant, "cuda") == false || fam == "gemma3")
+				// S18 on the Mac (G-S18c-Mac): the same on Metal, whose int8 device tower is Gemma 3's alone (tower_gemm_w8)
+				wantDevice := (backend == "cuda" || backend == "metal") && (!towerInt8(fam, quant, backend) || fam == "gemma3")
 				if wantDevice && got <= 0 {
 					t.Errorf("%s quant %q on %s has a device tower but towerReserve = %d", fam, quant, backend, got)
 				}
@@ -96,5 +98,18 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 	c.load.Backend = "cuda"
 	if mib := float64(towerReserve(c, dir)) / (1 << 20); mib < 520 || mib > 640 {
 		t.Errorf("gemma3 int8 reserve %.0f MiB, want 520-640 (measured 558)", mib)
+	}
+	// G-S18c-Mac: Gemma 3's Metal figures within 25% of the phys_footprint its towers measured (metal TestS18TowerHostMemory, 2026-10-08)
+	c.load.Backend = "metal"
+	for _, m := range []struct {
+		quant    string
+		measured float64 // MB
+	}{{"", 1172}, {"int8", 843}} {
+		c.visionQuant = m.quant
+		got := float64(towerReserve(c, dir)) / 1e6
+		t.Logf("gemma3 Metal tower reserve (quant %q): %.0f MB, measured %.0f MB", m.quant, got, m.measured)
+		if got < 0.75*m.measured || got > 1.25*m.measured {
+			t.Errorf("gemma3 Metal reserve (quant %q) %.0f MB, outside 25%% of the measured %.0f MB", m.quant, got, m.measured)
+		}
 	}
 }

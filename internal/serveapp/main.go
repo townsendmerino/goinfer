@@ -1186,7 +1186,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// the 8 GB card is 2 resident KV slots at the 4096 floor instead of 3.
 	// M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision tower's own leak/threading bugs are fixed
 	// (cuda/vision_encoder.go); cuda/vision_register.go registered its factory with vision.RegisterResident via cuda/cmd/serve's blank import.
-	enc, int8Tower, residentOK, err := attachGemma3Tower(siglipLoader(dir), int8Tower, gemma3FloatDefault(cfg, int8Tower), cfg.towerBackend(), cfg.requireBE, os.Stderr)
+	enc, int8Tower, residentOK, err := attachGemma3Tower(siglipLoader(dir, cfg.towerBackend() == "metal"), int8Tower, gemma3FloatDefault(cfg, int8Tower), cfg.towerBackend(), cfg.requireBE, os.Stderr)
 	if err != nil {
 		return err
 	}

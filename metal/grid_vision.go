@@ -170,12 +170,21 @@ TOWER_ATTN(80)
 // the edges. dbg plants a defect for the tests (0 in production): 1 drops the bias, 2 stages A one K column late, 3 skips
 // the last 8-wide quarter of every K step. (A first version that rounded A to f16, the registered lever, failed the
 // tower bars at real size; see the doc.)
+// tower_w8_scale is tower_gemm_w8's scale for weight row n at column k: one f32 per group of 32 along K
+// (ceil(K/32) a row). dbg 4 plants G-S18e's defect: the next group's scale (the row's last group keeps its own).
+inline float tower_w8_scale(device const float* WS, uint n, uint k, uint K, uint dbg) {
+    const uint nG = (K + 31u) / 32u;
+    uint g = k >> 5;
+    if (dbg == 4u) g = min(g + 1u, nG - 1u);
+    return WS[n * nG + g];
+}
 #define TG_T 64u
 #define TG_BK 32u
 #define TG_LD (TG_BK + 4u)
-template <typename TW>
+template <typename TW, bool SC>
 inline void tower_gemm_body(device const float* A, device const TW* W, device float* C, device const float* bias,
-    uint M, uint N, uint K, uint hasBias, uint dbg, threadgroup float* S, uint2 tg, ushort sgid, ushort tid) {
+    device const float* WS, uint M, uint N, uint K, uint hasBias, uint dbg, threadgroup float* S, uint2 tg, ushort sgid,
+    ushort tid) {
     threadgroup float* As = S;
     threadgroup float* Bs = S + TG_T * TG_LD;
     const uint m0 = tg.y * TG_T, n0 = tg.x * TG_T;
@@ -192,10 +201,13 @@ inline void tower_gemm_body(device const float* A, device const TW* W, device fl
         } else if (ga < M) {
             for (uint e = 0; e < 4u; e++) if (gk + e + aShift < K) av[e] = A[ga * K + gk + e + aShift];
         }
-        if (gw < N && gk + 4u <= K) {
+        // An int8 row starts 4-byte aligned only when K is a multiple of 4; a char4 load from an unaligned row reads
+        // the wrong bytes (K = 9 and 17 in the kernel gate), so w8 takes the element path there.
+        if (gw < N && gk + 4u <= K && (!SC || (K & 3u) == 0u)) {
             wv = float4(*(device const vec<TW, 4>*)(W + gw * K + gk));
+            if (SC) wv *= tower_w8_scale(WS, gw, gk, K, dbg); // the 4 share one group: gk is a multiple of 4, a group 32
         } else if (gw < N) {
-            for (uint e = 0; e < 4u; e++) if (gk + e < K) wv[e] = float(W[gw * K + gk + e]);
+            for (uint e = 0; e < 4u; e++) if (gk + e < K) wv[e] = float(W[gw * K + gk + e]) * (SC ? tower_w8_scale(WS, gw, gk + e, K, dbg) : 1.0f);
         }
         *(threadgroup float4*)(As + r * TG_LD + c4) = av;
         *(threadgroup float4*)(Bs + r * TG_LD + c4) = wv;
@@ -223,10 +235,20 @@ kernel void NAME(device const float* A [[buffer(0)]], device const TW* W [[buffe
     uint2 tg [[threadgroup_position_in_grid]], ushort sgid [[simdgroup_index_in_threadgroup]], \
     ushort tid [[thread_index_in_threadgroup]]) { \
     threadgroup float S[2u * TG_T * TG_LD]; \
-    tower_gemm_body<TW>(A, W, C, bias, M, N, K, hasBias, dbg, S, tg, sgid, tid); \
+    tower_gemm_body<TW, false>(A, W, C, bias, bias, M, N, K, hasBias, dbg, S, tg, sgid, tid); \
 }
 TOWER_GEMM(tower_gemm_w32, float)
 TOWER_GEMM(tower_gemm_w16, half)
+// tower_gemm_w8 (S18): int8 weights in groups of 32 along K, each group's f32 scale applied as the weights widen to f32
+// at staging; A and the accumulation f32, as w16. WS is [N, ceil(K/32)].
+kernel void tower_gemm_w8(device const float* A [[buffer(0)]], device const char* W [[buffer(1)]], device float* C [[buffer(2)]],
+    device const float* bias [[buffer(3)]], constant uint& M [[buffer(4)]], constant uint& N [[buffer(5)]],
+    constant uint& K [[buffer(6)]], constant uint& hasBias [[buffer(7)]], constant uint& dbg [[buffer(8)]],
+    device const float* WS [[buffer(9)]], uint2 tg [[threadgroup_position_in_grid]],
+    ushort sgid [[simdgroup_index_in_threadgroup]], ushort tid [[thread_index_in_threadgroup]]) {
+    threadgroup float S[2u * TG_T * TG_LD];
+    tower_gemm_body<char, true>(A, W, C, bias, WS, M, N, K, hasBias, dbg, S, tg, sgid, tid);
+}
 `
 
 // gvKind is the tower family; it decides the norm, the MLP, the position term, RoPE and the attention segments.
@@ -246,6 +268,7 @@ func (k gvKind) rope() bool    { return k != gvkSiglip }
 type gvProj struct {
 	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none). w is empty when only wh was kept (lever B)
 	wh      Buffer // S17 lever B: the same weights in f16 for tower_gemm_w16; empty when the GEMM runs f32
+	w8, ws  Buffer // S18: int8 weights in groups of 32 along in, and their f32 scales [out, ceil(in/32)], for tower_gemm_w8
 	out, in int
 }
 
@@ -270,6 +293,8 @@ type gridVAccel struct {
 	scale          Pipeline
 	fusedAttn      Pipeline // S17 lever A: tower_attn_hd<head_dim>; zero when the head dim has no fused kernel
 	gemmF16        Pipeline // S17 lever B: tower_gemm_w16, the GEMM over the f16 weight copy
+	gemmW8         Pipeline // S18: tower_gemm_w8, the GEMM over int8 weights in groups of 32
+	int8W          bool     // S18: projections upload as int8 groups of 32 (tower_gemm_w8) instead of f16
 	oldGemm        bool     // test seam: run the f32 GEMM even where an f16 copy exists (lever B's A/B; needs gvKeepF32ForAB)
 	gemmDbg        uint32   // test seam: tower_gemm_w16's planted defect (0 in production)
 	oldAttn        bool     // test seam: run eg2Ops.attention even when fusedAttn exists (the lever's in-process A/B)
@@ -327,7 +352,7 @@ func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64)
 	}
 	a := &gridVAccel{kind: kind, hidden: hidden, inter: inter, heads: heads, hd: hidden / heads, patchDim: patchDim}
 	var err error
-	more := map[string]*Pipeline{"gv_scale": &a.scale, "tower_gemm_w16": &a.gemmF16}
+	more := map[string]*Pipeline{"gv_scale": &a.scale, "tower_gemm_w16": &a.gemmF16, "tower_gemm_w8": &a.gemmW8}
 	switch a.hd {
 	case 64, 72, 80: // S17 lever A's fused attention; any other head dim keeps eg2Ops.attention
 		more[fmt.Sprintf("tower_attn_hd%d", a.hd)] = &a.fusedAttn
@@ -354,6 +379,11 @@ func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
 // weights sets a projection's weights: the f16 copy for tower_gemm_w16 (S17 lever B), and the f32 one only when the
 // A/B keeps both.
 func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
+	if a.int8W {
+		q, sc := quantG32(w, p.out, p.in)
+		p.w8, p.ws = NewBufferInt8(a.d, q), NewBufferFloats(a.d, sc)
+		return p
+	}
 	h := make([]uint16, len(w))
 	for i, v := range w {
 		h[i] = f32ToF16(v)
@@ -363,6 +393,43 @@ func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 		p.w = a.up(w)
 	}
 	return p
+}
+
+// quantG32 is tower_gemm_w8's weight form (S18): each row of w [rows, cols] in groups of 32 along cols, each group
+// scaled by its largest magnitude over 127 and rounded to int8. The scales are [rows, ceil(cols/32)]. The kernel's
+// weight is float(q)·scale, which dequantG32 reproduces for the CPU reference.
+func quantG32(w []float32, rows, cols int) ([]int8, []float32) {
+	nG := (cols + 31) / 32
+	q, sc := make([]int8, len(w)), make([]float32, rows*nG)
+	for r := range rows {
+		for g := range nG {
+			lo, hi := r*cols+g*32, r*cols+min(g*32+32, cols)
+			var mx float32
+			for _, v := range w[lo:hi] {
+				mx = max(mx, float32(math.Abs(float64(v))))
+			}
+			if mx == 0 {
+				continue
+			}
+			s := mx / 127
+			sc[r*nG+g] = s
+			for i := lo; i < hi; i++ {
+				q[i] = int8(max(-127, min(127, math.Round(float64(w[i]/s)))))
+			}
+		}
+	}
+	return q, sc
+}
+
+// dequantG32 is the weight tower_gemm_w8 computes with: float(q)·scale, per group of 32.
+func dequantG32(q []int8, sc []float32, rows, cols int) []float32 {
+	nG := (cols + 31) / 32
+	w := make([]float32, len(q))
+	for i := range w {
+		r, c := i/cols, i%cols
+		w[i] = float32(q[i]) * sc[r*nG+c/32]
+	}
+	return w
 }
 
 // splitQKV uploads a fused [3·hidden, hidden] qkv projection (rows q, then k, then v) as three projections.
@@ -454,6 +521,17 @@ func (a *gridVAccel) grow(np, maxSeg int) {
 func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows int) {
 	if a.prof != nil {
 		a.prof.flops["gemm"] += 2 * float64(rows) * float64(p.out) * float64(p.in)
+	}
+	if p.w8 != (Buffer{}) {
+		hasBias, b := uint32(0), p.b
+		if b == (Buffer{}) {
+			b = p.ws // bound but never read
+		} else {
+			hasBias = 1
+		}
+		e.Dispatch2D(a.gemmW8, (p.out+63)/64, (rows+63)/64, 512, 1, x, p.w8, out, b, a.u32(uint32(rows)), a.u32(uint32(p.out)),
+			a.u32(uint32(p.in)), a.u32(hasBias), a.u32(a.gemmDbg), p.ws)
+		return
 	}
 	if p.wh != (Buffer{}) && !a.oldGemm {
 		hasBias, b := uint32(0), p.b

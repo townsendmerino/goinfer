@@ -122,11 +122,15 @@ func TestTowerAttnKernel(t *testing.T) {
 // weights rounded to f16) of its own Σ|a·w| + |bias|. (The first f16-activation kernel's bar was 2e-3; it passed here
 // and failed the tower bars, see the doc.) Weights at a tower's scale (σ 0.02), so a dropped bias is far over either bar. Each
 // planted defect must miss it, on both kernels.
+//
+// tower_gemm_w8 is G-S18e (S18 on the Mac, registered before the code): int8 weights in groups of 32 with an f32 scale
+// each, against a float64 reference over the same dequantized weights (float(q)·scale), so the bar is 1e-5 (only the
+// accumulation differs); its fourth planted defect takes each group's scale from the next group.
 func TestTowerGemmKernel(t *testing.T) {
 	for _, k := range []struct {
 		name string
 		bar  float64
-	}{{"tower_gemm_w32", 1e-5}, {"tower_gemm_w16", 1e-3}} {
+	}{{"tower_gemm_w32", 1e-5}, {"tower_gemm_w16", 1e-3}, {"tower_gemm_w8", 1e-5}} {
 		t.Run(k.name, func(t *testing.T) { testTowerGemmKernel(t, k.name, k.bar) })
 	}
 }
@@ -159,17 +163,26 @@ func testTowerGemmKernel(t *testing.T, kernel string, bar float64) {
 			w[i] = float32(0.02 * rng.NormFloat64())
 			h[i] = f32ToF16(w[i])
 		}
-		bW := NewBufferU16s(d, h)
-		if kernel == "tower_gemm_w32" {
+		bW, bS := NewBufferU16s(d, h), Buffer{}
+		switch kernel {
+		case "tower_gemm_w32":
 			bW = NewBufferFloats(d, w)
+		case "tower_gemm_w8":
+			q8, sc := quantG32(w, s.N, s.K)
+			bW, bS = NewBufferInt8(d, q8), NewBufferFloats(d, sc)
+			w = dequantG32(q8, sc, s.N, s.K) // the reference is over the weights the kernel computes with
 		}
 		for i := range b {
 			b[i] = float32(0.5 * rng.NormFloat64())
 		}
 		bA, bB, bC := NewBufferFloats(d, a), NewBufferFloats(d, b), d.NewBufferLen(s.M*s.N)
 		e := q.Begin()
-		e.Dispatch2D(p, (s.N+63)/64, (s.M+63)/64, 512, 1, bA, bW, bC, bB, NewBufferU32(d, uint32(s.M)), NewBufferU32(d, uint32(s.N)),
-			NewBufferU32(d, uint32(s.K)), NewBufferU32(d, 1), NewBufferU32(d, dbg))
+		args := []Buffer{bA, bW, bC, bB, NewBufferU32(d, uint32(s.M)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, uint32(s.K)),
+			NewBufferU32(d, 1), NewBufferU32(d, dbg)}
+		if bS != (Buffer{}) {
+			args = append(args, bS)
+		}
+		e.Dispatch2D(p, (s.N+63)/64, (s.M+63)/64, 512, 1, args...)
 		e.End()
 		if err := e.Err(); err != nil {
 			t.Fatal(err)
@@ -199,7 +212,11 @@ func testTowerGemmKernel(t *testing.T, kernel string, bar float64) {
 	for _, df := range []struct {
 		name string
 		dbg  uint32
-	}{{"(1) the bias dropped", 1}, {"(2) A staged one K column late", 2}, {"(3) the last quarter of each K step skipped", 3}} {
+	}{{"(1) the bias dropped", 1}, {"(2) A staged one K column late", 2}, {"(3) the last quarter of each K step skipped", 3},
+		{"(4) each group's scale from the next group", 4}} {
+		if df.dbg == 4 && kernel != "tower_gemm_w8" {
+			continue
+		}
 		w := 0.0
 		for _, s := range []sh{{70, 33, 1176}, {128, 1152, 1152}} {
 			w = math.Max(w, run(s, df.dbg))

@@ -1,0 +1,7 @@
+=== RUN   TestS18TowerHostMemory
+[S18 G-S18h] f16 tower: Go heap peak during the attach +205 MB; phys_footprint +1154 MB after one image; host blocks held: false
+[S18 G-S18h] the CPU fallback of a head-only encoder matches LoadEncoder's float32 tower exactly
+[S18 G-S18h] int8 tower: Go heap peak during the attach +196 MB; phys_footprint +496 MB after one image; host blocks held: false
+--- PASS: TestS18TowerHostMemory (119.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	120.010s
