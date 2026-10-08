@@ -141,6 +141,9 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	if len(layers) != r.nL {
 		return fmt.Errorf("metal: SetAdapter got %d layers, model has %d", len(layers), r.nL)
 	}
+	if r.q4kLane { // the resident LoRA kernels read the int8 activations this lane never makes
+		return fmt.Errorf("metal: a LoRA adapter is not supported on a --quant q4k model")
+	}
 	if loraLayersIdentical(layers, r.loraCacheSrc) {
 		r.loraLayers = r.loraCached
 		return nil

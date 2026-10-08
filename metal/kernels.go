@@ -886,6 +886,13 @@ kernel void gemv_q4k_f32_resid(device const uchar* wq[[buffer(0)]], device const
     Q4K_F32_BODY
     if (lane==0) out[row] += acc;
 }
+kernel void gemv_q4k_f32_bias(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    device const float* bias[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    Q4K_F32_BODY
+    if (lane==0) out[row] = acc + bias[row];
+}
 // int8 weights (per-row scale) over f32 activations. K a multiple of 4.
 #define W8_F32_BODY \
     uint row = tgid*8u + sgid; \
@@ -908,6 +915,47 @@ kernel void gemv_w8_f32_resid(device const char* wq[[buffer(0)]], device const f
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     W8_F32_BODY
     if (lane==0) out[row] += acc;
+}
+kernel void gemv_w8_f32_bias(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
+    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
+    constant uint& N[[buffer(5)]], device const float* bias[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    W8_F32_BODY
+    if (lane==0) out[row] = acc + bias[row];
+}
+
+// The q4k lane's LM head: gemv_w8a8_coal's and gemv_w8a8_amax's buffer order and launch shapes, so every head dispatch
+// site runs unchanged when buildResident swaps the pipelines, but slot 0 holds the f32 final-norm output (the trunk's
+// rmsnorm_f32_out writes it into r.aq, sized 4·H bytes on this lane) and slot 1 is unread.
+kernel void gemv_w8f32_head(device const float* ax[[buffer(0)]], device const float* unused[[buffer(1)]],
+    device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    device const char4* wr = (device const char4*)(bq + (ulong)gid*(ulong)K);
+    device const float4* a4 = (device const float4*)ax;
+    float acc = 0.0f;
+    for (uint g=lid; g<(K>>2u); g+=32u) acc += dot(float4(wr[g]), a4[g]);
+    acc = simd_sum(acc);
+    if (lid==0) out[gid] = acc*bsc[gid];
+}
+kernel void gemv_w8f32_amax(device const float* ax[[buffer(0)]], device const float* unused[[buffer(1)]],
+    device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint row = tgid*(tgs>>5u) + sgid;
+    device const char4* wr = (device const char4*)(bq + (ulong)row*(ulong)K);
+    device const float4* a4 = (device const float4*)ax;
+    float acc = 0.0f;
+    for (uint g=lane; g<(K>>2u); g+=32u) acc += dot(float4(wr[g]), a4[g]);
+    acc = simd_sum(acc);
+    threadgroup float tv[8]; threadgroup uint ti[8];
+    if (lane==0) { tv[sgid] = acc*bsc[row]; ti[sgid] = row; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0) {
+        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
+        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        part[tgid].v = bv; part[tgid].i = bi;
+    }
 }
 
 // int8 twin of gemv_w4a8_sa_amax — the LM head is logit-critical and pinned at int8, so the

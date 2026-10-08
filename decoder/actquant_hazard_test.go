@@ -34,3 +34,23 @@ func TestActivationQuantHazard_declinesGPUResidency(t *testing.T) {
 		t.Error("a family with no measured hazard must not be flagged")
 	}
 }
+
+// TestActivationQuantHazard_metalQ4KLane: the one Metal configuration that clears the hazard is the q4k lane, which
+// quantizes no activation at all (docs/tasks/task-metal-q4k-2026-10.md). residentGateReasonAct admits Phi-3 on Metal
+// with actSafe; WebGPU stays declined either way (no such lane), and the default (actSafe false) still declines Metal.
+func TestActivationQuantHazard_metalQ4KLane(t *testing.T) {
+	m, err := Load("../testdata/phi3-tiny", Options{})
+	if err != nil {
+		t.Fatalf("Load phi3-tiny: %v", err)
+	}
+	defer m.Close()
+	if why := residentGateReasonAct(m.w.arch, "metal", true); strings.Contains(why, "Phi-3's activation outliers") {
+		t.Errorf("the q4k lane (actSafe) on metal still declined for the hazard: %q", why)
+	}
+	if why := residentGateReasonAct(m.w.arch, "metal", false); !strings.Contains(why, "Phi-3's activation outliers") {
+		t.Errorf("metal without the q4k lane must keep the hazard decline, got %q", why)
+	}
+	if why := residentGateReasonAct(m.w.arch, "webgpu", true); !strings.Contains(why, "Phi-3's activation outliers") {
+		t.Errorf("webgpu has no float-activation lane and must keep the hazard decline, got %q", why)
+	}
+}

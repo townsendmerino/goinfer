@@ -120,11 +120,14 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
-	qkvBias, preNorm, postNorm           Buffer
-	qNorm, kNorm                         Buffer          // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
-	moe                                  *moeLayer       // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
-	g4moe                                *gemma4MoeLayer // non-nil ⇒ Gemma-4 parallel dense‖MoE FFN (gemma4_moe.go)
-	uLayerScalar                         Buffer          // Gemma 4 dense layer's output scalar (S1.0); zero Buffer when 1 or absent
+	// The q4k lane (docs/tasks/task-metal-q4k-2026-10.md): each projection as its runs of same-kind rows (q4kLaneProj);
+	// the xxxW/xxxS buffers above stay empty on the lane.
+	qkvSegs, oSegs, guSegs, dSegs []q4kSeg
+	qkvBias, preNorm, postNorm    Buffer
+	qNorm, kNorm                  Buffer          // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
+	moe                           *moeLayer       // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
+	g4moe                         *gemma4MoeLayer // non-nil ⇒ Gemma-4 parallel dense‖MoE FFN (gemma4_moe.go)
+	uLayerScalar                  Buffer          // Gemma 4 dense layer's output scalar (S1.0); zero Buffer when 1 or absent
 	// ffnI is this dense layer's FFN width and uFFNI its uniform. Equal to the model's I (and r.uI) for every family
 	// except a Gemma 4 E-model, whose KV-shared layers are double-wide (S1.3, docs/tasks/task-multimodal-support-2026-10.md).
 	ffnI  int
@@ -211,9 +214,16 @@ type resident struct {
 	pF32ToF16                       Pipeline // bare convert, for o-proj's input (no norm/weight there)
 	pSAf16, pSAf16Bias, pSAf16Resid Pipeline
 	decodeLaneW4F16                 bool
-	axF16, mxF16, cxF16             Buffer   // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
-	pArgFinish                      Pipeline // fused block-argmax lm head reduce
-	pArgRowsPart                    Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
+	axF16, mxF16, cxF16             Buffer // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
+	// The q4k lane (docs/tasks/task-metal-q4k-2026-10.md): a model loaded at --quant q4k runs every projection on f32
+	// activations (no activation quantization), over Q4_K super-blocks or int8 rows. axF32 is a projection's input (the
+	// normed residual), swF32 the down-projection's (SwiGLU's output).
+	q4kLane                                                    bool
+	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
+	pRmsF32Out, pSwF32                                         Pipeline
+	axF32, swF32                                               Buffer
+	pArgFinish                                                 Pipeline // fused block-argmax lm head reduce
+	pArgRowsPart                                               Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
 	// R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
 	// split) instead of by query head, DEFAULT ON since 2026-09-21 (decodeAttnFA, set from
 	// metalAttnFAEnabled(); GOINFER_METAL_ATTN_FA=0 opts out) — see that function's own doc
@@ -555,6 +565,64 @@ type execJob struct {
 
 func byteBuf(d *Device, n int) Buffer {
 	return d.NewBufferBytes(n)
+}
+
+// q4kSeg is one run of a q4k-lane projection's output rows that share a weight kind: Q4_K super-blocks (s unused) or
+// int8 rows with per-row scales s, written at row off of the projection's output (uN holds rows).
+type q4kSeg struct {
+	q4k       bool
+	w, s, uN  Buffer
+	rows, off int
+}
+
+// q4kLaneProj uploads a projection, or a fused group with its parts' rows in order, as runs of consecutive parts of one
+// kind: a GGUF q4_k_m file mixes them inside a group (Qwen2.5's attn_v is Q6_K, so int8, in half the layers, beside
+// Q4_K attn_q/attn_k).
+func q4kLaneProj(d *Device, wms ...*linalg.WeightMat) []q4kSeg {
+	var segs []q4kSeg
+	off := 0
+	for i := 0; i < len(wms); {
+		j, q4k := i+1, wms[i].Kind() == "q4k"
+		for j < len(wms) && (wms[j].Kind() == "q4k") == q4k {
+			j++
+		}
+		rows := 0
+		for _, w := range wms[i:j] {
+			rows += w.Rows()
+		}
+		w, s := q4kLaneBuf(d, wms[i:j]...)
+		segs = append(segs, q4kSeg{q4k: q4k, w: w, s: s, uN: NewBufferU32(d, uint32(rows)), rows: rows, off: off})
+		off += rows
+		i = j
+	}
+	return segs
+}
+
+// q4kLaneBuf uploads parts of one kind for the q4k lane (docs/tasks/task-metal-q4k-2026-10.md): GGUF Q4_K super-blocks
+// verbatim when every part is Q4_K (the scale buffer unused), else int8 rows with their per-row scales. Any other
+// kind, or a mix, panics; buildResident recovers that into a decline.
+func q4kLaneBuf(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
+	if _, ok := wms[0].Q4K(); ok {
+		var all []byte
+		for _, w := range wms {
+			raw, ok := w.Q4K()
+			if !ok {
+				panic(fmt.Sprintf("metal: q4k lane: a fused group mixes Q4_K with %q", w.Kind()))
+			}
+			all = append(all, raw...)
+		}
+		return NewBufferInt8(d, unsafe.Slice((*int8)(unsafe.Pointer(&all[0])), len(all))), Buffer{}
+	}
+	var q []int8
+	var sc []float32
+	for _, w := range wms {
+		q8, s8, _, ok := w.Int8()
+		if !ok {
+			panic(fmt.Sprintf("metal: q4k lane: weight kind %q is neither q4k nor int8", w.Kind()))
+		}
+		q, sc = append(q, q8...), append(sc, s8...)
+	}
+	return NewBufferInt8(d, q), NewBufferFloats(d, sc)
 }
 
 func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
@@ -1018,6 +1086,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pF32ToF16 = pipe("f32_to_f16")
 	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
 	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
+	if r.q4kLane = m.Quant() == "q4k"; r.q4kLane {
+		r.decodeLaneW4F16 = false
+		r.pQ4K, r.pQ4KResid, r.pQ4KBias = pipe("gemv_q4k_f32"), pipe("gemv_q4k_f32_resid"), pipe("gemv_q4k_f32_bias")
+		r.pW8F32, r.pW8F32Resid, r.pW8F32Bias = pipe("gemv_w8_f32"), pipe("gemv_w8_f32_resid"), pipe("gemv_w8_f32_bias")
+		r.pRmsF32Out, r.pSwF32 = pipe("rmsnorm_f32_out"), pipe("swiglu_f32")
+	}
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
 	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
@@ -1043,6 +1117,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pMoeBatch[2], r.pMoeBatch[4] = pipe("moe_batch_gemv2"), pipe("moe_batch_gemv4")
 	r.pMoeCombine = pipe("moe_batch_combine")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
+	if r.q4kLane { // the same buffer order and launch shapes, f32 activations: every head dispatch site runs unchanged
+		r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8f32_head"), pipe("gemv_w8f32_amax")
+	}
 	r.pCopyVec = pipe("copy_f32")
 	r.pCopyU32 = pipe("copy_u32")
 	// R7b Mac half: device Gumbel-max sampler over r.logits (the same buffer pGemvW8 writes for
@@ -1147,6 +1224,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.moe.kSlots = false // D-P03's k-slot kernels read int4
 	}
 	r.w8Attn = !r.w8 && w8AttnEligible(m, r)
+	if r.q4kLane {
+		r.w8, r.w8Attn = false, false
+	}
 	if r.w8Attn {
 		r.decodeLaneW4F16 = false // the f16 lane reads int4 attention weights
 	}
@@ -1205,7 +1285,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatDeltaNet })
 		}
 	}
-	r.prefillOK = len(missing) == 0 && !m.HasPerLayerGeometry() &&
+	if r.q4kLane && (r.sandwich || r.postOnly || r.parallelBlock || r.outBias || r.layerNorm || r.moe != nil || r.g4moe != nil ||
+		r.dnet != nil || r.pleP > 0 || r.attnSink || r.learnedPos || r.kvI8 || r.qkNorm) {
+		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
+	}
+	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
 		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvI8 &&
 		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 	r.q = d.NewCommandQueue()
@@ -1241,6 +1325,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return int4BufA(d, a, wm)
 	}
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
+		if r.q4kLane { // the lane uploads its own segments (q4kLaneProj, below)
+			return Buffer{}, Buffer{}
+		}
 		q, s, e := upload(d, alias, wm)
 		if e != nil {
 			panic(e)
@@ -1249,6 +1336,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	// fuse uploads a fused group (QKV, gate|up): int4ConcatA, or int8Concat on the native int8 path.
 	fuse := func(wms ...*linalg.WeightMat) (Buffer, Buffer) {
+		if r.q4kLane {
+			return Buffer{}, Buffer{}
+		}
 		if _, _, _, ok := wms[0].Int8(); ok && (r.w8 || r.w8Attn) {
 			return int8Concat(d, alias, wms...)
 		}
@@ -1392,6 +1482,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.guW, L.guS = fuse(&lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 			L.ffnI = lw.GateProj.Rows()
+		}
+		if r.q4kLane {
+			// The q4k lane covers the plain dense shape (Phi-3, Llama, Qwen2): pre-norm attention (q/k/v bias allowed), a
+			// SwiGLU FFN.
+			if isDelta || L.moe != nil || L.g4moe != nil || L.qGate || L.kvShared || kEqV || r.nonGatedMLP {
+				return nil, fmt.Errorf("metal: --quant q4k runs on Metal for dense attention+SwiGLU layers only (layer %d is not)", l)
+			}
+			L.qkvSegs = q4kLaneProj(d, &lw.QProj, &lw.KProj, &lw.VProj)
+			L.oSegs, L.dSegs = q4kLaneProj(d, &lw.OProj), q4kLaneProj(d, &lw.DownProj)
+			L.guSegs = q4kLaneProj(d, &lw.GateProj, &lw.UpProj)
 		}
 		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/tasks/task-gpu-paths-2026-09.md) is a MODEL-level flag,
 		// but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear instead and
@@ -1779,6 +1879,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
+	if r.q4kLane { // the head's slot 0 holds the f32 final norm on this lane (gemv_w8f32_head)
+		r.aq = byteBuf(d, 4*H)
+	}
 	r.qkv = d.NewBufferLen(maxNHhd + 2*maxKvDim) // fused [q | k | v], sized to the widest layer
 	r.gu = d.NewBufferLen(2 * guDim)             // fused [gate | up]
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(maxNHhd), byteBuf(d, maxNHhd), d.NewBufferLen(1)
@@ -1813,6 +1916,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// f16 activation values are already the true values). Always allocated ("one binary carries
 	// both arms"); only used when decodeLaneW4F16 dispatches into them.
 	r.axF16, r.mxF16, r.cxF16 = byteBuf(d, 2*H), byteBuf(d, 2*H), byteBuf(d, 2*maxNHhd)
+	if r.q4kLane {
+		r.axF32, r.swF32 = d.NewBufferLen(H), d.NewBufferLen(guDim)
+	}
 	r.dq, r.dSc, r.dO = byteBuf(d, guDim), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
 	// CEIL, not floor: ForwardArgmax dispatches V*32 threads = ceil(V/8) threadgroups and the amax
@@ -2814,6 +2920,10 @@ func (r *resident) encodeTrunkWith(e *Encoder, uPos, uNKeys, uQTempScale Buffer,
 	for l := 0; l < r.nL; l++ {
 		r.encodeLayerWith(e, l, uPos, uNKeys, uQTempScale, rp)
 	}
+	if r.q4kLane { // f32 into r.aq: the swapped head pipelines read it as float
+		e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.uH, r.uEps, r.uAddOne)
+		return
+	}
 	r.encodeNorm(e, r.x, r.finalNorm, r.finalNormBias, r.aq, r.aSc)
 }
 
@@ -2890,6 +3000,13 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		// via NormPlacementLinear instead and carry a REAL pre-MLP norm (L.postNorm), so gate on
 		// the per-layer truth, matching cuda/resident.go segBFFN's postOnlyHere.
 		postOnlyHere := r.postOnly && L.delta == nil
+		if r.q4kLane { // f32 activations throughout: norm, fused gate|up, SwiGLU, down + residual
+			e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, x, L.postNorm, r.axF32, r.uH, r.uEps, r.uAddOne)
+			r.q4kGemv(e, L.guSegs, false, Buffer{}, r.axF32, r.gu, r.uH)
+			e.Dispatch(r.pSwF32, L.ffnI, 256, r.gu, r.gu.At(L.ffnI*4), r.swF32, L.uFFNI, r.uAct)
+			r.q4kGemv(e, L.dSegs, true, Buffer{}, r.swF32, x, L.uFFNI)
+			return
+		}
 		f16Lane := r.canUseF16Lane(l)
 		gq, gSc := r.mq, r.mSc
 		switch {
@@ -2952,6 +3069,29 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 	if L.uLayerScalar != (Buffer{}) && !g4DropLayerScalarForTest {
 		e.Dispatch(r.pLayerScale, r.H, 256, x, L.uLayerScalar) // Gemma 4 dense layer: h *= layer_scalar (S1.0)
+	}
+}
+
+// q4kGemv dispatches one q4k-lane projection over the f32 activation ax (K = uK), one dispatch per segment into its
+// rows of out: gemv_q4k_f32 for Q4_K super-blocks, gemv_w8_f32 for int8 rows with per-row scales. resid accumulates
+// into out; a non-empty bias is added per row (resid and bias are never both set).
+func (r *resident) q4kGemv(e *Encoder, segs []q4kSeg, resid bool, bias, ax, out, uK Buffer) {
+	for _, sg := range segs {
+		o := out.At(sg.off * 4)
+		switch {
+		case sg.q4k && resid:
+			e.Dispatch(r.pQ4KResid, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN)
+		case sg.q4k && bias != (Buffer{}):
+			e.Dispatch(r.pQ4KBias, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN, bias.At(sg.off*4))
+		case sg.q4k:
+			e.Dispatch(r.pQ4K, sg.rows*32, 256, sg.w, ax, o, uK, sg.uN)
+		case resid:
+			e.Dispatch(r.pW8F32Resid, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN)
+		case bias != (Buffer{}):
+			e.Dispatch(r.pW8F32Bias, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN, bias.At(sg.off*4))
+		default:
+			e.Dispatch(r.pW8F32, sg.rows*32, 256, sg.w, sg.s, ax, o, uK, sg.uN)
+		}
 	}
 }
 
@@ -3279,7 +3419,9 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	// encodeDeltaNetMixer instead), so the bare model-level flag is safe here unlike encodeLayer's
 	// shared FFN half below.
 	f16Lane := r.canUseF16Lane(l)
-	if r.postOnly {
+	if r.q4kLane {
+		e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, x, L.preNorm, r.axF32, r.uH, r.uEps, r.uAddOne)
+	} else if r.postOnly {
 		e.Dispatch(r.pQv, 256, 256, x, r.aq, r.aSc, r.uH)
 	} else if f16Lane {
 		// R1: f16 activation, no quantization — bypasses encodeNorm (which always produces the
@@ -3299,6 +3441,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		e.DispatchTG(r.pSA, 2*nHhd*32, 256, r.H*2, L.dnQw, L.dnQs, r.aq, r.aSc, r.dnQg, r.uH)
 		e.Dispatch(r.pDnQSplit, nHhd, 256, r.dnQg, r.qkv, r.dnAGate, g.uNHhd, g.uHd)
 		e.DispatchTG(r.pSA, 2*g.kvDim*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv.At(kOff), r.uH)
+	} else if r.q4kLane {
+		r.q4kGemv(e, L.qkvSegs, false, L.qkvBias, r.axF32, r.qkv, r.uH) // the combined bias, zeros where absent
 	} else if f16Lane {
 		e.DispatchTG(r.pSAf16Bias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.axF16, L.qkvBias, r.qkv, r.uH)
 	} else {
@@ -3399,7 +3543,9 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	if L.qGate { // ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
 	}
-	if f16Lane {
+	if r.q4kLane {
+		// o-proj reads r.ctx (f32) directly: no conversion, no quantization.
+	} else if f16Lane {
 		e.Dispatch(r.pF32ToF16, nHhd, 256, r.ctx, r.cxF16)
 	} else {
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
@@ -3425,6 +3571,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		if r.loraLayers != nil {
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}
+	} else if r.q4kLane {
+		r.q4kGemv(e, L.oSegs, true, Buffer{}, r.ctx, x, g.uNHhd) // o-proj + residual
 	} else if f16Lane {
 		e.DispatchTG(r.pSAf16Resid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cxF16, x, g.uNHhd) // o-proj + residual
 	} else {

@@ -13,7 +13,7 @@ import (
 )
 
 // TestQ4KLaneKernels is G-Q1 of docs/tasks/task-metal-q4k-2026-10.md (registered before this code): the q4k lane's two
-// GEMVs against a float64 reference on the host, which dequantizes the same bytes through aikit (linalg.WrapQ4K's Row for
+// GEMVs (plain, residual and bias variants) against a float64 reference on the host, which dequantizes the same bytes through aikit (linalg.WrapQ4K's Row for
 // Q4_K; the per-row scale for int8) and dots them with the same f32 activations. Bar: per row, |got - ref| at most 1e-5
 // of Σ|w·a| (f32 accumulation order only). Shapes: every Phi-3 projection's (o, gate|up, down, qkv, the LM head) and
 // edge cases (one super-block, a partial threadgroup). Each registered planted defect, compiled into its own copy of the
@@ -77,6 +77,21 @@ func TestQ4KLaneKernels(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		pqb, err := d.NewComputePipeline(lib, "gemv_q4k_f32_bias")
+		if err != nil {
+			t.Fatal(err)
+		}
+		pwb, err := d.NewComputePipeline(lib, "gemv_w8_f32_bias")
+		if err != nil {
+			t.Fatal(err)
+		}
+		biases := func(N int) []float32 {
+			b := make([]float32, N)
+			for i := range b {
+				b[i] = float32(rng.NormFloat64())
+			}
+			return b
+		}
 		q := d.NewCommandQueue()
 		rowsRef := func(wm *linalg.WeightMat, a []float32, N, K int) ([]float64, []float64) {
 			ref, mag := make([]float64, N), make([]float64, N)
@@ -104,15 +119,19 @@ func TestQ4KLaneKernels(t *testing.T) {
 				init[i] = float32(i % 7)
 			}
 			bRes := NewBufferFloats(d, init)
+			bias := biases(sh.N)
+			bBias, bOutB := NewBufferFloats(d, bias), d.NewBufferLen(sh.N)
 			uK, uN := NewBufferU32(d, uint32(sh.K)), NewBufferU32(d, uint32(sh.N))
 			e := q.Begin()
 			e.Dispatch(pq, sh.N*32, 256, bW, bA, bOut, uK, uN)
 			e.Dispatch(pqr, sh.N*32, 256, bW, bA, bRes, uK, uN)
+			e.Dispatch(pqb, sh.N*32, 256, bW, bA, bOutB, uK, uN, bBias)
 			e.End()
-			got, gotRes := bOut.Floats(), bRes.Floats()
+			got, gotRes, gotB := bOut.Floats(), bRes.Floats(), bOutB.Floats()
 			for n := range sh.N {
 				worstQ4K = math.Max(worstQ4K, math.Abs(float64(got[n])-ref[n])/math.Max(mag[n], 1e-30))
 				worstQ4K = math.Max(worstQ4K, math.Abs(float64(gotRes[n])-(ref[n]+float64(init[n])))/math.Max(mag[n], 1e-30))
+				worstQ4K = math.Max(worstQ4K, math.Abs(float64(gotB[n])-(ref[n]+float64(bias[n])))/math.Max(mag[n], 1e-30))
 			}
 		}
 		for _, sh := range w8Shapes {
@@ -134,12 +153,17 @@ func TestQ4KLaneKernels(t *testing.T) {
 				}
 			}
 			bW, bS, bA, bOut := NewBufferInt8(d, w8), NewBufferFloats(d, sc), NewBufferFloats(d, a), d.NewBufferLen(sh.N)
+			bias := biases(sh.N)
+			bBias, bOutB := NewBufferFloats(d, bias), d.NewBufferLen(sh.N)
+			uK, uN := NewBufferU32(d, uint32(sh.K)), NewBufferU32(d, uint32(sh.N))
 			e := q.Begin()
-			e.Dispatch(pw, sh.N*32, 256, bW, bS, bA, bOut, NewBufferU32(d, uint32(sh.K)), NewBufferU32(d, uint32(sh.N)))
+			e.Dispatch(pw, sh.N*32, 256, bW, bS, bA, bOut, uK, uN)
+			e.Dispatch(pwb, sh.N*32, 256, bW, bS, bA, bOutB, uK, uN, bBias)
 			e.End()
-			got := bOut.Floats()
+			got, gotB := bOut.Floats(), bOutB.Floats()
 			for n := range sh.N {
 				worstW8 = math.Max(worstW8, math.Abs(float64(got[n])-ref[n])/math.Max(mag[n], 1e-30))
+				worstW8 = math.Max(worstW8, math.Abs(float64(gotB[n])-(ref[n]+float64(bias[n])))/math.Max(mag[n], 1e-30))
 			}
 		}
 		return worstQ4K, worstW8

@@ -379,7 +379,7 @@ func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string
 	// W8A8), so a family whose output int8 activations destroy runs on the CPU at a weight-only
 	// precision instead of fast and wrong. Here rather than in decodeRunnerDecline so the generated
 	// hardware matrix shows it too.
-	if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && backend == "cuda") {
+	if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && (backend == "cuda" || backend == "metal")) {
 		return "every resident " + backend + " projection quantizes activations to int8, and " + why
 	}
 	if missing := missingFeatures(a.residentFeatures(), impl); len(missing) > 0 {

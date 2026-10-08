@@ -553,7 +553,12 @@ func (m *Model) residentAdmission() string {
 	}
 	// Per-32 activations over int8 resident projections (W8A8) is the configuration that clears the
 	// activation-quantization hazard (task-actquant-pergroup's gate passed it); int4 does not yet.
-	return residentGateReasonAct(m.w.arch, key, m.actGroup == 32 && !m.residentProjsInt4())
+	// Metal's q4k lane quantizes no activation at all, so the hazard does not apply to it (docs/tasks/task-metal-q4k-2026-10.md).
+	actSafe := m.actGroup == 32 && !m.residentProjsInt4()
+	if key == "metal" {
+		actSafe = m.quant == "q4k"
+	}
+	return residentGateReasonAct(m.w.arch, key, actSafe)
 }
 
 // residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
@@ -1144,9 +1149,9 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
 		return m
 	}
-	if m.quant == "q4k" && m.be.Name() != "cuda" {
-		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal and
-		// WebGPU have no Q4_K kernel yet.
+	if m.quant == "q4k" && m.be.Name() != "cuda" && m.be.Name() != "metal" {
+		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal has the q4k lane
+		// (f32 activations over Q4_K and int8 weights, docs/tasks/task-metal-q4k-2026-10.md); WebGPU has no Q4_K kernel yet.
 		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
 		return m
 	}
