@@ -315,6 +315,8 @@ func (r *resident) batchIneligible() string {
 		return "MoE"
 	case r.pleP > 0:
 		return "a Gemma 4 E-model (per-row PLE inputs, KV-shared layers, per-layer FFN widths)"
+	case r.q4kLane:
+		return "the q4k lane (its f32-activation kernels are decode-only; docs/tasks/task-metal-q4k-2026-10.md)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
 		return "a family variant the batched step does not reproduce"

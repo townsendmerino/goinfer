@@ -828,6 +828,136 @@ kernel void gemv_w4f16_sa_resid(device const uint4* wq[[buffer(0)]], device cons
     if (lane==0) out[row] += acc;
 }
 
+// --- the q4k lane (docs/tasks/task-metal-q4k-2026-10.md): float activations, no quantization ---
+// A model loaded at --quant q4k keeps its Q4_K tensors as GGUF super-blocks and its other tensors as int8 (per-row
+// scale); every projection reads the f32 activation straight from device memory, so nothing rounds Phi-3's activation
+// outliers. One simdgroup per output row, 8 rows per 256-thread threadgroup, row bound N checked (the grid is N*32).
+//
+// rmsnorm_f32_out: rmsnorm_f16_act's reduction, f32 out (out-of-place).
+kernel void rmsnorm_f32_out(device const float* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& H[[buffer(3)]],
+    constant float& eps[[buffer(4)]], constant uint& addOne[[buffer(5)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256]; float ss=0;
+    for(uint i=tid;i<H;i+=tgs) ss+=x[i]*x[i];
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2;s>0;s>>=1){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup);}
+    float rms=precise::rsqrt(red[0]/float(H)+eps);
+    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; out[i]=x[i]*rms*g; }
+}
+// q4k_scale_min: ggml's get_scale_min_k4, the j-th 6-bit scale and min of a super-block's 12-byte scales array.
+inline void q4k_scale_min(uint j, device const uchar* q, thread float& sc, thread float& m) {
+    if (j < 4u) { sc = float(q[j] & 63u); m = float(q[j+4u] & 63u); }
+    else { sc = float((q[j+4u] & 15u) | ((q[j-4u] >> 6u) << 4u)); m = float((q[j+4u] >> 4u) | ((q[j] >> 6u) << 4u)); }
+}
+// Per 256 weights (144 bytes): d (f16), dmin (f16), scales[12], qs[128]; w = d*sc*q - dmin*m per 32-weight sub-block;
+// byte qs[32j+l] holds element 64j+l (low nibble) and 64j+32+l (high). Lane l takes byte l of each 32-byte group.
+#define Q4K_F32_BODY \
+    uint row = tgid*8u + sgid; \
+    if (row >= N) return; \
+    uint NB = K >> 8u; \
+    device const uchar* wr = wq + (ulong)row*(ulong)NB*144ul; \
+    float acc = 0.0f; \
+    for (uint b=0u; b<NB; b++) { \
+        device const uchar* blk = wr + b*144u; \
+        float d  = float(as_type<half>(ushort(uint(blk[0]) | (uint(blk[1])<<8u)))); \
+        float dm = float(as_type<half>(ushort(uint(blk[2]) | (uint(blk[3])<<8u)))); \
+        device const uchar* scs = blk + 4; device const uchar* qs = blk + 16; \
+        device const float* a = ax + b*256u; \
+        for (uint j=0u; j<4u; j++) { \
+            float sc0, m0, sc1, m1; q4k_scale_min(2u*j, scs, sc0, m0); q4k_scale_min(2u*j+1u, scs, sc1, m1); \
+            uint q = uint(qs[j*32u + lane]); \
+            float a0 = a[j*64u + lane], a1 = a[j*64u + 32u + lane]; \
+            acc += (d*sc0*float(q & 15u) - dm*m0) * a0 + (d*sc1*float(q >> 4u) - dm*m1) * a1; \
+        } \
+    } \
+    acc = simd_sum(acc);
+kernel void gemv_q4k_f32(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    Q4K_F32_BODY
+    if (lane==0) out[row] = acc;
+}
+kernel void gemv_q4k_f32_resid(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    Q4K_F32_BODY
+    if (lane==0) out[row] += acc;
+}
+kernel void gemv_q4k_f32_bias(device const uchar* wq[[buffer(0)]], device const float* ax[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& K[[buffer(3)]], constant uint& N[[buffer(4)]],
+    device const float* bias[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    Q4K_F32_BODY
+    if (lane==0) out[row] = acc + bias[row];
+}
+// int8 weights (per-row scale) over f32 activations. K a multiple of 4.
+#define W8_F32_BODY \
+    uint row = tgid*8u + sgid; \
+    if (row >= N) return; \
+    device const char4* wr = (device const char4*)(wq + (ulong)row*(ulong)K); \
+    device const float4* a4 = (device const float4*)ax; \
+    float acc = 0.0f; \
+    for (uint g=lane; g<(K>>2u); g+=32u) acc += dot(float4(wr[g]), a4[g]); \
+    acc = simd_sum(acc) * sc[row];
+kernel void gemv_w8_f32(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
+    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
+    constant uint& N[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    W8_F32_BODY
+    if (lane==0) out[row] = acc;
+}
+kernel void gemv_w8_f32_resid(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
+    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
+    constant uint& N[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    W8_F32_BODY
+    if (lane==0) out[row] += acc;
+}
+kernel void gemv_w8_f32_bias(device const char* wq[[buffer(0)]], device const float* sc[[buffer(1)]],
+    device const float* ax[[buffer(2)]], device float* out[[buffer(3)]], constant uint& K[[buffer(4)]],
+    constant uint& N[[buffer(5)]], device const float* bias[[buffer(6)]], uint tgid[[threadgroup_position_in_grid]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    W8_F32_BODY
+    if (lane==0) out[row] = acc + bias[row];
+}
+
+// The q4k lane's LM head: gemv_w8a8_coal's and gemv_w8a8_amax's buffer order and launch shapes, so every head dispatch
+// site runs unchanged when buildResident swaps the pipelines, but slot 0 holds the f32 final-norm output (the trunk's
+// rmsnorm_f32_out writes it into r.aq, sized 4·H bytes on this lane) and slot 1 is unread.
+kernel void gemv_w8f32_head(device const float* ax[[buffer(0)]], device const float* unused[[buffer(1)]],
+    device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint gid[[threadgroup_position_in_grid]], uint lid[[thread_index_in_threadgroup]]) {
+    device const char4* wr = (device const char4*)(bq + (ulong)gid*(ulong)K);
+    device const float4* a4 = (device const float4*)ax;
+    float acc = 0.0f;
+    for (uint g=lid; g<(K>>2u); g+=32u) acc += dot(float4(wr[g]), a4[g]);
+    acc = simd_sum(acc);
+    if (lid==0) out[gid] = acc*bsc[gid];
+}
+kernel void gemv_w8f32_amax(device const float* ax[[buffer(0)]], device const float* unused[[buffer(1)]],
+    device const char* bq[[buffer(2)]], device const float* bsc[[buffer(3)]], device AmaxPart* part[[buffer(4)]],
+    constant uint& K[[buffer(5)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    uint row = tgid*(tgs>>5u) + sgid;
+    device const char4* wr = (device const char4*)(bq + (ulong)row*(ulong)K);
+    device const float4* a4 = (device const float4*)ax;
+    float acc = 0.0f;
+    for (uint g=lane; g<(K>>2u); g+=32u) acc += dot(float4(wr[g]), a4[g]);
+    acc = simd_sum(acc);
+    threadgroup float tv[8]; threadgroup uint ti[8];
+    if (lane==0) { tv[sgid] = acc*bsc[row]; ti[sgid] = row; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid==0) {
+        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
+        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        part[tgid].v = bv; part[tgid].i = bi;
+    }
+}
+
 // int8 twin of gemv_w4a8_sa_amax — the LM head is logit-critical and pinned at int8, so the
 // fused block-argmax must read it as int8 too or the greedy fast path disagrees with
 // argmax(full logits). Same launch shape (8 simdgroups/threadgroup, one AmaxPart per group over
@@ -1945,6 +2075,12 @@ kernel void swiglu_quant(device const float* g[[buffer(0)]], device const float*
         }
         for(uint i=(I4w<<2u)+tid;i<I;i+=tgs){ float s=glu_act_pinned(g[i],act)*u[i]; dq[i]=char(clamp(int(round(s*inv)),-127,127)); }
     }
+}
+// swiglu_f32: swiglu_quant's activation with no quantization (the q4k lane's down-projection input), grid = I.
+kernel void swiglu_f32(device const float* g[[buffer(0)]], device const float* u[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& I[[buffer(3)]], constant uint& act[[buffer(4)]],
+    uint i[[thread_position_in_grid]]) {
+    if (i < I) out[i] = glu_act_pinned(g[i], act) * u[i];
 }
 // act_quant: FeatNonGatedMLP's fused activation+quant — up->act->down (GPT-2, Nemotron relu²),
 // no gate multiply, unlike swiglu_quant. Reuses glu_act (same ordinals), so it inherits the
