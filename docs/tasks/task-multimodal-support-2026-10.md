@@ -2230,6 +2230,25 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
 - **Gates, registered 2026-10-07 before any S17 code:**
   - **Step 0, a profile:** before any lever, each backend's tower time is split by kernel class (GEMM, attention,
     norms and the rest) on SigLIP and Qwen2.5-VL at the F2a sizes. The split fixes each lever's projection band.
+  - **Step 0's instrument on Metal, registered 2026-10-07 evening before it runs** (TE11):
+    - **Tier and stopping rule:** by day (a profile, not a speed claim), fixed: the four F2a images per tower at serve's
+      caps, one warm-up and then 3 profiled forwards each, the median per kernel class reported.
+    - **The instrument:**
+      - With profiling on, the Metal grid tower ends its command buffer at every change of kernel class: GEMM (with its
+        bias), attention (the gathers, both GEMMs, the softmax, the scatter), norm, and elementwise (RoPE, the scale, the
+        residual adds, the activation).
+      - Each buffer's GPU-busy window (`GPUEndTime - GPUStartTime`) counts toward its class.
+      - With profiling off nothing changes: the hook is nil.
+      - The towers are SigLIP (Gemma 3) and Qwen2.5-VL (the two the audit named), and Qwen3.5 as a third (the grid
+        tower's own kind).
+    - **Overhead check:** the profiled total (the sum of GPU windows) against an unprofiled forward's wall, same image,
+      same process. Extra command buffers cost submit gaps, not GPU time, so the profiled GPU sum should be at most the
+      unprofiled wall. A sum over it marks the profile untrustworthy, and it is recorded so.
+    - **Also reported:** each class's achieved rate. GEMM FLOPs come from the shapes (2·M·N·K), against the M1 Pro GPU's
+      ~5.3 TFLOPS f32 peak, so each lever's band has a share and a headroom.
+    - **Cost:** SigLIP about 10 s a forward x 4 images x 4, Qwen2.5-VL 2-15 s x 4 x 4, Qwen3.5 under 2 s; about 8
+      minutes in all.
+    - **CUDA's twin** is nobara's, by the same split (`cudaEventRecord` per class).
   - **Each lever, before it is measured, writes into this doc:**
     - its projection band: the tower-time ratio it should give, from the profile share it attacks and the kernel
       speedup it expects;
