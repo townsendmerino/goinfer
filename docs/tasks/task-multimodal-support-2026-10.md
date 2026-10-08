@@ -2249,6 +2249,54 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **Cost:** SigLIP about 10 s a forward x 4 images x 4, Qwen2.5-VL 2-15 s x 4 x 4, Qwen3.5 under 2 s; about 8
       minutes in all.
     - **CUDA's twin** is nobara's, by the same split (`cudaEventRecord` per class).
+  - **Step 0 on Metal, read 2026-10-07 18:56-19:03 PDT: the time is GEMMs and attention; norms and elementwise are ~1%.**
+    - **The run:** `s2-towers` at `9b7da484`, `TestS17Profile`.
+    - **Its validity:**
+      - the profiled output equals the unprofiled bit for bit;
+      - the overhead check passed on all 12 runs (profiled GPU sum under the unprofiled wall);
+      - repeat reads agree within 0.1%.
+    - **Raw:** `docs/measurements/multimodal-support-2026-10/s17-step0-metal/profile.log`. The table is the median of
+      3 profiled forwards; TFLOPS from the shapes, against the M1 Pro's ~5.3 f32 peak:
+
+      | tower | rows | GPU time | GEMM: share, TFLOPS | attention: share, TFLOPS |
+      |---|---|---|---|---|
+      | SigLIP (every image) | 4096 | 8.68 s | 34%, 1.13 | **65%, 0.37** |
+      | Qwen2.5-VL, 896² image | 4096 | 6.65 s | **71%, 1.09** | 27%, 0.21 |
+      | Qwen2.5-VL, formula.png | 6192 | 11.21 s | **67%, 1.05** | 32%, 0.23 |
+      | Qwen2.5-VL, table.png | 5504 | 9.36 s | **68%, 1.10** | 31%, 0.23 |
+      | Qwen3.5-0.8B, 896² image | 3136 | 1.05 s | 43%, 1.19 | **55%, 0.63** |
+      | Qwen3.5-0.8B, formula.png | 4060 | 2.92 s | 23%, 1.03 | **76%, 0.27** |
+      | Qwen3.5-0.8B, table.png | 3888 | 1.69 s | 38%, 1.03 | **60%, 0.55** |
+
+      The tiny 4x6 image is dispatch-bound (90 ms, 0.4 TFLOPS) and not a lever's target.
+    - **The headroom, from this Mac's own records:**
+      - R19's simdgroup-matrix prefill attention ran 7.2x the old fused kernel (4444 to 618 ms, about 2.1 TFLOPS at head
+        dim 128, `metal-prefill-attn-2026-09-27.md`).
+      - The decoder's f16-MMA GEMMs run at 2.8-3.0 TFLOPS against MPS's 3.24-3.43 f16 ceiling
+        (`metal-gemm-ceiling-2026-09-25.md`).
+      - The towers run at 0.2-0.6 and 1.0-1.2 TFLOPS.
+- **The two Metal levers, bands registered 2026-10-07 evening before any lever code.** The projection is
+  tower = GEMM/k_G + attention/k_A + the rest, from step 0's split.
+  - **The instrument:** an in-process whole-tower A/B, interleaved, by day (TE5(b)), on the F2a images. Correctness
+    first, at G-S2b's and G-S3a's bars and planted defects, unchanged.
+  - **Lever A: attention.**
+    - **What:** a flash-style simdgroup-matrix attention for the towers. Non-causal; per segment (frames, windows); head
+      dims 64, 72 and 80 (R19's kernel is head dim 128 and causal).
+    - **The kernel speedup expected, k_A = 3-6:** R19's 7.2x is the ceiling; the smaller head dims and Qwen2.5-VL's
+      short windows reduce it.
+    - **The bands:**
+      - SigLIP 1.7-2.2x (8.68 to 4.9-4.0 s);
+      - Qwen3.5 table.png 1.6-2.0x;
+      - Qwen2.5-VL 1.2-1.3x.
+    - **Kill line:** under 1.02x on any tower, or under its band's low end with no mechanism found: parked.
+  - **Lever B: GEMM.**
+    - **What:** the towers' projections on f16-input simdgroup-matrix GEMMs with f32 accumulation, the decoder's path.
+    - **The kernel speedup expected, k_G = 2.3-2.7:** 1.1 to 2.5-3.0 TFLOPS.
+    - **The bands:** Qwen2.5-VL 1.7-1.8x; SigLIP 1.2-1.3x; Qwen3.5 1.1-1.3x.
+    - **Kill line:** as A's. If f16 inputs cannot hold the 0.9999 bar, B keeps f32 inputs at a lower k_G (its band is
+      re-registered before that variant runs) or is dropped.
+  - **The order:** A first. It is the largest share on two of the three towers and has R19's precedent; B follows.
+    With both at band, SigLIP projects to about 2.5 s.
   - **Each lever, before it is measured, writes into this doc:**
     - its projection band: the tower-time ratio it should give, from the profile share it attacks and the kernel
       speedup it expects;
