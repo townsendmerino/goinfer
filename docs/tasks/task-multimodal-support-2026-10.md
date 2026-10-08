@@ -1466,9 +1466,49 @@ One night job per box re-measures each table cell on the current binary, with ea
 
 It replaces the scattered and stale figures above: the 31 s, 29 s and 4.1 s, and the June ones.
 
-- **Speed bar:** a cell is "usable" when a new image's TTFT is under 5 s at the default image budget, on the box's best
-  backend. That bar is a proposal for the owner to confirm before S7 runs.
+- **Speed bar (confirmed by the owner 2026-10-07 evening):** a cell is "usable" when a new image's TTFT is under 5 s at
+  the default image budget, on the box's best backend.
 - **Output:** a dated record in `docs/measurements/`. S8 reads its numbers.
+
+#### S7 and S13-lite, registered 2026-10-07 evening before they run (the Mac half)
+
+- **The instrument:** `docs/measurements/multimodal-support-2026-10/vision_ttft.py`.
+  - It sends streaming requests and measures TTFT as the wall time to the first non-empty content delta, `max_tokens` 8,
+    temperature 0.
+  - **Every request, warm-up included, carries media no server has seen:** the base image or WAV with that request's own
+    pseudorandom least-significant-bit pattern (red channel for images, the low bit of each 16-bit sample for audio).
+    The size and content are the base's, so the tower and prefill cost what they cost, and every byte-hash image cache
+    misses (goinfer's feature cache, Ollama's and llama.cpp's). This is S13's harness fix; `bench_peer.py`'s
+    `fresh_image` does the same.
+  - **The media:**
+    - images: `testdata/gemma3_preprocess_image.png`, 896x896, which reaches or nears each family's default budget;
+    - audio: the LibriSpeech clip, 5.9 s;
+    - prompts: "Describe this image." and "Transcribe this audio."
+- **S7, Mac** (`run-s7-mac.sh`, night queue `s7-mac`, estimated 40 min):
+  - **The cells:** Gemma 3 4B, Gemma 4 E2B (image, and audio), Qwen2.5-VL-3B, Qwen3.5-0.8B, Qwen3-VL-2B, GLM-OCR, and
+    Gemma 4 E4B if tonight's `s6-e4b` built its sidecar.
+  - **How they run:** each on `--backend metal` with serve's defaults and nothing else, one warm-up and three timed
+    requests per cell. The binary is `serve-metal` from `s2-towers` @ `ed8d4756`, which has the device towers.
+  - **The reading:** usable when the median of the three timed TTFTs is under 5.0 s. Each cell also records the decode
+    path and where the tower ran, from serve's own log lines.
+  - S7 is a record, and its gaps rank S16-S18.
+- **S13-lite, Mac** (`run-s13lite-mac.sh`, night queue `s13lite-mac`, estimated 40 min): Gemma 3 4B, Metal, every
+  engine at its defaults.
+  - **The engines:**
+    - goinfer: `serve-metal` as above, `~/models/gemma-3-4b-it`, int4 at load;
+    - Ollama 0.32.5: `gemma3:4b`, model blob `sha256:aeda25e63ebd6...`, its own server;
+    - llama.cpp: `llama-server` build 10621 (`c1d0e7a00`), ggml-org/gemma-3-4b-it-GGUF Q4_K_M plus `mmproj-model-f16`.
+    - These are peer builds of the same base checkpoint at each engine's own int4-class quantization, which is the
+      peer convention.
+  - **The procedure:**
+    - three rounds, each engine once per round, the order rotated each round;
+    - per engine: start its server, one warm-up and three timed requests, stop it (same-session interleaved by block;
+      three 4B servers do not fit 16 GB at once).
+  - **The reading:** the median of the nine timed TTFTs per engine, against the 5 s bar, and goinfer's ratio to each
+    peer. Reported, not gated.
+- **A by-day smoke of the harness (17:29 PDT, one request per engine; exploratory and not quotable):** it ran end to
+  end on all three engines. Ollama's fresh-image TTFT read about 5 s, where r12's resent image read 0.4 s, which fits
+  the cache-hit reading.
 
 ### S8 — The support table in the README, kept true
 
@@ -1771,6 +1811,11 @@ Added 2026-10-07. Today a second image in one message is a 400.
 - **Gates:** two-image prompts against HF on a tiny fixture per family; served two-image requests; prefix reuse refusing a
   changed second image.
 - **Size:** S-M.
+- **The peers' trap, to get right and say so (from S15's desk map):**
+  - llama.cpp #24303 (fixed between b10360 and b10520) and Ollama #17814 (open) fuse two adjacent same-size images into
+    one 2-frame temporal "super-frame" on the Qwen3 family, through `mtmd`'s `can_merge_with()`. So 4 images read as 2.
+  - goinfer's rule is "Do not pair images" (`docs/multimodal.md`). S11's gates add a planted defect for it: two
+    same-size images in one message, merged as temporal halves, must go red.
 
 ### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
 
@@ -1790,6 +1835,8 @@ Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another en
 - **What:** one night per box, `bench_peer.py`, the S7 cells against llama.cpp (and MLX on the Mac) on the same image
   and prompt, same-session interleaved; reported, not gated, unless a bar is registered first.
 - **Size:** S-M (mostly harness: the vision peer path exists for SigLIP only).
+- **S13-lite first (owner, 2026-10-07 evening):** one model per box, against Ollama and llama.cpp, a fresh image per
+  timed request. Registered with S7 above. The full S13 comes after S10's remaining families, S11 and S15.
 
 ### S14 — Speech beyond Gemma 4 (last, after S12)
 
@@ -1797,6 +1844,93 @@ The owner put this last, after the WebGPU work. It starts with the choice P11 le
 (`docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`): a Whisper-style front end plus Qwen3-ASR; a
 Whisper encoder (which serves Voxtral), toward pure-Go Whisper; or Voxtral Realtime. Gates are written once the family
 is chosen.
+
+### S15 — Video (back in scope, owner 2026-10-07 evening)
+
+Depends on S11 (several images per message). They share:
+- several media blocks per prompt and per-block feature caching;
+- the resident image-block bookkeeping for more than one block;
+- the rule that same-size images are never paired.
+
+S15 adds temporal patching, frame timestamps and video placeholder tokens.
+
+#### Gate 0, the desk map (read 2026-10-07 from transformers 5.16.1; file:line citations in
+`docs/measurements/multimodal-support-2026-10/s15-video-deskmap-2026-10-07.md`)
+
+- **Qwen2.5-VL: native video.**
+  - **The processor:** `Qwen2VLVideoProcessor`; the token `<|video_pad|>`; `get_video_features` runs the image tower.
+  - **Frame sampling:** off by default (`do_sample_frames=False`: every frame given is used). With `fps` set, 4-768
+    frames, floored to even. The pixel budget is per frame (`smart_resize`, factor 28, 128·28² to 768·28²).
+  - **Temporal patching:**
+    - The patch layer is a `Conv3d` with kernel and stride [2, 14, 14], no bias.
+    - An odd frame count is padded with the last frame repeated.
+    - Each temporal group is its own vision attention segment, and the vision RoPE is (h, w), repeated per t.
+  - **Positions:**
+    - `second_per_grid_ts = temporal_patch_size / sampled_fps`, and the text model's t step is
+      `tokens_per_second * int(second_per_grid_t)` (`tokens_per_second` 2 in the 3B config).
+    - The `int()` truncates: above 2 sampled fps every frame group gets the same t.
+    - After a video, `current_pos` advances by max(h, w)/2, not by the t extent.
+    - Both look unintended, and S15 matches transformers exactly anyway (G-S15c is against it), recording each.
+  - **The prompt:** `<|vision_start|><|video_pad|><|vision_end|>`, the pad expanded; no timestamps.
+- **Qwen3-VL: native video.**
+  - **Frame sampling:** fps 2, 4-768 frames, `linspace` indices. The budget is per video (the 2B checkpoint caps it at
+    about 12,288 tokens). Fewer than 2 frames is an error.
+  - **The patch layer:** `Conv3d` [2, 16, 16] with bias.
+  - **Timestamps are text:** each frame pair is `<{t:.1f} seconds><|vision_start|>` + pads + `<|vision_end|>`, where t
+    is the mean of the pair's two frame times.
+  - **Positions:** each pair is a t = 1 grid laid out like a still image, so time is carried only by the timestamp
+    text.
+  - **A quirk:** with the shipped chat template the per-pair blocks sit inside a second, outer
+    `<|vision_start|>…<|vision_end|>`. Matched as transformers does it, and recorded.
+  - **DeepStack:** video goes through it, with the image and video features under one mask.
+- **Qwen3.5+:** the same as Qwen3-VL (it uses `Qwen3VLVideoProcessor`; the video token id is 248057), without DeepStack.
+- **Gemma 4: native video, now confirmed in code** (`docs/multimodal.md` said "not independently confirmed").
+  - **The tower:** each frame runs the image tower and `embed_vision` (`get_video_features`), and the result is
+    scattered in. There are no m-RoPE positions.
+  - **Frame sampling:** 32 frames (`arange` sampling; fewer than 32 is an error), at most 70 soft tokens a frame
+    (`max_soft_tokens`, one of 70-1120).
+  - **The prompt:** each frame is written as `MM:SS <|image>` + `<|video|>`×n + `<image|>`, joined with spaces.
+- **Gemma 3: no native video.** Frames go in as separate images (S11), each `\n\n<boi>` + 256 + `<eoi>\n\n`; any
+  timestamps are the client's text.
+- **The input shape, for the owner** (from cheapest):
+  - (a) **A client-extracted frame list as a content part** (frames plus their times): no decoding in goinfer.
+  - (b) **Animated GIF:** decodable by the standard library (`image/gif.DecodeAll`: frames plus delays, so real
+    timestamps). The caller composites each frame by its disposal method, and bounds memory with `DecodeConfig` first.
+  - (c) **mp4/H.264 in-process:** pure-Go demuxers exist (`abema/go-mp4`, `Eyevinn/mp4ff`; unverified), but no mature
+    pure-Go H.264 pixel decoder is known. So it means cgo (FFmpeg through `go-astiav`, openh264, VideoToolbox or NVDEC)
+    or a WASM decoder under wazero. Each breaks pure-Go or adds a large dependency, which is why `docs/multimodal.md`
+    ruled container decoding out of v1.
+- **Two known risks, made gates:**
+  - **The patch conv's temporal halves (F5d):** swapping `v.patch_embd.weight` and `.weight.1` is invisible on a still
+    image, where both halves see the same frame. At T > 1 they see different frames, so the swap must go red.
+  - **The peers' same-size pairing** (llama.cpp #24303, Ollama #17814): video is the one place frames ARE paired
+    temporally. Images in a message never are (S11's defect). S15 says which it does, per family, in the served log.
+
+#### Gates, registered 2026-10-07 evening before any S15 code
+
+- **G-S15a, preprocessing against HF's video processor:**
+  - **The clip:** a short committed clip with a known license, as frames (and, if the owner picks (b), the same clip as
+    an animated GIF).
+  - **The bar:** frame indices and timestamps equal; per-frame grids equal; pixels within one 8-bit level, the G-S10
+    preprocessing record's standard.
+  - **The families:** Qwen2.5-VL, Qwen3-VL, Qwen3.5, Gemma 4.
+- **G-S15b, the tower against HF at T > 1:** every soft token at cosine >= 0.9999 (0.999-0.9999 parked).
+  - **Fixtures:** the tiny fixtures with norms randomised and nonzero biases, then the real checkpoints.
+  - **Planted defects, each alone red:**
+    1. the temporal halves swapped (F5d);
+    2. the frame groups' attention segments merged;
+    3. an odd frame count padded with zeros instead of the last frame;
+    4. Qwen3-VL's DeepStack not applied to video features.
+- **G-S15c, full-model logits against HF on a video prompt (the G-S10c shape):**
+  - **The bar:** last-position cosine >= 0.9999 with an equal argmax, and argmax agreement over the text positions
+    after the video.
+  - **Planted defects:**
+    1. Qwen2.5-VL's `second_per_grid_ts` ignored;
+    2. Qwen3-VL's timestamps dropped from the prompt;
+    3. Gemma 4's per-frame `MM:SS` dropped.
+- **G-S15d, served:** a video request through serve, the tower on the device against `-vision-device cpu`, identical
+  replies or a first divergence at a near-tie (G-S2d's rule). Then the speed record at night, against S7's 5 s bar for
+  a short clip at the default budget.
 
 ### S16 — A resident m-RoPE prefill on Metal (added 2026-10-07 evening, after the audit)
 
