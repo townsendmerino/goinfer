@@ -294,6 +294,12 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 // releases can't meaningfully fail — so it always returns nil. Calls the standard Close() (not the
 // deprecated Release alias) on each sub-resource.
 func (ve *VisionEncoder) Close() error {
+	ve.c.releaseOwned(ve.release)
+	return nil
+}
+
+// release is Close's body (the wrappers it closes see they are already on the serializing goroutine and run in place).
+func (ve *VisionEncoder) release() {
 	for _, d := range []*DeviceBuffer{ve.patchW, ve.patchB, ve.posEmb, ve.postLNw, ve.postLNb} {
 		if d != nil {
 			_ = d.Close()
@@ -312,5 +318,4 @@ func (ve *VisionEncoder) Close() error {
 			}
 		}
 	}
-	return nil
 }

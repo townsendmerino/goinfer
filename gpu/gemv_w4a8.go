@@ -90,6 +90,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 
 // ResidentW4A8 is an int4 group-wise weight matrix resident on the GPU.
 type ResidentW4A8 struct {
+	ctx     *Context     // the Context that owns the buffers: Close after it is closed releases on the finalizer goroutine (releaseOwned)
 	bq      *wgpu.Buffer // [N, kp/32] vec4<u32> packed nibbles
 	bScales *wgpu.Buffer // [N, kp/32] f16 per-group scales, packed 2/u32 (N-83, docs/audit-2026-09-10.md:
 	// both writers below pack via packF16Pairs, not raw f32 — this field's comment was stale)
@@ -101,16 +102,18 @@ type ResidentW4A8 struct {
 
 // Release frees the resident GPU buffers.
 func (rm *ResidentW4A8) Close() error {
-	if rm.bq != nil {
-		accountFree(int64(rm.bq.GetSize()))
-		rm.bq.Release()
-		rm.bq = nil
-	}
-	if rm.bScales != nil {
-		accountFree(int64(rm.bScales.GetSize()))
-		rm.bScales.Release()
-		rm.bScales = nil
-	}
+	rm.ctx.releaseOwned(func() {
+		if rm.bq != nil {
+			accountFree(int64(rm.bq.GetSize()))
+			rm.bq.Release()
+			rm.bq = nil
+		}
+		if rm.bScales != nil {
+			accountFree(int64(rm.bScales.GetSize()))
+			rm.bScales.Release()
+			rm.bScales = nil
+		}
+	})
 	return nil
 }
 
@@ -220,7 +223,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
-	return &ResidentW4A8{bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
+	return &ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
 }
 
 // UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are
@@ -261,7 +264,7 @@ func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*Resi
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
-	return &ResidentW4A8{bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
+	return &ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
 }
 
 func (c *Context) ensureGEMVW4() error {

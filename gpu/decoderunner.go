@@ -1839,7 +1839,7 @@ func (r *DecodeRunner) release() {
 }
 
 // Release frees the runner's scratch (not the resident model).
-func (r *DecodeRunner) Close() error { r.release(); return nil }
+func (r *DecodeRunner) Close() error { r.c.releaseOwned(r.release); return nil }
 
 // dnetRunParams carries the model-level Gated-DeltaNet geometry (uniform across the linear
 // layers). keyDim/valueDim/convDim are derived once here rather than at every dispatch, because

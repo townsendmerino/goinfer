@@ -21,6 +21,8 @@ func TestContextClose_finalizerRace(t *testing.T) {
 		c.Close()
 	}
 	const rounds = 150
+	leakExempt.Store(true) // the leak per round is the point of this test
+	defer leakExempt.Store(false)
 	done := make(chan error, 1)
 	go func() {
 		for i := 0; i < rounds; i++ {

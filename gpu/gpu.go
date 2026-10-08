@@ -81,7 +81,8 @@ type Context struct {
 	// Close used to double-release the wgpu handles, a use-after-free inside the native layer. The
 	// cpu and cuda backends were already idempotent (cuda guards on r.reqCh == nil); only WebGPU
 	// crashed, and only on a machine with a real GPU.
-	closed bool
+	closed   atomic.Bool // set by Close; read from other goroutines by releaseOwned
+	liveBase int64       // LiveBufferBytes() when this Context was created: the leak report at Close compares against it
 
 	// hasDP4A records whether this adapter's WGSL compiler accepts dot4I8Packed
 	// (probed once in New(), never re-checked). gfx-rs/wgpu merged the builtin in
@@ -494,6 +495,7 @@ func New() (*Context, error) {
 	liveContexts.Add(1)
 	gpuEverAvailable.Store(true)
 	return &Context{
+		liveBase: liveBufferBytes.Load(),
 		instance: inst,
 		adapter:  adapter,
 		device:   device,
@@ -584,11 +586,13 @@ func (c *Context) mkPipeline(label, code string) (*wgpu.ShaderModule, *wgpu.Comp
 // Close releases all GPU resources. Safe to call once; the Context must
 // not be used afterward.
 func (c *Context) Close() error {
-	if c.closed {
+	if !c.closed.CompareAndSwap(false, true) {
 		return nil // idempotent: `defer m.Close()` + an explicit Close must not double-release (C-26b)
 	}
-	c.closed = true
 	liveContexts.Add(-1)
+	if h := leakAtClose; h != nil {
+		h(c) // on the caller's goroutine, where the stack names the test; the releases below run elsewhere
+	}
 	// The releases run on the runtime's finalizer goroutine, the one thread that also drops the device reference a leaked buffer holds (finalizerSerial's comment: two
 	// device drops at once deadlock wgpu-native).
 	finalizerSerial(c.release)
@@ -633,6 +637,40 @@ func (c *Context) release() {
 	c.layout, c.pipeline, c.shader, c.queue, c.device, c.adapter, c.instance = nil, nil, nil, nil, nil, nil, nil
 }
 
+// leakAtClose, when non-nil, is called by Context.Close on the caller's goroutine before anything is released. nil in production; the package's tests set it to report device buffers a test left
+// live (leak_report_test.go).
+var leakAtClose func(*Context)
+
+// releaseOwned runs f, a wrapper's release of its device buffers: in place while the Context is live, on the finalizer goroutine once it is closed. A wrapper closed AFTER its Context may hold the
+// last reference on the device, and that drop must not overlap another device's destruction (finalizerSerial). A nil Context (a wrapper built by hand in a test) runs f in place.
+func (c *Context) releaseOwned(f func()) {
+	if c != nil && !releaseOwnedHopOff && c.closed.Load() && serialGID.Load() != curGID() { // already on the serializing goroutine (a Close that closes other wrappers): run in place
+		finalizerSerial(f)
+		return
+	}
+	f()
+}
+
+// releaseOwnedHopOff turns the hop off (a wrapper closed after its Context releases in place, as before): the planted defect of TestContextClose_lateWrapperClose.
+var releaseOwnedHopOff bool
+
+// serialGID is the goroutine id of the finalizer goroutine while finalizerSerial's f runs on it, else 0.
+var serialGID atomic.Int64
+
+// curGID is the calling goroutine's id, parsed from its stack header. Only the release path of an already-closed Context calls it, so its cost does not matter.
+func curGID() int64 {
+	var b [48]byte
+	n := runtime.Stack(b[:], false)
+	var id int64
+	for _, ch := range b[len("goroutine "):n] {
+		if ch < '0' || ch > '9' {
+			break
+		}
+		id = id*10 + int64(ch-'0')
+	}
+	return id
+}
+
 type finalizerToken struct{ _ [64]byte } // not a tiny allocation: tiny objects are batched and their finalizers can be delayed
 
 // finalizerSerial runs f on the runtime's finalizer goroutine and waits for it.
@@ -649,7 +687,9 @@ func finalizerSerial(f func()) {
 	done := make(chan struct{})
 	tok := new(finalizerToken)
 	runtime.SetFinalizer(tok, func(*finalizerToken) {
+		serialGID.Store(curGID())
 		once.Do(f)
+		serialGID.Store(0)
 		close(done)
 	})
 	tok = nil
@@ -670,17 +710,21 @@ func finalizerSerial(f func()) {
 // once at first use and keeps the handle for every subsequent token. Release
 // frees the GPU buffer.
 type ResidentMatrix struct {
+	ctx  *Context
 	buf  *wgpu.Buffer
 	rows int // N (out features)
 	cols int // K (in features)
 }
 
-// Release frees the resident GPU buffer. Safe to call once.
+// Close frees the resident GPU buffer. Idempotent; after its Context is closed the release runs on the finalizer goroutine (releaseOwned).
 func (rm *ResidentMatrix) Close() error {
-	if rm.buf != nil {
-		rm.buf.Release()
-		rm.buf = nil
-	}
+	rm.ctx.releaseOwned(func() {
+		if rm.buf != nil {
+			accountFree(int64(rm.buf.GetSize()))
+			rm.buf.Release()
+			rm.buf = nil
+		}
+	})
 	return nil
 }
 
@@ -700,7 +744,8 @@ func (c *Context) UploadMatrix(b []float32, rows, cols int) (*ResidentMatrix, er
 	if err != nil {
 		return nil, fmt.Errorf("gpu: create resident buffer: %w", err)
 	}
-	return &ResidentMatrix{buf: buf, rows: rows, cols: cols}, nil
+	accountAlloc(int64(buf.GetSize()))
+	return &ResidentMatrix{ctx: c, buf: buf, rows: rows, cols: cols}, nil
 }
 
 // MatmulBTResident computes dst = a · rm.bᵀ ([M, rm.rows]), uploading only the

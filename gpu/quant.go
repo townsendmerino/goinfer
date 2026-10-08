@@ -90,6 +90,7 @@ func (c *Context) ensureQuant() error {
 // ResidentW8A8 is an int8 weight [N,K] uploaded once (packed 4-per-u32) with its
 // per-row scales — reused across every token's matmul against it.
 type ResidentW8A8 struct {
+	ctx     *Context     // see ResidentW4A8.ctx
 	bq      *wgpu.Buffer // [N, kp/4] packed int8
 	bScales *wgpu.Buffer // [N] f32
 	rows    int          // N
@@ -99,16 +100,18 @@ type ResidentW8A8 struct {
 
 // Release frees the resident GPU buffers.
 func (rm *ResidentW8A8) Close() error {
-	if rm.bq != nil {
-		accountFree(int64(rm.bq.GetSize()))
-		rm.bq.Release()
-		rm.bq = nil
-	}
-	if rm.bScales != nil {
-		accountFree(int64(rm.bScales.GetSize()))
-		rm.bScales.Release()
-		rm.bScales = nil
-	}
+	rm.ctx.releaseOwned(func() {
+		if rm.bq != nil {
+			accountFree(int64(rm.bq.GetSize()))
+			rm.bq.Release()
+			rm.bq = nil
+		}
+		if rm.bScales != nil {
+			accountFree(int64(rm.bScales.GetSize()))
+			rm.bScales.Release()
+			rm.bScales = nil
+		}
+	})
 	return nil
 }
 
@@ -163,7 +166,7 @@ func (c *Context) UploadW8A8(q8 []int8, scales []float32, N, K int) (*ResidentW8
 		return nil, fmt.Errorf("gpu: create W8A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
-	return &ResidentW8A8{bq: bq, bScales: sc, rows: N, cols: K, kp: padK(K)}, nil
+	return &ResidentW8A8{ctx: c, bq: bq, bScales: sc, rows: N, cols: K, kp: padK(K)}, nil
 }
 
 // MatmulW8A8 computes dst[M,N] = (aq quantized int8) · rm.bᵀ, dequantized — the
