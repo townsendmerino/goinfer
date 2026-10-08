@@ -3,8 +3,8 @@
 > **Status 2026-10-08: step 1 DONE — BUILD, with a thin margin.** 71 of 261 counted Critical and Major findings are
 > R or B (27.2%), more than three distinct options or families among them; every registered sensitivity clears 25%
 > (narrowest 26.7%). Record: [`audit-classes-2026-10-08.md`](../measurements/audit-classes-2026-10-08.md). Its §3
-> puts one scoping choice to the owner before step 2 starts: options are 22 of the 71, families 20, limits 19 and
-> state kinds 10, so §4 as written covers under a third of the class. Step 2 not started.
+> put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
+> 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 not started.
 
 ## 1. The class, and why it keeps coming back
 
@@ -117,6 +117,30 @@ dropping every entry that cites an earlier one. Per-finding table and the recurr
 [`audit-classes-2026-10-08.md`](../measurements/audit-classes-2026-10-08.md).
 
 ## 4. Step 2 — fail-closed admission for options × paths (if step 1 clears)
+
+### 4.0 Scope decision, 2026-10-08 (owner): kinds of state become columns
+
+Step 1 found options are 22 of the 71 R/B findings and kinds of state 10, with the state misses concentrated on
+lifecycle paths (truncate, reset, snapshot, reuse, rollback). Owner decision: **the grid's columns are the recurring
+options AND the kinds of state; limits stay out of step 2.** What that changes in the bullets below:
+
+- **Columns, options:** the five that recurred in step 1 — LoRA adapter, quantisation mode, prefill-lever selection
+  (`--cpu-fast-attention`, the fused/MMA levers, `--exact-prefill`), paged MoE slots, KV precision — plus every other
+  `decoder.Options` field, classified by the registration test as before.
+- **Columns, state:** one per kind `KVCache` carries — the four recurrent kinds `hasRecurrentState()` names (DeltaNet,
+  short-conv, Mamba-2, KDA), sliding-window rings, int8 KV scales, MLA latents, image blocks with m-RoPE positions,
+  captured hidden states (EAGLE), and adapter identity (the LoRA runtime and which adapter built a reused prefix).
+  `decoder/kvsnapshot.go` already checks MLA latents beside `hasRecurrentState()` rather than through it — one predicate
+  does not cover every path, which is the case for a column per kind.
+- **Rows:** the execution paths §4 names, with batched/fast prefill admission and the speculative paths first (19 of
+  step 1's 71 between them), plus the lifecycle paths a state column meets: `TruncateTo`, recurrent reset, session
+  snapshot and `LoadSession`, resident prefix reuse, and speculative rollback.
+- **A second registration test**, beside the `decoder.Options` one: reflection over `KVCache`'s fields fails when a
+  state field lands that a lifecycle row has not classified. Bailing Hybrid's KDA state (09-10 C-03) and LFM2's conv
+  window (09-02 C-02) are the two misses it would have caught at the commit that added them.
+- **Limits are out:** the 19 B findings (threadgroup memory, fixed score arrays, head-dim and alignment caps, context
+  caps) are a bound declared by each kernel and checked at its dispatch site, a different mechanism. Not filed here;
+  the record's §2 lists them for whoever picks that up.
 
 - **One chokepoint per path.** Every execution path (sequential decode, batched prefill, MC3 batched decode,
   resident, paged MoE, fast/exact prefill, speculative verify) asks one function whether it admits this model *with
