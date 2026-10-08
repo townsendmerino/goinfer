@@ -14,6 +14,7 @@
 #                     ~/models/qwen25vl-3b-instruct ~/models/gemma-3-4b-it
 # GS3C_SETTLE is the seconds to wait after an arm's server exits (default 2). The 2026-10-07 night's second resident arm,
 # started 2 s after the first exited, found its memory not yet back and fell to the CPU decoder; 30 s is the follow-up's.
+# GS3C_IMAGE replaces the request image (default testdata/glm_ocr/table.png; added 2026-10-08 for the Qwen3.6-35B-A3B, whose image turn prefills on the CPU).
 # GS3C_EXTRA adds serve flags to EVERY arm (e.g. "--kv-sessions 1" so a 4B model fits the 8 GB card; added 2026-10-07 by nobara).
 # Run from the repo root (it reads testdata/). Checkpoints come from ~/models, never the archive.
 set -euo pipefail
@@ -59,9 +60,9 @@ for dir in "$@"; do
     grep -E "decode path|prefill path|vision" "$OUT/gs3c-$fam-$lab.log" | cut -c1-200 || true
     trap 'kill $pid 2>/dev/null' ERR EXIT # a failed request must not leave this arm's server running on the GPU (found 2026-10-07: strays made later arms test the wrong server)
     python3 - "$OUT" "$fam" "$lab" "$PORT" <<'EOF'
-import base64, json, sys, time, urllib.request
+import base64, json, os, sys, time, urllib.request
 out, fam, lab, port = sys.argv[1:5]
-img = base64.b64encode(open('testdata/glm_ocr/table.png', 'rb').read()).decode()
+img = base64.b64encode(open(os.environ.get('GS3C_IMAGE', 'testdata/glm_ocr/table.png'), 'rb').read()).decode()  # GS3C_IMAGE: another image, e.g. a small one for a model whose prefill is slow (S6's 35B)
 body = {"messages": [{"role": "user", "content": [
     {"type": "image_url", "image_url": {"url": "data:image/png;base64," + img}},
     {"type": "text", "text": "What does this image show? Answer briefly."}]}],

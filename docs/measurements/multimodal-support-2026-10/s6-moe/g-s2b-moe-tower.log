@@ -1,0 +1,10 @@
+=== RUN   TestGridVisionCUDA_real
+=== RUN   TestGridVisionCUDA_real/qwen3.6-35b-a3b
+[S4 real qwen3.6-35b-a3b] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999995; tower CUDA 1.514s, CPU 14.074s (exploratory)
+[S4 real qwen3.6-35b-a3b] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999997; tower CUDA 119ms, CPU 689ms (exploratory)
+[S4 real qwen3.6-35b-a3b] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999999; tower CUDA 2.198s, CPU 20.585s (exploratory)
+[S4 real qwen3.6-35b-a3b] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999981; tower CUDA 2.077s, CPU 19.231s (exploratory)
+--- PASS: TestGridVisionCUDA_real (62.27s)
+    --- PASS: TestGridVisionCUDA_real/qwen3.6-35b-a3b (62.27s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	62.318s

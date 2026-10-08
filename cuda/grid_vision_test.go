@@ -282,6 +282,8 @@ func TestGridVisionCUDA_real(t *testing.T) {
 				}, enc.Cfg.OutHiddenSize, func() { _ = acc.Close() }
 			}},
 	}
+	// S6 on nobara (docs/tasks/task-multimodal-support-2026-10.md): the Qwen3.5+ MoE family's tower (Qwen3.6-35B-A3B: 27 blocks, hidden 1152, out 2048), whose two shards were copied from the archive into ~/models/qwen3.6-35b-a3b-vision.
+	fams = append(fams, fam{"qwen3.6-35b-a3b", filepath.Join(home, "models", "qwen3.6-35b-a3b-vision"), nil, fams[0].run})
 	for _, f := range fams {
 		t.Run(f.name, func(t *testing.T) {
 			if strings.HasPrefix(f.dir, "/srv/models") {
