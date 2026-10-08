@@ -3172,6 +3172,20 @@ Exit 0 is not the verdict (the triage and validation scripts exit 0 whatever hap
   recorded machine state at its start was loadavg 0.34, so it began before my first compile, but the arm and that compile are close in time and I cannot show they did not overlap, so I do not claim my work was not a cause. 1c has now been VOID on goinfer's swap growth in all three runs, on the previous two without me, which points at the 26B's own load.
 - **`gpu-release-validate`:** already recorded above (reproducers, suite 144 / 0, ten clean cell runs, planted defect red).
 
+#### Gemma 3's CUDA default is now float32 (owner, 2026-10-08, after the S13-lite float32 arm above)
+
+- **Decision:** "float32 it is". On `--backend cuda` with `-vision-quant` unset, Gemma 3's SigLIP tower is the float32 one; `webgpu` keeps int8 (it has no float32 device tower); Metal was already float32; an explicit `-vision-quant int8` asks for int8 and an explicit `f32`
+  never falls back. The evidence is the S13-lite float32 arm (2.396 s against 4.590 s) and G-S3b/G-S3d (float32 reproduces the CPU float32 reference's reply; the int8 default's reply diverged at a non-near-tie token), and the memory cost measured above.
+- **What it needed beyond flipping `towerInt8`** (`internal/serveapp/gemma3_tower.go`): the float32 reserve is 2.4 GB, and the plan subtracts it from the KV budget BEFORE the model loads, so on a card where one KV slot no longer fits beside the decoder and that reserve the resident build declines and the
+  decoder runs on the CPU, which is worse than the int8 tower it replaced. I found this by reasoning from `checkKVFits`, then demonstrated it on the card (`night-2026-10-08-nobara/gemma3-float32-default/result.txt`): with 5.4 GB free the float32 default put the decoder on the CPU; with the check it chose
+  int8, with a note, and the decoder stayed `cuda-resident`. Two guards, then:
+  1. **Before the plan** (`resolveGemma3VisionQuant`): the unset default becomes int8, with a note, unless the free VRAM holds the decoder, one 4096-position KV slot and the float32 tower. The sizes are estimates from the checkpoint (0.27 of the safetensors bytes for the decoder, 0.55 of that for a slot; both from
+     the measured 4B), and the check leans about 0.3 GB toward int8; it never leans toward declining. What it cannot read (an `hf:` reference, no probe, several models) is left alone.
+  2. **After the attach** (`attachGemma3Tower`): if the default float32 tower still fails to attach, it is released and the int8 device tower attached, not the CPU tower.
+- **Gates:** the table tests (`TestTowerInt8_gemma3ExplicitF32`, `TestTowerInt8`, `TestTowerReserve_gemma3`, `TestTowerReserve_everyDeviceTower`) now pin float32-on-CUDA, int8-on-webgpu and the explicit values; `TestAttachGemma3Tower` (7 cases), `TestLoadVisionTower_gemma3FloatDefaultFallsBackToInt8` and `TestResolveGemma3VisionQuant`
+  (8 cases and the edges) are new and each was shown red by disabling the thing it guards. The whole `internal/serveapp` suite passes, `gofmt`, vet and `staticcheck` are clean, and the flags page and `docs/multimodal.md` say so.
+- **What changes for a user on the 8 GB card:** a new image costs about 2.4 s of TTFT, not 4.6 s, with an exact tower; the default plan holds 2 resident KV slots at the 4096 floor, not 3. Not measured: the float32 tower's load time at startup (2.7 GB of weights more to upload).
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

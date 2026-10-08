@@ -6,14 +6,15 @@ import (
 	"testing"
 )
 
-// The S4 addendum (docs/tasks/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default.
-// Unset keeps today's choice (Gemma 3's device tower on cuda/webgpu is int8); an explicit f32 selects the float32 tower; int8 stays int8 everywhere.
+// The S4 addendum (docs/tasks/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters for the
+// fallback, attachGemma3Tower). Unset is float32 on CUDA since 2026-10-08 (owner) and int8 on WebGPU, which has no float32 device tower; an explicit f32 selects the float32 tower;
+// int8 stays int8 everywhere.
 func TestTowerInt8_gemma3ExplicitF32(t *testing.T) {
 	cases := []struct {
 		quant, backend string
 		want           bool
 	}{
-		{"", "cuda", true}, {"", "webgpu", true}, {"", "metal", false}, {"", "cpu", false}, {"", "", false}, // unset: unchanged
+		{"", "cuda", false}, {"", "webgpu", true}, {"", "metal", false}, {"", "cpu", false}, {"", "", false}, // unset: float32 on cuda (the owner's 2026-10-08 default), int8 on webgpu
 		{"f32", "cuda", false}, {"f32", "webgpu", false}, {"f32", "metal", false}, {"f32", "cpu", false}, // explicit f32: float32 everywhere
 		{"int8", "cuda", true}, {"int8", "webgpu", true}, {"int8", "metal", true}, {"int8", "cpu", true}, // int8 when asked
 	}
@@ -24,8 +25,8 @@ func TestTowerInt8_gemma3ExplicitF32(t *testing.T) {
 	}
 }
 
-// Gemma 3's float32 SigLIP tower is priced into the resident plan only when it will really run float32 on CUDA: the default (int8) reserves nothing, an explicit f32
-// reserves about 2 GB (27 layers of hidden 1152 / intermediate 4304 in float32 plus the 4096-patch scratch).
+// Gemma 3's SigLIP tower is priced into the resident plan on CUDA: the default (float32 since 2026-10-08) and an explicit f32 reserve about 2 GB (27 layers of hidden 1152 / intermediate
+// 4304 in float32 plus the 4096-patch scratch; measured at about 1.7 GiB, so the figure is generous), an explicit int8 about 558 MiB.
 func TestTowerReserve_gemma3(t *testing.T) {
 	dir := t.TempDir()
 	cfg := `{"model_type":"gemma3","vision_config":{"hidden_size":1152,"intermediate_size":4304,"num_hidden_layers":27,"patch_size":14,"image_size":896,"num_channels":3}}`
@@ -37,16 +38,17 @@ func TestTowerReserve_gemma3(t *testing.T) {
 		c.load.Backend = backend
 		return c
 	}
-	// S18: the int8 device tower (the shipped default, and an explicit int8) is priced too, at about the 558 MiB it holds
-	for _, q := range []string{"", "int8"} {
-		if got := float64(towerReserve(mk(q, "cuda"), dir)) / (1 << 20); got < 520 || got > 640 {
-			t.Errorf("int8 reserve (quant %q) = %.0f MiB, want 520-640", q, got)
-		}
+	// S18: the int8 device tower (an explicit int8, and the fallback) is priced too, at about the 558 MiB it holds
+	if got := float64(towerReserve(mk("int8", "cuda"), dir)) / (1 << 20); got < 520 || got > 640 {
+		t.Errorf("int8 reserve = %.0f MiB, want 520-640", got)
 	}
-	got := float64(towerReserve(mk("f32", "cuda"), dir)) / 1e9
-	t.Logf("gemma3 f32 tower reserve: %.2f GB", got)
-	if got < 1.9 || got > 2.5 {
-		t.Errorf("explicit f32 reserve %.2f GB, want 1.9-2.5", got)
+	// the default is float32 now, and prices as an explicit f32 does
+	for _, q := range []string{"", "f32"} {
+		got := float64(towerReserve(mk(q, "cuda"), dir)) / 1e9
+		t.Logf("gemma3 float32 tower reserve (quant %q): %.2f GB", q, got)
+		if got < 1.9 || got > 2.5 {
+			t.Errorf("float32 reserve (quant %q) %.2f GB, want 1.9-2.5", q, got)
+		}
 	}
 	if got := towerReserve(mk("f32", "metal"), dir); got != 0 {
 		t.Errorf("a non-cuda backend reserves %d, want 0", got)
@@ -90,7 +92,7 @@ func TestTowerReserve_everyDeviceTower(t *testing.T) {
 	// the int8 figure is calibrated against the 558 MiB measured on the card
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfgs["gemma3"]), 0o644)
-	c := config{visionPath: dir}
+	c := config{visionPath: dir, visionQuant: "int8"} // explicit: the default is float32 now
 	c.load.Backend = "cuda"
 	if mib := float64(towerReserve(c, dir)) / (1 << 20); mib < 520 || mib > 640 {
 		t.Errorf("gemma3 int8 reserve %.0f MiB, want 520-640 (measured 558)", mib)

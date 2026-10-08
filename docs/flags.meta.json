@@ -50,7 +50,7 @@
   {
    "name": "vision-quant",
    "group": "Choosing models",
-   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. Unset is `f32` everywhere except Gemma 3 under `--backend cuda` or `webgpu`, whose default device tower is still `int8`; an explicit `f32` selects the float32 device tower where one exists (CUDA) and the CPU tower otherwise.",
+   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. Unset is `f32` everywhere except Gemma 3 under `--backend webgpu` (only `int8` there). On CUDA Gemma 3 is `f32`, or `int8` with a note if the card cannot hold decoder, a KV slot and the float32 tower; explicit `f32` never falls back.",
    "type": "f32 | int8"
   },
   {

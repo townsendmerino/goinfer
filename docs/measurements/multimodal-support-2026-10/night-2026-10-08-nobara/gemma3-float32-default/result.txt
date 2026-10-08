@@ -1,0 +1,13 @@
+Gemma 3 4B float32 CUDA default, 2026-10-08 (nobara, RTX 2070 SUPER 8 GB, driver 595.91.07). EXPLORATORY, untimed. mem.sh is the probe (idle / after load / after two image requests, nvidia-smi MiB).
+
+1. The idle card, the new default (serve built from the working tree, no flags): `encoder f32/cuda-resident`, plan 2 of 4 KV slots at the 4096 floor, 2400 MB reserved, 7041 MiB used after load and after
+   both image requests (HTTP 200, 276 prompt tokens). The int8 default measured 6955 MiB with 3 slots (gemma3-memory-probe/).
+
+2. A TIGHT card (another server holding part of VRAM so that 5.4 GB is free: qwen2.5-coder-1.5b, --kv-sessions 1, nvidia-smi 2573 MiB used), Gemma 3 at defaults:
+   - float32 default WITHOUT the pre-load check (nopre.serve.log): the resident decoder DECLINED and ran on the CPU:
+       "default resident context 4096 positions does not fit (1.14 GB of KV plus 2.11 GB reserved for a companion attach, 2.81 GB free)"; tower f32/cuda-resident; 4409 MiB used.
+   - WITH the check (withpre.serve.log): "note: the float32 Gemma 3 vision tower is the CUDA default, but this card has 5.4 GB free and the decoder, one KV slot and that tower need about 6.1 GB:
+     using the int8 device tower"; `decode path: cuda-resident (int4)`, 1 KV slot at 4096, 959 MB reserved, tower int8/cuda-resident; 6881 MiB used; both image requests HTTP 200.
+   (An earlier occupier leaving 4.4 GB free was below even the int8 need and declined the resident decoder in both arms; it showed nothing and is not archived beyond this line.)
+
+The estimate (6.1 GB for the 4B) against what the f32 plan actually required on the card: decoder 2.18 + one KV slot 1.14 + float32 reserve 2.11 + margin 0.40 = 5.8 GB, so the check leans about 0.3 GB toward int8.

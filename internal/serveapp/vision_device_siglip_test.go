@@ -3,6 +3,7 @@ package serveapp
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,18 +36,18 @@ func TestLoadVisionTower_siglipHonoursVisionDevice(t *testing.T) {
 	t.Cleanup(func() { vision.RegisterResident(nil) })
 	dir := gemma3RealLayoutTiny(t)
 	for _, tc := range []struct {
-		device            string
+		device, quant     string
 		wantCalls, wantI8 int
-	}{{"cpu", 0, 0}, {"auto", 1, 1}} {
+	}{{"cpu", "", 0, 0}, {"auto", "", 1, 0}, {"auto", "int8", 1, 1}} { // the default tower under cuda is float32 since 2026-10-08; an explicit int8 is the int8 one
 		calls, int8Calls = 0, 0
-		cfg := config{visionPath: dir, visionDevice: tc.device, models: modelFlag{{path: "m"}}}
+		cfg := config{visionPath: dir, visionDevice: tc.device, visionQuant: tc.quant, models: modelFlag{{path: "m"}}}
 		cfg.load.Backend = "cuda"
 		if err := (&server{}).loadVisionTower(cfg); err != nil {
 			t.Fatalf("-vision-device %s: %v", tc.device, err)
 		}
 		if calls != tc.wantCalls || int8Calls != tc.wantI8 {
-			t.Errorf("-vision-device %s under cuda: resident factory called %d times (%d with an int8 tower), want %d (%d)",
-				tc.device, calls, int8Calls, tc.wantCalls, tc.wantI8)
+			t.Errorf("-vision-device %s -vision-quant %q under cuda: resident factory called %d times (%d with an int8 tower), want %d (%d)",
+				tc.device, tc.quant, calls, int8Calls, tc.wantCalls, tc.wantI8)
 		}
 	}
 }
@@ -91,4 +92,33 @@ func gemma3RealLayoutTiny(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// fallingSiglipResident stands in for a card that cannot hold the float32 tower: the factory refuses a float32 encoder (GPUWeights errs for one) and accepts the int8 one.
+func TestLoadVisionTower_gemma3FloatDefaultFallsBackToInt8(t *testing.T) {
+	var f32Tries, int8Tries int
+	vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {
+		if _, err := e.GPUWeights(); err == nil {
+			int8Tries++
+			return fakeSiglipResident{}, nil
+		}
+		f32Tries++
+		return nil, errors.New("cuda: device allocation failed: CUDA_ERROR_OUT_OF_MEMORY")
+	})
+	t.Cleanup(func() { vision.RegisterResident(nil) })
+	dir := gemma3RealLayoutTiny(t)
+	for _, tc := range []struct {
+		quant                   string
+		wantF32Tries, wantInt8s int
+	}{{"", 1, 1}, {"f32", 1, 0}} { // the default falls back to int8; an explicit f32 does not
+		f32Tries, int8Tries = 0, 0
+		cfg := config{visionPath: dir, visionQuant: tc.quant, models: modelFlag{{path: "m"}}}
+		cfg.load.Backend = "cuda"
+		if err := (&server{}).loadVisionTower(cfg); err != nil {
+			t.Fatalf("-vision-quant %q: %v", tc.quant, err)
+		}
+		if f32Tries != tc.wantF32Tries || int8Tries != tc.wantInt8s {
+			t.Errorf("-vision-quant %q under cuda with no room for float32: float32 attach tried %d times, int8 %d, want %d and %d", tc.quant, f32Tries, int8Tries, tc.wantF32Tries, tc.wantInt8s)
+		}
+	}
 }

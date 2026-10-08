@@ -418,7 +418,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.BoolVar(&cfg.noSelfTest, "no-selftest", false, "skip the startup self-tests: a kernel check against a reference that steps a CPU kernel tier down, or declines a GPU backend, when its output disagrees. On by default; skip it only if it misjudges a healthy machine (and tell us: `check --hardware` prints what it found).")
 	fs.IntVar(&cfg.visionMaxPixels, "vision-max-pixels", 0, "GLM-OCR only: lower the image pixel budget to this many pixels (0 = the model's own ceiling, 4.82 MP; it is never raised). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro.")
 	fs.StringVar(&cfg.visionDevice, "vision-device", "auto", "where the vision tower runs: auto (default: on the --backend's GPU when this binary has a tower there, else the CPU) | cpu (the CPU whatever the backend; the language model keeps its own backend)")
-	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere except Gemma 3 under --backend cuda|webgpu, whose default device tower is still int8; an explicit f32 selects the float32 device tower where one exists (CUDA, S4 addendum) and the CPU tower otherwise")
+	fs.StringVar(&cfg.visionQuant, "vision-quant", "", "vision encoder weight quant: f32 (bit-exact) | int8 (W8A8; lossy: relative L2 0.14-0.52 against f32, docs/measurements/vision-tower-int8-fidelity-*) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash. Unset (the default) is f32 everywhere except Gemma 3 under --backend webgpu, whose only device tower is int8; on CUDA Gemma 3 is f32 since 2026-10-08, or int8 (with a note) if the card cannot hold the decoder, one KV slot and the float32 tower, or if that tower fails to attach (an explicit f32 never falls back, and on webgpu runs the CPU tower)")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m), hf:<owner>/<repo>:safetensors (a safetensors checkpoint, fetched as a verified set) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
@@ -655,7 +655,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}
 	}
 
-	srv, err := newServer(cfg)
+	srv, err := newServer(resolveGemma3VisionQuant(cfg, os.Stderr)) // Gemma 3 on CUDA: float32 if the card holds it beside the decoder, else int8, before the plan prices the tower
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -1178,15 +1178,15 @@ func (s *server) loadVisionTower(cfg config) error {
 	if mt == "gemma4" {
 		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
-	enc, err := vision.LoadEncoder(dir, int8Tower)
-	if err != nil {
-		return fmt.Errorf("load vision encoder (%s): %w", dir, err)
-	}
-	// M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision
-	// tower's own leak/threading bugs are fixed (cuda/vision_encoder.go) — cuda/vision_register.go
-	// already registered its factory with vision.RegisterResident via cuda/cmd/serve's blank
-	// import; this gate was the only thing that never called EnableResident() for it.
-	residentOK, err := attachResidentTower("Gemma 3 SigLIP", enc, cfg.towerBackend(), cfg.requireBE, os.Stderr)
+	// On CUDA the unset default is the float32 tower (towerInt8); if it does not attach, attachGemma3Tower releases it and attaches the int8 device
+	// tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset default was already settled before the plan was made:
+	// resolveGemma3VisionQuant makes it int8 on a card too tight for the decoder, one KV slot and the float32 tower. Both are in gemma3_tower.go.
+	// The default flipped on the S13-lite float32 arm (2.40 s against 4.59 s a new image) and on G-S3b/d (the int8 tower changes the reply); see
+	// docs/tasks/task-multimodal-support-2026-10.md, "Gemma 3's CUDA default is now float32". The float32 tower holds about 1.7 GiB against 0.56, which on
+	// the 8 GB card is 2 resident KV slots at the 4096 floor instead of 3.
+	// M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision tower's own leak/threading bugs are fixed
+	// (cuda/vision_encoder.go); cuda/vision_register.go registered its factory with vision.RegisterResident via cuda/cmd/serve's blank import.
+	enc, int8Tower, residentOK, err := attachGemma3Tower(siglipLoader(dir), int8Tower, gemma3FloatDefault(cfg, int8Tower), cfg.towerBackend(), cfg.requireBE, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -1215,10 +1215,10 @@ func (s *server) loadVisionTower(cfg config) error {
 	return nil
 }
 
-// towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP tower's resident GPU encoders on CUDA and
-// WebGPU need int8 (W8A8), so --backend webgpu/cuda implies int8 for it even without --vision-quant; Metal's (S3) is float32. That int8
-// tower is lossy at real size (relative L2 0.16-0.52 against float32: docs/measurements/siglip-int8-fidelity-2026-10-07.md); changing
-// the default is the owner's. Every other tower (Qwen2.5-VL, Qwen3.5+, Qwen3-VL, Gemma 4, GLM-OCR) gets int8 only when asked for, whatever
+// towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP: WebGPU's device tower needs int8 (W8A8), so --backend webgpu
+// implies it without --vision-quant; CUDA's default is float32 since 2026-10-08 (owner; gemma3_tower.go) and Metal's (S3) is float32. The int8 tower
+// is lossy at real size (relative L2 0.16-0.52 against float32: docs/measurements/siglip-int8-fidelity-2026-10-07.md) and slower on CUDA (4.6 s against
+// 2.4 s a new image). Every other tower (Qwen2.5-VL, Qwen3.5+, Qwen3-VL, Gemma 4, GLM-OCR) gets int8 only when asked for, whatever
 // the backend: its device towers are float32, and its gates ran float32. (Qwen3-VL was missing from this list until 2026-10-07, so under
 // cuda/webgpu it got an int8 CPU tower nobody had validated, under a banner naming a -vision-quant the user never passed.) The old rule forced int8
 // on three of them under cuda/webgpu, which bought no speed (the CPU int8 tower is not faster) and cost fidelity: measured 2026-10-02
@@ -1237,7 +1237,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "gemma4", "glm_ocr":
 		return false
 	}
-	return backend == "webgpu" || backend == "cuda"
+	return backend == "webgpu" || (backend == "cuda" && modelType != "gemma3") // gemma3 on cuda: float32 by default
 }
 
 // enableResidentTower attaches the device-resident vision tower when the backend is webgpu, cuda or metal and reports whether it
