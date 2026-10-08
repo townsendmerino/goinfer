@@ -1,0 +1,7 @@
+rev: bf77ca502fcd59a6979dff96f44864d5e3104c0f
+started: 2026-10-08 11:32:24 PDT
+fixtures: 60 linked
+go: go version go1.27.0 linux/amd64
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 1.00 1.77 2.01 1/804 1655033
+finished: 2026-10-08 11:44:31 PDT

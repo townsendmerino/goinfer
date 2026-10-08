@@ -1,0 +1,28 @@
+=== RUN   TestContextClose_lateWrapperClose_plantedDefect
+    context_close_late_test.go:77: deadlock: a wrapper's Close after its Context and a finalizer-driven device release were in wgpuDeviceRelease at once for 1m0s
+--- FAIL: TestContextClose_lateWrapperClose_plantedDefect (60.23s)
+FAIL
+
+gpu: LEAK REPORT: 20 Context(s) closed with caller-owned device buffers still live:
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+  ?: 256 bytes of device buffers still live at Context.Close
+FAIL	github.com/townsendmerino/goinfer/gpu	60.519s
+FAIL

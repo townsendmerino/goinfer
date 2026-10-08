@@ -1,0 +1,27 @@
+gpu: LEAK REPORT: 474 Context(s) closed with caller-owned device buffers still live, 25 distinct callers:
+     1 x  399360..399360 bytes  TestNoBufferLeak
+     1 x  399360..399360 bytes  TestClose_drainsTrackedReleasesLIFO
+     1 x  399360..399360 bytes  TestClose_isIdempotent
+     1 x  399360..399360 bytes  TestClose_nilsBaseHandles
+   300 x  256..256 bytes  (no Test frame; nearest: gpu.(*Context).Close < gpu.lateWrapperCloseRounds < gpu.runLateClose.func1 < runtime.goexit)
+   150 x  256..256 bytes  TestContextClose_finalizerRace.func1
+     1 x  5581056..5581056 bytes  TestAttnBlock_parity
+     1 x  56297728..56297728 bytes  TestDecodeRunnerW4A8_parity
+     1 x  47298560..47298560 bytes  TestDecodeToken_throughput
+     1 x  114688..114688 bytes  TestDecodeToken_parity
+     1 x  108574240..108574240 bytes  TestKVCacheI8_parity
+     1 x  18919424..18919424 bytes  TestFusedMLP_parity
+     1 x  41371648..41371648 bytes  TestFusedMLP_microbench
+     1 x  1438880..1438880 bytes  TestDecodeRunnerMLA_parity
+     1 x  2165952..2165952 bytes  TestDecodeRunnerMoE_parity
+     1 x  4932552..4932552 bytes  TestDecodeRunnerMoEShared_parity
+     1 x  750848..750848 bytes  TestDecodeRunnerPerLayerRoPE_parity
+     1 x  3214976..3214976 bytes  TestPrefillLastW8A8_sharedQuantBitIdentical
+     1 x  4794240..4794240 bytes  TestPrefillLastW8A8_bufferRecycleBitIdentical
+     1 x  253440..253440 bytes  TestPrefillLastW8A8_parity
+     2 x  253440..253440 bytes  TestPrefillLastW8A8_qknormParity.func1
+     1 x  253440..253440 bytes  TestPrefillLastW8A8_gegluParity
+     1 x  335360..335360 bytes  TestPrefillLastW8A8_qgateParity
+     1 x  1445344..1445344 bytes  TestNemotronRelu2FFN_parity
+     1 x  752768..752768 bytes  TestDecodeRunnerSlidingWindow_parity
+ok  	github.com/townsendmerino/goinfer/gpu	254.553s

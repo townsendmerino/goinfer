@@ -1,0 +1,17 @@
+reproducers                  rc=0     104s  ok
+suite                        rc=0     255s  ok
+suite: pass=144 skip=58 fail=0
+== leak report (tests that closed a Context with device buffers still live):
+cell-1                       rc=0      31s  ok
+cell-2                       rc=0      30s  ok
+cell-3                       rc=0      31s  ok
+cell-4                       rc=0      30s  ok
+cell-5                       rc=0      30s  ok
+cell-6                       rc=0      31s  ok
+cell-7                       rc=0      31s  ok
+cell-8                       rc=0      31s  ok
+cell-9                       rc=0      30s  ok
+cell-10                      rc=0      30s  ok
+cell loop: cell-1..cell-10 above must each read ok (65 pass / 8 skip each; before b770a47c one run in eight hung)
+planted                      rc=1      62s  FAIL(rc=1)
+planted defect: RED as intended
