@@ -28,6 +28,31 @@ type emRow struct {
 	u      posUniforms
 }
 
+// emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 step 2,
+// docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one. OFF until G-S9c and G-S9d pass and the
+// night speed grade clears 1.02x; with it off the layer-major pass keeps the route. Tests set it.
+var emodelBatchedOn = false
+
+// emodelBatchDefect is G-S9c's planted defects in the batched pass (0 in production): 1 a shared layer attends over an
+// empty cache, 2 the PLE block skipped, 3 each row's PLE inputs from the next row, 4 the layer scalar dropped, 5 v_norm
+// dropped, 6 every layer's FFN at the first layer's width.
+var emodelBatchDefect int
+
+// emodelBatched reports whether this resident's E-model prompts take the batched pass: the switch, and a model the pass
+// implements (attention geometry on every layer, no K=V layer, f16 KV, int4 projections).
+func (a *metalResident) emodelBatched() bool {
+	r := a.r
+	if !emodelBatchedOn || !a.emodelLayerMajor() || r.kvI8 || r.w8 || r.w8Attn || r.q4kLane || r.dnet != nil {
+		return false
+	}
+	for l := range r.layers {
+		if g := r.layers[l].geom; g == nil || g.kEqV {
+			return false
+		}
+	}
+	return true
+}
+
 // emodelLayerMajor reports whether this resident takes its prompts through prefillEModel: a dense Gemma 4 E-model (no
 // paged MoE, no learned positions).
 func (a *metalResident) emodelLayerMajor() bool {

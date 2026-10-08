@@ -797,6 +797,19 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// 4b (docs/tasks/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
 	// layer on decode's own kernels, bit-identical to the sequential loop, so neither the floor nor --exact-prefill
 	// applies. Behind g4LayerMajorOn until graded.
+	// S9 step 2: an E-model prompt at or above the floor takes the batched pass when it is on; below the floor, or on any
+	// decline, the layer-major pass below runs it as before.
+	if a.emodelBatched() && a.fastPrefill() && startPos+len(embeddings) >= metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")) {
+		ok := true
+		for _, e := range embeddings {
+			ok = ok && len(e) == a.embLen()
+		}
+		if ok {
+			if lg, err := a.batchedPrefill(embeddings, startPos, 0, nil, nil); err == nil {
+				return lg, nil
+			}
+		}
+	}
 	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
 		if e := a.checkCap(startPos, len(embeddings)); e != nil {
 			return nil, e
@@ -869,7 +882,7 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 	if a.r.kvI8 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
 	}
-	if !a.r.prefillOK {
+	if !a.r.prefillOK && !a.emodelBatched() {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}
 	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
@@ -880,7 +893,7 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 	}
 	// F-C02: the exact attention kernel (no fused kernel for this head dim, or fused attention off) holds at most
 	// prefillExactAttnMaxKeys scores; the sequential path's decode kernels tile theirs.
-	if fused, _ := a.r.prefillAttnKernels(); !fused && startPos+len(embeddings) > prefillExactAttnMaxKeys {
+	if a.r.prefillExactAttn() && startPos+len(embeddings) > prefillExactAttnMaxKeys {
 		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
 			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.prefillGeom().hd)
 	}

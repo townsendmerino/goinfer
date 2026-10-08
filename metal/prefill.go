@@ -326,6 +326,19 @@ kernel void swiglu_f16(device const half* gu[[buffer(0)]], device half* out[[buf
     out[gid]=half(glu_act_f16(g, act)*u);
 }
 
+// ple_gelu_mul_f16 (S9 step 2): the batched PLE gate, decode's ple_gelu_mul per row: g[m][j] = gelu_tanh(g[m][j]) times
+// row m's own per-layer input ple[m*LP + off + j] (off = l*P). grid = M*P.
+kernel void ple_gelu_mul_f16(device half* g[[buffer(0)]], device const float* ple[[buffer(1)]], constant uint& P[[buffer(2)]],
+    constant uint& LP[[buffer(3)]], constant uint& off[[buffer(4)]], uint gid[[thread_position_in_grid]]) {
+    uint m = gid / P, j = gid % P;
+    g[gid] = half(glu_act_f16(float(g[gid]), 0u) * ple[m*LP + off + j]);
+}
+
+// layer_scale_f16 (S9 step 2): x *= s[0] over the f16 residual, Gemma 4's dense layer scalar. grid = M*H.
+kernel void layer_scale_f16(device half* x[[buffer(0)]], device const float* s[[buffer(1)]], uint i[[thread_position_in_grid]]) {
+    x[i] = half(float(x[i]) * s[0]);
+}
+
 // rope_f16: NeoX half-split, per-row position. Rotates a [M × total] region with row stride
 // 'stride' starting at byte-free offset 'base0' (element offset into each row). positions[m].
 kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],
@@ -1012,6 +1025,7 @@ type prefillState struct {
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 	pRopeM                                                     Pipeline // S16: rope_mrope_f16
+	pPLEGeluMulF16, pLayerScaleF16                             Pipeline // S9 step 2: the E-model PLE gate and layer scalar
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
 	pGemmM16N32                           Pipeline // D-B02's 16-token tile
@@ -1084,6 +1098,7 @@ func (r *resident) ensurePrefill() {
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"), pRopeM: p("rope_mrope_f16"),
+		pPLEGeluMulF16: p("ple_gelu_mul_f16"), pLayerScaleF16: p("layer_scale_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"),
@@ -1168,6 +1183,19 @@ func (r *resident) prefillAttnKernels() (fused, steel bool) {
 	return fused, steel
 }
 
+// prefillExactAttn reports whether any attention layer of the pass runs the exact attention kernel (no fused kernel for
+// its head dim, or fused attention off), whose score buffer holds prefillExactAttnMaxKeys keys. A Gemma 4 E-model's
+// layers differ (S9 step 2); every other family's are one geometry.
+func (r *resident) prefillExactAttn() bool {
+	fusedOn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && !(fusedOn && g.hd%8 == 0 && g.hd <= 128) {
+			return true
+		}
+	}
+	return false
+}
+
 // prefillGeom is the attention geometry the pass uses for every attention layer: the first attention layer's. A
 // Gated-DeltaNet hybrid's layer 0 is a DeltaNet layer, which has none (D-B01); every other admitted family's layer 0
 // has it.
@@ -1220,6 +1248,14 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		}
 	}
 
+	// S9 step 2: a Gemma 4 E-model varies the attention geometry and the FFN width by layer; the scratch fits the largest.
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil {
+			qkvDim, qDim = max(qkvDim, r.nH*g.hd+2*g.kvDim), max(qDim, r.nH*g.hd)
+		}
+		maxI = max(maxI, r.layers[l].ffnI)
+	}
+
 	// f16 activation scratch (per call, sized to the padded prompt).
 	// xF and the five prefillScratchU16 buffers below rely on Metal's zero-fill of a new buffer for their pad rows
 	// (aikit gpu.NewBufferLen* contract: Metal only; CUDA's is uninitialized) — see prefillScratchU16.
@@ -1254,7 +1290,6 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	u2I := NewBufferU32(d, uint32(2*I))
 	uQkv := NewBufferU32(d, uint32(qkvDim))
 	uQDim := NewBufferU32(d, uint32(qDim))
-	uKvDim := g0.uKvDim
 	uHd := g0.uHd
 	uStride := NewBufferU32(d, uint32(qkvDim))
 	uKOff := NewBufferU32(d, uint32(nHhd))
@@ -1320,6 +1355,22 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	if r.moe != nil {
 		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
 	}
+	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
+	// gate's scratch.
+	var pleInB, pleGF, uP, uLP Buffer
+	if r.pleP > 0 {
+		P, LP := r.pleP, r.nL*r.pleP
+		pv := make([]float32, M*LP)
+		for m := range M {
+			src := embs[m]
+			if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
+				src = embs[min(m+1, M-1)]
+			}
+			copy(pv[m*LP:(m+1)*LP], src[H:H+LP])
+		}
+		pleInB, pleGF, uP, uLP = NewBufferFloats(d, pv), prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
+		scratch = append(scratch, pleInB, pleGF, uP, uLP)
+	}
 	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
 	// projection and split gate.
 	var dn *prefillDelta
@@ -1370,7 +1421,47 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	attnFusedTotal := r.nH * numRowTiles
 	attnFusedTotal = (attnFusedTotal + attnFusedSGPT - 1) / attnFusedSGPT * attnFusedSGPT * 32
 	attnFusedTg := attnFusedSGPT * 32
-	useFusedAttn, useSteelAttn := r.prefillAttnKernels()
+	// S9 step 2: one attention geometry's uniforms, per layer. Every family before Gemma 4's E-models has one geometry, so
+	// it gets one bundle with the values the single-geometry pass used; an E-model gets one per head dim, and a KV-shared
+	// layer's Q-only projection its own stride. The fused/steel attention kernels hold head dims up to 128; past that the
+	// exact kernel runs (its key limit is checked before the pass).
+	type layerU struct {
+		g                                                            *attnGeom
+		qkvDim, nHhd, kvDim                                          int
+		uQkv, uStride, uKOff, uVOff, uTotalQ, uTotalK, uBaseK, uQDim Buffer
+		fused, steel                                                 bool
+	}
+	type luKey struct {
+		g      *attnGeom
+		shared bool
+	}
+	luCache := map[luKey]*layerU{}
+	fusedOn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION"))
+	layerUFor := func(L *residLayer) *layerU {
+		k := luKey{L.geom, L.kvShared}
+		if u, ok := luCache[k]; ok {
+			return u
+		}
+		g := L.geom
+		nh := r.nH * g.hd
+		q := nh + 2*g.kvDim
+		if L.kvShared {
+			q = nh // Q only: a shared layer projects no K or V
+		}
+		fused := fusedOn && g.hd%8 == 0 && g.hd <= 128
+		u := &layerU{g: g, qkvDim: q, nHhd: nh, kvDim: g.kvDim,
+			uQkv: getU32(q), uStride: getU32(q), uKOff: getU32(nh), uVOff: getU32(nh + g.kvDim),
+			uTotalQ: getU32(nh), uTotalK: getU32(g.kvDim), uBaseK: getU32(nh), uQDim: getU32(nh),
+			fused: fused, steel: fused && g.hd == 128 && !prefillSteelAttnOff}
+		luCache[k] = u
+		return u
+	}
+	// G-S9c (1): a shared layer attending over an empty cache instead of its source's (zero in production).
+	var zeroKV Buffer
+	if emodelBatchDefect == 1 {
+		zeroKV = prefillScratchU16(d, (startPos+Mpad+8)*qkvDim)
+		scratch = append(scratch, zeroKV)
+	}
 
 	e := r.q.Begin()
 	// S16: the DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
@@ -1400,6 +1491,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		if L.delta != nil {
 			r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
 		} else {
+			lu := layerUFor(L)
 			// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
 			// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
 			// Olmo 3 / Olmo Hybrid (postOnly): no pre-norm; GEMV reads raw residual xF directly.
@@ -1419,16 +1511,28 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 				gemm(e, Mpad, 2*kvDim, inAttn, L.qkvW, L.qkvS, kvF, uM, u2KvDim, uH, dummyBias, m0)
 				e.Dispatch(pf.pCopyCols, M*2*kvDim, 256, kvF, qkvF, u2KvDim, uQkv, uKOff, uMReal)
 			} else {
-				gemmAttn(e, Mpad, qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
+				gemmAttn(e, Mpad, lu.qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, lu.uQkv, uH, L.qkvBias, m1)
 			}
 			if r.qkNorm { // Qwen3 / Olmo 3: per-head Q/K RMSNorm before RoPE
-				qkNH, qkNKV, qkHD, qkNHhd := r.uNH, g0.uNKV, uHd, g0.uNHhd
-				tgCount := r.nH + g0.nKV
+				qkNH, qkNKV, qkHD, qkNHhd := r.uNH, lu.g.uNKV, lu.g.uHd, lu.g.uNHhd
+				tgCount := r.nH + lu.g.nKV
+				if L.kvShared {
+					// Q heads only: a shared layer projects no K. The kernel maps a threadgroup to (row, head) by nH+nKV, so
+					// nKV must be 0 here too, or rows shift and the "K" head normalizes the next row's Q (found by G-S9d).
+					tgCount, qkNKV = r.nH, r.uZero
+				}
 				if r.qkNormWhole {
 					qkNH, qkNKV, qkHD, qkNHhd = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD, r.uQKWholeHD
 					tgCount = 2
 				}
-				e.Dispatch(pf.pQK, M*tgCount*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, qkNHhd, uStride, r.uEps, r.uAddOne)
+				e.Dispatch(pf.pQK, M*tgCount*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, qkNHhd, lu.uStride, r.uEps, r.uAddOne)
+			}
+			// S9 step 2: Gemma 4's scale-less v_norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as
+			// decode does (encodeAttentionResidualWith): the Q/K-norm kernel over the V slot with nH = 0, a unit weight and
+			// addOne 0.
+			if !L.kvShared && r.g4VNorm && emodelBatchDefect != 5 {
+				e.Dispatch(pf.pQK, M*lu.g.nKV*tgReduceAttn, tgReduceAttn, qkvF.At((lu.nHhd+lu.kvDim)*2), r.vNormUnit, r.vNormUnit,
+					r.uZero, lu.g.uNKV, lu.g.uHd, r.uZero, lu.uStride, r.uEps, r.uZero)
 			}
 			// rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as decode
 			// does (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window
@@ -1437,21 +1541,31 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			// prefill archs have a uniform RoPE table (FeatPerLayerRoPE is not claimed), so L.invf equals
 			// r.invf there — this is behaviour-neutral for them and correct for the mixed-window case.
 			if mrope != nil { // S16: each row's own (t, h, w) rotation
-				e.Dispatch(pf.pRopeM, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, pos3B, uTotalQ, uStride, uBase0, g0.uHalf, L.mscale, r.mropeAxis)
-				e.Dispatch(pf.pRopeM, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, pos3B, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale, r.mropeAxis)
+				e.Dispatch(pf.pRopeM, M*r.nH*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalQ, lu.uStride, uBase0, lu.g.uHalf, L.mscale, r.mropeAxis)
+				if !L.kvShared {
+					e.Dispatch(pf.pRopeM, M*lu.g.nKV*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalK, lu.uStride, lu.uBaseK, lu.g.uHalf, L.mscale, r.mropeAxis)
+				}
 			} else {
-				e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf, L.mscale)
-				e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale)
+				e.Dispatch(pf.pRope, M*r.nH*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, posB, lu.uTotalQ, lu.uStride, uBase0, lu.g.uHalf, L.mscale)
+				if !L.kvShared {
+					e.Dispatch(pf.pRope, M*lu.g.nKV*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, posB, lu.uTotalK, lu.uStride, lu.uBaseK, lu.g.uHalf, L.mscale)
+				}
 			}
-			// scatter K,V to cache
-			e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
+			// scatter K,V to cache; a KV-shared layer stores nothing (its cache is its source's)
+			if !L.kvShared {
+				e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff)
+			}
+			kc, vc := r.kc[l], r.vc[l]
+			if L.kvShared && emodelBatchDefect == 1 {
+				kc, vc = zeroKV, zeroKV
+			}
 			// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
-			if useSteelAttn {
-				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
-			} else if useFusedAttn {
-				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+			if lu.steel {
+				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
+			} else if lu.fused {
+				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else {
-				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow)
+				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow)
 			}
 			if L.qGate { // ctx *= sigmoid(gate), before o-proj, as decode does
 				e.Dispatch(pf.pAttnGate, M*nHhd, 256, ctxF, gateF, uGateN)
@@ -1464,11 +1578,11 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			// families skip straight to the fused mode-2 residual epilogue, byte-identical to before
 			// this row.
 			if r.sandwich || r.postOnly {
-				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
+				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, lu.uQDim, dummyBias, m0)
 				e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
 				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 			} else {
-				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
+				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, lu.uQDim, dummyBias, m2)
 			}
 		}
 		if L.moe != nil {
@@ -1641,17 +1755,44 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		} else {
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
 		}
+		// S9 step 2: this layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
+		// layers are the model's I).
+		fI := I
+		if L.ffnI != 0 {
+			fI = L.ffnI
+		}
+		if emodelBatchDefect == 6 && r.layers[0].ffnI != 0 { // G-S9c (6): every layer at the first layer's width
+			fI = r.layers[0].ffnI
+		}
+		uFI, u2FI := uI, u2I
+		if fI != I {
+			uFI, u2FI = getU32(fI), getU32(2*fI)
+		}
 		// gate/up
-		gemm(e, Mpad, 2*I, inFFN, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
+		gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
 		// swiglu/geglu (G8: r.uAct selects — 0 for every family without FeatGatedGELU)
-		e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI, r.uAct)
+		e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
 		// down-proj, same plain-vs-sandwich split as o-proj above.
 		if r.sandwich || r.postOnly {
-			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uI, dummyBias, m0)
+			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
 			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 		} else {
-			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
+			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uFI, dummyBias, m2)
+		}
+		// S9 step 2: a Gemma 4 E-model's PLE block, then its layer scalar, in decode's order (encodeLayerResidualWith):
+		// the gate GEMM (H→P) on the raw residual, gelu(gate) times the row's own per-layer input, the projection GEMM
+		// (P→H), the post-PLE norm and the residual add; then h *= layer_scalar.
+		if L.pleGW != (Buffer{}) && emodelBatchDefect != 2 {
+			P := r.pleP
+			gemm(e, Mpad, P, xF, L.pleGW, L.pleGS, pleGF, uM, uP, uH, dummyBias, m0)
+			e.Dispatch(pf.pPLEGeluMulF16, M*P, 256, pleGF, pleInB, uP, uLP, getU32(l*P))
+			gemm(e, Mpad, H, pleGF, L.plePW, L.plePS, normF, uM, uH, uP, dummyBias, m0)
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postPLENorm, normF, uH, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+		}
+		if L.uLayerScalar != (Buffer{}) && emodelBatchDefect != 4 {
+			e.Dispatch(pf.pLayerScaleF16, M*H, 256, xF, L.uLayerScalar)
 		}
 	}
 	addDeep(r.nL - 1)
