@@ -3169,6 +3169,45 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **G-S18b-Mac, no regression:** for the bench set's text models, the Metal plan's context and slot count are never
       lower than today's (the sidecar can only lower the need). The `prequant` and `modelload` suites pass.
   - **Cost:** one transcode of Gemma 3 4B (minutes, about 2.4 GB of disk; 10 GB free at registration).
+- **S18 on the Mac, by day 2026-10-08: part 1 built and G-S18d PASS; two findings that part 1 cannot pass G-S18a
+  alone. Parts 2-4 wait on the owner.**
+  - **Part 1, built:**
+    - `modelload.Load` resolves a safetensors directory to its sidecar where the default holds; `dirSidecarApplies`
+      excludes `--lora`, q4k and `-stream-weights`. A failed build keeps the direct load, with a note.
+    - The tokenizer stays the directory's. A sidecar's tok half is `tokenizer.json` alone, so `tokenizer_config.json`'s
+      chat template and BOS/EOS flags would otherwise be lost silently.
+    - In `prequant`: the cache path keeps a dotted directory name whole; freshness is against every file in the
+      directory (`sourceFiles`); the disk projection for a directory is `projectedDirSidecarBytes`.
+  - **G-S18d PASS.** `TestDirSidecar_matchesDirectLoad`: 42 tiny safetensors fixtures, every family `decoder.Load`
+    reads directly, generate identical greedy streams through the sidecar (int4, embed-int4, Metal target) and direct.
+    No transcode was refused. The 6 skipped are towers, an audio encoder and `embedding_gemma2`, which `decoder.Load`
+    does not read. `TestDirSidecar_cachePathAndFreshness` and `TestLoad_safetensorsDirGoesThroughSidecar` cover the cache
+    path, freshness, reuse without a rebuild, the chat template, `-direct-load` and the exclusions. The modelload,
+    prequant, serveapp, chatapp, clef and decidecmd suites pass, and none wrote a sidecar into `testdata/`.
+  - **Finding 1: the one-time build loads the whole directory into the heap.** There is no streaming transcode for
+    safetensors; each family's loader builds the whole model. So the build costs the same RAM as today's direct load,
+    and the load guard refused Gemma 3 4B's build at 14:09: "needs ~5.6 GB resident at quant int4 + 0.0 GB KV",
+    against a 3.4 GB budget (70% of 4.9 GB available). That 5.6 GB includes the bundled vision tower priced at f32
+    (about 1.6 GB), which a text-only build never loads. Without it, about 3.9 GB is still over budget. Today's direct
+    load is refused the same way at this hour. The sidecar has to be built once while memory is free (at night, or
+    with the owner's apps closed); every load after that is an mmap.
+  - **Finding 2: the tower is bigger than the decoder's saving.** An exploratory probe on Gemma 3's Metal SigLIP alone
+    (`vision.LoadEncoder` then `newSiglipVResident` then one forward, the process's `phys_footprint` after each, a
+    throwaway test, not committed):
+    - the host f32 encoder: **2.17 GB**;
+    - plus the Metal resident: **3.23 GB** (the f16 device copy, +1.06 GB);
+    - after one forward: **3.45 GB** (+0.22 GB of scratch).
+
+    The resident keeps the host encoder referenced (`siglipVResident.enc`, for `FinishHidden`), and serve keeps it as
+    the CPU fallback tower. With the sidecar, the decoder needs about 3.3 GB, so decoder plus tower is about 6.8 GB
+    against a 4.2-4.9 GB budget. Part 2 would price this honestly and then decline, which is correct but not a pass.
+  - **What would pass:**
+    - dropping the host f32 encoder after the Metal upload (about -2 GB, but it loses the CPU fallback tower and needs
+      an aikit API to free the block weights while keeping the post-LN ones);
+    - an int8 SigLIP on Metal (CUDA's int8 tower holds 558 MiB);
+    - or both.
+
+    Each is the owner's call.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

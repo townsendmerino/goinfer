@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -154,9 +155,25 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		if loadPath, err = ensureGIW(); err != nil {
 			return nil, fmt.Errorf("sidecar cache (%s): %w — pass -direct-load (or GOINFER_GGUF_DIRECT=1) to load this .gguf straight into the heap instead", src, err)
 		}
+	} else if dirSidecarApplies(src, opts) && prequant.DefaultToSidecar(req.DirectLoad) {
+		// S18 (docs/tasks/task-multimodal-support-2026-10.md): a safetensors directory resolves to a sidecar too, so its
+		// weights are mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the
+		// weights counted once and counted twice. The one-time build loads the directory whole (no streaming transcode
+		// for safetensors yet), so a build that fails, the fit guard's refusal included, keeps today's direct load.
+		if p, gerr := ensureGIW(); gerr == nil {
+			loadPath = p
+		} else {
+			fmt.Fprintf(os.Stderr, "note: loading %s directly: its sidecar .giw could not be built (%v)\n", src, gerr)
+		}
 	}
 
-	tk, err := Tokenizer(loadPath)
+	// A directory's tokenizer stays the directory's: a sidecar's tok half is its tokenizer.json alone, and
+	// tokenizer_config.json (the chat template, the BOS/EOS flags) is beside it, not in it.
+	tokPath := loadPath
+	if src != loadPath && isDir(src) {
+		tokPath = src
+	}
+	tk, err := Tokenizer(tokPath)
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
@@ -192,6 +209,22 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		return nil, fmt.Errorf("--model %q: %w", req.Spec, err)
 	}
 	return &Result{Source: src, LoadPath: loadPath, Tokenizer: tk, Model: model, Opts: opts, LoadTime: loadTime}, nil
+}
+
+// dirSidecarApplies reports whether a safetensors directory source takes the sidecar default (S18): not with a LoRA to
+// merge (the merge needs the safetensors base, and a plain sidecar would drop the adapter), not at q4k (no .giw form),
+// and not under -stream-weights, which serve already explains is .gguf-only for a directory.
+func dirSidecarApplies(src string, opts decoder.Options) bool {
+	if opts.LoRA != "" || opts.Quant == "q4k" || opts.StreamWeights || !isDir(src) {
+		return false
+	}
+	m, _ := filepath.Glob(filepath.Join(src, "*.safetensors"))
+	return len(m) > 0
+}
+
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 // activationSafeQuant is the precision and activation group a load should use for src. For a family
