@@ -1,0 +1,18 @@
+T 585 585 585, mels 128
+mel bin   0: mean |dlogmel| goinfer 0.0000 scipy 0.0000
+mel bin  32: mean |dlogmel| goinfer 0.0012 scipy 0.0020
+mel bin  64: mean |dlogmel| goinfer 0.0035 scipy 0.0035
+mel bin  96: mean |dlogmel| goinfer 0.0032 scipy 0.0042
+mel bin 112: mean |dlogmel| goinfer 0.0055 scipy 0.0057
+mel bin 120: mean |dlogmel| goinfer 0.0105 scipy 0.0086
+mel bin 124: mean |dlogmel| goinfer 0.2601 scipy 0.1946
+mel bin 126: mean |dlogmel| goinfer 0.7056 scipy 0.4565
+mel bin 127: mean |dlogmel| goinfer 0.9560 scipy 0.5758
+frame    0: mean |dlogmel| goinfer 0.1253 scipy 0.1229
+frame    1: mean |dlogmel| goinfer 0.0224 scipy 0.0171
+frame    2: mean |dlogmel| goinfer 0.0190 scipy 0.0145
+frame  292: mean |dlogmel| goinfer 0.0214 scipy 0.0147
+frame  582: mean |dlogmel| goinfer 0.0242 scipy 0.0179
+frame  583: mean |dlogmel| goinfer 0.0228 scipy 0.0170
+frame  584: mean |dlogmel| goinfer 0.0220 scipy 0.0165
+waveform max |diff| goinfer 6.72e-02 scipy 5.09e-02; first samples orig [0.002380371 0.0020751953 0.0019836426] g [0.001599419 0.002296388 0.0018559445] r [0.0016153515 0.002280816 0.0018732151]

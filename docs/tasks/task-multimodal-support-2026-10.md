@@ -1356,8 +1356,9 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
     - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5d/`.
 - **S5 status, 2026-10-07 evening: G-S5a, G-S5c, the spoken clip (LibriSpeech, word error rate 0) and G-S5d (E2B's
   audio tower on Metal, on `s2-towers`) PASS on the Mac; G-S5b (the HF anchor for audio into the model) is queued on
-  nobara and has no result yet.** Owed: the speed record (tower per clip, CPU against Metal), and resampling for WAVs
-  that are not 16 kHz mono (S5's follow-up, below).
+  nobara and has no result yet.** Owed: the speed record (tower per clip, CPU against Metal). Resampling for WAVs that
+  are not 16 kHz mono (S5's follow-up, G-S5e above) read FAIL against scipy's resampler and is not wired in; the
+  owner decides.
 
 - **S5's follow-up: audio at any rate and channel count. G-S5e, registered 2026-10-07 evening before any resampler
   code.**
@@ -1392,6 +1393,43 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
     1. (i) resampled as if it were 48 kHz;
     2. (ii) read from its left channel only.
   - **Cost:** the tower on CPU for nine clip reads plus one serve run, a few minutes; a quick check, by day.
+- **G-S5e, read 2026-10-07 17:18-17:25 PDT on the Mac: FAIL, twice. Not wired; the owner decides.**
+  - **Reading 1, cutoff at 0.97 of Nyquist:** FAIL.
+
+    | clip | goinfer worst / mean | scipy worst / mean |
+    |---|---|---|
+    | 44.1 kHz mono | 0.575939 / 0.975807 | 0.617187 / 0.978763 |
+    | 48 kHz stereo | 0.576007 / 0.975891 | 0.619399 / 0.978813 |
+
+    - **The mechanism, per log-mel bin:** Gemma 4's filterbank runs to exactly 8 kHz, and a cutoff 3% under Nyquist
+      removes in-band content there. Below 7 kHz goinfer matches or beats scipy. In mel bin 127, goinfer's mean
+      |d log-mel| is 0.96 against scipy's 0.58.
+    - **The change:** the cutoff moved to Nyquist, scipy's convention. The bar did not move.
+  - **Reading 2, cutoff at Nyquist:** FAIL, by 0.007-0.008 on the worst token. The means are within 0.0003.
+
+    | clip | goinfer worst / mean | scipy worst / mean |
+    |---|---|---|
+    | 44.1 kHz mono | 0.610265 / 0.978540 | 0.617187 / 0.978763 |
+    | 48 kHz stereo | 0.610939 / 0.978580 | 0.619399 / 0.978813 |
+
+    - The worst token for both resamplers is token 87 (3.48 s).
+    - goinfer sits slightly below scipy on 123 of 147 tokens.
+    - Both leave the same 71 tokens under 0.99: any round trip through 44.1 kHz is lossy for this tower.
+  - **Planted defects, both red:**
+    - (1) the wrong rate: mean 0.302;
+    - (2) the left channel alone: mean 0.826, worst 0.003.
+  - **The served part was not run:** the in-process bar failed first.
+  - **What stands:**
+    - `multimodal.Resample`, `Downmix` and `DecodeWAVAnyRate` are committed with unit tests (passthrough, DC, tones,
+      aliasing, the downmix, and the extensible header).
+    - `DecodeWAV`, which serve uses, still takes only 16 kHz mono, and a test pins that.
+  - **For the owner:**
+    - (a) accept goinfer's resampler as it is (its mean is scipy's to 0.0003, and its worst token is 0.007 under
+      scipy's on a token both leave at 0.6);
+    - (b) a further change with its own mechanism (the window, beta and length are what still differ from
+      `resample_poly`), then a fresh reading;
+    - (c) leave serve 16 kHz-only.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5e/`.
 
 ### S6 — Coverage that is cheap once the above exists
 
