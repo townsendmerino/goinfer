@@ -86,6 +86,7 @@ type gridVAccel struct {
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows, SigLIP's table; nil otherwise
 	ropeTables     func([][3]int) (cos, sin []float32) // Qwen3, GLM-OCR (Qwen2.5-VL's come from its window plan)
 	planted        gvDefect                            // test seam: G-S2c's planted defects
+	prof           *gvProfile                          // test seam: S17 step 0's per-class GPU split; nil in production
 	tap            func(bi, n int)                     // HiddenTaps: called after block bi\'s command buffer, with the residual\'s live length
 	cap, segCap    int
 	x, xn, pt, pos Buffer
@@ -95,6 +96,20 @@ type gridVAccel struct {
 	sc, vt, ob     Buffer
 	ropeCos        Buffer
 	ropeSin        Buffer
+}
+
+// gvProfile is S17 step 0's instrument (docs/tasks/task-multimodal-support-2026-10.md): with it set, run ends its command
+// buffer at every change of kernel class and adds each buffer's GPU-busy window to its class, and linear and the
+// attention loop add their FLOPs. A test sets it; production never does, and run is then unchanged.
+type gvProfile struct {
+	cur   string
+	gpu   map[string]float64 // seconds of GPU-busy time per class
+	flops map[string]float64
+	bufs  int
+}
+
+func (p *gvProfile) reset() {
+	p.cur, p.gpu, p.flops, p.bufs = "", map[string]float64{}, map[string]float64{}, 0
 }
 
 // gvDefect is a planted defect (G-S2c); zero in production.
@@ -220,6 +235,9 @@ func (a *gridVAccel) grow(np, maxSeg int) {
 
 // linear runs out = x·Wᵀ (+ bias) over rows.
 func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows int) {
+	if a.prof != nil {
+		a.prof.flops["gemm"] += 2 * float64(rows) * float64(p.out) * float64(p.in)
+	}
 	a.gemm(e, x, p.w, out, rows, p.out, p.in)
 	if p.b != (Buffer{}) {
 		e.Dispatch(a.vit.AddBias, rows*p.out, 256, out, p.b, a.u32(uint32(rows)), a.u32(uint32(p.out)))
@@ -352,35 +370,60 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
 	a.slot = 0
 	e := a.eg2Ops.q.Begin()
+	account := func() { // S17 step 0: this buffer's GPU window to the class it ran
+		if a.prof != nil {
+			a.prof.gpu[a.prof.cur] += e.GPUEnd() - e.GPUStart()
+			a.prof.bufs++
+		}
+	}
 	flush := func() error {
 		e.End()
 		if err := e.Err(); err != nil {
 			return err
 		}
+		account()
 		a.slot = 0
 		e = a.eg2Ops.q.Begin()
 		return nil
 	}
+	var perr error
+	mark := func(class string) { // a class boundary: a no-op unless profiling
+		if a.prof == nil || class == a.prof.cur {
+			return
+		}
+		if a.prof.cur != "" {
+			if err := flush(); err != nil && perr == nil {
+				perr = err
+			}
+		}
+		a.prof.cur = class
+	}
+	mark("gemm")
 	pb := a.patchB
 	if a.planted.noPatchBias { // G-S2c (5), G-S3a (6)
 		pb = Buffer{}
 	}
 	a.linear(e, a.pt, &gvProj{w: a.patchW, b: pb, out: H, in: a.patchDim}, a.x, np)
 	if a.posEmbeds != nil && !a.planted.noPosEmbed { // G-S3a (5) drops it
+		mark("elementwise")
 		e.Dispatch(a.p.add, np*H, 256, a.x, a.pos, a.u32(uint32(np*H)))
 	}
 	nr := np * nH * hd / 2
 	scale := float32(1 / math.Sqrt(float64(hd)))
 	for bi := range a.blocks {
 		b := &a.blocks[bi]
+		mark("norm")
 		a.norm(e, a.x, b.norm1w, b.norm1b, a.xn, np)
+		mark("gemm")
 		a.linear(e, a.xn, &b.q, a.q, np)
 		a.linear(e, a.xn, &b.k, a.k, np)
 		a.linear(e, a.xn, &b.v, a.v, np)
 		if a.kind == gvkGlmOcr && !a.planted.noQKNorm { // per-head q/k RMSNorm, before RoPE
+			mark("norm")
 			a.rms(e, a.q, b.qNorm, a.q, np*nH, hd)
 			a.rms(e, a.k, b.kNorm, a.k, np*nH, hd)
 		}
+		mark("elementwise")
 		if a.kind.rope() {
 			e.Dispatch(a.p.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
 			e.Dispatch(a.p.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
@@ -389,8 +432,12 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 			e.Dispatch(a.scale, np*H, 256, a.q, a.u32(uint32(np*H)), a.f32(scale))
 		}
 		sg := segs(bi)
+		mark("attention")
 		for si := 1; si < len(sg); si++ {
 			off, T := sg[si-1]*H*4, sg[si]-sg[si-1]
+			if a.prof != nil {
+				a.prof.flops["attention"] += 4 * float64(T) * float64(T) * float64(hd) * float64(nH)
+			}
 			if a.slot+a.segSlots(T)+64 > eg2ArenaSlots {
 				if err := flush(); err != nil {
 					return nil, err
@@ -399,19 +446,28 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 			a.attention(e, eg2AttnBufs{q: a.q.At(off), k: a.k.At(off), v: a.v.At(off), qh: a.qh, kh: a.kh, vh: a.vh,
 				sc: a.sc, vt: a.vt, ob: a.ob, ctx: a.ctx.At(off)}, T, nH, hd, nH, 0)
 		}
+		mark("gemm")
 		a.linear(e, a.ctx, &b.proj, a.o, np)
+		mark("elementwise")
 		e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
+		mark("norm")
 		a.norm(e, a.x, b.norm2w, b.norm2b, a.xn, np)
+		mark("gemm")
 		if a.kind.gated() {
 			a.linear(e, a.xn, &b.gate, a.f1, np)
 			a.linear(e, a.xn, &b.up, a.f2, np)
+			mark("elementwise")
 			e.Dispatch(a.vit.SiLUMul, np*I, 256, a.f1, a.f2, a.u32(uint32(np*I)))
+			mark("gemm")
 			a.linear(e, a.f1, &b.down, a.o, np)
 		} else {
 			a.linear(e, a.xn, &b.fc1, a.f1, np)
+			mark("elementwise")
 			e.Dispatch(a.vit.GELUTanh, np*I, 256, a.f1, a.u32(uint32(np*I)))
+			mark("gemm")
 			a.linear(e, a.f1, &b.fc2, a.o, np)
 		}
+		mark("elementwise")
 		e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
 		if bi+1 < len(a.blocks) {
 			if err := flush(); err != nil {
@@ -425,6 +481,10 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 	e.End()
 	if err := e.Err(); err != nil {
 		return nil, err
+	}
+	account()
+	if perr != nil {
+		return nil, perr
 	}
 	if a.tap != nil && len(a.blocks) > 0 {
 		a.tap(len(a.blocks)-1, np*H)
