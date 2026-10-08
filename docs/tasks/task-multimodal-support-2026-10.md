@@ -1588,6 +1588,12 @@ prompt prefills token by token on the GPU too. Both backends decline E-models fr
   - **A real text-prefill win for E-models needs the f16-MMA pass to learn Gemma 4's per-layer geometry** (head size
     256 and 512 by layer, the PLE block, shared K/V), which it declines today for every dense Gemma 4. That is a
     further S9 step, noted here and not started.
+- **S9 step 2 (named 2026-10-07 evening, at the audit's request): the E-model text-prefill win.**
+  - S9's layer-major pass gives about 1.02x on a text prompt (the smoke above).
+  - The win needs the f16-MMA batched prefill to learn Gemma 4's per-layer geometry: head size 256 or 512 by layer,
+    the PLE block, the 18 KV-shared layers, and the dense layer scalar and `v_norm` of S1.0.
+  - Its gates are written here before its code. Correctness is S1's G3 shape (teacher-forced agreement against the
+    CPU, non-inferior to the validated reference); the speed is a text-prefill A/B at night, shipping at >= 1.02x.
 - **Still owed for S9:** the night speed record (`s9-speed`, queued tonight on the Mac) and CUDA's half (nobara).
 
 
@@ -1718,6 +1724,9 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     check).
   - **Tiny** (`testdata/qwen3vl-vision-tiny`, copied from aikit): merged rows and both sets at 1.000000000 on two grid
     sets. The planted taps-one-block-late defect is refused (the last tap falls past the 2-block tower), which is red.
+    **Amended 2026-10-07 evening (audit):** counting any refusal as red was too weak. The fixture was re-pinned with a third
+    block (and nonzero biases, qkv x6), so the late taps stay inside the tower: the defect now reads worst 0.997922,
+    red, and a refusal fails the test.
   - **Real 2B, four F2a images at serve's cap:** worst 0.999997916 (formula.png's second set); every other output
     0.99999990 or better. The planted defect on the 14x20 image: sets at 0.574, 0.293 and 0.661, red.
   - **Served, `--backend metal` in every arm:** the tower on Metal against `-vision-device cpu`, twice: byte-identical
@@ -1738,6 +1747,20 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     `multimodal.GridTowerTapper`, the same `run`-loop tap.
   - ~~The serve log's "Qwen3.5 vision"~~ (now "Qwen3-VL vision").
   - The MoE variants.
+- **The 2026-10-07 audit's fixes on `s2-towers` (Mac, evening):**
+  - **`towerInt8`:** `qwen3_vl` joins the float32 list (147e2298). Under cuda or webgpu it had an int8 CPU tower nobody
+    validated, under a banner naming a `-vision-quant` the user never passed. `TestTowerInt8` is now a table over
+    family x backend x `-vision-quant`, red without the fix.
+  - **The fallbacks (22bea42c):**
+    - Under `-require-backend`, a device tower's memory failure now fails the request instead of falling back to the
+      CPU: `deviceFallback.run` for the grid towers, `qwenDeviceForward` for Qwen2.5-VL.
+    - Every tower's forward is recovered from a panic: inside `run`, and for every family (Gemma 3 SigLIP, Gemma 4
+      image and audio) at `withFeatureCache`.
+    - Four tests, each red without its fix.
+  - **The fixture (ed8d4756 on `s2-towers`; aikit c4c1404, local):** `testdata/qwen3vl-vision-tiny` re-pinned.
+    - It now has nonzero biases at the weights' init scale (0.02), qkv x6 and three blocks.
+    - The bias scale is not arbitrary: a 0.3 scale drowned the DeepStack merger's signal (its planted post-shuffle-norm
+      defect read 0.998), 0.05 read 0.95, and 0.02 reads 0.898 / 0.880 (0.888 / 0.823 before).
 
 ### S11 — Several images per message
 
@@ -1774,6 +1797,100 @@ The owner put this last, after the WebGPU work. It starts with the choice P11 le
 (`docs/measurements/multimodal-finish-2026-10-06/p11-audio-comparison.md`): a Whisper-style front end plus Qwen3-ASR; a
 Whisper encoder (which serves Voxtral), toward pure-Go Whisper; or Voxtral Realtime. Gates are written once the family
 is chosen.
+
+### S16 — A resident m-RoPE prefill on Metal (added 2026-10-07 evening, after the audit)
+
+- **The gap:**
+  - Every Qwen-family image turn on a Mac (Qwen2.5-VL, Qwen3.5+, Qwen3-VL) prefills on the CPU, then `UploadKV`s
+    and decodes on Metal. Metal has `ForwardMRoPE` (decode rows) but no batched m-RoPE prefill.
+  - CUDA's twin (`PrefillMRoPELast`) measured 36.14x the CPU-prefill-plus-upload bridge: 711.2 ms against 19.7 ms
+    (`docs/benchmarks.md`, 2026-09-08). That was on a 14-token Qwen2.5-VL prompt, prefill only, with the tower
+    excluded. An image turn's gain is smaller in proportion to the tower's share.
+- **The scope:**
+  - The batched prefill's rope learns the per-row 3-component m-RoPE angle, for image rows and for the text rows
+    after them (`mropePositions`).
+  - Qwen3-VL's DeepStack injection: after layer l, add set l to the image rows. Prefill only, as in
+    `decoder/forwardn.go`'s `addDeepstack`. CUDA's prefill also lacks it, so CUDA's Qwen3-VL image turns also
+    prefill on the CPU. The CUDA twin is nobara's, under the same gates.
+- **Gates, registered 2026-10-07 before any S16 code:**
+  - **G-S16a, tiny, against the existing path:** the qwen25vl, qwen3.5 and qwen3vl tiny fixtures, one image each.
+    The new resident prefill against the current one (CPU prefill, `UploadKV`, Metal decode): last-row logits plus
+    the next 8 decode steps, at cosine >= 0.9999 per row with an equal argmax (0.999-0.9999 parked).
+    - Bit-identity is not expected: f16-MMA against the CPU's int4 kernels, G3's lesson.
+  - **G-S16b, planted defects, each alone red at G-S16a's bar:**
+    1. m-RoPE sections in the wrong order (t, w, h);
+    2. the image rows given 1-D text positions;
+    3. the text rows after the image given uncompressed positions;
+    4. DeepStack not added;
+    5. DeepStack added one layer late;
+    6. DeepStack added to the text rows too.
+
+    A fixture too degenerate to show one is sharpened first (S3's lesson; norms randomised, nonzero biases).
+  - **G-S16c, real:** Qwen2.5-VL-3B and Qwen3-VL-2B, the four F2a images, the same comparison at the same bar.
+    Then served: `run-gs3c-served.sh` with the tower held equal, `--backend metal` before and after the change on
+    one binary pair. Identical replies or a first divergence at a near-tie.
+  - **Speed, a record, at night:** image-turn TTFT on the same two models, old path against new, interleaved, the
+    tower time reported apart.
+    - **Projection band, written here before the speed run:** it comes from two inputs.
+      - A by-day split of one image turn on today's path: tower, CPU prefill, upload, first decode step.
+      - The new prefill's expected rate: the Metal f16-MMA text prefill's 225-366 TTFT tok/s on the 1.5B at K
+        256-3900 (`docs/benchmarks.md`, 2026-09-18), scaled to the 2-3B models.
+
+      TTFT then gains by the CPU prefill's share of the turn. CUDA's 36x does not transfer: it was a single-threaded
+      CPU bridge on 14 tokens.
+    - Ship at >= 1.02x TTFT (the owner's default); 1.00-1.02 parked; under 1.00 off.
+
+### S17 — Tower speed on both backends (added 2026-10-07 evening)
+
+- **The gap:** the device towers are correct float32 baselines, and slow.
+  - **SigLIP at 896x896:** about 5.45 TFLOP (27 layers of about 202 GFLOP: projections 43.5, MLP 81.2, attention
+    77.3).
+  - **Metal:** its 9.2 s on Metal is about 0.59 TFLOPS against the M1 Pro GPU's ~5.3 f32 peak. Qwen2.5-VL's 64x64
+    grid is about the same.
+  - **CUDA:** the towers run at 1.2-1.5x the CPU (S4 step 3).
+- **Absorbs S4's conditional step 6.** The candidate levers:
+  - **Metal:** f16 or simdgroup-matrix GEMMs; blocked (flash-style) attention.
+  - **CUDA:** tensor-core GEMMs; fused attention.
+- **Gates, registered 2026-10-07 before any S17 code:**
+  - **Step 0, a profile:** before any lever, each backend's tower time is split by kernel class (GEMM, attention,
+    norms and the rest) on SigLIP and Qwen2.5-VL at the F2a sizes. The split fixes each lever's projection band.
+  - **Each lever, before it is measured, writes into this doc:**
+    - its projection band: the tower-time ratio it should give, from the profile share it attacks and the kernel
+      speedup it expects;
+    - its kill line: under 1.02x, or outside its band on the low side with no mechanism found, and it is parked.
+  - **Correctness is unchanged for every lever:** G-S2b's and G-S3a's bars (every soft token at cosine >= 0.9999
+    against the CPU tower, on the tiny and the four F2a images) and their planted defects. An f16 lever that cannot
+    hold 0.9999 keeps f32 accumulation or is dropped. The bar does not move.
+  - **The speed instrument (TE5(b)):** a whole-tower in-process A/B, interleaved in one process, by day. A resolved
+    direction may be acted on; an unresolved one goes to the served TTFT gate at night. Ship at >= 1.02x.
+
+### S18 — Defaults that fit (added 2026-10-07 evening)
+
+- **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
+  hardware.
+  - **The 16 GB Mac:** Gemma 3 4B's decoder does not go resident by default. It needs 5.15 GB against a 4.2-4.9 GB
+    budget (G-S3b, G-S3c).
+  - **The 8 GB card:** it needs `--kv-sessions 1` (S4).
+  - **The tower reserve:** S4 step 4's reserve (`towerReserve`) returns 0 for an int8 tower, so Gemma 3's CUDA
+    SigLIP tower is never priced.
+- **The change:**
+  - **The plan:** the default KV plan sizes itself after the tower: fewer conversations or a shorter context before
+    declining the resident. Every tower is priced, int8 included.
+  - **The banner:** serve says what it chose and why, for example "KV plan: 1 conversation x 8192 positions
+    (reduced from 4 x 16384 to leave 1.1 GB for the vision tower)".
+- **Gates, registered 2026-10-07 before any S18 code:**
+  - **G-S18a, the defaults:** with no sizing flags, two cells:
+    - Gemma 3 4B on the 16 GB Mac must decode `metal-resident` with its tower on Metal;
+    - Gemma 3 4B on the 8 GB card (nobara) must decode `cuda-resident` with its tower on CUDA.
+
+    Each takes one served image turn whose reply is identical to the same request with the hand-set flags that
+    work today.
+  - **G-S18b, no regression:** a text-only model's default plan is unchanged (unit tests over the plan function on
+    the bench set's text models). A model with a tower that already fit keeps its plan.
+  - **G-S18c, the reserve:** `towerReserve` is nonzero for every family with a device tower under its backend, int8
+    included. It is a table test over family x backend, red on today's code for Gemma 3 under cuda.
+  - Measured by day on the Mac (G-S18a's Mac half is a served correctness check, not timed); nobara owns the CUDA
+    half.
 
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
