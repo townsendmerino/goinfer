@@ -1653,6 +1653,50 @@ the three timed requests is under 5.0 s). What differs is the box: the RTX 2070 
 - **By-day smokes of the harness on this box (18:50 and 19:11 PDT, exploratory and not quotable):** one goinfer cell (Qwen3.5-0.8B, TTFT 3.6 s on a fresh image), the Ollama arm (`gemma3:4b`, 1.6 s on a fresh image, 7.9 s on its
   first request) and the llama.cpp arm (Gemma 3 4B with its mmproj, 0.94 s) all ran end to end through `vision_ttft.py` under the timing lock.
 
+#### Night 2026-10-07 on nobara, read 2026-10-08 (the queue started 20:30 PDT and ended 00:15; raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-07-nobara/`)
+
+Eleven entries, nine ok. Every ok job ran well inside its estimate (S7 in 5 minutes against 60, S13-lite in 4 against 55): the estimates were conservative, and the logs show real cells, not early exits. The one failure is the GPU gate (below). The S7/S13-lite
+output directories are dated 2026-10-08 because the jobs ran after midnight.
+
+- **S7, nobara, CUDA, serve's defaults, a new image or clip every request, median of 3 timed, against the 5 s bar** (`s7/`):
+
+  | cell | TTFT | bar | what the log says |
+  |---|---|---|---|
+  | Gemma 3 4B, the shipped default (the build before S18) | **10.70 s** | no | decoder fell to the CPU on the resident build's OOM; int8 tower on CUDA |
+  | Gemma 3 4B, S18 build | **4.57 s** | yes | `cuda-resident`, int8 tower on CUDA (4.1 s of it is the tower) |
+  | Gemma 4 E2B, image | 0.85 s | yes | |
+  | Gemma 4 E2B, audio | 1.48 s | yes | |
+  | Qwen3.5-0.8B | 0.82 s | yes | |
+  | GLM-OCR | 2.09 s | yes | |
+  | Qwen2.5-VL-3B | **15.64 s** | no | **the tower ran out of device memory** (aikit's qwencuda, scratch for 4096 patches, a 56 MB allocation, despite a 3630 MB reserve) **and ran on the CPU** (15.1 s per encode) |
+  | Qwen3-VL-2B | not a cell | n/a | HTTP 400 on all four requests: main's serve takes no Qwen3-VL images (S10 is the Mac's unmerged `s10-mac-s2`); removed from the plan until S10 lands |
+
+  - Five of seven valid cells are under the bar. S18 turned Gemma 3 from the worst cell into one that clears it, 10.70 to 4.57 s.
+  - **Qwen2.5-VL is now the biggest CUDA gap, and it has two layers.** At defaults its tower does not fit beside the decoder and the KV (so the CPU tower runs, 15 s), and even on CUDA aikit's tower measured 7.97 s for this image
+    (`s4-tower-speed` below), over the bar by itself: it is still on the pre-fused-attention kernel, being aikit's `gpu/qwencuda` and not goinfer's tower base. The fix is the same shape as lever A (a fused attention, or
+    Qwen2.5-VL's window attention on the tower base) plus a reserve that actually covers it. Not started.
+- **S13-lite, nobara, Gemma 3 4B, every engine at its defaults, 3 rounds x 3 timed, order rotated, goinfer on the S18+S17 build** (`s13lite/`): **goinfer 4.61 s, Ollama 0.32.5 1.60 s, llama.cpp (427291b, CUDA) 0.96 s.** goinfer is
+  under the 5 s bar by 0.4 s, and 2.9x Ollama and 4.8x llama.cpp. Its time is the int8 tower (4.1 s of it, S4 addendum); the arm at defaults does not use the float32 tower, which measured 2.07 s and would put the same request at
+  about 2.5 s. That arm was not in the registration; the Gemma 3 default is the owner's open decision, and this is the evidence for it (a `-vision-quant f32` arm is the obvious next cell, not run).
+- **S1 on CUDA speed record** (`s1c-e2b-speed`): E2B decode CPU 12.65 / 12.64 tok/s, CUDA 87.53 / 87.63 tok/s (6.9x); the host's PLE cost per token: mean 0.411 ms, median 0.345, p90 0.573 over 512 tokens.
+- **G-S5b, read for the first time (`s5b-e2b-audio`): PASS.** goinfer's float32 E2B prefill on an audio prompt against HF (transformers 5.12.0): last-position cosine 1.000000, argmax 818 on both, text-position argmax agreement
+  after the block 15/15; the three planted defects each red (audio rows x the embed scale 0.888395, PLE from the audio token's id 0.950150, delimiters dropped 0.940021). This is the audio path's HF anchor.
+- **S9 part A speed record** (`s9a-e2b-prefill-ttft`, 3 interleaved rounds x 5 cold requests): at ~270 tokens batched 0.38-0.39 s against sequential 3.00-3.11 s (7.7-8.0x); at 2173 tokens 3.73-3.75 s against 24.9-25.6 s (6.6-6.9x).
+  Kill rule PASS.
+- **S9 part B speed record** (`s9b-e2b-image-ttft`): tower on the CPU, first request 5.00 against 23.8-24.0 s (4.8x), later requests 0.49 against 19.2-19.4 s; tower on CUDA, first 2.80-2.85 against 21.8 s (7.7-7.8x), later 0.50
+  against 19.3 s. Kill rule PASS.
+- **S4 addendum speed record** (`s4sig-speed`): SigLIP tower per image, CPU float32 20.75-21.04 s, CUDA float32 **2.06-2.09 s**, CUDA int8 4.07-4.09 s (built before lever A it would have read 18 s; it ran on the lever A build).
+- **S4 tower speed record** (`s4-tower-speed`, lever A build): Gemma 4 E2B 0.46-0.49 s against the CPU's 4.2-4.6 s (cosine 1.000000000); Qwen3.5-0.8B 0.46-0.62 s against 4.1-6.3 s; GLM-OCR 2.0-3.8 s against 20.6-43.9 s; **aikit's Qwen2.5-VL
+  7.97 s against the CPU's 15.2 s (64x64 grid) and 15.3 s against 24.4 s (86x72)**, only 1.6-1.9x.
+- **`peer-vetted-nobara`** (the Mac's job, graded by the Mac): CPU phi3-mini goinfer 8.2 against Ollama 10.7-10.8 tok/s, gpt-oss-20B CPU 7.4-7.5 against 10.7; Ollama gpt-oss on CUDA 26.2 tok/s with goinfer's arm empty. The re-runs are theirs.
+- **`gate-gpu-cuda`: FAILED, `cuda on Linux @ 420f4404. Do not tag.`** The heavy tier completed for the first time (882 tests, 7000 s). Triage on 2026-10-08 on an idle GPU (`gate-triage/`):
+  - **Pre-existing, not from this session's work (the same failures at `12c85f4a`, the tree this session started from):** `TestDefaultVerifyWidth_sweep`, `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`
+    (all three: `NewBlockSpec` out of device memory attaching the drafter beside the target, 2.6-25 MB allocations) and `TestResidentDenseBytes_matchesCUDADevice/qwen2.5-7b` (the build put 4442 MB on the device before its KV,
+    421 MB over Plan's 4021 MB, past the 384 MB margin). They are the drafter-reserve and Plan-weight-estimate accounting, and they are the same class as the Gemma 3 4B and Qwen2.5-VL cells above.
+  - **A heavy-tier state artifact:** `TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel` passes alone.
+  - **Mine, fixed:** `TestS17ProfileCUDA` failed its +10% overhead limit on the dispatch-bound 14x20 grid (+14.5% of 45 ms); the limit now applies from 0.5 s of wall and logs below it.
+  - **Not triaged:** `TestSpecNonCopyLane` (940 s, then `KV position 6144(+1) exceeds resident context cap 6144`) and the WebGPU parity run, which hung in `gpu.(*Context).Close` under `TestRMSNormBatched_parity` until the 10-minute timeout.
+
 ### S8 — The support table in the README, kept true
 
 - **The README** gains a short "Images and audio" section: one compact table (family by backend, a check or "CPU"),

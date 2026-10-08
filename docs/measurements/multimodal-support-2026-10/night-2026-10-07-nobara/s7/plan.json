@@ -1,0 +1,163 @@
+{
+ "rounds": 1,
+ "per_round": 3,
+ "rotate": false,
+ "cells": [
+  {
+   "cell": "gemma-3-4b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda",
+    "--model",
+    "/home/francis/models/gemma-3-4b-it",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "gemma-3-4b-s18",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18641,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/gemma-3-4b-it",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18641"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/home/francis/models/gemma-4-E2B-unq",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "gemma-4-e2b-audio",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "audio",
+   "base": "/home/francis/mycode/goinfer/testdata/speech/librispeech-1272-128104-0000.wav",
+   "prompt": "Transcribe this audio.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf",
+    "--vision",
+    "/home/francis/models/gemma-4-E2B-unq",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen2.5-vl-3b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/qwen25vl-3b-instruct",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen3.5-0.8b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/qwen3.5-0.8b",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "qwen3-vl-2b",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/qwen3-vl-2b-instruct",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  },
+  {
+   "cell": "glm-ocr",
+   "engine": "goinfer",
+   "api": "openai",
+   "port": 18640,
+   "model": "",
+   "media": "image",
+   "base": "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/home/francis/goinfer-bench/s7n/serve-cuda-s18",
+    "--model",
+    "/home/francis/models/glm-ocr",
+    "--backend",
+    "cuda",
+    "--addr",
+    "127.0.0.1:18640"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,59 @@
+[00:04:53] round 1: gemma-3-4b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda --model /home/francis/models/gemma-3-4b-it --backend cuda --addr 127.0.0.1:18640
+  up in 24 s, model 'gemma-3-4b-it'; load 2.49
+  warm-up 0: TTFT 10.708 s "Here's a description of the image"
+  timed   1: TTFT 10.7 s "Here's a description of the image"
+  timed   2: TTFT 10.692 s "Here's a description of the image"
+  timed   3: TTFT 10.731 s "Here's a description of the image"
+[00:06:07] round 1: gemma-3-4b-s18 | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/gemma-3-4b-it --backend cuda --addr 127.0.0.1:18641
+  up in 23 s, model 'gemma-3-4b-it'; load 3.99
+  warm-up 0: TTFT 4.606 s "Here's a description of the image"
+  timed   1: TTFT 4.605 s "Here's a description of the image"
+  timed   2: TTFT 4.57 s "Here's a description of the image"
+  timed   3: TTFT 4.572 s "Here's a description of the image"
+[00:06:53] round 1: gemma-4-e2b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /home/francis/models/gemma-4-E2B-unq --backend cuda --addr 127.0.0.1:18640
+  up in 7 s, model 'gemma-4-E2B_q4_0-it'; load 2.74
+  warm-up 0: TTFT 0.908 s 'This image is an **abstract gradient**'
+  timed   1: TTFT 0.851 s 'This image is an abstract gradient with a'
+  timed   2: TTFT 0.883 s 'This image is an **abstract gradient**'
+  timed   3: TTFT 0.846 s 'This image is an **abstract gradient**'
+[00:07:08] round 1: gemma-4-e2b-audio | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf --vision /home/francis/models/gemma-4-E2B-unq --backend cuda --addr 127.0.0.1:18640
+  up in 7 s, model 'gemma-4-E2B_q4_0-it'; load 2.28
+  warm-up 0: TTFT 2.449 s 'Mr. Quilter is the apostle of'
+  timed   1: TTFT 1.484 s 'Mr. Quilter is the apostle of'
+  timed   2: TTFT 1.441 s 'Mr. Quilter is the apostle of'
+  timed   3: TTFT 1.484 s 'Mr. Quilter is the apostle of'
+[00:07:25] round 1: qwen2.5-vl-3b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/qwen25vl-3b-instruct --backend cuda --addr 127.0.0.1:18640
+  up in 18 s, model 'qwen25vl-3b-instruct'; load 3.33
+  warm-up 0: TTFT 15.667 s 'This image is a blurred and abstract representation'
+  timed   1: TTFT 15.619 s 'The image is a solid color image with'
+  timed   2: TTFT 15.662 s 'This image is a gradient background with a'
+  timed   3: TTFT 15.643 s 'This image is a gradient background with a'
+[00:08:50] round 1: qwen3.5-0.8b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/qwen3.5-0.8b --backend cuda --addr 127.0.0.1:18640
+  up in 8 s, model 'qwen3.5-0.8b'; load 7.44
+  warm-up 0: TTFT 1.352 s 'This image is a vibrant, abstract digital'
+  timed   1: TTFT 0.819 s 'This image is a vibrant, abstract digital'
+  timed   2: TTFT 0.835 s 'This is a digital gradient image that transitions'
+  timed   3: TTFT 0.803 s 'This image is a digital gradient background featuring'
+[00:09:06] round 1: qwen3-vl-2b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/qwen3-vl-2b-instruct --backend cuda --addr 127.0.0.1:18640
+  up in 12 s, model 'qwen3-vl-2b-instruct'; load 7.47
+  !! request 0: HTTP Error 400: Bad Request
+  !! request 1: HTTP Error 400: Bad Request
+  !! request 2: HTTP Error 400: Bad Request
+  !! request 3: HTTP Error 400: Bad Request
+[00:09:22] round 1: glm-ocr | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/glm-ocr --backend cuda --addr 127.0.0.1:18640
+  up in 4 s, model 'glm-ocr'; load 6.95
+  warm-up 0: TTFT 4.218 s 'The image is a gradient of colors that'
+  timed   1: TTFT 2.087 s 'The image is a gradient of colors that'
+  timed   2: TTFT 2.073 s 'The image is a gradient of colors that'
+  timed   3: TTFT 2.11 s 'The image is a gradient of colors that'
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-3-4b | goinfer | 3 | 10.70 | no |
+| gemma-3-4b-s18 | goinfer | 3 | 4.57 | yes |
+| gemma-4-e2b | goinfer | 3 | 0.85 | yes |
+| gemma-4-e2b-audio | goinfer | 3 | 1.48 | yes |
+| qwen2.5-vl-3b | goinfer | 3 | 15.64 | no |
+| qwen3.5-0.8b | goinfer | 3 | 0.82 | yes |
+| qwen3-vl-2b | goinfer | 0 | - | - |
+| glm-ocr | goinfer | 3 | 2.09 | yes |

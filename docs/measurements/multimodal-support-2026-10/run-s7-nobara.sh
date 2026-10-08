@@ -29,7 +29,8 @@ cells = [cell("gemma-3-4b", ["--model", f"{m}/gemma-3-4b-it"]),
          cell("gemma-4-e2b", e2b), cell("gemma-4-e2b-audio", e2b, media="audio"),
          cell("qwen2.5-vl-3b", ["--model", f"{m}/qwen25vl-3b-instruct"]),
          cell("qwen3.5-0.8b", ["--model", f"{m}/qwen3.5-0.8b"]),
-         cell("qwen3-vl-2b", ["--model", f"{m}/qwen3-vl-2b-instruct"]),
+         # qwen3-vl-2b is NOT a cell yet: main's serve takes no Qwen3-VL images (S10 is on the Mac's unmerged s10-mac-s2); the 2026-10-07 night sent four requests and got HTTP 400 on every one.
+         # Add it back when S10 lands on main.
          cell("glm-ocr", ["--model", f"{m}/glm-ocr"])]
 # S18's after (added 2026-10-07 evening): the same Gemma 3 4B cell on the build with the S18 fixes, so one record shows the shipped default and its repair side by side
 s18 = serve.replace("serve-cuda", "serve-cuda-s18")

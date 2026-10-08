@@ -1,0 +1,60 @@
+[00:11:27] round 1: gemma-3-4b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/gemma-3-4b-it --backend cuda --addr 127.0.0.1:18650
+  up in 23 s, model 'gemma-3-4b-it'; load 2.06
+  warm-up 0: TTFT 4.629 s "Here's a description of the image"
+  timed   1: TTFT 4.624 s "Here's a description of the image"
+  timed   2: TTFT 4.611 s "Here's a description of the image"
+  timed   3: TTFT 4.602 s "Here's a description of the image"
+[00:12:12] round 1: gemma-3-4b | ollama: /home/francis/ollama-0325/bin/ollama serve
+  up in 3 s, model 'gemma3:4b'; load 1.61
+  warm-up 0: TTFT 6.76 s "Here's a description of the image"
+  timed   1: TTFT 1.621 s "Here's a description of the image"
+  timed   2: TTFT 1.593 s "Here's a description of the image"
+  timed   3: TTFT 1.607 s "Here's a description of the image"
+[00:12:31] round 1: gemma-3-4b | llama.cpp: /home/francis/mycode/peers/llama.cpp/build/bin/llama-server -m /home/francis/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf --mmproj /home/francis/models/gemma-3-4b-it-gguf/mmproj-model-f16.gguf -ngl 99 --port 18651 --host 127.0.0.1
+  up in 5 s, model '/home/francis/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf'; load 1.25
+  warm-up 0: TTFT 1.115 s "Here's a description of the image"
+  timed   1: TTFT 0.979 s "Here's a description of the image"
+  timed   2: TTFT 0.958 s "Here's a description of the image"
+  timed   3: TTFT 0.956 s "Here's a description of the image"
+[00:12:45] round 2: gemma-3-4b | ollama: /home/francis/ollama-0325/bin/ollama serve
+  up in 3 s, model 'gemma3:4b'; load 1.21
+  warm-up 0: TTFT 4.667 s "Here's a description of the image"
+  timed   1: TTFT 1.604 s "Here's a description of the image"
+  timed   2: TTFT 1.601 s "Here's a description of the image"
+  timed   3: TTFT 1.597 s "Here's a description of the image"
+[00:13:01] round 2: gemma-3-4b | llama.cpp: /home/francis/mycode/peers/llama.cpp/build/bin/llama-server -m /home/francis/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf --mmproj /home/francis/models/gemma-3-4b-it-gguf/mmproj-model-f16.gguf -ngl 99 --port 18651 --host 127.0.0.1
+  up in 3 s, model '/home/francis/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf'; load 1.08
+  warm-up 0: TTFT 0.956 s "Here's a description of the image"
+  timed   1: TTFT 0.956 s "Here's a description of the image"
+  timed   2: TTFT 0.935 s "Here's a description of the image"
+  timed   3: TTFT 0.957 s "Here's a description of the image"
+[00:13:12] round 2: gemma-3-4b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/gemma-3-4b-it --backend cuda --addr 127.0.0.1:18650
+  up in 24 s, model 'gemma-3-4b-it'; load 0.98
+  warm-up 0: TTFT 4.641 s "Here's a description of the image"
+  timed   1: TTFT 4.615 s "Here's a description of the image"
+  timed   2: TTFT 4.597 s "Here's a description of the image"
+  timed   3: TTFT 4.601 s "Here's a description of the image"
+[00:13:59] round 3: gemma-3-4b | llama.cpp: /home/francis/mycode/peers/llama.cpp/build/bin/llama-server -m /home/francis/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf --mmproj /home/francis/models/gemma-3-4b-it-gguf/mmproj-model-f16.gguf -ngl 99 --port 18651 --host 127.0.0.1
+  up in 3 s, model '/home/francis/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf'; load 1.05
+  warm-up 0: TTFT 0.979 s "Here's a description of the image"
+  timed   1: TTFT 0.959 s "Here's a description of the image"
+  timed   2: TTFT 0.953 s "Here's a description of the image"
+  timed   3: TTFT 0.957 s "Here's a description of the image"
+[00:14:10] round 3: gemma-3-4b | goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 --model /home/francis/models/gemma-3-4b-it --backend cuda --addr 127.0.0.1:18650
+  up in 23 s, model 'gemma-3-4b-it'; load 2.41
+  warm-up 0: TTFT 4.644 s "Here's a description of the image"
+  timed   1: TTFT 4.603 s "Here's a description of the image"
+  timed   2: TTFT 4.608 s "Here's a description of the image"
+  timed   3: TTFT 4.607 s "Here's a description of the image"
+[00:14:56] round 3: gemma-3-4b | ollama: /home/francis/ollama-0325/bin/ollama serve
+  up in 3 s, model 'gemma3:4b'; load 1.93
+  warm-up 0: TTFT 4.69 s "Here's a description of the image"
+  timed   1: TTFT 1.594 s "Here's a description of the image"
+  timed   2: TTFT 1.563 s "Here's a description of the image"
+  timed   3: TTFT 1.505 s "Here's a description of the image"
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-3-4b | goinfer | 9 | 4.61 | yes |
+| gemma-3-4b | ollama | 9 | 1.60 | yes |
+| gemma-3-4b | llama.cpp | 9 | 0.96 | yes |

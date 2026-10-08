@@ -1,0 +1,7 @@
+serve-cuda: main 575b4a8c; serve-cuda-s18: cb242e92
+started: 2026-10-08 00:04:53 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+Linux 7.2.0-202.nobara.fc44.x86_64
+ 00:04:53 up 4 days,  3:27,  3 users,  load average: 0.89, 3.81, 4.13
+Mem:           64238        3014       30212           2       31326       61224
+finished: 2026-10-08 00:09:40 PDT rc=0

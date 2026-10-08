@@ -1,0 +1,9 @@
+goinfer: /home/francis/goinfer-bench/s7n/serve-cuda-s18 (rev cb242e92)
+ollama: Warning: client version is 0.32.5
+ollama gemma3:4b model blob: sha256:aeda25e63ebd698fab8638ffb778e68bed908b960d39d0becc650fa981609d25
+llama-server: version: 0.4.0-dev (build 1, commit 427291b) at /home/francis/mycode/peers/llama.cpp/build/bin/llama-server
+started: 2026-10-08 00:11:27 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+Linux 7.2.0-202.nobara.fc44.x86_64
+ 00:11:27 up 4 days,  3:33,  3 users,  load average: 1.06, 3.51, 4.04
+finished: 2026-10-08 00:15:13 PDT rc=0
