@@ -1431,6 +1431,19 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
       `resample_poly`), then a fresh reading;
     - (c) leave serve 16 kHz-only.
   - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5e/`.
+- **Owner decision 2026-10-07 evening: option (b).** goinfer's resampler is to match scipy's `resample_poly` filter exactly:
+  - up and down reduced by their gcd;
+  - the cutoff 1/max(up, down) of the upsampled Nyquist, by `firwin` with unit DC gain;
+  - a Kaiser window with β = 5.0;
+  - 20·max(up, down) + 1 taps, centred, times up;
+  - zero padding, and an output length of ceil(n·up/down).
+
+  **Registered before the run, with the bar unchanged:**
+  - **The prediction:** with that filter, goinfer reproduces scipy's worst-token and mean cosine within 1e-4 on both
+    clips (44.1 kHz mono, 48 kHz stereo). Then G-S5e passes as registered.
+  - **The check of the filter itself:** a committed scipy golden, the resampled output of a deterministic signal at
+    44.1 kHz and at 48 kHz, which goinfer must match to 1e-6 per sample.
+  - **If it still fails:** stop and report. No further change to the resampler.
 
 ### S6 — Coverage that is cheap once the above exists
 
