@@ -2600,6 +2600,20 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   copy of the 33a18e82 slice (`cuda/testdata/noncopy_doc.txt`, 14,800 bytes) and the test refuses a prompt that does not fit with 160 new tokens, naming the cause. Not yet run after the fix (a measurement, longer than the
   by-day bound): `docs/measurements/multimodal-support-2026-10/margin/run-gate-triage.sh` runs it tonight, beside the WebGPU triage.
 
+- **The WebGPU parity-cell hang: root-caused and fixed by day, 2026-10-08.** The first heavy gate's webgpu-parity cell sat on `TestRMSNormBatched_parity` for over 10 minutes. Run alone that test passes in 0.14-0.4 s, and
+  nothing under `gpu/` changed between the gate's revision and now, so it was intermittent: the cell run 8 times in a row hung once (run 8, 2 min timeout), and in `TestVisionLayerNorm_parity`, a different test, so it is not
+  one test's bug. Raw and the unfixed goroutine dump: `margin/webgpu-hang-runs.txt`, `margin/webgpu-hang-unfixed-run8.log`.
+  - **Cause.** A deadlock inside wgpu-native, between two device destructions at once. The bindings give every wrapper (Buffer, CommandEncoder, ...) its own reference on the device and drop it from a finalizer. A buffer a
+    test leaks after its `Context` was closed holds the LAST reference on that device, so the garbage collector destroys the device on the finalizer goroutine at an arbitrary moment. If that lands while another
+    `Context.Close` destroys its own device, both threads park in `wgpuDeviceRelease` for good (the dump: `runtime.runFinalizers -> Buffer.release -> wgpuDeviceRelease` against `Context.Close -> wgpuDeviceRelease`).
+  - **Fix.** `Context.Close` runs its releases on the runtime's finalizer goroutine (`finalizerSerial`), the one thread that runs every finalizer, so a finalizer-driven device drop and a Close can no longer overlap. It
+    falls back to running in place after about a second if that goroutine is blocked. `gpu.TestContextClose_finalizerRace` is the reproducer: it deadlocks without the fix (90 s deadline) and passes with it.
+  - **Gates.** The parity cell: 10 of 10 runs clean after, against 1 hang in 8 before (same 65 pass / 8 skip, same ~30 s). The whole `gpu` package: 142 pass, 57 skip, 0 fail. `gofmt`, vet and `staticcheck` with the gpu
+    tags clean. 10 clean runs after a 1-in-8 failure is evidence, not proof (the chance of 10 clean runs by luck at 1/8 is about 26%); the reproducer is the sharper evidence, and the first night gate that runs the cell is the
+    next one.
+  - **Not covered.** An explicit `Release` from another goroutine (a caller closing a matrix after its Context while another Context closes) is not serialized; it stays the caller's ordering. The leaked buffers themselves
+    are a separate hygiene item (the live-buffer gauge in `gpu/bufaccount.go` counts them). `GOGC=1` did not amplify the hang. The night triage job is now the `TestSpecNonCopyLane` run alone (`noncopy-fixed-head`).
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

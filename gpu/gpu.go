@@ -4,8 +4,11 @@ package gpu
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -586,6 +589,14 @@ func (c *Context) Close() error {
 	}
 	c.closed = true
 	liveContexts.Add(-1)
+	// The releases run on the runtime's finalizer goroutine, the one thread that also drops the device reference a leaked buffer holds (finalizerSerial's comment: two
+	// device drops at once deadlock wgpu-native).
+	finalizerSerial(c.release)
+	return nil
+}
+
+// release is Close's body: drain the pipelines and shaders, then the base objects.
+func (c *Context) release() {
 	// Drain every lazily-created pipeline/shader, newest first. Registered at the allocation site
 	// (mkPipeline / track), so this stays complete as new ensure* builders are added — unlike the
 	// hand-maintained field list this replaces, which covered 14 of ~40.
@@ -620,7 +631,37 @@ func (c *Context) Close() error {
 		c.instance.Release()
 	}
 	c.layout, c.pipeline, c.shader, c.queue, c.device, c.adapter, c.instance = nil, nil, nil, nil, nil, nil, nil
-	return nil
+}
+
+type finalizerToken struct{ _ [64]byte } // not a tiny allocation: tiny objects are batched and their finalizers can be delayed
+
+// finalizerSerial runs f on the runtime's finalizer goroutine and waits for it.
+//
+// Why: the wgpu bindings give every wrapper (Buffer, CommandEncoder, ...) its own reference on the device and release it from a finalizer. A buffer a caller leaks after its Context was
+// closed therefore holds the LAST reference on that device, and the garbage collector drops it on the finalizer goroutine at an arbitrary moment. If that lands while another Context.Close
+// is releasing its own device on a test goroutine, two devices are destroyed at once inside wgpu-native and both threads park in wgpuDeviceRelease for good (the first heavy-tier gate's
+// webgpu-parity hang, 1 run in 8, a different test each time; gpu.TestContextClose_finalizerRace reproduces it). Every finalizer runs on one goroutine, so running Close's releases there
+// serializes them with all of those. It does not serialize an explicit Release from another goroutine (a caller closing a matrix after its Context), which stays the caller's ordering.
+//
+// If the finalizer goroutine does not take the job within about a second (it is blocked), f runs in place, which is what Close did before.
+func finalizerSerial(f func()) {
+	var once sync.Once // the fallback below and a late finalizer must not both run f
+	done := make(chan struct{})
+	tok := new(finalizerToken)
+	runtime.SetFinalizer(tok, func(*finalizerToken) {
+		once.Do(f)
+		close(done)
+	})
+	tok = nil
+	for i := 0; i < 50; i++ {
+		runtime.GC() // makes the unreachable token due; the finalizer goroutine runs it
+		select {
+		case <-done:
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	once.Do(f) // never reached the finalizer goroutine
 }
 
 // ResidentMatrix is a weight matrix [rows, cols] uploaded to a GPU storage

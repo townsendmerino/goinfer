@@ -1,0 +1,454 @@
+=== RUN   TestRoPE_parity
+    attention_test.go:44: RoPE parity: cosine=1.00000000 maxAbs=3.006e-06
+--- PASS: TestRoPE_parity (0.26s)
+=== RUN   TestRoPE_parityAtLongContextCeiling
+    attention_test.go:90: RoPE parity at pos=65535 (theta up to ~65535 rad at d=0): cosine=0.99999946 maxAbs=5.988e-03 (TestRoPE_parity's pos=37 case measures cosine=1.00000000 maxAbs=3.1e-06 for comparison)
+--- PASS: TestRoPE_parityAtLongContextCeiling (0.21s)
+=== RUN   TestAttention_parity
+    attention_test.go:152: Attention parity: cosine=1.00000000 maxAbs=1.192e-07
+--- PASS: TestAttention_parity (0.19s)
+=== RUN   TestAttnKeys_parity
+    attn_keys_test.go:84: nKeys=    1 (1 tile(s)): cosine=1.00000000 maxAbs=0.000e+00
+    attn_keys_test.go:84: nKeys=    2 (1 tile(s)): cosine=1.00000000 maxAbs=1.192e-07
+    attn_keys_test.go:84: nKeys=   40 (1 tile(s)): cosine=1.00000000 maxAbs=1.490e-07
+    attn_keys_test.go:84: nKeys=  127 (1 tile(s)): cosine=1.00000000 maxAbs=1.043e-07
+    attn_keys_test.go:84: nKeys=  128 (1 tile(s)): cosine=1.00000000 maxAbs=8.941e-08
+    attn_keys_test.go:84: nKeys=  129 (1 tile(s)): cosine=1.00000000 maxAbs=1.043e-07
+    attn_keys_test.go:84: nKeys= 2047 (1 tile(s)): cosine=1.00000000 maxAbs=7.823e-08
+    attn_keys_test.go:84: nKeys= 2048 (1 tile(s)): cosine=1.00000000 maxAbs=9.593e-08
+    attn_keys_test.go:84: nKeys= 2049 (2 tile(s)): cosine=1.00000000 maxAbs=9.686e-08
+    attn_keys_test.go:84: nKeys= 4133 (3 tile(s)): cosine=1.00000000 maxAbs=9.313e-08
+    attn_keys_test.go:84: nKeys= 5000 (3 tile(s)): cosine=1.00000000 maxAbs=6.333e-08
+--- PASS: TestAttnKeys_parity (0.30s)
+=== RUN   TestAttnWide_refParity
+=== RUN   TestAttnWide_refParity/hd64
+    attn_wide_test.go:118:   hd=64 nH=4 nKV=2 keys=7: cosine=1.000000000 maxAbs=2.98e-07
+=== RUN   TestAttnWide_refParity/hd128
+    attn_wide_test.go:118:   hd=128 nH=4 nKV=4 keys=5: cosine=1.000000000 maxAbs=2.38e-07
+=== RUN   TestAttnWide_refParity/hd256
+    attn_wide_test.go:118:   hd=256 nH=8 nKV=2 keys=13: cosine=1.000000000 maxAbs=2.98e-07
+=== RUN   TestAttnWide_refParity/hd257
+    attn_wide_test.go:118:   hd=257 nH=2 nKV=1 keys=3: cosine=1.000000000 maxAbs=2.38e-07
+=== RUN   TestAttnWide_refParity/hd512
+    attn_wide_test.go:118:   hd=512 nH=4 nKV=2 keys=11: cosine=1.000000000 maxAbs=3.58e-07
+=== RUN   TestAttnWide_refParity/hd1024
+    attn_wide_test.go:118:   hd=1024 nH=2 nKV=1 keys=6: cosine=1.000000000 maxAbs=2.38e-07
+--- PASS: TestAttnWide_refParity (0.19s)
+    --- PASS: TestAttnWide_refParity/hd64 (0.01s)
+    --- PASS: TestAttnWide_refParity/hd128 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd256 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd257 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd512 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd1024 (0.00s)
+=== RUN   TestAttnBatched_parity
+=== RUN   TestAttnBatched_parity/keys-eligible(hd=64,kvDim=128)
+    attnbatched_test.go:204: M=23 nH=8 nKV=4 hd=64: cosine=1.000000000 maxAbs=0.000e+00
+=== RUN   TestAttnBatched_parity/plain-fallback(hd=50,kvDim=50)
+    attnbatched_test.go:204: M=23 nH=4 nKV=1 hd=50: cosine=1.000000000 maxAbs=0.000e+00
+--- PASS: TestAttnBatched_parity (0.19s)
+    --- PASS: TestAttnBatched_parity/keys-eligible(hd=64,kvDim=128) (0.01s)
+    --- PASS: TestAttnBatched_parity/plain-fallback(hd=50,kvDim=50) (0.00s)
+=== RUN   TestWebGPUBackend_matchesCPU
+    backend_test.go:23: GPU backend: webgpu:vulkan
+    backend_test.go:61: qproj: max rel diff 1.07e-05
+    backend_test.go:61: oproj: max rel diff 1.09e-05
+    backend_test.go:61: gate: max rel diff 1.55e-05
+    backend_test.go:61: down: max rel diff 6.96e-05
+    backend_test.go:61: lmhead_slice: max rel diff 2.15e-05
+--- PASS: TestWebGPUBackend_matchesCPU (0.28s)
+=== RUN   TestWebGPUBackend_MatmulW4A8Batch_matchesCPU
+    backend_w4a8_batch_test.go:81: op 0 (N=1536): cosine=1.000000 maxAbs=2.7881e-03
+    backend_w4a8_batch_test.go:81: op 1 (N=256): cosine=1.000000 maxAbs=2.5268e-03
+    backend_w4a8_batch_test.go:81: op 2 (N=256): cosine=1.000000 maxAbs=2.1935e-03
+--- PASS: TestWebGPUBackend_MatmulW4A8Batch_matchesCPU (0.21s)
+=== RUN   TestWebGPUBackend_MatmulW4A8_matchesCPU
+=== RUN   TestWebGPUBackend_MatmulW4A8_matchesCPU/K=517_(not_a_multiple_of_32_--_fallback_unpack-and-repack_path)
+    backend_w4a8_test.go:83: MatmulW4A8 vs CPU: cosine=1.000000 maxAbs=9.7942e-04
+=== RUN   TestWebGPUBackend_MatmulW4A8_matchesCPU/K=512_(multiple_of_32_--_production_fast_path)
+    backend_w4a8_test.go:83: MatmulW4A8 vs CPU: cosine=1.000000 maxAbs=8.4567e-04
+--- PASS: TestWebGPUBackend_MatmulW4A8_matchesCPU (0.39s)
+    --- PASS: TestWebGPUBackend_MatmulW4A8_matchesCPU/K=517_(not_a_multiple_of_32_--_fallback_unpack-and-repack_path) (0.20s)
+    --- PASS: TestWebGPUBackend_MatmulW4A8_matchesCPU/K=512_(multiple_of_32_--_production_fast_path) (0.19s)
+=== RUN   TestBatchGEMV_parity
+    batch_test.go:61: BatchGEMV parity OK across 3 ops
+--- PASS: TestBatchGEMV_parity (0.21s)
+=== RUN   TestBatchTiled_parity
+    batch_test.go:109: BatchTiled parity OK across 3 ops (M=37)
+--- PASS: TestBatchTiled_parity (0.32s)
+=== RUN   TestAttnBlock_parity
+    decodelayer_test.go:143: AttnBlock parity: cosine=1.000000 maxAbs=1.221e-04
+--- PASS: TestAttnBlock_parity (0.19s)
+=== RUN   TestDecodeRunnerW4A8_parity
+    decoderunner_w4a8_test.go:212: W4A8 DecodeRunner parity (2 layers, int4 projections): cosine=1.000000 maxAbs=3.815e-06
+--- PASS: TestDecodeRunnerW4A8_parity (0.99s)
+=== RUN   TestDecodeTokenFusedBatched_parity
+    gpu_test.go:91: [live-vram] 59.0 MiB of device buffers already held before this test
+    decodetoken_batched_test.go:122: row 0 (pos 17): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:122: row 1 (pos 18): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:122: row 2 (pos 19): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:122: row 3 (pos 20): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:122: row 4 (pos 21): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestDecodeTokenFusedBatched_parity (0.16s)
+=== RUN   TestDecodeToken_parity
+    gpu_test.go:91: [live-vram] 59.0 MiB of device buffers already held before this test
+    decodetoken_test.go:128: DecodeToken parity (2 layers): cosine=1.000000 maxAbs=0.000e+00
+    decodetoken_test.go:140: DecodeTokenFused parity: cosine=1.000000 maxAbs=0.000e+00
+    decodetoken_test.go:163: DecodeRunner parity: cosine=1.000000 maxAbs=0.000e+00
+--- PASS: TestDecodeToken_parity (0.45s)
+=== RUN   TestDeltaRule_cpuParity
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    deltanet_test.go:248:   step  1: gates cos=1.000000000  rule cos=1.000000000 rel=3.9e-06  gnorm cos=1.000000000
+    deltanet_test.go:248:   step  2: gates cos=1.000000000  rule cos=1.000000000 rel=3.9e-06  gnorm cos=1.000000000
+    deltanet_test.go:248:   step 32: gates cos=1.000000000  rule cos=1.000000000 rel=6e-06  gnorm cos=1.000000000
+    deltanet_test.go:248:   step 64: gates cos=1.000000000  rule cos=1.000000000 rel=6e-06  gnorm cos=1.000000000
+    deltanet_test.go:253: DeltaNet mixer chain vs CPU, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:256:   deltaGates  worst cosine=1.000000000 worst maxAbs/rms=2.31e-07
+    deltanet_test.go:256:   deltaRule   worst cosine=1.000000000 worst maxAbs/rms=6.03e-06
+    deltanet_test.go:256:   deltaGNorm  worst cosine=1.000000000 worst maxAbs/rms=1.32e-05
+--- PASS: TestDeltaRule_cpuParity (0.38s)
+=== RUN   TestDeltaNorm_cpuParity
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    deltanet_test.go:378: deltaNorm vs l2normScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_cpuParity (0.21s)
+=== RUN   TestChainW8A8_parity
+    device_test.go:69: chain depth=4 parity: cosine=1.000000 maxAbs=1.172e-02
+--- PASS: TestChainW8A8_parity (0.21s)
+=== RUN   TestTiledDP4A_parity
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    gemm_dp4a_test.go:174: unpacked vs CPU: cosine=1.00000000 maxAbs=0.000e+00
+    gemm_dp4a_test.go:175: dot4I8Packed vs CPU: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestTiledDP4A_parity (0.20s)
+=== RUN   TestTiled_parity
+    gemm_test.go:47: tiled parity: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestTiled_parity (0.21s)
+=== RUN   TestGemma3ResidentParityWebGPU
+    gemma3_resident_parity_test.go:74: resident decode path: webgpu:vulkan-resident (int4)
+    gemma3_resident_parity_test.go:107:   pos  0 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  1 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  2 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  3 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  4 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  5 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  6 cosine 1.000000
+    gemma3_resident_parity_test.go:107:   pos  7 cosine 1.000000
+    gemma3_resident_parity_test.go:109: gemma3-vl-tiny text tower, resident vs CPU (int4 both sides): minCosine=1.000000
+--- PASS: TestGemma3ResidentParityWebGPU (1.57s)
+=== RUN   TestGemma4DenseTwoGeom_residentParity
+    gemma4_twogeom_test.go:88:   pos  0 cosine 1.000000 maxAbs 1.1921e-07 argmax cpu=183 webgpu=183
+    gemma4_twogeom_test.go:88:   pos  1 cosine 1.000000 maxAbs 1.1921e-07 argmax cpu=7 webgpu=7
+    gemma4_twogeom_test.go:88:   pos  2 cosine 1.000000 maxAbs 1.7881e-07 argmax cpu=42 webgpu=42
+    gemma4_twogeom_test.go:88:   pos  3 cosine 1.000000 maxAbs 0.0000e+00 argmax cpu=107 webgpu=107
+    gemma4_twogeom_test.go:88:   pos  4 cosine 1.000000 maxAbs 1.1921e-07 argmax cpu=5 webgpu=5
+    gemma4_twogeom_test.go:88:   pos  5 cosine 1.000000 maxAbs 1.1921e-07 argmax cpu=179 webgpu=179
+    gemma4_twogeom_test.go:88:   pos  6 cosine 1.000000 maxAbs 1.1921e-07 argmax cpu=13 webgpu=13
+    gemma4_twogeom_test.go:88:   pos  7 cosine 1.000000 maxAbs 1.1921e-07 argmax cpu=67 webgpu=67
+    gemma4_twogeom_test.go:90: webgpu two-geometry K=V resident parity: minCosine=1.000000 maxAbs=1.7881e-07 exact-argmax 8/8
+--- PASS: TestGemma4DenseTwoGeom_residentParity (0.28s)
+=== RUN   TestGemma4DenseScaled_webgpuParity
+    gemma4_twogeom_test.go:142:   pos  0  cosine 1.000000 maxAbs 0.0000e+00 argmax cpu=1 webgpu=1
+    gemma4_twogeom_test.go:142:   pos  1  cosine 1.000000 maxAbs 0.0000e+00 argmax cpu=7 webgpu=7
+    gemma4_twogeom_test.go:142:   pos  2  cosine 1.000000 maxAbs 0.0000e+00 argmax cpu=42 webgpu=42
+    gemma4_twogeom_test.go:142:   pos  3  cosine 1.000000 maxAbs 4.7684e-07 argmax cpu=100 webgpu=100
+    gemma4_twogeom_test.go:142:   pos  4  cosine 1.000000 maxAbs 7.1526e-07 argmax cpu=5 webgpu=5
+    gemma4_twogeom_test.go:142:   pos  5  cosine 1.000000 maxAbs 0.0000e+00 argmax cpu=200 webgpu=200
+    gemma4_twogeom_test.go:142:   pos  6  cosine 1.000000 maxAbs 4.7684e-07 argmax cpu=66 webgpu=66
+    gemma4_twogeom_test.go:142:   pos  7  cosine 1.000000 maxAbs 4.7684e-07 argmax cpu=88 webgpu=88
+    gemma4_twogeom_test.go:142:   pos  8  cosine 1.000000 maxAbs 2.3842e-07 argmax cpu=3 webgpu=3
+    gemma4_twogeom_test.go:142:   pos  9  cosine 1.000000 maxAbs 0.0000e+00 argmax cpu=71 webgpu=71
+    gemma4_twogeom_test.go:142:   pos 10  cosine 0.996006 maxAbs 2.0339e-01 argmax cpu=128 webgpu=128
+    gemma4_twogeom_test.go:142:   pos 11  cosine 0.998444 maxAbs 1.0378e-01 argmax cpu=9 webgpu=9
+    gemma4_twogeom_test.go:142:   pos 12  cosine 0.992512 maxAbs 2.4431e-01 argmax cpu=250 webgpu=250
+    gemma4_twogeom_test.go:142:   pos 13  cosine 0.975300 maxAbs 5.6683e-01 argmax cpu=17 webgpu=17
+    gemma4_twogeom_test.go:142:   pos 14  cosine 0.980779 maxAbs 3.9479e-01 argmax cpu=60 webgpu=60
+    gemma4_twogeom_test.go:142:   pos 15  cosine 0.992335 maxAbs 3.2373e-01 argmax cpu=200 webgpu=200
+    gemma4_twogeom_test.go:144: scaled dense (256-local / 512-global, 12 layers): minCosine=0.975300 exact-argmax 16/16 pos0=1.000000
+--- PASS: TestGemma4DenseScaled_webgpuParity (0.76s)
+=== RUN   TestGEMV_parity
+    gemv_test.go:45: GEMV parity: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestGEMV_parity (0.21s)
+=== RUN   TestW4A8_parity_and_bandwidth
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    gemv_w4a8_test.go:116: W4A8 GEMV parity [8960×1536, group 32]: cosine=1.000000 maxAbs=2.861e-06
+    gemv_w4a8_test.go:153: W4A8 GEMV (f16 scales): 36.9 µs/dispatch | 7.74 MB (56% of int8's 13.80 MB) | 209.9 GB/s
+    gemv_w4a8_test.go:164: projected token: gemv 4.14 ms (was 4.3) + fixed 6.85 → 10.99 ms = 91 tok/s (int8 was 89.7)
+--- PASS: TestW4A8_parity_and_bandwidth (0.41s)
+=== RUN   TestGptOssDownW4_parity
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    gptoss_down_w4_test.go:91: slot 0 → expert 5: cosine 1.000000 maxAbs 2.384e-07 (peak 3.43)
+    gptoss_down_w4_test.go:91: slot 1 → expert 0: cosine 1.000000 maxAbs 1.192e-07 (peak 1.79)
+    gptoss_down_w4_test.go:91: slot 2 → expert 3: cosine 1.000000 maxAbs 1.192e-07 (peak 0.8)
+--- PASS: TestGptOssDownW4_parity (0.21s)
+=== RUN   TestGptOssResidentParityWebGPU
+    gptoss_resident_test.go:64: resident decode path: webgpu:vulkan-resident (int4)
+    gptoss_resident_test.go:106:   pos  0 cosine 1.000000
+    gptoss_resident_test.go:106:   pos  1 cosine 1.000000
+    gptoss_resident_test.go:106:   pos  2 cosine 1.000000
+    gptoss_resident_test.go:106:   pos  3 cosine 0.999985
+    gptoss_resident_test.go:106:   pos  4 cosine 1.000000
+    gptoss_resident_test.go:106:   pos  5 cosine 0.999993
+    gptoss_resident_test.go:106:   pos  6 cosine 1.000000
+    gptoss_resident_test.go:106:   pos  7 cosine 1.000000
+    gptoss_resident_test.go:112: gpt-oss tiny, resident vs CPU (int4 both sides): minCosine=0.999985, argmax mismatches 0/8
+--- PASS: TestGptOssResidentParityWebGPU (0.24s)
+=== RUN   TestGraniteResidentParity
+    granite_resident_parity_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGraniteResidentParity (0.00s)
+=== RUN   TestKVCacheF16_parity
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    kv_f16_test.go:162: step 2: argmax flip f16=1167 f32=1364, f32 gap 0.0022 of range (cosine 0.99914)
+    kv_f16_test.go:168: === f16-KV vs f32-KV decode (8000-key context, 16 steps): argmax 15/16 | cosine min=0.99868 mean=0.99918 | worst flip gap=0.0022 ===
+--- PASS: TestKVCacheF16_parity (1.19s)
+=== RUN   TestKVCacheI8_parity
+    gpu_test.go:91: [live-vram] 59.1 MiB of device buffers already held before this test
+    kv_i8_parity_test.go:165: step 2: argmax flip i8=1386 f32=1364, f32 gap 0.0026 of range (cosine 0.99847)
+    kv_i8_parity_test.go:165: step 3: argmax flip i8=559 f32=1643, f32 gap 0.0003 of range (cosine 0.99873)
+    kv_i8_parity_test.go:165: step 6: argmax flip i8=3649 f32=1701, f32 gap 0.0198 of range (cosine 0.99864)
+    kv_i8_parity_test.go:165: step 13: argmax flip i8=1494 f32=2067, f32 gap 0.0207 of range (cosine 0.99653)
+    kv_i8_parity_test.go:171: === int8-KV vs f32-KV decode (8000-key context, 16 steps): argmax 12/16 | cosine min=0.99603 mean=0.99833 | worst flip gap=0.0207 ===
+--- PASS: TestKVCacheI8_parity (1.06s)
+=== RUN   TestFusedMLP_parity
+    layer_test.go:97: FusedMLP parity: cosine=1.000000 maxAbs=9.766e-04
+--- PASS: TestFusedMLP_parity (0.25s)
+=== RUN   TestLoRAResidentParityWebGPU
+    lora_resident_parity_test.go:98: resident-with-adapter vs CPU-with-adapter: cosine=0.999963 maxAbs=0.005082 argmax_match=true
+--- PASS: TestLoRAResidentParityWebGPU (0.25s)
+=== RUN   TestMambaRealInputParity
+    mamba_realinput_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMambaRealInputParity (0.00s)
+=== RUN   TestMambaGatedNorm_parity
+    gpu_test.go:91: [live-vram] 180.7 MiB of device buffers already held before this test
+    mamba_test.go:113:   nGroups=1: cosine=1.00000000 maxAbs=9.54e-07
+    mamba_test.go:113:   nGroups=8: cosine=1.00000000 maxAbs=9.54e-07
+--- PASS: TestMambaGatedNorm_parity (0.20s)
+=== RUN   TestMambaConv_parity
+    gpu_test.go:91: [live-vram] 180.7 MiB of device buffers already held before this test
+    mamba_test.go:223: mambaConv worst cosine over 64 tokens: 1.00000000
+--- PASS: TestMambaConv_parity (0.19s)
+=== RUN   TestMambaSSM_driftParity
+    gpu_test.go:91: [live-vram] 180.7 MiB of device buffers already held before this test
+    mamba_test.go:542:   tok     1: cosine=1.00000000 maxAbs=7.63e-06
+    mamba_test.go:542:   tok    16: cosine=1.00000000 maxAbs=9.66e-06
+    mamba_test.go:542:   tok   256: cosine=1.00000000 maxAbs=5.72e-06
+    mamba_test.go:542:   tok  1024: cosine=1.00000000 maxAbs=7.63e-06
+    mamba_test.go:542:   tok  2048: cosine=1.00000000 maxAbs=5.01e-06
+    mamba_test.go:551:   worst cosine over 2k tokens: 1.00000000
+--- PASS: TestMambaSSM_driftParity (0.66s)
+=== RUN   TestDecodeRunnerMLA_parity
+    gpu_test.go:91: [live-vram] 180.7 MiB of device buffers already held before this test
+    mla_test.go:365: MLA runner parity: cosine=1.000000 maxAbs=0.000e+00
+--- PASS: TestDecodeRunnerMLA_parity (0.18s)
+=== RUN   TestMLALatentStore_parity
+    gpu_test.go:91: [live-vram] 181.3 MiB of device buffers already held before this test
+=== RUN   TestMLALatentStore_parity/interleave
+    mla_test.go:429: interleave: cosine=1.00000000 maxAbs=4.172e-07
+=== RUN   TestMLALatentStore_parity/neox
+    mla_test.go:429: neox: cosine=1.00000000 maxAbs=4.172e-07
+--- PASS: TestMLALatentStore_parity (0.14s)
+    --- PASS: TestMLALatentStore_parity/interleave (0.01s)
+    --- PASS: TestMLALatentStore_parity/neox (0.00s)
+=== RUN   TestMLAHeadMatvec_parity
+    gpu_test.go:91: [live-vram] 181.3 MiB of device buffers already held before this test
+=== RUN   TestMLAHeadMatvec_parity/absorb_WUK
+    mla_test.go:470: absorb_WUK: cosine=1.00000000 maxAbs=1.192e-06
+=== RUN   TestMLAHeadMatvec_parity/lift_WUV
+    mla_test.go:470: lift_WUV: cosine=1.00000000 maxAbs=2.861e-06
+--- PASS: TestMLAHeadMatvec_parity (0.18s)
+    --- PASS: TestMLAHeadMatvec_parity/absorb_WUK (0.05s)
+    --- PASS: TestMLAHeadMatvec_parity/lift_WUV (0.00s)
+=== RUN   TestMLAAttn_parity
+    gpu_test.go:91: [live-vram] 181.3 MiB of device buffers already held before this test
+=== RUN   TestMLAAttn_parity/v3_rank512
+    mla_test.go:536: v3_rank512: cosine=1.00000000 maxAbs=1.341e-07
+=== RUN   TestMLAAttn_parity/small_rank96
+    mla_test.go:536: small_rank96: cosine=1.00000000 maxAbs=8.941e-08
+--- PASS: TestMLAAttn_parity (0.20s)
+    --- PASS: TestMLAAttn_parity/v3_rank512 (0.01s)
+    --- PASS: TestMLAAttn_parity/small_rank96 (0.00s)
+=== RUN   TestDecodeRunnerMoE_parity
+    gpu_test.go:91: [live-vram] 181.3 MiB of device buffers already held before this test
+    moe_runner_test.go:212: MoE DecodeRunner parity (2 layers, 8 experts top-2): cosine=1.000000 maxAbs=3.815e-06
+--- PASS: TestDecodeRunnerMoE_parity (0.17s)
+=== RUN   TestDecodeRunnerMoEShared_parity
+    gpu_test.go:91: [live-vram] 181.8 MiB of device buffers already held before this test
+=== RUN   TestDecodeRunnerMoEShared_parity/glm_sigmoid_bias_ungated
+    moe_shared_runner_test.go:275: glm_sigmoid_bias_ungated: cosine=1.000000 maxAbs=3.815e-06
+=== RUN   TestDecodeRunnerMoEShared_parity/qwen2moe_softmax_gated
+    moe_shared_runner_test.go:275: qwen2moe_softmax_gated: cosine=1.000000 maxAbs=0.000e+00
+--- PASS: TestDecodeRunnerMoEShared_parity (0.22s)
+    --- PASS: TestDecodeRunnerMoEShared_parity/glm_sigmoid_bias_ungated (0.07s)
+    --- PASS: TestDecodeRunnerMoEShared_parity/qwen2moe_softmax_gated (0.02s)
+=== RUN   TestMoEExpertW4A8_parity
+    gpu_test.go:91: [live-vram] 183.5 MiB of device buffers already held before this test
+    moe_w4a8_expert_test.go:70: slot 0 → expert 5: cosine 1.000000 maxAbs 0.000e+00
+    moe_w4a8_expert_test.go:70: slot 1 → expert 0: cosine 1.000000 maxAbs 0.000e+00
+    moe_w4a8_expert_test.go:70: slot 2 → expert 3: cosine 1.000000 maxAbs 0.000e+00
+--- PASS: TestMoEExpertW4A8_parity (0.15s)
+=== RUN   TestNemotronMoEResidentParityWebGPU
+    nemotron_moe_resident_test.go:56: resident decode path: webgpu:vulkan-resident (int4)
+    nemotron_moe_resident_test.go:89:   pos  0 cosine 0.999859
+    nemotron_moe_resident_test.go:89:   pos  1 cosine 0.999771
+    nemotron_moe_resident_test.go:89:   pos  2 cosine 0.999817
+    nemotron_moe_resident_test.go:89:   pos  3 cosine 0.999798
+    nemotron_moe_resident_test.go:89:   pos  4 cosine 0.999840
+    nemotron_moe_resident_test.go:89:   pos  5 cosine 0.999778
+    nemotron_moe_resident_test.go:89:   pos  6 cosine 0.999760
+    nemotron_moe_resident_test.go:89:   pos  7 cosine 0.999798
+    nemotron_moe_resident_test.go:91: nemotron3nano-tiny, resident vs CPU (int4 both sides): minCosine=0.999760
+--- PASS: TestNemotronMoEResidentParityWebGPU (0.32s)
+=== RUN   TestNemotronResidentParity
+    nemotron_resident_parity_test.go:80:   tok     1: cosine=0.999923 maxAbs=0.006269 argmax_match=true
+    nemotron_resident_parity_test.go:80:   tok    16: cosine=0.999806 maxAbs=0.008306 argmax_match=true
+    nemotron_resident_parity_test.go:80:   tok    64: cosine=0.999859 maxAbs=0.008422 argmax_match=true
+    nemotron_resident_parity_test.go:80:   tok   256: cosine=0.999691 maxAbs=0.01031 argmax_match=true
+    nemotron_resident_parity_test.go:89:   worst cosine over 256 tokens: 0.999691 (tok1 0.999923, drift 0.0002)
+--- PASS: TestNemotronResidentParity (1.51s)
+=== RUN   TestDecodeRunnerPerLayerRoPE_parity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 183.5 MiB of device buffers already held before this test
+    perlayer_rope_runner_test.go:155: per-layer rope: cosine=0.999981 maxAbs=1.207e-01
+--- PASS: TestDecodeRunnerPerLayerRoPE_parity (0.17s)
+=== RUN   TestRMSNormBatched_parity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 184.2 MiB of device buffers already held before this test
+    prefillrunner_batched_test.go:160: M=37 H=133: cosine=1.000000000 maxAbs=0.000e+00, 0/4921 elements differ
+--- PASS: TestRMSNormBatched_parity (0.15s)
+=== RUN   TestRoPEBatched_parity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 184.2 MiB of device buffers already held before this test
+    prefillrunner_batched_test.go:299: M=23 heads=5 hd=16 start=7: cosine=1.000000000 maxAbs=0.000e+00, 0/1840 elements differ
+--- PASS: TestRoPEBatched_parity (0.16s)
+=== RUN   TestPrefillLastW8A8_parity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 184.2 MiB of device buffers already held before this test
+    prefillrunner_test.go:116: last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_parity (0.26s)
+=== RUN   TestPrefillLastW8A8_qknormParity
+=== RUN   TestPrefillLastW8A8_qknormParity/addOne=false
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 184.4 MiB of device buffers already held before this test
+    prefillrunner_test.go:255: last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+=== RUN   TestPrefillLastW8A8_qknormParity/addOne=true
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 184.7 MiB of device buffers already held before this test
+    prefillrunner_test.go:255: last row (pos 36): cosine=1.00000000 maxAbs=7.629e-06
+--- PASS: TestPrefillLastW8A8_qknormParity (0.55s)
+    --- PASS: TestPrefillLastW8A8_qknormParity/addOne=false (0.26s)
+    --- PASS: TestPrefillLastW8A8_qknormParity/addOne=true (0.29s)
+=== RUN   TestPrefillLastW8A8_gegluParity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 184.9 MiB of device buffers already held before this test
+    prefillrunner_test.go:425: last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_gegluParity (0.29s)
+=== RUN   TestPrefillLastW8A8_qgateParity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 185.2 MiB of device buffers already held before this test
+    prefillrunner_test.go:531: qGate last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_qgateParity (0.22s)
+=== RUN   TestPrefillLastW8A8_kvF16Parity
+    gpu_test.go:88: [live-contexts] 1 already open before this test
+    gpu_test.go:91: [live-vram] 185.5 MiB of device buffers already held before this test
+    prefillrunner_test.go:643: kvF16 last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_kvF16Parity (0.23s)
+=== RUN   TestW8A8_parity
+    quant_test.go:74: W8A8 kernel parity: maxAbs=0.000e+00 cosine=1.00000000
+--- PASS: TestW8A8_parity (0.20s)
+=== RUN   TestQwen35ResidentParity
+=== RUN   TestQwen35ResidentParity/qwen3_5-tiny
+    qwen35_resident_parity_test.go:99: resident decode path: webgpu:vulkan-resident (int8int8)
+    qwen35_resident_parity_test.go:147:   tok    1: cosine=0.999979 maxAbs=0.002655 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok    2: cosine=0.999922 maxAbs=0.006032 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok    4: cosine=0.999963 maxAbs=0.0042 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok    8: cosine=0.999961 maxAbs=0.00354 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok   16: cosine=0.999972 maxAbs=0.004743 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok   64: cosine=0.999984 maxAbs=0.002992 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok  128: cosine=0.999939 maxAbs=0.006719 argmax_match=true
+    qwen35_resident_parity_test.go:150:   worst cosine over 128 tokens: 0.999919 (tok1 0.999979, drift 0.0001); argmax agree 127/128
+    qwen35_resident_parity_test.go:190:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+=== RUN   TestQwen35ResidentParity/qwen3_5_moe-tiny
+    qwen35_resident_parity_test.go:99: resident decode path: webgpu:vulkan-resident (int8int8)
+    qwen35_resident_parity_test.go:147:   tok    1: cosine=1.000000 maxAbs=1.371e-05 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok    2: cosine=0.999965 maxAbs=0.003488 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok    4: cosine=0.999954 maxAbs=0.004614 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok    8: cosine=0.999943 maxAbs=0.006617 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok   16: cosine=0.999917 maxAbs=0.005806 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok   64: cosine=0.999970 maxAbs=0.003517 argmax_match=true
+    qwen35_resident_parity_test.go:147:   tok  128: cosine=0.999973 maxAbs=0.00357 argmax_match=true
+    qwen35_resident_parity_test.go:150:   worst cosine over 128 tokens: 0.995927 (tok1 1.000000, drift 0.0041); argmax agree 125/128
+    qwen35_resident_parity_test.go:190:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+--- PASS: TestQwen35ResidentParity (0.88s)
+    --- PASS: TestQwen35ResidentParity/qwen3_5-tiny (0.33s)
+    --- PASS: TestQwen35ResidentParity/qwen3_5_moe-tiny (0.40s)
+=== RUN   TestNemotronRelu2FFN_parity
+    gpu_test.go:88: [live-contexts] 2 already open before this test
+    gpu_test.go:91: [live-vram] 185.5 MiB of device buffers already held before this test
+    relu2_test.go:150: Nemotron relu² FFN (W8A8 up→relu2Quant→W8A8 down) vs CPU: worst cosine over 32 tokens=0.999567
+--- PASS: TestNemotronRelu2FFN_parity (0.25s)
+=== RUN   TestResidency_matchesCPU
+    residency_test.go:25: set GOINFER_W4A8_GIW=<path to an int4 .giw>
+--- SKIP: TestResidency_matchesCPU (0.00s)
+=== RUN   TestResidentCaptureParityWebGPU
+    resident_capture_parity_test.go:33: set GOINFER_PARITY_CKPT to a phi3-shaped safetensors dir
+--- SKIP: TestResidentCaptureParityWebGPU (0.00s)
+=== RUN   TestDecodeRunnerSlidingWindow_parity
+    gpu_test.go:88: [live-contexts] 2 already open before this test
+    gpu_test.go:91: [live-vram] 186.9 MiB of device buffers already held before this test
+    sliding_runner_test.go:150: sliding-window (W=3, start=4): cosine=1.000000 maxAbs=5.722e-06
+--- PASS: TestDecodeRunnerSlidingWindow_parity (0.13s)
+=== RUN   TestUploadKV_matchesSequentialForward
+    uploadkv_parity_test.go:40: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestUploadKV_matchesSequentialForward (0.00s)
+=== RUN   TestVisionLayerNorm_parity
+    vision_test.go:69: GPU LayerNorm vs CPU: max abs diff = 1.907e-06
+panic: test timed out after 2m0s
+	running tests:
+		TestVisionLayerNorm_parity (1m40s)
+
+goroutine 41462 [running]:
+testing.(*M).startAlarm.func1()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2959 +0x34a
+created by time.goFunc
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/time/sleep.go:182 +0x2d
+
+goroutine 1 [chan receive, 1 minutes]:
+testing.(*T).Run(0xb4e01b46008, {0xf7afd9?, 0xb4e01b0faa0?}, 0x18d5ac0)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2266 +0x4f2
+testing.runTests.func1(0xb4e01b46008)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2742 +0x37
+testing.tRunner(0xb4e01b46008, 0xb4e01b0fbc8)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2193 +0xea
+testing.runTests({0xf83a6d, 0x25}, {0xf83a6d, 0x25}, 0xb4e01aba120, {0x1a678b0, 0xc6, 0xc6}, {0xc2aa12e4af58689b, 0x1bf094fe8b, ...})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2740 +0x510
+testing.(*M).Run(0xb4e01aa8c80)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2600 +0x6af
+main.main()
+	_testmain.go:458 +0x9b
+
+goroutine 21 [syscall]:
+github.com/oliverbestmann/webgpu/wgpu._Cfunc_wgpuDeviceRelease(0x7f118c0a45c0)
+	_cgo_gotypes.go:2458 +0x3a
+github.com/oliverbestmann/webgpu/wgpu.(*Buffer).release.func2(...)
+	/home/francis/go/pkg/mod/github.com/oliverbestmann/webgpu@v1.36.0/wgpu/gen_types.go:54
+github.com/oliverbestmann/webgpu/wgpu.(*Buffer).release(0xb4e0197c258)
+	/home/francis/go/pkg/mod/github.com/oliverbestmann/webgpu@v1.36.0/wgpu/gen_types.go:54 +0xb8
+github.com/oliverbestmann/webgpu/wgpu.releaseNow({0x7f11ecfab460?, 0xb4e0197c258?})
+	/home/francis/go/pkg/mod/github.com/oliverbestmann/webgpu@v1.36.0/wgpu/wgpu.go:125 +0x22
+runtime.runFinalizers()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/mfinal.go:272 +0x3f7
+
+goroutine 41400 [syscall]:
+github.com/oliverbestmann/webgpu/wgpu._Cfunc_wgpuDeviceRelease(0x7f118cc529c0)
+	_cgo_gotypes.go:2458 +0x3a
+github.com/oliverbestmann/webgpu/wgpu.(*Device).release.func1(...)
+	/home/francis/go/pkg/mod/github.com/oliverbestmann/webgpu@v1.36.0/wgpu/gen_types.go:559
+github.com/oliverbestmann/webgpu/wgpu.(*Device).release(0x18434b8?)
+	/home/francis/go/pkg/mod/github.com/oliverbestmann/webgpu@v1.36.0/wgpu/gen_types.go:559 +0x4a
+github.com/oliverbestmann/webgpu/wgpu.(*Device).Release(0xb4e01aa7050)
+	/home/francis/go/pkg/mod/github.com/oliverbestmann/webgpu@v1.36.0/wgpu/gen_types.go:551 +0x47
+github.com/townsendmerino/goinfer/gpu.(*Context).Close(0xb4e01ac4a08)
+	/home/francis/mycode/goinfer/gpu/gpu.go:614 +0x107
+github.com/townsendmerino/goinfer/gpu.TestVisionLayerNorm_parity(0xb4e01b46908)
+	/home/francis/mycode/goinfer/gpu/vision_test.go:73 +0x40c
+testing.tRunner(0xb4e01b46908, 0x18d5ac0)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2193 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/testing/testing.go:2258 +0x4d4

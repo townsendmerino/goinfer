@@ -1,0 +1,5 @@
+WebGPU parity-cell hang, 2026-10-08, nobara (RTX 2070 SUPER, Vulkan). The cell is the gate's: GOINFER_DNET_PARITY=1 GOINFER_SSM_PARITY=1, -run 'Parity|_parity|matchesCPU|matchesSequential', ./gpu/, tags gpu goinfer_testhooks.
+Unfixed (HEAD a9b6b190 tree): 8 consecutive runs, 7 clean (65 pass, 8 skip, ~29 s), run 8 hung and hit its 2 min timeout in TestVisionLayerNorm_parity (not the test the gate saw hang;
+webgpu-hang-unfixed-run8.log has the goroutine dump: one thread in wgpuDeviceRelease from runtime.runFinalizers -> Buffer.release, one in wgpuDeviceRelease from Context.Close, both parked 100 s).
+GOGC=1 did not amplify it (3 clean runs). gpu.TestContextClose_finalizerRace (a loop that leaks a matrix, closes its context, GCs while closing a second) deadlocks unfixed (90 s deadline) and passes fixed (49 s).
+Fixed: 10 consecutive cell runs, all 65 pass / 8 skip, ~30 s each, no timeout (webgpu-cell-fixed-run1.log is one). The whole ./gpu/ package at the fix: 142 pass, 57 skip, 0 fail, 206 s (webgpu-gpu-suite-fixed.log.gz).
