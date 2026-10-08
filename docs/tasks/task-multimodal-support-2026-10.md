@@ -76,7 +76,8 @@ The last phase puts the answer where users look first, the README, with a check 
   - The CUDA towers: only 1.2-1.5x the CPU (S17).
   - Qwen3.5 on the CPU: 7.7 s TTFT on a new image.
   - GLM-OCR's CPU tower: 29 s at 1 MP.
-- **To re-read:** the r12 peer reading (Ollama gemma3:4b 0.40 s) is probably a cache hit (S13's harness fix, below).
+- **To re-read:** the r12 peer reading (Ollama gemma3:4b, 0.43 s mean) timed a resent image, most likely an image-cache
+  hit. The harness now sends a fresh image per request; S13-lite re-measures it.
 
 ## Rules for every phase
 
