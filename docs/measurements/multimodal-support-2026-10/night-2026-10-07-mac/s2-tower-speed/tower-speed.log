@@ -1,0 +1,46 @@
+=== RUN   TestGridVisionMetal_real
+=== RUN   TestGridVisionMetal_real/qwen3
+[S2 real qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999212; tower Metal 1.162s, CPU 4.367s (exploratory)
+[S2 real qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999999; tower Metal 98ms, CPU 205ms (exploratory)
+[S2 real qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999953; tower Metal 3.074s, CPU 6.632s (exploratory)
+[S2 real qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999990; tower Metal 1.846s, CPU 6.151s (exploratory)
+=== RUN   TestGridVisionMetal_real/glm-ocr
+[S2 real glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): worst token cosine 0.999997288; tower Metal 5.692s, CPU 20.79s (exploratory)
+[S2 real glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): worst token cosine 1.000000000; tower Metal 133ms, CPU 139ms (exploratory)
+[S2 real glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): worst token cosine 0.999991618; tower Metal 11.836s, CPU 40.512s (exploratory)
+[S2 real glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): worst token cosine 0.999999836; tower Metal 8.871s, CPU 33.806s (exploratory)
+[S2 real glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): worst token cosine 0.999999654; tower Metal 12.072s, CPU 45.434s (exploratory)
+--- PASS: TestGridVisionMetal_real (206.58s)
+    --- PASS: TestGridVisionMetal_real/qwen3 (24.14s)
+    --- PASS: TestGridVisionMetal_real/glm-ocr (182.45s)
+=== RUN   TestGridVisionMetal_real
+=== RUN   TestGridVisionMetal_real/qwen3
+[S2 real qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999212; tower Metal 1.177s, CPU 4.466s (exploratory)
+[S2 real qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999999; tower Metal 99ms, CPU 205ms (exploratory)
+[S2 real qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999953; tower Metal 3.074s, CPU 6.614s (exploratory)
+[S2 real qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999990; tower Metal 1.857s, CPU 6.194s (exploratory)
+=== RUN   TestGridVisionMetal_real/glm-ocr
+[S2 real glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): worst token cosine 0.999997288; tower Metal 5.817s, CPU 21.379s (exploratory)
+[S2 real glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): worst token cosine 1.000000000; tower Metal 129ms, CPU 151ms (exploratory)
+[S2 real glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): worst token cosine 0.999991618; tower Metal 12.551s, CPU 41.666s (exploratory)
+[S2 real glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): worst token cosine 0.999999836; tower Metal 9.488s, CPU 35.155s (exploratory)
+[S2 real glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): worst token cosine 0.999999654; tower Metal 12.627s, CPU 47.202s (exploratory)
+--- PASS: TestGridVisionMetal_real (213.80s)
+    --- PASS: TestGridVisionMetal_real/qwen3 (24.55s)
+    --- PASS: TestGridVisionMetal_real/glm-ocr (189.26s)
+=== RUN   TestGridVisionMetal_real
+=== RUN   TestGridVisionMetal_real/qwen3
+[S2 real qwen3] gemma3_preprocess_image.png    grid [1 56 56] (784 merged): worst token cosine 0.999999212; tower Metal 1.258s, CPU 4.506s (exploratory)
+[S2 real qwen3] qwen25vl_preprocess_image.png  grid [1 14 20] (70 merged): worst token cosine 0.999999999; tower Metal 97ms, CPU 193ms (exploratory)
+[S2 real qwen3] glm_ocr/formula.png            grid [1 70 58] (1015 merged): worst token cosine 0.999999953; tower Metal 3.088s, CPU 6.775s (exploratory)
+[S2 real qwen3] glm_ocr/table.png              grid [1 54 72] (972 merged): worst token cosine 0.999999990; tower Metal 1.864s, CPU 6.28s (exploratory)
+=== RUN   TestGridVisionMetal_real/glm-ocr
+[S2 real glm-ocr] gemma3_preprocess_image.png    grid [1 64 64] (1024 merged): worst token cosine 0.999997288; tower Metal 5.78s, CPU 21.627s (exploratory)
+[S2 real glm-ocr] qwen25vl_preprocess_image.png  grid [1 6 8] (12 merged): worst token cosine 1.000000000; tower Metal 130ms, CPU 138ms (exploratory)
+[S2 real glm-ocr] glm_ocr/formula.png            grid [1 86 72] (1548 merged): worst token cosine 0.999991618; tower Metal 12.611s, CPU 41.647s (exploratory)
+[S2 real glm-ocr] glm_ocr/table.png              grid [1 64 86] (1376 merged): worst token cosine 0.999999836; tower Metal 9.469s, CPU 34.543s (exploratory)
+[S2 real glm-ocr] glm_ocr/invoice.png            grid [1 92 72] (1656 merged): worst token cosine 0.999999654; tower Metal 12.432s, CPU 45.456s (exploratory)
+--- PASS: TestGridVisionMetal_real (211.91s)
+    --- PASS: TestGridVisionMetal_real/qwen3 (25.01s)
+    --- PASS: TestGridVisionMetal_real/glm-ocr (186.89s)
+PASS

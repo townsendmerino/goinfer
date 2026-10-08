@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -100,7 +101,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 			t.Fatal(err)
 		}
 		for k := range steps {
-			logits = append(logits, l)
+			logits = append(logits, slices.Clone(l)) // forward returns the cache's reused logits buffer (night 2026-10-07: steps 1-31 all read the last)
 			next := argmax(l)
 			if forced != nil {
 				next = forced[k]

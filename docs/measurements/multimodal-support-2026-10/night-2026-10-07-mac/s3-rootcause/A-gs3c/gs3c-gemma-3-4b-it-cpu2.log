@@ -1,0 +1,19 @@
+swap guard (load): not armed for /Users/francistownsend-merino/models/gemma-3-4b-it — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+loaded "gemma-3-4b-it": 34-layer model (vocab 262208) in 11.881s [chat: gemma3]
+  decode path: cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: unknown (the model declares no maximum) · KV f32
+  session reuse: on (4 conversations kept prefilled)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /Users/francistownsend-merino/models/gemma-3-4b-it
+"gemma-3-4b-it" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18454 [chat:[gemma-3-4b-it]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 3.17 GB swap-used
+vision: encoded a 59792-byte image in 24.089s (sha256 d4352b06); a resend of it will skip this
+
+shutting down…

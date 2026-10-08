@@ -69,7 +69,7 @@ The last phase puts the answer where users look first, the README, with a check 
   - The Gemma 4 E2B tower on CUDA: 2.3 s encode.
   - Qwen3.5-0.8B's Metal tower: 1.2 s on an 896x896 image.
 - **Over it:**
-  - Gemma 4 E2B image turn on Metal: TTFT 10.8 s on S9's pass against 16.5 s before (one smoke pass).
+  - Gemma 4 E2B image turn on Metal: TTFT 10.24 s on S9's pass against 14.67 s before (1.43x, the night record; a ~512-token text prompt reads 0.98x, parked for the owner).
   - Gemma 3's Metal tower: 9.2-9.6 s, about 2.8x its 26 s CPU tower.
   - Qwen2.5-VL's Metal tower: 8.9-15.1 s on the large images.
   - Qwen3-VL-2B served on Metal: 19.2 s per request.
@@ -1748,6 +1748,128 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
 
   A cell the code cannot answer (a speed figure) carries a date instead.
 - **Size:** S, once S7 has numbers.
+
+#### Night 2026-10-07 on the Mac, read 2026-10-08 (raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-07-mac/`)
+
+**The night:** the queue ran 22:23-23:27 PDT, on AC power, with no thermal note recorded.
+- Two jobs started with the load over the settle bar after 300 s: s2-tower-speed at 1.12 and s9-speed at 1.27.
+- **s6-e4b failed:** the fit guard refused its prequant (15.9 GB needed against 7.5 GB available). The E4B sidecar is to
+  be built on nobara instead.
+- **peer-vetted-mac** is recorded in its own file.
+- Each block below is graded against its own registration.
+
+- **S2 tower speed (`s2-tower-speed`, a record with no bar): RECORDED.**
+  - **The run:** `TestGridVisionMetal_real` three times, a pre-built test binary from `s2-towers` at `bec48333`
+    (now on main) over the local aikit at `64bab88`.
+    - The aikit revision is inferred from its reflog and was not recorded by the script. It is in v1.59.0.
+    - The queue rev "36fe0d11 +dirty" is the main tree, which the binary does not depend on.
+  - **What it is:** the pre-lever Metal baseline for S17.
+  - **Correctness held in every pass:** worst token cosine Qwen3.5 0.999999212 and GLM-OCR 0.999991618, G-S2b's
+    readings to the digit.
+
+  | tower | image (merged) | Metal, 3 passes | CPU, 3 passes |
+  |---|---|---|---|
+  | Qwen3.5-0.8B | 896² (784) | 1.162s / 1.177s / 1.258s | 4.367s / 4.466s / 4.506s |
+  | Qwen3.5-0.8B | 14x20 (70) | 98ms / 99ms / 97ms | 205ms / 205ms / 193ms |
+  | Qwen3.5-0.8B | formula.png (1015) | 3.074s / 3.074s / 3.088s | 6.632s / 6.614s / 6.775s |
+  | Qwen3.5-0.8B | table.png (972) | 1.846s / 1.857s / 1.864s | 6.151s / 6.194s / 6.28s |
+  | GLM-OCR | 896² (1024) | 5.692s / 5.817s / 5.78s | 20.79s / 21.379s / 21.627s |
+  | GLM-OCR | 6x8 (12) | 133ms / 129ms / 130ms | 139ms / 151ms / 138ms |
+  | GLM-OCR | formula.png (1548) | 11.836s / 12.551s / 12.611s | 40.512s / 41.666s / 41.647s |
+  | GLM-OCR | table.png (1376) | 8.871s / 9.488s / 9.469s | 33.806s / 35.155s / 34.543s |
+  | GLM-OCR | invoice.png (1656) | 12.072s / 12.627s / 12.432s | 45.434s / 47.202s / 45.456s |
+
+  - **Ratios:** Metal is 2.0-3.8x the CPU on Qwen3.5 and 3.3-3.8x on GLM-OCR, and ties it on the 6x8 grid.
+  - **Formula.png is the attention cost:** on Qwen3.5 it costs 1.66x table.png on Metal for 4% more tokens. That is
+    S17 step 0's attention share (76% at 0.27 TFLOPS).
+  - **Drift:** GLM-OCR's first pass ran 5-7% under passes 2 and 3, probably thermal (not logged); the ratios hold to ±3%.
+
+- **S3 root cause (`s3-rootcause`): G-S3c PASS on both families; the Metal-tower arm is deterministic; the CPU-tower
+  repeat is VOID; phase 2 is VOID (a test bug, fixed).**
+  - **The binaries:** `serve-metal` at `0c66b18b`, `decoder-g3.test` at `6a5d4efb`.
+  - **A, G-S3c re-registered** (arms `=cpu:cpu`, `metal:cpu`, `cpu:cpu`, with `--embed-int4=false` and the tower on the
+    CPU):
+    - **Qwen2.5-VL-3B: PASS.** All three replies identical, "Table 2. Quarterly unit sales by region (thousands)", and
+      the Metal arm decoded `metal-resident (int4)`.
+    - **Gemma 3 4B: PASS.** The first differing generated token is 24: CPU ' along' 0.383 against Metal ' as' 0.375, a
+      near-tie (at least 0.192).
+    - Both CPU repeats are byte-identical.
+    - **So G-S3c's earlier Metal failure was the `--embed-int4` default, as root-caused.**
+  - **B, G-S3b's Gemma 3 controls:**
+    - The Metal-tower arm repeats itself byte for byte (reply and log-probabilities).
+    - **The CPU-tower repeat is VOID:** its resident build was refused 2 s after the previous resident arm exited
+      ("budget 4.92 GB"), so its comparison is a CPU decoder against a Metal one.
+    - **Indirect evidence that the CPU-tower arm repeats,** though not the registered pairing: B's `metal` log-probs are
+      byte-identical to A's, from a separate process, and the refused arm's match A's CPU arm.
+    - **Recorded, not graded, for G-S3b:** on a Metal-resident decoder, the Metal tower against the CPU tower first
+      differs at token 7 (' by' 0.489 against ' for' 0.082), not a near-tie. Token 0's 'The' moves 0.985 → 0.746.
+  - **C, phase 2 sensitivity: VOID.**
+    - **The bug:** `run()` in `decoder/gemma3_tower_sensitivity_real_test.go` kept `m.forward`'s returned slice, which
+      is the cache's reused logits buffer. So steps 1-31 all read the last step's logits, and every arm reported a
+      first argmax change at step 1. Fixed 2026-10-08 (`slices.Clone`).
+    - **A second problem, not fixed:** the test's greedy reference path ("...a table of quarterly unit sales...") is not
+      the served CPU-tower reply (" quarterly" at token 3). Its prompt or features must be checked against serve's
+      before a re-run.
+  - **Next, per the registration:** the perturbation control (phase 2, fixed), and the CPU-tower repeat re-queued with
+    a settle between arms. Both are on the night queue's list, not yet queued.
+
+- **S7 on the Mac (`s7-mac`, a record against the 5 s bar): two of six valid cells under the bar; Gemma 3 4B not
+  loaded.**
+  - **The setup:** `serve-metal` from `s2-towers` at `ed8d4756`, `--backend metal`, serve's defaults, a new image or
+    clip every request, one warm-up and three timed requests, median against 5.0 s. Ran 23:04-23:09 PDT, with load
+    rising from 0.97 to 5.34 over the run.
+
+  | cell | TTFT (median of 3) | bar | what the log says |
+  |---|---|---|---|
+  | Gemma 3 4B | not a cell | n/a | refused by the fit guard (5.9 GB needed against a 5.2 GB budget, 7.5 GB available at 23:04) |
+  | Gemma 4 E2B, image | **6.20 s** | no | `metal-resident (int4)`, tower on Metal (1.12 s per image); about 5 s of the TTFT is outside the tower, unexplained |
+  | Gemma 4 E2B, audio | 3.20 s | yes | `metal-resident (int4)`, audio tower on Metal (0.16-0.17 s per clip) |
+  | Qwen3.5-0.8B | 4.48 s | yes | `metal-resident (int4)`, tower on Metal (1.16 s) |
+  | Qwen3-VL-2B | **8.97 s** | no | `metal-resident (int4)`, tower on Metal (3.75-4.14 s) |
+  | GLM-OCR | **8.32 s** | no | **decoder on the CPU** (`metal does not implement [pairwise-mrope pairwise-rope]`), float32 tower on Metal (5.6 s) |
+  | Qwen2.5-VL-3B | **21.67 s** | no | `metal-resident (int4)`, tower on Metal (7.86-8.59 s, over the bar by itself) |
+  | Gemma 4 E4B | not run | n/a | conditional on `s6-e4b`'s sidecar, which was not built |
+
+  - **Where the time goes:** the towers explain Qwen2.5-VL, GLM-OCR and most of Qwen3-VL. That is S17's target.
+  - **Not measured:** decode tokens per second after the image (`max_tokens` is 8), as on nobara.
+  - **A log nit:** the audio cell's serve log says "encoded a ...-byte image" for each WAV clip.
+
+- **S13-lite on the Mac (`s13lite-mac`, reported, not gated): goinfer 12.81 s, over the 5 s bar; 2.6x Ollama and 2.7x
+  llama.cpp, both under it.**
+  - **The setup:** Gemma 3 4B, Metal, every engine at its defaults, a new image every request, 3 rounds of 1 warm-up and
+    3 timed, engine order rotated. Ran 23:13-23:20 PDT. The float32 arm (`3c55d7f4`) is nobara's and came later.
+
+  | engine | median TTFT (9 timed) | range | under 5 s |
+  |---|---|---|---|
+  | goinfer, `serve-metal` at `ed8d4756` (int4 at load) | **12.81 s** | 12.33-13.58 s | no |
+  | Ollama 0.32.5, `gemma3:4b` | **4.97 s** | 4.961-4.970 s | yes, by 0.03 s |
+  | llama.cpp b10621 (`c1d0e7a00`), Q4_K_M + mmproj-f16 | **4.68 s** | 4.673-4.688 s | yes |
+
+  - **Where goinfer's time goes:** the float32 SigLIP tower on Metal takes 8.9-9.6 s per image. That is S17's gap;
+    lever A is not on this build.
+  - **The decode path:** `metal-resident (int4)` in rounds 1 and 3. Round 2 fell to `cpu (int4)` because the resident
+    memory guard declined by 0.01 GB (5.15 against 5.14 GB). That is serve's default behaviour, so it stays in the
+    median. Without it the median is 13.06 s, and the reading is unchanged.
+  - **For comparison,** nobara's cell read goinfer 4.61 s, Ollama 1.60 s and llama.cpp 0.96 s.
+
+- **S9 speed on the Mac (`s9-speed`, a record; the registered rule turns the pass off below 1.00x): the image turn
+  reads 1.43x, so it stays on; a 512-token text prompt reads 0.98x, under the line.**
+  - **The setup:** `serve-metal` at `6e4449ae`, E2B q4_0 with `-vision-device cpu`, 3 passes with the arm order
+    alternating, under the timing lock. Every server logged the path it was meant to.
+
+  | TTFT | old (s) | S9 pass (s) | old/S9 (medians) | pairs |
+  |---|---|---|---|---|
+  | image turn | 16.526, 14.669, 14.643 (median 14.67) | 10.244, 10.282, 10.225 (median 10.24) | **1.43x** | 3/3 above 1 |
+  | ~512-token text | 10.847, 10.779, 10.728 (median 10.78) | 10.944, 10.995, 10.945 (median 10.95) | **0.98x** | 3/3 below 1 |
+
+  - **Image:** without the CPU tower encode (4.82-4.89 s every time), the part S9 changes goes about 9.8 → 5.4 s.
+    Pass 1's old figure (16.526 s) is a first-server outlier, which also inflated the by-day smoke's 1.53x.
+  - **Text:** the by-day smoke's 1.02x has reversed sign.
+  - **The rule did not name a metric.** Read literally, the text arm trips it, but both turns go through the one
+    `PrefillLast` pass, so turning it off would also drop the image win. **Parked for the owner:**
+    - keep the pass for media turns and decline it for text-only E-model prompts, until S9 step 2 (an f16-MMA E-model
+      pass) replaces the text route; or
+    - keep it everywhere, or turn it off everywhere.
 
 ### S9 — Batched E-model prefill on Metal and CUDA, image turns included
 
