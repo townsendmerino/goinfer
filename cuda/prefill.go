@@ -242,6 +242,42 @@ func (r *cudaResident) PrefillMRoPELast(ctx context.Context, embeddings [][]floa
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, mropePos)
 }
 
+// cudaDeepPlan is the DeepStack sets one PrefillMRoPEDeepstackLast call carries: the image run's absolute start and length, and one [n*hidden] set per decoder layer that gets one.
+type cudaDeepPlan struct {
+	start, n int
+	sets     [][]float32
+}
+
+// deepDefectForTest is G-S10g's planted-defect seam (S16's list): 0 none, 1 the sets not added, 2 each set one layer late, 3 the sets added to the text rows too.
+var deepDefectForTest int
+
+const (
+	deepDefectNotAdded = iota + 1
+	deepDefectOneLayerLate
+	deepDefectTextRows
+)
+
+// PrefillMRoPEDeepstackLast satisfies decoder.ResidentMRoPEDeepstackPrefill (S10 on CUDA, G-S10g): PrefillMRoPELast, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after layer l,
+// as the CPU prefill does. Only plain dense layers are claimed: a layer with an MoE, DeltaNet or Gemma 4 branch declines, and the turn keeps the CPU prefill and upload, as before.
+func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
+	if imgLen <= 0 || len(deep) == 0 || len(deep) > r.nLayers {
+		return nil, fmt.Errorf("cuda prefill: %d DeepStack sets over %d image rows for %d layers: %w", len(deep), imgLen, r.nLayers, errPrefillDeclined)
+	}
+	for l := range r.layers {
+		if Ly := &r.layers[l]; Ly.isMoE || Ly.g4moe || Ly.isDeltaNet {
+			return nil, fmt.Errorf("cuda prefill: DeepStack is claimed for plain dense layers only (layer %d is not one): %w", l, errPrefillDeclined)
+		}
+	}
+	for l, set := range deep {
+		if len(set) != imgLen*r.hidden {
+			return nil, fmt.Errorf("cuda prefill: DeepStack set %d has %d floats, want %d rows of %d", l, len(set), imgLen, r.hidden)
+		}
+	}
+	r.deepPlan = &cudaDeepPlan{start: imgStart, n: imgLen, sets: deep}
+	defer func() { r.deepPlan = nil }()
+	return r.PrefillMRoPELast(ctx, embeddings, startPos, mropePos)
+}
+
 // HybridMRoPEPrefill satisfies decoder.ResidentHybridMRoPEPrefill: for a Gated-DeltaNet hybrid (Qwen3.5+), PrefillMRoPELast builds
 // the recurrent state itself, because prefillCore runs the DeltaNet layers' recurrence over the same spliced rows
 // (prefillDeltaNetRows) and rotates the full-attention layers by the m-RoPE positions in the layout the model uses
@@ -1001,6 +1037,33 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			sbB = af(M * hidden)
 		}
 		residMN := uint32((M*hidden + 255) / 256)
+		// S10 on CUDA (G-S10g): Qwen3-VL's DeepStack sets, for the rows of THIS pass that fall in the image run, uploaded once and added to the residual after each layer (the loop below). A pass that
+		// holds none of the image run (a chunk of text before or after it) uploads nothing.
+		var dsBufs []Buffer
+		dsOff, dsN := 0, 0
+		if ds := r.deepPlan; ds != nil {
+			if a, b := max(ds.start, startPos), min(ds.start+ds.n, startPos+M); a < b {
+				imgOff, imgN := (a-startPos)*hidden, (b-a)*hidden
+				dsOff, dsN = imgOff, imgN
+				if deepDefectForTest == deepDefectTextRows {
+					dsOff, dsN = 0, M*hidden
+				}
+				for _, set := range ds.sets {
+					rows := set[(a-ds.start)*hidden : (b-ds.start)*hidden]
+					if deepDefectForTest == deepDefectTextRows { // G-S10g planted defect: the set added to the text rows too (the image rows' values cycled over the whole pass)
+						rows = make([]float32, M*hidden)
+						for i := range rows {
+							rows[i] = set[(a-ds.start)*hidden+i%imgN]
+						}
+					}
+					buf := af(dsN)
+					if e := gpu.Upload(buf, rows); e != nil {
+						return e
+					}
+					dsBufs = append(dsBufs, buf)
+				}
+			}
+		}
 		// Gemma 4 E-model per-layer embedding inputs: pleB holds every row's tail REORDERED to [layer][row][P], so layer l's slice is one contiguous
 		// [M, P] operand (glu_quant_batched's `up`, row stride P), and pleGB is the gate GEMV's [M, P] output.
 		var pleB, pleGB Buffer
@@ -1500,6 +1563,19 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					return e
 				}
 				r.profToc(gemvCat, t)
+			}
+			// DeepStack (S10, G-S10g): after decoder layer l, set l is added to the image rows, as the CPU prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]).
+			if dsN > 0 && deepDefectForTest != deepDefectNotAdded {
+				k := l
+				if deepDefectForTest == deepDefectOneLayerLate {
+					k = l - 1 // set l-1 added after layer l: every set one layer late, set 0 never early
+				}
+				if k >= 0 && k < len(dsBufs) {
+					if e := r.launch(r.bRes, LaunchConfig{GridX: uint32((dsN + 255) / 256), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+						Arg(xB.At(dsOff*4)), Arg(dsBufs[k]), gpu.ArgValue(int32(dsN))); e != nil {
+						return e
+					}
+				}
 			}
 			// BATCHED HIDDEN-STATE CAPTURE (P10). The per-token seam (capVec) syncs and
 			// downloads once per TAP PER TOKEN; a block drafter needs the taps for every token

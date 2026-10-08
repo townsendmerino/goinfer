@@ -971,9 +971,10 @@ type cudaResident struct {
 	// slot's per-layer K/V (nil with one slot), kvSlot the bound index. kc/vc above are the BOUND slot's buffers —
 	// every kernel launch and UploadKV reads them at call time — and UseKVSlot rebinds them.
 	kvSlotsReq      int
-	ctxPlanned      int   // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
-	allocSlackBytes int64 // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
-	kvSlotsN        int   // what checkKVFits granted (>= 1)
+	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
+	deepPlan        *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
+	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
+	kvSlotsN        int           // what checkKVFits granted (>= 1)
 	kvSlot          int
 	kvSlotBufs      []cudaKVSlot
 
