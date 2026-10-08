@@ -165,7 +165,8 @@
         "$MODELS/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"
       ],
       "used_by": [
-        "TestPhi3GGUFReal_gate"
+        "TestPhi3GGUFReal_gate",
+        "TestQ4KLane_realPhi3NonInferiority"
       ]
     },
     {

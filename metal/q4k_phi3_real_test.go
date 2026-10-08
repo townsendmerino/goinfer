@@ -24,7 +24,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags goinfer_testhooks -run '^TestQ4KLane_realPhi3NonInferiority$' -v ./metal/
 //
-// GOINFER_PHI3_GGUF overrides ~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf.
+// The Phi-3 file is the registered asset GOINFER_PHI3_GGUF (testdata/assets.json).
 func TestQ4KLane_realPhi3NonInferiority(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
@@ -34,10 +34,7 @@ func TestQ4KLane_realPhi3NonInferiority(t *testing.T) {
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(os.Stderr, "[G-Q2 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
 	}
-	phi3 := os.Getenv("GOINFER_PHI3_GGUF")
-	if phi3 == "" {
-		phi3 = filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf")
-	}
+	phi3 := decoder.AssetPathForTest(t, "GOINFER_PHI3_GGUF") // the asset registry (testdata/assets.json) resolves it
 	qb := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m")
 	rp, ra, rn := g3Model(t, qb+".int4.metal.giw", qb+".gguf", "reference Qwen2.5-Coder-1.5B", logf)
 	pp, pa, pn := g3ModelQ4K(t, phi3, "Phi-3 mini q4k", false, logf)

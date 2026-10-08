@@ -66,6 +66,12 @@ func (m *Model) residentImagePrefill(ctx context.Context, rip ResidentImagePrefi
 // computed for its other branches), to the resident backend's ResidentMRoPEPrefill. Any error is
 // a DECLINE, not fatal — the caller falls through to the CPU-prefill+UploadKV bridge.
 func (m *Model) residentMRoPEPrefill(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) (logits []float32, gpuPos int, err error) {
+	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos, nil)
+}
+
+// residentMRoPEPrefillDeep is residentMRoPEPrefill with Qwen3-VL's DeepStack sets (S16): with deep non-nil the resident must
+// implement ResidentMRoPEDeepstackPrefill, or the call declines (and the caller falls through to the CPU prefill).
+func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) (logits []float32, gpuPos int, err error) {
 	hidden := m.w.arch.HiddenDim
 	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
 		return nil, 0, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
@@ -82,7 +88,15 @@ func (m *Model) residentMRoPEPrefill(ctx context.Context, rmp ResidentMRoPEPrefi
 	for i := range rows {
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
-	logits, err = rmp.PrefillMRoPELast(ctx, rows, 0, mropePos)
+	if deep != nil {
+		rdp, ok := rmp.(ResidentMRoPEDeepstackPrefill)
+		if !ok {
+			return nil, 0, fmt.Errorf("decoder: the resident has no DeepStack prefill")
+		}
+		logits, err = rdp.PrefillMRoPEDeepstackLast(ctx, rows, 0, mropePos, deep, imgPos, imgLen)
+	} else {
+		logits, err = rmp.PrefillMRoPELast(ctx, rows, 0, mropePos)
+	}
 	if err != nil {
 		return nil, 0, err
 	}

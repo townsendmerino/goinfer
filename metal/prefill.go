@@ -343,6 +343,26 @@ kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buff
     x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
 }
 
+// rope_mrope_f16 (S16, docs/tasks/task-multimodal-support-2026-10.md): rope_f16 for Qwen's multimodal RoPE. Each row has
+// three positions (temporal, height, width) in pos3[m*3..], and rotary pair dd turns by pos3[m*3 + axis[dd]]. axis is the
+// host's own table from decoder's mropeComponent / mropeComponentInterleaved (contiguous sections for Qwen2.5-VL, strided
+// for Qwen3.5+/Qwen3-VL), built once per model, so the kernel carries no layout formula of its own. A text row has three
+// equal positions and reduces to rope_f16 at that position exactly.
+kernel void rope_mrope_f16(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], device const uint* pos3[[buffer(3)]],
+    constant uint& total[[buffer(4)]], constant uint& stride[[buffer(5)]],
+    constant uint& base0[[buffer(6)]], constant uint& rhalf[[buffer(7)]],
+    constant float& scale[[buffer(8)]], device const uint* axis[[buffer(9)]],
+    uint gid[[thread_position_in_grid]]) {
+    uint pairsPerRow = (total/hd) * rhalf;
+    uint m = gid / pairsPerRow, p = gid % pairsPerRow;
+    uint head = p/rhalf, dd = p%rhalf;
+    uint base = m*stride + base0 + head*hd;
+    float th = float(pos3[m*3u + axis[dd]]) * invf[dd]; float c=cos(th)*scale, s=sin(th)*scale;
+    float x0=float(x[base+dd]), x1=float(x[base+rhalf+dd]);
+    x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
+}
+
 // qk_norm_f16: per-head Q/K RMSNorm (Qwen3) on the f16 fused qkv[M×stride], before RoPE. One
 // threadgroup per (row m, head): head<nH is Q (weight qn), else K (kn, head-nH). Norm over hd.
 kernel void qk_norm_f16(device half* qkv[[buffer(0)]], device const float* qn[[buffer(1)]],
@@ -991,6 +1011,7 @@ type prefillState struct {
 	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	pRopeM                                                     Pipeline // S16: rope_mrope_f16
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
 	pGemmM16N32                           Pipeline // D-B02's 16-token tile
@@ -1062,7 +1083,7 @@ func (r *resident) ensurePrefill() {
 	r.pf = &prefillState{
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
-		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"),
+		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"), pRopeM: p("rope_mrope_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"),
@@ -1160,6 +1181,20 @@ func (r *resident) prefillGeom() *attnGeom {
 }
 
 func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
+	return r.prefillLast(embs, startPos, nil, nil)
+}
+
+// prefillDeep is Qwen3-VL's DeepStack injection for the batched pass (S16): set l is added to the image rows [start,
+// start+n) of the f16 residual after decoder layer l, as decoder's addDeepstack does on the CPU.
+type prefillDeep struct {
+	start, n int
+	sets     [][]float32
+}
+
+// prefillLast is PrefillLast with optional m-RoPE positions (S16): mrope, when non-nil, holds every absolute position's
+// (temporal, height, width) triple from 0 to startPos+len(embs), and the pass rotates q and k by them through
+// rope_mrope_f16 and r.mropeAxis. The K/V cache rows are still placed by sequence position.
+func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1202,6 +1237,15 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		posv[m] = uint32(startPos + m)
 	}
 	posB := NewBufferUint32s(d, posv)
+	var pos3B Buffer // S16: the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
+	if mrope != nil {
+		p3 := make([]uint32, Mpad*3)
+		for m := range Mpad {
+			t := mrope[startPos+min(m, M-1)]
+			p3[m*3], p3[m*3+1], p3[m*3+2] = uint32(t[0]), uint32(t[1]), uint32(t[2])
+		}
+		pos3B = NewBufferUint32s(d, p3)
+	}
 
 	// uniforms
 	uM := NewBufferU32(d, uint32(Mpad))
@@ -1329,7 +1373,29 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	useFusedAttn, useSteelAttn := r.prefillAttnKernels()
 
 	e := r.q.Begin()
+	// S16: the DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
+	// Set k is added after layer k, which is done at the top of iteration k+1 and after the loop, so every branch of the
+	// loop body (the MoE ones end in continue) reaches it.
+	var deepB []Buffer
+	if deep != nil {
+		for _, set := range deep.sets {
+			deepB = append(deepB, NewBufferFloats(d, set))
+		}
+	}
+	addDeep := func(k int) {
+		if k >= len(deepB) {
+			return
+		}
+		lo, hi := max(deep.start, startPos), min(deep.start+deep.n, startPos+M)
+		if hi <= lo {
+			return
+		}
+		e.Dispatch(pf.pResF32, (hi-lo)*H, 256, xF.At((lo-startPos)*H*2), deepB[k].At((lo-deep.start)*H*4))
+	}
 	for l := 0; l < r.nL; l++ {
+		if l > 0 {
+			addDeep(l - 1)
+		}
 		L := &r.layers[l]
 		if L.delta != nil {
 			r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
@@ -1370,8 +1436,13 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			// bindings applied the local window (and one RoPE table) to every layer (audit M-09). Admitted
 			// prefill archs have a uniform RoPE table (FeatPerLayerRoPE is not claimed), so L.invf equals
 			// r.invf there — this is behaviour-neutral for them and correct for the mixed-window case.
-			e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf, L.mscale)
-			e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale)
+			if mrope != nil { // S16: each row's own (t, h, w) rotation
+				e.Dispatch(pf.pRopeM, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, pos3B, uTotalQ, uStride, uBase0, g0.uHalf, L.mscale, r.mropeAxis)
+				e.Dispatch(pf.pRopeM, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, pos3B, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale, r.mropeAxis)
+			} else {
+				e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf, L.mscale)
+				e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale)
+			}
 			// scatter K,V to cache
 			e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 			// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
@@ -1583,6 +1654,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
 		}
 	}
+	addDeep(r.nL - 1)
 	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode
 	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
 	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing

@@ -405,6 +405,15 @@ type ResidentMRoPEPrefill interface {
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
 
+// ResidentMRoPEDeepstackPrefill is an OPTIONAL extension of ResidentMRoPEPrefill for Qwen3-VL (S16): the same batched m-RoPE
+// prefill, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after decoder layer l, as the CPU
+// prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]). deep holds one set per
+// injected layer, imgLen rows of the hidden size each. Without it GenerateQwenVLDeepstack keeps a turn that has DeepStack
+// sets on the CPU prefill.
+type ResidentMRoPEDeepstackPrefill interface {
+	PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) (logits []float32, err error)
+}
+
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
 // Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent
@@ -1112,6 +1121,26 @@ func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
 // Qwen3.5+ family: decoder.mropeComponentInterleaved) rather than in contiguous section blocks (Qwen2.5-VL: mropeComponent). A
 // resident that rotates by m-RoPE must apply the matching rule.
 func (m *Model) MRopeInterleavedResident() bool { return m.w.arch.MRopeInterleaved }
+
+// MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary
+// pairs, by the same rule the CPU rotates with (mropeComponent, or mropeComponentInterleaved for the interleaved layout), or
+// nil when the model has no three-way m-RoPE section. A resident's m-RoPE prefill kernel reads it as a table (S16), so the
+// layout lives in one place.
+func (m *Model) MRopeAxisResident(half int) []int {
+	sec := m.w.arch.MRopeSection
+	if len(sec) != 3 || half <= 0 {
+		return nil
+	}
+	comp := mropeComponent
+	if m.w.arch.MRopeInterleaved {
+		comp = mropeComponentInterleaved
+	}
+	axis := make([]int, half)
+	for d := range axis {
+		axis[d] = comp(d, sec)
+	}
+	return axis
+}
 
 // PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE (adjacent dims
 // 2d, 2d+1 share frequency d: Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR) rather than the

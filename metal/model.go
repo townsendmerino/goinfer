@@ -219,6 +219,7 @@ type resident struct {
 	// activations (no activation quantization), over Q4_K super-blocks or int8 rows. axF32 is a projection's input (the
 	// normed residual), swF32 the down-projection's (SwiGLU's output).
 	q4kLane                                                    bool
+	mropeAxis                                                  Buffer // S16: the m-RoPE prefill\'s per-pair axis table; empty when the model has none
 	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
 	pRmsF32Out, pSwF32                                         Pipeline
 	axF32, swF32                                               Buffer
@@ -2052,6 +2053,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.alias = alias
 	if line := alias.summary(); line != "" {
 		fmt.Fprint(os.Stderr, line)
+	}
+	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
+	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
+	if g := r.prefillGeom(); g != nil && r.prefillOK {
+		if ax := m.MRopeAxisResident(g.half); ax != nil {
+			u := make([]uint32, len(ax))
+			for i, v := range ax {
+				u[i] = uint32(v)
+			}
+			r.mropeAxis = NewBufferUint32s(d, u)
+		}
 	}
 	r.buildBatch() // MC3: the batched decode step, when this resident can run one (batch.go)
 	ok = true      // construction complete — the resident owns everything; Close (not the defer) frees it

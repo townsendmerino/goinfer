@@ -107,6 +107,22 @@ func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRo
 	return m.residentMRoPEPrefill(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos)
 }
 
+// ResidentMRoPEDeepstackPrefillForTest wraps residentMRoPEPrefillDeep (S16): the resident m-RoPE prefill with Qwen3-VL's
+// DeepStack sets, for the Metal gate that compares it with the CPU prefill.
+func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
+	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos, deep)
+}
+
+// SetDeepstackForTest gives c the DeepStack sets its next prefill adds after each decoder layer (GenerateQwenVLDeepstack's
+// own setting), so a cross-package gate can run the CPU prefill with them; nil clears them.
+func (c *KVCache) SetDeepstackForTest(start, n int, rows [][]float32) {
+	if rows == nil {
+		c.deepstack = nil
+		return
+	}
+	c.deepstack = &deepstackRows{start: start, n: n, rows: rows}
+}
+
 // ResidentUploadPrefillForTest wraps residentUploadPrefill (decoder/generate_vl_resident.go) —
 // the generic per-layer KVCache.LayerKV -> ResidentForward.UploadKV bridge GenerateGemma4VL's
 // resident branch uses after a CPU bidirectional prefill — so a real-hardware gate (cuda/) can

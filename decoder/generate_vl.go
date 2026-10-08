@@ -370,12 +370,13 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 			hp, isHP := m.resident.(ResidentHybridMRoPEPrefill)
 			hybridOK = isHP && hp.HybridMRoPEPrefill()
 		}
-		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) && deep == nil { // no resident prefill injects DeepStack
+		_, deepOK := m.resident.(ResidentMRoPEDeepstackPrefill) // a turn with DeepStack sets needs a resident that injects them (S16)
+		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && (!recurrent || hybridOK) && (deep == nil || deepOK) {
 			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
 				if recurrent {
 					m.residentForgetIDs()
 				}
-				if logits, gpuPos, ferr := m.residentMRoPEPrefill(ctx, rmp, ids, feats, imgPos, imgLen, mropePos); ferr == nil {
+				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, rmp, ids, feats, imgPos, imgLen, mropePos, deep); ferr == nil {
 					g.ImgPrefillResident = true
 					if capper, ok := m.resident.(ResidentCapped); ok {
 						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
