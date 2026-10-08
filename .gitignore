@@ -197,6 +197,10 @@ testdata/*-awq
 # generated tiny/scaled parity checkpoints — weights are *.safetensors (ignored above), but the
 # tokenizer/config JSONs are not, so ignore the whole dirs; the *_golden.json in testdata/ stay tracked.
 testdata/tiny-qwen2-moe/
+# Gemma 4 E-model tiny fixture: 9.4 MB, regenerated per machine by scripts/pin_gemma4_emodel_tiny.py and fingerprinted
+# in testdata/fixture_identity.json (docs/tasks/task-multimodal-support-2026-10.md). Ignored as a whole directory: with
+# only *.safetensors ignored, its config.json showed as untracked forever.
+testdata/gemma4-emodel-tiny/
 # Per-machine real-checkpoint fixtures for the §C1 sweep's forward-parity and tokenizer gates.
 # Same class as the dirs above: regenerable/fetchable locally, never committed. Listed because
 # these gates skip without them, and a skip in that sweep is a release blocker — so the dirs get
