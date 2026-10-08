@@ -114,3 +114,99 @@ func TestTowerAttnKernel(t *testing.T) {
 		}
 	}
 }
+
+// TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's
+// Metal lever B", registered before the code): tower_gemm_w32 and tower_gemm_w16 against a float64 A·Wᵀ + bias from the
+// f32 inputs, at the towers' projection shapes (rows trimmed so the host reference stays fast) and at edge shapes (M, N
+// and K off every tile multiple). Bars: every output within 1e-5 (w32: f32 accumulation order only) or 1e-3 (w16: the
+// weights rounded to f16) of its own Σ|a·w| + |bias|. (The first f16-activation kernel's bar was 2e-3; it passed here
+// and failed the tower bars, see the doc.) Weights at a tower's scale (σ 0.02), so a dropped bias is far over either bar. Each
+// planted defect must miss it, on both kernels.
+func TestTowerGemmKernel(t *testing.T) {
+	for _, k := range []struct {
+		name string
+		bar  float64
+	}{{"tower_gemm_w32", 1e-5}, {"tower_gemm_w16", 1e-3}} {
+		t.Run(k.name, func(t *testing.T) { testTowerGemmKernel(t, k.name, k.bar) })
+	}
+}
+
+func testTowerGemmKernel(t *testing.T, kernel string, bar float64) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	lib, err := d.CompileLibraryPrecise(eg2MSL+gvMSL, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	p, err := d.NewComputePipeline(lib, kernel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := d.NewCommandQueue()
+	rng := rand.New(rand.NewSource(23))
+	type sh struct{ M, N, K int }
+	shapes := []sh{{1, 7, 9}, {70, 33, 1176}, {65, 65, 17}, {128, 1152, 1152}, {96, 4304, 1152}, {96, 1152, 4304},
+		{64, 1280, 1280}, {100, 3420, 1280}}
+	run := func(s sh, dbg uint32) float64 {
+		a, w, b := make([]float32, s.M*s.K), make([]float32, s.N*s.K), make([]float32, s.N)
+		for i := range a {
+			a[i] = float32(rng.NormFloat64())
+		}
+		h := make([]uint16, len(w))
+		for i := range w {
+			w[i] = float32(0.02 * rng.NormFloat64())
+			h[i] = f32ToF16(w[i])
+		}
+		bW := NewBufferU16s(d, h)
+		if kernel == "tower_gemm_w32" {
+			bW = NewBufferFloats(d, w)
+		}
+		for i := range b {
+			b[i] = float32(0.5 * rng.NormFloat64())
+		}
+		bA, bB, bC := NewBufferFloats(d, a), NewBufferFloats(d, b), d.NewBufferLen(s.M*s.N)
+		e := q.Begin()
+		e.Dispatch2D(p, (s.N+63)/64, (s.M+63)/64, 512, 1, bA, bW, bC, bB, NewBufferU32(d, uint32(s.M)), NewBufferU32(d, uint32(s.N)),
+			NewBufferU32(d, uint32(s.K)), NewBufferU32(d, 1), NewBufferU32(d, dbg))
+		e.End()
+		if err := e.Err(); err != nil {
+			t.Fatal(err)
+		}
+		got := bC.Floats()
+		worst := 0.0
+		for m := range s.M {
+			for n := range s.N {
+				ref, mag := float64(b[n]), math.Abs(float64(b[n]))
+				for k := range s.K {
+					v := float64(a[m*s.K+k]) * float64(w[n*s.K+k])
+					ref, mag = ref+v, mag+math.Abs(v)
+				}
+				worst = math.Max(worst, math.Abs(float64(got[m*s.N+n])-ref)/mag)
+			}
+		}
+		return worst
+	}
+	worst := 0.0
+	for _, s := range shapes {
+		worst = math.Max(worst, run(s, 0))
+	}
+	fmt.Printf("[S17 B kernel] %s: worst |err|/(Σ|a·w|+|b|) %.2e over %d shapes (bar %.0e)\n", kernel, worst, len(shapes), bar)
+	if worst > bar {
+		t.Errorf("worst error %.2e, bar %.0e", worst, bar)
+	}
+	for _, df := range []struct {
+		name string
+		dbg  uint32
+	}{{"(1) the bias dropped", 1}, {"(2) A staged one K column late", 2}, {"(3) the last quarter of each K step skipped", 3}} {
+		w := 0.0
+		for _, s := range []sh{{70, 33, 1176}, {128, 1152, 1152}} {
+			w = math.Max(w, run(s, df.dbg))
+		}
+		fmt.Printf("[S17 B kernel] %s planted %s: worst %.2e\n", kernel, df.name, w)
+		if w <= bar {
+			t.Errorf("planted defect %s left the bar green (%.2e)", df.name, w)
+		}
+	}
+}

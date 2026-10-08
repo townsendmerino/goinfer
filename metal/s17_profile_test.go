@@ -180,11 +180,24 @@ func TestS17Profile(t *testing.T) {
 // TestS17LeverA_wholeTowerMetal is S17 lever A's speed instrument on Metal (docs/tasks/task-multimodal-support-2026-10.md,
 // "The two Metal levers", TE5(b)): a whole-tower A/B in one process, the fused tower_attn kernel against eg2Ops.attention
 // (gridVAccel.oldAttn), interleaved: per tower and image one warm-up of each arm, then 3 rounds, the arm order alternating
-// by round, each round's ratio old/fused from wall time. A direction resolves when all three ratios sit on one side of 1.
+// by round, each round's ratio old/new from wall time. A direction resolves when all three ratios sit on one side of 1.
 // SigLIP runs one image (every image is the same 4096 patches); the grid towers run the four F2a images at serve's caps.
 // Each round also checks the two arms' outputs agree (worst row cosine >= 0.9999; the CPU bar is G-S2b's and G-S3a's).
 // GOINFER_HEAVY_TESTS=1; the checkpoints from ~/models.
 func TestS17LeverA_wholeTowerMetal(t *testing.T) {
+	s17WholeTowerAB(t, "fused", func(a *gridVAccel) bool { return a.fusedAttn != (Pipeline{}) }, func(a *gridVAccel, old bool) { a.oldAttn = old })
+}
+
+// TestS17LeverB_wholeTowerMetal is lever B's instrument, the same A/B with the staged GEMM over f16 weights (tower_gemm_w16) against the f32
+// GEMM (gridVAccel.oldGemm), lever A on in both arms. gvKeepF32ForAB keeps both weight copies for the test's towers.
+func TestS17LeverB_wholeTowerMetal(t *testing.T) {
+	gvKeepF32ForAB = true
+	defer func() { gvKeepF32ForAB = false }()
+	s17WholeTowerAB(t, "f16 GEMM", func(a *gridVAccel) bool { return a.gemmF16 != (Pipeline{}) }, func(a *gridVAccel, old bool) { a.oldGemm = old })
+}
+
+// s17WholeTowerAB is the S17 levers' whole-tower in-process A/B: setOld(a, true) selects the old arm.
+func s17WholeTowerAB(t *testing.T, arm string, has func(*gridVAccel) bool, setOld func(*gridVAccel, bool)) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}
@@ -203,14 +216,14 @@ func TestS17LeverA_wholeTowerMetal(t *testing.T) {
 		}
 		return b
 	}
-	fmt.Fprintf(os.Stderr, "| tower | image | rows | old s (3 rounds) | fused s (3 rounds) | old/fused per round | median | worst row cosine |\n|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(os.Stderr, "| tower | image | rows | old s (3 rounds) | %s s (3 rounds) | old/%s per round | median | worst row cosine |\n|---|---|---|---|---|---|---|---|\n", arm, arm)
 	ab := func(tower, img string, a *gridVAccel, rows, H int, fwd func() ([]float32, error)) {
-		if a.fusedAttn == (Pipeline{}) {
-			t.Fatalf("%s: head dim %d has no fused kernel", tower, a.hd)
+		if !has(a) {
+			t.Fatalf("%s: no %s arm", tower, arm)
 		}
 		timed := func(old bool) ([]float32, float64) {
-			a.oldAttn = old
-			defer func() { a.oldAttn = false }()
+			setOld(a, old)
+			defer setOld(a, false)
 			t0 := time.Now()
 			out, err := fwd()
 			if err != nil {
@@ -250,7 +263,7 @@ func TestS17LeverA_wholeTowerMetal(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "| %s | %s | %d | %.3f / %.3f / %.3f | %.3f / %.3f / %.3f | %.2f / %.2f / %.2f | %.2fx | %.9f |\n", tower, img, rows,
 			to[0], to[1], to[2], tf[0], tf[1], tf[2], rs[0], rs[1], rs[2], med[1], worst)
 		if worst < 0.9999 {
-			t.Errorf("%s %s: the fused arm's output departs from the old arm's (worst row cosine %.9f)", tower, img, worst)
+			t.Errorf("%s %s: the %s arm's output departs from the old arm's (worst row cosine %.9f)", tower, img, arm, worst)
 		}
 	}
 	t.Run("siglip", func(t *testing.T) {

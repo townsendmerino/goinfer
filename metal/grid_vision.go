@@ -160,6 +160,73 @@ kernel void tower_attn_hd##HDV(device const float* q [[buffer(0)]], device const
 TOWER_ATTN(64)
 TOWER_ATTN(72)
 TOWER_ATTN(80)
+
+// tower_gemm_{w32,w16}: S17 lever B on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's Metal lever B"):
+// C[M,N] = A[M,K]·Wᵀ (+ bias[N]), A in f32, W [N,K] in f32 (w32) or f16 widened to f32 as it is staged (w16), f32
+// accumulation on simdgroup 8x8 tiles. One threadgroup of 16 simdgroups (512 threads) per 64x64 output tile, each
+// simdgroup 16x16 (2x2 fragments: 4x4 per simdgroup spilled, 0.08 TFLOPS against aikit's 1.19, 2026-10-08); K steps of 32
+// staged as float4 through padded threadgroup memory (one vector of A and one of W per thread per step), bounds-guarded
+// element by element only at an edge, so any M, N and K. The epilogue reuses the staging memory to add the bias and guard
+// the edges. dbg plants a defect for the tests (0 in production): 1 drops the bias, 2 stages A one K column late, 3 skips
+// the last 8-wide quarter of every K step. (A first version that rounded A to f16, the registered lever, failed the
+// tower bars at real size; see the doc.)
+#define TG_T 64u
+#define TG_BK 32u
+#define TG_LD (TG_BK + 4u)
+template <typename TW>
+inline void tower_gemm_body(device const float* A, device const TW* W, device float* C, device const float* bias,
+    uint M, uint N, uint K, uint hasBias, uint dbg, threadgroup float* S, uint2 tg, ushort sgid, ushort tid) {
+    threadgroup float* As = S;
+    threadgroup float* Bs = S + TG_T * TG_LD;
+    const uint m0 = tg.y * TG_T, n0 = tg.x * TG_T;
+    const uint sr = uint(sgid >> 2) * 16u, sc = uint(sgid & 3) * 16u;
+    const uint r = uint(tid) >> 3, c4 = (uint(tid) & 7u) * 4u;
+    const uint ga = m0 + r, gw = n0 + r, aShift = dbg == 2u ? 1u : 0u;
+    simdgroup_float8x8 acc[2][2];
+    for (uint i = 0; i < 2; i++) for (uint j = 0; j < 2; j++) acc[i][j] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
+    for (uint k0 = 0; k0 < K; k0 += TG_BK) {
+        const uint gk = k0 + c4;
+        float4 av = float4(0.0f), wv = float4(0.0f);
+        if (aShift == 0u && ga < M && gk + 4u <= K) {
+            av = *(device const float4*)(A + ga * K + gk);
+        } else if (ga < M) {
+            for (uint e = 0; e < 4u; e++) if (gk + e + aShift < K) av[e] = A[ga * K + gk + e + aShift];
+        }
+        if (gw < N && gk + 4u <= K) {
+            wv = float4(*(device const vec<TW, 4>*)(W + gw * K + gk));
+        } else if (gw < N) {
+            for (uint e = 0; e < 4u; e++) if (gk + e < K) wv[e] = float(W[gw * K + gk + e]);
+        }
+        *(threadgroup float4*)(As + r * TG_LD + c4) = av;
+        *(threadgroup float4*)(Bs + r * TG_LD + c4) = wv;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint kk = 0; kk < (dbg == 3u ? TG_BK - 8u : TG_BK); kk += 8u) {
+            simdgroup_float8x8 a[2], b[2];
+            for (uint i = 0; i < 2; i++) simdgroup_load(a[i], As + (sr + i * 8u) * TG_LD + kk, TG_LD);
+            for (uint j = 0; j < 2; j++) simdgroup_load(b[j], Bs + (sc + j * 8u) * TG_LD + kk, TG_LD, ulong2(0, 0), true);
+            for (uint i = 0; i < 2; i++) for (uint j = 0; j < 2; j++) simdgroup_multiply_accumulate(acc[i][j], a[i], b[j], acc[i][j]);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    for (uint i = 0; i < 2; i++) for (uint j = 0; j < 2; j++) simdgroup_store(acc[i][j], S + (sr + i * 8u) * TG_T + sc + j * 8u, TG_T);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    const bool addBias = hasBias != 0u && dbg != 1u;
+    for (uint idx = tid; idx < TG_T * TG_T; idx += 512u) {
+        const uint rr = idx / TG_T, cc = idx % TG_T, gr = m0 + rr, gc = n0 + cc;
+        if (gr < M && gc < N) C[gr * N + gc] = S[idx] + (addBias ? bias[gc] : 0.0f);
+    }
+}
+#define TOWER_GEMM(NAME, TW) \
+kernel void NAME(device const float* A [[buffer(0)]], device const TW* W [[buffer(1)]], device float* C [[buffer(2)]], \
+    device const float* bias [[buffer(3)]], constant uint& M [[buffer(4)]], constant uint& N [[buffer(5)]], \
+    constant uint& K [[buffer(6)]], constant uint& hasBias [[buffer(7)]], constant uint& dbg [[buffer(8)]], \
+    uint2 tg [[threadgroup_position_in_grid]], ushort sgid [[simdgroup_index_in_threadgroup]], \
+    ushort tid [[thread_index_in_threadgroup]]) { \
+    threadgroup float S[2u * TG_T * TG_LD]; \
+    tower_gemm_body<TW>(A, W, C, bias, M, N, K, hasBias, dbg, S, tg, sgid, tid); \
+}
+TOWER_GEMM(tower_gemm_w32, float)
+TOWER_GEMM(tower_gemm_w16, half)
 `
 
 // gvKind is the tower family; it decides the norm, the MLP, the position term, RoPE and the attention segments.
@@ -177,9 +244,14 @@ func (k gvKind) gated() bool   { return k == gvkGlmOcr || k == gvkQwen25 }
 func (k gvKind) rope() bool    { return k != gvkSiglip }
 
 type gvProj struct {
-	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none)
+	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none). w is empty when only wh was kept (lever B)
+	wh      Buffer // S17 lever B: the same weights in f16 for tower_gemm_w16; empty when the GEMM runs f32
 	out, in int
 }
+
+// gvKeepF32ForAB, set only by lever B's in-process A/B, keeps each projection's f32 weights beside its f16 copy so one
+// tower can run both GEMMs. Production uploads the f16 copy alone (half the weight memory).
+var gvKeepF32ForAB bool
 
 type gvBlock struct {
 	norm1w, norm1b, norm2w, norm2b Buffer // LayerNorm (Qwen3, SigLIP) or RMSNorm weight only (GLM-OCR, Qwen2.5-VL: the b's are zero)
@@ -197,6 +269,9 @@ type gridVAccel struct {
 	eg2Ops
 	scale          Pipeline
 	fusedAttn      Pipeline // S17 lever A: tower_attn_hd<head_dim>; zero when the head dim has no fused kernel
+	gemmF16        Pipeline // S17 lever B: tower_gemm_w16, the GEMM over the f16 weight copy
+	oldGemm        bool     // test seam: run the f32 GEMM even where an f16 copy exists (lever B's A/B; needs gvKeepF32ForAB)
+	gemmDbg        uint32   // test seam: tower_gemm_w16's planted defect (0 in production)
 	oldAttn        bool     // test seam: run eg2Ops.attention even when fusedAttn exists (the lever's in-process A/B)
 	attnDbg        uint32   // test seam: tower_attn's planted defect (0 in production)
 	kind           gvKind
@@ -252,7 +327,7 @@ func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64)
 	}
 	a := &gridVAccel{kind: kind, hidden: hidden, inter: inter, heads: heads, hd: hidden / heads, patchDim: patchDim}
 	var err error
-	more := map[string]*Pipeline{"gv_scale": &a.scale}
+	more := map[string]*Pipeline{"gv_scale": &a.scale, "tower_gemm_w16": &a.gemmF16}
 	switch a.hd {
 	case 64, 72, 80: // S17 lever A's fused attention; any other head dim keeps eg2Ops.attention
 		more[fmt.Sprintf("tower_attn_hd%d", a.hd)] = &a.fusedAttn
@@ -273,7 +348,21 @@ func (a *gridVAccel) up(v []float32) Buffer {
 }
 
 func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
-	return gvProj{w: a.up(p.W), b: a.up(p.B), out: p.Out, in: p.In}
+	return a.weights(gvProj{b: a.up(p.B), out: p.Out, in: p.In}, p.W)
+}
+
+// weights sets a projection's weights: the f16 copy for tower_gemm_w16 (S17 lever B), and the f32 one only when the
+// A/B keeps both.
+func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
+	h := make([]uint16, len(w))
+	for i, v := range w {
+		h[i] = f32ToF16(v)
+	}
+	p.wh = NewBufferU16s(a.d, h)
+	if gvKeepF32ForAB {
+		p.w = a.up(w)
+	}
+	return p
 }
 
 // splitQKV uploads a fused [3·hidden, hidden] qkv projection (rows q, then k, then v) as three projections.
@@ -283,7 +372,7 @@ func (a *gridVAccel) splitQKV(p vision.VisionProj) (q, k, v gvProj, err error) {
 		return q, k, v, fmt.Errorf("metal: qkv is %dx%d, want %dx%d", p.Out, p.In, 3*H, H)
 	}
 	part := func(i int) gvProj {
-		r := gvProj{w: a.up(p.W[i*H*H : (i+1)*H*H]), out: H, in: H}
+		r := a.weights(gvProj{out: H, in: H}, p.W[i*H*H:(i+1)*H*H])
 		if len(p.B) == 3*H {
 			r.b = a.up(p.B[i*H : (i+1)*H])
 		}
@@ -365,6 +454,17 @@ func (a *gridVAccel) grow(np, maxSeg int) {
 func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows int) {
 	if a.prof != nil {
 		a.prof.flops["gemm"] += 2 * float64(rows) * float64(p.out) * float64(p.in)
+	}
+	if p.wh != (Buffer{}) && !a.oldGemm {
+		hasBias, b := uint32(0), p.b
+		if b == (Buffer{}) {
+			b = p.wh // bound but never read
+		} else {
+			hasBias = 1
+		}
+		e.Dispatch2D(a.gemmF16, (p.out+63)/64, (rows+63)/64, 512, 1, x, p.wh, out, b, a.u32(uint32(rows)), a.u32(uint32(p.out)),
+			a.u32(uint32(p.in)), a.u32(hasBias), a.u32(a.gemmDbg))
+		return
 	}
 	a.gemm(e, x, p.w, out, rows, p.out, p.in)
 	if p.b != (Buffer{}) {

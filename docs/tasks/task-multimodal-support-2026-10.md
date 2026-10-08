@@ -1822,7 +1822,7 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
   | cell | TTFT (median of 3) | bar | what the log says |
   |---|---|---|---|
   | Gemma 3 4B | not a cell | n/a | refused by the fit guard (5.9 GB needed against a 5.2 GB budget, 7.5 GB available at 23:04) |
-  | Gemma 4 E2B, image | **6.20 s** | no | `metal-resident (int4)`, tower on Metal (1.12 s per image); about 5 s of the TTFT is outside the tower, unexplained |
+  | Gemma 4 E2B, image | **6.20 s** | no | `metal-resident (int4)`, tower on Metal (1.12 s per image); about 5 s of the TTFT is the prefill (explained below) |
   | Gemma 4 E2B, audio | 3.20 s | yes | `metal-resident (int4)`, audio tower on Metal (0.16-0.17 s per clip) |
   | Qwen3.5-0.8B | 4.48 s | yes | `metal-resident (int4)`, tower on Metal (1.16 s) |
   | Qwen3-VL-2B | **8.97 s** | no | `metal-resident (int4)`, tower on Metal (3.75-4.14 s) |
@@ -1831,6 +1831,15 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
   | Gemma 4 E4B | not run | n/a | conditional on `s6-e4b`'s sidecar, which was not built |
 
   - **Where the time goes:** the towers explain Qwen2.5-VL, GLM-OCR and most of Qwen3-VL. That is S17's target.
+  - **E2B's other 5 s, explained 2026-10-08 by day** (exploratory: one served E2B on Metal at HEAD, streamed):
+    - **The text-only prompt:** a fresh ~290-token prompt took 6.24 s to its first token. The same prompt again, with
+      its prefix reused, took 0.16 s.
+    - **Decode:** about 42 tok/s (about 24 ms a token).
+    - **The image turn:** 6.42 s, of which the tower is 1.34 s.
+    - **So:** the prefill costs about one decode step per prompt row (~290 rows at ~21 ms). That is S9's layer-major
+      pass, which runs every row through decode's GEMV kernels: bit-identical, but with no batching. Not a defect.
+    - **The fix is S9 step 2,** the f16-MMA batched prefill taught Gemma 4's per-layer geometry. It would bring this
+      cell to about the tower's time plus a batched prefill.
   - **Not measured:** decode tokens per second after the image (`max_tokens` is 8), as on nobara.
   - **A log nit:** the audio cell's serve log says "encoded a ...-byte image" for each WAV clip.
 
@@ -2777,6 +2786,72 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     | Qwen3.5 | formula.png | **1.3-1.6x** |
 
   - **Kill line and instrument as registered above.**
+
+- **S17's Metal lever B, the f32-input kernel's design, amended 2026-10-08 before its tower A/B runs.**
+  - **Why:** a kernel-only probe of the design registered above (one GEMM, SigLIP's shape 4096x4352x1152, in one
+    process; direction only, not a record) found it slower than aikit's `gemm_f32_sg_big` (1.19 TFLOPS):
+
+    | design | TFLOPS |
+    |---|---|
+    | the 32x32-per-simdgroup staged kernel, f16 weights | 0.22 |
+    | the same with direct loads | 0.08 (register spill) |
+    | 16x32 per simdgroup, direct loads | 1.53 |
+    | 64x64 tiles over 16 simdgroups of 16x16, K steps of 32 staged as float4 | **2.22** |
+
+  - **The kernel now:** `tower_gemm_w16` (f16 weights widened at staging) and `tower_gemm_w32` (f32 weights), both in
+    the 2.22 TFLOPS shape with edge guards and the bias fused.
+    - The probe: 2.02-2.03 TFLOPS (1.70x aikit), and 1.98 on SigLIP's unaligned 4304-wide K (1.75x).
+    - The kernel gate: w32 4.04e-7 against 1e-5; w16 1.99e-4 against 1e-3; every planted defect red.
+    - **Production uses w16:** f16 weights hold the tower bars (the run above) and halve the weight memory.
+  - **The kernel ratio, 1.7-1.75x, is inside the registered k_G (1.5-2.2).** The bands and the kill line stand as
+    re-registered above. The tower bars are re-run on this kernel before the A/B.
+
+- **S17's Metal lever B, read 2026-10-08 by day: every tower at or above its re-registered band; SHIPPED (default on,
+  `tower_gemm_w16`).**
+  - **Correctness at real size, unchanged bars, all PASS:**
+    - G-S2b: Qwen3.5 worst 0.999999036, GLM-OCR worst 0.999998282.
+    - G-S3a: SigLIP worst 0.999999622, Qwen2.5-VL worst 0.999996381.
+    - The tiny gates read ≥ 0.999999812.
+  - **The A/B** (`TestS17LeverB_wholeTowerMetal`): lever A's instrument, with lever A on in both arms.
+    - **Not idle:** the load average was 16.8 at the start (the owner's desktop apps and this session's own GPU work; no
+      stray process). The arms are interleaved; the absolute seconds are not a record.
+    - **Raw:** `docs/measurements/multimodal-support-2026-10/s17-leverB-metal/` (`ab.log`, `real-gates-w16.log`, and
+      the failed f16-input run, `real-gates-f16-inputs-FAILED.log`).
+
+  | tower | image (rows) | f32 GEMM s | w16 GEMM s | old/new per round | median | band (f32-input fallback) |
+  |---|---|---|---|---|---|---|
+  | SigLIP | any (4096) | 4.000 / 4.005 / 4.004 | 2.652 / 2.711 / 2.663 | 1.51 / 1.48 / 1.50 | **1.50x** | 1.3-1.6x |
+  | Qwen2.5-VL | 896² (4096) | 6.145 / 6.165 / 6.209 | 3.469 / 2.968 / 3.428 | 1.77 / 2.08 / 1.81 | **1.81x** | 1.4-2.0x |
+  | Qwen2.5-VL | 4x6 (24) | 0.167 / 0.089 / 0.085 | 0.089 / 0.077 / 0.076 | 1.88 / 1.16 / 1.13 | 1.16x | — |
+  | Qwen2.5-VL | formula.png (6192) | 9.326 / 9.475 / 9.440 | 5.222 / 5.177 / 5.182 | 1.79 / 1.83 / 1.82 | **1.82x** | 1.4-1.8x |
+  | Qwen2.5-VL | table.png (5504) | 8.381 / 8.340 / 8.322 | 4.834 / 4.582 / 4.635 | 1.73 / 1.82 / 1.80 | **1.80x** | 1.3-1.7x |
+  | Qwen3.5-0.8B | 896² (3136) | 0.729 / 0.701 / 0.775 | 0.547 / 0.494 / 0.541 | 1.33 / 1.42 / 1.43 | 1.42x | — |
+  | Qwen3.5-0.8B | 14x20 (280) | 0.062 / 0.075 / 0.068 | 0.046 / 0.049 / 0.048 | 1.33 / 1.52 / 1.41 | 1.41x | — |
+  | Qwen3.5-0.8B | formula.png (4060) | 0.972 / 0.982 / 0.961 | 0.632 / 0.625 / 0.630 | 1.54 / 1.57 / 1.53 | **1.54x** | 1.3-1.6x |
+  | Qwen3.5-0.8B | table.png (3888) | 0.960 / 0.921 / 0.912 | 0.682 / 0.696 / 0.608 | 1.41 / 1.32 / 1.50 | **1.41x** | 1.3-1.6x |
+
+  - **Every round resolves above 1** (27 of 27), with outputs agreeing to cosine ≥ 0.9999999. Every tower is above the
+    1.02x ship bar and at or above its band's low end: **default on.**
+  - **Qwen2.5-VL's text images sit at or just above the band's top** (1.82 and 1.80 against 1.8 and 1.7). That is
+    consistent with its GEMM share after lever A (step 0's split predates A); the band used step 0's GEMM seconds over
+    A's wall, so a larger post-A GEMM share reads high.
+  - **The two levers together, against step 0's pre-lever towers** (a product of two by-day A/Bs, not one
+    measurement): SigLIP 9.24 → about 2.7 s (2.23x × 1.50x ≈ 3.3x); Qwen2.5-VL 896² about 2.8x; Qwen3.5 formula.png
+    about 4.7x.
+  - **Also:** the weights are now uploaded in f16 only (half the tower's weight memory); the patch embedding stays f32.
+  - **Owed:** the served cells. Tonight's S7 and S13-lite re-runs are on lever A's build (`92c30640`) as registered,
+    so lever B's served effect is a later night's.
+
+- **S7 and S13-lite on the Mac, a second pass on levers A and B, registered 2026-10-08 before it runs (owner: "sure
+  queue it").**
+  - **What:** the same scripts, cells, procedure and 5 s bar as lever A's re-run above.
+  - **The one difference:** goinfer's binary is `serve-metal` at `e2910316` (both levers on), in
+    `~/goinfer-bench/s7-leverAB/`.
+  - **Order:** it runs after lever A's pass, the same night. Each cell reads against the 2026-10-07 night and lever A's
+    pass, so B's served effect is the difference between the two passes.
+  - **The same-night controls:** the peers (Ollama, llama.cpp) in S13-lite are re-measured in each pass.
+  - **The fit guard stays on.**
+  - **Queue:** `s7-mac-leverAB` and `s13lite-mac-leverAB`, 20 minutes each.
 
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
