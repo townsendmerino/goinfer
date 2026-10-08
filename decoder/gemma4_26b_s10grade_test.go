@@ -71,6 +71,7 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 	}
 	sumCos := map[string]float64{}
 	agree := map[string]int{}
+	nearG1, nearG3, nearAny := map[string]int{}, map[string]int{}, map[string]int{}
 	n := 0
 	for pi, seq := range s.Seqs {
 		c := m.NewCache(len(seq))
@@ -88,8 +89,34 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 					nb += float64(mt[j]) * float64(mt[j])
 				}
 				sumCos[a] += dot / math.Sqrt(na*nb)
+				t.Logf("POSCOS %-9s prompt %d pos %2d: cosine %.6f", a, pi+1, i, dot/math.Sqrt(na*nb))
 				if argmax(cpu) == argmax(mt) {
 					agree[a]++
+				} else {
+					// Per-position margins for the disagreement (the owner's follow-up of 2026-10-07: is the 26B's low argmax agreement near-ties?).
+					// G1c's rule: benign iff the CPU's top-1 and the index Metal chose are within 3% in the CPU's logits (relative to the CPU's top-1).
+					// The G3 rule is on probability: p(Metal's choice) >= half p(CPU's top-1), the softmax taken over the CPU's logits.
+					ct, mtop := argmax(cpu), argmax(mt)
+					gap := (float64(cpu[ct]) - float64(cpu[mtop])) / (math.Abs(float64(cpu[ct])) + 1e-30)
+					pr := math.Exp(float64(cpu[mtop]) - float64(cpu[ct]))
+					sec := math.Inf(-1)
+					for j := range cpu {
+						if j != ct && float64(cpu[j]) > sec {
+							sec = float64(cpu[j])
+						}
+					}
+					tie1, tie2 := gap <= 0.03, pr >= 0.5
+					if tie1 || tie2 {
+						nearAny[a]++
+					}
+					if tie1 {
+						nearG1[a]++
+					}
+					if tie2 {
+						nearG3[a]++
+					}
+					t.Logf("DISAGREE %-9s prompt %d pos %2d: cpu top %d (%.3f) vs metal %d (cpu logit %.3f): gap %.2f%% p-ratio %.3f cpu top1-top2 margin %.3f | G1 near-tie %v, G3 near-tie %v",
+						a, pi+1, i, ct, cpu[ct], mtop, cpu[mtop], gap*100, pr, float64(cpu[ct])-sec, tie1, tie2)
 				}
 			}
 			n++
@@ -98,6 +125,7 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 	}
 	for _, a := range arms {
 		t.Logf("%-9s mean Metal-vs-CPU cosine %.6f, argmax agreement %d/%d", a, sumCos[a]/float64(n), agree[a], n)
+		t.Logf("%-9s of the %d disagreements: %d are G1 near-ties (within 3%% of the CPU's top logit), %d are G3 near-ties (p >= half); hard (neither): %d", a, n-agree[a], nearG1[a], nearG3[a], n-agree[a]-nearAny[a])
 	}
 	if sumCos["fixed"] < sumCos["drop-both"] || agree["fixed"] < agree["drop-both"] {
 		t.Errorf("S1.0 26B re-check FAIL: a metric moved the wrong way with the fixes in")

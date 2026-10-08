@@ -238,6 +238,19 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     near-tie rule and no per-position margins. If the owner wants that, it is a follow-up with the G1 near-tie rule over
     these logits.
   - Raw: `docs/measurements/multimodal-support-2026-10/s10-26b-grade.log`. The 245 MB dump itself is not committed.
+- **S1.0's 26B: the per-position near-tie read the owner asked for, 2026-10-07 on nobara (no new Metal or GPU run).** The same CPU 26B forward over the same dump, with the test extended to classify every
+  disagreement (`TestGemma4_26B_s10Grade`; it reproduced the earlier numbers exactly: 0.990848 and 82/117 with the fixes in, 0.940854 and 71/117 dropped). Raw:
+  `s10-26b-neartie.log.gz` (the classification), `s10-26b-poscos.log.gz` (per-position cosine).
+  - **The disagreements are not near-ties, so the router-noise-floor explanation does not hold for them.** With the fixes in, 35 disagreements: **0 are near-ties under G1c's rule** (Metal's choice within 3% of the CPU's
+    top logit, measured in the CPU's logits) and **1 under G3's** (p(Metal's choice) >= half p(CPU's top)); 34 are neither. The median logit deficit of Metal's choice against the CPU's top is 2.95 (range 0.62-18.38), its
+    median probability ratio 0.052 (max 0.536); the CPU's own top-1 against top-2 margin at those positions has median 1.19. With the fixes dropped: 46 disagreements, 1 near-tie either way, median deficit 10.24.
+  - **They concentrate at the start of each prompt.** 21 of the 35 are in the first 12 positions of a prompt (agreement 15/36 = 42% there), against 14 of 81 from position 12 on (67/81 = 83%, still under the dense models'
+    94-95%). Mean Metal-vs-CPU cosine by position, fixes in: position 0 0.978072 (the three prompts share their first token, so this is one position counted three times: its three disagreements are one), positions 1-3
+    0.963993 (min 0.909045), 4-11 0.991282, 12 onward 0.994177. With the fixes dropped the early positions are far worse (position 0 0.467925, 1-3 0.864954), so the `v_norm` fix helps most where context is shortest.
+  - **What this does and does not say.** The 70% is not explained by near-ties, and it is mostly an early-position effect. It does not say why. Untested candidates: a short-context effect in Metal's paged/W4A8 MoE
+    path against the CPU's, or the CPU reference itself being the less accurate side there (nothing here compares either to transformers on the 26B). The test that separates them is the CUDA 26B (the C' streaming
+    resident, this card) against the same CPU forward on the same sequences: if CUDA agrees with the CPU at these positions the divergence is Metal-specific; if CUDA diverges the same way, the CPU or a shared stage is the
+    suspect. That is a new 26B run, which this read was told not to make, so it is proposed and not done.
 - **S1.0, the `v_norm` fix on CUDA and WebGPU, read 2026-10-07 on nobara (RTX 2070 SUPER, driver 595.91.07): PASS.**
   - **The fix:** every Gemma 4 layer that owns its K/V now applies the scale-less `v_norm`, K=V or not. CUDA: a per-layer
     `vNorm` flag (`cuda/backend.go`), the decode launch in `segA` and the batched-prefill launch in `cuda/prefill.go`
