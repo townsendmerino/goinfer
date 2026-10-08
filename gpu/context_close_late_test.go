@@ -15,6 +15,8 @@ import (
 //
 // Per round: context A's matrix outlives A.Close; context B's matrix is leaked on purpose and B is closed; a collection queues the leak's finalizer; then A's matrix is closed explicitly.
 func lateWrapperCloseRounds(t *testing.T, rounds int) error {
+	leakExempt.Store(true) // the leaked matrix per round is the point of this test
+	defer leakExempt.Store(false)
 	for i := 0; i < rounds; i++ {
 		a, err := New()
 		if err != nil {
