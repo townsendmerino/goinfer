@@ -177,33 +177,35 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 	),
 
+	// The tested cells are expert paging on an MoE .giw. StreamWeights on a dense .giw streams whole layers
+	// instead (layerPager); that branch is held by TestLayerPaging_bitExact, which needs a downloaded GGUF.
 	"StreamWeights": ogMerge(
 		ogResidentNA("CPU expert paging of an mmap-backed .giw (\"the CPU's expert paging is StreamWeights\")"),
 		map[ogPath]ogCell{
-			pathCPUDecode:        ogUntestedCell(),
-			pathCPUBatchPrefill:  ogUntestedCell(),
-			pathCPUBatchDecode:   ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
+			pathCPUDecode:        ogTestedBy("TestOptionPath_moePaging"),
+			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_moePaging"),
+			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchModelEligible", "TestOptionPath_moePagingDeclinesCPUBatch"),
+			pathSpecVerify:       ogTestedBy("TestOptionPath_moePaging"),
 			pathSessionLifecycle: ogNACell("pages weights, not the session's cache"),
 		},
 	),
 	"WeightCacheBytes": ogMerge(
 		ogResidentNA("the budget of StreamWeights, a CPU paging option"),
 		map[ogPath]ogCell{
-			pathCPUDecode:        ogUntestedCell(),
-			pathCPUBatchPrefill:  ogUntestedCell(),
-			pathCPUBatchDecode:   ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
+			pathCPUDecode:        ogTestedBy("TestOptionPath_moePaging"),
+			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_moePaging"),
+			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchModelEligible", "TestOptionPath_moePagingDeclinesCPUBatch"),
+			pathSpecVerify:       ogTestedBy("TestOptionPath_moePaging"),
 			pathSessionLifecycle: ogNACell("budgets weights, not the session's cache"),
 		},
 	),
 	"MoEPager": ogMerge(
 		ogResidentNA("the CPU expert pager's backing mode"),
 		map[ogPath]ogCell{
-			pathCPUDecode:        ogUntestedCell(),
-			pathCPUBatchPrefill:  ogUntestedCell(),
-			pathCPUBatchDecode:   ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
+			pathCPUDecode:        ogTestedBy("TestOptionPath_moePaging"),
+			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_moePaging"),
+			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchModelEligible", "TestOptionPath_moePagingDeclinesCPUBatch"),
+			pathSpecVerify:       ogTestedBy("TestOptionPath_moePaging"),
 			pathSessionLifecycle: ogNACell("pages weights, not the session's cache"),
 		},
 	),
@@ -259,4 +261,4 @@ var ogGrid = map[string]map[ogPath]ogCell{
 // optionGridUntestedCeiling is the ratchet: the number of ogUntested cells may not rise above it,
 // and when it falls the constant must be lowered to match (TestOptionGrid_ratchet), so a cell
 // that gains a test cannot quietly lose it again.
-const optionGridUntestedCeiling = 39
+const optionGridUntestedCeiling = 27

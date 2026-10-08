@@ -6,8 +6,8 @@
 > put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
 > 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 built the same day
 > as two registries (§4.1 state × lifecycle, behaviour-changing where a cell was unsafe; §4.2 options × paths, a
-> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 39 option
-> cells admitted untested (57 at build; 18 moved out the same day), the work list.
+> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 27 option
+> cells admitted untested (57 at build; 30 moved out the same day), all on the GPU-resident paths.
 
 ## 1. The class, and why it keeps coming back
 
@@ -194,9 +194,10 @@ the bullets below on one point: cells do not "start declined" — they start hon
   `TestKVI8_batchedPrefill` set the internal `kvI8` themselves; the Metal int8-KV parity tests drive kernels;
   `TestMC5_prefillChunkInvariance` chunks `PrefillLast` itself and never sets `ResidentPrefillChunk`. Each of those
   shows the path works, not that the option reaches it.
-- **Where it stands: 39 cells admitted untested, 22 tested, 3 declined** (KVPrecision at Metal's `PrefillPath`, Quant
-  int4 at `SpecDecodeConflict`, KVQuant at `cpuBatchCacheEligible`). 57 at build; 18 moved out on 2026-10-08 by
-  table-driven tests on the committed llama-tiny, so they run in CI. First round, ten cells:
+- **Where it stands: 27 cells admitted untested, 31 tested, 6 declined** (KVPrecision at Metal's `PrefillPath`, Quant
+  int4 at `SpecDecodeConflict`, KVQuant at `cpuBatchCacheEligible`, the three MoE paging options at
+  `cpuBatchModelEligible`). 57 at build; 30 moved out on 2026-10-08 by table-driven tests that run in CI. Every
+  untested cell left is on a GPU-resident path. First round, ten cells:
   - `TestOptionPath_cpuBatchedPrefill` (CPU batched prefill × Quant, KVQuant, ActQuantGroup, ExactPrefill, EmbedInt4):
     a Session's batched prefill must leave the same K/V, bit for bit, and pick the same first token as the per-token
     prefill on the same model.
@@ -223,8 +224,23 @@ the bullets below on one point: cells do not "start declined" — they start hon
     defect planted in the decode-only code (the int8 attention branch; the int4 embedding lookup) turned it red.
     Other planted defects, each red: every M>1 W8A8 matmul ignoring ActQuantGroup (batched decode); the batched
     step's fused int4 q‖k‖v given the wrong group; a restore dropping its last stored position.
-  - Left for later: the MoE paging options (MoEPager, StreamWeights, WeightCacheBytes; 12 cells) need a paged MoE
-    fixture built in the test, and the GPU columns need Metal or CUDA hardware.
+  - Third round, the MoE paging options (StreamWeights, WeightCacheBytes, MoEPager; 12 cells). The committed
+    mixtral-tiny cannot exercise them: its int8 experts (8 KB) do not survive page rounding, so Load builds no pager.
+    `ogMoEFixture` writes a synthetic Mixtral (4 experts of 64 KB per int8 projection) and `ogGIW` serializes it to
+    the .giw these options page from. `TestOptionPath_moePaging`: on CPU decode, CPU batched prefill and speculative
+    verify (both drafters), a paged load must emit the tokens and leave the K/V, bit for bit, of the same path on the
+    same .giw fully resident, under StreamWeights at the auto budget, WeightCacheBytes 1, and MoEPager mmap and pool at
+    1 byte. Effect checks: a pager was built; the requested mode was built; at 1 byte the pager's budget is below the
+    auto budget's and it evicted (evictions alone do not show the budget took hold: the pread pool rounds its slots
+    and evicts even at the auto budget, which a planted defect exposed). CPU batched decode is a decline:
+    `cpuBatchModelEligible` refuses MoE (and a dense StreamWeights load through its layer pager);
+    `TestOptionPath_moePagingDeclinesCPUBatch` checks the refusal and that four concurrent generations, each
+    re-faulting experts the others evict, match the same generations run alone on the resident model. Race-detector
+    clean. Planted defects, each red: the pool reading every expert one byte off; the pool keeping an evicted
+    expert's slot mapping; the mmap pager never touching (budget unenforced); Load ignoring WeightCacheBytes; the
+    batcher admitting MoE. StreamWeights on a dense .giw streams layers instead (layerPager), which llama-tiny is
+    too small to engage; that branch stays with TestLayerPaging_bitExact, which needs a downloaded GGUF.
+  - Left: the 27 GPU-resident cells, which need Metal or CUDA hardware.
 - **What fails closed:** a new `Options` field until it is classified on every path
   (`TestOptionGrid_everyOptionClassified`); a cell naming a test or decline that does not exist in any module
   (`TestOptionGrid_cellsCarryEvidence`); a rise in the untested count, or a fall not booked into the ceiling

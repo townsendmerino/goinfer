@@ -7,7 +7,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 ## Load options × execution paths
 
 **tested** names a test that drives the option through the path; **declined** names the function where the path refuses it;
-**untested** runs today with no test that drives it (39 cells; `TestOptionGrid_ratchet` lets that number only fall);
+**untested** runs today with no test that drives it (27 cells; `TestOptionGrid_ratchet` lets that number only fall);
 **n/a**: the option does not reach the path (reasons below the table).
 
 | option | CPU decode | CPU batched prefill | CPU batched decode | GPU resident decode | GPU resident prefill | speculative verify | session reuse and snapshot |
@@ -22,13 +22,13 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `MoECacheSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
-| `MoEPager` | untested | untested | untested | n/a | n/a | untested | n/a |
+| `MoEPager` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | untested | untested | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
 | `ResidentContext` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `ResidentKVSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | untested | untested | n/a |
-| `StreamWeights` | untested | untested | untested | n/a | n/a | untested | n/a |
-| `WeightCacheBytes` | untested | untested | untested | n/a | n/a | untested | n/a |
+| `StreamWeights` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
+| `WeightCacheBytes` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 
 **n/a reasons.**
 
