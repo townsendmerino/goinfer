@@ -37,6 +37,12 @@ if os.path.exists(s18):
     c = cell("gemma-3-4b-s18", ["--model", f"{m}/gemma-3-4b-it"], port=18641)
     c["cmd"][0] = s18
     cells.insert(1, c)
+# Every cell but the shipped-default Gemma 3 'before' runs on the CURRENT build (serve-cuda-s18: main plus S18's CUDA fixes and S17's fused attention), so the record reads the state about to ship; the
+# Gemma 3 cell keeps the older binary as its 'before' (amended 2026-10-07 evening, before the run).
+if os.path.exists(s18):
+    for c in cells:
+        if c["cell"] != "gemma-3-4b":
+            c["cmd"][0] = s18
 for c in cells:
     for a in c["cmd"]:
         if a.startswith("/Volumes/") or a.startswith("/srv/models"):

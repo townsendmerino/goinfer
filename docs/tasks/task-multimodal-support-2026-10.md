@@ -1291,7 +1291,7 @@ so the owner can decide the default with evidence. **Changing the default is not
     These reproduce `siglip-int8-fidelity-2026-10-07.md` (0.16-0.52, worst 0.01-0.17) on the CUDA tower itself. One image, one prompt and 32 tokens is evidence that the difference reaches the reply, not a rate.
   - **Speed, EXPLORATORY (single samples, nothing else measuring; the night record is queued as `s4sig-speed`, 12 min):** the tower alone on one image: float32 CUDA **18.0 s**, int8 CUDA **4.1-4.8 s**, CPU float32 **21-28 s**
     (served encode: 18.0 s float32, 4.1 s int8). So the float32 tower is only about 1.2-1.5x the CPU one and 3.6x over S7's 5 s TTFT bar by itself, while the int8 tower, which diverges visibly, is the one that fits the bar.
-    That is the same shape as the other CUDA towers (S4 step 3): correct, not fast. The f32 tower's cost is the scalar GEMMs and aikit's query-tiled attention at 4096 patches; the int8 path uses the tensor-core kernels. S17 (tower speed)
+    That is the same shape as the other CUDA towers (S4 step 3): correct, not fast. (Superseded the same evening by S17 lever A below: the float32 tower is now 1.97 s.) The f32 tower's cost is the scalar GEMMs and aikit's query-tiled attention at 4096 patches; the int8 path uses the tensor-core kernels. S17 (tower speed)
     is where this closes.
   - **Open, the owner's:** whether the default for Gemma 3 on cuda/webgpu changes from int8 to float32. The data above is the trade: float32 is exact (identical reply) and 18 s per new image on this card; int8 is 4 s and changes the reply.
   - **Not done:** the float32 tower under `--backend webgpu` (no tower there; an explicit `f32` runs the CPU tower); a float32-tower reserve measurement on the default plan (the 2.11 GB estimate is arithmetic, and Gemma 3 4B with the default
@@ -2312,6 +2312,36 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **Kill line:** under 1.02x on any tower, or under the low end of its band with no mechanism found, parks it; a kernel that misses the cosine bar at real size is not shipped however fast.
     - **Instrument:** an in-process whole-tower A/B, interleaved, by day (TE5(b)), the profile above re-run for the per-class change.
   - **S17's CUDA lever B (GEMM) is registered as not a lever:** the GEMMs are 4-7% of the tower time, so even an ideal one buys under 7%. Written here so that it is not built by default.
+  - **S17's CUDA lever A, read 2026-10-07 evening on nobara (commit `2e20dc01`): all three bands met; the float32 towers are 8-9x faster and SigLIP is under the 5 s bar.** Raw:
+    `docs/measurements/multimodal-support-2026-10/s17-lever-a-cuda/` (`leverA-ab.log`, `leverA-real.log`, `leverA-g4v.log`).
+    - **Built as registered** (`cuda/tower_base.cu`, `cuda/tower_base.go`): `tower_attn_hd64/72/80`, a fused, query-tiled, online-softmax float32 kernel (64 queries per block, 32-key tiles, a 4x2 score tile and a
+      4xNC output tile per thread, K staged transposed and V as it lies in one shared buffer, `exp2f` with the scale folded in); a head dim outside 64/72/80 keeps aikit's kernel, and there is no longer a 12288-patch ceiling
+      for these head dims (no score row in shared memory). Every multiply-add is an explicit `__fmaf_rn`, so the FMA lint passes; the PTX is regenerated at the same NVRTC 12.9.86 (the unchanged source reproduced the
+      committed PTX byte for byte first).
+    - **Correctness first, as registered.** (1) *The kernel against float64* at the production shapes (`TestTowerAttn_matchesFloat64`): head dim 72 at 4096 patches 3.5e-6, 64 at 3136 4.9e-6, 80 ragged 2.8e-6,
+      4093 ragged 7.0e-6, one key 0, lengths 7/33/65, and two segments in one buffer 5.2e-6 (max abs error; the bar was 5e-5). (2) *The tower gates at their registered bars, unchanged:* real SigLIP worst token cosine
+      0.999999848 to 0.999999977 on the four images; Qwen3.5-0.8B 0.999999528 to 0.999999999 and GLM-OCR 0.999996830 to 0.999999998 (`TestGridVisionCUDA_real`); Gemma 4 E2B 1.000000000 on all four
+      (`TestG4VCUDA_gemma4E2B`); the tiny tower suites and all their registered planted defects pass. The fused kernel is not bit-identical to aikit's (a different summation order), so the bar is the cosine one, as it was.
+      (3) *Planted kernel defects, each alone red:* (1) no rescale when the running max moves: kernel error 2.7, GLM-OCR tiny tower 0.937, **real SigLIP -0.125**; (3) the V tile read one key late: kernel error 2.0, tiny tower
+      0.324, **real SigLIP -0.146**; (2) the key mask one past the segment: kernel error 1.4e-2 and tiny tower 0.9978, but **invisible at real size** (cosine 1.000000 over 4096 keys, where the extra zero-score,
+      zero-value key carries 1/4097 of the weight): recorded as a limit of that defect, which is why (3) was added, not as a pass.
+    - **The whole-tower A/B** (`TestS17LeverA_wholeTower`, TE5(b): one process, fused and aikit's kernel interleaved per round, 3 rounds after a warm-up, the ratio per round):
+
+      | tower | fused | aikit's | ratio per round | the registered band |
+      |---|---|---|---|---|
+      | SigLIP float32, 4096 patches | 1.97 s | 18.01 s | 9.18 / 9.13 / 9.14 | 6.4-10x |
+      | Qwen3.5-0.8B, formula.png (4060 patches) | 0.539 s | 5.09 s | 9.44 / 9.47 / 9.45 | 6.8-11x |
+      | GLM-OCR, 896x896 (4096 patches) | 1.79 s | 14.12 s | 7.89 / 7.88 / 7.88 | 5.7-8.4x |
+
+      The fused attention runs at 2.5-2.6 TFLOPS in the towers (k_A of about 21 against the registered 10-25; isolated, with its transfers, 1.81 TFLOPS and 14.8x). The real-size gate runs on the other towers read:
+      Qwen3.5 0.44 s for the 896x896 image (was 3.1 s), Gemma 4 E2B 0.45-0.50 s (was 2.2 s). The kill line (under 1.02x, or under a band's low end) did not fire anywhere.
+    - **The profile again, fused** (the same instrument; bit-identical, overhead +0.6 to +0.9%): SigLIP GEMM 48% at 3.56 TFLOPS, attention 42% at 2.52, norm 2%, elementwise 8%; GLM-OCR GEMM 53% / attention 36%;
+      Qwen3.5 40% / 47%. **Attention is no longer the gap.** The GEMMs, at 39% of the fp32 peak, are now about half of every tower, so lever B is reopened as a candidate and not built: a GEMM twice as fast would buy
+      about a quarter of SigLIP's 1.97 s, and a tensor-core GEMM would trade away the float32 numerics these gates were passed on. It needs its own registered band and a fidelity gate before any code.
+    - **What it changes elsewhere:** (1) the float32 SigLIP tower (1.97 s) is now **faster than the int8 one (4.1 s)**, so the open question of Gemma 3's default under cuda/webgpu is no longer a trade of exactness
+      against speed on CUDA: float32 is exact and about twice as fast. It stays the owner's decision. (2) S7's 5 s bar is met by the tower alone for every CUDA tower measured here. (3) Tonight's queued records were
+      re-pinned to the build with this kernel before they ran: `s4sig-speed` and `s4-tower-speed` (their test binaries), S7 (every cell but its Gemma 3 'before' cell) and S13-lite (the goinfer arm), amended
+      2026-10-07 evening, before any of them ran.
   - **Step 0 on Metal, read 2026-10-07 18:56-19:03 PDT: the time is GEMMs and attention; norms and elementwise are ~1%.**
     - **The run:** `s2-towers` at `9b7da484`, `TestS17Profile`.
     - **Its validity:**
