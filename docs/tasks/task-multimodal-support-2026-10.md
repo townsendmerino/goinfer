@@ -3356,6 +3356,26 @@ CUDA's twin of the Mac's G-S10e (the tower) and S16 step 2 (the prefill).
   - **Decision for the owner (the Mac's precedent for a parked or failed reading: re-registering the bar is the owner's):** (a) keep it off; (b) turn it on for image runs of 512 rows or more, where all three images pass and where the CPU prefill costs seconds, and leave small images (84 rows is about a
     second on the CPU) on the CPU path; (c) re-register the control as 12 prompts per length (the minimum of more prompts is a lower, steadier bar) and re-read the control only. (b) and (c) each need to be registered before they are applied to any reading.
 
+#### G-S10g, the owner's decision (c): the control re-registered at 12 prompts per length, registered 2026-10-08 before the re-read
+
+Owner decision 2026-10-08: option (c), first. Written before any run of it.
+
+- **The change, and only this:** the text control for each image length is 12 prompts (seeds 1-12) instead of 4. Seeds 1-4 are the existing ones (same token formula), so the 12-prompt minimum is at most the 4-prompt minimum at every length, by construction.
+  The bar (image turn's worst per-step cosine at least the control's minimum minus 0.005; 0.005-0.015 below parked; worse fails; argmax differences near-ties only), the images, the 8 teacher-forced steps and the exact kernels are unchanged.
+- **The mechanism that justifies it, stated now so it is not found afterwards:** the 4x6 control's minimum (0.9728) is set by ONE prompt of four; the other three read 0.9885-0.9982. A minimum over four draws is a noisy statistic, and which prompt happens to be the lowest decides the bar. It is not that the bar is too hard.
+  The cost, also stated: the minimum of more draws is mechanically lower, so this change can only make a verdict easier. That is why the registration below fixes what each outcome means and reports the whole distribution, not only the minimum.
+- **Scope of the re-read:** the 4x6 image only (84 rows), as "re-read the control only" says. The other three images pass against the 4-prompt control and the 12-prompt minimum cannot be higher, so their verdicts cannot get worse; they are not re-run and are not re-claimed as re-read.
+- **Instrument check before the verdict is read:** the 12-prompt run's seeds 1-4 must reproduce the recorded per-prompt minima (0.9728, 0.9982, 0.9980, 0.9885 to four places). If they do not, the control is not the one the registered reading used and the run is void.
+- **Outcome rule, fixed now:**
+  - the 4x6 image's 0.9624 against the 12-prompt minimum m: **PASS** if m <= 0.9674 (so a new prompt reads at or below 0.9674); then the resident DeepStack prefill is enabled for all image sizes (`cudaDeepstackPrefillOn` default true, with its tests and docs), as registered under G-S10g.
+    The record prints all twelve per-prompt minima, with the image's 0.9624 beside them, so the reader can see where it falls.
+  - **Still PARKED or FAIL:** the path stays OFF, nothing else changes, and (b) (on for 512 or more rows) goes back to the owner as its own registration; it is not applied from here.
+  - No third control size is run if this one does not pass: a bigger control after a miss is a bar moved until it clears.
+- **Prediction, written now:** the image's 0.9624 is about 0.01 under the one low control prompt and 0.025-0.036 under the other three. A pass needs one of the eight new prompts at or below 0.9674, which is a tail event against the three at 0.9885+; I put it near even, no better.
+  A pass would rest on the minimum statistic and I will say so; it would not show the image turn is as good as the text path in the mean.
+- **Cost:** about 2 minutes (one image, 12 CPU prefills of 84 rows at about 1 s each, plus the image arm); by day, quick tier.
+
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
