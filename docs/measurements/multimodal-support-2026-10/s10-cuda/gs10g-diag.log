@@ -1,0 +1,10 @@
+=== RUN   TestS10DeepstackPrefillCUDA_diag
+[G-S10g diag] glm_ocr/table.png (986 rows, 972 image, hidden 2048) (a) as the gate: per-step cosine: 0.9125 0.9865 0.9857 0.9631 0.9935 0.9887 0.9800 0.9887 0.9917
+[G-S10g diag] glm_ocr/table.png (986 rows, 972 image, hidden 2048) (b) no DeepStack sets in either arm: per-step cosine: 0.9711 0.9856 0.9894 0.9879 0.9939 0.9929 0.9905 0.9935 0.9914
+[G-S10g diag] glm_ocr/table.png (986 rows, 972 image, hidden 2048) (c) as the gate, fast prefill levers off: per-step cosine: 0.9741 0.9861 0.9886 0.9805 0.9902 0.9912 0.9902 0.9929 0.9895
+[G-S10g diag] qwen25vl_preprocess_image.png (84 rows, 70 image, hidden 2048) (a) as the gate: per-step cosine: 0.9843 0.9789 0.9861 0.9624 0.9955 0.9888 0.9892 0.9926 0.9952
+[G-S10g diag] qwen25vl_preprocess_image.png (84 rows, 70 image, hidden 2048) (b) no DeepStack sets in either arm: per-step cosine: 0.9711 0.9904 0.9960 0.9917 0.9958 0.9971 0.9965 0.9923 0.9900
+[G-S10g diag] qwen25vl_preprocess_image.png (84 rows, 70 image, hidden 2048) (c) as the gate, fast prefill levers off: per-step cosine: 0.9843 0.9789 0.9861 0.9624 0.9955 0.9888 0.9892 0.9926 0.9952
+--- PASS: TestS10DeepstackPrefillCUDA_diag (65.36s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	65.426s

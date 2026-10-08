@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -63,6 +64,8 @@ func dsSpliceRows(m *decoder.Model, ids []int, feats []float32, start, n, hid in
 }
 
 func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
+	cudaDeepstackPrefillOn = true // the gates test the path production keeps off until graded
+	defer func() { cudaDeepstackPrefillOn = false }()
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
 	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
@@ -210,6 +213,8 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 // turn's worst per-step cosine (the last row and the 8 steps) is at least the control's minimum minus 0.005 and every argmax difference is an R10 near-tie; 0.005-0.015 below the control's minimum is parked; worse fails.
 // Both image arms see the same features and sets (the CPU encoder's). Heavy: about 6-8 minutes, a line per stage.
 func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
+	cudaDeepstackPrefillOn = true // the gates test the path production keeps off until graded
+	defer func() { cudaDeepstackPrefillOn = false }()
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}
@@ -334,6 +339,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 			}
 		}
 		ctlMin := 1.0
+		var perPrompt []float64 // each control prompt's own minimum, printed for context; the verdict uses their minimum as registered
 		for seed := 1; seed <= 4; seed++ {
 			hb("%s: text control %d of 4 (%d rows)", name, seed, n)
 			tids := make([]int, n)
@@ -376,9 +382,12 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 				t.Fatalf("control's batched pass: %v", err)
 			}
 			cGot, _ := textDecode(first, cTeach)
+			pm := 1.0
 			for k := range cRef {
-				ctlMin = math.Min(ctlMin, dsCosine(cRef[k], cGot[k]))
+				pm = math.Min(pm, dsCosine(cRef[k], cGot[k]))
 			}
+			perPrompt = append(perPrompt, pm)
+			ctlMin = math.Min(ctlMin, pm)
 		}
 		verdict := "PASS"
 		switch {
@@ -387,10 +396,205 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 		case worst < ctlMin-0.005:
 			verdict = "PARKED"
 		}
-		fmt.Fprintf(os.Stderr, "[G-S10g] qwen3-vl-2b %s (%d rows, %d image, hidden %d): worst cosine %.7f against the text control's minimum %.7f (4 prompts); argmax: %d near-ties, %d real: %s\n",
-			name, n, nImg, hid, worst, ctlMin, ties, real, verdict)
+		fmt.Fprintf(os.Stderr, "[G-S10g] qwen3-vl-2b %s (%d rows, %d image, hidden %d): worst cosine %.7f against the text control's minimum %.7f (4 prompts; each prompt's own minimum %.4f); argmax: %d near-ties, %d real: %s\n",
+			name, n, nImg, hid, worst, ctlMin, perPrompt, ties, real, verdict)
 		if verdict != "PASS" {
 			t.Errorf("%s: %s (worst %.7f, control minimum %.7f, %d non-tie argmax differences)", name, verdict, worst, ctlMin, real)
 		}
+	}
+}
+
+// TestS10DeepstackPrefillCUDA_diag is an EXPLORATORY diagnostic, not a gate: G-S10g's real reading failed on table.png (0.9125 against a control minimum of 0.9539) and was parked on the 4x6 image. It re-runs the
+// comparison on those two images in cuts that separate the candidate mechanisms, printing the per-step cosines: (a) as the gate; (b) with NO DeepStack sets in either arm (is the gap the batched prefill on image rows,
+// not the injection?); (c) as the gate with the fast prefill levers forced off (is it the L2/L3 levers?). Same features, same prompt, same teacher-forced steps in every cut.
+func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
+	cudaDeepstackPrefillOn = true // the gates test the path production keeps off until graded
+	defer func() { cudaDeepstackPrefillOn = false }()
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	requireCUDADevice(t)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "qwen3-vl-2b-instruct")
+	const merge, steps = 2, 8
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgTok, _ := tk.TokenID("<|image_pad|>")
+	enc, err := vision.LoadQwen3VisionEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := multimodal.LoadQwen3PreprocessConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limit := 1024 * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit {
+		pp.MaxPixels = limit
+	}
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "cuda", ResidentContext: 2048})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r := m.ResidentForwardForTest().(*cudaResident)
+	ctx := context.Background()
+	for _, name := range []string{"glm_ocr/table.png", "qwen25vl_preprocess_image.png"} {
+		data, _ := os.ReadFile(filepath.Join("../testdata", name))
+		px, grid, err := multimodal.QwenPreprocess(data, pp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		feats, deep, err := enc.ForwardDeepstack(px, [][3]int{grid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		nImg := grid[0] * grid[1] * grid[2] / (merge * merge)
+		pre, _ := tk.Encode("<|im_start|>user\n<|vision_start|>", false)
+		post, _ := tk.Encode("<|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n", false)
+		ids := append(append([]int{}, pre...), make([]int, nImg)...)
+		for k := range nImg {
+			ids[len(pre)+k] = imgTok
+		}
+		ids = append(ids, post...)
+		n, start := len(ids), len(pre)
+		hid := len(feats) / nImg
+		mrope, _ := decoder.MRopePositionsForTest(ids, imgTok, [][3]int{grid}, merge)
+		delta := mrope[n-1][0] + 1 - n
+		for _, cut := range []struct {
+			name     string
+			noSets   bool
+			exactKrn bool
+		}{{"(a) as the gate", false, false}, {"(b) no DeepStack sets in either arm", true, false}, {"(c) as the gate, fast prefill levers off", false, true}} {
+			sets := deep
+			if cut.noSets {
+				sets = nil
+			}
+			if cut.exactKrn {
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_CUDA_FAST_PREFILL_FLOOR", "1000000")
+			}
+			cache := m.NewCache(n + steps + 1)
+			cache.SetDeepstackForTest(start, nImg, sets)
+			refLast, err := m.PrefillLogitsQwenVLForTest(ctx, ids, feats, start, nImg, mrope, cache)
+			cache.SetDeepstackForTest(0, 0, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			refLast = append([]float32(nil), refLast...)
+			r.Reset()
+			if err := m.ResidentUploadPrefillForTest(cache); err != nil {
+				t.Fatal(err)
+			}
+			decode := func(first []float32, forced []int) ([][]float32, []int) {
+				out, toks := [][]float32{first}, []int{argmaxF(first)}
+				for k := range steps {
+					tok := toks[k]
+					if forced != nil {
+						tok = forced[k]
+					}
+					lg, err := r.ForwardMRoPE(m.EmbedResidentForTest(tok), n+k, n+k+delta)
+					if err != nil {
+						t.Fatal(err)
+					}
+					out = append(out, append([]float32(nil), lg...))
+					toks = append(toks, argmaxF(lg))
+				}
+				return out, toks
+			}
+			ref, teacher := decode(refLast, nil)
+			r.Reset()
+			var newLast []float32
+			if sets == nil {
+				newLast, _, err = m.ResidentMRoPEPrefillForTest(ctx, r, ids, feats, start, nImg, mrope)
+			} else {
+				newLast, _, err = m.ResidentMRoPEDeepstackPrefillForTest(ctx, r, ids, feats, start, nImg, mrope, sets)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := decode(append([]float32(nil), newLast...), teacher)
+			line := ""
+			for k := range ref {
+				line += fmt.Sprintf(" %.4f", dsCosine(ref[k], got[k]))
+			}
+			fmt.Fprintf(os.Stderr, "[G-S10g diag] %s (%d rows, %d image, hidden %d) %s: per-step cosine:%s\n", name, n, nImg, hid, cut.name, line)
+		}
+	}
+}
+
+// TestS10DeepstackPrefillCUDA_speed is an EXPLORATORY split of one image turn's prefill on Qwen3-VL-2B and table.png (986 rows), single samples, nothing graded: today's path (the CPU prefill with the sets, then the
+// KV upload) against the resident DeepStack prefill. It exists so the decision on the parked image is made with the stake in view; the night record is the S7 cell.
+func TestS10DeepstackPrefillCUDA_speed(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	cudaDeepstackPrefillOn = true
+	defer func() { cudaDeepstackPrefillOn = false }()
+	requireCUDADevice(t)
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "qwen3-vl-2b-instruct")
+	const merge = 2
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgTok, _ := tk.TokenID("<|image_pad|>")
+	enc, err := vision.LoadQwen3VisionEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := multimodal.LoadQwen3PreprocessConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limit := 1024 * pp.MergeSize * pp.MergeSize * pp.PatchSize * pp.PatchSize; pp.MaxPixels > limit {
+		pp.MaxPixels = limit
+	}
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "cuda", ResidentContext: 2048})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r := m.ResidentForwardForTest().(*cudaResident)
+	ctx := context.Background()
+	data, _ := os.ReadFile("../testdata/glm_ocr/table.png")
+	px, grid, err := multimodal.QwenPreprocess(data, pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feats, deep, err := enc.ForwardDeepstack(px, [][3]int{grid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nImg := grid[0] * grid[1] * grid[2] / (merge * merge)
+	pre, _ := tk.Encode("<|im_start|>user\n<|vision_start|>", false)
+	post, _ := tk.Encode("<|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n", false)
+	ids := append(append([]int{}, pre...), make([]int, nImg)...)
+	for k := range nImg {
+		ids[len(pre)+k] = imgTok
+	}
+	ids = append(ids, post...)
+	n, start := len(ids), len(pre)
+	mrope, _ := decoder.MRopePositionsForTest(ids, imgTok, [][3]int{grid}, merge)
+	for round := 0; round < 2; round++ { // the second round is warm
+		t0 := time.Now()
+		cache := m.NewCache(n + 9)
+		cache.SetDeepstackForTest(start, nImg, deep)
+		if _, err := m.PrefillLogitsQwenVLForTest(ctx, ids, feats, start, nImg, mrope, cache); err != nil {
+			t.Fatal(err)
+		}
+		cache.SetDeepstackForTest(0, 0, nil)
+		r.Reset()
+		if err := m.ResidentUploadPrefillForTest(cache); err != nil {
+			t.Fatal(err)
+		}
+		cpu := time.Since(t0)
+		r.Reset()
+		t1 := time.Now()
+		if _, _, err := m.ResidentMRoPEDeepstackPrefillForTest(ctx, r, ids, feats, start, nImg, mrope, deep); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(os.Stderr, "[G-S10g speed] round %d, %d rows: CPU prefill + upload %s, resident DeepStack prefill %s (exploratory, single samples)\n", round, n, cpu.Round(time.Millisecond), time.Since(t1).Round(time.Millisecond))
 	}
 }

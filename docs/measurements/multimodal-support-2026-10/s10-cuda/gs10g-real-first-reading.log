@@ -1,0 +1,39 @@
+=== RUN   TestS10DeepstackPrefillCUDA_real
+[G-S10g] gemma3_preprocess_image.png: tower features and sets (CPU encoder)
+[G-S10g] gemma3_preprocess_image.png: 798 rows, 784 image; today's path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10g] gemma3_preprocess_image.png: the resident DeepStack prefill
+[G-S10g] gemma3_preprocess_image.png: text control 1 of 4 (798 rows)
+[G-S10g] gemma3_preprocess_image.png: text control 2 of 4 (798 rows)
+[G-S10g] gemma3_preprocess_image.png: text control 3 of 4 (798 rows)
+[G-S10g] gemma3_preprocess_image.png: text control 4 of 4 (798 rows)
+[G-S10g] qwen3-vl-2b gemma3_preprocess_image.png (798 rows, 784 image, hidden 2048): worst cosine 0.9670174 against the text control's minimum 0.9451385 (4 prompts); argmax: 0 near-ties, 0 real: PASS
+[G-S10g] qwen25vl_preprocess_image.png: tower features and sets (CPU encoder)
+[G-S10g] qwen25vl_preprocess_image.png: 84 rows, 70 image; today's path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10g] qwen25vl_preprocess_image.png: the resident DeepStack prefill
+[G-S10g] qwen25vl_preprocess_image.png: text control 1 of 4 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 2 of 4 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 3 of 4 (84 rows)
+[G-S10g] qwen25vl_preprocess_image.png: text control 4 of 4 (84 rows)
+[G-S10g] qwen3-vl-2b qwen25vl_preprocess_image.png (84 rows, 70 image, hidden 2048): worst cosine 0.9623958 against the text control's minimum 0.9727514 (4 prompts); argmax: 0 near-ties, 0 real: PARKED
+    s10_deepstack_prefill_test.go:393: qwen25vl_preprocess_image.png: PARKED (worst 0.9623958, control minimum 0.9727514, 0 non-tie argmax differences)
+[G-S10g] glm_ocr/formula.png: tower features and sets (CPU encoder)
+[G-S10g] glm_ocr/formula.png: 1029 rows, 1015 image; today's path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10g] glm_ocr/formula.png: the resident DeepStack prefill
+[G-S10g] glm_ocr/formula.png: text control 1 of 4 (1029 rows)
+[G-S10g] glm_ocr/formula.png: text control 2 of 4 (1029 rows)
+[G-S10g] glm_ocr/formula.png: text control 3 of 4 (1029 rows)
+[G-S10g] glm_ocr/formula.png: text control 4 of 4 (1029 rows)
+[G-S10g] qwen3-vl-2b glm_ocr/formula.png (1029 rows, 1015 image, hidden 2048): worst cosine 0.9738649 against the text control's minimum 0.9416654 (4 prompts); argmax: 0 near-ties, 0 real: PASS
+[G-S10g] glm_ocr/table.png: tower features and sets (CPU encoder)
+[G-S10g] glm_ocr/table.png: 986 rows, 972 image; today's path (CPU prefill with the sets, upload, CUDA decode)
+[G-S10g] glm_ocr/table.png: the resident DeepStack prefill
+[G-S10g] glm_ocr/table.png: text control 1 of 4 (986 rows)
+[G-S10g] glm_ocr/table.png: text control 2 of 4 (986 rows)
+[G-S10g] glm_ocr/table.png: text control 3 of 4 (986 rows)
+[G-S10g] glm_ocr/table.png: text control 4 of 4 (986 rows)
+[G-S10g] qwen3-vl-2b glm_ocr/table.png (986 rows, 972 image, hidden 2048): worst cosine 0.9125077 against the text control's minimum 0.9539073 (4 prompts); argmax: 0 near-ties, 0 real: FAIL
+    s10_deepstack_prefill_test.go:393: glm_ocr/table.png: FAIL (worst 0.9125077, control minimum 0.9539073, 0 non-tie argmax differences)
+--- FAIL: TestS10DeepstackPrefillCUDA_real (246.76s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	246.832s
+FAIL

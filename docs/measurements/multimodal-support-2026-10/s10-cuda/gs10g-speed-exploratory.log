@@ -1,0 +1,21 @@
+=== RUN   TestS10DeepstackPrefillCUDA_tiny
+[G-S10g] qwen3vl-tiny (16x24 image) none: worst cosine 1.0000000, argmax 9/9, non-tie differences 0
+    step 2: today's top 160 p 0.0049, new 232 (today's p 0.0049): near-tie true
+    step 3: today's top 42 p 0.0049, new 258 (today's p 0.0048): near-tie true
+[G-S10g] qwen3vl-tiny (16x24 image) (4) the sets not added: worst cosine 0.9818884, argmax 7/9, non-tie differences 0
+    step 2: today's top 160 p 0.0049, new 232 (today's p 0.0049): near-tie true
+    step 3: today's top 42 p 0.0049, new 258 (today's p 0.0048): near-tie true
+[G-S10g] qwen3vl-tiny (16x24 image) (5) added one layer late: worst cosine 0.9818884, argmax 7/9, non-tie differences 0
+    step 0: today's top 241 p 0.0051, new 53 (today's p 0.0043): near-tie true
+    step 2: today's top 160 p 0.0049, new 167 (today's p 0.0048): near-tie true
+    step 3: today's top 42 p 0.0049, new 258 (today's p 0.0048): near-tie true
+    step 7: today's top 171 p 0.0048, new 190 (today's p 0.0047): near-tie true
+[G-S10g] qwen3vl-tiny (16x24 image) (6) added to the text rows too: worst cosine 0.1000094, argmax 5/9, non-tie differences 0
+[G-S10g] through GenerateQwenVLDeepstack: resident prefill true, tokens [241 35 160 42 39 122 71 171] (today's path [241 35 160 42 39 122 71 171])
+--- PASS: TestS10DeepstackPrefillCUDA_tiny (1.26s)
+=== RUN   TestS10DeepstackPrefillCUDA_speed
+[G-S10g speed] round 0, 986 rows: CPU prefill + upload 11.749s, resident DeepStack prefill 904ms (exploratory, single samples)
+[G-S10g speed] round 1, 986 rows: CPU prefill + upload 11.782s, resident DeepStack prefill 889ms (exploratory, single samples)
+--- PASS: TestS10DeepstackPrefillCUDA_speed (49.15s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	50.482s

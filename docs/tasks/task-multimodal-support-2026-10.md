@@ -3309,6 +3309,52 @@ CUDA's twin of the Mac's G-S10e (the tower) and S16 step 2 (the prefill).
   - **Speed (night):** the S7 Qwen3-VL-2B cell, before and after, tower time reported apart. No prediction written until Part A's split of one image turn (tower, CPU prefill, upload, first decode) is measured; it will be added here before Part B's speed run.
 - **Order:** A first (it removes the 14 s), measured, then B.
 
+#### S10 on CUDA, read 2026-10-08 (nobara)
+
+- **G-S10f, the tower with DeepStack: PASS, tiny, real and served** (code `50233201`, reserve fix `Qwen3-VL's tower priced`; raw `docs/measurements/multimodal-support-2026-10/s10-cuda/`).
+  - **Tiny** (`qwen3vl-vision-tiny`, norms randomised, two grid sets): the merged rows and both sets 1.000000000; the planted taps-one-block-late reads 0.995 and taps-in-reverse 0.992, both red.
+  - **Real, Qwen3-VL-2B, the four F2a images at serve's cap:** worst 0.999999219 (formula.png, set 1), every other output 0.9999999 or better; the planted late taps read 0.574 / 0.293 / 0.661 on the 14x20 image.
+  - **Speed, exploratory single samples:** the CUDA tower with the host mergers 1.49 s (3,136 patches), 2.10 s (4,060) and 1.93 s (3,888) against the CPU tower's 12.46 s, 18.49 s and 17.41 s; the device blocks alone are 1.08-1.63 s. Inside the registered 1.5-4.0 s band (the smallest image 0.01 s under its lower edge).
+  - **Served, `=cuda:cpu` against `cuda:auto`, table.png, 32 greedy tokens:** IDENTICAL replies ('Quarterly unit sales by region'), the CPU arm's repeat IDENTICAL. **The first served run was NOT the gate:** the CUDA arm's tower ran out of device memory on its first image (a 63.7 MB allocation)
+    and "runs on the CPU from now on", because the Qwen3-VL tower was priced at zero (it was in neither `towerVRAMEstimate` nor `cudaTowerRegistered`): the decoder had taken every free byte. The same class as S18's Gemma 3 fix; fixed by pricing it as the Qwen3.5 tower (1.64 GB for the
+    2B, against 1158 MiB measured resident after an image; the scratch is released per call, so the estimate is the peak), with `TestTowerReserve_everyDeviceTower` extended (red before) and the figure pinned. The default plan for the 2B moves from 3 slots at 6744 positions to 3 at 4955. The rerun is the one
+    recorded: the CUDA tower encoded the image in 3.11 s against the CPU arm's 18.4 s, no fallback in its log; the whole request 15.1 s against 30.4 s (the rest is the CPU DeepStack prefill, Part B).
+- **G-S10g, the resident DeepStack prefill (code `7703e4e3`): tiny PASS; the real gate's first reading FAILS the registered bar, and is kept.**
+  - **Tiny:** worst cosine 1.0000000, argmax 9/9 against the CPU prefill + upload; planted defects 0.9818884 (sets not added), 0.9818884 (one layer late: in the 2-layer fixture set 0 lands after the last layer, where nothing reads it, as on Metal), 0.1000094 (text rows too), all red;
+    through `GenerateQwenVLDeepstack` the turn takes the resident prefill and generates the same 8 tokens.
+  - **Real, first reading (S16's re-registered bar: the image turn's worst per-step cosine at least the same-length text control's minimum minus 0.005; 0.005-0.015 below parked; worse fails; every argmax difference a near-tie):**
+
+    | image | rows | worst cosine | text control's minimum (4 prompts) | verdict |
+    |---|---|---|---|---|
+    | gemma3_preprocess_image (896²) | 798 | 0.9670 | 0.9451 | PASS |
+    | qwen25vl_preprocess_image (4x6) | 84 | 0.9624 | 0.9728 | **PARKED** (0.0104 below) |
+    | glm_ocr/formula | 1029 | 0.9739 | 0.9417 | PASS |
+    | glm_ocr/table | 986 | 0.9125 | 0.9539 | **FAIL** (0.0414 below) |
+
+    No argmax differences on any image. So the path does NOT turn on in production, as registered.
+  - **Mechanism, a diagnostic and not a gate (`TestS10DeepstackPrefillCUDA_diag`; per-step cosines, step 0 first):** table.png as gated 0.9125 0.9865 0.9857 0.9631 0.9935 ...; with no sets in either arm 0.9711 0.9856 ...; as gated with the fast prefill levers off 0.9741 0.9861 0.9886 0.9805 ....
+    The failing number is the prefill's last-row logits (step 0), and it is the fast prefill levers (the L2/L3 kernels that engage at 512 or more rows, cosine-close but not bit-identical) acting on image rows with the sets added; with them off the image turn is above the control. The 4x6 image has 84 rows, below the lever floor,
+    so nothing changes there: its worst is step 3 (0.9624 as gated; 0.9711 at step 0 with no sets).
+  - **Amendment, registered before the re-read (the design, not the bar):** a DeepStack prefill runs on the exact kernels (`forceExactKernels` includes an active DeepStack plan), as the Gemma 4 E-model does until its fast levers have a fidelity gate (S9 on CUDA, G3p). The bar, the control and the images are unchanged;
+    the real test now also prints the control's four per-prompt minima beside the verdict, for context and not for the verdict.
+  - **Prediction, written now:** table.png PASSES (the lever-off cut read 0.9741 against 0.9539); the 896² and formula images stay PASS; the 4x6 image stays PARKED (no lever is involved at 84 rows). If it stays parked, that image is reported as parked and the path stays off; the bar is not moved to resolve it.
+  - **Re-read on the exact kernels (`gs10g-real-reread-exact-kernels.log`), every prediction held:**
+
+    | image | rows | worst cosine | text control's minimum | each control prompt's own minimum | argmax | verdict |
+    |---|---|---|---|---|---|---|
+    | 896² | 798 | 0.9680 | 0.9451 | 0.9653 0.9457 0.9451 0.9689 | 2 near-ties, 0 real | PASS |
+    | 4x6 | 84 | 0.9624 | 0.9728 | 0.9728 0.9982 0.9980 0.9885 | equal | **PARKED** (0.0104 below) |
+    | formula | 1029 | 0.9819 | 0.9417 | 0.9552 0.9807 0.9417 0.9983 | equal | PASS |
+    | table | 986 | 0.9741 | 0.9539 | 0.9782 0.9871 0.9539 0.9972 | equal | PASS (was FAIL) |
+
+    **So the registered outcome stands: three of four PASS, one PARKED, and the path stays OFF in production** (`cudaDeepstackPrefillOn`, default false; the gates turn it on; while it is off a Qwen3-VL image turn takes the CPU prefill and the upload, as before).
+    The parked image is the one with the fewest rows. Its worst is step 3 of the 8 teacher-forced decode steps (0.9624), below all four control prompts' own minima; the control's minimum on this length is set by one prompt (0.9728) while the other three
+    sit at 0.9885-0.9982, so the control's minimum is noisy. I have not moved the bar or the control to resolve it.
+  - **What is at stake, exploratory single samples (`gs10g-speed-exploratory.log`, table.png, 986 rows, on the exact kernels):** CPU prefill + KV upload **11.75 s** and **11.78 s** against the resident DeepStack prefill **0.90 s** and **0.89 s** (13x). With the tower's 2-3 s,
+    a Qwen3-VL-2B image turn on CUDA would be about 3 s against about 15 s today. The night speed record is the S7 Qwen3-VL cell.
+  - **Decision for the owner (the Mac's precedent for a parked or failed reading: re-registering the bar is the owner's):** (a) keep it off; (b) turn it on for image runs of 512 rows or more, where all three images pass and where the CPU prefill costs seconds, and leave small images (84 rows is about a
+    second on the CPU) on the CPU path; (c) re-register the control as 12 prompts per length (the minimum of more prompts is a lower, steadier bar) and re-read the control only. (b) and (c) each need to be registered before they are applied to any reading.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

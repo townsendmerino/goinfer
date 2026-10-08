@@ -248,6 +248,10 @@ type cudaDeepPlan struct {
 	sets     [][]float32
 }
 
+// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, OFF until G-S10g passes (docs/tasks/task-multimodal-support-2026-10.md, "S10 on CUDA"): three of the four real images pass and
+// one is parked. While it is off a Qwen3-VL image turn takes the CPU prefill and the upload, as before. The gates turn it on; production does not.
+var cudaDeepstackPrefillOn = false
+
 // deepDefectForTest is G-S10g's planted-defect seam (S16's list): 0 none, 1 the sets not added, 2 each set one layer late, 3 the sets added to the text rows too.
 var deepDefectForTest int
 
@@ -260,6 +264,9 @@ const (
 // PrefillMRoPEDeepstackLast satisfies decoder.ResidentMRoPEDeepstackPrefill (S10 on CUDA, G-S10g): PrefillMRoPELast, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after layer l,
 // as the CPU prefill does. Only plain dense layers are claimed: a layer with an MoE, DeltaNet or Gemma 4 branch declines, and the turn keeps the CPU prefill and upload, as before.
 func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
+	if !cudaDeepstackPrefillOn {
+		return nil, fmt.Errorf("cuda prefill: the resident DeepStack prefill is off until G-S10g passes on every image (one is parked): %w", errPrefillDeclined)
+	}
 	if imgLen <= 0 || len(deep) == 0 || len(deep) > r.nLayers {
 		return nil, fmt.Errorf("cuda prefill: %d DeepStack sets over %d image rows for %d layers: %w", len(deep), imgLen, r.nLayers, errPrefillDeclined)
 	}
@@ -965,7 +972,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		// ' issues' 0.19, the latter outside the sequential top 3: not a near-tie under the registered rule), while the same prompt on the exact kernels matched
 		// the sequential path in every logprob (docs/tasks/task-multimodal-support-2026-10.md, G3p). So an E-model batches on the exact kernels, bit-identical to
 		// decode at every length, until the levers pass a fidelity gate of their own.
-		r.eModel
+		r.eModel ||
+		// Qwen3-VL's DeepStack prefill (S10 on CUDA, G-S10g): the first real reading failed on table.png (986 rows, past the 512-row floor): the last-row logits read 0.9125 against the CPU prefill with the fast levers
+		// on, 0.9741 with them off (and 0.9711 with them on but no sets added), under a text control minimum of 0.9539. The levers have no fidelity evidence on image rows carrying DeepStack sets, so such a pass runs
+		// the exact kernels, as the E-model does, until they have.
+		r.deepPlan != nil
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 	if r.eModel {

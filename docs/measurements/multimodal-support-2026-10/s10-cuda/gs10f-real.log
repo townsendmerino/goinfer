@@ -1,0 +1,13 @@
+=== RUN   TestGridVisionCUDA_deepstackReal
+[G-S10f] gemma3_preprocess_image.png grid [1 56 56]: CUDA tower with host tails 1.487s (device blocks alone 1.077s), CPU tower 12.459s (exploratory, single samples)
+[G-S10f] gemma3_preprocess_image.png grid [1 56 56]: merged 0.999999935, deep0 1.000000000, deep1 0.999999913, deep2 0.999999915
+[G-S10f] qwen25vl_preprocess_image.png grid [1 14 20]: CUDA tower with host tails 125ms (device blocks alone 75ms), CPU tower 628ms (exploratory, single samples)
+[G-S10f] qwen25vl_preprocess_image.png grid [1 14 20]: merged 0.999999998, deep0 1.000000000, deep1 0.999999999, deep2 0.999999991
+[G-S10f] qwen25vl_preprocess_image.png, taps one block late: merged 0.999999998, deep0 0.573800566, deep1 0.293395229, deep2 0.660990830
+[G-S10f] glm_ocr/formula.png grid [1 70 58]: CUDA tower with host tails 2.098s (device blocks alone 1.631s), CPU tower 18.486s (exploratory, single samples)
+[G-S10f] glm_ocr/formula.png grid [1 70 58]: merged 0.999999977, deep0 1.000000000, deep1 0.999999219, deep2 0.999999793
+[G-S10f] glm_ocr/table.png grid [1 54 72]: CUDA tower with host tails 1.928s (device blocks alone 1.517s), CPU tower 17.413s (exploratory, single samples)
+[G-S10f] glm_ocr/table.png grid [1 54 72]: merged 0.999999984, deep0 1.000000000, deep1 0.999999976, deep2 0.999999932
+--- PASS: TestGridVisionCUDA_deepstackReal (116.34s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	116.398s
