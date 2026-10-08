@@ -1,0 +1,3 @@
+The user wants me to transcribe the provided audio.
+The audio contains a sound that resembles a dog barking.
+I will transcribe the sound as "Bark".

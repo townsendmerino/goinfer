@@ -3385,6 +3385,17 @@ CUDA's twin of the Mac's G-S10e (the tower) and S16 step 2 (the prefill).
   the reference's minus 2.0 points and free-run passes at least the reference's minus 1; 2.0-4.0 points below parked; worse fails. **G-E4B-C2** (served, image and three audio clips, CUDA against CPU) runs with that GGUF as `--model` and the QAT-unquantized safetensors (`google/gemma-4-E4B-it-qat-q4_0-unquantized`) as `-vision`, the E2B layout.
   **Prediction:** near E2B's delta (the same QAT recipe, a wider model); I will not claim more. The plain-bf16 FAIL above stays recorded as it is.
 
+#### S6, Gemma 4 E4B on CUDA: G-E4B-C1b and G-E4B-C2 PASS (read 2026-10-08, nobara; raw `docs/measurements/multimodal-support-2026-10/s6-e4b/`)
+
+- **G-E4B-C1b, G3c on the QAT GGUF (`g-e4b-c1b-qat-gguf.log`, 225 s): PASS.** Both sides loaded `gemma-4-E4B_q4_0-it.gguf` with the same options; E4B teacher-forced agreement **405/435 = 93.10%**, **8 of 8** prompts through the free-run rule; the reference (same process) 374/398 = 93.97%,
+  7 of 8; delta **-0.87 points** against the -2.0 margin; free-run passes 8 against 7. The same procedure on the plain bf16 checkpoint read 87.59% and 3 of 8 (above): the only change is the checkpoint, which supports the quantization-aware-training explanation. My prediction ("near E2B's +0.51") held in direction; the delta is
+  0.9 points lower than E2B's and inside the margin.
+- **G-E4B-C2, served (`g-e4b-c2-image/`, `g-e4b-c2-audio/`): PASS.** The QAT GGUF as `--model` and the QAT-unquantized safetensors (`google/gemma-4-E4B-it-qat-q4_0-unquantized`, downloaded today) as `--vision`, `-vision-device cpu` and `--embed-int4=false` on every arm, `--kv-sessions 1 -ctx 4096`, the CPU arm repeated.
+  - **Image (table.png, 32 greedy tokens):** the CUDA arm `decode path: cuda-resident (int4)`; its reply first differs from the CPU's at generated token 3 (CPU ' a' 0.488, CUDA ' me' 0.459, p(other) over half p(top): a near-tie); the CPU repeat IDENTICAL.
+  - **Audio (the three clips):** the CUDA arm `prefill resident`, `cuda-resident` on all three; short first differs at token 10 ('\n' 0.300 against ' I' 0.268, near-tie), mid IDENTICAL, long at token 24 (' mechanical' 0.053 against ' bird' 0.042, near-tie); the CPU repeats IDENTICAL on all three. (The clips are synthetic tones, so the replies describe sounds and are not transcripts; the gate is CUDA against CPU, as registered.)
+- **What is and is not established:** the E-model shape (PLE width 256, 18 KV-shared layers, two KV heads, no double-wide FFN) runs on CUDA and agrees with the CPU at the E2B's level on the QAT checkpoint; goinfer's CPU float32 agrees with HF float32 at 435 of 435 positions on the plain checkpoint. Not done: a CUDA speed record for E4B, and the E4B on Metal
+  (the Mac's, whose sidecar build failed the fit guard last night). The `gemma-4-E4B-it` bf16 directory (16 GB) is on the box only because of the first gate; it can be removed.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
