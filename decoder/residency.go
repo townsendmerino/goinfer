@@ -1113,6 +1113,26 @@ func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
 // resident that rotates by m-RoPE must apply the matching rule.
 func (m *Model) MRopeInterleavedResident() bool { return m.w.arch.MRopeInterleaved }
 
+// MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary
+// pairs, by the same rule the CPU rotates with (mropeComponent, or mropeComponentInterleaved for the interleaved layout), or
+// nil when the model has no three-way m-RoPE section. A resident's m-RoPE prefill kernel reads it as a table (S16), so the
+// layout lives in one place.
+func (m *Model) MRopeAxisResident(half int) []int {
+	sec := m.w.arch.MRopeSection
+	if len(sec) != 3 || half <= 0 {
+		return nil
+	}
+	comp := mropeComponent
+	if m.w.arch.MRopeInterleaved {
+		comp = mropeComponentInterleaved
+	}
+	axis := make([]int, half)
+	for d := range axis {
+		axis[d] = comp(d, sec)
+	}
+	return axis
+}
+
 // PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE (adjacent dims
 // 2d, 2d+1 share frequency d: Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR) rather than the
 // NeoX half-split (d, d+half) every other family uses — the same predicate FeatPairwiseRoPE derives
