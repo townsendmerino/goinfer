@@ -31,7 +31,7 @@ cells = [cell("gemma-3-4b", ["--model", f"{m}/gemma-3-4b-it"]),
          cell("qwen2.5-vl-3b", ["--model", f"{m}/qwen25vl-3b-instruct"]),
          cell("qwen3.5-0.8b", ["--model", f"{m}/qwen3.5-0.8b"]),
          cell("glm-ocr", ["--model", f"{m}/glm-ocr"]),
-         # S10 landed on main (2026-10-08): serve takes Qwen3-VL images. CUDA has no DeepStack tap yet, so this cell reads what the CPU tower does.
+         # S10 landed on main (2026-10-08): serve takes Qwen3-VL images. The tower is on CUDA (HiddenTaps); the resident DeepStack prefill is off, so the prefill is the CPU one.
          cell("qwen3-vl-2b", ["--model", f"{m}/qwen3-vl-2b-instruct"])]
 # Third read: every cell runs on the current build ($CUR = serve-cuda-s7r3).
 for c in cells:
