@@ -181,6 +181,82 @@
         "path": "docs/measurements/peer-sweep-2026-09-29.md",
         "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
+    },
+    {
+      "id": "phi3-mini-4k/cpu/decode",
+      "checkpoint": "phi3-mini-4k",
+      "machine": "cpu",
+      "basis": "median-of-3",
+      "value": 8.2,
+      "peer": 10.8,
+      "runs": "8.2 / 8.2 / 8.2",
+      "peer_runs": "10.8 / 10.7 / 10.8",
+      "ratio_raw": "0.763",
+      "ratio": "0.76×",
+      "verdict": "behind",
+      "why": "At its default, --quant q4k. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
+      "date": "2026-10-07",
+      "source": {
+        "path": "docs/measurements/peer-vetted-2026-10-07-nobara-pc.md",
+        "heading": "Night 1, 2026-10-07 23:31-23:58 PDT (graded 2026-10-08)"
+      }
+    },
+    {
+      "id": "gpt-oss-20b/cpu/decode",
+      "checkpoint": "gpt-oss-20b",
+      "machine": "cpu",
+      "basis": "median-of-3",
+      "value": 7.5,
+      "peer": 10.7,
+      "runs": "7.5 / 7.4 / 7.5",
+      "peer_runs": "10.7 / 10.7 / 10.7",
+      "ratio_raw": "0.696",
+      "ratio": "0.70×",
+      "verdict": "behind",
+      "why": "At its default, int4mix. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
+      "date": "2026-10-07",
+      "source": {
+        "path": "docs/measurements/peer-vetted-2026-10-07-nobara-pc.md",
+        "heading": "Night 1, 2026-10-07 23:31-23:58 PDT (graded 2026-10-08)"
+      }
+    },
+    {
+      "id": "gpt-oss-20b/mac/decode",
+      "checkpoint": "gpt-oss-20b",
+      "machine": "mac",
+      "basis": "median-of-3",
+      "value": 30.4,
+      "peer": null,
+      "runs": "30.4 / 30.4 / 30.5",
+      "peer_runs": "",
+      "ratio_raw": "",
+      "ratio": "goinfer alone",
+      "verdict": "na",
+      "why": "Ollama ran out of Metal memory at its first decode on this 16 GB Mac, two nights running, so there is no Ollama figure. goinfer's default int4mix runs as int4 on Metal. Context capped at 2,048.",
+      "date": "2026-10-08",
+      "source": {
+        "path": "docs/measurements/peer-vetted-2026-10-07-macbook.md",
+        "heading": "The re-run, read 2026-10-08 04:31-04:36 PDT: both cells GOINFER-ALONE"
+      }
+    },
+    {
+      "id": "gemma-4-26b-a4b/mac/decode",
+      "checkpoint": "gemma-4-26b-a4b",
+      "machine": "mac",
+      "basis": "median-of-3",
+      "value": 20.2,
+      "peer": null,
+      "runs": "18.9 / 20.2 / 20.2",
+      "peer_runs": "",
+      "ratio_raw": "",
+      "ratio": "goinfer alone",
+      "verdict": "na",
+      "why": "Ollama's load (about 14.3 GB, mmap off) did not finish on this 16 GB Mac, so there is no Ollama figure. goinfer pages the experts from a one-time sidecar with -moe-cache-experts; its first run is slower while that cache warms. Context capped at 2,048.",
+      "date": "2026-10-08",
+      "source": {
+        "path": "docs/measurements/peer-vetted-2026-10-07-macbook.md",
+        "heading": "The re-run, read 2026-10-08 04:31-04:36 PDT: both cells GOINFER-ALONE"
+      }
     }
   ],
   "decisions": [

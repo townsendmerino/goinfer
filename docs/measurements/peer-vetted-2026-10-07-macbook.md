@@ -131,3 +131,44 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
   - If M2's Ollama arm fails again, the cell is GOINFER-ALONE with that reason.
   - If it runs, the paired cell is the reported one, with night 1 stated beside it.
 - **Script:** `peer-vetted-2026-10-07/run-mac-2.sh`, results in `~/goinfer-bench/peer-vetted/results-mac-2/`.
+
+### The re-run, read 2026-10-08 04:31-04:36 PDT: both cells GOINFER-ALONE
+
+- **The run:** night job `peer-vetted-mac-2`, started by day on the owner's word.
+  - Binaries at `65b2c22a` (serve sha256 `43312af3…`); the harness from `836b33ef`; Ollama 0.32.5.
+  - Load 1.60 at the start, the instant idle gate (wait 3.3 s each), no thermal warning; system swap 1,355.88 MB used
+    at the start.
+- **Raw:** `~/goinfer-bench/peer-vetted/results-mac-2/` on the MacBook (`metal-g26q.json`, `metal-g20.json`,
+  `grade.jsonl`, and `serve-logs/` with Ollama's own logs). Night log: the night runner's
+  `runs/2026-10-08/peer-vetted-mac-2.log`.
+- **Graded** with `peer-vetted-2026-10-07/grade.py`, the rules above unchanged.
+
+| cell | goinfer runs (tok/s) | median | decode path | goinfer swap growth | Ollama | outcome |
+|---|---|---:|---|---:|---|---|
+| M3 metal G26Q (the vetted 26B) @128 greedy, ctx 2048 | 18.9 / 20.2 / 20.2 | 20.2 | `metal-resident (int4)` | 0.0 MB | no runs: its load did not finish (below) | **GOINFER-ALONE** |
+| M2 metal G20 (gpt-oss 20B) @128 greedy, ctx 2048 | 30.4 / 30.4 / 30.5 | 30.4 | `metal-resident (int4mix→int4, no Metal int8 GEMV kernel)` | 0.0 MB | no runs: Metal out of memory at its first decode (below) | **GOINFER-ALONE** |
+
+- **M2, Ollama:** its warm-up returned HTTP 500 again. Its log now says why:
+  - `ggml_metal_synchronize: error: command buffer 0 failed with status 5`,
+    `Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)`, at the first decode
+    (`n_batch = 512`); then `llama-server terminated ... signal: killed`.
+  - The by-day check (above) had it running with 1 GB of Metal headroom. At night it ran out of Metal memory twice.
+  - **By the registered rule, the cell is GOINFER-ALONE with that reason.** Night 1's reading (29.0 tok/s, also alone)
+    is stated beside it, not averaged in.
+- **M3, Ollama:** its warm-up failed with `Remote end closed connection without response`, 12.2 s in.
+  - **Its log stops mid-load, with no error of its own,** after placing 31/31 layers: 10,480.59 MiB on Metal,
+    3,273.38 MiB CPU_REPACK and 578.89 MiB CPU, with mmap disabled. That is about 14.3 GB on a 16 GB Mac.
+  - System swap over the step grew from 1,355.88 MB to 2,450.94 MB (+1,095 MB), past the registered +1,024 MB kill,
+    while goinfer's arm grew 0.0 MB.
+  - That is consistent with the harness's kill-watch, but the harness did not record it: a failed warm-up then wrote
+    no swap figures. That gap is fixed since (nobara's re-registration, above in its record).
+  - **By the registered rule** ("If Ollama cannot run the 26B without swapping, goinfer's arm is recorded alone"), the
+    cell is GOINFER-ALONE. Ollama was not retried with other settings.
+- **M3's spread, disclosed:** goinfer's three runs spread 6.5% ((20.2 - 18.9) / 19.8).
+  - The 5% spread cap applies to a paired ratio, and there is none here, so the grade stands.
+  - The mechanism is visible in the per-completion rates: run 1's first nine completions climb from 17.9 to 20.2 tok/s
+    as the paged expert cache (`-moe-cache-experts`) warms, and the later runs hold 20.2.
+  - The site cell carries the median, 20.2, and its runs as printed.
+- **M1, Phi-3:** the code fix is built (`docs/tasks/task-metal-q4k-2026-10.md`). Its gates on the real file (G-Q2,
+  G-Q3) come before an M1 cell, then the cell by an amendment here.
+
