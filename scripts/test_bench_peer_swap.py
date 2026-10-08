@@ -13,7 +13,7 @@ import bench_peer  # noqa: E402
 
 class SwapWatch(unittest.TestCase):
     def setUp(self):
-        for k in ("BENCH_SWAP_VOID_MB", "BENCH_SWAP_KILL_MB"):
+        for k in ("BENCH_SWAP_VOID_MB", "BENCH_SWAP_KILL_MB", "BENCH_SWAPIN_VOID_MB"):
             self.addCleanup(os.environ.pop, k, None)
 
     def test_void_rule(self):
@@ -24,6 +24,18 @@ class SwapWatch(unittest.TestCase):
         self.assertIsNone(w.void_reason(), "no growth is not a void")
         w.peak = 0.5
         self.assertIn("void", w.void_reason())
+
+    def test_swapin_rule(self):
+        # nobara's rule (2026-10-08): swap growth from idle pages pushed out is not a void; swap-ins over the limit are.
+        os.environ["BENCH_SWAP_VOID_MB"] = "256"
+        os.environ["BENCH_SWAPIN_VOID_MB"] = "100"
+        w = bench_peer.SwapWatch()
+        w.peak, w.swapin = 46.1, 0.0
+        self.assertIsNone(w.void_reason(), "46 MB of growth and no swap-ins is not a void under the Linux rule")
+        w.swapin = 120.0
+        self.assertIn("swap-ins", w.void_reason())
+        w.swapin, w.peak = 0.0, 300.0
+        self.assertIn("grew", w.void_reason())
 
     def test_kill_stops_the_server_group(self):
         os.environ["BENCH_SWAP_KILL_MB"] = "100"

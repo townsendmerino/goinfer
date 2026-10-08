@@ -109,3 +109,36 @@ Queued at 50 minutes.
     stated beside it.
 - **One change, the fix above:** the harness runs from a worktree with `G26Q:128` in `scripts/prompts.json`.
 - **Script:** `peer-vetted-2026-10-07/run-nobara-2.sh`, results in `~/goinfer-bench/peer-vetted-2026-10-07/results-2/`.
+
+### The re-run, read 2026-10-08 04:20-04:36 PDT: both cells VOID again, on goinfer's swap growth
+
+- **1c (the vetted 26B on the CPU):**
+  - Ollama ran: 10.8 / 10.8 / 10.8 tok/s, swap +0.0 MB.
+  - goinfer's arm, `cpu (int4)`, grew system swap by 46.1 MB: VOID under the registered rule (any growth).
+- **2 (gpt-oss on CUDA, ctx 2048):**
+  - Ollama ran: 26.2 / 26.3 / 26.2 tok/s, swap +0.0 MB.
+  - goinfer's arm, `cuda-resident (int4mix)`, grew swap by 1.9 MB: VOID.
+- **Raw:** `~/goinfer-bench/peer-vetted-2026-10-07/results-2/` on nobara-pc.
+
+### Re-registration, 2026-10-08, before the third run (owner: option (b))
+
+- **Why.** The rule "any swap growth voids an arm" was written for the 16 GB Mac. Applying it to nobara was this
+  record's choice, and it voids the arm on the wrong mechanism:
+  - With 58 GB available, Linux pushes other processes' idle pages out to swap under the page-cache pressure of a 12-14
+    GB load: +14.4, +1.9 and +46.1 MB in goinfer's arms, 0.0 in Ollama's.
+  - Pages pushed out are not read back by the engine being timed, so they slow nothing.
+  - Thrashing shows as swap-ins: pages the timed process needs, read back from swap.
+- **The rule on nobara from this run:** an arm is VOID when the swap-ins over its cell exceed 100 MB (`/proc/vmstat`
+  `pswpin`, `BENCH_SWAPIN_VOID_MB=100`), or when swap use grows by more than 256 MB (`BENCH_SWAP_VOID_MB=256`).
+  - The Mac's rule is unchanged (any growth).
+  - Both figures go in each cell's record (`swap_growth_mb`, `swapin_mb`).
+- **What it covers:**
+  - It applies to the cells re-run from here: 1c and 2, which have produced no graded cell.
+  - The night-1 cells 1a and 1b were valid under the stricter rule (0.0 MB) and stand.
+  - Nothing already run is re-graded.
+- **Unchanged:** the cells, bands, binaries (`65b2c22a`) and the calibrated prompt.
+- **One instrument change:** a failed warm-up now records its swap figures (the Mac's night-2 26B kill read as
+  "connection closed" without them).
+- **Script:** `peer-vetted-2026-10-07/run-nobara-3.sh`, results in `~/goinfer-bench/peer-vetted-2026-10-07/results-3/`.
+  Queued for tonight.
+

@@ -540,6 +540,20 @@ def swap_used_mb():
         return None
 
 
+def swapins_mb():
+    """Pages read back from swap since boot, in MB (Linux /proc/vmstat pswpin, 4 KiB pages); None elsewhere. Swap-ins are
+    the thrashing signal: a load that pushes OTHER processes' idle pages out to swap (swap use grows) is not slowed by it,
+    but one that has to read its own pages back is."""
+    try:
+        for line in open("/proc/vmstat"):
+            k, v = line.split()
+            if k == "pswpin":
+                return int(v) * 4096 / (1 << 20)
+    except Exception:
+        return None
+    return None
+
+
 class SwapWatch:
     """Swap growth over one cell, from a baseline taken before its server starts (peer-vetted 2026-10-07: "any swap
     growth voids that engine's arm"). Polls system swap every POLL_S on a thread; the peak growth goes in the cell's
@@ -551,6 +565,8 @@ class SwapWatch:
 
     def __init__(self):
         self.base = swap_used_mb()
+        self.base_in = swapins_mb()
+        self.swapin = None
         self.peak = 0.0
         self.killed = None
         self.pgid = None
@@ -581,14 +597,24 @@ class SwapWatch:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join(timeout=5)
-        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed}
+        now_in = swapins_mb()
+        if self.base_in is not None and now_in is not None:
+            self.swapin = round(now_in - self.base_in, 1)
+        return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed,
+                "swapin_mb": self.swapin}
 
     def void_reason(self):
+        """BENCH_SWAP_VOID_MB voids on swap GROWTH over it (0: any growth; the Mac's rule). BENCH_SWAPIN_VOID_MB voids on
+        swap-INS over it (Linux only; peer-vetted 2026-10-08, nobara: idle pages pushed out under page-cache pressure grew
+        swap by 1.9-46 MB beside a 12-14 GB load with 58 GB free, which slows nothing being timed)."""
         lim = os.environ.get("BENCH_SWAP_VOID_MB", "").strip()
+        inlim = os.environ.get("BENCH_SWAPIN_VOID_MB", "").strip()
         if self.killed:
             return self.killed
         if lim and self.peak > float(lim):
             return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
+        if inlim and self.swapin is not None and self.swapin > float(inlim):
+            return f"swap-ins of {self.swapin:.1f} MB during the cell (> {float(inlim):.0f} MB): void"
         return None
 
 
@@ -1270,7 +1296,8 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         try:
             warm = post_stream(url, mk(), parse)
         except Exception as e:
-            return None, f"warmup failed: {e}", None
+            stats = swap.stop()
+            return None, swap.void_reason() or f"warmup failed: {e}", {"swap": stats}
         phases["warmup_s"] = round(time.time() - t_warm, 2)
 
         _, ncomp, nruns = gen_params()

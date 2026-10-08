@@ -11,7 +11,8 @@ The 2026-09-29 sweep's rules (../peer-sweep-2026-09-29/grade.py), unchanged:
 
 Two additions, both registered before the run:
 1. A cell the harness refused (no runs) is VOID with the harness's own reason. A swap-voided arm lands here: the harness
-   runs with BENCH_SWAP_VOID_MB=0, so any swap growth over the cell voids that engine's arm.
+   applies each box's registered swap rule (the Mac: any growth, BENCH_SWAP_VOID_MB=0; nobara from 2026-10-08: swap-ins
+   over 100 MB or growth over 256 MB) and drops the arm's runs, so this grader does not re-check swap itself.
 2. A goinfer arm that is valid beside a VOID Ollama arm is reported "GOINFER-ALONE" with its median. claims.json then
    carries peer: null and no ratio.
 """
@@ -49,8 +50,6 @@ def arm_ok(c):
     gate = (k.get("token_gate") or {}).get("verdict")
     if gate not in ("ok", "short"):
         return False, f"token gate {gate}"
-    if (k.get("swap") or {}).get("swap_growth_mb", 0) > 0:
-        return False, f"swap grew +{k['swap']['swap_growth_mb']} MB"
     dp = k.get("decode_path")
     if c["engine"] == "goinfer" and c["backend"] != "cpu" and dp and dp.startswith("cpu"):
         return False, f"decode path {dp}"
