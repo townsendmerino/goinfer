@@ -69,4 +69,43 @@ Queued at 50 minutes.
 
 ## Results
 
-*(not yet run)*
+### Night 1, 2026-10-07 23:31-23:58 PDT (graded 2026-10-08)
+
+- **The run:** night job `peer-vetted-nobara` at the pinned `65b2c22a`.
+  - Serve sha256: `11fdea29…` (cuda) and `524b8866…` (cpu).
+  - NVIDIA driver 595.91.07, Ollama v0.32.5.
+  - Load 0.89 at the start.
+- **Raw:** `~/goinfer-bench/peer-vetted-2026-10-07/results/` on nobara-pc (`cpu.json`, `cuda-g20.json`, `grade.jsonl`,
+  serve logs).
+- **Graded** with `peer-vetted-2026-10-07/grade.py`, the rules above unchanged.
+
+| cell | goinfer runs (tok/s) | median | Ollama runs | median | pairs r | median r | outcome |
+|---|---|---:|---|---:|---|---:|---|
+| 1a cpu phi3-mini @128 greedy | 8.2 / 8.2 / 8.2 | 8.2 | 10.8 / 10.7 / 10.8 | 10.8 | 0.763 / 0.763 / 0.762 | 0.763 | BEHIND |
+| 1b cpu G20 (gpt-oss 20B) @128 greedy | 7.5 / 7.4 / 7.5 | 7.5 | 10.7 / 10.7 / 10.7 | 10.7 | 0.696 / 0.693 / 0.696 | 0.696 | BEHIND |
+| 1c cpu G26Q (Gemma 4 26B-A4B) @128 greedy | — | — | — | — | — | — | **not run** (harness crash, below) |
+| 2 cuda G20 @128 greedy, ctx 2048 | — | — | 26.2 / 26.2 / 26.2 | 26.2 | — | — | **VOID** (goinfer's swap grew +14.4 MB) |
+
+- **1a and 1b:** goinfer's decode paths were `cpu (q4k)` and `cpu (int4mix)`; swap growth was 0.0 MB on every arm.
+- **1c did not run:**
+  - `bench_peer.py` raised `KeyError: 'G26Q:128'` when building the cell's prompt. The `G26Q` key was added without a
+    calibrated prompt in `scripts/prompts.json`, which the by-day smokes did not exercise (they loaded serve directly).
+  - The crash came after 1a and 1b, the step's last cell.
+  - Fixed 2026-10-08 by calibrating `G26Q:128` with `bench_prompts_calibrate.py`: 129 tokens, the same text as
+    `M26:128`, the same tokenizer family.
+- **2 is VOID by the registered swap rule:**
+  - goinfer's arm decoded `cuda-resident (int4mix)`, but system swap grew 14.4 MB during its cell (from before the
+    server started to its last completion), and any growth voids the arm.
+  - The harness drops a voided arm's runs, so no goinfer figure is reported.
+  - Ollama's arm (26.2 tok/s, swap +0.0 MB) has nothing to pair with.
+  - The void stands for this night.
+
+### The re-run, registered 2026-10-08 before it runs (owner: "reschedule nobara and kick it off")
+
+- **The cells:** the two that produced no graded cell, 1c and 2. They run again as a second, separate measurement,
+  started by day on the owner's word.
+- **What is unchanged:** cells, rules, bands, void conditions and binaries (the same `65b2c22a` serve builds).
+  - Night 1's VOID for cell 2 is not re-graded. If the re-run is valid, it is the reported cell, with this history
+    stated beside it.
+- **One change, the fix above:** the harness runs from a worktree with `G26Q:128` in `scripts/prompts.json`.
+- **Script:** `peer-vetted-2026-10-07/run-nobara-2.sh`, results in `~/goinfer-bench/peer-vetted-2026-10-07/results-2/`.
