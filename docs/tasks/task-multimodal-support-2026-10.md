@@ -1,9 +1,16 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: ACTIVE.** S1 is done on Metal and CUDA (2026-10-07; Metal and CUDA speed records taken or queued); S2 onward
-not started. The phases were extended on 2026-10-07 (S9-S14, owner decisions below), and the order they run in is in
-"Order of work". Each phase writes its own gates into this doc, and commits them, before its first measurement
-(CLAUDE.md, "Pre-registration").
+**Status: ACTIVE (2026-10-07 evening).** The phases' state:
+- **S1 (E-model decode on the GPU):** done on Metal and CUDA.
+- **Correctness passed on the Mac or nobara** for S2 (Qwen3.5+ and GLM-OCR towers), S3 (Gemma 3 and Qwen2.5-VL towers
+  on Metal), S4 steps 0-5 (the CUDA towers), S5 (E2B audio into the model, its tower on Metal included), S9 on Metal,
+  and S10 for Qwen3-VL. Most of that code is on `s2-towers`, not `main` ("Where it stands" marks which).
+- **In flight:** S3's night root-cause steps, S4's speed record, S9's CUDA half, S6 (E4B, 31B), and the 2026-10-07
+  audit's fixes.
+- **New and not started:** S15-S18.
+
+The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
+measurement (CLAUDE.md, "Pre-registration").
 
 The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was finished and aikit v1.58.0 shipped:
 "we want better overall support." Three axes:
@@ -13,42 +20,63 @@ The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was fini
 
 The last phase puts the answer where users look first, the README, with a check that keeps it true.
 
-## Where it stands (2026-10-06; the E2B/E4B row updated 2026-10-07 for S1)
+## Where it stands (rebuilt 2026-10-07 evening, from the gate readings below)
 
 "Tower / decoder": where the image or audio encoder runs, then where the language model runs after it.
+- **Branches:** **[s2]** marks code on `s2-towers` only; aikit v1.59.0, which it needs, is tagged, but the branch is not
+  merged into `main`. Unmarked cells are on `main`.
+- **Image turns on Metal:** "prefill CPU" means the image turn prefills on the CPU and uploads its KV before decoding on
+  the GPU. Every Qwen-family image turn does this, because Metal has no m-RoPE prefill (S16).
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 | CPU / CPU | GPU / GPU | CPU / GPU (read, never run) | GPU / GPU |
-| Gemma 4 E2B, E4B | CPU / CPU | CPU / GPU (since 2026-10-07, S1 on CUDA) | GPU / GPU (since 2026-10-06, S1) | CPU / CPU |
-| Gemma 4 26B, 31B | CPU / CPU | CPU / GPU | GPU (checked on E2B only) / GPU (read) | CPU / CPU |
-| Qwen2.5-VL | CPU / CPU | CPU / GPU | CPU / GPU (read, never run) | CPU / GPU |
-| Qwen3.5+ dense | CPU / CPU | CPU / GPU | CPU / CPU | CPU / CPU |
-| GLM-OCR | CPU / CPU | CPU / GPU | CPU / CPU | CPU / staged |
+| Gemma 3 | CPU / CPU | GPU (int8 SigLIP: lossy, see below) / GPU | GPU, float32 [s2] / CPU by default on a 16 GB Mac (its resident needs 5.15 GB against a 4.2-4.9 GB budget; S18) | GPU (int8) / GPU |
+| Gemma 4 E2B | CPU / CPU | GPU [s2] / GPU, image prefill CPU (S9 on CUDA owed) | GPU / GPU, layer-major prefill (S9) | CPU / CPU |
+| Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU [s2] / GPU | CPU / CPU |
+| Gemma 4 E4B | CPU / CPU, not yet validated | not validated | not validated (S6 queued tonight) | CPU / CPU |
+| Gemma 4 26B | CPU / CPU | GPU (checked on E2B) [s2] / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
+| Gemma 4 31B | not validated (nobara, S6) | not validated | too large for the Mac | not validated |
+| Qwen2.5-VL | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / GPU |
+| Qwen3.5+ dense | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / CPU |
+| Qwen3.5+ MoE | never run | never run | never run | never run |
+| Qwen3-VL (dense) | CPU [s2] / CPU [s2] | CPU (int8 by default until the fix on `s2-towers`; no DeepStack tap on CUDA) / GPU, not served | GPU with DeepStack [s2] / GPU, prefill CPU [s2] | not run |
+| GLM-OCR | CPU / CPU | GPU [s2] / GPU | GPU [s2] / CPU (Metal does not run its decoder) | CPU / staged |
 | EmbeddingGemma 2 (text, image, audio) | CPU | CPU | GPU | CPU |
 
 **Gaps in coverage:**
 - **Models:**
-  - Qwen3.5+ MoE images have never been run.
-  - Gemma 4 E4B and 31B were never validated (no checkpoint on either box).
-  - Qwen3-VL is text only.
-  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower.
-- **Audio** is EmbeddingGemma 2's embeddings only. Gemma 4 E2B/E4B audio into the model is not wired, though its tower
-  (aikit `audio`) exists.
+  - Qwen3.5+ MoE and Qwen3-VL MoE images have never been run.
+  - Gemma 4 E4B and 31B are not validated; S6 has them queued on both boxes.
+  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
+  - Several images per message (S11) and video (S15) are not supported.
+- **Audio:**
+  - Gemma 4 E2B audio into the model works on CPU and Metal.
+  - Serve accepts only 16 kHz mono WAV (resampling is S5's follow-up).
+  - E4B audio rides on S6.
+  - G-S5b, the HF anchor for audio into the model, has no result yet.
+- **Precision:** under `--backend cuda|webgpu`, serve gives Gemma 3 an int8 SigLIP tower. At real size that tower is
+  relative L2 0.16-0.52 from float32, worst token 0.01-0.17 (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`).
+  Changing the default waits for the owner; nobara builds the float32 CUDA tower (S4).
 - **Release binaries:** WebGPU needs cgo and is in no release binary.
 
-**Speed** (the most recent read of each, exploratory unless marked):
-- **Usable:**
-  - Gemma 3 on CUDA: a 4.1 s tower (recorded 2026-09-21).
-  - Qwen3.5 on CUDA: 3.6 s for a new image, 0.3 s to resend one.
-  - EmbeddingGemma 2 on Metal: 1.2-2 s an image, 70-180 ms an audio clip.
+**Speed** (the most recent read of each, exploratory unless marked; S7 measures every cell against the 5 s bar):
+- **Under 5 s:**
+  - Gemma 3 on CUDA: a 4.1 s tower (2026-09-21).
+  - Qwen3.5 on CUDA: 3.6 s for a new image.
+  - EmbeddingGemma 2 on Metal: 1.2-2 s an image.
   - The Gemma 4 tower on Metal: 1.3-2.3 s.
-- **Slow:**
-  - Gemma 4 E2B image chat on a Mac: 14-16 s for 32 tokens, mostly CPU decode.
+  - The Gemma 4 E2B tower on CUDA: 2.3 s encode.
+  - Qwen3.5-0.8B's Metal tower: 1.2 s on an 896x896 image.
+- **Over it:**
+  - Gemma 4 E2B image turn on Metal: TTFT 10.8 s on S9's pass against 16.5 s before (one smoke pass).
+  - Gemma 3's Metal tower: 9.2-9.6 s, about 2.8x its 26 s CPU tower.
+  - Qwen2.5-VL's Metal tower: 8.9-15.1 s on the large images.
+  - Qwen3-VL-2B served on Metal: 19.2 s per request.
+  - GLM-OCR on Metal: 12.3 s for an invoice.
+  - The CUDA towers: only 1.2-1.5x the CPU (S17).
   - Qwen3.5 on the CPU: 7.7 s TTFT on a new image.
-- **Very slow:**
-  - Gemma 3's CPU tower: 31 s (recorded 2026-09-08).
-  - GLM-OCR's tower: 29 s at 1 MP, minutes at its full size.
+  - GLM-OCR's CPU tower: 29 s at 1 MP.
+- **To re-read:** the r12 peer reading (Ollama gemma3:4b 0.40 s) is probably a cache hit (S13's harness fix, below).
 
 ## Rules for every phase
 
@@ -141,11 +169,13 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     | two-geometry localize, layer 1 (global, K=V) | 0.980768 | **0.999940** |
     | two-geometry resident, min | 0.981251 | **0.999761** (max abs 0.21 → 0.024) |
     | MoE localize, worst layer | 0.999644 | **0.999982** |
-    | MoE resident, min | 0.958904 | **0.999809** |
+    | MoE resident, min | 0.872764 | **0.998690** |
 
     - Argmax agreement is unchanged (15/16 dense, 8/8 two-geometry, all MoE).
-    - Each fix alone moves its own tests: the scalar alone lifts the scaled-dense mean to 0.880, `v_norm` alone to
-      0.906.
+    - Each fix alone moves its own tests: the scalar alone lifts the scaled-dense mean to 0.906 (`s10-vnorm.log`, the
+      run with `v_norm` dropped), `v_norm` alone to 0.880 (`s10-scalar.log`, the scalar dropped).
+    - Corrected 2026-10-07 (Cowork audit): the MoE minimum above read 0.958904 → 0.999809, single positions rather than
+      the test's own minCosine; and the two single-fix means were swapped.
     - Two individual scaled-dense positions read lower after (pos 2 0.918→0.907, pos 12 0.884→0.836). At those
       positions the CPU's own int4 path is at 0.70 and 0.45 against f32, so they are quantization noise on a
       low-agreement position, not a regression. Every summary metric and every two-geometry and MoE position rose.
@@ -168,6 +198,8 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     dropped it matches the old golden 10/10, byte for byte, so the fix is exactly what moved them. It is re-baked
     (same M1 Pro, macOS 26.6.2).
   - **Raw:** `docs/measurements/multimodal-support-2026-10/s10-*.log`.
+  - **Naming:** the `s10-*.log` files and the `GOINFER_S10_DROP` seam belong to S1.0, not to S10 (Qwen3-VL). They kept
+    a working name from before the phases were numbered, and stay unrenamed because records cite them.
   - **Still owed:** the 26B on Metal (night queue), and the same `v_norm` fix on CUDA and WebGPU (nobara).
   - **The 26B re-check's design, fixed 2026-10-06 before it runs.** Every 26B Metal parity test compares against a CPU
     26B forward, which the Mac must not run (the M26 rule: Metal only, paged, guards on). So it is split across the
@@ -393,8 +425,9 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     Run 2's verdict stands as the G3 reading only if the owner accepts this amendment.
   - **G3 run 2, 2026-10-06 20:56 PDT (amended procedure): FAIL as registered.** 7/8 prompts pass (prompt 3 first
     diverges at generated token 19, CPU gap 5.91%); teacher-forced agreement 413/435 = **94.94%**. Deterministic: a
-    re-run that logs each disagreement gives the same 413/435. Of the 22 disagreements, 16 are near-ties under 3% and
-    6 exceed it (7.63, 5.91, 4.00, 3.52, 3.49%), four of those six at prompt positions.
+    re-run that logs each disagreement gives the same 413/435. Of the 22 disagreements, 17 are near-ties under 3% and
+    5 exceed it (7.63, 5.91, 4.00, 3.52, 3.49%), four of those five at prompt positions (corrected 2026-10-07 from
+    "16 ... 6": `g3-run2.log` lists five gaps over 3%).
     - **Control (CPU int8 tables vs CPU e4h tables, same procedure): 93.56%.** A table-precision change alone, on the
       CPU, disagrees as often as Metal does: run 1's confound was real but was not what failed it.
     - **Localization (exploratory), the residual after every layer, Metal vs CPU, at three positions including the
@@ -1309,9 +1342,10 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
       - short and long, the synthetic tones: the replies first differ at token 0, each a near-tie on the CPU-tower
         arm's probabilities ("Please" against "I", "M" against "Hmm").
     - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5d/`.
-- **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
-  clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
-  test clip.
+- **S5 status, 2026-10-07 evening: G-S5a, G-S5c, the spoken clip (LibriSpeech, word error rate 0) and G-S5d (E2B's
+  audio tower on Metal, on `s2-towers`) PASS on the Mac; G-S5b (the HF anchor for audio into the model) is queued on
+  nobara and has no result yet.** Owed: the speed record (tower per clip, CPU against Metal), and resampling for WAVs
+  that are not 16 kHz mono (S5's follow-up, below).
 
 ### S6 — Coverage that is cheap once the above exists
 
@@ -1656,22 +1690,49 @@ The owner put this last, after the WebGPU work. It starts with the choice P11 le
 Whisper encoder (which serves Voxtral), toward pure-Go Whisper; or Voxtral Realtime. Gates are written once the family
 is chosen.
 
-## Order of work (owner, 2026-10-07)
+## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
-S2, S3, S4 (towers), S5 (Gemma 4 audio), S9 (batched E-model prefill), S6 (coverage, with E4B and 31B validated), S10
-(new towers), S11 (several images), S12 (WebGPU), S7 (measure every cell), S13 (peers), S8 (the README table), S14
-(speech). S8's drift check keeps the README true through S14, which updates the table as part of its own work.
+1. **In flight, finish:**
+   - S3's night root-cause steps;
+   - S4 step 5;
+   - S9 on CUDA;
+   - S6 (E4B, 31B);
+   - the 2026-10-07 audit's fixes.
+2. **Then S7 and S13-lite** (one model per box), against the 5 s bar.
+3. **Then S16, S17 and S18,** in the order those measurements rank them: the largest gap to the bar and to the peer
+   first.
+4. **Then:**
+   - S10's remaining families: Pixtral, LFM2.5-VL, North, and the Qwen3.5+ and Qwen3-VL MoE images;
+   - S11 (several images);
+   - S15 (video);
+   - S12 (WebGPU);
+   - full S13;
+   - S8 (the README table);
+   - S14 (speech).
+
+S8's drift check keeps the README true through S14, which updates the table as part of its own work.
 
 ## Decisions for the owner
 
+**Decided 2026-10-07 evening** (after the Cowork audit of this doc):
+- **Video is back in scope (S15).** This reverses the morning's "Video: deferred; no phase."
+- **S7's speed bar:** a cell is usable when a new image's TTFT is under 5 s at the default image budget, on the box's
+  best backend.
+- **Order:** S7 and a one-model-per-box S13 move ahead of S10's remaining families, S11 and S12, so the speed work aims
+  at a measured gap ("Order of work").
+
 **Decided 2026-10-07:**
-- **Video:** deferred; no phase.
+- **Video:** deferred; no phase. (Reversed the same evening; above.)
 - **Gemma 4 E4B and 31B:** download and validate (S6), not a narrowed claim.
 - **WebGPU:** invest in it for multimodal (S12).
 - **Speech:** last (S14), after the WebGPU work; the family is chosen when it starts.
 
 **Still open:**
 
+- Gemma 3's int8 SigLIP default under `--backend cuda|webgpu` (`siglip-int8-fidelity-2026-10-07.md`); nobara builds
+  the float32 CUDA tower and the served comparison first.
+- Whether `s2-towers` is merged and pushed (aikit's side, v1.59.0, is tagged).
+- serve's `--embed-int4` default differing by backend on tied-head families (the int4 head measured 3.5x the int8
+  head's KL to HF on a real image).
 - S14's speech family (P11's options; decided when S14 starts).
 - Which VL checkpoint `pull` recommends per box class (P9(d)).
-- The S7 speed bar.

@@ -136,7 +136,7 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 	// CPU-vs-CPU (noise-floor pre-flight), so 0.60 catches a crater without encoding the quant floor
 	// as a quality bar. Correctness rests on the argmax gate + Step-5a router idx parity + Step-5c
 	// expert chain + the localization above.
-	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.958904 and after-fix 0.999809 readings)
+	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.872764 and after-fix 0.998690 minCosine readings, s10-both.log and s10-after.log)
 	if minCos < 0.995 {
 		t.Errorf("minCosine %.6f < 0.995 — a crater, not quant noise; the dense‖MoE forward is broken", minCos)
 	}
