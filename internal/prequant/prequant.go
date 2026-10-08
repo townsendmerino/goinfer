@@ -154,7 +154,9 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	} else {
 		fmt.Fprintf(os.Stderr, "prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)\n", dir)
 	}
-	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora})
+	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck below does the same). Unpinned, the fit
+	// guard priced the model's full context: on 2026-10-07 it refused Gemma 4 E4B for 8.8 GB of weights "+ 7.1 GB KV".
+	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora, ResidentContext: 1})
 	if err != nil {
 		return fmt.Errorf("load %s (%s): %w", dir, quant, err)
 	}

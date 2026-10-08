@@ -102,4 +102,32 @@ CPU 26B is forbidden on this Mac. Granite 4.0-H Tiny is out of scope.
 
 ## Results
 
-*(not yet run)*
+### Night 1, 2026-10-07 23:25-23:27 PDT
+
+- **The run:** night job `peer-vetted-mac` at the pinned `65b2c22a`, Ollama 0.32.5.
+- **Raw:** `~/goinfer-bench/peer-vetted/results-mac-2026-10-07/` on the MacBook.
+- **M3 (the 26B): not run.** The harness raised `KeyError: 'G26Q:128'`: the `G26Q` key had no calibrated prompt, the
+  same crash as nobara's cell 1c. Fixed 2026-10-08 (`G26Q:128`, 129 tokens, calibrated on nobara).
+- **M2 (gpt-oss):**
+  - **goinfer:** 28.8 / 29.0 / 29.0 tok/s, `metal-resident (int4mix→int4, no Metal int8 GEMV kernel)`, swap +0.0 MB,
+    every completion at 64 tokens.
+  - **Ollama:** its warm-up failed with `HTTP Error 500` (no runs).
+  - **The grader** reads GOINFER-ALONE (median 29.0).
+  - **Not graded as final.** The harness discarded Ollama's log, so the 500's cause was unknown, and GOINFER-ALONE is
+    for an Ollama arm that cannot run the cell.
+  - **Checked by day, 2026-10-08, untimed:** Ollama loads the same `g20` tag on Metal and answers. It placed all 25
+    layers on the GPU at 11,097 MiB against 12,123 MiB free. With 1 GB of headroom, the likely cause is Metal memory
+    not yet released by goinfer's 7.4 GB server, whose teardown preceded Ollama's warm-up by about 15 s.
+
+### The re-run, registered 2026-10-08 before it runs (owner: "anything to reschedule here")
+
+- **The cells:** M3 and M2 run again as a second, separate night, same pre-registration.
+- **What is unchanged:** cells, rules, bands, void conditions and binaries (`65b2c22a`). Ollama is **not** given
+  different settings.
+- **Two changes, both instruments:**
+  - The harness runs from a checkout with `G26Q:128` in `scripts/prompts.json`.
+  - It keeps Ollama's own log beside goinfer's serve logs, so a failed arm has its reason.
+- **The verdicts:**
+  - If M2's Ollama arm fails again, the cell is GOINFER-ALONE with that reason.
+  - If it runs, the paired cell is the reported one, with night 1 stated beside it.
+- **Script:** `peer-vetted-2026-10-07/run-mac-2.sh`, results in `~/goinfer-bench/peer-vetted/results-mac-2/`.

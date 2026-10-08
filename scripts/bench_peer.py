@@ -1182,9 +1182,13 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 # §B7's recorded peer configuration. Flash attention OFF because that is what the
                 # anchor used; leaving it default would compare against a different engine.
                 env["OLLAMA_FLASH_ATTENTION"] = "false"
-            proc = subprocess.Popen([OLLAMA, "serve"], env=env,
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    preexec_fn=os.setsid)
+            # Ollama's own log beside goinfer's serve logs (2026-10-08): a peer-vetted cell's Ollama arm failed its warm-up
+            # with a bare HTTP 500, and with the log discarded the reason (Metal memory at that moment) had to be re-derived.
+            os.makedirs(SERVE_LOG_DIR, exist_ok=True)
+            with open(os.path.join(SERVE_LOG_DIR, f"ollama-{backend}-{model_key}-{depth}-{cfg_name}.log"), "ab") as olog:
+                proc = subprocess.Popen([OLLAMA, "serve"], env=env,
+                                        stdout=olog, stderr=olog,
+                                        preexec_fn=os.setsid)
             port, url, parse, mk = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
                 (lambda: ollama_payload(tag, prompt, cfg, backend))
         elif engine == "llamacpp":
