@@ -11,7 +11,7 @@ from the code and not run. Nothing here was executed except reading files and th
      g4moe join (`metal/gemma4_moe.go:718`). The CUDA fix (`0907f07c`, which also added `KVSrcAtResident`) wired dense
      layers on CUDA (`cuda/backend.go:1528`), and WebGPU wires them too (`gpu/residency.go:649`). Metal has no other
      `LayerScalar` reference outside `embeddinggemma2.go`/`gemma4_moe.go`. `encodeLayerResidualWith`'s dense tail
-     ends at the down-proj and residual add (`metal/model.go:2965-3126`). Every E2B layer is dense, so this is
+     ends at the down-proj and residual add (`metal/model.go:2977-3138`). Every E2B layer is dense, so this is
      mandatory for S1.
    - **(b) No resident backend applies the scale-less `v_norm` on a NON-K=V layer.** HF applies
      `value_states = self.v_norm(value_states)` on EVERY non-shared layer (transformers 5.12
@@ -34,14 +34,14 @@ from the code and not run. Nothing here was executed except reading files and th
    (the token-table row read inline in `runLayersGemma4FromEmbed` as of 2026-10-06; S1.2 moved it into
    `Model.gemma4PLEInputs`). Every resident entry point carries only `embedding []float32`
    (`decoder/residency.go:50-87`, `metal/backend.go:542-561`). Recommended: an "augmented embedding row" built in
-   `embedResidentInto` (`decoder/residency.go:1540`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
+   `embedResidentInto` (`decoder/residency.go:1560`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
    computed host-side by the exact CPU code (bit-identical PLE inputs). Metal already has strict length checks to
-   extend (`metal/backend.go:544,609`, `metal/model.go:3618`). Details in §3.1.
+   extend (`metal/backend.go:544,609`, `metal/model.go:3630`). Details in §3.1.
 4. **The whole per-layer PLE branch can be built from kernels Metal already has:** `quant_vec`, `gemv_w4a8_sa`,
    `swiglu_quant` (whose `glu_act(g)*u` + int8 quant IS `gelu(gate)·ple` + quant), `rmsnorm_f32`, `residual`,
    `scale_vec`. No new MSL needed for step 1. `eg2_gelu_mul_ple` is semantically the same multiply but lives in a
    separate f32 library, and EG2's PLE has no token-identity term (§3.1).
-5. **Shared KV on Metal is buffer aliasing.** Metal's KV is linear, not a ring (`metal/model.go:1630-1663`).
+5. **Shared KV on Metal is buffer aliasing.** Metal's KV is linear, not a ring (`metal/model.go:1631-1664`).
    Aliasing also brings 4 traps: kv_store must be skipped or it writes into the source, MC1 slot copies, UploadKV,
    and accounting (§5).
 6. **Per-layer FFN width is a hard-coded model-level `r.I` on Metal**, and `I = FFNPerLayer[0]` (`decoder/gguf.go:376-377`).
@@ -72,7 +72,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
 ### 1.2 Forward, one token: `runLayersGemma4` → `runLayersGemma4FromEmbed`
 
 - **Embedding:** `h = Embed[id] × √hidden` (`decoder/forward_gemma4.go:29-40`). The resident twin is
-  `embedResidentInto` (`decoder/residency.go:1540-1567`).
+  `embedResidentInto` (`decoder/residency.go:1560-1587`).
 - **PLE inputs**, computed once per token from the INITIAL scaled embedding, before layer 0
   (inline in `runLayersGemma4FromEmbed` as of 2026-10-06, which the bare line numbers in this list refer to; S1.2
   moved the block verbatim into `Model.gemma4PLEInputs`):
@@ -174,10 +174,10 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 | `metal/kernels.go` | `allKernels`, compiled as ONE library: `+ moeKernels + gemma4MoeKernels + …` (:2089), so `scale_vec` is available to every build. Also `rmsnorm_f32` (:91), `quant_vec` (:172), `gemv_w4a8_sa` (:425), `kv_store` (:951), `glu_act` with the clamped tanh (:1889-1898), `swiglu_quant` (:1907) |
 | `metal/batch.go` | MC3 batched step. `batchIneligible` declines sandwich, kEqV and windows (:308-340), so all Gemma is excluded |
 | `metal/greedy_chain.go` | on-device embedding gather. `greedyChainWhyNot` declines `embedScale>1` (:63-91), so Gemma is excluded |
-| `metal/prefill.go` | f16 MMA batched prefill. Off for Gemma 4 via `!m.HasPerLayerGeometry()` (`metal/model.go:1286`, `decoder/features.go:529`) |
+| `metal/prefill.go` | f16 MMA batched prefill. Off for Gemma 4 via `!m.HasPerLayerGeometry()` (`metal/model.go:1287`, `decoder/features.go:529`) |
 | `metal/embeddinggemma2.go` | separate f32 encoder (own MSL lib); its PLE block is at :405-410 |
 
-### 2.2 Build (`buildResident`, `metal/model.go:1012-2072`)
+### 2.2 Build (`buildResident`, `metal/model.go:1013-2084`)
 
 - **Dims and scratch:**
   - `H, nL, nH, I, V` come from `m.Dims()` (:987). `I` is model-level.
@@ -203,11 +203,11 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - The `vNormUnit`/`uZero` plumbing is built for every model (:1735-1743).
   - Width `%8` checks via `bad8` (:1561+). Threadgroup-stage budget (:1590-1612). R18 rows per GEMV:
     `gemvRows.gu = gemvRowsFor(2*I,4)`, and down-staging only if `I <= MaxThreadgroupMemoryLength` (:1614-1626).
-- **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:856-858`).
+- **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:864-866`).
   The decoder then runs the prompt token by token: `ForwardNoLogits` for all but the last, then `Forward`
   (`decoder/model.go:1612-1640`).
 
-### 2.3 Decode step encode (`encodeLayerResidualWith`, `metal/model.go:2965-3126`; attention :3097-3260)
+### 2.3 Decode step encode (`encodeLayerResidualWith`, `metal/model.go:2977-3138`; attention :3097-3260)
 
 - **Attention:**
   - pre-norm: `rmsnorm_quant` gives int8 `aq` with a single per-vector scale.
@@ -231,14 +231,14 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 - **Adapter:**
   - `Forward(emb,pos)` → `ForwardMRoPE` checks `len==hidden` (`metal/backend.go:542-561`), then goes to
     `ForwardEmbMRoPEPipe`, the encode-ahead executor. The executor copies `job.emb` into `r.x` at commit time
-    (`metal/model.go:2437`).
+    (`metal/model.go:2449`).
   - `ForwardNoLogits` (:590) goes through the executor with `noHead`.
-  - `ForwardN` → `ForwardBatch` (`metal/model.go:3591`): layer-major in one command buffer, with per-row `batchX`
+  - `ForwardN` → `ForwardBatch` (`metal/model.go:3603`): layer-major in one command buffer, with per-row `batchX`
     slices and uniforms, and a `len(emb) != r.H` check.
-  - `ForwardArgmax(id,pos)` uses `loadEmbedRow` (`metal/model.go:2626-2629`).
-  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:948,1009`), and `StepBatch` (MC3,
+  - `ForwardArgmax(id,pos)` uses `loadEmbedRow` (`metal/model.go:2638-2641`).
+  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:981,1042`), and `StepBatch` (MC3,
     `metal/batch.go:914`, which declines Gemma).
-- **UploadKV** (`metal/backend.go:1102-`): writes host K/V rows at `base*kvDim`, f16 or int8.
+- **UploadKV** (`metal/backend.go:1135-`): writes host K/V rows at `base*kvDim`, f16 or int8.
 - **GenerateGemma4VL uses resident decode only when `bidirectional`** (the gate in `GenerateGemma4VL`, `decoder/generate_gemma4_vl.go`, as of 2026-10-06; S1.8 admits E-models too).
   That covers 26B/31B: CPU prefill → `residentUploadPrefill` → `m.resident.Forward(m.embedResident(next), gpuPos)`
   (:169-194). E2B never touches the resident, and `TestGenerateGemma4VL_sequentialPathNeverTouchesResident`
@@ -302,21 +302,21 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 - **Why not a side-channel `SetPLETokens()` interface:** a forgotten call site would silently reuse stale PLE.
   With augmented rows, a site that drops the tail fails a **strict** length check.
 - **Metal must assert `len == H + L·P` when PLE is on (and `== H` otherwise) at EVERY entry:** ForwardMRoPE
-  (`metal/backend.go:544`; ForwardNoLogits :609 already checks), the executor job, ForwardBatch (`metal/model.go:3618`), PrefillLast/prefillByStep,
+  (`metal/backend.go:544`; ForwardNoLogits :609 already checks), the executor job, ForwardBatch (`metal/model.go:3630`), PrefillLast/prefillByStep,
   HiddenLast/ResidualAll, ForwardNoLogits, ForwardSample, and StepBatch. Today `ForwardEmbMRoPE`/`forwardHiddenNoHead`
   do a bare `copy(r.x.Floats(), emb)` (:1973, :2000; the executor at :2209), which would **silently truncate** the tail.
   - `ForwardArgmax(id,pos)` and `Forward(id,pos)` take an id and use `loadEmbedRow` (:1846). They need the host PLE
     helper too, or must refuse when PLE is on. They are test-only paths (ForwardArgmax is unused in production per
     the N-03 note at `metal/model.go` softcapParallel comment).
 - **Device buffers:**
-  - model-level: `pleIn` `[L·P]` f32 shared (written at commit time like `r.x`, `metal/model.go:2437`); for
+  - model-level: `pleIn` `[L·P]` f32 shared (written at commit time like `r.x`, `metal/model.go:2449`); for
     ForwardBatch, a per-row `batchPLE [cap·L·P]` (grow in `ensureBatchCap`, :1878); `uP` (=P).
   - per layer: `pleGateW/S` (int4, rows P, K=H), `pleProjW/S` (rows H, K=P), `postPLENorm` (f32 [H]),
     `uLayerScalar` (1 float, for `scale_vec`).
   - scratch: `pleG [P]` f32, `pleQ [P]` int8 + 1 scale (reuse `r.dq/dSc` after the down-proj, or dedicate one).
 - **Per-layer encode,** appended after the dense FFN's residual in `encodeLayerResidualWith` (after :2814):
   1. `quant_vec(x → mq, mSc, uH)`. This quantizes the RAW residual. See risk R4, the massive-activation sink. The
-     alternative is `f32_to_f16(x)` + `gemv_w4f16_sa` (pipelines already built: `metal/model.go:1088-1096`).
+     alternative is `f32_to_f16(x)` + `gemv_w4f16_sa` (pipelines already built: `metal/model.go:1089-1097`).
   2. `gemv_w4a8_sa(pleGateW, mq, mSc → pleG)`, rows P.
   3. **`swiglu_quant(pleG, pleIn.At(l·P·4), pleQ, pleSc, uP, uAct)`.** This IS `gelu_tanh(gate)·perLayer[l]`
      followed by int8 quant, with the clamped tanh (`metal/kernels.go:2037-2078`). P=256 is divisible by 4.
@@ -346,17 +346,17 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - Skip K-norm, `v_norm`, K-rope and **`kv_store`**.
   - `attention` reads `r.kc[l]` (the alias) with `uNKeys = pos+1` and the layer's own window. Inside one command
     buffer the source layer's `kv_store` for this `pos` was already encoded earlier (src < l), so ordering is correct.
-- **MC1 slots** (`metal/model.go:1663-1690`):
+- **MC1 slots** (`metal/model.go:1664-1691`):
   - In the `kvContig` path, `r.kc[l].At(s*kvSlotBytes[l])` coincides with the source's view when aliased.
     INFERRED OK.
   - The **non-contig path (int8 KV, `allocSlots=1`) allocates a fresh `byteBuf` for every layer with a non-zero
     `kc`**, so a shared layer gets its own empty buffer in slots ≥ 1. That is a silent garbage read. Alias in that
     loop explicitly, as `b.kc[l] = b.kc[src]`.
-- **UploadKV** (`metal/backend.go:1102`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
+- **UploadKV** (`metal/backend.go:1135`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
   skips it only because the CPU cache is empty there (`decoder/generate_vl_resident.go:26-28`), and an upload through
   the alias would overwrite the source.
 - **Bookkeeping:**
-  - `kvBuffers()` (`metal/model.go:2511-2518`) will list aliased buffers twice. The ledger-based `ReleaseAll` is
+  - `kvBuffers()` (`metal/model.go:2523-2530`) will list aliased buffers twice. The ledger-based `ReleaseAll` is
     safe, but check any residency-set or teardown-consistency test that assumes uniqueness (`residencyBufs`, :262).
   - Host readers of `kc` (snapshots, `kvHostOff`) must not double-export.
 - **Accounting:**
@@ -371,7 +371,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 ### 3.3 Per-layer FFN width (`FFNPerLayer`)
 
 - **Model-level `r.I` and `r.uI` are wired through every dense FFN dispatch:**
-  - gate|up rows `2*r.I` (`metal/model.go:3032-3036`).
+  - gate|up rows `2*r.I` (`metal/model.go:3044-3048`).
   - the `swiglu_quant` up offset `r.gu.At(r.I*4)` and `r.uI` (:2802).
   - down `K=r.uI` (:2804, :2816-2818).
   - LoRA offsets (:2799).
@@ -387,7 +387,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `batch.go`/`prefill.go` also read `r.I` (`metal/batch.go:336-337`), but both are declined for this family. Add
     explicit E-model guards anyway (§5, R7).
 - Budget: E2B max 12288. Threadgroup staging for the dense down is not counted
-  (`metal/model.go:734-736` comment). The R18 staged down needs `I ≤ MaxThreadgroupMemoryLength` (12288 ≤ 32768 OK).
+  (`metal/model.go:735-737` comment). The R18 staged down needs `I ≤ MaxThreadgroupMemoryLength` (12288 ≤ 32768 OK).
 - `use_double_wide_mlp` is the HF origin of the varying widths (`TF/models/gemma4/modeling_gemma4.py:1068-1073`). The GGUF carries
   the array.
 
@@ -421,7 +421,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 | kvSrc map | `decoder/gemma4_kvsrc_test.go:14-90` | reuse |
 | Shared-KV-only tiny (PLE-free): `gemma4-vl-tiny`, 4 layers, `num_kv_shared_layers=2`, K=V globals | `scripts/pin_gemma4_vl_tiny.py:36-56`; tests `decoder/gemma4_vl_test.go:24,96` | gitignored (`.gitignore:213`), **absent on the Mac**; regen needs `~/.venv-vl` |
 | E2B vision tower on Metal | `metal/gemma4_vision_e2b_real_test.go:21` | tower only |
-| Metal resident-vs-CPU patterns | `metal/gemma4_twogeom_test.go:41-63,181-232` (direct `buildResident`, int4 both sides, argmax + 3% near-tie rule, cosine 0.90 backstop at the time, 0.995 since S1.0); `metal/gemma4_dense_scaled_test.go:24-111` (calibrated envelope: mean Metal-vs-CPUint4 ≥ mean CPUint4-vs-f32, pos0 ≥ 0.97); `metal/gemma1_resident_parity_test.go:18-56` (via `Load(Backend:"metal")` + `ResidentForwardForTest`, 16 positions, worst cosine ≥ 0.999); localize helpers `forwardTrunkForTest`/`forwardSubCaptureForTest` (`metal/model.go:2684,2704`) | mirror |
+| Metal resident-vs-CPU patterns | `metal/gemma4_twogeom_test.go:41-63,181-232` (direct `buildResident`, int4 both sides, argmax + 3% near-tie rule, cosine 0.90 backstop at the time, 0.995 since S1.0); `metal/gemma4_dense_scaled_test.go:24-111` (calibrated envelope: mean Metal-vs-CPUint4 ≥ mean CPUint4-vs-f32, pos0 ≥ 0.97); `metal/gemma1_resident_parity_test.go:18-56` (via `Load(Backend:"metal")` + `ResidentForwardForTest`, 16 positions, worst cosine ≥ 0.999); localize helpers `forwardTrunkForTest`/`forwardSubCaptureForTest` (`metal/model.go:2696,2716`) | mirror |
 | **Tiny E-model with PLE + shared KV + varying FFN** | none | **must be built (S1.1)** |
 
 Building the tiny E-model fixture requires either:
@@ -463,8 +463,8 @@ Pin the fixture like `pin_gemma4_vl_tiny.py`, with these settings:
   26B "bar 0.88, int4-hostile" may partly be this.
 - **R6. MC1 int8-KV slot copies** allocate per layer, so a shared layer must alias in every slot (§3.2).
 - **R7. Paths that are declined only incidentally:** MC3 step (sandwich, `metal/batch.go:320-321`), greedy chain
-  (`embedScale>1`, `metal/greedy_chain.go:67-68`), f16 MMA prefill (`HasPerLayerGeometry`, `metal/model.go:1286`),
-  W4F16 lane (sandwich, `metal/model.go:3158`). None of them runs PLE/shared-KV/per-layer FFN. Add explicit
+  (`embedScale>1`, `metal/greedy_chain.go:67-68`), f16 MMA prefill (`HasPerLayerGeometry`, `metal/model.go:1287`),
+  W4F16 lane (sandwich, `metal/model.go:3170`). None of them runs PLE/shared-KV/per-layer FFN. Add explicit
   `pleDim>0 || sharedKV` declines to each, because a future uniform-geometry E-variant (or a step-kernel widening)
   would otherwise admit them. The doc's own lesson: "explicit, checked directly rather than assumed caught".
 - **R8. Memory accounting:**

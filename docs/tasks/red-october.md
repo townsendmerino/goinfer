@@ -330,7 +330,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:1046` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:1079` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -876,8 +876,8 @@ new decision.
 item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchronous-only closure,
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
-(`metal/model.go:546`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:2391-2391`), and `ForwardEmbNoLogitsPipe`
+(`metal/model.go:547`), `execLoop` branching on it to pre-encode the next command buffer while the
+current one is still on the GPU (`metal/model.go:2403-2403`), and `ForwardEmbNoLogitsPipe`
 (`metal/backend.go:615`) as the entry point — matching M-01's own Fix-section sketch almost
 verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:607-619`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
@@ -1683,7 +1683,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:1046` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `metal/backend.go:1079` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).

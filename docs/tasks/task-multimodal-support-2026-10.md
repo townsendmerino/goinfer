@@ -2469,6 +2469,63 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       CPU bridge on 14 tokens.
     - Ship at >= 1.02x TTFT (the owner's default); 1.00-1.02 parked; under 1.00 off.
 
+- **S16 on Metal, step 1 (Qwen2.5-VL's m-RoPE prefill), built and gated on the tiny fixtures 2026-10-08.**
+  - **What:** `metalResident.PrefillMRoPELast` (`decoder.ResidentMRoPEPrefill`), the f16 batched pass with each row
+    rotated by its own (t, h, w) triple.
+    - **The kernel,** `rope_mrope_f16`, reads a per-pair axis table that the decoder builds from its own
+      `mropeComponent` / `mropeComponentInterleaved` (`Model.MRopeAxisResident`), so the layout lives in one place.
+    - **The K/V cache** is still placed by sequence position.
+    - **Shared declines:** `PrefillLast`'s checks moved into one helper (`batchedPrefill`), so the image entry declines
+      in exactly the text pass's cases. The batched step and the layer-major routes never take it.
+  - **G-S16a / G-S16b (defects 1-3), PASS** (`TestS16MRoPEPrefill_tiny`).
+    - **Coverage:** the tiny Qwen2.5-VL and Qwen3.5 VL fixtures, each with its golden prompt and with a synthetic 16x24
+      image (96 merged rows, random features at the golden features' scale).
+    - **Why the synthetic image:** the golden 2x3 grid keeps every position under 6, where most rotary pairs barely
+      turn and a position defect can hide.
+    - **Results:**
+      - the new path's worst cosine is 0.999943 / 0.999950 / 0.999935 / 0.999948, with every argmax equal, over the
+        last row and 8 decode steps against today's path;
+      - through `GenerateQwenVL`, the Qwen2.5-VL fixture takes the resident prefill and its greedy tokens equal today's
+        path's.
+    - **Defects, each red on at least one case:** (1) h and w swapped 0.99538; (2) the image rows 1-D 0.98174; (3) the
+      text after the image uncompressed 0.98380.
+    - **Not seen on the Qwen2.5-VL fixture:** the h/w swap. Its head dim 16 and rope base 10000 put h and w on
+      frequencies that turn under 0.12 rad across the whole grid. Real size covers it.
+  - **The hybrid (Qwen3.5+) is NOT claimed**, so `HybridMRoPEPrefill` is not implemented on Metal, and a hybrid's image
+    turn stays on the CPU as before.
+    - **Why:** a hybrid's only reference decodes on the CPU, so its per-step comparison cannot isolate the prefill.
+    - **Measured 2026-10-08 on Qwen3.5-0.8B,** the four F2a images, every row at a flat text position (so no m-RoPE in
+      any arm). Every pair of backends differs by about the same:
+
+      | comparison | worst cosine |
+      |---|---|
+      | Metal sequential vs CPU | 0.87-0.94 |
+      | Metal batched vs CPU | 0.89-0.95 |
+      | Metal batched vs Metal sequential | 0.88-0.94 |
+
+    - **The text baseline** for the same model and comparison is 0.987-0.990.
+    - **So:** the gap is this model's sensitivity on image prompts across kernel sets, not the m-RoPE pass. A hybrid
+      claim needs a G3-shaped gate (model-level non-inferiority), not G-S16a's per-step bar. Parked for the owner.
+  - **S16's night job, registered 2026-10-08 before it runs** (`docs/measurements/multimodal-support-2026-10/s16/
+    run-s16-night.sh`, night queue `s16-night`; Qwen2.5-VL-3B, which the fit guard refuses by day):
+    1. **G-S16c, real:** `TestS16MRoPEPrefill_real`, the four F2a images, today's path (the upload bridge, Metal decode)
+       against the S16 prefill, at G-S16a's bar.
+    2. **G-S16c, served:** one image request (`run-gs3c-served.sh`'s), the same binary with `--exact-prefill` (today's
+       path) and without. PASS: identical Metal replies, or the first difference at a near-tie in today's
+       log-probabilities.
+    3. **Speed, a record:** image-turn TTFT, today's path against S16, `vision_ttft.py`, 3 rounds of 1 warm-up + 3 timed,
+       the order rotated, a new 896² image every request.
+       - **The projection band, written before it runs:**
+         - On the S16 build, the tower is lever A+B's (about 8.6 s / 2.8 ≈ 3.1 s).
+         - Today's path's other time was 13.1 s on the 2026-10-07 S7 cell (21.67 s TTFT less its 8.59 s tower): the
+           CPU prefill, the upload and the first token.
+         - S16 prefills about 1,040 rows at 110-180 tok/s, the 1.5B's f16-MMA 225-366 TTFT tok/s
+           (`docs/benchmarks.md`, 2026-09-18) halved for the 3B: 5.8-9.5 s.
+         - **So TTFT goes about 16.2 → 9.1-12.8 s: 1.3-1.8x.**
+       - **The rule:** ship at >= 1.02x, park at 1.00-1.02, off below 1.00. Below the band's low end with no mechanism
+         found: parked.
+    - **Cost:** about 25 minutes, queued at 40.
+
 ### S17 — Tower speed on both backends (added 2026-10-07 evening)
 
 - **The gap:** the device towers are correct float32 baselines, and slow.
