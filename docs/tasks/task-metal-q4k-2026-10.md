@@ -130,3 +130,33 @@ logits cosine at least 0.99 and no NaN, on a decode path reading `metal-resident
   - run G-Q2/G-Q3 at night with a pinned small context, when the Mac's free memory is the budget;
   - a guarded bypass with the +1 GB swap kill-watch.
 
+### Owner decision 2026-10-08: G-Q2 and G-Q3 at night, the fit guard on
+
+The owner chose the night queue (option a) over a guarded bypass by day and over a memory fix first. Written before
+either gate runs:
+
+- **G-Q2, as it runs:** `TestQ4KLane_realPhi3NonInferiority` (`metal/q4k_phi3_real_test.go`).
+  - **The procedure is G3's, unchanged:** `g3Run`, the eight G3 prompts, 32 greedy tokens, free run then teacher-forced,
+    at a pinned context of 512.
+  - **The reference:** Qwen2.5-Coder-1.5B's int4 Metal sidecar, as G3 runs it, in the same process and before Phi-3.
+  - **The bands are those registered above.** PASS: Phi-3's agreement is at least the reference's minus 2.0 points, and
+    its free-run passes at least the reference's minus 1. AMBIGUOUS (parked): 2.0-4.0 points below. FAIL: worse.
+  - **One departure from G3: one load, not two.** Phi-3 at q4k has no Metal sidecar to load twice, and two loads do not fit
+    16 GB, so the model that builds the resident is also the CPU reference.
+    - **Checked by day, 2026-10-08,** by `TestQ4KLane_g3OneLoadMatchesTwo` on Qwen2.5-Coder-0.5B q4_k_m: one load and two
+      loads gave identical counts (8/8 prompts, 395/398). Building the resident does not change that model's CPU forward.
+    - (The 0.5B's 99.25% is that check's by-product, not a G-Q2 reading.)
+- **G-Q3, as it runs:** `docs/measurements/metal-q4k-2026-10/run-gq3-served.sh`.
+  - **The request:** one request, the peer harness's `phi3-mini:128` prompt, 64 greedy tokens, top-3 log-probabilities.
+  - **The arms:** one serve binary, `-quant q4k -ctx 512`, `--backend cpu` (the reference) and then `--backend metal`.
+  - **Each arm's decode path must read as named** (`cpu (q4k)` / `metal-resident (q4k)`), or the run is void.
+  - **PASS:** identical text, or the first differing token at a near-tie (the CPU's p(other) at least half its top).
+  - **By-day smoke of the script** (Qwen2.5-Coder-0.5B, exploratory, not a result): ran end to end. The replies first
+    differed at generated token 20, a near-tie (0.361 against 0.350).
+- **The night job:** `docs/measurements/metal-q4k-2026-10/run-gq-mac.sh`.
+  - Pinned worktree with its own `go.work`, a test binary and a serve binary built there.
+  - **The fit guard stays on.** A refusal is recorded as a refusal, and the next step is the owner's.
+  - Results in `~/goinfer-bench/metal-q4k/results-<date>/` on the MacBook.
+- **What follows a PASS of both:** M1, the Phi-3 Metal peer cell, by an amendment to
+  `docs/measurements/peer-vetted-2026-10-07-macbook.md`.
+
