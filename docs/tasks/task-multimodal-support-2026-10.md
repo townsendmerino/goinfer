@@ -2894,6 +2894,20 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Not covered.** An explicit `Release` from another goroutine (a caller closing a matrix after its Context while another Context closes) is not serialized; it stays the caller's ordering. The leaked buffers themselves
     are a separate hygiene item (the live-buffer gauge in `gpu/bufaccount.go` counts them). `GOGC=1` did not amplify the hang. The night triage job is now the `TestSpecNonCopyLane` run alone (`noncopy-fixed-head`).
 
+- **The WebGPU hang's "not covered" list, worked 2026-10-08 (code on the local branch `gpu-explicit-release`, commit bf77ca50; NOT on main until a device run passes).** (1) A wrapper closed by the caller after its
+  Context: `ResidentMatrix`, `ResidentW8A8`, `ResidentW4A8` and `ResidentStackedW8A8` now carry their Context, and those, the GEMV and decode runners, `residentDecoder` and `VisionEncoder` release through
+  `Context.releaseOwned`: in place while the Context is live, on the finalizer goroutine once it is closed (a release already running there is detected by goroutine id and runs in place, so a Close that closes other
+  wrappers does not wait on itself). `ResidentStackedW8A8.Close` also nils its buffers now: a second Close used to release twice. (2) Leaks: `ResidentMatrix` and the stacked weights join the live-buffer gauge
+  (`LiveBufferBytes` covered three of the five resident types); `Context.Close` calls a test-only hook on the caller's goroutine, and the package's `TestMain` prints a LEAK REPORT naming each test that closed a Context
+  with buffers still live (`GOINFER_GPU_LEAKS_FATAL=1` fails the package). The report is the work list for the leaks themselves; none has been fixed yet because none has been listed. `DeviceBuffer` (the per-op
+  activation buffers, 19 creation sites) does not hop: it has no Context back-pointer and is closed in place, normally before its Context.
+  - **Status:** only `TestReleaseOwned` (the routing, no device) has run. The reproducer `TestContextClose_lateWrapperClose`, its planted defect (hop off, must hang), the whole `./gpu/` package, the leak report and a 10-run
+    cell loop need the GPU, which the night queue held when this was written: `run-gpu-release-validate.sh` is queued last tonight (est 20 min) and has never run, plumbing included. Read `validate-summary.txt` in the
+    morning; merge the branch to main only if the reproducers pass, the planted defect is red, the suite is 142 pass / 0 fail and all ten cell runs are clean.
+  - **A disclosure about tonight's queue:** after the queue started at 11:02 I compiled and vetted the `gpu` package three times and ran its device-free test, on the same box as the first job's timed CPU cells. The
+    harness's cell gate saw the load ("loadavg 5.19 > 1.00, waiting") and held the cell until it fell, so the cells were not started under load, but a compile burst inside a cell would not have been seen. Read
+    `peer-vetted-nobara-3` with that in mind (its raw log has the gate lines).
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
