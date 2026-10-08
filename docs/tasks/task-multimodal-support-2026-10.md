@@ -2538,6 +2538,23 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       measure it.
     - **Qwen2.5-VL-3B's G-S16c** is the night job's (the fit guard refuses it by day).
 
+  - **G-S16a / G-S16c's bar, re-registered 2026-10-08 (owner: "a, change the bar"), before it is applied to any reading.**
+    - **Why:** the per-step 0.9999 is stricter than Metal's shipped f16 text prefill achieves against the CPU's int4
+      prefill (0.977-0.997, measured above).
+    - **The control:** for each image prompt, text-only prompts of the same length on the same model, in the same
+      isolated comparison: the CPU prefill and upload, against Metal's batched prefill, both decoding the same 8
+      teacher-forced steps on Metal. Four prompts per length (token seeds 1-4), so the control has a spread.
+    - **PASS:** the image turn's worst per-step cosine (the last row and 8 steps) is at least the control's minimum
+      minus 0.005, and every argmax difference is a near-tie by R10 (the other token's reference p at least half the
+      top's).
+    - **Parked:** 0.005-0.015 below the control's minimum.
+    - **FAIL:** worse, or a non-tie argmax difference.
+    - **The tiny gates keep their passing readings;** this rule governs the real-size G-S16c.
+    - **What it gates:** Qwen2.5-VL's path (no DeepStack) and Qwen3-VL's (DeepStack) each turn on in production only
+      when that model passes.
+    - **Tonight:** step 1 runs a test binary with the control, from a later rev. The served and speed steps keep the
+      `a1e007c7` serve binary, where the path was on.
+
   - **S16's night job, registered 2026-10-08 before it runs** (`docs/measurements/multimodal-support-2026-10/s16/
     run-s16-night.sh`, night queue `s16-night`; Qwen2.5-VL-3B, which the fit guard refuses by day):
     1. **G-S16c, real:** `TestS16MRoPEPrefill_real`, the four F2a images, today's path (the upload bridge, Metal decode)
