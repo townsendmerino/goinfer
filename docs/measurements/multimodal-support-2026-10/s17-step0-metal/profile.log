@@ -1,0 +1,24 @@
+=== RUN   TestS17Profile
+| tower | image | rows | unprofiled ms | profiled GPU ms | gemm ms (share, TFLOPS) | attention ms (share, TFLOPS) | norm ms (share) | elementwise ms (share) | buffers |
+|---|---|---|---|---|---|---|---|---|---|
+=== RUN   TestS17Profile/siglip
+| SigLIP | gemma3_preprocess_image.png | 4096 | 8938.1 | 8680.1 | 2972.1 (34%, 1.13) | 5642.0 (65%, 0.37) | 16.0 (0%) | 48.6 (1%) | 325 |
+| SigLIP | qwen25vl_preprocess_image.png | 4096 | 9036.8 | 8683.8 | 2975.7 (34%, 1.13) | 5642.4 (65%, 0.37) | 16.0 (0%) | 48.5 (1%) | 325 |
+| SigLIP | glm_ocr/formula.png | 4096 | 9009.8 | 8680.7 | 2975.2 (34%, 1.13) | 5642.5 (65%, 0.37) | 15.4 (0%) | 47.9 (1%) | 325 |
+| SigLIP | glm_ocr/table.png | 4096 | 8991.7 | 8681.2 | 2975.4 (34%, 1.13) | 5641.8 (65%, 0.37) | 15.5 (0%) | 49.1 (1%) | 325 |
+=== RUN   TestS17Profile/qwen2.5-vl
+| Qwen2.5-VL | gemma3_preprocess_image.png | 4096 | 8152.3 | 6651.9 | 4744.2 (71%, 1.09) | 1807.8 (27%, 0.21) | 17.3 (0%) | 77.4 (1%) | 412 |
+| Qwen2.5-VL | qwen25vl_preprocess_image.png | 24 | 112.6 | 90.7 | 69.5 (77%, 0.44) | 19.1 (21%, 0.00) | 0.7 (1%) | 1.2 (1%) | 384 |
+| Qwen2.5-VL | glm_ocr/formula.png | 6192 | 13135.8 | 11209.1 | 7472.3 (67%, 1.05) | 3602.4 (32%, 0.23) | 25.6 (0%) | 114.9 (1%) | 440 |
+| Qwen2.5-VL | glm_ocr/table.png | 5504 | 11282.5 | 9362.7 | 6341.6 (68%, 1.10) | 2885.6 (31%, 0.23) | 23.2 (0%) | 104.1 (1%) | 412 |
+=== RUN   TestS17Profile/qwen3.5
+| Qwen3.5-0.8B | gemma3_preprocess_image.png | 3136 | 1124.8 | 1045.4 | 453.5 (43%, 1.19) | 573.6 (55%, 0.63) | 4.1 (0%) | 12.1 (1%) | 145 |
+| Qwen3.5-0.8B | qwen25vl_preprocess_image.png | 280 | 88.0 | 76.9 | 53.7 (70%, 0.90) | 20.9 (27%, 0.14) | 0.7 (1%) | 1.5 (2%) | 145 |
+| Qwen3.5-0.8B | glm_ocr/formula.png | 4060 | 3011.7 | 2916.0 | 678.0 (23%, 1.03) | 2217.1 (76%, 0.27) | 5.4 (0%) | 16.5 (1%) | 145 |
+| Qwen3.5-0.8B | glm_ocr/table.png | 3888 | 1768.4 | 1691.3 | 650.6 (38%, 1.03) | 1018.2 (60%, 0.55) | 5.2 (0%) | 15.9 (1%) | 145 |
+--- PASS: TestS17Profile (384.95s)
+    --- PASS: TestS17Profile/siglip (182.57s)
+    --- PASS: TestS17Profile/qwen2.5-vl (170.49s)
+    --- PASS: TestS17Profile/qwen3.5 (31.90s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	385.831s
