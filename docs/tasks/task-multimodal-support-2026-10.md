@@ -2506,6 +2506,38 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **The text baseline** for the same model and comparison is 0.987-0.990.
     - **So:** the gap is this model's sensitivity on image prompts across kernel sets, not the m-RoPE pass. A hybrid
       claim needs a G3-shaped gate (model-level non-inferiority), not G-S16a's per-step bar. Parked for the owner.
+  - **S16 step 2 (Qwen3-VL's DeepStack), built 2026-10-08.**
+    - **The decoder:** a new optional `decoder.ResidentMRoPEDeepstackPrefill`, which `GenerateQwenVLDeepstack` uses
+      when the resident implements it. Before, a turn with DeepStack sets always prefilled on the CPU.
+    - **Metal:** `PrefillMRoPEDeepstackLast` adds set l to the image rows of the f16 residual after layer l, at the top
+      of iteration l+1 and after the loop, so every branch of the layer loop reaches it (the MoE branches end in
+      `continue`).
+    - **Its tiny gate PASSES** (`TestS16DeepstackPrefill_tiny`: the qwen3vl-tiny decoder, a synthetic 16x24 image,
+      random features and sets): worst cosine 0.9999463.
+      - Each planted defect is red on cosine: (4) the sets not added 0.98195; (5) added one layer late 0.98195 (in a
+        2-layer model "late" pushes set 0 past the last layer, where nothing reads it, as on the CPU); (6) added to the
+        text rows too 0.99350.
+      - **The argmax reading:** this fixture's next-token distribution is nearly uniform (top p about 0.005), so argmax
+        differences are read by R10's near-tie rule. Every one was a near-tie, including the free runs' first
+        divergence through `GenerateQwenVLDeepstack`, which took the resident prefill.
+  - **G-S16c on Qwen3-VL-2B, read 2026-10-08 by day: FAIL against the registered bar.**
+    - **The readings:** the four F2a images, today's path (the CPU prefill with the sets, the upload, Metal decode)
+      against the DeepStack prefill. Worst per-step cosine 0.9718 / 0.9776 / 0.9846 / 0.9865, with argmax 8/9 on two
+      images. The bar was 0.9999 and an equal argmax.
+    - **The mechanism, measured the same day:** the same isolated comparison on a text-only prompt reads worst 0.97726
+      at 84 tokens and 0.99739 at 800. That is the CPU prefill and upload against Metal's shipped batched text
+      prefill, both decoding on Metal, with no image and no m-RoPE.
+    - **So:** the m-RoPE prefill sits at the shipped f16 prefill's own distance from the CPU's int4 prefill (that
+      prefill was graded by the §3.2 pooled gate, not a per-step 0.9999). G-S16a's bar held on the tiny fixtures and is
+      stricter than the shipped text path at real size.
+    - **The bar stands as registered.** Re-registering it is the owner's: for example, non-inferiority to the same
+      model's text-prefill control at the same length, or S1's G3 shape.
+    - **Until then the resident m-RoPE prefill is OFF in production** (`metalMRoPEPrefillOn`, default false; the gates
+      turn it on). An image turn takes the CPU prefill and upload, as before.
+    - **The night job is pinned at `a1e007c7`**, where the path was on, so its G-S16c, served and speed readings still
+      measure it.
+    - **Qwen2.5-VL-3B's G-S16c** is the night job's (the fit guard refuses it by day).
+
   - **S16's night job, registered 2026-10-08 before it runs** (`docs/measurements/multimodal-support-2026-10/s16/
     run-s16-night.sh`, night queue `s16-night`; Qwen2.5-VL-3B, which the fit guard refuses by day):
     1. **G-S16c, real:** `TestS16MRoPEPrefill_real`, the four F2a images, today's path (the upload bridge, Metal decode)
