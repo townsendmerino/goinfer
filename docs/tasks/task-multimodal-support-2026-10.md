@@ -2401,6 +2401,23 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       against speed on CUDA: float32 is exact and about twice as fast. It stays the owner's decision. (2) S7's 5 s bar is met by the tower alone for every CUDA tower measured here. (3) Tonight's queued records were
       re-pinned to the build with this kernel before they ran: `s4sig-speed` and `s4-tower-speed` (their test binaries), S7 (every cell but its Gemma 3 'before' cell) and S13-lite (the goinfer arm), amended
       2026-10-07 evening, before any of them ran.
+- **S7 on CUDA, the fix: Qwen2.5-VL on goinfer's tower base. Registered 2026-10-08 before any code.** S7's worst CUDA cell is Qwen2.5-VL-3B at 15.64 s: at defaults aikit's `gpu/qwencuda` tower ran out of device memory
+  (a 56 MB scratch allocation, with 3630 MB reserved) and the CPU tower encoded for 15 s; and even on CUDA that tower measured 7.97 s for this image (`s4-tower-speed`), over the 5 s bar on its own, because it carries aikit's unfused
+  attention (S17 step 0's finding for every tower).
+  - **What changes** (`cuda/qwen25_vision.go`, the `gridQwen25` kind on `cuda/grid_vision.go`): Metal's port (`metal/vl_towers.go`) on the CUDA tower base, from aikit's own exports (`GPUWeights`, `BuildWindowPlan`, `MergeHidden`, so the window
+    permutation, both segmentations and the RoPE tables are the CPU path's, not reimplemented): the pixel rows permuted into window order before the patch embed, then per block RMSNorm (eps 1e-6), biased split q/k/v, NeoX rotate-half
+    RoPE from the plan's tables, **attention per window segment (per frame segment on the full-attention blocks) through the fused kernel**, biased proj and residual, RMSNorm, the SiLU-gated MLP with its biases, residual; the output permuted
+    back to the original patch order; the merger stays aikit's, on the host. Float32 only (an int8-loaded encoder declines, as Metal's does). It registers through `vision.RegisterQwenResident` in the cuda package and replaces the blank import of
+    aikit's `qwencuda` (whose allocation-failure fix, v0.1.1, stays in aikit); serve's `recoverDeviceTower` and `qwenForwardWithFallback` keep guarding it.
+  - **Gates (G-S3a's, for the Qwen2.5-VL tower on CUDA; bars and planted defects unchanged from the Metal rebuild):** every merged token at cosine >= 0.9999 against aikit's CPU tower (0.999-0.9999 ambiguous, parked), on the tiny tower
+    (`qwen25vl-tiny`, the grids 8x8, 12x16 and a two-image batch; norms randomised and q/k/v/proj sharpened first, exactly as Metal's check, because the tiny tower's init-scale weights hid most of S3's defects) and on `qwen25vl-3b-instruct` at real
+    size on the four F2a images. Planted defects, each alone red on the tiny tower: (1) the attention scale dropped, (2) RoPE's halves swapped, (3) every block attending its whole frame, (4) the window reordering skipped. The fused kernel's own defects
+    stay covered by the kernel and tower gates already registered (S17 lever A).
+  - **Bands, written before the code (tower = GEMM + attention + the rest, from S17 step 0's rates: GEMM 3.5 TFLOPS, fused attention 2.5):** the 896x896 image (64x64 grid, 4096 patches): GEMMs about 5.2 TFLOP = 1.5 s, the four full-attention blocks
+    about 0.3 s, the rest 0.1-0.2 s, so **1.7-2.6 s against aikit's 7.97 s (3-4.7x)**; formula.png (86x72, 6192 patches): **2.5-3.8 s against 15.3 s**. **The S7 reading it is for:** the Qwen2.5-VL cell under the 5 s bar at serve's defaults on the 8 GB card
+    (the tower attached on CUDA, not the CPU fallback), predicted 3-4 s (the tower plus the resident m-RoPE prefill of about 1,000 merged tokens).
+  - **Kill line:** a worst token under 0.9999 at real size is not shipped however fast; a tower over 4 s on the 896x896 image, or the S7 cell still over 5 s at defaults with the tower on CUDA, means the plan is wrong and is re-opened, not tuned to pass.
+  - **Reserve:** `towerVRAMEstimate` for `qwen2_5_vl` prices 8192 patches at about 3.4 GB; this tower's float32 weights are about 2.5 GB and its scratch about 68 KB per patch (0.28 GB at 4096), so the estimate stands as a ceiling; it is measured, not assumed, in the S7 cell.
   - **Step 0 on Metal, read 2026-10-07 18:56-19:03 PDT: the time is GEMMs and attention; norms and elementwise are ~1%.**
     - **The run:** `s2-towers` at `9b7da484`, `TestS17Profile`.
     - **Its validity:**
