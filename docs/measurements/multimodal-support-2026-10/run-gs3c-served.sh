@@ -2,13 +2,15 @@
 # G-S3c's served comparison (docs/tasks/task-multimodal-support-2026-10.md, S3): one image request per checkpoint
 # (testdata/glm_ocr/table.png, "What does this image show? Answer briefly.", 32 greedy tokens, top-3 log-probabilities),
 # through ONE serve binary, once per arm. Every arm keeps the vision tower on the CPU (-vision-device cpu), so only the
-# decoder's backend differs. The first arm is compared against each later one: identical reply text, or the first
-# differing token and the near-tie read (the reference arm's p(other token) >= half its own top token's p).
+# decoder's backend differs. The REFERENCE arm, marked with a leading "=", is compared against every other arm: identical
+# reply text, or the first differing token and the near-tie read (the reference arm's p(other token) >= half its own top
+# token's p). Exactly one arm must be marked; the script refuses otherwise. (Until 2026-10-07 the FIRST arm was the
+# reference, which made G-S3b's Metal-tower arm the reference for Gemma 3 when the registered one is -vision-device cpu.)
 #
 # Usage: run-gs3c-served.sh <serve binary> <out dir> <arm>[,<arm>...] <model dir>...
 #   an arm is a --backend value, optionally :<-vision-device> (default cpu), e.g. metal:auto puts the tower on Metal too
-#   (G-S3b: metal:cpu,metal:auto); a repeated arm runs again as a control (its files get a numeric suffix).
-# Example (nobara): run-gs3c-served.sh ~/goinfer-bench/s3/serve-cuda ~/goinfer-logs/s3c-cuda cpu,cuda,cpu \
+#   (G-S3b: =metal:cpu,metal:auto); a repeated arm runs again as a control (its files get a numeric suffix).
+# Example (nobara): run-gs3c-served.sh ~/goinfer-bench/s3/serve-cuda ~/goinfer-logs/s3c-cuda cuda,=cpu,cpu \
 #                     ~/models/qwen25vl-3b-instruct ~/models/gemma-3-4b-it
 # GS3C_EXTRA adds serve flags to EVERY arm (e.g. "--kv-sessions 1" so a 4B model fits the 8 GB card; added 2026-10-07 by nobara).
 # Run from the repo root (it reads testdata/). Checkpoints come from ~/models, never the archive.
@@ -21,7 +23,18 @@ PORT=${GS3C_PORT:-18454}
 for dir in "$@"; do
   case "$dir" in /Volumes/*|/srv/models*) echo "$dir is the archive (CLAUDE.md)" >&2; exit 2;; esac
 done
-IFS=, read -r -a arms <<<"$ARMS"
+IFS=, read -r -a marked <<<"$ARMS"
+arms=() refidx=-1
+for i in "${!marked[@]}"; do
+  a=${marked[$i]}
+  if [[ $a == =* ]]; then
+    [ "$refidx" -lt 0 ] || { echo "two arms are marked as the reference (\"=\"): $ARMS" >&2; exit 2; }
+    refidx=$i a=${a#=}
+  fi
+  arms+=("$a")
+done
+[ "$refidx" -ge 0 ] || { echo "no reference arm: mark exactly one arm with a leading \"=\" (e.g. =cpu,metal)" >&2; exit 2; }
+[ "${#arms[@]}" -ge 2 ] || { echo "need the reference and at least one other arm: $ARMS" >&2; exit 2; }
 for dir in "$@"; do
   fam=$(basename "$dir")
   labels=()
@@ -63,9 +76,12 @@ EOF
     trap - ERR EXIT
     kill $pid; wait $pid 2>/dev/null || true; sleep 2
   done
-  python3 - "$OUT" "$fam" "${labels[@]}" <<'EOF'
+  python3 - "$OUT" "$fam" "$refidx" "${labels[@]}" <<'EOF'
 import json, math, sys
-out, fam, ref, *others = sys.argv[1:]
+out, fam, refidx, *labels = sys.argv[1:]
+ref = labels[int(refidx)]
+others = [l for k, l in enumerate(labels) if k != int(refidx)]
+print(f'{fam}: reference arm {ref}')
 rd = json.load(open(f'{out}/gs3c-logprobs-{fam}-{ref}.json'))
 for o in others:
     od = json.load(open(f'{out}/gs3c-logprobs-{fam}-{o}.json'))

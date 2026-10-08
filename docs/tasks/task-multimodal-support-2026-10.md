@@ -922,7 +922,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     `docs/measurements/multimodal-support-2026-10/s3-gs3a-rebuilt-real.log`.
 - **G-S3b, read 2026-10-07 12:00-12:04 PDT on the Mac** (serve binary from `s2-towers` at `0c66b18b`, table.png, 32 greedy
   tokens, both arms `--backend metal`, the tower on Metal against `-vision-device cpu`; `run-gs3c-served.sh` with arms
-  `metal:auto,metal:cpu`): **Qwen2.5-VL PASS; Gemma 3 FAIL as registered, its control owed.**
+  `metal:auto,metal:cpu`): **Qwen2.5-VL PASS; Gemma 3 read FAIL, re-graded PASS the same evening (below).**
   - **Qwen2.5-VL-3B: byte-identical replies** ("Table 2. Quarterly unit sales by region (thousands)"). Decoder
     `metal-resident (int4)` in both arms, the tower on Metal in one. Request time 38.1 s against 53.1 s (exploratory).
   - **Gemma 3 4B: the replies differ at generated token 10,** " presented" against " broken". The Metal-tower arm puts
@@ -937,6 +937,18 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     int4 W4A8 decoder quantizes activations per tensor, so a 1e-7 perturbation can cross an int8 rounding and change a
     choice the reference itself makes with p 0.8.
   - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3b/`.
+  - **Re-graded 2026-10-07 evening (Cowork audit; no new run): Gemma 3 PASS.**
+    - **The misgrade:** `run-gs3c-served.sh` graded against whichever arm came first, and this run listed `metal:auto`
+      first. So the Metal-tower arm served as the reference.
+    - **The registered reference** is the `-vision-device cpu` arm. At generated token 10 it has " broken" 0.485 and
+      " presented" 0.404. 0.404 is at least half of 0.485, so this is a near-tie, and G-S3b passes under its own rule.
+    - **The re-grade:** the script's own grader, run on the recorded files with the CPU-tower arm as the reference
+      (`s3-gs3b/regrade-2026-10-07.txt`).
+    - **The script now refuses an ambiguous order.** The reference arm is marked with a leading `=`; exactly one must
+      be marked, or nothing runs. Tonight's callers mark theirs: `run-s3-rootcause-night.sh` (step A's reference is
+      `cpu:cpu`; it too listed `metal:cpu` first), `run-s6-e4b-night.sh` and `run-gs5c-served.sh`'s callers.
+    - **Still worth understanding:** at token 9, p(",") moves from 0.841 to 0.556 on features at cosine 0.9999999.
+      Tonight's determinism and sensitivity steps (`run-s3-rootcause-night.sh` steps B and C) still run for that.
 - **G-S3c's failure, analysed 2026-10-07 (no new measurement): the two arms run different CPU kernels, so the gate does
   not isolate Metal. REFUTED the same day by measurement; see "G-S3c root cause, in progress" below.**
   - Metal has no resident m-RoPE prefill (only CUDA implements `PrefillMRoPELast`). So a Qwen2.5-VL image turn under

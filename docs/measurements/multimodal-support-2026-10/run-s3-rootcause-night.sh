@@ -28,11 +28,11 @@ cd "$SRC" || exit 2
 SERVED=docs/measurements/multimodal-support-2026-10/run-gs3c-served.sh
 rc=0
 echo "=== A. G-S3c re-registered $(date '+%T')"
-GS3C_EXTRA="--embed-int4=false" bash "$SERVED" "$BIN/serve-metal" "$OUT/A-gs3c" metal:cpu,cpu:cpu,cpu:cpu \
+GS3C_EXTRA="--embed-int4=false" bash "$SERVED" "$BIN/serve-metal" "$OUT/A-gs3c" metal:cpu,=cpu:cpu,cpu:cpu \
   "$HOME/models/qwen25vl-3b-instruct" "$HOME/models/gemma-3-4b-it" > "$OUT/A-gs3c.log" 2>&1 || rc=1
 grep -E "decode path|IDENTICAL|differing|top-3|near-tie|exited" "$OUT/A-gs3c.log"
 echo "=== B. G-S3b Gemma 3 controls $(date '+%T')"
-bash "$SERVED" "$BIN/serve-metal" "$OUT/B-gs3b" metal:cpu,metal:cpu,metal:auto,metal:auto \
+bash "$SERVED" "$BIN/serve-metal" "$OUT/B-gs3b" =metal:cpu,metal:cpu,metal:auto,metal:auto \
   "$HOME/models/gemma-3-4b-it" > "$OUT/B-gs3b.log" 2>&1 || rc=1
 grep -E "decode path|IDENTICAL|differing|top-3|near-tie|exited" "$OUT/B-gs3b.log"
 echo "=== C. Gemma 3 phase 2 $(date '+%T')"
