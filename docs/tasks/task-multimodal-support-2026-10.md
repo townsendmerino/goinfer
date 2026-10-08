@@ -1359,6 +1359,40 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
   nobara and has no result yet.** Owed: the speed record (tower per clip, CPU against Metal), and resampling for WAVs
   that are not 16 kHz mono (S5's follow-up, below).
 
+- **S5's follow-up: audio at any rate and channel count. G-S5e, registered 2026-10-07 evening before any resampler
+  code.**
+  - **The gap.** Serve refuses a WAV that is not 16 kHz mono (`multimodal.DecodeWAV`), so ordinary 44.1 or 48 kHz files
+    and stereo files get a 400.
+  - **The change:**
+    - a pure-Go resampler to 16 kHz: windowed sinc, Kaiser window, polyphase for rational ratios;
+    - a downmix of any channel count to mono, by the per-sample mean (librosa's `to_mono` convention);
+    - both in `multimodal`, used by `DecodeWAV`;
+    - 16-bit PCM only, as today.
+  - **Inputs, made offline and committed** under `testdata/speech/`, with the tool and settings recorded in the README
+    there. All derive from the LibriSpeech clip (CC BY 4.0, 5.855 s):
+    - (i) **44.1 kHz mono:** ffmpeg 8.1.1, `-ar 44100 -ac 1 -c:a pcm_s16le`, its default resampler.
+    - (ii) **48 kHz stereo:** ffmpeg to 48 kHz mono, then numpy builds the channels as L = s + d and R = s - d, with
+      d = 0.3 x the clip time-reversed, checked free of clipping. So the correct downmix is s up to rounding, and a
+      left-only read is visibly wrong.
+    - (iii) **The reference:** each of those files back to 16 kHz with scipy's `resample_poly` (scipy 1.16.3, Kaiser
+      window, its defaults), after the reference downmix for (ii).
+  - **The bar, through the real E2B audio tower** (aikit's log-mel and `Gemma4AudioEncoder`, the path G-S5a validated
+    against HF), soft tokens compared with the 16 kHz original's, per-token cosine:
+    - **PASS:** for (i) and (ii), goinfer's worst-token and mean cosine are each at least the reference's (iii) minus
+      0.001.
+    - **Ambiguous (parked):** 0.001-0.005 below the reference.
+    - **FAIL:** worse than that.
+    - **The reason for this form:** a round trip through 44.1 or 48 kHz cannot return the original exactly in any
+      resampler (the anti-alias transition band below 8 kHz, a second 16-bit rounding). What goinfer owes is no more
+      loss than a standard resampler. An absolute cosine set before measuring would be a guess at that loss.
+  - **Served:** one serve binary on the E2B, `--backend cpu`, the three clips (the original, (i), (ii)), "Transcribe
+    this audio.", 32 greedy tokens. **(i)'s and (ii)'s transcriptions must be identical to the original's,** which is
+    the exact LibriSpeech text (G-S5c's spoken-clip reading).
+  - **Planted defects, each alone must fail the bar:**
+    1. (i) resampled as if it were 48 kHz;
+    2. (ii) read from its left channel only.
+  - **Cost:** the tower on CPU for nine clip reads plus one serve run, a few minutes; a quick check, by day.
+
 ### S6 — Coverage that is cheap once the above exists
 
 - **Qwen3.5+ MoE images:** never run. On nobara, at night; the checkpoint's tower is in the archive, so it is copied to
