@@ -1,0 +1,7 @@
+bin: /home/francis/goinfer-bench/s9b (new rev e6d18adb, old rev f1b593d0)
+model: /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf  vision: /home/francis/models/gemma-4-E2B-unq
+rounds=1 reps=2
+started: 2026-10-07 17:16:24 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 1.25 1.87 2.90 2/842 939558
+finished: 2026-10-07 17:18:21 PDT

@@ -1,0 +1,4 @@
+=== RUN   TestGemma4EModelImage_generateTakesTheResidentPath
+--- PASS: TestGemma4EModelImage_generateTakesTheResidentPath (1.41s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	1.466s

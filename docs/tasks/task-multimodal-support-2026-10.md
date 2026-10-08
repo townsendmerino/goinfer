@@ -1235,6 +1235,31 @@ different rows.
   faster than the CPU-prefill turn at the default image budget, the path is removed. No other bar.
 - **Day / night:** code + G1q + G2q about 10 minutes; G3q about 6; speed record queued.
 
+- **S9 on CUDA part B read 2026-10-07 on nobara (commit `e6d18adb`; local, not pushed): G1q, G2q and G3q PASS.**
+  Raw: `docs/measurements/multimodal-support-2026-10/s9b-cuda/` (`partb-g1q-g2q-run1.log.gz`, `partb-generate-run1.log`, `g3q/`, `speed-smoke/`).
+  - **Built as registered** (`decoder/generate_gemma4_vl.go`; no backend code): for an E-model with a causal image block, `GenerateGemma4VL` claims the resident, builds the prompt's rows (text rows as
+    `embedResident`; an image row's hidden part is the projected feature as-is and its tail is `gemma4PLEInputs(feature, PadTokenID)`), takes the logits from `PrefillLast(ctx, rows, 0)` and decodes resident from
+    `len(ids)`; the CPU prefill, the CPU cache and the upload bridge are skipped. A decline or any non-cancel error forgets the half-written prefill, releases the claim and falls through to the unchanged CPU prefill + upload.
+    Serve logs `vision: image prefill ran resident (batched)` when it ran. The bidirectional class (26B/31B) is untouched; a backend whose resident declines the E-model batched pass (Metal today) falls through.
+  - **G1q PASS.** On the tiny E-model with synthetic features, the image block at the start, in the middle and at the end of the 18-position prompt (6 soft tokens): the resident's batched last-position logits on the
+    built rows against the CPU forward (`prefillLogitsGemma4VL`), cosine **1.000000 / 1.000000 / 1.000000** (the CPU's own int4-vs-f32 cosine at those positions 0.805, 0.763, 0.901), argmax identical in all three,
+    and bit-identical to the same rows run one token at a time on the same resident. Non-vacuity as in G1p (`passPromptLen`).
+  - **G2q PASS, each planted defect in the row builder red on at least one layout:** (1) the placeholder's id instead of the pad id for an image tail: red on image-last only (cosine 0.989288, argmax off by 7.02%;
+    the other two layouts read 0.998928 and 0.995355 and stay green, so this defect is the one the fixture sees least); (2) the feature scaled by the embed scale: red on image-first and image-last (0.890795, 0.493592);
+    (3) an image tail zero: red on image-first and image-last (0.959385, 0.734399); (4) image positions built as text rows (the placeholder ids' embedding): red on image-first and image-last (0.783826, -0.051670).
+  - **The flow, `TestGemma4EModelImage_generateTakesTheResidentPath`:** three turns on one CUDA model (image, the same image, then plain text) generate the CPU model's greedy tokens, the image turns report
+    `ImgPrefillResident` and `DecodeResident`; with `GOINFER_BATCHED_PREFILL=0` the same turn reports `ImgPrefillResident=false`, `DecodeResident=true` and still matches (the fall-through).
+  - **G3q, served, real `gemma-4-E2B_q4_0-it.gguf` + `~/models/gemma-4-E2B-unq` on CUDA, `--kv-sessions 1 -ctx 4096`, the S4 table image, greedy, 32 tokens with top-3 logprobs: PASS.**
+    Reference: the pre-part-B build (`f1b593d0`, tower on the CPU, CPU prefill + upload). *New, tower on the CPU:* first differs at generated token 17 (' for' 0.428 against '.' 0.281; 0.281 >= half of 0.428:
+    a near-tie, True). *New with `GOINFER_BATCHED_PREFILL=0` (same-binary control):* IDENTICAL to the reference, 32 tokens, so the new path declining reproduces today's behaviour exactly. *New, tower on CUDA:* first
+    differs at token 27 ('\n\n' 0.591 against ' It' 0.303; near-tie True), with the tower's own ~1e-6 feature difference on top. The logs show the resident-prefill line on the two new arms and not on the control, and
+    decode on the resident path on all of them. The reply differs from the CPU-prefill one only where GPU int4 and CPU int4 arithmetic differ, which G1c already bounds; it is not bit-identical by design.
+  - **Speed, EXPLORATORY (single samples; not quotable; the night record is queued as `s9b-e2b-image-ttft`, 20 min, 3 interleaved rounds x 4 requests, four arms, with the registered kill rule):** wall time of the whole
+    32-token image request: 24.7 s before (CPU tower, CPU prefill), 5.8 s with resident prefill (CPU tower), 3.7 s with resident prefill and the CUDA tower. The one-cell smoke of the night script (max_tokens=1,
+    1 round, 2 requests): first request 4.97 s against 23.58 s (CPU tower) and 2.83 s against 21.54 s (CUDA tower); the second request, with the tower's features cached, 0.47 s against 19.08 s and 0.45 s against 19.00 s.
+  - **Not done:** Metal's half (the batched E-model pass is the Mac's S9; the decoder side is backend-generic and falls through until then); E4B (no checkpoint); the bidirectional class is out of scope; an image turn
+    whose prompt exceeds the resident context cap declines to the CPU path (by the existing cap check inside the batched pass).
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).

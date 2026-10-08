@@ -1,0 +1,20 @@
+bin: /home/francis/goinfer-bench/s9b (new rev e6d18adb, old rev f1b593d0)
+model: /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf  vision: /home/francis/models/gemma-4-E2B-unq
+rounds=1 reps=2
+started: 2026-10-07 17:16:24 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 1.25 1.87 2.90 2/842 939558
+[17:16:24] round 1 arm new-cpu
+   new-cpu: 4.97 0.47
+[17:16:36] round 1 arm old-cpu
+   old-cpu: 23.58 19.08
+[17:17:25] round 1 arm new-auto
+   new-auto: 2.83 0.45
+[17:17:34] round 1 arm old-auto
+   old-auto: 21.54 19.00
+== tower placement cpu: first rep (includes the tower) and median of the later reps (warm tower), old / new per round
+   round 1: first new 4.97s old 23.58s (4.75x) | later new 0.47s old 19.08s (40.95x)
+== tower placement auto: first rep (includes the tower) and median of the later reps (warm tower), old / new per round
+   round 1: first new 2.83s old 21.54s (7.62x) | later new 0.45s old 19.00s (41.85x)
+kill rule: PASS
+finished: 2026-10-07 17:18:21 PDT

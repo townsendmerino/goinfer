@@ -1,0 +1,7 @@
+new: /home/francis/goinfer-bench/s9b/serve-cuda-new (e6d18adb)
+old: /home/francis/goinfer-bench/s9b/serve-cuda-old (f1b593d0)
+model: /home/francis/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf
+started: 2026-10-07 17:13:51 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 1.11 1.70 3.02 2/843 939160
+finished: 2026-10-07 17:15:23 PDT rc=0
