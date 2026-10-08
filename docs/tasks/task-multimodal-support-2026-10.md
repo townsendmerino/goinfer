@@ -2590,6 +2590,13 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **A production consequence worth stating:** on the 8 GB card an unpinned default load now plans against what the build will actually take, so the plan line and the final context agree on every bench model but Gemma 3.
     Nothing here changes a speed.
 
+- **`TestSpecNonCopyLane` (the first heavy gate's 940 s failure): root-caused 2026-10-08 by tokenizing, no run needed; fixed; the measurement itself is queued tonight.** The test built its "~4000-token document" from the first
+  14,800 bytes of the LIVE `docs/benchmarks.md`. On the Qwen2.5-Coder tokenizer with the test's own closing line that slice is **4,911 tokens at the commit that added the test (33a18e82), 6,233 at 12c85f4a (the exact
+  number the gate log prints for the declined prefill) and 6,200 at the commit before this fix**, against a context pinned at 6,144. So the batched prefill declined, every arm ran the per-token path (940 s), and the first
+  speculative arm died at "KV position 6144(+1) exceeds resident context cap". It fails at the baseline the same way: nothing a recent change broke, and nothing to do with the margin. The document is now a frozen
+  copy of the 33a18e82 slice (`cuda/testdata/noncopy_doc.txt`, 14,800 bytes) and the test refuses a prompt that does not fit with 160 new tokens, naming the cause. Not yet run after the fix (a measurement, longer than the
+  by-day bound): `docs/measurements/multimodal-support-2026-10/margin/run-gate-triage.sh` runs it tonight, beside the WebGPU triage.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**

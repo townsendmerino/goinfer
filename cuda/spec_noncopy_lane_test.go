@@ -50,11 +50,15 @@ func TestSpecNonCopyLane(t *testing.T) {
 	if err != nil {
 		t.Skipf("tokenizer: %v", err)
 	}
-	doc, err := os.ReadFile("../docs/benchmarks.md")
+	// A FROZEN copy of the first 14,800 bytes of docs/benchmarks.md as of 33a18e82 (the commit that added this test; 4,911 prompt tokens on the Qwen tokenizer). The test
+	// used to read the live file, which kept growing: by 12c85f4a the same slice was 6,233 tokens, over the 6,144-position context pinned below, so every arm declined
+	// the batched prefill, ran the per-token path (940 s) and died at "KV position 6144(+1) exceeds resident context cap" -- the 2026-10-07 night gate's failure,
+	// root-caused 2026-10-08 by tokenizing the slice at three revisions. A measurement over a mutable document is not reproducible either.
+	doc, err := os.ReadFile("testdata/noncopy_doc.txt")
 	if err != nil {
 		t.Fatalf("doc: %v", err)
 	}
-	text := string(doc)[:14800]
+	text := string(doc)
 	// Each kind is (name, question placed BEFORE the document, closing line). The FRESH kinds ask a question the document cannot answer and tell the model to
 	// answer it; a first attempt that put "ignore the text above" AFTER the document was ignored by the 1.5B, which just kept copying the document (identical
 	// acceptance to COPY), so the printed output head is checked for novelty every run.
@@ -76,6 +80,9 @@ func TestSpecNonCopyLane(t *testing.T) {
 		prompt, err := decoder.EncodeChatForTest(tk, kd.pre+text+"\n\n"+kd.ask)
 		if err != nil {
 			t.Fatalf("encode: %v", err)
+		}
+		if len(prompt)+nNew+8 > 6144 {
+			t.Fatalf("%s: the %d-token prompt plus %d new tokens does not fit the 6144-position context this test pins: the frozen document or the tokenizer changed", kd.name, len(prompt), nNew)
 		}
 		type res struct {
 			ms           float64
