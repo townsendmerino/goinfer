@@ -40,6 +40,8 @@ import (
 // height and width components swapped; (2) the image rows given 1-D text positions; (3) the text rows after the image
 // given uncompressed (sequence) positions. Defects 4-6 (DeepStack) belong to S16's Qwen3-VL step.
 func TestS16MRoPEPrefill_tiny(t *testing.T) {
+	metalMRoPEPrefillOn = true // the gates test the path production keeps off until G-S16c is graded
+	defer func() { metalMRoPEPrefillOn = false }()
 	type golden struct {
 		InputIDs      []int     `json:"input_ids"`
 		ImageToken    int       `json:"image_token_id"`
@@ -239,7 +241,8 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 }
 
 // TestS16MRoPEPrefill_real is G-S16c's first half (docs/tasks/task-multimodal-support-2026-10.md, S16, registered before
-// any S16 code): Qwen2.5-VL-3B on the four F2a images, the resident m-RoPE prefill against today's path (the upload bridge,
+// any S16 code): Qwen2.5-VL-3B and Qwen3-VL-2B (with its DeepStack sets, S16 step 2) on the four F2a images, the resident
+// m-RoPE prefill against today's path (the upload bridge,
 // then Metal decode, so both arms decode on the same kernels) at G-S16a's bar (the last prompt row and 8 teacher-forced
 // decode steps, cosine >= 0.9999 with an equal argmax). The hybrid branch is kept for when a hybrid is claimed: Qwen3.5's
 // only reference decodes on the CPU, and on image prompts every pair of backends differs there by about 0.9 cosine
@@ -249,15 +252,17 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -timeout 30m -run '^TestS16MRoPEPrefill_real$' -v ./metal/
 func TestS16MRoPEPrefill_real(t *testing.T) {
+	metalMRoPEPrefillOn = true // the gates test the path production keeps off until G-S16c is graded
+	defer func() { metalMRoPEPrefillOn = false }()
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
 	home, _ := os.UserHomeDir()
 	const merge, steps, bar = 2, 8, 0.9999
 	for _, fx := range []struct {
-		dir    string
-		hybrid bool
-	}{{"qwen25vl-3b-instruct", false}} {
+		dir          string
+		hybrid, deep bool
+	}{{"qwen25vl-3b-instruct", false, false}, {"qwen3-vl-2b-instruct", false, true}} {
 		t.Run(fx.dir, func(t *testing.T) {
 			dir := filepath.Join(home, "models", fx.dir)
 			if _, err := os.Stat(dir); err != nil {
@@ -277,7 +282,8 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			}
 			var imgs []img
 			var featsOf func(img) ([]float32, error)
-			if fx.hybrid {
+			var deepOf func(img) ([]float32, [][]float32, error) // Qwen3-VL: the merged features and the DeepStack sets
+			if fx.hybrid || fx.deep {
 				enc, err := vision.LoadQwen3VisionEncoder(dir, false)
 				if err != nil {
 					t.Fatal(err)
@@ -298,6 +304,9 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 					imgs = append(imgs, img{px, grid})
 				}
 				featsOf = func(i img) ([]float32, error) { return enc.Forward(i.px, [][3]int{i.grid}) }
+				if fx.deep {
+					deepOf = func(i img) ([]float32, [][]float32, error) { return enc.ForwardDeepstack(i.px, [][3]int{i.grid}) }
+				}
 			} else {
 				enc, err := vision.LoadQwenVisionEncoder(dir, false)
 				if err != nil {
@@ -321,7 +330,11 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 				}
 				featsOf = func(i img) ([]float32, error) { return enc.Forward(i.px, [][3]int{i.grid}) }
 			}
-			m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 8192})
+			ctxLen := 8192 // Qwen2.5-VL's formula.png is 6,192 image rows at its default budget
+			if fx.hybrid || fx.deep {
+				ctxLen = 2048 // the Qwen3.5+ / Qwen3-VL towers are capped at serve's 1,024 merged rows
+			}
+			m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: ctxLen})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -332,7 +345,13 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			}
 			ctx := context.Background()
 			for ii, im := range imgs {
-				feats, err := featsOf(im)
+				var feats []float32
+				var deep [][]float32
+				if deepOf != nil {
+					feats, deep, err = deepOf(im)
+				} else {
+					feats, err = featsOf(im)
+				}
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -357,7 +376,9 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 				}
 				delta := mrope[n-1][0] + 1 - n
 				cache := m.NewCache(n + steps + 1)
+				cache.SetDeepstackForTest(start, nImg, deep)
 				refLast, err := m.PrefillLogitsQwenVLForTest(ctx, ids, feats, start, nImg, mrope, cache)
+				cache.SetDeepstackForTest(0, 0, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -391,7 +412,7 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 				}
 				ref, teacher := decode(refLast, nil)
 				a.Reset()
-				newLast, _, err := m.ResidentMRoPEPrefillForTest(ctx, a, ids, feats, start, nImg, mrope)
+				newLast, _, err := m.ResidentMRoPEDeepstackPrefillForTest(ctx, a, ids, feats, start, nImg, mrope, deep)
 				if err != nil {
 					t.Fatalf("%s: resident m-RoPE prefill: %v", s3Images[ii], err)
 				}
@@ -411,4 +432,199 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestS16DeepstackPrefill_tiny is S16 step 2's G-S16a and G-S16b defects 4-6 (docs/tasks/task-multimodal-support-2026-10.md):
+// the tiny Qwen3-VL decoder (2 layers, DeepStack after layers 0 and 1), a synthetic prompt with a 16x24 image (96 merged
+// rows) whose features and DeepStack sets are random at unit scale (the comparison is Go path against Go path, so no HF
+// golden is needed). Today's path: the CPU prefill with the sets, its K/V uploaded, Metal decode; the new path: Metal's
+// DeepStack m-RoPE prefill. G-S16a's bar (the last row and 8 teacher-forced steps, cosine >= 0.9999, every argmax equal).
+// Defects, each on the new arm only and each red: (4) the sets not added; (5) added one layer late; (6) added to the text
+// rows too (the first image row's set vector on every row before the image).
+//
+// This fixture's next-token distribution is nearly uniform (its top token near p 0.005 over a ~300-token vocabulary), so an
+// argmax difference is read by R10's near-tie rule, as the served gates read one: it counts only when the new token's
+// reference probability is under half the reference's top. Cosine carries the bar.
+func TestS16DeepstackPrefill_tiny(t *testing.T) {
+	metalMRoPEPrefillOn = true // the gates test the path production keeps off until G-S16c is graded
+	defer func() { metalMRoPEPrefillOn = false }()
+	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
+	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
+	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {
+		t.Fatalf("no fixture at %s", path)
+	}
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256,
+		Knobs: &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok || a.r.mropeAxis == (Buffer{}) {
+		t.Fatalf("not Metal-resident with an m-RoPE axis table: %s", m.ResidentDecline())
+	}
+	const imgTok, visStart, hid = 299, 298, 64
+	nb := gh * gw
+	ids := []int{10, 11, 12, visStart}
+	start := len(ids)
+	for range nb {
+		ids = append(ids, imgTok)
+	}
+	ids = append(ids, 13, 14, 15, 16, 17)
+	n := len(ids)
+	rng := rand.New(rand.NewSource(17))
+	rnd := func(k int) []float32 {
+		v := make([]float32, k)
+		for i := range v {
+			v[i] = float32(rng.NormFloat64())
+		}
+		return v
+	}
+	feats, sets := rnd(nb*hid), [][]float32{rnd(nb * hid), rnd(nb * hid)}
+	mrope, err := decoder.MRopePositionsForTest(ids, imgTok, [][3]int{{1, 2 * gh, 2 * gw}}, merge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delta := mrope[n-1][0] + 1 - n
+	ctx := context.Background()
+	cache := m.NewCache(n + steps + 1)
+	cache.SetDeepstackForTest(start, nb, sets)
+	refLast, err := m.PrefillLogitsQwenVLForTest(ctx, ids, feats, start, nb, mrope, cache)
+	cache.SetDeepstackForTest(0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refLast = append([]float32(nil), refLast...)
+	a.Reset()
+	if err := m.ResidentUploadPrefillForTest(cache); err != nil {
+		t.Fatal(err)
+	}
+	decode := func(first []float32, forced []int) ([][]float32, []int) {
+		out, toks := [][]float32{first}, []int{argmaxF(first)}
+		for k := range steps {
+			tok := toks[k]
+			if forced != nil {
+				tok = forced[k]
+			}
+			lg, err := a.ForwardMRoPE(m.EmbedResidentForTest(tok), n+k, n+k+delta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), lg...))
+			toks = append(toks, argmaxF(lg))
+		}
+		return out, toks
+	}
+	ref, teacher := decode(refLast, nil)
+	zeros := make([]float32, nb*hid)
+	for di, c := range []struct {
+		name         string
+		sets         [][]float32
+		start, count int
+	}{
+		{"none", sets, start, nb},
+		{"(4) the sets not added", nil, start, nb},
+		{"(5) added one layer late", [][]float32{zeros, sets[0]}, start, nb},
+		{"(6) added to the text rows too", nil, 0, start + nb},
+	} {
+		s, st, cnt := c.sets, c.start, c.count
+		if di == 3 { // the first image row's set vector on every row before the image, then the real sets
+			s = make([][]float32, len(sets))
+			for k, set := range sets {
+				s[k] = make([]float32, 0, cnt*hid)
+				for range start {
+					s[k] = append(s[k], set[:hid]...)
+				}
+				s[k] = append(s[k], set...)
+			}
+		}
+		a.Reset()
+		var newLast []float32
+		if s == nil {
+			newLast, _, err = m.ResidentMRoPEPrefillForTest(ctx, a, ids, feats, start, nb, mrope)
+		} else {
+			newLast, err = a.PrefillMRoPEDeepstackLast(ctx, spliceRows(m, ids, feats, start, nb, hid), 0, mrope, s, st, cnt)
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got, _ := decode(append([]float32(nil), newLast...), teacher)
+		worst, agree, real := 1.0, 0, 0
+		for k := range ref {
+			worst = math.Min(worst, cosF(ref[k], got[k]))
+			ra, ga := argmaxF(ref[k]), argmaxF(got[k])
+			if ra == ga {
+				agree++
+				continue
+			}
+			lp := logSoftmaxF(ref[k])
+			tie := math.Exp(lp[ga]) >= math.Exp(lp[ra])/2
+			if !tie {
+				real++
+			}
+			fmt.Printf("    step %d: today's top %d p %.4f, new %d (today's p %.4f): near-tie %v\n", k, ra, math.Exp(lp[ra]), ga, math.Exp(lp[ga]), tie)
+		}
+		pass := worst >= bar && real == 0
+		fmt.Printf("[S16 DeepStack] qwen3vl-tiny (16x24 image) %s: worst cosine %.7f, argmax %d/%d, non-tie differences %d\n", c.name, worst, agree, len(ref), real)
+		if di == 0 && !pass {
+			t.Errorf("the DeepStack prefill misses the bar (worst %.7f, %d non-tie argmax differences)", worst, real)
+		}
+		if di > 0 && pass {
+			t.Errorf("planted defect %s left the bar green (worst %.7f)", c.name, worst)
+		}
+	}
+	// Through the decoder's entry point: a turn with DeepStack sets now takes the resident prefill.
+	stream, gen := m.GenerateQwenVLDeepstack(ctx, ids, start, nb, 0xfeed, func() ([]float32, [][]float32, error) { return feats, sets, nil },
+		[][3]int{{1, 2 * gh, 2 * gw}}, merge, imgTok, steps, decoder.SamplingParams{})
+	var got []int
+	for id := range stream {
+		got = append(got, id)
+	}
+	if e := gen.Err(); e != nil {
+		t.Fatal(e)
+	}
+	fmt.Printf("[S16 DeepStack] through GenerateQwenVLDeepstack: resident prefill %v, tokens %v (today's path %v)\n", gen.ImgPrefillResident, got, teacher[:steps])
+	if !gen.ImgPrefillResident {
+		t.Error("GenerateQwenVLDeepstack did not take the resident DeepStack prefill")
+	}
+	for k := range min(len(got), steps) { // the first differing token must be a near-tie in today's logits at that step
+		if got[k] != teacher[k] {
+			lp := logSoftmaxF(ref[k])
+			if math.Exp(lp[got[k]]) < math.Exp(lp[teacher[k]])/2 {
+				t.Errorf("the free runs first differ at step %d (%d against %d) and it is not a near-tie (p %.4f against %.4f)",
+					k, got[k], teacher[k], math.Exp(lp[got[k]]), math.Exp(lp[teacher[k]]))
+			}
+			break
+		}
+	}
+}
+
+// spliceRows is residentMRoPEPrefill's row building (the embedding lookup, the raw image features over the image block),
+// for a test that calls a resident prefill entry directly.
+func spliceRows(m *decoder.Model, ids []int, feats []float32, start, n, hid int) [][]float32 {
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		if i >= start && i < start+n {
+			rows[i] = feats[(i-start)*hid : (i-start+1)*hid]
+		} else {
+			rows[i] = m.EmbedResidentForTest(id)
+		}
+	}
+	return rows
+}
+
+func logSoftmaxF(v []float32) []float64 {
+	mx := math.Inf(-1)
+	for _, x := range v {
+		mx = math.Max(mx, float64(x))
+	}
+	sum := 0.0
+	for _, x := range v {
+		sum += math.Exp(float64(x) - mx)
+	}
+	out := make([]float64, len(v))
+	for i, x := range v {
+		out[i] = float64(x) - mx - math.Log(sum)
+	}
+	return out
 }

@@ -1181,13 +1181,20 @@ func (r *resident) prefillGeom() *attnGeom {
 }
 
 func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
-	return r.prefillLast(embs, startPos, nil)
+	return r.prefillLast(embs, startPos, nil, nil)
+}
+
+// prefillDeep is Qwen3-VL's DeepStack injection for the batched pass (S16): set l is added to the image rows [start,
+// start+n) of the f16 residual after decoder layer l, as decoder's addDeepstack does on the CPU.
+type prefillDeep struct {
+	start, n int
+	sets     [][]float32
 }
 
 // prefillLast is PrefillLast with optional m-RoPE positions (S16): mrope, when non-nil, holds every absolute position's
 // (temporal, height, width) triple from 0 to startPos+len(embs), and the pass rotates q and k by them through
 // rope_mrope_f16 and r.mropeAxis. The K/V cache rows are still placed by sequence position.
-func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int) []float32 {
+func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1366,7 +1373,29 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int) [
 	useFusedAttn, useSteelAttn := r.prefillAttnKernels()
 
 	e := r.q.Begin()
+	// S16: the DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
+	// Set k is added after layer k, which is done at the top of iteration k+1 and after the loop, so every branch of the
+	// loop body (the MoE ones end in continue) reaches it.
+	var deepB []Buffer
+	if deep != nil {
+		for _, set := range deep.sets {
+			deepB = append(deepB, NewBufferFloats(d, set))
+		}
+	}
+	addDeep := func(k int) {
+		if k >= len(deepB) {
+			return
+		}
+		lo, hi := max(deep.start, startPos), min(deep.start+deep.n, startPos+M)
+		if hi <= lo {
+			return
+		}
+		e.Dispatch(pf.pResF32, (hi-lo)*H, 256, xF.At((lo-startPos)*H*2), deepB[k].At((lo-deep.start)*H*4))
+	}
 	for l := 0; l < r.nL; l++ {
+		if l > 0 {
+			addDeep(l - 1)
+		}
 		L := &r.layers[l]
 		if L.delta != nil {
 			r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
@@ -1625,6 +1654,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int) [
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
 		}
 	}
+	addDeep(r.nL - 1)
 	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode
 	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
 	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing

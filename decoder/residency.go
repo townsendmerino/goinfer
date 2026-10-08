@@ -405,6 +405,15 @@ type ResidentMRoPEPrefill interface {
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
 
+// ResidentMRoPEDeepstackPrefill is an OPTIONAL extension of ResidentMRoPEPrefill for Qwen3-VL (S16): the same batched m-RoPE
+// prefill, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after decoder layer l, as the CPU
+// prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]). deep holds one set per
+// injected layer, imgLen rows of the hidden size each. Without it GenerateQwenVLDeepstack keeps a turn that has DeepStack
+// sets on the CPU prefill.
+type ResidentMRoPEDeepstackPrefill interface {
+	PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) (logits []float32, err error)
+}
+
 // PrefillPathReporter is an OPTIONAL Prefiller extension: report at LOAD time whether the batched
 // prefill will actually be taken for THIS model, and when it won't, why and what that costs. The
 // Prefiller contract declines per call (arch/geometry/quant), and generateInto's fallback is silent

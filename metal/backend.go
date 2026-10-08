@@ -846,13 +846,13 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if len(embeddings) < 2 && a.inStepRange(promptLen, floor) {
 		return nil, fmt.Errorf("metal: a 1-token suffix in the batched step's range runs on the sequential path (the step's bits)")
 	}
-	return a.batchedPrefill(embeddings, startPos, floor, nil)
+	return a.batchedPrefill(embeddings, startPos, floor, nil, nil)
 }
 
 // batchedPrefill is the f16 batched pass behind PrefillLast and PrefillMRoPELast (S16): the same declines (the floor, an
 // int8 KV cache, a family the pass does not implement, the resident's cap, the exact attention kernel's key limit), the
 // same recovery of a request-time panic, and the same non-finite-logit check. mrope is nil for a text prompt.
-func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor int, mrope [][3]int) ([]float32, error) {
+func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep) ([]float32, error) {
 	promptLen := startPos + len(embeddings)
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
@@ -901,7 +901,7 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 				err = fmt.Errorf("metal: batched prefill aborted: %v", p)
 			}
 		}()
-		logits = a.r.prefillLast(embeddings, startPos, mrope)
+		logits = a.r.prefillLast(embeddings, startPos, mrope, deep)
 		return nil
 	}(); err != nil {
 		return nil, err
@@ -929,8 +929,35 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 // layer-major route owns this family, or when the batched pass itself would; the batched step never takes it (its kernels
 // rotate by one scalar position).
 func (a *metalResident) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
+	return a.prefillMRoPE(ctx, embeddings, startPos, mropePos, nil)
+}
+
+// PrefillMRoPEDeepstackLast (decoder.ResidentMRoPEDeepstackPrefill, S16) is PrefillMRoPELast for Qwen3-VL: the same pass,
+// which also adds DeepStack set l to the image rows after decoder layer l. Each set must be imgLen rows of the hidden size.
+func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
+	if imgStart < 0 || imgLen <= 0 || len(deep) > a.r.nL {
+		return nil, fmt.Errorf("metal: DeepStack prefill of %d sets over [%d,%d) for %d layers", len(deep), imgStart, imgStart+imgLen, a.r.nL)
+	}
+	for l, set := range deep {
+		if len(set) != imgLen*a.r.H {
+			return nil, fmt.Errorf("metal: DeepStack set %d has %d values, want %d x %d", l, len(set), imgLen, a.r.H)
+		}
+	}
+	return a.prefillMRoPE(ctx, embeddings, startPos, mropePos, &prefillDeep{start: imgStart, n: imgLen, sets: deep})
+}
+
+// metalMRoPEPrefillOn turns S16's resident m-RoPE prefill on. OFF until its real-size gate (G-S16c) is graded: the tiny gates
+// pass, but on Qwen3-VL-2B the image turn read 0.972-0.986 against the registered 0.9999 (2026-10-08), which is the same gap
+// Metal's shipped text prefill shows against the CPU prefill (0.977-0.997) and an open bar question for the owner. Off, an
+// image turn takes the CPU prefill and the upload, as before. Tests set it.
+var metalMRoPEPrefillOn = false
+
+func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep *prefillDeep) ([]float32, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
+	}
+	if !metalMRoPEPrefillOn {
+		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off until its real-size gate is graded (S16); the image prefill runs on the CPU")
 	}
 	if a.r.mropeAxis == (Buffer{}) {
 		return nil, fmt.Errorf("metal: no m-RoPE axis table for this model; the image prefill runs on the CPU")
@@ -944,7 +971,7 @@ func (a *metalResident) PrefillMRoPELast(ctx context.Context, embeddings [][]flo
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill); the image prefill runs on the CPU")
 	}
-	return a.batchedPrefill(embeddings, startPos, metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")), mropePos)
+	return a.batchedPrefill(embeddings, startPos, metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")), mropePos, deep)
 }
 
 // firstNonFinite is the index of the first NaN or ±Inf in v, or -1.
