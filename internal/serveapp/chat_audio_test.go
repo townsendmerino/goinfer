@@ -85,7 +85,7 @@ func TestOmitChatHistory_audio(t *testing.T) {
 }
 
 // TestGemma4AudioPrompt_refusals: a model without an audio tower is told so; a clip over 30 s and a WAV that is not
-// 16 kHz mono 16-bit are refused by name, before any tower runs.
+// 16-bit PCM are refused by name, before any tower runs. (A 44.1 kHz or stereo clip is resampled, G-S5e: multimodal's tests.)
 func TestGemma4AudioPrompt_refusals(t *testing.T) {
 	turns := func() []chat.Turn { return []chat.Turn{{Role: "user", Content: "Transcribe this audio."}} }
 	tmpl := chat.Gemma4()
@@ -99,8 +99,9 @@ func TestGemma4AudioPrompt_refusals(t *testing.T) {
 	if _, err := lm.gemma4AudioPrompt(tmpl, "", turns(), 0, long); err == nil || !strings.Contains(err.Error(), "30 s") {
 		t.Errorf("31 s clip: %v", err)
 	}
-	wrong := imageRef{data: wavBytes(16000, 44100), audio: true}
-	if _, err := lm.gemma4AudioPrompt(tmpl, "", turns(), 0, wrong); err == nil || !strings.Contains(err.Error(), "16000 Hz") {
-		t.Errorf("44.1 kHz clip: %v", err)
+	b24 := wavBytes(16000, 44100)
+	binary.LittleEndian.PutUint16(b24[34:], 24)
+	if _, err := lm.gemma4AudioPrompt(tmpl, "", turns(), 0, imageRef{data: b24, audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
+		t.Errorf("24-bit clip: %v", err)
 	}
 }

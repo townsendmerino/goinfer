@@ -339,12 +339,13 @@ const gemma4AudioMaxSoftTokens = 750
 // gemma4AudioMaxSeconds is the same cap in seconds of 16 kHz audio.
 const gemma4AudioMaxSeconds = 30
 
-// gemma4AudioPrompt is the Gemma 4 audio path (S5): the WAV (16 kHz mono 16-bit PCM) through aikit's log-mel and the
+// gemma4AudioPrompt is the Gemma 4 audio path (S5): the WAV (16-bit PCM at any rate, 1-8 channels, downmixed and resampled
+// to 16 kHz mono by resample_poly's filter: G-S5e) through aikit's log-mel and the
 // audio tower (embed_audio baked in) → the prompt with the audio block, <|audio> + n x <|audio|> + <audio|>, before the
 // user's text, as HF's processor writes it (no newline on either side). The run is generated through GenerateGemma4VL,
 // which splices any media run the same way: rows unscaled, PAD for PLE's token-identity term.
 func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, clip imageRef) (visionInput, error) {
-	samples, err := multimodal.DecodeWAV(clip.data)
+	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
 	if err != nil {
 		return visionInput{}, err
 	}
