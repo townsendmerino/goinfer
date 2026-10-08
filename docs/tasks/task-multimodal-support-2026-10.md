@@ -2174,6 +2174,47 @@ different rows.
     - **The projection band, written before the run:** the layer-major pass costs about 21 ms a row; the batched pass
       runs the 1.5B's text prefill at 225-366 tok/s (`docs/benchmarks.md`, 2026-09-18), and E2B is about that size. So
       an image turn's ~290-row prefill goes 5-6 s → about 0.8-1.3 s, and TTFT 6.4 → about 2.2-2.7 s: **2.4-2.9x**.
+    - **The night job, specified 2026-10-08 before it runs** (`run-s9step2-speed.sh`, in this campaign's measurements
+      directory). Two serve binaries from pinned worktrees: `main` (the switch off, so the layer-major pass, arm `lm`)
+      and the local night-only branch `s9b-night-on` (`main` with the switch on and a one-time stderr line when the
+      batched pass runs, arm `batched`). Each server is fresh and serves two requests, 8 tokens each, streamed: a
+      ~512-token text prompt (the graded cell), then `table.png` (the record). The tower runs on the CPU in both arms.
+      There are 5 passes, the arm order alternating, under the timing lock. Two arms, no peer (TE5(a)).
+    - **The rule:** the median of the 5 per-pass text TTFT ratios, lm / batched. **Ship** at >= 1.02 (the switch goes
+      on), **park** at 1.00-1.02, **off** below 1.00. **Void** if any batched server log lacks the ran line (a silent
+      fallback would otherwise read as a park), or if a pass is missing. The image cell is a record against the band
+      above, not a gate.
+- **S9 step 2 on Metal, by day 2026-10-08: built; G-S9d PASS; G-S9c FAILED its registered bar and passes the owner's
+  amended one. The switch stays off until the night speed rule grades it.**
+  - **Built** as designed above, in `metal/prefill.go` (`prefillLast`, with the per-layer uniform bundles `layerU`) and
+    `metal/prefill_emodel.go` (`emodelBatchedOn`, off; `emodelBatched`, which declines K=V layers, an int8 KV cache, int8
+    projections and the q4k lane). `PrefillLast` tries it first for an E-model at or above the floor and falls back to
+    the layer-major pass on any decline. The exact attention kernel takes the 256/512 head dims.
+  - **A defect G-S9d found, fixed before the records below.** A KV-shared layer's Q/K norm dispatch still passed the
+    model's KV head count with a Q-only row stride. The rows shifted, and the "K" head normalised the next row's Q. It
+    now passes nKV 0 for a shared layer. G-S9c did not catch this one at its first read: its tiny fixture's shared
+    layers sit where the shift moved little.
+  - **G-S9d, real E2B: PASS.** Batched 96.88% (248/256, 8/8 free-run passes) against layer-major 97.27% (249/256, 7/8):
+    delta -0.39 points against the -2.0 margin. The free runs differ only at small CPU gaps (prompt 3: 0.79% against
+    layer-major's 5.91%; prompt 5: token 31 at 0.20%). The record is `s9step2/gs9d-realE2B.log`, 49 s.
+  - **G-S9c, tiny: FAIL against the registered 0.9999.** Worst cosine 0.9907247 (12-token) and 0.9915778 (96-token),
+    0 non-tie argmax differences, reproduced exactly on re-run.
+    - **The planted defects are all red, on both prompts** (worst cosine, 12-token / 96-token): (1) 0.888 / 0.909;
+      (2) 0.186 / 0.439; (3) 0.473 / 0.486; (4) 0.942 / 0.940; (5) 0.681 / 0.815; (6) 0.825 / 0.852.
+    - **A deviation from the registration, disclosed:** defect (1) is "a shared layer attends over an empty cache", not
+      "a shared layer stores its K/V over its source's". The pass never projects K/V on a shared layer (its QKV stride is
+      Q only), so the registered defect has no code path to plant. The substitute catches the same class: a shared layer
+      that does not read its source.
+    - **The mechanism read for the miss** is quantization noise that the tiny fixture amplifies, not a defect. The
+      fixture is strengthened (norm weights ×42, layer scalars ×6), so a small rounding difference grows through 6
+      layers. Every quantized path reads only 0.70-0.83 against an f32 CPU on it. On the 96-token prompt, the batched
+      pass is closer to f32 than the layer-major one (0.829 against 0.792). Gemma 3's shipped batched pass reads
+      0.99993 on its own, unstrengthened tiny fixture. The real-checkpoint gate, G-S9d, passes.
+    - **The bar, amended 2026-10-08 by the owner** (option "amend to 0.98"): worst cosine >= 0.98, every argmax equal
+      or an R10 near-tie, every planted defect red. 0.98 sits between the clean pass (0.9907) and the nearest defect
+      (0.940). **PASS** under it (`s9step2/gs9c-tiny-amended.log`; the run against 0.9999 is `s9step2/gs9c-tiny.log`).
+  - **The prefill refactor's regression check:** `go run ./cmd/gate quick`, 13:44-13:53. 2154 tests passed, and the
+    only red was G-S9c at 0.9999 (every other family's prefill test passed).
 
 
 

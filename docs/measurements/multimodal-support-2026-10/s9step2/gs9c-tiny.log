@@ -1,0 +1,21 @@
+=== RUN   TestS9EModelBatched_tiny
+[S9 G-S9c] golden 12-token none: worst cosine 0.9907247 over the last row and 8 steps, 0 non-tie argmax differences
+    s9_emodel_batched_test.go:114: golden 12-token: the batched pass misses the bar (worst 0.9907247, 0 non-tie differences)
+[S9 G-S9c] golden 12-token (1) a shared layer over an empty cache: worst cosine 0.8881437 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (2) the PLE block skipped: worst cosine 0.1858487 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (3) PLE inputs from the next row: worst cosine 0.4726153 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (4) the layer scalar dropped: worst cosine 0.9415970 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (5) v_norm dropped: worst cosine 0.6808163 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] golden 12-token (6) every FFN at the first layer's width: worst cosine 0.8249908 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token none: worst cosine 0.9915778 over the last row and 8 steps, 0 non-tie argmax differences
+    s9_emodel_batched_test.go:114: synthetic 96-token: the batched pass misses the bar (worst 0.9915778, 0 non-tie differences)
+[S9 G-S9c] synthetic 96-token (1) a shared layer over an empty cache: worst cosine 0.9085624 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (2) the PLE block skipped: worst cosine 0.4394590 over the last row and 8 steps, 1 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (3) PLE inputs from the next row: worst cosine 0.4863389 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (4) the layer scalar dropped: worst cosine 0.9395372 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (5) v_norm dropped: worst cosine 0.8151245 over the last row and 8 steps, 0 non-tie argmax differences
+[S9 G-S9c] synthetic 96-token (6) every FFN at the first layer's width: worst cosine 0.8524690 over the last row and 8 steps, 0 non-tie argmax differences
+--- FAIL: TestS9EModelBatched_tiny (0.99s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	1.465s
+FAIL
