@@ -70,7 +70,7 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 		return nil, err
 	}
 	if q.deep > 0 { // Qwen3-VL: the merged rows, then each DeepStack set, one flat vector (the feature cache stores it whole)
-		return q.fb.run("Qwen3-VL", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+		return q.fb.run("Qwen3-VL", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 			merged, deep, err := multimodal.Qwen3TowerFeaturesDeepstack(enc, acc, pv, [][3]int{grid})
 			if err != nil {
 				return nil, err
@@ -81,7 +81,7 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 			return merged, nil
 		})
 	}
-	return q.fb.run("Qwen3.5", &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
+	return q.fb.run("Qwen3.5", q.plan.require, &q.acc, func(acc multimodal.GridTowerAccelerator) ([]float32, error) {
 		return multimodal.Qwen3TowerFeatures(enc, acc, pv, [][3]int{grid})
 	})
 }

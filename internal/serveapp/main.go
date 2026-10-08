@@ -1318,6 +1318,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 	}
 	for _, lm := range s.models {
 		lm.qwenEnc = enc
+		lm.qwenRequire = require
 		lm.qwenPP = pp
 		lm.qwenMerge = enc.Cfg.SpatialMergeSize
 		lm.qwenImgTok = -1

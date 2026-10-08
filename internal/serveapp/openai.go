@@ -123,11 +123,12 @@ type loadedModel struct {
 	// Qwen2.5-VL vision tower (P5; nil ⇒ Gemma3/text). The merger is in the encoder
 	// (no separate projector); preprocessing + m-RoPE are Qwen-specific, so the image
 	// path branches on qwenEnc != nil.
-	qwenEnc    *vision.QwenVisionEncoder
-	qwenDevMu  sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
-	qwenPP     multimodal.QwenPreprocessConfig
-	qwenMerge  int // spatial_merge_size
-	qwenImgTok int // <|image_pad|> id
+	qwenEnc     *vision.QwenVisionEncoder
+	qwenDevMu   sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
+	qwenRequire bool       // -require-backend: a device-memory failure of the Qwen2.5-VL tower fails the request instead of falling back to the CPU
+	qwenPP      multimodal.QwenPreprocessConfig
+	qwenMerge   int // spatial_merge_size
+	qwenImgTok  int // <|image_pad|> id
 
 	// Qwen3.5+ vision tower (P8a; nil ⇒ not Qwen3.5 / no tower). Shares qwenPP/qwenMerge/qwenImgTok
 	// and the GenerateQwenVL route with the Qwen2.5-VL path above, but the tower itself loads LAZILY

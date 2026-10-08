@@ -89,12 +89,14 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 		return vi, err
 	}
 	// One place for every family: the cache sits between the prompt builders and the generate call.
-	return lm.withFeatureCache(vi, img.data), nil
+	return lm.withFeatureCache(vi, img.data, lm.towerFamily(img.audio)), nil
 }
 
-// withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode.
-func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte) visionInput {
-	vi.features = lm.visionFeatureCache().wrap(raw, vi.features)
+// withFeatureCache answers vi's features from this model's per-image cache when it holds these bytes' encode. A miss runs the tower through
+// recoverDeviceTower, so a tower that panics (on any device, for any family) fails the request rather than the server.
+func (lm *loadedModel) withFeatureCache(vi visionInput, raw []byte, family string) visionInput {
+	tower := vi.features
+	vi.features = lm.visionFeatureCache().wrap(raw, func() ([]float32, error) { return recoverDeviceTower(family, tower) })
 	return vi
 }
 
@@ -173,30 +175,67 @@ func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error)
 	return lm.qwenForwardWithFallback(pv, grid)
 }
 
-// qwenForwardWithFallback is the Qwen2.5-VL ViT with the device-memory fallback: on a device allocation failure it closes the resident tower (the encoder then runs aikit's
-// CPU path) and runs the image again there.
+// qwenForwardWithFallback is the Qwen2.5-VL ViT with the device-memory fallback (qwenDeviceForward).
 func (lm *loadedModel) qwenForwardWithFallback(pv []float32, grid [3]int) ([]float32, error) {
 	lm.qwenDevMu.Lock()
 	defer lm.qwenDevMu.Unlock()
-	out, err := recoverDeviceTower("Qwen2.5-VL", func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
-	if err == nil || !lm.qwenEnc.ResidentEnabled() || !isDeviceMemoryError(err) {
-		return out, err
-	}
-	fmt.Fprintf(os.Stderr, "vision: the Qwen2.5-VL tower ran out of device memory (%v); it runs on the CPU from now on\n", err)
-	lm.qwenEnc.Close()
-	return recoverDeviceTower("Qwen2.5-VL", func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
+	return qwenDeviceForward(lm.qwenEnc, lm.qwenRequire, func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
 }
 
-// recoverDeviceTower runs a vision tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
-// resident decoder has taken its VRAM, and aikit's Qwen2.5-VL tower panics on an allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it: unrecovered, one big
-// image killed the whole server (found by the S4 default-plan run, 2026-10-07). The request fails with the reason; the server and the other requests live.
+// residentTower is the part of aikit's Qwen2.5-VL encoder the fallback uses: whether its device tower is attached, and detaching it.
+type residentTower interface {
+	ResidentEnabled() bool
+	Close()
+}
+
+// qwenDeviceForward runs forward on the Qwen2.5-VL encoder t, a panic becoming an error. On a device allocation failure with the device tower attached it detaches the
+// tower (the encoder then runs aikit's CPU path) and runs the image again there; under require (-require-backend) it fails the request instead and keeps the tower.
+func qwenDeviceForward(t residentTower, require bool, forward func() ([]float32, error)) ([]float32, error) {
+	out, err := recoverDeviceTower("Qwen2.5-VL", forward)
+	if err == nil || !t.ResidentEnabled() || !isDeviceMemoryError(err) {
+		return out, err
+	}
+	if require {
+		return nil, refuseCPUFallback("Qwen2.5-VL", err)
+	}
+	fmt.Fprintf(os.Stderr, "vision: the Qwen2.5-VL tower ran out of device memory (%v); it runs on the CPU from now on\n", err)
+	t.Close()
+	return recoverDeviceTower("Qwen2.5-VL", forward)
+}
+
+// recoverDeviceTower runs a tower's forward and turns a panic into an error that names the likely cause. A device tower grows its scratch on the first image, after the
+// resident decoder has taken the device's memory, and aikit's Qwen2.5-VL tower panicked on an allocation failure (`CUDA_ERROR_OUT_OF_MEMORY`) instead of returning it:
+// unrecovered, one big image killed the whole server (found by the S4 default-plan run, 2026-10-07). The request fails with the reason; the server and the other requests
+// live. Every tower passes through it: the grid towers inside deviceFallback.run, Qwen2.5-VL inside qwenDeviceForward, and every family's features (Gemma 3's SigLIP,
+// Gemma 4's image and audio towers included) at withFeatureCache.
 func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []float32, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			out, err = nil, fmt.Errorf("the %s vision tower failed on the device (%v): the image needs more VRAM than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu", family, r)
+			hint := ""
+			if isDeviceMemoryError(fmt.Errorf("%v", r)) {
+				hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
+			}
+			out, err = nil, fmt.Errorf("the %s tower failed (%v)%s", family, r, hint)
 		}
 	}()
 	return fn()
+}
+
+// towerFamily names this model's tower for an error message.
+func (lm *loadedModel) towerFamily(audio bool) string {
+	switch {
+	case audio:
+		return "Gemma 4 audio"
+	case lm.glm != nil:
+		return "GLM-OCR"
+	case lm.qwen3 != nil:
+		return "Qwen3.5+ vision"
+	case lm.qwenEnc != nil:
+		return "Qwen2.5-VL"
+	case lm.gemma4Enc != nil:
+		return "Gemma 4 vision"
+	}
+	return "Gemma 3 SigLIP"
 }
 
 // qwenVisionPrompt is the Qwen2.5-VL and Qwen3.5+ image path: smart-resize preprocess → ViT +
