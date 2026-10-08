@@ -4,7 +4,10 @@
 > R or B (27.2%), more than three distinct options or families among them; every registered sensitivity clears 25%
 > (narrowest 26.7%). Record: [`audit-classes-2026-10-08.md`](../measurements/audit-classes-2026-10-08.md). Its §3
 > put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
-> 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 not started.
+> 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 built the same day
+> as two registries (§4.1 state × lifecycle, behaviour-changing where a cell was unsafe; §4.2 options × paths, a
+> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 57 option
+> cells admitted untested, the work list.
 
 ## 1. The class, and why it keeps coming back
 
@@ -164,8 +167,35 @@ options AND the kinds of state; limits stay out of step 2.** What that changes i
   that do not consult the grid; the adapter switch through `rewindForReuse`/`reconcile`. Seven planted defects (an
   unclassified field; a snapshot cell set to kept, and to persisted; image blocks declared exact on rewind; the adapter
   check removed; KDA dropped from `hasRecurrentState`; KDA dropped from `holdsState`) each turned its test red.
-- **Stage 2** (options × paths, with the admission chokepoints) is next. The Metal admission site (`metal/backend.go`
-  `prefillOK`) waits until the in-flight multimodal work there is committed.
+
+### 4.2 Stage 2 — load options × execution paths: BUILT 2026-10-08, as a ratchet
+
+**Owner decision 2026-10-08: no behaviour change in this stage.** A combination that runs today with no test that
+drives it stays admitted and is declared *admitted, untested*; the count of such cells may only fall. This replaces
+the bullets below on one point: cells do not "start declined" — they start honestly labelled.
+
+- **The grid** is `decoder/optiongrid.go`: every `decoder.Options` field × 7 paths (CPU decode, CPU batched prefill,
+  CPU batched decode, GPU resident decode, GPU resident prefill, speculative verify, session reuse and snapshot). Each
+  cell is *tested* (names a test), *declined* (names the function that refuses it, and a test where one exists),
+  *admitted, untested*, or *n/a* (with a reason, quoting the option's own doc comment where it has one). Nine fields are
+  load-only (read while loading, by no path afterwards), each with a reason. Generated page:
+  [`docs/option-state-grid.md`](../option-state-grid.md), beside the cache-state grid.
+- **"Tested" is strict.** The test must set the option through `Options` and run the path. Applying that cut five
+  claims on the way in: `TestInt4_forwardParity` runs per token (decode, not batched prefill); `TestKVI8_genParity` and
+  `TestKVI8_batchedPrefill` set the internal `kvI8` themselves; the Metal int8-KV parity tests drive kernels;
+  `TestMC5_prefillChunkInvariance` chunks `PrefillLast` itself and never sets `ResidentPrefillChunk`. Each of those
+  shows the path works, not that the option reaches it.
+- **Where it stands: 57 cells admitted untested, 5 tested, 2 declined** (KVPrecision at Metal's `PrefillPath`, Quant
+  int4 at `SpecDecodeConflict`). That count is the work list; the generated page shows which cells.
+- **What fails closed:** a new `Options` field until it is classified on every path
+  (`TestOptionGrid_everyOptionClassified`); a cell naming a test or decline that does not exist in any module
+  (`TestOptionGrid_cellsCarryEvidence`); a rise in the untested count, or a fall not booked into the ceiling
+  (`TestOptionGrid_ratchet`); a stale generated page (`TestOptionStateGrid_fresh`). Four planted defects (a new
+  field; a missing test name; a tested cell dropped to untested; a hand edit to the page) each turned its test red.
+- **Not yet done, and why.** The §4 "one chokepoint per path asks one function" refactor would change admission code,
+  including Metal's `PrefillPath` in files the multimodal work has open; under the no-behaviour-change decision it is
+  better done cell by cell, each with the test that moves it from untested to tested. New *paths* are not detected
+  automatically; adding one means adding it to `ogPaths`, which then fails every option until each is classified.
 
 - **One chokepoint per path.** Every execution path (sequential decode, batched prefill, MC3 batched decode,
   resident, paged MoE, fast/exact prefill, speculative verify) asks one function whether it admits this model *with
