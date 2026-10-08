@@ -160,19 +160,21 @@ var cudaTowerRegistered = func(mt string) bool {
 }
 
 // qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (cuda/qwen25_vision.go), calibrated to a measurement and not derived (S7 on CUDA's fix, 2026-10-08). On the 8 GB card the tower's weights took
-// 2758 MiB, 337 MiB over the arithmetic size (about 570 separate buffers, each rounded by the allocator); the first image's scratch is np * (7 hidden + 2 padded intermediate + patch dim + 2 head dim) * 4 bytes, 270 MiB at
-// 4096 patches; and the resident build's own scratch beyond the plan's reading was 535 MiB against the 384 MiB margin, so the tower, loaded after it, found 169 MiB free and its first scratch allocation failed. The
-// ceiling stays 8192 patches (about 1.6 MP); a larger image falls back to the CPU tower by name (deviceFallback). The 256 MiB is slack for that margin overshoot, not for the tower's own needs.
+// 2758 MiB, 337 MiB over the arithmetic size (about 570 separate buffers, each rounded up to the allocator's 2 MiB quantum); the first image's scratch is np * (7 hidden + 2 padded intermediate + patch dim + 2 head dim) * 4
+// bytes, 270 MiB at 4096 patches. The ceiling stays 8192 patches (about 1.6 MP); a larger image falls back to the CPU tower by name (deviceFallback).
+//
+// There used to be a further 256 MiB of "slack for the resident build's scratch beyond the plan's reading, measured 535 MiB against the 384 MiB margin". That was a misattribution: the text build's scratch after the plan's
+// probe is 0 MiB, and the shortfall it was patching was the allocator rounding of the TEXT model's weights, which the CUDA plan now prices itself (cuda.packedAllocSlack, 2026-10-08). Removed after a served probe on the
+// card: serve's defaults on the 3B, a ~8,000-patch image (2,014 prompt tokens) then a small one, the tower on CUDA, no failure, 1152 MiB of the 8192 still free after all three requests.
 func qwen25VLTowerEstimate(d towerDims) int64 {
 	const (
-		np          = 8192
-		allocExtra  = 337 << 20 // weights' allocator overhead, measured
-		marginSlack = 256 << 20 // the build's scratch beyond the plan's reading, measured 535 MiB against the 384 MiB margin
+		np         = 8192
+		allocExtra = 337 << 20 // weights' allocator overhead, measured
 	)
 	h, i := int64(d.hidden), (int64(d.inter)+63)/64*64 // the tower pads the intermediate width to a multiple of 64
 	patchIn := int64(d.inChan * d.temporal * d.patch * d.patch)
 	hd := h / 16 // Qwen2.5-VL's 16 heads
 	params := int64(d.layers)*(4*h*h+3*h*i) + patchIn*h
 	scratch := int64(np) * (7*h + 2*i + patchIn + 2*hd) * 4
-	return params*4 + allocExtra + scratch + marginSlack
+	return params*4 + allocExtra + scratch
 }

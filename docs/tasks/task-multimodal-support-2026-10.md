@@ -2585,8 +2585,11 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - `TestDefaultVerifyWidth_sweep`, `TestFlashDecodeBlockSpecLane` and `TestBlockSpec_twoTurnsMatchPlain` were NOT the margin and NOT the rounding. They load the target plainly (the log reads "less 384 MB reserved": the margin
       alone) and bolt `NewBlockSpec` on afterwards, where `serve --drafter` loads the drafter first and prices it through `Options.ExtraResidentBytes` and `ExtraResidentKVPerPosition`. The plan fills the card to the margin and the
       drafter's allocation runs out. The tests now price the drafter the way serve does (`withDrafterReserve`). I did not run them with the slack off, so I do not claim the slack is needed for them.
-  - **Not done / owed:** the Qwen2.5-VL tower estimate keeps its 256 MiB slack (it is the tower's own estimator, calibrated to `nvidia-smi`; whether tower buffers round the same way is unmeasured, so it is not replaced by
-    this change). The drafter's own weights are priced unrounded in `DrafterResidentBytesEstimate` (about 35 buffers, tens of MiB, inside the margin). Gemma 3's 69 MiB residual is unexplained.
+  - **Not done / owed:** the drafter's own weights are priced unrounded in `DrafterResidentBytesEstimate` (about 35 buffers, tens of MiB, inside the margin). Gemma 3's 69 MiB residual is unexplained.
+  - **The Qwen2.5-VL tower's 256 MiB slack: removed, same day.** It was the misattribution above: "the build's scratch beyond the plan's reading, 535 MiB against 384" is not reproduced (0 MiB after the probe), and
+    the rounding it patched is now priced by the plan. A served probe on the card, exploratory and untimed (`margin/qwen25vl-slack-probe.txt`): serve's defaults, an ~8,000-patch image (2,014 prompt tokens), a small image,
+    the big one again; with the slack at 256 and at 0 the tower stays on CUDA, no failure, identical replies, the same 7040 MiB used (KV buffers round to the same 6 MiB), 1152 MiB of the 8192 still free. At 0 the
+    default context is 5967 against 5057 (+18%). `qwen25VLTowerEstimate` is now 3.46 GB (weights 2758 MiB + 540 MiB of scratch at the 8192-patch ceiling); its test band is re-pinned to 3.40-3.60.
   - **A production consequence worth stating:** on the 8 GB card an unpinned default load now plans against what the build will actually take, so the plan line and the final context agree on every bench model but Gemma 3.
     Nothing here changes a speed.
 

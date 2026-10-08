@@ -1,0 +1,10 @@
+Qwen2.5-VL 3B tower: does the tower still fit on the 8 GB card with the 256 MiB "marginSlack" removed? 2026-10-08, nobara (RTX 2070 SUPER, 595.91.07), by day, EXPLORATORY and untimed
+(the request times below are not results). Two serve-cuda builds of main + the one constant: slack 256 MiB (as shipped) and 0. Serve's default flags, --model ~/models/qwen25vl-3b-instruct
+--backend cuda. Requests: a 1400x1120 noise image (8,000 patches, under the 8,192 ceiling), the small testdata image, the big one again. probe.sh is the script.
+
+[slack256] plan: context 5258 -> trimmed to 5057 at the build ("less 3940 MB reserved"); tower on CUDA
+[slack256] big: HTTP 200, prompt_tokens=2014, used VRAM 7040 MiB; small: HTTP 200, prompt_tokens=1038; big-again: HTTP 200
+[slack0]   plan: context 6168 -> trimmed to 5967 at the build ("less 3684 MB reserved"); tower on CUDA
+[slack0]   big: HTTP 200, prompt_tokens=2014, used VRAM 7040 MiB; small: HTTP 200, prompt_tokens=1038; big-again: HTTP 200
+Replies identical in both arms. Used VRAM is the same 7040 MiB because each KV buffer is 1 KiB/position x ctx rounded up to a 2 MiB multiple: 5057 and 5967 positions both land in 6 MiB buffers.
+So removing the slack buys 910 more context positions (+18%) at the same device footprint, with 1152 MiB of the 8192 still free (about 745 MiB past the ~407 MiB the driver hides).

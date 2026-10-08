@@ -17,7 +17,7 @@ func TestTowerVRAMEstimate(t *testing.T) {
 		{"gemma4 E2B", "gemma4", `{"vision_config":{"hidden_size":768,"intermediate_size":3072,"num_hidden_layers":16,"patch_size":16,"position_embedding_size":10240,"default_output_length":280,"pooling_kernel_size":3}}`, 0, 0.80, 0.95},
 		{"qwen3.5-0.8b", "qwen3_5", `{"vision_config":{"depth":12,"hidden_size":768,"in_channels":3,"intermediate_size":3072,"patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 0.60, 0.75},
 		{"glm-ocr, ceiling capped to 1.5 MP for the reserve", "glm_ocr", `{"vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 2.3, 2.7},
-		{"qwen2.5-vl-3b (measured 2758 MiB of weights + 270 MiB of scratch at 4096 patches on the card)", "qwen2_5_vl", `{"vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 3.55, 3.95},
+		{"qwen2.5-vl-3b (measured 2758 MiB of weights + 270 MiB of scratch per 4096 patches, at the 8192-patch ceiling: 3298 MiB = 3.46 GB)", "qwen2_5_vl", `{"vision_config":{"depth":32,"hidden_size":1280,"in_channels":3,"intermediate_size":3420,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 0, 3.40, 3.60},
 		{"glm-ocr capped at 1 MP", "glm_ocr", `{"vision_config":{"depth":24,"hidden_size":1024,"in_channels":3,"intermediate_size":4096,"patch_size":14,"spatial_merge_size":2,"temporal_patch_size":2}}`, 1_000_000, 1.8, 2.2},
 	}
 	for _, c := range cases {
