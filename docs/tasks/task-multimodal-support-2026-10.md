@@ -3430,6 +3430,22 @@ Dump `cuda/s10_anchor_dump_test.go` (94 s), Hugging Face side `scripts/anchor_s1
 - **What it does not say.** The probabilities printed for 'Quarter' and 'Table' on table.png (HF 1e-14 and 8e-7) are for the gate's prompt, "Describe this image.", which is not the prompt of the served check ("What does this image show? Answer briefly."), where those two tokens split 0.41/0.11 and 0.24/0.19. So this anchor does not answer the served split directly. I did not re-run it on the served prompt: a new anchor after a FAIL is a new registration, and it is the owner's call whether to open one.
 - **Outcome.** Option 3's reading is FAIL, so option 2 (enable) is not taken; `cudaDeepstackPrefillOn` stays false. No bar was moved.
 
+#### G-S10i, the HF float32 anchor on the SERVED prompt, registered 2026-10-08 before any code or run (owner: yes, after G-S10h read FAIL)
+
+G-S10h used the gate's prompt ("Describe this image."), not the one on which the served check split ("What does this image show? Answer briefly."), so it did not explain that split. This repeats G-S10h with the served prompt and nothing else changed.
+
+- **Unchanged from G-S10h, on purpose:** the model, the four images and their cap, the two arms, the teacher tokens (the off path's greedy), the 9 positions, the HF float32 side, the metric (delta = cos(on, HF) - cos(off, HF) per (image, step)), the thresholds and the order of the rule:
+  **FAIL** if mean delta < -0.005 or any image's step-0 delta < -0.02; **PASS** if mean delta >= -0.002 and every image's step-0 delta >= -0.01; otherwise **AMBIGUOUS**. No threshold is touched because G-S10h failed.
+- **Changed:** the user turn's text is "What does this image show? Answer briefly." (the served request's, `run-gs3c-served.sh`), the ids are the chat template's rendering of one image then that text, with the generation prompt, and the image-pad token expanded to the image's row count.
+- **New instrument check (iv), void on failure:** the hand-built ids equal `apply_chat_template` on `[{"type": "image"}, {"type": "text", ...}]` from the checkpoint's own template (Hugging Face's tokenizer, image-pad expanded), for every image. Checks (i) and (iii) as before; (i) is expected to differ from the gate's recorded worst cosines now, because the prompt differs, so it is reported and not compared (the dump's off-against-on worst is the new reference for this prompt).
+  (ii) stays unavailable (no PIL/torchvision) and informational.
+- **The served split, printed and read as registered here:** on table.png at step 0, the log-odds ln(p('Quarter') / p('Table')) of HF, of the off arm and of the on arm. The served check had Quarter 0.412 / Table 0.112 off and 0.190 / 0.236 on, i.e. log-odds +1.30 off and -0.22 on. The arm whose log-odds is nearer HF's is the one that is nearer on the token pair the served check split on. This is context for the owner, not a graded condition.
+- **What each outcome does, fixed now:**
+  - **PASS:** this is the served prompt's reading and it goes to the owner beside G-S10h's FAIL. It does not erase that FAIL, and nothing is enabled from here: enabling needs the served rule re-registered with a direction and a band, and the owner's decision weighing both anchors.
+  - **FAIL or AMBIGUOUS:** the path stays off. **No third anchor is run**: a third prompt after two readings is searching for a pass.
+- **Prediction, written now:** the sign of the mean delta will match G-S10h's (positive, +0.005 to +0.015), and one of the larger images will again carry a negative step-0 delta below -0.01; I put the chance of a PASS under 30%. On the served split I expect HF's log-odds to be nearer the on arm's, because the on arm moved the first token toward 'Table' and the table image is the one where the on arm was closer to HF; that is a guess and could be wrong.
+- **Cost, tier:** day, ~3 minutes (dump 95 s, HF 1 min).
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
