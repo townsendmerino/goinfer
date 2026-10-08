@@ -1,0 +1,5 @@
+=== RUN   TestSiglipCUDA_speed
+[S4 siglip speed] gemma3_preprocess_image.png  round 1: CPU f32 20.96s | CUDA f32 18.01s | CUDA int8 4.75s
+[S4 siglip speed] glm_ocr/table.png            round 1: CPU f32 21.26s | CUDA f32 17.99s | CUDA int8 4.08s
+--- PASS: TestSiglipCUDA_speed (135.08s)
+PASS

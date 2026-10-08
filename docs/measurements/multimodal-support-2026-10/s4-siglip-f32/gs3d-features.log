@@ -1,0 +1,8 @@
+=== RUN   TestSiglipCUDA_int8VsFloat32
+[S4 G-S3d] gemma3_preprocess_image.png    int8 CUDA tower vs float32 CPU: relative L2 0.5238, worst token cosine -0.0209, mean token cosine 0.9294 (int8 tower 4.272s)
+[S4 G-S3d] qwen25vl_preprocess_image.png  int8 CUDA tower vs float32 CPU: relative L2 0.5395, worst token cosine 0.0016, mean token cosine 0.9291 (int8 tower 4.27s)
+[S4 G-S3d] glm_ocr/formula.png            int8 CUDA tower vs float32 CPU: relative L2 0.2330, worst token cosine 0.1856, mean token cosine 0.9787 (int8 tower 4.269s)
+[S4 G-S3d] glm_ocr/table.png              int8 CUDA tower vs float32 CPU: relative L2 0.1679, worst token cosine 0.1410, mean token cosine 0.9868 (int8 tower 4.267s)
+--- PASS: TestSiglipCUDA_int8VsFloat32 (104.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	104.230s

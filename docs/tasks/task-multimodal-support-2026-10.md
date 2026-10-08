@@ -1251,6 +1251,38 @@ so the owner can decide the default with evidence. **Changing the default is not
   on that axis; the check is rerun on a sharper fixture before any result is read.
 - **Day / night:** the tower, the tiny gates and the vets are day work; the real-size gate and the served arms are a few minutes each (G-S3a real about 3, G-S3b/d about 8); the speed record goes on the night queue.
 
+- **S4 addendum read 2026-10-07 evening on nobara (commits `5309aa0c`, `f37fe277`; the tower is on `main` once pushed): G-S3a PASS, G-S3b PASS, G-S3d recorded; the default is unchanged.**
+  Raw: `docs/measurements/multimodal-support-2026-10/s4-siglip-f32/` (`gs3a-real.log`, `gs3b/`, `gs3d/`, `gs3d-features.log`, `speed-smoke/`).
+  - **Built as registered** (`cuda/siglip_vision.go`, the `gridSiglip` kind on `cuda/grid_vision.go`, `cuda/vision_register.go`): the float32 SigLIP tower on the tower base, no RoPE, one segment over every patch, aikit's `FinishHidden`
+    on the host. The one global resident factory dispatches on how the encoder was loaded: a float32 encoder gets this tower, an int8 one still gets `NewVisionEncoder` (`TestSiglipCUDA_int8StaysTheInt8Tower`). Serve:
+    `-vision-quant` is unset by default; unset keeps today's choice, an explicit `f32` selects the float32 tower (`towerInt8`); `towerReserve` prices the float32 Gemma 3 tower at 2.11 GB (27 layers of hidden 1152 /
+    intermediate 4304 in float32 plus the 4096-patch scratch). `docs/flags.md`, its meta file and `docs/multimodal.md` say so.
+  - **G-S3a on CUDA PASS.** Tiny (`siglip-tiny`, norms randomised, patch and q/k biases sharpened, q/k scaled x6, as Metal's check): worst token cosine **1.000000000**; the three registered defects alone, each red:
+    (1) attention scale dropped 0.998501, (5) position table dropped 0.745354, (6) patch-embed bias dropped 0.762383 (defect (1) is the closest to the bar and still clear of it). Real `gemma-3-4b-it`, the four F2a images, attached
+    through `EnableResident` with the attached type asserted: worst token **0.999999968** (`gemma3_preprocess_image`), **0.999999968** (`qwen25vl_preprocess_image`), **0.999996014** (`glm_ocr/formula`), **0.999999927**
+    (`glm_ocr/table`), all over 0.9999. head_dim 72, the real-size risk named in the registration, is not a problem for aikit's attention kernel on this base.
+  - **G-S3b on CUDA PASS.** `gemma-3-4b-it`, `--backend cuda --kv-sessions 1 -ctx 4096 -vision-quant f32`, `table.png`, 32 greedy tokens. Reference `=cuda:cpu` (the CPU float32 tower): the device float32 tower (log: `encoder
+    f32/cuda-resident`) gives an IDENTICAL reply, and a second CPU-tower run (the determinism control) is IDENTICAL too.
+  - **G-S3d, what the int8 default costs, recorded (evidence for the owner's decision, not a verdict).** *Served, same request, the shipped default (no `-vision-quant`: `encoder int8/cuda-resident`) against the same float32
+    CPU reference:* the reply differs at **generated token 3**: the reference has ' quarterly' at 0.989, the int8 tower's arm chose ' a' (0.011): not a near-tie (p(other) 0.011 against half of 0.989). The int8 reply opens "The image shows a table
+    presenting quarterly unit sales data..." against the reference's "The image shows quarterly unit sales data broken down by geographic region...". *Features, the int8 CUDA tower against the float32 CPU tower, per image:*
+
+    | image | relative L2 | worst token cosine | mean token cosine |
+    |---|---|---|---|
+    | gemma3_preprocess_image | 0.5238 | -0.0209 | 0.9294 |
+    | qwen25vl_preprocess_image | 0.5395 | 0.0016 | 0.9291 |
+    | glm_ocr/formula | 0.2330 | 0.1856 | 0.9787 |
+    | glm_ocr/table | 0.1679 | 0.1410 | 0.9868 |
+
+    These reproduce `siglip-int8-fidelity-2026-10-07.md` (0.16-0.52, worst 0.01-0.17) on the CUDA tower itself. One image, one prompt and 32 tokens is evidence that the difference reaches the reply, not a rate.
+  - **Speed, EXPLORATORY (single samples, nothing else measuring; the night record is queued as `s4sig-speed`, 12 min):** the tower alone on one image: float32 CUDA **18.0 s**, int8 CUDA **4.1-4.8 s**, CPU float32 **21-28 s**
+    (served encode: 18.0 s float32, 4.1 s int8). So the float32 tower is only about 1.2-1.5x the CPU one and 3.6x over S7's 5 s TTFT bar by itself, while the int8 tower, which diverges visibly, is the one that fits the bar.
+    That is the same shape as the other CUDA towers (S4 step 3): correct, not fast. The f32 tower's cost is the scalar GEMMs and aikit's query-tiled attention at 4096 patches; the int8 path uses the tensor-core kernels. S17 (tower speed)
+    is where this closes.
+  - **Open, the owner's:** whether the default for Gemma 3 on cuda/webgpu changes from int8 to float32. The data above is the trade: float32 is exact (identical reply) and 18 s per new image on this card; int8 is 4 s and changes the reply.
+  - **Not done:** the float32 tower under `--backend webgpu` (no tower there; an explicit `f32` runs the CPU tower); a float32-tower reserve measurement on the default plan (the 2.11 GB estimate is arithmetic, and Gemma 3 4B with the default
+    4 KV slots still does not fit the 8 GB card, which is S18's CUDA side).
+
 ### S5 — Gemma 4 E2B/E4B audio into the model
 
 aikit's `audio` package probably loads E2B's tower unchanged (its config and tensor names were checked on nobara,

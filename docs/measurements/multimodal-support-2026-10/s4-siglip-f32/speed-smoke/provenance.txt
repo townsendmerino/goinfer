@@ -1,0 +1,6 @@
+binary: /home/francis/goinfer-bench/s4sig/cuda.test (rev f37fe277)
+rounds: 1
+started: 2026-10-07 18:23:35 PDT
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 467 MiB
+load: 8.22 7.03 4.94 4/831 992018
+finished: 2026-10-07 18:25:51 PDT rc=0

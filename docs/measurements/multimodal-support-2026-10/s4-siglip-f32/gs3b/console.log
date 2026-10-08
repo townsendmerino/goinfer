@@ -1,0 +1,21 @@
+[18:17:21] gemma-3-4b-it: arm cuda (--backend cuda -vision-device cpu --kv-sessions 1 -ctx 4096 -vision-quant f32)
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /home/francis/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cuda (21.6s): 'The image shows quarterly unit sales data broken down by geographic region (North, South, East, West, and Central). It also presents the total sales a'
+[18:18:11] gemma-3-4b-it: arm cuda-towerauto (--backend cuda -vision-device auto --kv-sessions 1 -ctx 4096 -vision-quant f32)
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32/cuda-resident) from /home/francis/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cuda-towerauto (19.1s): 'The image shows quarterly unit sales data broken down by geographic region (North, South, East, West, and Central). It also presents the total sales a'
+[18:18:54] gemma-3-4b-it: arm cuda2 (--backend cuda -vision-device cpu --kv-sessions 1 -ctx 4096 -vision-quant f32)
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+loaded vision tower for "gemma-3-4b-it" (256 image tokens/image, soft-token id 262144, encoder f32) from /home/francis/models/gemma-3-4b-it
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+  cuda2 (21.6s): 'The image shows quarterly unit sales data broken down by geographic region (North, South, East, West, and Central). It also presents the total sales a'
+gemma-3-4b-it: reference arm cuda
+gemma-3-4b-it: cuda-towerauto against cuda: IDENTICAL replies
+gemma-3-4b-it: cuda2 against cuda: IDENTICAL replies
