@@ -3208,6 +3208,63 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - or both.
 
     Each is the owner's call.
+- **S18 on the Mac, the tower: owner chose "both" (c) 2026-10-08. A design probe, then the design and gates,
+  registered before any tower code.**
+  - **The probe (exploratory, a throwaway test, CPU, not committed):** Gemma 3's SigLIP with its projection weights
+    rounded to int8 and activations kept f32, against the f32 tower, on the four F2a images (`last_hidden_state`,
+    4,096 tokens):
+
+    | int8 granularity | mean token cosine | relative L2 | worst token |
+    |---|---|---|---|
+    | groups of 32 | 0.99914-0.99962 | 0.020-0.040 | 0.39-0.99 |
+    | groups of 128 | 0.99845-0.99939 | 0.028-0.054 | 0.39-0.91 |
+    | per row | 0.99664-0.99863 | 0.046-0.073 | 0.49-0.83 |
+    | W8A8, serve's int8 tower (`siglip-int8-fidelity-2026-10-07.md`) | 0.932-0.987 | 0.16-0.52 | 0.01-0.17 |
+
+    - **What it shows:** most of W8A8's loss is the activations. Weight-only int8 in groups of 32 is about 10x closer.
+    - **No int8 form holds the tower bar** (every token at cosine >= 0.9999): a few outlier tokens stay far off, and
+      they do not shrink monotonically with the group size. So the int8 tower is graded at the decoder (the served
+      reply), not by the tower bar.
+  - **The design:**
+    1. **Build the tower block by block from disk (the "free the host copy" half).** Today `vision.LoadEncoder`
+       materializes all 27 blocks in f32 (2.17 GB). The Metal resident then uploads its own copy, and serve keeps the
+       encoder as the CPU fallback. Freeing the blocks after the upload would still peak at about decoder + 2.17 GB +
+       the device copy at the first image, the swap case. So:
+       - aikit gains a head-only load (config, patch embed, position table, post-layernorm; no blocks) and a per-block
+         f32 reader;
+       - the Metal resident builds from that, one block at a time, so the host never holds more than one block;
+       - the encoder's CPU forward loads its blocks on first use, so the CPU fallback still works (slower the first
+         time).
+
+       That is an aikit release (the owner's to push and tag); goinfer develops against the local checkout until then.
+    2. **A weight-only int8 SigLIP on Metal:** int8 weights in groups of 32 along K, each with an f32 scale, widened to
+       f32 as they are staged in lever B's GEMM (`tower_gemm_w8`, the same 64x64 tiles); activations, attention and
+       norms stay f32. Device weights are about 0.46 GB, against the f16 tower's 0.82 GB.
+    3. **Serve's choice on Metal, mirroring CUDA's (`resolveGemma3VisionQuant`):**
+       - unset `-vision-quant`: the f16 tower when the decoder plus that tower fits the Metal budget, otherwise the
+         int8 one, with a note;
+       - `f32`: the f16 tower, as today;
+       - `int8`: the Metal int8 tower (today it is the CPU W8A8 tower).
+    4. **S18's parts 2-4 as registered above** (Metal prices the tower at the form chosen, the context before the
+       decline, the banner).
+  - **Gates, registered before the code:**
+    - **G-S18e, the kernel:** `tower_gemm_w8` against a float64 reference over the same dequantized weights, each output
+      within 1e-5 of Σ|a·w| + |bias| (only accumulation differs). Planted defects red: a group's scale taken from the
+      next group, the bias dropped, A one K column late.
+    - **G-S18f, the tower is exact on its weights:** the Metal int8 tower against the CPU f32 tower running the same
+      group-32-rounded weights; every token at cosine >= 0.9999 (the tower bar, on the quantized weights), on the
+      four F2a images. The quantization's own cost against the true f32 tower is recorded (relative L2 per image). A
+      relative L2 above 0.06 on any image is red, a regression guard at 1.5x the probe's worst.
+    - **G-S18g, the reply (decoder-level, night: it needs the 4B decoder):** a served image turn (`table.png` and the
+      four F2a images, 32 greedy tokens, top-3 logprobs), the Metal int8 tower against the f16 Metal tower on the
+      same decoder. PASS: identical replies, or each first difference at an R10 near-tie (p(other) >= half p(top)).
+      **If it fails, the int8 tower is not a default:** explicit `-vision-quant int8` only, and Gemma 3 on the
+      16 GB Mac keeps the f16 tower where it fits, or the CPU.
+    - **G-S18h, host memory:** with the tower attached, its share of the process's `phys_footprint` is within 10% of
+      device weights + scratch + head. No 2.17 GB block copy stays, and none is transiently held (the peak sampled
+      during the attach). The CPU fallback still produces the f32 tower's output after a forced device failure.
+    - **G-S18a as registered,** read by day after the sidecar is built at night, with whichever tower serve chose,
+      named.
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).
