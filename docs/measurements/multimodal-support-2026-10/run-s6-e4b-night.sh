@@ -39,9 +39,9 @@ if [ -e "$GIW" ]; then
   echo "=== 3. G-E4B-2 served $(date '+%T')"
   cd "$SRC" || exit 2
   GS3C_EXTRA="--vision $DIR --embed-int4=false" bash docs/measurements/multimodal-support-2026-10/run-gs3c-served.sh \
-    "$BIN/serve-metal" "$OUT/3a-image" metal:cpu,cpu:cpu,cpu:cpu "$GIW" > "$OUT/3a-image.log" 2>&1 || rc=1
+    "$BIN/serve-metal" "$OUT/3a-image" metal:cpu,=cpu:cpu,cpu:cpu "$GIW" > "$OUT/3a-image.log" 2>&1 || rc=1
   grep -E "decode path|IDENTICAL|differing|top-3|near-tie|exited" "$OUT/3a-image.log"
-  bash docs/measurements/multimodal-support-2026-10/run-gs5c-served.sh "$BIN/serve-metal" "$OUT/3b-audio" cpu,metal,cpu -- \
+  bash docs/measurements/multimodal-support-2026-10/run-gs5c-served.sh "$BIN/serve-metal" "$OUT/3b-audio" =cpu,metal,cpu -- \
     --model "$GIW" --vision "$DIR" -vision-device cpu > "$OUT/3b-audio.log" 2>&1 || rc=1
   grep -E "decode path|IDENTICAL|differing|exited" "$OUT/3b-audio.log"
 fi

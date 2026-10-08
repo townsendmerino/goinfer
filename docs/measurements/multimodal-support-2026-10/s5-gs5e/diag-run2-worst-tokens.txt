@@ -1,0 +1,9 @@
+44.1: 147 tokens; goinfer below scipy on 123; under 0.99: goinfer 71, scipy 71
+  token  87 (3.48 s): scipy 0.617187 goinfer 0.610265, original token norm 126.955
+  token  92 (3.68 s): scipy 0.779041 goinfer 0.776902, original token norm 109.323
+  token  88 (3.52 s): scipy 0.817034 goinfer 0.815614, original token norm 113.853
+  token 120 (4.80 s): scipy 0.829019 goinfer 0.828824, original token norm 109.453
+  token 119 (4.76 s): scipy 0.863302 goinfer 0.862985, original token norm 121.424
+  token 121 (4.84 s): scipy 0.910822 goinfer 0.910939, original token norm 100.134
+  token  93 (3.72 s): scipy 0.921733 goinfer 0.920855, original token norm 92.852
+  token 146 (5.84 s): scipy 0.924369 goinfer 0.924017, original token norm 107.018

@@ -1,0 +1,11 @@
+=== RUN   TestGemma4AudioResample
+[G-S5e] 44.1 kHz mono: goinfer worst 0.610265 mean 0.978540 (147 tokens, 93680 samples) | scipy worst 0.617187 mean 0.978763 (147 tokens) -> FAIL
+    gemma4_audio_resample_real_test.go:133: 44.1 kHz mono: G-S5e FAIL
+[G-S5e] 48 kHz stereo: goinfer worst 0.610939 mean 0.978580 (147 tokens, 93680 samples) | scipy worst 0.619399 mean 0.978813 (147 tokens) -> FAIL
+    gemma4_audio_resample_real_test.go:133: 48 kHz stereo: G-S5e FAIL
+[G-S5e] planted (1) 44.1 kHz resampled as 48 kHz: worst -0.059974 mean 0.302463 -> FAIL
+[G-S5e] planted (2) stereo, left channel only: worst 0.003413 mean 0.826456 -> FAIL
+--- FAIL: TestGemma4AudioResample (4.85s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/multimodal	5.206s
+FAIL

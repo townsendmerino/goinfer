@@ -1353,6 +1353,24 @@ def run_embed_cell(engine, approx_tokens, n_inputs):
     finally:
         _stop_proc(proc)
 
+def fresh_image(i):
+    """VISION_IMAGE_PATH as PNG bytes that differ for every i: request i's own pseudorandom pattern (seeded by i) XORed
+    into the red channel's least significant bit. The size, and the content to within one 8-bit level in one channel, are
+    the base image's, so a tower and a prefill cost what they cost on the base image; every byte-hash cache (goinfer's
+    feature cache, Ollama's and llama.cpp's image caches) misses. Needs Pillow."""
+    import io
+    import random
+    from PIL import Image
+    im = Image.open(VISION_IMAGE_PATH).convert("RGB")
+    r, g, b = im.split()
+    rng = random.Random(1_000_003 * (i + 1))
+    bits = bytes(rng.getrandbits(1) for _ in range(im.width * im.height))
+    r = Image.frombytes("L", im.size, bytes(p ^ q for p, q in zip(r.tobytes(), bits)))
+    out = io.BytesIO()
+    Image.merge("RGB", (r, g, b)).save(out, format="PNG")
+    return out.getvalue()
+
+
 def vision_payload_goinfer(b64):
     return {"model": "bench", "stream": True, "max_tokens": 1,
             # TTFT only: the doc's own 31.3 s/image figure is the SigLIP tower's cost, front-loaded
@@ -1378,9 +1396,13 @@ def run_vision_cell(engine):
     from this one; the two are not directly comparable numbers, only both evidence about the same
     underlying cost). goinfer and Ollama only. CPU only, matching the existing row's own backend.
     """
-    with open(VISION_IMAGE_PATH, "rb") as f:
-        import base64
-        b64 = base64.b64encode(f.read()).decode()
+    import base64
+    # A NEW image every request, warm-up included (S13's harness fix, docs/tasks/task-multimodal-support-2026-10.md,
+    # 2026-10-07). Sending the same bytes every time measured a re-send: Ollama/llama.cpp and goinfer all cache an
+    # image's encode by its bytes, so the 2026-09-20 row's 0.4 s for gemma3:4b on the CPU was most likely a cache hit.
+    # fresh_image(i) is VISION_IMAGE_PATH with request i's own pseudorandom least-significant-bit pattern in the red
+    # channel: the same size and content (so the same tower and prefill cost), different bytes for every cache.
+    images = [base64.b64encode(fresh_image(i)).decode() for i in range(gen_params()[2] + 1)]
     proc = None
     try:
         if engine == "goinfer":
@@ -1391,14 +1413,14 @@ def run_vision_cell(engine):
                  "-addr", f"127.0.0.1:{GPORT}"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
             port, url, parse, build = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", \
-                parse_openai, (lambda: vision_payload_goinfer(b64))
+                parse_openai, vision_payload_goinfer
         elif engine == "ollama":
             env = dict(os.environ, OLLAMA_MODELS=OLLAMA_MODELS, OLLAMA_HOST=f"127.0.0.1:{OPORT}")
             proc = subprocess.Popen([OLLAMA, "serve"], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                     preexec_fn=os.setsid)
             port, url, parse, build = OPORT, f"http://127.0.0.1:{OPORT}/api/chat", parse_ollama, \
-                (lambda: vision_payload_ollama(b64))
+                vision_payload_ollama
         else:
             return None, f"vision cell: unsupported engine {engine!r}", None
 
@@ -1411,7 +1433,7 @@ def run_vision_cell(engine):
         for i in range(nruns + 1):  # i==0 is warmup: model load + first-run outlier, discarded
             t0 = time.perf_counter()
             try:
-                _, t_first, _, _, _ = post_stream(url, build(), parse)
+                _, t_first, _, _, _ = post_stream(url, build(images[i]), parse)
             except Exception as e:
                 if i == 0:
                     return None, f"warmup failed: {e}", None

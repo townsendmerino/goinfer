@@ -1,7 +1,19 @@
 # R12 (iii) — vision peer row: Ollama measured; goinfer declines safely, and forcing it is unsafe here
 
+> **Correction, 2026-10-07 (the Cowork audit of `task-multimodal-support-2026-10.md`): the Ollama figure below is
+> not a new-image TTFT.**
+> - **The cause:** `run_vision_cell` sent the same image's bytes for the warm-up and for every timed request.
+>   Ollama (llama.cpp's mtmd) and goinfer both cache an image's encode by its bytes, so the timed requests most
+>   likely re-used the warm-up's encode. Encoding a fresh 896x896 image through Gemma 3's 400M-parameter SigLIP
+>   tower, then prefilling a 4B model on the CPU, in 0.4 s is implausible: goinfer's own CPU tower alone takes 26 s
+>   on the same Mac.
+> - **The number:** 0.407-0.455 s is what Ollama takes to answer a resent image. It is not a peer row for a new one.
+> - **A second error:** the mean of 0.4548 and 0.4072 is 0.431, not 0.400.
+> - **The harness now sends a distinct image of the same size per request** (`fresh_image` in
+>   `scripts/bench_peer.py`). The new-image row is S13-lite's, re-measured at night.
+
 **Result: Ollama's `gemma3:4b` TTFT (CPU, one image, warm process) measured at 0.407-0.455 s
-(mean 0.4 s). goinfer's own side produced no usable number: the load-time fit guard correctly
+(mean printed as 0.4 s; it is 0.431 s, and of a resent image: see the correction above). goinfer's own side produced no usable number: the load-time fit guard correctly
 declined `gemma-3-4b-it` on this Mac's real current headroom (needs ~6.1 GB resident, ~5.0 GB
 free), and bypassing that guard (`GOINFER_NO_FIT_GUARD=1`, done with explicit sign-off after
 weighing it as a "modest ~1.1 GB shortfall") produced a REAL near-incident — system swap `used`
@@ -52,7 +64,7 @@ the nominal 16 GB before any test starts).**
 
 | engine | model | TTFT samples (s) | mean | note |
 |---|---|---:|---:|---|
-| ollama | gemma3:4b | 0.4548, 0.4072 | **0.400** | warm process (1 warmup request discarded, per the harness's own design); CPU-forced (`num_gpu: 0`) |
+| ollama | gemma3:4b | 0.4548, 0.4072 | **0.431** (was printed 0.400; a resent image, see the correction above) | warm process (1 warmup request discarded, per the harness's own design); CPU-forced (`num_gpu: 0`) |
 | goinfer | gemma-3-4b-it | *(none)* | — | fit guard declined by default (correct); bypassed run killed mid-load before any request could complete |
 
 Provenance: `apple-m1pro`/`macbookpro.lan`, Darwin 25.6.0 arm64, goinfer `3513c5b1`, tree clean,
@@ -68,7 +80,7 @@ the HTTP response timing, a different (and here, believed-correct) code path.
 
 ## Reading
 
-**Ollama's 0.4s TTFT is a real, usable number** for a warm-model, one-image, CPU vision request —
+**Ollama's 0.4s TTFT is a real, usable number** (corrected 2026-10-07: for a RESENT image, not a new one; see the top) for a warm-model, one-image, CPU vision request —
 directly comparable in kind (though not in magnitude or methodology) to the existing 31.3 s/image
 SigLIP-tower figure in `benchmarks.md`, which is an in-process driver measurement of the tower alone,
 not a served-HTTP TTFT; the two remain separate instruments per `run_vision_cell`'s own doc comment.

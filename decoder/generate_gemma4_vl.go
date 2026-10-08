@@ -111,8 +111,9 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 // uploaded through the generic residentUploadPrefill bridge (the one Gemma 3/Qwen's GenerateVL use) and decode
 // runs resident. That was gated on UseBidirectionalAttention (the 26B-A4B/31B class) until no backend could run an
 // E2B/E4B; since S1 (docs/tasks/task-multimodal-support-2026-10.md) Metal does — the bridge skips KV-shared layers,
-// which own no KV, and embedResident carries the PLE inputs — so the E-model class is admitted too. CUDA and WebGPU
-// still decline the E-model shape at load, so only Metal reaches this with one. A causal, non-E Gemma 4 keeps
+// which own no KV, and embedResident carries the PLE inputs — so the E-model class is admitted too. CUDA runs the
+// E-model since S1 on CUDA and reaches this too (its prefill declines E-models, so an image turn prefills here on the
+// CPU and uploads); WebGPU still declines the E-model shape at load. A causal, non-E Gemma 4 keeps
 // decoding on the CPU after an image, as before: widening to it is untested on CUDA.
 //
 // `imgHash`, `imgPos` and `imgLen` are also what the resident commit below records as this

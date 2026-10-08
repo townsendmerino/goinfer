@@ -142,7 +142,7 @@ func TestGemma4DenseScaled_webgpuParity(t *testing.T) {
 		t.Logf("  pos %2d  cosine %.6f maxAbs %.4e argmax cpu=%d webgpu=%d", i, c, m, argmax(cpuL), argmax(gpuL))
 	}
 	t.Logf("scaled dense (256-local / 512-global, 12 layers): minCosine=%.6f exact-argmax %d/%d pos0=%.6f", minCos, exact, len(prompt), c0)
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300, exact-argmax 15/16 -> 16/16.
+	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300 (exact-argmax 15/16 -> 16/16 on nobara's RTX 2070 SUPER only; the Apple GPU reads 15/16 either way, so the argmax bar below stays at 15/16).
 	if c0 < 0.999 {
 		t.Errorf("pos-0 cosine %.6f < 0.999 — the 256-local/512-global resident geometry diverges at first token", c0)
 	}

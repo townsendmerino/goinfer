@@ -1,0 +1,4 @@
+gemma-3-4b-it: reference arm metal
+gemma-3-4b-it: metal-towerauto against metal: first differing generated token 10: metal ' broken', metal-towerauto ' presented'
+  metal top-3: ' broken' 0.485, ' presented' 0.404, ' totaling' 0.046
+  near-tie (p(other) >= half p(top) = 0.242): True

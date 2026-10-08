@@ -1,9 +1,16 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: ACTIVE.** S1 is done on Metal and CUDA (2026-10-07; Metal and CUDA speed records taken or queued); S2 onward
-not started. The phases were extended on 2026-10-07 (S9-S14, owner decisions below), and the order they run in is in
-"Order of work". Each phase writes its own gates into this doc, and commits them, before its first measurement
-(CLAUDE.md, "Pre-registration").
+**Status: ACTIVE (2026-10-07 evening).** The phases' state:
+- **S1 (E-model decode on the GPU):** done on Metal and CUDA.
+- **Correctness passed on the Mac or nobara** for S2 (Qwen3.5+ and GLM-OCR towers), S3 (Gemma 3 and Qwen2.5-VL towers
+  on Metal), S4 steps 0-5 (the CUDA towers), S5 (E2B audio into the model, its tower on Metal included), S9 on Metal,
+  and S10 for Qwen3-VL. Most of that code is on `s2-towers`, not `main` ("Where it stands" marks which).
+- **In flight:** S3's night root-cause steps, S4's speed record, S9's CUDA half, S6 (E4B, 31B), and the 2026-10-07
+  audit's fixes.
+- **New and not started:** S15-S18.
+
+The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
+measurement (CLAUDE.md, "Pre-registration").
 
 The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was finished and aikit v1.58.0 shipped:
 "we want better overall support." Three axes:
@@ -13,42 +20,64 @@ The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was fini
 
 The last phase puts the answer where users look first, the README, with a check that keeps it true.
 
-## Where it stands (2026-10-06; the E2B/E4B row updated 2026-10-07 for S1)
+## Where it stands (rebuilt 2026-10-07 evening, from the gate readings below)
 
 "Tower / decoder": where the image or audio encoder runs, then where the language model runs after it.
+- **Branches:** **[s2]** marks code on `s2-towers` only; aikit v1.59.0, which it needs, is tagged, but the branch is not
+  merged into `main`. Unmarked cells are on `main`.
+- **Image turns on Metal:** "prefill CPU" means the image turn prefills on the CPU and uploads its KV before decoding on
+  the GPU. Every Qwen-family image turn does this, because Metal has no m-RoPE prefill (S16).
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 | CPU / CPU | GPU / GPU | CPU / GPU (read, never run) | GPU / GPU |
-| Gemma 4 E2B, E4B | CPU / CPU | CPU / GPU (since 2026-10-07, S1 on CUDA) | GPU / GPU (since 2026-10-06, S1) | CPU / CPU |
-| Gemma 4 26B, 31B | CPU / CPU | CPU / GPU | GPU (checked on E2B only) / GPU (read) | CPU / CPU |
-| Qwen2.5-VL | CPU / CPU | CPU / GPU | CPU / GPU (read, never run) | CPU / GPU |
-| Qwen3.5+ dense | CPU / CPU | CPU / GPU | CPU / CPU | CPU / CPU |
-| GLM-OCR | CPU / CPU | CPU / GPU | CPU / CPU | CPU / staged |
+| Gemma 3 | CPU / CPU | GPU (int8 SigLIP: lossy, see below) / GPU | GPU, float32 [s2] / CPU by default on a 16 GB Mac (its resident needs 5.15 GB against a 4.2-4.9 GB budget; S18) | GPU (int8) / GPU |
+| Gemma 4 E2B | CPU / CPU | GPU [s2] / GPU, image prefill CPU (S9 on CUDA owed) | GPU / GPU, layer-major prefill (S9) | CPU / CPU |
+| Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU [s2] / GPU | CPU / CPU |
+| Gemma 4 E4B | CPU / CPU, not yet validated | not validated | not validated (S6 queued tonight) | CPU / CPU |
+| Gemma 4 26B | CPU / CPU | GPU (checked on E2B) [s2] / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
+| Gemma 4 31B | not validated (nobara, S6) | not validated | too large for the Mac | not validated |
+| Qwen2.5-VL | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / GPU |
+| Qwen3.5+ dense | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / CPU |
+| Qwen3.5+ MoE | never run | never run | never run | never run |
+| Qwen3-VL (dense) | CPU [s2] / CPU [s2] | CPU (int8 by default until the fix on `s2-towers`; no DeepStack tap on CUDA) / GPU, not served | GPU with DeepStack [s2] / GPU, prefill CPU [s2] | not run |
+| GLM-OCR | CPU / CPU | GPU [s2] / GPU | GPU [s2] / CPU (Metal does not run its decoder) | CPU / staged |
 | EmbeddingGemma 2 (text, image, audio) | CPU | CPU | GPU | CPU |
 
 **Gaps in coverage:**
 - **Models:**
-  - Qwen3.5+ MoE images have never been run.
-  - Gemma 4 E4B and 31B were never validated (no checkpoint on either box).
-  - Qwen3-VL is text only.
-  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower.
-- **Audio** is EmbeddingGemma 2's embeddings only. Gemma 4 E2B/E4B audio into the model is not wired, though its tower
-  (aikit `audio`) exists.
+  - Qwen3.5+ MoE and Qwen3-VL MoE images have never been run.
+  - Gemma 4 E4B and 31B are not validated; S6 has them queued on both boxes.
+  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
+  - Several images per message (S11) and video (S15) are not supported.
+- **Audio:**
+  - Gemma 4 E2B audio into the model works on CPU and Metal.
+  - Serve accepts only 16 kHz mono WAV (resampling is S5's follow-up).
+  - E4B audio rides on S6.
+  - G-S5b, the HF anchor for audio into the model, has no result yet.
+- **Precision:** under `--backend cuda|webgpu`, serve gives Gemma 3 an int8 SigLIP tower. At real size that tower is
+  relative L2 0.16-0.52 from float32, worst token 0.01-0.17 (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`).
+  Changing the default waits for the owner; nobara builds the float32 CUDA tower (S4).
 - **Release binaries:** WebGPU needs cgo and is in no release binary.
 
-**Speed** (the most recent read of each, exploratory unless marked):
-- **Usable:**
-  - Gemma 3 on CUDA: a 4.1 s tower (recorded 2026-09-21).
-  - Qwen3.5 on CUDA: 3.6 s for a new image, 0.3 s to resend one.
-  - EmbeddingGemma 2 on Metal: 1.2-2 s an image, 70-180 ms an audio clip.
+**Speed** (the most recent read of each, exploratory unless marked; S7 measures every cell against the 5 s bar):
+- **Under 5 s:**
+  - Gemma 3 on CUDA: a 4.1 s tower (2026-09-21).
+  - Qwen3.5 on CUDA: 3.6 s for a new image.
+  - EmbeddingGemma 2 on Metal: 1.2-2 s an image.
   - The Gemma 4 tower on Metal: 1.3-2.3 s.
-- **Slow:**
-  - Gemma 4 E2B image chat on a Mac: 14-16 s for 32 tokens, mostly CPU decode.
+  - The Gemma 4 E2B tower on CUDA: 2.3 s encode.
+  - Qwen3.5-0.8B's Metal tower: 1.2 s on an 896x896 image.
+- **Over it:**
+  - Gemma 4 E2B image turn on Metal: TTFT 10.8 s on S9's pass against 16.5 s before (one smoke pass).
+  - Gemma 3's Metal tower: 9.2-9.6 s, about 2.8x its 26 s CPU tower.
+  - Qwen2.5-VL's Metal tower: 8.9-15.1 s on the large images.
+  - Qwen3-VL-2B served on Metal: 19.2 s per request.
+  - GLM-OCR on Metal: 12.3 s for an invoice.
+  - The CUDA towers: only 1.2-1.5x the CPU (S17).
   - Qwen3.5 on the CPU: 7.7 s TTFT on a new image.
-- **Very slow:**
-  - Gemma 3's CPU tower: 31 s (recorded 2026-09-08).
-  - GLM-OCR's tower: 29 s at 1 MP, minutes at its full size.
+  - GLM-OCR's CPU tower: 29 s at 1 MP.
+- **To re-read:** the r12 peer reading (Ollama gemma3:4b, 0.43 s mean) timed a resent image, most likely an image-cache
+  hit. The harness now sends a fresh image per request; S13-lite re-measures it.
 
 ## Rules for every phase
 
@@ -141,11 +170,13 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     | two-geometry localize, layer 1 (global, K=V) | 0.980768 | **0.999940** |
     | two-geometry resident, min | 0.981251 | **0.999761** (max abs 0.21 → 0.024) |
     | MoE localize, worst layer | 0.999644 | **0.999982** |
-    | MoE resident, min | 0.958904 | **0.999809** |
+    | MoE resident, min | 0.872764 | **0.998690** |
 
     - Argmax agreement is unchanged (15/16 dense, 8/8 two-geometry, all MoE).
-    - Each fix alone moves its own tests: the scalar alone lifts the scaled-dense mean to 0.880, `v_norm` alone to
-      0.906.
+    - Each fix alone moves its own tests: the scalar alone lifts the scaled-dense mean to 0.906 (`s10-vnorm.log`, the
+      run with `v_norm` dropped), `v_norm` alone to 0.880 (`s10-scalar.log`, the scalar dropped).
+    - Corrected 2026-10-07 (Cowork audit): the MoE minimum above read 0.958904 → 0.999809, single positions rather than
+      the test's own minCosine; and the two single-fix means were swapped.
     - Two individual scaled-dense positions read lower after (pos 2 0.918→0.907, pos 12 0.884→0.836). At those
       positions the CPU's own int4 path is at 0.70 and 0.45 against f32, so they are quantization noise on a
       low-agreement position, not a regression. Every summary metric and every two-geometry and MoE position rose.
@@ -168,6 +199,8 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     dropped it matches the old golden 10/10, byte for byte, so the fix is exactly what moved them. It is re-baked
     (same M1 Pro, macOS 26.6.2).
   - **Raw:** `docs/measurements/multimodal-support-2026-10/s10-*.log`.
+  - **Naming:** the `s10-*.log` files and the `GOINFER_S10_DROP` seam belong to S1.0, not to S10 (Qwen3-VL). They kept
+    a working name from before the phases were numbered, and stay unrenamed because records cite them.
   - **Still owed:** the 26B on Metal (night queue), and the same `v_norm` fix on CUDA and WebGPU (nobara).
   - **The 26B re-check's design, fixed 2026-10-06 before it runs.** Every 26B Metal parity test compares against a CPU
     26B forward, which the Mac must not run (the M26 rule: Metal only, paged, guards on). So it is split across the
@@ -393,8 +426,9 @@ declares `FeatGemma4EModel` (`decoder/features.go`), so these sizes fall back to
     Run 2's verdict stands as the G3 reading only if the owner accepts this amendment.
   - **G3 run 2, 2026-10-06 20:56 PDT (amended procedure): FAIL as registered.** 7/8 prompts pass (prompt 3 first
     diverges at generated token 19, CPU gap 5.91%); teacher-forced agreement 413/435 = **94.94%**. Deterministic: a
-    re-run that logs each disagreement gives the same 413/435. Of the 22 disagreements, 16 are near-ties under 3% and
-    6 exceed it (7.63, 5.91, 4.00, 3.52, 3.49%), four of those six at prompt positions.
+    re-run that logs each disagreement gives the same 413/435. Of the 22 disagreements, 17 are near-ties under 3% and
+    5 exceed it (7.63, 5.91, 4.00, 3.52, 3.49%), four of those five at prompt positions (corrected 2026-10-07 from
+    "16 ... 6": `g3-run2.log` lists five gaps over 3%).
     - **Control (CPU int8 tables vs CPU e4h tables, same procedure): 93.56%.** A table-precision change alone, on the
       CPU, disagrees as often as Metal does: run 1's confound was real but was not what failed it.
     - **Localization (exploratory), the residual after every layer, Metal vs CPU, at three positions including the
@@ -889,7 +923,7 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     `docs/measurements/multimodal-support-2026-10/s3-gs3a-rebuilt-real.log`.
 - **G-S3b, read 2026-10-07 12:00-12:04 PDT on the Mac** (serve binary from `s2-towers` at `0c66b18b`, table.png, 32 greedy
   tokens, both arms `--backend metal`, the tower on Metal against `-vision-device cpu`; `run-gs3c-served.sh` with arms
-  `metal:auto,metal:cpu`): **Qwen2.5-VL PASS; Gemma 3 FAIL as registered, its control owed.**
+  `metal:auto,metal:cpu`): **Qwen2.5-VL PASS; Gemma 3 read FAIL, re-graded PASS the same evening (below).**
   - **Qwen2.5-VL-3B: byte-identical replies** ("Table 2. Quarterly unit sales by region (thousands)"). Decoder
     `metal-resident (int4)` in both arms, the tower on Metal in one. Request time 38.1 s against 53.1 s (exploratory).
   - **Gemma 3 4B: the replies differ at generated token 10,** " presented" against " broken". The Metal-tower arm puts
@@ -904,6 +938,18 @@ registered, declined). The CUDA twins are nobara's, after S2.4, against the same
     int4 W4A8 decoder quantizes activations per tensor, so a 1e-7 perturbation can cross an int8 rounding and change a
     choice the reference itself makes with p 0.8.
   - Raw: `docs/measurements/multimodal-support-2026-10/s3-gs3b/`.
+  - **Re-graded 2026-10-07 evening (Cowork audit; no new run): Gemma 3 PASS.**
+    - **The misgrade:** `run-gs3c-served.sh` graded against whichever arm came first, and this run listed `metal:auto`
+      first. So the Metal-tower arm served as the reference.
+    - **The registered reference** is the `-vision-device cpu` arm. At generated token 10 it has " broken" 0.485 and
+      " presented" 0.404. 0.404 is at least half of 0.485, so this is a near-tie, and G-S3b passes under its own rule.
+    - **The re-grade:** the script's own grader, run on the recorded files with the CPU-tower arm as the reference
+      (`s3-gs3b/regrade-2026-10-07.txt`).
+    - **The script now refuses an ambiguous order.** The reference arm is marked with a leading `=`; exactly one must
+      be marked, or nothing runs. Tonight's callers mark theirs: `run-s3-rootcause-night.sh` (step A's reference is
+      `cpu:cpu`; it too listed `metal:cpu` first), `run-s6-e4b-night.sh` and `run-gs5c-served.sh`'s callers.
+    - **Still worth understanding:** at token 9, p(",") moves from 0.841 to 0.556 on features at cosine 0.9999999.
+      Tonight's determinism and sensitivity steps (`run-s3-rootcause-night.sh` steps B and C) still run for that.
 - **G-S3c's failure, analysed 2026-10-07 (no new measurement): the two arms run different CPU kernels, so the gate does
   not isolate Metal. REFUTED the same day by measurement; see "G-S3c root cause, in progress" below.**
   - Metal has no resident m-RoPE prefill (only CUDA implements `PrefillMRoPELast`). So a Qwen2.5-VL image turn under
@@ -1309,9 +1355,82 @@ aikit's `audio` package probably loads E2B's tower unchanged (its config and ten
       - short and long, the synthetic tones: the replies first differ at token 0, each a near-tie on the CPU-tower
         arm's probabilities ("Please" against "I", "M" against "Hmm").
     - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5d/`.
-- **S5 status: G-S5a and G-S5c PASS on the Mac; G-S5b queued on nobara tonight.** Owed: the speed record (the tower per
-  clip, CPU against Metal; EmbeddingGemma 2's Metal audio accelerator could serve E2B's tower, not wired), and a spoken
-  test clip.
+- **S5 status, 2026-10-07 evening: G-S5a, G-S5c, the spoken clip (LibriSpeech, word error rate 0) and G-S5d (E2B's
+  audio tower on Metal, on `s2-towers`) PASS on the Mac; G-S5b (the HF anchor for audio into the model) is queued on
+  nobara and has no result yet.** Owed: the speed record (tower per clip, CPU against Metal). Resampling for WAVs that
+  are not 16 kHz mono (S5's follow-up, G-S5e above) read FAIL against scipy's resampler and is not wired in; the
+  owner decides.
+
+- **S5's follow-up: audio at any rate and channel count. G-S5e, registered 2026-10-07 evening before any resampler
+  code.**
+  - **The gap.** Serve refuses a WAV that is not 16 kHz mono (`multimodal.DecodeWAV`), so ordinary 44.1 or 48 kHz files
+    and stereo files get a 400.
+  - **The change:**
+    - a pure-Go resampler to 16 kHz: windowed sinc, Kaiser window, polyphase for rational ratios;
+    - a downmix of any channel count to mono, by the per-sample mean (librosa's `to_mono` convention);
+    - both in `multimodal`, used by `DecodeWAV`;
+    - 16-bit PCM only, as today.
+  - **Inputs, made offline and committed** under `testdata/speech/`, with the tool and settings recorded in the README
+    there. All derive from the LibriSpeech clip (CC BY 4.0, 5.855 s):
+    - (i) **44.1 kHz mono:** ffmpeg 8.1.1, `-ar 44100 -ac 1 -c:a pcm_s16le`, its default resampler.
+    - (ii) **48 kHz stereo:** ffmpeg to 48 kHz mono, then numpy builds the channels as L = s + d and R = s - d, with
+      d = 0.3 x the clip time-reversed, checked free of clipping. So the correct downmix is s up to rounding, and a
+      left-only read is visibly wrong.
+    - (iii) **The reference:** each of those files back to 16 kHz with scipy's `resample_poly` (scipy 1.16.3, Kaiser
+      window, its defaults), after the reference downmix for (ii).
+  - **The bar, through the real E2B audio tower** (aikit's log-mel and `Gemma4AudioEncoder`, the path G-S5a validated
+    against HF), soft tokens compared with the 16 kHz original's, per-token cosine:
+    - **PASS:** for (i) and (ii), goinfer's worst-token and mean cosine are each at least the reference's (iii) minus
+      0.001.
+    - **Ambiguous (parked):** 0.001-0.005 below the reference.
+    - **FAIL:** worse than that.
+    - **The reason for this form:** a round trip through 44.1 or 48 kHz cannot return the original exactly in any
+      resampler (the anti-alias transition band below 8 kHz, a second 16-bit rounding). What goinfer owes is no more
+      loss than a standard resampler. An absolute cosine set before measuring would be a guess at that loss.
+  - **Served:** one serve binary on the E2B, `--backend cpu`, the three clips (the original, (i), (ii)), "Transcribe
+    this audio.", 32 greedy tokens. **(i)'s and (ii)'s transcriptions must be identical to the original's,** which is
+    the exact LibriSpeech text (G-S5c's spoken-clip reading).
+  - **Planted defects, each alone must fail the bar:**
+    1. (i) resampled as if it were 48 kHz;
+    2. (ii) read from its left channel only.
+  - **Cost:** the tower on CPU for nine clip reads plus one serve run, a few minutes; a quick check, by day.
+- **G-S5e, read 2026-10-07 17:18-17:25 PDT on the Mac: FAIL, twice. Not wired; the owner decides.**
+  - **Reading 1, cutoff at 0.97 of Nyquist:** FAIL.
+
+    | clip | goinfer worst / mean | scipy worst / mean |
+    |---|---|---|
+    | 44.1 kHz mono | 0.575939 / 0.975807 | 0.617187 / 0.978763 |
+    | 48 kHz stereo | 0.576007 / 0.975891 | 0.619399 / 0.978813 |
+
+    - **The mechanism, per log-mel bin:** Gemma 4's filterbank runs to exactly 8 kHz, and a cutoff 3% under Nyquist
+      removes in-band content there. Below 7 kHz goinfer matches or beats scipy. In mel bin 127, goinfer's mean
+      |d log-mel| is 0.96 against scipy's 0.58.
+    - **The change:** the cutoff moved to Nyquist, scipy's convention. The bar did not move.
+  - **Reading 2, cutoff at Nyquist:** FAIL, by 0.007-0.008 on the worst token. The means are within 0.0003.
+
+    | clip | goinfer worst / mean | scipy worst / mean |
+    |---|---|---|
+    | 44.1 kHz mono | 0.610265 / 0.978540 | 0.617187 / 0.978763 |
+    | 48 kHz stereo | 0.610939 / 0.978580 | 0.619399 / 0.978813 |
+
+    - The worst token for both resamplers is token 87 (3.48 s).
+    - goinfer sits slightly below scipy on 123 of 147 tokens.
+    - Both leave the same 71 tokens under 0.99: any round trip through 44.1 kHz is lossy for this tower.
+  - **Planted defects, both red:**
+    - (1) the wrong rate: mean 0.302;
+    - (2) the left channel alone: mean 0.826, worst 0.003.
+  - **The served part was not run:** the in-process bar failed first.
+  - **What stands:**
+    - `multimodal.Resample`, `Downmix` and `DecodeWAVAnyRate` are committed with unit tests (passthrough, DC, tones,
+      aliasing, the downmix, and the extensible header).
+    - `DecodeWAV`, which serve uses, still takes only 16 kHz mono, and a test pins that.
+  - **For the owner:**
+    - (a) accept goinfer's resampler as it is (its mean is scipy's to 0.0003, and its worst token is 0.007 under
+      scipy's on a token both leave at 0.6);
+    - (b) a further change with its own mechanism (the window, beta and length are what still differ from
+      `resample_poly`), then a fresh reading;
+    - (c) leave serve 16 kHz-only.
+  - Raw: `docs/measurements/multimodal-support-2026-10/s5-gs5e/`.
 
 ### S6 — Coverage that is cheap once the above exists
 
@@ -1347,9 +1466,49 @@ One night job per box re-measures each table cell on the current binary, with ea
 
 It replaces the scattered and stale figures above: the 31 s, 29 s and 4.1 s, and the June ones.
 
-- **Speed bar:** a cell is "usable" when a new image's TTFT is under 5 s at the default image budget, on the box's best
-  backend. That bar is a proposal for the owner to confirm before S7 runs.
+- **Speed bar (confirmed by the owner 2026-10-07 evening):** a cell is "usable" when a new image's TTFT is under 5 s at
+  the default image budget, on the box's best backend.
 - **Output:** a dated record in `docs/measurements/`. S8 reads its numbers.
+
+#### S7 and S13-lite, registered 2026-10-07 evening before they run (the Mac half)
+
+- **The instrument:** `docs/measurements/multimodal-support-2026-10/vision_ttft.py`.
+  - It sends streaming requests and measures TTFT as the wall time to the first non-empty content delta, `max_tokens` 8,
+    temperature 0.
+  - **Every request, warm-up included, carries media no server has seen:** the base image or WAV with that request's own
+    pseudorandom least-significant-bit pattern (red channel for images, the low bit of each 16-bit sample for audio).
+    The size and content are the base's, so the tower and prefill cost what they cost, and every byte-hash image cache
+    misses (goinfer's feature cache, Ollama's and llama.cpp's). This is S13's harness fix; `bench_peer.py`'s
+    `fresh_image` does the same.
+  - **The media:**
+    - images: `testdata/gemma3_preprocess_image.png`, 896x896, which reaches or nears each family's default budget;
+    - audio: the LibriSpeech clip, 5.9 s;
+    - prompts: "Describe this image." and "Transcribe this audio."
+- **S7, Mac** (`run-s7-mac.sh`, night queue `s7-mac`, estimated 40 min):
+  - **The cells:** Gemma 3 4B, Gemma 4 E2B (image, and audio), Qwen2.5-VL-3B, Qwen3.5-0.8B, Qwen3-VL-2B, GLM-OCR, and
+    Gemma 4 E4B if tonight's `s6-e4b` built its sidecar.
+  - **How they run:** each on `--backend metal` with serve's defaults and nothing else, one warm-up and three timed
+    requests per cell. The binary is `serve-metal` from `s2-towers` @ `ed8d4756`, which has the device towers.
+  - **The reading:** usable when the median of the three timed TTFTs is under 5.0 s. Each cell also records the decode
+    path and where the tower ran, from serve's own log lines.
+  - S7 is a record, and its gaps rank S16-S18.
+- **S13-lite, Mac** (`run-s13lite-mac.sh`, night queue `s13lite-mac`, estimated 40 min): Gemma 3 4B, Metal, every
+  engine at its defaults.
+  - **The engines:**
+    - goinfer: `serve-metal` as above, `~/models/gemma-3-4b-it`, int4 at load;
+    - Ollama 0.32.5: `gemma3:4b`, model blob `sha256:aeda25e63ebd6...`, its own server;
+    - llama.cpp: `llama-server` build 10621 (`c1d0e7a00`), ggml-org/gemma-3-4b-it-GGUF Q4_K_M plus `mmproj-model-f16`.
+    - These are peer builds of the same base checkpoint at each engine's own int4-class quantization, which is the
+      peer convention.
+  - **The procedure:**
+    - three rounds, each engine once per round, the order rotated each round;
+    - per engine: start its server, one warm-up and three timed requests, stop it (same-session interleaved by block;
+      three 4B servers do not fit 16 GB at once).
+  - **The reading:** the median of the nine timed TTFTs per engine, against the 5 s bar, and goinfer's ratio to each
+    peer. Reported, not gated.
+- **A by-day smoke of the harness (17:29 PDT, one request per engine; exploratory and not quotable):** it ran end to
+  end on all three engines. Ollama's fresh-image TTFT read about 5 s, where r12's resent image read 0.4 s, which fits
+  the cache-hit reading.
 
 ### S8 — The support table in the README, kept true
 
@@ -1587,6 +1746,12 @@ different rows.
   - **A real text-prefill win for E-models needs the f16-MMA pass to learn Gemma 4's per-layer geometry** (head size
     256 and 512 by layer, the PLE block, shared K/V), which it declines today for every dense Gemma 4. That is a
     further S9 step, noted here and not started.
+- **S9 step 2 (named 2026-10-07 evening, at the audit's request): the E-model text-prefill win.**
+  - S9's layer-major pass gives about 1.02x on a text prompt (the smoke above).
+  - The win needs the f16-MMA batched prefill to learn Gemma 4's per-layer geometry: head size 256 or 512 by layer,
+    the PLE block, the 18 KV-shared layers, and the dense layer scalar and `v_norm` of S1.0.
+  - Its gates are written here before its code. Correctness is S1's G3 shape (teacher-forced agreement against the
+    CPU, non-inferior to the validated reference); the speed is a text-prefill A/B at night, shipping at >= 1.02x.
 - **Still owed for S9:** the night speed record (`s9-speed`, queued tonight on the Mac) and CUDA's half (nobara).
 
 
@@ -1717,6 +1882,9 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     check).
   - **Tiny** (`testdata/qwen3vl-vision-tiny`, copied from aikit): merged rows and both sets at 1.000000000 on two grid
     sets. The planted taps-one-block-late defect is refused (the last tap falls past the 2-block tower), which is red.
+    **Amended 2026-10-07 evening (audit):** counting any refusal as red was too weak. The fixture was re-pinned with a third
+    block (and nonzero biases, qkv x6), so the late taps stay inside the tower: the defect now reads worst 0.997922,
+    red, and a refusal fails the test.
   - **Real 2B, four F2a images at serve's cap:** worst 0.999997916 (formula.png's second set); every other output
     0.99999990 or better. The planted defect on the 14x20 image: sets at 0.574, 0.293 and 0.661, red.
   - **Served, `--backend metal` in every arm:** the tower on Metal against `-vision-device cpu`, twice: byte-identical
@@ -1737,6 +1905,20 @@ qwen3-vl-2b-instruct`); the Mac gets only what a test needs.
     `multimodal.GridTowerTapper`, the same `run`-loop tap.
   - ~~The serve log's "Qwen3.5 vision"~~ (now "Qwen3-VL vision").
   - The MoE variants.
+- **The 2026-10-07 audit's fixes on `s2-towers` (Mac, evening):**
+  - **`towerInt8`:** `qwen3_vl` joins the float32 list (147e2298). Under cuda or webgpu it had an int8 CPU tower nobody
+    validated, under a banner naming a `-vision-quant` the user never passed. `TestTowerInt8` is now a table over
+    family x backend x `-vision-quant`, red without the fix.
+  - **The fallbacks (22bea42c):**
+    - Under `-require-backend`, a device tower's memory failure now fails the request instead of falling back to the
+      CPU: `deviceFallback.run` for the grid towers, `qwenDeviceForward` for Qwen2.5-VL.
+    - Every tower's forward is recovered from a panic: inside `run`, and for every family (Gemma 3 SigLIP, Gemma 4
+      image and audio) at `withFeatureCache`.
+    - Four tests, each red without its fix.
+  - **The fixture (ed8d4756 on `s2-towers`; aikit c4c1404, local):** `testdata/qwen3vl-vision-tiny` re-pinned.
+    - It now has nonzero biases at the weights' init scale (0.02), qkv x6 and three blocks.
+    - The bias scale is not arbitrary: a 0.3 scale drowned the DeepStack merger's signal (its planted post-shuffle-norm
+      defect read 0.998), 0.05 read 0.95, and 0.02 reads 0.898 / 0.880 (0.888 / 0.823 before).
 
 ### S11 — Several images per message
 
@@ -1747,6 +1929,11 @@ Added 2026-10-07. Today a second image in one message is a 400.
 - **Gates:** two-image prompts against HF on a tiny fixture per family; served two-image requests; prefix reuse refusing a
   changed second image.
 - **Size:** S-M.
+- **The peers' trap, to get right and say so (from S15's desk map):**
+  - llama.cpp #24303 (fixed between b10360 and b10520) and Ollama #17814 (open) fuse two adjacent same-size images into
+    one 2-frame temporal "super-frame" on the Qwen3 family, through `mtmd`'s `can_merge_with()`. So 4 images read as 2.
+  - goinfer's rule is "Do not pair images" (`docs/multimodal.md`). S11's gates add a planted defect for it: two
+    same-size images in one message, merged as temporal halves, must go red.
 
 ### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
 
@@ -1766,6 +1953,8 @@ Added 2026-10-07. S7 grades each cell against a TTFT bar, not against another en
 - **What:** one night per box, `bench_peer.py`, the S7 cells against llama.cpp (and MLX on the Mac) on the same image
   and prompt, same-session interleaved; reported, not gated, unless a bar is registered first.
 - **Size:** S-M (mostly harness: the vision peer path exists for SigLIP only).
+- **S13-lite first (owner, 2026-10-07 evening):** one model per box, against Ollama and llama.cpp, a fresh image per
+  timed request. Registered with S7 above. The full S13 comes after S10's remaining families, S11 and S15.
 
 ### S14 — Speech beyond Gemma 4 (last, after S12)
 
@@ -1774,22 +1963,230 @@ The owner put this last, after the WebGPU work. It starts with the choice P11 le
 Whisper encoder (which serves Voxtral), toward pure-Go Whisper; or Voxtral Realtime. Gates are written once the family
 is chosen.
 
-## Order of work (owner, 2026-10-07)
+### S15 — Video (back in scope, owner 2026-10-07 evening)
 
-S2, S3, S4 (towers), S5 (Gemma 4 audio), S9 (batched E-model prefill), S6 (coverage, with E4B and 31B validated), S10
-(new towers), S11 (several images), S12 (WebGPU), S7 (measure every cell), S13 (peers), S8 (the README table), S14
-(speech). S8's drift check keeps the README true through S14, which updates the table as part of its own work.
+Depends on S11 (several images per message). They share:
+- several media blocks per prompt and per-block feature caching;
+- the resident image-block bookkeeping for more than one block;
+- the rule that same-size images are never paired.
+
+S15 adds temporal patching, frame timestamps and video placeholder tokens.
+
+#### Gate 0, the desk map (read 2026-10-07 from transformers 5.16.1; file:line citations in
+`docs/measurements/multimodal-support-2026-10/s15-video-deskmap-2026-10-07.md`)
+
+- **Qwen2.5-VL: native video.**
+  - **The processor:** `Qwen2VLVideoProcessor`; the token `<|video_pad|>`; `get_video_features` runs the image tower.
+  - **Frame sampling:** off by default (`do_sample_frames=False`: every frame given is used). With `fps` set, 4-768
+    frames, floored to even. The pixel budget is per frame (`smart_resize`, factor 28, 128·28² to 768·28²).
+  - **Temporal patching:**
+    - The patch layer is a `Conv3d` with kernel and stride [2, 14, 14], no bias.
+    - An odd frame count is padded with the last frame repeated.
+    - Each temporal group is its own vision attention segment, and the vision RoPE is (h, w), repeated per t.
+  - **Positions:**
+    - `second_per_grid_ts = temporal_patch_size / sampled_fps`, and the text model's t step is
+      `tokens_per_second * int(second_per_grid_t)` (`tokens_per_second` 2 in the 3B config).
+    - The `int()` truncates: above 2 sampled fps every frame group gets the same t.
+    - After a video, `current_pos` advances by max(h, w)/2, not by the t extent.
+    - Both look unintended, and S15 matches transformers exactly anyway (G-S15c is against it), recording each.
+  - **The prompt:** `<|vision_start|><|video_pad|><|vision_end|>`, the pad expanded; no timestamps.
+- **Qwen3-VL: native video.**
+  - **Frame sampling:** fps 2, 4-768 frames, `linspace` indices. The budget is per video (the 2B checkpoint caps it at
+    about 12,288 tokens). Fewer than 2 frames is an error.
+  - **The patch layer:** `Conv3d` [2, 16, 16] with bias.
+  - **Timestamps are text:** each frame pair is `<{t:.1f} seconds><|vision_start|>` + pads + `<|vision_end|>`, where t
+    is the mean of the pair's two frame times.
+  - **Positions:** each pair is a t = 1 grid laid out like a still image, so time is carried only by the timestamp
+    text.
+  - **A quirk:** with the shipped chat template the per-pair blocks sit inside a second, outer
+    `<|vision_start|>…<|vision_end|>`. Matched as transformers does it, and recorded.
+  - **DeepStack:** video goes through it, with the image and video features under one mask.
+- **Qwen3.5+:** the same as Qwen3-VL (it uses `Qwen3VLVideoProcessor`; the video token id is 248057), without DeepStack.
+- **Gemma 4: native video, now confirmed in code** (`docs/multimodal.md` said "not independently confirmed").
+  - **The tower:** each frame runs the image tower and `embed_vision` (`get_video_features`), and the result is
+    scattered in. There are no m-RoPE positions.
+  - **Frame sampling:** 32 frames (`arange` sampling; fewer than 32 is an error), at most 70 soft tokens a frame
+    (`max_soft_tokens`, one of 70-1120).
+  - **The prompt:** each frame is written as `MM:SS <|image>` + `<|video|>`×n + `<image|>`, joined with spaces.
+- **Gemma 3: no native video.** Frames go in as separate images (S11), each `\n\n<boi>` + 256 + `<eoi>\n\n`; any
+  timestamps are the client's text.
+- **The input shape, for the owner** (from cheapest):
+  - (a) **A client-extracted frame list as a content part** (frames plus their times): no decoding in goinfer.
+  - (b) **Animated GIF:** decodable by the standard library (`image/gif.DecodeAll`: frames plus delays, so real
+    timestamps). The caller composites each frame by its disposal method, and bounds memory with `DecodeConfig` first.
+  - (c) **mp4/H.264 in-process:** pure-Go demuxers exist (`abema/go-mp4`, `Eyevinn/mp4ff`; unverified), but no mature
+    pure-Go H.264 pixel decoder is known. So it means cgo (FFmpeg through `go-astiav`, openh264, VideoToolbox or NVDEC)
+    or a WASM decoder under wazero. Each breaks pure-Go or adds a large dependency, which is why `docs/multimodal.md`
+    ruled container decoding out of v1.
+- **Two known risks, made gates:**
+  - **The patch conv's temporal halves (F5d):** swapping `v.patch_embd.weight` and `.weight.1` is invisible on a still
+    image, where both halves see the same frame. At T > 1 they see different frames, so the swap must go red.
+  - **The peers' same-size pairing** (llama.cpp #24303, Ollama #17814): video is the one place frames ARE paired
+    temporally. Images in a message never are (S11's defect). S15 says which it does, per family, in the served log.
+
+#### Gates, registered 2026-10-07 evening before any S15 code
+
+- **G-S15a, preprocessing against HF's video processor:**
+  - **The clip:** a short committed clip with a known license, as frames (and, if the owner picks (b), the same clip as
+    an animated GIF).
+  - **The bar:** frame indices and timestamps equal; per-frame grids equal; pixels within one 8-bit level, the G-S10
+    preprocessing record's standard.
+  - **The families:** Qwen2.5-VL, Qwen3-VL, Qwen3.5, Gemma 4.
+- **G-S15b, the tower against HF at T > 1:** every soft token at cosine >= 0.9999 (0.999-0.9999 parked).
+  - **Fixtures:** the tiny fixtures with norms randomised and nonzero biases, then the real checkpoints.
+  - **Planted defects, each alone red:**
+    1. the temporal halves swapped (F5d);
+    2. the frame groups' attention segments merged;
+    3. an odd frame count padded with zeros instead of the last frame;
+    4. Qwen3-VL's DeepStack not applied to video features.
+- **G-S15c, full-model logits against HF on a video prompt (the G-S10c shape):**
+  - **The bar:** last-position cosine >= 0.9999 with an equal argmax, and argmax agreement over the text positions
+    after the video.
+  - **Planted defects:**
+    1. Qwen2.5-VL's `second_per_grid_ts` ignored;
+    2. Qwen3-VL's timestamps dropped from the prompt;
+    3. Gemma 4's per-frame `MM:SS` dropped.
+- **G-S15d, served:** a video request through serve, the tower on the device against `-vision-device cpu`, identical
+  replies or a first divergence at a near-tie (G-S2d's rule). Then the speed record at night, against S7's 5 s bar for
+  a short clip at the default budget.
+
+### S16 — A resident m-RoPE prefill on Metal (added 2026-10-07 evening, after the audit)
+
+- **The gap:**
+  - Every Qwen-family image turn on a Mac (Qwen2.5-VL, Qwen3.5+, Qwen3-VL) prefills on the CPU, then `UploadKV`s
+    and decodes on Metal. Metal has `ForwardMRoPE` (decode rows) but no batched m-RoPE prefill.
+  - CUDA's twin (`PrefillMRoPELast`) measured 36.14x the CPU-prefill-plus-upload bridge: 711.2 ms against 19.7 ms
+    (`docs/benchmarks.md`, 2026-09-08). That was on a 14-token Qwen2.5-VL prompt, prefill only, with the tower
+    excluded. An image turn's gain is smaller in proportion to the tower's share.
+- **The scope:**
+  - The batched prefill's rope learns the per-row 3-component m-RoPE angle, for image rows and for the text rows
+    after them (`mropePositions`).
+  - Qwen3-VL's DeepStack injection: after layer l, add set l to the image rows. Prefill only, as in
+    `decoder/forwardn.go`'s `addDeepstack`. CUDA's prefill also lacks it, so CUDA's Qwen3-VL image turns also
+    prefill on the CPU. The CUDA twin is nobara's, under the same gates.
+- **Gates, registered 2026-10-07 before any S16 code:**
+  - **G-S16a, tiny, against the existing path:** the qwen25vl, qwen3.5 and qwen3vl tiny fixtures, one image each.
+    The new resident prefill against the current one (CPU prefill, `UploadKV`, Metal decode): last-row logits plus
+    the next 8 decode steps, at cosine >= 0.9999 per row with an equal argmax (0.999-0.9999 parked).
+    - Bit-identity is not expected: f16-MMA against the CPU's int4 kernels, G3's lesson.
+  - **G-S16b, planted defects, each alone red at G-S16a's bar:**
+    1. m-RoPE sections in the wrong order (t, w, h);
+    2. the image rows given 1-D text positions;
+    3. the text rows after the image given uncompressed positions;
+    4. DeepStack not added;
+    5. DeepStack added one layer late;
+    6. DeepStack added to the text rows too.
+
+    A fixture too degenerate to show one is sharpened first (S3's lesson; norms randomised, nonzero biases).
+  - **G-S16c, real:** Qwen2.5-VL-3B and Qwen3-VL-2B, the four F2a images, the same comparison at the same bar.
+    Then served: `run-gs3c-served.sh` with the tower held equal, `--backend metal` before and after the change on
+    one binary pair. Identical replies or a first divergence at a near-tie.
+  - **Speed, a record, at night:** image-turn TTFT on the same two models, old path against new, interleaved, the
+    tower time reported apart.
+    - **Projection band, written here before the speed run:** it comes from two inputs.
+      - A by-day split of one image turn on today's path: tower, CPU prefill, upload, first decode step.
+      - The new prefill's expected rate: the Metal f16-MMA text prefill's 225-366 TTFT tok/s on the 1.5B at K
+        256-3900 (`docs/benchmarks.md`, 2026-09-18), scaled to the 2-3B models.
+
+      TTFT then gains by the CPU prefill's share of the turn. CUDA's 36x does not transfer: it was a single-threaded
+      CPU bridge on 14 tokens.
+    - Ship at >= 1.02x TTFT (the owner's default); 1.00-1.02 parked; under 1.00 off.
+
+### S17 — Tower speed on both backends (added 2026-10-07 evening)
+
+- **The gap:** the device towers are correct float32 baselines, and slow.
+  - **SigLIP at 896x896:** about 5.45 TFLOP (27 layers of about 202 GFLOP: projections 43.5, MLP 81.2, attention
+    77.3).
+  - **Metal:** its 9.2 s on Metal is about 0.59 TFLOPS against the M1 Pro GPU's ~5.3 f32 peak. Qwen2.5-VL's 64x64
+    grid is about the same.
+  - **CUDA:** the towers run at 1.2-1.5x the CPU (S4 step 3).
+- **Absorbs S4's conditional step 6.** The candidate levers:
+  - **Metal:** f16 or simdgroup-matrix GEMMs; blocked (flash-style) attention.
+  - **CUDA:** tensor-core GEMMs; fused attention.
+- **Gates, registered 2026-10-07 before any S17 code:**
+  - **Step 0, a profile:** before any lever, each backend's tower time is split by kernel class (GEMM, attention,
+    norms and the rest) on SigLIP and Qwen2.5-VL at the F2a sizes. The split fixes each lever's projection band.
+  - **Each lever, before it is measured, writes into this doc:**
+    - its projection band: the tower-time ratio it should give, from the profile share it attacks and the kernel
+      speedup it expects;
+    - its kill line: under 1.02x, or outside its band on the low side with no mechanism found, and it is parked.
+  - **Correctness is unchanged for every lever:** G-S2b's and G-S3a's bars (every soft token at cosine >= 0.9999
+    against the CPU tower, on the tiny and the four F2a images) and their planted defects. An f16 lever that cannot
+    hold 0.9999 keeps f32 accumulation or is dropped. The bar does not move.
+  - **The speed instrument (TE5(b)):** a whole-tower in-process A/B, interleaved in one process, by day. A resolved
+    direction may be acted on; an unresolved one goes to the served TTFT gate at night. Ship at >= 1.02x.
+
+### S18 — Defaults that fit (added 2026-10-07 evening)
+
+- **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
+  hardware.
+  - **The 16 GB Mac:** Gemma 3 4B's decoder does not go resident by default. It needs 5.15 GB against a 4.2-4.9 GB
+    budget (G-S3b, G-S3c).
+  - **The 8 GB card:** it needs `--kv-sessions 1` (S4).
+  - **The tower reserve:** S4 step 4's reserve (`towerReserve`) returns 0 for an int8 tower, so Gemma 3's CUDA
+    SigLIP tower is never priced.
+- **The change:**
+  - **The plan:** the default KV plan sizes itself after the tower: fewer conversations or a shorter context before
+    declining the resident. Every tower is priced, int8 included.
+  - **The banner:** serve says what it chose and why, for example "KV plan: 1 conversation x 8192 positions
+    (reduced from 4 x 16384 to leave 1.1 GB for the vision tower)".
+- **Gates, registered 2026-10-07 before any S18 code:**
+  - **G-S18a, the defaults:** with no sizing flags, two cells:
+    - Gemma 3 4B on the 16 GB Mac must decode `metal-resident` with its tower on Metal;
+    - Gemma 3 4B on the 8 GB card (nobara) must decode `cuda-resident` with its tower on CUDA.
+
+    Each takes one served image turn whose reply is identical to the same request with the hand-set flags that
+    work today.
+  - **G-S18b, no regression:** a text-only model's default plan is unchanged (unit tests over the plan function on
+    the bench set's text models). A model with a tower that already fit keeps its plan.
+  - **G-S18c, the reserve:** `towerReserve` is nonzero for every family with a device tower under its backend, int8
+    included. It is a table test over family x backend, red on today's code for Gemma 3 under cuda.
+  - Measured by day on the Mac (G-S18a's Mac half is a served correctness check, not timed); nobara owns the CUDA
+    half.
+
+## Order of work (owner, 2026-10-07 evening; replaces the morning order)
+
+1. **In flight, finish:**
+   - S3's night root-cause steps;
+   - S4 step 5;
+   - S9 on CUDA;
+   - S6 (E4B, 31B);
+   - the 2026-10-07 audit's fixes.
+2. **Then S7 and S13-lite** (one model per box), against the 5 s bar.
+3. **Then S16, S17 and S18,** in the order those measurements rank them: the largest gap to the bar and to the peer
+   first.
+4. **Then:**
+   - S10's remaining families: Pixtral, LFM2.5-VL, North, and the Qwen3.5+ and Qwen3-VL MoE images;
+   - S11 (several images);
+   - S15 (video);
+   - S12 (WebGPU);
+   - full S13;
+   - S8 (the README table);
+   - S14 (speech).
+
+S8's drift check keeps the README true through S14, which updates the table as part of its own work.
 
 ## Decisions for the owner
 
+**Decided 2026-10-07 evening** (after the Cowork audit of this doc):
+- **Video is back in scope (S15).** This reverses the morning's "Video: deferred; no phase."
+- **S7's speed bar:** a cell is usable when a new image's TTFT is under 5 s at the default image budget, on the box's
+  best backend.
+- **Order:** S7 and a one-model-per-box S13 move ahead of S10's remaining families, S11 and S12, so the speed work aims
+  at a measured gap ("Order of work").
+
 **Decided 2026-10-07:**
-- **Video:** deferred; no phase.
+- **Video:** deferred; no phase. (Reversed the same evening; above.)
 - **Gemma 4 E4B and 31B:** download and validate (S6), not a narrowed claim.
 - **WebGPU:** invest in it for multimodal (S12).
 - **Speech:** last (S14), after the WebGPU work; the family is chosen when it starts.
 
 **Still open:**
 
+- Gemma 3's int8 SigLIP default under `--backend cuda|webgpu` (`siglip-int8-fidelity-2026-10-07.md`); nobara builds
+  the float32 CUDA tower and the served comparison first.
+- Whether `s2-towers` is merged and pushed (aikit's side, v1.59.0, is tagged).
+- serve's `--embed-int4` default differing by backend on tied-head families (the int4 head measured 3.5x the int8
+  head's KL to HF on a real image).
 - S14's speech family (P11's options; decided when S14 starts).
 - Which VL checkpoint `pull` recommends per box class (P9(d)).
-- The S7 speed bar.
