@@ -90,7 +90,7 @@ func TestDefaultVerifyWidth_sweep(t *testing.T) {
 	best := map[cell]string{}
 
 	for _, quant := range []string{"int4", "int8"} {
-		mc, e := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: quant})
+		mc, e := decoder.Load(tgt, withDrafterReserve(decoder.Options{Backend: "cuda", Quant: quant}, dr))
 		if e != nil {
 			t.Logf("quant %s: load failed (%v) — skipping this arm", quant, e)
 			continue

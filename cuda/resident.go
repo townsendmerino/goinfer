@@ -123,6 +123,14 @@ const fitDefaultCtx = 16384
 // regress the historical default" comment above did not anticipate, because raising an already-guard-shrunk
 // context back to cudaCtxCapDefault is exactly the regression the guard pinned it to prevent.
 func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
+	return resolveCtxCapFitSlack(m, request, modelCtx, slots, 0)
+}
+
+// resolveCtxCapFitSlack is resolveCtxCapFit for a build that knows its packed weight buffers: allocSlack is the
+// device memory the driver's allocation rounding adds to them (packedAllocSlack), which Plan's dense figure -- the
+// requested bytes -- cannot see. It is priced as ExtraBytes here and NOT in checkKVFits, whose probe is read after the
+// weights are on the device and is already net of it. 0 for a caller without the packed weights.
+func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, allocSlack int64) int {
 	if (request > 0 && m.ResidentContextPinned()) || m.FitDisabled() || m.MoECacheExperts() {
 		return resolveCtxCap(request, modelCtx) // a genuine explicit -ctx is untouched either way
 	}
@@ -174,7 +182,7 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
 	// asked with, never grows past it (fitplan.go's own "never GROW past what was asked"), so
 	// pricing the drafter's K/V at candidate can only over-estimate the eventual real cost (safe)
 	// or land exactly on it — never under-price the way pricing at a fixed guess could.
-	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
+	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + allocSlack
 	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
 	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
 		return floor // Plan could not confidently improve on the floor
@@ -962,10 +970,12 @@ type cudaResident struct {
 	// (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvSlotBufs each
 	// slot's per-layer K/V (nil with one slot), kvSlot the bound index. kc/vc above are the BOUND slot's buffers —
 	// every kernel launch and UploadKV reads them at call time — and UseKVSlot rebinds them.
-	kvSlotsReq int
-	kvSlotsN   int // what checkKVFits granted (>= 1)
-	kvSlot     int
-	kvSlotBufs []cudaKVSlot
+	kvSlotsReq      int
+	ctxPlanned      int   // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
+	allocSlackBytes int64 // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
+	kvSlotsN        int   // what checkKVFits granted (>= 1)
+	kvSlot          int
+	kvSlotBufs      []cudaKVSlot
 
 	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
 	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
@@ -1156,6 +1166,66 @@ func (r *cudaResident) slotStrides(layer int) []int64 {
 // 5 MiB -> 6, 6 -> 6, 9 -> 10, so 2 MiB granular and NOT next-power-of-two, which would over-charge
 // by up to 2x on any buffer not sitting just above a power of two).
 const allocQuantumBytes = 2 << 20
+
+// allocRoundSlack is what the driver adds to ONE buffer of n bytes: a buffer of a quantum or more is rounded up to
+// the next quantum, a smaller one is not (measured 2026-10-08 against the free VRAM at every allocation of a 7B load:
+// applying this to the exact packed-buffer sizes predicts the gap to the requested bytes within 3-5%, 406 MiB against
+// 420 on the 7B; rounding the small ones too predicts 998 MiB).
+func allocRoundSlack(n int64) int64 {
+	if n < allocQuantumBytes {
+		return 0
+	}
+	return (allocQuantumBytes - n%allocQuantumBytes) % allocQuantumBytes
+}
+
+// allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
+var allocSlackOffForTest bool
+
+var hostWType = reflect.TypeOf(hostW{})
+
+// packedAllocSlack is the allocation rounding of every packed weight the build is about to upload: each hostW found
+// under v (a struct, slice, array or pointer, however nested), as the two buffers upW allocates for it. Walking by
+// reflection, not by field name, is what keeps a family's extra projections (DeltaNet, MLA, Mamba, experts) counted
+// without this function learning about them -- the per-family struct literal that omits a field is the defect class
+// this repo has been bitten by. Experts under C' are slot-cached rather than uploaded whole, so they are over-counted
+// there, which only shrinks the planned context.
+func packedAllocSlack(v any) int64 {
+	var walk func(rv reflect.Value) int64
+	walk = func(rv reflect.Value) int64 {
+		switch rv.Kind() {
+		case reflect.Ptr, reflect.Interface:
+			if rv.IsNil() {
+				return 0
+			}
+			return walk(rv.Elem())
+		case reflect.Slice, reflect.Array:
+			switch rv.Type().Elem().Kind() {
+			case reflect.Struct, reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Array:
+			default:
+				return 0 // a vector of numbers (biases, norms) holds no hostW: do not walk its elements
+			}
+			var n int64
+			for i := 0; i < rv.Len(); i++ {
+				n += walk(rv.Index(i))
+			}
+			return n
+		case reflect.Struct:
+			if rv.Type() == hostWType {
+				n := allocRoundSlack(int64(rv.FieldByName("wpk").Len()) * 4)
+				n += allocRoundSlack(int64(rv.FieldByName("ws").Len()) * 4)
+				n += allocRoundSlack(int64(rv.FieldByName("ws16").Len()) * 2)
+				return n
+			}
+			var n int64
+			for i := 0; i < rv.NumField(); i++ {
+				n += walk(rv.Field(i))
+			}
+			return n
+		}
+		return 0
+	}
+	return walk(reflect.ValueOf(v))
+}
 
 // slotRequirement is the device VRAM n slots/layer actually costs: each buffer rounded up to its own
 // quantum, times the layer count. Monotone non-decreasing in n, which is what makes capSlots'

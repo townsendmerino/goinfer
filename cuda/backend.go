@@ -666,7 +666,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// — extraBytes now needs this same final ctxCap value, and a struct literal cannot reference a
 	// sibling field being set in the same literal).
 	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil)
-	residentCtxCap := resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq)
+	allocSlack := packedAllocSlack([]any{hls, hlm})
+	if allocSlackOffForTest {
+		allocSlack = 0 // the planted defect of TestBuildScratchAccounting_plantedDefect: the plan as it was before the slack was priced
+	}
+	residentCtxCap := resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq, allocSlack)
 	r := &cudaResident{
 		knob:   m.Knob,
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
@@ -693,9 +697,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
 		// cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who
 		// did not ask allocates exactly what they always did.
-		ctxCap:      residentCtxCap,
-		ctxExplicit: m.ResidentContextRequest() > 0,
-		kvSlotsReq:  kvSlotsReq,
+		ctxCap:          residentCtxCap,
+		ctxPlanned:      residentCtxCap,
+		allocSlackBytes: allocSlack,
+		ctxExplicit:     m.ResidentContextRequest() > 0,
+		kvSlotsReq:      kvSlotsReq,
 		// M-22 (docs/audit-2026-09-10.md): a drafter's device K/V is priced here at the FINAL,
 		// actually-chosen ctxCap — resolveCtxCapFit's own ExtraBytes consult (above, feeding
 		// residentCtxCap) already priced it at candidate, the widest ctx that call considered; this

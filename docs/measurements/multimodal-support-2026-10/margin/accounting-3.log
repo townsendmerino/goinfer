@@ -1,0 +1,37 @@
+=== RUN   TestBuildScratchAccounting
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf    device before KV   466 MiB | Plan   322 + slack  139 -> residual    5 MiB | ctx planned 16384 final 16384 (1 slots, KV   384 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack  122 -> residual    6 MiB | ctx planned 16384 final 16384 (1 slots, KV   896 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack  406 -> residual   19 MiB | ctx planned 16384 final 16384 (1 slots, KV  1792 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/gemma-3-4b-it
+cuda: resident context 15092, trimmed from 15350 at the build, so one KV slot fits beside the weights (4393 MB free, less 384 MB reserved)
+    build_scratch_accounting_test.go:35: [margin accounting] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack  257 -> residual   69 MiB | ctx planned 15350 final 15092 (1 slots, KV  4009 MiB) | post-KV scratch   73, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen25vl-3b-instruct
+    build_scratch_accounting_test.go:35: [margin accounting] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack  136 -> residual   36 MiB | ctx planned 16384 final 16384 (1 slots, KV  1152 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf
+    build_scratch_accounting_test.go:35: [margin accounting] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack  142 -> residual   58 MiB | ctx planned 16384 final 16384 (1 slots, KV   576 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+--- PASS: TestBuildScratchAccounting (59.54s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.79s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.58s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf (18.58s)
+    --- PASS: TestBuildScratchAccounting/gemma-3-4b-it (11.26s)
+    --- PASS: TestBuildScratchAccounting/qwen25vl-3b-instruct (8.94s)
+    --- PASS: TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf (11.39s)
+=== RUN   TestBuildScratchAccounting_plantedDefect
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack  122 -> residual    6 MiB | ctx planned 16384 final 16384 (1 slots, KV   896 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV  1054 MiB | Plan   926 + slack    0 -> residual  128 MiB | ctx planned 16384 final 16384 (1 slots, KV   896 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack  406 -> residual   19 MiB | ctx planned 16384 final 16384 (1 slots, KV  1792 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4446 MiB | Plan  4021 + slack    0 -> residual  425 MiB | ctx planned 16384 final 16384 (1 slots, KV  1792 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+cuda: resident context 15092, trimmed from 15350 at the build, so one KV slot fits beside the weights (4393 MB free, less 384 MB reserved)
+cuda: resident context 15092, trimmed from 16317 at the build, so one KV slot fits beside the weights (4393 MB free, less 384 MB reserved)
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack  257 -> residual   69 MiB | ctx planned 15350 final 15092 (1 slots, KV  4009 MiB) | post-KV scratch   73, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] gemma-3-4b-it                              device before KV  2688 MiB | Plan  2362 + slack    0 -> residual  326 MiB | ctx planned 16317 final 15092 (1 slots, KV  4009 MiB) | post-KV scratch   73, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack  136 -> residual   36 MiB | ctx planned 16384 final 16384 (1 slots, KV  1152 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] qwen25vl-3b-instruct                       device before KV  1958 MiB | Plan  1786 + slack    0 -> residual  172 MiB | ctx planned 16384 final 16384 (1 slots, KV  1152 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack on ] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack  142 -> residual   58 MiB | ctx planned 16384 final 16384 (1 slots, KV   576 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+    build_scratch_accounting_test.go:35: [margin accounting slack off] gemma-4-E2B_q4_0-it.gguf                   device before KV  1584 MiB | Plan  1384 + slack    0 -> residual  200 MiB | ctx planned 16384 final 16384 (1 slots, KV   576 MiB) | post-KV scratch    0, first-use    0 MiB, against the 384 MiB margin
+--- PASS: TestBuildScratchAccounting_plantedDefect (112.24s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	171.913s

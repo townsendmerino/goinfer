@@ -521,14 +521,19 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
-			if _, ok := m.ResidentForwardForTest().(*cudaResident); !ok || atKV == 0 {
+			res, ok := m.ResidentForwardForTest().(*cudaResident)
+			if !ok || atKV == 0 {
 				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
 			}
 			ran++
 			drop := free0 - atKV
 			est, all := m.ResidentDenseWeightBytesFor("cuda"), m.ResidentDenseWeightBytes()
-			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB); "+
-				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(drop-est), mb(ctxCapMarginBytes))
+			// Plan prices the requested bytes; the driver rounds each buffer of a quantum or more up (allocRoundSlack), which the build prices into the plan on its own
+			// (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: on the 7B the rounding alone
+			// is 406 MB, over the whole margin (the 2026-10-07 night gate's failure, root-caused 2026-10-08: docs/tasks/task-multimodal-support-2026-10.md).
+			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB) + allocation slack %.0f MB; "+
+				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(res.allocSlackBytes), mb(drop-est-res.allocSlackBytes), mb(ctxCapMarginBytes))
+			est += res.allocSlackBytes
 			if est > drop+allocQuantumBytes {
 				t.Errorf("Plan prices %.0f MB of dense weights for CUDA, but the build put only %.0f MB on the device "+
 					"before its KV: it counts something CUDA keeps on the host", mb(est), mb(drop))

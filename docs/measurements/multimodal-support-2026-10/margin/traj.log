@@ -1,0 +1,134 @@
+=== RUN   TestBuildScratchAccounting
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+TMPTRAJ n=1 requested 0 MiB, device fell 0 MiB (gap 0)
+TMPTRAJ n=214 requested 261 MiB, device fell 308 MiB (gap 47)
+TMPTRAJ n=414 requested 512 MiB, device fell 602 MiB (gap 90)
+TMPTRAJ n=565 requested 927 MiB, device fell 1052 MiB (gap 125)
+TMPALLOC total 1870 MiB nbuf=572
+TMPALLOC    942.7 MiB ZZ-waste-to-2MiB
+TMPALLOC    847.3 MiB resident.go:1079
+TMPALLOC     78.1 MiB resident.go:1093
+TMPALLOC      1.1 MiB resident.go:1074
+TMPALLOC      0.8 MiB backend.go:1235
+TMPALLOC      0.0 MiB backend.go:1698
+TMPALLOC      0.0 MiB backend.go:1690
+TMPALLOC      0.0 MiB backend.go:1025
+TMPALLOC      0.0 MiB ZZ-count
+TMPALLOC      0.0 MiB backend.go:1236
+    build_scratch_accounting_test.go:66:   checkKVFits probe #1: free 6159 MiB
+TMPTRAJ n=580 requested 1039 MiB, device fell 1164 MiB (gap 125)
+TMPTRAJ n=596 requested 1295 MiB, device fell 1420 MiB (gap 125)
+TMPTRAJ n=612 requested 1551 MiB, device fell 1676 MiB (gap 125)
+TMPTRAJ n=628 requested 1807 MiB, device fell 1932 MiB (gap 125)
+TMPALLOC total 1168 MiB nbuf=192
+TMPALLOC    896.0 MiB backend.go:1732
+TMPALLOC    271.1 MiB ZZ-waste-to-2MiB
+TMPALLOC      0.6 MiB backend.go:1831
+TMPALLOC      0.1 MiB resident.go:1079
+TMPALLOC      0.1 MiB backend.go:1800
+TMPALLOC      0.0 MiB backend.go:1801
+TMPALLOC      0.0 MiB resident.go:1074
+TMPALLOC      0.0 MiB resident.go:1093
+TMPALLOC      0.0 MiB backend.go:1833
+TMPALLOC      0.0 MiB backend.go:1762
+TMPALLOC      0.0 MiB backend.go:1775
+TMPALLOC      0.0 MiB backend.go:1235
+TMPALLOC      0.0 MiB backend.go:1677
+TMPALLOC      0.0 MiB backend.go:1698
+    build_scratch_accounting_test.go:66:   checkKVFits probe #2: free 5261 MiB
+TMPALLOC total 262 MiB nbuf=131
+TMPALLOC    258.9 MiB ZZ-waste-to-2MiB
+TMPALLOC      2.5 MiB prefill.go:966
+TMPALLOC      0.3 MiB backend.go:1732
+TMPALLOC      0.1 MiB prefill.go:967
+TMPALLOC      0.1 MiB resident.go:1079
+TMPALLOC      0.0 MiB resident.go:1093
+TMPALLOC      0.0 MiB backend.go:1833
+TMPALLOC      0.0 MiB resident.go:1074
+TMPALLOC      0.0 MiB backend.go:1235
+TMPALLOC      0.0 MiB backend.go:1762
+TMPALLOC      0.0 MiB backend.go:1831
+TMPALLOC      0.0 MiB backend.go:1800
+TMPALLOC      0.0 MiB backend.go:1025
+TMPALLOC      0.0 MiB backend.go:1801
+    build_scratch_accounting_test.go:66:   checkKVFits probe #3: free 5261 MiB
+TMPALLOC total 194 MiB nbuf=97
+TMPALLOC    193.5 MiB ZZ-waste-to-2MiB
+TMPALLOC      0.2 MiB prefill.go:966
+TMPALLOC      0.1 MiB backend.go:1732
+TMPALLOC      0.1 MiB resident.go:1079
+TMPALLOC      0.0 MiB prefill.go:967
+TMPALLOC      0.0 MiB backend.go:1833
+TMPALLOC      0.0 MiB resident.go:1093
+TMPALLOC      0.0 MiB resident.go:1074
+TMPALLOC      0.0 MiB backend.go:1831
+TMPALLOC      0.0 MiB backend.go:1235
+TMPALLOC      0.0 MiB backend.go:1800
+TMPALLOC      0.0 MiB backend.go:1025
+TMPALLOC      0.0 MiB backend.go:1801
+TMPALLOC      0.0 MiB backend.go:1698
+    build_scratch_accounting_test.go:66:   checkKVFits probe #4: free 5261 MiB
+TMPALLOC total 362 MiB nbuf=181
+TMPALLOC    361.7 MiB ZZ-waste-to-2MiB
+TMPALLOC      0.1 MiB prefill.go:966
+TMPALLOC      0.1 MiB resident.go:1079
+TMPALLOC      0.0 MiB backend.go:1732
+TMPALLOC      0.0 MiB resident.go:1074
+TMPALLOC      0.0 MiB prefill.go:967
+TMPALLOC      0.0 MiB resident.go:1093
+TMPALLOC      0.0 MiB backend.go:1833
+TMPALLOC      0.0 MiB backend.go:1831
+TMPALLOC      0.0 MiB backend.go:1235
+TMPALLOC      0.0 MiB backend.go:1413
+TMPALLOC      0.0 MiB backend.go:1025
+TMPALLOC      0.0 MiB backend.go:1800
+TMPALLOC      0.0 MiB backend.go:1416
+    build_scratch_accounting_test.go:66:   checkKVFits probe #5: free 5261 MiB
+    build_scratch_accounting_test.go:96: [margin accounting] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf      pre-KV: device  1054 MiB, Plan   926 MiB, short by  128 | KV   896 MiB (1 slots x ctx 16384) | post-KV build scratch  132 MiB | lazy (first 520-token prefill + decode)    0 MiB | post-KV + lazy  132 MiB against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf
+TMPTRAJ n=1 requested 0 MiB, device fell 0 MiB (gap 0)
+TMPTRAJ n=47 requested 258 MiB, device fell 290 MiB (gap 32)
+TMPTRAJ n=89 requested 515 MiB, device fell 580 MiB (gap 65)
+TMPTRAJ n=134 requested 799 MiB, device fell 896 MiB (gap 97)
+TMPTRAJ n=174 requested 1049 MiB, device fell 1176 MiB (gap 127)
+TMPTRAJ n=214 requested 1300 MiB, device fell 1456 MiB (gap 156)
+TMPTRAJ n=254 requested 1550 MiB, device fell 1736 MiB (gap 186)
+TMPTRAJ n=294 requested 1800 MiB, device fell 2016 MiB (gap 216)
+TMPTRAJ n=334 requested 2050 MiB, device fell 2296 MiB (gap 246)
+TMPTRAJ n=375 requested 2304 MiB, device fell 2582 MiB (gap 278)
+TMPTRAJ n=416 requested 2587 MiB, device fell 2896 MiB (gap 309)
+TMPTRAJ n=456 requested 2837 MiB, device fell 3176 MiB (gap 339)
+TMPTRAJ n=496 requested 3087 MiB, device fell 3456 MiB (gap 369)
+TMPTRAJ n=536 requested 3337 MiB, device fell 3736 MiB (gap 399)
+TMPTRAJ n=565 requested 4023 MiB, device fell 4442 MiB (gap 419)
+TMPTRAJ n=566 requested 4024 MiB, device fell 4444 MiB (gap 420)
+TMPALLOC total 5262 MiB nbuf=663
+TMPALLOC   3631.2 MiB resident.go:1079
+TMPALLOC   1167.7 MiB ZZ-waste-to-2MiB
+TMPALLOC    388.9 MiB resident.go:1093
+TMPALLOC     63.7 MiB prefill.go:966
+TMPALLOC      6.7 MiB prefill.go:967
+TMPALLOC      1.9 MiB resident.go:1074
+TMPALLOC      1.8 MiB backend.go:1235
+TMPALLOC      0.0 MiB backend.go:1698
+TMPALLOC      0.0 MiB backend.go:1690
+TMPALLOC      0.0 MiB backend.go:1732
+TMPALLOC      0.0 MiB backend.go:1833
+TMPALLOC      0.0 MiB backend.go:1831
+TMPALLOC      0.0 MiB backend.go:1025
+TMPALLOC      0.0 MiB ZZ-count
+    build_scratch_accounting_test.go:66:   checkKVFits probe #1: free 2635 MiB
+TMPTRAJ n=576 requested 4120 MiB, device fell 4540 MiB (gap 420)
+TMPTRAJ n=584 requested 4376 MiB, device fell 4796 MiB (gap 420)
+TMPTRAJ n=592 requested 4632 MiB, device fell 5052 MiB (gap 420)
+TMPTRAJ n=600 requested 4888 MiB, device fell 5308 MiB (gap 420)
+TMPTRAJ n=608 requested 5144 MiB, device fell 5564 MiB (gap 420)
+TMPTRAJ n=616 requested 5400 MiB, device fell 5820 MiB (gap 420)
+TMPTRAJ n=624 requested 5656 MiB, device fell 6076 MiB (gap 420)
+TMPTRAJ n=661 requested 5919 MiB, device fell 6344 MiB (gap 425)
+    build_scratch_accounting_test.go:96: [margin accounting] qwen2.5-7b-instruct-q4_k_m.gguf              pre-KV: device  4446 MiB, Plan  4021 MiB, short by  425 | KV  1792 MiB (1 slots x ctx 16384) | post-KV build scratch    0 MiB | lazy (first 520-token prefill + decode)    0 MiB | post-KV + lazy    0 MiB against the 384 MiB margin
+--- PASS: TestBuildScratchAccounting (26.31s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.70s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf (20.31s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	26.440s

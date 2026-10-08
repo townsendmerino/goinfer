@@ -9,7 +9,7 @@ from the code and not run. Nothing here was executed except reading files and th
    and are missed by the loose existing bars:
    - **(a) Metal never applies the per-layer output scalar on DENSE Gemma 4 layers.** It applies it only inside the
      g4moe join (`metal/gemma4_moe.go:718`). The CUDA fix (`0907f07c`, which also added `KVSrcAtResident`) wired dense
-     layers on CUDA (`cuda/backend.go:1522`), and WebGPU wires them too (`gpu/residency.go:649`). Metal has no other
+     layers on CUDA (`cuda/backend.go:1528`), and WebGPU wires them too (`gpu/residency.go:649`). Metal has no other
      `LayerScalar` reference outside `embeddinggemma2.go`/`gemma4_moe.go`. `encodeLayerResidualWith`'s dense tail
      ends at the down-proj and residual add (`metal/model.go:2965-3126`). Every E2B layer is dense, so this is
      mandatory for S1.
@@ -492,13 +492,13 @@ Pin the fixture like `pin_gemma4_vl_tiny.py`, with these settings:
   regenerate it and pin the transformers version: memory notes 5.12 vs 5.15 differences, and the local venv has 5.12.
 
 **CUDA, briefly (later):**
-- Same model-level `r.inter` (`cuda/resident.go:3123, 3454-3493`).
+- Same model-level `r.inter` (`cuda/resident.go:3193, 3454-3493`).
 - `v_norm` only on kEqV (as of 2026-10-06; every K/V-owning Gemma 4 layer since 2026-10-07, see the S1.0 block of the task doc).
 - No PLE (as of 2026-10-06 the dense tail's comment said "no PLE branch yet"; the PLE branch landed 2026-10-07, see the S1-on-CUDA block of the task doc).
 - Projections are built for every layer (`cuda/backend.go:384-387`), so a shared layer's empty K/V would fail or be
   zero.
 - `KVSrcAtResident` is unused.
-- The dense layer scalar IS wired (`cuda/backend.go:1522`).
+- The dense layer scalar IS wired (`cuda/backend.go:1528`).
 - `residentHostSideBytes` already treats both PLE tables as host-side, while the recommended Metal design uploads
   `PerLayerModelProj` only if step S1.5b moves it on-device.
 

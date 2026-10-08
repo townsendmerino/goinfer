@@ -182,16 +182,16 @@ func TestBlockSpec_twoTurnsMatchPlain(t *testing.T) {
 
 	runSpec := func(t *testing.T, n int, turn2ViaSpec bool) twoTurnResult {
 		t.Helper()
-		mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
-		if err != nil {
-			t.Fatalf("load (spec): %v", err)
-		}
-		defer mc.Close()
-		dr, err := decoder.LoadDFlashDrafter(ddir)
+		dr, err := decoder.LoadDFlashDrafter(ddir) // before the target: its device bytes are priced into the target's plan (withDrafterReserve)
 		if err != nil {
 			t.Fatalf("load drafter: %v", err)
 		}
 		defer dr.Close()
+		mc, err := decoder.Load(tgt, withDrafterReserve(decoder.Options{Backend: "cuda", Quant: "int4"}, dr))
+		if err != nil {
+			t.Fatalf("load (spec): %v", err)
+		}
+		defer mc.Close()
 		spec, err := mc.NewBlockSpec(dr, dr.TargetLayerIDs())
 		if err != nil {
 			t.Fatalf("NewBlockSpec: %v", err)

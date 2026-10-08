@@ -1,0 +1,10 @@
+=== RUN   TestBuildScratchAccounting
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    build_scratch_accounting_test.go:88: [margin accounting] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf      pre-KV: device   852 MiB, Plan   322 MiB, short by  530 | KV   384 MiB (1 slots x ctx 16384) | post-KV build scratch -254 MiB | lazy (first 520-token prefill + decode)    0 MiB | post-KV + lazy -254 MiB against the 384 MiB margin
+=== RUN   TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf#01
+    build_scratch_accounting_test.go:88: [margin accounting] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf      pre-KV: device   466 MiB, Plan   322 MiB, short by  144 | KV   384 MiB (1 slots x ctx 16384) | post-KV build scratch    0 MiB | lazy (first 520-token prefill + decode)    0 MiB | post-KV + lazy    0 MiB against the 384 MiB margin
+--- PASS: TestBuildScratchAccounting (4.71s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (2.67s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf#01 (1.75s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	4.820s

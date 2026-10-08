@@ -1,0 +1,296 @@
+=== RUN   TestDefaultVerifyWidth_sweep
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.30 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.30 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.30 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: dense weights need 0.00 GB but only 0.30 GB is free on the device (plus 384 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path) — continuing on the CPU/staged path
+    default_width_sweep_test.go:111: NewBlockSpec(int4): cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 66 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b72fc360?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261b7446050, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x226213e7e000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x226213e7e000, 0xa0000, 0xa0000}, {0x2261f7110000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x14131211100f0e0d?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 8
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+--- FAIL: TestDefaultVerifyWidth_sweep (12.22s)
+=== RUN   TestFlashDecodeBlockSpecLane
+=== RUN   TestFlashDecodeBlockSpecLane/multirow-verify
+cuda: resident context 15384, trimmed from 15721 at the build, so one KV slot fits beside the weights (4711 MB free, less 384 MB reserved)
+    flash_decode_spec_test.go:404: NewBlockSpec refused with the lane on: cuda: executor job panicked: cuda: device allocation failed (typed-len, 24903680 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 137 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b7680f80?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x226203570050, 0x17c0000, 0x5f0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x22622fd7c000, 0x5f0000, 0x5f0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x22622fd7c000, 0x5f0000, 0x5f0000}, {0x226203366000, 0xa00, 0xa00}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x2261b74458c8?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 69
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+=== RUN   TestFlashDecodeBlockSpecLane/optionA-scope
+cuda: resident context 15384, trimmed from 15721 at the build, so one KV slot fits beside the weights (4711 MB free, less 384 MB reserved)
+    flash_decode_spec_test.go:404: NewBlockSpec refused with the lane on: cuda: executor job panicked: cuda: device allocation failed (typed-len, 24903680 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 71 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261f906c010?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x226203570000, 0x17c0000, 0x5f0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x22625ccf6000, 0x5f0000, 0x5f0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x22625ccf6000, 0x5f0000, 0x5f0000}, {0x22621e312000, 0xa00, 0xa00}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 139
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+--- FAIL: TestFlashDecodeBlockSpecLane (24.70s)
+    --- FAIL: TestFlashDecodeBlockSpecLane/multirow-verify (12.36s)
+    --- FAIL: TestFlashDecodeBlockSpecLane/optionA-scope (12.34s)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/llama-tiny
+    kv_slots_test.go:530: device before KV 4 MB; Plan's CUDA dense 0 MB (all dense, host tables included, 0 MB); under by 4 MB (margin 384 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    kv_slots_test.go:530: device before KV 466 MB; Plan's CUDA dense 322 MB (all dense, host tables included, 453 MB); under by 144 MB (margin 384 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    kv_slots_test.go:530: device before KV 1054 MB; Plan's CUDA dense 926 MB (all dense, host tables included, 1149 MB); under by 128 MB (margin 384 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-7b-instruct-q4_k_m.gguf
+    kv_slots_test.go:530: device before KV 4446 MB; Plan's CUDA dense 4021 MB (all dense, host tables included, 4541 MB); under by 425 MB (margin 384 MB)
+    kv_slots_test.go:537: the build put 4446 MB on the device before its KV, 425 MB more than Plan's 4021 MB: more than the 384 MB margin reserved for scratch
+--- FAIL: TestResidentDenseBytes_matchesCUDADevice (24.68s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/llama-tiny (0.06s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.87s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.40s)
+    --- FAIL: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-7b-instruct-q4_k_m.gguf (18.20s)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:246: NewBlockSpec: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 235 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b7508020?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261b75a8050, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x2262081c6000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x2262081c6000, 0xa0000, 0xa0000}, {0x2261b7598000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 323
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:250: NewBlockSpec: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 366 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b72fc3c0?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261b79dc050, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x2261ff144000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x2261ff144000, 0xa0000, 0xa0000}, {0x2261b75ee000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 77
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:246: NewBlockSpec: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 434 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b7508020?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261b79dc050, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x2261f86ca000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x2261f86ca000, 0xa0000, 0xa0000}, {0x2261b7873000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x2262281ef730?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 402
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:250: NewBlockSpec: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 436 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b73ae010?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261b75a8050, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x226200c56000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x226200c56000, 0xa0000, 0xa0000}, {0x2261b7692000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 197
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:246: NewBlockSpec: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 456 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b72fc3a0?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261dd692000, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x226200e90000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x226200e90000, 0xa0000, 0xa0000}, {0x2261b778c000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x2261b7870a80?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 420
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+    spec_twoturn_test.go:250: NewBlockSpec: cuda: executor job panicked: cuda: device allocation failed (typed-len, 2621440 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+        goroutine 483 [running, locked to thread]:
+        runtime/debug.Stack()
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+        github.com/townsendmerino/goinfer/cuda.runJob.func1()
+        	/home/francis/mycode/goinfer/cuda/resident.go:2084 +0x3d
+        panic({0x167e988?, 0x2261b7508020?})
+        	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+        github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2261b7446050, 0x280000, 0xa0000, {0xc6065c, 0x9})
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:307 +0x294
+        github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+        	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.5/cuda.go:440
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+        	/home/francis/mycode/goinfer/cuda/resident.go:1063
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x2261b74cd808, {0x2261fd498000, 0xa0000, 0xa0000})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1083 +0x6c
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0xc5e437, 0x4}, {0x2261fd498000, 0xa0000, 0xa0000}, {0x2261b73ba000, 0x400, 0x400}, {0x0, ...}, ...})
+        	/home/francis/mycode/goinfer/cuda/resident.go:1093 +0x91
+        github.com/townsendmerino/goinfer/cuda.(*cudaResident).AttachDrafter.func1()
+        	/home/francis/mycode/goinfer/cuda/drafter.go:152 +0xcc6
+        github.com/townsendmerino/goinfer/cuda.runJob(0x22620dd70248?)
+        	/home/francis/mycode/goinfer/cuda/resident.go:2087 +0x51
+        github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+        	/home/francis/mycode/goinfer/cuda/backend.go:819 +0x68
+        created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 458
+        	/home/francis/mycode/goinfer/cuda/backend.go:815 +0x5526
+--- FAIL: TestBlockSpec_twoTurnsMatchPlain (106.41s)
+    --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=1 (35.02s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (11.64s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (11.69s)
+    --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=17 (35.36s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (11.50s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (11.65s)
+    --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=48 (35.67s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (11.61s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (11.69s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	168.176s
+FAIL

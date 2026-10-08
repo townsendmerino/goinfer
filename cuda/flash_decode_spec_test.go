@@ -371,7 +371,12 @@ func TestFlashDecodeBlockSpecLane(t *testing.T) {
 			t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
 			t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
 			t.Setenv("GOINFER_CUDA_FLASH_DECODE_VERIFY", mode.verify)
-			mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+			dr, err := decoder.LoadDFlashDrafter(ddir) // before the target: its device bytes are priced into the target's plan (withDrafterReserve)
+			if err != nil {
+				t.Fatalf("drafter: %v", err)
+			}
+			defer dr.Close()
+			mc, err := decoder.Load(tgt, withDrafterReserve(decoder.Options{Backend: "cuda", Quant: "int4"}, dr))
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -383,11 +388,6 @@ func TestFlashDecodeBlockSpecLane(t *testing.T) {
 			if !mc.BlockSpecCapable() {
 				t.Skip("not block-spec capable")
 			}
-			dr, err := decoder.LoadDFlashDrafter(ddir)
-			if err != nil {
-				t.Fatalf("drafter: %v", err)
-			}
-			defer dr.Close()
 			tk, err := decoder.LoadTokenizerForTest(tgt)
 			if err != nil {
 				t.Skipf("tokenizer: %v", err)

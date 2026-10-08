@@ -1,0 +1,93 @@
+=== RUN   TestDefaultVerifyWidth_sweep
+    default_width_sweep_test.go:144: === int4 / code (n=12 per width) ===
+    default_width_sweep_test.go:149:    width 5     163.0 tok/s  (sd 32.7)
+    default_width_sweep_test.go:149:    width 6     172.8 tok/s  (sd 37.8)
+    default_width_sweep_test.go:149:    width 7     179.0 tok/s  (sd 41.3)
+    default_width_sweep_test.go:149:    width 8     165.4 tok/s  (sd 38.9)
+    default_width_sweep_test.go:149:    width 9     166.7 tok/s  (sd 47.7)
+    default_width_sweep_test.go:149:    width 10    159.4 tok/s  (sd 46.3)
+    default_width_sweep_test.go:170:    -> best width 7;  7-vs-8 POOLED +8.2%  |  PAIRED +8.5% (sd 6.4), 7 wins 12/12 pairs
+    default_width_sweep_test.go:144: === int4 / math (n=12 per width) ===
+    default_width_sweep_test.go:149:    width 5     196.4 tok/s  (sd 14.1)
+    default_width_sweep_test.go:149:    width 6     210.9 tok/s  (sd 19.0)
+    default_width_sweep_test.go:149:    width 7     214.8 tok/s  (sd 19.0)
+    default_width_sweep_test.go:149:    width 8     213.0 tok/s  (sd 25.3)
+    default_width_sweep_test.go:149:    width 9     209.4 tok/s  (sd 33.7)
+    default_width_sweep_test.go:149:    width 10    208.1 tok/s  (sd 35.2)
+    default_width_sweep_test.go:170:    -> best width 7;  7-vs-8 POOLED +0.9%  |  PAIRED +1.5% (sd 7.9), 7 wins 6/12 pairs
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+    default_width_sweep_test.go:144: === int8 / code (n=12 per width) ===
+    default_width_sweep_test.go:149:    width 5      93.8 tok/s  (sd 15.7)
+    default_width_sweep_test.go:149:    width 6      95.4 tok/s  (sd 16.4)
+    default_width_sweep_test.go:149:    width 7      97.0 tok/s  (sd 18.4)
+    default_width_sweep_test.go:149:    width 8      89.2 tok/s  (sd 19.9)
+    default_width_sweep_test.go:149:    width 9      86.9 tok/s  (sd 23.4)
+    default_width_sweep_test.go:149:    width 10     83.8 tok/s  (sd 25.3)
+    default_width_sweep_test.go:170:    -> best width 7;  7-vs-8 POOLED +8.7%  |  PAIRED +9.4% (sd 8.2), 7 wins 10/12 pairs
+    default_width_sweep_test.go:144: === int8 / math (n=12 per width) ===
+    default_width_sweep_test.go:149:    width 5     103.1 tok/s  (sd 13.7)
+    default_width_sweep_test.go:149:    width 6     110.5 tok/s  (sd 17.9)
+    default_width_sweep_test.go:149:    width 7     111.1 tok/s  (sd 21.0)
+    default_width_sweep_test.go:149:    width 8     110.3 tok/s  (sd 25.5)
+    default_width_sweep_test.go:149:    width 9     102.0 tok/s  (sd 25.0)
+    default_width_sweep_test.go:149:    width 10    100.1 tok/s  (sd 24.3)
+    default_width_sweep_test.go:170:    -> best width 7;  7-vs-8 POOLED +0.7%  |  PAIRED +1.7% (sd 6.5), 7 wins 8/12 pairs
+    default_width_sweep_test.go:178: === best width per (quant, suite) ===
+    default_width_sweep_test.go:180:    int8  code  -> 7
+    default_width_sweep_test.go:180:    int8  math  -> 7
+    default_width_sweep_test.go:180:    int4  code  -> 7
+    default_width_sweep_test.go:180:    int4  math  -> 7
+--- PASS: TestDefaultVerifyWidth_sweep (247.46s)
+=== RUN   TestFlashDecodeBlockSpecLane
+=== RUN   TestFlashDecodeBlockSpecLane/multirow-verify
+    flash_decode_spec_test.go:448: multirow-verify: block speculation == plain LANE over 96 tokens; 18 rounds; multi-row launches 972, lane launches 972 inside
+=== RUN   TestFlashDecodeBlockSpecLane/optionA-scope
+    flash_decode_spec_test.go:448: optionA-scope: block speculation == plain EXACT over 96 tokens; 17 rounds; multi-row launches 0, lane launches 0 inside
+--- PASS: TestFlashDecodeBlockSpecLane (28.74s)
+    --- PASS: TestFlashDecodeBlockSpecLane/multirow-verify (14.45s)
+    --- PASS: TestFlashDecodeBlockSpecLane/optionA-scope (14.29s)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/llama-tiny
+    kv_slots_test.go:534: device before KV 4 MB; Plan's CUDA dense 0 MB (all dense, host tables included, 0 MB) + allocation slack 0 MB; under by 4 MB (margin 384 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    kv_slots_test.go:534: device before KV 466 MB; Plan's CUDA dense 322 MB (all dense, host tables included, 453 MB) + allocation slack 139 MB; under by 5 MB (margin 384 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    kv_slots_test.go:534: device before KV 1054 MB; Plan's CUDA dense 926 MB (all dense, host tables included, 1149 MB) + allocation slack 122 MB; under by 6 MB (margin 384 MB)
+=== RUN   TestResidentDenseBytes_matchesCUDADevice/qwen2.5-7b-instruct-q4_k_m.gguf
+    kv_slots_test.go:534: device before KV 4446 MB; Plan's CUDA dense 4021 MB (all dense, host tables included, 4541 MB) + allocation slack 406 MB; under by 19 MB (margin 384 MB)
+--- PASS: TestResidentDenseBytes_matchesCUDADevice (25.46s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/llama-tiny (0.10s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.83s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (4.55s)
+    --- PASS: TestResidentDenseBytes_matchesCUDADevice/qwen2.5-7b-instruct-q4_k_m.gguf (18.77s)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 1 tok (reused 0), turn2 1 tok (reused 0, want 24, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 17 tok (reused 0), turn2 17 tok (reused 0, want 40, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48
+cuda: resident context 15512, trimmed from 15721 at the build, so one KV slot fits beside the weights (4747 MB free, less 384 MB reserved)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 48 tok (reused 0), turn2 48 tok (reused 0, want 71, checked=false)
+--- PASS: TestBlockSpec_twoTurnsMatchPlain (115.78s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1 (37.94s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (12.91s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (12.72s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17 (38.14s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (12.79s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (13.12s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48 (39.31s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (13.14s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (13.36s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	417.667s

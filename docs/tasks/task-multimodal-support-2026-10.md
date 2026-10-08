@@ -2545,6 +2545,51 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Not done:** the registered banner wording ("KV plan: 1 conversation x 8192 positions (reduced from 4 x 16384 to leave 1.1 GB for the vision tower)"). The CUDA planner already prints what it chose and why
     (the context floor line, the slots-granted line with the reserve), but not in that shape and not from serve; a unified serve banner is shared with the Mac's Metal cell. The Metal half of G-S18a is the Mac's.
 
+- **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
+  `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
+  The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).
+  - **Where the bytes go (`TestBuildScratchAccounting`, six models, first `checkKVFits` probe against the free VRAM before the load):** the build's own scratch allocated AFTER the probe, beyond the KV, is 0 MiB on five models and
+    73 MiB on Gemma 3 (the 7B read 0; the 421 MiB I quoted for it is this pre-probe gap, 425 measured below; the 535 MiB I quoted for the Qwen2.5-VL build is NOT reproduced by its text build, 172 MiB before the KV and 0 after: it came from the served S7 run, which also loads the tower, and is not decomposed here. Corrected after the read). The shortfall is BEFORE the probe: the device falls 128 / 425 / 326 / 172 / 200 MiB more than Plan's dense
+    figure on the 1.5B / 7B / Gemma 3 4B / Qwen2.5-VL 3B / Gemma 4 E2B (0.5B: 144 MiB; its first load in a process reads 530, a one-time 386 MiB context and module cost that a serve process has already paid before it plans).
+  - **What the shortfall is:** the buffers the build allocates before the probe sum to Plan's figure (7B: 4024 MiB requested against Plan's 4021, counted at the four allocation helpers). The extra is the driver rounding each
+    buffer of 2 MiB or more up to a 2 MiB multiple (`allocQuantumBytes`, measured long ago for the expert slots in `allocgran_test.go`; the weight estimate never applied it). Sampling free VRAM at every allocation during the
+    7B load shows the gap growing steadily with the weight uploads (0 -> 420 MiB) and flat from the KV on. Applying "sizes >= 2 MiB round up to 2 MiB" to the exact buffer sizes predicts the gap: 0.5B 139 against 140 MiB
+    measured, 1.5B 122 against 125, 7B 406 against 420. Gemma 3 / Qwen2.5-VL / E2B leave 32-54 MiB beyond the rule (modules and the tower's context; read below).
+  - **Why it hits what it hits:** Plan sizes the context from `free - margin - dense`, so every unpinned build asks `checkKVFits` for a context that already spent the rounding; the S18 trim then gives positions back. A
+    `--drafter` attach is priced by the same unrounded estimate, so it can find no room; and the 7B's 425 MiB breaks `TestResidentDenseBytes`' "short by less than the margin" bound (384). Nothing is wrong with the margin.
+  - **The change:** `BuildResident` sums the allocator's rounding over the exact packed buffers (every `hostW` in the layers and the LM head, found by reflection so no family's fields are missed) before it plans, and adds it to
+    the planning call's `ExtraBytes` in `resolveCtxCapFit`. NOT to `checkKVFits`, whose probe is read after the weights and is already net of it. The margin stays 384 MiB. The drafter's and the towers' estimates are priced
+    the same way in a second step only if their own rows below still miss (they are separate estimators).
+  - **Gates (`TestBuildScratchAccounting`, heavy; the six bench models):**
+    - **G-M1 residual:** `device before KV - (Plan dense + slack)` is within [-8, +64] MiB on the Qwen models (0.5B, 1.5B, 7B) and within [-8, +128] MiB on Gemma 3, Qwen2.5-VL and E2B. The slack is the build's own
+      number (`cudaResident.allocSlackBytes`), so a model whose residual falls outside has a cost the rule does not know.
+    - **G-M2 no regression of the planned context:** for each model, the unpinned context the plan picks with the slack is not larger than the one `checkKVFits` then grants without a trim, i.e. no "trimmed at the build" line
+      on the bench set at serve's defaults (the 7B and Gemma 3 4B, which trimmed before).
+    - **G-M3 the old failures:** the four tests named above pass in isolation on the card.
+    - **Planted defect:** the slack zeroed (the old planning) turns G-M2 red on the 7B.
+  - **Kill line:** a residual above +128 MiB on any model, or G-M2 red on a model whose slack is nonzero, means the rule is not the whole story: stop, do not widen the margin to make it pass, and re-open the measurement.
+  - **Bands that are NOT claims:** no speed is claimed. A larger planned context where the old plan trimmed is a capacity effect, measured by the plan line, not timed.
+
+- **Build-scratch / margin accounting on CUDA: read 2026-10-08 on nobara. G-M1 PASS, G-M3 PASS, G-M2 as registered NOT met (restated below). Raw:** `docs/measurements/multimodal-support-2026-10/margin/`
+  (`accounting-3.log` the gate, `planted.log` the slack-off comparison, `traj.log` + `sizes.log` the rounding evidence, `gm3-fixed.log` the four tests red before, `gm3-fixed-2.log` green after, `plan-tests.log` the existing
+  planning tests). Not archived: a first accounting run whose probe stub kept the LAST `checkKVFits` reading (the build reaches it more than once; the first is the plan's) and three runs of a temporary allocation counter
+  that was reverted.
+  - **G-M1 PASS.** Residual (`device before the KV - (Plan dense + slack)`): 0.5B 5 MiB, 1.5B 6, 7B 19 (band -8..+64); Gemma 3 4B 69, Qwen2.5-VL 3B 36, Gemma 4 E2B 58 (band -8..+128). The slack the build prices is 139 / 122 /
+    406 / 257 / 136 / 142 MiB against 144 / 128 / 425 / 326 / 172 / 200 MiB of total gap before it. After the probe, the build's scratch beyond the KV plus the first prefill and decode is 0 on five models and 73 MiB on Gemma 3,
+    far inside the 384 MiB margin; the margin was never short.
+  - **G-M2 as registered is NOT met, and its premise was wrong.** I wrote that the 7B and Gemma 3 4B "trimmed before". The 7B did not: it plans 16384 and keeps 16384 with or without the slack. Gemma 3 4B does, and still does:
+    planned 15350, final 15092 (a 258-position trim) with the slack, against 16317 -> 15092 (1,225) without. The slack cut the trim by 79% and left the Gemma-specific 69 MiB residual, which the rule does not explain.
+    The planted defect (slack off) is red on the 7B through its residual (425 MiB, over the 384 MiB margin the old bound enforced; 19 with the slack) and on Gemma 3 through the trim, not through a 7B trim.
+  - **G-M3 PASS, with two different causes.** The four tests pass in isolation (`gm3-fixed-2.log`; 417 s, not the ~3 min I estimated: `TestDefaultVerifyWidth_sweep` alone is 247 s).
+    - `TestResidentDenseBytes_matchesCUDADevice/7b` was the rounding: its bound ("short of the device by less than the margin") now reads Plan plus the build's priced slack. Red before, green after.
+    - `TestDefaultVerifyWidth_sweep`, `TestFlashDecodeBlockSpecLane` and `TestBlockSpec_twoTurnsMatchPlain` were NOT the margin and NOT the rounding. They load the target plainly (the log reads "less 384 MB reserved": the margin
+      alone) and bolt `NewBlockSpec` on afterwards, where `serve --drafter` loads the drafter first and prices it through `Options.ExtraResidentBytes` and `ExtraResidentKVPerPosition`. The plan fills the card to the margin and the
+      drafter's allocation runs out. The tests now price the drafter the way serve does (`withDrafterReserve`). I did not run them with the slack off, so I do not claim the slack is needed for them.
+  - **Not done / owed:** the Qwen2.5-VL tower estimate keeps its 256 MiB slack (it is the tower's own estimator, calibrated to `nvidia-smi`; whether tower buffers round the same way is unmeasured, so it is not replaced by
+    this change). The drafter's own weights are priced unrounded in `DrafterResidentBytesEstimate` (about 35 buffers, tens of MiB, inside the margin). Gemma 3's 69 MiB residual is unexplained.
+  - **A production consequence worth stating:** on the 8 GB card an unpinned default load now plans against what the build will actually take, so the plan line and the final context agree on every bench model but Gemma 3.
+    Nothing here changes a speed.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
