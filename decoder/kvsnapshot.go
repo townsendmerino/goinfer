@@ -68,7 +68,11 @@ func (s *Session) Snapshot(id string) []byte {
 	// The recurrent kinds come from hasRecurrentState() rather than being re-listed: LFM2 was
 	// missing from this list too, so -session-dir and -kv-idle-demote restored an LFM2 session
 	// "warm" with empty conv windows (audit-2026-09-02 C-02, the C-05 shape).
-	if c.hasRecurrentState() || len(c.mlaLatent) > 0 {
+	//
+	// Since 2026-10-08 the refused kinds come from the cache-state grid (cachestate.go): every kind
+	// whose snapshot cell is "refused" — the four recurrent kinds and MLA as before, plus the
+	// multimodal image blocks and m-RoPE positions, which the format does not carry either.
+	if c.holdsStateHandled(lcSnapshot, hRefused) {
 		return nil
 	}
 	// Gemma-4's global (append-forever) layers carry PER-LAYER KV widths — its E2B/E4B geometry

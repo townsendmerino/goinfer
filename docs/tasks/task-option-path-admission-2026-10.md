@@ -142,6 +142,31 @@ options AND the kinds of state; limits stay out of step 2.** What that changes i
   caps) are a bound declared by each kernel and checked at its dispatch site, a different mechanism. Not filed here;
   the record's §2 lists them for whoever picks that up.
 
+### 4.1 Stage 1 — kinds of state × lifecycle paths: BUILT 2026-10-08
+
+- **The grid** is `decoder/cachestate.go`: 14 kinds of state (every `KVCache` field is one of them, or is geometry,
+  a counter or scratch, with a reason) × 5 lifecycle paths (partial rewind, full reset, snapshot, session prefix
+  reuse, speculative rollback), each cell a handling and why it is right.
+- **Read, not documented.** `Session.Snapshot` refuses, and a partial `TruncateTo` reports inexact, for every kind the
+  grid marks so (`holdsStateHandled`), replacing the hand-listed `hasRecurrentState() || mlaLatent` and recurrent-only
+  checks.
+- **What the grid changed in behaviour.** (1) A library `Session` that switches LoRA adapter on a warm prefix now
+  prefills cold; before, it reused K/V built under the previous adapter (`UseAdapter`'s comment left it to the caller).
+  serve was not exposed: it keeps one session LRU per adapter in its own snapshot namespace. (2) Image blocks and m-RoPE
+  positions are refused by `Snapshot` and make a partial rewind inexact. Neither is reachable today (VL generations
+  use fresh caches); the cells were undeclared, and now fail closed.
+- **One cell is caller-bound, by declaration:** adapter × snapshot. The blob does not record the adapter; a restored
+  session adopts the first one bound (serve rebinds inside a per-adapter fingerprint namespace). Making the blob carry
+  it is a format-version bump, left for the owner.
+- **Tests** (`decoder/cachestate_test.go`): the registration test over `KVCache`'s fields; every cell declared and
+  within what its path can do; `holdsState` knows every kind; the grid's recurrent row equals `hasRecurrentState()`;
+  rewind, snapshot and speculative-rollback cells checked on every own-forward family's real cache and by properties
+  that do not consult the grid; the adapter switch through `rewindForReuse`/`reconcile`. Seven planted defects (an
+  unclassified field; a snapshot cell set to kept, and to persisted; image blocks declared exact on rewind; the adapter
+  check removed; KDA dropped from `hasRecurrentState`; KDA dropped from `holdsState`) each turned its test red.
+- **Stage 2** (options × paths, with the admission chokepoints) is next. The Metal admission site (`metal/backend.go`
+  `prefillOK`) waits until the in-flight multimodal work there is committed.
+
 - **One chokepoint per path.** Every execution path (sequential decode, batched prefill, MC3 batched decode,
   resident, paged MoE, fast/exact prefill, speculative verify) asks one function whether it admits this model *with
   these load options*, the way `prefillOK` asks about features today. Each path declares which options it supports;
