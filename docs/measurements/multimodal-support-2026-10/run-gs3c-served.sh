@@ -42,6 +42,7 @@ for dir in "$@"; do
       sleep 1
     done
     grep -E "decode path|prefill path|vision" "$OUT/gs3c-$fam-$lab.log" | cut -c1-200 || true
+    trap 'kill $pid 2>/dev/null' ERR EXIT # a failed request must not leave this arm's server running on the GPU (found 2026-10-07: strays made later arms test the wrong server)
     python3 - "$OUT" "$fam" "$lab" "$PORT" <<'EOF'
 import base64, json, sys, time, urllib.request
 out, fam, lab, port = sys.argv[1:5]
@@ -59,6 +60,7 @@ open(f'{out}/gs3c-reply-{fam}-{lab}.txt', 'w').write(c['message']['content'])
 json.dump((c.get('logprobs') or {}).get('content') or [], open(f'{out}/gs3c-logprobs-{fam}-{lab}.json', 'w'))
 print(f'  {lab} ({time.time() - t:.1f}s): {c["message"]["content"][:150]!r}')
 EOF
+    trap - ERR EXIT
     kill $pid; wait $pid 2>/dev/null || true; sleep 2
   done
   python3 - "$OUT" "$fam" "${labels[@]}" <<'EOF'
