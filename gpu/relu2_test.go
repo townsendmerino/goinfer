@@ -39,10 +39,12 @@ func TestNemotronRelu2FFN_parity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer upRM.Close()
 	downRM, err := ctx.UploadW8A8(downQ, downS, hidden, interOdd)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer downRM.Close()
 
 	// GPU FFN: quantize x → up GEMV → relu2Quant → down GEMV. Built per call (isolation test).
 	relu2f := func(x float32) float32 {

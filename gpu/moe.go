@@ -398,6 +398,7 @@ type ResidentStackedW8A8 struct {
 // Release frees the stacked buffers.
 func (s *ResidentStackedW8A8) Close() error {
 	s.ctx.releaseOwned(func() {
+		traceFree(s)
 		if s.bq != nil {
 			accountFree(int64(s.bq.GetSize()))
 			s.bq.Release()
@@ -440,7 +441,7 @@ func (c *Context) UploadStackedExperts(q8 [][]int8, scales [][]float32, nE, N, K
 		return nil, fmt.Errorf("gpu: stacked expert scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
-	return &ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp}, nil
+	return traced(&ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp}, int64(bq.GetSize())+int64(sc.GetSize())), nil
 }
 
 func (c *Context) ensureMoEExpert() error {

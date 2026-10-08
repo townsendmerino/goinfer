@@ -1,0 +1,48 @@
+gpu: LEAK REPORT: 24 Context(s) closed with caller-owned device buffers still live, 23 distinct callers:
+     1 x  399360..399360 bytes  TestNoBufferLeak
+           created at: layer_test.go:70 x1 (133120 B); layer_test.go:73 x1 (133120 B); layer_test.go:76 x1 (132096 B)
+     1 x  399360..399360 bytes  TestClose_drainsTrackedReleasesLIFO
+           created at: layer_test.go:70 x1 (133120 B); layer_test.go:73 x1 (133120 B); layer_test.go:76 x1 (132096 B)
+     1 x  399360..399360 bytes  TestClose_isIdempotent
+           created at: layer_test.go:70 x1 (133120 B); layer_test.go:73 x1 (133120 B); layer_test.go:76 x1 (132096 B)
+     1 x  399360..399360 bytes  TestClose_nilsBaseHandles
+           created at: layer_test.go:70 x1 (133120 B); layer_test.go:73 x1 (133120 B); layer_test.go:76 x1 (132096 B)
+     1 x  5581056..5581056 bytes  TestAttnBlock_parity
+           created at: decodelayer_test.go:123 x4 (5519360 B); decodelayer_test.go:132 x1 (21504 B); decodelayer_test.go:131 x1 (21504 B); decodelayer_test.go:138 x2 (12288 B); decodelayer_test.go:129 x1 (6144 B); decodelayer_test.go:130 x1 (256 B)
+     1 x  56297728..56297728 bytes  TestDecodeRunnerW4A8_parity
+           created at: decoderunner_w4a8_test.go:183 x15 (56180736 B); decoderunner_w4a8_test.go:193 x2 (43008 B); decoderunner_w4a8_test.go:194 x2 (43008 B); decoderunner_w4a8_test.go:181 x6 (30976 B)
+     1 x  47298560..47298560 bytes  TestDecodeToken_throughput
+           created at: decodetoken_bench_test.go:75 x2941 (39717888 B); decodetoken_bench_test.go:66 x73 (953344 B)
+     1 x  114688..114688 bytes  TestDecodeToken_parity
+           created at: decodetoken_test.go:123 x9 (114688 B)
+     1 x  108574240..108574240 bytes  TestKVCacheI8_parity
+           created at: kv_i8_parity_test.go:69 x15 (100077568 B); kv_i8_parity_test.go:107 x4 (4232976 B); kv_i8_parity_test.go:106 x4 (4232976 B); kv_i8_parity_test.go:67 x5 (30720 B)
+     1 x  18919424..18919424 bytes  TestFusedMLP_parity
+           created at: layer_test.go:73 x1 (6307840 B); layer_test.go:70 x1 (6307840 B); layer_test.go:76 x1 (6297600 B); layer_test.go:67 x1 (6144 B)
+     1 x  41371648..41371648 bytes  TestFusedMLP_microbench
+           created at: layer_test.go:70 x1 (13798400 B); layer_test.go:73 x1 (13798400 B); layer_test.go:76 x1 (13768704 B); layer_test.go:67 x1 (6144 B)
+     1 x  1438880..1438880 bytes  TestDecodeRunnerMLA_parity
+           created at: mla_test.go:309 x6 (811008 B); mla_test.go:302 x17 (485824 B); mla_test.go:315 x16 (137568 B); mla_test.go:331 x2 (4480 B)
+     1 x  2165952..2165952 bytes  TestDecodeRunnerMoE_parity
+           created at: moe_runner_test.go:174 x6 (1605632 B); moe_runner_test.go:167 x11 (536640 B); moe_runner_test.go:189 x2 (9216 B); moe_runner_test.go:190 x2 (9216 B); moe_runner_test.go:180 x6 (5248 B)
+     1 x  4932552..4932552 bytes  TestDecodeRunnerMoEShared_parity
+           created at: moe_shared_runner_test.go:224 x12 (3211264 B); moe_shared_runner_test.go:217 x36 (1673864 B); moe_shared_runner_test.go:242 x4 (18432 B); moe_shared_runner_test.go:243 x4 (18432 B); moe_shared_runner_test.go:230 x12 (8512 B)
+     1 x  750848..750848 bytes  TestDecodeRunnerPerLayerRoPE_parity
+           created at: perlayer_rope_runner_test.go:122 x15 (733184 B); perlayer_rope_runner_test.go:134 x2 (6144 B); perlayer_rope_runner_test.go:133 x2 (6144 B); perlayer_rope_runner_test.go:128 x7 (5376 B)
+     1 x  3214976..3214976 bytes  TestPrefillLastW8A8_sharedQuantBitIdentical
+           created at: prefill_sharedquant_test.go:31 x26 (2449216 B); prefill_sharedquant_test.go:54 x1 (133120 B); prefill_sharedquant_test.go:71 x4 (29696 B); prefill_sharedquant_test.go:70 x4 (29696 B); prefill_sharedquant_test.go:26 x22 (15424 B)
+     1 x  4794240..4794240 bytes  TestPrefillLastW8A8_bufferRecycleBitIdentical
+           created at: prefill_sharedquant_test.go:31 x41 (4141312 B); prefill_sharedquant_test.go:54 x2 (266240 B); prefill_sharedquant_test.go:71 x15 (111360 B); prefill_sharedquant_test.go:70 x14 (103936 B); prefill_sharedquant_test.go:26 x59 (45632 B)
+     1 x  253440..253440 bytes  TestPrefillLastW8A8_parity
+           created at: prefillrunner_test.go:97 x180 (253440 B)
+     2 x  253440..253440 bytes  TestPrefillLastW8A8_qknormParity.func1
+           created at: prefillrunner_test.go:236 x180 (253440 B)
+     1 x  253440..253440 bytes  TestPrefillLastW8A8_gegluParity
+           created at: prefillrunner_test.go:406 x180 (253440 B)
+     1 x  335360..335360 bytes  TestPrefillLastW8A8_qgateParity
+           created at: prefillrunner_test.go:512 x220 (335360 B)
+     1 x  1445344..1445344 bytes  TestNemotronRelu2FFN_parity
+           created at: relu2_test.go:42 x1 (722944 B); relu2_test.go:38 x1 (722400 B)
+     1 x  752768..752768 bytes  TestDecodeRunnerSlidingWindow_parity
+           created at: sliding_runner_test.go:113 x15 (733184 B); sliding_runner_test.go:128 x2 (7168 B); sliding_runner_test.go:129 x2 (7168 B); sliding_runner_test.go:119 x6 (5248 B)
+ok  	github.com/townsendmerino/goinfer/gpu	254.126s

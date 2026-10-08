@@ -9,8 +9,8 @@ import (
 
 // synthPrefill builds an L-layer synthetic W8A8 model (Qwen-shaped, with Qwen2's q/k/v biases when withBias) with
 // prior K/V at positions [0, start) and returns a function that runs one PrefillLastW8A8 of M rows on fresh caches and
-// returns the last row's logits and every layer's K and V cache, read back whole.
-func synthPrefill(t *testing.T, ctx *Context, L int, withBias bool) (run func() (logits []float32, caches [][]float32), start, M, kvDim int) {
+// returns the last row's logits and every layer's K and V cache, read back whole. Everything it uploads, on every run, is added to own for the caller to close.
+func synthPrefill(t *testing.T, ctx *Context, own *closers, L int, withBias bool) (run func() (logits []float32, caches [][]float32), start, M, kvDim int) {
 	const hidden, nH, nKV, hd, inter, vocab = 256, 8, 2, 32, 688, 512
 	start, M = 5, 24
 	qDim := nH * hd
@@ -23,7 +23,7 @@ func synthPrefill(t *testing.T, ctx *Context, L int, withBias bool) (run func() 
 	for d := range invFreq {
 		invFreq[d] = float32(1.0 / math.Pow(1e6, float64(2*d)/float64(hd)))
 	}
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return add(own, d) }
 	seed := uint64(7)
 	W := func(N, K int) *ResidentW8A8 {
 		seed++
@@ -32,7 +32,7 @@ func synthPrefill(t *testing.T, ctx *Context, L int, withBias bool) (run func() 
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(own, rm)
 	}
 	type lw struct {
 		an, mn         []float32
@@ -55,6 +55,7 @@ func synthPrefill(t *testing.T, ctx *Context, L int, withBias bool) (run func() 
 	if err != nil {
 		t.Fatal(err)
 	}
+	add(own, lmHead)
 	invD := up32(invFreq)
 	xs := make([][]float32, M)
 	for r := range xs {
@@ -68,7 +69,9 @@ func synthPrefill(t *testing.T, ctx *Context, L int, withBias bool) (run func() 
 		mw := ModelW{FinalNorm: fnorm, LMHead: lmHead}
 		for l := range layers {
 			kc, _ := ctx.NewKVCache(layers[l].priorK, capElems)
+			add(own, kc)
 			vc, _ := ctx.NewKVCache(layers[l].priorV, capElems)
+			add(own, vc)
 			a := AttnWeights{Norm: up32(layers[l].an), QProj: layers[l].q, KProj: layers[l].k, VProj: layers[l].v,
 				OProj: layers[l].o, InvFreq: invD, KCache: kc, VCache: vc}
 			if withBias {
@@ -120,10 +123,12 @@ func samePrefill(t *testing.T, what string, refL, gotL []float32, refC, gotC [][
 func TestPrefillLastW8A8_sharedQuantBitIdentical(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
+	var own closers
+	defer own.closeAll()
 	defer func() { prefillQuantPerProj = false }()
 	const L = 2
 	for _, withBias := range []bool{false, true} {
-		run, start, M, kvDim := synthPrefill(t, ctx, L, withBias)
+		run, start, M, kvDim := synthPrefill(t, ctx, &own, L, withBias)
 		arm := func(perProj bool) ([]float32, [][]float32, int64) {
 			prefillQuantPerProj = perProj
 			s0 := prefillSharedQuants.Load()
@@ -149,9 +154,11 @@ func TestPrefillLastW8A8_sharedQuantBitIdentical(t *testing.T) {
 func TestPrefillLastW8A8_bufferRecycleBitIdentical(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
+	var own closers
+	defer own.closeAll()
 	defer func() { prefillBufFresh, prefillBufPoison = false, false }()
 	for _, withBias := range []bool{false, true} {
-		run, start, M, kvDim := synthPrefill(t, ctx, 3, withBias)
+		run, start, M, kvDim := synthPrefill(t, ctx, &own, 3, withBias)
 		arm := func(fresh, poison bool) ([]float32, [][]float32, int64) {
 			prefillBufFresh, prefillBufPoison = fresh, poison
 			r0 := prefillBufReused.Load()

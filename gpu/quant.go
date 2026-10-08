@@ -101,6 +101,7 @@ type ResidentW8A8 struct {
 // Release frees the resident GPU buffers.
 func (rm *ResidentW8A8) Close() error {
 	rm.ctx.releaseOwned(func() {
+		traceFree(rm)
 		if rm.bq != nil {
 			accountFree(int64(rm.bq.GetSize()))
 			rm.bq.Release()
@@ -166,7 +167,7 @@ func (c *Context) UploadW8A8(q8 []int8, scales []float32, N, K int) (*ResidentW8
 		return nil, fmt.Errorf("gpu: create W8A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
-	return &ResidentW8A8{ctx: c, bq: bq, bScales: sc, rows: N, cols: K, kp: padK(K)}, nil
+	return traced(&ResidentW8A8{ctx: c, bq: bq, bScales: sc, rows: N, cols: K, kp: padK(K)}, int64(bq.GetSize())+int64(sc.GetSize())), nil
 }
 
 // MatmulW8A8 computes dst[M,N] = (aq quantized int8) · rm.bᵀ, dequantized — the

@@ -31,6 +31,7 @@ func TestNoBufferLeak(t *testing.T) {
 
 	t.Run("FusedMLP", func(t *testing.T) {
 		f := newMLPFixture(t, ctx, 256, 512)
+		defer f.close()
 		if _, err := ctx.FusedMLP(f.x, f.rmsWDev, f.gateRM, f.upRM, f.downRM, f.eps, false); err != nil {
 			t.Fatalf("warm-up FusedMLP: %v", err)
 		}

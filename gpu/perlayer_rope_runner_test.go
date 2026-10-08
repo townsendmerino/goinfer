@@ -118,20 +118,24 @@ func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 	// --- GPU resident runner (per-layer rope) ---
+	var own closers
+	defer own.closeAll()
 	mk := func(bq []int8, s []float32, N, K int) *ResidentW8A8 {
 		rm, e := ctx.UploadW8A8(bq, s, N, K)
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(&own, rm)
 	}
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return add(&own, d) }
 	invD := [L]*DeviceBuffer{up32(invFreq[0]), up32(invFreq[1])}
 	rm := runModel{finalNorm: up32(fnorm).buf, lmHead: mk(lmBQ, lmS, vocab, hidden)}
 	for l := range layers {
 		Lw := &layers[l]
 		kc, _ := ctx.NewKVCache(Lw.priorK, (pos+1)*kvDim)
+		add(&own, kc)
 		vc, _ := ctx.NewKVCache(Lw.priorV, (pos+1)*kvDim)
+		add(&own, vc)
 		rm.layers = append(rm.layers, runLayer{
 			attnNorm: up32(Lw.an).buf, invFreq: invD[l].buf, kCache: kc.buf, vCache: vc.buf, mlpNorm: up32(Lw.mn).buf,
 			q: mk(Lw.qBQ, Lw.qS, qDim, hidden), k: mk(Lw.kBQ, Lw.kS, kvDim, hidden), v: mk(Lw.vBQ, Lw.vS, kvDim, hidden),

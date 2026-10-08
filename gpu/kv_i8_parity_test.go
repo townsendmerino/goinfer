@@ -64,13 +64,15 @@ func TestKVCacheI8_parity(t *testing.T) {
 	fnorm := randMat(hidden, 600)
 	lmBQ, lmS := quantW(vocab, hidden, 999)
 
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	var own closers
+	defer own.closeAll()
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return add(&own, d) }
 	mk := func(bq []int8, s []float32, N, K int) *ResidentW8A8 {
 		rm, e := ctx.UploadW8A8(bq, s, N, K)
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(&own, rm)
 	}
 	invD := up32(invFreq)
 
@@ -80,7 +82,9 @@ func TestKVCacheI8_parity(t *testing.T) {
 	for l := range layers {
 		L := &layers[l]
 		kc, _ := ctx.NewKVCache(L.priorK, capElems)
+		add(&own, kc)
 		vc, _ := ctx.NewKVCache(L.priorV, capElems)
+		add(&own, vc)
 		mw.Layers = append(mw.Layers, LayerW{
 			Attn: AttnWeights{
 				Norm: up32(L.an), QProj: mk(L.qBQ, L.qS, qDim, hidden), KProj: mk(L.kBQ, L.kS, kvDim, hidden),
@@ -108,6 +112,10 @@ func TestKVCacheI8_parity(t *testing.T) {
 		if e1 != nil || e2 != nil {
 			t.Fatalf("NewKVCacheI8 (layer %d): %v %v", l, e1, e2)
 		}
+		add(&own, kc)
+		add(&own, ks)
+		add(&own, vc)
+		add(&own, vs)
 		rmI8.layers = append(rmI8.layers, runLayer{
 			attnNorm: up32(L.an).buf, invFreq: invD.buf, mlpNorm: up32(L.mn).buf,
 			kCache: kc.buf, vCache: vc.buf, kScale: ks.buf, vScale: vs.buf,

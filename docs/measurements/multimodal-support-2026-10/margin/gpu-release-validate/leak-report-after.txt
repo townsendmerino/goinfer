@@ -1,0 +1,5 @@
+default settings, 2026-10-08, after the fixes: go test -count=1 -tags 'gpu goinfer_testhooks' -v ./gpu/
+ok  	github.com/townsendmerino/goinfer/gpu	255.482s
+go test rc=0
+pass=144 skip=58 fail=0 leak-report-lines=0
+-short (the darwin CI job's variant): go test rc=0 pass=128 skip=74 fail=0

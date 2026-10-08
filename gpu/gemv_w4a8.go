@@ -103,6 +103,7 @@ type ResidentW4A8 struct {
 // Release frees the resident GPU buffers.
 func (rm *ResidentW4A8) Close() error {
 	rm.ctx.releaseOwned(func() {
+		traceFree(rm)
 		if rm.bq != nil {
 			accountFree(int64(rm.bq.GetSize()))
 			rm.bq.Release()
@@ -223,7 +224,7 @@ func (c *Context) UploadW4A8(nib []uint8, scales []float32, N, K int) (*Resident
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
-	return &ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
+	return traced(&ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, int64(bq.GetSize())+int64(bs.GetSize())), nil
 }
 
 // UploadW4A8Packed is the fast path of UploadW4A8: it uploads int4 weights whose bytes are
@@ -264,7 +265,7 @@ func (c *Context) UploadW4A8Packed(q4 []byte, scales []float32, N, K int) (*Resi
 		return nil, fmt.Errorf("gpu: create W4A8 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(bs.GetSize()))
-	return &ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, nil
+	return traced(&ResidentW4A8{ctx: c, bq: bq, bScales: bs, rows: N, cols: K, kp: kp, nGroups: nGroups}, int64(bq.GetSize())+int64(bs.GetSize())), nil
 }
 
 func (c *Context) ensureGEMVW4() error {

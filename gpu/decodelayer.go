@@ -38,8 +38,9 @@ func (c *Context) rmsnormDevice(x, weight *DeviceBuffer, H int, eps float32, add
 	if err := c.submitUnary(c.rmsnormPipeline, bg, 64); err != nil {
 		return nil, nil, err
 	}
-	free := []func(){func() { out.Release() }, pbuf.Release, bg.Release}
-	return newDeviceBuffer(out, H), free, nil
+	odb := newDeviceBuffer(out, H)
+	free := []func(){func() { _ = odb.Close() }, pbuf.Release, bg.Release} // Close, not out.Release(): it also settles the live-buffer gauge for the wrapper
+	return odb, free, nil
 }
 
 // residualInPlace: x += y (submit, no poll).
@@ -186,8 +187,9 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 	cmd, _ := enc.TryFinish(nil)
 	defer cmd.Release()
 	c.queue.Submit(cmd)
-	free := []func(){func() { ctxBuf.Release() }, pbuf.Release, sinksBuf.Release, hsBuf.Release, bg.Release}
-	return newDeviceBuffer(ctxBuf, nH*hd), free, nil
+	cdb := newDeviceBuffer(ctxBuf, nH*hd)
+	free := []func(){func() { _ = cdb.Close() }, pbuf.Release, sinksBuf.Release, hsBuf.Release, bg.Release}
+	return cdb, free, nil
 }
 
 // AttnWeights bundles a layer's attention weights + norm (already resident).
@@ -247,8 +249,9 @@ func (c *Context) qSplitDevice(qg *DeviceBuffer, n, headDim int) (*DeviceBuffer,
 	if err := c.submitUnary(c.deltaQSplitPipeline, bg, n); err != nil {
 		return nil, nil, nil, err
 	}
-	free := []func(){func() { q.Release() }, func() { gate.Release() }, pbuf.Release, bg.Release}
-	return newDeviceBuffer(q, n), newDeviceBuffer(gate, n), free, nil
+	qdb, gdb := newDeviceBuffer(q, n), newDeviceBuffer(gate, n)
+	free := []func(){func() { _ = qdb.Close() }, func() { _ = gdb.Close() }, pbuf.Release, bg.Release}
+	return qdb, gdb, free, nil
 }
 
 // attnGateInPlace applies ctx *= sigmoid(gate) in place (submit, no poll).
@@ -308,16 +311,21 @@ func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV
 	if err != nil {
 		return nil, err
 	}
-	frees = append(frees, func() { q.Close() }, func() { k.Close() }, func() { v.Close() })
+	// Bind the buffers by value: a closure over q would close whatever q is reassigned to below, and the double-width q the matmul made (QGate) would never be freed.
+	q0, k0, v0 := q, k, v
+	frees = append(frees, func() { q0.Close() }, func() { k0.Close() }, func() { v0.Close() })
 
 	var aGate *DeviceBuffer
 	if w.QGate {
 		var fsQ []func()
-		q, aGate, fsQ, err = c.qSplitDevice(q, nH*hd, hd)
+		var qSplit *DeviceBuffer
+		qSplit, aGate, fsQ, err = c.qSplitDevice(q, nH*hd, hd)
 		if err := keep(fsQ, err); err != nil {
 			return nil, err
 		}
-		frees = append(frees, func() { q.Close() }, func() { aGate.Close() })
+		q = qSplit
+		gate := aGate
+		frees = append(frees, func() { qSplit.Close() }, func() { gate.Close() })
 	}
 
 	if w.QNorm != nil {
@@ -408,7 +416,8 @@ func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer
 	if err := c.submitUnary(c.swigluPipeline, bg, inter); err != nil {
 		return nil, nil, err
 	}
-	return newDeviceBuffer(mid, inter), []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
+	mdb := newDeviceBuffer(mid, inter)
+	return mdb, []func(){func() { _ = mdb.Close() }, pbuf.Release, bg.Release}, nil
 }
 
 // gegluDevice: gelu_tanh(gate)·up → new device buffer (submit, no poll).
@@ -433,7 +442,8 @@ func (c *Context) gegluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer,
 	if err := c.submitUnary(c.gegluPipeline, bg, inter); err != nil {
 		return nil, nil, err
 	}
-	return newDeviceBuffer(mid, inter), []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
+	mdb := newDeviceBuffer(mid, inter)
+	return mdb, []func(){func() { _ = mdb.Close() }, pbuf.Release, bg.Release}, nil
 }
 
 // mlpInto runs the gated-MLP sub-block on xd in place (xd += Down(swiglu/geglu(Gate/Up

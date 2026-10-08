@@ -109,14 +109,16 @@ func TestDecodeRunnerSlidingWindow_parity(t *testing.T) {
 	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 	// --- GPU resident runner (sliding window) ---
+	var own closers
+	defer own.closeAll()
 	mk := func(bq []int8, s []float32, N, K int) *ResidentW8A8 {
 		rm, e := ctx.UploadW8A8(bq, s, N, K)
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(&own, rm)
 	}
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return add(&own, d) }
 	invD := up32(invFreq)
 	rm := runModel{
 		finalNorm:     up32(fnorm).buf,
@@ -126,7 +128,9 @@ func TestDecodeRunnerSlidingWindow_parity(t *testing.T) {
 	for l := range layers {
 		L := &layers[l]
 		kc, _ := ctx.NewKVCache(L.priorK, (pos+1)*kvDim)
+		add(&own, kc)
 		vc, _ := ctx.NewKVCache(L.priorV, (pos+1)*kvDim)
+		add(&own, vc)
 		rm.layers = append(rm.layers, runLayer{
 			attnNorm: up32(L.an).buf, invFreq: invD.buf, kCache: kc.buf, vCache: vc.buf, mlpNorm: up32(L.mn).buf,
 			q: mk(L.qBQ, L.qS, qDim, hidden), k: mk(L.kBQ, L.kS, kvDim, hidden), v: mk(L.vBQ, L.vS, kvDim, hidden),

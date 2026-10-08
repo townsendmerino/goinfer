@@ -96,21 +96,25 @@ func TestDecodeToken_parity(t *testing.T) {
 	linalg.MatmulBTW8A8(xnf, lmBQ, lmS, refLogits, 1, hidden, vocab)
 
 	// --- GPU DecodeToken ---
+	var own closers
+	defer own.closeAll()
 	mk := func(bq []int8, s []float32, N, K int) *ResidentW8A8 {
 		rm, e := ctx.UploadW8A8(bq, s, N, K)
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(&own, rm)
 	}
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return add(&own, d) }
 	invD := up32(invFreq)
 	mw := ModelW{FinalNorm: up32(fnorm), LMHead: mk(lmBQ, lmS, vocab, hidden)}
 	defer mw.Release() // resident weights are caller-owned; Context.Close does not free them
 	for l := range layers {
 		L := &layers[l]
 		kc, _ := ctx.NewKVCache(L.priorK, (pos+1)*kvDim)
+		add(&own, kc)
 		vc, _ := ctx.NewKVCache(L.priorV, (pos+1)*kvDim)
+		add(&own, vc)
 		mw.Layers = append(mw.Layers, LayerW{
 			Attn: AttnWeights{
 				Norm: up32(L.an), QProj: mk(L.qBQ, L.qS, qDim, hidden), KProj: mk(L.kBQ, L.kS, kvDim, hidden),

@@ -178,20 +178,24 @@ func TestDecodeRunnerW4A8_parity(t *testing.T) {
 	refLogits := refMatmulW4A8(fq, fs, lmN, lmS, vocab, hidden, w4Group)
 
 	// --- GPU W4A8 DecodeRunner (build a runModel with int4 projections) ---
-	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return d }
+	var own closers
+	defer own.closeAll()
+	up32 := func(v []float32) *DeviceBuffer { d, _ := ctx.UploadF32(v); return add(&own, d) }
 	w4 := func(nib []uint8, sc []float32, N, K int) *ResidentW4A8 {
 		rm, e := ctx.UploadW4A8(nib, sc, N, K)
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(&own, rm)
 	}
 	invD := up32(invFreq)
 	rm := runModel{finalNorm: up32(fnorm).buf, lmHead: w4(lmN, lmS, vocab, hidden)}
 	for l := range layers {
 		L := &layers[l]
 		kc, _ := ctx.NewKVCache(L.priorK, (pos+1)*kvDim)
+		add(&own, kc)
 		vc, _ := ctx.NewKVCache(L.priorV, (pos+1)*kvDim)
+		add(&own, vc)
 		rm.layers = append(rm.layers, runLayer{
 			attnNorm: up32(L.an).buf, invFreq: invD.buf, kCache: kc.buf, vCache: vc.buf, mlpNorm: up32(L.mn).buf,
 			q: w4(L.qN, L.qS, qDim, hidden), k: w4(L.kN, L.kS, kvDim, hidden), v: w4(L.vN, L.vS, kvDim, hidden),

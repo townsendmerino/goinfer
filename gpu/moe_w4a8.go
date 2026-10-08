@@ -235,7 +235,7 @@ func (c *Context) UploadStackedExpertsInt4(nib [][]uint8, scales [][]float32, nE
 		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
-	return &ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, nil
+	return traced(&ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, int64(bq.GetSize())+int64(sc.GetSize())), nil
 }
 
 // UploadStackedExpertsInt4Packed is the fast path of UploadStackedExpertsInt4: each
@@ -272,5 +272,5 @@ func (c *Context) UploadStackedExpertsInt4Packed(q4 [][]byte, scales [][]float32
 		return nil, fmt.Errorf("gpu: stacked w4 scales buffer: %w", err)
 	}
 	accountAlloc(int64(bq.GetSize()) + int64(sc.GetSize()))
-	return &ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, nil
+	return traced(&ResidentStackedW8A8{ctx: c, bq: bq, bScales: sc, nE: nE, rows: N, cols: K, kp: kp, w4: true}, int64(bq.GetSize())+int64(sc.GetSize())), nil
 }

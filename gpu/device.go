@@ -96,6 +96,7 @@ func (d *DeviceBuffer) Close() error {
 		d.buf.Release()
 		d.buf = nil
 		accountFree(d.bytes)
+		traceFree(d)
 		d.bytes = 0
 	}
 	return nil
@@ -283,6 +284,7 @@ func (c *Context) readbackRaw(buf *wgpu.Buffer, n int) ([]float32, error) {
 	db := newDeviceBuffer(buf, n)
 	out, err := c.Readback(db)
 	accountFree(db.bytes) // balances newDeviceBuffer's accountAlloc; buf itself is untouched
+	traceFree(db)
 	return out, err
 }
 

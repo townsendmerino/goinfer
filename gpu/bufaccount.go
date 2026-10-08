@@ -32,6 +32,30 @@ func LiveBufferBytes() int64 { return liveBufferBytes.Load() }
 // must fail loudly, because skipping there silently turns a correctness gate into a no-op).
 func GPUEverAvailable() bool { return gpuEverAvailable.Load() }
 
+// allocTrace, when non-nil (the package's tests set it), is told about every counted wrapper as it is created (alloc=true, n its bytes) and when its buffers are released (alloc=false), keyed by the
+// wrapper pointer. It is how the leak report names the line that created a buffer nobody closed. nil in production: one load per allocation.
+var allocTrace func(key any, n int64, alloc bool)
+
+// traced reports o's creation to allocTrace and returns it, so a creation site stays one expression.
+func traced[T any](o T, n int64) T {
+	if f := allocTrace; f != nil {
+		allocSeq.Add(1)
+		f(o, n, true)
+	}
+	return o
+}
+
+// allocSeq counts traced allocations; allocSeqNow is read at Context creation so a leak report can tell which survivors were created during that Context's life.
+var allocSeq atomic.Int64
+
+func allocSeqNow() int64 { return allocSeq.Load() }
+
+func traceFree(key any) {
+	if f := allocTrace; f != nil {
+		f(key, 0, false)
+	}
+}
+
 func accountAlloc(n int64) {
 	if n > 0 {
 		liveBufferBytes.Add(n)
@@ -53,5 +77,5 @@ func newDeviceBuffer(buf *wgpu.Buffer, n int) *DeviceBuffer {
 		sz = int64(buf.GetSize())
 	}
 	accountAlloc(sz)
-	return &DeviceBuffer{buf: buf, n: n, bytes: sz}
+	return traced(&DeviceBuffer{buf: buf, n: n, bytes: sz}, sz)
 }

@@ -51,7 +51,11 @@ type mlpFixture struct {
 	gateRM, upRM, downRM *ResidentW8A8
 	H, I                 int
 	eps                  float32
+	own                  closers
 }
+
+// close releases what the fixture uploaded.
+func (f *mlpFixture) close() { f.own.closeAll() }
 
 func newMLPFixture(t *testing.T, ctx *Context, H, I int) *mlpFixture {
 	f := &mlpFixture{H: H, I: I, eps: 1e-6}
@@ -67,15 +71,19 @@ func newMLPFixture(t *testing.T, ctx *Context, H, I int) *mlpFixture {
 	if f.rmsWDev, err = ctx.UploadF32(f.rmsW); err != nil {
 		t.Fatalf("UploadF32: %v", err)
 	}
+	add(&f.own, f.rmsWDev)
 	if f.gateRM, err = ctx.UploadW8A8(f.gBQ, f.gS, I, H); err != nil {
 		t.Fatalf("UploadW8A8 gate: %v", err)
 	}
+	add(&f.own, f.gateRM)
 	if f.upRM, err = ctx.UploadW8A8(f.uBQ, f.uS, I, H); err != nil {
 		t.Fatalf("UploadW8A8 up: %v", err)
 	}
+	add(&f.own, f.upRM)
 	if f.downRM, err = ctx.UploadW8A8(f.dBQ, f.dS, H, I); err != nil {
 		t.Fatalf("UploadW8A8 down: %v", err)
 	}
+	add(&f.own, f.downRM)
 	return f
 }
 
@@ -87,6 +95,7 @@ func TestFusedMLP_parity(t *testing.T) {
 	}
 	defer ctx.Close()
 	f := newMLPFixture(t, ctx, 1536, 4096)
+	defer f.close()
 
 	got, err := ctx.FusedMLP(f.x, f.rmsWDev, f.gateRM, f.upRM, f.downRM, f.eps, false)
 	if err != nil {
@@ -111,9 +120,8 @@ func TestFusedMLP_microbench(t *testing.T) {
 	defer ctx.Close()
 	const H, I, iters = 1536, 8960, 100
 	f := newMLPFixture(t, ctx, H, I)
+	defer f.close()
 	gateUp := []decodeWeight{f.gateRM, f.upRM} // BatchGEMV is precision-agnostic (P-16)
-	guRun, _ := ctx.NewGEMVRunner(f.gateRM)    // not used directly; staged uses BatchGEMV + a down runner
-	_ = guRun
 	downRun, _ := ctx.NewGEMVRunner(f.downRM)
 	defer downRun.Release()
 

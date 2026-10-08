@@ -119,17 +119,23 @@ func TestAttnBlock_parity(t *testing.T) {
 	}
 
 	// --- GPU on-device sub-block ---
+	var own closers
+	defer own.closeAll()
 	mk := func(bq []int8, s []float32, N, K int) *ResidentW8A8 {
 		rm, e := ctx.UploadW8A8(bq, s, N, K)
 		if e != nil {
 			t.Fatal(e)
 		}
-		return rm
+		return add(&own, rm)
 	}
 	normD, _ := ctx.UploadF32(normW)
+	add(&own, normD)
 	invD, _ := ctx.UploadF32(invFreq)
+	add(&own, invD)
 	kc, _ := ctx.NewKVCache(priorK, (pos+1)*kvDim)
+	add(&own, kc)
 	vc, _ := ctx.NewKVCache(priorV, (pos+1)*kvDim)
+	add(&own, vc)
 	w := AttnWeights{
 		Norm: normD, QProj: mk(qBQ, qS, qDim, hidden), KProj: mk(kBQ, kS, kvDim, hidden),
 		VProj: mk(vBQ, vS, kvDim, hidden), OProj: mk(oBQ, oS, hidden, qDim),

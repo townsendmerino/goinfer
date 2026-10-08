@@ -2979,10 +2979,20 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Validated, night of 2026-10-08 (`margin/gpu-release-validate/`).** All four criteria written before the run were met: the two reproducers pass (150 rounds each); the whole `./gpu/` package is 144 pass / 58 skip /
     0 fail (142 / 57 / 0 before, plus the two new tests and the planted-defect skip); ten consecutive runs of the webgpu-parity cell are clean (65 pass / 8 skip, ~30 s; before the first fix one in eight hung); and the
     planted defect (the hop off) deadlocks, so the reproducer can see what it guards. `staticcheck` with the gpu tags is clean. The script's plumbing had never run before the job and worked.
-  - **The leak report is the work list for the leaks themselves, and it is long: 21 tests close a Context with caller-owned device buffers still live** (`margin/gpu-release-validate/leak-report-aggregated.txt`), the largest
-    `TestKVCacheI8_parity` (108 MB), `TestDecodeRunnerW4A8_parity` (56 MB), `TestDecodeToken_throughput` (47 MB), `TestFusedMLP_microbench` (41 MB), `TestFusedMLP_parity` (19 MB). A first report said 474 contexts: 450 of them
-    were the two reproducers leaking a 256-byte matrix per round on purpose (now exempt) and the rest are these. None is fixed. They no longer risk the hang (a late Close of a long-lived wrapper hops, and a leak's
-    finalizer is serialized with Close), but each pins device memory for the rest of the run, which is how the suite used to climb to 7,782 of 8,192 MiB (`bufaccount.go`).
+  - **The leaks are fixed (same day).** The report said 21 tests closed a Context with caller-owned device buffers live, the largest `TestKVCacheI8_parity` (108 MB), `TestDecodeRunnerW4A8_parity` (56 MB),
+    `TestDecodeToken_throughput` (47 MB) and `TestFusedMLP_microbench` (41 MB). To fix them from evidence and not by guessing, the counted wrappers now report their creation to a test-only trace
+    (`allocTrace`, keyed by address: a first version held the wrappers themselves, which kept every leaked device alive and exhausted the driver's ~63-device limit mid-suite), and the report names the test-file line and
+    the library function that made each survivor (`margin/gpu-release-validate/leak-report-before-with-sites.txt`). What it found:
+    - **Test omissions (most of them).** The shared MLP fixture, the hand-built models in the decode-runner, MLA, MoE, per-layer-RoPE, sliding-window, int8-KV, shared-quant and q-gate tests, and two weight uploads in the
+      Relu2 test never closed what they uploaded. They now add it to a small `closers` helper (`closers_test.go`) and close it with a deferred call. (A value-receiver `closeAll` copied the empty slice at the `defer` line
+      and closed nothing; it is a pointer receiver.)
+    - **Three library defects.** (1) `rmsnormDevice`, the attention-context, q-split, SwiGLU and GeGLU helpers returned a `DeviceBuffer` beside a `free` function that released the raw buffer without settling the
+      live-buffer gauge: the memory was freed and the accounting leaked, ~73 wrappers and ~1.3 MB of gauge per `DecodeToken`. The `free` closures now close the wrapper. (2) A REAL GPU-memory leak in `attnBlockInto`: its
+      cleanup closures captured the variable `q`, so after the q-gate split reassigned it the double-width `q` the matmul made was never freed (a closure over a reassigned variable). Each buffer is bound by value now.
+      (3) `ResidentStackedW8A8.Close` did not nil its buffers, so a second Close released twice (fixed earlier in this series).
+    - **Result.** The whole `./gpu/` package: 144 pass / 58 skip / 0 fail with an empty leak report and exit 0, and the `-short` variant CI's darwin job runs: 128 / 74 / 0 (`leak-report-after.txt`). `staticcheck` is clean. The
+      leak check is now FATAL by default (`GOINFER_GPU_LEAKS_FATAL=0` turns it off): a throwaway test that leaks one upload on purpose fails the package with exit 1, naming the file, the line and the library function.
+      `gpu-darwin` runs the same package on the Mac's adapter, so a leak that only shows there would turn that job red; it is the first place to look.
   - **A disclosure about tonight's queue:** after the queue started at 11:02 I compiled and vetted the `gpu` package three times and ran its device-free test, on the same box as the first job's timed CPU cells. The
     harness's cell gate saw the load ("loadavg 5.19 > 1.00, waiting") and held the cell until it fell, so the cells were not started under load, but a compile burst inside a cell would not have been seen. Read
     `peer-vetted-nobara-3` with that in mind (its raw log has the gate lines).

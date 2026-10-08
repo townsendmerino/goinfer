@@ -83,6 +83,7 @@ type Context struct {
 	// crashed, and only on a machine with a real GPU.
 	closed   atomic.Bool // set by Close; read from other goroutines by releaseOwned
 	liveBase int64       // LiveBufferBytes() when this Context was created: the leak report at Close compares against it
+	allocSeq int64       // the allocation trace's sequence number when this Context was created (leak_report_test.go)
 
 	// hasDP4A records whether this adapter's WGSL compiler accepts dot4I8Packed
 	// (probed once in New(), never re-checked). gfx-rs/wgpu merged the builtin in
@@ -496,6 +497,7 @@ func New() (*Context, error) {
 	gpuEverAvailable.Store(true)
 	return &Context{
 		liveBase: liveBufferBytes.Load(),
+		allocSeq: allocSeqNow(),
 		instance: inst,
 		adapter:  adapter,
 		device:   device,
@@ -721,6 +723,7 @@ func (rm *ResidentMatrix) Close() error {
 	rm.ctx.releaseOwned(func() {
 		if rm.buf != nil {
 			accountFree(int64(rm.buf.GetSize()))
+			traceFree(rm)
 			rm.buf.Release()
 			rm.buf = nil
 		}
@@ -745,7 +748,7 @@ func (c *Context) UploadMatrix(b []float32, rows, cols int) (*ResidentMatrix, er
 		return nil, fmt.Errorf("gpu: create resident buffer: %w", err)
 	}
 	accountAlloc(int64(buf.GetSize()))
-	return &ResidentMatrix{ctx: c, buf: buf, rows: rows, cols: cols}, nil
+	return traced(&ResidentMatrix{ctx: c, buf: buf, rows: rows, cols: cols}, int64(buf.GetSize())), nil
 }
 
 // MatmulBTResident computes dst = a · rm.bᵀ ([M, rm.rows]), uploading only the
