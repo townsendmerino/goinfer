@@ -1689,6 +1689,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			where = "resident"
 		}
 		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path\n", n, where)
+		if gen.ImgPrefillResident { // S9 part B: the image turn's prefill ran as one batched pass on the resident (otherwise the CPU prefilled and uploaded)
+			fmt.Fprintf(os.Stderr, "vision: image prefill ran resident (batched)\n")
+		}
 	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {

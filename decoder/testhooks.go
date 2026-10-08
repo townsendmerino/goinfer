@@ -452,3 +452,11 @@ func ResetSelfTestCachesForTest() { resetSelfTestCaches() }
 // SetGemma4PLEDropTokenForTest plants S1's G2 defect (2): the resident embedding row's PLE inputs lose their
 // token-identity term (docs/tasks/task-multimodal-support-2026-10.md). The CPU forward is unaffected.
 func SetGemma4PLEDropTokenForTest(on bool) { gemma4PLEDropTokenForTest = on }
+
+// SetGemma4VLRowsDefectForTest selects S9 part B's G2q planted defect in the E-model image-row builder (0 clears it; see gemma4VLRowsDefectForTest).
+func SetGemma4VLRowsDefectForTest(d int) { gemma4VLRowsDefectForTest = d }
+
+// Gemma4EModelImageRowsForTest exposes the E-model image-row builder (G1q/G2q build the rows, then hand them to the resident's PrefillLast).
+func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, imgPos, imgLen int) ([][]float32, error) {
+	return m.gemma4EModelImageRows(ids, imageEmbeds, imgPos, imgLen)
+}
