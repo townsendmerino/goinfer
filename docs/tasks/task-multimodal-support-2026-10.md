@@ -2735,6 +2735,49 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **The instrument:** lever A's, TE5(b): an in-process whole-tower A/B, interleaved by day, f16 GEMM against the f32
     GEMM, with lever A on in both arms.
 
+- **S17's Metal lever B, f16 inputs: FAILED the tower bars at real size, 2026-10-08. The registered fallback,
+  f32 inputs, is re-registered here before it runs.**
+  - **The f16-input kernel (`tower_gemm_f16`) passed its own gate:** worst 3.40e-4 against 2e-3, on N(0,1)
+    activations, with every planted defect red (the bias dropped 1.06e-1, A one K column late 2.91e-1, the second half
+    of each K step skipped 1.56e-1).
+  - **The towers fail with it** (G-S2b and G-S3a, cosine against the CPU tower, bar 0.9999):
+
+    | tower | image | worst token cosine |
+    |---|---|---|
+    | GLM-OCR | table.png | 0.962422796 |
+    | GLM-OCR | invoice.png | 0.995452352 |
+    | SigLIP | 896² image | 0.996123455 |
+    | SigLIP | formula.png | 0.947761767 |
+    | SigLIP | table.png | 0.991308799 |
+    | Qwen2.5-VL | 896² image | 0.997665165 |
+    | Qwen2.5-VL | formula.png | 0.917237607 |
+    | Qwen2.5-VL | table.png | 0.835251574 |
+
+  - **Not measured: why.** Far beyond f16 rounding noise, and worst on dense-text images: the shape of real activation
+    outliers losing precision or overflowing in f16. It is not chased further: the registration's fallback is exactly
+    the fix.
+  - **The fallback (`tower_gemm_w16`):** the same kernel, with the activations staged in f32 and the f16 weights
+    widened to f32 as they are staged, on f32 simdgroup tiles.
+    - **What it keeps:** the 64x64 tiles with 16 multiply-accumulates per 8 fragment loads, the fused bias, and half the
+      weight memory.
+    - **The kernel bar:** 1e-3 of Σ|a·w| + |bias|, since only the weights round. Measured 1.99e-4, every planted defect
+      red.
+    - **The tower bars are unchanged.**
+  - **Its k_G, re-registered: 1.5-2.2.** The f32 tiles' peak is the f32 rate (~5.3 TFLOPS). The old kernel's 1.1
+    TFLOPS loads one fragment from device memory per multiply; staging plus a 2:1 ratio should give 1.7-2.4 TFLOPS.
+  - **The bands, by the same post-A projection:**
+
+    | tower | image | band |
+    |---|---|---|
+    | SigLIP | any | **1.3-1.6x** |
+    | Qwen2.5-VL | 896² | **1.4-2.0x** |
+    | Qwen2.5-VL | formula.png | **1.4-1.8x** |
+    | Qwen2.5-VL | table.png | **1.3-1.7x** |
+    | Qwen3.5 | table.png | **1.3-1.6x** |
+    | Qwen3.5 | formula.png | **1.3-1.6x** |
+
+  - **Kill line and instrument as registered above.**
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
