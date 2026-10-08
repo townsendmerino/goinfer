@@ -492,7 +492,7 @@ Pin the fixture like `pin_gemma4_vl_tiny.py`, with these settings:
   regenerate it and pin the transformers version: memory notes 5.12 vs 5.15 differences, and the local venv has 5.12.
 
 **CUDA, briefly (later):**
-- Same model-level `r.inter` (`cuda/resident.go:3193, 3454-3493`).
+- Same model-level `r.inter` (`cuda/resident.go:3194, 3454-3493`).
 - `v_norm` only on kEqV (as of 2026-10-06; every K/V-owning Gemma 4 layer since 2026-10-07, see the S1.0 block of the task doc).
 - No PLE (as of 2026-10-06 the dense tail's comment said "no PLE branch yet"; the PLE branch landed 2026-10-07, see the S1-on-CUDA block of the task doc).
 - Projections are built for every layer (`cuda/backend.go:384-387`), so a shared layer's empty K/V would fail or be
