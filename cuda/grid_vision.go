@@ -36,6 +36,7 @@ type gridKind uint8
 const (
 	gridQwen3  gridKind = iota // LayerNorm, GELU-tanh MLP, interpolated position rows, one segment per frame
 	gridGlmOcr                 // RMSNorm, per-head q/k RMSNorm, SiLU-gated MLP, no position table, one segment per frame
+	gridSiglip                 // Gemma 3's SigLIP: LayerNorm, GELU-tanh MLP, a fixed position table, NO RoPE, one segment over every patch (siglip_vision.go)
 )
 
 type gridProj struct {
@@ -55,6 +56,7 @@ type gridBlock struct {
 type gridDefect struct {
 	noScale, swapRope, transposePos, noQKNorm, noPatchBias bool
 	oneSegment                                             bool // every frame of a batch attends over every frame (the segment boundaries ignored)
+	noPosEmbed                                             bool // SigLIP: the position table not added
 }
 
 type gridTower struct {

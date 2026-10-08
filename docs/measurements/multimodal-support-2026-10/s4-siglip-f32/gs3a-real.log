@@ -1,0 +1,12 @@
+=== RUN   TestSiglipCUDA_real
+[S4 G-S3a siglip real] gemma3_preprocess_image.png    tower CUDA 18.149s, CPU 23.567s (exploratory)
+[S4 G-S3a siglip] gemma-3-4b-it gemma3_preprocess_image.png: worst token cosine 0.999999968
+[S4 G-S3a siglip real] qwen25vl_preprocess_image.png  tower CUDA 17.981s, CPU 28.006s (exploratory)
+[S4 G-S3a siglip] gemma-3-4b-it qwen25vl_preprocess_image.png: worst token cosine 0.999999968
+[S4 G-S3a siglip real] glm_ocr/formula.png            tower CUDA 17.986s, CPU 21.872s (exploratory)
+[S4 G-S3a siglip] gemma-3-4b-it glm_ocr/formula.png: worst token cosine 0.999996014
+[S4 G-S3a siglip real] glm_ocr/table.png              tower CUDA 17.996s, CPU 20.378s (exploratory)
+[S4 G-S3a siglip] gemma-3-4b-it glm_ocr/table.png: worst token cosine 0.999999927
+--- PASS: TestSiglipCUDA_real (169.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	169.336s
