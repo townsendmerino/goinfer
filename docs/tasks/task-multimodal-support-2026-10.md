@@ -3286,6 +3286,29 @@ at `9561da9a`, with one more cell. Night queue `s7-nobara-3`, estimated 12 minut
 - **What would be a regression:** any cell whose serve log reads a decode path other than `cuda-resident`, or a CPU tower where the second read had a CUDA one. It is root-caused before any further work.
 - **Not a gate** beyond the 5 s bar per cell; a record that ranks what is left.
 
+#### S10 on CUDA: Qwen3-VL's tower with DeepStack (G-S10f) and its resident DeepStack prefill (G-S10g), registered 2026-10-08 before any code (nobara)
+
+CUDA's twin of the Mac's G-S10e (the tower) and S16 step 2 (the prefill).
+- **Today, measured by day (exploratory, untimed, serve `9561da9a`, Qwen3-VL-2B at defaults on the 8 GB card, a 23 KB image, 801 prompt tokens):** the decoder is `cuda-resident` (3 KV slots at context 6744). The first image logs `vision: the Qwen3.5 tower runs on the CPU:
+  cuda declined it: the cuda tower cannot tap the DeepStack blocks` and `encoded a 23028-byte image in 14.223s`. The turn then prefills on the CPU and uploads, because CUDA's resident m-RoPE prefill does not implement `decoder.ResidentMRoPEDeepstackPrefill`. The replies are sensible ("This image displays a smooth,"). The startup
+  banner says `tower (CUDA) loads on first image`, which is the plan and not what then happens.
+- **Part A, the tower (G-S10f).** `HiddenTaps` on CUDA's grid tower (`multimodal.GridTowerTapper`): the residual after each DeepStack block (`enc.Cfg.DeepstackVisualIndexes`), read by finishing the queue and downloading it at that block; aikit's host tails make the merged rows and the sets.
+  - **Bar:** G-S10e's. The merged rows and each DeepStack set at worst-row cosine >= 0.9999 against aikit's CPU `ForwardDeepstack` (0.999-0.9999 parked), on the tiny DeepStack tower (`testdata/qwen3vl-vision-tiny`, norms randomised, two grid sets) and on Qwen3-VL-2B's four F2a images at serve's cap (heavy).
+  - **Planted defects, each alone red on the tiny tower, a refusal counting as a failure:** (1) every tap one block late (the tiny tower has three blocks so the late taps stay inside it); (2) the taps handed back in reverse order.
+  - **Served (G-S10d on CUDA):** `--backend cuda` at defaults against `-vision-device cpu`, one image request, 32 greedy tokens with top-3 logprobs: identical replies, or a first divergence at a near-tie (p(other) at least half p(top)); the CPU arm repeated for determinism; the CUDA arm's log must not contain
+    `runs on the CPU`.
+  - **Speed (night, a record):** the tower per image on the 2B's four images, CUDA against the CPU tower, interleaved under the timing lock, host tails reported apart.
+  - **Prediction, with its arithmetic:** the 800-token image is 3,200 patches. GEMMs: 24 blocks x 2 x 3,200 x 12 x 1024^2 is about 1.9 TFLOP, 0.5-0.6 s at the 3.5 TFLOPS the other towers reach; the fused attention about 1.0 TFLOP, 0.4-0.6 s; the host tails (four mergers, about 40 GFLOP each on the CPU) 1-2 s. So **1.5-4.0 s a
+    new image, against the CPU tower's 14.2 s.** **Kill line:** over 4 s re-opens the plan with a profile (S17 step 0's tool) and does not tune.
+- **Part B, the resident prefill (G-S10g).** `PrefillMRoPEDeepstackLast` on CUDA's resident (`decoder.ResidentMRoPEDeepstackPrefill`): after layer l, set l is added to the image rows of the residual, prefill only, as `addDeepstack` does on the CPU. Until it exists the DeepStack turn keeps the CPU prefill and the upload, correctly and slowly.
+  - **Tiny, against the CPU prefill + upload path (S16's G-S16a):** last-row logits and the next 8 decode steps at cosine >= 0.9999 per row with an equal argmax, on `qwen3vl-tiny` and a synthetic image with random features and sets (0.999-0.9999 parked).
+  - **Planted defects (S16's 4-6), each alone red:** the sets not added; added one layer late; added to the text rows too.
+  - **Real (S16's re-registered bar, which exists because the strict one was tighter than the shipped batched prefill's own distance from the CPU's):** Qwen3-VL-2B, the four F2a images: the image turn's worst per-step cosine at least the same-length text-only control's minimum (four prompts per length) minus 0.005, every argmax
+    difference a near-tie; 0.005-0.015 below parked; worse fails. Then served, resident prefill on against off, one binary: identical replies or a near-tie first divergence, `ImgPrefillResident` true.
+  - **It turns on in production only if the real gate passes,** as on Metal.
+  - **Speed (night):** the S7 Qwen3-VL-2B cell, before and after, tower time reported apart. No prediction written until Part A's split of one image turn (tower, CPU prefill, upload, first decode) is measured; it will be added here before Part B's speed run.
+- **Order:** A first (it removes the 14 s), measured, then B.
+
 ## Order of work (owner, 2026-10-07 evening; replaces the morning order)
 
 1. **In flight, finish:**
