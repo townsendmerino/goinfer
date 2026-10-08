@@ -1611,6 +1611,29 @@ It replaces the scattered and stale figures above: the 31 s, 29 s and 4.1 s, and
   end on all three engines. Ollama's fresh-image TTFT read about 5 s, where r12's resent image read 0.4 s, which fits
   the cache-hit reading.
 
+#### S7 and S13-lite, the nobara half, registered 2026-10-07 evening before they run
+
+The instrument, the media, the prompts, the 5 s bar and the reading are the Mac half's, unchanged (`vision_ttft.py`: a fresh image or clip per request, warm-up included; TTFT to the first content delta; usable when the median of
+the three timed requests is under 5.0 s). What differs is the box: the RTX 2070 SUPER (8 GB, driver 595.91.07), `--backend cuda`, serve's defaults and nothing else.
+
+- **S7, nobara** (`run-s7-nobara.sh`, night queue `s7-nobara`, estimated 60 min, one warm-up and three timed requests per cell):
+  - **The cells:** Gemma 3 4B, Gemma 4 E2B (image, and audio), Qwen2.5-VL-3B, Qwen3.5-0.8B, Qwen3-VL-2B, GLM-OCR. Gemma 4 E4B is not run (no checkpoint on this box).
+  - **The binary:** `serve-cuda` built from `main` at `575b4a8c` with the released aikit v1.59.0 pins, pinned in `~/goinfer-bench/s7n/`.
+  - **What the defaults do, found by a by-day look, not a measurement:** Gemma 3 4B's default plan fails the resident build on this card (`CUDA_ERROR_OUT_OF_MEMORY` after the four KV slots), so its decoder runs on
+    the CPU while the int8 tower loads on CUDA: S18's gap, as recorded. That cell therefore reads a CPU-decoder TTFT, and is a reading of the shipped default, not of what the card can do (a hand-set
+    `--kv-sessions 1` cell is S18's G-S18a comparison, not this one). Every cell records the decode path and where the tower ran from serve's own log lines.
+  - **Reading:** a record. Its gaps rank S16-S18, and S17's CUDA half has its first number already (the float32 SigLIP tower, 18 s per image; the int8 one 4 s).
+- **S13-lite, nobara** (`run-s13lite-nobara.sh`, night queue `s13lite-nobara`, estimated 45 min): Gemma 3 4B, CUDA, every engine at its defaults, a new image every request, three rounds with the engine order
+  rotated each round (one server at a time; two 4B servers do not fit the 8 GB card).
+  - **The engines:** goinfer as above, `~/models/gemma-3-4b-it` (int4 at load); **Ollama 0.32.5**, `gemma3:4b`, **model blob `sha256:aeda25e63ebd6`, the same blob the Mac's cell reads** (pulled to `~/ollama-0325/models`
+    2026-10-07), its own server on 11535.
+  - **llama.cpp is not run on this box, and that is stated here rather than dropped:** there is no `cmake` and no `nvcc` (the CUDA toolkit here has `cuobjdump` and `nvdisasm` only) and no `llama-server` build, and a CUDA build
+    needs a package install that is the owner's to make. The script refuses to run unless `S13_NO_LLAMA=1` is passed, so the missing arm is a stated choice, and adds llama.cpp as the third engine if `LLAMA=` points at a
+    CUDA build with the Mac's GGUF and mmproj. The Mac's llama.cpp cell stands alone for that peer until then.
+  - **The reading:** the median of the nine timed TTFTs per engine against the 5 s bar, and goinfer's ratio to Ollama. Reported, not gated.
+- **By-day smokes of the harness on this box (18:50 PDT, exploratory and not quotable):** one goinfer cell (Qwen3.5-0.8B, TTFT 3.6 s on a fresh image) and the Ollama arm (`gemma3:4b`, 1.6 s on a fresh image, 7.9 s on its
+  first request) both ran end to end through `vision_ttft.py` under the timing lock.
+
 ### S8 — The support table in the README, kept true
 
 - **The README** gains a short "Images and audio" section: one compact table (family by backend, a check or "CPU"),
