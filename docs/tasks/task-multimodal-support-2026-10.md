@@ -1211,6 +1211,30 @@ Part A is the text-prompt path (`PrefillLast`, `PrefillLastN`, `HiddenLast`, `Re
   - **Not done:** part B (the Gemma 4 image turn, still CPU prefill plus `UploadKV`); an E-model fidelity gate for the fast levers; E4B (no checkpoint); the Metal half of S9 (the Mac's); `gate gpu` over this tree
     (tonight's queue has it); the commits are local.
 
+#### S9 on CUDA, part B (the Gemma 4 E-model image turn) — plan registered 2026-10-07 on nobara, before any code
+
+Today `GenerateGemma4VL` prefills an E-model image turn on the CPU, token by token (E2B/E4B ship `use_bidirectional_attention=""`, so the image block is attended causally and the sequential walk IS the
+reference forward), then uploads the KV of the owning layers (`residentUploadPrefill`). Part A made the resident's batched pass carry an E-model row, so a causal image turn is a text-like prefill with
+different rows.
+
+- **What changes** (`decoder/generate_gemma4_vl.go`, a decoder helper, one test hook; no backend code): for an E-model with a causal image block, when the resident is a `Prefiller` and batched prefill is not
+  knob-disabled, `GenerateGemma4VL` builds the prompt's resident rows `[hidden || L*P]` (text rows exactly as `embedResident` builds them; an image row's hidden part is the projected feature as-is, no embed scale, and
+  its tail is `gemma4PLEInputs(feature, PadTokenID)`: the pad token's identity term, as `prefillLogitsGemma4VL` passes `padID`), takes the logits from `PrefillLast(ctx, rows, 0)`, and decodes resident from
+  `len(ids)`. The CPU prefill, the CPU cache and the upload bridge are skipped on that path. **Any decline or error other than a cancel falls through to today's CPU prefill + upload, unchanged** (a backend
+  without a batched E-model prefill, a prompt past the context cap). The bidirectional class (26B/31B, `"vision"`) is untouched.
+- **Gates (written before the code):**
+  - **G1q, the image turn's batched resident logits against the CPU reference.** On the tiny E-model with synthetic features, three layouts (image at the start, in the middle, at the end of the prompt), the last
+    position's logits from `PrefillLast` on the built rows against `prefillLogitsGemma4VL`'s (the CPU forward, via a test hook): G1c's rule (argmax identical or a near-tie within 3%; cosine at least the CPU's own int4-vs-f32
+    cosine at the same position). Plus the batched rows against the SAME resident's sequential per-row forward: bit-identical last-row logits and bit-identical decode afterwards. Non-vacuity as in G1p.
+  - **G2q, planted defects in the new row builder, each alone must turn G1q red:** (1) an image row's tail built from the placeholder token's id instead of the pad id; (2) the image feature multiplied by the embed scale;
+    (3) an image row's tail zero. Plus: a mutant that builds image rows as text rows (the placeholder ids' embedding), shown red.
+  - **G3q, served, real `gemma-4-E2B_q4_0-it.gguf` on CUDA, the `testdata` table image used by S4:** the image turn with prefill resident (the new binary) against the same turn on the pre-change `main` build (CPU prefill + upload);
+    reply identical or first different token a near-tie under the registered rule; the startup/log lines must show the resident prefill ran (a log line is added for it, named in the test). Run with the tower on the CPU and
+    with it on CUDA (the s2-towers code, now on main).
+- **Speed (night; exploratory by day):** image-turn time to first token, new against the pre-change build, same tower placement, interleaved rounds, under the timing lock. **Kill rule:** if the resident-prefill turn is not
+  faster than the CPU-prefill turn at the default image budget, the path is removed. No other bar.
+- **Day / night:** code + G1q + G2q about 10 minutes; G3q about 6; speed record queued.
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
