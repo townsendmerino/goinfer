@@ -69,7 +69,7 @@ The last phase puts the answer where users look first, the README, with a check 
   - The Gemma 4 E2B tower on CUDA: 2.3 s encode.
   - Qwen3.5-0.8B's Metal tower: 1.2 s on an 896x896 image.
 - **Over it:**
-  - Gemma 4 E2B image turn on Metal: TTFT 10.24 s on S9's pass against 14.67 s before (1.43x, the night record; a ~512-token text prompt reads 0.98x, parked for the owner).
+  - Gemma 4 E2B image turn on Metal: TTFT 10.24 s on S9's pass against 14.67 s before (1.43x, the night record; a ~512-token text prompt reads 0.98x; the owner keeps the pass everywhere, 2026-10-08).
   - Gemma 3's Metal tower: 9.2-9.6 s, about 2.8x its 26 s CPU tower.
   - Qwen2.5-VL's Metal tower: 8.9-15.1 s on the large images.
   - Qwen3-VL-2B served on Metal: 19.2 s per request.
@@ -1870,6 +1870,28 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
     - keep the pass for media turns and decline it for text-only E-model prompts, until S9 step 2 (an f16-MMA E-model
       pass) replaces the text route; or
     - keep it everywhere, or turn it off everywhere.
+  - **Owner, 2026-10-08: keep it everywhere.**
+
+- **Owner decisions on this night, 2026-10-08:**
+  - **S9: keep the pass everywhere.** The text prompt's 0.98x does not turn it off. The image turn's 1.43x and the text
+    prompt's 0.98x are recorded as they read.
+  - **S3: queue what the follow-ups need** (below).
+- **S3 follow-ups, registered 2026-10-08 before they run** (`run-s3-followup-night.sh`, night queue `s3-followup`):
+  - **Phase 2, fixed and re-run.** Two fixes in `decoder/gemma3_tower_sensitivity_real_test.go`:
+    - **The logits copy** (above).
+    - **Serve's own prompt encoding:** template segments, the block spliced in as a Special segment, `EncodeSegments`.
+      The hand-written string merged the template's "\n" with the block's "\n\n" into one token: 277 tokens against
+      serve's 278, found 2026-10-08 by encoding both with the tokenizer alone. That is why its greedy path was not
+      serve's.
+    - **Its reference must reproduce G-S3b's served CPU-tower reply on the same decoder** (the day run's `metal:cpu`
+      arm, which decoded `cpu (int4)` with Metal's layout:
+      `docs/measurements/multimodal-support-2026-10/s3-gs3b/gs3c-reply-gemma-3-4b-it-metal.txt`), or the step is VOID.
+    - **The reading is the registered one:** the Metal arm inside the three noise arms (KL and first argmax change)
+      means the decoder's sensitivity, not a tower defect.
+  - **G-S3b's CPU-tower repeat:** two `metal:cpu` arms on the night's `serve-metal` (`0c66b18b`), with a 30 s settle
+    between arms (`GS3C_SETTLE`). Both arms must decode `metal-resident`, or the pair is VOID. PASS: byte-identical
+    replies and log-probabilities.
+  - **Cost:** about 15 minutes, queued at 20.
 
 ### S9 — Batched E-model prefill on Metal and CUDA, image turns included
 

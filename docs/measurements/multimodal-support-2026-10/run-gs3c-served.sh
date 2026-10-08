@@ -12,6 +12,8 @@
 #   (G-S3b: =metal:cpu,metal:auto); a repeated arm runs again as a control (its files get a numeric suffix).
 # Example (nobara): run-gs3c-served.sh ~/goinfer-bench/s3/serve-cuda ~/goinfer-logs/s3c-cuda cuda,=cpu,cpu \
 #                     ~/models/qwen25vl-3b-instruct ~/models/gemma-3-4b-it
+# GS3C_SETTLE is the seconds to wait after an arm's server exits (default 2). The 2026-10-07 night's second resident arm,
+# started 2 s after the first exited, found its memory not yet back and fell to the CPU decoder; 30 s is the follow-up's.
 # GS3C_EXTRA adds serve flags to EVERY arm (e.g. "--kv-sessions 1" so a 4B model fits the 8 GB card; added 2026-10-07 by nobara).
 # Run from the repo root (it reads testdata/). Checkpoints come from ~/models, never the archive.
 set -euo pipefail
@@ -74,7 +76,7 @@ json.dump((c.get('logprobs') or {}).get('content') or [], open(f'{out}/gs3c-logp
 print(f'  {lab} ({time.time() - t:.1f}s): {c["message"]["content"][:150]!r}')
 EOF
     trap - ERR EXIT
-    kill $pid; wait $pid 2>/dev/null || true; sleep 2
+    kill $pid; wait $pid 2>/dev/null || true; sleep "${GS3C_SETTLE:-2}"
   done
   python3 - "$OUT" "$fam" "$refidx" "${labels[@]}" <<'EOF'
 import json, math, sys
