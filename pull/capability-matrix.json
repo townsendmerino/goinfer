@@ -992,6 +992,30 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "voxtral",
+    "model_types": [
+      "voxtral"
+    ],
+    "display_name": "Voxtral",
+    "description": "Mistral Voxtral Mini 3B: a Llama decoder (tensors under language_model.*, head_dim 128) fed by a Whisper-style audio tower, four-frame stacking and a two-linear projector",
+    "summary": "Mistral's Voxtral Mini 3B, speech understanding and transcription. Not yet served, and checked against transformers on a tiny checkpoint only: the real Voxtral Mini is not yet verified.",
+    "tasks": [
+      "audio"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ audio encoder)",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+  },
+  {
     "name": "gpt-oss",
     "model_types": [
       "gpt_oss"

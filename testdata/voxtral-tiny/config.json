@@ -1,0 +1,57 @@
+{
+  "architectures": [
+    "VoxtralForConditionalGeneration"
+  ],
+  "audio_config": {
+    "activation_dropout": 0.0,
+    "activation_function": "gelu",
+    "attention_dropout": 0.0,
+    "dropout": 0.0,
+    "head_dim": 16,
+    "hidden_size": 32,
+    "initializer_range": 0.02,
+    "intermediate_size": 128,
+    "layerdrop": 0.0,
+    "max_source_positions": 1500,
+    "model_type": "voxtral_encoder",
+    "num_attention_heads": 2,
+    "num_hidden_layers": 2,
+    "num_key_value_heads": 2,
+    "num_mel_bins": 128,
+    "scale_embedding": false,
+    "vocab_size": 160
+  },
+  "audio_token_id": 24,
+  "dtype": "float32",
+  "hidden_size": 48,
+  "model_type": "voxtral",
+  "projector_hidden_act": "gelu",
+  "text_config": {
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "bos_token_id": 1,
+    "eos_token_id": 2,
+    "head_dim": 16,
+    "hidden_act": "silu",
+    "hidden_size": 48,
+    "initializer_range": 0.02,
+    "intermediate_size": 96,
+    "max_position_embeddings": 4096,
+    "mlp_bias": false,
+    "model_type": "llama",
+    "num_attention_heads": 4,
+    "num_hidden_layers": 2,
+    "num_key_value_heads": 2,
+    "pad_token_id": null,
+    "pretraining_tp": 1,
+    "rms_norm_eps": 1e-05,
+    "rope_parameters": {
+      "rope_theta": 100000000.0,
+      "rope_type": "default"
+    },
+    "tie_word_embeddings": false,
+    "use_cache": true,
+    "vocab_size": 160
+  },
+  "transformers_version": "5.15.0"
+}

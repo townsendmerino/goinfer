@@ -76,6 +76,7 @@ var censusList = []string{
 	"../testdata/gemma4-moe-unified-tiny", "../testdata/glm-tiny-bias",
 	"../testdata/glm-tiny.gguf", "../testdata/qwen25vl-tiny", "testdata/qwen3_5_moe-tiny",
 	"../testdata/qwen3asr-tiny", // S14.3: Qwen3-ASR's decoder in the real checkpoint layout (thinker.*, nested config)
+	"../testdata/voxtral-tiny",  // S14.4b: Voxtral's text decoder in the real checkpoint layout (language_model.*, nested text_config, untied head, head_dim != hidden/heads)
 	// llama-tiny (2026-09-02): the plain `llama` arch had NO fixture anywhere in the tree, only
 	// goldens — so the census round-tripped 21 families without ever touching the most common
 	// architecture in the ecosystem, and a required parity gate's family at that. The only

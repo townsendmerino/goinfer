@@ -27,6 +27,7 @@ var registry = map[string]archAdapter{
 	"qwen3":               qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":               qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
+	"voxtral":             voxtralArchitecture,    // Voxtral Mini's text decoder: exactly Llama (nested text_config, tensors under language_model.*, head_dim 128 != hidden/heads); the audio tower and projector are aikit/audio.VoxtralAudio
 	"qwen3_asr":           qwen3_asrArchitecture,  // Qwen3-ASR's text decoder: exactly Qwen3 (nested thinker_config.text_config, tensors under thinker.*); the audio encoder is aikit/audio
 	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters; no vision, no DeepStack — P8 Phase 0)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
@@ -1684,6 +1685,18 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	arch.Name = "qwen3_vl"
 	arch.MRopeSection = section
 	arch.MRopeInterleaved = true
+	return arch, schema, nil
+}
+
+// voxtralArchitecture expresses Voxtral Mini's text decoder: Llama dense (GQA 32/8, an explicit head_dim of 128 that is NOT hidden/heads = 96, rope_theta 1e8, untied head), whose config
+// nests it under text_config and whose tensors sit under language_model.* (the Gemma 3 VL layout the weights loader already strips). The audio tower and projector are
+// aikit/audio.VoxtralAudio; the soft-token splice is Model.GenerateAudio.
+func voxtralArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	arch, schema, err := llamaArchitecture(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	arch.Name = "voxtral"
 	return arch, schema, nil
 }
 

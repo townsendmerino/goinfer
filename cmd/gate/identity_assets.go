@@ -94,6 +94,7 @@ var identityTiny = []identityAsset{
 var identityNoTiny = map[string]string{
 	"deepseek_v2": "no deepseek_v2 tiny fixture (deepseek-tiny is model_type deepseek_v3; v2's gate is the real V2-Lite)",
 	"qwen3_asr":   "its tiny checkpoint (testdata/qwen3asr-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this tool reads; its gates are decoder TestQwen3ASR_tiny*",
+	"voxtral":     "its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this tool reads; its gates are decoder TestVoxtral_tiny*",
 }
 
 // identityReal: small real checkpoints under the models dir (~/models). Never /Volumes or /srv/models:

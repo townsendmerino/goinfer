@@ -930,9 +930,11 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 	// LM head: separate tensor when the family/checkpoint is untied, else the
 	// tied embedding serves as the head. Determined by tensor presence so a
 	// checkpoint that ties despite its family default still loads.
+	// The head sits under the checkpoint's top-level prefix like every other tensor (Voxtral: language_model.lm_head.weight, untied): looked up bare it is never found and the embedding silently
+	// becomes the head (found by G-S14e2's text gate: logit cosine 0.15 against transformers; the families with a prefix and a head, Gemma 3 VL and Qwen3-ASR, both tie it).
 	arch.TiedLMHead = true
 	if s.LMHead != "" {
-		if head, herr := embedTable(s.LMHead, cfg.VocabSize); herr == nil {
+		if head, herr := embedTable(topPrefix+s.LMHead, cfg.VocabSize); herr == nil {
 			w.LMHead = head
 			arch.TiedLMHead = false
 		}

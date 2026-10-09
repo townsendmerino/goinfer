@@ -45,6 +45,8 @@ var parityGates = []gateCheck{
 	{"qwen3", "TestQwen3_forwardParity"},
 	{"qwen3_asr-text", "TestQwen3ASR_tinyTextParity"},               // 2026-10-08: Qwen3-ASR's decoder from the checkpoint's own layout, against transformers
 	{"qwen3_asr-composition", "TestQwen3ASR_tinyCompositionParity"}, // audio samples -> front end -> encoder -> splice -> decoder, against transformers
+	{"voxtral-text", "TestVoxtral_tinyTextParity"},                  // 2026-10-09: Voxtral's Llama decoder from the checkpoint's own layout (language_model.*, untied head, head_dim != hidden/heads), against transformers
+	{"voxtral-composition", "TestVoxtral_tinyCompositionParity"},    // audio samples -> whole-signal front end -> tower -> stacking -> projector -> splice -> decoder, on 1 and 2 windows, against transformers
 	{"qwen3-gguf", "TestGGUF_qwen3_parity"},
 	{"qwen2moe", "TestQwen2Moe_forwardParity"},
 	{"qwen3moe", "TestQwen3Moe_forwardParity"},

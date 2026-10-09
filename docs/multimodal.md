@@ -807,7 +807,7 @@ number is published without provenance.
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
      generic attention makes (`decoder/attention.go:157`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`decoder/registry.go:1684`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:1685`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`

@@ -143,6 +143,13 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-6, RoPEGlobalBase: 1000000,
 			HiddenAct: "silu",
 		}
+	case "voxtral":
+		// Voxtral's text decoder is plain Llama (nested text_config, tensors under language_model.*); the audio tower and projector are aikit's. head_dim differs from hidden/heads on purpose.
+		return &Config{
+			ModelType: "voxtral", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 8, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 100000000,
+			HiddenAct: "silu",
+		}
 	case "qwen2_moe":
 		return &Config{
 			ModelType: "qwen2_moe", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -535,6 +542,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen2_5_vl":          {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
 	"qwen3_vl":            {"Qwen3-VL", "Qwen3-VL (qwen3 + interleaved m-RoPE; the vision tower, with DeepStack injection into the first decoder layers)", "safetensors", "text (+ vision tower)"},
 	"qwen3_asr":           {"Qwen3-ASR", "Qwen3-ASR speech to text: a Qwen3 decoder (tensors under thinker.*) fed by an audio encoder (three strided Conv2d, windowed attention, a projector)", "safetensors", "text (+ audio encoder)"},
+	"voxtral":             {"Voxtral", "Mistral Voxtral Mini 3B: a Llama decoder (tensors under language_model.*, head_dim 128) fed by a Whisper-style audio tower, four-frame stacking and a two-linear projector", "safetensors", "text (+ audio encoder)"},
 	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
 	"qwen3_moe":           {"Qwen3-MoE", "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
@@ -629,6 +637,7 @@ var siteDocs = map[string]siteDoc{
 	"qwen3_moe":        {"Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.", []string{"chat", "code"}},
 	"qwen3_vl":         {"Qwen3-VL. Reads images (verified on Qwen3-VL-2B).", []string{"chat", "vision"}},
 	"qwen3_asr":        {"Qwen3-ASR, speech to text in 30 languages (0.6B and 1.7B). Reads audio (verified on Qwen3-ASR-0.6B).", []string{"audio"}},
+	"voxtral":          {"Mistral's Voxtral Mini 3B, speech understanding and transcription. Not yet served, and checked against transformers on a tiny checkpoint only: the real Voxtral Mini is not yet verified.", []string{"audio"}},
 	"smollm3":          {"Hugging Face's SmolLM3, 3B.", []string{"chat"}},
 	"spark2_5":         {"XHToken's Spark-X2.5, 1.7B and 4B.", []string{"chat"}},
 	"gpt-oss":          {"OpenAI's open-weight gpt-oss, 20B and 120B.", []string{"chat"}},

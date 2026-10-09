@@ -22,7 +22,7 @@ piece it worried about is already handled:
 |---|---|---|
 | config nesting | `text_config` | flattened at `decoder/config.go:1426` |
 | weight prefix | `model.language_model.*` | detected at `decoder/weights.go:745` |
-| DeltaNet tensors | `in_proj_qkv` / `_z` / `_a` / `_b`, `A_log`, `conv1d`, `dt_bias` | the separate-tensor branch, `decoder/weights.go:1408` |
+| DeltaNet tensors | `in_proj_qkv` / `_z` / `_a` / `_b`, `A_log`, `conv1d`, `dt_bias` | the separate-tensor branch, `decoder/weights.go:1410` |
 | layer pattern | `DDDSDDDSDDDSDDDSDDDSDDDS` — 18 DeltaNet + 6 softmax | the 3:1 hybrid this adapter was built for |
 | ignored cleanly | `model.visual.*` (153 tensors), `mtp.*` (15) | loaded text-only without complaint |
 

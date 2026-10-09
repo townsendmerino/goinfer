@@ -51,6 +51,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3.8 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | SmolLM3 | ✅ | CPU | ✅ resident | ✅ resident |
 | Spark-X2.5 | ✅ | CPU | CPU | CPU |
+| Voxtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | gpt-oss | ✅ | ✅ resident | ✅ resident | ✅ resident |
 
 Resident acceleration above is CAPABILITY (does the backend implement the family's
