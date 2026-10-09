@@ -2218,6 +2218,57 @@ different rows.
 
 
 
+- **The Mac night of 2026-10-08, graded 2026-10-09** (the runner started 22:16, ended 23:48; 6 of 10 jobs ok; raw logs in
+  `~/goinfer-logs/night/runs/2026-10-08/`, archived into this campaign's measurements as noted per job).
+  - **S9 step 2, the night speed rule: SHIP.**
+    - **Text cell:** text-prompt TTFT 10.991 s (layer-major) against 1.565 s (batched), medians. The five per-pass
+      ratios are 7.418 / 6.841 / 7.046 / 7.038 / 7.004, median **7.04x** against the 1.02 bar.
+    - **Not void:** the batched arm's ran line is in all five server logs. Binaries: `79631cb7` (lm) and `90de0779`
+      (`s9b-night-on`).
+    - **The image cell, a record:** 10.223 s against 5.603 s, **1.82x**, under the 2.4-2.9x projection band. Both
+      arms run the tower on the CPU (`-vision-device cpu`, about 4.5 s), which the band's 6.4 s baseline (S7's,
+      tower on Metal) did not include. The prefill itself fell from about 5.7 s to about 1.1 s.
+    - **So `emodelBatchedOn` goes on** (G-S9c and G-S9d passed by day).
+  - **S7 and S13-lite on levers A and A+B, records against the 5 s bar** (serve-metal `92c30640` = A,
+    `e2910316` = A+B; the 2026-10-07 night is the baseline):
+
+    | cell | 10-07 | lever A | levers A+B |
+    |---|---|---|---|
+    | Gemma 3 4B (S7) | not loaded (fit guard) | not loaded (fit guard, at that minute) | 6.50 s |
+    | Gemma 4 E2B, image | 6.20 s | 6.24 s | 6.17 s |
+    | Gemma 4 E2B, audio | 3.20 s | 3.23 s | 3.14 s |
+    | Qwen3.5-0.8B | 4.48 s | 4.03 s | 3.94 s |
+    | Qwen3-VL-2B | 8.97 s | 7.74 s | 7.30 s |
+    | GLM-OCR | 8.32 s | 6.40 s | 5.30 s |
+    | Qwen2.5-VL-3B | 21.67 s | 20.50 s | 17.72 s |
+    | **S13-lite, Gemma 3 4B: goinfer** | 12.81 s | 7.79 s | **6.60 s** |
+    | S13-lite: Ollama / llama.cpp | 4.97 / 4.68 s | 4.97 / 4.70 s | 4.97 / 4.69 s |
+
+    - The towers' levers show up where the tower dominates: GLM-OCR -36%, Qwen3-VL -19%, Gemma 3 -48% in S13-lite.
+    - E2B's image cell does not move, because its time is the prefill (S9 step 2's, above).
+    - Qwen2.5-VL is still the prefill: these binaries predate S16, whose own speed record below takes it to 5.73 s.
+    - Two cells under the bar, as before.
+  - **S16 (`s16-night`): the served gate PASS on both models; the real gate VOID (memory); speed a record.**
+    - **G-S16c served:** today's path against S16, both Metal arms. **IDENTICAL replies** on Qwen2.5-VL-3B and on
+      Qwen3-VL-2B.
+    - **Speed** (image-turn TTFT, `vision_ttft.py`, 9 timed each, rotated):
+      - Qwen2.5-VL-3B: 19.46 s today against **5.73 s** S16 (3.4x);
+      - Qwen3-VL-2B: 8.25 s against **2.86 s** (2.9x, under the 5 s bar).
+    - **G-S16c real: VOID, not FAIL.** Neither model went Metal-resident in the test process. Qwen2.5-VL's resident
+      build needed 3.77 GB against a live budget of 2.80 GB, and Qwen3-VL's load saw 3.2 GB available. No
+      comparison ran.
+  - **VOID on memory** (the load-time fit guard, with 6.7-7.4 GB available all night):
+    - **`s3-followup`:** at `1be0c274`, before directory sidecars. Phase 2's test loads Gemma 3 4B's directory in the
+      heap ("needs ~5.6 GB ... + 0.6 GB KV", budget 4.8 GB), and the G-S3b repeat's servers were refused the same
+      way.
+    - **`metal-q4k-gq`** (`docs/tasks/task-metal-q4k-2026-10.md`): G-Q2's Phi-3 load at q4k needs 4.0 GB + 0.4 GB
+      KV + 2.2 GB "reading the checkpoint", against 5.2 GB. G-Q3's serve was refused the same way, and its
+      automatic streaming retry has no q4k form. The reference arm ran (Qwen2.5-Coder-1.5B, 94.22%, 7/8).
+  - **`gs18g`: VOID by design error.** It served Gemma 3 4B from the ggml-org Q4_K_M GGUF, whose tokenizer has no
+    `<image_soft_token>`. All three servers loaded Metal-resident, then exited at the vision setup ("tokenizer has no
+    `<image_soft_token>` token"). The directory decoder, whose sidecar now exists, serves the same request: G-S18a's
+    two arms ran that way by day.
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).

@@ -29,9 +29,11 @@ type emRow struct {
 }
 
 // emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 step 2,
-// docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one. OFF until G-S9c and G-S9d pass and the
-// night speed grade clears 1.02x; with it off the layer-major pass keeps the route. Tests set it.
-var emodelBatchedOn = false
+// docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. ON
+// since 2026-10-09: G-S9c and G-S9d passed by day, and the night speed rule read 7.04x on a ~512-token text prompt
+// (10.99 -> 1.57 s TTFT, five passes 6.84-7.42x). Below the floor, on any decline, or with --exact-prefill, the
+// layer-major pass (bit-identical to sequential) keeps the route.
+var emodelBatchedOn = true
 
 // emodelBatchDefect is G-S9c's planted defects in the batched pass (0 in production): 1 a shared layer attends over an
 // empty cache, 2 the PLE block skipped, 3 each row's PLE inputs from the next row, 4 the layer scalar dropped, 5 v_norm

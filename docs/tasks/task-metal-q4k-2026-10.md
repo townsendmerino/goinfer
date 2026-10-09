@@ -160,3 +160,15 @@ either gate runs:
 - **What follows a PASS of both:** M1, the Phi-3 Metal peer cell, by an amendment to
   `docs/measurements/peer-vetted-2026-10-07-macbook.md`.
 
+
+- **The Mac night of 2026-10-08 (`metal-q4k-gq`, at `1d3ba518`): G-Q2 and G-Q3 VOID on memory, not graded.**
+  - **G-Q2:** the reference arm ran (Qwen2.5-Coder-1.5B through its int4 sidecar: 7/8 prompts pass the free-run rule,
+    teacher-forced 375/398 = 94.22%). Phi-3's load was refused by the load-time fit guard: "needs ~4.0 GB resident at
+    quant q4k + 0.4 GB KV + 2.2 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) =
+    6.6 GB", against 5.2 GB (70% of 7.4 GB available).
+  - **G-Q3:** the CPU arm's serve was refused the same way. Its automatic streaming retry has no q4k form ("--quant
+    q4k has no .giw form yet").
+  - **Why:** the Mac had 6.7-7.4 GB available all night with the owner's apps open. q4k has no sidecar, so Phi-3 at
+    q4k is a heap load, and the guard prices the mapped .gguf on top.
+  - **What would run it:** memory freed (apps closed), the guard bypassed for this job (the owner's call), or a q4k
+    .giw form.

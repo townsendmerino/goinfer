@@ -823,6 +823,10 @@ func (a *metalResident) PrefillPath() (bool, string) {
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a paged MoE)"
 	}
 	if a.emodelLayerMajor() {
+		if a.emodelBatched() && a.fastPrefill() {
+			floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+			return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens (a Gemma 4 E-model, S9 step 2); layer-major on decode's kernels below it (bit-identical to sequential)", floor)
+		}
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a Gemma 4 E-model, S9)"
 	}
 	if a.r.kvI8 {
