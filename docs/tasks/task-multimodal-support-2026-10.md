@@ -1901,6 +1901,27 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
     between arms (`GS3C_SETTLE`). Both arms must decode `metal-resident`, or the pair is VOID. PASS: byte-identical
     replies and log-probabilities.
   - **Cost:** about 15 minutes, queued at 20.
+- **S3 follow-ups, read 2026-10-09 by day: phase 2 PASS (the decoder's sensitivity, not a tower defect); G-S3b's
+  CPU-tower repeat PASS.** The night run was VOID on memory (above). Re-pinned by the owner to `c2891555` and run by
+  day; raw `s3-followup-2026-10-09/`.
+  - **A disclosed deviation:** the repeat's serve binary is built at `c2891555`, not the registered `0c66b18b`. That
+    older binary predates the directory sidecar, and its heap load was what the guard refused. Phase 2's test loads
+    Gemma 3 through its sidecar (`gemma-3-4b-it.int4.metal.giw`, the file serve's Metal load reads).
+  - **Phase 2: not VOID.** The reference path (CPU tower) reproduces the served reply exactly: "The image shows
+    quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total
+    for all regions."
+  - **The registered reading holds.** The Metal tower's arm sits inside the three noise arms:
+
+    | arm | KL mean (nats) | KL max | first argmax change |
+    |---|---|---|---|
+    | Metal tower | 0.0563 | 0.489 | step 10 |
+    | CPU tower + noise, seed 1 | 0.0661 | 0.484 | step 7 |
+    | CPU tower + noise, seed 2 | 0.0307 | 0.323 | step 7 |
+    | CPU tower + noise, seed 3 | 0.0462 | 0.558 | step 7 |
+
+    **So G-S3b's red was the decoder's sensitivity to the tower's float32-order differences, not a tower defect.**
+  - **G-S3b's CPU-tower repeat: PASS.** Both arms decoded `metal-resident (int4)` with a 30 s settle. Replies and
+    log-probabilities are byte-identical (`cmp`).
 
 ### S9 — Batched E-model prefill on Metal and CUDA, image turns included
 

@@ -1,0 +1,7 @@
+rev c2891555: decoder test sha256 2099df09380979ab; serve-metal c2891555 (sha256 da04d19effaa83bd)
+started: 2026-10-09 07:26:25 PDT
+ProductName:		macOS ProductVersion:		26.6.2 BuildVersion:		25G83 
+Now drawing from 'AC Power'
+total = 4096.00M  used = 2929.88M  free = 1166.12M  (encrypted)
+ 7:26  up 14 days, 21:21, 1 user, load averages: 1.45 2.88 3.97
+finished: 2026-10-09 07:29:06 PDT rc=0

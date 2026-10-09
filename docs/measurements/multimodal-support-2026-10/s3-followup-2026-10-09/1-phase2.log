@@ -1,0 +1,12 @@
+=== RUN   TestGemma3TowerSensitivity
+[g3] loading the decoder through its sidecar gemma-3-4b-it.int4.metal.giw
+decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu
+[g3] gemma-3-4b-it on metal: decode path cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]; 256 soft tokens
+[g3] reference (CPU tower) greedy: "The image shows quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total for all regions."
+[g3] the reference path reproduces the served reply (gs3c-reply-gemma-3-4b-it-metal.txt)
+[g3] Metal tower                KL mean 0.05631, max 0.48871 nats; first argmax change at step 10: reference " broken" p 0.485, this " presented" (reference p 0.404)
+[g3] CPU tower + noise, seed 1  KL mean 0.06609, max 0.48429 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3] CPU tower + noise, seed 2  KL mean 0.03069, max 0.32320 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+[g3] CPU tower + noise, seed 3  KL mean 0.04621, max 0.55751 nats; first argmax change at step 7: reference " by" p 0.499, this " broken" (reference p 0.437)
+--- PASS: TestGemma3TowerSensitivity (31.42s)
+PASS
