@@ -21,7 +21,8 @@ import (
 //	goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json
 //
 // goinfer-chat is in-process, so this runs the same pipeline goinfer-serve's GLM-OCR image route runs, minus the HTTP:
-// preprocess (the checkpoint's pixel budget, halved) -> the vision tower (f32, on the CPU) -> GenerateQwenVL, with the
+// preprocess (the checkpoint's pixel budget, halved) -> the vision tower (f32; on the backend's device tower when this binary has
+// one, as serve's planGridTower picks it, else the CPU) -> GenerateQwenVL, with the
 // image block spliced into the glm_ocr chat template as SPECIAL text (multimodal.SpliceImageBlock, the helper serve uses).
 // GLM-OCR is the only vision family goinfer-chat carries; goinfer-serve handles the others.
 //
@@ -39,6 +40,10 @@ type imageInput struct {
 	grid   [3]int
 	nImg   int
 	tower  *vision.GlmOcrVisionEncoder // loaded on first use
+	// device is the backend whose GLM-OCR tower runs the blocks (S2: "metal" or "cuda", when this binary registered one;
+	// towerDevice), "" for aikit's CPU tower. acc is that tower once built; nil runs on the CPU.
+	device string
+	acc    multimodal.GridTowerAccelerator
 	// towerTime is how long the tower took (load excluded), so the reply's tok/s can exclude it.
 	towerTime time.Duration
 }
@@ -104,7 +109,23 @@ func loadImageInput(dir, imagePath string, maxPixels int) (*imageInput, error) {
 	return &imageInput{raw: raw, dir: dir, pp: pp, pixels: pixels, grid: grid, nImg: multimodal.QwenMergedTokens(grid, pp.MergeSize)}, nil
 }
 
-// features runs the tower (f32, CPU) over the preprocessed image; loads it on first use.
+// towerDevice is the device a GLM-OCR tower runs on for a model loaded on backend: the backend itself when it is a GPU
+// backend this binary registered a GLM-OCR tower for, else "" (the CPU). serve's planGridTower makes the same choice.
+func towerDevice(backend string, registered []string) string {
+	if (backend == "metal" || backend == "cuda") && slices.Contains(registered, backend) {
+		return backend
+	}
+	return ""
+}
+
+// useBackend points the tower at backend's device tower when this binary has one (towerDevice).
+func (im *imageInput) useBackend(backend string) {
+	im.device = towerDevice(backend, multimodal.GlmOcrTowers())
+}
+
+// features runs the tower (f32) over the preprocessed image, on im.device's tower when it starts and the CPU otherwise;
+// loads it on first use. A device tower that declines, or fails on this image, falls back to the CPU with a note, as
+// serve's does without -require-backend.
 func (im *imageInput) features() ([]float32, error) {
 	if im.tower == nil {
 		progress("loading the GLM-OCR vision tower…")
@@ -113,10 +134,26 @@ func (im *imageInput) features() ([]float32, error) {
 			return nil, fmt.Errorf("load glm-ocr vision tower (%s): %w", im.dir, err)
 		}
 		im.tower = tw
+		if im.device != "" {
+			if im.acc, err = multimodal.NewGlmOcrTower(im.device, tw); err != nil {
+				progress(fmt.Sprintf("the GLM-OCR tower runs on the CPU: %s declined it: %v", im.device, err))
+				im.acc = nil
+			}
+		}
 	}
 	t0 := time.Now()
-	progress(fmt.Sprintf("reading the image: %d image tokens through the vision tower (CPU, f32: on an M1 Pro about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP; --vision-max-pixels lowers the budget)…", im.nImg))
-	feats, err := im.tower.Forward(im.pixels, [][3]int{im.grid})
+	if im.acc != nil {
+		progress(fmt.Sprintf("reading the image: %d image tokens through the vision tower (%s, f32)…", im.nImg, im.device))
+	} else {
+		progress(fmt.Sprintf("reading the image: %d image tokens through the vision tower (CPU, f32: on an M1 Pro about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP; --vision-max-pixels lowers the budget)…", im.nImg))
+	}
+	feats, err := multimodal.GlmOcrTowerFeatures(im.tower, im.acc, im.pixels, [][3]int{im.grid})
+	if err != nil && im.acc != nil {
+		progress(fmt.Sprintf("the %s GLM-OCR tower failed on this image (%v); running it on the CPU", im.device, err))
+		_ = im.acc.Close()
+		im.acc = nil
+		feats, err = multimodal.GlmOcrTowerFeatures(im.tower, nil, im.pixels, [][3]int{im.grid})
+	}
 	if err == nil {
 		im.towerTime = time.Since(t0)
 		progress(fmt.Sprintf("vision tower done in %s", im.towerTime.Round(time.Second)))

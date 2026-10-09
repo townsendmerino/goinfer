@@ -1,0 +1,69 @@
+=== RUN   TestZZQ25VLFixDiag
+decoder: context capped at 12667 (model allows 128000) so that KV fits: weights 3.6 GB + KV 0.9 GB of budget 4.4 GB — pass -ctx to choose, or -stream-weights to lift
+[cpu arm done]
+decoder: .giw context capped at 53285 (model allows 128000) so that KV+scratch fits: needs ~3.91 GB of 4.91 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[cpu arm done]
+decoder: .giw context capped at 41641 (model allows 128000) so that KV+scratch fits: needs ~3.11 GB of 4.11 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[cpu arm done]
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[02-one-forward-pass.md/512 k=0] vs E: F 0.9947 D 0.9936 B 0.9943 H 0.9943
+[02-one-forward-pass.md/512 k=1] vs E: F 0.9898 D 0.9896 B 0.9841 H 0.9877
+[02-one-forward-pass.md/512 k=2] vs E: F 0.9968 D 0.9965 B 0.9963 H 0.9956
+[02-one-forward-pass.md/512 k=3] vs E: F 0.9922 D 0.9925 B 0.9915 H 0.9901
+[02-one-forward-pass.md/512 k=4] vs E: F 0.9881 D 0.9904 B 0.9890 H 0.9901
+[02-one-forward-pass.md/512 k=5] vs E: F 0.9916 D 0.9807 B 0.9902 H 0.9880
+[02-one-forward-pass.md/512 k=6] vs E: F 0.9975 D 0.9967 B 0.9969 H 0.9969
+[02-one-forward-pass.md/512 k=7] vs E: F 0.9948 D 0.9945 B 0.9946 H 0.9946
+[02-one-forward-pass.md/512 k=8] vs E: F 0.9341 D 0.9602 B 0.9673 H 0.9575
+[02-one-forward-pass.md/1500 k=0] vs E: F 0.9917 D 0.9896 B 0.9914 H 0.9914
+[02-one-forward-pass.md/1500 k=1] vs E: F 0.9974 D 0.9950 B 0.9969 H 0.9965
+[02-one-forward-pass.md/1500 k=2] vs E: F 0.9964 D 0.9952 B 0.9961 H 0.9963
+[02-one-forward-pass.md/1500 k=3] vs E: F 0.9919 D 0.9890 B 0.9905 H 0.9924
+[02-one-forward-pass.md/1500 k=4] vs E: F 0.9958 D 0.9946 B 0.9952 H 0.9950
+[02-one-forward-pass.md/1500 k=5] vs E: F 0.9881 D 0.9846 B 0.9846 H 0.9873
+[02-one-forward-pass.md/1500 k=6] vs E: F 0.9957 D 0.9917 B 0.9936 H 0.9950
+[02-one-forward-pass.md/1500 k=7] vs E: F 0.9953 D 0.9930 B 0.9942 H 0.9940
+[02-one-forward-pass.md/1500 k=8] vs E: F 0.9941 D 0.9929 B 0.9927 H 0.9931
+[quantization.md/512 k=0] vs E: F 0.9606 D 0.9510 B 0.9768 H 0.9768
+[quantization.md/512 k=1] vs E: F 0.9912 D 0.9887 B 0.9919 H 0.9922
+[quantization.md/512 k=2] vs E: F 0.9778 D 0.9752 B 0.9753 H 0.9766
+[quantization.md/512 k=3] vs E: F 0.9627 D 0.9822 B 0.9722 H 0.9734
+[quantization.md/512 k=4] vs E: F 0.9578 D 0.9749 B 0.9708 H 0.9675
+[quantization.md/512 k=5] vs E: F 0.9959 D 0.9944 B 0.9953 H 0.9954
+[quantization.md/512 k=6] vs E: F 0.9749 D 0.9864 B 0.9713 H 0.9739
+[quantization.md/512 k=7] vs E: F 0.9904 D 0.9871 B 0.9868 H 0.9899
+[quantization.md/512 k=8] vs E: F 0.9934 D 0.9916 B 0.9934 H 0.9827
+[quantization.md/1500 k=0] vs E: F 0.9920 D 0.9872 B 0.9926 H 0.9926
+[quantization.md/1500 k=1] vs E: F 0.9832 D 0.9808 B 0.9831 H 0.9829
+[quantization.md/1500 k=2] vs E: F 0.9953 D 0.9945 B 0.9949 H 0.9952
+[quantization.md/1500 k=3] vs E: F 0.9901 D 0.9851 B 0.9891 H 0.9929
+[quantization.md/1500 k=4] vs E: F 0.8137 D 0.8698 B 0.7039 H 0.6928
+[quantization.md/1500 k=5] vs E: F 0.9875 D 0.9936 B 0.9809 H 0.9695
+[quantization.md/1500 k=6] vs E: F 0.9569 D 0.9672 B 0.9398 H 0.9564
+[quantization.md/1500 k=7] vs E: F 0.9864 D 0.9789 B 0.9798 H 0.9835
+[quantization.md/1500 k=8] vs E: F 0.9895 D 0.9871 B 0.9878 H 0.9865
+[README.md/512 k=0] vs E: F 0.9942 D 0.9856 B 0.9940 H 0.9940
+[README.md/512 k=1] vs E: F 0.9728 D 0.9539 B 0.9700 H 0.9647
+[README.md/512 k=2] vs E: F 0.9847 D 0.9815 B 0.9789 H 0.9821
+[README.md/512 k=3] vs E: F 0.9947 D 0.9893 B 0.9939 H 0.9941
+[README.md/512 k=4] vs E: F 0.9923 D 0.9886 B 0.9915 H 0.9924
+[README.md/512 k=5] vs E: F 0.9802 D 0.9710 B 0.9769 H 0.9753
+[README.md/512 k=6] vs E: F 0.9890 D 0.9862 B 0.9830 H 0.9876
+[README.md/512 k=7] vs E: F 0.9969 D 0.9937 B 0.9955 H 0.9963
+[README.md/512 k=8] vs E: F 0.9922 D 0.9869 B 0.9889 H 0.9887
+[README.md/1500 k=0] vs E: F 0.9955 D 0.9913 B 0.9941 H 0.9941
+[README.md/1500 k=1] vs E: F 0.9870 D 0.9792 B 0.9828 H 0.9823
+[README.md/1500 k=2] vs E: F 0.9922 D 0.9880 B 0.9918 H 0.9910
+[README.md/1500 k=3] vs E: F 0.9759 D 0.9595 B 0.9785 H 0.9781
+[README.md/1500 k=4] vs E: F 0.9911 D 0.9929 B 0.9949 H 0.9916
+[README.md/1500 k=5] vs E: F 0.9889 D 0.9813 B 0.9853 H 0.9838
+[README.md/1500 k=6] vs E: F 0.9939 D 0.9903 B 0.9920 H 0.9933
+[README.md/1500 k=7] vs E: F 0.9934 D 0.9883 B 0.9908 H 0.9916
+[README.md/1500 k=8] vs E: F 0.9948 D 0.9936 B 0.9949 H 0.9939
+[summary 54 steps] F: mean 0.9840 worst 0.8137 argmax==E 45
+[summary 54 steps] D: mean 0.9833 worst 0.8698 argmax==E 41
+[summary 54 steps] B: mean 0.9815 worst 0.7039 argmax==E 38
+[summary 54 steps] H: mean 0.9813 worst 0.6928 argmax==E 40
+--- PASS: TestZZQ25VLFixDiag (484.96s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	485.775s

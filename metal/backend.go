@@ -1044,13 +1044,13 @@ func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embedding
 // (Qwen2.5-VL; Qwen3.5+ is not claimed) and with them (Qwen3-VL). Off, an image turn takes the CPU prefill and the upload.
 //   - DeepStack (Qwen3-VL): ON since 2026-10-09 (owner). G-S16c real PASS through its sidecar on all four images over healthy
 //     text controls (0.87-0.95), the served comparison IDENTICAL, image-turn TTFT 8.25 -> 2.86 s (2.9x).
-//   - Without DeepStack (Qwen2.5-VL): OFF. It passed G-S16c and the served comparison (19.46 -> 5.73 s); it was held for a
-//     text control that fell to -0.36 against the CPU. That control's reference is W4A8 and is the less precise arm: the
-//     batched pass measured closest to an f64 truth (docs/tasks/task-metal-prefill-precision-2026-10.md, Step 0). Off until
-//     the owner re-registers the control against a non-W4A8 reference (docs/tasks/task-multimodal-support-2026-10.md).
+//   - Without DeepStack (Qwen2.5-VL): ON since 2026-10-09 (owner). G-S16c and the served comparison passed (19.46 -> 5.73
+//     s). It was held for a text control that fell to -0.36, but that control's reference was W4A8, the less precise arm
+//     (docs/completed/task-metal-prefill-precision-2026-10.md). Against non-W4A8 references the image turns read even
+//     with the CPU prefill (mean 0.948 against weight-only int8) and closer to the same weights (0.990 against 0.977).
 //
 // Tests set them.
-var metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, true
+var metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true
 
 func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep *prefillDeep) ([]float32, error) {
 	if e := ctx.Err(); e != nil {

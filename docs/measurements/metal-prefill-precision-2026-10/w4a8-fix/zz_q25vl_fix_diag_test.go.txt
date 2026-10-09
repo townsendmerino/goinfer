@@ -1,0 +1,174 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// Throwaway (W4A8 instability on Qwen2.5-VL, fix candidates): 8 teacher-forced decode steps, graded against E (CPU
+// weight-only int8 from the directory, f32 activations; also the teacher). Arms: F CPU int4 per-32 activation scales,
+// D CPU int4 per-row W4A8 (today's CPU), B Metal batched prefill + today's W4A8 decode, H Metal batched prefill + the
+// f16-activation decode lane (R1's gemv_w4f16, down-proj still W4A8).
+// Prompts: ZZ_TEXT=1 takes real text (repo docs, tokenized, cut to ZZ_NS lengths); otherwise S16's random tokens.
+func TestZZQ25VLFixDiag(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "qwen25vl-3b-instruct")
+	src := dir + ".int4.metal.giw"
+	ctx := context.Background()
+	const steps = 8
+	type cell struct {
+		name string
+		ids  []int
+	}
+	var cells []cell
+	nList, seeds := []int{20, 1562}, []int{1, 2, 3, 4}
+	if s := os.Getenv("ZZ_NS"); s != "" {
+		nList = nil
+		for _, f := range strings.Split(s, ",") {
+			v, _ := strconv.Atoi(f)
+			nList = append(nList, v)
+		}
+	}
+	if os.Getenv("ZZ_TEXT") == "1" {
+		tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range []string{"../docs/book/02-one-forward-pass.md", "../docs/quantization.md", "../README.md"} {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids, err := tk.Encode(string(raw), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, n := range nList {
+				if n <= len(ids) {
+					cells = append(cells, cell{fmt.Sprintf("%s/%d", filepath.Base(f), n), ids[:n]})
+				}
+			}
+		}
+	} else {
+		for _, n := range nList {
+			for _, sd := range seeds {
+				ids := make([]int, n)
+				for i := range ids {
+					ids[i] = 1000 + (i*7919+sd*104729)%50000
+				}
+				cells = append(cells, cell{fmt.Sprintf("rand n=%d s=%d", n, sd), ids})
+			}
+		}
+	}
+	cpuRun := func(m *decoder.Model, ids, teach []int) ([][]float32, []int) {
+		c := m.NewCache(len(ids) + steps + 1)
+		first, err := m.PrefillLogitsForTest(ctx, ids, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, tch := [][]float32{append([]float32(nil), first...)}, teach
+		if tch == nil {
+			tch = []int{argmaxF(first)}
+		}
+		for k := range steps {
+			lg, err := m.ForwardForTest(tch[k], c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), lg...))
+			if teach == nil {
+				tch = append(tch, argmaxF(lg))
+			}
+		}
+		return out, tch
+	}
+	E, F, D, teach := map[int][][]float32{}, map[int][][]float32{}, map[int][][]float32{}, map[int][]int{}
+	for _, ph := range []struct {
+		src  string
+		opts decoder.Options
+		out  map[int][][]float32
+	}{
+		{dir, decoder.Options{Quant: "int8", Backend: "cpu"}, E},
+		{src, decoder.Options{Quant: "int4", Backend: "cpu", ActQuantGroup: 32}, F},
+		{src, decoder.Options{Quant: "int4", Backend: "cpu"}, D},
+	} {
+		m, err := decoder.Load(ph.src, ph.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, c := range cells {
+			ph.out[i], teach[i] = cpuRun(m, c.ids, teach[i])
+		}
+		m.Close()
+		fmt.Fprintf(os.Stderr, "[cpu arm done]\n")
+	}
+	m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 2048})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	defer func(v bool) { a.r.decodeLaneW4F16 = v; a.r.stopExec() }(a.r.decodeLaneW4F16)
+	names := []string{"F", "D", "B", "H"}
+	sum, worst := make([]float64, 4), []float64{1, 1, 1, 1}
+	agree := make([]int, 4)
+	cnt := 0
+	for i, c := range cells {
+		n := len(c.ids)
+		embs := make([][]float32, n)
+		for j, id := range c.ids {
+			embs[j] = m.EmbedResidentForTest(id)
+		}
+		metalArm := func(f16 bool) [][]float32 {
+			a.r.decodeLaneW4F16 = f16
+			a.r.stopExec()
+			a.Reset()
+			first, err := a.batchedPrefill(embs, 0, 0, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := [][]float32{append([]float32(nil), first...)}
+			for k := range steps {
+				lg, err := a.Forward(m.EmbedResidentForTest(teach[i][k]), n+k)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, append([]float32(nil), lg...))
+			}
+			return out
+		}
+		B, H := metalArm(false), metalArm(true)
+		for k := 0; k <= steps; k++ {
+			e := E[i][k]
+			arms := [][]float32{F[i][k], D[i][k], B[k], H[k]}
+			line := fmt.Sprintf("[%s k=%d] vs E:", c.name, k)
+			for j, x := range arms {
+				cs := cosF(e, x)
+				sum[j] += cs
+				worst[j] = min(worst[j], cs)
+				if argmaxF(x) == argmaxF(e) {
+					agree[j]++
+				}
+				line += fmt.Sprintf(" %s %.4f", names[j], cs)
+			}
+			cnt++
+			fmt.Fprintln(os.Stderr, line)
+		}
+	}
+	for j, nm := range names {
+		fmt.Fprintf(os.Stderr, "[summary %d steps] %s: mean %.4f worst %.4f argmax==E %d\n", cnt, nm, sum[j]/float64(cnt), worst[j], agree[j])
+	}
+}

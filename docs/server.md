@@ -420,7 +420,7 @@ is in no release binary.
 
 **GLM-OCR** (a 0.9B document model; `model_type` `glm_ocr`) is auto-discovered from its checkpoint directory and uses aikit's own tower (`vision.GlmOcrVisionEncoder`, aikit v1.52.0), loaded on the
 first image. An image is at most 6,144 image tokens (about 4.8 megapixels, the default; the owner chose to keep the model's own ceiling, 2026-10-04) and `-vision-max-pixels N` lowers the cap (it never raises it; `goinfer-chat --vision-max-pixels` likewise). The CPU tower costs about 29 s at 1 MP, 92 s at 2 MP and 7 min at 4.8 MP on an M1 Pro (`measurements/glm-ocr-tower-cost-2026-10.md`); one that does not fit the resolved context is refused with
-`image_too_large_for_context` before the tower runs. The CPU tower costs about 44 s for a 1,656-token page on this class of machine (exploratory, one rendered invoice). Structured extraction with
+`image_too_large_for_context` before the tower runs. The CPU tower costs about 44 s for a 1,656-token page on this class of machine (exploratory, one rendered invoice). Under `--backend metal` or `cuda` the float32 tower runs on the device (S2): about 5 s for that page on an M1 Pro (exploratory), and `goinfer-chat --image` takes the same device tower since 2026-10-09. Structured extraction with
 `response_format` is described below; the measured accuracy is in `docs/measurements/glm-ocr-o5-2026-10/`.
 
 ```bash

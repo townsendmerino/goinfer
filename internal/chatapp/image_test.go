@@ -3,6 +3,7 @@ package chatapp
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"image"
 	"image/color"
@@ -11,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
 
+	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -291,4 +294,80 @@ func TestChatImage_demoEndToEnd(t *testing.T) {
 // constrainTemplate is constrain.TemplateFromSchema for a schema given as a string.
 func constrainTemplate(schema string) (string, error) {
 	return constrain.TemplateFromSchema([]byte(schema))
+}
+
+// towerDevice is serve's planGridTower choice: a GPU backend's device tower when this binary registered one, else the CPU.
+func TestTowerDevice(t *testing.T) {
+	for _, tc := range []struct {
+		backend    string
+		registered []string
+		want       string
+	}{
+		{"metal", []string{"metal"}, "metal"},
+		{"cuda", []string{"cuda", "metal"}, "cuda"},
+		{"metal", nil, ""},             // a binary without the Metal tower
+		{"cpu", []string{"metal"}, ""}, // a CPU run keeps the CPU tower
+		{"webgpu", []string{"webgpu"}, ""},
+	} {
+		if got := towerDevice(tc.backend, tc.registered); got != tc.want {
+			t.Errorf("towerDevice(%q, %v) = %q, want %q", tc.backend, tc.registered, got, tc.want)
+		}
+	}
+}
+
+// fakeGlmTower is a registered GLM-OCR device tower whose Hidden fails, counting its calls.
+type fakeGlmTower struct{ calls, closed *int }
+
+func (f fakeGlmTower) Name() string { return "fake" }
+func (f fakeGlmTower) Hidden([]float32, [][3]int) ([]float32, error) {
+	*f.calls++
+	return nil, errors.New("device out of memory")
+}
+func (f fakeGlmTower) Close() error { *f.closed++; return nil }
+
+// features on a device tower that declines at build, or fails on the image, falls back to the CPU tower with the CPU's
+// exact features, and a failed tower is closed and not tried again.
+func TestImageFeatures_deviceTowerFallsBackToCPU(t *testing.T) {
+	dir := "../../testdata/glm-ocr-vision-tiny"
+	if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
+		t.Skipf("no tiny GLM-OCR tower: %v", err)
+	}
+	// One 8x8-patch image: rows of C·T·P·P = 3·2·4·4 values.
+	grid := [3]int{1, 8, 8}
+	px := make([]float32, grid[0]*grid[1]*grid[2]*3*2*4*4)
+	for i := range px {
+		px[i] = float32((i*37)%101)/50 - 1
+	}
+	cpu := &imageInput{dir: dir, pixels: px, grid: grid}
+	want, err := cpu.features()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, closed := 0, 0
+	multimodal.RegisterGlmOcrTower("fake-fails", func(*vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
+		return fakeGlmTower{&calls, &closed}, nil
+	})
+	multimodal.RegisterGlmOcrTower("fake-declines", func(*vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
+		return nil, errors.New("no device")
+	})
+	defer multimodal.UnregisterGlmOcrTower("fake-fails")
+	defer multimodal.UnregisterGlmOcrTower("fake-declines")
+	for _, dev := range []string{"fake-fails", "fake-declines"} {
+		im := &imageInput{dir: dir, pixels: px, grid: grid, device: dev}
+		for range 2 {
+			got, err := im.features()
+			if err != nil {
+				t.Fatalf("%s: %v", dev, err)
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("%s: features differ from the CPU tower's", dev)
+			}
+		}
+		if im.acc != nil {
+			t.Errorf("%s: the device tower is still attached after falling back", dev)
+		}
+	}
+	if calls != 1 || closed != 1 {
+		t.Errorf("the failing tower ran %d times and closed %d times, want 1 and 1 (tried once, then the CPU)", calls, closed)
+	}
 }

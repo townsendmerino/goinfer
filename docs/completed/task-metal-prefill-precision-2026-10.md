@@ -1,6 +1,6 @@
 # Task — Metal's batched prefill loses precision on Qwen2.5 (scoped 2026-10-09)
 
-**Status:** **STEP 0 DONE 2026-10-09 — THE PREMISE IS REFUTED. Recommended close; no fix written.** The batched f16
+**Status:** **CLOSED 2026-10-09 (owner: "close it") — STEP 0 REFUTED THE PREMISE; no fix written.** The batched f16
 pass is the MOST precise of the four prefill arms, not the lossy one: against an f64 truth on the same int4 weights it
 is 27-54x closer than the decode path at layer 0, and 4-8x closer per layer at depth. The collapses S16's control saw
 are W4A8's per-row int8 activation scale on Qwen2.5-VL-3B, and they hit the CPU-throughout arm too. Fixes (a)-(c) and
@@ -114,7 +114,7 @@ which is W4A8, so it measured agreement with the less precise arm.
 
 **What follows:**
 - **This task:** no change to the batched pass. Fixes (a)-(c) would make the most precise arm more precise. G-P1 to
-  G-P3 are moot. Recommended close.
+  G-P3 are moot. Closed (owner, 2026-10-09).
 - **S16 for Qwen2.5-VL:** the reason it was held ("the lossy batched pass") is void. Turning it on moves image turns
   from the W4A8 CPU prefill onto the more precise arm. Its control needs a reference that is not W4A8 before it means
   anything: the per-32 CPU arm, or E. This is a re-registration of S16's bar for this family, so it is the owner's
@@ -124,6 +124,38 @@ which is W4A8, so it measured agreement with the less precise arm.
   is `ActivationQuantHazard`'s territory, the Phi-3 guard. Whether real text shows it is unmeasured (S16's real-text
   control ran against the same W4A8 reference). Metal has no per-group activation kernel and declines `ActQuantGroup`
   to the CPU.
+
+## Follow-up: the W4A8 instability on Qwen2.5-VL-3B (owner: "investigate and try to fix", 2026-10-09, by day)
+
+Records: `docs/measurements/metal-prefill-precision-2026-10/w4a8-fix/` (two logs, the probe kept as `.go.txt`).
+Exploratory, not a graded gate. Eight teacher-forced decode steps graded against E (CPU weight-only int8 from the
+directory, f32 activations; also the teacher), with four arms:
+
+- **F:** CPU int4, per-32 activation scales;
+- **D:** CPU int4, per-row W4A8 (today's CPU);
+- **B:** Metal batched prefill + today's W4A8 decode;
+- **H:** Metal batched prefill + R1's f16-activation decode lane (`decodeLaneW4F16`; QKV, o-proj and gate/up in f16,
+  down-proj still W4A8).
+
+| cell | F mean / worst | D mean / worst | B mean / worst | H mean / worst | argmax = E (F/D/B/H) |
+|---|---|---|---|---|---|
+| random tokens, n = 20 and 1,562, seeds 1-4 (72 steps) | 0.917 / 0.25 | 0.841 / -0.47 | 0.878 / -0.58 | 0.888 / -0.20 | 49/49/47/47 |
+| real text: three repo docs at 512 and 1,500 tokens (54 steps) | 0.984 / 0.81 | 0.983 / 0.87 | 0.982 / 0.70 | 0.981 / 0.69 | 45/41/38/40 |
+
+- **On random tokens:**
+  - Per-row W4A8 collapses on sporadic single steps, in every arm that runs it.
+  - The f16 lane lifts the worst step (-0.58 to -0.20) but not the mean, and it still collapses where F holds
+    (n = 1,562 seed 4 step 1: H 0.21, F 0.70). So the down-proj's W4A8 input is part of it, not only the
+    projections the lane covers.
+  - A few steps are low in every int4 arm, F included (n = 20 seed 2 step 5, about 0.2): int4 weights, not activations.
+- **On real text the collapses do not appear.**
+  - All four means agree within 0.003.
+  - The one low step (quantization.md at 1,500 tokens, step 4) is low in every arm, F included.
+  - The argmax counts lean to F (45 against 38-41) on 54 correlated steps, which this sample cannot resolve.
+- **Reading:** the catastrophic steps are mostly a property of random-token prompts on this checkpoint. No real-text
+  defect was measured, so no fix was built. The candidates, if a resolved real-text gate ever shows a gap:
+  - per-32 activation scales by default on the CPU for this family (speed-gated already, `task-actquant-pergroup-2026-09.md`);
+  - R1's f16 lane on Metal, extended to the down-proj, with its voided gate (3) re-run.
 
 ## The fix, chosen by Step 0's result (SUPERSEDED 2026-10-09: Step 0 found nothing to fix; kept as registered)
 
