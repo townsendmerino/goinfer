@@ -808,6 +808,8 @@ var awaitingFirstConfirmation = map[string]string{}
 // on a family that already has a canonical gate. A new entry claiming anything else is a coverage
 // hole wearing a reason, and reviewing it is the point of making it a code change.
 var realckptNotRequired = map[string]string{
+	"TestVoxtralReal_gate": "voxtral is required through the tiny gates (decoder TestVoxtral_tinyTextParity and TestVoxtral_tinyCompositionParity); this adds the real Voxtral Mini 3B, whose reference " +
+		"needs scripts/pin_voxtral_real.py's output directory (GOINFER_VOXTRAL_REF), not a plain registered asset",
 	"TestQwen3ASRReal_gate": "qwen3_asr is required through the tiny gates (decoder TestQwen3ASR_tinyTextParity and TestQwen3ASR_tinyCompositionParity); this adds the real Qwen3-ASR-0.6B, whose reference " +
 		"needs scripts/pin_qwen3asr_real.py's output directory (GOINFER_QWEN3ASR_REF), not a plain registered asset",
 	"TestGemma3Real_gate": "unregistered asset (GEMMA3_4B, not even GOINFER_-prefixed); gemma3 is " +
