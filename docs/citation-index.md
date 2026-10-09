@@ -1034,6 +1034,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:796` | goinfer | `return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kin` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:716` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:138` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
+| `docs/tasks/task-mellum21-2026-10.md|internal/servecheck/check.go:183` | goinfer | `if len(ev.Choices) > 0 && ev.Choices[0].Delta.Content != "" {` |
 | `docs/tasks/task-minimax-code-compat-2026-09.md|cuda/resident.go:48` | goinfer | `const cudaCtxCapDefault = 4096` |
 | `docs/tasks/task-minimax-code-compat-2026-09.md|decoder/fitplan.go:184` | goinfer | `MetalCtxDefault = 4096` |
 | `docs/tasks/task-minimax-code-compat-2026-09.md|internal/serveapp/openai.go:1399` | goinfer | `case "system", "developer":` |
