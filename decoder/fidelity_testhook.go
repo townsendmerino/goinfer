@@ -425,3 +425,8 @@ type W8F3Ref struct {
 	Logits         [][][]float32 // [prompt][position][vocab]
 	PromptLen, Pos int
 }
+
+// PrefillLogitsAudioForTest exposes prefillLogitsAudio (Qwen3-ASR's soft-token prefill) for cross-package gates that need the logits and the cache, not GenerateAudio's token channel.
+func (m *Model) PrefillLogitsAudioForTest(ctx context.Context, ids []int, feats []float32, pos, n int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsAudio(ctx, ids, feats, pos, n, cache)
+}

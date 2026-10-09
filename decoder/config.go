@@ -1426,8 +1426,15 @@ func loadConfig(fsys fs.FS, name string) (*Config, error) {
 	// are present, so a flat config.json is unaffected (text_config absent).
 	var nest struct {
 		TextConfig json.RawMessage `json:"text_config"`
+		// Qwen3-ASR's original layout wraps everything in thinker_config (as Qwen3-Omni's does): the text decoder's dims are one level deeper.
+		Thinker struct {
+			TextConfig json.RawMessage `json:"text_config"`
+		} `json:"thinker_config"`
 	}
-	if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {
+	if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) == 0 {
+		nest.TextConfig = nest.Thinker.TextConfig
+	}
+	if len(nest.TextConfig) > 0 {
 		if err := json.Unmarshal(nest.TextConfig, &c); err != nil {
 			return nil, fmt.Errorf("decoder: parse %s text_config: %w", name, err)
 		}

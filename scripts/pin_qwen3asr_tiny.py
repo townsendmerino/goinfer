@@ -66,6 +66,28 @@ with zipfile.ZipFile(f"{out}/golden.zip", "w", zipfile.ZIP_DEFLATED, compresslev
         z.writestr(f"{name}.tower.f32", tower.numpy().astype("<f4").tobytes()); z.writestr(f"{name}.out.f32", proj.numpy().astype("<f4").tobytes())
         meta["cases"].append({"name": name, "samples": int(len(x)), "T": T, "valid": valid, "tokens": int(tower.shape[0]), "d_model": audio["d_model"], "out_dim": audio["output_dim"]})
         print(f"{name}: {len(x)} samples, T {T}, valid {valid}, tokens {tower.shape[0]}, tower rms {tower.pow(2).mean().sqrt():.3f}, out rms {proj.pow(2).mean().sqrt():.3f}")
+    # G-S14c1/c2: the decoder half and the composition. Token ids are in the tiny vocabulary (160): 10 <|im_start|>, 11 <|im_end|>, 13 newline, 148/149/150 audio start/end/pad.
+    def gen_cont(**kw):
+        with torch.no_grad():
+            g = model.generate(max_new_tokens=8, min_new_tokens=8, do_sample=False, **kw)
+        return g[0, kw["input_ids"].shape[1]:].tolist()
+    text_ids = torch.tensor([[10, 12, 13, 11, 13, 10, 14, 13, 55, 77, 91, 120, 33, 5]])
+    with torch.no_grad():
+        tl = model(input_ids=text_ids).logits[0, -1]
+    z.writestr("text.ids.json", json.dumps(text_ids[0].tolist())); z.writestr("text.logits.f32", tl.numpy().astype("<f4").tobytes())
+    z.writestr("text.cont.json", json.dumps(gen_cont(input_ids=text_ids)))
+    meta["text"] = {"ids": text_ids[0].tolist()}
+    for name, x in cases:
+        b = fe(x, sampling_rate=16000, return_tensors="pt", return_attention_mask=True, padding=True, truncation=False, n_window=50)
+        feats, mask = b["input_features"], b["attention_mask"]
+        n = int(model.model.audio_tower(input_features=feats, input_features_mask=mask).last_hidden_state.shape[0])
+        ids = [10, 12, 13, 11, 13, 10, 14, 13, 148] + [150] * n + [149, 11, 13, 10, 15, 13]
+        t = torch.tensor([ids])
+        with torch.no_grad():
+            lg = model(input_ids=t, input_features=feats, input_features_mask=mask).logits[0, -1]
+        z.writestr(f"{name}.prompt.json", json.dumps(ids)); z.writestr(f"{name}.logits.f32", lg.numpy().astype("<f4").tobytes())
+        z.writestr(f"{name}.cont.json", json.dumps(gen_cont(input_ids=t, input_features=feats, input_features_mask=mask)))
+        print(f"{name}: prompt {len(ids)} tokens ({n} audio), continuation {json.loads(z.read(f'{name}.cont.json')) if False else ''}")
     z.writestr("meta.json", json.dumps(meta, indent=1))
 # NOTE: transformers 5.15.0 cannot read this nested layout (nor the real Qwen3-ASR checkpoint's: it takes the nested config for defaults and reports every weight MISSING, i.e. randomly initialised,
 # with no error). The reference outputs above come from the in-memory model; the layout's names are the real checkpoint's, and the Go loader is exercised on the real one (G-S14b3).

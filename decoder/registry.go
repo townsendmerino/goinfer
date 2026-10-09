@@ -27,6 +27,7 @@ var registry = map[string]archAdapter{
 	"qwen3":               qwen3Architecture,      // Qwen3 dense (0.6B/1.7B/4B/8B/…)
 	"qwen2":               qwen2Architecture,      // Qwen2/Qwen2.5 dense (llama + q/k/v bias)
 	"qwen2_5_vl":          qwen2_5_vlArchitecture, // Qwen2.5-VL text decoder (qwen2 + m-RoPE; nested rope_parameters)
+	"qwen3_asr":           qwen3_asrArchitecture,  // Qwen3-ASR's text decoder: exactly Qwen3 (nested thinker_config.text_config, tensors under thinker.*); the audio encoder is aikit/audio
 	"qwen3_vl":            qwen3_vlArchitecture,   // Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; nested text_config/rope_parameters; no vision, no DeepStack — P8 Phase 0)
 	"qwen2_moe":           qwen2MoeArchitecture,   // Qwen-MoE/Qwen2-MoE (qwen2 + sparse MoE + shared expert)
 	"qwen3_moe":           qwen3MoeArchitecture,   // Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3's attention (QK-norm, no bias) + a sparse MoE on every layer, NO shared expert
@@ -1667,6 +1668,20 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	arch.Name = "qwen3_vl"
 	arch.MRopeSection = section
 	arch.MRopeInterleaved = true
+	return arch, schema, nil
+}
+
+// qwen3_asrArchitecture expresses Qwen3-ASR's text decoder: Qwen3 dense (per-head q/k RMSNorm, GQA, no q/k/v bias, head_dim 128) whose config carries Qwen3-VL's
+// interleaved m-RoPE section ({mrope_section [24, 20, 20], interleaved}). For ASR the three position components are always equal (audio is sequential like text), and
+// interleaved m-RoPE with equal components IS plain RoPE, so the text path is exactly qwen3 and the rope_scaling block is dropped here, as transformers' own Qwen3ASR text
+// model (a plain Qwen3Model) never reads it. The audio encoder and projector are aikit's audio.QwenASREncoder; the soft-token splice is Model.GenerateAudio.
+func qwen3_asrArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	cfg.RopeScaling = nil
+	arch, schema, err := qwen3Architecture(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	arch.Name = "qwen3_asr"
 	return arch, schema, nil
 }
 

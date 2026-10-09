@@ -857,6 +857,30 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "qwen3_asr",
+    "model_types": [
+      "qwen3_asr"
+    ],
+    "display_name": "Qwen3-ASR",
+    "description": "Qwen3-ASR speech to text: a Qwen3 decoder (tensors under thinker.*) fed by an audio encoder (three strided Conv2d, windowed attention, a projector)",
+    "summary": "Qwen3-ASR, speech to text in 30 languages (0.6B and 1.7B). Reads audio (verified on Qwen3-ASR-0.6B).",
+    "tasks": [
+      "audio"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ audio encoder)",
+    "gpu_residency_eligible": true,
+    "parity": "pending"
+  },
+  {
     "name": "qwen3_moe",
     "model_types": [
       "qwen3_moe"

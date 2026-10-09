@@ -137,6 +137,13 @@ func representativeConfig(modelType string) *Config {
 			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
 			HiddenAct: "silu",
 		}
+	case "qwen3_asr":
+		// Qwen3-ASR's text decoder is plain Qwen3 (the checkpoint's interleaved m-RoPE section is dropped: audio positions are sequential); the audio encoder is aikit's.
+		return &Config{
+			ModelType: "qwen3_asr", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
+			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-6, RoPEGlobalBase: 1000000,
+			HiddenAct: "silu",
+		}
 	case "qwen2_moe":
 		return &Config{
 			ModelType: "qwen2_moe", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
@@ -528,6 +535,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen2":               {"Qwen2 / Qwen2.5", "Alibaba Qwen2/2.5 dense (q/k/v bias)", "safetensors, GGUF", "text"},
 	"qwen2_5_vl":          {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
 	"qwen3_vl":            {"Qwen3-VL", "Qwen3-VL (qwen3 + interleaved m-RoPE; the vision tower, with DeepStack injection into the first decoder layers)", "safetensors", "text (+ vision tower)"},
+	"qwen3_asr":           {"Qwen3-ASR", "Qwen3-ASR speech to text: a Qwen3 decoder (tensors under thinker.*) fed by an audio encoder (three strided Conv2d, windowed attention, a projector)", "safetensors", "text (+ audio encoder)"},
 	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
 	"qwen3_moe":           {"Qwen3-MoE", "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
@@ -583,7 +591,7 @@ type siteDoc struct {
 }
 
 // siteTasks is the closed set a family's Tasks may draw from; the site's filters are built from it.
-var siteTasks = map[string]bool{"chat": true, "code": true, "vision": true}
+var siteTasks = map[string]bool{"chat": true, "code": true, "vision": true, "audio": true}
 
 var siteDocs = map[string]siteDoc{
 	"olmo_hybrid":      {"Ai2's 7B hybrid: mostly linear-attention layers, a few full-attention ones, no position encoding at all.", []string{"chat"}},
@@ -621,6 +629,7 @@ var siteDocs = map[string]siteDoc{
 	"qwen3":            {"Alibaba's Qwen3 dense models.", []string{"chat"}},
 	"qwen3_moe":        {"Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.", []string{"chat", "code"}},
 	"qwen3_vl":         {"Qwen3-VL. Reads images (verified on Qwen3-VL-2B).", []string{"chat", "vision"}},
+	"qwen3_asr":        {"Qwen3-ASR, speech to text in 30 languages (0.6B and 1.7B). Reads audio (verified on Qwen3-ASR-0.6B).", []string{"audio"}},
 	"smollm3":          {"Hugging Face's SmolLM3, 3B.", []string{"chat"}},
 	"spark2_5":         {"XHToken's Spark-X2.5, 1.7B and 4B.", []string{"chat"}},
 	"gpt-oss":          {"OpenAI's open-weight gpt-oss, 20B and 120B.", []string{"chat"}},

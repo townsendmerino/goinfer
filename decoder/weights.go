@@ -654,6 +654,10 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if have["language_model.model.embed_tokens.weight"] {
 		topPrefix = "language_model."
 	}
+	// Qwen3-ASR (and Qwen3-Omni) keep the whole text decoder under thinker.*: thinker.model.* and thinker.lm_head.weight, beside thinker.audio_tower.* (the audio encoder is audio/, not this).
+	if have["thinker.model.embed_tokens.weight"] {
+		topPrefix = "thinker."
+	}
 	// A decoder-as-embedder checkpoint (Qwen3-Embedding, and the same shape for embeddinggemma)
 	// ships the BASE model — Qwen3Model, no LM head — whose tensors carry NO "model." prefix at
 	// all: embed_tokens.weight, norm.weight, layers.N.*. (The config still says
