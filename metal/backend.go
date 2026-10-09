@@ -1041,11 +1041,16 @@ func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embedding
 }
 
 // metalMRoPEPrefillOn and metalDeepstackPrefillOn turn S16's resident m-RoPE prefill on, for a turn without DeepStack sets
-// (Qwen2.5-VL) and with them (Qwen3-VL). Each stays OFF until its model has passed G-S16c (the re-registered bar, owner
-// 2026-10-08), the served comparison and the night TTFT record (ship at >= 1.02x). Off, an image turn takes the CPU prefill
-// and the upload, as before. Qwen3-VL-2B passed G-S16c by day on 2026-10-08; Qwen2.5-VL-3B and both served and speed steps
-// are the night's. Tests set them.
-var metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false
+// (Qwen2.5-VL; Qwen3.5+ is not claimed) and with them (Qwen3-VL). Off, an image turn takes the CPU prefill and the upload.
+//   - DeepStack (Qwen3-VL): ON since 2026-10-09 (owner). G-S16c real PASS through its sidecar on all four images over healthy
+//     text controls (0.87-0.95), the served comparison IDENTICAL, image-turn TTFT 8.25 -> 2.86 s (2.9x).
+//   - Without DeepStack (Qwen2.5-VL): OFF. It passed G-S16c and the served comparison (19.46 -> 5.73 s), but its text
+//     control is Metal's batched f16 prefill, which on this model reaches decode-step cosines of 0.62-0.75 against the CPU
+//     (-0.36 over S16's four seeds) where the CPU prefill and upload stay at 0.95-1.0; turning it on would move image turns
+//     onto that pass. Held until Qwen2.5-VL's batched prefill precision is fixed (docs/tasks/task-multimodal-support-2026-10.md).
+//
+// Tests set them.
+var metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, true
 
 func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep *prefillDeep) ([]float32, error) {
 	if e := ctx.Err(); e != nil {

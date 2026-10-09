@@ -2312,6 +2312,29 @@ different rows.
       - Qwen2.5-VL's long-prompt Metal prefill is a defect to find before S16 is claimed for it. It is not S16's own:
         the control is today's path.
       - S16 goes on for Qwen3-VL only, pending the owner.
+  - **Qwen2.5-VL's control, investigated 2026-10-09 by day** (owner: "investigate now"; exploratory diagnostics, logs
+    `s16/real-2026-10-09/q25vl-diag.log` and `q25vl-dec.log`, through the rebuilt sidecar):
+    - **The last prompt row is fine.** CPU prefill against Metal's batched f16 pass reads cosine 0.95-0.99 on the
+      control's random tokens and 0.82-0.99 on real text, 32 to 1,500 tokens. Metal's sequential path reads
+      0.95-0.999. No non-finite values; max |logit| 12-28.
+    - **The collapse is in the decode steps that read the batched pass's K/V.** The control's random tokens (seed 1),
+      decoded 8 teacher-forced steps from four K/V sources, cosine against CPU-throughout:
+      - the CPU prefill uploaded to Metal, the control's reference: 0.948-1.0;
+      - Metal sequential: 0.82-0.998;
+      - **Metal batched: steps at 0.70-0.75** (n = 512 step 7-8, n = 1024 step 1, n = 1500 step 5 and 8), each a
+        different argmax; elsewhere 0.95-0.99.
+      - The S16 run's -0.36 is the same effect over four seeds and up to 1,562 rows.
+    - **The likely mechanism, not yet measured:** the batched pass rounds activations to f16 for its MMA GEMMs, and
+      Qwen2.5's large activations lose precision there. That is the failure S17 lever B's f16-activation kernel hit on
+      the towers, which f32 activations fixed. A precision defect of the batched text prefill on this model, live in
+      production for long Qwen2.5-VL text prompts. Not S16's.
+    - **The decision (owner, 2026-10-09):**
+      - S16 is ON for Qwen3-VL (`metalDeepstackPrefillOn`: real PASS on healthy controls, served IDENTICAL, TTFT
+        8.25 -> 2.86 s).
+      - It stays OFF for Qwen2.5-VL (`metalMRoPEPrefillOn`): turning it on would move image turns from the CPU prefill
+        (0.95-1.0) onto the lossy batched pass.
+      - **Owed:** a task for Qwen2.5-VL's batched prefill precision (f32 activations, as lever B), with a decode-step gate
+        against the CPU on the control.
 
 ### S10 — Towers for the families that have none
 

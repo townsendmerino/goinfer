@@ -1,0 +1,15 @@
+=== RUN   TestZZQ25VLPrefillDiag
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[q25vl] random n=   32  cos(cpu,batched) 0.98965  cos(cpu,seq) 0.99742  cos(seq,batched) 0.99259  argmax cpu/bat/seq 2570/2570/2570  batched max|logit| 19.2 nonfinite 0
+[q25vl] random n=  128  cos(cpu,batched) 0.95511  cos(cpu,seq) 0.96446  cos(seq,batched) 0.94917  argmax cpu/bat/seq 261/261/292  batched max|logit| 12.0 nonfinite 0
+[q25vl] random n=  512  cos(cpu,batched) 0.98365  cos(cpu,seq) 0.98999  cos(seq,batched) 0.97616  argmax cpu/bat/seq 271/271/271  batched max|logit| 12.4 nonfinite 0
+[q25vl] random n= 1024  cos(cpu,batched) 0.96294  cos(cpu,seq) 0.98721  cos(seq,batched) 0.97122  argmax cpu/bat/seq 220/220/220  batched max|logit| 11.6 nonfinite 0
+[q25vl] random n= 1500  cos(cpu,batched) 0.97609  cos(cpu,seq) 0.99726  cos(seq,batched) 0.97822  argmax cpu/bat/seq 151645/198/151645  batched max|logit| 12.9 nonfinite 0
+[q25vl] text   n=   32  cos(cpu,batched) 0.96680  cos(cpu,seq) 0.99227  cos(seq,batched) 0.95672  argmax cpu/bat/seq 6625/6625/6625  batched max|logit| 25.5 nonfinite 0
+[q25vl] text   n=  128  cos(cpu,batched) 0.94690  cos(cpu,seq) 0.97805  cos(seq,batched) 0.96740  argmax cpu/bat/seq 35799/35799/35799  batched max|logit| 23.6 nonfinite 0
+[q25vl] text   n=  512  cos(cpu,batched) 0.99324  cos(cpu,seq) 0.99899  cos(seq,batched) 0.99315  argmax cpu/bat/seq 13/13/13  batched max|logit| 27.6 nonfinite 0
+[q25vl] text   n= 1024  cos(cpu,batched) 0.81735  cos(cpu,seq) 0.94933  cos(seq,batched) 0.90469  argmax cpu/bat/seq 1555/1555/1555  batched max|logit| 22.6 nonfinite 0
+[q25vl] text   n= 1500  cos(cpu,batched) 0.98001  cos(cpu,seq) 0.99086  cos(seq,batched) 0.97085  argmax cpu/bat/seq 21219/21219/21219  batched max|logit| 25.5 nonfinite 0
+--- PASS: TestZZQ25VLPrefillDiag (255.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	255.554s
