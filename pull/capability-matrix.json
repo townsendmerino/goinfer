@@ -939,7 +939,7 @@
       "sha256": "63addcbf5897c00f3e11df9a9fe64d90bdb4d3114c2fe25b9039aff09bbd56cc",
       "kind": "directory",
       "good_for": "box class M: reading screenshots, tables and documents on an 8 GB GPU box or a 16-32 GB Mac. Apache-2.0",
-      "needs": "4.3 GB download (bf16, quantized to int4 on load: about 1.2 GB resident, an estimate) plus the vision tower: about 1.2 GB of float32 weights on the CPU, about 1.6 GB reserved on a CUDA card. Measured on an RTX 2070 SUPER (2026-10-08, single samples): a 1,000-token image turn took about 15 s, because its DeepStack prefill runs on the CPU (the resident one is off until it is checked against Hugging Face); on the CPU the tower alone takes 12-18 s. The family is checked against Hugging Face on the real 2B, text and one image prompt",
+      "needs": "4.3 GB download (bf16, quantized to int4 on load: about 1.2 GB resident, an estimate) plus the vision tower: about 1.2 GB of float32 weights on the CPU, about 1.6 GB reserved on a CUDA card. Measured on an RTX 2070 SUPER (2026-10-09, serve's defaults, the median of three timed requests): a new 896-pixel image's first token took 2.2 s with the DeepStack prefill on the GPU (it was 10.8 s on 2026-10-08, when that prefill ran on the CPU); on the CPU the tower alone takes 12-18 s. The family is checked against Hugging Face on the real 2B, text and one image prompt; the GPU image prefill reads within a small margin of the CPU one overall and slightly farther in logits cosine on that 896-pixel image (G-S10k)",
       "tools": "not yet measured"
     }
   },

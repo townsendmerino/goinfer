@@ -64,7 +64,7 @@ func dsSpliceRows(m *decoder.Model, ids []int, feats []float32, start, n, hid in
 }
 
 func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
-	prevDeep := cudaDeepstackPrefillOn // production default is ON since G-S10g passed; the gate sets it explicitly and puts it back
+	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
 	cudaDeepstackPrefillOn = true
 	defer func() { cudaDeepstackPrefillOn = prevDeep }()
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
@@ -214,7 +214,7 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 // turn's worst per-step cosine (the last row and the 8 steps) is at least the control's minimum minus 0.005 and every argmax difference is an R10 near-tie; 0.005-0.015 below the control's minimum is parked; worse fails.
 // Both image arms see the same features and sets (the CPU encoder's). Heavy: about 6-8 minutes, a line per stage.
 func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
-	prevDeep := cudaDeepstackPrefillOn // production default is ON since G-S10g passed; the gate sets it explicitly and puts it back
+	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
 	cudaDeepstackPrefillOn = true
 	defer func() { cudaDeepstackPrefillOn = prevDeep }()
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
@@ -413,7 +413,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 // comparison on those two images in cuts that separate the candidate mechanisms, printing the per-step cosines: (a) as the gate; (b) with NO DeepStack sets in either arm (is the gap the batched prefill on image rows,
 // not the injection?); (c) as the gate with the fast prefill levers forced off (is it the L2/L3 levers?). Same features, same prompt, same teacher-forced steps in every cut.
 func TestS10DeepstackPrefillCUDA_diag(t *testing.T) {
-	prevDeep := cudaDeepstackPrefillOn // production default is ON since G-S10g passed; the gate sets it explicitly and puts it back
+	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
 	cudaDeepstackPrefillOn = true
 	defer func() { cudaDeepstackPrefillOn = prevDeep }()
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
@@ -535,7 +535,7 @@ func TestS10DeepstackPrefillCUDA_speed(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}
-	prevDeep := cudaDeepstackPrefillOn // production default is ON since G-S10g passed; the gate sets it explicitly and puts it back
+	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
 	cudaDeepstackPrefillOn = true
 	defer func() { cudaDeepstackPrefillOn = prevDeep }()
 	requireCUDADevice(t)

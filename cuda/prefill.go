@@ -248,10 +248,13 @@ type cudaDeepPlan struct {
 	sets     [][]float32
 }
 
-// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, OFF (docs/tasks/task-multimodal-support-2026-10.md, "S10 on CUDA" and "G-S10g, the owner's decision (c)"): the real gate passes on all four
-// images (the 84-row one against a 12-prompt control, 2026-10-08), but the served check, the same image through a binary with it on and one with it off, differed at the first generated token and not at a near-tie
-// read from the off path, so it stays off until the owner decides how to read that. While it is off a Qwen3-VL image turn takes the CPU prefill and the upload, as before. The gates turn it on; production does not.
-var cudaDeepstackPrefillOn = false
+// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, ON BY THE OWNER'S DECISION of 2026-10-09 ("just turn it on"), over a registered FAIL. The record (docs/tasks/task-multimodal-support-2026-10.md):
+// G-S10g passed on all four images against a text control; G-S10j (one prompt per image, bars set without a noise floor) read FAIL and left it off; the first pass of the 896-pixel investigation found the chunk boundary exact, no
+// localized fault in the per-layer residuals, and that one equivalent CPU kernel moves the same statistic as much as G-S10j's "defect"; G-S10k (64 units, the margin taken from an A/A in the same run) read FAIL on its per-image
+// guard alone: pooled the resident prefill is within the margin (+0.0007 [-0.0044, +0.0060] against 0.0050), and on the 896-pixel image it is farther in logits cosine by about 0.011 while closer in KL and argmax agreement.
+// So the one known residual is a small cosine difference on that image, not a defect located anywhere, and what it buys is a prefill about 13x faster than the CPU prefill and upload. Off, a Qwen3-VL image turn takes the
+// CPU prefill and the upload; setting this false restores that path exactly. The gates set it explicitly and put it back.
+var cudaDeepstackPrefillOn = true
 
 // deepDefectForTest is G-S10g's planted-defect seam (S16's list): 0 none, 1 the sets not added, 2 each set one layer late, 3 the sets added to the text rows too.
 var deepDefectForTest int
