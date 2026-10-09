@@ -186,7 +186,7 @@ WebGPU.
 
 ### G7 — Nemotron 3 Nano / 3.5 Lightning are CPU on every backend, and the matrix says otherwise
 
-**Where.** `decoder/residency.go:402`: `if a.nemotron != nil { return a.MoE == nil }` — the
+**Where.** `decoder/residency.go:410`: `if a.nemotron != nil { return a.MoE == nil }` — the
 MoE block kind has no resident builder on any backend (comment at 234–240). `docs/hardware-matrix.md`
 row "Nemotron-H → WebGPU ✅ resident" is generated from the *dense* representative config, so it is
 true of Nemotron-H and false of the two models people download. docs/completed/task-families-2026-09.md F2

@@ -85,14 +85,14 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:210` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:273` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
-| `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:200` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
+| `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:204` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1045` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1577` | goinfer | `func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1630` | goinfer | `if cache.treeMask != nil && !m.canBatchN(K) {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:167` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:786` | goinfer | `// constraint, so the slot is what gets to decide. Every other slot buffer follows from ` |
-| `docs/audit-2026-09-10.md|decoder/generate_vl.go:109` | goinfer | `logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here` |
+| `docs/audit-2026-09-10.md|decoder/generate_vl.go:125` | goinfer | `logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:17` | goinfer | `func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation, sampler` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
 | `docs/audit-2026-09-10.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
@@ -280,8 +280,8 @@ supports.
 | `docs/audit-metal-2026-09-30.md|decoder/model.go:607` | goinfer | `// path never priced before. guardGIWFit refuses or auto-pins exactly like the .gguf` |
 | `docs/audit-metal-2026-09-30.md|decoder/model.go:708` | goinfer | `pinnedCtx, err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts))` |
 | `docs/audit-metal-2026-09-30.md|decoder/prefill_budget.go:120` | goinfer | `kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)` |
-| `docs/audit-metal-2026-09-30.md|decoder/residency.go:1250` | goinfer | `rf, ok, err := rb.BuildResident(m)` |
-| `docs/audit-metal-2026-09-30.md|decoder/residency.go:1387` | goinfer | `case m.kvPrecI8:` |
+| `docs/audit-metal-2026-09-30.md|decoder/residency.go:1258` | goinfer | `rf, ok, err := rb.BuildResident(m)` |
+| `docs/audit-metal-2026-09-30.md|decoder/residency.go:1395` | goinfer | `case m.kvPrecI8:` |
 | `docs/audit-metal-2026-09-30.md|decoder/residency.go:60` | goinfer | `// "Batched" is an amortization OPPORTUNITY, not a structural guarantee every` |
 | `docs/audit-metal-2026-09-30.md|decoder/residency.go:62` | goinfer | `// CUDA's prefillReady path runs the whole batch in one weight-stationary pass (one` |
 | `docs/audit-metal-2026-09-30.md|decoder/resident_reuse.go:19` | goinfer | `//     call plus the tool result. Measured deltas in a real /v1/messages loop were 45 an` |
@@ -665,8 +665,8 @@ supports.
 | `docs/gpu-residency-coverage.md|decoder/features.go:811` | goinfer | `FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, gener` |
 | `docs/gpu-residency-coverage.md|decoder/features.go:821` | goinfer | `FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (n` |
 | `docs/gpu-residency-coverage.md|decoder/hardware_matrix_test.go:42` | goinfer | `t.Setenv("GOINFER_SSM_RESIDENT", "")` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:676` | goinfer | `return false // own forward, not yet bridged` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:697` | goinfer | `if a.granite != nil {` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:684` | goinfer | `return false // own forward, not yet bridged` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:705` | goinfer | `if a.granite != nil {` |
 | `docs/how-inference-works.md|decoder/attention.go:154` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:220` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:79` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
@@ -685,7 +685,7 @@ supports.
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:858` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:785` | goinfer | `switch o.Backend {` |
-| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:1210` | goinfer | `func (m *Model) withResidency() *Model {` |
+| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:1218` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:94` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:319` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2644` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
@@ -710,10 +710,10 @@ supports.
 | `docs/measurements/multimodal-audit-2026-10-02.md|cuda/vision_register.go:13` | goinfer | `vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/capability_matrix_test.go:559` | goinfer | `"qwen3_5_moe":      {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE"` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/features.go:100` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:161` | goinfer | `if (bidirectional \|\| eModel) && m.tryClaimResident() {` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:178` | goinfer | `if (bidirectional \|\| eModel) && m.tryClaimResident() {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:29` | goinfer | `func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbeds []floa` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:159` | goinfer | `if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:297` | goinfer | `recurrent := m.hasRecurrentState()` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:175` | goinfer | `if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:328` | goinfer | `recurrent := m.hasRecurrentState()` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|demo/agent/agent/agent.go:285` | goinfer | `anchor: func (s *Session) Turn(ctx context.Context, user string, ev Events) (string, err` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|demo/agent/agent/agent.go:303` | goinfer | `if err := enc.EnableResident(); err != nil {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|gpu/residency.go:1250` | goinfer | `func (rd *residentDecoder) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float3` |
@@ -747,8 +747,8 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:50` | goinfer | `// pleTokenID selects which token id's per-layer embedding feeds PLE's` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4.go:81` | goinfer | `// Cross-layer KV sharing: layers ≥ firstShared reuse the KV of the last` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4_batched.go:67` | goinfer | `func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4_batched.go:99` | goinfer | `for row := range K {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4_batched.go:103` | goinfer | `for row := range K {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/forward_gemma4_batched.go:71` | goinfer | `func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_admission_test.go:62` | goinfer | `anchor: func TestGemma4Admission_unconditional(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_emodel_real_test.go:15` | goinfer | `func TestGemma4EModel_realDeclinesResident(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_emodel_real_test.go:40` | goinfer | `// Every resident backend without the E-model bridge must report FeatGemma4EModel missin` |
@@ -757,7 +757,7 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_parity_test.go:16` | goinfer | `func TestGemma4_logitParity(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gemma4_vl_test.go:24` | goinfer | `func TestGemma4VL_textParity(t *testing.T) {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_gemma4_vl.go:10` | goinfer | `// prefillLogitsGemma4VL sequentially prefills a Gemma 4 multimodal prompt — ids` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_gemma4_vl.go:48` | goinfer | `if i >= imgPos && i < imgPos+imgLen {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_gemma4_vl.go:51` | goinfer | `if r, in := imageSpanRow(spans, i); in {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/generate_vl_resident.go:26` | goinfer | `if len(k) == 0 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/gguf.go:2626` | goinfer | `// Gemma 4 (E-models): a dedicated layer loader. Per-layer head_dim/FFN, the` |
@@ -771,14 +771,14 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/model.go:1615` | goinfer | `var logits []float32` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:366` | goinfer | `RMSAddOne:     false,` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/registry.go:372` | goinfer | `// learned q/k-norm weights absorb the scaling, unlike Gemma 3's explicit` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1000` | goinfer | `a := m.w.arch` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1622` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1008` | goinfer | `a := m.w.arch` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:1630` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:50` | goinfer | `type ResidentForward interface {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:575` | goinfer | `func (m *Model) residentAdmission() string {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:647` | goinfer | `case a.gemma4 != nil:` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:947` | goinfer | `func (m *Model) VFromKResident(i int) bool {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:957` | goinfer | `// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerS` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:976` | goinfer | `func (m *Model) KVSrcAtResident(i int) int { return m.w.arch.gemma4KVSrcAt(i) }` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:583` | goinfer | `func (m *Model) residentAdmission() string {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:655` | goinfer | `case a.gemma4 != nil:` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:955` | goinfer | `func (m *Model) VFromKResident(i int) bool {` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:965` | goinfer | `// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerS` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:984` | goinfer | `func (m *Model) KVSrcAtResident(i int) int { return m.w.arch.gemma4KVSrcAt(i) }` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residentneed.go:46` | goinfer | `func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weightbytes.go:184` | goinfer | `func (m *Model) ResidentHostCopyBytes(slots int) int64 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weights.go:1002` | goinfer | `// Cross-layer KV sharing (num_kv_shared_layers, P7): the last N layers carry` |
@@ -854,7 +854,7 @@ supports.
 | `docs/multimodal.md|cuda/resident.go:2316` | goinfer | `// common case folded in.` |
 | `docs/multimodal.md|decoder/attention.go:157` | goinfer | `ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta,` |
 | `docs/multimodal.md|decoder/config.go:1442` | goinfer | `if len(nest.TextConfig) > 0 {` |
-| `docs/multimodal.md|decoder/generate_vl.go:297` | goinfer | `recurrent := m.hasRecurrentState()` |
+| `docs/multimodal.md|decoder/generate_vl.go:328` | goinfer | `recurrent := m.hasRecurrentState()` |
 | `docs/multimodal.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
 | `docs/multimodal.md|decoder/registry.go:1684` | goinfer | `arch.Name = "qwen3_vl"` |
@@ -872,7 +872,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:2279` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1768` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1622` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/ollama-chase.md|decoder/residency.go:1630` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:792` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:737` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:2610` | goinfer | `func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {` |
@@ -995,7 +995,7 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1835` | goinfer | `// and fall back to CPU, which applies the adapter correctly on its own` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:354` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:356` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:402` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:410` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1151` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:592` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/loadflags/loadflags.go:97` | goinfer | `MoECacheSlots:    f.MoECacheSlots,` |
