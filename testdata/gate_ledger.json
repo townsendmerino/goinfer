@@ -793,6 +793,24 @@
       "value": "PASS"
     },
     {
+      "commit": "93f4ab0e",
+      "date": "2026-10-09",
+      "gate": "TestVoxtral_tinyCompositionParity",
+      "note": "Voxtral tiny against transformers 5.15.0, nobara-pc, 2026-10-09: 6 s clip (375 audio tokens) and 35 s clip (2 windows, 750): worst per-row projector cosine 0.999999999, logit cosine 0.999999999, argmax and 8-token continuation equal; Go front end, tower, stacking, projector, splice and decoder",
+      "promoted_by": "claude",
+      "source_sha256": "a520c8975fec1434",
+      "value": "PASS"
+    },
+    {
+      "commit": "93f4ab0e",
+      "date": "2026-10-09",
+      "gate": "TestVoxtral_tinyTextParity",
+      "note": "Voxtral tiny checkpoint (in the real hub layout) against transformers 5.15.0, nobara-pc, 2026-10-09: last-row cosine 1.000000000 and an equal 8-token greedy continuation; this gate found the untied-head lookup bug (cosine 0.15 before the fix)",
+      "promoted_by": "claude",
+      "source_sha256": "fa1ae508ad485c8b",
+      "value": "PASS"
+    },
+    {
       "commit": "bd085de",
       "date": "2026-08-27",
       "gate": "TestW4A8DecodeParity",
