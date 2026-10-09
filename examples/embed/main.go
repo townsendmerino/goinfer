@@ -53,7 +53,7 @@ func main() {
 
 // buildPrompt renders the checkpoint's own chat template when Detect recognizes it (ErrUnknownTemplate
 // means fall back to the raw prompt) and encodes it. A rendered template already carries the family's
-// own BOS marker (Template.Render's contract, chat/chat.go:114-115); addBOS=true would double it on
+// own BOS marker (Template.Render's contract, chat/chat.go:116-117); addBOS=true would double it on
 // Gemma/Llama-3/Mistral (M-39, audit-2026-09-10). Only the raw-text fallback needs the tokenizer to
 // prepend one.
 func buildPrompt(tok *tokenizer.Tokenizer, prompt string) ([]int, error) {
