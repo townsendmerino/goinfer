@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -352,8 +353,14 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 		}
 		out["text decode, 48 positions"] = dec
 		a.Reset()
+		// glm-ocr-tiny cannot take the batched pass: hidden 48 and FFN 144 are not multiples of 32, which its GEMMs need
+		// (resident.prefillUnaligned). The decline must name that; the real checkpoint grades the batched paths
+		// (TestPairwiseRoPERealMetal; amendment in docs/tasks/task-metal-pairwise-followups-2026-10.md, Part A).
 		if l, err := a.PrefillLast(ctx, embs, 0); err != nil {
-			t.Logf("text batched prefill declined, NOT graded: %v", err)
+			if !strings.Contains(err.Error(), "multiple of 32") {
+				t.Fatalf("text batched prefill declined for a reason other than the 32-alignment: %v", err)
+			}
+			t.Logf("text batched prefill declined, NOT graded (graded on the real checkpoint): %v", err)
 		} else {
 			pre := newPWMetric()
 			pre.add(l, textLast32)
@@ -364,7 +371,10 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 		a.Reset()
 		gpuPos := len(g.PromptIDs)
 		if li, gp, err := mRes.ResidentMRoPEPrefillForTest(ctx, rmp, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos); err != nil {
-			t.Logf("image m-RoPE prefill declined, NOT graded (the image turn takes the CPU prefill and the upload): %v", err)
+			if !strings.Contains(err.Error(), "multiple of 32") {
+				t.Fatalf("image m-RoPE prefill declined for a reason other than the 32-alignment: %v", err)
+			}
+			t.Logf("image m-RoPE prefill declined, NOT graded (graded on the real checkpoint): %v", err)
 			upC := cpuRow.NewCache(len(g.PromptIDs) + g.NNew)
 			if _, err := cpuRow.PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, upC); err != nil {
 				t.Fatal(err)

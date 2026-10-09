@@ -943,6 +943,29 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	return a.batchedPrefill(embeddings, startPos, floor, nil, nil)
 }
 
+// prefillUnaligned names the first reduction length the batched pass's GEMMs cannot take, or "" when every one is a multiple
+// of 32. gemm_w4f16_tile and its int8 twin stage K in slabs of 32 with no partial-slab handling (metal/prefill.go). An int4
+// resident cannot violate it (int4Buf refuses K%32 != 0 at build), but a native int8 one can: glm-ocr-tiny (hidden 48, FFN
+// 144) was admitted and read cosine 0.22 against the CPU (docs/tasks/task-metal-pairwise-followups-2026-10.md, Part A).
+// Real checkpoints are 32-aligned; this keeps a model that is not on the sequential path instead of computing garbage.
+func (r *resident) prefillUnaligned() string {
+	if r.H%32 != 0 {
+		return fmt.Sprintf("the hidden size is %d", r.H)
+	}
+	for l := range r.layers {
+		L := &r.layers[l]
+		if L.geom != nil && (r.nH*L.geom.hd)%32 != 0 {
+			return fmt.Sprintf("layer %d's attention output width is %d", l, r.nH*L.geom.hd)
+		}
+		if fi := L.ffnI; L.moe == nil && fi == 0 && r.I%32 != 0 {
+			return fmt.Sprintf("the FFN width is %d", r.I)
+		} else if fi%32 != 0 {
+			return fmt.Sprintf("layer %d's FFN width is %d", l, fi)
+		}
+	}
+	return ""
+}
+
 // batchedPrefill is the f16 batched pass behind PrefillLast and PrefillMRoPELast (S16): the same declines (the floor, an
 // int8 KV cache, a family the pass does not implement, the resident's cap, the exact attention kernel's key limit), the
 // same recovery of a request-time panic, and the same non-finite-logit check. mrope is nil for a text prompt.
@@ -965,6 +988,9 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 	}
 	if !a.r.prefillOK && !a.emodelBatched() {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
+	}
+	if why := a.r.prefillUnaligned(); why != "" {
+		return nil, fmt.Errorf("metal: the prefill GEMMs need every reduction length a multiple of 32 and %s; using sequential path", why)
 	}
 	// startPos < 0 would wrap to a huge uint32 and make kv_store_f16 write far out of bounds — on
 	// UMA that silently corrupts adjacent buffers (audit R-27). The decoder never passes one (it passes 0,

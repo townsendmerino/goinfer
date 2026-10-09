@@ -123,6 +123,10 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatNoPE:              true, // SmolLM3 NoPE layers — invFreq is zero, exact identity in rope_f16
 	decoder.FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid — no pre-norm; sublayer outputs normed before residual
 	decoder.FeatQKNormWhole:       true, // Olmo 3 / Olmo Hybrid — single QK reduction over the whole projected width
+	// GPT-J pairwise rotation (GLM-OCR; docs/tasks/task-metal-pairwise-followups-2026-10.md Part A): rope_f16_pw and
+	// rope_mrope_f16_pw, bound in place of the NeoX prefill kernels for a pairwise model (ropeF16Name).
+	decoder.FeatPairwiseRoPE:  true,
+	decoder.FeatPairwiseMRoPE: true,
 }
 
 type residLayer struct {

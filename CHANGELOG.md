@@ -15,6 +15,18 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — GLM-OCR prefills on the GPU on Apple silicon, image turns included
+
+Metal's batched prefill now runs GLM-OCR (its pairwise rotation kernels were already built), and so does the GPU image prefill for
+its image turns. On an M1 Pro the test invoice's prefill went from about 5.7 s to 1.2 s and the whole run to 14-16 s, with a reply
+byte-identical to the CPU decoder's (exploratory).
+
+### Fixed — Metal's batched prefill no longer runs a model whose dimensions it cannot handle
+
+Its matrix kernels need every reduction length (hidden size, attention output width, FFN width) to be a multiple of 32. An int4 model
+always is; a native int8 model need not be, and one that was not got admitted and produced unrelated logits with no error (found on a
+48-wide test model, cosine 0.22 against the CPU). Such a model now prefills sequentially. No real checkpoint is affected.
+
 ### Changed — building a `.giw` from a safetensors directory streams one layer at a time
 
 `prequant` (and the sidecar `goinfer-serve` and `goinfer-chat` build for a model directory) loaded the whole model into

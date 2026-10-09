@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,6 +125,46 @@ func TestPairwiseRoPERealMetal(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "[%s] PAIRWISE %d positions: mean cos %.6f, worst %.6f (pos %d); continuation flips: %d near-tie, %d real\n", name, len(toks), mean, worst, wp, ties, real)
 			if mean < 0.99 || worst < 0.90 || real > 0 {
 				t.Errorf("%s: mean %.6f (>= 0.99), worst %.6f (>= 0.90), %d non-tie continuation flips (0)", name, mean, worst, real)
+			}
+			// The batched pass (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-A2/G-B3): the prompt through PrefillLast,
+			// its last-token logits against the CPU's (>= 0.98, CUDA's real tier), then the continuation decoded after it,
+			// teacher-forced, against the CPU per position (the decode bars) with no non-tie flip.
+			embs := make([][]float32, nPrompt)
+			for i := range nPrompt {
+				embs[i] = mr.EmbedResidentForTest(toks[i])
+			}
+			a.Reset()
+			if last, perr := a.PrefillLast(context.Background(), embs, 0); perr != nil {
+				fmt.Fprintf(os.Stderr, "[%s] batched prefill declined, NOT graded: %v\n", name, perr)
+			} else {
+				pc := cosF(last, ref[nPrompt-1])
+				var bmean, bworst float64 = 0, 1
+				breal := 0
+				for k := nPrompt; k < len(toks); k++ {
+					l, err := a.Forward(mr.EmbedResidentForTest(toks[k]), k)
+					if err != nil {
+						t.Fatal(err)
+					}
+					cs := cosF(l, ref[k])
+					bmean += cs
+					bworst = min(bworst, cs)
+					if k < len(toks)-1 {
+						if want, got := argmaxF(ref[k]), argmaxF(l); want != got {
+							lo, hi := ref[k][0], ref[k][0]
+							for _, v := range ref[k] {
+								lo, hi = min(lo, v), max(hi, v)
+							}
+							if float64(ref[k][want]-ref[k][got])/float64(hi-lo) > 0.03 {
+								breal++
+							}
+						}
+					}
+				}
+				bmean /= float64(len(toks) - nPrompt)
+				fmt.Fprintf(os.Stderr, "[%s] BATCHED prefill last-token cos %.6f; decode after it: mean %.6f, worst %.6f, %d non-tie flips\n", name, pc, bmean, bworst, breal)
+				if pc < 0.98 || bmean < 0.99 || bworst < 0.90 || breal > 0 {
+					t.Errorf("%s batched: prefill cos %.6f (>= 0.98), decode mean %.6f (>= 0.99), worst %.6f (>= 0.90), %d non-tie flips (0)", name, pc, bmean, bworst, breal)
+				}
 			}
 			restore := pwForceNeoX(t, a)
 			nm, nw, nwp, _, _ := measure()

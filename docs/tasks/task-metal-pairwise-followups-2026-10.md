@@ -1,6 +1,7 @@
 # Task — the two limits left by Metal pairwise RoPE (2026-10)
 
-**Status:** SCOPED 2026-10-09, gates registered below before any code (owner: "lets fix these 2 limits").
+**Status:** Part A BUILT 2026-10-09 (results below). Parts B and C not started. Gates were registered before any code
+(owner: "lets fix these 2 limits").
 
 The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
 
@@ -38,6 +39,29 @@ The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
   - The JSON reply is byte-identical, or each difference is a teacher-forced near-tie (3% rule).
   - TTFT is reported, exploratory.
 - **G-A3:** `gate quick` green.
+
+### Part A results, 2026-10-09 (by day, the M1 Pro)
+
+- **Found by G-A1's first run, and fixed: a latent bug in the batched pass's admission.**
+  - The f16 GEMMs need every reduction length (hidden size, attention output width, FFN width) a multiple of 32.
+  - An int4 resident cannot violate that (`int4Buf` refuses at build), but a native int8 one can, and `prefillOK`
+    never checked.
+  - glm-ocr-tiny (hidden 48, FFN 144) was admitted and read cosine 0.218 (text) and 0.312 (image block) against the
+    CPU: garbage, with no error.
+  - `resident.prefillUnaligned` now declines such a model to the sequential path with the reason named. Real
+    checkpoints are 32-aligned, so none changes path.
+- **G-A1 amendment (mechanism above):** glm-ocr-tiny cannot take the pass by its dimensions, so the tiny test asserts
+  the decline names the 32-alignment. The batched paths are graded on the real checkpoint instead.
+- **G-A1 PASS, real** (`TestPairwiseRoPERealMetal/glm-ocr`, 64 README tokens and a 16-token CPU continuation):
+  - batched-prefill last token: cosine 0.996932 against the CPU int4;
+  - decode after it: mean 0.997001, worst 0.994574, 0 non-tie flips.
+
+  An exploratory 256-token probe read batched against the CPU per-32 at 0.999841, closer than Metal's sequential path
+  (0.997716).
+- **G-A2 PASS:** the test invoice's reply through `metal/cmd/chat` is byte-identical to the CPU decoder's. The image
+  prefill now runs on the GPU (S16's resident m-RoPE pass).
+  - Exploratory timing, two runs: prefill 1.2-1.3 s against about 5.7 s before; decode 95 tok/s; whole invoice
+    14-16 s (70 s that morning; 23 s after the GPU tower; about 20 s with the resident decoder).
 
 ## Part B — Cohere's batched prefill
 
