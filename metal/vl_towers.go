@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // Gemma 3's SigLIP tower and Qwen2.5-VL's tower on Metal (S3 of docs/tasks/task-multimodal-support-2026-10.md), on the
@@ -31,6 +32,8 @@ func init() {
 	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
 		return newQwen25VResident(enc)
 	})
+	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "metal") // S8: aikit's slots cannot be asked what is registered
+	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "metal")
 }
 
 // siglipForceInt8 is a test seam (S18's G-S18f): build the int8 tower (tower_gemm_w8) from a float32 encoder's in-memory

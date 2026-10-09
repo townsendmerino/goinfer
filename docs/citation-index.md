@@ -707,10 +707,10 @@ supports.
 | `docs/measurements/multimodal-audit-2026-10-02.md|cuda/prefill.go:240` | goinfer | `func (r *cudaResident) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, sta` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|cuda/resident.go:2317` | goinfer | `func (r *cudaResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, e` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|cuda/vision_encoder.go:138` | goinfer | `// DEFAULT since 2026-09-21 (owner override of the pre-registered rule; the served downs` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|cuda/vision_register.go:13` | goinfer | `vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|cuda/vision_register.go:17` | goinfer | `vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/capability_matrix_test.go:559` | goinfer | `"qwen3_5_moe":      {"Qwen3.5-MoE", "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE"` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/features.go:100` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:178` | goinfer | `if (bidirectional \|\| eModel) && m.tryClaimResident() {` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:178` | goinfer | `if gemma4ImageDecodeResident(bidirectional, eModel) && m.tryClaimResident() { // S8's ta` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_gemma4_vl.go:29` | goinfer | `func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbeds []floa` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:175` | goinfer | `if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|decoder/generate_vl.go:328` | goinfer | `recurrent := m.hasRecurrentState()` |
@@ -718,7 +718,7 @@ supports.
 | `docs/measurements/multimodal-audit-2026-10-02.md|demo/agent/agent/agent.go:303` | goinfer | `if err := enc.EnableResident(); err != nil {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|gpu/residency.go:1250` | goinfer | `func (rd *residentDecoder) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float3` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|gpu/residency.go:1429` | goinfer | `func (rd *residentDecoder) UploadKV(layer, base int, keys, vals []float32) error {` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|gpu/vision_register.go:11` | goinfer | `vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|gpu/vision_register.go:15` | goinfer | `vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/chatapp/image.go:132` | goinfer | `tw, err := vision.LoadGlmOcrVisionEncoder(im.dir, false)` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/loadflags/loadflags.go:110` | goinfer | `// Resolve "auto" first: every check below and every caller after this reads Backend by ` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |

@@ -818,7 +818,7 @@ re-baked by the code it checks (G-04).
   staging, scalar int8 — the shape CUDA's M-14 retired), `qwenmetal/encoder.go:188-213,311-334`
   (per-op `Run1D`/`Run2D`, each a commit + `waitUntilCompleted` + pool drain: 544–704 synchronous
   submits per image at 32 blocks); aikit `CHANGELOG.md:332-333` (batched SigLIP tower 0.46×/0.33× of
-  CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:172`
+  CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:195`
   ("Metal — still not started"), `docs/benchmarks.md:554-557` (CPU SigLIP 31.3 s/image).
 <!-- citation-lint: allow-path qwenmetal/encoder.go aikit's own SEPARATE Go module (own go.mod), added after the aikit/gpu v0.32.0 release goinfer's cuda/go.mod currently pins — goinfer does not depend on it yet (line 477's own "nothing imports qwenmetal" is this in prose), so no checked-out or module-cache root can verify it here. -->
 <!-- citation-lint: allow-path visionmetal/encoder.go same as qwenmetal/encoder.go above: aikit's own separate, not-yet-pinned Go module. -->
@@ -883,7 +883,7 @@ re-baked by the code it checks (G-04).
   G-06 already went through this session; (b) the crossover measurement itself, since this
   session had no real SigLIP/Qwen2.5-VL checkpoint or Metal hardware benchmark run to confirm the
   Mechanism section's arithmetic actually closes the gap to the CPU tower's recorded times, only
-  that each kernel change is individually correct; (c) `docs/multimodal.md:172` /
+  that each kernel change is individually correct; (c) `docs/multimodal.md:195` /
   `docs/benchmarks.md:554-557`, the two doc paths this finding's own Where cites, do not exist
   under those names in the current aikit tree — reconciling the promised "crossover row" needs
   finding wherever that content now lives first.
