@@ -137,7 +137,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen2-MoE | `qwen2_moe` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99954 |
 | Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/0.99946 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
-| Qwen3-ASR | `qwen3_asr` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ audio encoder) | yes | pending |
+| Qwen3-ASR | `qwen3_asr` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ audio encoder) | yes | full-oracle 100.0%/1.00000 |
 | Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99834 |
 | Qwen3-VL | `qwen3_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/1.00000 |
 | SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
