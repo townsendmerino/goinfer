@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from transformers import AutoTokenizer
 
-CKPTS = ["qwen3-4b", "qwen3.5-0.8b", "qwen3.5-9b", "gemma-4-26b-a4b-it"]
+CKPTS = os.environ["PIN_CKPTS"].split(",") if os.environ.get("PIN_CKPTS") else ["qwen3-4b", "qwen3.5-0.8b", "qwen3.5-9b", "gemma-4-26b-a4b-it"]  # PIN_CKPTS=mellum2.1 pins one checkpoint (testdata/chat_think_goldens/mellum21_think_history.json)
 TOOLS = [{"type": "function", "function": {"name": "get_weather", "description": "Weather for a city",
           "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
 U = lambda c: {"role": "user", "content": c}

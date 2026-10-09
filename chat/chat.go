@@ -182,7 +182,12 @@ func Detect(meta Meta) (*Template, error) {
 		// Mellum2 IS ChatML; its distinctive normalize_content macro lets Detect
 		// name it "mellum2" (banner/serve) before the generic <|im_start|> branch.
 		case strings.Contains(t, "normalize_content") && strings.Contains(t, "<|im_start|>"):
-			return Mellum2(), nil
+			// Mellum2.1's template adds Qwen3's thinking control and history rule to the same ChatML body; 2.0's has neither, so the detectors return nil for it.
+			m := Mellum2()
+			m.reason = detectChatMLReasoning(t)
+			m.nativeTools = declaresQwen35XMLTools(t, m.reason)
+			m.groupsToolResults = detectGroupedToolResults(t)
+			return m, nil
 		// M-36 (audit-2026-09-10): three fingerprints checked BEFORE their generic siblings,
 		// same "more specific first" discipline already used above (Harmony-before-Gemma4,
 		// Mellum2-before-ChatML) — each of these three otherwise matches a generic branch's
