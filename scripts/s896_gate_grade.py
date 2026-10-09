@@ -95,7 +95,7 @@ if all("a" in r for r in rows):
         if all(("x_" + nm) in r for r in rows):
             x_pt, x_lo, x_hi, x_se, x_img = boot("x_" + nm); xv = verdict(x_pt, x_lo, x_hi, x_img)
             out.setdefault("planted", {})[nm] = dict(mean=x_pt, lo=x_lo, hi=x_hi, verdict=xv, per_image=x_img)
-            print(f"control 3, planted defect '{nm}': mean x {x_pt:+.4f} [{x_lo:+.4f}, {x_hi:+.4f}] per image { {i: round(v, 4) for i, v in x_img.items()} } -> {xv}" + ("  (must be FAIL)" if nm == "notadded" else "  (reported)"))
+            print(f"control 3, planted defect '{nm}': mean x {x_pt:+.4f} [{x_lo:+.4f}, {x_hi:+.4f}] per image { {i: round(v, 4) for i, v in x_img.items()} } -> {xv}" + ("  (must be FAIL)" if nm == "textrows" else "  (reported: the gate's sensitivity to this defect)"))
 # ---- secondary, never in the verdict
 print(f"\nsecondary: mean KL(HF||arm) OFF {np.mean([r['kl_off'] for r in rows]):.4f}  ON {np.mean([r['kl_on'] for r in rows]):.4f};  argmax agreement with HF OFF {np.mean([r['agree_off'] for r in rows]):.3f}  ON {np.mean([r['agree_on'] for r in rows]):.3f}")
 # ---- controls 1, 2, 4
