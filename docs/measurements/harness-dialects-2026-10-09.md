@@ -78,3 +78,10 @@ harnesses need things `serve` lacks. Per the second branch, each becomes its own
   alive during a long prefill. Settle with a trace before changing anything.
 
 Gate 1 (the `/v1/messages` harness-scale row) is unaffected by these and proceeds.
+
+**Status (same day, branch `libsurface-harness-2026-10`):** H-a fixed (both tool shapes and a flat named
+`tool_choice` decode; unrunnable tool types are dropped and named in `X-Goinfer-Tools-Dropped`; `TestServe_responses`
+step 4b end to end). H-b fixed (`context_length`, `max_model_len`). H-c open as a decision, not a defect: the
+resident-cap overflow message was worded on purpose so a client does not compact against a server limit
+(`contextLengthErrorFor`, opencode compacted 34 times), and Claude Code compacting on "prompt is too long" is that
+same trade on the Messages route. H-d open pending a trace.
