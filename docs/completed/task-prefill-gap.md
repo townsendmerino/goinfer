@@ -282,7 +282,7 @@ gate it produced cannot answer the question it was built for:
 - **CUDA-decode-vs-CPU compares two implementations of the same numerics** — W4A8 on both sides —
   so a disagreement there is a defect signal. **Fast-vs-exact prefill on Metal compares two
   different numerics of the same model.** The exact (decode) path quantises activations to int8 per
-  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:615`); the batched path
+  row before every GEMV (`rmsnorm_quant` → `gemv_w4a8_*`, `metal/model.go:621`); the batched path
   keeps them in f16 and dequantises the int4 weights to f16 in-kernel (`metal/prefill.go:13`–`:13`).
   They are guaranteed to disagree. The measurement in `measurements/prefill-gate-l1-2026-09-05.md`
   is a correct measurement of *how much* — it is not evidence about *which arm is wrong*.
@@ -425,7 +425,7 @@ change is confined to prompt ingestion, which is why `--exact-prefill` is a comp
   overhead-free marginal — the O(K²) attention term this doc's next item targets.
 - **BUILT, MEASURED, AND §3-GATED — SHIPS (2026-09-10):** the Metal twin of L2, a
   `simdgroup_matrix` flash attention for `attention_prefill` (`attention_prefill_fused`,
-  `metal/prefill.go:339`). This paragraph's own pre-registered projection — "would take the
+  `metal/prefill.go:386`). This paragraph's own pre-registered projection — "would take the
   S/K=3900 speedup from 2.02× to ~5×" — is a real measurement, not arithmetic: **4.23× measured**
   (baseline 2.03×) on the real S checkpoint, end to end. Kernel-isolated ratio 5.45× at K=3900,
   1.80× at K=140. The §3 gate (same pooled §3.2 form and reference files L1's gate used, prompt
