@@ -49,6 +49,18 @@ def made_up(out):
     return names
 
 
+def processed(proc, images):
+    """The full PixtralProcessor on [IMG] per image: its pixel values and sizes are the model's (it passes the image
+    processor patch_size x spatial_merge_size; the image processor called alone rounds to the patch, 14, and the merged
+    grid then disagrees with the ids)."""
+    enc = proc(text="[IMG]" * len(images), images=images, return_tensors="pt")
+    f = proc.patch_size * proc.spatial_merge_size
+    for h, w in enc["image_sizes"].tolist():
+        if h % f or w % f:
+            sys.exit(f"processor size {h}x{w} is not a multiple of {f}")
+    return enc
+
+
 def save(out, name, t):
     t.detach().float().contiguous().numpy().astype("<f4").tofile(os.path.join(out, name + ".f32"))
 
@@ -87,10 +99,10 @@ def main():
         name = img.replace("/", "_").removesuffix(".png")
         im = Image.open(path).convert("RGB")
         pil[img] = im
-        enc = proc.image_processor(images=[im], return_tensors="pt")
+        enc = processed(proc, [im])
         h, w = (int(x) for x in enc["image_sizes"][0])
         save(out, name + ".pixels", enc["pixel_values"][0, :, :h, :w])
-        ids = proc(text="[IMG]", images=[im], return_tensors="pt")["input_ids"][0].tolist()
+        ids = enc["input_ids"][0].tolist()
         golden["a"].append({"image": img, "name": name, "src": [im.height, im.width], "size": [h, w],
                             "img": ids.count(IMG), "brk": ids.count(BRK), "end": ids.count(END)})
         log(f"a: {img} {im.width}x{im.height} -> {w}x{h}, {ids.count(IMG)} [IMG]")
@@ -98,7 +110,7 @@ def main():
     # b: every stage of the tower and the projector, from the processor's own pixels.
     for img in IMAGES:
         name = img.replace("/", "_").removesuffix(".png")
-        enc = proc.image_processor(images=[pil[img]], return_tensors="pt")
+        enc = processed(proc, [pil[img]])
         st = {}
         hooks = [tower.patch_conv.register_forward_hook(lambda m, i, o: st.__setitem__("conv", o[0].flatten(1).T.clone())),
                  tower.ln_pre.register_forward_hook(lambda m, i, o: st.__setitem__("lnpre", o[0].clone()))]
@@ -122,7 +134,7 @@ def main():
 
     # b: two images in one call (block-diagonal mask), each image's projector output.
     pair = [IMAGES[3], IMAGES[0]]
-    enc = proc.image_processor(images=[pil[p] for p in pair], return_tensors="pt")
+    enc = processed(proc, [pil[p] for p in pair])
     with torch.no_grad():
         fs = model.model.get_image_features(pixel_values=enc["pixel_values"], image_sizes=enc["image_sizes"],
                                             vision_feature_layer=-1).pooler_output
@@ -138,7 +150,7 @@ def main():
     else:
         ids_in = json.load(open(idsf))
         ids = ids_in["ids"]
-        enc = proc.image_processor(images=[pil[ids_in["image"]]], return_tensors="pt")
+        enc = processed(proc, [pil[ids_in["image"]]])
         with torch.no_grad():
             n = model.model.get_image_features(pixel_values=enc["pixel_values"], image_sizes=enc["image_sizes"],
                                                vision_feature_layer=-1).pooler_output[0].shape[0]
