@@ -101,6 +101,21 @@ func TestRegistry_everyEntryIsVerifiable(t *testing.T) {
 		if c.Bytes <= 0 {
 			t.Errorf("%s: bytes = %d", c.Name, c.Bytes)
 		}
+		if c.IsDirectory() {
+			// A safetensors checkpoint directory (P9(d)): no single file to pin, so the digest is the plan's tree digest, and the
+			// reference is the explicit owner/repo:safetensors form that ParseRef already takes.
+			if c.Repo == "" || c.File != "" {
+				t.Errorf("%s: a directory entry names a repo and no file (%q, %q)", c.Name, c.Repo, c.File)
+			}
+			if c.GoodFor == "" || c.Needs == "" {
+				t.Errorf("%s: missing good_for/needs", c.Name)
+			}
+			ref, err := ParseRef(c.Ref())
+			if err != nil || !ref.Checkpoint || ref.Repo != c.Repo {
+				t.Errorf("%s: Ref() = %q parses to %+v, %v; want the checkpoint selector on %s", c.Name, c.Ref(), ref, err, c.Repo)
+			}
+			continue
+		}
 		if c.Repo == "" || c.File == "" {
 			t.Errorf("%s: repo/file incomplete (%q, %q)", c.Name, c.Repo, c.File)
 		}
@@ -190,6 +205,9 @@ func TestRegistry_digestsMatchLocalFiles(t *testing.T) {
 	}
 	checked := 0
 	for _, c := range RecommendedAll() {
+		if c.IsDirectory() {
+			continue // a directory has a tree digest, checked against the plan at pull time (TestPlan_treeDigest*), not a file here
+		}
 		// The file may sit anywhere under the models root; find it by name rather than guessing
 		// the layout, which differs per checkpoint.
 		var path string
@@ -228,4 +246,28 @@ func TestRegistry_digestsMatchLocalFiles(t *testing.T) {
 		checked++
 	}
 	t.Logf("verified %d of %d entries against local files", checked, len(RecommendedAll()))
+}
+
+// A directory entry is a recommendation that carries a vision tower, so it is only worth having if it can be told apart from a
+// GGUF one everywhere a list is printed, and if at least one exists for each box class the registry promises (P9(d), 2026-10-08).
+func TestRegistry_directoryEntriesAreVisionLanguage(t *testing.T) {
+	var dirs int
+	for _, c := range RecommendedAll() {
+		if !c.IsDirectory() {
+			continue
+		}
+		dirs++
+		if !strings.Contains(c.Describe(), "dir") {
+			t.Errorf("%s: Describe() %q does not say it is a directory", c.Name, c.Describe())
+		}
+		if g := strings.ToLower(c.GoodFor); !strings.Contains(g, "screenshot") && !strings.Contains(g, "picture") && !strings.Contains(g, "image") {
+			t.Errorf("%s: a directory entry is in the registry for its images, and its good_for says nothing about them", c.Name)
+		}
+		if !strings.Contains(c.Needs, "vision tower") {
+			t.Errorf("%s: needs does not carry the tower's cost (P9(d): \"with the tower's cost in the line\")", c.Name)
+		}
+	}
+	if dirs == 0 {
+		t.Fatal("no directory entry: the vision-language recommendations are gone, and this gate would pass having checked nothing")
+	}
 }

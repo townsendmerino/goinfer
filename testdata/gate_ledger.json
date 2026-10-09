@@ -730,6 +730,15 @@
       "value": "PASS"
     },
     {
+      "commit": "7ee05f0a",
+      "date": "2026-10-08",
+      "gate": "TestQwen3VLReal_gate",
+      "note": "Qwen3-VL-2B text forward against HF f32 on nobara-pc, 2026-10-08, main at 7ee05f0a plus the pull changes (no decoder change): logit cosine 1.000000, argmax 12095 equal, 6-token continuation equal; raw docs/measurements/multimodal-support-2026-10/p9d/qwen3vl-real-gate-text.log. Also passed 2026-10-07 (G-S10a). The image prompt (TestQwen3VLImageReal, G-S10c) passed again the same day: cosine 1.000000, argmax equal, 15/15, three planted defects red (p9d/qwen3vl-image-gate.log).",
+      "promoted_by": "claude",
+      "source_sha256": "d682d762fe68f7e4",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestQwen3_forwardParity",

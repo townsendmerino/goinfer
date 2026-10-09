@@ -419,3 +419,45 @@ func TestAnyLoads_generativeOrEncoder(t *testing.T) {
 		t.Fatalf("the CLI's plan of a NomicBert: family %q, %v; want %q", p.Family, err, EncoderFamily)
 	}
 }
+
+func TestPlan_treeDigestFollowsTheFiles(t *testing.T) {
+	base := Plan{Repo: "o/r", Files: []File{{Path: "config.json", Size: 10}, {Path: "model.safetensors", Size: 1000, SHA256: "aa"}}}
+	d := base.TreeDigest()
+	if len(d) != 64 {
+		t.Fatalf("digest %q is not 64 hex characters", d)
+	}
+	reordered := Plan{Repo: "o/r", Files: []File{base.Files[1], base.Files[0]}}
+	if reordered.TreeDigest() != d {
+		t.Error("the digest depends on the listing order: it must sort by path")
+	}
+	for name, mut := range map[string]func(p *Plan){
+		"a weight's digest": func(p *Plan) { p.Files[1].SHA256 = "ab" },
+		"a weight's size":   func(p *Plan) { p.Files[1].Size++ },
+		"a config's size":   func(p *Plan) { p.Files[0].Size++ },
+		"a file's name":     func(p *Plan) { p.Files[0].Path = "config2.json" },
+		"an added file":     func(p *Plan) { p.Files = append(p.Files, File{Path: "extra.json", Size: 1}) },
+	} {
+		q := Plan{Repo: "o/r", Files: append([]File(nil), base.Files...)}
+		mut(&q)
+		if q.TreeDigest() == d {
+			t.Errorf("changing %s did not change the tree digest", name)
+		}
+	}
+}
+
+func TestPlan_verifyPin(t *testing.T) {
+	p := Plan{Repo: "o/r", Files: []File{{Path: "model.safetensors", Size: 5, SHA256: "aa"}}}
+	if err := p.VerifyPin(""); err != nil {
+		t.Errorf("an empty pin (the explicit form) must pin nothing: %v", err)
+	}
+	if err := p.VerifyPin(p.TreeDigest()); err != nil {
+		t.Errorf("the matching pin was refused: %v", err)
+	}
+	err := p.VerifyPin(strings.Repeat("0", 64))
+	if err == nil {
+		t.Fatal("a pin that does not match the plan was accepted: a re-uploaded checkpoint would ride under the recommended name")
+	}
+	if !strings.Contains(err.Error(), "nothing was downloaded") || !strings.Contains(err.Error(), CheckpointSelector) {
+		t.Errorf("the refusal does not say that nothing was downloaded and how to take the new files: %v", err)
+	}
+}

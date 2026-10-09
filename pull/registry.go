@@ -37,12 +37,18 @@ var capabilityMatrixJSON []byte
 
 // Checkpoint is one recommended checkpoint, as recorded on its capability-matrix row.
 type Checkpoint struct {
-	Name    string `json:"name"`     // the short name `pull` accepts
-	Repo    string `json:"repo"`     // Hugging Face repo
-	File    string `json:"file"`     // exact filename in that repo
-	Quant   string `json:"quant"`    // the on-disk quantization
-	Bytes   int64  `json:"bytes"`    // download size
-	SHA256  string `json:"sha256"`   // verified on fetch
+	Name   string `json:"name"`   // the short name `pull` accepts
+	Repo   string `json:"repo"`   // Hugging Face repo
+	File   string `json:"file"`   // exact filename in that repo ("" for a directory entry)
+	Quant  string `json:"quant"`  // the on-disk quantization
+	Bytes  int64  `json:"bytes"`  // download size
+	SHA256 string `json:"sha256"` // verified on fetch (for a directory entry: the plan's tree digest, Plan.TreeDigest)
+	// Kind is "" for a single-file GGUF (every entry until 2026-10-08) and KindDirectory for a safetensors checkpoint
+	// fetched as a set (`pull <name>` then runs the same plan-and-verify path as `pull owner/repo:safetensors`, and
+	// refuses when the repo's files no longer match the tree digest this build pins). It is how a vision-language
+	// checkpoint can be recommended at all: the GGUF loader reads no image projector, the safetensors directory
+	// carries the tower (docs/multimodal.md, P9(d)).
+	Kind    string `json:"kind,omitempty"`
 	GoodFor string `json:"good_for"` // what it is worth using for
 	Needs   string `json:"needs"`    // what it costs to run
 	// Tools records what `internal/servecheck`'s two tools rows measured for this checkpoint
@@ -57,6 +63,12 @@ type Checkpoint struct {
 	Family string `json:"-"`
 	Parity string `json:"-"`
 }
+
+// KindDirectory marks a registry entry that is a safetensors checkpoint directory, not a single GGUF file.
+const KindDirectory = "directory"
+
+// IsDirectory reports whether the entry is a safetensors checkpoint directory.
+func (c Checkpoint) IsDirectory() bool { return c.Kind == KindDirectory }
 
 type matrixRow struct {
 	Name       string      `json:"name"`
@@ -120,11 +132,20 @@ func RecommendedNames() []string {
 
 // Ref converts a registry entry into the exact repo/file reference the fetcher already takes, so
 // a short name is a lookup in front of the existing path rather than a second download route.
-func (c Checkpoint) Ref() string { return c.Repo + ":" + c.File }
+func (c Checkpoint) Ref() string {
+	if c.IsDirectory() {
+		return c.Repo + ":" + CheckpointSelector
+	}
+	return c.Repo + ":" + c.File
+}
 
 // Describe is one listing line.
 func (c Checkpoint) Describe() string {
-	return fmt.Sprintf("%-22s %6.2f GB  %-8s %s", c.Name, float64(c.Bytes)/1e9, c.Quant, c.GoodFor)
+	quant := c.Quant
+	if c.IsDirectory() {
+		quant += " dir" // a safetensors directory, quantized on load: the size is the full-precision download
+	}
+	return fmt.Sprintf("%-22s %6.2f GB  %-8s %s", c.Name, float64(c.Bytes)/1e9, quant, c.GoodFor)
 }
 
 // DescribeTools reports what `serve check`'s two tools rows measured for this checkpoint (R11):

@@ -1,0 +1,9 @@
+=== RUN   TestQwen3VLImageReal
+decoder: context capped at 146531 (model allows 262144) so that KV fits: weights 7.9 GB + KV 31.3 GB of budget 39.2 GB — pass -ctx to choose, or -stream-weights to lift
+[G-S10c] 1083 ids, image [4, 1068), 3 DeepStack sets, fast attention true: last-position cosine 1.000000, argmax 86608 (HF 86608); text-position agreement after the image 15/15 (100.0%)
+[G-S10c] planted (1) DeepStack not added: last-position cosine 0.982867, argmax 86608 (HF 86608), red true
+[G-S10c] planted (2) added one layer late: last-position cosine 0.987967, argmax 86608 (HF 86608), red true
+[G-S10c] planted (3) added to the text positions too: last-position cosine -0.135017, argmax 1986 (HF 86608), red true
+--- PASS: TestQwen3VLImageReal (94.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	94.705s

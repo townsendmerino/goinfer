@@ -1,0 +1,8 @@
+=== RUN   TestQwen3VLReal_gate
+decoder: context capped at 153360 (model allows 262144) so that KV fits: weights 7.9 GB + KV 32.8 GB of budget 40.7 GB — pass -ctx to choose, or -stream-weights to lift
+    qwen3vl_real_test.go:51: qwen3-vl-2b: 28 layers, H=16 kv=8 headDim=128 inter=6144 MRopeSection=[24 20 20]
+    qwen3vl_real_test.go:63: qwen3-vl-2b text parity: argmax got=12095 want=12095 | logit cosine=1.000000
+    qwen3vl_real_test.go:79: qwen3-vl-2b continuation got=[12095 11 323 279 6722 315] want=[12095 11 323 279 6722 315]
+--- PASS: TestQwen3VLReal_gate (4.41s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	4.443s

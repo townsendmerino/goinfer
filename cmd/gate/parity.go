@@ -121,6 +121,7 @@ var parityRealckptGates = []gateCheck{
 	{"laguna", "TestLagunaReal_gate"},
 	{"laguna-oracle", "TestLagunaReal_oracle"},
 	{"qwen25vl-real", "TestQwen25VLReal_gate"},
+	{"qwen3vl-real", "TestQwen3VLReal_gate"}, // 2026-10-08: Qwen3-VL-2B text forward against HF f32 (the image prompt is TestQwen3VLImageReal, which needs its own pin output)
 	{"laguna-gguf", "TestLagunaGGUF_gate"},
 	{"glm4moe-air", "TestGlm4MoeAir_gate"},
 	{"cohere", "TestCohereAyaReal_gate"},
@@ -193,6 +194,7 @@ var emitGates = []gateCheck{
 	{"laguna", "TestLagunaReal_oracle"},
 	{"qwen3_5", "TestQwen38Real_oracle"},
 	{"qwen2_5_vl", "TestQwen25VLReal_gate"},
+	{"qwen3_vl", "TestQwen3VLReal_gate"}, // Qwen3-VL-2B text forward against HF f32; the image prompt is TestQwen3VLImageReal (needs scripts/pin_qwen3vl_image_real.py output, so not a required gate)
 }
 
 // assetNeverBuilt names required gates whose asset has NEVER been built anywhere, so no invocation
@@ -824,10 +826,6 @@ var realckptNotRequired = map[string]string{
 		"full-model gate TestQwen35Real_gate2FullModel is required",
 	"TestQwen3Real_gate": "unregistered asset (GOINFER_QWEN3_REAL); qwen3 is required through " +
 		"TestQwen3_forwardParity + TestGGUF_qwen3_parity",
-	"TestQwen3VLReal_gate": "qwen3_vl is required through TestQwen3VL_textParity (tiny-golden, " +
-		"cosine 1.0); this adds the real Qwen3-VL-2B-Instruct checkpoint (GOINFER_QWEN3VL_2B), " +
-		"not yet pulled to any box (P8 Phase 0, docs/multimodal.md) — a real, tracked gap, not an " +
-		"unregistered asset",
 }
 
 // realckptDirs are the packages the realckpt cell runs, and so the packages scanned for its gates.

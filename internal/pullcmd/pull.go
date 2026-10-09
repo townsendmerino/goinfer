@@ -72,6 +72,12 @@ multi-gigabyte transfer — a community GGUF re-upload of the same model is usua
 // itself).
 func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string, err error) {
 	if c, ok := pull.Recommended(refArg); ok {
+		if c.IsDirectory() {
+			// A safetensors checkpoint directory (P9(d)): the same plan-and-verify path as owner/repo:safetensors, with the tree
+			// digest this build pins riding in Pin; pullCheckpoint refuses before any weight byte moves if the repo no longer matches.
+			note = fmt.Sprintf("%s → %s (%s, %.2f GB download) — %s\n", refArg, c.Ref(), c.Quant, float64(c.Bytes)/1e9, c.GoodFor)
+			return pull.Ref{Repo: c.Repo, Checkpoint: true, Pin: c.SHA256, Bytes: c.Bytes}, c.Ref(), note, nil
+		}
 		// M-32 (audit-2026-09-10.md): build the Ref directly from the checkpoint rather than
 		// round-tripping through ParseRef(c.Ref()) — that string is just "repo:file", and
 		// ParseRef only ever sets Pin for a "demo:" ref (pull.go's Curated() branch), so the
@@ -285,6 +291,7 @@ func printPlan(p pull.Plan) {
 		fmt.Print(listingLine(pull.Listed{File: f}))
 	}
 	fmt.Printf("  %s\n", p.SizeNote())
+	fmt.Printf("  tree digest %s\n", p.TreeDigest())
 }
 
 // pullCheckpoint fetches a repo's safetensors checkpoint (pull <owner/repo>:safetensors) as one verified set.
@@ -292,6 +299,10 @@ func pullCheckpoint(ctx context.Context, ref pull.Ref, outDir string) int {
 	// AnyLoads, not PlanCheckpoint's generative check: the CLI fetches an embedding encoder too (serve --embed-model).
 	p, err := pull.PlanCheckpointFor(ctx, ref.Repo, pull.AnyLoads)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
+		return 1
+	}
+	if err := p.VerifyPin(ref.Pin); err != nil {
 		fmt.Fprintf(os.Stderr, "goinfer-chat pull: %v\n", err)
 		return 1
 	}

@@ -100,7 +100,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3-MoE** — Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert
 
-> **Qwen3-VL** — Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)
+> **Qwen3-VL** — Qwen3-VL (qwen3 + interleaved m-RoPE; the vision tower, with DeepStack injection into the first decoder layers)
 
 > **SmolLM3** — HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings
 
@@ -136,7 +136,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen2.5-VL | `qwen2_5_vl` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/0.99946 |
 | Qwen3 | `qwen3` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99834 |
-| Qwen3-VL | `qwen3_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Qwen3-VL | `qwen3_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/1.00000 |
 | SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Spark-X2.5 | `spark2_5` | dense | interleave | no | partial | RMSNorm, pre-norm | GELU (gated) | no | safetensors | text | no | full-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |

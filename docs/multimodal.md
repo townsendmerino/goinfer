@@ -920,6 +920,12 @@ number is published without provenance.
   **2026-10-06: unblocked.** `pull` fetches `hf:<repo>:safetensors` directories since `20e113ba` (2026-10-03). What is left is the
   registry's schema (one `File` per family row) and which checkpoint to recommend; that is an owner decision, listed in
   §"Finishing this doc".
+  **(d) DONE, 2026-10-08 (owner decision: one VL checkpoint per box class, each a single safetensors directory).** The registry has a
+  directory entry kind (`Kind: "directory"`; its digest is the plan's tree digest, `Plan.TreeDigest`, and `pull <name>` refuses before any
+  weight byte moves if the repo no longer matches it). Box class S (CPU only, 16 GB RAM or less): `qwen3.5-0.8b`. Box class M (an 8 GB GPU, or
+  16-32 GB Apple Silicon): `qwen3-vl-2b`. Box class L (24 GB GPU or 64 GB and up): none, because nothing at that size is validated, Apache-licensed
+  and a single directory; `pull owner/repo:safetensors` works for anything else. Qwen2.5-VL-3B is deliberately not recommended: its `qwen-research`
+  license is non-commercial. Each line carries the tower's cost. Record: `docs/tasks/task-multimodal-support-2026-10.md`, "P9(d) done".
 - **P10 · Breadth on the small end.** LFM2.5-VL-3B (SigLIP2 on `lfm2`), Ministral 3's Pixtral tower
   (the `ministral3` decoder exists; the tower is in the same checkpoint), North Micro Vision 2.4B.
   Each is a tower descriptor + projector on a decoder already at parity; do them in that order,

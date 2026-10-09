@@ -96,7 +96,20 @@
     "loaders": "safetensors, GGUF",
     "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "real-oracle 100.0%/0.99989"
+    "parity": "real-oracle 100.0%/0.99989",
+    "checkpoint": {
+      "name": "qwen3.5-0.8b",
+      "label": "Qwen3.5 0.8B (reads images)",
+      "repo": "Qwen/Qwen3.5-0.8B",
+      "file": "",
+      "quant": "bf16",
+      "bytes": 1769905646,
+      "sha256": "1a91f39bee94362e2daefc14d18bbfa2e8c90890b4a7f0d1f43cf2a4603593e5",
+      "kind": "directory",
+      "good_for": "box class S: reading a screenshot or a simple picture with no GPU; a 0.8B model, so expect the gist, not fine detail. Apache-2.0",
+      "needs": "1.8 GB download (bf16, quantized to int4 on load: about 1 GB resident, an estimate) plus the vision tower: about 0.35 GB of float32 weights on the CPU, about 0.7 GB reserved on a CUDA card. The family is checked against Hugging Face on a real checkpoint, and the image path was verified on this 0.8B",
+      "tools": "not yet measured"
+    }
   },
   {
     "name": "deepseek_v2",
@@ -874,10 +887,11 @@
       "qwen3_vl"
     ],
     "display_name": "Qwen3-VL",
-    "description": "Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)",
-    "summary": "Qwen3-VL, the text half only. It doesn't take images yet.",
+    "description": "Qwen3-VL (qwen3 + interleaved m-RoPE; the vision tower, with DeepStack injection into the first decoder layers)",
+    "summary": "Qwen3-VL. Reads images (verified on Qwen3-VL-2B).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
@@ -888,9 +902,22 @@
     "activation": "SwiGLU",
     "tied_lm_head": false,
     "loaders": "safetensors",
-    "modality": "text",
+    "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000",
+    "checkpoint": {
+      "name": "qwen3-vl-2b",
+      "label": "Qwen3-VL 2B (reads images)",
+      "repo": "Qwen/Qwen3-VL-2B-Instruct",
+      "file": "",
+      "quant": "bf16",
+      "bytes": 4266640306,
+      "sha256": "63addcbf5897c00f3e11df9a9fe64d90bdb4d3114c2fe25b9039aff09bbd56cc",
+      "kind": "directory",
+      "good_for": "box class M: reading screenshots, tables and documents on an 8 GB GPU box or a 16-32 GB Mac. Apache-2.0",
+      "needs": "4.3 GB download (bf16, quantized to int4 on load: about 1.2 GB resident, an estimate) plus the vision tower: about 1.2 GB of float32 weights on the CPU, about 1.6 GB reserved on a CUDA card. Measured on an RTX 2070 SUPER (2026-10-08, single samples): a 1,000-token image turn took about 15 s, because its DeepStack prefill runs on the CPU (the resident one is off until it is checked against Hugging Face); on the CPU the tower alone takes 12-18 s. The family is checked against Hugging Face on the real 2B, text and one image prompt",
+      "tools": "not yet measured"
+    }
   },
   {
     "name": "smollm3",

@@ -132,3 +132,27 @@ func TestRunHint_encoderPointsAtEmbedModel(t *testing.T) {
 		t.Errorf("generative hint: %q", h)
 	}
 }
+
+// A directory entry (P9(d)) resolves to the checkpoint form with its tree digest pinned: the same ref a user could type as
+// owner/repo:safetensors, plus the Pin that makes pullCheckpoint refuse a repo that has changed since this build was cut.
+func TestResolveRunRef_directoryEntryPinsTheTreeDigest(t *testing.T) {
+	for _, name := range []string{"qwen3.5-0.8b", "qwen3-vl-2b"} {
+		c, ok := pull.Recommended(name)
+		if !ok || !c.IsDirectory() {
+			t.Fatalf("%s: not a directory entry in the registry (%+v, %v)", name, c, ok)
+		}
+		ref, arg, note, err := resolveRunRef(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !ref.Checkpoint || ref.Repo != c.Repo || ref.File != "" || ref.Pin != c.SHA256 || ref.Bytes != c.Bytes {
+			t.Errorf("%s: ref %+v does not carry the checkpoint selector and the registry's pin", name, ref)
+		}
+		if arg != c.Repo+":safetensors" {
+			t.Errorf("%s: resolved arg %q, want %s:safetensors", name, arg, c.Repo)
+		}
+		if !strings.Contains(note, "GB download") {
+			t.Errorf("%s: the note %q does not state the download size", name, note)
+		}
+	}
+}

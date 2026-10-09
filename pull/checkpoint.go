@@ -2,6 +2,8 @@ package pull
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -269,6 +271,37 @@ func PlanCheckpointFor(ctx context.Context, repo string, loads func(modelType st
 	}
 	sort.Slice(p.Files, func(i, j int) bool { return p.Files[i].Path < p.Files[j].Path })
 	return p, nil
+}
+
+// TreeDigest is the digest a registry entry pins for a checkpoint directory: sha256 over one line per planned file, in path
+// order, "path<TAB>size<TAB>sha256-or-dash". The weights are LFS files, so their lines carry the digest Hugging Face
+// declares; a small non-LFS file (config, tokenizer) carries its size only, which is what the tree listing offers. It is the
+// directory's counterpart of a GGUF entry's sha256: the same upstream-re-upload guard, for a set.
+func (p Plan) TreeDigest() string {
+	files := append([]File(nil), p.Files...)
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	h := sha256.New()
+	for _, f := range files {
+		sum := f.SHA256
+		if sum == "" {
+			sum = "-"
+		}
+		fmt.Fprintf(h, "%s\t%d\t%s\n", f.Path, f.Size, sum)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// VerifyPin is the check a registry entry's directory pull makes after planning and before any weight byte moves: the repo's
+// files must hash to the tree digest this build pins. An empty pin (the explicit owner/repo:safetensors form) pins nothing.
+func (p Plan) VerifyPin(pin string) error {
+	if pin == "" {
+		return nil
+	}
+	if got := p.TreeDigest(); got != pin {
+		return fmt.Errorf("%s has changed since this build was cut (tree digest %s, this build pins %s); nothing was downloaded. "+
+			"Fetch the new files with the explicit form owner/repo:%s, which pins nothing", p.Repo, got, pin, CheckpointSelector)
+	}
+	return nil
 }
 
 // SizeNote is the disk-and-bandwidth line a plan must show before the transfer (the doc's §3 rule 4): the full-precision

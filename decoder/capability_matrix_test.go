@@ -527,7 +527,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen3":               {"Qwen3", "Alibaba Qwen3 dense (QK-norm, no bias)", "safetensors, GGUF", "text"},
 	"qwen2":               {"Qwen2 / Qwen2.5", "Alibaba Qwen2/2.5 dense (q/k/v bias)", "safetensors, GGUF", "text"},
 	"qwen2_5_vl":          {"Qwen2.5-VL", "Qwen2.5-VL text decoder (qwen2 + m-RoPE)", "safetensors", "text (+ vision tower)"},
-	"qwen3_vl":            {"Qwen3-VL", "Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)", "safetensors", "text"},
+	"qwen3_vl":            {"Qwen3-VL", "Qwen3-VL (qwen3 + interleaved m-RoPE; the vision tower, with DeepStack injection into the first decoder layers)", "safetensors", "text (+ vision tower)"},
 	"qwen2_moe":           {"Qwen2-MoE", "Qwen1.5/2 MoE (sparse + always-on shared expert)", "safetensors, GGUF", "text"},
 	"qwen3_moe":           {"Qwen3-MoE", "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert", "safetensors, GGUF", "text"},
 	"llama":               {"Llama", "Meta Llama 2/3 dense (single-base RoPE)", "safetensors, GGUF, GPTQ, AWQ", "text"},
@@ -620,7 +620,7 @@ var siteDocs = map[string]siteDoc{
 	"qwen2_5_vl":       {"Qwen2.5-VL. Reads images.", []string{"chat", "vision"}},
 	"qwen3":            {"Alibaba's Qwen3 dense models.", []string{"chat"}},
 	"qwen3_moe":        {"Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.", []string{"chat", "code"}},
-	"qwen3_vl":         {"Qwen3-VL, the text half only. It doesn't take images yet.", []string{"chat"}},
+	"qwen3_vl":         {"Qwen3-VL. Reads images (verified on Qwen3-VL-2B).", []string{"chat", "vision"}},
 	"smollm3":          {"Hugging Face's SmolLM3, 3B.", []string{"chat"}},
 	"spark2_5":         {"XHToken's Spark-X2.5, 1.7B and 4B.", []string{"chat"}},
 	"gpt-oss":          {"OpenAI's open-weight gpt-oss, 20B and 120B.", []string{"chat"}},
@@ -666,15 +666,16 @@ type capabilityRow struct {
 // recommendedCheckpoint is one checkpoint this project has actually run. See pull/registry.go for
 // what consumes it and why nothing is listed that the parity gates do not back.
 type recommendedCheckpoint struct {
-	Name    string `json:"name"`     // the short name `pull` accepts
-	Label   string `json:"label"`    // what a page titles it: the model in words, not the short name
-	Repo    string `json:"repo"`     // Hugging Face repo
-	File    string `json:"file"`     // exact filename in that repo
-	Quant   string `json:"quant"`    // on-disk quantization
-	Bytes   int64  `json:"bytes"`    // download size
-	SHA256  string `json:"sha256"`   // verified on fetch; goinfer hosts no weights
-	GoodFor string `json:"good_for"` // what it is worth using for
-	Needs   string `json:"needs"`    // what it costs to run
+	Name    string `json:"name"`           // the short name `pull` accepts
+	Label   string `json:"label"`          // what a page titles it: the model in words, not the short name
+	Repo    string `json:"repo"`           // Hugging Face repo
+	File    string `json:"file"`           // exact filename in that repo ("" for a directory entry)
+	Quant   string `json:"quant"`          // on-disk quantization
+	Bytes   int64  `json:"bytes"`          // download size
+	SHA256  string `json:"sha256"`         // verified on fetch; goinfer hosts no weights (a directory entry: the plan's tree digest, pull.Plan.TreeDigest)
+	Kind    string `json:"kind,omitempty"` // "directory" for a safetensors checkpoint fetched as a set (a vision-language checkpoint: the tower is in the directory); "" for a single GGUF file
+	GoodFor string `json:"good_for"`       // what it is worth using for
+	Needs   string `json:"needs"`          // what it costs to run
 	// Tools records what internal/servecheck's two tools rows measured for this checkpoint (R11,
 	// docs/measurements/cold-user-2026-09-06-nobara-pc.md) — from a RECORDED `serve check` run
 	// against the real checkpoint, never guessed. See pull.Checkpoint.Tools for the consumer.
@@ -688,6 +689,28 @@ type recommendedCheckpoint struct {
 // Only families whose parity is a T3 method may appear — pull's TestRegistry_noEntryOutrunsItsParity
 // enforces that, so a family still at tiny-golden cannot be recommended to a first-time user.
 var recommendedCheckpoints = map[string]recommendedCheckpoint{
+	// P9(d), owner decision 2026-10-08 (option A): one vision-language checkpoint per box class, each a single safetensors directory (the GGUF loader
+	// reads no image projector). S (CPU only, 16 GB RAM or less): Qwen3.5-0.8B. M (an 8 GB GPU, or 16-32 GB Apple Silicon): Qwen3-VL-2B. L (24 GB GPU or
+	// 64 GB and up): none yet, because nothing at that size is validated, Apache-licensed and a single directory; the explicit owner/repo:safetensors form works.
+	// The digest is Plan.TreeDigest at authoring time (pull prints it); pull refuses a repo that no longer matches.
+	"qwen3_5": {
+		Name: "qwen3.5-0.8b", Label: "Qwen3.5 0.8B (reads images)", Repo: "Qwen/Qwen3.5-0.8B", Kind: "directory", Quant: "bf16",
+		Bytes: 1769905646, SHA256: "1a91f39bee94362e2daefc14d18bbfa2e8c90890b4a7f0d1f43cf2a4603593e5",
+		GoodFor: "box class S: reading a screenshot or a simple picture with no GPU; a 0.8B model, so expect the gist, not fine detail. Apache-2.0",
+		Needs: "1.8 GB download (bf16, quantized to int4 on load: about 1 GB resident, an estimate) plus the vision tower: about 0.35 GB of float32 weights on the CPU, " +
+			"about 0.7 GB reserved on a CUDA card. The family is checked against Hugging Face on a real checkpoint, and the image path was verified on this 0.8B",
+		Tools: "not yet measured",
+	},
+	"qwen3_vl": {
+		Name: "qwen3-vl-2b", Label: "Qwen3-VL 2B (reads images)", Repo: "Qwen/Qwen3-VL-2B-Instruct", Kind: "directory", Quant: "bf16",
+		Bytes: 4266640306, SHA256: "63addcbf5897c00f3e11df9a9fe64d90bdb4d3114c2fe25b9039aff09bbd56cc",
+		GoodFor: "box class M: reading screenshots, tables and documents on an 8 GB GPU box or a 16-32 GB Mac. Apache-2.0",
+		Needs: "4.3 GB download (bf16, quantized to int4 on load: about 1.2 GB resident, an estimate) plus the vision tower: about 1.2 GB of float32 weights on the CPU, " +
+			"about 1.6 GB reserved on a CUDA card. Measured on an RTX 2070 SUPER (2026-10-08, single samples): a 1,000-token image turn took about 15 s, because its DeepStack prefill " +
+			"runs on the CPU (the resident one is off until it is checked against Hugging Face); on the CPU the tower alone takes 12-18 s. The family is checked against Hugging Face " +
+			"on the real 2B, text and one image prompt",
+		Tools: "not yet measured",
+	},
 	"qwen2": {
 		Name: "qwen2.5-coder-0.5b", Label: "Qwen2.5-Coder 0.5B", Repo: "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
 		File: "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", Quant: "q4_k_m",
