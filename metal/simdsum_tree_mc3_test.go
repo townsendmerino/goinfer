@@ -61,9 +61,9 @@ kernel void sstree(device const float* in [[buffer(0)]], device float* out [[buf
 	o := ob.Floats()[:W*3]
 	// CPU sequential order as a control that SHOULD differ
 	seqDiff, aDiff, bDiff, abDiff := 0, 0, 0, 0
-	for w := 0; w < W; w++ {
+	for w := range W {
 		var sq float32
-		for l := 0; l < 32; l++ {
+		for l := range 32 {
 			sq += in[w*32+l]
 		}
 		s, a, b := o[w*3], o[w*3+1], o[w*3+2]

@@ -86,7 +86,7 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 	kInt8Cpu := make([]int8, nKeys*kvDim)
 	vInt8Cpu := make([]int8, nKeys*kvDim)
 
-	for pos := 0; pos < nKeys; pos++ {
+	for pos := range nKeys {
 		kRow := make([]float32, kvDim)
 		vRow := make([]float32, kvDim)
 		for i := range kRow {
@@ -105,10 +105,10 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 		)
 
 		// Mirror CPU quantization:
-		for h := 0; h < nKV; h++ {
+		for h := range nKV {
 			base := h * hd
 			var amaxK, amaxV float32
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				if a := float32(math.Abs(float64(kRow[base+dd]))); a > amaxK {
 					amaxK = a
 				}
@@ -128,7 +128,7 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 			vScalesCpu[pos*nKV+h] = scV
 			invK := 1.0 / scK
 			invV := 1.0 / scV
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				qK := int8(math.Round(float64(kRow[base+dd] * invK)))
 				qV := int8(math.Round(float64(vRow[base+dd] * invV)))
 				kInt8Cpu[pos*kvDim+base+dd] = qK
@@ -150,14 +150,14 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 
 	// CPU reference:
 	ref := make([]float32, nH*hd)
-	for qh := 0; qh < nH; qh++ {
+	for qh := range nH {
 		kvh := qh / (nH / nKV)
 		sc := make([]float64, nKeys)
 		mx := math.Inf(-1)
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			kScale := float64(kScalesCpu[s*nKV+kvh])
 			var dot float64
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				kVal := float64(kInt8Cpu[s*kvDim+kvh*hd+dd]) * kScale
 				dot += float64(q[qh*hd+dd]) * kVal
 			}
@@ -167,13 +167,13 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 			}
 		}
 		var sum float64
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			sc[s] = math.Exp(sc[s] - mx)
 			sum += sc[s]
 		}
-		for dd := 0; dd < hd; dd++ {
+		for dd := range hd {
 			var acc float64
-			for s := 0; s < nKeys; s++ {
+			for s := range nKeys {
 				vScale := float64(vScalesCpu[s*nKV+kvh])
 				vVal := float64(vInt8Cpu[s*kvDim+kvh*hd+dd]) * vScale
 				acc += sc[s] * vVal
@@ -303,7 +303,7 @@ func TestMetalBuildResident_KVI8(t *testing.T) {
 	emb := make([]float32, mI8.Config().HiddenDim)
 	rng := rand.New(rand.NewSource(99))
 
-	for pos := 0; pos < 5; pos++ {
+	for pos := range 5 {
 		for i := range emb {
 			emb[i] = rng.Float32()*2 - 1
 		}

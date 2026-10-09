@@ -101,7 +101,7 @@ func TestAttentionFA_endToEndReproduction(t *testing.T) {
 		if _, err := r.ForwardBatch(embs, 0); err != nil {
 			t.Fatalf("ForwardBatch: %v", err)
 		}
-		for step := 0; step < nSteps; step++ {
+		for step := range nSteps {
 			pos := prefillLen + step
 			emb := make([]float32, H)
 			for j := range emb {
@@ -118,7 +118,7 @@ func TestAttentionFA_endToEndReproduction(t *testing.T) {
 	_, shippedLogits := runOne(false)
 	_, faLogits := runOne(true)
 
-	for step := 0; step < nSteps; step++ {
+	for step := range nSteps {
 		pos := prefillLen + step
 		lShipped, lFA := shippedLogits[step], faLogits[step]
 		if len(lShipped) != len(lFA) {

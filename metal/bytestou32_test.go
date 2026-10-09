@@ -23,7 +23,7 @@ func TestBytesToU32_matchesManualLE(t *testing.T) {
 		if len(got) != n {
 			t.Fatalf("n=%d: len(got)=%d, want %d", n, len(got), n)
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			want := binary.LittleEndian.Uint32(b[4*i:])
 			if got[i] != want {
 				t.Errorf("n=%d word %d: got %#x, want %#x (LE oracle)", n, i, got[i], want)

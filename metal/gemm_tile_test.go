@@ -74,7 +74,7 @@ func TestGemmTile_bitIdentical(t *testing.T) {
 				resid[i] = half(float32(int(rnd()%2001)-1000) * 1e-2)
 			}
 			a, uM := NewBufferU16s(d, av), NewBufferU32(d, uint32(rows))
-			for mode := uint32(0); mode < 3; mode++ {
+			for mode := range uint32(3) {
 				uMode := NewBufferU32(d, mode)
 				run := func(p Pipeline, tm, tn int) []uint16 {
 					c := NewBufferU16s(d, resid) // mode 2 adds into it

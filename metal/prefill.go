@@ -1588,7 +1588,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		if L.moe != nil {
 			if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
 				// Fallback to row-by-row path for A/B testing
-				for m := 0; m < M; m++ {
+				for m := range M {
 					row := xF.At(m * H * 2)
 					e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
 					r.encodeMoERoute(e, L)
@@ -1642,7 +1642,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			if r.moeCap.major != nil {
 				r.moeCap.major(l, idxSlice, wgtSlice)
 			}
-			for m := 0; m < M; m++ {
+			for m := range M {
 				for j := 0; j < r.moe.k; j++ {
 					eIdx := int(idxSlice[m*r.moe.k+j])
 					w := wgtSlice[m*r.moe.k+j]

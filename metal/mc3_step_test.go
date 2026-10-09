@@ -211,7 +211,7 @@ func mc3IdentityWith(t *testing.T, depths []int, ctx int, setup func(r *resident
 		mc3Fill(t, r, B+m, ids)
 	}
 	totalDiff := 0
-	for st := 0; st < steps; st++ {
+	for st := range steps {
 		seqs := make([]batchSeq, B)
 		ref := make([][]float32, B)
 		for m := range B {
@@ -275,7 +275,7 @@ func TestMC3Step_throughput(t *testing.T) {
 	depths := []int{128, 512}
 	if v := os.Getenv("GOINFER_METAL_MC3_DEPTHS"); v != "" {
 		depths = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			var n int
 			fmt.Sscan(strings.TrimSpace(f), &n)
 			depths = append(depths, n)
@@ -300,11 +300,11 @@ func TestMC3Step_throughput(t *testing.T) {
 		hb("depth %d: %d slots filled", D, maxB+1)
 		arms := []int{0, 1, 2, 4, 8} // 0 = production single-token decode on slot maxB
 		per := map[int][]float64{}   // arm -> per-rep median GPU ms per step
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			for k := range arms {
 				a := arms[(k+rep)%len(arms)]
 				var ms []float64
-				for tok := 0; tok < tokens; tok++ {
+				for range tokens {
 					emb := mc3Emb(r, rnd())
 					if a == 0 {
 						if err := r.useKVSlot(maxB); err != nil {
@@ -362,7 +362,7 @@ func TestMC3Step_drawsMatchForwardSample(t *testing.T) {
 		mc3Fill(t, r, B+m, ids)
 	}
 	differ, draws := 0, 0
-	for st := 0; st < steps; st++ {
+	for st := range steps {
 		seqs := make([]batchSeq, B)
 		wantID := make([]int, B)
 		wantLogits := make([][]float32, B)
@@ -454,7 +454,7 @@ func TestMC3StepBreakdown(t *testing.T) {
 	depths := []int{128}
 	if v := os.Getenv("GOINFER_METAL_MC3_DEPTHS"); v != "" {
 		depths = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			var n int
 			fmt.Sscan(strings.TrimSpace(f), &n)
 			depths = append(depths, n)
@@ -467,7 +467,7 @@ func TestMC3StepBreakdown(t *testing.T) {
 	}{{"full", nil}, {"-matmul", []string{"matmul"}}, {"-attention", []string{"attention"}}, {"-per-row", []string{"per-row"}},
 		{"all empty", []string{"matmul", "attention", "per-row"}}}
 	for _, D := range depths {
-		for sl := 0; sl < 8; sl++ {
+		for sl := range 8 {
 			ids := make([]int, D)
 			for i := range ids {
 				ids[i] = 1000 + 7*i + sl
@@ -477,7 +477,7 @@ func TestMC3StepBreakdown(t *testing.T) {
 		}
 		for _, B := range []int{2, 4, 8} {
 			ms := map[string][]float64{}
-			for rep := 0; rep < 15; rep++ {
+			for rep := range 15 {
 				for k := range arms {
 					a := arms[(k+rep)%len(arms)]
 					set(a.off...)

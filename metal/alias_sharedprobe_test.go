@@ -302,7 +302,7 @@ func phaseLast(t *testing.T, path string, marks map[string]time.Time, phases []s
 		hi := float64(marks[p.to].UnixNano()) / 1e9
 		var best map[string]float64
 		bestAt := -1.0
-		for _, line := range strings.Split(string(raw), "\n") {
+		for line := range strings.SplitSeq(string(raw), "\n") {
 			fs := strings.Fields(line)
 			if len(fs) < 4 {
 				continue
