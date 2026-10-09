@@ -800,6 +800,24 @@ func metalFusedAttentionEnabled(v string) bool {
 // re-quantized. "" leaves the decoder's label.
 func (a *metalResident) ResidentQuant() string { return a.quant }
 
+// PrefillKernelFloor (decoder.ResidentPrefillKernelFloor) is the whole-prompt length from which the batched
+// prefill runs the f16 MMA kernels, below which it runs decode rows or the sequential loop: two kernel classes
+// that are not bit-identical. 0 when one class runs at every length (a layer-major path, int8 KV, an arch the
+// MMA kernels do not cover, fast prefill off, or GOINFER_METAL_FAST_PREFILL_FLOOR=0). PrefillPath reports the same
+// number; both read prefillKernelFloor.
+func (a *metalResident) PrefillKernelFloor() int { return a.prefillKernelFloor() }
+
+func (a *metalResident) prefillKernelFloor() int {
+	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvI8 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
+		return 0
+	}
+	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
+		return max(floor, metalStepPrefillCeiling)
+	}
+	return floor
+}
+
 func (a *metalResident) PrefillPath() (bool, string) {
 	if a.g4LayerMajor() || a.moeLayerMajor() {
 		return true, "layer-major on decode's kernels (bit-identical to sequential; a paged MoE)"
@@ -821,10 +839,10 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.VerifyCost() != nil && !a.r.promptStepOff {
-		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", max(floor, metalStepPrefillCeiling))
+		return true, fmt.Sprintf("batched f16-MMA from %d prompt tokens; below it, decode rows on the batched step kernels (bit-identical to sequential, E-P01)", a.prefillKernelFloor())
 	}
 	if floor > 0 {
-		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
+		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", a.prefillKernelFloor())
 	}
 	return true, "batched f16-MMA (GOINFER_METAL_FAST_PREFILL_FLOOR=0; §3.2 gate passed 2026-09-09)"
 }

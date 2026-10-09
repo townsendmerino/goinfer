@@ -4,6 +4,7 @@ package metal
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -20,7 +21,7 @@ import (
 // fingerprint: options that must not change the numbers are held to exact equality on it.
 //
 // These cover the Metal backend only. The grid has no backend axis, and a cell can hold on one GPU
-// backend and not another (ActQuantGroup is honoured by CUDA residency and ignored by Metal's).
+// backend and not another (ActQuantGroup is honoured by CUDA residency, and Metal used to ignore it).
 
 const mgFixture = "../testdata/llama-tiny"
 
@@ -399,58 +400,90 @@ func TestOptionPathMetal_exactPrefill(t *testing.T) {
 }
 
 // TestOptionPathMetal_prefillChunk: ResidentPrefillChunk under MC3 prefills a long prompt in chunks while
-// another generation is decoding. Metal's batched prefill is chunk-invariant, so the chunked generation
-// must match the same generation prefilled whole, and the batcher's prefill-pass count must show the
-// chunks ran.
+// another generation is decoding, and the chunked generation must match the same generation prefilled whole,
+// with the batcher's prefill-pass count showing the chunks ran.
 //
-// The chunk is 32, the batched-prefill floor with two KV slots. Below the floor the invariance does not
-// hold: at chunk 8 or 16 the chunked reply differs from the whole one by 0.003-0.004 in log-probability
-// on this model (2026-10-08), so a reply then depends on whether another generation was decoding.
-// serve's default chunk (512) is far above every floor; the finding is recorded in
-// docs/tasks/task-option-path-admission-2026-10.md.
+// Chunk 8 and 16 are the regression case (option-path admission finding 3, 2026-10-08): with two KV slots
+// Metal's batched prefill runs decode rows below a 32-token whole-prompt floor and f16 MMA from it, so a first
+// chunk under the floor ran on the other kernel class, and the reply differed from the whole prefill by
+// 0.003-0.004 in log-probability: it depended on whether another generation was decoding. mc3Prefill now
+// raises a chunk below the resident's PrefillKernelFloor to the floor.
 func TestOptionPathMetal_prefillChunk(t *testing.T) {
-	opts := mgWith(func(o *decoder.Options) { o.ResidentKVSlots = 2; o.ResidentPrefillChunk = 32 })
-	m := mgLoad(t, opts)
-	mgResident(t, m)
-	if n := m.EnableResidentConcurrency(2); n != 2 {
-		t.Fatalf("EnableResidentConcurrency(2) = %d", n)
-	}
-	// The reference runs on its own model: the resident remembers a committed prefix across generations,
-	// so running the same prompt first on m would leave the measured run nothing to prefill.
-	ref := mgLoad(t, opts)
-
-	// Chunking happens only while another generation is inside its decode loop, so a second generation
-	// decodes (read continuously) while this one prefills. Whether they overlap is up to the scheduler, so
-	// attempts repeat, each with a fresh 96-token prompt, until the pass count shows chunks; the output is
-	// checked on every attempt.
-	const attempts = 5
-	for a := 1; ; a++ {
-		long := make([]int, 96)
-		for i := range long {
-			long[i] = (i*37 + 11*a + 3) % 256
-		}
-		wantT, wantL := mgGen(t, ref, long, 4) // alone: nobody decoding, so prefilled whole
-
-		before := m.ResidentBatchStats().PrefillPasses
-		aCh, _ := m.Generate(context.Background(), []int{1, 2, 3, 5 + a}, 100, decoder.SamplingParams{})
-		<-aCh
-		done := make(chan struct{})
-		go func() {
-			for range aCh {
+	for _, chunk := range []int{8, 16, 32} {
+		t.Run(fmt.Sprintf("chunk %d", chunk), func(t *testing.T) {
+			opts := mgWith(func(o *decoder.Options) { o.ResidentKVSlots = 2; o.ResidentPrefillChunk = chunk })
+			m := mgLoad(t, opts)
+			mgResident(t, m)
+			kf, ok := m.ResidentForwardForTest().(decoder.ResidentPrefillKernelFloor)
+			if !ok || kf.PrefillKernelFloor() != 32 {
+				t.Fatalf("the resident does not report its 32-token kernel floor (ok=%v)", ok)
 			}
-			close(done)
-		}()
-		gotT, gotL := mgGen(t, m, long, 4)
-		passes := m.ResidentBatchStats().PrefillPasses - before
-		<-done
-		if !slices.Equal(gotT, wantT) || mgMaxDiff(gotL, wantL) != 0 {
-			t.Errorf("attempt %d: chunked %v vs whole %v, log-probabilities apart by %g", a, gotT, wantT, mgMaxDiff(gotL, wantL))
-		}
-		if passes >= 4 { // the other generation's prefill, two 32-token chunks, and the final pass
-			break
-		}
-		if a == attempts {
-			t.Fatalf("%d prefill passes on the last of %d attempts: the prompt was never chunked", passes, attempts)
+			if n := m.EnableResidentConcurrency(2); n != 2 {
+				t.Fatalf("EnableResidentConcurrency(2) = %d", n)
+			}
+			// The reference runs on its own model: the resident remembers a committed prefix across generations,
+			// so running the same prompt first on m would leave the measured run nothing to prefill.
+			ref := mgLoad(t, opts)
+
+			// Chunking happens only while another generation is inside its decode loop, so a second generation
+			// decodes (read continuously) while this one prefills. Whether they overlap is up to the scheduler, so
+			// attempts repeat, each with a fresh 96-token prompt, until the pass count shows chunks; the output is
+			// checked on every attempt.
+			const attempts = 5
+			for a := 1; ; a++ {
+				long := make([]int, 96)
+				for i := range long {
+					long[i] = (i*37 + 11*a + 3) % 256
+				}
+				wantT, wantL := mgGen(t, ref, long, 4) // alone: nobody decoding, so prefilled whole
+
+				before := m.ResidentBatchStats().PrefillPasses
+				aCh, _ := m.Generate(context.Background(), []int{1, 2, 3, 5 + a}, 100, decoder.SamplingParams{})
+				<-aCh
+				done := make(chan struct{})
+				go func() {
+					for range aCh {
+					}
+					close(done)
+				}()
+				gotT, gotL := mgGen(t, m, long, 4)
+				passes := m.ResidentBatchStats().PrefillPasses - before
+				<-done
+				if !slices.Equal(gotT, wantT) || mgMaxDiff(gotL, wantL) != 0 {
+					t.Errorf("attempt %d: chunked %v vs whole %v, log-probabilities apart by %g", a, gotT, wantT, mgMaxDiff(gotL, wantL))
+				}
+				if passes >= 4 { // the other generation's prefill, two 32-token chunks, and the final pass
+					break
+				}
+				if a == attempts {
+					t.Fatalf("%d prefill passes on the last of %d attempts: the prompt was never chunked", passes, attempts)
+				}
+			}
+		})
+	}
+}
+
+// TestOptionPathMetal_actQuantGroupDeclines: Metal's resident projections use per-vector activation scales, so
+// a load asking for per-group scales is declined at residentAdmission (actGroupResidentDecline) and runs on the
+// CPU, which honours the group; its output must be the CPU's exactly. Before 2026-10-08 it went resident and
+// produced the per-vector numbers (option-path admission finding 1).
+func TestOptionPathMetal_actQuantGroupDeclines(t *testing.T) {
+	opts := mgWith(func(o *decoder.Options) { o.ActQuantGroup = 32 })
+	m := mgLoad(t, opts)
+	if strings.HasPrefix(m.DecodePath(), "metal-resident") {
+		t.Fatal("ActQuantGroup 32 went Metal-resident")
+	}
+	if !strings.Contains(m.ResidentDecline(), "ActQuantGroup") {
+		t.Fatalf("decline does not name ActQuantGroup: %s", m.ResidentDecline())
+	}
+	cpuOpts := opts
+	cpuOpts.Backend = "cpu"
+	c := mgLoad(t, cpuOpts)
+	for _, p := range [][]int{mgShort(), mgLong()} {
+		gt, gl := mgGen(t, m, p, 12)
+		ct, cl := mgGen(t, c, p, 12)
+		if !slices.Equal(gt, ct) || mgMaxDiff(gl, cl) != 0 {
+			t.Errorf("declined load %v, CPU %v, log-probabilities apart by %g", gt, ct, mgMaxDiff(gl, cl))
 		}
 	}
 }

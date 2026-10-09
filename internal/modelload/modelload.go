@@ -233,8 +233,10 @@ func isDir(p string) bool {
 //     per-32 (docs/tasks/task-int4-weight-quality-2026-09.md: on phi3-mini, CPU decode 1.31× and
 //     CUDA resident decode 1.26× / 1.17× (depth 128 / 2048) the int8int8 default's, and CUDA fits the
 //     default context resident where int8int8 does not);
-//   - int8int8 with per-32 activation scales anywhere else (Metal, WebGPU: no Q4_K kernel yet), which
-//     those backends run resident (docs/tasks/task-actquant-pergroup-2026-09.md).
+//   - int8int8 with per-32 activation scales anywhere else (Metal, WebGPU: no Q4_K kernel yet). Only CUDA
+//     residency implements per-group activation scales, so on Metal and WebGPU such a load declines to the
+//     CPU (decoder's actGroupResidentDecline; docs/tasks/task-option-path-admission-2026-10.md §4.3), which
+//     honours the group (docs/tasks/task-actquant-pergroup-2026-09.md).
 //
 // An explicit int8int8 gets per-32 too. An explicit int4/int4mix is honoured with a warning, because
 // per-32 does not clear int4's weight error. msg is "" when nothing applies.

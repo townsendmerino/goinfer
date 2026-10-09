@@ -22,7 +22,7 @@ parity manifest is unaffected (neither file is hashed).
 
 - **Where:** `decoder/speculative.go:137` (`GenerateSpeculative`, the target model's claim, and `:150` for the draft
   model) and `decoder/blockspec.go:229` (`BlockSpec`) take the resident with a bare
-  `atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)`. `m.tryClaimResident()` (`decoder/model.go:1737`) routes through
+  `atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)`. `m.tryClaimResident()` (`decoder/model.go:1742`) routes through
   `m.batcher.claimExclusive`, which also requires `holders == 0`; MC3's `claim` (`decoder/mc3_batch.go:158`) reads
   `resBusy` but never sets it. So with resident concurrency on, these two paths can take the resident while batched
   holders are mid-step on the same KV.

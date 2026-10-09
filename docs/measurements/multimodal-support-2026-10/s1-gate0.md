@@ -18,7 +18,7 @@ from the code and not run. Nothing here was executed except reading files and th
      `TF/models/gemma4/modeling_gemma4.py:1247-1254`), and the CPU reference does too, unconditionally (`decoder/forward_gemma4.go:150`).
      Metal ran `v_norm` only `if g.kEqV` (in `metal/model.go`'s attention encode, before S1.0's fix in c12e2778). CUDA
      was the same (the `v_norm` launch in `segA`, as of 2026-10-06; WebGPU too; both fixed 2026-10-07, see the S1.0 block of the task doc). E2B has `attention_k_eq_v=False` (real `config.json`), so `kEqV` is false
-     on every layer (`decoder/residency.go:906-914`), and **no E2B layer would get `v_norm`**. The same gap affects the
+     on every layer (`decoder/residency.go:947-955`), and **no E2B layer would get `v_norm`**. The same gap affects the
      already-shipped 12B/26B/31B **sliding** layers on all three GPU backends. INFERRED: the sandwich post-attention
      RMSNorm partly hides it, because a uniform V scale cancels exactly and a per-(pos, head) scale does not. That
      would explain why the existing gates pass: pos0 ≥ 0.97 in `metal/gemma4_dense_scaled_test.go` (raised to 0.99 by S1.0), the 0.90
@@ -34,7 +34,7 @@ from the code and not run. Nothing here was executed except reading files and th
    (the token-table row read inline in `runLayersGemma4FromEmbed` as of 2026-10-06; S1.2 moved it into
    `Model.gemma4PLEInputs`). Every resident entry point carries only `embedding []float32`
    (`decoder/residency.go:50-87`, `metal/backend.go:601-620`). Recommended: an "augmented embedding row" built in
-   `embedResidentInto` (`decoder/residency.go:1581`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
+   `embedResidentInto` (`decoder/residency.go:1622`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
    computed host-side by the exact CPU code (bit-identical PLE inputs). Metal already has strict length checks to
    extend (`metal/backend.go:603,668`, `metal/model.go:3642`). Details in §3.1.
 4. **The whole per-layer PLE branch can be built from kernels Metal already has:** `quant_vec`, `gemv_w4a8_sa`,
@@ -72,7 +72,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
 ### 1.2 Forward, one token: `runLayersGemma4` → `runLayersGemma4FromEmbed`
 
 - **Embedding:** `h = Embed[id] × √hidden` (`decoder/forward_gemma4.go:29-40`). The resident twin is
-  `embedResidentInto` (`decoder/residency.go:1581-1608`).
+  `embedResidentInto` (`decoder/residency.go:1622-1649`).
 - **PLE inputs**, computed once per token from the INITIAL scaled embedding, before layer 0
   (inline in `runLayersGemma4FromEmbed` as of 2026-10-06, which the bare line numbers in this list refer to; S1.2
   moved the block verbatim into `Model.gemma4PLEInputs`):
@@ -88,7 +88,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
 - **Shared KV source map** (`decoder/forward_gemma4.go:81-100`): with `firstShared = L - SharedKVLayers`, a layer
   `l ≥ firstShared` uses the LAST non-shared layer of the SAME type (sliding vs full). The standalone twin is
   `Architecture.gemma4KVSrcAt` (`decoder/arch.go:786-805`), exported as `Model.KVSrcAtResident`
-  (`decoder/residency.go:935`), pinned by `decoder/gemma4_kvsrc_test.go:14`. For E2B, sliding layers 15+ read
+  (`decoder/residency.go:976`), pinned by `decoder/gemma4_kvsrc_test.go:14`. For E2B, sliding layers 15+ read
   layer 13 and full layers read layer 14. Nothing outside decoder calls `KVSrcAtResident` yet (grep).
 - **Per-layer attention** (`decoder/forward_gemma4.go:120-168`, the body of the layer loop):
   - pre-attn RMSNorm.
@@ -190,7 +190,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - FFN, default branch (:1336-1338): `fuse(Gate, Up)` and `mk(Down)`. The g4moe branch is at :1323-1324.
   - Sandwich norms (:1374-1387). `preNorm` and `postNorm` (PreMLPNorm) at :1345-1351.
   - Per-layer `invf` from `RopeInvFreqLayerResident`, which builds the gemma4 per-layer table
-    (`decoder/residency.go:959-974`), plus `mscale` and `geom` (:1397-1409).
+    (`decoder/residency.go:1000-1015`), plus `mscale` and `geom` (:1397-1409).
   - Window uniform `uWindow` from `LayerIsLocalResident` (:1438-1443).
   - QKV bias as zeros sized to Q|K|V (:1444-1454).
 - **KV:** one linear buffer per layer, `paddedCtxCap*kvDim` bytes at f16, int8 + per-head scales when `kvI8`
@@ -203,7 +203,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - The `vNormUnit`/`uZero` plumbing is built for every model (:1735-1743).
   - Width `%8` checks via `bad8` (:1561+). Threadgroup-stage budget (:1590-1612). R18 rows per GEMV:
     `gemvRows.gu = gemvRowsFor(2*I,4)`, and down-staging only if `I <= MaxThreadgroupMemoryLength` (:1614-1626).
-- **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:936-938`).
+- **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:954-956`).
   The decoder then runs the prompt token by token: `ForwardNoLogits` for all but the last, then `Forward`
   (`decoder/model.go:1615-1643`).
 
@@ -236,9 +236,9 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `ForwardN` → `ForwardBatch` (`metal/model.go:3615`): layer-major in one command buffer, with per-row `batchX`
     slices and uniforms, and a `len(emb) != r.H` check.
   - `ForwardArgmax(id,pos)` uses `loadEmbedRow` (`metal/model.go:2650-2653`).
-  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:1081,1142`), and `StepBatch` (MC3,
+  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:1099,1142`), and `StepBatch` (MC3,
     `metal/batch.go:914`, which declines Gemma).
-- **UploadKV** (`metal/backend.go:1235-`): writes host K/V rows at `base*kvDim`, f16 or int8.
+- **UploadKV** (`metal/backend.go:1253-`): writes host K/V rows at `base*kvDim`, f16 or int8.
 - **GenerateGemma4VL uses resident decode only when `bidirectional`** (the gate in `GenerateGemma4VL`, `decoder/generate_gemma4_vl.go`, as of 2026-10-06; S1.8 admits E-models too).
   That covers 26B/31B: CPU prefill → `residentUploadPrefill` → `m.resident.Forward(m.embedResident(next), gpuPos)`
   (:169-194). E2B never touches the resident, and `TestGenerateGemma4VL_sequentialPathNeverTouchesResident`
@@ -255,8 +255,8 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `residentGateReasonAct` (:372-401) checks missing features, MoE cap, per-layer geometry
     (`residentPerLayerGeomBackends`, Metal true, :488) and Gemma 4 MoE (:504).
   - `decodeRunnerEligible`'s gemma4 case falls through, so gemma4 is admitted by shape
-    (`decoder/residency.go:606-624`).
-  - `Model.residentAdmission` (`decoder/residency.go:552-571`) runs at load.
+    (`decoder/residency.go:647-665`).
+  - `Model.residentAdmission` (`decoder/residency.go:575-597`) runs at load.
   - Metal re-checks in `BuildResident` (`metal/backend.go:89-91`).
 - **Tests pinning the E-model decline** (update these on declare):
   - `decoder/gemma4_admission_test.go:62-73`.
@@ -324,14 +324,14 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   5. `rmsnorm_f32(dO, postPLENorm, uH, uEps, uAddOne)`.
   6. `residual(x, dO)`.
   7. `scale_vec(x, uLayerScalar)`. This is gap 1a, needed on every dense gemma4 layer, PLE or not.
-- **Decoder accessors needed** (pattern: `decoder/residency.go:916-974`):
+- **Decoder accessors needed** (pattern: `decoder/residency.go:957-1015`):
   - `PLEDimResident()`.
   - `Gemma4PLELayerResident(l) (gate, proj *WeightMat, postNorm []float32)`.
   - The augmented-embedding width.
 
 ### 3.2 Shared KV (`SharedKVLayers`)
 
-- **Build,** for `l ≥ firstShared`: `src := m.KVSrcAtResident(l)`, which exists (`decoder/residency.go:935`).
+- **Build,** for `l ≥ firstShared`: `src := m.KVSrcAtResident(l)`, which exists (`decoder/residency.go:976`).
   - **Assert** `geom(l) == geom(src)` and `window(l) == window(src)`; decline otherwise. Same-type sourcing makes this
     true by construction.
   - Alias the buffers: `r.kc[l], r.vc[l] (, r.ks[l], r.vs[l]) = r.kc[src], …`, and set
@@ -352,7 +352,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - The **non-contig path (int8 KV, `allocSlots=1`) allocates a fresh `byteBuf` for every layer with a non-zero
     `kc`**, so a shared layer gets its own empty buffer in slots ≥ 1. That is a silent garbage read. Alias in that
     loop explicitly, as `b.kc[l] = b.kc[src]`.
-- **UploadKV** (`metal/backend.go:1235`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
+- **UploadKV** (`metal/backend.go:1253`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
   skips it only because the CPU cache is empty there (`decoder/generate_vl_resident.go:26-28`), and an upload through
   the alias would overwrite the source.
 - **Bookkeeping:**

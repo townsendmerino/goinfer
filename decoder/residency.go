@@ -474,6 +474,29 @@ type ResidentFastPrefill interface {
 	FastPrefillFloor() int
 }
 
+// ResidentPrefillKernelFloor is the optional capability of a resident whose batched prefill runs one class of
+// kernels below a whole-prompt length and another, not bit-identical, from it (Metal: decode rows below its
+// floor, f16 MMA from it). PrefillKernelFloor is that length, or 0 when one class runs at every length.
+// Chunked prefill (mc3Prefill) reads it so no chunk straddles the boundary the whole prompt would not: a first
+// chunk below the floor ran on the other class, and the reply then depended on whether another generation was
+// decoding (option-path admission finding 3, 2026-10-08). A narrower contract than ResidentFastPrefill's,
+// which prefix reuse also reads; a backend can report this one without changing what it reuses.
+type ResidentPrefillKernelFloor interface {
+	PrefillKernelFloor() int
+}
+
+// prefillKernelFloor is the resident's kernel-class boundary for chunking: PrefillKernelFloor when the resident
+// reports it, else ResidentFastPrefill's floor (the same boundary, as CUDA reports it), else 0.
+func (m *Model) prefillKernelFloor() int {
+	if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
+		return kf.PrefillKernelFloor()
+	}
+	if fp, ok := m.resident.(ResidentFastPrefill); ok {
+		return fp.FastPrefillFloor()
+	}
+	return 0
+}
+
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The cuda, metal and webgpu backends implement it.
 // withResidency applies residentAdmission's gates BEFORE calling it; the backend's own build can
@@ -560,6 +583,9 @@ func (m *Model) residentAdmission() string {
 	if _, declared := residentBackendFeatures[key]; !declared {
 		return ""
 	}
+	if why := actGroupResidentDecline(key, m.actGroup, m.quant); why != "" {
+		return why
+	}
 	// Per-32 activations over int8 resident projections (W8A8) is the configuration that clears the
 	// activation-quantization hazard (task-actquant-pergroup's gate passed it); int4 does not yet.
 	// Metal's q4k lane quantizes no activation at all, so the hazard does not apply to it (docs/tasks/task-metal-q4k-2026-10.md).
@@ -568,6 +594,21 @@ func (m *Model) residentAdmission() string {
 		actSafe = m.quant == "q4k"
 	}
 	return residentGateReasonAct(m.w.arch, key, actSafe)
+}
+
+// actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
+// docs/tasks/task-option-path-admission-2026-10.md §4.3): per-group activation scales are implemented by
+// CUDA residency only (actgroup.cu). Metal's and WebGPU's projections read per-vector scales and nothing
+// in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
+// whenever the family had no activation hazard for the gate below to catch. The Options doc has always
+// said such a load declines to the CPU; this makes it so. Metal's q4k lane is exempt: it quantizes no
+// activation at all, and modelFromOptions stamps the group on every q4k load.
+func actGroupResidentDecline(backend string, actGroup int, quant string) string {
+	if actGroup == 0 || backend == "cuda" || backend == "metal" && quant == "q4k" {
+		return ""
+	}
+	return fmt.Sprintf("ActQuantGroup %d: %s's resident projections use per-vector activation scales (per-group "+
+		"scales are implemented by CUDA residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
 }
 
 // residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for

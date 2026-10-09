@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — `ActQuantGroup` on Metal and WebGPU now runs on the CPU, as documented
+
+A load with `Options.ActQuantGroup` set used to run Metal-resident at per-vector activation scales whenever the model family had no activation-outlier hazard: nothing on Metal reads the group, so the option was dropped without a word. Only CUDA residency implements per-group scales; on Metal and WebGPU such a load now declines to the CPU, which honours the group, and the decline names the option. Metal's q4k lane is unaffected. The CLIs set the group only for hazard families, which already ran on the CPU, so this reaches library callers.
+
+### Fixed — chunked resident prefill no longer depends on whether another generation is decoding
+
+With `Options.ResidentPrefillChunk` below Metal's batched-prefill floor (32 tokens with two KV slots), a prompt prefilled in chunks while another generation decoded came out slightly different (about 0.003 in log-probability) from the same prompt prefilled whole, because the first chunk ran on the other kernel class. A chunk below the resident's kernel floor is now raised to it. serve's default chunk (512) was never affected.
+
 ### Changed — KV session snapshots record the LoRA adapter (format v3)
 
 `Session.Snapshot` now writes the name of the compute-time adapter the KV was built under, and `Model.LoadSession` rebinds that adapter, or refuses the snapshot when the model has not loaded it. A restored session that is then bound to a different adapter prefills cold instead of continuing from the other adapter's KV. Snapshots written by earlier builds (v2) are skipped on load, so each stored `-session-dir` session takes one cold prefill after upgrading.

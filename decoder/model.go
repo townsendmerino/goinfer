@@ -1673,6 +1673,11 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	}
 	pf, ok := m.resident.(Prefiller)
 	C := m.prefillChunk
+	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
+	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
+	if f := m.prefillKernelFloor(); f > 0 && len(prompt) >= f && C > 0 && C < f {
+		C = f
+	}
 	chunk := ok && C > 0 && m.knobs.get(knobBatchedPrefill) != "0"
 	var logits []float32
 	var err error

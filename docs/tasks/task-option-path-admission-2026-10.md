@@ -6,8 +6,8 @@
 > put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
 > 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 built the same day
 > as two registries (§4.1 state × lifecycle, behaviour-changing where a cell was unsafe; §4.2 options × paths, a
-> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 9 option
-> cells admitted untested (57 at build; 48 moved out the same day), each held open by a finding in §4.3.
+> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: none.
+> All 57 cells admitted untested at build were tested, declined or found n/a by 2026-10-08 (§4.2, §4.3).
 
 ## 1. The class, and why it keeps coming back
 
@@ -194,9 +194,10 @@ the bullets below on one point: cells do not "start declined" — they start hon
   `TestKVI8_batchedPrefill` set the internal `kvI8` themselves; the Metal int8-KV parity tests drive kernels;
   `TestMC5_prefillChunkInvariance` chunks `PrefillLast` itself and never sets `ResidentPrefillChunk`. Each of those
   shows the path works, not that the option reaches it.
-- **Where it stands: 9 cells admitted untested, 46 tested, 8 declined** (KVPrecision at Metal's `PrefillPath`, Quant
+- **Where it stands: 0 cells admitted untested, 54 tested, 9 declined** (KVPrecision at Metal's `PrefillPath`, Quant
   int4 at `SpecDecodeConflict`, KVQuant at `cpuBatchCacheEligible`, the three MoE paging options at
-  `cpuBatchModelEligible`, EmbedInt4 on both resident paths at Metal's `int8Buf`). 57 at build; 48 moved out on
+  `cpuBatchModelEligible`, EmbedInt4 on both resident paths at Metal's `int8Buf`, ActQuantGroup on resident prefill
+  at `actGroupResidentDecline`). 57 at build; 49 moved out on
   2026-10-08. The CPU columns' tests run in CI; the GPU columns' (§4.3) run on a Mac only. First round, ten cells:
   - `TestOptionPath_cpuBatchedPrefill` (CPU batched prefill × Quant, KVQuant, ActQuantGroup, ExactPrefill, EmbedInt4):
     a Session's batched prefill must leave the same K/V, bit for bit, and pick the same first token as the per-token
@@ -301,16 +302,20 @@ top five) as a numeric fingerprint through the public entry points.
 - **Metal only.** The grid has no backend axis, and finding 1 shows a cell can hold on CUDA and not on Metal. CUDA's
   resident columns are proven where CUDA tests exist (ActQuantGroup) and not otherwise.
 
-**Findings, behaviour unchanged pending the owner:**
+**Findings.** All three closed 2026-10-08: 1 and 3 fixed (owner's call); 2 was no numeric defect, and its int8 decline is now named (its own entry below):
 
 1. **ActQuantGroup is silently ignored by Metal.** Nothing in `metal/` reads it, and for a family without the
    activation hazard `residentAdmission` admits the load: `Quant: "int8int8", ActQuantGroup: 32` on llama-tiny runs
    Metal-resident with log-probabilities identical, bit for bit, to the same load without the option. The Options
    doc says resident backends other than CUDA decline to the CPU when it is set. Reachable from a library caller;
    the CLIs set the group only for hazard families, which Metal does decline (to the CPU, not resident, although
-   `internal/modelload`'s `activationSafeQuant` comment says Metal runs them resident at per-32). Fix candidates: a
-   named decline in `residentAdmission` when the group is set on Metal or WebGPU, or the doc and comment corrected.
-   ActQuantGroup × resident prefill stays untested.
+   `internal/modelload`'s `activationSafeQuant` comment says Metal runs them resident at per-32). **Fixed:**
+   `actGroupResidentDecline` in `residentAdmission` declines a load with the group set on every resident backend but
+   CUDA (Metal's q4k lane exempt: it quantizes no activation, and every q4k load carries the group), naming the option;
+   the load runs on the CPU, which honours it. The modelload comment is corrected. Tests:
+   `TestActGroupResidentDecline_table` and `TestResidentAdmission_actGroupDeclinesOffCUDA` (decoder, in CI, through
+   Load with fake backends reporting metal, webgpu and cuda), `TestOptionPathMetal_actQuantGroupDeclines` (the real
+   Metal load runs on the CPU with the CPU's exact output). Removing the gate turns all three red.
 2. **MoECacheExperts on Metal is not bit-identical to fully resident.** The doc's claim cites CUDA tests. On
    mixtral-tiny at int4 with fewer slots than experts (2 or 3 of 8), decode-only log-probabilities differ from the
    fully resident model by about 0.004; with slots for all experts they are identical. With int8 experts Metal's
@@ -377,8 +382,15 @@ top five) as a numeric fingerprint through the public entry points.
    is 32 tokens; at chunk 8 or 16 a prompt prefilled in chunks while another generation decodes differs from the same
    prompt prefilled whole by 0.003-0.004 in log-probability, so the reply depends on whether someone else was
    decoding, which `mc3_batch.go`'s comment rules out. At chunk 32 and above the results are identical. serve's
-   default (512) is unaffected; a library caller choosing a small chunk is not. A fix candidate: raise the chunk to
-   the floor, or decline below it.
+   default (512) is unaffected; a library caller choosing a small chunk is not. The cause: Metal's floor is a
+   whole-prompt length (decode rows below it, f16 MMA from it), so a first chunk under it ran on the other kernel
+   class from the whole prompt. **Fixed:** a resident reports the boundary through a new optional
+   `ResidentPrefillKernelFloor` (Metal implements it from the same predicates `PrefillPath` reports), and
+   `mc3Prefill` raises a chunk below it to the floor; a resident without it falls back to `ResidentFastPrefill`'s
+   floor, the same boundary as CUDA reports it (not exercised here: no CUDA on this machine). A separate interface so
+   Metal reporting its floor does not also change prefix reuse, which `ResidentFastPrefill` drives.
+   `TestOptionPathMetal_prefillChunk` now runs chunks 8, 16 and 32, all exact; dropping the raise, or Metal reporting
+   no floor, turns it red.
 
 ## 5. Not in scope
 

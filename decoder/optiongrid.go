@@ -134,11 +134,10 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	}, ogUntestedCell()),
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
 		pathCPUDecode: ogTestedBy("TestActQuantGroup_perModel"),
-		// Tested on CUDA. Metal ignores the setting (2026-10-08): no code in metal/ reads it, and for a family
-		// without the activation hazard residentAdmission admits the load, so a Metal resident runs per-vector
-		// scales while the option asked for per-32 — the Options doc says other resident backends decline.
-		// Recorded in docs/tasks/task-option-path-admission-2026-10.md; the resident prefill cell stays untested.
+		// Tested on CUDA, the one resident with per-group activation scales. Metal and WebGPU decline the load to
+		// the CPU (actGroupResidentDecline, since 2026-10-08; before, Metal ran it resident at per-vector scales).
 		pathResidentDecode:   ogTestedBy("TestActGroup_phi3ResidentMatchesCPU"),
+		pathResidentPrefill:  ogDeclinedAt("actGroupResidentDecline", "TestOptionPathMetal_actQuantGroupDeclines"),
 		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
@@ -246,7 +245,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		ogCPUNA("chunks a resident's batched prefill under MC3"),
 		map[ogPath]ogCell{
 			pathResidentDecode:  ogNACell("chunks prefill; decode is one token"),
-			pathResidentPrefill: ogTestedBy("TestOptionPathMetal_prefillChunk"), // at a chunk >= the batched-prefill floor; below it, see the test
+			pathResidentPrefill: ogTestedBy("TestOptionPathMetal_prefillChunk"), // chunks below the kernel floor are raised to it
 			pathSpecVerify: ogNACell("chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative " +
 				"paths claim the resident exclusively (claimExclusive) and prefill whole"),
 			pathSessionLifecycle: ogNACell("schedules a prefill; the session's cache is the same either way (chunk-invariant)"),
@@ -276,4 +275,4 @@ var ogGrid = map[string]map[ogPath]ogCell{
 // optionGridUntestedCeiling is the ratchet: the number of ogUntested cells may not rise above it,
 // and when it falls the constant must be lowered to match (TestOptionGrid_ratchet), so a cell
 // that gains a test cannot quietly lose it again.
-const optionGridUntestedCeiling = 1
+const optionGridUntestedCeiling = 0

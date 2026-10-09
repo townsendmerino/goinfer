@@ -7,12 +7,12 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 ## Load options × execution paths
 
 **tested** names a test that drives the option through the path; **declined** names the function where the path refuses it;
-**untested** runs today with no test that drives it (1 cells; `TestOptionGrid_ratchet` lets that number only fall);
+**untested** runs today with no test that drives it (0 cells; `TestOptionGrid_ratchet` lets that number only fall);
 **n/a**: the option does not reach the path (reasons below the table).
 
 | option | CPU decode | CPU batched prefill | CPU batched decode | GPU resident decode | GPU resident prefill | speculative verify | session reuse and snapshot |
 |---|---|---|---|---|---|---|---|
-| `ActQuantGroup` | tested: `TestActQuantGroup_perModel` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestActGroup_phi3ResidentMatchesCPU` | untested | tested: `TestOptionPath_specVerify` | n/a |
+| `ActQuantGroup` | tested: `TestActQuantGroup_perModel` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestActGroup_phi3ResidentMatchesCPU` | declined at `actGroupResidentDecline` (`TestOptionPathMetal_actQuantGroupDeclines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `Backend` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
