@@ -425,3 +425,42 @@ func TestBanner_contextWhenTheModelDeclaresNoMaximum(t *testing.T) {
 		t.Errorf("pinned: %q", pinned)
 	}
 }
+
+// The head table's precision is on the banner (D of the --embed-int4 decision, 2026-10-08): the same checkpoint is a different model under a different table, and the default differs by backend.
+// Two halves: the line itself from the facts, and the facts from a real load with the flag both ways.
+func TestBanner_headTable(t *testing.T) {
+	for _, c := range []struct{ kind, want string }{
+		{"int4", "head table: int4 (--embed-int4; --embed-int4=false pins int8)"},
+		{"int8", "head table: int8"},
+	} {
+		got := bannerLine(modelBannerFrom(bannerFacts{decodePath: "cpu (int4)", headTable: c.kind}, config{}), "head table:")
+		if got != c.want {
+			t.Errorf("head table %q: banner line %q, want %q", c.kind, got, c.want)
+		}
+	}
+	if got := bannerLine(modelBannerFrom(bannerFacts{decodePath: "cpu (int4)"}, config{}), "head table:"); got != "" {
+		t.Errorf("an unknown head table printed a line: %q", got)
+	}
+}
+
+func TestFactsOf_headTableFollowsEmbedInt4(t *testing.T) {
+	p := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no committed tiny fixture at %s", p)
+	}
+	for _, embed4 := range []bool{true, false} {
+		m, err := decoder.Load(p, decoder.Options{Backend: "cpu", Quant: "int4", EmbedInt4: embed4})
+		if err != nil {
+			t.Fatalf("load (embed-int4 %v): %v", embed4, err)
+		}
+		f := factsOf(&loadedModel{name: "tiny", model: m})
+		_ = m.Close()
+		want := "int8"
+		if embed4 {
+			want = "int4"
+		}
+		if f.headTable != want {
+			t.Errorf("EmbedInt4=%v: facts report head table %q, want %q", embed4, f.headTable, want)
+		}
+	}
+}

@@ -1351,6 +1351,18 @@ func (m *Model) ResidentKVPrecision() string {
 	return "f32"
 }
 
+// HeadTable is the precision of the token-embedding / LM-head table this model loaded with: "int4" (--embed-int4), "int8" (the pin), "f32" or "q4k"; "" when the CPU copy is not held.
+// The head is the matrix every decoded token streams in full, so serve's banner names it: the same checkpoint is a different model under a different table (docs/quantization.md).
+func (m *Model) HeadTable() string {
+	if m.w == nil {
+		return ""
+	}
+	if m.w.arch != nil && m.w.arch.TiedLMHead {
+		return m.w.Embed.Kind()
+	}
+	return m.w.LMHead.Kind()
+}
+
 // DecodePath names the decode path this model actually resolved to — "<backend>-resident" when the
 // full-residency runner built, "<backend>-staged" when the backend runs per-matmul under the CPU
 // forward, "cpu" otherwise — with the resident weight quant in parens. A staged GPU path also names

@@ -25,6 +25,7 @@ import (
 // test — without a GPU, and without capturing stderr.
 type bannerFacts struct {
 	decodePath   string
+	headTable    string // the embedding / LM-head table's precision (decoder.Model.HeadTable); "" when unknown
 	prefillPath  string
 	resident     bool // the model decodes through the resident runner (⇒ stateless, no prefix reuse)
 	hasTemplate  bool
@@ -77,6 +78,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	_, prefillWhy := lm.model.PrefillPath()
 	f := bannerFacts{
 		decodePath:   lm.model.DecodePath(),
+		headTable:    lm.model.HeadTable(),
 		prefillPath:  prefillWhy,
 		resident:     lm.model.ResidentActive(),
 		hasTemplate:  lm.tmpl != nil,
@@ -120,6 +122,13 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// forward per prompt token.
 	out = append(out, "decode path: "+f.decodePath)
 	out = append(out, "prefill path: "+f.prefillPath)
+	if f.headTable != "" { // the table every token streams, and the one --embed-int4 changes by backend
+		line := "head table: " + f.headTable
+		if f.headTable == "int4" {
+			line += " (--embed-int4; --embed-int4=false pins int8)"
+		}
+		out = append(out, line)
+	}
 
 	// How much context, and at what KV precision — the two numbers that decide whether a
 	// harness's turn fits at all.
