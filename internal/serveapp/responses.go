@@ -97,6 +97,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	dropUnrunnableTools(w, &req.Tools)
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })
 }
 

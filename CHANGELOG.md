@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — `/v1/responses` reads tools in the Responses API's own shape
+
+`/v1/responses` decoded `tools` only in the Chat Completions nesting (`{"function":{"name":…}}`), so a tool sent in the
+Responses shape (`{"type":"function","name":…}`), as Codex and every harness's Responses mode send it, reached the
+prompt with an empty name and no schema while the request returned 200. Both shapes are now read, on both routes, and
+so is a Responses-shaped named `tool_choice`. Tool types the server cannot run (`custom` freeform-grammar tools,
+`web_search`, `tool_search`, `namespace`) are left out of the prompt and named in an `X-Goinfer-Tools-Dropped` header.
+
 ### Changed — Command-R7B and Command-R prefill on the GPU on Apple silicon
 
 Metal's batched prefill now runs the Cohere family: a bias-free LayerNorm, its parallel attention-and-MLP block, and its logit scale

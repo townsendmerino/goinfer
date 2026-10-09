@@ -280,7 +280,11 @@ not with a chat model's context. The resolved caps are printed on the startup li
 
 **Responses API.** `/v1/responses` honors `input` (string or message items),
 `instructions`, `text.format` (→ the same constrained grammar), `tools`, and
-streaming (`response.created`/`output_text.delta`/`completed`). `store` +
+streaming (`response.created`/`output_text.delta`/`completed`). Function tools and a named `tool_choice` are
+accepted in the Responses shape (`{"type":"function","name":…,"parameters":…}`) or the Chat Completions one
+(`{"type":"function","function":{…}}`). Tool types this server cannot run (`custom` freeform-grammar tools such as
+Codex's apply_patch, `web_search`, `tool_search`, `namespace`) are left out of the prompt and named in the
+`X-Goinfer-Tools-Dropped` response header; `/v1/chat/completions` does the same. `store` +
 `previous_response_id` continue a conversation from an in-memory ring — by
 construction a prompt-prefix extension, so it rides the warm-KV cache below.
 

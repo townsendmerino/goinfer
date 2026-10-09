@@ -686,6 +686,11 @@ func (m chatMessage) imageData() ([]imageRef, error) { return contentPartsImages
 func rawStr(s string) json.RawMessage { b, _ := json.Marshal(s); return b }
 
 // toolSpec is an OpenAI tool definition (we honor type:"function").
+//
+// It decodes both wire shapes (H-a, docs/measurements/harness-dialects-2026-10-09.md): Chat Completions nests the
+// function, `{"type":"function","function":{"name",…}}`, while the Responses API flattens it,
+// `{"type":"function","name",…,"parameters"}`. /v1/responses decoded only the nested shape, so every
+// Responses-shaped tool (Codex is Responses-only) arrived with an empty name and no schema.
 type toolSpec struct {
 	Type     string `json:"type"`
 	Function struct {
@@ -693,6 +698,52 @@ type toolSpec struct {
 		Description string          `json:"description"`
 		Parameters  json.RawMessage `json:"parameters"`
 	} `json:"function"`
+}
+
+func (t *toolSpec) UnmarshalJSON(b []byte) error {
+	type nested toolSpec // no methods, so no recursion
+	var w struct {
+		nested
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+	}
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	*t = toolSpec(w.nested)
+	if t.Function.Name == "" && w.Name != "" { // the Responses (flat) shape
+		t.Function.Name, t.Function.Description, t.Function.Parameters = w.Name, w.Description, w.Parameters
+	}
+	return nil
+}
+
+// functionTools keeps the function tools and names the rest. A client may declare tool types this server cannot
+// run (Responses `custom` freeform-grammar tools, `web_search`, `tool_search`, `namespace`, `local_shell`): before
+// H-a each became a function tool with an empty name in the prompt. They are now left out of the prompt, and the
+// handler reports them in the X-Goinfer-Tools-Dropped header so the omission is visible.
+func functionTools(tools []toolSpec) (kept []toolSpec, dropped []string) {
+	for _, t := range tools {
+		if (t.Type == "" || t.Type == "function") && t.Function.Name != "" {
+			kept = append(kept, t)
+			continue
+		}
+		d := t.Type
+		if t.Function.Name != "" {
+			d += ":" + t.Function.Name
+		}
+		dropped = append(dropped, d)
+	}
+	return kept, dropped
+}
+
+// dropUnrunnableTools applies functionTools to a request's tool list in place, setting the header when any is dropped.
+func dropUnrunnableTools(w http.ResponseWriter, tools *[]toolSpec) {
+	kept, dropped := functionTools(*tools)
+	if len(dropped) > 0 {
+		w.Header().Set("X-Goinfer-Tools-Dropped", strings.Join(dropped, ","))
+	}
+	*tools = kept
 }
 
 // apiToolCall is the OpenAI wire form of a tool call (arguments is a JSON string).
@@ -794,6 +845,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	dropUnrunnableTools(w, &req.Tools)
 	if err := validateN(req.N); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

@@ -410,8 +410,12 @@ func forcedTool(toolChoice json.RawMessage, tools []chat.Tool, afterToolResult b
 	case "function":
 		var c struct {
 			Function struct{ Name string } `json:"function"`
+			Name     string                `json:"name"` // the Responses shape, {"type":"function","name":…} (H-a)
 		}
 		if json.Unmarshal(toolChoice, &c) == nil {
+			if c.Function.Name == "" {
+				c.Function.Name = c.Name
+			}
 			for i := range tools {
 				if tools[i].Name == c.Function.Name {
 					return &tools[i]
