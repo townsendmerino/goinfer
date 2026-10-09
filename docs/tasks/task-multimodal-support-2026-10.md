@@ -2554,6 +2554,68 @@ families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models
 
 **Size:** aikit about 500 lines, goinfer about 800, both with tests: M, as registered for S10.
 
+**S10 Pixtral progress (2026-10-09, Mac and nobara): G-S10m-a, b and c PASS; d owed.**
+- **The code:**
+  - aikit, local branch `s10-pixtral` (96259e5, 419c9b3; not pushed): `PixtralVisionEncoder` and `PixtralPatchify`.
+    The tiny tower's weights now ship, un-ignored like the other tiny towers' (a fresh checkout on nobara failed both
+    tiny tests without them).
+  - goinfer, worktree branch `s10-pixtral`:
+    - `multimodal.PixtralProjector` (with `ForwardStages`), `PixtralPreprocess` and `PixtralImageBlock`;
+    - `decoder.GenerateVLCausalSpans`: one span per merged row, only `[IMG]` spliced, no image block. Its resident
+      path is the backend's plain batched prefill (`Prefiller.PrefillLast`) over the spliced rows;
+    - serve's `mistral3` tower, CPU float32, with one span per merged row (`imageSpans`);
+    - the support-table row.
+- **A real defect found by the ids step:** `chat.Ministral()` rendered the whole prompt as one Special segment, so the
+  vision splice never found the image block and refused every Pixtral request. It also let a typed `[/INST]` become a
+  control token. It now renders its six markers as control tokens and the texts as content (M25). All six are single
+  special tokens of the 3B's tokenizer (ids 1, 2, 3, 4, 17, 18). `TestRenderSegments_ministral` on that tokenizer
+  (nobara): byte identity with the whole-string encode on legitimate turns, and a forged `[/INST]` stays literal.
+- **A reference mistake, caught by the reference's own check:** the first pin called `PixtralImageProcessorFast`
+  alone, which rounds to the patch (14). `PixtralProcessor` passes it patch x merge (28). `table.png` came out 910 high
+  instead of 924, and the script stopped at "1419 [IMG] in goinfer's ids, the tower gives 1376 rows". The references
+  now come from the full processor. goinfer's preprocessing was right throughout.
+- **G-S10m-a, preprocessing: PASS.** transformers 5.12.0 (`~/.venv-vl`), the four F2a images and the two layout cases
+  (a 1000x20 strip, one merged row with no break; a 3000x2000 image, downscaled to 1540x1036). Every size equal. The
+  pixels are bit-identical on all six (max |diff| 0, the mean of order 1e-7 being float rounding of the normalisation).
+  Every [IMG], [IMG_BREAK] and [IMG_END] count equal.
+- **G-S10m-b, tower and projector: PASS.** From HF's own pixels, every stage (patch conv, ln_pre, 24 blocks, the
+  projector's norm, merger, linear_1, linear_2), worst row cosine:
+
+  | image | patches | worst stage |
+  |---|---|---|
+  | gemma3_preprocess_image.png | 64x64 | 0.999999994 (block 13) |
+  | qwen25vl_preprocess_image.png | 4x6 | 0.999999999 (the merger) |
+  | glm_ocr/formula.png | 86x72 | 0.999999999 (block 17) |
+  | glm_ocr/table.png | 66x86 | 0.999999998 (block 13) |
+
+  Two images in one call (table, then the 896x896): each bit-identical to itself alone, and 0.999999999 against HF's
+  own two-image call. The planted defects are the tiny tests' (aikit's three, goinfer's position-major merger at
+  0.809).
+- **G-S10m-c, the full model: PASS.** `table.png`, an explicit system message, "What does this table show? Answer in
+  one sentence.": 1,474 ids, a 33x43 merged grid (1,419 [IMG]), 13 text positions after the image. goinfer float32
+  CPU, its own preprocessing end to end: last-position cosine 1.000000, argmax 1784 equal, agreement 13/13. The
+  production entry's last logits: cosine 1.000000 against HF.
+
+  | planted defect | last cosine | argmax | agreement | verdict |
+  |---|---|---|---|---|
+  | features also over [IMG_BREAK]/[IMG_END] | 0.952522 | equal | 8/13 | red |
+  | a bidirectional block per row | 0.996371 | equal | 13/13 | red, on the cosine bar only |
+  | rows shifted by one position | 0.738214 | equal | 8/13 | red |
+
+  Defect 2 is red by the cosine bar alone: per-row bidirectionality moves the last logits but not the greedy reading
+  of this prompt.
+- **Wall time on nobara:** the references 3 min (one float32 load), a and b 2.7 min, c 4.5 min. Started 16:29:27 PDT,
+  done 16:39:46.
+- **Raw:** `docs/measurements/multimodal-support-2026-10/s10m-pixtral/` (the driver, every step's log, the two refused
+  runs, and the reference summary without its float arrays).
+- **Owed:**
+  - G-S10m-d, served CPU against Metal. The 3B is not on the archive, and its HF files are about 7.7 GB against
+    15 GiB free on the Mac (owner's call).
+  - The parity manifest refresh for the `forwardn.go` core edit (`scripts/refresh_parity_hashes.sh`, at merge, in the
+    main checkout, which has the tiny checkpoints).
+  - aikit's release, then merging goinfer's branch.
+  - The README and `docs/multimodal.md` prose that still calls Pixtral "not yet".
+
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
 owner's choice is that decision. The dev checkpoint is `Qwen/Qwen3-VL-2B-Instruct`, downloaded on nobara (`~/models/

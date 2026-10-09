@@ -1,0 +1,22 @@
+[16:26:57] 1/4 ids
+=== RUN   TestPixtralFull
+[G-S10m-c   0.4s] wrote 1474 ids, 33x43 merged (1419 [IMG]): /home/francis/goinfer-logs/pixtral-real/ids.json
+--- PASS: TestPixtralFull (0.35s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.357s
+[16:27:03] 2/4 transformers references
+[transformers] The tokenizer you are loading from '/home/francis/models/ministral3-3b-bf16' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+Loading weights:   0%|          | 0/458 [00:00<?, ?it/s]Loading weights:   0%|          | 1/458 [00:00<00:59,  7.73it/s]Loading weights:   3%|▎         | 13/458 [00:00<00:09, 47.26it/s]Loading weights:   5%|▍         | 22/458 [00:00<00:08, 48.56it/s]Loading weights:   7%|▋         | 31/458 [00:00<00:08, 47.95it/s]Loading weights:   9%|▊         | 40/458 [00:00<00:08, 47.95it/s]Loading weights:  10%|▉         | 45/458 [00:00<00:08, 47.97it/s]Loading weights:  12%|█▏        | 54/458 [00:01<00:07, 53.11it/s]Loading weights:  13%|█▎        | 60/458 [00:01<00:07, 52.30it/s]Loading weights:  15%|█▍        | 67/458 [00:01<00:06, 56.17it/s]Loading weights:  16%|█▌        | 73/458 [00:01<00:07, 53.00it/s]Loading weights:  17%|█▋        | 79/458 [00:01<00:07, 51.26it/s]Loading weights:  19%|█▉        | 86/458 [00:01<00:07, 50.60it/s]Loading weights:  20%|██        | 93/458 [00:01<00:06, 54.01it/s]Loading weights:  22%|██▏       | 99/458 [00:02<00:07, 45.53it/s]Loading weights:  24%|██▍       | 109/458 [00:02<00:06, 53.39it/s]Loading weights:  25%|██▌       | 115/458 [00:02<00:07, 46.20it/s]Loading weights:  28%|██▊       | 126/458 [00:02<00:05, 55.94it/s]Loading weights:  29%|██▉       | 132/458 [00:02<00:06, 50.43it/s]Loading weights:  30%|███       | 138/458 [00:02<00:06, 51.85it/s]Loading weights:  31%|███▏      | 144/458 [00:02<00:06, 50.74it/s]Loading weights:  33%|███▎      | 153/458 [00:03<00:05, 52.23it/s]Loading weights:  35%|███▍      | 159/458 [00:03<00:05, 52.80it/s]Loading weights:  36%|███▌      | 165/458 [00:03<00:05, 51.38it/s]Loading weights:  37%|███▋      | 171/458 [00:03<00:05, 49.44it/s]Loading weights:  38%|███▊      | 176/458 [00:03<00:06, 41.46it/s]Loading weights:  40%|████      | 184/458 [00:03<00:05, 48.73it/s]Loading weights:  42%|████▏     | 193/458 [00:03<00:05, 49.13it/s]Loading weights:  44%|████▍     | 202/458 [00:04<00:05, 49.19it/s]Loading weights:  46%|████▌     | 211/458 [00:04<00:04, 49.80it/s]Loading weights:  48%|████▊     | 220/458 [00:04<00:04, 50.35it/s]Loading weights:  50%|█████     | 229/458 [00:04<00:04, 50.98it/s]Loading weights:  55%|█████▌    | 252/458 [00:04<00:02, 87.01it/s]Loading weights:  58%|█████▊    | 266/458 [00:04<00:02, 95.56it/s]Loading weights:  64%|██████▍   | 293/458 [00:04<00:01, 133.71it/s]Loading weights:  69%|██████▉   | 318/458 [00:05<00:00, 160.84it/s]Loading weights:  75%|███████▌  | 345/458 [00:05<00:00, 188.85it/s]Loading weights:  82%|████████▏ | 374/458 [00:05<00:00, 215.35it/s]Loading weights:  87%|████████▋ | 397/458 [00:05<00:00, 216.95it/s]Loading weights:  94%|█████████▍| 430/458 [00:05<00:00, 235.43it/s]Loading weights: 100%|██████████| 458/458 [00:05<00:00, 83.19it/s] 
+[   7.4s] loaded (PixtralImageProcessor, transformers 5.12.0)
+[   9.0s] a: gemma3_preprocess_image.png 896x896 -> 896x896, 1024 [IMG]
+[   9.0s] a: qwen25vl_preprocess_image.png 84x56 -> 84x56, 6 [IMG]
+[   9.1s] a: glm_ocr/formula.png 1000x1200 -> 1008x1204, 1548 [IMG]
+[   9.1s] a: glm_ocr/table.png 1200x900 -> 1204x910, 1419 [IMG]
+[   9.1s] a: strip_1000x20.png 1000x20 -> 1008x28, 36 [IMG]
+[   9.3s] a: big_3000x2000.png 3000x2000 -> 1540x1036, 2035 [IMG]
+[  23.3s] b: gemma3_preprocess_image.png 64x64 patches, 1024 units, 30 stages
+[  23.6s] b: qwen25vl_preprocess_image.png 4x6 patches, 6 units, 30 stages
+[  47.6s] b: glm_ocr/formula.png 86x72 patches, 1548 units, 30 stages
+[  67.1s] b: glm_ocr/table.png 65x86 patches, 1376 units, 30 stages
+[ 109.8s] b: two images in one call
+1419 [IMG] in goinfer's ids, the tower gives 1376 rows

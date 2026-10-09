@@ -1,0 +1,7 @@
+[16:25:31] 1/4 ids
+=== RUN   TestPixtralFull
+    pixtral_real_test.go:94: vision: image 1 of 1: vision: the image block was not found in the rendered prompt (template changed?); refusing to encode its sentinels as ordinary text
+--- FAIL: TestPixtralFull (0.34s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.340s
+FAIL
