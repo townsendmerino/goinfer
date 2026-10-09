@@ -107,8 +107,7 @@ jobs:
         run: go vet ./...
       - uses: ./.github/actions/staticcheck
         with:
-          version: "2026.2" # v0.8.0
-          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
+          version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck
         working-directory: site
         run: staticcheck ./...

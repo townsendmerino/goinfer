@@ -3275,18 +3275,19 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - `Quantized` and `HasBlocks` accessors.
     - `TestLoadEncoderHead_matchesLoadEncoder`: bit-identical to `LoadEncoder` at both precisions, and the streamed
       blocks equal `Weights()`. The vision suite passes.
-  - **goinfer, on aikit v1.60.0 since its merge** (every module's require bumped), still on Go 1.27.0.
-    - aikit's release moved aikit to `toolchain go1.27.2`, because govulncheck v1.8.0 now finds the Go 1.27.0
+  - **goinfer is on aikit v1.60.0 since its merge** (every module's require bumped).
+  - **goinfer moved to Go 1.27.2 the same evening (owner: "lets move to 1.27.2").**
+    - aikit's release had moved aikit to `toolchain go1.27.2`, because govulncheck v1.8.0 now finds the Go 1.27.0
       standard library's advisories GO-2026-6607..6617 reachable (fixed in 1.27.2). It also moved aikit's
-      golangci-lint to v2.14.0.
-    - goinfer cannot follow yet: no staticcheck release (v0.8.0 or v0.8.1) reads Go 1.27.2's export data (version 5).
-      A canary that imports the standard library fails on both: "export data version 5 is greater than maximum
-      supported version 4". CI downloads the release binary.
-    - staticcheck v0.8.1 built from source against golang.org/x/tools v0.51.0 does read it: the canary is red, and
-      goinfer's root (linux/amd64) and metal (tagged) are clean.
-    - Moving CI to that build is the owner's call: it compiles staticcheck on every run again, about 24 s, which
-      reverses C5.
-    - Until then goinfer's govulncheck will read the new advisories as reachable (serve uses net/http).
+      golangci-lint to v2.14.0. goinfer's govulncheck read the same advisories at 41814649 (serve uses net/http).
+    - No staticcheck release (v0.8.0 or v0.8.1) reads Go 1.27.2's export data (version 5). A canary that imports the
+      standard library fails on both: "export data version 5 is greater than maximum supported version 4".
+    - So CI now builds staticcheck v0.8.1 against golang.org/x/tools v0.51.0 from `.github/actions/staticcheck/go.mod`
+      instead of downloading the release. That costs the ~24 s compile C5 had removed, until a staticcheck release
+      reads Go 1.27.2.
+    - The root go.mod gains `toolchain go1.27.2`. A workspace's go.work needs the same line, because the module's line
+      is ignored in workspace mode.
+    - CLAUDE.md's install line and `cmd/gate`'s hint now name the source build.
     - `tower_gemm_w8` in `metal/grid_vision.go`. `tower_gemm_body` takes the scale under a compile-time flag, so w16
       and w32 compile as before.
     - The SigLIP resident streams the blocks for a head-only encoder and keeps uploading in-memory float32 blocks

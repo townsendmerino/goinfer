@@ -145,14 +145,13 @@ jobs:
 
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
-      # C5: a downloaded, checksum-verified release binary (./.github/actions/staticcheck),
-      # not `go run @version` (measured 24s median compiling from source every run,
-      # docs/measurements/ci-timing-2026-09.md) -- same pin (2026.2 == v0.8.0), just fetched
-      # once as a binary instead of built from source on every job that needs it.
+      # Built from source again since the move to Go 1.27.2 (2026-10-08): no staticcheck release reads its export data,
+      # so ./.github/actions/staticcheck builds v0.8.1 against golang.org/x/tools v0.51.0 from its own go.mod. This is
+      # the ~24 s compile C5 had removed (docs/measurements/ci-timing-2026-09.md); a release that reads Go 1.27.2 restores
+      # the checksum-verified download.
       - uses: ./.github/actions/staticcheck
         with:
-          version: "2026.2" # v0.8.0
-          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
+          version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck
         run: staticcheck ./...
 
@@ -614,11 +613,10 @@ jobs:
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
 
-      # C5: pinned release binary, not `go run @version` -- see .github/actions/staticcheck.
+      # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       - uses: ./.github/actions/staticcheck
         with:
-          version: "2026.2" # v0.8.0
-          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
+          version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck -tags gpu
         run: staticcheck -tags 'gpu goinfer_testhooks' ./gpu/...
 
@@ -657,14 +655,13 @@ jobs:
       - name: vet -tags cuda
         run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
 
-      # C5: pinned release binary, not `go run @version` -- see .github/actions/staticcheck.
+      # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this
       # is now a prebuilt binary invocation, not a `go run` -- the env var had no effect on the
       # binary's own analysis of the cuda module either way.
       - uses: ./.github/actions/staticcheck
         with:
-          version: "2026.2" # v0.8.0
-          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
+          version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
       - name: staticcheck -tags cuda
         run: staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...
 
