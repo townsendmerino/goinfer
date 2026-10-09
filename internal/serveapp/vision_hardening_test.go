@@ -195,22 +195,23 @@ func TestServe_noRouteEncodesARenderedPrompt(t *testing.T) {
 // chat_template.json) wrap the image sequence in "\n\n" on both sides for Gemma 3, and with NO
 // adjacent newline at all for Gemma 4 and Qwen2.5-VL — the opposite of what this file used to
 // splice (a bare trailing "\n" on all three, or none on Gemma 3). This can't be driven through
-// the real *VisionPrompt methods without a real vision tower, so it is asserted structurally on
-// the source: qwenVisionPrompt's and gemma4VisionPrompt's block assignment must be a BARE
-// multimodal.*ImageBlock(n) call with nothing concatenated onto it, in each function's own AST —
-// not a repo-wide grep, which could not tell one family's assignment from another's.
+// the real prompt builders without a real vision tower, so it is asserted structurally on the
+// source: each family's block assignment must be exactly the multimodal block call, with nothing
+// concatenated onto it — in prepImage (S11, vision_multi.go), case by case, and in
+// glmOcrVisionPrompt — in each function's own AST, not a repo-wide grep, which could not tell one
+// family's assignment from another's.
 func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "vision_serve.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
 	render := func(e ast.Expr) string {
 		var b strings.Builder
 		_ = printer.Fprint(&b, fset, e)
 		return b.String()
 	}
-	check := func(fnName, wantCall string) {
+	findFn := func(file, fnName string) *ast.FuncDecl {
+		af, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
 		var fn *ast.FuncDecl
 		ast.Inspect(af, func(n ast.Node) bool {
 			if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == fnName {
@@ -219,31 +220,63 @@ func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 			return true
 		})
 		if fn == nil {
-			t.Fatalf("%s not found — this guard is watching nothing", fnName)
+			t.Fatalf("%s not found in %s — this guard is watching nothing", fnName, file)
 		}
-		var found bool
-		ast.Inspect(fn, func(n ast.Node) bool {
+		return fn
+	}
+	// blockRHS collects the right-hand side of every assignment to `block` or `<x>.block` under n.
+	blockRHS := func(n ast.Node) []string {
+		var got []string
+		ast.Inspect(n, func(n ast.Node) bool {
 			assign, ok := n.(*ast.AssignStmt)
 			if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
 				return true
 			}
-			id, ok := assign.Lhs[0].(*ast.Ident)
-			if !ok || id.Name != "block" {
-				return true
-			}
-			found = true
-			got := render(assign.Rhs[0])
-			if got != wantCall {
-				t.Errorf("%s: block := %s, want exactly %s — a newline was concatenated onto (or "+
-					"dropped from) the real processor's shape (M-38)", fnName, got, wantCall)
+			switch l := assign.Lhs[0].(type) {
+			case *ast.Ident:
+				if l.Name == "block" {
+					got = append(got, render(assign.Rhs[0]))
+				}
+			case *ast.SelectorExpr:
+				if l.Sel.Name == "block" {
+					got = append(got, render(assign.Rhs[0]))
+				}
 			}
 			return true
 		})
-		if !found {
-			t.Errorf("%s: no `block :=` assignment found — this guard is watching the wrong thing", fnName)
+		return got
+	}
+	// prepImage: one switch case per family.
+	want := map[string]string{`"qwen"`: "multimodal.QwenImageBlock(n)", `"gemma4"`: "multimodal.Gemma4ImageBlock(n)", "default": "multimodal.Gemma3PromptBlock(n)"}
+	seen := map[string]bool{}
+	ast.Inspect(findFn("vision_multi.go", "prepImage"), func(n ast.Node) bool {
+		cc, ok := n.(*ast.CaseClause)
+		if !ok {
+			return true
+		}
+		key := "default"
+		if len(cc.List) == 1 {
+			key = render(cc.List[0])
+		}
+		w, ok := want[key]
+		if !ok {
+			return true
+		}
+		seen[key] = true
+		got := blockRHS(&ast.BlockStmt{List: cc.Body})
+		if len(got) != 1 || got[0] != w {
+			t.Errorf("prepImage case %s: block = %v, want exactly %s — a newline was concatenated onto (or "+
+				"dropped from) the real processor's shape (M-38)", key, got, w)
+		}
+		return true
+	})
+	for k := range want {
+		if !seen[k] {
+			t.Errorf("prepImage has no case %s — this guard is watching the wrong thing", k)
 		}
 	}
-	check("qwenVisionPrompt", "multimodal.QwenImageBlock(n)")
-	check("gemma4VisionPrompt", "multimodal.Gemma4ImageBlock(n)")
-	check("glmOcrVisionPrompt", "multimodal.GlmOcrImageBlock(n)") // GLM-OCR: image first, the task prompt directly after
+	// GLM-OCR: image first, the task prompt directly after.
+	if got := blockRHS(findFn("vision_serve.go", "glmOcrVisionPrompt")); len(got) != 1 || got[0] != "multimodal.GlmOcrImageBlock(n)" {
+		t.Errorf("glmOcrVisionPrompt: block := %v, want exactly multimodal.GlmOcrImageBlock(n) (M-38)", got)
+	}
 }

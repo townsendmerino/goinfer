@@ -54,3 +54,21 @@ func FindImageRun(ids []int, tok int) (pos, n int) {
 	}
 	return 0, 0
 }
+
+// FindImageRuns returns every run of tok in ids, in order, as [start, length] pairs: one per image block (S11, several
+// images per message). Every family wraps its block in non-placeholder tokens (Gemma's <start_of_image>/<end_of_image>,
+// Qwen's <|vision_start|>/<|vision_end|>), so two images never form one run.
+func FindImageRuns(ids []int, tok int) [][2]int {
+	var runs [][2]int
+	for i := 0; i < len(ids); i++ {
+		if ids[i] != tok {
+			continue
+		}
+		start := i
+		for i < len(ids) && ids[i] == tok {
+			i++
+		}
+		runs = append(runs, [2]int{start, i - start})
+	}
+	return runs
+}

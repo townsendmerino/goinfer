@@ -9,7 +9,8 @@ import (
 // (decoder.GenerateVL and its Qwen and Gemma 4 variants), and a chat client resends the whole conversation, so its second image turn used to carry
 // both images and fail with "v1 supports 1 image per request, got 2". Owner decision 2026-10-01: NO multi-image history. The newest image is kept and
 // every image in an EARLIER message is replaced by a visible note, so the model knows something was there rather than hearing nothing, and the client
-// is told with a header. Several images inside the one latest message are a different thing — the caller asked for them together — and stay a 400.
+// is told with a header. Several images inside the one latest message are a different thing — the caller asked for them together — and since
+// S11 (docs/tasks/task-multimodal-support-2026-10.md) they are taken, each its own block, up to maxImagesPerTurn.
 
 // imagesOmittedHeader tells the client how many earlier images this request's answer did not see.
 const imagesOmittedHeader = "X-Goinfer-Images-Omitted"

@@ -6,7 +6,7 @@
 > Every cell carries a label in the audit record: **run** = run on `nobara-pc` on 2026-10-02 (CUDA and WebGPU only), **read** = read from code and never run
 > (**every Metal cell: no Mac was available**), **recorded** = a dated record in the tree, not re-measured. A cell marked unverified stays unverified here.
 >
-> Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; one image per generation: serve keeps the newest image in a conversation and replaces earlier ones with a note, `internal/serveapp/image_history.go`; several images in the latest message are a 400) for **Gemma 3** (SigLIP),
+> Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; the newest message's images, up to 8 and each its own block in place (S11), while earlier images are replaced by a note, `internal/serveapp/image_history.go`; GLM-OCR takes one) for **Gemma 3** (SigLIP),
 > **Gemma 4** (E2B/E4B/26B-A4B/31B), **Qwen2.5-VL**, **Qwen3.5+ dense** (0.8B and 9B gated; the MoE sizes are accepted by serve's auto-discovery and have never been
 > run) and **GLM-OCR**. Negatives: Qwen3-VL is its text decoder only (no tower), and a `mistral3` checkpoint's tower is ignored (an image gets HTTP 400).
 > In each cell, the first half is where the vision **tower** runs, the second where the **decoder** runs after the image.

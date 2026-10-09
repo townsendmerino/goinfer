@@ -225,6 +225,7 @@ func TestSSE_everyStreamingDriveSiteHeartbeats(t *testing.T) {
 		{"vision_serve.go", "serveVisionChatWith"},
 		{"vision_serve.go", "serveVisionMessages"},
 		{"responses.go", "serveResponsesWith"},
+		{"responses.go", "serveVisionResponses"}, // S11: input_image on /v1/responses
 	}
 	fnRe := regexp.MustCompile(`(?ms)^func (?:\([^)]*\) )?(\w+)\([^\n]*\{\n(.*?)\n\}`)
 	for _, site := range sites {

@@ -19,6 +19,7 @@ type imageRef struct {
 	mediaType string // e.g. "image/png" (informational; preprocess sniffs the real format), "audio/wav"
 	data      []byte // raw bytes (base64 already decoded)
 	audio     bool   // an OpenAI input_audio part (S5 of docs/tasks/task-multimodal-support-2026-10.md): a WAV for Gemma 4's audio tower
+	at        int    // S11: the byte offset in its message's joined text parts where this part sat (placeImageBlocks)
 }
 
 // contentPart is one element of an OpenAI chat message's content array.
@@ -74,12 +75,18 @@ func contentPartsImages(raw json.RawMessage) ([]imageRef, error) {
 		return nil, nil
 	}
 	var out []imageRef
+	at := 0 // the joined text so far (contentPartsText's), where the next media part sits
 	for _, p := range parts {
+		if p.Type == "text" {
+			at += len(p.Text)
+			continue
+		}
 		if p.Type == "input_audio" {
 			ref, err := decodeInputAudio(p.InputAudio)
 			if err != nil {
 				return nil, err
 			}
+			ref.at = at
 			out = append(out, ref)
 			continue
 		}
@@ -90,6 +97,7 @@ func contentPartsImages(raw json.RawMessage) ([]imageRef, error) {
 		if err != nil {
 			return nil, err
 		}
+		ref.at = at
 		out = append(out, ref)
 	}
 	return out, nil

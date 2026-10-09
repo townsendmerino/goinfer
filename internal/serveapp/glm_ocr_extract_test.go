@@ -171,11 +171,12 @@ func TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt(t *testing.
 	if !confOK || payloads < 2 {
 		t.Errorf("serveVisionChatWith must set sampling.confidenceOK and write gr.conf.payload() back in the stream and the buffered reply (confidenceOK set: %v, payload writes: %d)", confOK, payloads)
 	}
-	ext, vp, pr := pos["glmOcrExtractionTurn"], pos["visionPrompt"], pos["prepare"]
+	// visionPromptN (S11) builds the prompt for every image of the message; it is the call the order is about.
+	ext, vp, pr := pos["glmOcrExtractionTurn"], pos["visionPromptN"], pos["prepare"]
 	if !ext.IsValid() || !vp.IsValid() || !pr.IsValid() {
-		t.Fatalf("serveVisionChatWith must call glmOcrExtractionTurn, visionPrompt and prepare (found %v)", pos)
+		t.Fatalf("serveVisionChatWith must call glmOcrExtractionTurn, visionPromptN and prepare (found %v)", pos)
 	}
 	if !(ext < vp && vp < pr) {
-		t.Errorf("serveVisionChatWith must call glmOcrExtractionTurn, then visionPrompt, then prepare; the positions are %v, %v, %v", ext, vp, pr)
+		t.Errorf("serveVisionChatWith must call glmOcrExtractionTurn, then visionPromptN, then prepare; the positions are %v, %v, %v", ext, vp, pr)
 	}
 }

@@ -134,6 +134,15 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
+	// S11: input_image parts route to the vision path, under the chat route's history rule (image_history.go) and its
+	// refusal of images together with tools.
+	noteOmittedImages(w.Header(), omitChatHistoryImages(messages))
+	imgs, ierr := chatImages(messages)
+	if ierr != nil {
+		writeErr(w, http.StatusBadRequest, ierr.Error())
+		return
+	}
+
 	// Sampling: Responses uses max_output_tokens / text.format (vs the chat API's
 	// max_tokens / response_format); map them onto the shared prepare path.
 	sm := req.sampling
@@ -153,6 +162,14 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	// must 400, not silently fall through to the tools-less prompt below and drop the caller's
 	// tools (M-16, audit-2026-09-10) — the other two surfaces already refuse this.
 	toolsActive := len(req.Tools) > 0 && toolChoiceMode(req.ToolChoice) != "none"
+	if len(imgs) > 0 {
+		if toolsActive {
+			writeErr(w, http.StatusBadRequest, "tools are not supported together with image inputs; send images or tools, not both")
+			return
+		}
+		s.serveVisionResponses(w, r, lm, req, messages, imgs, sm, id, created, store)
+		return
+	}
 	if toolsActive {
 		if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
 			writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
@@ -229,6 +246,97 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 
 	var sb strings.Builder
 	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	if gerr != nil {
+		writeServerErr(w, "generation failed: "+gerr.Error())
+		return
+	}
+	if cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
+		return
+	}
+	out := []any{outputMessage(id+"-msg", sb.String())}
+	writeJSON(w, http.StatusOK, responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp))
+	s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
+}
+
+// serveVisionResponses is serveResponsesWith's plain-text branch for input that carries images (S11): the prompt from
+// visionPromptN, generation through driveVL, rendered as a Responses object (or its event stream).
+func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm *loadedModel, req responseReq, messages []chatMessage, imgs []imageRef, sm sampling, id string, created int64, store bool) {
+	if imgs[0].audio {
+		if !lm.audioCapable() {
+			writeErr(w, http.StatusBadRequest, "this model has no audio tower (audio input needs a Gemma 4 checkpoint with an audio_config, e.g. E2B or E4B)")
+			return
+		}
+	} else if !lm.visionCapable() {
+		writeErr(w, http.StatusBadRequest, "this model has no vision tower (start with --vision <dir> to enable image input)")
+		return
+	}
+	if len(imgs) > maxImagesPerTurn {
+		writeErr(w, http.StatusBadRequest, tooManyImages(len(imgs)))
+		return
+	}
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if sm.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
+	system, turns := messagesToTurns(messages)
+	msgText, ordered := chatMediaText(messages)
+	vi, err := lm.visionPromptN(tm, system, turns, imgs, ordered, msgText)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	gr, err := lm.prepare(sm, vi.ids, false)
+	if err != nil {
+		writeErr(w, prepareErrStatus(err), err.Error())
+		return
+	}
+	gr.id = id
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+		return
+	}
+	defer lm.exit()
+	inTok := len(gr.promptIDs)
+	if req.Stream {
+		ss, ok := sseStart(w)
+		if !ok {
+			return
+		}
+		sseEvent(ss, "response.created", map[string]any{
+			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
+		})
+		var sb strings.Builder
+		stopBeat := sseHeartbeat(ss) // N-24: the image turn's tower and prefill are the silent window
+		finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
+			sb.WriteString(t)
+			sseEvent(ss, "response.output_text.delta", map[string]any{
+				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
+			})
+		})
+		stopBeat()
+		if gerr != nil {
+			sseEvent(ss, "error", map[string]any{"type": "error", "message": "generation failed: " + gerr.Error()})
+			sseDone(ss)
+			return
+		}
+		out := []any{outputMessage(id+"-msg", sb.String())}
+		sseEvent(ss, "response.completed", map[string]any{
+			"type": "response.completed", "response": responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp),
+		})
+		if cancelReason != "" {
+			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": cancelReason})
+		}
+		sseDone(ss)
+		s.maybeStore(store, id, lm.name, messages, sb.String(), nil)
+		return
+	}
+	var sb strings.Builder
+	finish, nComp, _, _, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
@@ -461,9 +569,65 @@ func responseInputToMessages(raw json.RawMessage) ([]chatMessage, error) {
 		if role == "" {
 			role = "user"
 		}
-		msgs = append(msgs, chatMessage{Role: role, Content: rawStr(contentText(it.Content))})
+		content, err := responsesContent(it.Content)
+		if err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, chatMessage{Role: role, Content: content})
 	}
 	return msgs, nil
+}
+
+// responsesContent is a Responses message content as a chat message's (S11): plain text when it carries no image, as it
+// always was; otherwise a chat content array, each input_image an image_url part in its place among the text parts, so
+// the vision path sees the order the caller sent. An image by file_id is refused (this server stores no files).
+func responsesContent(raw json.RawMessage) (json.RawMessage, error) {
+	var parts []struct {
+		Type     string          `json:"type"`
+		Text     string          `json:"text"`
+		ImageURL json.RawMessage `json:"image_url"`
+		FileID   string          `json:"file_id"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return rawStr(contentText(raw)), nil
+	}
+	hasImage := false
+	for _, p := range parts {
+		hasImage = hasImage || p.Type == "input_image"
+	}
+	if !hasImage {
+		return rawStr(contentText(raw)), nil
+	}
+	type imageURL struct {
+		URL string `json:"url"`
+	}
+	type chatPart struct {
+		Type     string    `json:"type"`
+		Text     string    `json:"text,omitempty"`
+		ImageURL *imageURL `json:"image_url,omitempty"`
+	}
+	out := make([]chatPart, 0, len(parts))
+	for _, p := range parts {
+		if p.Type != "input_image" {
+			out = append(out, chatPart{Type: "text", Text: p.Text})
+			continue
+		}
+		if p.FileID != "" {
+			return nil, fmt.Errorf("input_image by file_id is not supported (this server stores no files); send image_url as a base64 data: URI")
+		}
+		var url string
+		if json.Unmarshal(p.ImageURL, &url) != nil { // the Responses shape is a string; take the chat API's {url} too
+			var u imageURL
+			_ = json.Unmarshal(p.ImageURL, &u)
+			url = u.URL
+		}
+		if url == "" {
+			return nil, fmt.Errorf("input_image needs image_url (a base64 data: URI)")
+		}
+		out = append(out, chatPart{Type: "image_url", ImageURL: &imageURL{URL: url}})
+	}
+	b, err := json.Marshal(out)
+	return b, err
 }
 
 // toolOutputText flattens a `function_call_output`'s `output`: a plain string when it is one, the

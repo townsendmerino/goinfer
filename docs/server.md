@@ -370,7 +370,10 @@ Compatible, not full-spec (llama.cpp's bar): `thinking` / `cache_control` /
 tower, a Qwen3.5+ checkpoint and a GLM-OCR checkpoint, and routes each to its own loader),
 `cmd/serve` accepts images on both surfaces — OpenAI `image_url` content parts and Anthropic
 `image` blocks — **base64 / `data:` URIs only** (a remote URL is never fetched: an SSRF guard,
-returns 400), one image per generation (serve keeps the newest image in a conversation and replaces earlier ones with a visible note and an `X-Goinfer-Images-Omitted` header; several images in the latest message are a 400). An image runs through the matching pure-Go vision tower into the
+returns 400). Images in the newest message are taken, up to 8, each its own block where its part sat among the text
+(S11; `/v1/responses` `input_image` parts too). Images in earlier messages are replaced by a visible note and an
+`X-Goinfer-Images-Omitted` header. GLM-OCR takes one image per request, and an audio clip must be the only media in its
+request. An image runs through the matching pure-Go vision tower into the
 decoder's embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
 dropped/pasted image too, for Gemma 3 only. Qwen3-VL is its text decoder only (no tower), and a
 `mistral3` checkpoint's tower is ignored: an image on either is a 400 "this model has no vision tower".

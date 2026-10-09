@@ -1699,11 +1699,20 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	defer cancel()
 	var stream <-chan int
 	var gen *decoder.Generation
+	// S11: the image paths take every image's span; a one-media builder (GLM-OCR, audio) set only the first.
+	spans, grids := vi.spans, vi.grids
+	if len(spans) == 0 {
+		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
+	}
 	if vi.asr { // Qwen3-ASR (S14.3): the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
 		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, gr.sp)
 	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL (S10): split the flat features into the merged rows and the DeepStack sets
-		n := vi.imgLen * lm.model.Config().HiddenDim
-		stream, gen = lm.model.GenerateQwenVLDeepstack(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, func() ([]float32, [][]float32, error) {
+		total := 0
+		for _, sp := range spans {
+			total += sp.Len
+		}
+		n := total * lm.model.Config().HiddenDim
+		stream, gen = lm.model.GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
 			flat, err := vi.features()
 			if err != nil {
 				return nil, nil, err
@@ -1713,15 +1722,21 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 				deep[l] = flat[(l+1)*n : (l+2)*n]
 			}
 			return flat[:n], deep, nil
-		}, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else if vi.qwen {
-		stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, [][3]int{vi.grid}, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
+			f, err := vi.features()
+			return f, nil, err
+		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else if vi.gemma4 {
-		stream, gen = lm.model.GenerateGemma4VL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	} else {
-		stream, gen = lm.model.GenerateVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
+	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // S11: say why a multi-image turn prefilled on the CPU
+		fmt.Fprintf(os.Stderr, "vision: %d images; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", len(spans), gen.ImgPrefillDecline)
+	}
 	if vi.gemma4 { // S1 G4 evidence (docs/tasks/task-multimodal-support-2026-10.md): where this image turn decoded
 		where := "cpu"
 		if gen.DecodeResident {

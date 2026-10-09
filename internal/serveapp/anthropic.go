@@ -351,7 +351,12 @@ func anthropicImages(req *anthropicReq) ([]imageRef, error) {
 		if json.Unmarshal(m.Content, &blocks) != nil {
 			continue // plain-string content carries no images
 		}
+		at := 0 // the message's text blocks so far (anthropicTurns joins them), where the next image sits
 		for _, bl := range blocks {
+			if bl.Type == "text" {
+				at += len(bl.Text)
+				continue
+			}
 			if bl.Type != "image" {
 				continue
 			}
@@ -362,6 +367,7 @@ func anthropicImages(req *anthropicReq) ([]imageRef, error) {
 			if err != nil {
 				return nil, err
 			}
+			ref.at = at
 			out = append(out, ref)
 		}
 	}

@@ -68,14 +68,15 @@ func TestOmitChatHistoryImages(t *testing.T) {
 		t.Errorf("three turns: kept %v", imgs)
 	}
 
-	// Two images in the SAME (latest) message are the caller's explicit request: nothing is omitted, and the guard still sees two.
+	// Two images in the SAME (latest) message are the caller's explicit request: nothing is omitted, and both reach the
+	// vision path, which takes up to maxImagesPerTurn of them (S11).
 	same := chatMsgs(t, `{"messages":[{"role":"user","content":[
 	  {"type":"image_url","image_url":{"url":"`+dataURI("a")+`"}},{"type":"image_url","image_url":{"url":"`+dataURI("b")+`"}}]}]}`)
 	if n := omitChatHistoryImages(same); n != 0 {
 		t.Errorf("two images in one message: omitted %d, want 0", n)
 	}
-	if imgs, _ := chatImages(same); len(imgs) != 2 || len(imgs) <= maxImagesPerTurn {
-		t.Errorf("two images in one message: %d seen — the one-image 400 would no longer fire", len(imgs))
+	if imgs, _ := chatImages(same); len(imgs) != 2 || len(imgs) > maxImagesPerTurn {
+		t.Errorf("two images in one message: %d seen (cap %d) — both must reach the vision path", len(imgs), maxImagesPerTurn)
 	}
 
 	// One image, or none: the bytes are left exactly as they came.

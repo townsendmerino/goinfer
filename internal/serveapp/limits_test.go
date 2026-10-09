@@ -107,7 +107,8 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	// Guarded by a caller, with the reason. A private helper reached from exactly one guarded
 	// handler does not need its own check — but it has to say so here rather than be forgotten.
 	guardedByCaller := map[string]string{
-		"respondTools": "reached only from serveResponsesWith, which guards before the tools/plain branch",
+		"respondTools":         "reached only from serveResponsesWith, which guards before the tools/plain branch",
+		"serveVisionResponses": "reached only from serveResponsesWith, which guards before the images/tools/plain branch (S11)",
 	}
 	// Direct calls, plus the prompt builders that tokenize TRANSITIVELY. The vision routes were the
 	// hole in the first cut of this check: serveVisionChatWith contains no tokenizer call of its
@@ -115,7 +116,7 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	// to protect, and dropping that guard produced no failure. Caught by mutation, not by reading.
 	tokenizers := []string{
 		"lm.promptForT(", "lm.tk.EncodeSegments(", "lm.tk.Encode(", "lm.encode(",
-		"lm.visionPrompt(", "lm.qwenVisionPrompt(",
+		"lm.visionPrompt(", "lm.visionPromptN(", "lm.imagesPrompt(",
 	}
 
 	files, err := filepath.Glob("*.go")

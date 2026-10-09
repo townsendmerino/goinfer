@@ -54,3 +54,34 @@ func SpliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 	out = append(out, segs[segIdx+1:]...)
 	return out, nil
 }
+
+// SpliceImageBlocks is SpliceImageBlock for several images (S11): blocks in prompt order, spliced from the END, so the
+// last block is the last occurrence of its text and each earlier block is the last occurrence before the one after it.
+// That keeps V-19's rule (an earlier turn quoting the sentinel text is never taken for an image) for every block; a
+// block the user's own words forge after the real ones takes a real block's place, and the run-length check downstream
+// then refuses the request.
+func SpliceImageBlocks(segs []tokenizer.Segment, blocks []string) ([]tokenizer.Segment, error) {
+	if len(blocks) == 0 {
+		return nil, fmt.Errorf("vision: no image block to splice")
+	}
+	head := segs
+	var tail []tokenizer.Segment // already spliced: from the latest block to the end
+	for k := len(blocks) - 1; k >= 0; k-- {
+		out, err := SpliceImageBlock(head, blocks[k])
+		if err != nil {
+			return nil, fmt.Errorf("vision: image %d of %d: %w", k+1, len(blocks), err)
+		}
+		// The block just spliced is the last Special segment whose text is blocks[k] (SpliceImageBlock searches from the end
+		// and the template's own Special segments never carry a block's text): everything from it on is settled.
+		cut := -1
+		for i, sg := range slices.Backward(out) {
+			if sg.Special && sg.Text == blocks[k] {
+				cut = i
+				break
+			}
+		}
+		tail = append(slices.Clone(out[cut:]), tail...)
+		head = out[:cut]
+	}
+	return append(slices.Clone(head), tail...), nil
+}

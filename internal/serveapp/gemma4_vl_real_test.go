@@ -94,17 +94,17 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 }
 
 // askAboutImage drives the REAL serving-side vision wiring end to end on real weights:
-// lm.gemma4VisionPrompt (real tower forward, real preprocessing) -> lm.prepare -> lm.driveVL
+// lm.imagesPrompt (real tower forward, real preprocessing) -> lm.prepare -> lm.driveVL
 // (real GenerateGemma4VL). This is the first-ever real run of this exact seam — every prior
 // gemma4 VL gate this session called decoder-level functions directly with precomputed
-// image_features, never gemma4VisionPrompt's own real-tower invocation (docs/multimodal.md's
+// image_features, never imagesPrompt's own real-tower invocation (docs/multimodal.md's
 // Phase B "HTTP-level integration smoke test" gap).
 func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byte, maxTokens int) string {
 	t.Helper()
 	turns := []chat.Turn{{Role: "user", Content: question}}
-	vi, err := lm.gemma4VisionPrompt(lm.tmpl, "", turns, 0, imageRef{mediaType: "image/png", data: imgData})
+	vi, err := lm.imagesPrompt(lm.tmpl, "", turns, 0, "gemma4", []imageRef{{mediaType: "image/png", data: imgData}}, false, "", false)
 	if err != nil {
-		t.Fatalf("gemma4VisionPrompt: %v", err)
+		t.Fatalf("imagesPrompt: %v", err)
 	}
 	gr, err := lm.prepare(sampling{}, vi.ids, false)
 	if err != nil {
@@ -166,9 +166,9 @@ func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 	lm := loadGemma4VLReal(t, modelPath, visionDir, decoder.Options{})
 
 	img := solidColorPNG(t, 128, color.RGBA{R: 220, G: 30, B: 30, A: 255})
-	vi, err := lm.gemma4VisionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: "What color is this image? Answer in one word."}}, 0, imageRef{mediaType: "image/png", data: img})
+	vi, err := lm.imagesPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: "What color is this image? Answer in one word."}}, 0, "gemma4", []imageRef{{mediaType: "image/png", data: img}}, false, "", false)
 	if err != nil {
-		t.Fatalf("gemma4VisionPrompt: %v", err)
+		t.Fatalf("imagesPrompt: %v", err)
 	}
 	const top = 3
 	topN := top

@@ -2690,6 +2690,32 @@ per backend. Nothing in it needs the night queue.
   - **This concerns goinfer's 26B/31B image turns, not S11.** Which semantics the real checkpoints were trained with
     is open (Google's reference, not transformers, decides). It is recorded for the owner, not fixed here.
 
+#### S11 results, step 3 (serve, 2026-10-09, by day)
+
+- **What changed:**
+  - `maxImagesPerTurn` is 8.
+  - Each family's one-image preparation is `prepImage`, and the prompt is `imagesPrompt`. It places every block where
+    its part sat, using an offset recorded at parse time (`imageRef.at`). It splices them with
+    `multimodal.SpliceImageBlocks`, which works from the end so V-19's last-occurrence rule holds per block, and finds
+    one run per image with `FindImageRuns`.
+  - One image takes the same code with N = 1.
+  - When the media message is not the last user turn, every block leads that turn, as one image always did.
+  - GLM-OCR keeps its one-page builder. A second image there is a 400 that names the family.
+  - An audio clip must be the only media in its request.
+  - `/v1/responses` now takes `input_image` (a data URI; `file_id` is refused) through a new `serveVisionResponses`. A
+    multi-image turn whose resident prefill declined logs why.
+- **G-S11f PASS** (`internal/serveapp/two_images_test.go`): part order through the chat, Anthropic and Responses parsers
+  into the placed blocks (interleaved, adjacent, a merged turn, an earlier media message); the ninth image's 400 names
+  the cap; GLM-OCR's and the audio-mix refusals.
+- **Kept honest along the way:**
+  - The M-38 newline guard (`TestVision_imageBlockNewlinesMatchTheRealProcessors`) now reads each family's case in
+    `prepImage`. A planted `+ "\n"` on Gemma 3's block turned it red.
+  - The tokenizing-route guard lists the new builders.
+  - The SSE heartbeat guard lists the new streaming site.
+  - The history test now expects two images in one message to reach the vision path.
+- `go test ./internal/serveapp/ ./multimodal/` green; gofmt, vet (plain, realckpt, windows) and staticcheck (linux
+  target) clean.
+
 ### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
 
 WebGPU today: Gemma 3 GPU/GPU, Qwen2.5-VL decode on the GPU, GLM-OCR staged, Gemma 4 and Qwen3.5 on the CPU, and no

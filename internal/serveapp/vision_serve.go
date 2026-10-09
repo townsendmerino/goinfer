@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/audio"
-	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -20,7 +20,7 @@ import (
 // run-finder live in the vision package (shared with demo/agent).
 const (
 	imageSoftToken   = multimodal.ImageSoftToken
-	maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for N)
+	maxImagesPerTurn = 8 // S11: images in the newest message, each its own block; a guard on tower work per request
 )
 
 // lastUserTurn returns the index of the last user turn (where v1 attaches the
@@ -47,6 +47,11 @@ type visionInput struct {
 	deepSets       int  // Qwen3-VL (S10): features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
 	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR)
+	// S11: every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then
+	// returns every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the
+	// one-media builders (GLM-OCR, audio), whose single span driveVL reads from imgPos/imgLen.
+	spans []decoder.ImageSpan
+	grids [][3]int
 }
 
 // visionPrompt runs img through the tower and assembles the multimodal prompt: the
@@ -122,7 +127,7 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 		return lm.glmOcrVisionPrompt(tm, system, turns, idx, img)
 	}
 	if lm.qwenEnc != nil || lm.qwen3 != nil {
-		return lm.qwenVisionPrompt(tm, system, turns, idx, img)
+		return lm.imagesPrompt(tm, system, turns, idx, "qwen", []imageRef{img}, false, "", false)
 	}
 	if img.audio {
 		if !lm.audioCapable() {
@@ -130,41 +135,7 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 		}
 		return lm.gemma4AudioPrompt(tm, system, turns, idx, img)
 	}
-	if lm.gemma4Enc != nil {
-		return lm.gemma4VisionPrompt(tm, system, turns, idx, img)
-	}
-	pv, err := vision.Preprocess(img.data, lm.vcfg)
-	if err != nil {
-		return visionInput{}, err
-	}
-	imgHash := multimodal.HashImageBytes(img.data)
-	n := lm.vproj.MMTokens()
-	hiddenDim := lm.model.Config().HiddenDim
-	features := func() ([]float32, error) {
-		hidden, err := lm.venc.Forward(pv.Data)
-		if err != nil {
-			return nil, fmt.Errorf("vision encoder: %w", err)
-		}
-		feats, err := lm.vproj.Forward(hidden)
-		if err != nil {
-			return nil, fmt.Errorf("vision projector: %w", err)
-		}
-		if len(feats) != n*hiddenDim {
-			return nil, fmt.Errorf("projector emitted %d features, want %d", len(feats), n*hiddenDim)
-		}
-		return feats, nil
-	}
-	block := multimodal.Gemma3PromptBlock(n)
-	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	imgPos, imgLen := multimodal.FindImageRun(ids, lm.vimgTok)
-	if imgLen != n {
-		return visionInput{}, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
-	}
-	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen}, nil
+	return lm.imagesPrompt(tm, system, turns, idx, lm.imageKind(), []imageRef{img}, false, "", false)
 }
 
 // qwenForward runs whichever tower this model carries on the shared Qwen-shaped route: the Qwen2.5-VL ViT (eager), the
@@ -244,45 +215,6 @@ func (lm *loadedModel) towerFamily(audio bool) string {
 	return "Gemma 3 SigLIP"
 }
 
-// qwenVisionPrompt is the Qwen2.5-VL and Qwen3.5+ image path: smart-resize preprocess → ViT +
-// merger (the merged features replace the <|image_pad|> run) → the prompt with the
-// vision block prepended. The grid drives m-RoPE in GenerateQwenVL.
-func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
-	pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
-	if err != nil {
-		return visionInput{}, err
-	}
-	imgHash := multimodal.HashImageBytes(img.data)
-	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
-	hiddenDim := lm.model.Config().HiddenDim
-	deepSets := lm.qwenDeepstackSets() // Qwen3-VL (S10): the features carry this many DeepStack sets after the merged rows
-	features := func() ([]float32, error) {
-		feats, err := lm.qwenForward(pv, grid)
-		if err != nil {
-			return nil, fmt.Errorf("qwen vision encoder: %w", err)
-		}
-		if len(feats) != n*hiddenDim*(1+deepSets) {
-			return nil, fmt.Errorf("qwen encoder emitted %d features, want %d (%d rows x %d, %d DeepStack sets)", len(feats), n*hiddenDim*(1+deepSets), n, hiddenDim, deepSets)
-		}
-		return feats, nil
-	}
-	// M-38 (audit-2026-09-10): Qwen2.5-VL's real chat_template.json (verified live against
-	// Qwen/Qwen2.5-VL-7B-Instruct) splices <|vision_start|><|image_pad|><|vision_end|> inline
-	// with NO adjacent newline on either side — the trailing "\n" this used to append doesn't
-	// exist in the real template.
-	block := multimodal.QwenImageBlock(n)
-	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
-	if imgLen != n {
-		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
-	}
-	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true, deepSets: deepSets}, nil
-}
-
 // qwenDeepstackSets is how many DeepStack sets this model's Qwen tower returns after its merged rows: the Qwen3-VL
 // tower's deepstack_visual_indexes, 0 for every other tower.
 func (lm *loadedModel) qwenDeepstackSets() int {
@@ -335,46 +267,6 @@ func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turn
 		return visionInput{}, fmt.Errorf("image placeholder run = %d image tokens, want %d (template mismatch)", imgLen, n)
 	}
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
-}
-
-// gemma4VisionPrompt is the Gemma 4 image path: aspect-ratio-preserving preprocess
-// → the tower (projection baked in, no separate projector) → the prompt with the
-// image block prepended. n (soft-token count) is computed from THIS image's own
-// patch grid (multimodal.Gemma4PooledTokens), not a fixed per-checkpoint constant
-// — see that function's doc comment. CPU-only v1 (decoder.GenerateGemma4VL): see
-// its own doc comment for why no resident GPU bridge is attempted here.
-func (lm *loadedModel) gemma4VisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
-	patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)
-	if err != nil {
-		return visionInput{}, err
-	}
-	imgHash := multimodal.HashImageBytes(img.data)
-	n := multimodal.Gemma4PooledTokens(positionIDs, lm.gemma4Enc.Cfg.PoolingKernelSize)
-	hiddenDim := lm.model.Config().HiddenDim
-	features := func() ([]float32, error) {
-		feats, err := multimodal.Gemma4TowerFeatures(lm.gemma4Enc, lm.gemma4Tower, patches, positionIDs)
-		if err != nil {
-			return nil, fmt.Errorf("gemma4 vision encoder: %w", err)
-		}
-		if len(feats) != n*hiddenDim {
-			return nil, fmt.Errorf("gemma4 encoder emitted %d features, want %d", len(feats), n*hiddenDim)
-		}
-		return feats, nil
-	}
-	// M-38 (audit-2026-09-10): Gemma 4's own processor (processing_gemma4.py, verified against the
-	// real transformers source) does f"{boi_token}{image_tokens}{eoi_token}" — no adjacent
-	// newline at all, unlike the trailing "\n" this used to append.
-	block := multimodal.Gemma4ImageBlock(n)
-	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	imgPos, imgLen := multimodal.FindImageRun(ids, lm.gemma4ImgTok)
-	if imgLen != n {
-		return visionInput{}, fmt.Errorf("image placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", imgLen, n)
-	}
-	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, gemma4: true}, nil
 }
 
 // gemma4AudioEncoder is the audio tower, loaded on the first clip (aikit's gemma4_audio, CPU, float32).
@@ -496,7 +388,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	if len(imgs) > maxImagesPerTurn {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("v1 supports %d image per request, got %d", maxImagesPerTurn, len(imgs)))
+		writeErr(w, http.StatusBadRequest, tooManyImages(len(imgs)))
 		return
 	}
 	// G1c, extended (audit-2026-09-02 M-21). Image bytes are excluded (chatInputBytes counts tokenizable TEXT), so this cannot reject a
@@ -520,7 +412,8 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	if req.sampling.constrainsOutput() {
 		tm = lm.constrainedTemplate(ts)
 	}
-	vi, err := lm.visionPrompt(tm, system, turns, imgs[0])
+	msgText, ordered := chatMediaText(req.Messages)
+	vi, err := lm.visionPromptN(tm, system, turns, imgs, ordered, msgText)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -619,7 +512,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	if len(imgs) > maxImagesPerTurn {
-		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", fmt.Sprintf("v1 supports %d image per request, got %d", maxImagesPerTurn, len(imgs)))
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", tooManyImages(len(imgs)))
 		return
 	}
 	// G1c, extended (audit-2026-09-02 M-21). NOT in the audit's list of five — found by widening
@@ -641,7 +534,8 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	tm := lm.templateFor(ts)
-	vi, err := lm.visionPrompt(tm, system, turns, imgs[0])
+	msgText, ordered := anthropicMediaText(req)
+	vi, err := lm.visionPromptN(tm, system, turns, imgs, ordered, msgText)
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
