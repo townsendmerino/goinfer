@@ -129,6 +129,38 @@ opencode 1.18.29 (`npm install --prefix`, an isolated directory, nothing global;
 - **VRAM:** 7,377 MiB before; samples every 3 s during: 7,377, 7,473, 7,503 MiB peak (about +126 MiB); 7,377 after. Margin about 690 MiB at the peak, thinner than the 7B's (6,824 flat) but no growth beyond the sampled peak.
 - **Reading:** this is a measured success of the same kind as the Qwen2.5-7B's: one task, one run, this configuration, one box; no claim about longer loops. It is a **different kind of fit** (streaming experts, 7.4 GB) and it requires the branch's template/reasoning support.
 
+## Night follow-ups, PRE-REGISTERED 2026-10-09 ~16:30 PDT, before any of the three has run (owner: "queue all 3")
+
+Three jobs on nobara-pc, `~/models`, one timed run per box (the queue serialises them and holds the timing lock). Each names tier, instrument, stopping rule, cost basis and bar (TE11). Binaries are pinned: `~/goinfer-bench/mellum21/followups/{decoder.test,serve-cuda,rev}`, built from the commit that carries this section. No result below is known; the only prior reads are cited.
+
+### A. Where does 2.1's window-golden cosine come from? (`run-mellum21-followup-a.sh`, est 70 min queued, about 35 expected)
+
+- **Question.** `TestMellum2_windowParity` reads 0.98600 on 2.1 against 2.0's 0.99636 (floor 0.98, argmax exact on both); the short chat golden reads 0.99971 against 0.99955. Is the length-dependent drop a window-path defect, a long-context full-attention (YaRN) defect, or neither?
+- **Instrument.** `TestMellum2_layerDump` (goinfer int8int8, the same sequential path as the window gate, `ForwardCapture` of all 28 layers' residuals at positions 10, 300, 600, 900, 1000, 1030, 1100, 1300, 1440 of the 1,441-token golden; it checks this run's own argmax and logit cosine against the golden) and `scripts/diff_mellum_layers.py run` (HF bf16, a forward hook on every layer: the residual after the layer, before the final norm; HF's `hidden_states[-1]` is post-norm and is not used). Positions <= 1023 are "short" (the 1024 window cannot have altered them); >= 1024 are "long". Proven before queueing: the planted-defect self-test names a planted layer and its type in both cases (`selftest`), and the whole pipeline ran on a tiny random Mellum (cosines 0.9998-0.99997, class N, rotary buffers printed).
+- **Rule.** `d_short(l)` / `d_long(l)` = 1 - the median per-layer cosine over short / long positions. An EXCESS layer has `d_long > d_short + 0.005`. **W:** the first excess layer is a sliding layer (the window path is suspect). **F:** it is a full-attention layer (long-context full attention / YaRN suspect). **N:** no excess layer (the logit-level drop is not localised by layer; the final-layer `d_long` and `d_short` are reported). The reference is also checked for the `persistent=False` trap: every `inv_freq` buffer must be finite and in range, and a non-finite one is "the reference is broken", not goinfer.
+- **Stopping rule.** Fixed: one dump, one HF forward, all positions. No second run on a miss.
+- **Cost basis.** The window gate's 883 s (measured tonight) plus the pin's HF forwards (195 s for two, measured); about 35 min, queued at 70.
+- **What it cannot say.** There is no 2.0 weights copy on this disk, so "2.1's weights are more sensitive than 2.0's" is NOT testable here: class N would leave exactly that possibility open, and the 2.0 arm needs `models-pull mellum2-unq` (24 GB) and a second job.
+- **Prediction (written now).** N, at 0.50 (a 0.01 cosine at the logit is an amplified small per-layer difference that no layer crosses 0.005 on); F at 0.25; W at 0.15; a broken instrument or a non-finite reference buffer at 0.10.
+
+### B. Does expert-major still earn its default on 2.1? (`run-mellum21-followup-b.sh`, est 130 min queued, about 80 expected)
+
+- **Instrument.** `TestMoEExpertMajor_endToEnd`, exactly P18's: K=4096, 2 pairs interleaved with alternating lead after one discarded warm forward, one process, the flag on against off, int4 on the CPU path; it fails if expert-major did not run in the "on" arm or did run in the "off" arm.
+- **Bar (P18's own, written before 2.0 ran, `docs/queue-performance.md` P18).** Net >= 15% end to end: FUND (it keeps its default). < 8%: PARK (it no longer earns the default on this checkpoint: the finding). 8-15%: AMBIGUOUS, parked pending a second mechanism. Nothing is re-based.
+- **Stopping rule.** Fixed N (2 pairs); no early stop.
+- **Cost basis.** The 2.0 record: 1,207 s per-row, 277 s expert-major per forward at K=4096. Warm (1,207) + 2 x (1,207 + 277) + int4 load = about 80 min; queued at 130.
+- **Prior read, not a result.** Tonight's K=600 engagement check measured 3.37x on one pair; the 2.0 ratio at K=4096 was 4.36x. **Prediction:** FUND with a ratio above 3x, at 0.90. A PARK would say the RL checkpoint's expert routing no longer concentrates the way 2.0's did.
+
+### C. What is the prize for a windowed-KV plan on CUDA? (`run-mellum21-followup-c.sh`, est 30 min queued, about 12 expected)
+
+- **Why it is a measurement and not the change.** The CUDA resident plan prices KV for all 28 layers although 21 are windowed to 1024 (`112.0 KB/position`). Measured today on this card with the 6.5 GB int4mix bundle: **fully resident loads at ctx 1024 and 2048 and declines at 3072 and 4096** (the plan wants more than the KV alone: 0.47 GB of KV at 4096 against 0.66 GB "free" still declines), and at 16384 the model runs only through expert streaming (C'). The lever (windowed KV on CUDA) is a kernel and cache change and is NOT built; this job sizes it.
+- **Instrument.** `resident_vs_cprime.py`: the same model at ctx 2048, fully resident (R) against `--moe-cache-experts` (S, 45 of 64 slots per layer), sessions ABBA (R S S R), one cold server each, one discarded warm request, then 3 fixed prompts x 3 reps, greedy, thinking off, 128 tokens; decode rate = (n-1)/(t_last - t_first) over the streamed content deltas. A resident arm that did not load `cuda-resident` without a C' line, or an S arm without the C' line, **voids** the job (it exits `VOID`). The greedy texts are compared across arms (C' is documented bit-identical to resident); a difference is reported, not hidden.
+- **Bar.** Overall = the median over prompts of (median R rate / median S rate). **>= 1.15: worth building** the windowed-KV plan for residency. **< 1.05: park** (streaming already costs under 5% at this size). 1.05-1.15: AMBIGUOUS, parked. The two sessions of each arm are compared to read the session drift, and the per-prompt spread is printed; a ratio inside that spread is read as ambiguous even if it clears a bar.
+- **Stopping rule.** Fixed (2 sessions per arm, 9 requests per session).
+- **Cost basis.** Four loads of the cached bundle at about 20-25 s (measured today) plus 36 streamed requests of about 2 s each.
+- **Limit, stated now.** ctx 2048 is the only context at which the two arms can both run; the prize at the context a harness needs (16384) is an extrapolation of this one, because attention cost differs. A smoke of the driver today (two requests per arm, 32 tokens) ran end to end and is **not a result**; it is not quoted here for that reason.
+- **Prediction.** Ratio in 1.05-1.15 (ambiguous) at 0.45; >= 1.15 at 0.35; < 1.05 at 0.20.
+
 ## What this work touched
 
 - `chat/chat.go`, `chat/history.go` (the template work); `decoder/mellum2_parity_test.go` (env overrides); `scripts/pin_mellum2.py` (parameters and a provenance block, defaults unchanged).
