@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -401,9 +402,21 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	// An unsupported controller is not a failure — httptest's recorder has no deadline support —
 	// so the error is deliberately dropped, matching sseWriter.frame's own comment.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(jsonWriteTimeout))
+	// Encode BEFORE the status line goes out. The body used to be streamed straight from the encoder after WriteHeader(code) with its error dropped, so a value JSON cannot
+	// carry (a NaN or an infinity in a float) reached the client as HTTP 200 with Content-Length 0: S6's 35B image check read "empty answer" for a whole night and
+	// the server said nothing (2026-10-09). A body that cannot be encoded is a server error and says so.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	if err := enc.Encode(v); err != nil {
+		msg, _ := json.Marshal("response could not be encoded: " + err.Error()) // a string always encodes
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error":{"message":%s,"type":"api_error"}}`+"\n", msg)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // statusCancelled is the non-streaming status for a K1 admin-cancelled generation

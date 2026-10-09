@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -1890,13 +1891,25 @@ func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {
 	for _, lp := range lps {
 		top := make([]any, 0, len(lp.Top))
 		for _, t := range lp.Top {
-			top = append(top, map[string]any{"token": lm.tokenText(t.ID), "logprob": t.Logprob})
+			top = append(top, map[string]any{"token": lm.tokenText(t.ID), "logprob": jsonLogprob(t.Logprob)})
 		}
 		content = append(content, map[string]any{
-			"token": lm.tokenText(lp.ID), "logprob": lp.Logprob, "top_logprobs": top,
+			"token": lm.tokenText(lp.ID), "logprob": jsonLogprob(lp.Logprob), "top_logprobs": top,
 		})
 	}
 	return map[string]any{"content": content}
+}
+
+// logprobImpossible is the logprob reported for a token whose probability is exactly zero: OpenAI's own convention (-9999.0), because -Inf, the true value, cannot be written in JSON.
+// A zero-probability candidate is normal, not an error: when the thinking budget forces the end-of-thinking token, that token has probability 1 and every other candidate, including the
+// filler entries that pad the top-k list, has none (S6's 35B image check, 2026-10-09: step 24 of a 32-token answer). NaN is NOT mapped: it would be a bug, and writeJSON reports it.
+const logprobImpossible = -9999.0
+
+func jsonLogprob(x float64) float64 {
+	if math.IsInf(x, -1) {
+		return logprobImpossible
+	}
+	return x
 }
 
 func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(id)) }
