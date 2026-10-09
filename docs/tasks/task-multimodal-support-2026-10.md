@@ -3481,6 +3481,29 @@ This lifts my own "no third anchor" rule at the owner's word. It is bounded belo
 - **Prediction, written now:** the gate holds after the embed-int4 and KV-quant fields (one or two rounds); with the served configuration the mean delta stays within +-0.01 and the verdict is AMBIGUOUS again (probability about 0.5), a PASS about 0.2, a FAIL about 0.3.
 - **Cost, tier:** day. Finding the configuration is the unknown (I estimate under 45 minutes, three dump runs at 95 s each); once it holds, the dump and HF side are ~3 minutes.
 
+#### G-S10j read 2026-10-08: the instrument gate HELD in round 3, and the anchor reads FAIL; the resident DeepStack prefill stays OFF for good in this tranche (raw `docs/measurements/multimodal-support-2026-10/s10-cuda/gs10j-*`)
+
+- **Deviation from the registration, first.** I wrote that the served reference is stable because "the server's repeat is IDENTICAL". It is for the on binary and is **not** for the off binary: its second identical request differs from its first (the second reuses the first's resident KV prefix). The reference is therefore each binary's COLD first request, which reproduced across three separate server starts (the off binary's 0.4115 / 0.1117 at 16:29, 16:45 and in the reference file). Recorded in `gs10j-served-reference.json` by `scripts/s10j_served_reference.sh`, before any comparison.
+- **The three rounds (cap 3), each a named hypothesis:**
+  1. **Serve's `decoder.Options`** (built from `internal/loadflags` defaults: embed-int4 on, KV f32, fit, the CPU-attention knob): NOT HELD (worst |diff| 0.1068 off, 0.0559 on), numerically identical to G-S10i's embed-int4-only diagnostic, so no other Options field matters.
+  2. **The vision tower's source.** Tested on the SERVER side, not the dump: the off binary with `-vision-device cpu` gives Quarter 0.3047 / Table 0.1644 / A 0.1375 / quarter 0.0963, which is the round-1 dump's numbers to four digits. So the dump's goinfer side (prompt, options, CPU prefill) is exactly serve's, and the whole gap was the tower: serve's `auto` is the CUDA tower and the dump had the CPU encoder.
+  3. **The dump with the CUDA tower's features and sets** (`newQwen3Tower` + `Qwen3TowerFeaturesDeepstack`, the same calls serve makes): **HELD, worst |diff| 0.0000 for both arms**, all ten top-5 probabilities identical to four digits.
+- **What round 2 means beyond the anchor (an observation, not a gate):** the CUDA tower's merged rows agree with the CPU encoder at worst-row cosine 0.9999992 (G-S10f), and that is enough to move this prompt's first token from Quarter 0.305 to Quarter 0.412. The first token here is a near-tie between 'Quarter' and 'Table' under int4, so a feature difference of about 0.1% per row swings it by 0.1 in probability. It is the same kind of sensitivity G-S10i found for the embed-table precision. Neither tower has been ranked against Hugging Face's.
+- **Step 2, the registered rule on the instrument-held dump: FAIL.** 36 pairs, **mean delta -0.00887**, step-0 deltas **-0.0554 (896²), -0.0005 (4x6), -0.0085 (formula), -0.0104 (table)**: the mean is under -0.005 and the 896² image's step 0 is under -0.02, each enough alone.
+
+  | image | rows | mean delta (on - off) | steps where on is closer | step-0 delta | KL(HF‖off) step 0 | KL(HF‖on) step 0 |
+  |---|---|---|---|---|---|---|
+  | 896² | 803 | -0.0200 | 1/9 | **-0.0554** | 0.3408 | 0.6070 |
+  | 4x6 | 89 | +0.0022 | 5/9 | -0.0005 | 0.1775 | 0.0678 |
+  | formula | 1034 | -0.0048 | 2/9 | -0.0085 | 0.1492 | 0.3174 |
+  | table | 991 | -0.0129 | 0/9 | -0.0104 | 0.3210 | 0.7486 |
+
+  The checks: (iv) the chat template's ids equal the dump's on all four; (iii) HF's step-0 argmax is in an arm's top-3 on all four (G-S10i's 896² miss is gone, as it came from the unserved configuration); (i) the new off-against-on worst cosines 0.9626 / 0.9868 / 0.9812 / 0.9677; (ii) still unavailable.
+- **The served split, answered.** On table.png at step 0, ln(p('Quarter')/p('Table')): HF **+1.69** (0.702 / 0.129), off **+1.30** (0.4115 / 0.1117), on **-0.21** (0.190 / 0.236). The off arm (the CPU prefill and upload) is the nearer to Hugging Face's float32 first token; the resident DeepStack prefill moves it toward 'Table', away from HF. My guess that the on arm would be nearer was wrong.
+- **Prediction record.** Held: the gate passed within the cap (it took all three rounds; I said one or two), the mean delta lay inside +-0.01 (-0.0089). Missed: I put FAIL at 0.3 and AMBIGUOUS at 0.5.
+- **Outcome.** `cudaDeepstackPrefillOn` stays false. Three anchors have been run (G-S10h FAIL on the gate's prompt with an unserved dump, G-S10i AMBIGUOUS with an unserved dump, G-S10j FAIL on the served configuration), and the last is the only one whose instrument reproduces the served numbers; it is the one that counts. The 13x prefill speedup (0.9 s against 11.8 s on table.png) is real and is left unused: the resident prefill is less close to HF than the CPU one on three of four images, by cosines of a few hundredths at the first token.
+  No further anchor of this kind is run. What could change this is a change to the prefill itself (a lever, a kernel) that closes the 896² image's step-0 gap, with the same anchor as its gate; the gap is largest on the image with the most rows after the 4x6 (803), so the first place to look is the long-sequence batched path, not the DeepStack add. That is a hypothesis, not a finding.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.

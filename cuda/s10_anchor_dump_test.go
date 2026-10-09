@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -77,7 +79,22 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 		pp.MaxPixels = limit
 	}
 	embed4 := os.Getenv("GOINFER_S10H_EMBED4") == "1" // serve's --embed-int4 defaults to true with --quant int4; Options' zero value is false
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "cuda", ResidentContext: 2048, EmbedInt4: embed4})
+	opts := decoder.Options{Quant: "int4", Backend: "cuda", ResidentContext: 2048, EmbedInt4: embed4}
+	if os.Getenv("GOINFER_S10H_SERVED") == "1" { // G-S10j round 1: the options serve builds from its flag defaults (internal/loadflags), the context kept at 2048 (no numerics there)
+		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+		lf := loadflags.Register(fs, loadflags.Serve)
+		if err := fs.Parse([]string{"--backend", "cuda"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := lf.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		opts = lf.Options()
+		opts.ResidentContext = 2048
+		embed4 = opts.EmbedInt4
+		t.Logf("served options: quant %q embedInt4 %v kv %q/%q fit-disabled %v exactPrefill %v knobs %v", opts.Quant, opts.EmbedInt4, opts.KVPrecision, opts.KVQuant, opts.DisableFit, opts.ExactPrefill, opts.Knobs)
+	}
+	m, err := decoder.Load(dir, opts)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -85,6 +102,13 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 	r, ok := m.ResidentForwardForTest().(*cudaResident)
 	if !ok || !r.mropePrefillReady {
 		t.Fatalf("not CUDA-resident with the m-RoPE batched kernel: %s", m.ResidentDecline())
+	}
+	var acc *gridTower
+	if os.Getenv("GOINFER_S10H_CUDATOWER") == "1" {
+		if acc, err = newQwen3Tower(enc); err != nil {
+			t.Fatalf("CUDA tower: %v", err)
+		}
+		t.Cleanup(func() { _ = acc.Close() })
 	}
 	ctx := context.Background()
 	hb := func(format string, a ...any) { fmt.Fprintf(os.Stderr, "[G-S10h] "+format+"\n", a...) }
@@ -99,7 +123,13 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 			t.Fatal(err)
 		}
 		hb("%s: tower features and sets (CPU encoder)", tag)
-		feats, deep, err := enc.ForwardDeepstack(px, [][3]int{grid})
+		var feats []float32
+		var deep [][]float32
+		if acc != nil { // G-S10j round 3: the features serve's -vision-device auto produces (the CUDA tower and aikit's host tails)
+			feats, deep, err = multimodal.Qwen3TowerFeaturesDeepstack(enc, acc, px, [][3]int{grid})
+		} else {
+			feats, deep, err = enc.ForwardDeepstack(px, [][3]int{grid})
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,7 +196,7 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 			worst = math.Min(worst, dsCosine(off[k], on[k]))
 		}
 		hb("%s: INSTRUMENT CHECK (i) off-against-on worst cosine %.4f over %d rows", tag, worst, n)
-		meta, _ := json.Marshal(map[string]any{"image": name, "n": n, "start": start, "nImg": nImg, "grid": grid, "ids": ids, "teacher": teacher[:steps], "vocab": len(off[0]), "steps": steps + 1, "prompt": prompt, "embedInt4": embed4})
+		meta, _ := json.Marshal(map[string]any{"image": name, "n": n, "start": start, "nImg": nImg, "grid": grid, "ids": ids, "teacher": teacher[:steps], "vocab": len(off[0]), "steps": steps + 1, "prompt": prompt, "embedInt4": embed4, "cudaTower": acc != nil})
 		for suffix, v := range map[string][]float32{"px": px, "off": flat(off), "on": flat(on)} {
 			if err := writeF32(filepath.Join(out, tag+"."+suffix+".f32"), v); err != nil {
 				t.Fatal(err)

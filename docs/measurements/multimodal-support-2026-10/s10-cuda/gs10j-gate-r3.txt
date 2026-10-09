@@ -1,0 +1,3 @@
+off (dsoff): worst |diff| 0.0000 -> HELD   'Quarter' served 0.4115 dump 0.4115; 'Table' served 0.1117 dump 0.1117; 'The' served 0.0989 dump 0.0989; 'A' served 0.0970 dump 0.0970; 'quarter' served 0.0489 dump 0.0489
+on  (dson): worst |diff| 0.0000 -> HELD   'Table' served 0.2359 dump 0.2359; 'Quarter' served 0.1905 dump 0.1905; 'A' served 0.1291 dump 0.1291; 'The' served 0.1030 dump 0.1030; 'Sales' served 0.0708 dump 0.0708
+INSTRUMENT GATE: HELD

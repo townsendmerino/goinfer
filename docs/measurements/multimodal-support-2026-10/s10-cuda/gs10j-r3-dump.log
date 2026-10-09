@@ -1,0 +1,7 @@
+    s10_anchor_dump_test.go:95: served options: quant "int4" embedInt4 true kv "f32"/"f32" fit-disabled false exactPrefill false knobs &map[GOINFER_CPU_FAST_ATTENTION:1]
+[G-S10h] gemma3_preprocess_image.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9626 over 803 rows
+[G-S10h] qwen25vl_preprocess_image.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9868 over 89 rows
+[G-S10h] formula.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9812 over 1034 rows
+[G-S10h] table.png: INSTRUMENT CHECK (i) off-against-on worst cosine 0.9677 over 991 rows
+--- PASS: TestS10DeepstackPrefillCUDA_anchorDump (54.55s)
+ok  	github.com/townsendmerino/goinfer/cuda	54.631s

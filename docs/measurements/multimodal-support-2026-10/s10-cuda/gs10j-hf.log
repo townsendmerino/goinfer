@@ -1,0 +1,28 @@
+[G-S10h hf      0s] loading float32 model
+[G-S10h hf      2s] loaded; torch threads 8
+[G-S10h hf      2s] no processor: 
+[G-S10h hf      2s] gemma3_preprocess_image.png: (iv) chat-template ids equal the dump's ids: True (803 vs 803)
+[G-S10h hf      2s] gemma3_preprocess_image.png: HF float32 forward, 811 tokens
+[G-S10h hf     15s] gemma3_preprocess_image.png: done in 13s, logits (811, 151936)
+[G-S10h hf     15s] gemma3_preprocess_image.png: cos(off,HF) 0.8836 0.8781 0.9563 0.9117 0.9410 0.9575 0.9748 0.9713 0.9478
+[G-S10h hf     15s] gemma3_preprocess_image.png: cos(on ,HF) 0.8282 0.8576 0.9434 0.8938 0.9432 0.8950 0.9737 0.9703 0.9372  step-0 delta -0.0554  KL off 0.3408 on 0.6070  off-vs-on worst 0.9626
+[G-S10h hf     15s] qwen25vl_preprocess_image.png: (iv) chat-template ids equal the dump's ids: True (89 vs 89)
+[G-S10h hf     15s] qwen25vl_preprocess_image.png: HF float32 forward, 97 tokens
+[G-S10h hf     17s] qwen25vl_preprocess_image.png: done in 2s, logits (97, 151936)
+[G-S10h hf     17s] qwen25vl_preprocess_image.png: cos(off,HF) 0.9429 0.8590 0.9183 0.9240 0.9509 0.9509 0.9762 0.9352 0.9424
+[G-S10h hf     17s] qwen25vl_preprocess_image.png: cos(on ,HF) 0.9423 0.8509 0.9136 0.9356 0.9538 0.9490 0.9776 0.9460 0.9506  step-0 delta -0.0005  KL off 0.1775 on 0.0678  off-vs-on worst 0.9868
+[G-S10h hf     17s] formula.png: (iv) chat-template ids equal the dump's ids: True (1034 vs 1034)
+[G-S10h hf     17s] formula.png: HF float32 forward, 1042 tokens
+[G-S10h hf     34s] formula.png: done in 18s, logits (1042, 151936)
+[G-S10h hf     34s] formula.png: cos(off,HF) 0.9652 0.9619 0.9393 0.9605 0.9701 0.9796 0.9374 0.9438 0.9282
+[G-S10h hf     34s] formula.png: cos(on ,HF) 0.9567 0.9597 0.9345 0.9589 0.9533 0.9522 0.9419 0.9405 0.9450  step-0 delta -0.0085  KL off 0.1492 on 0.3174  off-vs-on worst 0.9812
+[G-S10h hf     34s] table.png: (iv) chat-template ids equal the dump's ids: True (991 vs 991)
+[G-S10h hf     34s] table.png: HF float32 forward, 999 tokens
+[G-S10h hf     52s] table.png: done in 18s, logits (999, 151936)
+[G-S10h hf     52s] table.png: cos(off,HF) 0.9586 0.9585 0.9628 0.9689 0.9493 0.9674 0.9328 0.9456 0.9492
+[G-S10h hf     52s] table.png: cos(on ,HF) 0.9482 0.9437 0.9489 0.9490 0.9409 0.9525 0.9202 0.9303 0.9437  step-0 delta -0.0104  KL off 0.3210 on 0.7486  off-vs-on worst 0.9677
+[G-S10h hf     52s] READING: 36 pairs, mean delta -0.00887, step-0 deltas [-0.0554, -0.0005, -0.0085, -0.0104] -> FAIL
+[G-S10h hf     52s] table.png step-0 probabilities: {"Quarter": {"hf": 0.7018961520306751, "off": 0.41154058953878125, "on": 0.1904647615433417}, "Table": {"hf": 0.1290464489761141, "off": 0.11171666917321084, "on": 0.23594338407221482}}
+[G-S10h hf     52s] table.png step-0 ln(p(Quarter)/p(Table)): {"hf": 1.693613052368164, "off": 1.3039417266845703, "on": -0.2141246795654297}
+[G-S10h hf     52s] instrument (iv) template ids: {'gemma3_preprocess_image.png': True, 'qwen25vl_preprocess_image.png': True, 'formula.png': True, 'table.png': True}
+[G-S10h hf     52s] instrument (iii) sanity: {'gemma3_preprocess_image.png': True, 'qwen25vl_preprocess_image.png': True, 'formula.png': True, 'table.png': True}
