@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -49,11 +50,15 @@ func rep(mt string, edit func(*Config)) func(t *testing.T) *Config {
 	}
 }
 
-func fixtureConfig(dir string) func(t *testing.T) *Config {
+// eModelConfig is an E-model's config.json (testdata/gemma4-emodel-tiny's, inlined: that fixture is gitignored, and CI has
+// only tracked files): per-layer inputs (PLE), KV-shared layers and a per-layer head dim, the E2B/E4B shape.
+const eModelConfig = `{"attention_bias":false,"attention_k_eq_v":false,"bos_token_id":2,"enable_moe_block":false,"eos_token_id":1,"final_logit_softcapping":30.0,"head_dim":32,"hidden_activation":"gelu_pytorch_tanh","hidden_size":256,"hidden_size_per_layer_input":32,"intermediate_size":256,"layer_types":["sliding_attention","sliding_attention","full_attention","sliding_attention","sliding_attention","full_attention"],"max_position_embeddings":128,"model_type":"gemma4_text","moe_intermediate_size":null,"num_attention_heads":4,"num_experts":null,"num_hidden_layers":6,"num_key_value_heads":1,"num_kv_shared_layers":2,"pad_token_id":0,"per_layer_config":{"2":{"head_dim":64},"5":{"head_dim":64}},"rms_norm_eps":1e-06,"rope_local_base_freq":10000.0,"rope_parameters":{"full_attention":{"partial_rotary_factor":0.25,"rope_theta":1000000.0,"rope_type":"proportional"},"sliding_attention":{"rope_theta":10000.0,"rope_type":"default"}},"rope_theta":1000000.0,"sliding_window":4,"tie_word_embeddings":true,"top_k_experts":null,"use_bidirectional_attention":null,"use_double_wide_mlp":true,"vocab_size":256,"vocab_size_per_layer_input":256}`
+
+func jsonConfig(raw string) func(t *testing.T) *Config {
 	return func(t *testing.T) *Config {
-		c, err := loadConfig(os.DirFS(dir), "config.json")
+		c, err := loadConfig(fstest.MapFS{"config.json": {Data: []byte(raw)}}, "config.json")
 		if err != nil {
-			t.Fatalf("%s: %v", dir, err)
+			t.Fatalf("config: %v", err)
 		}
 		return c
 	}
@@ -64,9 +69,9 @@ func bidirectional(c *Config) { c.UseBidirectionalAttention = "vision" }
 var supportRows = []supportRow{
 	{"Gemma 3", "gemma3", multimodal.TowerSigLIP, rep("gemma3", nil),
 		"CUDA: float32 tower by default, int8 when the card cannot hold it (2026-10-08); WebGPU: int8 tower. Metal: resident by default on a 16 GB Mac (G-S18a, 2026-10-08)."},
-	{"Gemma 4 E2B, E4B", "gemma4", multimodal.TowerGemma4, fixtureConfig("../testdata/gemma4-emodel-tiny"),
+	{"Gemma 4 E2B, E4B", "gemma4", multimodal.TowerGemma4, jsonConfig(eModelConfig),
 		"E4B validated on CUDA (2026-10-08), not yet on Metal (2026-10-09)."},
-	{"Gemma 4 E2B, E4B audio", "gemma4", multimodal.TowerGemma4Audio, fixtureConfig("../testdata/gemma4-emodel-tiny"),
+	{"Gemma 4 E2B, E4B audio", "gemma4", multimodal.TowerGemma4Audio, jsonConfig(eModelConfig),
 		"One clip per request; 16-bit WAV, any rate (2026-10-09)."},
 	{"Gemma 4 26B", "gemma4", multimodal.TowerGemma4, rep("gemma4_unified_text", bidirectional),
 		"Tower checked on E2B (2026-10-07)."},
