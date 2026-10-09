@@ -1,0 +1,19 @@
+wrote /private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/g3-new.giw: 2778 MB (int4)
+       45.18 real        26.82 user         4.87 sys
+          5944262656  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              167542  page reclaims
+              649433  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                3734  signals received
+                 846  voluntary context switches
+              316097  involuntary context switches
+        227912945232  instructions retired
+         99108636253  cycles elapsed
+          1847316632  peak memory footprint

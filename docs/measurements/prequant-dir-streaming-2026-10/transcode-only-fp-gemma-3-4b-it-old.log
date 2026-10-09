@@ -1,0 +1,31 @@
+=== RUN   TestZZFootprint
+    zz_realcmp_test.go:61: old: 0 bytes, err load /Users/francistownsend-merino/models/gemma-3-4b-it (int4): decoder: gemma-3-4b-it needs ~5.6 GB resident at quant int4 + 0.0 GB KV = 5.6 GB; this machine currently has 6.2 GB of memory available (budget 4.4 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+    zz_realcmp_test.go:63: load /Users/francistownsend-merino/models/gemma-3-4b-it (int4): decoder: gemma-3-4b-it needs ~5.6 GB resident at quant int4 + 0.0 GB KV = 5.6 GB; this machine currently has 6.2 GB of memory available (budget 4.4 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestZZFootprint (0.01s)
+FAIL
+        0.01 real         0.00 user         0.00 sys
+            10665984  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1196  page reclaims
+                  10  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   1  signals received
+                  10  voluntary context switches
+                 101  involuntary context switches
+            79941685  instructions retired
+            24918001  cycles elapsed
+             6275648  peak memory footprint

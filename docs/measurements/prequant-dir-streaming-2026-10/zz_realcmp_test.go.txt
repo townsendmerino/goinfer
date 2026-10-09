@@ -1,0 +1,65 @@
+package prequant
+
+import (
+	"context"
+	"io"
+	"os"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/giw"
+)
+
+func TestZZRealBundleCompare(t *testing.T) {
+	a, b := os.Getenv("ZZ_OLD"), os.Getenv("ZZ_NEW")
+	if a == "" {
+		t.Skip("set ZZ_OLD and ZZ_NEW")
+	}
+	ra, err := os.ReadFile(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rb, err := os.ReadFile(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wa, ta, err := giw.Read(ra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wb, tb, err := giw.Read(rb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(ta) != string(tb) {
+		t.Fatal("tokenizer halves differ")
+	}
+	ra, rb = wa, wb
+	why := dirStreamDiff(t, ra, rb)
+	t.Logf("old %d B, new %d B: %q", len(ra), len(rb), why)
+	if why != "" {
+		t.Fatal(why)
+	}
+}
+
+
+// Throwaway (G-DS2): the transcode body alone, no self-check, one arm per process so /usr/bin/time -l reads its footprint.
+func TestZZFootprint(t *testing.T) {
+	dir, arm := os.Getenv("ZZ_DIR"), os.Getenv("ZZ_ARM")
+	if dir == "" {
+		t.Skip("set ZZ_DIR and ZZ_ARM")
+	}
+	tg := decoder.GIWTargetForBackend("metal")
+	var n int64
+	var err error
+	if arm == "old" {
+		n, err = residentDirBody(io.Discard, dir, "", "int4", false, tg, "x")
+	} else {
+		n, err = decoder.StreamTranscodeDir(context.Background(), dir, io.Discard, "int4", false, tg, "x")
+	}
+	t.Logf("%s: %d bytes, err %v", arm, n, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+}

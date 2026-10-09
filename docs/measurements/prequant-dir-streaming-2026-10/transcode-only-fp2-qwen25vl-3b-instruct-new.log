@@ -1,0 +1,22 @@
+=== RUN   TestZZFootprint
+    zz_realcmp_test.go:61: new: 2220246207 bytes, err <nil>
+--- PASS: TestZZFootprint (35.95s)
+PASS
+       35.96 real        21.75 user         3.71 sys
+          3853778944  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               98960  page reclaims
+              376709  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                2730  signals received
+                 179  voluntary context switches
+              229694  involuntary context switches
+        175248369500  instructions retired
+         79702984181  cycles elapsed
+           950241080  peak memory footprint

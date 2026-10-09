@@ -132,11 +132,11 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 }
 
 // transcodeDir builds a .giw from a safetensors model DIRECTORY (no GGUF available — the
-// path for Mellum2 and other safetensors-only models). It loads the model at `quant`,
-// serializes the resident weights into the bundle, and carries the dir's tokenizer.json
+// path for Mellum2 and other safetensors-only models). It streams the weights into the
+// bundle one layer at a time (decoder.StreamTranscodeDir; a LoRA merge or a family whose loader
+// does not stream loads the whole model instead), and carries the dir's tokenizer.json
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
-// blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
-// is loaded rather than layer-streamed — acceptable for the models this targets.
+// blob isn't GGUF metadata).
 func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -154,16 +154,10 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	} else {
 		fmt.Fprintf(os.Stderr, "prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)\n", dir)
 	}
-	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck below does the same). Unpinned, the fit
-	// guard priced the model's full context: on 2026-10-07 it refused Gemma 4 E4B for 8.8 GB of weights "+ 7.1 GB KV".
-	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora, ResidentContext: 1})
-	if err != nil {
-		return fmt.Errorf("load %s (%s): %w", dir, quant, err)
-	}
-	defer m.Close()
 	id := filepath.Base(dir)
 	var side []byte
 	if lora != "" {
+		var err error
 		if side, err = loraSidecarBytes(lora); err != nil {
 			return err
 		}
@@ -182,9 +176,21 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if err != nil {
 		return fmt.Errorf("create %s: %w", tmp, err)
 	}
-	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.SerializeWeightsToForTarget(w, m.Weights(), id, target)
-	})
+	// Streamed one layer at a time (docs/tasks/task-prequant-dir-streaming-2026-10.md): peak memory about the globals plus
+	// one layer, byte-identical to the resident transcode. A LoRA merge, and a family whose loader does not stream yet, take
+	// the resident transcode instead.
+	body := func(w io.Writer) (int64, error) { return residentDirBody(w, dir, lora, quant, embedInt4, target, id) }
+	if lora == "" {
+		body = func(w io.Writer) (int64, error) {
+			n, serr := decoder.StreamTranscodeDir(ctx, dir, w, quant, embedInt4, target, id)
+			if decoder.IsDirNoStream(serr) && n == 0 {
+				fmt.Fprintf(os.Stderr, "prequant: streams: no (%v); building it resident\n", serr)
+				return residentDirBody(w, dir, lora, quant, embedInt4, target, id)
+			}
+			return n, serr
+		}
+	}
+	werr := giw.WriteStream(f, tokBytes, body)
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
@@ -210,6 +216,20 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		return fmt.Errorf("write %s: %w", loraSidecar(out), err)
 	}
 	return nil
+}
+
+// residentDirBody is the resident directory transcode: Load the whole model at quant, then serialize it. A LoRA merge
+// needs it (the merge works on the f32 projections), and so does a family whose safetensors loader does not stream; it is
+// also G-DS1's reference for the streamed bytes.
+func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, target decoder.GIWTarget, id string) (int64, error) {
+	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same). Unpinned, the fit
+	// guard priced the model's full context: on 2026-10-07 it refused Gemma 4 E4B for 8.8 GB of weights "+ 7.1 GB KV".
+	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora, ResidentContext: 1})
+	if err != nil {
+		return 0, fmt.Errorf("load %s (%s): %w", dir, quant, err)
+	}
+	defer m.Close()
+	return decoder.SerializeWeightsToForTarget(w, m.Weights(), id, target)
 }
 
 // EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant,

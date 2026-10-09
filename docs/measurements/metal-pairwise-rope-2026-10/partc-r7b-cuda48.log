@@ -1,0 +1,8 @@
+=== RUN   TestZZR7BCuda48
+decoder: .giw context capped at 55132 (model allows 132096) so that KV+scratch fits: needs ~5.11 GB of 6.12 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: dense weight streaming: 32 layers, window 29 resident
+[metal] weights aliased from command-r7b.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4744 MB bound in place, 1 MB copied (anonymous) — 3328 MB int4 nibbles (64 single tensors + 64 fused groups = 2176 MB) + 1000 MB int8 codes (1 matrices) + 416 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[cuda48] Metal vs CPU int4 on CUDA's 48-token prompt: mean 0.995862 worst 0.975860 (pos 46) | CUDA resident 2026-10-01: mean 0.996714 worst 0.987022
+--- PASS: TestZZR7BCuda48 (12.58s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	13.104s

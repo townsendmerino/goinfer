@@ -1,0 +1,186 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"runtime/debug"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// Throwaway (Part C of docs/tasks/task-metal-pairwise-followups-2026-10.md): C1, does an f16 KV cache on the CPU reproduce
+// Metal's gap on Command-R7B; C0, at the worst position (13), which layer the gap opens at.
+func TestZZR7BGap(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "command-r7b")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	raw, _ := os.ReadFile("../README.md")
+	ids, _ := tk.Encode(string(raw), false)
+	const nPrompt, nCont = 64, 16
+	probe := 13
+	if v := os.Getenv("ZZ_PROBE"); v != "" {
+		fmt.Sscan(v, &probe)
+	}
+	ids = ids[:nPrompt]
+	cpuRun := func(f16kv bool, toks []int) ([][]float32, []int, [][]float32) {
+		defer decoder.SetKVRoundF16ForTest(f16kv)()
+		mc, err := decoder.Load(dir+".int4.cpu-arm64.giw", decoder.Options{Backend: "cpu", Quant: "int4", StreamWeights: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer mc.Close()
+		_, nL, _, _, _, _, _ := mc.Dims()
+		layers := make([]int, nL)
+		for i := range layers {
+			layers[i] = i
+		}
+		c := mc.NewCache(nPrompt + nCont)
+		var out [][]float32
+		var hidden [][]float32
+		chain := toks == nil
+		if chain {
+			toks = append([]int(nil), ids...)
+		}
+		for i := 0; i < nPrompt+nCont; i++ {
+			var l []float32
+			var err error
+			if i == probe {
+				l, hidden, err = mc.ForwardCapture(toks[i], c, layers)
+				hidden = append([][]float32(nil), hidden...)
+			} else {
+				l, err = mc.ForwardForTest(toks[i], c)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), l...))
+			if chain && i >= nPrompt-1 && len(toks) < nPrompt+nCont {
+				toks = append(toks, argmaxF(l))
+			}
+		}
+		return out, toks, hidden
+	}
+	A, toks, hA := cpuRun(false, nil)
+	var ctxCache *decoder.KVCache
+	{
+		mc, err := decoder.Load(dir+".int4.cpu-arm64.giw", decoder.Options{Backend: "cpu", Quant: "int4", StreamWeights: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctxCache = mc.NewCache(nPrompt + nCont)
+		for i := 0; i < probe; i++ {
+			if _, err := mc.ForwardForTest(toks[i], ctxCache); err != nil {
+				t.Fatal(err)
+			}
+		}
+		mc.Close()
+	}
+	B, _, hB := cpuRun(true, toks)
+	debug.FreeOSMemory()
+	stat := func(x, y [][]float32) (mean, worst float64, wp int) {
+		worst = 1
+		for i := range x {
+			c := cosF(x[i], y[i])
+			mean += c
+			if c < worst {
+				worst, wp = c, i
+			}
+		}
+		return mean / float64(len(x)), worst, wp
+	}
+	m, w, p := stat(B, A)
+	fmt.Fprintf(os.Stderr, "[C1] CPU f16-KV vs CPU f32-KV: mean %.6f worst %.6f (pos %d)\n", m, w, p)
+	mr, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, ok := mr.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not resident: %s", mr.ResidentDecline())
+	}
+	a.Reset()
+	var M [][]float32
+	for i, tok := range toks {
+		l, err := a.Forward(mr.EmbedResidentForTest(tok), i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		M = append(M, append([]float32(nil), l...))
+	}
+	m1, w1, p1 := stat(M, A)
+	m2, w2, p2 := stat(M, B)
+	fmt.Fprintf(os.Stderr, "[C1] Metal vs CPU f32-KV: mean %.6f worst %.6f (pos %d) | Metal vs CPU f16-KV: mean %.6f worst %.6f (pos %d)\n", m1, w1, p1, m2, w2, p2)
+
+	// C0: Metal's residual after each layer at the probe position (its own context for 0..probe-1), against the CPU's.
+	a.Reset()
+	for i := 0; i < probe; i++ {
+		if _, err := a.Forward(mr.EmbedResidentForTest(toks[i]), i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	emb := mr.EmbedResidentForTest(toks[probe])
+	rel := func(x, y []float32) float64 {
+		var n, d float64
+		for i := range x {
+			e := float64(x[i]) - float64(y[i])
+			n, d = n+e*e, d+float64(y[i])*float64(y[i])
+		}
+		return math.Sqrt(n / d)
+	}
+	own := make([][]float32, len(hA))
+	for l := range hA {
+		own[l] = a.r.forwardTrunkForTest(emb, probe, l+1)
+	}
+	// The same step on the CPU's exact context (uploaded, so f16 in Metal's cache): context differences removed.
+	a.Reset()
+	if err := mr.ResidentUploadPrefillForTest(ctxCache); err != nil {
+		t.Fatal(err)
+	}
+	up := make([][]float32, len(hA))
+	for l := range hA {
+		up[l] = a.r.forwardTrunkForTest(emb, probe, l+1)
+	}
+	line := fmt.Sprintf("[C0] pos %d, per layer", probe) + " relL2 against CPU f32-KV: Metal own context | Metal on the CPU's uploaded context | CPU f16-KV:"
+	for l := range hA {
+		if l < 9 || l%4 == 3 || l == len(hA)-1 {
+			line += fmt.Sprintf("\n  L%02d %.4f | %.4f | %.4f", l, rel(own[l], hA[l]), rel(up[l], hA[l]), rel(hB[l], hA[l]))
+		}
+	}
+	fmt.Fprintln(os.Stderr, line)
+	mr.Close()
+	debug.FreeOSMemory()
+	if os.Getenv("ZZ_KVF32") == "1" {
+		metalKVF32ForTest = true
+		mf, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 512})
+		metalKVF32ForTest = false
+		if err != nil {
+			t.Fatal(err)
+		}
+		af, ok := mf.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			t.Fatalf("f32-KV resident declined: %s", mf.ResidentDecline())
+		}
+		if !af.r.kvF32 {
+			t.Fatal("the f32 KV path did not take")
+		}
+		af.Reset()
+		var MF [][]float32
+		for i, tok := range toks {
+			l, err := af.Forward(mf.EmbedResidentForTest(tok), i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			MF = append(MF, append([]float32(nil), l...))
+		}
+		mf.Close()
+		m3, w3, p3 := stat(MF, A)
+		m4, _, _ := stat(MF, M)
+		fmt.Fprintf(os.Stderr, "[C1] Metal f32-KV vs CPU f32-KV: mean %.6f worst %.6f (pos %d) | Metal f32-KV vs Metal f16-KV: mean %.6f\n", m3, w3, p3, m4)
+	}
+}

@@ -1,0 +1,23 @@
+prequant: load /Users/francistownsend-merino/models/qwen25vl-3b-instruct (int4): decoder: qwen25vl-3b-instruct needs ~3.9 GB resident at quant int4 + 0.0 GB KV = 3.9 GB; this machine currently has 5.4 GB of memory available (budget 3.8 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+        0.12 real         0.14 user         0.01 sys
+            60506112  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                4456  page reclaims
+                  12  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                  49  signals received
+                  18  voluntary context switches
+                 526  involuntary context switches
+          1668786030  instructions retired
+           482304630  cycles elapsed
+            56722032  peak memory footprint

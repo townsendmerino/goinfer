@@ -100,10 +100,10 @@ func TestGlmOcr_realConfig(t *testing.T) {
 
 // TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may
 // run it resident only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope
-// kernels. CUDA does (cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA); Metal and
-// WebGPU still have only the NeoX half-split kernels, and admitting glm_ocr there gave logit cosine
-// -0.34 resident-vs-CPU on the CUDA twin of that kernel set (2026-10-01), with no error. The decline
-// must name the missing features so `serve check` shows the real cause.
+// kernels. CUDA does (cuda/rope_pairwise.cu, gated by cuda.TestGlmOcrResidentParityCUDA), and Metal since
+// 2026-10-09 (metal.TestGlmOcrResidentParityMetal); WebGPU still has only the NeoX half-split kernels, and
+// admitting glm_ocr there gave logit cosine -0.34 resident-vs-CPU on the CUDA twin of that kernel set
+// (2026-10-01), with no error. The decline must name the missing features so `serve check` shows the real cause.
 func TestGlmOcr_residentDeclined(t *testing.T) {
 	cfg, err := loadConfig(os.DirFS("../testdata"), "glm_ocr_real_config.json")
 	if err != nil {
@@ -115,17 +115,18 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 	}
 	for backend, feats := range residentBackendFeatures {
 		wantAdmit := feats[FeatPairwiseRoPE] && feats[FeatPairwiseMRoPE]
-		if backend == "cuda" && !wantAdmit {
-			t.Errorf("cuda must declare both pairwise features (cuda/rope_pairwise.cu)")
+		pairwiseBackend := backend == "cuda" || backend == "metal"
+		if pairwiseBackend && !wantAdmit {
+			t.Errorf("%s must declare both pairwise features (its pairwise rope kernels)", backend)
 		}
-		if backend != "cuda" && wantAdmit {
+		if !pairwiseBackend && wantAdmit {
 			t.Errorf("backend %q declares the pairwise features: it needs pairwise rope kernels and a resident-vs-CPU gate on peaked attention first", backend)
 		}
 		got := ResidentEligible(arch, backend)
 		why := residentGateReason(arch, backend)
-		if backend == "cuda" {
+		if pairwiseBackend {
 			if !got {
-				t.Errorf("cuda declines glm_ocr: %s", why)
+				t.Errorf("%s declines glm_ocr: %s", backend, why)
 			}
 			continue
 		}

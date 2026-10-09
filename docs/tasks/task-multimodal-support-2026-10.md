@@ -3257,6 +3257,157 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **The fit guard stays on.**
   - **Queue:** `s7-mac-leverAB` and `s13lite-mac-leverAB`, 20 minutes each.
 
+- **S7 and S13-lite on the Mac, levers A and A+B, read 2026-10-09** (the night of 2026-10-08; all four jobs exit 0; raw
+  `~/goinfer-logs/night/runs/2026-10-08/s7-mac-leverA*.log` and `s13lite-mac-leverA*.log`).
+  - **Conditions:** median of three timed requests per cell, new media every request. The load average sat at 2.3-6
+    during the cells (the instant idle gate), so the seconds are a record of the night, not an idle measurement. The
+    passes are same-night and interleave nothing, so a small difference between them is not a resolved effect.
+
+  | cell (median TTFT, s) | 2026-10-07 | lever A | levers A+B | under 5 s |
+  |---|---|---|---|---|
+  | gemma-3-4b (S13-lite, 9 requests) | 12.81 | 7.79 | 6.60 | no; Ollama 4.97, llama.cpp 4.69 |
+  | gemma-4-e2b | 6.20 | 6.24 | 6.17 | no |
+  | gemma-4-e2b audio | 3.20 | 3.23 | 3.14 | yes |
+  | qwen2.5-vl-3b | 21.67 | 20.50 | 17.72 | no |
+  | qwen3.5-0.8b | 4.48 | 4.03 | 3.94 | yes |
+  | qwen3-vl-2b | 8.97 | 7.74 | 7.30 | no |
+  | glm-ocr | 8.32 | 6.40 | 5.30 | no |
+
+  - **Reading:**
+    - The tower levers took Gemma 3 from 12.8 to 6.6 s, still 1.3-1.4x the peers.
+    - Every Qwen cell moved with them.
+    - Gemma 4 E2B did not move (its tower was already on Metal; the time is elsewhere).
+    - Two cells pass, five do not.
+  - **All of this predates 2026-10-09's changes,** which reach three of the five failing cells:
+    - S16 put Qwen2.5-VL's and Qwen3-VL's image prefill on the GPU; the served comparisons read 19.46 -> 5.73 s and
+      8.25 -> 2.86 s.
+    - GLM-OCR's decoder and prefill went resident (`docs/tasks/task-metal-pairwise-followups-2026-10.md`).
+
+- **S7 and S13-lite on the Mac, a third pass on 2026-10-09's tree, registered 2026-10-09 before it runs** (owner:
+  "continue with image/audio track").
+  - **What:** the same scripts, cells, procedure and 5 s bar as the two passes above.
+  - **Binary:** `serve-metal` at `74830779`, in `~/goinfer-bench/s7-2026-10-09/` (`BIN=`).
+  - **Purpose:** re-rank the failing cells for S17/S18's next lever, since three of the five moved by day.
+  - **Queue:** `s7-mac-0909` and `s13lite-mac-0909`, 20 minutes each, tonight.
+
+- **S17's next Metal lever: Gemma 3's image turn prefills on the CPU. A resident image prefill on Metal, registered
+  2026-10-09 before any code** (owner: "continue with image/audio track").
+  - **Measured by day (exploratory, one run each; `metal/zz_g3_prefill_probe_test.go`, not committed):**
+    - Gemma 3 4B's image turn (282 positions, 256 of them the image) prefills on the CPU in 3.67-3.86 s, then
+      uploads its K/V (0.04 s).
+    - Metal implements no `ResidentImagePrefill`, so every non-Qwen image turn takes that bridge.
+    - The same 282 positions through Metal's batched pass take 0.93 s (causal, so for scale only).
+    - With the tower at about 2.8 s, that CPU prefill is most of the gap between S7's 6.6 s and the peers' 4.7-5.0 s.
+  - **Change:**
+    - `metalResident.PrefillImageLast` (`decoder.ResidentImagePrefill`): the batched f16 pass with the image block
+      `[imgStart, imgEnd)` attending bidirectionally, as the CPU's `KVCache.attendHi` and CUDA's
+      `PrefillImageLast` do.
+    - `attention_prefill` (the exact kernel) takes the block. A query inside it sees keys up to `imgEnd - 1`; every
+      other query stays causal; the sliding window's lower bound stays at the causal position's.
+    - When a block is present the pass runs the exact kernel on every layer; the fused and steel kernels carry no
+      mask. Gemma 3's head dim (256) uses the exact kernel anyway.
+    - The whole prompt in one pass (no chunking across a bidirectional block, as on CUDA).
+  - **G-IP1, kernel:** `attention_prefill` with a block against a float64 reference, covering causal rows, block
+    rows, a block at a non-zero start and a sliding window that cuts in. Max abs diff <= 4e-3 (f16 output).
+    Control: the same kernel with no block must miss by at least 10x on the block's rows.
+  - **G-IP2, tiny** (`gemma3-vl-tiny`, its image golden's prompt): the resident image prefill's last-token logits
+    and 8 teacher-forced decode steps after it, against the CPU's image prefill (`prefillLogitsVL`) at int4 per-32.
+    - Bars: cosine >= 0.995, relL2 <= 0.15.
+    - Planted defect: the block ignored (causal everywhere) must read red, or the fixture is blind and the gate moves
+      to G-IP3 alone, recorded.
+  - **G-IP3, real** (Gemma 3 4B, S3's four images, through its sidecar): last row plus 8 teacher-forced steps, against
+    the CPU image prefill at per-32.
+    - Bar: the resident path's worst cosine >= today's production path's worst minus 0.005, where today's path is the
+      CPU W4A8 prefill uploaded, graded against the same reference. Every argmax difference is an R10 near-tie.
+    - Planted defect as in G-IP2.
+  - **G-IP4, served** (by day, exploratory): S3's served comparison (`run-gs3c-served.sh`, arms `metal` against the
+    CPU bridge). Replies identical or first diverging at a near-tie. TTFT reported; tonight's S7 pass, if queued
+    after this lands, carries the record.
+  - **Speed:** ships at >= 1.02x TTFT (the bar), which the measurement above expects to clear by about 1.7x.
+
+- **G-IP3's first run found a shipped bug: Gemma 3 4B's batched pass on Metal returns garbage, text or image** (by day,
+  2026-10-09; probes in `metal/zz_g3_prefill_probe_test.go`, not committed).
+  - The resident image prefill and the planted no-block arm both read cosine NaN. That was a cosine of all-zero logits.
+  - **Text alone does it too.** A 31-token text prompt through `Generate` on Metal answers `<pad>` and then unrelated
+    tokens; the sequential path's first token is 818.
+    - Every Gemma 3 prompt of 16 tokens or more on Metal has taken this pass since `84c3f29f` (2026-09-13, audit M-06,
+      which admitted Gemma 3 and graded it on tiny fixtures only).
+    - Image turns were spared: they prefill on the CPU (above).
+  - **Mechanism, measured:** the pass keeps the residual in f16 (max 65,504), and Gemma 3 4B's residual outgrows it.
+    - The `<bos>` row reaches 50,752 by layer 5 and is inf at layer 6. At layer 7 its K/V are NaN, attention spreads
+      NaN to every row, and the int8 LM head turns a NaN row into finite zeros.
+    - So A-C02's non-finite-logit check (`batchedPrefillImg`) passes it.
+    - Computing `<bos>` on decode's f32 kernels and the rest batched does not help: every ordinary row climbs to about
+      60,000 by layer 26 and overflows at layer 27.
+  - **Fix 1, safety (registered before code):** the pass declines when its last residual row is non-finite after the
+    trunk, and the decoder re-runs the prompt sequentially, as A-C02 does for a non-finite logit.
+    - The last row is enough. A row that overflows before the final layer writes NaN K/V, which reaches the last row
+      through attention. A row that overflows only in the final layer writes no further K/V. A NaN K/V row that only
+      sliding-window layers hold, outside the last row's window, is never attended again.
+    - **G-NF1, real** (Gemma 3 4B, the 31-token prompt): the batched pass declines, naming the overflow, and
+      `Generate`'s 24 greedy tokens equal the sequential path's (fast prefill off). The planted defect, the guard off,
+      is today's garbage (above).
+    - **G-NF2, tiny:** a test seam that writes inf into the last residual row makes the pass decline. Every family
+      that does not overflow keeps its path; `gate quick` green.
+  - **Fix 2, the lever (registered before code): store the residual scaled by 1/s.**
+    - **Applies to:** a sandwich-norm family with no PLE, MoE, post-only norm or DeepStack (Gemma 3, on this pass).
+      - Every read of its residual there is an RMSNorm (pre-attention, pre-MLP, final), and RMSNorm ignores scale
+        except through eps.
+      - Every write is an embedding upload or a post-normed branch's `residual_f16` add.
+      - So the pass uploads the embeddings times 1/s and adds each branch times 1/s.
+      - s is a power of two, so the scaling is exact in floating point. The scaled pass equals today's wherever today's
+        does not overflow, except through eps and subnormals.
+    - **s:** the smallest power of two that leaves at least 4x headroom over the largest residual measured on Gemma 3
+      4B (the pass's largest finite value times s) across the G-RS2 prompts and S3's four image turns. Recorded.
+    - **G-RS1, identity (tiny, `gemma3-vl-tiny`, which does not overflow):** last-token logits scaled against unscaled,
+      cosine >= 0.99999. Families without the scale run the unchanged kernels, so they are identical by construction,
+      and their existing tests are unchanged.
+    - **G-RS2, real Gemma 3 4B text:**
+      - Batched last token against the CPU at int4 per-32: cosine >= 0.98 (G-B3's real tier).
+      - 16 teacher-forced decode steps after it, with no non-tie flip.
+      - The guard of Fix 1 does not fire on prompts of 31, about 450 and about 2,000 tokens.
+      - Planted defect: s = 1 must trip the guard.
+    - **G-RS3, speed, exploratory by day:** TTFT on about 512 tokens, batched against sequential. Ships at >= 1.02x.
+    - G-IP3 then runs as registered.
+  - **Results, 2026-10-09 (by day, the M1 Pro; logs `docs/measurements/multimodal-support-2026-10/s17-*.log`, probes
+    archived as `zz_g3_prefill_probe_test.go.txt` there):**
+    - **G-NF1 PASS** (`TestGemma3PrefillOverflow_declinesReal`, run at s = 1): the batched pass declines, naming the
+      overflow, and `Generate`'s 24 greedy tokens equal the sequential path's ("The bicycle's origins can be traced back
+      to 1817 in Germany, ...").
+    - **G-NF2 PASS** (`TestPrefill_declinesNonFiniteLogits`): an inf in the last residual row declines; the next clean
+      pass does not.
+    - **s = 32.** The measured peak was 295,936 on every prompt (the `<bos>` row, after layer 31; prompts of 31, 716 and
+      3,094 tokens and an image turn). s = 16 would leave 3.5x headroom, under the registered 4x; s = 32 leaves 7.1x.
+    - **G-RS1 PASS, bit-identical** (`TestPrefillResidScale_identityTiny`): s = 32 against s = 1, max |diff| 0.
+      - The first build read cosine 0.99994, under the 0.99999 bar. **Mechanism:** the tiny fixture's residual is
+        small, so after dividing by s² its mean square sat near eps (1e-6).
+      - **Fix, inside the registered design:** the three norms that read the residual (pre-attention, pre-MLP, final)
+        take eps/s². Then x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly.
+    - **G-RS2 PASS** (`TestGemma3PrefillResidScaleReal`; batched last token against the CPU at int4 per-32, then 16
+      teacher-forced steps). The overflow guard fired on none of the three prompts at s = 32 and on all of them at
+      s = 1.
+
+      | prompt | last token | worst over the 16 steps | flips |
+      |---|---|---|---|
+      | 31 tokens | 0.999596 | 0.982823 | 0 |
+      | 468 tokens | 0.999085 | 0.960446 | 2 near-tie, 0 real |
+      | 1,894 tokens | 0.999030 | 0.958636 | 0 |
+
+    - **G-RS3, exploratory:** 538 tokens, batched 2.06-2.33 s against sequential 15.05-15.16 s (three runs each, warm),
+      about 7x. Ships (bar 1.02x).
+    - **G-IP3 PASS** (`TestImagePrefillResident_gemma3Real`, S3's four images through the sidecar):
+      - The resident image prefill's worst cosine is 0.991388, against a bar of 0.968103 (production's worst, 0.973103,
+        minus 0.005), with 0 non-tie argmax differences.
+      - It sits closer to the reference than today's CPU W4A8 bridge on every image (0.991-0.993 against 0.973-0.986).
+      - The planted no-block arm reads 0.962159 over the four, under the bar, so the gate is not blind. On one image
+        alone (table.png) it reads 0.989773, which is above it.
+      - The prompt is serve's shape (`Gemma3PromptBlock`, `<bos>`). The first run used the bare block without `<bos>`;
+        corrected before grading.
+    - **G-IP2 PASS** (tiny), as before: 0.999674 / relL2 0.0256. The planted defect is blind there, as registered, so
+      G-IP3 carries it.
+    - `gate quick` green (2,237 passed, 0 failed); staticcheck clean on the darwin `metal` package and the linux target.
+    - **G-IP4 (served TTFT) is still owed.**
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
@@ -4240,6 +4391,24 @@ The positive control reads **exactly 0 / 0** (`qwen2.5-0.5b-instruct`, both arms
 ##### S6's served check: the first night's run is VOID (a plumbing error of mine); the fixed script is queued (`~/goinfer-logs/s6-moe-2026-10-08/`, 2 min)
 
 All three arms were void by the harness's own check (`decode path` was `cpu (int4mix)`, not `cuda-resident`): the 35B's int4 weights are 18.6 GB on an 8 GB card, and `run-s6-moe-night.sh` did not pass `--moe-cache-experts`, the C' expert streaming its own header says it uses, so the CUDA build declined with `cuMemAlloc ... CUDA_ERROR_OUT_OF_MEMORY` and said so ("Try -moe-cache-experts"). The harness stopped after the first arm. **No reading was made and none is claimed.** The script now passes the flag. **Plumbing control, by day (not a result):** the same pinned binary with the same flags loads in 1m44s and logs `decode path: cuda-resident (int4mix)`, KV plan 1 x 4,096 positions, 2.1 GB held back for the tower; stopped by pid, GPU back to 468 MiB. The registration (G-S6m above) is unchanged; it is queued again at est 60.
+
+**Second night's run (`s6-moe-image-2`, run by day 2026-10-09 09:43): no reading again, for a different reason. It was
+re-queued as `s6-moe-image-3`.**
+- **What failed:** the first arm's image request returned HTTP 500 and the harness stopped. "Arm cuda/cuda2 log is
+  missing" followed from that; those arms never ran.
+- **The error,** reproduced by day with the same pinned binary and flags: `qwen3_5_moe has no mrope_section in
+  rope_parameters; refusing an image turn`.
+- **The cause:** `~/models/qwen3.6-35b-a3b-int4.giw` was built on 2026-09-24 from `qwen3.6-35b-a3b-Q8_0.gguf`, before
+  45ac1c07 (2026-10-06) made a Qwen3.5+ GGUF carry its m-RoPE split. Its embedded config had no `mrope_section`.
+  The binary (8ff9a57e) is newer and was not at fault.
+- **The fix:** the bundle was rebuilt from the same Q8_0 GGUF by `prequant -quant int4` at `origin/main` afb50500
+  (2.5 min). It now carries `mrope_section [11,11,10]`, interleaved, and replaces the old file under the same name.
+  Re-running the request got past the refusal.
+- **That check is plumbing, not a result.** That run's swap guard then tripped, because `g31b` started loading the 31B
+  at the same moment.
+- **Same staleness, not fixed here:** all four of nobara's Qwen3.5-9B sidecars (`Qwen3.5-9B-Q4_K_M.int4.cuda`,
+  `.int4.e4h.cuda`, `.int4.e4h.cpu-amd64`, `.int8int8.e4h.cpu-amd64`) lack the section. The sidecar freshness check
+  does not see it (source mtime and layout only), so a 9B image turn there would be refused until they are rebuilt.
 
 ##### Gemma 4 31B, step (b'): the 31B against a layer-streaming Hugging Face float32 reference. Registered 2026-10-09 before any code (owner: "register it")
 

@@ -1,0 +1,26 @@
+=== RUN   TestPairwiseRoPERealMetal
+=== RUN   TestPairwiseRoPERealMetal/glm-ocr
+decoder: context capped at 27987 (model allows 131072) so that KV fits: weights 1.4 GB + KV 3.4 GB of budget 4.8 GB — pass -ctx to choose, or -stream-weights to lift
+[glm-ocr] cpu int4 loaded in 2s
+[glm-ocr] cpu reference: 80 positions in 3s
+[glm-ocr] PAIRWISE 80 positions: mean cos 0.996190, worst 0.988864 (pos 13); continuation flips: 0 near-tie, 0 real
+[glm-ocr] NeoX     80 positions: mean cos 0.772141, worst 0.252920 (pos 38)
+=== RUN   TestPairwiseRoPERealMetal/command-r7b
+    pairwise_rope_real_test.go:53: load cpu: decoder: command-r7b needs ~8.3 GB resident at quant int4 + 9.6 GB KV = 17.9 GB; this machine currently has 5.5 GB of memory available (budget 3.9 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+=== RUN   TestPairwiseRoPERealMetal/aya-expanse-8b
+    pairwise_rope_real_test.go:53: load cpu: decoder: aya-expanse-8b needs ~8.3 GB resident at quant int4 + 2.0 GB KV = 10.3 GB; this machine currently has 5.5 GB of memory available (budget 3.9 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestPairwiseRoPERealMetal (7.47s)
+    --- PASS: TestPairwiseRoPERealMetal/glm-ocr (6.99s)
+    --- FAIL: TestPairwiseRoPERealMetal/command-r7b (0.24s)
+    --- FAIL: TestPairwiseRoPERealMetal/aya-expanse-8b (0.23s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	8.075s
+FAIL

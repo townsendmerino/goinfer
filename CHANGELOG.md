@@ -15,6 +15,46 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — Command-R7B and Command-R prefill on the GPU on Apple silicon
+
+Metal's batched prefill now runs the Cohere family: a bias-free LayerNorm, its parallel attention-and-MLP block, and its logit scale
+are in the pass. On an M1 Pro a 512-token Command-R7B prompt prefills in 2.5 s instead of 23.4 s (exploratory). Against the CPU at int4
+the batched prefill's last token reads cosine 0.996 and the decode after it flips no token.
+
+### Changed — GLM-OCR prefills on the GPU on Apple silicon, image turns included
+
+Metal's batched prefill now runs GLM-OCR (its pairwise rotation kernels were already built), and so does the GPU image prefill for
+its image turns. On an M1 Pro the test invoice's prefill went from about 5.7 s to 1.2 s and the whole run to 14-16 s, with a reply
+byte-identical to the CPU decoder's (exploratory).
+
+### Fixed — Metal's batched prefill no longer runs a model whose dimensions it cannot handle
+
+Its matrix kernels need every reduction length (hidden size, attention output width, FFN width) to be a multiple of 32. An int4 model
+always is; a native int8 model need not be, and one that was not got admitted and produced unrelated logits with no error (found on a
+48-wide test model, cosine 0.22 against the CPU). Such a model now prefills sequentially. No real checkpoint is affected.
+
+### Changed — building a `.giw` from a safetensors directory streams one layer at a time
+
+`prequant` (and the sidecar `goinfer-serve` and `goinfer-chat` build for a model directory) loaded the whole model into
+memory before writing the `.giw`. It now writes the header, then builds, writes and frees one layer at a time, and reads
+the embedding in blocks of rows.
+- **Memory:** on an M1 Pro, Command-R7B's sidecar peaks at 2.3 GB instead of the 8.3 GB that was refused without a fit-guard
+  bypass, and GLM-OCR at 0.41 GB instead of 1.67 GB. The bundle is identical apart from the recorded quant label, which a
+  streamed bundle leaves for the reader to infer, as streamed GGUF bundles already do.
+- **Time:** the build is slower where the old one loaded layers in parallel (GLM-OCR 3.2 to 7.5 s).
+- **Not covered:** a LoRA merge and the gpt2 layout still build the whole model.
+
+### Changed — GLM-OCR, Command-R, Command-R7B and Aya run on the GPU on Apple silicon
+
+These families rotate their positions GPT-J pairwise, and Metal's rope kernels were NeoX half-split only, so Metal ran them
+on the CPU. Metal now has pairwise twins of its rope kernels, and every other family keeps exactly the kernels it had.
+- **GLM-OCR:** the test invoice decodes at 92-95 tok/s against about 42 and finishes in about 20 s on an M1 Pro, with a
+  reply byte-identical to the CPU decoder's (exploratory).
+- **Command-R7B:** against the CPU at int4 per position, mean cosine 0.989 and worst 0.946, with no flipped token. The
+  wrong kernels read -0.69.
+- **Not covered:** Aya was not run on its real checkpoint. Neither family has a batched prefill on Metal yet, so their
+  prompts prefill sequentially (Cohere) or on the CPU (GLM-OCR images).
+
 ### Changed — `goinfer-chat --image` runs GLM-OCR's vision tower on the GPU: an invoice in 23 s instead of 70 s on an M1 Pro
 
 `goinfer-chat --image` always ran GLM-OCR's float32 vision tower on the CPU, even in the Metal and CUDA builds, where

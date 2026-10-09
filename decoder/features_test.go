@@ -230,8 +230,10 @@ var admissionGolden = map[string][]string{
 	// -0.041, exact at position 0 only). The old gates used flat 0.02-std fixtures where a wrong
 	// rotation reads 0.9997. FeatPairwiseRoPE is declared by cuda alone; metal declines these families
 	// to the CPU path until the Mac session ports the kernels.
-	"cohere":      {"cuda"},
-	"cohere2":     {"cuda"},
+	// 2026-10-09: Metal too (docs/tasks/task-metal-pairwise-rope-2026-10.md: rope_pw and twins, metal.TestPairwiseRoPEResidentParityMetal
+	// and the real-checkpoint metal.TestPairwiseRoPERealMetal). WebGPU still declines.
+	"cohere":      {"cuda", "metal"},
+	"cohere2":     {"cuda", "metal"},
 	"deepseek_v2": {"cuda", "webgpu"},
 	"deepseek_v3": {"cuda", "webgpu"},
 	// G6 (docs/tasks/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
@@ -285,8 +287,9 @@ var admissionGolden = map[string][]string{
 	// GLM-OCR: CUDA only (2026-10-01, cuda/rope_pairwise.cu; cuda.TestGlmOcrResidentParityCUDA).
 	// Admitted with the NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny; Metal and
 	// WebGPU still have only NeoX rope kernels and decline (FeatPairwiseRoPE + FeatPairwiseMRoPE).
-	"glm_ocr":      {"cuda"},
-	"glm_ocr_text": {"cuda"},
+	// 2026-10-09: Metal too (the pairwise twins; metal.TestGlmOcrResidentParityMetal). WebGPU still declines.
+	"glm_ocr":      {"cuda", "metal"},
+	"glm_ocr_text": {"cuda", "metal"},
 	"llama":        {"cuda", "metal", "webgpu"},
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
 	// zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
@@ -430,7 +433,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatMLA,
 			// 2026-10-01: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
 			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the
-			// real Aya/R7B gate. metal and webgpu do NOT declare either.
+			// real Aya/R7B gate. metal declares both since 2026-10-09 (its own twins and gates); webgpu does not.
 			// 2026-10-07: FeatGemma4EModel (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md): the PLE branch from existing
 			// kernels, KV-shared layers aliasing their source's cache, per-layer FFN widths; G1c/G2c on the tiny E-model, graphs bit-exact.
 			FeatPairwiseRoPE, FeatPairwiseMRoPE, FeatGemma4EModel},
@@ -472,6 +475,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
 			FeatParallelBlock, FeatLogitScale,
 			FeatGemma4EModel,
+			// 2026-10-09: GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw; docs/tasks/task-metal-pairwise-rope-2026-10.md).
+			FeatPairwiseRoPE, FeatPairwiseMRoPE,
 		},
 	}
 	for be, exp := range want {
@@ -593,16 +598,16 @@ func TestPairwiseRoPE_derivationScope(t *testing.T) {
 }
 
 // TestPairwiseRoPE_declineNamesCause: the families that rotate pairwise are DECLINED on every backend
-// that has only NeoX rope kernels (metal, webgpu), and the decline reason names the missing feature,
+// that has only NeoX rope kernels (webgpu), and the decline reason names the missing feature,
 // so `serve check` / DecodePath tell the operator why instead of "arch is not eligible". CUDA admits
-// them (cuda/rope_pairwise.cu).
+// them (cuda/rope_pairwise.cu), and Metal since 2026-10-09 (its pairwise twins).
 func TestPairwiseRoPE_declineNamesCause(t *testing.T) {
 	for _, fam := range []string{"cohere", "cohere2", "glm_ocr"} {
 		arch, _, err := resolveArchitecture(representativeConfig(fam))
 		if err != nil {
 			t.Fatalf("%s: %v", fam, err)
 		}
-		for _, be := range []string{"metal", "webgpu"} {
+		for _, be := range []string{"webgpu"} {
 			if ResidentEligible(arch, be) {
 				t.Errorf("%s admitted on %s: only NeoX rope kernels there", fam, be)
 				continue
@@ -612,8 +617,10 @@ func TestPairwiseRoPE_declineNamesCause(t *testing.T) {
 				t.Errorf("%s on %s: decline reason %q does not name %q", fam, be, why, FeatPairwiseRoPE)
 			}
 		}
-		if !ResidentEligible(arch, "cuda") {
-			t.Errorf("%s declined on cuda: %s", fam, residentGateReason(arch, "cuda"))
+		for _, be := range []string{"cuda", "metal"} {
+			if !ResidentEligible(arch, be) {
+				t.Errorf("%s declined on %s: %s", fam, be, residentGateReason(arch, be))
+			}
 		}
 	}
 }

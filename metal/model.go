@@ -123,6 +123,16 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatNoPE:              true, // SmolLM3 NoPE layers — invFreq is zero, exact identity in rope_f16
 	decoder.FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid — no pre-norm; sublayer outputs normed before residual
 	decoder.FeatQKNormWhole:       true, // Olmo 3 / Olmo Hybrid — single QK reduction over the whole projected width
+	// GPT-J pairwise rotation (GLM-OCR; docs/tasks/task-metal-pairwise-followups-2026-10.md Part A): rope_f16_pw and
+	// rope_mrope_f16_pw, bound in place of the NeoX prefill kernels for a pairwise model (ropeF16Name).
+	decoder.FeatPairwiseRoPE:  true,
+	decoder.FeatPairwiseMRoPE: true,
+	// Cohere / Command-R7B (Part B): a bias-free LayerNorm (layernorm_f16, layernorm_quant_f16), the parallel block (the
+	// MLP reads the attention's shared input norm) and the host-side logit scale. A biased LayerNorm, or LayerNorm with
+	// QK-norm, is declined in batchedPrefill.
+	decoder.FeatLayerNorm:     true,
+	decoder.FeatParallelBlock: true,
+	decoder.FeatLogitScale:    true,
 }
 
 type residLayer struct {
@@ -371,6 +381,7 @@ type resident struct {
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	pairwiseRoPE  bool    // FeatPairwiseRoPE: pRope/pRope2 and the prefill's rope pipelines are the GPT-J pairwise twins (rope_pw, ...)
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
@@ -478,6 +489,10 @@ type resident struct {
 	// dense FFN buffers unset entirely) MUST decline prefill and let the caller fall back to
 	// the sequential Forward loop: correct, just a slower TTFT.
 	prefillOK bool
+	// prefillResidNonFinite reports that the last batched pass ended with a non-finite value in its last residual row: the
+	// f16 residual overflowed (Gemma 3 4B's outgrows 65,504 by layer 6, docs/tasks/task-multimodal-support-2026-10.md S17).
+	// batchedPrefillImg declines on it. poisonPrefillResidForTest writes an inf there first, for the test of that decline.
+	prefillResidNonFinite, poisonPrefillResidForTest bool
 
 	// w8: every dense body projection runs as W8A8 on its int8 weights instead of being re-quantized to int4
 	// (docs/tasks/task-metal-int8-2026-10.md, slice 1). Set by buildResident (w8Eligible). The GEMV pipelines are then
@@ -1112,6 +1127,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
 	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
+	// Pairwise rope (docs/tasks/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
+	// GLM-OCR) binds the pairwise twins into the same fields, so no dispatch site changes; every other family keeps these.
+	if r.pairwiseRoPE = m.PairwiseRoPEResident(); r.pairwiseRoPE {
+		r.pRope, r.pRope2 = pipe("rope_pw"), pipe("rope2_pw")
+	}
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pLayerScale = pipe("layer_scale")
 	if P := m.Gemma4PLEDimResident(); P > 0 {
