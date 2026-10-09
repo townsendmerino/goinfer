@@ -35,7 +35,7 @@ The last phase puts the answer where users look first, the README, with a check 
 | Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU [s2] / GPU | CPU / CPU |
 | Gemma 4 E4B | CPU / CPU, not yet validated | not validated | not validated (S6 queued tonight) | CPU / CPU |
 | Gemma 4 26B | CPU / CPU | GPU (checked on E2B) [s2] / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
-| Gemma 4 31B | not validated (nobara, S6) | not validated | too large for the Mac | not validated |
+| Gemma 4 31B | CPU / CPU: runs, coherent (G-31a: text and one table image); text logits agree with Hugging Face float32 as well as the E4B's do ((b'), 12 prompts, CPU); the image path is not checked against Hugging Face | not validated (8 GB card) | too large for the Mac | not validated |
 | Qwen2.5-VL | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / GPU |
 | Qwen3.5+ dense | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / CPU |
 | Qwen3.5+ MoE | never run | never run | never run | never run |
@@ -46,7 +46,7 @@ The last phase puts the answer where users look first, the README, with a check 
 **Gaps in coverage:**
 - **Models:**
   - Qwen3.5+ MoE and Qwen3-VL MoE images have never been run.
-  - Gemma 4 E4B and 31B are not validated; S6 has them queued on both boxes.
+  - Gemma 4 E4B: validated on CUDA (G-E4B-C1b, C2). Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
   - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
   - Several images per message (S11) and video (S15) are not supported.
 - **Audio:**
@@ -4365,6 +4365,75 @@ Owner choice of 2026-10-08, "(b') with (a) as its first step"; (a) is G-31a (rea
 - **Measured after the flip (exploratory; a speed check, not a gate).** `serve` built from the flipped tree, Qwen3-VL-2B at serve's defaults on the RTX 2070 SUPER, the S7 harness's one cell (a new image per request, one warm-up and three timed): **median TTFT 2.20 s** (2.17, 2.22, 2.20; warm-up 3.98), against **10.79 s** in S7's third read with the CPU prefill, the one cell that was over the 5 s bar. The serve log reads `decode path: cuda-resident (int4)` and `prefill path: batched`. So every S7 cell is now under the bar on CUDA.
 - **Housekeeping done with it.** The recommended-checkpoint line for `qwen3-vl-2b` said the image turn took about 15 s because the DeepStack prefill runs on the CPU; it now states the 2.2 s measurement and the G-S10k caveat (the capability-matrix copies regenerated). The gates (`TestS10DeepstackPrefillCUDA_*`, the dumps) set the variable explicitly and put it back, so their meaning is unchanged; the tiny gate passes with the new default.
 - **What this does not claim:** that the resident prefill is as close to Hugging Face as the CPU one on every image (it is not, on the 896 image, by a small cosine margin), or anything about Metal (its own switch, `metalDeepstackPrefillOn`, is the Mac's) or about other Qwen3-VL sizes.
+
+#### The queue of 2026-10-09, run by day (09:43-12:45 PDT, 3 h 02 min of 7 h 15 min estimated), read the same day (nobara; logs under `~/goinfer-logs/night/runs/2026-10-09/`)
+
+Four jobs ran and read; the fifth, `s6-moe-image-3`, was queued onto this box's queue by the Mac session (the 35B bundle rebuilt at 11:56 for the m-RoPE section) and failed for the same reason as the first (below), so it is superseded, not graded. Everything below is read against the registrations above.
+
+##### G-S6m, the 35B's served image check: PASS, after a server bug the check itself found (raw `~/goinfer-logs/s6-moe-fixed-2026-10-09/`, binary rev in `provenance.txt`)
+
+- **First, the failures.** `s6-moe-image-2` (this box) and `s6-moe-image-3` (the Mac's) both failed in about two minutes, with the first arm correctly `cuda-resident (int4mix)` (the `--moe-cache-experts` repair held) and then the harness client dying on `JSONDecodeError: Expecting value: line 1 column 1`. **Replayed by hand against the same pinned binary: the server answered the image request with HTTP 200 and `Content-Length: 0`**, on a first send and on a resend; the same request without `logprobs` returned a normal answer ("This image shows a collection of ..."); text requests were fine.
+- **Cause, in two layers.** (1) `writeJSON` wrote the 200 status and then streamed the encoder's output with its error dropped, so a body JSON cannot carry became an empty 200. (2) The body could not be carried because a logprob was -Inf: at step 24 of the 32-token answer the **thinking budget forces the end-of-thinking token** (id 248069, probability 1, logprob 0) and the other two top-3 entries, filler ids 0 and 1, have probability zero (logprob -Inf). That is a normal state, not a numerical fault. Found by building the server with the encode error surfaced ("json: unsupported value: -Inf") and then a temporary print naming the entries (removed).
+- **Fixed** (`43e35056`): `writeJSON` encodes first and answers an unencodable body with a 500 that names the problem (red on the old code: status 200, empty body; `TestWriteJSON_*`); the logprobs builder reports **-9999** for a zero-probability token, OpenAI's own convention (`TestJSONLogprob_*`; NaN is deliberately left to be reported). The whole `serveapp` package passes.
+- **G-S6m, as registered** (`~/models/qwen3.6-35b-a3b-int4.giw` rebuilt 11:56; one image request, 32 greedy tokens, top-3 logprobs; three arms, `--backend cuda --moe-cache-experts`): the CUDA-tower reply **IDENTICAL** to the CPU-tower reply; the CPU-tower repeat **IDENTICAL**; **every arm decoded `cuda-resident (int4mix)`**. 37-47 s per request (the image turn prefills on the CPU: no MoE hybrid image gate exists). **PASS.** Prediction ("identical") held. What it establishes: the 35B runs an image turn end to end on this box and the CUDA tower is the CPU tower in the served path; there is no Hugging Face anchor for the 35B (the claim was never "matches HF").
+- **Two limits, and a trap.** The binary was built from `70de7994` plus the serve fix before it was committed (`serve-cuda.rev` read `70de7994`; the source is `43e35056`). The server's swap guard tripped on the second request in one process when the box already had 5.3 GB of swap in use ("swap grew 0.58 GB over baseline; refusing new requests"): serving the 35B on this 62 GB box next to other work is marginal, and the harness's clean first request is what avoided it.
+
+##### G-S14c4 re-read: G-S14c4a PASS, G-S14c4b FAIL again, and the added arm overturns a hypothesis (`~/goinfer-logs/s14c4-2026-10-09/`, 51 min, binaries `s14c4b` at `c7df2f72`)
+
+| arm | WER | control tokens in replies | first-run WER |
+|---|---|---|---|
+| R, transformers float32 | 4.09% | 0 | 4.09% |
+| F, goinfer native weights | **4.09%** | 0 | 4.96% |
+| I, goinfer int4 (serve defaults) | 8.26% | **33 of 73** | 9.13% |
+| S, control: F on the next clip's audio | 127.39% | 0 | 126.96% |
+| A1, record only: int4 body, int8 head | **16.78%** | 3 | (new) |
+
+- **G-S14c4a: PASS.** F is byte-equal to R on **73 of 73** clips and |WER_F - WER_R| = **0.00** (bars: 70 of 73, 0.30). The first reading's NOT MET (71 of 73, 0.87) was the null-EOS stop-id bug (`9775a315`) and nothing else; it is superseded by this re-read, not erased.
+- **G-S14c4b: FAIL, unchanged:** WER_I - WER_F = **+4.17** [+0.61, +9.52], 15 clips differ, **33 control tokens (parks regardless)**. The stop-id bug cancelled in this difference, as predicted before the re-read; so the two empty int4 replies were NOT that artefact (2 empty replies remain with the fix).
+- **The added record-only arm A1 refutes "the int4 head damages the first token".** With the head at the int8 pin the stray `<|im_start|>` prefixes fall from 33 to 3, but **WER rises from +4.17 to +12.70 points** because 7 replies come back as an empty string and 3 more as garbage, against 1 and 2 with the int4 head.
+  | first generated token | float32 | int4 body + int4 head | int4 body + int8 head |
+  |---|---|---|---|
+  | `language ...` | 73 | 37 | 60 |
+  | `<|im_start|>language ...` | 0 | **33** | 3 |
+  | empty (a stop token first) | 0 | 1 | **7** |
+  | other (garbage, a lost prefix) | 0 | 2 | 3 |
+  So the int4 **body** leaves the first position a near-tie among `language`, `<|im_start|>` and a stop token, and the head's precision only changes which wrong one wins. The stray control token is the MILD symptom: the metric's normaliser strips it, so it costs no WER; the costly failures are a premature stop and a garbage first token.
+- **Prediction scored.** R and F near 2-4% (held: 4.09, 4.09); F byte-equal on 90-100% (held: 100%); WER_I - WER_F within +0.5 (**missed**, +4.17); control tokens in at most two clips (**missed**, 33). The registered hypotheses for the first reading ((i) the int4 body or head damages the first token; (ii) the empties are the stop-id bug) read: (i) true of the body and false of the head as the cause; (ii) false.
+- **What this means for the control-token decision (still the owner's).** Forbidding or stripping control tokens would remove the visible symptom and cost nothing in WER terms, and would leave 7-10% of replies wrong or empty. What would address the cause is a decode constraint on the first tokens (the assistant turn must open `language <name><asr_text>`, which the Qwen3-ASR prompt layout already supports as a forced prefix), which the reference does not do and which is a product choice, not a repair; or finding why the int4 body flattens that one position.
+
+##### Option D complete: 7 of 7 models graded, none COSTLY; the registered map matches nothing, so the numbers go to the owner (`~/goinfer-logs/head-precision-2026-10-09/`, 1 h 12 min, binary `hp2` at `9a021498`)
+
+| model (head) | agree int8 -> int4 | d_agree [95%] | dKL [95%] | ratio | reading |
+|---|---|---|---|---|---|
+| qwen2.5-0.5b-instruct (tied) | 82.8 -> 83.1 | -0.29 [-1.95, +1.46] | +0.0182 [+0.0086, +0.0275] | 1.11x | MIXED |
+| qwen3-1.7b-bf16 (tied) | 93.2 -> 93.1 | +0.10 [-0.78, +0.98] | +0.0190 [+0.0047, +0.0356] | 1.17x | MIXED |
+| qwen25vl-3b-instruct (tied) | 89.5 -> 87.8 | **+1.66** [+0.20, +3.12] | +0.0216 [+0.0123, +0.0317] | 1.31x | MIXED |
+| gemma-3-4b-it (tied) | 91.1 -> 89.5 | **+1.66** [+0.39, +2.93] | **+0.0453** [+0.0196, +0.0713] | 1.23x | MIXED |
+| tinyllama-1.1b-chat (untied) | 91.0 -> 90.5 | +0.49 [-0.68, +1.66] | +0.0042 [+0.0003, +0.0079] | 1.07x | OK |
+| phi3-mini-4k (untied; **now read**) | 89.3 -> 89.6 | -0.39 [-1.95, +1.07] | +0.0107 [-0.0012, +0.0248] | 1.07x | MIXED |
+| olmo3-7b-think (untied, its own repository's chat template) | 96.3 -> 96.7 | -0.39 [-1.46, +0.78] | **-0.0218** [-0.0392, -0.0072] | **0.54x** | OK |
+
+- **The plain reading:** the int4 head costs at most **+1.66 points** of top-1 agreement (Qwen2.5-VL-3B and Gemma 3) and **at most +0.045 nats** of KL (Gemma 3); on olmo3 it is *better* in KL than the int8 head (0.54x) with the interval excluding zero. The "3.5x the KL to Hugging Face on one real image" on Qwen2.5-VL-3B is **not reproduced on text: 1.31x**. The "about 2.3 points" on file is not reproduced either (largest 1.66). **0 of 4 tied-head models and 0 of 3 untied are COSTLY; the registered map ("COSTLY on two or more tied-head models" etc.) matches nothing, so the decision is the owner's, as registered.**
+- **Prediction scored:** at most two COSTLY (held: 0); 1-3 points and 0.02-0.06 nats on the tied small-vocabulary models (the agreement cost came in at or below the range: the two smallest read -0.29 and +0.10; the KL cost 0.018-0.045, mostly at its floor).
+- **What the fix of the inert flag did, measured:** phi3's int4-head arm is no longer VOID (`HeadTable()` read int8 then int4 across the arms on all three of this night's models), and its reading is MIXED with the interval of dKL touching zero.
+- **A control that did not run, disclosed.** The positive control step (both arms at the int8 pin must read exactly 0 / 0) failed in 0 s: it reads `qwen2.5-0.5b-instruct`, which is not among this night's three models, so there was no HF dump for it. **The exact-zero control was therefore not re-observed on this night's binary** (night 1's read exactly 0 / 0 on its own); what held on this binary is the `HeadTable()` assertion. A repeat would add the 0.5B to `HP_MODELS`.
+
+##### (b'), the Gemma 4 31B against a layer-streaming Hugging Face float32 reference: both arms PASS as registered (`~/goinfer-logs/g31b-2026-10-09/`, 45 min against 150 queued, binaries `g31b` at `9d5e7943`)
+
+- **Controls (run first by the job, held):** streaming against ordinary on the 31B-shaped tiny at max |diff| 4.17e-07, the six planted defects red, bit-identical twice; the sequences are G-31a's pinned path files (sha256 checked by the script).
+- **Result** (12 prompts, 373 positions for the 31B and 384 for the E4B, cluster bootstrap over the prompts):
+
+  | model, arm | agreement with HF float32 | mean KL(HF || arm) |
+  |---|---|---|
+  | 31B int8int8 | **94.64%** [91.5, 97.1] | 0.0955 [0.0592, 0.1430] |
+  | 31B int4 | **94.37%** [91.2, 96.6] | 0.1444 [0.0832, 0.2283] |
+  | E4B int8int8 | 97.92% [96.6, 99.2] | 0.0083 [0.0050, 0.0121] |
+  | E4B int4 | 92.97% [89.1, 96.4] | 0.1114 [0.0632, 0.1655] |
+
+  **int8int8: the 31B is 3.28 points below the E4B (bar: PASS at -5.0 or better) -> PASS. int4: the 31B is 1.40 points ABOVE the E4B -> PASS. Both arms PASS, so the status row may change** as the registration worded it: "agrees with Hugging Face float32 as well as the E4B does, teacher-forced on 12 prompts, CPU; not validated on images or on contexts past the sliding window" (the status table is updated to that, and which parity tier it earns under the matrix's rules is the owner's call, not this record's).
+- **Said plainly, beside the PASS:** the registered statistic is agreement, and on KL the 31B's int8int8 arm is **11 times** the E4B's (0.0955 against 0.0083, intervals not overlapping); the E4B's int8int8 is nearly float32, the 31B's is not. That is the failure mode I named in advance (60 layers accumulate more quantisation drift than 42) showing in the divergence and not in the top-1. It is not in the rule and does not change the verdict; it does say "as well as the E4B" holds for the argmax and not for the distribution.
+- **Prediction scored:** the E4B at 70-85% on both arms (**missed: 97.9% and 93.0%**; the "about 77% from Hugging Face" in G-31a's registration was a different quantity); the 31B's int8int8 within 5 of it with probability 0.65 (held), its int4 with 0.55 (held); controls pass with 0.8 (held, after the first attempt's bug, found and fixed by the control before any reading).
+- **Limits (registered, unchanged):** sequences under 100 tokens never reach the 1,024-position sliding window (control 1's tiny is the only place the window engages); 12 prompts along goinfer's own int8int8 path; the E4B is a different shape; CPU only.
 
 ##### Findings for the owner from this night (none is a gate; each is stated with its evidence)
 
