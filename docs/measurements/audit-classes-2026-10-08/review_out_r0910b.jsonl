@@ -1,0 +1,38 @@
+{"id": "M-21", "verdict": "AGREE", "to": null, "why": "Grow-and-abandon device buffers: a leak, no unregistered option/family/state, no limit; O per rubric."}
+{"id": "M-22", "verdict": "CHANGE", "to": "N", "why": "Reservation already handles the drafter (prices weights); omitting K/V term is sizing arithmetic, fix adds a multiplication term, not a registration. N."}
+{"id": "M-23", "verdict": "AGREE", "to": null, "why": "Feature missing from prefillFeatures allowlist; fix adds it. R precedes O(perf) in order."}
+{"id": "M-24", "verdict": "AGREE", "to": null, "why": "Guard treats mmap-aliased state as default heap-copied; fix extends the existing MmapByteOffset exemption predicate to dense weights."}
+{"id": "M-25", "verdict": "AGREE", "to": null, "why": "residentQuantLabel predicate lists only int8int8; int8/int4mix option values fall to default; fix widens predicate."}
+{"id": "M-26", "verdict": "AGREE", "to": null, "why": "Flag absent from chat/gemma and library option nonexistent: missing feature, O; doc claim secondary."}
+{"id": "M-27", "verdict": "AGREE", "to": null, "why": "Router tensor not excluded by loader branches/matmulQuant ffn_ predicate (gpt-oss/qwen35 were); fix registers exclusion. R."}
+{"id": "M-28", "verdict": "AGREE", "to": null, "why": "Flat KV formula treats hybrid/sliding/MLA families as default dense; fix keys on per-layer kind predicates (incl. Nemotron addendum). R."}
+{"id": "M-29", "verdict": "AGREE", "to": null, "why": "Loader-f32/packed tensors priced as default; fix adds name predicates. R."}
+{"id": "M-30", "verdict": "AGREE", "to": null, "why": "remedy() has no branch for safetensors-directory source, gives default gguf text; fix branches on source. Product message, R."}
+{"id": "M-31", "verdict": "AGREE", "to": null, "why": "GGUF branch hardcodes false, so -embed-int4 option treated as default on that path; option x path miss."}
+{"id": "M-32", "verdict": "AGREE", "to": null, "why": "Registry pin dropped through ParseRef round-trip; integrity plumbing fix, not registration. O."}
+{"id": "M-33", "verdict": "AGREE", "to": null, "why": "Non-atomic in-place write on one branch; crash robustness, O."}
+{"id": "M-34", "verdict": "AGREE", "to": null, "why": "Three families' MoE loops absent from pager touch hook list; fix registers touch. R."}
+{"id": "M-35", "verdict": "AGREE", "to": null, "why": "n_shared_experts=0 state accepted by config but WebGPU builder assumes default; fix gates. R."}
+{"id": "M-36", "verdict": "AGREE", "to": null, "why": "Detect has no branch for Ministral3/SmolLM3/Olmo3, routes to default renderers; fix adds routing/declines. R."}
+{"id": "M-37", "verdict": "AGREE", "to": null, "why": "Harmony renderer knows gpt-oss but emits wrong history bytes; N."}
+{"id": "M-38", "verdict": "AGREE", "to": null, "why": "Family-aware builders splice wrong newline layout; layout error on handled path, N."}
+{"id": "M-39", "verdict": "AGREE", "to": null, "why": "Wrong addBOS boolean on a handled path; fix is an expression, N."}
+{"id": "M-40", "verdict": "AGREE", "to": null, "why": "No depth limit existed at all; unbounded resource use is O."}
+{"id": "M-41", "verdict": "AGREE", "to": null, "why": "Declined-tokenizer state unhandled on four load paths; fix adds named decline. R."}
+{"id": "M-42", "verdict": "AGREE", "to": null, "why": "Release gate/post-publish check fails to verify promised assets; G."}
+{"id": "M-43", "verdict": "AGREE", "to": null, "why": "Release create ordering is release mechanics; O."}
+{"id": "M-44", "verdict": "AGREE", "to": null, "why": "govulncheck job does not scan what its header claims; G."}
+{"id": "M-45", "verdict": "AGREE", "to": null, "why": "readme-smoke compares HEAD README with @latest binary; gate checks wrong thing, G."}
+{"id": "M-46", "verdict": "AGREE", "to": null, "why": "Dependency provenance; module mechanics, O."}
+{"id": "M-47", "verdict": "AGREE", "to": null, "why": "README flag value the parser rejects; rubric's direct G example."}
+{"id": "M-48", "verdict": "AGREE", "to": null, "why": "exact-prefill handler sets Metal/CPU but not CUDA knob, so CUDA runs default; fix adds CUDA. R precedes G."}
+{"id": "M-49", "verdict": "AGREE", "to": null, "why": "Help/docs state opposite of code; G."}
+{"id": "M-50", "verdict": "AGREE", "to": null, "why": "False RAM claim in docs/help; G."}
+{"id": "M-51", "verdict": "AGREE", "to": null, "why": "False capability claims in help text; G."}
+{"id": "M-52", "verdict": "AGREE", "to": null, "why": "Help states stale default; docs claim, G."}
+{"id": "M-53", "verdict": "AGREE", "to": null, "why": "CHANGELOG omits flips/flags it should record; G."}
+{"id": "M-54", "verdict": "AGREE", "to": null, "why": "Stale doc header/paragraph; G."}
+{"id": "M-55", "verdict": "AGREE", "to": null, "why": "Doc exactness promise false on CUDA/Metal; docs-only, G."}
+{"id": "M-56", "verdict": "AGREE", "to": null, "why": "Doc claims no-op knob operative; phantom test looser than claimed; G."}
+{"id": "M-57", "verdict": "AGREE", "to": null, "why": "Stale architecture count in docs; G."}
+{"id": "M-58", "verdict": "AGREE", "to": null, "why": "Book quotes withdrawn figures; G."}

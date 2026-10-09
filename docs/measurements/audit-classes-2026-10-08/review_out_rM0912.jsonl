@@ -1,0 +1,27 @@
+{"id": "M-01", "verdict": "AGREE", "to": null, "why": "Backend lacks an optional prefill interface; fix is a new method, speed only. Not a registration miss; O perf."}
+{"id": "M-02", "verdict": "AGREE", "to": null, "why": "Over-high floor constant in product code; consequence is TTFT. Stale comment is secondary; O perf."}
+{"id": "M-03", "verdict": "AGREE", "to": null, "why": "GEMM kernel occupancy/staging inefficiency; pure performance."}
+{"id": "M-04", "verdict": "AGREE", "to": null, "why": "Attention kernel barrier/rescale cost and redundant K/V reads; pure performance."}
+{"id": "M-05", "verdict": "AGREE", "to": null, "why": "Row-serial MoE prefill bandwidth/dispatch cost plus undocumented bound; performance, no wrong output."}
+{"id": "M-06", "verdict": "AGREE", "to": null, "why": "FeatPerLayerRoPE (Gemma 3) exists but admission map omits it, so default decline; fix is one map entry. R."}
+{"id": "M-07", "verdict": "AGREE", "to": null, "why": "Redundant host row4 copy; fix restructures repack/release lifecycle, not adding to a list. Memory footprint, O."}
+{"id": "M-08", "verdict": "AGREE", "to": null, "why": "Single-threadgroup serial rank loop; performance."}
+{"id": "M-11", "verdict": "AGREE", "to": null, "why": "Per-command-buffer boundary cost on paged decode; performance."}
+{"id": "M-13", "verdict": "AGREE", "to": null, "why": "Option documented CUDA-only; fix is an auto-sizing formula, not a registration or named decline. O."}
+{"id": "M-14", "verdict": "AGREE", "to": null, "why": "Missing binding selector forces queue-wide residency attach; performance."}
+{"id": "M-15", "verdict": "AGREE", "to": null, "why": "CPU vision tower on Metal is a missing/slow feature, deliberately unwired; O."}
+{"id": "C-01", "verdict": "AGREE", "to": null, "why": "Kernel knows the case; buffer sizing lacks tile round-up so reads overrun. Sizing arithmetic, N not B."}
+{"id": "C-02", "verdict": "AGREE", "to": null, "why": "Paged-MoE state unaccounted on three entry points, treated as non-paged; fix is a named decline. R."}
+{"id": "C-03", "verdict": "AGREE", "to": null, "why": "Base projection dims are a fixed size an adapter's Out can exceed unchecked, writing into K/V; fix is a bound check. B."}
+{"id": "C-04", "verdict": "AGREE", "to": null, "why": "Leak on error path; O per rubric example."}
+{"id": "C-05", "verdict": "AGREE", "to": null, "why": "Missing OS-thread pin, crash risk not caused by an R/B miss; O."}
+{"id": "C-06", "verdict": "AGREE", "to": null, "why": "32 KiB threadgroup-memory limit exceeded by np>7,680 with no check; fix is a bound check. B."}
+{"id": "G-01", "verdict": "AGREE", "to": null, "why": "Test red before reaching its MoE check; a gate that cannot pass. G."}
+{"id": "G-02", "verdict": "AGREE", "to": null, "why": "Release gate silently drops missing cells and passes; G."}
+{"id": "G-03", "verdict": "AGREE", "to": null, "why": "Gate fixture lacks the global layer real Gemma 3 has; G."}
+{"id": "G-04", "verdict": "AGREE", "to": null, "why": "Golden re-baked by code under test; audit trail missing. G."}
+{"id": "G-05", "verdict": "AGREE", "to": null, "why": "Settled verdict in comments measured on wrong shape; claim does not hold. G."}
+{"id": "G-06", "verdict": "AGREE", "to": null, "why": "Ledger assertion passes by construction; G."}
+{"id": "G-07", "verdict": "AGREE", "to": null, "why": "Superseded gate cannot run; citations to nonexistent test. G."}
+{"id": "G-08", "verdict": "AGREE", "to": null, "why": "Coverage gap in fidelity gate; G."}
+{"id": "G-09", "verdict": "AGREE", "to": null, "why": "Measurement harness never run and declines the relevant shape; G."}

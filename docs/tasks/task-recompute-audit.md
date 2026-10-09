@@ -139,13 +139,13 @@ positions are inherent, not recompute.
   `cuda/resident.go:571` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
-  reuses through `rewindForReuse` (`decoder/session.go:80-87`) → `KVCache.TruncateTo`
+  reuses through `rewindForReuse` (`decoder/session.go:87-94`) → `KVCache.TruncateTo`
   (`decoder/kvcache.go:592`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
   is **inexact** (cold prefill), and `pos == c.pos` is **exact**. An agent turn is `previous prompt +
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
   hybrid-specific refusal on that path is `reconcile`'s reset after a mid-sweep rollback
-  (`decoder/session.go:113-117`). So `docs/completed/qwen3_5_moe.md:132` ("falls back to full
+  (`decoder/session.go:126-130`). So `docs/completed/qwen3_5_moe.md:132` ("falls back to full
   recompute") was stale for the case that matters; corrected 2026-09-12 alongside that doc's
   archival, with the test below already the evidence for the fix.
 - **Phase 0 — exact extension, no snapshot.** Replace the blanket refusal with the staged rule:

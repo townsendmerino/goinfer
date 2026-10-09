@@ -1422,7 +1422,7 @@ func (g *gpuGate) repoHygiene() {
 	}
 }
 
-// withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck@v0.8.0) with `go
+// withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck v0.8.1, built by .github/actions/staticcheck) with `go
 // install` and then calls them by bare name, which works there because setup-go puts GOPATH/bin on PATH.
 // A developer shell need not, and on nobara it did not: the gate reported "staticcheck: command not
 // found" as two failed CI checks (2026-09-28) while the pinned binary sat in ~/go/bin. Prepending the

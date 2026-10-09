@@ -401,7 +401,7 @@ func staticcheckBinary(qc *quickConfig) (string, error) {
 	if bin == "" {
 		p, err := exec.LookPath("staticcheck")
 		if err != nil {
-			return "staticcheck", fmt.Errorf("staticcheck not installed: go install honnef.co/go/tools/cmd/staticcheck@v0.8.0")
+			return "staticcheck", fmt.Errorf("staticcheck not installed: %s", staticcheckInstall)
 		}
 		bin = p
 	}
@@ -411,16 +411,20 @@ func staticcheckBinary(qc *quickConfig) (string, error) {
 	}
 	want := pinnedStaticcheck(qc.Root)
 	if !strings.Contains(string(out), want) {
-		return bin, fmt.Errorf("%s is %q; CI pins %q — go install honnef.co/go/tools/cmd/staticcheck@v0.8.0",
-			bin, strings.TrimSpace(string(out)), strings.TrimSpace(want))
+		return bin, fmt.Errorf("%s is %q; CI pins %q — %s",
+			bin, strings.TrimSpace(string(out)), strings.TrimSpace(want), staticcheckInstall)
 	}
 	return bin, nil
 }
 
+// staticcheckInstall builds the staticcheck CI pins (.github/actions/staticcheck's go.mod: v0.8.1 against
+// golang.org/x/tools v0.51.0, since no release reads Go 1.27.2's export data) where `go install` would put it.
+const staticcheckInstall = `GOWORK=off go build -C .github/actions/staticcheck -o "$(go env GOPATH)/bin/staticcheck" honnef.co/go/tools/cmd/staticcheck`
+
 var staticcheckPinRE = regexp.MustCompile(`(?s)uses: \./\.github/actions/staticcheck\s+with:\s+version: "([0-9.]+)"`)
 
-// pinnedStaticcheck reads the release tag CI pins (ci.yml's staticcheck action input, e.g. "2026.2",
-// which `staticcheck -version` prints as "staticcheck 2026.2 (0.8.0)"). Without a ci.yml it falls
+// pinnedStaticcheck reads the release tag CI pins (ci.yml's staticcheck action input, e.g. "2026.2.1",
+// which `staticcheck -version` prints as "staticcheck 2026.2.1 (0.8.1)"). Without a ci.yml it falls
 // back to the version CLAUDE.md names.
 func pinnedStaticcheck(root string) string {
 	if b, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml")); err == nil {
@@ -428,7 +432,7 @@ func pinnedStaticcheck(root string) string {
 			return "staticcheck " + string(m[1]) + " "
 		}
 	}
-	return "(0.8.0)"
+	return "(0.8.1)"
 }
 
 // ---- report ----

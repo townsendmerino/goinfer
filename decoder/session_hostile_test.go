@@ -39,12 +39,14 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 	clean := sess.Snapshot("model-A")
 
 	// The header layout, from Snapshot's writer: magic, ver(4), id (u32 length + bytes),
-	// numLayers(4) kvDim(4) window(4) headDim(4) manualPos(1) quant(1) pos(4).
-	// Offsets derived from kvSnapMagic rather than hardcoded — the first draft assumed a
-	// 4-byte magic and indexed into the middle of the id string.
+	// adapter (u32 length + bytes, v3), numLayers(4) kvDim(4) window(4) headDim(4) manualPos(1)
+	// quant(1) pos(4). Offsets derived from kvSnapMagic rather than hardcoded — the first draft
+	// assumed a 4-byte magic and indexed into the middle of the id string.
 	idLenOff := len(kvSnapMagic) + 4
 	idLen := int(binary.LittleEndian.Uint32(clean[idLenOff:]))
-	base := idLenOff + 4 + idLen
+	adLenOff := idLenOff + 4 + idLen
+	adLen := int(binary.LittleEndian.Uint32(clean[adLenOff:]))
+	base := adLenOff + 4 + adLen
 	off := map[string]int{
 		"numLayers": base, "kvDim": base + 4, "window": base + 8, "headDim": base + 12,
 		"pos": base + 18,

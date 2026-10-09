@@ -598,12 +598,15 @@ func (c *KVCache) TruncateTo(pos int) (exact bool) {
 	// exactly rewound (audit C-01). Reset it on a full clear (Session.Reset → TruncateTo(0), and
 	// sessionLRU.fresh), and report inexact on any rewind so rewindForReuse cold-prefills rather
 	// than decoding a new sequence from the previous one's leaked state.
-	if c.hasRecurrentState() {
-		if pos == 0 {
-			c.resetRecurrent()
-		} else if pos < c.pos {
-			exact = false
-		}
+	if c.hasRecurrentState() && pos == 0 {
+		c.resetRecurrent()
+	}
+	// A partial rewind is inexact for every kind the cache-state grid marks so (cachestate.go): the
+	// four recurrent kinds, and the multimodal image blocks and m-RoPE positions, which are set by an
+	// image prefill and have no per-position rewind either. Read from the grid rather than listed
+	// here, so a new kind declared inexact is honoured at this site the day it is declared.
+	if pos > 0 && pos < c.pos && c.holdsStateHandled(lcRewind, hInexact) {
+		exact = false
 	}
 	// Multimodal state (image blocks + m-RoPE) also has no per-position rewind, and unlike
 	// the recurrent state can live on a non-recurrent (VL) family — so clear it on any full

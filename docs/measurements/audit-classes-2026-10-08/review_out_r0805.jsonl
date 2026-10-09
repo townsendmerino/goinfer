@@ -1,0 +1,74 @@
+{"id": "B-01", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Module/release mechanics: go.mod require on a pseudo placeholder; no registration, bound, numerics or gate defect."}
+{"id": "B-02", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Module mechanics: missing require in go.mod breaks standalone build; not a product-code registration or limit."}
+{"id": "B-03", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Module mechanics: incomplete go.sum breaks clean-clone build; release/module class."}
+{"id": "B-04", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Module mechanics: stale go.sum in an unbuilt committed module; CI absence is secondary to the module defect."}
+{"id": "B-05", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Release mechanics: clean clone links stale published backends; module graph, not product logic."}
+{"id": "B-06", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Release ordering/tagging mechanics across modules."}
+{"id": "B-07", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Dependency/module skew; release mechanics class."}
+{"id": "B-08", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: API shape: exported test hooks and global mutators; breaking-change risk, not R/B/N/G."}
+{"id": "B-09", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: API shape/security/race on an exported global map; nothing unregistered, no limit, no numerics."}
+{"id": "B-10", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Panic from recover placement on exported API; deliberate internal panics, not caused by an R or B miss."}
+{"id": "B-11", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: API shape: exported mutable fields and error-less method signatures."}
+{"id": "B-12", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: API shape/naming consistency before semver tag."}
+{"id": "B-13", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: API shape: exported signatures exposing unexported types."}
+{"id": "B-14", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Security/default exposure; not a registration, bound, numerics or gate defect."}
+{"id": "C-01", "verdict": "AGREE", "to": null, "why": "Entry as filed matches R: TruncateTo rewinds KV, rings, mlaLatent but omits delta/mamba state; resident reset unwired. State missed by lifecycle path."}
+{"id": "C-02", "verdict": "AGREE", "to": null, "why": "Entry as filed matches R: Recurrent families reach the one speculative entry point lacking the rollback-safety decline; fix gives them a named refusal."}
+{"id": "C-03", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Concurrency race on shared resident KV; not a registration miss, limit, or numerics error."}
+{"id": "C-04", "verdict": "CHANGE", "to": "N", "why": "Predicate knows windowed families but is keyed on the wrong condition; filed fix passes the taken path and honours discarded exact returns, not a registration."}
+{"id": "C-05", "verdict": "AGREE", "to": null, "why": "Entry as filed matches R: Per-layer stride state is not handled by the session loader, so restored caches mis-slice. R (state x loader) vs N (sizing)."}
+{"id": "C-06", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Config-sized scratch buffers overrun by blob-declared dims with no check; fix is a bound check. B vs O (input validation)."}
+{"id": "C-07", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Capture is skipped by control flow in a branch that handles MoE; the fix moves code, it registers nothing."}
+{"id": "C-08", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Dropped errors at GPU boundary; no unregistered value, limit, or arithmetic fault."}
+{"id": "C-09", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Dropped GPU errors leading to stale output; error handling, not R/B/N."}
+{"id": "C-10", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Row index derived from reduced tail threadgroup size: indexing error. N vs B (no fixed capacity exceeded)."}
+{"id": "C-11", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Floor vs ceil sizing arithmetic not tied to a fixed limit; explicit N case."}
+{"id": "C-12", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: metalCtxCap and threadgroup sc[4096] exceeded via exported methods with no check; fix is a bound check."}
+{"id": "C-13", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Fixed 16-element kernel accumulator exceeded by M>16 with no check; fix rejects M > gemmRowMaxM."}
+{"id": "C-14", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Reduction handles input but tie-break computes wrong index; numerics."}
+{"id": "C-15", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Wrong rounding/underflow/overflow arithmetic in conversion; numerics."}
+{"id": "C-16", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Lint test's hand-written file list omitted a production kernel; kernel itself later found clean. G vs N for the kernel half."}
+{"id": "C-17", "verdict": "AGREE", "to": null, "why": "Entry as filed matches R: Non-positional Mamba state not accounted for by resident truncate/verify path; fix declines ForwardN with mamba."}
+{"id": "C-18", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Unbounded request field allocating proportional memory: rubric's explicit O case. O vs B (model context)."}
+{"id": "C-19", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Request validation gap causing panic; not R/B/N."}
+{"id": "C-20", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Arch.MaxPositions loaded but never compared to prompt length; reachable input exceeds model max positions."}
+{"id": "C-21", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Unbounded resource use with no limit held; resource exhaustion."}
+{"id": "C-22", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Shutdown/lifecycle hang in server mechanics; not R/B/N/G."}
+{"id": "C-23", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Loop over hidden_size overruns shorter norm tensor; fix is a load-time length check. B vs O (input validation)."}
+{"id": "C-24", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Panic boundary missing in product code; comment claims secondary. O vs G."}
+{"id": "C-25", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Indexes layer 0 in a path that knows the MoE layer list; an indexing error."}
+{"id": "C-26", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Leak plus non-idempotent close causing use-after-free; O vs R (incomplete hand-kept release list)."}
+{"id": "C-27", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Panic and dropped errors on allocation failure; not caused by R/B miss."}
+{"id": "C-28", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Error-path cleanup omission leaving resource state poisoned; leak/error-handling class."}
+{"id": "C-29", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Use-after-free and data race; concurrency class."}
+{"id": "C-30", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Data race on per-model pager state; concurrency class."}
+{"id": "C-31", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Unbounded allocation where code holds no limit; O vs B (file size bound)."}
+{"id": "G-01", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Defect is a test whose guarded check is unreachable; it stays green if the feature table is emptied. Not product code, so R/B/N do not."}
+{"id": "G-02", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Filed as a golden hashing a computation the shipped path never runs; the product embed-scale miss is cross-referenced to B-11, not this entry (R consi"}
+{"id": "G-03", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Freshness test and -update output depend on process environment; a gate defect in test code, fixed with t.Setenv."}
+{"id": "G-04", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Filed as a disabled gate: slots arm is dispatched and pins correctly, only the record the test reads is missing; not treated-as-default, so not R."}
+{"id": "G-05", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Gate skips on every other machine because its fixture path is hardcoded; a test/gate defect with no product-code miss."}
+{"id": "G-06", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Test fixture paths hardcoded to two machines make 29% of tests skip; purely a test/gate defect."}
+{"id": "M-01", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Unbounded concurrency and slow-body pinning on pre-queue work with no limit held; rubric puts no-limit resource exhaustion in O, not B."}
+{"id": "M-02", "verdict": "AGREE", "to": null, "why": "Entry as filed matches R: Explicit top_p=0 falls into the sampler's TopP>0 'disabled' default; fix gives it named greedy handling plus refusal. R vs O (request validation)."}
+{"id": "M-03", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: The absent case is the default itself and its chosen behaviour breaks the OpenAI contract; no unregistered value or arithmetic error, so API semantics"}
+{"id": "M-04", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: finish_reason logic handles max_tokens but compares against requested, not effective, budget; fix plumbs the value rather than registering anything (R"}
+{"id": "M-05", "verdict": "CHANGE", "to": "O", "why": "Error-handling: grammar build error and ok=false are returned but discarded; filed fix honours that return with a 400, which the strict R test excludes."}
+{"id": "M-06", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: API compatibility and request-parsing shape; no unregistered option on a dispatch path and no numeric error."}
+{"id": "M-07", "verdict": "AGREE", "to": null, "why": "Entry as filed matches R: Families the capture seam rejects (DeepSeek/MLA etc.) are admitted by EAGLE entry points and panic in fuseAt; fix applies the allow-list/canBatchN gua"}
+{"id": "M-08", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Resource leak on error paths; rubric places leaks in O."}
+{"id": "M-09", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Prefill claims sliding-window support but binds the wrong (model-level) buffers per layer; a wrong-binding computation fixed by rebinding, not registr"}
+{"id": "M-10", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Kernels hard-assume K multiple of 32 with nothing checking; fix is a decline. A shape constraint, not an option/family/state, so B not R."}
+{"id": "M-11", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Threadgroup memory sized from model dims can exceed maxThreadgroupMemoryLength with no check; fix is a decline in BuildResident."}
+{"id": "M-12", "verdict": "AGREE", "to": null, "why": "Entry as filed matches B: Kernel capacity of 128 (workgroup_size, red array) exceeded by admitted archs with no check; fix adds a decline."}
+{"id": "M-13", "verdict": "AGREE", "to": null, "why": "Entry as filed matches N: Decoder knows the dummy-prefix strip but applies it at the wrong granularity, producing wrong text; nothing unregistered (O for exported-API break con"}
+{"id": "M-14", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Sibling-file path derived from a literal name; a loader path bug, not an option, family or state."}
+{"id": "M-15", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Unbounded decoded dimensions allocate proportional memory; MaxPixels caps output only, so no input limit is held \u2014 rubric's unbounded-allocation O cas"}
+{"id": "M-16", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Buffer leaks on error paths; rubric places leaks in O."}
+{"id": "M-17", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: Wrong constant only feeds the published capability matrix whose comment claims runtime parity; runtime admits correctly. Not B (no unchecked overflow)"}
+{"id": "M-18", "verdict": "AGREE", "to": null, "why": "Entry as filed matches G: CI jobs' hand-written build lists omit wired serve for the gpu and metal tags that the cuda job covers; a gate gap, R-shaped."}
+{"id": "M-19", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Module-graph mechanics; the CI guard gap is secondary to the module-structure defect."}
+{"id": "M-20", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: License-attribution completeness is release mechanics; an omission rather than a false claim, so O over G."}
+{"id": "M-21", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Missing cancellation in an exported signature; API shape / breaking-change risk."}
+{"id": "M-22", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Exported type naming collision across modules; API shape."}
+{"id": "M-23", "verdict": "AGREE", "to": null, "why": "Entry as filed matches O: Exported API returning mutable internal pointers; API shape, not an unregistered value or arithmetic error."}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -51,6 +52,15 @@ func readTowerDims(dir string) (towerDims, bool) {
 
 // towerVRAMEstimate is the float32 weights plus the peak scratch of one tower, in bytes, for the given model type and (GLM-OCR's) pixel ceiling (0 = the model's own).
 func towerVRAMEstimate(mt string, d towerDims, maxPixels int) int64 {
+	if mt == "qwen2_5_vl" {
+		return qwen25VLTowerEstimate(d)
+	}
+	params, scratch := towerParts(mt, d, maxPixels)
+	return params*4 + scratch
+}
+
+// towerParts is a tower's parameter count and its peak scratch in bytes (towerVRAMEstimate's two terms), 0, 0 for a family it does not know.
+func towerParts(mt string, d towerDims, maxPixels int) (params, scratch int64) {
 	patchIn := d.inChan * d.temporal * d.patch * d.patch
 	var mlpMats, np int
 	switch mt {
@@ -77,12 +87,14 @@ func towerVRAMEstimate(mt string, d towerDims, maxPixels int) int64 {
 		// about 1.5 MP and let a larger image fall back to the CPU tower (deviceFallback) instead.
 		np = min(px, 1_500_000) / (d.patch * d.patch)
 	case "qwen2_5_vl":
-		return qwen25VLTowerEstimate(d)
+		// The CUDA reserve is qwen25VLTowerEstimate's calibrated figure; this is the arithmetic form, for Metal: the gated MLP and a ceiling of 8192 patches.
+		mlpMats = 3
+		np = 8192
 	default:
-		return 0
+		return 0, 0
 	}
 	h, i := int64(d.hidden), int64(d.inter)
-	params := int64(d.layers)*(4*h*h+int64(mlpMats)*h*i) + int64(patchIn)*h
+	params = int64(d.layers)*(4*h*h+int64(mlpMats)*h*i) + int64(patchIn)*h
 	if mt == "gemma4" {
 		params += 2 * int64(d.posTable) * h
 	}
@@ -90,14 +102,48 @@ func towerVRAMEstimate(mt string, d towerDims, maxPixels int) int64 {
 		params += int64(np) * h // the fixed position table
 	}
 	// scratch: about twelve hidden-wide buffers, two MLP-wide ones, the widest projection's input copy and the pixel rows, per patch
-	scratch := int64(np) * 4 * (12*h + 2*i + max(h, i) + int64(patchIn))
-	return params*4 + scratch
+	scratch = int64(np) * 4 * (12*h + 2*i + max(h, i) + int64(patchIn))
+	return params, scratch
+}
+
+// metalTowerEstimate is what a Metal device tower holds of the Mac's memory (S18 on the Mac): the projections at the form Metal uploads, the rest in float32, plus
+// the scratch. The grid towers (SigLIP, Qwen2.5-VL, Qwen3.5+, GLM-OCR) upload f16 projections since S17's lever B, or int8 in groups of 32 for Gemma 3's
+// int8 tower (S18, tower_gemm_w8: a byte plus an f32 scale per 32); Gemma 4's Metal tower is float32. Calibrated against Gemma 3's measured footprint
+// (G-S18h, metal TestS18TowerHostMemory, 2026-10-08): 1172 MB f16 and 843 MB int8 against 1292 and 932 from this, about 10% over, the safe direction (the
+// scratch term is towerParts', which over-counts Metal's).
+func metalTowerEstimate(mt string, d towerDims, maxPixels int, int8 bool) int64 {
+	params, scratch := towerParts(mt, d, maxPixels)
+	if params == 0 {
+		return 0
+	}
+	h := int64(d.hidden)
+	// the projections: everything but the patch embed and the position tables, which stay float32
+	patchIn := int64(d.inChan * d.temporal * d.patch * d.patch)
+	if mt == "gemma3" || mt == "gemma4" {
+		patchIn = int64(3 * d.patch * d.patch)
+	}
+	head := patchIn * h
+	switch mt {
+	case "gemma3":
+		side := int64(d.imageSize) / int64(max(d.patch, 1))
+		head += side * side * h
+	case "gemma4":
+		head += 2 * int64(d.posTable) * h
+	}
+	proj := params - head
+	switch {
+	case mt == "gemma4":
+		return params*4 + scratch
+	case int8:
+		return proj + proj/8 + head*4 + scratch // a byte each, plus an f32 scale per 32
+	}
+	return proj*2 + head*4 + scratch
 }
 
 // towerReserve is what to add to Options.ExtraResidentBytes for this model's CUDA vision tower: zero unless the tower will run on CUDA (the backend is cuda, -vision-device is
 // not cpu, the tower is float32 and this binary registers a CUDA tower for the family).
 func towerReserve(cfg config, modelPath string) int64 {
-	if cfg.towerBackend() != "cuda" {
+	if cfg.towerBackend() != "cuda" && cfg.towerBackend() != "metal" {
 		return 0
 	}
 	dir := cfg.visionPath
@@ -108,6 +154,19 @@ func towerReserve(cfg config, modelPath string) int64 {
 		return 0 // a GGUF mmproj or an unresolved reference: nothing priced
 	}
 	mt := visionModelType(dir)
+	if cfg.towerBackend() == "metal" {
+		// S18 on the Mac: Metal's device memory is the Mac's RAM, and its guard now prices this beside the decoder. Gemma 3's int8 tower is Metal's own
+		// (tower_gemm_w8); every other family's int8 tower is the CPU's.
+		i8 := towerInt8(mt, cfg.visionQuant, "metal")
+		if !metalTowerRegistered(mt) || i8 && mt != "gemma3" {
+			return 0
+		}
+		d, ok := readTowerDims(dir)
+		if !ok {
+			return 0
+		}
+		return metalTowerEstimate(mt, d, cfg.visionMaxPixels, i8)
+	}
 	if towerInt8(mt, cfg.visionQuant, "cuda") {
 		// Gemma 3's SigLIP is the one family with an int8 DEVICE tower on CUDA (the shipped default, and `-vision-quant int8`); every other int8 tower is the CPU's and holds no VRAM. It used to be
 		// priced at zero, so the default plan took every free byte and the tower then loaded beside a decoder with nothing left (S18, G-S18c).
@@ -155,6 +214,19 @@ var cudaTowerRegistered = func(mt string) bool {
 		return slices.Contains(multimodal.GlmOcrTowers(), "cuda")
 	case "qwen2_5_vl":
 		return true // aikit's qwencuda registers through the vision package, not multimodal's registry; a cuda binary imports it
+	}
+	return false
+}
+
+// metalTowerRegistered says whether this binary has a Metal device tower for the model type: a metal binary registers the metal backend and its towers in
+// the same package init, so a plain build (and a unit test) sees none. A variable so G-S18c-Mac's table test can stand in for a metal build.
+var metalTowerRegistered = func(mt string) bool {
+	if !slices.Contains(decoder.RegisteredBackends(), "metal") {
+		return false
+	}
+	switch mt {
+	case "gemma3", "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "glm_ocr", "gemma4":
+		return true
 	}
 	return false
 }

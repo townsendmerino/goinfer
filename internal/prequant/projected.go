@@ -1,6 +1,7 @@
 package prequant
 
 import (
+	"os"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -74,4 +75,36 @@ func projectedSidecarBytes(ggufPath, quant string) (int64, bool) {
 		}
 	}
 	return int64(total * 1.03), true
+}
+
+// projectedDirSidecarBytes is projectedSidecarBytes for a safetensors directory (S18): the sizes of its .safetensors
+// files, scaled from a 16-bit source to the quant's bytes per element with its group scales (int4 0.5 + 4/32, int8 1 +
+// 4/32, f32 4), plus the same 3% margin. A bundled vision tower is in the files and not in the sidecar, and an f32 source
+// is twice the elements' bytes, so both over-count, which is the safe direction for a disk check. ok is false when the
+// directory holds no .safetensors file.
+func projectedDirSidecarBytes(dir, quant string) (int64, bool) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, false
+	}
+	var src int64
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".safetensors") {
+			continue
+		}
+		if fi, err := e.Info(); err == nil {
+			src += fi.Size()
+		}
+	}
+	if src == 0 {
+		return 0, false
+	}
+	perElem := 1 + 4.0/32 // int8, int8int8, int4mix (its attention stays int8)
+	switch quant {
+	case "", "f32":
+		perElem = 4
+	case "int4":
+		perElem = 0.5 + 4.0/32
+	}
+	return int64(float64(src) / 2 * perElem * 1.03), true
 }

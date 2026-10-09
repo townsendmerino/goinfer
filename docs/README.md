@@ -30,6 +30,7 @@ These are the pages to trust, and to update when reality moves.
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how the pieces fit: the forward pass, loading and memory, the GPU backends and how residency is admitted, serving, configuration, modules and where cgo is quarantined |
 | [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 39 model families as of 2026-09-30. The registry is the source of truth; do not hand-edit |
+| [option-state-grid.md](option-state-grid.md) | **generated** from `decoder/optiongrid.go` and `decoder/cachestate.go` — every load option × execution path (tested, declined, admitted untested, n/a) and every kind of cache state × lifecycle path. The untested count only falls; do not hand-edit |
 | [citation-index.md](citation-index.md) | **generated** by `scripts/queue_citation_lint.py --update` — every `path:line`, SHA and bare-file citation in the live docs with the content it was keyed to. The lint's state, not reading material; do not edit or cite |
 | [tool-call-coverage.md](tool-call-coverage.md) | per family: tool calls **constrained**, parsed only, or none — from a census of real checkpoints through `chat.Detect` (2026-09-24). What "tools: yes" does and does not promise |
 | [benchmarks.md](benchmarks.md) | **current claims only**, provenance-gated: machine, checkpoint, quant, date, thermal note. Section IDs are stable; a *Retired section IDs* index maps the ones that moved |
@@ -132,7 +133,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
 [`task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) treats the audits'
 findings as a dataset: if "an option or family not registered with a guard" is common enough, it becomes a
-fail-closed options × paths gate. [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
+fail-closed options × paths gate. Step 1 found it is (27.2% of 261 findings, 2026-10-08). [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
 asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered

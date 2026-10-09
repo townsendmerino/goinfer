@@ -1,5 +1,8 @@
 # goinfer
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/townsendmerino/goinfer.svg)](https://pkg.go.dev/github.com/townsendmerino/goinfer)
+[![codecov](https://codecov.io/gh/townsendmerino/goinfer/graph/badge.svg)](https://codecov.io/gh/townsendmerino/goinfer)
+
 **Run an open-weight LLM inside your Go program.** Pure Go, no cgo: `go get` it, import it,
 cross-compile it like anything else. No Python, no llama.cpp, no C toolchain, no daemon.
 

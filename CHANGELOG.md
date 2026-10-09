@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — KV session snapshots record the LoRA adapter (format v3)
+
+`Session.Snapshot` now writes the name of the compute-time adapter the KV was built under, and `Model.LoadSession` rebinds that adapter, or refuses the snapshot when the model has not loaded it. A restored session that is then bound to a different adapter prefills cold instead of continuing from the other adapter's KV. Snapshots written by earlier builds (v2) are skipped on load, so each stored `-session-dir` session takes one cold prefill after upgrading.
+
 ### Fixed — `serve check`'s `stop sequences` row no longer fails on models that handle stop sequences correctly
 
 The row asked a model to answer the bare line `Count: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10.` with a stop at `5`. Qwen2.5-Coder-7B ("The count is now 10.") and the Gemma-4 26B ("The total count is…") never counted, so the row printed `FAIL` on a first run against a popular model. The prompt now says what to write (`Count from 1 to 10, separated by commas, and write nothing else.`). The row still fails a stop string that leaks and a reply that never reaches the stop. Checked on the 26B and Qwen2.5-7B-Instruct, both pass.

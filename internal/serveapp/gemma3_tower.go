@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 )
 
 // attachableTower is what attachGemma3Tower needs of a vision encoder: the device attach and the release of one that did not take.
@@ -63,8 +64,11 @@ var cudaFreeBytes = func() (int64, bool) { return decoder.FreeBytesFor("cuda") }
 // already quantized, taken at its size), and one 4096-position KV slot was 1088 MB (0.54 of the weights, taken as 0.55). The estimate leans toward int8 on a card that would just have fit float32; it never
 // leans toward declining. Anything it cannot read (an hf: reference, no free-VRAM probe, several models) leaves the default alone and the post-attach fallback as the guard.
 func resolveGemma3VisionQuant(cfg config, note io.Writer) config {
-	if cfg.visionQuant != "" || cfg.towerBackend() != "cuda" || len(cfg.models) != 1 {
+	if cfg.visionQuant != "" || (cfg.towerBackend() != "cuda" && cfg.towerBackend() != "metal") || len(cfg.models) != 1 {
 		return cfg
+	}
+	if cfg.towerBackend() == "metal" {
+		return resolveGemma3VisionQuantMetal(cfg, note)
 	}
 	path := cfg.models[0].path
 	dir := cfg.visionPath
@@ -97,6 +101,61 @@ func resolveGemma3VisionQuant(cfg config, note io.Writer) config {
 	return cfg
 }
 
+// sidecarFresh is prequant.SidecarPathIfFresh, a variable so a test can see which sidecar the Metal choice asks for.
+var sidecarFresh = prequant.SidecarPathIfFresh
+
+// metalFreeBytes is the Metal resident budget (the memory guard's ceiling: the lower of 70% of RAM and the live available); a variable so the tests can
+// stand in for a Mac.
+var metalFreeBytes = func() (int64, bool) { return decoder.FreeBytesFor("metal") }
+
+// resolveGemma3VisionQuantMetal is resolveGemma3VisionQuant on Metal (S18 on the Mac, docs/tasks/task-multimodal-support-2026-10.md): the unset default is
+// the f16 tower when the budget holds the decoder, one KV slot at Metal's 2048-position floor and that tower, and the int8 tower (tower_gemm_w8, groups of
+// 32) otherwise, with a note. The decoder's bytes are an estimate from the checkpoint: about 0.34 of the safetensors on the device (Gemma 3 4B's 5.15 GB
+// guard figure, less its 0.53 GB of KV, is two copies of about 2.3-2.9 GB), counted twice unless a fresh sidecar .giw will be loaded instead (a heap
+// load keeps the host copy beside the device one; part 1 of S18). It leans toward int8: a wrong f16 choice can push the decoder itself to the CPU, which
+// is far worse than the int8 tower.
+func resolveGemma3VisionQuantMetal(cfg config, note io.Writer) config {
+	path := cfg.models[0].path
+	dir := cfg.visionPath
+	if dir == "" {
+		dir = path
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() || visionModelType(dir) != "gemma3" {
+		return cfg
+	}
+	d, ok := readTowerDims(dir)
+	if !ok {
+		return cfg
+	}
+	w, ok := gemma3ResidentWeightsEstimate(path)
+	if !ok {
+		return cfg
+	}
+	free, ok := metalFreeBytes()
+	if !ok {
+		return cfg
+	}
+	w = w * 34 / 27 // gemma3ResidentWeightsEstimate's 0.27 is CUDA's; Metal's int4 layout and int8-pinned head read about 0.34
+	dec := w
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		// The sidecar the load will look for: the RESOLVED quant and embed-int4 (Options: off by default on Metal, whose
+		// resident takes no int4 head), not the raw flags, which asked for the ".e4h" sidecar a Metal load never reads.
+		o := cfg.load.Options()
+		if _, fresh := sidecarFresh(path, o.Quant, "metal", o.EmbedInt4); !fresh {
+			dec *= 2 // a heap load: the host copy stays beside the device one
+		}
+	}
+	const margin = 384 << 20
+	need := dec + w*55/100/4 + metalTowerEstimate("gemma3", d, cfg.visionMaxPixels, false) + margin // one f16 KV slot at 2048 (CUDA's f32 4096-slot ratio, halved twice)
+	if free >= need {
+		return cfg
+	}
+	cfg.visionQuant = "int8"
+	fmt.Fprintf(note, "note: this Mac's resident budget is %.1f GB and the decoder, one KV slot and the f16 Gemma 3 vision tower need about %.1f GB: using the int8 Metal tower "+
+		"(weights in groups of 32, activations f32; -vision-quant f32 forces f16)\n", float64(free)/1e9, float64(need)/1e9)
+	return cfg
+}
+
 // gemma3ResidentWeightsEstimate is the device bytes the decoder's weights will take, from the checkpoint alone (see resolveGemma3VisionQuant).
 func gemma3ResidentWeightsEstimate(path string) (int64, bool) {
 	fi, err := os.Stat(path)
@@ -120,10 +179,16 @@ func gemma3ResidentWeightsEstimate(path string) (int64, bool) {
 	return total * 27 / 100, total > 0
 }
 
-// siglipLoader is how attachGemma3Tower loads Gemma 3's SigLIP encoder from dir at either precision.
-func siglipLoader(dir string) func(int8 bool) (*vision.Encoder, error) {
+// siglipLoader is how attachGemma3Tower loads Gemma 3's SigLIP encoder from dir at either precision. head loads it without its blocks (S18 on the Mac): a
+// Metal tower streams them from the checkpoint as it uploads, so the host never holds the 2.17 GB of float32 blocks beside the device copy, and the CPU
+// path loads them only if it ever runs (a failed attach).
+func siglipLoader(dir string, head bool) func(int8 bool) (*vision.Encoder, error) {
 	return func(i8 bool) (*vision.Encoder, error) {
-		e, err := vision.LoadEncoder(dir, i8)
+		load := vision.LoadEncoder
+		if head {
+			load = vision.LoadEncoderHead
+		}
+		e, err := load(dir, i8)
 		if err != nil {
 			return nil, fmt.Errorf("load vision encoder (%s): %w", dir, err)
 		}
@@ -131,7 +196,8 @@ func siglipLoader(dir string) func(int8 bool) (*vision.Encoder, error) {
 	}
 }
 
-// gemma3FloatDefault says whether the float32 tower in use is the DEFAULT, the only case in which a failed attach may fall back to int8: -vision-quant unset, on CUDA, and not already int8.
+// gemma3FloatDefault says whether the float32 tower in use is the DEFAULT, the only case in which a failed attach may fall back to int8: -vision-quant unset, on CUDA or
+// (since S18) Metal, which now has an int8 device tower too, and not already int8.
 func gemma3FloatDefault(cfg config, int8Tower bool) bool {
-	return cfg.visionQuant == "" && cfg.towerBackend() == "cuda" && !int8Tower
+	return cfg.visionQuant == "" && (cfg.towerBackend() == "cuda" || cfg.towerBackend() == "metal") && !int8Tower
 }

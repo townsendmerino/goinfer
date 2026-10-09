@@ -1,0 +1,12 @@
+stream-weights: transcoding gemma-3-4b-it → gemma-3-4b-it.int4.metal.giw (int4, one-time — minutes + ~model-size on disk)…
+note: loading /Users/francistownsend-merino/models/gemma-3-4b-it directly: its sidecar .giw could not be built (load /Users/francistownsend-merino/models/gemma-3-4b-it (int4): decoder: gemma-3-4b-it needs ~5.6 GB resident at quant int4 + 0.0 GB KV = 5.6 GB; this machine currently has 7.1 GB of memory available (budget 4.9 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it)
+swap guard (load): not armed for /Users/francistownsend-merino/models/gemma-3-4b-it — only a direct .gguf build is watched, so a swap-growing load is not stopped here; the serving watch arms once the server is up
+load model (/Users/francistownsend-merino/models/gemma-3-4b-it): decoder: gemma-3-4b-it needs ~5.6 GB resident at quant int4 + 0.3 GB KV = 5.9 GB; this machine currently has 7.1 GB of memory available (budget 4.9 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it

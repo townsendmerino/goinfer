@@ -243,6 +243,9 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 	// missing probe must never be the reason a load that would have worked gets refused.
 	if fi, serr := os.Stat(ggufPath); serr == nil {
 		need, ok := projectedSidecarBytes(ggufPath, quant)
+		if fi.IsDir() {
+			need, ok = projectedDirSidecarBytes(ggufPath, quant)
+		}
 		if !ok {
 			need = fi.Size() // header unreadable: the old proxy, better than none
 			if n, ok := decoder.GGUFFileBytes(ggufPath); ok {
@@ -303,6 +306,11 @@ func DefaultToSidecar(directLoad bool) bool {
 // they are different bundles at the same source and quant, and need different cache keys.
 func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWTarget) string {
 	base := ggufPath[:len(ggufPath)-len(filepath.Ext(ggufPath))]
+	if isDir(ggufPath) {
+		// A safetensors directory (S18): the sidecar sits beside it, named after the whole directory. Its name is not a
+		// file name with an extension, and "qwen2.5-0.5b-instruct" would otherwise lose ".5-0.5b-instruct".
+		base = filepath.Clean(ggufPath)
+	}
 	tgt := string(target)
 	if tgt == "" {
 		tgt = "canonical"
@@ -387,7 +395,7 @@ func cacheNewer(cache, src string) bool {
 	}
 	// A split GGUF is as new as its newest shard: a re-pulled shard 2 makes the sidecar stale as surely as a new
 	// shard 1 does. A single file is its own one-element set.
-	srcs, err := decoder.GGUFShards(src)
+	srcs, err := sourceFiles(src)
 	if err != nil {
 		return false
 	}
@@ -398,6 +406,34 @@ func cacheNewer(cache, src string) bool {
 		}
 	}
 	return true
+}
+
+// sourceFiles is what a sidecar's freshness is judged against: every shard of a split GGUF, a single file itself, or
+// every regular file at the top of a safetensors directory (S18). A directory's own mtime moves only when an entry is
+// added, removed or renamed, so a safetensors file rewritten in place would leave a stale sidecar judged fresh.
+func sourceFiles(src string) ([]string, error) {
+	if !isDir(src) {
+		return decoder.GGUFShards(src)
+	}
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range ents {
+		if e.Type().IsRegular() && !strings.HasPrefix(e.Name(), ".") {
+			out = append(out, filepath.Join(src, e.Name()))
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s: no files", src)
+	}
+	return out, nil
+}
+
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 func quantLabel(q string) string {

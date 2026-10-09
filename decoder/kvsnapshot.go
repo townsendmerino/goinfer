@@ -17,11 +17,12 @@ import (
 // fatal. Keys/values are written as plain little-endian float32 (the snapshot is
 // an offline artifact, not the hot path — gzip-wrap the bytes if size matters).
 //
-// Format v2 (little-endian throughout, reusing serialize.go's giwWriter/giwReader):
+// Format v3 (little-endian throughout, reusing serialize.go's giwWriter/giwReader):
 //
 //	magic     [5]byte = "GINFK"
-//	version   uint32 = 2
+//	version   uint32 = 3
 //	id        str      (conversation/model identity, for tooling; not validated)
+//	adapter   str      (the compute-time LoRA adapter the KV was built under; "" = base)
 //	numLayers uint32   \
 //	kvDim     uint32    |
 //	window    uint32    | geometry guard — must match the loading model's cache
@@ -38,12 +39,12 @@ import (
 //	                 else {f32 keys; f32 vals}   (KV-shared layers serialize len 0)
 //	crc       uint32   (CRC32-IEEE over every preceding byte)
 //
-// v1 (f32-global-only) blobs are rejected by the version guard — snapshots are a
-// regenerable cache, so a version bump just triggers a cold prefill.
+// v1 (f32-global-only) and v2 (no adapter field) blobs are rejected by the version guard —
+// snapshots are a regenerable cache, so a version bump just triggers a cold prefill.
 
 const (
 	kvSnapMagic   = "GINFK"
-	kvSnapVersion = 2 // v2: ring windowed persistence × {f32 | int8} payload
+	kvSnapVersion = 3 // v2: ring windowed persistence × {f32 | int8} payload; v3: + the adapter name
 )
 
 // SnapshotError is returned by Model.LoadSession on any magic/version/geometry/
@@ -68,7 +69,11 @@ func (s *Session) Snapshot(id string) []byte {
 	// The recurrent kinds come from hasRecurrentState() rather than being re-listed: LFM2 was
 	// missing from this list too, so -session-dir and -kv-idle-demote restored an LFM2 session
 	// "warm" with empty conv windows (audit-2026-09-02 C-02, the C-05 shape).
-	if c.hasRecurrentState() || len(c.mlaLatent) > 0 {
+	//
+	// Since 2026-10-08 the refused kinds come from the cache-state grid (cachestate.go): every kind
+	// whose snapshot cell is "refused" — the four recurrent kinds and MLA as before, plus the
+	// multimodal image blocks and m-RoPE positions, which the format does not carry either.
+	if c.holdsStateHandled(lcSnapshot, hRefused) {
 		return nil
 	}
 	// Gemma-4's global (append-forever) layers carry PER-LAYER KV widths — its E2B/E4B geometry
@@ -84,10 +89,20 @@ func (s *Session) Snapshot(id string) []byte {
 			return nil
 		}
 	}
+	// The adapter is recorded by its registry name, the only identity that survives a restart. An
+	// adapter runtime without a name cannot be looked up again on load, so refuse (cold prefill).
+	adapterName := ""
+	if c.lora != nil {
+		if c.lora.name == "" {
+			return nil
+		}
+		adapterName = c.lora.name
+	}
 	wr := &giwWriter{}
 	wr.raw([]byte(kvSnapMagic))
 	wr.u32(kvSnapVersion)
 	wr.str(id)
+	wr.str(adapterName)
 	wr.u32(uint32(c.numLayers))
 	wr.u32(uint32(c.kvDim))
 	wr.u32(uint32(c.window))
@@ -179,6 +194,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		return nil, &SnapshotError{fmt.Sprintf("format version %d, this build reads %d", v, kvSnapVersion)}
 	}
 	gotID := r.str()
+	gotAdapter := r.str()
 	numLayers, kvDim, window, headDim := int(r.u32()), int(r.u32()), int(r.u32()), int(r.u32())
 	if !r.need(2) {
 		return nil, &SnapshotError{"truncated header"}
@@ -205,6 +221,15 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 	// different model even if the architecture happens to match.
 	if wantID != "" && gotID != wantID {
 		return nil, &SnapshotError{fmt.Sprintf("model identity mismatch: snapshot %q, want %q", gotID, wantID)}
+	}
+	// Adapter guard (v3): the KV was projected through this adapter, so the restored session is
+	// bound to the same one. If this model has no adapter by that name the KV cannot be continued
+	// correctly, so it is skipped like any other stale snapshot.
+	var lora *loraRuntime
+	if gotAdapter != "" {
+		if lora = m.adapter(gotAdapter); lora == nil {
+			return nil, &SnapshotError{fmt.Sprintf("built under adapter %q, which this model has not loaded", gotAdapter)}
+		}
 	}
 
 	// M17: numLayers/kvDim/pos are blob-controlled and feed m.NewCache(pos), which allocates pos ×
@@ -387,7 +412,8 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 		return nil, &SnapshotError{"truncated body: " + r.err.Error()}
 	}
 	ref.pos = pos
-	return &Session{m: m, cache: ref, tokens: tokens}, nil
+	ref.lora = lora
+	return &Session{m: m, cache: ref, tokens: tokens, kvAdapter: lora}, nil
 }
 
 // ints writes a length-prefixed []int as uint32s (token ids are non-negative).

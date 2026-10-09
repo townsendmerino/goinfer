@@ -3141,6 +3141,244 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Not done:** the registered banner wording ("KV plan: 1 conversation x 8192 positions (reduced from 4 x 16384 to leave 1.1 GB for the vision tower)"). The CUDA planner already prints what it chose and why
     (the context floor line, the slots-granted line with the reserve), but not in that shape and not from serve; a unified serve banner is shared with the Mac's Metal cell. The Metal half of G-S18a is the Mac's.
 
+- **S18 on the Mac: the design amended and its gates registered 2026-10-08, before any code (owner: "sidecar for dirs
+  too").**
+  - **Why the registered change cannot pass alone.** Gemma 3 4B from its safetensors directory prices about 5.15 GB on
+    Metal:
+    - about 1.7 GB of int4 layers on the device;
+    - the same again as the heap host copy, because a safetensors load quantizes into the heap, and Metal's unified
+      memory then holds both;
+    - about 1.2 GB of int8 LM head and embedding;
+    - 0.53 GB of KV at the 4096 default (34 layers x 4 KV heads x 256 x 2 x f16 = 136 KB a position).
+
+    Shrinking the context or the slot count saves at most about 0.45 GB, which leaves about 4.7 GB against a live budget
+    of 4.2-4.9 GB (G-S3b, G-S3c, S7). The load guard read 3.9 GB at 14:05 today. Metal's guard does not price the
+    tower at all: `towerReserve` is CUDA-only, and Metal never reads `ExtraResidentBytes`.
+  - **The lever: a `.giw` sidecar for a safetensors directory too.** A `.gguf` on darwin already loads through its
+    sidecar (S1, `prequant.DefaultToSidecar`). The weights are then mmap aliases, which the guard prices once (M-24's
+    exemption in `ResidentHostCopyBytes`). That takes about 1.7 GB off the need.
+  - **The change, four parts:**
+    1. **The sidecar for a directory,** where `DefaultToSidecar` holds (darwin, linux) and no `-direct-load`:
+       - `modelload.Load` resolves a safetensors directory to `<dir>.<quant>.<target>.giw` through
+         `prequant.EnsureCachedGIW`, which already transcodes a directory (`transcodeDir`).
+       - Not for a `--lora` load (the merge needs the safetensors base), and not for `--quant q4k` (no `.giw` form).
+       - A transcode that fails falls back to the direct load with a one-line note, never a refused start.
+       - Freshness for a directory: the sidecar must be newer than every regular file in the directory, not just the
+         directory's own mtime.
+       - The disk check for a directory: a projection from the safetensors files' sizes at the quant, not the
+         directory entry's 4 KB.
+    2. **Metal prices the tower.** `towerReserve` returns the Metal tower's resident bytes when the tower runs on Metal,
+       and Metal's guard (`residentNeedBytes`, so also `metalKVSlots`) adds `ExtraResidentBytes`. The figure comes from
+       the tower's dims at the precision Metal uploads, calibrated against a measured RSS delta by day (below).
+    3. **The context before the decline.** If an unpinned build still prices over the budget, the context halves from
+       4096 down to a floor of 2048 before the guard declines. An explicit `-ctx` is never shrunk.
+    4. **The banner:** serve prints one line naming the KV plan and why it shrank, as registered, when part 3 or the
+       slot count reduced it.
+  - **Gates (G-S18a as registered, plus Mac-side additions):**
+    - **G-S18a, the Mac cell:** `serve --model ~/models/gemma-3-4b-it --backend metal`, no sizing flags. The decode path
+      is `metal-resident` and the tower is on Metal. One served image turn (`table.png`, 32 greedy tokens, top-3
+      logprobs) whose reply is identical to the same request with hand-set flags (`--model <the sidecar> -ctx 2048
+      -kv-sessions 1`). By day, a served correctness check, not timed. It is recorded with the live budget it ran
+      under, because the budget moves with the owner's load.
+    - **G-S18d, the directory sidecar, by tests:** on a tiny safetensors fixture, a directory loads through a sidecar
+      built once; the second load reuses it; CPU logits through the sidecar are bit-identical to the direct load's;
+      `-direct-load` and `--lora` stay direct; a touched safetensors file makes the sidecar stale. Red on today's code
+      (it loads the directory directly).
+    - **G-S18c-Mac, the reserve:** `towerReserve` is nonzero for every family with a Metal device tower under `metal`,
+      zero under `-vision-device cpu`. The Metal guard's need grows by exactly the reserve. Gemma 3's figure is within
+      ±25% of the RSS delta its tower load measures on the Mac.
+    - **G-S18b-Mac, no regression:** for the bench set's text models, the Metal plan's context and slot count are never
+      lower than today's (the sidecar can only lower the need). The `prequant` and `modelload` suites pass.
+  - **Cost:** one transcode of Gemma 3 4B (minutes, about 2.4 GB of disk; 10 GB free at registration).
+- **S18 on the Mac, by day 2026-10-08: part 1 built and G-S18d PASS; two findings that part 1 cannot pass G-S18a
+  alone. Parts 2-4 wait on the owner.**
+  - **Part 1, built:**
+    - `modelload.Load` resolves a safetensors directory to its sidecar where the default holds; `dirSidecarApplies`
+      excludes `--lora`, q4k and `-stream-weights`. A failed build keeps the direct load, with a note.
+    - The tokenizer stays the directory's. A sidecar's tok half is `tokenizer.json` alone, so `tokenizer_config.json`'s
+      chat template and BOS/EOS flags would otherwise be lost silently.
+    - In `prequant`: the cache path keeps a dotted directory name whole; freshness is against every file in the
+      directory (`sourceFiles`); the disk projection for a directory is `projectedDirSidecarBytes`.
+  - **G-S18d PASS.** `TestDirSidecar_matchesDirectLoad`: 42 tiny safetensors fixtures, every family `decoder.Load`
+    reads directly, generate identical greedy streams through the sidecar (int4, embed-int4, Metal target) and direct.
+    No transcode was refused. The 6 skipped are towers, an audio encoder and `embedding_gemma2`, which `decoder.Load`
+    does not read. `TestDirSidecar_cachePathAndFreshness` and `TestLoad_safetensorsDirGoesThroughSidecar` cover the cache
+    path, freshness, reuse without a rebuild, the chat template, `-direct-load` and the exclusions. The modelload,
+    prequant, serveapp, chatapp, clef and decidecmd suites pass, and none wrote a sidecar into `testdata/`.
+  - **Finding 1: the one-time build loads the whole directory into the heap.** There is no streaming transcode for
+    safetensors; each family's loader builds the whole model. So the build costs the same RAM as today's direct load,
+    and the load guard refused Gemma 3 4B's build at 14:09: "needs ~5.6 GB resident at quant int4 + 0.0 GB KV",
+    against a 3.4 GB budget (70% of 4.9 GB available). That 5.6 GB includes the bundled vision tower priced at f32
+    (about 1.6 GB), which a text-only build never loads. Without it, about 3.9 GB is still over budget. Today's direct
+    load is refused the same way at this hour. The sidecar has to be built once while memory is free (at night, or
+    with the owner's apps closed); every load after that is an mmap.
+  - **Finding 2: the tower is bigger than the decoder's saving.** An exploratory probe on Gemma 3's Metal SigLIP alone
+    (`vision.LoadEncoder` then `newSiglipVResident` then one forward, the process's `phys_footprint` after each, a
+    throwaway test, not committed):
+    - the host f32 encoder: **2.17 GB**;
+    - plus the Metal resident: **3.23 GB** (the f16 device copy, +1.06 GB);
+    - after one forward: **3.45 GB** (+0.22 GB of scratch).
+
+    The resident keeps the host encoder referenced (`siglipVResident.enc`, for `FinishHidden`), and serve keeps it as
+    the CPU fallback tower. With the sidecar, the decoder needs about 3.3 GB, so decoder plus tower is about 6.8 GB
+    against a 4.2-4.9 GB budget. Part 2 would price this honestly and then decline, which is correct but not a pass.
+  - **What would pass:**
+    - dropping the host f32 encoder after the Metal upload (about -2 GB, but it loses the CPU fallback tower and needs
+      an aikit API to free the block weights while keeping the post-LN ones);
+    - an int8 SigLIP on Metal (CUDA's int8 tower holds 558 MiB);
+    - or both.
+
+    Each is the owner's call.
+- **S18 on the Mac, the tower: owner chose "both" (c) 2026-10-08. A design probe, then the design and gates,
+  registered before any tower code.**
+  - **The probe (exploratory, a throwaway test, CPU, not committed):** Gemma 3's SigLIP with its projection weights
+    rounded to int8 and activations kept f32, against the f32 tower, on the four F2a images (`last_hidden_state`,
+    4,096 tokens):
+
+    | int8 granularity | mean token cosine | relative L2 | worst token |
+    |---|---|---|---|
+    | groups of 32 | 0.99914-0.99962 | 0.020-0.040 | 0.39-0.99 |
+    | groups of 128 | 0.99845-0.99939 | 0.028-0.054 | 0.39-0.91 |
+    | per row | 0.99664-0.99863 | 0.046-0.073 | 0.49-0.83 |
+    | W8A8, serve's int8 tower (`siglip-int8-fidelity-2026-10-07.md`) | 0.932-0.987 | 0.16-0.52 | 0.01-0.17 |
+
+    - **What it shows:** most of W8A8's loss is the activations. Weight-only int8 in groups of 32 is about 10x closer.
+    - **No int8 form holds the tower bar** (every token at cosine >= 0.9999): a few outlier tokens stay far off, and
+      they do not shrink monotonically with the group size. So the int8 tower is graded at the decoder (the served
+      reply), not by the tower bar.
+  - **The design:**
+    1. **Build the tower block by block from disk (the "free the host copy" half).** Today `vision.LoadEncoder`
+       materializes all 27 blocks in f32 (2.17 GB). The Metal resident then uploads its own copy, and serve keeps the
+       encoder as the CPU fallback. Freeing the blocks after the upload would still peak at about decoder + 2.17 GB +
+       the device copy at the first image, the swap case. So:
+       - aikit gains a head-only load (config, patch embed, position table, post-layernorm; no blocks) and a per-block
+         f32 reader;
+       - the Metal resident builds from that, one block at a time, so the host never holds more than one block;
+       - the encoder's CPU forward loads its blocks on first use, so the CPU fallback still works (slower the first
+         time).
+
+       That is an aikit release (the owner's to push and tag); goinfer develops against the local checkout until then.
+    2. **A weight-only int8 SigLIP on Metal:** int8 weights in groups of 32 along K, each with an f32 scale, widened to
+       f32 as they are staged in lever B's GEMM (`tower_gemm_w8`, the same 64x64 tiles); activations, attention and
+       norms stay f32. Device weights are about 0.46 GB, against the f16 tower's 0.82 GB.
+    3. **Serve's choice on Metal, mirroring CUDA's (`resolveGemma3VisionQuant`):**
+       - unset `-vision-quant`: the f16 tower when the decoder plus that tower fits the Metal budget, otherwise the
+         int8 one, with a note;
+       - `f32`: the f16 tower, as today;
+       - `int8`: the Metal int8 tower (today it is the CPU W8A8 tower).
+    4. **S18's parts 2-4 as registered above** (Metal prices the tower at the form chosen, the context before the
+       decline, the banner).
+  - **Gates, registered before the code:**
+    - **G-S18e, the kernel:** `tower_gemm_w8` against a float64 reference over the same dequantized weights, each output
+      within 1e-5 of Σ|a·w| + |bias| (only accumulation differs). Planted defects red: a group's scale taken from the
+      next group, the bias dropped, A one K column late.
+    - **G-S18f, the tower is exact on its weights:** the Metal int8 tower against the CPU f32 tower running the same
+      group-32-rounded weights; every token at cosine >= 0.9999 (the tower bar, on the quantized weights), on the
+      four F2a images. The quantization's own cost against the true f32 tower is recorded (relative L2 per image). A
+      relative L2 above 0.06 on any image is red, a regression guard at 1.5x the probe's worst.
+    - **G-S18g, the reply (decoder-level, night: it needs the 4B decoder):** a served image turn (`table.png` and the
+      four F2a images, 32 greedy tokens, top-3 logprobs), the Metal int8 tower against the f16 Metal tower on the
+      same decoder. PASS: identical replies, or each first difference at an R10 near-tie (p(other) >= half p(top)).
+      **If it fails, the int8 tower is not a default:** explicit `-vision-quant int8` only, and Gemma 3 on the
+      16 GB Mac keeps the f16 tower where it fits, or the CPU.
+    - **G-S18h, host memory:** with the tower attached, its share of the process's `phys_footprint` is within 10% of
+      device weights + scratch + head. No 2.17 GB block copy stays, and none is transiently held (the peak sampled
+      during the attach). The CPU fallback still produces the f32 tower's output after a forced device failure.
+    - **G-S18a as registered,** read by day after the sidecar is built at night, with whichever tower serve chose,
+      named.
+- **S18 on the Mac, the tower, by day 2026-10-08: built; G-S18e, G-S18f, G-S18h and G-S18c-Mac PASS; part 3 built and
+  tested. G-S18g (the served reply) and G-S18a wait on the night and on an aikit release.**
+  - **aikit v1.60.0, released 2026-10-08 (owner: "yes push / release"),** from branch `s18-encoder-head`:
+    - `vision.LoadEncoderHead` (the encoder without its blocks) and `Encoder.ForEachSiglipBlock` (the blocks read
+      one at a time from the checkpoint).
+    - The CPU `Forward`, `Weights` and `GPUWeights` load the blocks on first use, so the CPU path and the CUDA and
+      WebGPU towers are unchanged.
+    - `Quantized` and `HasBlocks` accessors.
+    - `TestLoadEncoderHead_matchesLoadEncoder`: bit-identical to `LoadEncoder` at both precisions, and the streamed
+      blocks equal `Weights()`. The vision suite passes.
+  - **goinfer is on aikit v1.60.0 since its merge** (every module's require bumped).
+  - **goinfer moved to Go 1.27.2 the same evening (owner: "lets move to 1.27.2").**
+    - aikit's release had moved aikit to `toolchain go1.27.2`, because govulncheck v1.8.0 now finds the Go 1.27.0
+      standard library's advisories GO-2026-6607..6617 reachable (fixed in 1.27.2). It also moved aikit's
+      golangci-lint to v2.14.0. goinfer's govulncheck read the same advisories at 41814649 (serve uses net/http).
+    - No staticcheck release (v0.8.0 or v0.8.1) reads Go 1.27.2's export data (version 5). A canary that imports the
+      standard library fails on both: "export data version 5 is greater than maximum supported version 4".
+    - So CI now builds staticcheck v0.8.1 against golang.org/x/tools v0.51.0 from `.github/actions/staticcheck/go.mod`
+      instead of downloading the release. That costs the ~24 s compile C5 had removed, until a staticcheck release
+      reads Go 1.27.2.
+    - The root go.mod gains `toolchain go1.27.2`. A workspace's go.work needs the same line, because the module's line
+      is ignored in workspace mode.
+    - CLAUDE.md's install line and `cmd/gate`'s hint now name the source build.
+    - `tower_gemm_w8` in `metal/grid_vision.go`. `tower_gemm_body` takes the scale under a compile-time flag, so w16
+      and w32 compile as before.
+    - The SigLIP resident streams the blocks for a head-only encoder and keeps uploading in-memory float32 blocks
+      otherwise (the tiny gates sharpen weights through `Weights()`). An encoder loaded with quant=true gets the int8
+      tower.
+    - Serve:
+      - on Metal it loads a head-only encoder;
+      - the unset default is chosen by `resolveGemma3VisionQuantMetal` (f16 when the budget holds the decoder, one
+        KV slot at 2048 and the f16 tower, else int8, with a note);
+      - a failed f16 default attach falls back to the int8 device tower, as on CUDA.
+    - `towerReserve` prices Metal towers (`metalTowerEstimate`). Metal's guard adds `ExtraResidentBytes`, the drafter's
+      included.
+    - `BuildResident` halves an unpinned context to the 2048 floor before it declines (`shrinkCtxToFit`) and prints
+      the KV plan line.
+  - **G-S18e PASS** (`TestTowerGemmKernel/tower_gemm_w8`): worst 3.26e-7 against 1e-5 over 8 shapes. The planted
+    defects read: the bias dropped 1.06e-1, A one column late 2.91e-1, a quarter of each K step skipped 1.08e-1, the
+    next group's scale 6.46e-2.
+    - Found on the way: a `char4` load from an unaligned int8 row (K = 9 or 17) reads the wrong bytes. The int8 path
+      now takes the element path unless K is a multiple of 4.
+  - **G-S18f PASS** (`s18-mac/gs18f-real.log`; tiny `TestS18Int8Tower_tiny`).
+    - On the same rounded weights the Metal int8 tower's worst token is 0.999999965 / 0.999999947 / 0.999999881 /
+      0.999999849 on the four F2a images.
+    - Against the true float32 tower, the relative L2 is 0.0254 / 0.0285 / 0.0399 / 0.0200, the probe's figures
+      exactly, under the 0.06 guard.
+    - Tiny: 1.000000000, with every planted defect red; the scale defect at 0.999829, the narrowest.
+  - **G-S18h PASS** (`s18-mac/gs18h-memory-{f16,int8}.log`, each form in its own process; the first run had both in
+    one process and is `gs18h-memory.log`, which confounds the second form's footprint):
+
+    | tower | Go heap peak during the attach (bar 217 MB) | phys_footprint after one image |
+    |---|---|---|
+    | f16 | 215 MB | 1172 MB |
+    | int8 | 196 MB | 843 MB |
+
+    - The encoder holds no blocks after either attach.
+    - The f16 form's 215 MB against 217 is a narrow pass: one block's float32 plus its f16 copy and GC lag.
+    - The CPU fallback (the device tower detached) matches `LoadEncoder`'s float32 tower bit for bit.
+    - Gemma 3's tower was 3.45 GB before (finding 2 above).
+  - **G-S18c-Mac PASS** (`TestTowerReserve_everyDeviceTower` with Metal rows): nonzero for every Metal device tower,
+    zero for the CPU's. Gemma 3's figures are 1291 MB (f16) and 932 MB (int8) against the measured 1172 and 843, about
+    10% over and inside the ±25% bar. The old code priced every Metal tower at zero, so the Metal rows fail on it.
+  - **Part 3** (`TestS18ShrinkCtxToFit`): with a budget between the 4096 and 2048 needs, an unpinned build goes
+    resident at 2048 and prints "metal: KV plan: 1 conversation(s) x 2048 positions (context reduced from 4096 ...)".
+    An explicit `-ctx 4096` still declines, and the ceiling's entry goes with the resident.
+    - The test probes with a Metal load: a CPU load prices more, since it keeps arm64-repacked weights.
+  - **The arithmetic for G-S18a now:** the decoder through the sidecar is about 2.9 GB plus KV (to be measured), and
+    the int8 tower 0.84 GB, so about 4.0 GB at a 2048 context, against a 4.2-4.9 GB budget.
+  - **G-S18a, the Mac cell: PASS, read 2026-10-08 17:57 by day** (`s18-mac/gs18a-run2/`; serve-metal at `95201adb`
+    plus the fix below).
+    - **The default arm** (`serve --model ~/models/gemma-3-4b-it --backend metal`, no sizing flags):
+      - `decode path: metal-resident (int4)`;
+      - `encoder f32/metal-resident` (the f16 Metal tower: the budget held it, so the default did not take int8);
+      - "metal: KV plan: 2 conversation(s) x 4096 positions (1.2 GB left for the vision tower or drafter)";
+      - `table.png`'s 32-token reply in 7.5 s.
+    - **The hand-set arm** (`--model <the sidecar> --vision <dir> -ctx 2048 -kv-sessions 1 -vision-quant f32`): the
+      same decode path and tower. Its reply and every token are **IDENTICAL**.
+    - **The budget it ran under:** 8.5 GB reclaimable, in the evening with the owner's apps open. The int8 tower and
+      the context shrink were not needed here. The tight case is G-S18g's tonight and the unit tests'.
+    - **The sidecar:** built once with the guard bypassed on the owner's word ("so do this now"), in 32 s. Max RSS
+      was 6.7-8.3 GB with the bf16 source mapped; swap grew 1-2 GB during each build.
+    - **A defect the first run found, fixed before the second:**
+      - On `--backend metal` the load's embed-int4 resolves OFF (the Metal resident takes no int4 head), so the
+        sidecar a Metal load reads is `<dir>.int4.metal.giw`, not `.int4.e4h.metal.giw`. The first build used
+        `-embed-int4`, and the default arm, finding no plain sidecar, tried to transcode one and was refused by the
+        guard (`s18-mac/gs18a/`).
+      - `resolveGemma3VisionQuantMetal` had the same fault: it asked about the `.e4h` sidecar, using the raw flag. It
+        now reads `cfg.load.Options()`, and `TestResolveGemma3VisionQuant` checks what it asks for.
+      - The two `.e4h` sidecars built today (the directory's and the GGUF's, 2.7 GB each) are read by no Metal load.
+  - **Owed:**
+    - G-S18g (the served reply, int8 tower against f16 on the same decoder: night);
+    - nothing else for the Mac half: G-S18a passed (above).
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

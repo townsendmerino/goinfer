@@ -88,9 +88,11 @@ func (l *sessionLRU) newSession() *decoder.Session {
 // freshly created and fault-back-restored sessions alike, since a snapshot carries
 // KV but not the active adapter.
 func (l *sessionLRU) bindAdapter(s *decoder.Session) {
-	if l.adapter != "" {
-		_ = s.UseAdapter(l.adapter)
+	if l.adapter == "" {
+		s.ClearAdapter()
+		return
 	}
+	_ = s.UseAdapter(l.adapter)
 }
 
 // enableTiering turns on tiered KV: resident sessions idle longer than after are
@@ -371,7 +373,7 @@ func (l *sessionLRU) readCold(c *coldSession) (*decoder.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.bindAdapter(s) // the snapshot carries KV but not the active adapter (#7)
+	l.bindAdapter(s) // the snapshot restores its own adapter; this binds the LRU's, so a mismatch goes cold
 	return s, nil
 }
 
@@ -497,7 +499,7 @@ func (l *sessionLRU) load(dir string) int {
 			fmt.Fprintf(os.Stderr, "skip %s: %v\n", filepath.Base(p), err)
 			continue
 		}
-		l.bindAdapter(s) // restored KV is base-projected bytes; re-activate the adapter (#7)
+		l.bindAdapter(s) // the snapshot restores its own adapter; this binds the LRU's, so a mismatch goes cold
 		l.order = append(l.order, s)
 		loaded++
 	}

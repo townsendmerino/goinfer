@@ -44,10 +44,17 @@ const attnScoreTileBound = 4096
 func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	req := m.ResidentContextRequest()
 	if req <= 0 {
-		return metalCtxCapDefault, nil
+		req = metalCtxCapDefault
+		if c, ok := metalCtxCeiling.Load(m); ok {
+			req = min(req, c.(int)) // S18: lowered by BuildResident before it declines (shrinkCtxToFit)
+		}
+		return req, nil
 	}
 	if !m.ResidentContextPinned() {
 		req = min(req, metalCtxCapDefault)
+	}
+	if c, ok := metalCtxCeiling.Load(m); ok && !m.ResidentContextPinned() {
+		req = min(req, c.(int)) // S18: lowered by BuildResident before it declines (shrinkCtxToFit)
 	}
 	if req > metalCtxCapMax {
 		return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "+
@@ -200,7 +207,8 @@ type resident struct {
 	pPLEGeluMul              Pipeline
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
-	emodelLayerMajorRuns     int // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
+	ctxCeilKey               *decoder.Model // S18: the metalCtxCeiling entry this resident's context came from; nil when none
+	emodelLayerMajorRuns     int            // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
 	uPleP                    Buffer
 	g4VNorm                  bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
 	pSA, pSABias, pSAResid   Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
@@ -2601,6 +2609,10 @@ func (r *resident) useKVSlot(i int) error {
 }
 
 func (r *resident) Close() error {
+	if r.ctxCeilKey != nil {
+		metalCtxCeiling.Delete(r.ctxCeilKey) // S18: a ceiling must not keep its model alive past the resident
+		r.ctxCeilKey = nil
+	}
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
 		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)

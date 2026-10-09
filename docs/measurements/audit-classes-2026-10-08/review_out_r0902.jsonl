@@ -1,0 +1,57 @@
+{"id": "C-01", "verdict": "AGREE", "to": null, "why": "canBatchN exclusion list omits lfm2; batched path treats it as dense default and panics. Fix adds it to the table."}
+{"id": "C-02", "verdict": "AGREE", "to": null, "why": "Conv state missing from recurrent-state predicates across lifecycle paths; fix adds c.conv / lfm2 to guards."}
+{"id": "C-03", "verdict": "AGREE", "to": null, "why": "Writer has no shortConv branch; family field silently dropped by serializer. Fix adds tail branch and refusal."}
+{"id": "C-04", "verdict": "AGREE", "to": null, "why": "Path handles ring layers but tile sizing arithmetic mismatches slot capacity; computed buffer, not a fixed limit."}
+{"id": "C-05", "verdict": "CHANGE", "to": "N", "why": "Fix is consuming TruncateTo's ignored exact bool in reconcile (honouring a return value); ring caches are handled, result discarded. Not a registration."}
+{"id": "C-06", "verdict": "AGREE", "to": null, "why": "Concurrent writers race; no registration or bound involved."}
+{"id": "C-07", "verdict": "AGREE", "to": null, "why": "MaxPositions limit exists; 1 MiB input exceeds it with no token check. Fix truncates/refuses."}
+{"id": "C-08", "verdict": "AGREE", "to": null, "why": "Unbounded request field with no limit in code; O per rubric."}
+{"id": "C-09", "verdict": "AGREE", "to": null, "why": "Wrong bias index (idxZeros) on a path that knows gpt-oss biases: indexing error."}
+{"id": "C-10", "verdict": "AGREE", "to": null, "why": "byteLevelKnobs switch silently defaults unknown pre names; fix registers walkers and loud decline."}
+{"id": "C-11", "verdict": "AGREE", "to": null, "why": "StopIDs option and merged eosIDs never consulted by the block-spec path; treated as absent."}
+{"id": "C-12", "verdict": "AGREE", "to": null, "why": "Wasted head work and grow-only leak: perf and leak."}
+{"id": "G-01", "verdict": "AGREE", "to": null, "why": "Gate reports PASS on all-skip cells."}
+{"id": "G-02", "verdict": "AGREE", "to": null, "why": "Ritual/CI never compiles tagged Metal parity tests."}
+{"id": "G-03", "verdict": "AGREE", "to": null, "why": "Release check builds wrong binary."}
+{"id": "G-04", "verdict": "AGREE", "to": null, "why": "Ledger state makes required gates non-blocking."}
+{"id": "G-05", "verdict": "AGREE", "to": null, "why": "Sweep ignores FAIL counts; hand lists miss gates. Gate defect."}
+{"id": "G-06", "verdict": "AGREE", "to": null, "why": "Test tolerance weaker than bit-identity contract."}
+{"id": "G-07", "verdict": "AGREE", "to": null, "why": "Test's stated config not what runs; nothing asserts it."}
+{"id": "G-08", "verdict": "AGREE", "to": null, "why": "Evidence test binds stale argument lists."}
+{"id": "G-09", "verdict": "AGREE", "to": null, "why": "Gate has no WebGPU group; parity opt-in by env var."}
+{"id": "G-10", "verdict": "AGREE", "to": null, "why": "Substring match, zero-assertion PASS, log-only Test* harnesses."}
+{"id": "M-01", "verdict": "AGREE", "to": null, "why": "Accountant hand-enumerates fields, omits several families' tensors; fix adds them via writer walk."}
+{"id": "M-02", "verdict": "AGREE", "to": null, "why": "Guard never reads the paging slots option, judging paged models as unpaged default; fix adds paged branch. Low-medium."}
+{"id": "M-03", "verdict": "AGREE", "to": null, "why": "Per-token allocation churn: performance."}
+{"id": "M-04", "verdict": "AGREE", "to": null, "why": "Untrusted blob validation and ordering; input validation, O."}
+{"id": "M-05", "verdict": "CHANGE", "to": "N", "why": "Llama-4 path handles the family but applies the wrong mask past chunk size; fix is chunk-start arithmetic, not a list/switch registration."}
+{"id": "M-06", "verdict": "CHANGE", "to": "O", "why": "Config validation of zero/NaN/Inf values and zero dims at the chokepoint; RoPE exemptions are incidental. Not a registration, bound or numerics miss."}
+{"id": "M-07", "verdict": "AGREE", "to": null, "why": "EAGLE prefill ignores the cpuFastAttention option, running default kernel; fix plumbs the choice."}
+{"id": "M-08", "verdict": "AGREE", "to": null, "why": "Empty candidate set indexes -1 on a path that handles MinP; N acceptable."}
+{"id": "M-09", "verdict": "AGREE", "to": null, "why": "Five family branches never drive the sink; fix is named needsResidentSerialize list plus refusal."}
+{"id": "M-10", "verdict": "AGREE", "to": null, "why": "Layer-count ceilings exist but untrusted counts reach allocation before them; bound check fix."}
+{"id": "M-11", "verdict": "AGREE", "to": null, "why": "Validator treats absent family-required tail fields as allowed default; fix registers required fields per family."}
+{"id": "M-12", "verdict": "AGREE", "to": null, "why": "Non-atomic write and mtime freshness: robustness mechanics."}
+{"id": "M-13", "verdict": "AGREE", "to": null, "why": "MaxTokens and context cap exist; burst exceeds both unchecked. Fix clamps."}
+{"id": "M-14", "verdict": "AGREE", "to": null, "why": "verifyTheta keys on backend name, not accounting for MoE/K=V models whose batched pass declines; perf-only R. O plausible."}
+{"id": "M-15", "verdict": "AGREE", "to": null, "why": "Fixed len(prompt)+512 KV capacity exceeded by longer generation without check."}
+{"id": "M-16", "verdict": "AGREE", "to": null, "why": "48 KB shared-memory limit exceeded by attended keys with no check."}
+{"id": "M-17", "verdict": "AGREE", "to": null, "why": "Missing per-write deadline: resource exhaustion."}
+{"id": "M-18", "verdict": "AGREE", "to": null, "why": "Decoder ignores function_call/_output item types, treating them as default user message."}
+{"id": "M-19", "verdict": "AGREE", "to": null, "why": "Heartbeat missing on one route; not option/family/state."}
+{"id": "M-20", "verdict": "AGREE", "to": null, "why": "Gemma 4 rendering/parsing computed wrong on a path that handles it."}
+{"id": "M-21", "verdict": "AGREE", "to": null, "why": "Late validation on unguarded routes: resource exhaustion."}
+{"id": "M-22", "verdict": "AGREE", "to": null, "why": "Prompt-injection/security exposure."}
+{"id": "M-23", "verdict": "AGREE", "to": null, "why": "Shutdown cancel semantics; not an option/family/state miss."}
+{"id": "M-24", "verdict": "AGREE", "to": null, "why": "Leak on 409 path."}
+{"id": "M-25", "verdict": "AGREE", "to": null, "why": "Sequence-level strip applied to continuation; decode logic wrong."}
+{"id": "M-26", "verdict": "AGREE", "to": null, "why": "include_usage option honoured on one stream path only; others treat it as off."}
+{"id": "M-27", "verdict": "AGREE", "to": null, "why": "May-end read as must-end; logic wrong in a path that handles scalars."}
+{"id": "M-28", "verdict": "AGREE", "to": null, "why": "Reflection builds wrong schemas; Go type shapes are not option/family/state."}
+{"id": "M-29", "verdict": "AGREE", "to": null, "why": "Literal encoding wrong (HTML escape, float64 precision)."}
+{"id": "M-30", "verdict": "AGREE", "to": null, "why": "Over-strict schema refusal on tool path; API handling, O."}
+{"id": "M-31", "verdict": "AGREE", "to": null, "why": "Restated constant over-declines; input checked against wrong number, nothing runs wrong."}
+{"id": "M-32", "verdict": "AGREE", "to": null, "why": "Family KV branches ignore --kv option; fixed by named decline."}
+{"id": "M-33", "verdict": "AGREE", "to": null, "why": "Release mechanics and licensing."}
+{"id": "M-34", "verdict": "AGREE", "to": null, "why": "Release doc claims nonexistent CI check."}
+{"id": "M-35", "verdict": "AGREE", "to": null, "why": "Comments and lint exemption claim a frozen artifact that no longer exists."}

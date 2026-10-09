@@ -1,0 +1,3 @@
+[17:57:22] arm default: --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal ; 8.49 GB reclaimable; swap 4889.25M
+default arm's tower: f32
+[17:58:06] arm handset: --model /Users/francistownsend-merino/models/gemma-3-4b-it.int4.metal.giw --vision /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal -ctx 2048 -kv-sessions 1 -vision-quant f32 ; 8.21 GB reclaimable; swap 4849.19M

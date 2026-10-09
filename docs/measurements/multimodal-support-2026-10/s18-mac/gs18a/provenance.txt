@@ -1,0 +1,1 @@
+[17:55:48] arm default: --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal ; 7.64 GB reclaimable; swap 4353.00M

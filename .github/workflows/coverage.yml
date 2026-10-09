@@ -1,0 +1,49 @@
+name: coverage
+
+# Test coverage of the root module, uploaded to Codecov for the README badge and the coverage
+# link awesome-go asks for. A separate workflow rather than a step in ci.yml's sharded `test-*`
+# jobs: those run under -race and split ./decoder across five runners, so their profiles would
+# have to be merged, and -race is not what a coverage number needs. This runs the same suite
+# once, without -race, on each push to main -- not on pull requests, so it adds nothing to a
+# PR's critical path.
+#
+# Per-package coverage (no -coverpkg): each package is credited only with what its own tests
+# execute. GPU backends whose tests skip without a device count as uncovered here, honestly.
+#
+# Upload: CODECOV_TOKEN if the secret is set, else codecov-action's tokenless path for public
+# repos. fail_ci_if_error is false, so a Codecov outage or a missing token never turns the run
+# red; the total is also written to the job summary, so the number is readable without Codecov.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: test with coverage
+        run: go test -timeout 40m -tags goinfer_testhooks -covermode=atomic -coverprofile=coverage.out ./...
+      - name: coverage summary
+        run: |
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')
+          echo "total statement coverage: $total"
+          echo "### Coverage: $total of statements (root module, per-package)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

@@ -33,6 +33,12 @@ type Session struct {
 	// after its first generation, takes the full reset. It is NOT a general "the state is clean" claim; the extra checks in rewindForReuse (no tokens, pos 0) exist
 	// because tests and snapshot loaders build caches by hand.
 	cleanCache bool
+
+	// kvAdapter is the compute-time adapter tokens' KV was built under — the cache-state grid's
+	// adapter × prefix-reuse cell (cachestate.go): rewindForReuse goes cold when the adapter bound
+	// now is a different one, instead of projecting a new turn through one fine-tune on top of a
+	// prefix another built. LoadSession sets it from the snapshot (format v3 records the adapter).
+	kvAdapter *loraRuntime
 }
 
 // NewSession allocates an empty session. capHint pre-sizes the KV cache for an
@@ -50,8 +56,9 @@ func (s *Session) Tokens() []int { return s.tokens }
 // UseAdapter activates a compute-time LoRA adapter (Model.LoadAdapter, #7) for
 // this session's subsequent Generate calls, so a single resident base serves many
 // fine-tunes without paying its RAM per adapter. Switching adapters changes the
-// projections, so any KV built under a different (or no) adapter is stale — the
-// caller should Reset first if the cached prefix was produced by another adapter.
+// projections, so any KV built under a different (or no) adapter is stale: the next
+// Generate notices and prefills cold rather than reusing it (since 2026-10-08; before,
+// the caller had to Reset).
 func (s *Session) UseAdapter(name string) error {
 	rt := s.m.adapter(name) // locked read — LoadAdapter may mutate the map concurrently (audit C-29)
 	if rt == nil {
@@ -84,6 +91,12 @@ func (s *Session) rewindForReuse(prompt []int) int {
 	clean := s.cleanCache && len(s.tokens) == 0 && s.cache.Pos() == 0
 	s.cleanCache = false
 	if clean {
+		return 0
+	}
+	// The cached prefix was built under a different adapter (or under the base, or the base after an
+	// adapter): the same tokens are different K/V, so nothing is reusable. Cold, as on an inexact rewind.
+	if len(s.tokens) > 0 && s.kvAdapter != s.cache.lora {
+		s.cache.TruncateTo(0)
 		return 0
 	}
 	matched := max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
@@ -137,6 +150,7 @@ func (s *Session) reconcile(seq []int) {
 		return
 	}
 	s.tokens = seq
+	s.kvAdapter = s.cache.lora
 }
 
 // Generate is Model.Generate with cross-call KV reuse. It rewinds the cache to

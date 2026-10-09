@@ -33,6 +33,10 @@ func init() {
 	})
 }
 
+// siglipForceInt8 is a test seam (S18's G-S18f): build the int8 tower (tower_gemm_w8) from a float32 encoder's in-memory
+// blocks, so a tiny gate can sharpen them first. Production chooses int8 by the encoder (vision.Encoder.Quantized).
+var siglipForceInt8 bool
+
 // siglipVResident is the SigLIP tower on Metal (vision.ResidentEncoder).
 type siglipVResident struct {
 	a   *gridVAccel
@@ -41,27 +45,42 @@ type siglipVResident struct {
 }
 
 func newSiglipVResident(enc *vision.Encoder) (*siglipVResident, error) {
-	w, err := enc.Weights()
-	if err != nil {
-		return nil, fmt.Errorf("metal: the SigLIP tower runs float32 (load it with quant=false): %w", err)
-	}
-	c := w.Cfg
+	// S18: the blocks are read from the checkpoint one at a time (ForEachSiglipBlock) and uploaded, so the host never
+	// holds the whole tower beside the Metal copy (2.17 GB of f32 on Gemma 3's so400m). The encoder may be head-only
+	// (vision.LoadEncoderHead); its CPU path, serve's fallback, loads its own blocks only if it ever runs. An encoder
+	// loaded with quant=true gets the int8 tower: weights in groups of 32, activations f32 (tower_gemm_w8).
+	c := enc.Cfg
+	patchW, patchB, posEmb, np := enc.SiglipHead()
 	a, err := newGridVAccel(gvkSiglip, c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads,
 		c.NumChannels*c.PatchSize*c.PatchSize, c.LayerNormEps)
 	if err != nil {
 		return nil, err
 	}
-	if len(w.PosEmb) != w.NumPatches*c.HiddenSize {
-		return nil, fmt.Errorf("metal: SigLIP position table %d values for %d patches of %d", len(w.PosEmb), w.NumPatches, c.HiddenSize)
+	a.int8W = enc.Quantized() || siglipForceInt8
+	if len(posEmb) != np*c.HiddenSize {
+		return nil, fmt.Errorf("metal: SigLIP position table %d values for %d patches of %d", len(posEmb), np, c.HiddenSize)
 	}
-	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
-	pos := w.PosEmb
-	a.posEmbeds = func([][3]int) []float32 { return pos }
-	for _, b := range w.Blocks {
+	a.patchW, a.patchB = a.up(patchW), a.up(patchB)
+	a.posEmbeds = func([][3]int) []float32 { return posEmb }
+	add := func(_ int, b vision.SiglipBlock) error {
 		a.blocks = append(a.blocks, gvBlock{norm1w: a.up(b.LN1W), norm1b: a.up(b.LN1B), norm2w: a.up(b.LN2W), norm2b: a.up(b.LN2B),
 			q: a.proj(b.Q), k: a.proj(b.K), v: a.proj(b.V), proj: a.proj(b.O), fc1: a.proj(b.FC1), fc2: a.proj(b.FC2)})
+		return nil
 	}
-	return &siglipVResident{a: a, enc: enc, np: w.NumPatches}, nil
+	if enc.HasBlocks() && !enc.Quantized() {
+		// The blocks are already on the host in float32: upload those, so a caller's in-memory weights are the ones that
+		// run (the tiny gates sharpen them through Weights' aliasing slices), and nothing is read twice.
+		w, err := enc.Weights()
+		if err != nil {
+			return nil, err
+		}
+		for i, b := range w.Blocks {
+			_ = add(i, b)
+		}
+	} else if err := enc.ForEachSiglipBlock(add); err != nil {
+		return nil, fmt.Errorf("metal: SigLIP blocks: %w", err)
+	}
+	return &siglipVResident{a: a, enc: enc, np: np}, nil
 }
 
 // hidden is the last block's output for GridPatches' rows (the stage FinishHidden takes).
