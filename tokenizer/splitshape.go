@@ -44,6 +44,8 @@ const (
 	// (see split_gpt2orig.go): a CASE-SENSITIVE contraction clause (no `(?i:)`, unlike cl100k's)
 	// and no [\r\n] handling, so ` 2020` is ONE pre-token.
 	shapeGPT2Original
+	// shapeTekken is Mistral's Tekken pattern: o200k's alternation without the attached contractions and with a single `\p{N}` for digits (split_o200k.go's splitTekken).
+	shapeTekken
 )
 
 func (s splitShape) String() string {
@@ -54,6 +56,8 @@ func (s splitShape) String() string {
 		return "o200k"
 	case shapeGPT2Original:
 		return "gpt2-original"
+	case shapeTekken:
+		return "tekken"
 	}
 	return "unknown"
 }
@@ -82,6 +86,8 @@ var (
 	// source) DOES carry a contraction clause, so a Split spelling it was misclassified as
 	// shapeUnknown by an exclusion that assumed the opposite.
 	gpt2LeadContraction = regexp.MustCompile(`^'s\|'t\|'re\|'ve\|'m\|'ll\|'d\|`)
+	// Tekken: the o200k case-split classes, NO attached contractions, then a bare `\p{N}` alternative followed by o200k's punctuation tail.
+	tekkenDigitTail = regexp.MustCompile(`\|\\p\{N\}\| \?\[\^\\s\\p\{L\}\\p\{N\}\]\+\[\\r\\n/\]\*`)
 )
 
 // classifySplit names the alternation a Split regex expresses.
@@ -96,6 +102,8 @@ func classifySplit(re string) splitShape {
 	switch {
 	case o200kCaseSplit.MatchString(c) && o200kAttached.MatchString(c):
 		return shapeO200k
+	case o200kCaseSplit.MatchString(c) && !o200kAttached.MatchString(c) && tekkenDigitTail.MatchString(c):
+		return shapeTekken
 	case cl100kLeadContraction.MatchString(c):
 		return shapeCl100k
 	case gpt2Letters.MatchString(c) && gpt2LeadContraction.MatchString(c):
@@ -110,5 +118,5 @@ func classifySplit(re string) splitShape {
 // PreTokenizerDecline, because a wrong split that SAYS SO is better than one that does not, and
 // refusing to load a model that works today would be the worse trade.
 func walkerImplements(s splitShape) bool {
-	return s == shapeCl100k || s == shapeO200k || s == shapeGPT2Original
+	return s == shapeCl100k || s == shapeO200k || s == shapeGPT2Original || s == shapeTekken
 }

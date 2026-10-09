@@ -771,7 +771,7 @@ every load.
 **Measured, same discipline as C-10** — walked the real shape rather than guessing a name→shape
 mapping (the mistake C-10 was). Fetched `ibm-granite/granite-4.0-h-tiny`'s real HF
 `tokenizer.json` (2026-09-07, repo sha `791e0d3d…`): its Split regex is byte-identical to the
-cl100k pattern `tokenizer/bytelevel.go:258` already documents, `\p{N}{1,3}` digit runs
+cl100k pattern `tokenizer/bytelevel.go:260` already documents, `\p{N}{1,3}` digit runs
 (Llama-3's cap), `normalizer: null`, `model.ignore_merges: false` — the one knob that makes it
 its own case rather than an alias for `llama-bpe` (which has `ignoreMerges: true`).
 

@@ -249,6 +249,8 @@ func (t *Tokenizer) splitPre(seg string) []string {
 		return splitO200k(seg)
 	case shapeGPT2Original:
 		return splitGPT2Original(seg)
+	case shapeTekken:
+		return splitTekken(seg)
 	}
 	return splitGPT2(seg, t.maxDigits)
 }

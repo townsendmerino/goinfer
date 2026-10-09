@@ -27,7 +27,18 @@ import "unicode"
 //
 // Written against the published o200k_base pattern above and validated by differential testing
 // against an independent ordered-alternative matcher (split_o200k_test.go), not by eyeballing.
-func splitO200k(s string) []string {
+func splitO200k(s string) []string { return splitO200kVariant(s, true, 3) }
+
+// splitTekken walks Mistral's Tekken pattern (Voxtral, Mistral Small 3.x): o200k's alternation with the contraction suffixes REMOVED and `\p{N}` for a single digit:
+//
+//	[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+
+//
+// Everything else (the case split, marks as word content, the `/` in the punctuation tail, the whitespace alternatives) is o200k's, so this is the same walker with two switches.
+// `don't` is therefore `don` + `'t` here and one pre-token in o200k, and `2026` is four pre-tokens here and two in o200k.
+func splitTekken(s string) []string { return splitO200kVariant(s, false, 1) }
+
+// splitO200kVariant is the o200k walker with its two family switches: whether contractions attach to the word they follow, and the digit-run cap.
+func splitO200kVariant(s string, contractions bool, maxDigits int) []string {
 	rs := []rune(s)
 	n := len(rs)
 	var out []string
@@ -49,7 +60,7 @@ func splitO200k(s string) []string {
 	}
 	// contractionLen returns the length of an attached contraction at i, or 0.
 	contractionLen := func(i int) int {
-		if i >= n || rs[i] != '\'' || i+1 >= n {
+		if !contractions || i >= n || rs[i] != '\'' || i+1 >= n {
 			return 0
 		}
 		switch unicode.ToLower(rs[i+1]) {
@@ -145,10 +156,10 @@ func splitO200k(s string) []string {
 			continue
 		}
 
-		// Alt 3: \p{N}{1,3}
+		// Alt 3: \p{N}{1,3} (o200k) or \p{N} (Tekken): maxDigits
 		if unicode.IsNumber(r) {
 			k := i + 1
-			for k < n && k-i < 3 && unicode.IsNumber(rs[k]) {
+			for k < n && k-i < maxDigits && unicode.IsNumber(rs[k]) {
 				k++
 			}
 			emit(i, k)

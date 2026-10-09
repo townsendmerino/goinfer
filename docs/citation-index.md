@@ -966,7 +966,7 @@ supports.
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:71` | goinfer | `func isVersionArg(a string) bool {` |
 | `docs/tasks/task-first-hour.md|linalg/weightmat_row4_arm64.go:23` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
-| `docs/tasks/task-first-hour.md|tokenizer/bytelevel.go:258` | goinfer | `//	(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\|` |
+| `docs/tasks/task-first-hour.md|tokenizer/bytelevel.go:260` | goinfer | `//	(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\|` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/model.go:314` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:97` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
 | `docs/tasks/task-fit-to-hardware.md|internal/loadflags/loadflags.go:267` | goinfer | `"entrypoints (goinfer/metal/cmd/chat, goinfer/metal/cmd/serve) are darwin-gated and need` |
