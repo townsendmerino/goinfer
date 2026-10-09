@@ -3420,7 +3420,35 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - **G-IP2 PASS** (tiny), as before: 0.999674 / relL2 0.0256. The planted defect is blind there, as registered, so
       G-IP3 carries it.
     - `gate quick` green (2,237 passed, 0 failed); staticcheck clean on the darwin `metal` package and the linux target.
-    - **G-IP4 (served TTFT) is still owed.**
+    - **G-IP4, served, by day (exploratory): FAIL as registered** (`docs/measurements/multimodal-support-2026-10/s17-gip4/`).
+      The arms are `serve-metal` at `74830779` (before; the CPU bridge) and at `80be9921` (after), `--backend metal`,
+      default flags, the tower on Metal.
+      - **TTFT** (`vision_ttft.py`, three interleaved rounds, one warm-up and three timed requests each, fresh images):
+        median 6.88 s before, 4.14 s after, 1.66x. Gemma 3's Metal cell is now under the 5 s bar.
+      - **Replies** (S3's four images, 32 greedy tokens, top-3 logprobs, after against before):
+        - `qwen25vl_preprocess_image.png` is identical.
+        - `gemma3_preprocess_image.png` first differs at token 10 (" bright" 0.495, " green" 0.324): a near-tie.
+        - `formula.png` first differs at token 2 (" demonstrates" 0.384, " shows" 0.377): a near-tie.
+        - **`table.png` first differs at token 5, and not at a near-tie:** before " presenting" 0.625, after " of",
+          which before gave 0.104. **This is the FAIL.** The bar is not moved.
+      - **Diagnostic, not a regrade** (`diag-table*.txt`). Served prompt, CPU tower, " The image shows a table"
+        teacher-forced, then p at token 5:
+
+        | arm | " presenting" | " of" | " detailing" |
+        |---|---|---|---|
+        | CPU int4 per-32 (G-IP3's reference) | 0.440 | 0.271 | 0.168 |
+        | the bridge | 0.418 | 0.328 | 0.223 |
+        | the resident pass | 0.172 | 0.494 | 0.267 |
+
+        - Under the reference the position is close: " of" is an R10 near-tie (0.271 >= 0.220).
+        - At this token the bridge sits nearer the reference than the resident pass, which reverses G-IP3's
+          whole-vector reading for this image.
+        - The served bridge's 0.625/0.104 split comes from the Metal tower's features; with CPU tower features the
+          bridge is itself near a tie.
+        - **Not the residual scale:** at s = 8, 16, 32 and 64 the resident pass picks " of" (p 0.44-0.50), with
+          " presenting" at 0.16-0.31.
+      - **Both replies are correct descriptions of the table.** Whether the lever stays on, which it is since
+        `f6b113ba`, is the owner's decision.
 
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 

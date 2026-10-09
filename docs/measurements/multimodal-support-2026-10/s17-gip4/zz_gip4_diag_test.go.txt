@@ -1,0 +1,132 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// Throwaway (G-IP4 diagnostic): table.png's served prompt, the shared reply prefix teacher-forced; each arm's p over the
+// tokens the bridge and the resident chose at the first difference.
+func TestZZGIP4Diag(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	src := dir + ".int4.metal.giw"
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	enc, _ := vision.LoadEncoder(dir, false)
+	proj, _ := multimodal.LoadProjector(dir)
+	img := os.Getenv("ZZ_IMG")
+	prefix := os.Getenv("ZZ_PREFIX")
+	words := []string{os.Getenv("ZZ_A"), os.Getenv("ZZ_B"), os.Getenv("ZZ_C")}
+	data, _ := os.ReadFile("../testdata/" + img)
+	pv, _ := vision.Preprocess(data, vision.Gemma3())
+	h, _ := enc.Forward(pv.Data)
+	f, _ := proj.Forward(h)
+	ids, _ := tk.Encode("<start_of_turn>user\n"+multimodal.Gemma3PromptBlock(256)+"What does this image show? Answer briefly.<end_of_turn>\n<start_of_turn>model\n", true)
+	pos, n := -1, 0
+	soft, _ := tk.TokenID("<image_soft_token>")
+	for i, id := range ids {
+		if id == soft {
+			if pos < 0 {
+				pos = i
+			}
+			n++
+		}
+	}
+	forced, _ := tk.Encode(prefix, false)
+	var cand []int
+	for _, w := range words {
+		x, _ := tk.Encode(w, false)
+		cand = append(cand, x[0])
+		fmt.Fprintf(os.Stderr, "[diag] %q -> %v\n", w, x)
+	}
+	fmt.Fprintf(os.Stderr, "[diag] prompt %d tokens, block [%d,%d); forced %v\n", len(ids), pos, pos+n, forced)
+	report := func(arm string, l []float32) {
+		mx := float64(l[0])
+		for _, v := range l {
+			mx = math.Max(mx, float64(v))
+		}
+		z := 0.0
+		for _, v := range l {
+			z += math.Exp(float64(v) - mx)
+		}
+		top := argmaxF(l)
+		s := fmt.Sprintf("[diag] %-22s argmax %6d (p %.3f)", arm, top, math.Exp(float64(l[top])-mx)/z)
+		for k, c := range cand {
+			s += fmt.Sprintf(" | %q %.3f", words[k], math.Exp(float64(l[c])-mx)/z)
+		}
+		fmt.Fprintln(os.Stderr, s)
+	}
+	ctx := context.Background()
+	for _, q := range []struct {
+		name, quant string
+		group       int
+		src         string
+	}{{"cpu int4 per-32 (ref)", "int4", 32, src}} {
+		mc, err := decoder.Load(q.src, decoder.Options{Backend: "cpu", Quant: q.quant, ActQuantGroup: q.group})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := mc.NewCache(len(ids) + len(forced) + 2)
+		l, err := mc.PrefillLogitsVLForTest(ctx, ids, f, pos, n, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range forced {
+			if l, err = mc.ForwardForTest(id, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		report(q.name, l)
+		mc.Close()
+	}
+	m, err := decoder.Load(src, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	cont := func(arm string) {
+		var l []float32
+		var err error
+		for k, id := range forced {
+			if l, err = a.Forward(m.EmbedResidentForTest(id), len(ids)+k); err != nil {
+				t.Fatal(err)
+			}
+		}
+		report(arm, l)
+	}
+	c := m.NewCache(len(ids) + 1)
+	if _, err := m.PrefillLogitsVLForTest(ctx, ids, f, pos, n, c); err != nil {
+		t.Fatal(err)
+	}
+	a.Reset()
+	if err := m.ResidentUploadPrefillForTest(c); err != nil {
+		t.Fatal(err)
+	}
+	cont("bridge (cpu W4A8)")
+	a.Reset()
+	if _, _, err := m.ResidentImagePrefillForTest(ctx, a, ids, f, pos, n); err != nil {
+		t.Fatal(err)
+	}
+	cont("resident image prefill")
+	for _, sc := range []float32{8, 16, 64} {
+		prefillResidScaleForTest = sc
+		a.Reset()
+		if _, _, err := m.ResidentImagePrefillForTest(ctx, a, ids, f, pos, n); err != nil {
+			t.Fatal(err)
+		}
+		cont(fmt.Sprintf("resident, s=%v", sc))
+	}
+	prefillResidScaleForTest = 0
+}

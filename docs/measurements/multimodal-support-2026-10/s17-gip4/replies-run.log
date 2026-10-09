@@ -1,0 +1,12 @@
+bridge-74830779 gemma3_preprocess_image.png: 7.6s 'The image shows a gradient blend of dark purple and bright green.'
+bridge-74830779 qwen25vl_preprocess_image.png: 7.4s 'The image shows a gradient blend of dark purple, gray, and light green.'
+bridge-74830779 glm_ocr/formula.png: 7.6s 'The image demonstrates the Gaussian integral and its connection to the normal distribution'
+bridge-74830779 glm_ocr/table.png: 7.7s 'The image shows a table presenting quarterly unit sales by region (North, South, East, Wes'
+resident-80be9921 gemma3_preprocess_image.png: 5.0s 'The image shows a gradient blend of dark purple and green, fading into white.'
+resident-80be9921 qwen25vl_preprocess_image.png: 4.6s 'The image shows a gradient blend of dark purple, gray, and light green.'
+resident-80be9921 glm_ocr/formula.png: 4.9s 'The image shows a note about the Gaussian integral and its relation to the normal distribu'
+resident-80be9921 glm_ocr/table.png: 5.0s 'The image shows a table of quarterly unit sales by region (North, South, East, West, and C'
+gemma3_preprocess_image.png: first difference at token 10: bridge ' bright', resident ' green'; bridge top-3 ' bright' 0.495, ' green' 0.324, ' light' 0.159; near-tie True
+qwen25vl_preprocess_image.png: IDENTICAL
+glm_ocr/formula.png: first difference at token 2: bridge ' demonstrates', resident ' shows'; bridge top-3 ' demonstrates' 0.384, ' shows' 0.377, ' presents' 0.124; near-tie True
+glm_ocr/table.png: first difference at token 5: bridge ' presenting', resident ' of'; bridge top-3 ' presenting' 0.625, ' detailing' 0.223, ' of' 0.104; near-tie False

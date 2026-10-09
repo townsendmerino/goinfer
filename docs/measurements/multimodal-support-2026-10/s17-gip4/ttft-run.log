@@ -1,0 +1,41 @@
+[13:23:33] round 1: gemma-3-4b | bridge-74830779: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18611
+  up in 6 s, model 'gemma-3-4b-it'; load 1.63
+  warm-up 0: TTFT 8.693 s "Here's a description of the image"
+  timed   1: TTFT 7.307 s "Here's a description of the image"
+  timed   2: TTFT 7.851 s "Here's a description of the image"
+  timed   3: TTFT 7.437 s "Here's a description of the image"
+[13:24:17] round 1: gemma-3-4b | resident-80be9921: /Users/francistownsend-merino/goinfer-bench/s17-gip4/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18612
+  up in 7 s, model 'gemma-3-4b-it'; load 3.16
+  warm-up 0: TTFT 4.525 s "Here's a description of the image"
+  timed   1: TTFT 4.408 s "Here's a description of the image"
+  timed   2: TTFT 4.556 s "Here's a description of the image"
+  timed   3: TTFT 4.514 s "Here's a description of the image"
+[13:24:46] round 2: gemma-3-4b | resident-80be9921: /Users/francistownsend-merino/goinfer-bench/s17-gip4/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18612
+  up in 6 s, model 'gemma-3-4b-it'; load 3.14
+  warm-up 0: TTFT 4.517 s "Here's a description of the image"
+  timed   1: TTFT 4.283 s "Here's a description of the image"
+  timed   2: TTFT 4.013 s "Here's a description of the image"
+  timed   3: TTFT 4.137 s "Here's a description of the image"
+[13:25:14] round 2: gemma-3-4b | bridge-74830779: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18611
+  up in 6 s, model 'gemma-3-4b-it'; load 2.70
+  warm-up 0: TTFT 7.133 s "Here's a description of the image"
+  timed   1: TTFT 6.798 s "Here's a description of the image"
+  timed   2: TTFT 6.878 s "Here's a description of the image"
+  timed   3: TTFT 7.118 s "Here's a description of the image"
+[13:25:53] round 3: gemma-3-4b | bridge-74830779: /Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18611
+  up in 5 s, model 'gemma-3-4b-it'; load 2.90
+  warm-up 0: TTFT 6.523 s "Here's a description of the image"
+  timed   1: TTFT 6.692 s "Here's a description of the image"
+  timed   2: TTFT 6.412 s "Here's a description of the image"
+  timed   3: TTFT 6.629 s "Here's a description of the image"
+[13:26:30] round 3: gemma-3-4b | resident-80be9921: /Users/francistownsend-merino/goinfer-bench/s17-gip4/serve-metal --model /Users/francistownsend-merino/models/gemma-3-4b-it --backend metal --addr 127.0.0.1:18612
+  up in 5 s, model 'gemma-3-4b-it'; load 2.97
+  warm-up 0: TTFT 4.428 s "Here's a description of the image"
+  timed   1: TTFT 4.137 s "Here's a description of the image"
+  timed   2: TTFT 3.913 s "Here's a description of the image"
+  timed   3: TTFT 3.936 s "Here's a description of the image"
+
+| cell | engine | timed requests | median TTFT (s) | under the 5 s bar |
+|---|---|---|---|---|
+| gemma-3-4b | bridge-74830779 | 9 | 6.88 | no |
+| gemma-3-4b | resident-80be9921 | 9 | 4.14 | yes |

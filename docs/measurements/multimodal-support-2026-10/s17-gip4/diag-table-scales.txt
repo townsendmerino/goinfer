@@ -1,0 +1,8 @@
+[diag] prompt 277 tokens, block [5,261); forced [818 2471 3831 496 2633]
+[diag] cpu int4 per-32 (ref)  argmax  25529 (p 0.440) | " presenting" 0.440 | " of" 0.271 | " detailing" 0.168
+[diag] bridge (cpu W4A8)      argmax  25529 (p 0.418) | " presenting" 0.418 | " of" 0.328 | " detailing" 0.223
+[diag] resident image prefill argmax    529 (p 0.494) | " presenting" 0.172 | " of" 0.494 | " detailing" 0.267
+[diag] resident, s=8          argmax    529 (p 0.481) | " presenting" 0.308 | " of" 0.481 | " detailing" 0.161
+[diag] resident, s=16         argmax    529 (p 0.436) | " presenting" 0.276 | " of" 0.436 | " detailing" 0.057
+[diag] resident, s=64         argmax    529 (p 0.503) | " presenting" 0.156 | " of" 0.503 | " detailing" 0.169
+ok  	github.com/townsendmerino/goinfer/metal	48.830s

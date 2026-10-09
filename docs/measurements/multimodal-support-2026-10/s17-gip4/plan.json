@@ -1,0 +1,45 @@
+{
+ "rounds": 3,
+ "per_round": 3,
+ "rotate": true,
+ "cells": [
+  {
+   "cell": "gemma-3-4b",
+   "engine": "bridge-74830779",
+   "api": "openai",
+   "port": 18611,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s7-2026-10-09/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-3-4b-it",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18611"
+   ]
+  },
+  {
+   "cell": "gemma-3-4b",
+   "engine": "resident-80be9921",
+   "api": "openai",
+   "port": 18612,
+   "model": "",
+   "media": "image",
+   "base": "/Users/francistownsend-merino/tmcode/goinfer/testdata/gemma3_preprocess_image.png",
+   "prompt": "Describe this image.",
+   "cmd": [
+    "/Users/francistownsend-merino/goinfer-bench/s17-gip4/serve-metal",
+    "--model",
+    "/Users/francistownsend-merino/models/gemma-3-4b-it",
+    "--backend",
+    "metal",
+    "--addr",
+    "127.0.0.1:18612"
+   ]
+  }
+ ]
+}
