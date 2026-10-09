@@ -1160,7 +1160,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 *(June 2026's survey, kept as the design record. Some `file:line` references below now point elsewhere; 2026-10-06 found
 `decoder/weights.go:494` and `decoder/gguf_qwen35.go:77` no longer at what they describe.)*
 
-- **VL config flattening** — `decoder/config.go:1439` decodes `text_config` (the nested
+- **VL config flattening** — `decoder/config.go:1442` decodes `text_config` (the nested
   text-decoder dims of a `*ForConditionalGeneration`), so VL `config.json`s
   already parse.
 - **Text decoders at parity** for the natural first targets: `gemma3`, `qwen2`,

@@ -61,7 +61,7 @@ is the same for a backend whatever the family, so it is stated once here:
 | Metal | `goinfer-serve-darwin-arm64` and `-amd64`, built from `metal/cmd/serve` (`release-assets.yml:202-203`) | none |
 | WebGPU | **no release binary** (`release-assets.yml:155`: "`-tags gpu` (WebGPU) is deliberately NOT here: it needs cgo"); self-build `gpu/cmd/serve` with `-tags gpu` and a C toolchain | cgo (B3, verified-run) |
 
-`goinfer-chat` has the same per-platform binaries (`release-assets.yml:79-84`) but its `--image` is **GLM-OCR only** (`internal/chatapp/image.go:111`, tower f32 on the
+`goinfer-chat` has the same per-platform binaries (`release-assets.yml:79-84`) but its `--image` is **GLM-OCR only** (`internal/chatapp/image.go:132`, tower f32 on the
 CPU always). `demo/agent` takes images for **Gemma 3 only**, with the tower on `cpu` or `webgpu` (the `--vision-backend` flag in `demo/agent/cmd/agent-web/main.go`, `demo/agent/agent/agent.go:285-307`): no CUDA tower there.
 
 *Changed 2026-10-02 (item 2 below): the tower-quant cells in the tables describe the rule as audited. Today Qwen2.5-VL, Qwen3.5+ and Gemma 4 load f32 unless `-vision-quant int8`, on every backend.*
