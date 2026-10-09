@@ -584,7 +584,7 @@ func TestS10DeepstackPrefillCUDA_speed(t *testing.T) {
 	ids = append(ids, post...)
 	n, start := len(ids), len(pre)
 	mrope, _ := decoder.MRopePositionsForTest(ids, imgTok, [][3]int{grid}, merge)
-	for round := 0; round < 2; round++ { // the second round is warm
+	for round := range 2 { // the second round is warm
 		t0 := time.Now()
 		cache := m.NewCache(n + 9)
 		cache.SetDeepstackForTest(start, nImg, deep)

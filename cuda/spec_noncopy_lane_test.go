@@ -127,7 +127,7 @@ func TestSpecNonCopyLane(t *testing.T) {
 		for _, a := range arms {
 			run(a, 1)
 			var xs []float64
-			for i := 0; i < 3; i++ {
+			for range 3 {
 				xs = append(xs, run(a, 1).ms)
 			}
 			sort.Float64s(xs)
@@ -135,7 +135,7 @@ func TestSpecNonCopyLane(t *testing.T) {
 		}
 		times := map[string][]float64{}
 		last := map[string]res{}
-		for round := 0; round < 3; round++ {
+		for round := range 3 {
 			for k := range arms {
 				a := arms[(k+round)%len(arms)]
 				r := run(a, nNew)

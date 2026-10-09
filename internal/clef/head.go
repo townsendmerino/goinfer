@@ -326,7 +326,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 		field := baseFields[qi*w : (qi+1)*w]
 		sc := make([]float64, no)
 		mx := math.Inf(-1)
-		for o := 0; o < no; o++ {
+		for o := range no {
 			sc[o] = dot64(routed[(first[qi]+o)*w:(first[qi]+o+1)*w], field) / math.Sqrt(float64(w))
 			mx = math.Max(mx, sc[o])
 		}
@@ -336,7 +336,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 			z += sc[o]
 		}
 		sum := summaries[qi*w : (qi+1)*w]
-		for o := 0; o < no; o++ {
+		for o := range no {
 			wt := float32(sc[o] / z)
 			for j, v := range routed[(first[qi]+o)*w : (first[qi]+o+1)*w] {
 				sum[j] += wt * v
@@ -378,7 +378,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 	out := make([][]float32, nQ)
 	for qi, q := range qs {
 		anchor := make([]float64, hs)
-		for j := 0; j < hs; j++ {
+		for j := range hs {
 			anchor[j] = float64(qv[qi*hs+j] + global[j])
 		}
 		normalize64(anchor)
@@ -399,7 +399,7 @@ func (h *Head) Forward(hidden [][]float32, ids []int, qs []Question, lm LMHeadRo
 			opt := on[oi*w : (oi+1)*w]
 			cosine := cosineSimilarity(field, opt)
 			feat := make([]float32, 4*w)
-			for j := 0; j < w; j++ {
+			for j := range w {
 				feat[j], feat[w+j] = field[j], opt[j]
 				feat[2*w+j] = field[j] * opt[j]
 				feat[3*w+j] = float32(math.Abs(float64(field[j] - opt[j])))
@@ -447,11 +447,11 @@ func (h *Head) attend(m mha, q []float32, nq int, kv []float32, nk int) []float3
 	ctx := make([]float32, nq*w)
 	scale := 1 / math.Sqrt(float64(hd))
 	sc := make([]float64, nk)
-	for i := 0; i < nq; i++ {
-		for hh := 0; hh < heads; hh++ {
+	for i := range nq {
+		for hh := range heads {
 			qv := Q[i*w+hh*hd : i*w+(hh+1)*hd]
 			mx := math.Inf(-1)
-			for j := 0; j < nk; j++ {
+			for j := range nk {
 				sc[j] = dot64(qv, K[j*w+hh*hd:j*w+(hh+1)*hd]) * scale
 				mx = math.Max(mx, sc[j])
 			}
@@ -461,7 +461,7 @@ func (h *Head) attend(m mha, q []float32, nq int, kv []float32, nk int) []float3
 				z += sc[j]
 			}
 			dst := ctx[i*w+hh*hd : i*w+(hh+1)*hd]
-			for j := 0; j < nk; j++ {
+			for j := range nk {
 				wt := float32(sc[j] / z)
 				for d, v := range V[j*w+hh*hd : j*w+(hh+1)*hd] {
 					dst[d] += wt * v
@@ -498,11 +498,9 @@ func matmulBT(a, b []float32, M, K, N int) []float32 {
 	per := (M + workers - 1) / workers
 	for lo := 0; lo < M; lo += per {
 		hi := min(lo+per, M)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			linalg.MatmulBTInto(dst[lo*N:hi*N], a[lo*K:hi*K], b, hi-lo, K, N)
-		}()
+		})
 	}
 	wg.Wait()
 	return dst
@@ -515,7 +513,7 @@ func addInPlace(dst, src []float32) {
 }
 
 func addBias(x, bias []float32, n, w int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		row := x[i*w : (i+1)*w]
 		for j := range row {
 			row[j] += bias[j]
@@ -525,7 +523,7 @@ func addBias(x, bias []float32, n, w int) {
 
 // layerNormRows is nn.LayerNorm (eps 1e-5, biased variance) over each row of src, with the statistics in float64.
 func layerNormRows(dst, src []float32, ln layerNorm, rows, w int) {
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		row := src[i*w : (i+1)*w]
 		var mean float64
 		for _, v := range row {

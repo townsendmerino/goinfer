@@ -41,14 +41,14 @@ func fencedToolCall(out string, tools []Tool) (ToolCall, string, bool) {
 	}
 	open := strings.Index(trimmed, "```")
 	body := trimmed[open+3 : len(trimmed)-3]
-	nl := strings.IndexByte(body, '\n')
-	if nl < 0 {
+	before, after, ok0 := strings.Cut(body, "\n")
+	if !ok0 {
 		return ToolCall{}, "", false
 	}
-	if tag := strings.TrimSpace(body[:nl]); tag != "" && !strings.EqualFold(tag, "json") {
+	if tag := strings.TrimSpace(before); tag != "" && !strings.EqualFold(tag, "json") {
 		return ToolCall{}, "", false
 	}
-	content := body[nl+1:]
+	content := after
 	var raw map[string]json.RawMessage
 	dec := json.NewDecoder(strings.NewReader(content))
 	if dec.Decode(&raw) != nil || raw == nil || strings.TrimSpace(content[dec.InputOffset():]) != "" {

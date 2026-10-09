@@ -40,8 +40,8 @@ type decliningPrefillerBackend struct {
 func (b *decliningPrefillerBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	b.rf = &decliningPrefiller{
-		fakeResident: fakeResident{vocab: vocab},
-		reason:       "fake: layer 3 needs 52000 bytes of shared memory, device limit 49152",
+		vocab:  vocab,
+		reason: "fake: layer 3 needs 52000 bytes of shared memory, device limit 49152",
 	}
 	return b.rf, true, nil
 }

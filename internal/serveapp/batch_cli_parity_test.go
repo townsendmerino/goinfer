@@ -195,7 +195,7 @@ func firstChoice(t *testing.T, line map[string]any) choiceView {
 func parseBatchFile(t *testing.T, data []byte) map[string]map[string]any {
 	t.Helper()
 	out := map[string]map[string]any{}
-	for _, raw := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+	for raw := range bytes.SplitSeq(bytes.TrimSpace(data), []byte("\n")) {
 		if len(raw) == 0 {
 			continue
 		}

@@ -133,7 +133,7 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	arch := m.w.arch
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var perPos float64
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		var kvDim int
 		if arch != nil {
 			kvDim = arch.kvDimAt(l)

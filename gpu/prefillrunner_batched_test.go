@@ -64,7 +64,7 @@ func TestRMSNormBatched_parity(t *testing.T) {
 			t.Fatalf("encoder: %v", err)
 		}
 		defer enc.Release()
-		for r := 0; r < M; r++ {
+		for r := range M {
 			rowSrc, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(H * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 			if err != nil {
 				t.Fatalf("alloc rowSrc: %v", err)
@@ -210,7 +210,7 @@ func TestRoPEBatched_parity(t *testing.T) {
 			t.Fatalf("encoder: %v", err)
 		}
 		defer enc.Release()
-		for r := 0; r < M; r++ {
+		for r := range M {
 			rowBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(heads * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 			if err != nil {
 				t.Fatalf("alloc rowBuf: %v", err)

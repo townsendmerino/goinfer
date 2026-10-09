@@ -116,7 +116,7 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 			greedy := func(from []float32, pos, n int) []int {
 				ids := make([]int, 0, n)
 				l := from
-				for i := 0; i < n; i++ {
+				for i := range n {
 					id := argmax(l)
 					ids = append(ids, id)
 					nl, err := r.Forward(emb(id), pos+i)

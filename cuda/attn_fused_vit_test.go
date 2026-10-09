@@ -92,17 +92,17 @@ func TestAttnVit_logicAndBMIdentity(t *testing.T) {
 					}
 				}
 				worst, at := 1.0, ""
-				for m := 0; m < M; m++ {
-					for h := 0; h < nH; h++ {
+				for m := range M {
+					for h := range nH {
 						mRun, lRun := math.Inf(-1), 0.0
 						acc := make([]float64, hd)
 						for s0 := 0; s0 < M; s0 += 64 {
 							nk := min(64, M-s0)
 							sc := make([]float64, nk)
 							tmax := math.Inf(-1)
-							for j := 0; j < nk; j++ {
+							for j := range nk {
 								var dot float64
-								for d := 0; d < hd; d++ {
+								for d := range hd {
 									dot += float64(f16rne(q[m*qDim+h*hd+d])) * float64(f16rne(kc[(s0+j)*qDim+h*hd+d]))
 								}
 								sc[j] = dot * float64(scale)
@@ -123,7 +123,7 @@ func TestAttnVit_logicAndBMIdentity(t *testing.T) {
 							}
 							for j := range sc {
 								pj := float64(f16rne(float32(sc[j])))
-								for d := 0; d < hd; d++ {
+								for d := range hd {
 									acc[d] += pj * float64(f16rne(vc[(s0+j)*qDim+h*hd+d]))
 								}
 							}
@@ -131,7 +131,7 @@ func TestAttnVit_logicAndBMIdentity(t *testing.T) {
 							mRun = mNew
 						}
 						var dot, na, nb float64
-						for d := 0; d < hd; d++ {
+						for d := range hd {
 							x, y := float64(o64[m*qDim+h*hd+d]), acc[d]/lRun
 							dot += x * y
 							na += x * x

@@ -96,7 +96,7 @@ func TestP20ExpertLocality(t *testing.T) {
 	fmt.Printf("%-6s %8s %8s %10s %10s %12s\n", "layer", "rows", "distinct", "row*topK", "dupFactor", "fitsInSlots?")
 	var maxDistinct, moeLayers int
 	var sumRatio float64
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		if rows[l] == 0 {
 			continue // dense/non-MoE layer (gemma4's dense‖MoE branch skips routing here)
 		}
@@ -123,7 +123,7 @@ func TestP20ExpertLocality(t *testing.T) {
 
 	// A histogram of distinct counts, so "does it fit" isn't read off one worst layer.
 	var counts []int
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		if rows[l] > 0 {
 			counts = append(counts, len(seen[l]))
 		}

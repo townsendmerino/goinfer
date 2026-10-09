@@ -125,7 +125,7 @@ func TestServeUnknownPositional_namesTheSubcommands(t *testing.T) {
 // no longer has one — a renamed field would otherwise make every check above vacuous.
 func backendsLine(t *testing.T, report string) string {
 	t.Helper()
-	for _, l := range strings.Split(report, "\n") {
+	for l := range strings.SplitSeq(report, "\n") {
 		if v, ok := strings.CutPrefix(l, "backends: "); ok {
 			return strings.TrimSpace(v)
 		}
@@ -190,7 +190,7 @@ func TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered(t *testing.T) {
 		t.Fatal("could not find the boundary between the header and the flag dump")
 	}
 	want := 0
-	for _, l := range strings.Split(help[dumpAt:], "\n") {
+	for l := range strings.SplitSeq(help[dumpAt:], "\n") {
 		if strings.HasPrefix(l, "  -") {
 			want++
 		}

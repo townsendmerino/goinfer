@@ -130,7 +130,7 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 
 	// 1. last row: same key set, so bit-for-bit equality.
 	last := M - 1
-	for d := 0; d < qDim; d++ {
+	for d := range qDim {
 		a, b := causal[last*qDim+d], full[last*qDim+d]
 		if a != b {
 			t.Fatalf("row %d (the row where causal and non-causal see the SAME keys) differs at %d: "+
@@ -140,9 +140,9 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 	t.Logf("row %d: bit-identical across %d values (same key set) — the copy changed only the mask", last, qDim)
 
 	// 2. every earlier row must differ: it sees strictly more keys now.
-	for m := 0; m < last; m++ {
+	for m := range last {
 		same := true
-		for d := 0; d < qDim; d++ {
+		for d := range qDim {
 			if causal[m*qDim+d] != full[m*qDim+d] {
 				same = false
 				break

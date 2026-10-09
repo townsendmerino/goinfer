@@ -5,6 +5,7 @@ package gpu
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -126,8 +127,8 @@ func runGeomParity(t *testing.T, ctx *Context, hidden, nH, nKV, hd, inter, vocab
 	// --- GPU W4A8 DecodeRunner ---
 	var keep []func()
 	defer func() {
-		for i := len(keep) - 1; i >= 0; i-- {
-			keep[i]()
+		for _, k := range slices.Backward(keep) {
+			k()
 		}
 	}()
 	up32 := func(v []float32) *DeviceBuffer {

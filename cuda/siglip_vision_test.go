@@ -280,9 +280,9 @@ func TestSiglipCUDA_int8VsFloat32(t *testing.T) {
 		var num, den, sumCos float64
 		worst := 1.0
 		n := len(want) / W
-		for i := 0; i < n; i++ {
+		for i := range n {
 			var dot, na, nb float64
-			for j := 0; j < W; j++ {
+			for j := range W {
 				a, b := float64(want[i*W+j]), float64(got[i*W+j])
 				dot += a * b
 				na += a * a

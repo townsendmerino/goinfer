@@ -94,7 +94,7 @@ func TestPrefill_dispatchProfile(t *testing.T) {
 	ps := []int{256, 1024}
 	if v := os.Getenv("GOINFER_PREFILL_PROF_P"); v != "" {
 		ps = ps[:0]
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil {
 				t.Fatalf("GOINFER_PREFILL_PROF_P: bad entry %q", f)
@@ -133,7 +133,7 @@ func TestPrefill_dispatchProfile(t *testing.T) {
 			wall, gemm, attn, normsRope, kvWrite time.Duration
 		}
 		var best cell
-		for rep := 0; rep < 2; rep++ {
+		for rep := range 2 {
 			c.SetPrefillProfForTest(true)
 			rf.Reset()
 			t0 := time.Now()

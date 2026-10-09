@@ -89,7 +89,7 @@ func TestVsumSplitGateVsReference(t *testing.T) {
 	ks := []int{8000} // the depth the +40% was measured at; overridable for a re-run at another depth
 	if v := strings.TrimSpace(os.Getenv("GOINFER_VSUM_GATE_KS")); v != "" {
 		ks = ks[:0]
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
 				ks = append(ks, k)
 			}

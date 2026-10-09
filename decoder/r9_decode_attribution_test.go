@@ -266,12 +266,12 @@ func TestR9_mlpMatmulIsolated(t *testing.T) {
 			for _, w := range []int{1, 16, 1, 16} {
 				linalg.SetParallelWidth(w)
 				// hot: layer 0 gate, repeated
-				for i := 0; i < 20; i++ {
+				for range 20 {
 					matmulInto(ws, m.be, &L[0].GateProj, h, gate, 1)
 				}
 				const hotN = 200
 				t0 := time.Now()
-				for i := 0; i < hotN; i++ {
+				for range hotN {
 					matmulInto(ws, m.be, &L[0].GateProj, h, gate, 1)
 				}
 				hot := time.Since(t0) / hotN
@@ -279,7 +279,7 @@ func TestR9_mlpMatmulIsolated(t *testing.T) {
 				// cold: full sweep, gate/up/down per layer in order
 				const sweeps = 8
 				t1 := time.Now()
-				for s := 0; s < sweeps; s++ {
+				for range sweeps {
 					for l := range L {
 						matmulInto(ws, m.be, &L[l].GateProj, h, gate, 1)
 						matmulInto(ws, m.be, &L[l].UpProj, h, up, 1)
@@ -328,7 +328,7 @@ func TestR9_groupedDepthSweep(t *testing.T) {
 	depths := []int{128, 512, 1024, 2048, 4096}
 	if v := os.Getenv("GOINFER_R9_DEPTHS"); v != "" {
 		depths = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			var d int
 			fmt.Sscanf(f, "%d", &d)
 			depths = append(depths, d)
@@ -418,7 +418,7 @@ func TestR9_cpuTuningAB(t *testing.T) {
 	for _, k := range knobs {
 		const pairs = 3
 		var rOn, rOff, pOn, pOff float64
-		for p := 0; p < pairs; p++ {
+		for p := range pairs {
 			var on, off, partOn, partOff float64
 			if p%2 == 0 {
 				k.set(true)

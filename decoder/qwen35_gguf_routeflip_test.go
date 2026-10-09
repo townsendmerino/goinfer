@@ -130,7 +130,7 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 	zero, totalFlips := 0, 0
 	for s := range refL {
 		st := stepStat{step: s, cos: cosineFull(gotL[s], refL[s]), firstFlipLayer: -1}
-		for l := 0; l < nL; l++ {
+		for l := range nL {
 			a := append([]int(nil), refSel[s][l]...)
 			b := append([]int(nil), gotSel[s][l]...)
 			sort.Ints(a)

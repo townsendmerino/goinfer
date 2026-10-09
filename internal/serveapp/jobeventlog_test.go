@@ -111,7 +111,7 @@ func TestJobEventLog_noMissedAppendBetweenSnapshotAndWait(t *testing.T) {
 	l := newJobEventLog()
 	const n = 200
 	go func() {
-		for i := 0; i < n; i++ {
+		for i := range n {
 			l.append([]byte{byte(i)})
 		}
 		l.markDone()

@@ -124,8 +124,7 @@ func cpuBatchConversations(t *testing.T, m *Model, nConv, turns, maxTok int, sp 
 	}
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func() { defer wg.Done(); run(c) }()
+		wg.Go(func() { ; run(c) })
 	}
 	wg.Wait()
 	return ids, reused

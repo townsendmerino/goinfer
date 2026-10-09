@@ -48,7 +48,7 @@ func (e taskStub) EncodeTasks(texts []string, prompt string) ([][]float32, []int
 func newTaskTestServer() (*server, *string) {
 	last := new(string)
 	*last = "<not called>"
-	enc := taskStub{stubEncoder: stubEncoder{dim: 8}, last: last, prompts: map[string]string{
+	enc := taskStub{dim: 8, last: last, prompts: map[string]string{
 		"query": "task: search result | query: ", "document": "title: none | text: ", "STS": "task: sentence similarity | query: ",
 	}}
 	return &server{embed: enc, embedDim: 8, embedID: "eg2", embedWidths: []int{8, 4, 2}}, last

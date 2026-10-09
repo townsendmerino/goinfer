@@ -69,7 +69,7 @@ func TestWebGPU_ForwardNoLogits_byteIdenticalKV(t *testing.T) {
 			var currEmb []float32
 			pos := len(prompt)
 			lastL := wantLogits
-			for step := 0; step < 4; step++ {
+			for step := range 4 {
 				argmax := 0
 				maxVal := float32(-math.MaxFloat32)
 				for idx, v := range lastL {
@@ -123,7 +123,7 @@ func TestWebGPU_ForwardNoLogits_byteIdenticalKV(t *testing.T) {
 			currEmb = lastEmb
 			pos = len(prompt)
 			lastL = gotLogits
-			for step := 0; step < 4; step++ {
+			for step := range 4 {
 				argmax := 0
 				maxVal := float32(-math.MaxFloat32)
 				for idx, v := range lastL {
@@ -252,7 +252,7 @@ func BenchmarkWebGPU_Prefill_KVOnlyVsFull(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			rf.Reset()
-			for p := 0; p < promptLen; p++ {
+			for p := range promptLen {
 				if _, err := rf.Forward(embs[p], p); err != nil {
 					b.Fatalf("Forward %d: %v", p, err)
 				}
@@ -264,7 +264,7 @@ func BenchmarkWebGPU_Prefill_KVOnlyVsFull(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			rf.Reset()
-			for p := 0; p < promptLen-1; p++ {
+			for p := range promptLen - 1 {
 				if err := kvOnly.ForwardNoLogits(embs[p], p); err != nil {
 					b.Fatalf("ForwardNoLogits %d: %v", p, err)
 				}

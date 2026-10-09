@@ -75,7 +75,7 @@ func TestMLAResidentParityCUDA(t *testing.T) {
 	gpuToks := make([]int, 0, N)
 	base := len(prompt)
 	fedTok := prompt[len(prompt)-1]
-	for i := 0; i < N; i++ {
+	for i := range N {
 		cos, _ := cosF32(lgR, lgC)
 		worstCos = math.Min(worstCos, cos)
 		cTok, gTok := argmaxF(lgC), argmaxF(lgR)

@@ -408,10 +408,7 @@ func growI8(s []int8, n int) []int8 {
 	if cap(s)-len(s) >= n {
 		return s[:len(s)+n]
 	}
-	newCap := 2 * cap(s)
-	if newCap < len(s)+n {
-		newCap = len(s) + n
-	}
+	newCap := max(2*cap(s), len(s)+n)
 	grown := make([]int8, len(s)+n, newCap)
 	copy(grown, s)
 	return grown
@@ -421,10 +418,7 @@ func growF32(s []float32, n int) []float32 {
 	if cap(s)-len(s) >= n {
 		return s[:len(s)+n]
 	}
-	newCap := 2 * cap(s)
-	if newCap < len(s)+n {
-		newCap = len(s) + n
-	}
+	newCap := max(2*cap(s), len(s)+n)
 	grown := make([]float32, len(s)+n, newCap)
 	copy(grown, s)
 	return grown
@@ -471,7 +465,7 @@ func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
 		nKV := st / c.headDim
 		n := len(c.keysQ[layer]) / st
 		k, v = make([]float32, n*st), make([]float32, n*st)
-		for p := 0; p < n; p++ {
+		for p := range n {
 			o, so := p*st, p*nKV
 			dequantHeads(c.keysQ[layer][o:o+st], c.keyScale[layer][so:so+nKV], nKV, c.headDim, k[o:o+st])
 			dequantHeads(c.valsQ[layer][o:o+st], c.valScale[layer][so:so+nKV], nKV, c.headDim, v[o:o+st])

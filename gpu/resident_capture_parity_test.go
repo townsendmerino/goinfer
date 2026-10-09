@@ -150,7 +150,7 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 	// teacher-forced cosine (both fed the CPU's token) so a first flip does not hide what follows.
 	cpuTok, gpuTok := argmaxF(lastCPU), argmaxF(lastGPU)
 	pos := len(prompt)
-	for step := 0; step < 6; step++ {
+	for step := range 6 {
 		cpuL, err := mcpu.ForwardForTest(cpuTok, cache)
 		if err != nil {
 			t.Fatalf("cpu gen %d: %v", step, err)

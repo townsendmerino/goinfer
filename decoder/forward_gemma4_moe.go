@@ -114,13 +114,11 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	if pager != nil {
 		pager.Lock()
 		defer pager.Unlock()
-		fillWG.Add(1)
-		go func() {
-			defer fillWG.Done()
+		fillWG.Go(func() {
 			for _, e := range idx {
 				pager.touch(unsafe.Pointer(&w.expertsGateUp[e]))
 			}
-		}()
+		})
 	}
 	var sum float32
 	for _, v := range topv {

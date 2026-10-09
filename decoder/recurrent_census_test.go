@@ -92,8 +92,8 @@ func fillRecurrent(t *testing.T, fields []reflect.Value) {
 				continue
 			}
 			st := f.Index(i).Elem()
-			for j := 0; j < st.NumField(); j++ {
-				w := writable(st.Field(j))
+			for _, field := range st.Fields() {
+				w := writable(field)
 				switch w.Interface().(type) {
 				case []float32:
 					buf := make([]float32, max(w.Len(), 4))

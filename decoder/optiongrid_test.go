@@ -23,10 +23,10 @@ const optionStateGridPath = "../docs/option-state-grid.md"
 // TestOptions_everyFlagReachesOptions makes every CLI flag reach Options. A-C01 (-kv i8 into Metal's
 // batched prefill) was an option no path's admission had been asked about.
 func TestOptionGrid_everyOptionClassified(t *testing.T) {
-	ty := reflect.TypeOf(Options{})
+	ty := reflect.TypeFor[Options]()
 	seen := map[string]bool{}
-	for i := 0; i < ty.NumField(); i++ {
-		name := ty.Field(i).Name
+	for field := range ty.Fields() {
+		name := field.Name
 		seen[name] = true
 		row, inGrid := ogGrid[name]
 		why, loadOnly := ogLoadOnly[name]

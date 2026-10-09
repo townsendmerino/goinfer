@@ -226,7 +226,7 @@ func TestWhitespaceBound_stringTypedNumberRunaway(t *testing.T) {
 	var out []byte
 	const maxSteps = 400
 	finished := false
-	for step := 0; step < maxSteps; step++ {
+	for step := range maxSteps {
 		l := score(out)
 		m.Process(gen, l)
 		best, bestV := -1, float32(math.Inf(-1))

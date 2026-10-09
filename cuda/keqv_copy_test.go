@@ -129,7 +129,7 @@ func keqvRunFixture(t *testing.T, dir string, graphs bool) (run keqvRun, kEqVLay
 		hashLogits(h, logits)
 	}
 	pos := len(prompt)
-	for g := 0; g < gen; g++ {
+	for range gen {
 		tok := keqvArgmax(logits)
 		run.Tokens = append(run.Tokens, tok)
 		if logits, err = rf.Forward(embed(tok), pos); err != nil {
@@ -156,7 +156,7 @@ func keqvRunFixture(t *testing.T, dir string, graphs bool) (run keqvRun, kEqVLay
 	}
 	hashLogits(hp, logits)
 	pos = len(prompt)
-	for g := 0; g < gen; g++ {
+	for range gen {
 		tok := keqvArgmax(logits)
 		run.PTokens = append(run.PTokens, tok)
 		if logits, err = rf.Forward(embed(tok), pos); err != nil {

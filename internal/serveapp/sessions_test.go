@@ -177,7 +177,7 @@ func TestBestExtend_editedLastMessageReuse(t *testing.T) {
 func TestPickSession_sparePreambleGoesFresh(t *testing.T) {
 	pre := []int{1, 2, 3, 4, 5, 6, 7}                          // the chat template's shared lead
 	convA := append(append([]int(nil), pre...), 100, 101, 102) // conversation A's turn 1 + reply ...
-	for i := 0; i < 160; i++ {
+	for i := range 160 {
 		convA = append(convA, 200+i)
 	}
 	sessions := [][]int{convA}

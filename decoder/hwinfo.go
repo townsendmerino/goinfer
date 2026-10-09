@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"maps"
 	"sort"
 	"sync"
 )
@@ -23,9 +24,7 @@ func RegisterHardwareInfo(name string, info func() []string) {
 func HardwareInfo() map[string][]string {
 	hwInfoMu.RLock()
 	fns := make(map[string]func() []string, len(hwInfo))
-	for k, f := range hwInfo {
-		fns[k] = f
-	}
+	maps.Copy(fns, hwInfo)
 	hwInfoMu.RUnlock()
 	out := make(map[string][]string, len(fns))
 	for k, f := range fns {
@@ -69,9 +68,7 @@ func RunSelfTests() []SelfTestResult {
 	if !SelfTestsSkipped() {
 		selfTestFnMu.RLock()
 		fns := make(map[string]func() SelfTestResult, len(selfTestFns))
-		for k, f := range selfTestFns {
-			fns[k] = f
-		}
+		maps.Copy(fns, selfTestFns)
 		selfTestFnMu.RUnlock()
 		for _, f := range fns {
 			RecordSelfTest(f())

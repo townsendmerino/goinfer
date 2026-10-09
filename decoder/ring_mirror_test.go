@@ -19,7 +19,7 @@ func mirrorEqual(r *ring) (bool, string) {
 		return true, ""
 	}
 	ws := r.w * r.stride
-	for i := 0; i < ws; i++ {
+	for i := range ws {
 		if math.Float32bits(r.k[i]) != math.Float32bits(r.k[ws+i]) {
 			return false, fmt.Sprintf("k slot %d differs from its mirror", i/r.stride)
 		}
@@ -76,7 +76,7 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 			}
 		}
 		vec := func() []float32 { return randVec(rng, stride) }
-		for step := 0; step < 400; step++ {
+		for range 400 {
 			switch op := rng.Intn(10); {
 			case op < 5: // a decode token: write the next position
 				r.write(pos, vec(), vec())

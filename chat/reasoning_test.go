@@ -69,13 +69,10 @@ func chunkings(s string) [][]string {
 	}
 	out = append(out, bytewise)
 	rng := rand.New(rand.NewSource(int64(len(s))*7919 + 1))
-	for k := 0; k < 40; k++ {
+	for range 40 {
 		var parts []string
 		for rest := s; rest != ""; {
-			n := 1 + rng.Intn(6)
-			if n > len(rest) {
-				n = len(rest)
-			}
+			n := min(1+rng.Intn(6), len(rest))
 			parts = append(parts, rest[:n])
 			rest = rest[n:]
 		}

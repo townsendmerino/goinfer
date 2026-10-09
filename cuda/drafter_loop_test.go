@@ -47,7 +47,7 @@ func dflashLoop(t *testing.T, mc *decoder.Model, r *cudaResident, rd *residentDr
 	// fuse the prompt's tap rows into drafter context
 	fuse := func(capt [][]float32, n int) {
 		cat := make([][]float32, n)
-		for m := 0; m < n; m++ {
+		for m := range n {
 			row := make([]float32, 0, len(taps)*hidden)
 			for _, tp := range capt {
 				row = append(row, tp[m*hidden:(m+1)*hidden]...)

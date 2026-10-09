@@ -493,11 +493,9 @@ func parallelRows(n int, f func(lo, hi int)) {
 		if lo == hi {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			f(lo, hi)
-		}()
+		})
 	}
 	wg.Wait()
 }

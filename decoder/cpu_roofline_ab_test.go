@@ -93,7 +93,7 @@ func (h *cpuDecodeAB) run(name string, pairs int, set func(on bool)) (median flo
 	_, ref := h.gen()
 	var ratios []float64
 	var sumOn, sumOff float64
-	for p := 0; p < pairs; p++ {
+	for p := range pairs {
 		var on, off float64
 		var tOn, tOff []int
 		if p%2 == 0 {
@@ -242,7 +242,7 @@ func procStatusMB(key string) float64 {
 	if err != nil {
 		return 0
 	}
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		if strings.HasPrefix(line, key+":") {
 			var kb float64
 			fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(line, key+":")), "%f", &kb)
@@ -329,7 +329,7 @@ func pairAB(t *testing.T, name string, a, b *cpuDecodeAB, pairs int) {
 		}
 	}
 	var ratios []float64
-	for p := 0; p < pairs; p++ {
+	for p := range pairs {
 		var ma, mb float64
 		var ta, tb []int
 		if p%2 == 0 {

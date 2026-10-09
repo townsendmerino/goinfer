@@ -96,7 +96,7 @@ func TestQwen35Real_loaderSlice(t *testing.T) {
 	if got := len(m.w.Layers); got != 4 {
 		t.Fatalf("loaded %d layers, want 4", got)
 	}
-	for l := 0; l < 3; l++ { // 0,1,2 are Gated DeltaNet (linear)
+	for l := range 3 { // 0,1,2 are Gated DeltaNet (linear)
 		if m.w.Layers[l].delta == nil {
 			t.Errorf("layer %d: delta (linear-attn) weights not loaded", l)
 		}

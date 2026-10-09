@@ -463,7 +463,7 @@ func runLedger(argv []string, w io.Writer) int {
 
 func splitGates(s string) []string {
 	var out []string
-	for _, g := range strings.Split(s, ",") {
+	for g := range strings.SplitSeq(s, ",") {
 		if g != "" {
 			out = append(out, g)
 		}

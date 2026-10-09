@@ -51,7 +51,7 @@ func TestCheckUnique(t *testing.T) {
 		t.Errorf("duplicate not named with both positions: %v", err)
 	}
 	var many []string
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		many = append(many, "x", "x") // nine duplicates
 	}
 	if err := CheckUnique(ls(many...)); err == nil || !strings.Contains(err.Error(), "more") {

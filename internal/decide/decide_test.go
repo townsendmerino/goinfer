@@ -159,7 +159,7 @@ func TestNew_refusesMultiTokenLabels(t *testing.T) {
 func TestFitTemperatures_recoversKnownT(t *testing.T) {
 	const tStar = 1.7
 	var rows []FitRow
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		lp := []float64{float64(i%7) * 0.9, float64(i%5) * -0.6, float64(i%3) * 1.3}
 		var z float64
 		tgt := make([]float64, len(lp))

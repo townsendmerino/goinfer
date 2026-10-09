@@ -171,7 +171,7 @@ func ttftCSV(env string, def []string) []string {
 		return def
 	}
 	out := make([]string, 0, 4)
-	for _, f := range strings.Split(v, ",") {
+	for f := range strings.SplitSeq(v, ",") {
 		if f = strings.TrimSpace(f); f != "" {
 			out = append(out, f)
 		}

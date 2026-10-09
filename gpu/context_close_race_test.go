@@ -25,7 +25,7 @@ func TestContextClose_finalizerRace(t *testing.T) {
 	defer leakExempt.Store(false)
 	done := make(chan error, 1)
 	go func() {
-		for i := 0; i < rounds; i++ {
+		for range rounds {
 			a, err := New()
 			if err != nil {
 				done <- err

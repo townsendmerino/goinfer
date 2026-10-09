@@ -95,7 +95,7 @@ func TestResidentDrafter_fuseParity(t *testing.T) {
 	for i, row := range ctx {
 		// f32 reference: fc matmul, then plain RMSNorm with the drafter's own eps.
 		ref := make([]float32, N)
-		for n := 0; n < N; n++ {
+		for n := range N {
 			var acc float64
 			wr := fcW[n*K : (n+1)*K]
 			for k, v := range row {
@@ -237,7 +237,7 @@ func TestResidentDrafter_extendContext(t *testing.T) {
 
 	// --- position dependence: identical input at different positions must differ (RoPE) ---
 	same := true
-	for j := 0; j < kvDim; j++ {
+	for j := range kvDim {
 		if oneShot[j] != oneShot[4*kvDim+j] {
 			same = false
 			break
@@ -394,7 +394,7 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 		t.Fatalf("SetHiddenCapture: %v", e)
 	}
 	perTok := make([][][]float32, M) // [m][tap][hidden]
-	for m := 0; m < M; m++ {
+	for m := range M {
 		if e := r.do(func() error {
 			if e := r.launchToken(rows[m], base+m, base+m, false); e != nil {
 				return e
@@ -430,8 +430,8 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 		if len(got[ti]) != M*hidden {
 			t.Fatalf("tap %d: batched row block is %d, want %d", taps[ti], len(got[ti]), M*hidden)
 		}
-		for m := 0; m < M; m++ {
-			for j := 0; j < hidden; j++ {
+		for m := range M {
+			for j := range hidden {
 				a, b := perTok[m][ti][j], got[ti][m*hidden+j]
 				if a != b {
 					if bad < 3 {

@@ -79,7 +79,7 @@ func TestQwen35GGUF_gate(t *testing.T) {
 		gen := make([]int, 0, steps)
 		aligned := true
 		firstDiv := -1
-		for s := 0; s < steps; s++ {
+		for s := range steps {
 			logits, err := m.forward(cur, cache)
 			if err != nil {
 				t.Fatalf("prompt %d step %d forward: %v", pi, s, err)

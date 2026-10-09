@@ -102,7 +102,7 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 	if v := os.Getenv("GOINFER_CUDA_GATE_KS"); strings.TrimSpace(v) != "" {
 		subFloorKs = nil
 		decisionKs = decisionKs[:0]
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
 				decisionKs = append(decisionKs, k)
 			}

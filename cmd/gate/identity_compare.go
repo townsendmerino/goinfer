@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // `gate identity`'s COMPARISON. Bytes decide; everything else here only describes a difference.
@@ -103,7 +104,7 @@ func compareDumps(a, b *dump) dumpDiff {
 	for p := 0; p < len(am.Prompts) && p < len(bm.Prompts); p++ {
 		sa, sb := am.Prompts[p].Steps, bm.Prompts[p].Steps
 		n := min(sa, sb)
-		for s := 0; s < n; s++ {
+		for s := range n {
 			ra := floatsAt(a.Bin, offA+s*v, v)
 			rb := floatsAt(b.Bin, offB+s*v, v)
 			if ra == nil || rb == nil {
@@ -175,14 +176,15 @@ func intsEqual(a, b []int) bool {
 }
 
 func stepsOf(m *dumpMeta) string {
-	s := "["
+	var s strings.Builder
+	s.WriteString("[")
 	for i, p := range m.Prompts {
 		if i > 0 {
-			s += " "
+			s.WriteString(" ")
 		}
-		s += fmt.Sprint(p.Steps)
+		s.WriteString(fmt.Sprint(p.Steps))
 	}
-	return s + "]"
+	return s.String() + "]"
 }
 
 // describe renders a non-identical diff in one line.

@@ -85,7 +85,7 @@ func (r *cudaResident) topkReadback(v, k int, temperature float64, wantZ bool) (
 		return decoder.TopKRow{}, e
 	}
 	row := decoder.TopKRow{IDs: buf[:k], Logits: make([]float32, k)}
-	for i := 0; i < k; i++ {
+	for i := range k {
 		row.Logits[i] = math.Float32frombits(uint32(buf[k+i]))
 	}
 	if wantZ {

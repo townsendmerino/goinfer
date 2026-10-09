@@ -17,7 +17,7 @@ import (
 func lateWrapperCloseRounds(t *testing.T, rounds int) error {
 	leakExempt.Store(true) // the leaked matrix per round is the point of this test
 	defer leakExempt.Store(false)
-	for i := 0; i < rounds; i++ {
+	for range rounds {
 		a, err := New()
 		if err != nil {
 			return err

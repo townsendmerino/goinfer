@@ -197,8 +197,8 @@ func (l *sessionLRU) checkin(s *decoder.Session) {
 
 // coldestIdle is the index of the least recently used session no generation holds, or -1 when every one is busy.
 func (l *sessionLRU) coldestIdle() int {
-	for i := len(l.order) - 1; i >= 0; i-- {
-		if !l.busy[l.order[i]] {
+	for i, v := range slices.Backward(l.order) {
+		if !l.busy[v] {
 			return i
 		}
 	}

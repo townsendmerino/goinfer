@@ -123,7 +123,7 @@ func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
 			if e := gpu.Download(rf.vc[l], v); e != nil {
 				return e
 			}
-			for h := 0; h < nH; h++ {
+			for h := range nH {
 				p := (h*997 + 13) % nKeys
 				copy(q[h*hd:(h+1)*hd], k[p*kvDim+(h/G)*hd:p*kvDim+(h/G)*hd+hd])
 			}
@@ -157,8 +157,8 @@ func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
 		}
 		perHead := func(got []float32) (med, mx float64) {
 			es := make([]float64, nH)
-			for h := 0; h < nH; h++ {
-				for i := 0; i < hd; i++ {
+			for h := range nH {
+				for i := range hd {
 					es[h] = math.Max(es[h], math.Abs(float64(got[h*hd+i])-ref[h*hd+i]))
 				}
 				es[h] /= math.Max(refMax, 1e-12)
@@ -219,7 +219,7 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true},
 		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
 	}
-	for _, cell := range strings.Split(cells, ",") {
+	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
 		if len(parts) != 2 {
 			t.Fatalf("bad cell %q", cell)

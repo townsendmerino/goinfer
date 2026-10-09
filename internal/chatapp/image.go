@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -129,8 +130,8 @@ func (im *imageInput) features() ([]float32, error) {
 func (s *session) imageTurns(turns []chat.Turn) ([]chat.Turn, error) {
 	out := append([]chat.Turn(nil), turns...)
 	idx := -1
-	for i := len(out) - 1; i >= 0; i-- {
-		if out[i].Role == "user" {
+	for i, o := range slices.Backward(out) {
+		if o.Role == "user" {
 			idx = i
 			break
 		}

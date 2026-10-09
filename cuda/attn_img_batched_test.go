@@ -137,7 +137,7 @@ func TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal(t *testing.T) 
 	}
 
 	rowsDiffer := func(m int) bool {
-		for d := 0; d < qDim; d++ {
+		for d := range qDim {
 			if causal[m*qDim+d] != img[m*qDim+d] {
 				return true
 			}
@@ -150,7 +150,7 @@ func TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal(t *testing.T) 
 	// span is [imgStart-startPos, imgEnd-startPos).
 	blockStartRow, blockEndRow := imgStart-startPos, imgEnd-startPos
 
-	for m := 0; m < blockStartRow; m++ {
+	for m := range blockStartRow {
 		if rowsDiffer(m) {
 			t.Errorf("row %d (before the block) must be bit-identical to causal — the mask leaked bidirectionality outside the block", m)
 		}
@@ -227,7 +227,7 @@ func TestAttnImgBatched_windowDecoupled(t *testing.T) {
 	// ...q at the test row set to all-ones, dot-producted against an all-100s poison key: score =
 	// 100*hd*scale = 800, versus ordinary keys scoring O(0.01) — softmax puts effectively all mass
 	// on the poison key if it is attended at all.
-	for d := 0; d < hd; d++ {
+	for d := range hd {
 		q[testRow*qDim+d] = 1
 		kc[poisonKey*kvDim+d] = 100
 		vc[poisonKey*kvDim+d] = 999

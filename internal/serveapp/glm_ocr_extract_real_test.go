@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -83,9 +84,7 @@ func TestServe_glmOcrExtraction_O5(t *testing.T) {
 			}}},
 			"response_format": map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "invoice", "schema": json.RawMessage(schema)}},
 		}
-		for k, v := range extra {
-			body[k] = v
-		}
+		maps.Copy(body, extra)
 		raw, _ := json.Marshal(body)
 		resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(raw))
 		if err != nil {

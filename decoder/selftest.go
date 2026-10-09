@@ -42,17 +42,18 @@ func (r SelfTestResult) OK() bool {
 
 // Summary is the one line a log or a report shows.
 func (r SelfTestResult) Summary() string {
-	s := fmt.Sprintf("%s %s (%.1f ms)", r.Backend, r.Status, float64(r.Elapsed.Microseconds())/1000)
+	var s strings.Builder
+	s.WriteString(fmt.Sprintf("%s %s (%.1f ms)", r.Backend, r.Status, float64(r.Elapsed.Microseconds())/1000))
 	if len(r.Disabled) > 0 {
-		s += ", stepped down: " + strings.Join(r.Disabled, ", ")
+		s.WriteString(", stepped down: " + strings.Join(r.Disabled, ", "))
 	}
 	if r.Note != "" {
-		s += ", " + r.Note
+		s.WriteString(", " + r.Note)
 	}
 	for _, m := range r.Mismatches {
-		s += "; " + m
+		s.WriteString("; " + m)
 	}
-	return s
+	return s.String()
 }
 
 var (

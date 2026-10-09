@@ -125,7 +125,7 @@ func TestQwen35GGUF_weightDiff(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < nLayer; i++ {
+	for i := range nLayer {
 		t.Logf("--- layer %d (%s) ---", i, layerKind(wRef.arch, i))
 		lr, lg := &wRef.Layers[i], &gW.Layers[i]
 		check("attn_norm", lg.PreAttnNorm, lr.PreAttnNorm)
@@ -207,7 +207,7 @@ func wmDense(t *testing.T, name string, w *linalg.WeightMat) []float32 {
 	}
 	rows, cols := w.Rows(), w.Cols()
 	out := make([]float32, rows*cols)
-	for i := 0; i < rows; i++ {
+	for i := range rows {
 		w.Row(i, out[i*cols:(i+1)*cols])
 	}
 	return out

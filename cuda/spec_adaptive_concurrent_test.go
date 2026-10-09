@@ -81,8 +81,7 @@ func TestSpecAdaptiveConcurrentCUDA(t *testing.T) {
 		got := make([][]int, nCl)
 		var wg sync.WaitGroup
 		for c := range nCl {
-			wg.Add(1)
-			go func() { defer wg.Done(); got[c] = specIDs(t, m, mkPrompt(c), maxTok) }()
+			wg.Go(func() { ; got[c] = specIDs(t, m, mkPrompt(c), maxTok) })
 		}
 		wg.Wait()
 		for c := range nCl {

@@ -99,7 +99,7 @@ func TestQwen38GGUF_weightDiff(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < nLayer; i++ {
+	for i := range nLayer {
 		t.Logf("--- layer %d (%s) ---", i, layerKind(wRef.arch, i))
 		p := fmt.Sprintf("blk.%d.", i) // the GGUF prefix loadQ35 uses, for the per-tensor quant lookup
 		lr, lg := &wRef.Layers[i], &gW.Layers[i]

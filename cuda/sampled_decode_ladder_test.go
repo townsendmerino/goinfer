@@ -164,7 +164,7 @@ func TestSampledDecodeLadder(t *testing.T) {
 	dropped := make([]int, len(arms))
 	ratios := make([][]float64, len(arms))
 	start := time.Now()
-	for r := 0; r < reps; r++ {
+	for r := range reps {
 		promptIdx = r % len(prompts)
 		round := make([]float64, len(arms))
 		ok := make([]bool, len(arms))

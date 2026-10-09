@@ -99,7 +99,7 @@ func TestR14DrafterArgmaxAB(t *testing.T) {
 	const pairs = 6
 	ratios := make([]float64, 0, pairs)
 	var sumH, sumD float64
-	for p := 0; p < pairs; p++ {
+	for p := range pairs {
 		var h, d float64
 		if p%2 == 0 {
 			_, h = run(true)

@@ -319,7 +319,7 @@ func BenchmarkForwardN_NormPrefill_K512_Dim2048(b *testing.B) {
 	b.SetBytes(K * dim * 4)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for r := 0; r < K; r++ {
+		for r := range K {
 			rmsNormInto(norm[r*dim:(r+1)*dim], h[r*dim:(r+1)*dim], weight, 1, dim, 1e-6, false)
 		}
 	}
@@ -339,7 +339,7 @@ func BenchmarkAttendQuery_Heads32_K512_Dim128(b *testing.B) {
 	cache := NewKVCache(1, nKV, hd, 0, nKeys, nil)
 	k := benchFloatSlice(nKV*hd, 2)
 	v := benchFloatSlice(nKV*hd, 3)
-	for s := 0; s < nKeys; s++ {
+	for range nKeys {
 		cache.Append(0, k, v)
 	}
 	q := benchFloatSlice(nH*hd, 1)

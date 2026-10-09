@@ -67,7 +67,7 @@ func TestMinistral3ResidentParityCUDA(t *testing.T) {
 	cache := mcpu.NewCache(ntok + 1)
 	worst, first := 1.0, 1.0
 	exact := 0
-	for i := 0; i < ntok; i++ {
+	for i := range ntok {
 		tok := (i*37 + 3) % vocab
 		cpuL, err := mcpu.ForwardForTest(tok, cache)
 		if err != nil {

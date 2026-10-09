@@ -66,8 +66,7 @@ func TestSwapWatch_baseline(t *testing.T) {
 	const alreadyDeepInSwap = 14_700_000_000 // the cold-user run's own stale 14.7 GB baseline
 	r := newScriptedReader([]int64{alreadyDeepInSwap, alreadyDeepInSwap, alreadyDeepInSwap + 1000})
 	var tripped atomic.Bool
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	w := StartSwapWatch(ctx, SwapWatchOptions{
 		Read:         r.Read,
 		PollInterval: time.Millisecond,
@@ -97,8 +96,7 @@ func TestSwapWatch_ramp(t *testing.T) {
 	})
 	var trips atomic.Int64
 	var lastUsed, lastDelta atomic.Int64
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	w := StartSwapWatch(ctx, SwapWatchOptions{
 		Read:         r.Read,
 		PollInterval: time.Millisecond,
@@ -139,8 +137,7 @@ func TestSwapWatch_hysteresis(t *testing.T) {
 		baseline + 60_000_000,
 	})
 	var trips, resumes atomic.Int64
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	w := StartSwapWatch(ctx, SwapWatchOptions{
 		Read:         r.Read,
 		PollInterval: time.Millisecond,
@@ -170,8 +167,7 @@ func TestSwapWatch_hysteresis(t *testing.T) {
 func TestSwapWatch_unavailableReadingsAreSkipped(t *testing.T) {
 	r := newScriptedReader([]int64{-1, -1, 1_000_000_000, -1, 1_000_000_000 + 100})
 	var tripped atomic.Bool
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	w := StartSwapWatch(ctx, SwapWatchOptions{
 		Read:         r.Read,
 		PollInterval: time.Millisecond,
@@ -190,8 +186,7 @@ func TestSwapWatch_unavailableReadingsAreSkipped(t *testing.T) {
 // around every StartSwapWatch call site.
 func TestSwapWatch_offSwitch(t *testing.T) {
 	var tripped atomic.Bool
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	w := StartSwapWatch(ctx, SwapWatchOptions{
 		Read:   nil,
 		OnTrip: func(int64, int64) { tripped.Store(true) },

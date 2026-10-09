@@ -151,7 +151,7 @@ func TestHarmonySplitter_chunkIndependent(t *testing.T) {
 				}
 			}
 		}
-		for n := 0; n < 300; n++ {
+		for range 300 {
 			var parts []string
 			for rest := f; rest != ""; {
 				k := 1 + rng.Intn(min(len(rest), 12))

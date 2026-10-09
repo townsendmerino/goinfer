@@ -516,7 +516,7 @@ func Collapse(files []File) []Listed {
 			continue
 		}
 		seen[group[0].Path] = true
-		out = append(out, Listed{File: File{Path: group[0].Path, Size: SetBytes(group), SHA256: group[0].SHA256}, Shards: len(group)})
+		out = append(out, Listed{Path: group[0].Path, Size: SetBytes(group), SHA256: group[0].SHA256, Shards: len(group)})
 	}
 	return out
 }

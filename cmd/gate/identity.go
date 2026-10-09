@@ -128,7 +128,7 @@ func runIdentity(argv []string, w io.Writer) int {
 
 func splitList(s string) []string {
 	var out []string
-	for _, f := range strings.Split(s, ",") {
+	for f := range strings.SplitSeq(s, ",") {
 		if f = strings.TrimSpace(f); f != "" {
 			out = append(out, f)
 		}
@@ -463,7 +463,7 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 	} else {
 		gov := "1.21"
 		if b, err := os.ReadFile(filepath.Join(s.WT, "go.mod")); err == nil {
-			for _, ln := range strings.Split(string(b), "\n") {
+			for ln := range strings.SplitSeq(string(b), "\n") {
 				if f := strings.Fields(ln); len(f) == 2 && f[0] == "go" {
 					gov = f[1]
 				}

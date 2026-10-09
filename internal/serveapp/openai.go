@@ -1298,8 +1298,7 @@ func (e *prefillMemoryError) Unwrap() error { return e.err }
 // EITHER response format (writeErr's OpenAI shape or writeAnthropicErr's), so the 413 split
 // above cannot silently regress back to a flat 400 at a site someone forgets to update.
 func prepareErrStatus(err error) int {
-	var pmErr *prefillMemoryError
-	if errors.As(err, &pmErr) {
+	if _, ok := errors.AsType[*prefillMemoryError](err); ok {
 		return http.StatusRequestEntityTooLarge
 	}
 	return http.StatusBadRequest

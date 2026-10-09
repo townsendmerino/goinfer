@@ -695,7 +695,7 @@ func finalizerSerial(f func()) {
 		close(done)
 	})
 	tok = nil
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		runtime.GC() // makes the unreachable token due; the finalizer goroutine runs it
 		select {
 		case <-done:

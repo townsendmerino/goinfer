@@ -72,7 +72,7 @@ func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInt
 	expertsGateUp := make([]linalg.WeightMat, nExperts)
 	expertsDown := make([]linalg.WeightMat, nExperts)
 	off := 0
-	for e := 0; e < nExperts; e++ {
+	for e := range nExperts {
 		guQ4 := mapping[off : off+guBytes]
 		off += guBytes
 		dnQ4 := mapping[off : off+dnBytes]
@@ -252,10 +252,10 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 	const goroutines, itersEach = 8, 30
 	var wg sync.WaitGroup
 	fails := make(chan string, goroutines*itersEach)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Go(func() {
 			rng := rand.New(rand.NewSource(int64(g)))
-			for iter := 0; iter < itersEach; iter++ {
+			for range itersEach {
 				i := rng.Intn(nToks)
 				got := gemma4MoEFFN(be, arch, append([]float32(nil), toks[i]...), w, poolPager)
 				for j := range want[i] {

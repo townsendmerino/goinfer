@@ -83,7 +83,7 @@ func TestResidentAcquire_interleavedConversationsKeepTheirSlots(t *testing.T) {
 	conv := map[string][]int{"A": append(slices.Clone(pre), 100), "B": append(slices.Clone(pre), 200)}
 	committed := map[string]int{}
 	gen := 10
-	for turn := 0; turn < 4; turn++ {
+	for turn := range 4 {
 		for _, c := range []string{"A", "B"} {
 			prompt := conv[c]
 			got := m.residentAcquire(prompt, nil, nil)

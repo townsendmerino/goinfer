@@ -962,7 +962,7 @@ func TestEmitterCoverage_joinedFamilies(t *testing.T) {
 	report := func(fams map[string]bool) string {
 		var b strings.Builder
 		emitterCoverage(&b, res, fams)
-		for _, l := range strings.Split(b.String(), "\n") {
+		for l := range strings.SplitSeq(b.String(), "\n") {
 			if strings.Contains(l, "TestGemma12Real_gate") {
 				return l
 			}

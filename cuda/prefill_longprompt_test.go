@@ -139,7 +139,7 @@ func TestPrefillLongPrompt(t *testing.T) {
 	lengths := []int{512, 2048, 4096, 8012}
 	if v := os.Getenv("GOINFER_LONGPROMPT_LENGTHS"); v != "" {
 		lengths = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, e := strconv.Atoi(strings.TrimSpace(f))
 			if e != nil || n <= 0 {
 				t.Fatalf("GOINFER_LONGPROMPT_LENGTHS: bad entry %q", f)

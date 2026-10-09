@@ -180,9 +180,9 @@ func TestQuantVecBatched_scaleIsExactMaxabs(t *testing.T) {
 	rng := rand.New(rand.NewSource(99))
 	host := make([]float32, M*N)
 	want := make([]float32, M)
-	for m := 0; m < M; m++ {
+	for m := range M {
 		// Row m is scaled by (m+1), so every row's maxabs is distinct and a leak is visible.
-		for i := 0; i < N; i++ {
+		for i := range N {
 			v := float32(rng.NormFloat64()) * float32(m+1)
 			host[m*N+i] = v
 			if a := float32(math.Abs(float64(v))); a > want[m] {
@@ -209,7 +209,7 @@ func TestQuantVecBatched_scaleIsExactMaxabs(t *testing.T) {
 	if e := gc.CopyDtoH(bg, got, dsc); e != nil {
 		t.Fatalf("CopyDtoH: %v", e)
 	}
-	for m := 0; m < M; m++ {
+	for m := range M {
 		if wantScale := want[m] / 127.0; got[m] != wantScale {
 			t.Errorf("row %d: scale %v, want EXACTLY %v (maxabs %v / 127)", m, got[m], wantScale, want[m])
 		}

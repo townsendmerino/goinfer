@@ -168,10 +168,7 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 	// ever sees freeBytes, makes the two checks agree: whatever ctx Plan picks now already leaves
 	// room for it. floored at 0 rather than going negative on an already-tiny free-bytes probe
 	// (Plan's own tryCtx/chooseCtx already decline cleanly on an unfittable budget).
-	marginedFree := free - ctxCapMarginBytes
-	if marginedFree < 0 {
-		marginedFree = 0
-	}
+	marginedFree := max(free-ctxCapMarginBytes, 0)
 	// ExtraBytes: tasks/task-fit-to-hardware.md §2's drafter-aware sizing — a --drafter attaching after
 	// BuildResident must not find the context Plan chose here left it no room (m.ExtraResidentBytes's
 	// own doc comment). Zero when nothing is attaching, so this is a no-op for every load without one.
@@ -1182,7 +1179,7 @@ func allocRoundSlack(n int64) int64 {
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
 var allocSlackOffForTest bool
 
-var hostWType = reflect.TypeOf(hostW{})
+var hostWType = reflect.TypeFor[hostW]()
 
 // packedAllocSlack is the allocation rounding of every packed weight the build is about to upload: each hostW found
 // under v (a struct, slice, array or pointer, however nested), as the two buffers upW allocates for it. Walking by
@@ -1194,14 +1191,14 @@ func packedAllocSlack(v any) int64 {
 	var walk func(rv reflect.Value) int64
 	walk = func(rv reflect.Value) int64 {
 		switch rv.Kind() {
-		case reflect.Ptr, reflect.Interface:
+		case reflect.Pointer, reflect.Interface:
 			if rv.IsNil() {
 				return 0
 			}
 			return walk(rv.Elem())
 		case reflect.Slice, reflect.Array:
 			switch rv.Type().Elem().Kind() {
-			case reflect.Struct, reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Array:
+			case reflect.Struct, reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Array:
 			default:
 				return 0 // a vector of numbers (biases, norms) holds no hostW: do not walk its elements
 			}
@@ -1218,8 +1215,8 @@ func packedAllocSlack(v any) int64 {
 				return n
 			}
 			var n int64
-			for i := 0; i < rv.NumField(); i++ {
-				n += walk(rv.Field(i))
+			for _, field := range rv.Fields() {
+				n += walk(field)
 			}
 			return n
 		}
@@ -1423,7 +1420,6 @@ func (r *cudaResident) allocSlots() error {
 	}
 	sort.SliceStable(reqs, func(a, b int) bool { return reqs[a].size > reqs[b].size })
 	for _, q := range reqs {
-		q := q
 		if q.isW {
 			probe(q.size, func() { q.w.W = r.au32(q.n) })
 		} else {
@@ -1855,7 +1851,7 @@ func (r *cudaResident) HeadArgProfForTest() (sync, dl, host time.Duration, calls
 // hostArgmaxRows is the serial host argmax both tails share: strict > from element 0, so ties go
 // to the lowest index — the same tie-break argmax_reduce implements on the device.
 func (r *cudaResident) hostArgmaxRows(host []float32, M int, ids []int) {
-	for m := 0; m < M; m++ {
+	for m := range M {
 		row := host[m*r.vocab : (m+1)*r.vocab]
 		bi, bv := 0, row[0]
 		for i, v := range row {
@@ -2670,7 +2666,7 @@ func (r *cudaResident) pipeName(f Pipeline) (name string) {
 	}
 	v := reflect.ValueOf(r).Elem()
 	t := v.Type()
-	pt := reflect.TypeOf(Pipeline{})
+	pt := reflect.TypeFor[Pipeline]()
 	for i := 0; i < t.NumField(); i++ {
 		if t.Field(i).Type != pt {
 			continue

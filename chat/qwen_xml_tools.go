@@ -212,11 +212,11 @@ func renderQwen35XMLTools(system string, turns []Turn, tools []Tool, hist histKi
 // boolean, null, an object or a list) and kept as text otherwise. That is the one place the text and the type can disagree: a value "123"
 // for a string parameter must stay "123", which only the schema can say.
 func parseQwenXMLCall(body string, tools []Tool) (ToolCall, bool) {
-	i := strings.Index(body, "<function=")
-	if i < 0 {
+	_, after, ok := strings.Cut(body, "<function=")
+	if !ok {
 		return ToolCall{}, false
 	}
-	rest := body[i+len("<function="):]
+	rest := after
 	end := strings.Index(rest, ">")
 	if end <= 0 {
 		return ToolCall{}, false

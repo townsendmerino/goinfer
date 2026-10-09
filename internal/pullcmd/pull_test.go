@@ -113,8 +113,8 @@ func TestResolveRunRef_registryShortNameRewrites(t *testing.T) {
 
 // R22: the listing marks a projector among the quants (listingLine is what `pull <repo>` prints per file).
 func TestListingLine_marksVisionProjector(t *testing.T) {
-	q := listingLine(pull.Listed{File: pull.File{Path: "gemma-3-4b-it-Q4_K_M.gguf", Size: 2 << 30}})
-	m := listingLine(pull.Listed{File: pull.File{Path: "mmproj-google_gemma-3-4b-it-f16.gguf", Size: 800 << 20}})
+	q := listingLine(pull.Listed{Path: "gemma-3-4b-it-Q4_K_M.gguf", Size: 2 << 30})
+	m := listingLine(pull.Listed{Path: "mmproj-google_gemma-3-4b-it-f16.gguf", Size: 800 << 20})
 	if strings.Contains(q, "vision projector") || !strings.HasSuffix(q, "\n") {
 		t.Errorf("a quant row was marked or lost its newline: %q", q)
 	}

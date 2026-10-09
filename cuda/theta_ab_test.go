@@ -176,7 +176,7 @@ func TestThetaAB(t *testing.T) {
 
 			// Interleave arm-by-arm across repetitions so drift cannot bias one arm.
 			times := make(map[string][]float64, len(arms))
-			for r := 0; r < reps; r++ {
+			for range reps {
 				for _, a := range arms {
 					t0 := time.Now()
 					got, err := a.run()

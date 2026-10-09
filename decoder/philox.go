@@ -19,7 +19,7 @@ const (
 )
 
 func philox4x32(ctr [4]uint32, key [2]uint32) [4]uint32 {
-	for r := 0; r < 10; r++ {
+	for r := range 10 {
 		if r > 0 { // the key is bumped between rounds, not before the first
 			key[0] += philoxW0
 			key[1] += philoxW1

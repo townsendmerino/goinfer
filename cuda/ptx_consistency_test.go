@@ -153,7 +153,7 @@ func cuGlobals(cu string) map[string][]string {
 		params := strings.TrimSpace(src[loc[1] : i-1])
 		var kinds []string
 		if params != "" && params != "void" {
-			for _, p := range strings.Split(params, ",") {
+			for p := range strings.SplitSeq(params, ",") {
 				kinds = append(kinds, cKind(p))
 			}
 		}

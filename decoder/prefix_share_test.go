@@ -19,7 +19,7 @@ func sharedPrompts(vocab, prefix int, suffixes []int) [][]int {
 	out := make([][]int, len(suffixes))
 	for k, n := range suffixes {
 		p := append([]int(nil), base...)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			p = append(p, (k*101+i*53+7)%vocab)
 		}
 		out[k] = p

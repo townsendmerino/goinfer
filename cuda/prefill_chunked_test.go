@@ -77,7 +77,7 @@ func TestPrefillChunked_bitIdentical(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[chunked] chunk=%-6s M=%d prefill %s\n", chunk, M, time.Since(start).Round(time.Millisecond))
 		ids := make([]int, 0, 8)
 		cur := lg
-		for k := 0; k < 8; k++ {
+		for k := range 8 {
 			best := 0
 			for i, v := range cur {
 				if v > cur[best] {

@@ -110,7 +110,7 @@ func TestAttnBatched_parity(t *testing.T) {
 					t.Fatalf("encoder: %v", err)
 				}
 				defer enc.Release()
-				for row := 0; row < M; row++ {
+				for row := range M {
 					qRow, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(tc.nH * tc.hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 					if err != nil {
 						t.Fatalf("alloc qRow: %v", err)

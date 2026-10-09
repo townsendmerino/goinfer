@@ -34,7 +34,7 @@ func s17Profile(t *testing.T, name string, ops *towerOps, fwd func() ([]float32,
 	}
 	var walls []time.Duration
 	var ref []float32
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		t0 := time.Now()
 		out, err := fwd()
 		walls = append(walls, time.Since(t0))
@@ -47,7 +47,7 @@ func s17Profile(t *testing.T, name string, ops *towerOps, fwd func() ([]float32,
 	var per [nTowerClass][]time.Duration
 	var gf, af float64
 	same := true
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		ops.startProf()
 		t0 := time.Now()
 		out, err := fwd()

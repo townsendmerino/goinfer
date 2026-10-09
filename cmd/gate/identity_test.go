@@ -103,14 +103,14 @@ func TestIdentityPathAllowed_refusesTheArchive(t *testing.T) {
 func synthDump(prompts, steps, v int, f func(p, s, i int) float32) *dump {
 	m := &dumpMeta{OK: true, Vocab: v, DecodePath: "cpu (f32)"}
 	var b bytes.Buffer
-	for p := 0; p < prompts; p++ {
+	for p := range prompts {
 		m.Prompts = append(m.Prompts, struct {
 			Len    int   `json:"len"`
 			Steps  int   `json:"steps"`
 			Tokens []int `json:"tokens"`
 		}{Len: 8, Steps: steps, Tokens: make([]int, steps)})
-		for s := 0; s < steps; s++ {
-			for i := 0; i < v; i++ {
+		for s := range steps {
+			for i := range v {
 				_ = binary.Write(&b, binary.LittleEndian, math.Float32bits(f(p, s, i)))
 			}
 		}
@@ -170,7 +170,7 @@ func TestJudgeCell_verdicts(t *testing.T) {
 	noisy := func(ulps int) *dump {
 		return synthDump(1, 2, 8, func(p, s, i int) float32 {
 			x := base(p, s, i)
-			for k := 0; k < ulps; k++ {
+			for range ulps {
 				x = math.Nextafter32(x, float32(math.Inf(1)))
 			}
 			return x

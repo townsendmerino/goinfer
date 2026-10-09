@@ -157,7 +157,7 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	// of every CI run. The check right after the loop is the guard that shape needs: a build that
 	// declares a stride must be seen to apply it.
 	var seedList []int
-	for s := 0; s < seeds; s += sweepSeedStride {
+	for s := range seeds {
 		seedList = append(seedList, s)
 	}
 	if sweepSeedStride > 1 && len(seedList) >= seeds {

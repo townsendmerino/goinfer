@@ -162,7 +162,7 @@ func checkEnvReadRatchet(t *testing.T, root string, readInProd map[string]string
 	// "startup: <who> — <why>" (configuration read once at startup) or "diagnostic: <owning doc> — <why>".
 	listed := map[string]string{}
 	if b, err := os.ReadFile(path); err == nil {
-		for _, line := range strings.Split(string(b), "\n") {
+		for line := range strings.SplitSeq(string(b), "\n") {
 			if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
 				name, ann, _ := strings.Cut(line, "\t")
 				listed[strings.TrimSpace(name)] = strings.TrimSpace(ann)
@@ -227,9 +227,9 @@ func checkEnvReadRatchet(t *testing.T, root string, readInProd map[string]string
 
 // testhooksOnly reports whether a Go file's build constraint requires the goinfer_testhooks tag.
 func testhooksOnly(src []byte) bool {
-	for _, line := range strings.Split(string(src), "\n") {
+	for line := range strings.SplitSeq(string(src), "\n") {
 		if c, ok := strings.CutPrefix(line, "//go:build "); ok {
-			for _, term := range strings.Split(c, "&&") {
+			for term := range strings.SplitSeq(c, "&&") {
 				if strings.TrimSpace(term) == "goinfer_testhooks" {
 					return !strings.Contains(c, "||")
 				}

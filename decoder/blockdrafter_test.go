@@ -106,13 +106,12 @@ func syntheticDrafter(t *testing.T, nLayers int) *DFlashDrafter {
 	t.Helper()
 	const hidden, nH, nKV, hd, inter, nTaps = 8, 2, 1, 4, 16, 2
 	mat := func(n, k int) linalg.WeightMat { return linalg.WrapF32(make([]float32, n*k), n, k) }
-	d := &DFlashDrafter{blockTrunk: blockTrunk{
+	d := &DFlashDrafter{
 		hidden: hidden, nHeads: nH, nKV: nKV, headDim: hd, inter: inter,
 		fc:         mat(hidden, nTaps*hidden),
 		hiddenNorm: make([]float32, hidden),
-		finalNorm:  make([]float32, hidden),
-	}}
-	for i := 0; i < nLayers; i++ {
+		finalNorm:  make([]float32, hidden)}
+	for range nLayers {
 		d.layers = append(d.layers, dflashLayer{
 			q: mat(nH*hd, hidden), k: mat(nKV*hd, hidden), v: mat(nKV*hd, hidden), o: mat(hidden, nH*hd),
 			gate: mat(inter, hidden), up: mat(inter, hidden), down: mat(hidden, inter),

@@ -116,7 +116,7 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 								t.Fatalf("download: %v", e)
 							}
 							copy(got, full[:M*qDim])
-							for i := 0; i < M; i++ {
+							for i := range M {
 								nk := n0 + i
 								ws := 0
 								if window > 0 && nk > window {

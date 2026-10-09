@@ -204,16 +204,7 @@ func newExpertBufferPool(giwPath string, members []poolMember, budget int64, min
 			}
 		}
 	}
-	nSlots := int(budget / int64(slotSize))
-	if nSlots < minSlots {
-		nSlots = minSlots
-	}
-	if nSlots < 1 {
-		nSlots = 1
-	}
-	if nSlots > len(members) {
-		nSlots = len(members)
-	}
+	nSlots := min(max(max(int(budget/int64(slotSize)), minSlots), 1), len(members))
 	fd, err := os.Open(giwPath)
 	if err != nil {
 		return nil, fmt.Errorf("open %s for pread: %w", giwPath, err)

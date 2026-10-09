@@ -142,10 +142,7 @@ type fitCheck struct {
 }
 
 func (f fitCheck) need() int64 {
-	n := f.weightBytes + f.kvBytes + f.srcFileBytes
-	if f.cudaBuildBytes > n {
-		n = f.cudaBuildBytes
-	}
+	n := max(f.cudaBuildBytes, f.weightBytes+f.kvBytes+f.srcFileBytes)
 	return n
 }
 func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
@@ -375,10 +372,7 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	if avail <= 0 {
 		return 0, nil
 	}
-	budget := avail - giwMemMargin
-	if budget < 0 {
-		budget = 0
-	}
+	budget := max(avail-giwMemMargin, 0)
 	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling (A3)
 	if !ok {
 		return 0, nil // no pin and the model's own max is unknown ⇒ can't price KV; proceed

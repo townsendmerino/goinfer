@@ -43,7 +43,7 @@ func TestVsumMechanism(t *testing.T) {
 	if sSpec == "" {
 		sSpec = "1,2,4,8,16"
 	}
-	for _, f := range strings.Split(sSpec, ",") {
+	for f := range strings.SplitSeq(sSpec, ",") {
 		s, err := strconv.Atoi(strings.TrimSpace(f))
 		if err != nil || s < 1 {
 			t.Fatalf("GOINFER_VSUM_MECH_S: bad entry %q", f)

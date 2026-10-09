@@ -55,7 +55,7 @@ func gumbelArgmaxRange(logits []float32, lo, hi int, invT float32, key [2]uint32
 	d0, d1 := uint32(draw), uint32(draw>>32)
 	for b := lo >> 2; b<<2 < hi; b++ {
 		r := philox4x32([4]uint32{uint32(b), d0, d1, 0}, key)
-		for lane := 0; lane < 4; lane++ {
+		for lane := range 4 {
 			i := b<<2 + lane
 			if i < lo || i >= hi {
 				continue

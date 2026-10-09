@@ -214,7 +214,7 @@ func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 	// origMaxPos=8 on the fixture: positions 0-7 give floor=0 (scale==1, the identity a SHORT
 	// test would only ever see — the exact "minimal repro hides the bug" trap AttnTempBeta's own
 	// comment warns about), 8-15 give floor=1, 16-23 give floor=2. Covers both.
-	for pos := 0; pos < 24; pos++ {
+	for pos := range 24 {
 		want := float32(1 + m.w.arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/m.w.arch.AttnTempOrigMaxPos)))
 		got := m.AttnTempScale(pos)
 		if got != want {

@@ -19,7 +19,7 @@ package decoder
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -84,7 +84,7 @@ func (b *snapshotBuf) bytes() int {
 
 func stats(d []time.Duration) (lo, med, hi time.Duration) {
 	s := append([]time.Duration(nil), d...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	return s[0], s[len(s)/2], s[len(s)-1]
 }
 
@@ -115,7 +115,7 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 	// tokens of a sequence is smaller, and pricing that would understate the real cost.
 	cache := m.NewCache(64)
 	const prime = 16
-	for i := 0; i < prime; i++ {
+	for i := range prime {
 		if _, err := m.forward(1+i, cache); err != nil {
 			t.Fatalf("prime forward %d: %v", i, err)
 		}
@@ -165,7 +165,7 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 	// landing on one of them. Pooling separately-run batches is what this repo's rule 7 forbids.
 	const rounds = 30
 	var dec, snap, rest []time.Duration
-	for r := 0; r < rounds; r++ {
+	for r := range rounds {
 		t0 := time.Now()
 		if _, err := m.forward(1+(r%64), cache); err != nil {
 			t.Fatalf("decode forward: %v", err)
@@ -201,7 +201,7 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 	// one under-bounding by 7-10x and one inverting a sign.
 	ctl := newSnapshotBuf(cache)
 	var tight []time.Duration
-	for r := 0; r < rounds; r++ {
+	for range rounds {
 		t0 := time.Now()
 		ctl.take(cache)
 		ctl.restore(cache)
@@ -214,7 +214,7 @@ func TestDeltaNetSnapshotCost(t *testing.T) {
 
 	// Allocating variant: what the FIRST round costs if the buffer is not reused.
 	var alloc []time.Duration
-	for r := 0; r < 10; r++ {
+	for range 10 {
 		t0 := time.Now()
 		b := newSnapshotBuf(cache)
 		b.take(cache)

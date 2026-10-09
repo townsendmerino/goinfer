@@ -97,7 +97,7 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 	const rounds = 8 // 320 calls total per arm, alternating in small blocks so drift cannot bias one arm
 	pos := 8
 	var full, noLog []float64
-	for round := 0; round < rounds; round++ {
+	for range rounds {
 		full = append(full, timeIt(perRound, func() error { _, e := r.Run(emb, pos, pos); pos++; return e })...)
 		noLog = append(noLog, timeIt(perRound, func() error {
 			if e := r.RunNoLogits(emb, pos, pos); e != nil {

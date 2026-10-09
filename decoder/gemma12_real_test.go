@@ -98,7 +98,7 @@ func TestGemma12Real_gate(t *testing.T) {
 				if cos < cosBar || bcos < cosBar {
 					t.Errorf("%s: cosine %.6f / %.6f < %.3f", label, cos, bcos, cosBar)
 				}
-				for i := 0; i < contN; i++ {
+				for i := range contN {
 					if got[i] != gm.ContinuationIDs[i] {
 						t.Errorf("%s: continuation[%d] = %d, want %d", label, i, got[i], gm.ContinuationIDs[i])
 						break

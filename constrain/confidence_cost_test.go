@@ -74,7 +74,7 @@ func TestConfidenceCost_C1(t *testing.T) {
 	const N = 15
 	for _, st := range states {
 		best := map[bool]time.Duration{false: time.Hour, true: time.Hour}
-		for i := 0; i < N; i++ {
+		for i := range N {
 			for _, on := range []bool{i%2 == 0, i%2 != 0} {
 				if d := timeOne(on, st.prefix); d < best[on] {
 					best[on] = d

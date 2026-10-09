@@ -60,8 +60,7 @@ func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		for c := range nConv {
-			wg.Add(1)
-			go func() { defer wg.Done(); <-start; one(c) }()
+			wg.Go(func() { ; <-start; one(c) })
 		}
 		close(start)
 		wg.Wait()

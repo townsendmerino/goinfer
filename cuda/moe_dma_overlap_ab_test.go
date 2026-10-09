@@ -115,7 +115,7 @@ func TestMoEDMAOverlapAB(t *testing.T) {
 	const pairs = 8
 	ratios := make([]float64, 0, pairs)
 	var sumOff, sumOn time.Duration
-	for p := 0; p < pairs; p++ {
+	for p := range pairs {
 		var dOff, dOn time.Duration
 		var aOff, aOn []int
 		if p%2 == 0 {

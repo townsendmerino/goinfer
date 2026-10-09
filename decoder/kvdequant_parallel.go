@@ -53,11 +53,9 @@ func dequantKVRows(dstK, dstV []float32, kq, vq []int8, ksc, vsc []float32, rows
 		if r0 >= r1 {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			chunk(r0, r1)
-		}()
+		})
 	}
 	chunk(0, min(per, rows)) // the caller takes the first chunk
 	wg.Wait()

@@ -13,6 +13,8 @@ package decoder
 // registry itself: a new Options field fails TestOptionGrid_everyOptionClassified until it is
 // classified on every path, and a cell that claims a test or a decline must name one that exists.
 
+import "maps"
+
 // ogPath is an execution path an option can reach.
 type ogPath string
 
@@ -84,9 +86,7 @@ func ogResidentNA(why string) map[ogPath]ogCell {
 func ogMerge(ms ...map[ogPath]ogCell) map[ogPath]ogCell {
 	out := map[ogPath]ogCell{}
 	for _, m := range ms {
-		for p, c := range m {
-			out[p] = c
-		}
+		maps.Copy(out, m)
 	}
 	return out
 }

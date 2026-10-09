@@ -53,7 +53,7 @@ func fusedQKVRowsRun(t *testing.T, rf *cudaResident, H, qDim, kvDim, rowsPerWarp
 		}
 		qb, kb, vb := rf.af(qDim), rf.af(kvDim), rf.af(kvDim)
 		shm := uint32((H + 256 + H/4) * 4)
-		for i := 0; i < n; i++ {
+		for range n {
 			var e error
 			if rowsPerWarp == 0 {
 				e = rf.launch(rf.fQKV, LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
@@ -206,7 +206,7 @@ func fusedGURun(t *testing.T, rf *cudaResident, H, I, rowsPerWarp, n int, seed i
 		Sg, Su := rf.upu16(mkS(I)), rf.upu16(mkS(I))
 		gb, ub := rf.af(I), rf.af(I)
 		shm := uint32((H + 256 + H/4) * 4)
-		for i := 0; i < n; i++ {
+		for range n {
 			var e error
 			if rowsPerWarp == 0 {
 				e = rf.launch(rf.fGU, LaunchConfig{GridX: uint32((2*I + 63) / 64), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},

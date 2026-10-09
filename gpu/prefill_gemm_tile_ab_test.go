@@ -111,7 +111,7 @@ func TestPrefill_gemmTileAB(t *testing.T) {
 	const pairs = 4
 	var gr, wr []float64
 	var g16s, g64s, w16s, w64s time.Duration
-	for p := 0; p < pairs; p++ {
+	for p := range pairs {
 		var g16, g64, w16, w64 time.Duration
 		if p%2 == 0 {
 			_, g16, _ = run(16, true)

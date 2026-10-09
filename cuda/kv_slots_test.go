@@ -429,10 +429,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 			// With the candidate at 8192 that was always the candidate; at 16384 the 3000-position case holds only ~12000, which is the
 			// budget talking, not a shrink the slots rule did.
 			room := slots * c.target
-			wantOne := fitDefaultCtx
-			if room < fitDefaultCtx {
-				wantOne = room
-			}
+			wantOne := min(room, fitDefaultCtx)
 			if d := one - wantOne; d < -wantOne/50 || d > wantOne/50 {
 				t.Fatalf("one slot chose ctx %d, want ~%d (the candidate %d or the forced budget's %d positions, whichever is less)", one, wantOne, fitDefaultCtx, room)
 			}

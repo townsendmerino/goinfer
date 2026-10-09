@@ -68,7 +68,7 @@ func runQuick(argv []string, w io.Writer) int {
 		return 2
 	}
 	if files != "" {
-		for _, f := range strings.Split(files, ",") {
+		for f := range strings.SplitSeq(files, ",") {
 			if f = strings.TrimSpace(f); f != "" {
 				o.Files = append(o.Files, filepath.ToSlash(f))
 			}
@@ -378,7 +378,7 @@ func moduleGoFiles(qc *quickConfig, m *quickModule) []string {
 		return nil
 	}
 	var files []string
-	for _, f := range strings.Split(string(out), "\x00") {
+	for f := range strings.SplitSeq(string(out), "\x00") {
 		if !strings.HasSuffix(f, ".go") || qc.moduleOf(f) != m || !fileExists(filepath.Join(qc.Root, f)) {
 			continue
 		}
@@ -393,7 +393,7 @@ func moduleGoFiles(qc *quickConfig, m *quickModule) []string {
 func staticcheckBinary(qc *quickConfig) (string, error) {
 	bin := ""
 	if out, err := exec.Command("go", "env", "GOPATH").Output(); err == nil {
-		gp := strings.Split(strings.TrimSpace(string(out)), string(os.PathListSeparator))[0]
+		gp, _, _ := strings.Cut(strings.TrimSpace(string(out)), string(os.PathListSeparator))
 		if p := filepath.Join(gp, "bin", "staticcheck"); fileExists(p) {
 			bin = p
 		}

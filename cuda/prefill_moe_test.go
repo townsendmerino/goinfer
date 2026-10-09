@@ -110,7 +110,7 @@ func prefillMoEParity(t *testing.T, dir string, real26B bool) {
 	}
 
 	rf.Reset()
-	for i := 0; i < M-1; i++ {
+	for i := range M - 1 {
 		if e := rf.ForwardNoLogits(embs[i], i); e != nil {
 			t.Fatalf("sequential ForwardNoLogits(%d): %v", i, e)
 		}

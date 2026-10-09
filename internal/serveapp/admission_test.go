@@ -86,7 +86,6 @@ func TestAdmission_fifoOrderPreserved(t *testing.T) {
 	const n = 5
 	order := make(chan int, n)
 	for i := range n {
-		i := i
 		go func() {
 			if a.enter(context.Background(), admissionRecord{promptIDs: []int{i}}) {
 				order <- i

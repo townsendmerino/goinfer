@@ -3,7 +3,7 @@
 package cuda
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/townsendmerino/aikit/gpu"
 )
@@ -70,7 +70,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 
 	// --- Phase 1: per row, the dense branch (-> g4x1All) and the router+MoE-input-norm (-> idxAll/
 	// hostWgt, mqAll/mScAll). Identical arithmetic to gemma4MoeMLPPre, only the destinations differ. ---
-	for m := 0; m < M; m++ {
+	for m := range M {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
@@ -130,7 +130,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 	// row assigned to it into rankScratch[rank]. Identical shape to moe_expert_major.go Phase 2. ---
 	type slot struct{ row, rank int }
 	byExpert := map[uint32][]slot{}
-	for m := 0; m < M; m++ {
+	for m := range M {
 		for j := 0; j < r.topK; j++ {
 			byExpert[hostIdx[m*r.topK+j]] = append(byExpert[hostIdx[m*r.topK+j]], slot{m, j})
 		}
@@ -139,7 +139,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 	for e := range byExpert {
 		experts = append(experts, e)
 	}
-	sort.Slice(experts, func(i, j int) bool { return experts[i] < experts[j] })
+	slices.Sort(experts)
 
 	c := Ly.expCache
 	gu := 2 * r.moeInter
@@ -196,7 +196,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 
 	// --- Phase 4: per row, the rest of gemma4MoeMLPPost's join — cheap (a handful of O(hidden)
 	// kernels), not the DMA-heavy part, so a plain per-row loop over the batched buffers is fine. ---
-	for m := 0; m < M; m++ {
+	for m := range M {
 		if e := ctx.Err(); e != nil {
 			return e
 		}

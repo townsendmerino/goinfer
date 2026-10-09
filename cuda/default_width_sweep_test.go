@@ -125,7 +125,7 @@ func TestDefaultVerifyWidth_sweep(t *testing.T) {
 				if e2 != nil {
 					t.Fatalf("encode: %v", e2)
 				}
-				for r := 0; r < repeats; r++ {
+				for range repeats {
 					// INTERLEAVED over width within a prompt+repeat, so drift and thermal
 					// state hit every width alike instead of accumulating down one column.
 					for _, w := range widths {
@@ -160,7 +160,7 @@ func TestDefaultVerifyWidth_sweep(t *testing.T) {
 			n := min(len(a), len(b))
 			var diffs []float64
 			wins := 0
-			for i := 0; i < n; i++ {
+			for i := range n {
 				d := (a[i]/b[i] - 1) * 100
 				diffs = append(diffs, d)
 				if a[i] > b[i] {

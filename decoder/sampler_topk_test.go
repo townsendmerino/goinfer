@@ -179,7 +179,7 @@ func TestSampleFromTopK_typicalConfigRarelyFallsBack(t *testing.T) {
 	k, _ := s.TopKWidth(len(logits))
 	row := refTopKRow(logits, k, p.Temperature, true)
 	miss := 0
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		if _, ok := s.SampleFromTopK(row, len(logits)); !ok {
 			miss++
 		}
@@ -203,7 +203,7 @@ func TestSampleFromTopK_deviceRoundedZ(t *testing.T) {
 	row.Z *= 1 + 1e-6
 	diff := 0
 	const n = 5000
-	for i := 0; i < n; i++ {
+	for range n {
 		want, _ := full.SampleWithInfo(logits)
 		got, ok := fast.SampleFromTopK(row, len(logits))
 		if !ok {

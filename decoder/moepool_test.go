@@ -247,10 +247,10 @@ func TestExpertPager_poolModeLockPreventsCrossStreamCorruption(t *testing.T) {
 	const itersEach = 200
 	var wg sync.WaitGroup
 	errs := make(chan string, goroutines*itersEach)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Go(func() {
 			rng := rand.New(rand.NewSource(int64(g) + 100))
-			for iter := 0; iter < itersEach; iter++ {
+			for range itersEach {
 				i := rng.Intn(nExperts)
 				pager.Lock()
 				pager.touch(keys[i])

@@ -57,7 +57,7 @@ func foreignCUDAContexts() (out []foreignCtx, ok bool) {
 		return nil, false
 	}
 	self := os.Getpid()
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}

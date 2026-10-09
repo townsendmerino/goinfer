@@ -313,7 +313,7 @@ func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen
 		qAll = make([]float32, keyDim)
 		kAll = make([]float32, keyDim)
 	}
-	for headK := 0; headK < nk; headK++ {
+	for headK := range nk {
 		l2normScaledInto(qAll[headK*hk:(headK+1)*hk], conv[headK*hk:(headK+1)*hk], qScale)
 		l2normScaledInto(kAll[headK*hk:(headK+1)*hk], conv[keyDim+headK*hk:keyDim+(headK+1)*hk], 1)
 	}

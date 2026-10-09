@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 // Qwen2.5-VL image preprocessing: image bytes -> pre-flattened pixel_values
@@ -173,10 +174,8 @@ func ParseQwen3PreprocessConfig(raw []byte) (QwenPreprocessConfig, error) {
 	case len(pc.ImageMean) != 3 || len(pc.ImageStd) != 3:
 		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing image_mean/image_std")
 	}
-	for _, s := range pc.ImageStd {
-		if s == 0 {
-			return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): image_std has a zero")
-		}
+	if slices.Contains(pc.ImageStd, 0) {
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): image_std has a zero")
 	}
 	return QwenPreprocessConfig{
 		PatchSize: pc.PatchSize, MergeSize: pc.MergeSize, TemporalPatchSize: pc.TemporalPatchSize,

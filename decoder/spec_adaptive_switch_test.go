@@ -62,11 +62,9 @@ func TestSpecAdaptiveSwitch_matchesPlainDecode(t *testing.T) {
 
 	var wg sync.WaitGroup
 	var got []mc3Turn
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		got = specAdaptiveConversation(t, m, 0, turns, maxTok)
-	}()
+	})
 	// 1-3 plain concurrent generations, staggered short/long so the spec conversation is sometimes alone
 	// (claimExclusive succeeds, drafts) and sometimes not (yields), inside its own maxTok=40 lifetime.
 	for c := 1; c <= 3; c++ {
@@ -118,11 +116,9 @@ func TestSpecAdaptiveSwitch_offByDefaultUnaffected(t *testing.T) {
 	// SetSpecAdaptive intentionally not called.
 	var wg sync.WaitGroup
 	var got mc3Turn
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		got = specAdaptiveTurn(t, m, []int{1, 2, 3, 4, 5, 6}, 24)
-	}()
+	})
 	for c := 1; c <= 2; c++ {
 		wg.Add(1)
 		go func(c int) {

@@ -118,7 +118,7 @@ func runDeterminismArm(t *testing.T, m *decoder.Model, r *cudaResident, tk *toke
 		}
 		const runs, nNew = 5, 48
 		var first []int
-		for run := 0; run < runs; run++ {
+		for run := range runs {
 			var got []int
 			ch, gen := m.Generate(context.Background(), ids, nNew, decoder.SamplingParams{Temperature: 0})
 			for tok := range ch {

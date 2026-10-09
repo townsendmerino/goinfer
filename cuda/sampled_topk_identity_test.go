@@ -100,7 +100,7 @@ func TestSampledTopKStreamIdentity(t *testing.T) {
 			fast, g := run(c.sp, false)
 			diff, firstDiff := 0, -1
 			n := min(len(full), len(fast))
-			for i := 0; i < n; i++ {
+			for i := range n {
 				if full[i] != fast[i] {
 					if firstDiff < 0 {
 						firstDiff = i

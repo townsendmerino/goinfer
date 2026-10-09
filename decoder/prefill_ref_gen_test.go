@@ -111,7 +111,7 @@ func TestPrefillGateReference(t *testing.T) {
 	want := map[string]bool{"S": true, "D7": true}
 	if v := strings.TrimSpace(os.Getenv("GOINFER_CPU_REF_MODELS")); v != "" {
 		want = map[string]bool{}
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			want[strings.TrimSpace(f)] = true
 		}
 	}
@@ -182,7 +182,7 @@ func refKs(def []int) []int {
 		return def
 	}
 	out := make([]int, 0, 4)
-	for _, f := range strings.Split(v, ",") {
+	for f := range strings.SplitSeq(v, ",") {
 		if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
 			out = append(out, k)
 		}
@@ -252,11 +252,8 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 	results := make([][]float32, workers)
 	errs := make([]error, workers)
 	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		w := w
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for w := range workers {
+		wg.Go(func() {
 			cache := m.NewCache(len(probe) + 4)
 			lg, err := m.PrefillLogitsForTest(context.Background(), probe, cache)
 			if err != nil {
@@ -264,7 +261,7 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 				return
 			}
 			results[w] = append([]float32(nil), lg...)
-		}()
+		})
 	}
 	wg.Wait()
 	for w, err := range errs {
@@ -336,10 +333,8 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 		wg       sync.WaitGroup
 	)
 	t0 := time.Now()
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			for j := range jobs {
 				seedLogits, refTokens, refLogits, err := prefillReferenceCell(m, j.ids, continuationN, K)
 				if err != nil {
@@ -369,7 +364,7 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpoin
 					modelName, K, j.pi+1, done, len(prompts)-cached, outPath, time.Since(t0).Round(time.Second))
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if firstErr != nil {
@@ -394,7 +389,7 @@ func prefillReferenceCell(m *Model, ids []int, continuationN, K int) (seedLogits
 	refTokens = make([]int, continuationN)
 	refLogits = make([][]float32, continuationN)
 	cur := seed
-	for i := 0; i < continuationN; i++ {
+	for i := range continuationN {
 		refTokens[i] = refArgmax(cur)
 		refLogits[i] = cur
 		if i == continuationN-1 {

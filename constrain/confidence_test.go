@@ -22,7 +22,7 @@ const confTarget = `{"category":"billing","urgent":true,"count":12,"amount":3.5,
 // confVocab is every printable ASCII byte as a token (ids 0..127), a few multi-byte tokens, and an EOS with no bytes.
 func confVocab() (tokens [][]byte, ids map[string]int, eos int) {
 	ids = map[string]int{}
-	for b := 0; b < 128; b++ {
+	for b := range 128 {
 		tokens = append(tokens, []byte{byte(b)})
 		ids[string(rune(b))] = b
 	}
@@ -48,7 +48,7 @@ func runConf(t *testing.T, m *Masker, tokens [][]byte, ids map[string]int, eos i
 	if err != nil {
 		t.Fatal(err)
 	}
-	for step := 0; step < 400; step++ {
+	for range 400 {
 		logits := make([]float32, len(tokens))
 		for i := range logits {
 			logits[i] = -30

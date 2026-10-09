@@ -90,7 +90,7 @@ func TestSampledDecodeLadder(t *testing.T) {
 	}
 	rates := make([][]float64, len(arms))
 	ratios := make([][]float64, len(arms))
-	for r := 0; r < reps; r++ {
+	for r := range reps {
 		round := make([]float64, len(arms))
 		ok := make([]bool, len(arms))
 		for k := range arms {

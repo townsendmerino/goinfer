@@ -66,7 +66,7 @@ func TestPrefillDecomp(t *testing.T) {
 	depths := []int{128, 512, 2048}
 	if v := os.Getenv("GOINFER_DECOMP_K"); v != "" {
 		depths = depths[:0]
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
 				depths = append(depths, k)
 			}

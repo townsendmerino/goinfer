@@ -221,7 +221,7 @@ func TestCachedHostRAMAvailable_rateLimits(t *testing.T) {
 		return 42
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if got := cachedHostRAMAvailable(); got != 42 {
 			t.Fatalf("call %d: got %d, want 42", i, got)
 		}

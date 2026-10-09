@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 					const reps, per = 7, 20
 					timeIt := func(p Pipeline, c LaunchConfig) (float64, error) {
 						t0 := time.Now()
-						for i := 0; i < per; i++ {
+						for range per {
 							if e := r.launch(p, c, args...); e != nil {
 								return 0, e
 							}
@@ -78,12 +79,12 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 						}
 						return float64(time.Since(t0).Microseconds()) / per, nil
 					}
-					for i := 0; i < 3; i++ { // warm-up both
+					for range 3 { // warm-up both
 						timeIt(p64, c64)
 						timeIt(p128, c128)
 					}
 					var a, b []float64
-					for i := 0; i < reps; i++ {
+					for range reps {
 						x, e := timeIt(p64, c64)
 						if e != nil {
 							return e
@@ -111,11 +112,11 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 		}
 	}
 	T := -1
-	for i := len(Ms) - 1; i >= 0; i-- {
-		if worstByM[Ms[i]] > 1.03 {
+	for _, M := range slices.Backward(Ms) {
+		if worstByM[M] > 1.03 {
 			break
 		}
-		T = Ms[i]
+		T = M
 	}
 	fmt.Printf("worst ratio by M (both hd, all startPos): %v\nREGISTERED RULE PICKS T = %d (-1 = none)\n", worstByM, T)
 }

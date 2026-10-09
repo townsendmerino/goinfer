@@ -82,7 +82,7 @@ func TestLead3_pinOrderMicrobench(t *testing.T) {
 
 	const pairs = 3
 	var sumA, sumB time.Duration
-	for p := 0; p < pairs; p++ {
+	for p := range pairs {
 		var allocA, fillA, fillB, pinB time.Duration
 		if p%2 == 0 {
 			allocA, fillA = pinThenFill()

@@ -61,7 +61,7 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 	if v := os.Getenv("GOINFER_R25_PS"); v != "" {
 		Ps = nil
 		var n int
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if _, e := fmt.Sscan(f, &n); e == nil && n > 0 {
 				Ps = append(Ps, n)
 			}

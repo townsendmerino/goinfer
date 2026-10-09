@@ -10,11 +10,13 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -209,7 +211,7 @@ func (qc *quickConfig) finish() error {
 		if err != nil {
 			return fmt.Errorf("module %s: %w", m.Name, err)
 		}
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			f := strings.Fields(ln)
 			if len(f) == 2 && f[0] == "module" {
 				m.Path = f[1]
@@ -297,9 +299,7 @@ func (qc *quickConfig) cmdEnv(m *quickModule, target, overlay string, forTest bo
 		set["GOWORK"] = work
 		moduleMode = work == "off"
 	}
-	for k, v := range m.Env {
-		set[k] = v
-	}
+	maps.Copy(set, m.Env)
 	if target != "" && target != runtime.GOOS+"/"+runtime.GOARCH {
 		goos, goarch, _ := strings.Cut(target, "/")
 		set["GOOS"], set["GOARCH"], set["CGO_ENABLED"] = goos, goarch, "0"
@@ -346,7 +346,7 @@ func (qc *quickConfig) repoWorkCovers(m *quickModule) bool {
 	}
 	uses := map[string]bool{}
 	inUse := false
-	for _, ln := range strings.Split(string(b), "\n") {
+	for ln := range strings.SplitSeq(string(b), "\n") {
 		f := strings.Fields(strings.TrimSpace(ln))
 		switch {
 		case len(f) == 0:
@@ -439,8 +439,8 @@ type quickGraph struct {
 }
 
 func stripVariant(ip string) string {
-	if i := strings.Index(ip, " ["); i >= 0 {
-		return ip[:i]
+	if before, _, ok := strings.Cut(ip, " ["); ok {
+		return before
 	}
 	return ip
 }
@@ -1048,7 +1048,7 @@ func (r *testRoot) crossModuleReader(root, rel string) string {
 	}
 	if r.hasLit("..") || r.hasLit("../..") {
 		all := true
-		for _, c := range strings.Split(rel, "/") {
+		for c := range strings.SplitSeq(rel, "/") {
 			all = all && r.hasLit(c)
 		}
 		if all {
@@ -1155,10 +1155,8 @@ func toolchainInput(name string) bool {
 }
 
 func addReason(m map[*testRoot][]string, r *testRoot, why string) {
-	for _, w := range m[r] {
-		if w == why {
-			return
-		}
+	if slices.Contains(m[r], why) {
+		return
 	}
 	m[r] = append(m[r], why)
 }
@@ -1275,21 +1273,14 @@ func (g *quickGraph) selectFor(qc *quickConfig, changed []string, goldenFiles ma
 }
 
 func appendUnique(xs []string, x string) []string {
-	for _, y := range xs {
-		if y == x {
-			return xs
-		}
+	if slices.Contains(xs, x) {
+		return xs
 	}
 	return append(xs, x)
 }
 
 func slicesContains(xs []string, x string) bool {
-	for _, y := range xs {
-		if y == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, x)
 }
 
 // goldenFiles reads the parity manifest's shared sets — plus each family's own non-test forward

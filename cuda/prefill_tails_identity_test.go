@@ -81,7 +81,7 @@ func tailsRun(t *testing.T, dir string, moeCache bool) (res map[string]string, o
 	}
 	hashLogits(h, logits)
 	pos := len(prompt)
-	for g := 0; g < 4; g++ {
+	for range 4 {
 		tok := keqvArgmax(logits)
 		fmt.Fprintf(h, "tok%d", tok)
 		if logits, err = rf.Forward(embed(tok), pos); err != nil {

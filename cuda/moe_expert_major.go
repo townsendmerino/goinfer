@@ -3,7 +3,7 @@
 package cuda
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/townsendmerino/aikit/gpu"
 )
@@ -124,7 +124,7 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 
 	// --- Phase 1: route every row, storing its quantized activation directly into mqAll/mScAll (r.rms and the
 	// router GEMV both take explicit destination buffers, so this is a plain retarget, no extra copy). ---
-	for m := 0; m < M; m++ {
+	for m := range M {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
@@ -161,7 +161,7 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	// controlled entirely by RANK, not by this iteration order. ---
 	type slot struct{ row, rank int }
 	byExpert := map[uint32][]slot{}
-	for m := 0; m < M; m++ {
+	for m := range M {
 		for j := 0; j < r.topK; j++ {
 			e := st.hostIdx[m*r.topK+j]
 			byExpert[e] = append(byExpert[e], slot{m, j})
@@ -171,7 +171,7 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	for e := range byExpert {
 		experts = append(experts, e)
 	}
-	sort.Slice(experts, func(i, j int) bool { return experts[i] < experts[j] })
+	slices.Sort(experts)
 
 	c := Ly.expCache
 	gu := 2 * r.moeInter

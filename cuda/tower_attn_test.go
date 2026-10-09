@@ -23,12 +23,12 @@ func attnRef(q, k, v []float32, T, nH, hd int, scale float64, rows []int) map[in
 	out := map[int][]float64{}
 	for _, i := range rows {
 		o := make([]float64, stride)
-		for h := 0; h < nH; h++ {
+		for h := range nH {
 			sc := make([]float64, T)
 			mx := math.Inf(-1)
-			for j := 0; j < T; j++ {
+			for j := range T {
 				var d float64
-				for x := 0; x < hd; x++ {
+				for x := range hd {
 					d += float64(q[i*stride+h*hd+x]) * float64(k[j*stride+h*hd+x])
 				}
 				sc[j] = d * scale
@@ -39,9 +39,9 @@ func attnRef(q, k, v []float32, T, nH, hd int, scale float64, rows []int) map[in
 				sc[j] = math.Exp(sc[j] - mx)
 				sum += sc[j]
 			}
-			for j := 0; j < T; j++ {
+			for j := range T {
 				w := sc[j] / sum
-				for x := 0; x < hd; x++ {
+				for x := range hd {
 					o[h*hd+x] += w * float64(v[j*stride+h*hd+x])
 				}
 			}
@@ -147,7 +147,7 @@ func TestTowerAttn_matchesFloat64(t *testing.T) {
 						rows = append(rows, rng.Intn(n))
 					}
 				default:
-					for i := 0; i < n; i++ {
+					for i := range n {
 						rows = append(rows, i)
 					}
 				}
@@ -215,7 +215,7 @@ func TestTowerAttn_speed(t *testing.T) {
 		towerAttnAikit = !own
 		runAttn(t, ops, q, k, v, T, nH, hd, 0.118, []int{0, T}) // warm
 		t0 := time.Now()
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			runAttn(t, ops, q, k, v, T, nH, hd, 0.118, []int{0, T})
 		}
 		if own {

@@ -57,7 +57,7 @@ func TestTopKSelect_matchesReference(t *testing.T) {
 			return idx[a] < idx[b]
 		})
 		ids, vals := make([]int32, k), make([]float32, k)
-		for i := 0; i < k; i++ {
+		for i := range k {
 			ids[i], vals[i] = int32(idx[i]), l[idx[i]]
 		}
 		return ids, vals
@@ -104,7 +104,7 @@ func TestTopKSelect_matchesReference(t *testing.T) {
 					t.Fatalf("v=%d %s k=%d: %v", v, kind, k, err)
 				}
 				wantIDs, wantVals := ref(l, k)
-				for i := 0; i < k; i++ {
+				for i := range k {
 					if row.IDs[i] != wantIDs[i] || row.Logits[i] != wantVals[i] {
 						t.Fatalf("v=%d %s k=%d: entry %d is (id %d, %v), want (id %d, %v)",
 							v, kind, k, i, row.IDs[i], row.Logits[i], wantIDs[i], wantVals[i])
@@ -139,7 +139,7 @@ func TestTopKSelect_matchesReference(t *testing.T) {
 			t.Fatal(err)
 		}
 		t0 := time.Now()
-		for i := 0; i < n; i++ {
+		for range n {
 			if err := rf.TopKLaunchForTest(rf.vocab, 256, 0.8, wz); err != nil {
 				t.Fatal(err)
 			}
@@ -155,7 +155,7 @@ func TestTopKSelect_matchesReference(t *testing.T) {
 				t.Fatal(err)
 			}
 			t0 := time.Now()
-			for i := 0; i < n; i++ {
+			for range n {
 				if _, err := rf.TopKForTest(l, k, 0.8, wz); err != nil {
 					t.Fatal(err)
 				}

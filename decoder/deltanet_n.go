@@ -53,11 +53,9 @@ func fanOut(n, workers int, fn func(lo, hi int)) {
 		if lo >= hi {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			fn(lo, hi)
-		}()
+		})
 	}
 	fn(0, min(per, n))
 	wg.Wait()
@@ -124,7 +122,7 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 				}
 				out[c] = silu(s)
 			}
-			for headK := 0; headK < nk; headK++ {
+			for headK := range nk {
 				l2normScaledInto(qAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[headK*hk:(headK+1)*hk], qScale)
 				l2normScaledInto(kAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[keyDim+headK*hk:keyDim+(headK+1)*hk], 1)
 			}

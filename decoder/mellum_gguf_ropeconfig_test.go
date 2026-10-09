@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"maps"
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -43,9 +44,7 @@ func TestGGUFMellumConfig_attentionFactorSentinelOmitted(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			meta := map[string]any{}
-			for k, v := range base {
-				meta[k] = v
-			}
+			maps.Copy(meta, base)
 			if c.attnFactor != nil {
 				meta["mellum.rope.scaling.yarn_attn_factor"] = c.attnFactor
 			}

@@ -74,8 +74,7 @@ func TestPrepare_prefillShare(t *testing.T) {
 			t.Fatal("tinyServed is resident; the CPU case needs the CPU path")
 		}
 		err := prepareWithAhead(t, lm, 3)
-		var pm *prefillMemoryError
-		if !errors.As(err, &pm) {
+		if _, ok := errors.AsType[*prefillMemoryError](err); !ok {
 			t.Fatalf("3 CPU generations ahead, twice a lone request's need: err = %v, want a prefillMemoryError (413)", err)
 		}
 		if err := prepareWithAhead(t, lm, 0); err != nil {
@@ -101,8 +100,7 @@ func TestPrepare_prefillShare(t *testing.T) {
 		}
 		mt := maxTokens
 		_, err := lm.prepare(sampling{MaxTokens: &mt}, ids, true)
-		var pm *prefillMemoryError
-		if !errors.As(err, &pm) {
+		if _, ok := errors.AsType[*prefillMemoryError](err); !ok {
 			t.Fatalf("a lone resident request with half its need: err = %v, want a prefillMemoryError", err)
 		}
 	})

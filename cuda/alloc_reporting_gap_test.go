@@ -169,7 +169,7 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 	for time.Now().Before(deadline) {
 		n, _ := stdout.Read(buf)
 		if n > 0 {
-			for _, ln := range strings.Split(string(buf[:n]), "\n") {
+			for ln := range strings.SplitSeq(string(buf[:n]), "\n") {
 				if strings.HasPrefix(ln, "A10DRAINED free=") {
 					fmt.Sscanf(ln, "A10DRAINED free=%d", &childFree)
 				}
@@ -199,7 +199,7 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 		for dl := time.Now().Add(60 * time.Second); time.Now().Before(dl); {
 			n, _ := mp.Read(mb)
 			if n > 0 && strings.Contains(string(mb[:n]), "A10CTXHELD") {
-				for _, ln := range strings.Split(string(mb[:n]), "\n") {
+				for ln := range strings.SplitSeq(string(mb[:n]), "\n") {
 					if strings.HasPrefix(ln, "A10CTXHELD") {
 						t.Logf("  middle process: %s", strings.TrimPrefix(ln, "A10CTXHELD "))
 					}

@@ -142,7 +142,7 @@ func buildLlamaTinyLoRAFixtureCUDASeeded(t *testing.T, off int) string {
 	at := map[string]loraCUDAStTensor{}
 	pfx := "base_model.model.model.layers."
 	itoa := func(i int) string { return string(rune('0' + i)) }
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		add := func(mod string, inDim, outDim, seed int) {
 			at[pfx+itoa(l)+mod+".lora_A.weight"] = loraCUDAStTensor{[]int{r, inDim}, fill(r*inDim, seed)}
 			at[pfx+itoa(l)+mod+".lora_B.weight"] = loraCUDAStTensor{[]int{outDim, r}, fill(outDim*r, seed+1)}

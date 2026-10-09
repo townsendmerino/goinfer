@@ -9,7 +9,7 @@ func TestNewKVCache_skipLayerZeroesCapacity(t *testing.T) {
 	const capHint = 1000
 	skip := func(l int) bool { return l == 1 }
 	c := NewKVCache(3, 8, 128, 0, capHint, skip)
-	for l := 0; l < 3; l++ {
+	for l := range 3 {
 		wantZero := l == 1
 		gotZero := cap(c.keys[l]) == 0 && cap(c.vals[l]) == 0
 		if wantZero != gotZero {
@@ -30,7 +30,7 @@ func TestNewKVCache_nilSkipLayerReservesEveryLayer(t *testing.T) {
 	const capHint = 16
 	c := NewKVCache(4, 2, 4, 0, capHint, nil)
 	want := capHint * 2 * 4
-	for l := 0; l < 4; l++ {
+	for l := range 4 {
 		if cap(c.keys[l]) != want || cap(c.vals[l]) != want {
 			t.Errorf("layer %d: cap(keys)=%d cap(vals)=%d, want %d", l, cap(c.keys[l]), cap(c.vals[l]), want)
 		}

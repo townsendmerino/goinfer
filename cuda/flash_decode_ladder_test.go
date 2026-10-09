@@ -109,7 +109,7 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 					rf.faSplit = a.s
 					return rf.flashDecodeAttn(0, pos)
 				}
-				for i := 0; i < 8; i++ { // warm
+				for range 8 { // warm
 					if e := run(); e != nil {
 						return e
 					}
@@ -118,7 +118,7 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 					return e
 				}
 				t0 := time.Now()
-				for i := 0; i < N; i++ {
+				for range N {
 					if e := run(); e != nil {
 						return e
 					}
@@ -134,7 +134,7 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 			}
 			return float64(el.Microseconds()) / float64(N)
 		}
-		for r := 0; r < rounds; r++ {
+		for r := range rounds {
 			for k := range arms {
 				i := (k + r) % len(arms)
 				times[i] = append(times[i], timeArm(arms[i]))

@@ -91,7 +91,7 @@ func TestPrefillNonUniform_bitIdentical(t *testing.T) {
 	// Sequential reference: KV-only for every position but the last, whose logits are the seed —
 	// exactly what residentPrefillSeed's fallback does.
 	rf.Reset()
-	for i := 0; i < M-1; i++ {
+	for i := range M - 1 {
 		if e := rf.ForwardNoLogits(embs[i], i); e != nil {
 			t.Fatalf("sequential ForwardNoLogits(%d): %v", i, e)
 		}

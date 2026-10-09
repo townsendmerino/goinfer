@@ -628,7 +628,7 @@ func emitterCoverage(w io.Writer, res *results, fams map[string]bool) {
 		// each family on its own, so look the parts up one by one. Looking the joined string up never matched, and
 		// the v0.21.0 sweep warned "emitted NO row for gemma+gemma2" while both rows had been merged.
 		var missing []string
-		for _, f := range strings.Split(g.Family, "+") {
+		for f := range strings.SplitSeq(g.Family, "+") {
 			if !fams[f] {
 				missing = append(missing, f)
 			}

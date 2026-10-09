@@ -21,10 +21,10 @@ func TestF16Rules_agree(t *testing.T) {
 			t.Fatalf("%g (%#08x): F16Bits %#04x, linalg.F32ToF16 %#04x", f, math.Float32bits(f), a, c)
 		}
 	}
-	for n := 0; n < 5_000_000; n++ {
+	for range 5_000_000 {
 		check(math.Float32frombits(rng.Uint32()))
 	}
-	for h := 0; h < 1<<16; h++ { // every binary16 value and its exact half-way neighbours
+	for h := range 1 << 16 { // every binary16 value and its exact half-way neighbours
 		f := linalg.F16ToF32(uint16(h))
 		b := math.Float32bits(f)
 		for _, d := range []int32{-0x1000, -1, 0, 1, 0x1000} {

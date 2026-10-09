@@ -23,6 +23,8 @@ package chat
 // What is deliberately NOT replicated: the templates trim every message's content (user and system too), which goinfer's
 // renderers have never done; and Gemma 4's `preserve_thinking` kwarg. Both are separate fidelity questions from reasoning.
 
+import "slices"
+
 import "strings"
 
 type histKind uint8
@@ -72,8 +74,8 @@ func detectGemma4History(tmpl string) histKind {
 // lastQueryIndex is the index of the last user turn that starts a query — not a turn that only accompanies tool results.
 // With no such turn it is the last turn's index (Qwen3's own default), so nothing counts as "after the query" except the last.
 func lastQueryIndex(turns []Turn) int {
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == "user" && !turns[i].ToolLoop {
+	for i, turn := range slices.Backward(turns) {
+		if turn.Role == "user" && !turn.ToolLoop {
 			return i
 		}
 	}
@@ -82,8 +84,8 @@ func lastQueryIndex(turns []Turn) int {
 
 // lastUserIndex is Gemma 4's: the last user turn, or -1.
 func lastUserIndex(turns []Turn) int {
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == "user" && !turns[i].ToolLoop {
+	for i, turn := range slices.Backward(turns) {
+		if turn.Role == "user" && !turn.ToolLoop {
 			return i
 		}
 	}
@@ -93,11 +95,11 @@ func lastUserIndex(turns []Turn) int {
 // splitTagged is the Qwen templates' extraction of a <think> block left inside assistant content.
 func splitTagged(content string) (reasoning, rest string, ok bool) {
 	const closeTag, openTag = "</think>", "<think>"
-	first := strings.Index(content, closeTag)
-	if first < 0 {
+	before, _, ok := strings.Cut(content, closeTag)
+	if !ok {
 		return "", content, false
 	}
-	head := strings.TrimRight(content[:first], "\n")
+	head := strings.TrimRight(before, "\n")
 	if i := strings.LastIndex(head, openTag); i >= 0 {
 		head = head[i+len(openTag):]
 	}
@@ -138,9 +140,9 @@ func qwenAssistant(kind histKind, t Turn, idx, lq, n int) (block bool, reasoning
 // stripChannels is Gemma 4's strip_thinking: drop every `<|channel>…<channel|>` span, then trim.
 func stripChannels(text string) string {
 	var out strings.Builder
-	for _, part := range strings.Split(text, "<channel|>") {
-		if i := strings.Index(part, "<|channel>"); i >= 0 {
-			out.WriteString(part[:i])
+	for part := range strings.SplitSeq(text, "<channel|>") {
+		if before, _, ok := strings.Cut(part, "<|channel>"); ok {
+			out.WriteString(before)
 		} else {
 			out.WriteString(part)
 		}

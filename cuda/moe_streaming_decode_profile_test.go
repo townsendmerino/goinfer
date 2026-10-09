@@ -68,7 +68,7 @@ func TestMoEStreamingDecodeProfile(t *testing.T) {
 	pos := 0
 	genStart := time.Now()
 	id := next()
-	for i := 0; i < nNew; i++ {
+	for i := range nNew {
 		emb := m.EmbedResidentForTest(id)
 		nextID, err := r.ForwardArgmax(emb, pos)
 		if err != nil {

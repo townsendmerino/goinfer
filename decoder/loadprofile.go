@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -130,14 +131,14 @@ func (p *LoadProfile) Summary() string {
 	total := p.Total()
 	name, d, share := p.Dominant()
 
-	parts := ""
+	var parts strings.Builder
 	for i, x := range ph {
 		if i > 0 {
-			parts += " "
+			parts.WriteString(" ")
 		}
-		parts += fmt.Sprintf("%s %s", x.Name, roundDur(x.D))
+		parts.WriteString(fmt.Sprintf("%s %s", x.Name, roundDur(x.D)))
 	}
-	out := fmt.Sprintf("load %s (%s) — %.0f%% %s", roundDur(total), parts, share*100, name)
+	out := fmt.Sprintf("load %s (%s) — %.0f%% %s", roundDur(total), parts.String(), share*100, name)
 	_ = d
 	if p.bytes > 0 && total > 0 {
 		// Source bytes over the WHOLE load, not over `map`. The file is mmap'd, so its pages fault

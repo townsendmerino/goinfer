@@ -81,7 +81,7 @@ func TestThetaProbe_CUDA(t *testing.T) {
 		widths := []int{1, 2, 3, 4, 6, 8, 12, 16}
 		for _, depth := range []int{128, 512} {
 			rf.Reset()
-			for p := 0; p < depth; p++ {
+			for p := range depth {
 				if _, err := rf.Forward(emb(), p); err != nil {
 					t.Fatalf("%s seed at %d: %v", mdl, p, err)
 				}
@@ -94,7 +94,7 @@ func TestThetaProbe_CUDA(t *testing.T) {
 				}
 				const reps = 9
 				samples := make([]float64, 0, reps)
-				for r := 0; r < reps+2; r++ {
+				for r := range reps + 2 {
 					rf.TruncateTo(depth)
 					t0 := time.Now()
 					if _, err := rf.ForwardN(embs, depth); err != nil {

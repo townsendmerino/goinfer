@@ -38,8 +38,8 @@ func distinctTrigramRatioServeapp(s string) float64 {
 func solidColorPNG(t *testing.T, size int, c color.RGBA) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
+	for y := range size {
+		for x := range size {
 			img.SetRGBA(x, y, c)
 		}
 	}

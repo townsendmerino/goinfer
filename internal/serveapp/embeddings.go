@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 
 	"github.com/townsendmerino/aikit/encoder"
 )
@@ -306,10 +307,8 @@ func (s *server) resolveDimensions(d *int) (int, error) {
 		return 0, fmt.Errorf("dimensions must be between 1 and %d", s.embedDim)
 	}
 	if len(s.embedWidths) > 0 {
-		for _, w := range s.embedWidths {
-			if *d == w {
-				return *d, nil
-			}
+		if slices.Contains(s.embedWidths, *d) {
+			return *d, nil
 		}
 		return 0, fmt.Errorf("dimensions %d is not a width %q was trained to be truncated to: dimensions must be one of %v", *d, s.embedID, s.embedWidths)
 	}

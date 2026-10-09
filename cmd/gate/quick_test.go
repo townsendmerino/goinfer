@@ -287,7 +287,7 @@ func TestQuick_neverDropsAGoListDependent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: go list: %v", m.Name, err)
 		}
-		for _, pkg := range strings.Fields(string(out)) {
+		for pkg := range strings.FieldsSeq(string(out)) {
 			binaries++
 			cmd := exec.Command("go", "list", "-e", "-deps", "-test", "-tags", strings.Join(m.TestTags, " "), "-f", tmpl, pkg)
 			cmd.Dir, cmd.Env = qc.modDir(m), env
@@ -295,7 +295,7 @@ func TestQuick_neverDropsAGoListDependent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: go list -deps -test %s: %v", m.Name, pkg, err)
 			}
-			for _, ln := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			for ln := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 				f := strings.Split(ln, "|")
 				if len(f) != 6 || !local[f[3]] {
 					continue
@@ -305,7 +305,7 @@ func TestQuick_neverDropsAGoListDependent(t *testing.T) {
 				if base == pkg || f[1] == pkg {
 					files += "," + f[5] // the package under test and its external test package
 				}
-				for _, name := range strings.Split(files, ",") {
+				for name := range strings.SplitSeq(files, ",") {
 					// "" is an empty list; an absolute name is the generated _testmain.go in the
 					// build cache, which no change to the tree can touch.
 					if name == "" || filepath.IsAbs(name) {
@@ -473,7 +473,7 @@ func ckFixture(t *testing.T) (*quickConfig, *testRoot) {
 		t.Fatal(err)
 	}
 	var plain strings.Builder
-	for i := 0; i < minSplitRest; i++ {
+	for i := range minSplitRest {
 		fmt.Fprintf(&plain, "func TestPlain%02d(t *testing.T) {}\n", i)
 	}
 	files := map[string]string{

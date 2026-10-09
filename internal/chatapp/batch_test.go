@@ -126,7 +126,7 @@ func outputs(t *testing.T, path string) (ids []string, content map[string]string
 		t.Fatal(err)
 	}
 	content = map[string]string{}
-	for _, raw := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+	for raw := range bytes.SplitSeq(bytes.TrimSpace(data), []byte("\n")) {
 		if len(raw) == 0 {
 			continue
 		}
@@ -201,7 +201,7 @@ func TestRunBatchLines_splitsSuccessAndFailure(t *testing.T) {
 func TestRunBatchLines_interruptAndResume(t *testing.T) {
 	const n = 7
 	var names []string
-	for i := 0; i < n; i++ {
+	for i := range n {
 		names = append(names, string(rune('a'+i)))
 	}
 	in := inputFile(t, names...)

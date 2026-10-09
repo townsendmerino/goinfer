@@ -1319,10 +1319,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// PLUS the per-slice coordination inside each round. Full numbers:
 	// docs/measurements/r13-served-decode-2026-09-20.md.
 	attendGroupedLayer := func(pool []headWorkerScratch) {
-		splitWorkers := min(len(pool), maxAttnWorkers)
-		if splitWorkers < 1 {
-			splitWorkers = 1
-		}
+		splitWorkers := max(min(len(pool), maxAttnWorkers), 1)
 		leader := &pool[0]
 		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom (R-17)
 			leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
@@ -1518,7 +1515,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		h1_0 := min(headsPer, nH)
 		ws0 := &pool[0]
 		lastKVH0 := -1
-		for qhead := 0; qhead < h1_0; qhead++ {
+		for qhead := range h1_0 {
 			if kvh := qhead / group; kvh != lastKVH0 {
 				gatherKV(ws0, kvh)
 				lastKVH0 = kvh

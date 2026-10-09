@@ -33,7 +33,7 @@ func requireBareCUDADevice(t *testing.T) *Device {
 // re-derived, since it is the CPU reference this kernel is held to).
 func cpuLayerNorm(x, w, b []float32, rows, dim int, eps float64) []float32 {
 	out := make([]float32, rows*dim)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		xr := x[r*dim : r*dim+dim]
 		var mean float64
 		for _, v := range xr {
@@ -48,7 +48,7 @@ func cpuLayerNorm(x, w, b []float32, rows, dim int, eps float64) []float32 {
 		variance /= float64(dim)
 		inv := 1.0 / math.Sqrt(variance+eps)
 		dst := out[r*dim : r*dim+dim]
-		for d := 0; d < dim; d++ {
+		for d := range dim {
 			dst[d] = float32((float64(xr[d])-mean)*inv)*w[d] + b[d]
 		}
 	}
@@ -73,11 +73,11 @@ func cosineF32(a, b []float32) float64 {
 // an f32 CPU reference.
 func dequantRows(packed []int32, scale []float32, rows, dim int) []float32 {
 	out := make([]float32, rows*dim)
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		s := scale[r]
 		for i4 := 0; i4 < dim/4; i4++ {
 			word := uint32(packed[r*(dim/4)+i4])
-			for b := 0; b < 4; b++ {
+			for b := range 4 {
 				v := int8(byte(word >> (8 * b)))
 				out[r*dim+i4*4+b] = float32(v) * s
 			}

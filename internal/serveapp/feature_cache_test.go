@@ -114,9 +114,7 @@ func TestFeatureCache_concurrent(t *testing.T) {
 	c := newFeatureCache(10 * 100 * 4)
 	var wg sync.WaitGroup
 	for g := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range 200 {
 				raw := []byte{byte(i % 17), byte(g % 3)}
 				f, err := c.wrap(raw, func() ([]float32, error) { return fcFeats(100, float32(raw[0])), nil })()
@@ -125,7 +123,7 @@ func TestFeatureCache_concurrent(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if c.used < 0 || c.used > c.budget || c.order.Len() != len(c.items) {

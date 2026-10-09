@@ -109,7 +109,7 @@ func TestTiledRB64_microbench(t *testing.T) {
 		}
 		const iters = 5
 		var dOld, dNew time.Duration
-		for i := 0; i < iters; i++ {
+		for range iters {
 			t0 := time.Now()
 			if _, err := runTiledKernelTile(ctx, old, 16, aq, aScales, rm, M); err != nil {
 				t.Fatal(err)

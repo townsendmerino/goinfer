@@ -1250,7 +1250,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 						// resident path to CPU. And hidden/nH is not a substitute — qwen3_5's
 						// head_dim is 256 where hidden/heads is not.
 						maxHd := 0
-						for l := 0; l < nLayers; l++ {
+						for l := range nLayers {
 							if h := m.HeadDimAtResident(l); h > maxHd {
 								maxHd = h
 							}

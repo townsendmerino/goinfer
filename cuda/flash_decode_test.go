@@ -21,12 +21,12 @@ func flashRef(q, k, v []float32, nH, nKV, hd, winStart, nKeys int, scale float32
 	kvDim := nKV * hd
 	out := make([]float64, nH*hd)
 	sc := make([]float64, nKeys-winStart)
-	for h := 0; h < nH; h++ {
+	for h := range nH {
 		kvh := h / G
 		mx := math.Inf(-1)
 		for s := winStart; s < nKeys; s++ {
 			var d float64
-			for i := 0; i < hd; i++ {
+			for i := range hd {
 				d += float64(q[h*hd+i]) * float64(k[s*kvDim+kvh*hd+i])
 			}
 			d *= float64(scale)
@@ -40,7 +40,7 @@ func flashRef(q, k, v []float32, nH, nKV, hd, winStart, nKeys int, scale float32
 		}
 		for s := winStart; s < nKeys; s++ {
 			w := sc[s-winStart] / den
-			for i := 0; i < hd; i++ {
+			for i := range hd {
 				out[h*hd+i] += w * float64(v[s*kvDim+kvh*hd+i])
 			}
 		}

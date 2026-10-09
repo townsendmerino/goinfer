@@ -84,7 +84,7 @@ func TestSpecResidentPrefillRegression(t *testing.T) {
 			t.Fatalf("encode: %v", err)
 		}
 		var offMed, specMed []float64
-		for r := 0; r < 3; r++ {
+		for range 3 {
 			t0 := time.Now()
 			ch, g := m.Generate(ctx, prompt, maxTok, greedy)
 			ref := collectToks(ch)

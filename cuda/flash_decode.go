@@ -66,7 +66,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		return
 	}
 	maxHd := 0
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		if h := m.HeadDimAtResident(l); h > maxHd {
 			maxHd = h
 		}
@@ -180,7 +180,7 @@ type faRun struct{ row0, n, nKeys0, winStart, per int }
 // faRowRuns groups rows i=0..m-1, with nKeys_i = n0+i and the layer's sliding window, into runs. per_i = ceil(span_i / S).
 func faRowRuns(n0, m, window, s int) []faRun {
 	var runs []faRun
-	for i := 0; i < m; i++ {
+	for i := range m {
 		nk := n0 + i
 		ws := 0
 		if window > 0 && nk > window {
@@ -226,7 +226,7 @@ func (r *cudaResident) verifyLaneFrom(l, startPos, m, tail int, hasImage bool) i
 		return m
 	}
 	win := int(r.layers[l].window)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		nk := startPos + i + 1
 		nWin := nk
 		if win > 0 && nk > win {

@@ -84,7 +84,7 @@ func drawCounts(t *testing.T, logits []float32, T float64, seed int64, n int) []
 	t.Helper()
 	s := NewSampler(SamplingParams{Temperature: T, Seed: seed})
 	c := make([]int, len(logits))
-	for i := 0; i < n; i++ {
+	for range n {
 		info, err := s.SampleWithInfo(logits)
 		if err != nil {
 			t.Fatal(err)
@@ -117,7 +117,7 @@ func TestGumbelDraw_equivalentToLegacyDistribution(t *testing.T) {
 	newC := drawCounts(t, logits, T, 11, n)
 	old := NewSampler(SamplingParams{Temperature: T, Seed: 11})
 	oldC := make([]int, len(logits))
-	for i := 0; i < n; i++ {
+	for range n {
 		oldC[old.sampleChunked(logits, T, old.rng.Float64())]++
 	}
 	// two-sample chi-square with equal n: sum (a-b)^2/(a+b) ~ chi2(df), bins with a+b < 40 merged.
@@ -161,7 +161,7 @@ func TestGumbelDraw_largeVocabTailAndHead(t *testing.T) {
 		order[i] = i
 	}
 	// rank by exact probability
-	for i := 0; i < 256+10; i++ { // partial selection of the top 266 is enough
+	for i := range 256 + 10 { // partial selection of the top 266 is enough
 		best := i
 		for j := i + 1; j < v; j++ {
 			if p[order[j]] > p[order[best]] {
@@ -174,7 +174,7 @@ func TestGumbelDraw_largeVocabTailAndHead(t *testing.T) {
 		mu := prob * n
 		return (float64(obs) - mu) / math.Sqrt(n*prob*(1-prob))
 	}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		id := order[i]
 		if z := zOf(c[id], p[id]); math.Abs(z) >= 4.5 {
 			t.Errorf("rank %d token %d: observed %d, expected %.1f, z=%+.2f", i, id, c[id], p[id]*n, z)
@@ -183,7 +183,7 @@ func TestGumbelDraw_largeVocabTailAndHead(t *testing.T) {
 	inHead := make(map[int]bool)
 	var headMass float64
 	var headObs int
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		inHead[order[i]] = true
 		headMass += p[order[i]]
 		headObs += c[order[i]]
@@ -212,7 +212,7 @@ func TestGumbelNoise_transformAndRange(t *testing.T) {
 	rng := rand.New(rand.NewSource(4))
 	prev := float32(math.Inf(1))
 	var worst float64
-	for i := 0; i < 2_000_000; i++ {
+	for i := range 2_000_000 {
 		var h uint32
 		if i < 100_000 { // an ordered grid for the monotonicity check
 			h = uint32(uint64(i) * (1 << 32) / 100_000)
@@ -243,7 +243,7 @@ func TestGumbelDraw_parallelEqualsSequential(t *testing.T) {
 		logits := gumbelTestLogits(rng, v, 3)
 		for _, T := range []float64{0.3, 1.0, 2.5} {
 			s := NewSampler(SamplingParams{Temperature: T, Seed: 99})
-			for d := 0; d < 8; d++ {
+			for d := range 8 {
 				seed, draw := s.gseed, s.gdraw
 				got := s.gumbelDraw(logits, T)
 				_, want := gumbelArgmaxRange(logits, 0, v, float32(1/T), [2]uint32{uint32(seed), uint32(seed >> 32)}, draw)
@@ -308,7 +308,7 @@ func TestGumbelDraw_edgeRows(t *testing.T) {
 		l[i] = float32(math.Inf(-1))
 	}
 	l[17], l[40] = 0, 0.5
-	for i := 0; i < 2000; i++ {
+	for range 2000 {
 		if id := s.gumbelDraw(l, 1.0); id != 17 && id != 40 {
 			t.Fatalf("drew masked token %d", id)
 		}

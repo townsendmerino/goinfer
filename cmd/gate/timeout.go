@@ -23,7 +23,7 @@ func timeoutPanic(blob string) (after string, running []string) {
 	}
 	after = m[1]
 	inList := false
-	for _, l := range strings.Split(blob[strings.Index(blob, m[0]):], "\n") {
+	for l := range strings.SplitSeq(blob[strings.Index(blob, m[0]):], "\n") {
 		switch {
 		case strings.Contains(l, "running tests:"):
 			inList = true

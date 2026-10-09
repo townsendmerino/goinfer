@@ -262,7 +262,7 @@ func TestDownload_recordsDigestSoResolveDoesNotRehash(t *testing.T) {
 		f := File{Path: "m.gguf", Size: int64(len(body)), SHA256: want}
 		var path string
 		var err error
-		for i := 0; i < attempts; i++ {
+		for range attempts {
 			path, err = Download(context.Background(), "o/r", f, dir, nil)
 		}
 		if err != nil {

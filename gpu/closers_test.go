@@ -5,6 +5,7 @@ package gpu
 import (
 	"io"
 	"reflect"
+	"slices"
 )
 
 // closers collects the wrappers a test uploads so one deferred closeAll releases them, newest first. Resident weights and device buffers are caller-owned (Context.Close does not free them), and the
@@ -13,7 +14,7 @@ type closers []io.Closer
 
 // add records x (a nil wrapper is ignored: a failed Upload returns one) and returns it, so an upload site stays one expression.
 func add[T io.Closer](c *closers, x T) T {
-	if v := reflect.ValueOf(x); !v.IsValid() || (v.Kind() == reflect.Ptr && v.IsNil()) {
+	if v := reflect.ValueOf(x); !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil()) {
 		return x
 	}
 	*c = append(*c, x)
@@ -21,7 +22,7 @@ func add[T io.Closer](c *closers, x T) T {
 }
 
 func (c *closers) closeAll() { // pointer receiver: `defer own.closeAll()` must see what is added after the defer line
-	for i := len(*c) - 1; i >= 0; i-- {
+	for i := range slices.Backward(*c) {
 		_ = (*c)[i].Close()
 	}
 }

@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -14,10 +15,8 @@ import (
 func TestAutoBackend_picksTheFirstGPUThatAnswers(t *testing.T) {
 	answers := func(ok ...string) func(string) (int64, bool) {
 		return func(b string) (int64, bool) {
-			for _, o := range ok {
-				if o == b {
-					return 1 << 30, true
-				}
+			if slices.Contains(ok, b) {
+				return 1 << 30, true
 			}
 			return 0, false
 		}

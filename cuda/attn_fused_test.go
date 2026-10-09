@@ -505,10 +505,7 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 						kvh := h / (c.nH / c.nKV)
 						// Block-uniform tile bounds, exactly as the kernel computes them.
 						qTile := (m / bmT) * bmT
-						lastRow := qTile + bmT - 1
-						if lastRow > c.M-1 {
-							lastRow = c.M - 1
-						}
+						lastRow := min(qTile+bmT-1, c.M-1)
 						blockMax := c.startPos + lastRow + 1
 						blockMinWin := 0
 						if c.window > 0 {
@@ -523,10 +520,7 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 						}
 						acc := make([]float64, c.hd)
 						for s0 := blockMinWin; s0 < blockMax; s0 += bnT {
-							nkTile := bnT
-							if blockMax-s0 < nkTile {
-								nkTile = blockMax - s0
-							}
+							nkTile := min(blockMax-s0, bnT)
 							tileMax := math.Inf(-1)
 							sc := make([]float64, nkTile)
 							ok := make([]bool, nkTile)

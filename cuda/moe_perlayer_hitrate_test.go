@@ -67,7 +67,7 @@ func TestMoEPerLayerHitRate(t *testing.T) {
 	pos := 0
 	id := next()
 	genStart := time.Now()
-	for i := 0; i < nNew; i++ {
+	for i := range nNew {
 		emb := m.EmbedResidentForTest(id)
 		nextID, err := r.ForwardArgmax(emb, pos)
 		if err != nil {

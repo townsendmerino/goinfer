@@ -52,7 +52,7 @@ func readNpyF32(t *testing.T, path string) ([]int, []float32) {
 		t.Fatalf("%s: no shape in header %q", path, header)
 	}
 	var shape []int
-	for _, p := range strings.Split(m[1], ",") {
+	for p := range strings.SplitSeq(m[1], ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
@@ -66,7 +66,7 @@ func readNpyF32(t *testing.T, path string) ([]int, []float32) {
 	data := b[10+hlen:]
 	n := len(data) / 4
 	out := make([]float32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*4:]))
 	}
 	return shape, out
@@ -158,7 +158,7 @@ func TestQwen35Real_gate2FullModel(t *testing.T) {
 		gen := make([]int, 0, steps)
 		aligned := true // inputs match the golden's so far (all prior argmax agreed)
 		firstDiv := -1
-		for s := 0; s < steps; s++ {
+		for s := range steps {
 			logits, err := m.forward(cur, cache)
 			if err != nil {
 				t.Fatalf("prompt %d step %d forward: %v", pi, s, err)

@@ -745,10 +745,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	dispFlat := func(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, total int, bufs ...*wgpu.Buffer) {
 		off := 0
 		for off < total {
-			n := total - off
-			if n > maxChunkElems {
-				n = maxChunkElems
-			}
+			n := min(total-off, maxChunkElems)
 			p := uni([]uint32{uint32(n), 0, 0, 0})
 			entries := make([]bindEntry, 0, len(bufs)+1)
 			for _, b := range bufs {

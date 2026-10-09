@@ -80,7 +80,7 @@ func TestFidelityArm_run(t *testing.T) {
 	}
 	done := map[string]bool{}
 	if b, err := os.ReadFile(outPath); err == nil {
-		for _, l := range strings.Split(string(b), "\n") {
+		for l := range strings.SplitSeq(string(b), "\n") {
 			var row struct{ ID string }
 			if json.Unmarshal([]byte(l), &row) == nil && row.ID != "" {
 				done[row.ID] = true

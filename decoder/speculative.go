@@ -293,7 +293,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			// boundary: no draft, just a plain verified step on cur).
 			draftTok := make([]int, kRound)
 			d := cur
-			for i := 0; i < kRound; i++ {
+			for i := range kRound {
 				dl, err := draftForward(d)
 				if err != nil {
 					g.err = err
@@ -322,7 +322,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			accepted := 0
 			allAccept := true
 			var nextTok int
-			for i := 0; i < kRound; i++ {
+			for i := range kRound {
 				ti := argmax(logitsN[i])
 				if draftTok[i] == ti {
 					accepted++

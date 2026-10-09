@@ -22,6 +22,7 @@ package cuda
 import (
 	"math"
 	"os"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ import (
 
 func statsD(d []time.Duration) (lo, med, hi time.Duration) {
 	s := append([]time.Duration(nil), d...)
-	sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
+	slices.Sort(s)
 	return s[0], s[len(s)/2], s[len(s)-1]
 }
 
@@ -84,7 +85,7 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 		len(states), total, float64(total)/(1<<20), states[0].nWin, states[0].nSt)
 
 	// Prime so the conv ring is at steady state.
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if _, err := rf.Forward(mc.EmbedResidentForTest(1+i), i); err != nil {
 			t.Fatalf("prime forward %d: %v", i, err)
 		}
@@ -156,7 +157,7 @@ func TestDeltaNetSnapshotCUDA(t *testing.T) {
 
 	const rounds = 30
 	var dec, snap, rest []time.Duration
-	for r := 0; r < rounds; r++ {
+	for r := range rounds {
 		t0 := time.Now()
 		if _, err := rf.Forward(mc.EmbedResidentForTest(1+(r%64)), 16+r); err != nil {
 			t.Fatalf("decode forward: %v", err)

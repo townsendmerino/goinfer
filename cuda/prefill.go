@@ -953,10 +953,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	}
 	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
 	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
-	r.passPromptLen = startPos + M
-	if r.chunkPromptLen > r.passPromptLen {
-		r.passPromptLen = r.chunkPromptLen // a chunk of a longer prompt: the floor is the prompt's, not this pass's
-	}
+	r.passPromptLen = max(r.chunkPromptLen,
+		// a chunk of a longer prompt: the floor is the prompt's, not this pass's
+		startPos+M)
 	// M-09/M-10/M-11 (docs/audit-2026-09-10.md): every tail EXCEPT tailLastLogits (ordinary
 	// single-row prefill) needs decode-identical numerics — HiddenLast's bit-identity contract,
 	// speculative verify's "verify == sequential greedy" invariant — so the fast L2/L3 levers,
@@ -1459,7 +1458,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						return e
 					}
 				} else {
-					for m := 0; m < M; m++ {
+					for m := range M {
 						// Between ROWS: this loop is the one that made cancellation coarse. A MoE
 						// chunk is M sequential per-token FFNs, so without this a cancelled 512-row
 						// chunk still runs every one of them — measured ~22 s on M26, against the
@@ -1830,7 +1829,7 @@ func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepR
 		return nil, nil, e
 	}
 	outs = make([][]float32, M)
-	for m := 0; m < M; m++ {
+	for m := range M {
 		row := r.logitsB.At(m * r.vocab * 4)
 		if rows != nil && rows[m].draw != nil {
 			// stepDraw/gumbelPick read r.logits, not a caller-supplied buffer — copy this row's
@@ -1908,7 +1907,7 @@ func (r *cudaResident) bLayerNormQuantB(x, w Buffer, N, M int, qOut, sOut Buffer
 			Arg(x), Arg(w), Arg(r.zeroBias), gpu.ArgValue(int32(N)), gpu.ArgValue(r.eps), Arg(qOut), Arg(sOut))
 	}
 	// Fallback: loop M rows with r.fLN (layernorm_quant from glue.ptx)
-	for m := 0; m < M; m++ {
+	for m := range M {
 		xm := x.At(m * N * 4)
 		qm := qOut.At(m * N) // N bytes per row (N/4 int32 words)
 		sm := sOut.At(m * 4) // 4 bytes per float32 scale

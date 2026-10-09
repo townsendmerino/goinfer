@@ -100,7 +100,7 @@ func TestLayerNormQuant(t *testing.T) {
 	sc := scale[0]
 	got := make([]float32, H)
 	for j, word := range packed {
-		for b := 0; b < 4; b++ {
+		for b := range 4 {
 			got[j*4+b] = float32(int8(byte(word>>(8*b)))) * sc
 		}
 	}

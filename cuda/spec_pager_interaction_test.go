@@ -348,7 +348,7 @@ func TestSpecPagerInteraction(t *testing.T) {
 			continue
 		}
 		for pi := range prompts {
-			for rep := 0; rep < repeats; rep++ {
+			for rep := range repeats {
 				r.ResetPagerStatsForTest()
 				var got []int
 				var dur time.Duration

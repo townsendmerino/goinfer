@@ -114,7 +114,7 @@ func TestQuantizeEmbedWM_repackedOnlyMatchesCanonical(t *testing.T) {
 	canonical := quantizeEmbedWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true)
 
 	// Row(): the per-token embedding lookup, layout-independent per aikit's own contract.
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		gotR, wantR := make([]float32, cols), make([]float32, cols)
 		repackedOnly.Row(r, gotR)
 		canonical.Row(r, wantR)

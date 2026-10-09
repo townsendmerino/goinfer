@@ -149,7 +149,7 @@ func TestMropeComponentInterleaved_differsFromChunked(t *testing.T) {
 	section := []int{4, 2, 2}
 	half := 8
 	differs := false
-	for d := 0; d < half; d++ {
+	for d := range half {
 		if mropeComponentInterleaved(d, section) != mropeComponent(d, section) {
 			differs = true
 			break

@@ -153,9 +153,7 @@ func runBatchLines(ctx context.Context, plan *batchPlan, run func(context.Contex
 	)
 	stopBeat := make(chan struct{})
 	var beat sync.WaitGroup
-	beat.Add(1)
-	go func() { // a line can take minutes on a big model; say it is alive rather than leave the log silent
-		defer beat.Done()
+	beat.Go(func() { // a line can take minutes on a big model; say it is alive rather than leave the log silent
 		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
 		for {
@@ -170,7 +168,7 @@ func runBatchLines(ctx context.Context, plan *batchPlan, run func(context.Contex
 				mu.Unlock()
 			}
 		}
-	}()
+	})
 	defer func() { close(stopBeat); beat.Wait() }()
 
 	start := time.Now()

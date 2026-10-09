@@ -30,7 +30,7 @@ func TestGEMVNSweep(t *testing.T) {
 		t.Skip("set GOINFER_GEMV_SWEEP_N (one N per process, deliberately -- see this test's own doc comment)")
 	}
 	var ns []int
-	for _, part := range strings.Split(nStr, ",") {
+	for part := range strings.SplitSeq(nStr, ",") {
 		n, err := strconv.Atoi(strings.TrimSpace(part))
 		if err != nil {
 			t.Fatalf("bad GOINFER_GEMV_SWEEP_N entry %q: %v", part, err)

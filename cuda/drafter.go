@@ -241,7 +241,7 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 		if e := gpu.Download(d.ctxFuse, host); e != nil {
 			return e
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			out[i] = append([]float32(nil), host[i*hidden:(i+1)*hidden]...)
 		}
 		return d.r.launchErr
@@ -295,10 +295,7 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 			// ~500 tokens failed mid-stream, prompt-length independent, and blockspec returned that
 			// as the generation's terminal error. Every committed block-spec test stops at <= 96
 			// tokens, so none of them could reach it.
-			capRows := need + 512
-			if d.r.ctxCap > capRows {
-				capRows = d.r.ctxCap
-			}
+			capRows := max(d.r.ctxCap, need+512)
 			d.kc = make([]Buffer, geo.Layers)
 			d.vc = make([]Buffer, geo.Layers)
 			for l := range d.kc {
@@ -608,7 +605,7 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 		if e := gpu.Download(s.x, host); e != nil {
 			return e
 		}
-		for i := 0; i < M; i++ {
+		for i := range M {
 			out[i] = append([]float32(nil), host[i*hidden:(i+1)*hidden]...)
 		}
 		return d.r.launchErr

@@ -70,7 +70,7 @@ func TestGemmaSublayerTrace(t *testing.T) {
 		}
 		run := make([]float32, len(scaledEmbed))
 		copy(run, scaledEmbed)
-		for l := 0; l < nL; l++ {
+		for l := range nL {
 			ac := make([]float32, len(channels))
 			mc := make([]float32, len(channels))
 			aa := make([]float32, len(channels))

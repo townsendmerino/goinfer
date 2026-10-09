@@ -126,8 +126,7 @@ func (s *server) serveClef(w http.ResponseWriter, r *http.Request, lm *loadedMod
 		if r.Context().Err() != nil {
 			return // the client left
 		}
-		var re *clef.RequestError
-		if errors.As(err, &re) {
+		if _, ok := errors.AsType[*clef.RequestError](err); ok {
 			writeErr(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}

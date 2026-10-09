@@ -39,10 +39,10 @@ var markState = map[cacheState]func(c *KVCache){
 // declaration of which kind of state it is, or why it is not state. KDA (audit 2026-09-10 C-03)
 // landed as a field nothing classified and was missed at every lifecycle site; this fails that commit.
 func TestKVCache_everyFieldHasAState(t *testing.T) {
-	ty := reflect.TypeOf(KVCache{})
+	ty := reflect.TypeFor[KVCache]()
 	seen := map[string]bool{}
-	for i := 0; i < ty.NumField(); i++ {
-		name := ty.Field(i).Name
+	for field := range ty.Fields() {
+		name := field.Name
 		seen[name] = true
 		_, isState := kvCacheFieldState[name]
 		why, notState := kvCacheNotState[name]
@@ -405,8 +405,7 @@ func TestSession_snapshotRecordsAdapter(t *testing.T) {
 	t.Run("an adapter this model has not loaded is refused", func(t *testing.T) {
 		other := plainModel(t)
 		_, err := other.LoadSession(built(a), "id")
-		var se *SnapshotError
-		if !errors.As(err, &se) {
+		if _, ok := errors.AsType[*SnapshotError](err); !ok {
 			t.Fatalf("LoadSession = %v, want a *SnapshotError (the caller then prefills cold)", err)
 		}
 	})

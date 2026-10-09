@@ -162,7 +162,7 @@ func checkProbs(t *testing.T, name string, p map[string]float64, keys []string) 
 func TestSystemOne_rejects(t *testing.T) {
 	ts := systemOneServer(t)
 	seventeen := `{`
-	for i := 0; i < 17; i++ {
+	for i := range 17 {
 		if i > 0 {
 			seventeen += ","
 		}

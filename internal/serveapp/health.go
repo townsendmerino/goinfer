@@ -55,9 +55,7 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		// H2 (docs/tasks/task-hardware-coverage-2026-10.md): each backend's startup self-test, so an operator can see that a kernel tier was stepped down or a backend declined without reading a log.
 		"selftest": selfTestFields(),
 	}
-	for k, v := range haltedFields {
-		resp[k] = v
-	}
+	maps.Copy(resp, haltedFields)
 	writeJSON(w, http.StatusOK, resp)
 }
 

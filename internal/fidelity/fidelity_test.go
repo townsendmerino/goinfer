@@ -15,12 +15,12 @@ const flipP = 0.03
 // noise) and whose agreement differs by agreeShift (probability points).
 func synth(rng *rand.Rand, name string, prompts, positions int, klScale, agreeShift float64) Cell {
 	c := Cell{Name: name}
-	for p := 0; p < prompts; p++ {
+	for p := range prompts {
 		base := 0.02 * math.Exp(rng.NormFloat64()*0.6) // prompts differ a lot in difficulty, as the logs show
 		pAgree := 0.85 + 0.05*rng.NormFloat64()
 		var pr Prompt
 		pr.ID = name + "-" + string(rune('a'+p%26))
-		for i := 0; i < positions; i++ {
+		for range positions {
 			// The arms are CORRELATED, as real candidate/exact arms are: both see the same position, so they mostly
 			// agree or disagree with the reference together. flipP is the per-position discordance for equal arms
 			// (~3%, the order the gates' recorded d/N shows); agreeShift moves the candidate's agreement on top of it.
@@ -50,9 +50,9 @@ func passRate(t *testing.T, seed uint64, trials, cells, prompts int, klScale, ag
 	t.Helper()
 	rng := rand.New(rand.NewPCG(seed, 7))
 	pass := 0
-	for i := 0; i < trials; i++ {
+	for range trials {
 		var cs []Cell
-		for k := 0; k < cells; k++ {
+		for k := range cells {
 			cs = append(cs, synth(rng, string(rune('A'+k)), prompts, 64, klScale, agreeShift))
 		}
 		v, err := NonInferior(cs, c)
@@ -102,9 +102,9 @@ func TestNoMarginRule_isACoinFlipForEqualArms(t *testing.T) {
 	rng := rand.New(rand.NewPCG(4, 7))
 	pass := 0
 	const trials = 400
-	for i := 0; i < trials; i++ {
+	for range trials {
 		var all []Prompt
-		for k := 0; k < 5; k++ {
+		for range 5 {
 			all = append(all, synth(rng, "c", 10, 64, 1.0, 0).Prompts...)
 		}
 		s, err := Summarize(all, 0.05)
@@ -123,7 +123,7 @@ func TestNoMarginRule_isACoinFlipForEqualArms(t *testing.T) {
 func TestPerCellNeverVetoes(t *testing.T) {
 	rng := rand.New(rand.NewPCG(5, 7))
 	var cs []Cell
-	for k := 0; k < 6; k++ {
+	for k := range 6 {
 		cs = append(cs, synth(rng, string(rune('A'+k)), 12, 64, 1.0, 0))
 	}
 	// One cell's candidate is much worse; pooled it is diluted but the cell is reported.
@@ -146,9 +146,9 @@ func TestPerCellNeverVetoes(t *testing.T) {
 func TestSuperiority_equalArmsRarelyWin(t *testing.T) {
 	rng := rand.New(rand.NewPCG(6, 7))
 	wins := 0
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		var cs []Cell
-		for k := 0; k < 5; k++ {
+		for range 5 {
 			cs = append(cs, synth(rng, "c", 10, 64, 1.0, 0))
 		}
 		if _, ok, err := Superiority(cs, 0.05); err != nil {

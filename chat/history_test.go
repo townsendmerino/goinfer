@@ -77,8 +77,8 @@ func goldenTurns(t *testing.T, msgs []json.RawMessage) []Turn {
 // afterSystemTurn drops the system turn (the tools preamble: its JSON key order and spacing are goinfer's own, checked
 // structurally elsewhere — TestRenderTools_declarations) and leaves the conversation.
 func afterSystemTurn(s string) string {
-	if i := strings.Index(s, "<|im_end|>\n"); i >= 0 {
-		return s[i+len("<|im_end|>\n"):]
+	if _, after, ok := strings.Cut(s, "<|im_end|>\n"); ok {
+		return after
 	}
 	return s
 }

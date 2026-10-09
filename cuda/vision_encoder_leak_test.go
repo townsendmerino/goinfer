@@ -73,7 +73,7 @@ func TestVisionEncoder_forwardPatchesReleasesDeviceScratch(t *testing.T) {
 	}
 
 	const n = 10
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if _, err := ve.ForwardPatches(patches); err != nil {
 			t.Fatalf("ForwardPatches call %d: %v", i, err)
 		}
