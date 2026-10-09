@@ -90,11 +90,11 @@ reported rather than reddening the lint.
 Not rebuilt below; this is the floor J1–J9 build on.
 
 - **One decode worker per model.** `tryEnter` claims a queue slot and then takes its turn
-  (`internal/serveapp/openai.go:336`), and that turn is what serialises decode. The cap is
-  literally `1 running + --max-queue` (`internal/serveapp/openai.go:107`).
+  (`internal/serveapp/openai.go:337`), and that turn is what serialises decode. The cap is
+  literally `1 running + --max-queue` (`internal/serveapp/openai.go:108`).
 - **The wait is not fair and not context-aware by itself.** `sync.Mutex.Lock()` has no context, so
   a second check exists purely so a halt can cut a waiter loose
-  (`internal/serveapp/openai.go:336`). Waiters are woken in whatever order the mutex chooses: a
+  (`internal/serveapp/openai.go:337`). Waiters are woken in whatever order the mutex chooses: a
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
@@ -102,9 +102,9 @@ Not rebuilt below; this is the floor J1–J9 build on.
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:621`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
-  (`internal/serveapp/helpers.go:85`).
+  (`internal/serveapp/helpers.go:86`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1459`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/serveapp/openai.go:1460`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
@@ -143,7 +143,7 @@ Replace the bare mutex wait with an explicit queue the server can reason about.
 
 - A per-model FIFO of waiting requests with a real `context.Context` per waiter, so a cancelled or
   halted waiter leaves immediately and the second halt check in
-  `internal/serveapp/openai.go:336` stops being load-bearing.
+  `internal/serveapp/openai.go:337` stops being load-bearing.
 - **Context-aware**, in both senses: the admission record carries the request's prompt-token count
   and its session/prefix key, so J6 and J7 have something to schedule on. J1 itself keeps strict
   FIFO — it establishes the structure and changes no order.
@@ -524,8 +524,8 @@ The only throughput item, and it is deliberately last.
 
 ## Sources
 
-`internal/serveapp/openai.go:107`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
-check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
+`internal/serveapp/openai.go:108`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
+check, `drive`) · `internal/serveapp/helpers.go:86` (`-max-inflight`, distinct from the per-model
 429) · `internal/loadflags/loadflags.go:70`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:621` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:72` (the one existing bulk

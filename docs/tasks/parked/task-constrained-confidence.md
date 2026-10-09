@@ -53,7 +53,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:600`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:601`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](../task-tool-grammar-union-2026-09.md)
@@ -150,7 +150,7 @@ is.
   recurrent state (`decoder/kvsnapshot.go:63`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:600`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:601`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
@@ -942,7 +942,7 @@ contract) · `decoder/arch.go:959` (the `qwen3_5` / `qwen3_5_moe` own-forward ro
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:805`, `:744`
 (merge-at-load) · `decoder/kvcache.go:586` (`TruncateTo`) · `decoder/kvsnapshot.go:63` (snapshot
-skips recurrent state) · `internal/serveapp/openai.go:38`, `:536`, `:538` (`top_logprobs` cap,
+skips recurrent state) · `internal/serveapp/openai.go:39`, `:536`, `:538` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/serveapp/main.go:704` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
