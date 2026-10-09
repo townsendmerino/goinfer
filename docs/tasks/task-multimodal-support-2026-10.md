@@ -18,7 +18,6 @@
   - S14 (speech).
   - The Mac's third S7/S13-lite pass.
   - The `--embed-int4` default (option D).
-  - G-IP4 (S17's served TTFT).
 - **Not started:** S8, S10's remaining families, S11, S12, full S13, S15.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
@@ -3449,6 +3448,8 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
           " presenting" at 0.16-0.31.
       - **Both replies are correct descriptions of the table.** Whether the lever stays on, which it is since
         `f6b113ba`, is the owner's decision.
+      - **Owner decision, 2026-10-09: keep it on**, over G-IP4's registered FAIL. G-IP3's logit gate passed, and against
+        the reference the divergence is an R10 near-tie. The FAIL stays recorded as read.
 
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
