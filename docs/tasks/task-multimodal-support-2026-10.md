@@ -2574,6 +2574,78 @@ Added 2026-10-07. Today a second image in one message is a 400.
   - goinfer's rule is "Do not pair images" (`docs/multimodal.md`). S11's gates add a planted defect for it: two
     same-size images in one message, merged as temporal halves, must go red.
 
+#### S11, plan and gates, registered 2026-10-09 before any code (owner: "G-IP4, then S11 (it unblocks S15), then S8")
+
+**What exists, mapped 2026-10-09:**
+- **Already handles several blocks:**
+  - the CPU bidirectional mask (`KVCache.SetImageBlocks` / `attendHi`);
+  - `mropePositions`, which consumes one grid per image run in order;
+  - `reuseLenOf`, which iterates blocks and claims;
+  - the Qwen resident m-RoPE prefill (`PrefillMRoPELast` takes no block argument).
+- **One block only:**
+  - serve (`maxImagesPerTurn = 1`, `visionInput`, `FindImageRun`, `SpliceImageBlock`);
+  - every `Generate*` signature;
+  - `residentCommitIDs`;
+  - the Gemma 4 bidirectional range (`gemma4AttendRange`, documented as a v1 non-goal);
+  - DeepStack rows;
+  - Metal's `attention_prefill_img` (one `uint2`) and CUDA's `attn_img_batched` (two ints).
+- **Image order is lost:** `contentPartsText` joins the text parts and drops where the images sat.
+- **The Responses API silently drops an `input_image` part.** That is a bug, not a limit.
+
+**Choices made here, each changeable by the owner:**
+- **Order is kept.** Each image's block goes where its part sat among the text parts, as the HF processors do. Two images
+  with no text between them stay two blocks.
+- **Never pair images.** Every image is its own block; for Qwen, its own t = 1 grid (`docs/multimodal.md`).
+- **The cap:**
+  - Several images in the newest message, up to 8 (`maxImagesPerTurn`, a guard on tower work per request).
+  - The context must hold every block, as one block's check does today.
+  - The newest-message media rule (`image_history.go`, owner 2026-10-01) is unchanged.
+- **Audio stays one clip per message.** A message with images and audio stays a 400. S11 is about images.
+- **The Responses API** gets `input_image`, with the same rules as chat. Batches and jobs keep refusing images.
+- **GLM-OCR stays one image per request,** with a 400 that says so. Its task prompts are written for one page.
+- **Resident prefill:**
+  - Two-block image prefill on Metal and CUDA comes after the CPU path.
+  - Until then a multi-image turn takes the CPU prefill and upload bridge, which handles any number of blocks, and the
+    log says why.
+  - The Qwen family's resident m-RoPE prefill takes several images from the start.
+
+**Steps:**
+1. Two-image tiny goldens from HF (transformers 5.15.0, `~/g4venv` on nobara), for Gemma 3, Qwen2.5-VL, Qwen3.5 and
+   Gemma 4 (bidirectional tiny). Two layouts each: A, text, B, text; and A and B adjacent and the same size.
+2. Decoder: span slices through the `Generate*` entries, the CPU prefills, DeepStack, `gemma4AttendRange`, the window
+   check, and reuse claims and commits.
+3. Serve: part order, N images, per-family builders, the Responses API.
+4. Metal and CUDA: the image block as a list.
+
+**Gates:**
+- **G-S11a, tiny, CPU, against the two-image HF goldens:** each family at its existing single-image golden's bars, on
+  both layouts.
+- **G-S11b, planted defects** (each must read red; a fixture that is blind to one says so, and G-S11e carries it):
+  1. The same-size adjacent pair merged as temporal halves (Qwen: one t = 2 grid).
+  2. The two images' features swapped.
+  3. Gemma 3 and Gemma 4: the second block left causal.
+- **G-S11c, resident:**
+  - Each backend's two-image prefill, against the CPU's, on the tiny fixtures: cosine >= 0.995, relL2 <= 0.15, as
+    G-IP2.
+  - Where a backend declines, the test asserts the decline and its stated reason.
+- **G-S11d, reuse:**
+  - The same two images again reuse the whole prompt.
+  - A changed second image reuses no further than the second block's start.
+  - A changed first image reuses no further than the first block's start.
+- **G-S11e, served, real, by day** (Gemma 3 4B, Qwen2.5-VL-3B, Qwen3-VL-2B on the Mac; Gemma 4 E2B; `table.png` and
+  `formula.png` in one message):
+  - The reply names both: it contains "table" and one of "integral", "Gaussian", "formula".
+  - Its first 32 greedy tokens match the CPU decoder's two-image path, or first differ at an R10 near-tie.
+  - The single-image reply is unchanged: identical to the binary before S11.
+- **G-S11f, API:**
+  - OpenAI chat, Anthropic messages and the Responses API each carry part order. A unit test checks the block positions.
+  - A ninth image is a 400 that names the cap.
+  - GLM-OCR's second image is a 400 that names the family.
+- **G-S11g:** `gate quick` green; `GOOS=windows go vet`; the tagged vets.
+
+**Cost:** about two days by day. Step 1 is an hour on nobara, step 2 most of a day, step 3 half a day, step 4 half a day
+per backend. Nothing in it needs the night queue.
+
 ### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
 
 WebGPU today: Gemma 3 GPU/GPU, Qwen2.5-VL decode on the GPU, GLM-OCR staged, Gemma 4 and Qwen3.5 on the CPU, and no
