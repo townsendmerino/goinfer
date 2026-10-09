@@ -43,7 +43,8 @@ comparability and requires a deliberate re-anchor, not a silent carry-forward.
 
 ## Working in the tree
 
-**Five Go modules**, not one: the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/`. `go.work` is
+**Six Go modules**, not one: the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/`, and `site/` (the website generator,
+built by `site.yml`). `go.work` is
 gitignored and **mandatory** for cross-module work; a `GOWORK=off` build of a submodule resolves
 the root from the proxy at its last published tag, so it can fail with "method not found" on
 perfectly good code. That failure is expected between releases, not a bug.
