@@ -2,6 +2,7 @@ package prequant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -141,4 +142,108 @@ func greedyOrSkip(m *decoder.Model, prompts [][]int) (out [][]int, why string) {
 		return nil, "no prompt produced a token"
 	}
 	return out, ""
+}
+
+// TestDirSidecar_keepsMRopeSection: a Qwen-VL's m-RoPE section survives the sidecar. Real checkpoints carry it in
+// rope_scaling, which the adapters read and clear, and Config.MRopeSection was `json:"-"`, so a .giw dropped it and the
+// model loaded from one ran plain RoPE on image positions (found 2026-10-09 by S16's real gate). The tiny fixtures carry
+// it in rope_parameters, a raw field that survives, which is why TestDirSidecar_matchesDirectLoad (text-only, where the
+// three axes coincide anyway) passed: each fixture here is copied with the section moved into rope_scaling, as the
+// released checkpoints have it. A config with no section at all is refused, which is what makes a stale sidecar fail its
+// self-check and rebuild.
+func TestDirSidecar_keepsMRopeSection(t *testing.T) {
+	for _, fx := range []string{"qwen25vl-tiny", "qwen3vl-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			src := filepath.Join("../../testdata", fx)
+			if _, err := os.Stat(src); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			copyDir := func(cfgEdit func(map[string]any)) string {
+				dst := filepath.Join(t.TempDir(), fx)
+				if err := os.Mkdir(dst, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				ents, _ := os.ReadDir(src)
+				for _, e := range ents {
+					if !e.Type().IsRegular() {
+						continue
+					}
+					raw, err := os.ReadFile(filepath.Join(src, e.Name()))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if e.Name() == "config.json" {
+						var c map[string]any
+						if err := json.Unmarshal(raw, &c); err != nil {
+							t.Fatal(err)
+						}
+						cfgEdit(c)
+						raw, _ = json.Marshal(c)
+					}
+					if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return dst
+			}
+			// textCfg is where the decoder reads the text config: the nested text_config when there is one.
+			textCfg := func(c map[string]any) map[string]any {
+				if tc, ok := c["text_config"].(map[string]any); ok {
+					return tc
+				}
+				return c
+			}
+			var section []any
+			released := copyDir(func(c map[string]any) {
+				tc := textCfg(c)
+				rp, _ := tc["rope_parameters"].(map[string]any)
+				if rp == nil {
+					rp, _ = c["rope_parameters"].(map[string]any)
+				}
+				section, _ = rp["mrope_section"].([]any)
+				delete(rp, "mrope_section")
+				tc["rope_scaling"] = map[string]any{"type": "mrope", "rope_type": "default", "mrope_section": section}
+			})
+			if len(section) != 3 {
+				t.Fatalf("the fixture has no mrope_section in rope_parameters to move")
+			}
+			half := 0
+			for _, v := range section {
+				half += int(v.(float64))
+			}
+			direct, err := decoder.Load(released, decoder.Options{Quant: "int4"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := direct.MRopeAxisResident(half)
+			direct.Close()
+			if len(want) == 0 {
+				t.Fatal("the direct load has no m-RoPE axis table: the rewritten config is not the released layout")
+			}
+			out := filepath.Join(t.TempDir(), "s.giw")
+			if err := Transcode(context.Background(), released, out, "int4", false, decoder.GIWTargetForBackend("metal")); err != nil {
+				t.Fatal(err)
+			}
+			side, err := decoder.Load(out, decoder.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := side.MRopeAxisResident(half)
+			side.Close()
+			if !slices.Equal(got, want) {
+				t.Errorf("m-RoPE axis table through the sidecar %v, direct %v", got, want)
+			}
+			none := copyDir(func(c map[string]any) {
+				tc := textCfg(c)
+				for _, m := range []map[string]any{tc, c} {
+					if rp, ok := m["rope_parameters"].(map[string]any); ok {
+						delete(rp, "mrope_section")
+					}
+				}
+			})
+			if _, err := decoder.Load(none, decoder.Options{Quant: "int4"}); err == nil || !strings.Contains(err.Error(), "no m-RoPE section") {
+				t.Errorf("a config with no m-RoPE section loaded (err %v); it must be refused", err)
+			}
+		})
+	}
 }

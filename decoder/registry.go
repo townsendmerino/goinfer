@@ -1596,6 +1596,14 @@ func qwen2_5_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			cfg.RopeScaling = nil
 		}
 	}
+	if section == nil && len(cfg.MRopeSection) == 3 {
+		section = cfg.MRopeSection // a .giw's config carries it under its own key (rope_scaling was cleared when it was written)
+	}
+	if len(section) != 3 {
+		// A Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A .giw
+		// written before 2026-10-09 dropped it; refusing makes a stale sidecar fail its self-check and rebuild.
+		return nil, nil, fmt.Errorf("decoder(qwen2_5_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it")
+	}
 	cfg.MRopeSection = section
 	arch, schema, err := qwen2Architecture(cfg)
 	if err != nil {
@@ -1659,6 +1667,14 @@ func qwen3_vlArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			// call parseRopeScaling at all.
 			cfg.RopeScaling = nil
 		}
+	}
+	if section == nil && len(cfg.MRopeSection) == 3 {
+		section = cfg.MRopeSection // a .giw's config carries it under its own key (rope_scaling was cleared when it was written)
+	}
+	if len(section) != 3 {
+		// A Qwen-VL without its m-RoPE section would run plain RoPE on image positions and still look fine on text. A .giw
+		// written before 2026-10-09 dropped it; refusing makes a stale sidecar fail its self-check and rebuild.
+		return nil, nil, fmt.Errorf("decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it")
 	}
 	cfg.MRopeSection = section
 	arch, schema, err := qwen3Architecture(cfg)

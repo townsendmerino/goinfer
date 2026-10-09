@@ -30,6 +30,11 @@ func s9Run(t *testing.T, a *metalResident, mg *decoder.Model, rows [][]float32, 
 	var out [][]float32
 	var last []float32
 	if lm {
+		// G-S9a gates the layer-major pass, which keeps the route below the fast-prefill floor, on a decline and under
+		// --exact-prefill; since S9 step 2 shipped (emodelBatchedOn, 2026-10-09) PrefillLast takes the batched pass above
+		// the floor, so pin the layer-major one here.
+		defer func(v bool) { emodelBatchedOn = v }(emodelBatchedOn)
+		emodelBatchedOn = false
 		before := a.r.emodelLayerMajorRuns
 		lg, err := a.PrefillLast(context.Background(), rows, 0)
 		if err != nil {

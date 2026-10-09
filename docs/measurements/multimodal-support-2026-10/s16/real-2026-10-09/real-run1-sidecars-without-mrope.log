@@ -1,0 +1,15 @@
+=== RUN   TestS16MRoPEPrefill_real
+=== RUN   TestS16MRoPEPrefill_real/qwen25vl-3b-instruct
+[S16] qwen25vl-3b-instruct: the decoder through its sidecar
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    s16_mrope_prefill_test.go:359: not Metal-resident with an m-RoPE axis table: 
+=== RUN   TestS16MRoPEPrefill_real/qwen3-vl-2b-instruct
+[S16] qwen3-vl-2b-instruct: the decoder through its sidecar
+[metal] weights aliased from qwen3-vl-2b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1053 MB bound in place, 1 MB copied (anonymous) — 672 MB int4 nibbles (56 single tensors + 56 fused groups = 448 MB) + 297 MB int8 codes (1 matrices) + 84 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    s16_mrope_prefill_test.go:359: not Metal-resident with an m-RoPE axis table: 
+--- FAIL: TestS16MRoPEPrefill_real (10.71s)
+    --- FAIL: TestS16MRoPEPrefill_real/qwen25vl-3b-instruct (7.39s)
+    --- FAIL: TestS16MRoPEPrefill_real/qwen3-vl-2b-instruct (3.32s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	11.264s
+FAIL

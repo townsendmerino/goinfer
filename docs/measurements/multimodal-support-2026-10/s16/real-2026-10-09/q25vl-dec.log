@@ -1,0 +1,32 @@
+=== RUN   TestZZQ25VLDecodeDiag
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[dec n= 512 k=0] cos D-A 1.0000  D-B 0.9836  D-C 0.9900  A-B 0.9836 | argmax D 271 A 271 B 271 C 271
+[dec n= 512 k=1] cos D-A 0.9988  D-B 0.9948  D-C 0.9984  A-B 0.9950 | argmax D 73594 A 73594 B 73594 C 73594
+[dec n= 512 k=2] cos D-A 0.9943  D-B 0.9892  D-C 0.9877  A-B 0.9865 | argmax D 2014 A 2236 B 2014 C 2236
+[dec n= 512 k=3] cos D-A 0.9838  D-B 0.9793  D-C 0.9948  A-B 0.9768 | argmax D 2621 A 3410 B 2621 C 3410
+[dec n= 512 k=4] cos D-A 0.9952  D-B 0.9892  D-C 0.9965  A-B 0.9929 | argmax D 279 A 279 B 279 C 279
+[dec n= 512 k=5] cos D-A 0.9821  D-B 0.9724  D-C 0.9921  A-B 0.9723 | argmax D 4265 A 4265 B 4265 C 4265
+[dec n= 512 k=6] cos D-A 0.9975  D-B 0.9959  D-C 0.9985  A-B 0.9970 | argmax D 315 A 315 B 315 C 315
+[dec n= 512 k=7] cos D-A 0.9823  D-B 0.7478  D-C 0.9847  A-B 0.7586 | argmax D 279 A 279 B 279 C 279
+[dec n= 512 k=8] cos D-A 0.9801  D-B 0.7204  D-C 0.9794  A-B 0.7809 | argmax D 7402 A 330 B 1565 C 330
+[dec n=1024 k=0] cos D-A 1.0000  D-B 0.9629  D-C 0.9872  A-B 0.9629 | argmax D 220 A 220 B 220 C 220
+[dec n=1024 k=1] cos D-A 0.9478  D-B 0.7546  D-C 0.9674  A-B 0.6705 | argmax D 33952 A 33952 B 121105 C 33952
+[dec n=1024 k=2] cos D-A 0.9953  D-B 0.9859  D-C 0.9875  A-B 0.9857 | argmax D 11 A 11 B 271 C 319
+[dec n=1024 k=3] cos D-A 0.9973  D-B 0.9876  D-C 0.9959  A-B 0.9875 | argmax D 220 A 220 B 220 C 220
+[dec n=1024 k=4] cos D-A 0.9573  D-B 0.8849  D-C 0.9859  A-B 0.9662 | argmax D 16 A 16 B 105600 C 16
+[dec n=1024 k=5] cos D-A 0.9990  D-B 0.9973  D-C 0.9988  A-B 0.9975 | argmax D 15 A 15 B 15 C 15
+[dec n=1024 k=6] cos D-A 0.9990  D-B 0.9972  D-C 0.9988  A-B 0.9970 | argmax D 15 A 15 B 15 C 15
+[dec n=1024 k=7] cos D-A 0.9987  D-B 0.9963  D-C 0.9986  A-B 0.9963 | argmax D 15 A 15 B 15 C 15
+[dec n=1024 k=8] cos D-A 0.9975  D-B 0.9955  D-C 0.9979  A-B 0.9963 | argmax D 15 A 15 B 15 C 15
+[dec n=1500 k=0] cos D-A 1.0000  D-B 0.9761  D-C 0.9973  A-B 0.9761 | argmax D 151645 A 151645 B 198 C 151645
+[dec n=1500 k=1] cos D-A 0.9947  D-B 0.9761  D-C 0.9937  A-B 0.9806 | argmax D 198 A 198 B 198 C 198
+[dec n=1500 k=2] cos D-A 0.9622  D-B 0.9712  D-C 0.9621  A-B 0.9748 | argmax D 522 A 151645 B 151645 C 151645
+[dec n=1500 k=3] cos D-A 0.9758  D-B 0.9534  D-C 0.9832  A-B 0.9763 | argmax D 1726 A 1551 B 1726 C 1851
+[dec n=1500 k=4] cos D-A 0.9981  D-B 0.9959  D-C 0.9976  A-B 0.9949 | argmax D 397 A 397 B 397 C 397
+[dec n=1500 k=5] cos D-A 0.9782  D-B 0.7085  D-C 0.8229  A-B 0.6224 | argmax D 58390 A 122017 B 73594 C 122017
+[dec n=1500 k=6] cos D-A 0.9956  D-B 0.9909  D-C 0.9958  A-B 0.9914 | argmax D 151645 A 151645 B 151645 C 151645
+[dec n=1500 k=7] cos D-A 0.9831  D-B 0.9109  D-C 0.9871  A-B 0.8669 | argmax D 198 A 198 B 198 C 198
+[dec n=1500 k=8] cos D-A 0.9818  D-B 0.7322  D-C 0.9486  A-B 0.6489 | argmax D 151645 A 151645 B 151644 C 151645
+--- PASS: TestZZQ25VLDecodeDiag (150.87s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	151.400s

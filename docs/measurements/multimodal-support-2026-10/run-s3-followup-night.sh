@@ -5,7 +5,7 @@
 #   1. Phase 2, fixed: decoder/gemma3_tower_sensitivity_real_test.go with the logits copy and serve's own prompt
 #      encoding, from a test binary pinned at REV. Its reference path must reproduce G-S3b's served CPU-tower reply on the
 #      same decoder (the day run's metal:cpu arm, CPU int4 with Metal's layout), or the step is void.
-#   2. G-S3b's CPU-tower repeat: two metal:cpu arms on the pinned serve-metal (0c66b18b, the 2026-10-07 night's), 30 s
+#   2. G-S3b's CPU-tower repeat: two metal:cpu arms on serve-metal built at the pinned rev (re-pinned 2026-10-09), 30 s
 #      settle between arms. Each arm must decode metal-resident, or the pair is void.
 # Usage: GQ_REV=<commit> run-s3-followup-night.sh [out dir]. Checkpoints from ~/models only.
 set -uo pipefail
@@ -14,13 +14,18 @@ R=$HOME/tmcode/goinfer
 BIN=$HOME/goinfer-bench/s3
 OUT=${1:-$BIN/followup-$(date +%F)}
 WT=$BIN/wt-$REV
-[ -x "$BIN/serve-metal" ] && [ -f "$BIN/g3-feats.json" ] || { echo "FATAL: $BIN/serve-metal or g3-feats.json missing"; exit 2; }
+[ -f "$BIN/g3-feats.json" ] || { echo "FATAL: $BIN/g3-feats.json missing"; exit 2; }
 [ -d "$HOME/models/gemma-3-4b-it" ] || { echo "FATAL: ~/models/gemma-3-4b-it missing"; exit 2; }
 mkdir -p "$OUT"
 [ -d "$WT" ] || git -C "$R" worktree add --detach "$WT" "$REV" || exit 1
 [ "$(git -C "$WT" rev-parse --short=8 HEAD)" = "$REV" ] || { echo "worktree is not at $REV"; exit 1; }
 [ -x "$BIN/decoder-g3-$REV.test" ] || (cd "$WT/decoder" && GOWORK=off go test -c -tags realckpt -o "$BIN/decoder-g3-$REV.test" .) || exit 1
-{ echo "rev $REV: decoder test sha256 $(shasum -a 256 "$BIN/decoder-g3-$REV.test" | cut -c1-16); serve-metal $(cat "$BIN/serve-metal.rev")"
+# The serve binary is built at the pinned rev too (re-pinned 2026-10-09: the night of 2026-10-08 ran a pre-built binary from
+# before the directory sidecar, whose heap load the guard refused); it needs the workspace for the metal module.
+printf 'go 1.27.0\n\ntoolchain go1.27.2\n\nuse (\n\t.\n\t./gpu\n\t./metal\n)\n' > "$WT/go.work"
+[ -x "$BIN/serve-metal-$REV" ] || (cd "$WT/metal" && GOWORK=$WT/go.work CGO_ENABLED=0 go build -o "$BIN/serve-metal-$REV" ./cmd/serve) || exit 1
+echo "$REV" > "$BIN/serve-metal-$REV.rev"
+{ echo "rev $REV: decoder test sha256 $(shasum -a 256 "$BIN/decoder-g3-$REV.test" | cut -c1-16); serve-metal $REV (sha256 $(shasum -a 256 "$BIN/serve-metal-$REV" | cut -c1-16))"
   echo "started: $(date '+%F %T %Z')"; sw_vers | tr '\n' ' '; echo; pmset -g batt | head -1; sysctl -n vm.swapusage; uptime; } | tee "$OUT/provenance.txt"
 rc=0
 echo "=== 1. phase 2, fixed $(date '+%T')"
@@ -29,7 +34,7 @@ echo "=== 1. phase 2, fixed $(date '+%T')"
   "$BIN/decoder-g3-$REV.test" -test.run '^TestGemma3TowerSensitivity$' -test.v -test.timeout 30m ) > "$OUT/1-phase2.log" 2>&1 || rc=1
 grep -E "\[g3\]|^--- |VOID" "$OUT/1-phase2.log"
 echo "=== 2. G-S3b CPU-tower repeat $(date '+%T')"
-( cd "$WT" && GS3C_SETTLE=30 bash docs/measurements/multimodal-support-2026-10/run-gs3c-served.sh "$BIN/serve-metal" "$OUT/2-repeat" \
+( cd "$WT" && GS3C_SETTLE=30 bash docs/measurements/multimodal-support-2026-10/run-gs3c-served.sh "$BIN/serve-metal-$REV" "$OUT/2-repeat" \
   =metal:cpu,metal:cpu "$HOME/models/gemma-3-4b-it" ) > "$OUT/2-repeat.log" 2>&1 || rc=1
 grep -E "decode path|IDENTICAL|differing|top-3|near-tie|exited" "$OUT/2-repeat.log"
 n=$(grep -c "decode path: metal-resident" "$OUT/2-repeat.log")

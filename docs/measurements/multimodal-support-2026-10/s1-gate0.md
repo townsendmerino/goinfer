@@ -203,7 +203,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - The `vNormUnit`/`uZero` plumbing is built for every model (:1735-1743).
   - Width `%8` checks via `bad8` (:1561+). Threadgroup-stage budget (:1590-1612). R18 rows per GEMV:
     `gemvRows.gu = gemvRowsFor(2*I,4)`, and down-staging only if `I <= MaxThreadgroupMemoryLength` (:1614-1626).
-- **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:954-956`).
+- **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:958-960`).
   The decoder then runs the prompt token by token: `ForwardNoLogits` for all but the last, then `Forward`
   (`decoder/model.go:1615-1643`).
 
@@ -236,9 +236,9 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `ForwardN` → `ForwardBatch` (`metal/model.go:3615`): layer-major in one command buffer, with per-row `batchX`
     slices and uniforms, and a `len(emb) != r.H` check.
   - `ForwardArgmax(id,pos)` uses `loadEmbedRow` (`metal/model.go:2650-2653`).
-  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:1099,1142`), and `StepBatch` (MC3,
+  - Others: `ForwardSample` (gumbel), `HiddenLast`/`ResidualAll` (`metal/backend.go:1108,1142`), and `StepBatch` (MC3,
     `metal/batch.go:914`, which declines Gemma).
-- **UploadKV** (`metal/backend.go:1253-`): writes host K/V rows at `base*kvDim`, f16 or int8.
+- **UploadKV** (`metal/backend.go:1262-`): writes host K/V rows at `base*kvDim`, f16 or int8.
 - **GenerateGemma4VL uses resident decode only when `bidirectional`** (the gate in `GenerateGemma4VL`, `decoder/generate_gemma4_vl.go`, as of 2026-10-06; S1.8 admits E-models too).
   That covers 26B/31B: CPU prefill → `residentUploadPrefill` → `m.resident.Forward(m.embedResident(next), gpuPos)`
   (:169-194). E2B never touches the resident, and `TestGenerateGemma4VL_sequentialPathNeverTouchesResident`
@@ -352,7 +352,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - The **non-contig path (int8 KV, `allocSlots=1`) allocates a fresh `byteBuf` for every layer with a non-zero
     `kc`**, so a shared layer gets its own empty buffer in slots ≥ 1. That is a silent garbage read. Alias in that
     loop explicitly, as `b.kc[l] = b.kc[src]`.
-- **UploadKV** (`metal/backend.go:1253`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
+- **UploadKV** (`metal/backend.go:1262`): refuse (or no-op) a shared layer explicitly. Today `residentUploadPrefill`
   skips it only because the CPU cache is empty there (`decoder/generate_vl_resident.go:26-28`), and an upload through
   the alias would overwrite the source.
 - **Bookkeeping:**

@@ -40,8 +40,8 @@ import (
 // height and width components swapped; (2) the image rows given 1-D text positions; (3) the text rows after the image
 // given uncompressed (sequence) positions. Defects 4-6 (DeepStack) belong to S16's Qwen3-VL step.
 func TestS16MRoPEPrefill_tiny(t *testing.T) {
-	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test the paths production keeps off until graded
-	defer func() { metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false }()
+	defer func(m, d bool) { metalMRoPEPrefillOn, metalDeepstackPrefillOn = m, d }(metalMRoPEPrefillOn, metalDeepstackPrefillOn)
+	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test both paths whatever production keeps on
 	type golden struct {
 		InputIDs      []int     `json:"input_ids"`
 		ImageToken    int       `json:"image_token_id"`
@@ -258,8 +258,8 @@ func TestS16MRoPEPrefill_tiny(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -timeout 60m -run '^TestS16MRoPEPrefill_real$' -v ./metal/
 func TestS16MRoPEPrefill_real(t *testing.T) {
-	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test the paths production keeps off until graded
-	defer func() { metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false }()
+	defer func(m, d bool) { metalMRoPEPrefillOn, metalDeepstackPrefillOn = m, d }(metalMRoPEPrefillOn, metalDeepstackPrefillOn)
+	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test both paths whatever production keeps on
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
 	}
@@ -340,7 +340,16 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			if fx.hybrid || fx.deep {
 				ctxLen = 2048 // the Qwen3.5+ / Qwen3-VL towers are capped at serve's 1,024 merged rows
 			}
-			m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: ctxLen})
+			// Through the directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, what serve's Metal load reads):
+			// its int4 weights are mapped, not held twice, which is what the 2026-10-08 night's live budget (2.80 GB
+			// against 3.77 GB for Qwen2.5-VL) lacked. It generates exactly what the direct load does
+			// (prequant.TestDirSidecar_matchesDirectLoad).
+			src := dir
+			if g := dir + ".int4.metal.giw"; func() bool { _, err := os.Stat(g); return err == nil }() {
+				src = g
+				fmt.Fprintf(os.Stderr, "[S16] %s: the decoder through its sidecar\n", filepath.Base(fx.dir))
+			}
+			m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: ctxLen})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -511,8 +520,8 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 // argmax difference is read by R10's near-tie rule, as the served gates read one: it counts only when the new token's
 // reference probability is under half the reference's top. Cosine carries the bar.
 func TestS16DeepstackPrefill_tiny(t *testing.T) {
-	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test the paths production keeps off until graded
-	defer func() { metalMRoPEPrefillOn, metalDeepstackPrefillOn = false, false }()
+	defer func(m, d bool) { metalMRoPEPrefillOn, metalDeepstackPrefillOn = m, d }(metalMRoPEPrefillOn, metalDeepstackPrefillOn)
+	metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true // the gates test both paths whatever production keeps on
 	const merge, steps, bar, gh, gw = 2, 8, 0.9999, 8, 12
 	path := filepath.Join("..", "testdata", "qwen3vl-tiny")
 	if _, err := os.Stat(filepath.Join(path, "model.safetensors")); err != nil {

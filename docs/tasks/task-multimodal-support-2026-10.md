@@ -1901,6 +1901,27 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
     between arms (`GS3C_SETTLE`). Both arms must decode `metal-resident`, or the pair is VOID. PASS: byte-identical
     replies and log-probabilities.
   - **Cost:** about 15 minutes, queued at 20.
+- **S3 follow-ups, read 2026-10-09 by day: phase 2 PASS (the decoder's sensitivity, not a tower defect); G-S3b's
+  CPU-tower repeat PASS.** The night run was VOID on memory (above). Re-pinned by the owner to `c2891555` and run by
+  day; raw `s3-followup-2026-10-09/`.
+  - **A disclosed deviation:** the repeat's serve binary is built at `c2891555`, not the registered `0c66b18b`. That
+    older binary predates the directory sidecar, and its heap load was what the guard refused. Phase 2's test loads
+    Gemma 3 through its sidecar (`gemma-3-4b-it.int4.metal.giw`, the file serve's Metal load reads).
+  - **Phase 2: not VOID.** The reference path (CPU tower) reproduces the served reply exactly: "The image shows
+    quarterly unit sales data by region, broken down into North, South, East, West, and Central, along with a total
+    for all regions."
+  - **The registered reading holds.** The Metal tower's arm sits inside the three noise arms:
+
+    | arm | KL mean (nats) | KL max | first argmax change |
+    |---|---|---|---|
+    | Metal tower | 0.0563 | 0.489 | step 10 |
+    | CPU tower + noise, seed 1 | 0.0661 | 0.484 | step 7 |
+    | CPU tower + noise, seed 2 | 0.0307 | 0.323 | step 7 |
+    | CPU tower + noise, seed 3 | 0.0462 | 0.558 | step 7 |
+
+    **So G-S3b's red was the decoder's sensitivity to the tower's float32-order differences, not a tower defect.**
+  - **G-S3b's CPU-tower repeat: PASS.** Both arms decoded `metal-resident (int4)` with a 30 s settle. Replies and
+    log-probabilities are byte-identical (`cmp`).
 
 ### S9 — Batched E-model prefill on Metal and CUDA, image turns included
 
@@ -2217,6 +2238,124 @@ different rows.
     only red was G-S9c at 0.9999 (every other family's prefill test passed).
 
 
+
+- **The Mac night of 2026-10-08, graded 2026-10-09** (the runner started 22:16, ended 23:48; 6 of 10 jobs ok; raw logs in
+  `~/goinfer-logs/night/runs/2026-10-08/`, archived into this campaign's measurements as noted per job).
+  - **S9 step 2, the night speed rule: SHIP.**
+    - **Text cell:** text-prompt TTFT 10.991 s (layer-major) against 1.565 s (batched), medians. The five per-pass
+      ratios are 7.418 / 6.841 / 7.046 / 7.038 / 7.004, median **7.04x** against the 1.02 bar.
+    - **Not void:** the batched arm's ran line is in all five server logs. Binaries: `79631cb7` (lm) and `90de0779`
+      (`s9b-night-on`).
+    - **The image cell, a record:** 10.223 s against 5.603 s, **1.82x**, under the 2.4-2.9x projection band. Both
+      arms run the tower on the CPU (`-vision-device cpu`, about 4.5 s), which the band's 6.4 s baseline (S7's,
+      tower on Metal) did not include. The prefill itself fell from about 5.7 s to about 1.1 s.
+    - **So `emodelBatchedOn` goes on** (G-S9c and G-S9d passed by day).
+  - **S7 and S13-lite on levers A and A+B, records against the 5 s bar** (serve-metal `92c30640` = A,
+    `e2910316` = A+B; the 2026-10-07 night is the baseline):
+
+    | cell | 10-07 | lever A | levers A+B |
+    |---|---|---|---|
+    | Gemma 3 4B (S7) | not loaded (fit guard) | not loaded (fit guard, at that minute) | 6.50 s |
+    | Gemma 4 E2B, image | 6.20 s | 6.24 s | 6.17 s |
+    | Gemma 4 E2B, audio | 3.20 s | 3.23 s | 3.14 s |
+    | Qwen3.5-0.8B | 4.48 s | 4.03 s | 3.94 s |
+    | Qwen3-VL-2B | 8.97 s | 7.74 s | 7.30 s |
+    | GLM-OCR | 8.32 s | 6.40 s | 5.30 s |
+    | Qwen2.5-VL-3B | 21.67 s | 20.50 s | 17.72 s |
+    | **S13-lite, Gemma 3 4B: goinfer** | 12.81 s | 7.79 s | **6.60 s** |
+    | S13-lite: Ollama / llama.cpp | 4.97 / 4.68 s | 4.97 / 4.70 s | 4.97 / 4.69 s |
+
+    - The towers' levers show up where the tower dominates: GLM-OCR -36%, Qwen3-VL -19%, Gemma 3 -48% in S13-lite.
+    - E2B's image cell does not move, because its time is the prefill (S9 step 2's, above).
+    - Qwen2.5-VL is still the prefill: these binaries predate S16, whose own speed record below takes it to 5.73 s.
+    - Two cells under the bar, as before.
+  - **S16 (`s16-night`): the served gate PASS on both models; the real gate VOID (memory); speed a record.**
+    - **G-S16c served:** today's path against S16, both Metal arms. **IDENTICAL replies** on Qwen2.5-VL-3B and on
+      Qwen3-VL-2B.
+    - **Speed** (image-turn TTFT, `vision_ttft.py`, 9 timed each, rotated):
+      - Qwen2.5-VL-3B: 19.46 s today against **5.73 s** S16 (3.4x);
+      - Qwen3-VL-2B: 8.25 s against **2.86 s** (2.9x, under the 5 s bar).
+    - **G-S16c real: VOID, not FAIL.** Neither model went Metal-resident in the test process. Qwen2.5-VL's resident
+      build needed 3.77 GB against a live budget of 2.80 GB, and Qwen3-VL's load saw 3.2 GB available. No
+      comparison ran.
+  - **VOID on memory** (the load-time fit guard, with 6.7-7.4 GB available all night):
+    - **`s3-followup`:** at `1be0c274`, before directory sidecars. Phase 2's test loads Gemma 3 4B's directory in the
+      heap ("needs ~5.6 GB ... + 0.6 GB KV", budget 4.8 GB), and the G-S3b repeat's servers were refused the same
+      way.
+    - **`metal-q4k-gq`** (`docs/tasks/task-metal-q4k-2026-10.md`): G-Q2's Phi-3 load at q4k needs 4.0 GB + 0.4 GB
+      KV + 2.2 GB "reading the checkpoint", against 5.2 GB. G-Q3's serve was refused the same way, and its
+      automatic streaming retry has no q4k form. The reference arm ran (Qwen2.5-Coder-1.5B, 94.22%, 7/8).
+  - **`gs18g`: VOID by design error.** It served Gemma 3 4B from the ggml-org Q4_K_M GGUF, whose tokenizer has no
+    `<image_soft_token>`. All three servers loaded Metal-resident, then exited at the vision setup ("tokenizer has no
+    `<image_soft_token>` token"). The directory decoder, whose sidecar now exists, serves the same request: G-S18a's
+    two arms ran that way by day.
+
+- **By day 2026-10-09 (owner: "re-pin and run now", "run with latest code now").**
+  - **A silent defect in S18 part 1, found and fixed: a Qwen-VL loaded through a sidecar lost its m-RoPE section.**
+    - **The mechanism:** the qwen2_5_vl and qwen3_vl adapters read `mrope_section` from `rope_scaling` (where the
+      released checkpoints carry it), clear `rope_scaling`, and keep the section in `Config.MRopeSection`, which was
+      `json:"-"`. A `.giw` therefore dropped it, and a model loaded from one ran plain RoPE on image positions, with
+      text unaffected (the three axes coincide on text).
+    - **Live since part 1:** serve loads a Qwen-VL directory through its sidecar by default. GGUF-sourced Qwen-VL
+      sidecars had the same loss before part 1.
+    - **Why G-S18d missed it:** its text-only greedy streams cannot see image positions, and the tiny fixtures carry
+      the section in `rope_parameters`, a raw field that survives. CLAUDE.md's "minimal in exactly the dimension that
+      hides the bug".
+    - **Found by** S16's real gate loading through the new sidecars: "not Metal-resident with an m-RoPE axis table"
+      (`s16/real-2026-10-09/real-run1-sidecars-without-mrope.log`).
+    - **The fix:**
+      - `MRopeSection` is serialized (`json:"mrope_section,omitempty"`), and the two adapters take it from a `.giw`'s
+        config.
+      - A Qwen-VL config with no section is refused ("no m-RoPE section ... rebuild it"), so a stale sidecar fails
+        its freshness self-check and rebuilds instead of being trusted.
+      - `prequant.TestDirSidecar_keepsMRopeSection`: each Qwen-VL fixture is copied with the section moved into
+        `rope_scaling` as released, and its m-RoPE axis table through the sidecar must equal the direct load's (red
+        with the old tag); a config with no section must be refused.
+  - **G-S16c real: PASS on both models, through the rebuilt sidecars** (`s16/real-2026-10-09/real.log`, 535 s), under
+    the re-registered bar:
+
+    | model | image | worst cosine | text control min | argmax |
+    |---|---|---|---|---|
+    | Qwen2.5-VL-3B | gemma3_preprocess_image | 0.913 | 0.335 | 0 real |
+    | Qwen2.5-VL-3B | qwen25vl_preprocess_image | 0.950 | -0.022 | 0 real (3 near-ties) |
+    | Qwen2.5-VL-3B | formula | 0.836 | -0.356 | 0 real (1 near-tie) |
+    | Qwen2.5-VL-3B | table | 0.892 | 0.387 | 0 real |
+    | Qwen3-VL-2B | gemma3_preprocess_image | 0.972 | 0.875 | 0 real (1 near-tie) |
+    | Qwen3-VL-2B | qwen25vl_preprocess_image | 0.978 | 0.954 | 0 real (1 near-tie) |
+    | Qwen3-VL-2B | formula | 0.985 | 0.958 | 0 real |
+    | Qwen3-VL-2B | table | 0.986 | 0.866 | 0 real |
+
+    - **But Qwen2.5-VL's text control is itself broken.** Its minimum cosine against the CPU falls to 0.33, -0.02 and
+      -0.36 on same-length text prompts (about 1,000-1,600 rows): unrelated logits. The relative bar then passes
+      vacuously.
+    - **The plan:**
+      - Qwen3-VL's PASS stands on healthy controls (0.87-0.95).
+      - Qwen2.5-VL's long-prompt Metal prefill is a defect to find before S16 is claimed for it. It is not S16's own:
+        the control is today's path.
+      - S16 goes on for Qwen3-VL only, pending the owner.
+  - **Qwen2.5-VL's control, investigated 2026-10-09 by day** (owner: "investigate now"; exploratory diagnostics, logs
+    `s16/real-2026-10-09/q25vl-diag.log` and `q25vl-dec.log`, through the rebuilt sidecar):
+    - **The last prompt row is fine.** CPU prefill against Metal's batched f16 pass reads cosine 0.95-0.99 on the
+      control's random tokens and 0.82-0.99 on real text, 32 to 1,500 tokens. Metal's sequential path reads
+      0.95-0.999. No non-finite values; max |logit| 12-28.
+    - **The collapse is in the decode steps that read the batched pass's K/V.** The control's random tokens (seed 1),
+      decoded 8 teacher-forced steps from four K/V sources, cosine against CPU-throughout:
+      - the CPU prefill uploaded to Metal, the control's reference: 0.948-1.0;
+      - Metal sequential: 0.82-0.998;
+      - **Metal batched: steps at 0.70-0.75** (n = 512 step 7-8, n = 1024 step 1, n = 1500 step 5 and 8), each a
+        different argmax; elsewhere 0.95-0.99.
+      - The S16 run's -0.36 is the same effect over four seeds and up to 1,562 rows.
+    - **The likely mechanism, not yet measured:** the batched pass rounds activations to f16 for its MMA GEMMs, and
+      Qwen2.5's large activations lose precision there. That is the failure S17 lever B's f16-activation kernel hit on
+      the towers, which f32 activations fixed. A precision defect of the batched text prefill on this model, live in
+      production for long Qwen2.5-VL text prompts. Not S16's.
+    - **The decision (owner, 2026-10-09):**
+      - S16 is ON for Qwen3-VL (`metalDeepstackPrefillOn`: real PASS on healthy controls, served IDENTICAL, TTFT
+        8.25 -> 2.86 s).
+      - It stays OFF for Qwen2.5-VL (`metalMRoPEPrefillOn`): turning it on would move image turns from the CPU prefill
+        (0.95-1.0) onto the lossy batched pass.
+      - **Owed:** a task for Qwen2.5-VL's batched prefill precision (f32 activations, as lever B), with a decode-step gate
+        against the CPU on the control.
 
 ### S10 — Towers for the families that have none
 
