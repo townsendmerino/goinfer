@@ -132,7 +132,7 @@ is.
 
 **Decisions.**
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
-  (`decoder/model.go:1322`) returns logits plus captured residuals. `qwen3_5` dense shares
+  (`decoder/model.go:1325`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
   (`decoder/arch.go:959`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
   contract (`decoder/capture.go:14`) is the residual *after* layer l, before the final norm, so D2
@@ -937,7 +937,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:1322` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
+`Process`) · `decoder/model.go:1325` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:959` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:705`, `:744`

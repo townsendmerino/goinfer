@@ -53,8 +53,8 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   slower path. The failure mode we are designing against is a Metal box quietly decoding on the
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
-  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:687`,
-  `metal/gemma4_moe.go:244`, `decoder/moepaging.go`).
+  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:716`,
+  `metal/gemma4_moe.go:256`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
 ---
@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:497 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:714` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:717` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -279,8 +279,8 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
-  silently loosened, since Metal's OWN expert paging (`metal/moe.go:687`,
-  `metal/gemma4_moe.go:244`, cited by the ground rule, NOT inspected this round) may have a real
+  silently loosened, since Metal's OWN expert paging (`metal/moe.go:716`,
+  `metal/gemma4_moe.go:256`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
   fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose

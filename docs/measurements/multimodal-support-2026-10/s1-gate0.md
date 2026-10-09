@@ -8,7 +8,7 @@ from the code and not run. Nothing here was executed except reading files and th
 1. **Two pre-existing Metal Gemma 4 gaps that the E-model inherits**, found while mapping. Both are real in code today
    and are missed by the loose existing bars:
    - **(a) Metal never applies the per-layer output scalar on DENSE Gemma 4 layers.** It applies it only inside the
-     g4moe join (`metal/gemma4_moe.go:718`). The CUDA fix (`0907f07c`, which also added `KVSrcAtResident`) wired dense
+     g4moe join (`metal/gemma4_moe.go:730`). The CUDA fix (`0907f07c`, which also added `KVSrcAtResident`) wired dense
      layers on CUDA (`cuda/backend.go:1528`), and WebGPU wires them too (`gpu/residency.go:649`). Metal has no other
      `LayerScalar` reference outside `embeddinggemma2.go`/`gemma4_moe.go`. `encodeLayerResidualWith`'s dense tail
      ends at the down-proj and residual add (`metal/model.go:2989-3150`). Every E2B layer is dense, so this is
@@ -205,7 +205,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
     `gemvRows.gu = gemvRowsFor(2*I,4)`, and down-staging only if `I <= MaxThreadgroupMemoryLength` (:1614-1626).
 - **Batched prefill** is declined for Gemma 4 (`r.prefillOK`, :1178-1180; the message is at `metal/backend.go:936-938`).
   The decoder then runs the prompt token by token: `ForwardNoLogits` for all but the last, then `Forward`
-  (`decoder/model.go:1612-1640`).
+  (`decoder/model.go:1615-1643`).
 
 ### 2.3 Decode step encode (`encodeLayerResidualWith`, `metal/model.go:2989-3150`; attention :3097-3260)
 
@@ -224,7 +224,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `swiglu_quant(gu, gu.At(r.I*4), dq, dSc, r.uI, act)`.
   - Sandwich: down `pGemv` with `K=r.uI` into `dO` → `rmsnorm_f32(postMLPNorm)` → `residual`.
   - **No layer scalar** (gap 1a).
-- **g4moe FFN:** `encodeGemma4MoEFFN`, which ends in `encodeG4Join` with `scale_vec` (`metal/gemma4_moe.go:710-719`).
+- **g4moe FFN:** `encodeGemma4MoEFFN`, which ends in `encodeG4Join` with `scale_vec` (`metal/gemma4_moe.go:722-731`).
 
 ### 2.4 Entry points
 
@@ -395,7 +395,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 
 - **Text:**
   - Once Metal declares `FeatGemma4EModel`, `residentAdmission` admits E2B and the stateless Generate path uses
-    `residentPrefillSeed` (`decoder/model.go:1571-1640`).
+    `residentPrefillSeed` (`decoder/model.go:1574-1643`).
   - `PrefillLast` declines on per-layer geometry, so the prompt runs sequentially per token through the executor,
     and every embedding comes from `embedResident`, so it carries PLE.
   - Nothing else in the decoder needs to know.
