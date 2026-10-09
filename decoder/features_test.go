@@ -24,7 +24,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// path this phase doesn't have (cache.mropePos is never set for ordinary Generate), same
 	// reasoning as qwen2_5_vl's empty profile above.
 	"qwen3_vl": {FeatQKNorm},
-	"llama":    {},
+	// qwen3_asr (S14.3): Qwen3 exactly (qwen3_asrArchitecture calls qwen3Architecture; the checkpoint's interleaved m-RoPE section is dropped because audio positions are sequential), so the same
+	// FeatQKNorm and nothing else.
+	"qwen3_asr": {FeatQKNorm},
+	"llama":     {},
 	// SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/tasks/task-gpu-paths-2026-09.md):
 	// cuda+metal now declare FeatNoPE (RopeInvFreqLayer zeroes the NoPE layers' invFreq table,
 	// no new kernel), so this is SmolLM3's ONLY required feature and it now reaches both —
@@ -332,6 +335,7 @@ var admissionGolden = map[string][]string{
 	"qwen2":      {"cuda", "metal", "webgpu"},
 	"qwen2_5_vl": {"cuda", "metal", "webgpu"},
 	"qwen3_vl":   {"cuda", "metal", "webgpu"}, // text-only (P8 Phase 0); same admission as plain qwen3
+	"qwen3_asr":  {"cuda", "metal", "webgpu"}, // the text decoder is plain qwen3; the audio turn (GenerateAudio) prefills and decodes on the CPU weights whatever resident is built
 	"qwen2_moe":  {"cuda", "metal", "webgpu"}, // cuda joined 2026-08-20 (the gate weight, not a kernel)
 	"qwen3":      {"cuda", "metal", "webgpu"},
 	// qwen3_moe needs {FeatMoE, FeatQKNorm} — strictly WEAKER than qwen2_moe's
