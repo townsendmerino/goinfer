@@ -1,0 +1,114 @@
+rev: 06b2d922dd4a9e0a781953f9dc46bf7409727a1a (+dirty files: 0)
+started: 2026-10-09 08:41:05 PDT
+load: 0.30 2.70 2.40 1/828 2135676
+NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 468 MiB
+[08:42:07] ... run1 running, 3 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:43:07] ... run1 running, 8 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:44:07] ... run1 running, 13 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:45:07] ... run1 running, 32 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:46:07] ... run1 running, 35 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:47:07] ... run1 running, 39 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:48:07] ... run1 running, 43 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:49:07] ... run1 running, 46 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:50:07] ... run1 running, 50 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:51:07] ... run1 running, 54 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:52:07] ... run1 running, 58 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[08:53:07] ... run1 running, 61 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+run1 rc=0 units=64
+[08:54:38] ... run2 running, 3 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[08:55:38] ... run2 running, 8 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[08:56:38] ... run2 running, 13 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[08:57:38] ... run2 running, 32 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[08:58:38] ... run2 running, 35 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[08:59:38] ... run2 running, 38 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:00:38] ... run2 running, 42 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:01:38] ... run2 running, 45 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:02:38] ... run2 running, 48 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:03:38] ... run2 running, 52 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:04:38] ... run2 running, 56 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:05:38] ... run2 running, 59 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+[09:06:38] ... run2 running, 63 unit files in /home/francis/goinfer-logs/s896g-run1-2026-10-09/b
+run2 rc=0 units=64
+[s896g grade      0s] 64 units in /home/francis/goinfer-logs/s896g-run1-2026-10-09/a
+[s896g grade      3s] loading float32 model for 64 units without a cached reference
+[s896g grade     24s] HF unit 1/64 formula.png.p00: 1037 tokens in 19s
+[s896g grade     43s] HF unit 2/64 formula.png.p01: 1035 tokens in 20s
+[s896g grade     63s] HF unit 3/64 formula.png.p02: 1037 tokens in 19s
+[s896g grade     81s] HF unit 4/64 formula.png.p03: 1035 tokens in 18s
+[s896g grade    100s] HF unit 5/64 formula.png.p04: 1044 tokens in 19s
+[s896g grade    118s] HF unit 6/64 formula.png.p05: 1035 tokens in 18s
+[s896g grade    136s] HF unit 7/64 formula.png.p06: 1038 tokens in 18s
+[s896g grade    154s] HF unit 8/64 formula.png.p07: 1032 tokens in 19s
+[s896g grade    173s] HF unit 9/64 formula.png.p08: 1033 tokens in 19s
+[s896g grade    191s] HF unit 10/64 formula.png.p09: 1039 tokens in 17s
+[s896g grade    212s] HF unit 11/64 formula.png.p10: 1041 tokens in 21s
+[s896g grade    230s] HF unit 12/64 formula.png.p11: 1038 tokens in 19s
+[s896g grade    251s] HF unit 13/64 formula.png.p12: 1037 tokens in 20s
+[s896g grade    274s] HF unit 14/64 formula.png.p13: 1038 tokens in 23s
+[s896g grade    295s] HF unit 15/64 formula.png.p14: 1036 tokens in 21s
+[s896g grade    315s] HF unit 16/64 formula.png.p15: 1036 tokens in 20s
+[s896g grade    332s] HF unit 17/64 gemma3_preprocess_image.png.p00: 806 tokens in 17s
+[s896g grade    350s] HF unit 18/64 gemma3_preprocess_image.png.p01: 804 tokens in 18s
+[s896g grade    366s] HF unit 19/64 gemma3_preprocess_image.png.p02: 806 tokens in 17s
+[s896g grade    383s] HF unit 20/64 gemma3_preprocess_image.png.p03: 804 tokens in 17s
+[s896g grade    399s] HF unit 21/64 gemma3_preprocess_image.png.p04: 813 tokens in 16s
+[s896g grade    415s] HF unit 22/64 gemma3_preprocess_image.png.p05: 804 tokens in 16s
+[s896g grade    433s] HF unit 23/64 gemma3_preprocess_image.png.p06: 807 tokens in 18s
+[s896g grade    451s] HF unit 24/64 gemma3_preprocess_image.png.p07: 801 tokens in 18s
+[s896g grade    466s] HF unit 25/64 gemma3_preprocess_image.png.p08: 802 tokens in 15s
+[s896g grade    481s] HF unit 26/64 gemma3_preprocess_image.png.p09: 808 tokens in 16s
+[s896g grade    497s] HF unit 27/64 gemma3_preprocess_image.png.p10: 810 tokens in 15s
+[s896g grade    512s] HF unit 28/64 gemma3_preprocess_image.png.p11: 807 tokens in 16s
+[s896g grade    530s] HF unit 29/64 gemma3_preprocess_image.png.p12: 806 tokens in 17s
+[s896g grade    546s] HF unit 30/64 gemma3_preprocess_image.png.p13: 807 tokens in 17s
+[s896g grade    563s] HF unit 31/64 gemma3_preprocess_image.png.p14: 805 tokens in 16s
+[s896g grade    579s] HF unit 32/64 gemma3_preprocess_image.png.p15: 805 tokens in 16s
+[s896g grade    581s] HF unit 33/64 qwen25vl_preprocess_image.png.p00: 92 tokens in 2s
+[s896g grade    583s] HF unit 34/64 qwen25vl_preprocess_image.png.p01: 90 tokens in 2s
+[s896g grade    586s] HF unit 35/64 qwen25vl_preprocess_image.png.p02: 92 tokens in 2s
+[s896g grade    588s] HF unit 36/64 qwen25vl_preprocess_image.png.p03: 90 tokens in 2s
+[s896g grade    590s] HF unit 37/64 qwen25vl_preprocess_image.png.p04: 99 tokens in 2s
+[s896g grade    592s] HF unit 38/64 qwen25vl_preprocess_image.png.p05: 90 tokens in 2s
+[s896g grade    595s] HF unit 39/64 qwen25vl_preprocess_image.png.p06: 93 tokens in 2s
+[s896g grade    597s] HF unit 40/64 qwen25vl_preprocess_image.png.p07: 87 tokens in 2s
+[s896g grade    599s] HF unit 41/64 qwen25vl_preprocess_image.png.p08: 88 tokens in 2s
+[s896g grade    601s] HF unit 42/64 qwen25vl_preprocess_image.png.p09: 94 tokens in 2s
+[s896g grade    604s] HF unit 43/64 qwen25vl_preprocess_image.png.p10: 96 tokens in 2s
+[s896g grade    606s] HF unit 44/64 qwen25vl_preprocess_image.png.p11: 93 tokens in 2s
+[s896g grade    607s] HF unit 45/64 qwen25vl_preprocess_image.png.p12: 92 tokens in 2s
+[s896g grade    609s] HF unit 46/64 qwen25vl_preprocess_image.png.p13: 93 tokens in 2s
+[s896g grade    611s] HF unit 47/64 qwen25vl_preprocess_image.png.p14: 91 tokens in 2s
+[s896g grade    614s] HF unit 48/64 qwen25vl_preprocess_image.png.p15: 91 tokens in 2s
+[s896g grade    632s] HF unit 49/64 table.png.p00: 994 tokens in 19s
+[s896g grade    653s] HF unit 50/64 table.png.p01: 992 tokens in 21s
+[s896g grade    674s] HF unit 51/64 table.png.p02: 994 tokens in 21s
+[s896g grade    694s] HF unit 52/64 table.png.p03: 992 tokens in 21s
+[s896g grade    714s] HF unit 53/64 table.png.p04: 1001 tokens in 20s
+[s896g grade    737s] HF unit 54/64 table.png.p05: 992 tokens in 23s
+[s896g grade    756s] HF unit 55/64 table.png.p06: 995 tokens in 20s
+[s896g grade    777s] HF unit 56/64 table.png.p07: 989 tokens in 20s
+[s896g grade    798s] HF unit 57/64 table.png.p08: 990 tokens in 22s
+[s896g grade    819s] HF unit 58/64 table.png.p09: 996 tokens in 21s
+[s896g grade    841s] HF unit 59/64 table.png.p10: 998 tokens in 22s
+[s896g grade    862s] HF unit 60/64 table.png.p11: 995 tokens in 21s
+[s896g grade    882s] HF unit 61/64 table.png.p12: 994 tokens in 19s
+[s896g grade    901s] HF unit 62/64 table.png.p13: 995 tokens in 20s
+[s896g grade    921s] HF unit 63/64 table.png.p14: 993 tokens in 19s
+[s896g grade    939s] HF unit 64/64 table.png.p15: 993 tokens in 19s
+
+64 units; per image {'gemma3_preprocess_image.png': 16, 'qwen25vl_preprocess_image.png': 16, 'formula.png': 16, 'table.png': 16}
+d = c(ON) - c(OFF): mean +0.0007  95% [-0.0044, +0.0060]  se 0.0027   per image {'gemma3_preprocess_image.png': -0.0111, 'qwen25vl_preprocess_image.png': 0.0097, 'formula.png': -0.0027, 'table.png': 0.0069}
+a = c(OFFX) - c(OFF) (the A/A): mean -0.0039  95% [-0.0088, +0.0010]  se 0.0025   per image {'gemma3_preprocess_image.png': -0.0071, 'qwen25vl_preprocess_image.png': 0.0, 'formula.png': -0.0022, 'table.png': -0.0062}; unit-level sd 0.0201
+margin M = max(0.005, -mean a) = 0.0050; instrument sufficiency: se(mean a) 0.0025 <= M/2 = 0.0025: HELD
+
+VERDICT (ON against OFF at margin M): FAIL
+control 3, planted defect 'late': mean x -0.0010 [-0.0077, +0.0057] per image {'gemma3_preprocess_image.png': -0.0079, 'qwen25vl_preprocess_image.png': -0.0019, 'formula.png': -0.0006, 'table.png': 0.0064} -> PARKED  (reported: the gate's sensitivity to this defect)
+control 3, planted defect 'notadded': mean x -0.0054 [-0.0136, +0.0027] per image {'gemma3_preprocess_image.png': -0.0316, 'qwen25vl_preprocess_image.png': 0.0046, 'formula.png': -0.0071, 'table.png': 0.0124} -> FAIL  (reported: the gate's sensitivity to this defect)
+control 3, planted defect 'textrows': mean x -0.4712 [-0.5249, -0.4224] per image {'gemma3_preprocess_image.png': -0.4328, 'qwen25vl_preprocess_image.png': -0.6086, 'formula.png': -0.473, 'table.png': -0.3702} -> FAIL  (must be FAIL)
+
+secondary: mean KL(HF||arm) OFF 0.2715  ON 0.2560;  argmax agreement with HF OFF 0.816  ON 0.832
+control 2, ON byte-identical across the two runs: 64/64
+control 4, template ids equal on every unit: True; HF step-0 argmax in an arm's top 3 on 100% of units (needs >= 90%)
+control 1, the served-prompt unit of each image byte-identical to G-S10j round 3 (first 4 steps): 8/8
+[s896g grade    949s] done
+finished: 2026-10-09 09:22:40 PDT
