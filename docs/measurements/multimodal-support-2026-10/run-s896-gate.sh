@@ -13,10 +13,11 @@ mkdir -p "$OUT/a" "$OUT/b"
 cd "$SRC" || exit 2
 { echo "rev: $(git rev-parse HEAD) (+dirty files: $(git status --short | grep -vc '^??'))"; echo "started: $(date '+%F %T %Z')"; echo "load: $(cat /proc/loadavg)"; nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader; } | tee "$OUT/provenance.txt"
 (cd cuda && go test -c -tags 'cuda goinfer_testhooks' -o "$OUT/cuda.test" .) || { echo "FATAL: build"; exit 2; }
-tick() { ( while sleep 60; do echo "[$(date +%T)] ... $1 running, $(ls "$2" 2>/dev/null | grep -c '\.meta\.json$') unit files in $2"; done ) & echo $!; }
+# The ticker is started directly, never inside $(...): a command substitution waits for every holder of its pipe, and a background loop holds it forever (the first launch of this script hung there).
 run() { # label dir extra-env...
   local label=$1 dir=$2; shift 2
-  local t=$(tick "$label" "$dir")
+  ( while sleep 60; do echo "[$(date +%T)] ... $label running, $(ls "$dir" 2>/dev/null | grep -c '\.meta\.json$') unit files in $dir"; done ) &
+  local t=$!
   ( cd cuda && env GOINFER_HEAVY_TESTS=1 GOINFER_S896G_DIR="$dir" "$@" "$OUT/cuda.test" -test.run '^TestS896_gateDump$' -test.v -test.timeout 90m ) > "$OUT/$label.log" 2>&1
   local rc=$?; kill "$t" 2>/dev/null; wait "$t" 2>/dev/null
   echo "$label rc=$rc units=$(ls "$dir" | grep -c '\.meta\.json$')"; return $rc
