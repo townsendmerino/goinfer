@@ -562,6 +562,11 @@ func (s *server) pathFields(name string) map[string]any {
 	// unknown rather than published as 0.
 	if ctx := lm.contextWindow(lm.adapter == ""); ctx > 0 {
 		f["context_window"] = ctx
+		// H-b (docs/measurements/harness-dialects-2026-10-09.md): the same number under the names harnesses read.
+		// Hermes takes max_model_len or context_length (else assumes 128K, and refuses under 64K), Oh My Pi's
+		// discovery reads the same two (else 128K); a client that over-assumes the window overruns ours.
+		f["context_length"] = ctx
+		f["max_model_len"] = ctx
 	}
 	// W11: whether image content parts are accepted — the same visionCapable the vision path checks
 	// before answering "this model has no vision tower", so a client can hide image input on a model

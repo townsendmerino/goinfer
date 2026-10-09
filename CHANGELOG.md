@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Fixed — a zero `decoder.Options` loads a cpu-arm64 `.giw`
+
+`decoder.Load(path, Options{})` on a `.giw` prequantized for cpu-arm64 failed with "Backend \"\" needs canonical bytes —
+rebuild with `go run ./cmd/prequant`", although the zero `Backend` is documented as the CPU and `Backend: "cpu"` loaded
+the same file. The zero value now loads it on the CPU (library surface review M5).
+
+### Added — `/v1/models` publishes `context_length` and `max_model_len`
+
+The same number as `context_window`, under the names Hermes and Oh My Pi read. Without them both assume a 128K window
+and overrun a smaller served one.
+
 ### Fixed — `/v1/responses` reads tools in the Responses API's own shape
 
 `/v1/responses` decoded `tools` only in the Chat Completions nesting (`{"function":{"name":…}}`), so a tool sent in the

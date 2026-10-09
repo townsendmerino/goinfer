@@ -627,7 +627,17 @@ func Load(dir string, opts Options) (*Model, error) {
 		// Backend:"metal") — which withResidency's own decline does NOT fail loudly
 		// for (it logs and falls back to CPU/staged, which is non-fatal by design but
 		// not the "fails at load" contract L2 requires for a wrong-representation file).
-		if wantsCanonicalInt4(opts.Backend, be) {
+		// The zero Backend is the CPU here (Options.Backend's own doc: "cpu" (default)), unlike the GGUF paths, where
+		// wantsCanonicalInt4 keeps "" conservative because canonical bytes can still be built at load. A .giw's bytes
+		// are already fixed, and the zero value resolves to the plain CPU backend, which runs row4-only weights; refusing
+		// it sent the library review's obvious `Load(path, Options{})` to a rebuild instruction (M5,
+		// docs/measurements/library-surface-2026-10-09.md). An out-of-band resident build on such a model still
+		// refuses by name (metal's "int4 tensor has no canonical bytes").
+		giwBackend := opts.Backend
+		if giwBackend == "" {
+			giwBackend = "cpu"
+		}
+		if wantsCanonicalInt4(giwBackend, be) {
 			if n := repackedOnlyInt4Count(w); n > 0 {
 				_ = mmap.Unmap(data)
 				closeBackend(be)
