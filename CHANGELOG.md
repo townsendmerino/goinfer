@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — `goinfer-chat --image` runs GLM-OCR's vision tower on the GPU: an invoice in 23 s instead of 70 s on an M1 Pro
+
+`goinfer-chat --image` always ran GLM-OCR's float32 vision tower on the CPU, even in the Metal and CUDA builds, where
+`goinfer-serve` has run it on the device since S2. It now takes the same device tower serve does when the resolved backend is
+metal or cuda and the binary carries one. A device that declines, or fails on an image, falls back to the CPU tower with a note.
+On the M1 Pro the 1,656-token test invoice's tower went from 48 s to 5 s and the whole run from 70 s to 23 s, with a
+byte-identical reply (exploratory, one run each). The decoder still runs on the CPU on Metal: it needs pairwise rope.
+
 ### Fixed — `ActQuantGroup` on Metal and WebGPU now runs on the CPU, as documented
 
 A load with `Options.ActQuantGroup` set used to run Metal-resident at per-vector activation scales whenever the model family had no activation-outlier hazard: nothing on Metal reads the group, so the option was dropped without a word. Only CUDA residency implements per-group scales; on Metal and WebGPU such a load now declines to the CPU, which honours the group, and the decline names the option. Metal's q4k lane is unaffected. The CLIs set the group only for hazard families, which already ran on the CPU, so this reaches library callers.

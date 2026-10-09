@@ -401,6 +401,7 @@ All flags:
 		explicit := map[string]bool{}
 		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
 		s.img = img
+		img.useBackend(opts.Backend)
 		if !explicit["temp"] {
 			s.sp.Temperature = imageDefaultTemp
 		}
