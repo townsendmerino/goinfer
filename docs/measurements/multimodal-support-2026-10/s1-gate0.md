@@ -34,7 +34,7 @@ from the code and not run. Nothing here was executed except reading files and th
    (the token-table row read inline in `runLayersGemma4FromEmbed` as of 2026-10-06; S1.2 moved it into
    `Model.gemma4PLEInputs`). Every resident entry point carries only `embedding []float32`
    (`decoder/residency.go:50-87`, `metal/backend.go:601-620`). Recommended: an "augmented embedding row" built in
-   `embedResidentInto` (`decoder/residency.go:1569`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
+   `embedResidentInto` (`decoder/residency.go:1581`), `[H ‖ L·P per-layer inputs]`, with the per-layer inputs
    computed host-side by the exact CPU code (bit-identical PLE inputs). Metal already has strict length checks to
    extend (`metal/backend.go:603,668`, `metal/model.go:3642`). Details in §3.1.
 4. **The whole per-layer PLE branch can be built from kernels Metal already has:** `quant_vec`, `gemv_w4a8_sa`,
@@ -72,14 +72,14 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
 ### 1.2 Forward, one token: `runLayersGemma4` → `runLayersGemma4FromEmbed`
 
 - **Embedding:** `h = Embed[id] × √hidden` (`decoder/forward_gemma4.go:29-40`). The resident twin is
-  `embedResidentInto` (`decoder/residency.go:1569-1596`).
+  `embedResidentInto` (`decoder/residency.go:1581-1608`).
 - **PLE inputs**, computed once per token from the INITIAL scaled embedding, before layer 0
   (inline in `runLayersGemma4FromEmbed` as of 2026-10-06, which the bare line numbers in this list refer to; S1.2
   moved the block verbatim into `Model.gemma4PLEInputs`):
   - `tok = PerLayerTokenEmbed.Row(pleTokenID) × √P`, shape `[L·P]` (:81-85).
   - `ctx = PerLayerModelProj · h` (`[L·P × H]`, :87), then `× 1/√H` (:88-91), then per layer an RMSNorm over its
     P-segment with the shared weight `PerLayerProjNorm` (:95). This is `normalize(arch, …)`. `arch.RMSAddOne` is
-    false for gemma4 (`decoder/registry.go:365`).
+    false for gemma4 (`decoder/registry.go:366`).
   - `perLayer[l] = (tok[l] + ctx[l]) × 1/√2` (:92-99). Matches HF `project_per_layer_inputs`
     (`TF/models/gemma4/modeling_gemma4.py:1781-1811`).
   - `pleTokenID` is the token id for text. At an image/audio position it is **`arch.gemma4.PadTokenID`**: in the
@@ -103,7 +103,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
   - Shared layer: no projection, no append.
   - Attention over `cache.Keys(kvSrc(l))` from `cache.WindowStart(pos, global)` (:180-186), where `global` is THIS
     layer's type, which equals the source's type by construction. Scale is `arch.AttnScale = 1.0`
-    (`decoder/registry.go:371-373`).
+    (`decoder/registry.go:372-374`).
   - o_proj → `PostAttnNorm` (sandwich) → residual add (:188-190).
 - **Dense FFN**, at the **per-layer width** `ffn = arch.ffnAt(l)` (:146, `decoder/arch.go:611-616`):
   - pre-MLP norm.
@@ -155,7 +155,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `PadTokenID` is **never set from GGUF** (no reference in `decoder/gguf*.go`). It stays 0, which is correct for
     E2B only because E2B's `pad_token_id` is 0.
 - **Safetensors:**
-  - shared-KV skip (`decoder/weights.go:897-915`).
+  - shared-KV skip (`decoder/weights.go:901-919`).
   - FFNPerLayer discovery, recorded only when it varies (:1160-1183).
   - **PLE refused**: the safetensors loader's gemma4 branch in `decoder/weights.go` (as of 2026-10-06, before S1.1 replaced the refusal).
 
