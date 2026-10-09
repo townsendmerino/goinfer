@@ -3257,6 +3257,39 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **The fit guard stays on.**
   - **Queue:** `s7-mac-leverAB` and `s13lite-mac-leverAB`, 20 minutes each.
 
+- **S7 and S13-lite on the Mac, levers A and A+B, read 2026-10-09** (the night of 2026-10-08; all four jobs exit 0; raw
+  `~/goinfer-logs/night/runs/2026-10-08/s7-mac-leverA*.log` and `s13lite-mac-leverA*.log`).
+  - **Conditions:** median of three timed requests per cell, new media every request. The load average sat at 2.3-6
+    during the cells (the instant idle gate), so the seconds are a record of the night, not an idle measurement. The
+    passes are same-night and interleave nothing, so a small difference between them is not a resolved effect.
+
+  | cell (median TTFT, s) | 2026-10-07 | lever A | levers A+B | under 5 s |
+  |---|---|---|---|---|
+  | gemma-3-4b (S13-lite, 9 requests) | 12.81 | 7.79 | 6.60 | no; Ollama 4.97, llama.cpp 4.69 |
+  | gemma-4-e2b | 6.20 | 6.24 | 6.17 | no |
+  | gemma-4-e2b audio | 3.20 | 3.23 | 3.14 | yes |
+  | qwen2.5-vl-3b | 21.67 | 20.50 | 17.72 | no |
+  | qwen3.5-0.8b | 4.48 | 4.03 | 3.94 | yes |
+  | qwen3-vl-2b | 8.97 | 7.74 | 7.30 | no |
+  | glm-ocr | 8.32 | 6.40 | 5.30 | no |
+
+  - **Reading:**
+    - The tower levers took Gemma 3 from 12.8 to 6.6 s, still 1.3-1.4x the peers.
+    - Every Qwen cell moved with them.
+    - Gemma 4 E2B did not move (its tower was already on Metal; the time is elsewhere).
+    - Two cells pass, five do not.
+  - **All of this predates 2026-10-09's changes,** which reach three of the five failing cells:
+    - S16 put Qwen2.5-VL's and Qwen3-VL's image prefill on the GPU; the served comparisons read 19.46 -> 5.73 s and
+      8.25 -> 2.86 s.
+    - GLM-OCR's decoder and prefill went resident (`docs/tasks/task-metal-pairwise-followups-2026-10.md`).
+
+- **S7 and S13-lite on the Mac, a third pass on 2026-10-09's tree, registered 2026-10-09 before it runs** (owner:
+  "continue with image/audio track").
+  - **What:** the same scripts, cells, procedure and 5 s bar as the two passes above.
+  - **Binary:** `serve-metal` at `74830779`, in `~/goinfer-bench/s7-2026-10-09/` (`BIN=`).
+  - **Purpose:** re-rank the failing cells for S17/S18's next lever, since three of the five moved by day.
+  - **Queue:** `s7-mac-0909` and `s13lite-mac-0909`, 20 minutes each, tonight.
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
