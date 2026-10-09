@@ -61,7 +61,7 @@ is the same for a backend whatever the family, so it is stated once here:
 | Metal | `goinfer-serve-darwin-arm64` and `-amd64`, built from `metal/cmd/serve` (`release-assets.yml:202-203`) | none |
 | WebGPU | **no release binary** (`release-assets.yml:155`: "`-tags gpu` (WebGPU) is deliberately NOT here: it needs cgo"); self-build `gpu/cmd/serve` with `-tags gpu` and a C toolchain | cgo (B3, verified-run) |
 
-`goinfer-chat` has the same per-platform binaries (`release-assets.yml:79-84`) but its `--image` is **GLM-OCR only** (`internal/chatapp/image.go:110`, tower f32 on the
+`goinfer-chat` has the same per-platform binaries (`release-assets.yml:79-84`) but its `--image` is **GLM-OCR only** (`internal/chatapp/image.go:111`, tower f32 on the
 CPU always). `demo/agent` takes images for **Gemma 3 only**, with the tower on `cpu` or `webgpu` (the `--vision-backend` flag in `demo/agent/cmd/agent-web/main.go`, `demo/agent/agent/agent.go:285-307`): no CUDA tower there.
 
 *Changed 2026-10-02 (item 2 below): the tower-quant cells in the tables describe the rule as audited. Today Qwen2.5-VL, Qwen3.5+ and Gemma 4 load f32 unless `-vision-quant int8`, on every backend.*
@@ -104,7 +104,7 @@ place in production code (`:1125-1127`, the Gemma 3 `vision.Encoder`, on `webgpu
 | backend | (1) tower | (2) decoder after the image | verdict |
 |---|---|---|---|
 | CPU | CPU `QwenVisionEncoder` | CPU | recorded; tiny fixtures verified-run (T7) |
-| CUDA | **CPU**, int8 by the rule. aikit now has the seam (`vision/qwen_resident.go:38,44`) and the module (`gpu/qwencuda`), but **goinfer registers no Qwen factory and imports neither** (B1; `docs/tasks/task-aikit-boundary-2026-09.md:33`), and serve never calls `EnableResident` on it | resident m-RoPE prefill (`cuda/prefill.go:227`) then `ForwardMRoPE` decode (`cuda/resident.go:2321`), else CPU prefill + `UploadKV`; 3.86x decode recorded 2026-09-08 | **verified-run** (P2, T2, T3: real 3B checkpoint, cosine 0.998644 prefill, 1.000000 decode step, reuse 165) |
+| CUDA | **CPU**, int8 by the rule. aikit now has the seam (`vision/qwen_resident.go:38,44`) and the module (`gpu/qwencuda`), but **goinfer registers no Qwen factory and imports neither** (B1; `docs/tasks/task-aikit-boundary-2026-09.md:33`), and serve never calls `EnableResident` on it | resident m-RoPE prefill (`cuda/prefill.go:227`) then `ForwardMRoPE` decode (`cuda/resident.go:2317`), else CPU prefill + `UploadKV`; 3.86x decode recorded 2026-09-08 | **verified-run** (P2, T2, T3: real 3B checkpoint, cosine 0.998644 prefill, 1.000000 decode step, reuse 165) |
 | Metal | CPU (`gpu/qwenmetal` exists, not imported, B2) | `ForwardMRoPE` + `UploadKV` exist (`metal/backend.go:601,1127`); no m-RoPE prefill kernel, so CPU prefill then bridge | read-from-code |
 | WebGPU | CPU, int8 | `ForwardMRoPE` + `UploadKV` (`gpu/residency.go:1250,1428`), CPU prefill then bridge | **verified-run** (P9: reuse 165; T9 primitives cosine 1.0). At temperature 0 the cold and the reused turn give different text, every time (a CPU-prefill versus GPU-last-token arithmetic gap; item 8 below) |
 
@@ -138,7 +138,7 @@ no image has been run through a MoE checkpoint (P8a: "the MoE checkpoint last an
 | Ministral 3 / `mistral3` | the checkpoint's tower is ignored; an image gets HTTP 400 "this model has no vision tower" | **verified-run** (P6) |
 | anything else | the capability matrix marks `vision` for exactly `qwen3_5`, `glm_ocr`, `gemma4`, `qwen2_5_vl` in `tasks`, and names a vision tower in the modality text of those plus `gemma3` and `mistral3` (ignored); nothing else | read from `docs/capability-matrix.json` |
 
-All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1718-1722`), and the Anthropic `image` block goes through
+All five working families share one route (`internal/serveapp/vision_serve.go`, dispatch at `internal/serveapp/openai.go:1717-1721`), and the Anthropic `image` block goes through
 the same `driveVL`; the Anthropic surface was **not run** here.
 
 ## Claims in the docs that were wrong

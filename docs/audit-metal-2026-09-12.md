@@ -338,7 +338,7 @@ re-baked by the code it checks (G-04).
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:737-689,668-671` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,
-  a third copy); `decoder/fitguard.go:452-253` (the guard prices int4 at ~2× on arm64 because of
+  a third copy); `decoder/fitguard.go:446-247` (the guard prices int4 at ~2× on arm64 because of
   row4); commit `3931ae1` (log: "2365.1 MB (Backend:"cpu") vs 3254.7 MB (unspecified) — 889.6 MB
   saved").
 - **Mechanism and bound (record):** once resident the GPU reads only the MTLBuffer; the host row4
@@ -1579,10 +1579,10 @@ re-baked by the code it checks (G-04).
   warm-cache for the same reason.
 - N-38 `metal/prefill_ttft_test.go:80` — the first `PrefillLast` (P=256) includes the one-time compile;
   the L2 record's P=256 row carries it in both arms.
-- N-39 `internal/serveapp/openai.go:1526-1345` — comment says adapter requests "drop to the staged
+- N-39 `internal/serveapp/openai.go:1525-1344` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1526-1352,753-757,844-847`) to say what  `decoder/model.go:1793`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
+  adapter routing (`internal/serveapp/openai.go:1525-1351,753-757,844-847`) to say what  `decoder/model.go:1793`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
   the same session (`prefillFrom>0`, continuing off the reused warm prefix) still drops to CPU,
