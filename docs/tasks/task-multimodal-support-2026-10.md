@@ -3519,6 +3519,33 @@ Owner choice: (b') a layer-streaming Hugging Face float32 reference, and (a) fir
   the 31B's int8int8 arm reads 31 GB per decoded token (about 1-1.5 s each, 384 tokens, 6-10 min) and the int4 arm 17 GB (a third of that), plus two loads (5-10 min each); the served smoke about 10 min with the image prefill. Total estimate 90-110 minutes, queued at 120; timing lock held by `night.py`.
 - **Plumbing control by day (not a result):** the harness on a tiny Gemma 4 fixture, and the night script against an empty directory, before it is queued.
 
+#### The `--embed-int4` default, option D: the parked quality evaluation, registered 2026-10-08 before any harness code (owner: "d", with option A's banner line)
+
+Option A is done (`serve`'s banner prints `head table: int4 (...)` or `int8`, from `Model.HeadTable()`; the facts test is mutation-checked). This registers D.
+
+- **The question.** What does the int4 embedding / LM-head table cost against the int8 pin, per model family, now? The only evidence on file is "about 2.3 points of top-1" (measured before 2026-09-28, not re-verified, CPU only) and one real image on which the int4 head had 3.5x the KL to Hugging Face (0.134 against 0.038, Qwen2.5-VL-3B).
+- **Instrument.** For each model, Hugging Face float32 (transformers 5.15.0, `~/g4venv`, CPU) runs 16 fixed chat prompts through the checkpoint's own chat template, continues each greedily for exactly 32 tokens (EOS suppressed, so every prompt has 32 positions), and dumps its logits at those 32 positions: 16 x 32 = 512 positions per model.
+  goinfer then teacher-forces that HF path on the CPU backend, `--quant int4` in both arms, and the ONLY difference is `EmbedInt4` (false = the int8 pin, true = int4). Each arm is loaded alone and closed. The test asserts `HeadTable()` reads int8 in one arm and int4 in the other, so a run in which the flag did nothing is void.
+- **Models (7, all with safetensors on the NVMe; the choice spans the two things the question turns on):**
+  - tied head: `qwen2.5-0.5b-instruct` (head 26% of a token), `qwen3-1.7b-bf16`, `qwen25vl-3b-instruct` (text path; the model on which the 3.5x was seen), `gemma-3-4b-it` (262k vocabulary: the biggest table);
+  - untied head: `tinyllama-1.1b-chat` (32k vocabulary), `phi3-mini-4k` (32k), `olmo3-7b-think` (100k).
+  A model that fails to load or whose logits cannot be compared is recorded as such and the others still run; it does not silently drop out of the count.
+- **Statistics, per model** (all paired by position, with a cluster bootstrap over the 16 prompts, 10,000 resamples, fixed seed, 95% interval):
+  - d_agree = (top-1 agreement with the HF argmax, int8 head) - (the same, int4 head), in points;
+  - dKL = mean KL(HF || int4 head) - mean KL(HF || int8 head), in nats (also the ratio of the means, reported).
+- **Per-model reading, fixed now:**
+  - **OK:** the interval's upper bound of d_agree <= 2.3 points (the disclosed cost) AND the upper bound of dKL <= 0.02 nats. (0.02 is about half the int4 body's own KL to HF on the one real image on file, 0.038; a head cost above half the body's is not small.)
+  - **COSTLY:** the point estimate of d_agree >= 4.3 points (the disclosed cost plus 2.0) OR the point estimate of dKL >= 0.05 nats.
+  - **MIXED:** neither.
+- **What each outcome means for the default. This registration decides nothing by itself: it only fixes which reading goes with which option, and the owner decides.**
+  - All seven OK: option C (the default on everywhere, which needs an int4 table in Metal's resident) is justified on quality; the Mac work is the owner's call.
+  - COSTLY on at least two of the four tied-head models and OK on the untied: the candidate is "default off for tied-head models", a rule resolved per model at load, not per backend. COSTLY on both kinds: option B (off everywhere), with the speed given back.
+  - Anything else: the numbers go to the owner as they are.
+- **Controls:** (1) positive: on `qwen2.5-0.5b-instruct` the harness is run with BOTH arms at EmbedInt4=false, and dKL and d_agree must be exactly 0 (the CPU decode is deterministic; if not, the statistic has noise of its own that the intervals must include). (2) the `HeadTable()` assertion above. (3) HF's own continuation is a sanity row: its mean top-1 probability is printed per model.
+- **Limits, stated now:** CPU backend only (the GPU backends dequantise the same table, but their kernels are not exercised); 512 positions per model give a paired agreement interval of roughly +-1 point; greedy continuations of 16 fixed prompts are not a benchmark; the HF reference is float32 of a bf16 checkpoint, so every KL here includes the body's int4 error, shared by both arms.
+- **Prediction, written now:** int4-head costs about 1-3 points of agreement and 0.02-0.06 nats on the tied small-vocabulary models, less on the untied; I expect at most two COSTLY. The 3.5x on the one image will turn out to be one image's near-ties.
+- **Tier and cost (TE11):** night. Instrument: HF dump script plus a `realckpt` Go test, graded by a script; stopping rule: all seven models, the fixed prompt set, no early stop. Cost basis: HF float32 forwards, about 25 minutes for the seven (the 7B is the long one); goinfer two loads and 2 x 512 teacher-forced steps per model, about 40 minutes; estimate 70 minutes, queued at 100.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
