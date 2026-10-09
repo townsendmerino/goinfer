@@ -158,7 +158,9 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	// declares a stride must be seen to apply it.
 	var seedList []int
 	for s := range seeds {
-		seedList = append(seedList, s)
+		if s%sweepSeedStride == 0 { // not `s += sweepSeedStride`: go fix rewrites that to `range seeds` where the stride is the constant 1 (the non-race build), and drops it from the -race build too (2026-10-08, again)
+			seedList = append(seedList, s)
+		}
 	}
 	if sweepSeedStride > 1 && len(seedList) >= seeds {
 		t.Fatalf("sweepSeedStride=%d but %d of %d seeds selected — the stride is declared and not applied", sweepSeedStride, len(seedList), seeds)
