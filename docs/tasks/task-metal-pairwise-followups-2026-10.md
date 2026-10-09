@@ -1,6 +1,7 @@
 # Task — the two limits left by Metal pairwise RoPE (2026-10)
 
-**Status:** Parts A and B BUILT 2026-10-09 (results below). Part C not started. Gates were registered before any code
+**Status:** Parts A and B BUILT 2026-10-09. Part C DONE the same day: no fix. Metal matches CUDA like for like, and the
+f16 KV cache is not the mechanism. Results below. Gates were registered before any code
 (owner: "lets fix these 2 limits").
 
 The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
@@ -130,6 +131,37 @@ The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
   - if C1 shows f16 KV explains at least half the gap (mean 0.997 - 0.989), an f32-KV option for Metal is scoped, with
     its own speed and memory gate (it doubles KV bytes);
   - otherwise C0's layer and op name the next step, written up for the owner before any code.
+
+### Part C results, 2026-10-09 (by day, the M1 Pro)
+
+Records: `docs/measurements/metal-pairwise-rope-2026-10/partc-*.log`, probes kept as `zz_r7b_*_test.go.txt`. The CPU arms
+ran from Command-R7B's CPU sidecar under `StreamWeights`, with no guard bypass. Both seams used here were test-only and
+were removed after the run.
+
+- **C1, as registered:** on the CPU, rounding K/V through f16 alone moves Command-R7B by mean cosine 0.989570 (worst
+  0.854509 at position 13). Metal against the CPU at f32 KV reads 0.989242 (worst 0.945679, also position 13). By the
+  registered rule, "f16 KV explains at least half the gap".
+- **C0 disagrees.** Per layer at position 13, with the CPU's exact context uploaded:
+  - the CPU's f16-KV arm stays exact (relL2 0.0000) through layer 2;
+  - Metal already differs at layer 1 (relL2 0.17, against 0.0029 at layer 0).
+
+  At positions 5, 30 and 60 Metal's layer-1 step adds 2-3% relL2 the same way (0.2% at layer 0), growing to 7-9% by
+  layer 4, while the f16-KV arm is still about 0. Metal's divergence is its per-step arithmetic from layer 1 on, not
+  KV storage. Position 13 is where Command-R7B amplifies any perturbation of that size.
+- **The two pre-registered measurements disagreed, so the fix was measured directly** instead of scoped.
+  - Metal's existing f32 KV path (`kv_store_f32` / `attention_f32`, disabled since the Gemma investigation found KV
+    precision a red herring there) was turned on through a test seam.
+  - Mean 0.990080 against the CPU (+0.0008); the worst position got worse (0.935608 at 50).
+  - Metal f32-KV against Metal f16-KV reads 0.988495: switching precision moves the output about as much as any other
+    perturbation. An f32-KV option would not fix this; not scoped.
+- **The comparison that started Part C was not like for like.** CUDA's 0.996714 was measured on its own 48-token
+  prompt (the golden prompt cycled, then a fixed tail); Metal's 0.989242 on 64 README tokens.
+  - On CUDA's exact prompt Metal reads mean 0.995862, worst 0.975860 (position 46), against CUDA's 0.996714 and
+    0.987022.
+  - The difference is 0.0009 in the mean; both clear CUDA's own bar (mean >= 0.99, worst >= 0.90).
+  - The README prompt is simply harder for this model, on every backend's perturbation.
+- **Closed.** The limit, as stated ("Metal sits a little below CUDA"), does not hold like for like. The README-prompt
+  mean stays recorded as the owner-accepted 0.989 floor in `TestPairwiseRoPERealMetal`.
 
 ## Cost
 

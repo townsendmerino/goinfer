@@ -1,0 +1,29 @@
+=== RUN   TestZZR7BGap
+decoder: .giw context capped at 49173 (model allows 132096) so that KV+scratch fits: needs ~4.75 GB of 5.75 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: dense weight streaming: 32 layers, window 27 resident
+decoder: .giw context capped at 45949 (model allows 132096) so that KV+scratch fits: needs ~4.55 GB of 5.55 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: dense weight streaming: 32 layers, window 26 resident
+decoder: .giw context capped at 71141 (model allows 132096) so that KV+scratch fits: needs ~6.09 GB of 7.09 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)
+[C1] CPU f16-KV vs CPU f32-KV: mean 0.989570 worst 0.854509 (pos 13)
+[metal] weights aliased from command-r7b.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4744 MB bound in place, 1 MB copied (anonymous) — 3328 MB int4 nibbles (64 single tensors + 64 fused groups = 2176 MB) + 1000 MB int8 codes (1 matrices) + 416 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[C1] Metal vs CPU f32-KV: mean 0.989242 worst 0.945679 (pos 13) | Metal vs CPU f16-KV: mean 0.986663 worst 0.768034 (pos 13)
+[C0] pos 13, per layer relL2 against CPU f32-KV: Metal own context | Metal on the CPU's uploaded context | CPU f16-KV:
+  L00 0.0029 | 0.0029 | 0.0000
+  L01 0.1699 | 0.1700 | 0.0000
+  L02 0.1698 | 0.1688 | 0.0000
+  L03 0.1847 | 0.1837 | 0.0003
+  L04 0.1862 | 0.1844 | 0.0075
+  L05 0.2843 | 0.2923 | 0.0560
+  L06 0.3423 | 0.3671 | 0.0671
+  L07 0.3023 | 0.3301 | 0.0661
+  L08 0.3416 | 0.3654 | 0.1093
+  L11 0.2670 | 0.2899 | 0.1554
+  L15 0.3584 | 0.2859 | 0.2701
+  L19 0.4484 | 0.3368 | 0.3991
+  L23 0.3462 | 0.5185 | 0.6589
+  L27 0.3686 | 0.5458 | 0.7044
+  L31 0.4588 | 0.5357 | 0.6897
+--- PASS: TestZZR7BGap (24.53s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	25.054s

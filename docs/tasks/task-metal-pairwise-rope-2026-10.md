@@ -177,8 +177,11 @@ site changes.
 
   - **Owner decision, 2026-10-09:** "close enough, so it's a go." The bar was not amended; the result ships as a
     recorded miss.
-  - **Not measured:** why Metal sits below CUDA here (CUDA's resident read mean 0.9967 on a 48-token prompt). Metal
-    stores its KV cache in f16 where CUDA defaults to f32; that is a hypothesis, not a finding.
+  - **Not measured here; settled in Part C of `docs/tasks/task-metal-pairwise-followups-2026-10.md`:**
+    - Metal does not sit below CUDA like for like: on CUDA's own 48-token prompt it reads mean 0.995862 against
+      CUDA's 0.996714.
+    - The f16 KV cache is not the mechanism: f32 KV moved the mean by +0.0008.
+    - The README prompt is harder for this model on every backend.
 - **G-PR5, Aya-expanse-8B: NOT RUN.** Its CPU reference ran (`gpr5-real-aya.log`). Its Metal sidecar build ran out of
   disk, and the directory load is refused by Metal's guard (9.33 GB). Aya rides on Command-R7B's result and the tiny
   Cohere gates.

@@ -1,0 +1,70 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime/debug"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// Throwaway (Part C): Metal on CUDA's exact 48-token Command-R7B prompt (cuda/cohere_real_resident_test.go's construction),
+// so the comparison with CUDA's resident (mean 0.996714 vs the CPU int4, 2026-10-01) is like for like.
+func TestZZR7BCuda48(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "command-r7b")
+	var g struct {
+		PromptIDs []int `json:"prompt_ids"`
+	}
+	if err := decoder.ReadGoldenJSONForTest("../testdata/cohere2_r7b_golden.json.gz", &g); err != nil {
+		t.Fatal(err)
+	}
+	mc, err := decoder.Load(dir+".int4.cpu-arm64.giw", decoder.Options{Backend: "cpu", Quant: "int4", StreamWeights: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, _, _, _, vocab := mc.Dims()
+	long := make([]int, 48)
+	for i := range long {
+		long[i] = g.PromptIDs[i%len(g.PromptIDs)]
+		if i >= len(g.PromptIDs) {
+			long[i] = (i*37 + 3) % vocab
+		}
+	}
+	c := mc.NewCache(48)
+	var ref [][]float32
+	for _, tok := range long {
+		l, err := mc.ForwardForTest(tok, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref = append(ref, append([]float32(nil), l...))
+	}
+	mc.Close()
+	debug.FreeOSMemory()
+	mr, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+	a := mr.ResidentForwardForTest().(*metalResident)
+	a.Reset()
+	var mean, worst float64 = 0, 1
+	wp := 0
+	for i, tok := range long {
+		l, err := a.Forward(mr.EmbedResidentForTest(tok), i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cs := cosF(l, ref[i])
+		mean += cs
+		if cs < worst {
+			worst, wp = cs, i
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[cuda48] Metal vs CPU int4 on CUDA's 48-token prompt: mean %.6f worst %.6f (pos %d) | CUDA resident 2026-10-01: mean 0.996714 worst 0.987022\n", mean/48, worst, wp)
+}
