@@ -1,0 +1,16 @@
+qc-e4b                 rc=0     292s
+prequant-int4          rc=0     152s
+-rw-r--r-- 1 francis francis 17304032906 Oct  8 22:05 /home/francis/models/gemma-4-31B-it.int4.cpu-amd64.giw
+  decode path: cpu (int4) [int4 layout: canonical (down, embed, gate/up, qkv)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+loaded Gemma 4 vision tower for "gemma-4-31B-it.int4.cpu-amd64.giw" (max 280 soft tokens/image, soft-token id 258880, tower on CPU) from /home/francis/models/gemma-4-31B-it
+"gemma-4-31B-it.int4.cpu-amd64.giw" concurrency: one generation at a time — -max-concurrent 4 applies to CPU models and to GPU-resident models that batch decode (a weight-streaming or vision model run
+request body cap: 48.0 MiB (text) / 80.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+smoke                  rc=1     262s
+!! G-31a1 automatic bars NOT held (or a request failed)
+prequant-int8          rc=0     414s
+qc-31b                 rc=0    1358s
+sibling e4b-bf16: 352/384 = 91.67% (95% CI 88.5-94.0); splits 32, of which 3 at an int8int8 margin < 0.1; non-finite 0; synthetic=False; load 17s/50s, 0.35/0.23 s per token (int8int8/int4)
+31B     gemma4-31b: 352/373 = 94.37% (95% CI 91.5-96.3); splits 21, of which 4 at an int8int8 margin < 0.1; non-finite 0; synthetic=False; load 0s/2s, 2.25/1.39 s per token (int8int8/int4)
+G-31a2: the 31B is -2.70 points below the sibling -> PASS
+deleted the int8int8 bundle (the int4 bundle stays)
