@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -37,22 +38,37 @@ func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 
 	stop := sseHeartbeat(ss)
 	var wg sync.WaitGroup
-	// Send for a minimum WALL time, not only a minimum count: 800 small writes into a recorder can
-	// finish before the ticker's first tick on a runner with a coarse timer (seen on the macOS CI
-	// runner, where the check below then failed with "no heartbeat frame at all"). 20ms is hundreds
-	// of 50µs intervals, so the overlap this test exists for always happens.
+	// Send until the ticker has written at least one heartbeat into the stream, not for a fixed time: 800 small
+	// writes, or then 20ms of them, can finish before the first tick on a runner with a coarse timer. It failed
+	// that way with "no heartbeat frame at all" on the macOS runner and three times on the Windows ones (about
+	// 15.6ms timer granularity; 2026-10-08, -09, -09). The watcher reads the recorder under the writer's own lock,
+	// so the check is race-free; the 5s cap turns a heartbeat that never comes into the failure below, not a hang.
+	var pinged atomic.Bool
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		for off := 0; !pinged.Load(); time.Sleep(time.Millisecond) {
+			ss.mu.Lock()
+			b := rec.Body.Bytes()
+			pinged.Store(bytes.Contains(b[max(off-len(": ping"), 0):], []byte(": ping")))
+			off = len(b)
+			ss.mu.Unlock()
+		}
+	}()
 	start := time.Now()
 	for i := range 4 { // several "handlers" is not the real shape, but it widens the window
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 200 || time.Since(start) < 20*time.Millisecond; j++ {
+			for j := 0; j < 200 || time.Since(start) < 20*time.Millisecond || (!pinged.Load() && time.Since(start) < 5*time.Second); j++ {
 				sseSend(ss, map[string]any{"delta": fmt.Sprintf("w%d-%d", i, j)})
 			}
 		}(i)
 	}
 	wg.Wait()
 	stop()
+	pinged.Store(true) // ends the watcher if no heartbeat ever came
+	<-watchDone
 
 	// Every frame must be intact: a ": ping" spliced into a "data:" line is the non-panicking
 	// failure, and it is the one a client silently drops.
