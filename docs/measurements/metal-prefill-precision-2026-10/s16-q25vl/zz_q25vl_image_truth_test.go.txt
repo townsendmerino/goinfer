@@ -1,0 +1,183 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// Throwaway (S16 for Qwen2.5-VL, before the switch): an image turn's last row and 8 teacher-forced steps from S16 off
+// (the CPU W4A8 image prefill uploaded, Metal decode) and S16 on (Metal's m-RoPE batched prefill, Metal decode), graded
+// against two references that are not W4A8: E, CPU weight-only int8 from the directory (f32 activations; the teacher),
+// and F, CPU int4 from the same sidecar with per-32 activation scales.
+func TestZZQ25VLImageTruth(t *testing.T) {
+	defer func(m, d bool) { metalMRoPEPrefillOn, metalDeepstackPrefillOn = m, d }(metalMRoPEPrefillOn, metalDeepstackPrefillOn)
+	metalMRoPEPrefillOn = true
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "qwen25vl-3b-instruct")
+	src := dir + ".int4.metal.giw"
+	const merge, steps = 2, 8
+	ctx := context.Background()
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgTok, _ := tk.TokenID("<|image_pad|>")
+	type turn struct {
+		name               string
+		ids                []int
+		feats              []float32
+		start, nImg, delta int
+		mrope              [][3]int
+	}
+	var turns []turn
+	{
+		enc, err := vision.LoadQwenVisionEncoder(dir, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := enc.EnableResident(); err != nil {
+			t.Fatal(err)
+		}
+		pp, err := multimodal.LoadQwenPreprocessConfig(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range s3Images {
+			data, _ := os.ReadFile(filepath.Join("../testdata", name))
+			px, grid, err := multimodal.QwenPreprocess(data, pp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			feats, err := enc.Forward(px, [][3]int{grid})
+			if err != nil {
+				t.Fatal(err)
+			}
+			nImg := grid[0] * grid[1] * grid[2] / (merge * merge)
+			pre, _ := tk.Encode("<|im_start|>user\n<|vision_start|>", false)
+			post, _ := tk.Encode("<|vision_end|>Describe this image.<|im_end|>\n<|im_start|>assistant\n", false)
+			ids := append(append([]int{}, pre...), make([]int, nImg)...)
+			for k := range nImg {
+				ids[len(pre)+k] = imgTok
+			}
+			ids = append(ids, post...)
+			mrope, err := decoder.MRopePositionsForTest(ids, imgTok, [][3]int{grid}, merge)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := len(ids)
+			turns = append(turns, turn{name, ids, append([]float32(nil), feats...), len(pre), nImg, mrope[n-1][0] + 1 - n, mrope})
+		}
+		enc.Close()
+	}
+	// cpuRun: the CPU image prefill and CPU decode of the teacher (nil: its own greedy chain becomes the teacher).
+	cpuRun := func(m *decoder.Model, tr turn, teach []int) ([][]float32, []int) {
+		c := m.NewCache(len(tr.ids) + steps + 1)
+		first, err := m.PrefillLogitsQwenVLForTest(ctx, tr.ids, tr.feats, tr.start, tr.nImg, tr.mrope, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, tch := [][]float32{append([]float32(nil), first...)}, teach
+		if tch == nil {
+			tch = []int{argmaxF(first)}
+		}
+		for k := range steps {
+			lg, err := m.ForwardForTest(tch[k], c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), lg...))
+			if teach == nil {
+				tch = append(tch, argmaxF(lg))
+			}
+		}
+		return out, tch
+	}
+	eOut, fOut, teach := map[int][][]float32{}, map[int][][]float32{}, map[int][]int{}
+	me, err := decoder.Load(dir, decoder.Options{Quant: "int8", Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, tr := range turns {
+		eOut[i], teach[i] = cpuRun(me, tr, nil)
+		fmt.Fprintf(os.Stderr, "[E done %s, %d rows]\n", tr.name, len(tr.ids))
+	}
+	me.Close()
+	mf, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "cpu", ActQuantGroup: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, tr := range turns {
+		fOut[i], _ = cpuRun(mf, tr, teach[i])
+		fmt.Fprintf(os.Stderr, "[F done %s]\n", tr.name)
+	}
+	mf.Close()
+	m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 8192})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	var sumE, sumF [2]float64
+	var minE, minF = [2]float64{1, 1}, [2]float64{1, 1}
+	cnt := 0
+	for i, tr := range turns {
+		n := len(tr.ids)
+		dec := func(first []float32) [][]float32 {
+			out := [][]float32{append([]float32(nil), first...)}
+			for k := range steps {
+				lg, err := a.ForwardMRoPE(m.EmbedResidentForTest(teach[i][k]), n+k, n+k+tr.delta)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, append([]float32(nil), lg...))
+			}
+			return out
+		}
+		c := m.NewCache(n + steps + 1)
+		offLast, err := m.PrefillLogitsQwenVLForTest(ctx, tr.ids, tr.feats, tr.start, tr.nImg, tr.mrope, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		offLast = append([]float32(nil), offLast...)
+		a.Reset()
+		if err := m.ResidentUploadPrefillForTest(c); err != nil {
+			t.Fatal(err)
+		}
+		off := dec(offLast)
+		a.Reset()
+		onLast, _, err := m.ResidentMRoPEDeepstackPrefillForTest(ctx, a, tr.ids, tr.feats, tr.start, tr.nImg, tr.mrope, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		on := dec(onLast)
+		for k := 0; k <= steps; k++ {
+			e, f := eOut[i][k], fOut[i][k]
+			ce := [2]float64{cosF(e, off[k]), cosF(e, on[k])}
+			cf := [2]float64{cosF(f, off[k]), cosF(f, on[k])}
+			for j := range 2 {
+				sumE[j] += ce[j]
+				sumF[j] += cf[j]
+				minE[j] = min(minE[j], ce[j])
+				minF[j] = min(minF[j], cf[j])
+			}
+			cnt++
+			fmt.Fprintf(os.Stderr, "[img %-32s rows %4d k=%d] vs E: off %.4f on %.4f F %.4f | vs F: off %.4f on %.4f | argmax E %d F %d off %d on %d\n",
+				tr.name, n, k, ce[0], ce[1], cosF(e, f), cf[0], cf[1], argmaxF(e), argmaxF(f), argmaxF(off[k]), argmaxF(on[k]))
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[summary %d steps] vs E: off mean %.4f worst %.4f | on mean %.4f worst %.4f ; vs F: off mean %.4f worst %.4f | on mean %.4f worst %.4f\n",
+		cnt, sumE[0]/float64(cnt), minE[0], sumE[1]/float64(cnt), minE[1], sumF[0]/float64(cnt), minF[0], sumF[1]/float64(cnt), minF[1])
+}

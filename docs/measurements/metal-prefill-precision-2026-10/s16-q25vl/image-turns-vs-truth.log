@@ -1,0 +1,52 @@
+=== RUN   TestZZQ25VLImageTruth
+decoder: context capped at 2859 (model allows 128000) so that KV fits: weights 3.6 GB + KV 0.2 GB of budget 3.7 GB — pass -ctx to choose, or -stream-weights to lift
+[E done gemma3_preprocess_image.png, 1038 rows]
+[E done qwen25vl_preprocess_image.png, 20 rows]
+[E done glm_ocr/formula.png, 1562 rows]
+[E done glm_ocr/table.png, 1390 rows]
+decoder: .giw context capped at 58123 (model allows 128000) so that KV+scratch fits: needs ~4.24 GB of 5.24 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[F done gemma3_preprocess_image.png]
+[F done qwen25vl_preprocess_image.png]
+[F done glm_ocr/formula.png]
+[F done glm_ocr/table.png]
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[img gemma3_preprocess_image.png      rows 1038 k=0] vs E: off 0.9680 on 0.9686 F 0.9714 | vs F: off 0.9869 on 0.9988 | argmax E 785 F 1986 off 1986 on 1986
+[img gemma3_preprocess_image.png      rows 1038 k=1] vs E: off 0.8900 on 0.8809 F 0.9359 | vs F: off 0.9588 on 0.9782 | argmax E 2168 F 2168 off 2168 on 2168
+[img gemma3_preprocess_image.png      rows 1038 k=2] vs E: off 0.9676 on 0.9643 F 0.9718 | vs F: off 0.9864 on 0.9950 | argmax E 374 F 374 off 374 on 374
+[img gemma3_preprocess_image.png      rows 1038 k=3] vs E: off 0.9174 on 0.9559 F 0.9617 | vs F: off 0.9705 on 0.9920 | argmax E 264 F 264 off 264 on 264
+[img gemma3_preprocess_image.png      rows 1038 k=4] vs E: off 0.9574 on 0.9654 F 0.9777 | vs F: off 0.9855 on 0.9934 | argmax E 20169 F 6437 off 6437 on 6437
+[img gemma3_preprocess_image.png      rows 1038 k=5] vs E: off 0.9503 on 0.9507 F 0.9623 | vs F: off 0.9866 on 0.9940 | argmax E 4004 F 4004 off 4004 on 4004
+[img gemma3_preprocess_image.png      rows 1038 k=6] vs E: off 0.8680 on 0.9112 F 0.9246 | vs F: off 0.9836 on 0.9955 | argmax E 429 F 448 off 72094 on 72094
+[img gemma3_preprocess_image.png      rows 1038 k=7] vs E: off 0.8916 on 0.9089 F 0.9447 | vs F: off 0.9820 on 0.9909 | argmax E 33592 F 33592 off 33592 on 33592
+[img gemma3_preprocess_image.png      rows 1038 k=8] vs E: off 0.9037 on 0.9130 F 0.9467 | vs F: off 0.9836 on 0.9908 | argmax E 504 F 38411 off 504 on 504
+[img qwen25vl_preprocess_image.png    rows   20 k=0] vs E: off 0.9866 on 0.9884 F 0.9889 | vs F: off 0.9924 on 0.9991 | argmax E 1986 F 785 off 1986 on 785
+[img qwen25vl_preprocess_image.png    rows   20 k=1] vs E: off 0.9274 on 0.9415 F 0.9367 | vs F: off 0.9686 on 0.9744 | argmax E 2168 F 2168 off 2168 on 2168
+[img qwen25vl_preprocess_image.png    rows   20 k=2] vs E: off 0.9669 on 0.9533 F 0.9459 | vs F: off 0.9852 on 0.9962 | argmax E 374 F 374 off 374 on 7952
+[img qwen25vl_preprocess_image.png    rows   20 k=3] vs E: off 0.9361 on 0.9299 F 0.8862 | vs F: off 0.9519 on 0.9792 | argmax E 264 F 264 off 264 on 264
+[img qwen25vl_preprocess_image.png    rows   20 k=4] vs E: off 0.9191 on 0.9235 F 0.9216 | vs F: off 0.9810 on 0.9769 | argmax E 3691 F 3691 off 3691 on 3691
+[img qwen25vl_preprocess_image.png    rows   20 k=5] vs E: off 0.9122 on 0.9170 F 0.9281 | vs F: off 0.9757 on 0.9857 | argmax E 323 F 323 off 4171 on 323
+[img qwen25vl_preprocess_image.png    rows   20 k=6] vs E: off 0.9311 on 0.9209 F 0.9489 | vs F: off 0.9791 on 0.9825 | argmax E 4158 F 4158 off 4158 on 4158
+[img qwen25vl_preprocess_image.png    rows   20 k=7] vs E: off 0.8412 on 0.8227 F 0.9283 | vs F: off 0.9585 on 0.9559 | argmax E 10300 F 10300 off 2168 on 2168
+[img qwen25vl_preprocess_image.png    rows   20 k=8] vs E: off 0.9752 on 0.9767 F 0.9840 | vs F: off 0.9939 on 0.9970 | argmax E 315 F 315 off 315 on 315
+[img glm_ocr/formula.png              rows 1562 k=0] vs E: off 0.9868 on 0.9895 F 0.9898 | vs F: off 0.9948 on 0.9996 | argmax E 785 F 785 off 785 on 785
+[img glm_ocr/formula.png              rows 1562 k=1] vs E: off 0.9157 on 0.9148 F 0.8948 | vs F: off 0.8554 on 0.9668 | argmax E 2168 F 2168 off 2168 on 2168
+[img glm_ocr/formula.png              rows 1562 k=2] vs E: off 0.9617 on 0.9618 F 0.9724 | vs F: off 0.9678 on 0.9932 | argmax E 374 F 374 off 5610 on 5610
+[img glm_ocr/formula.png              rows 1562 k=3] vs E: off 0.9598 on 0.9685 F 0.9778 | vs F: off 0.9766 on 0.9935 | argmax E 264 F 264 off 264 on 264
+[img glm_ocr/formula.png              rows 1562 k=4] vs E: off 0.9580 on 0.9668 F 0.9749 | vs F: off 0.9831 on 0.9956 | argmax E 62533 F 62533 off 62533 on 62533
+[img glm_ocr/formula.png              rows 1562 k=5] vs E: off 0.9172 on 0.9444 F 0.9423 | vs F: off 0.9868 on 0.9940 | argmax E 2197 F 2197 off 2197 on 2197
+[img glm_ocr/formula.png              rows 1562 k=6] vs E: off 0.9504 on 0.9480 F 0.9715 | vs F: off 0.9905 on 0.9931 | argmax E 24849 F 24849 off 24849 on 24849
+[img glm_ocr/formula.png              rows 1562 k=7] vs E: off 0.9934 on 0.9932 F 0.9947 | vs F: off 0.9970 on 0.9984 | argmax E 330 F 330 off 330 on 330
+[img glm_ocr/formula.png              rows 1562 k=8] vs E: off 0.9934 on 0.9933 F 0.9948 | vs F: off 0.9970 on 0.9979 | argmax E 32 F 32 off 32 on 32
+[img glm_ocr/table.png                rows 1390 k=0] vs E: off 0.9758 on 0.9805 F 0.9810 | vs F: off 0.9953 on 0.9996 | argmax E 1986 F 1986 off 1986 on 1986
+[img glm_ocr/table.png                rows 1390 k=1] vs E: off 0.9539 on 0.8990 F 0.9136 | vs F: off 0.9076 on 0.9829 | argmax E 2168 F 2168 off 2168 on 2168
+[img glm_ocr/table.png                rows 1390 k=2] vs E: off 0.9739 on 0.9695 F 0.9771 | vs F: off 0.9885 on 0.9960 | argmax E 374 F 374 off 374 on 374
+[img glm_ocr/table.png                rows 1390 k=3] vs E: off 0.9714 on 0.9239 F 0.9613 | vs F: off 0.9703 on 0.9804 | argmax E 264 F 264 off 264 on 264
+[img glm_ocr/table.png                rows 1390 k=4] vs E: off 0.9766 on 0.9418 F 0.9639 | vs F: off 0.9750 on 0.9920 | argmax E 1965 F 1965 off 1965 on 1965
+[img glm_ocr/table.png                rows 1390 k=5] vs E: off 0.9808 on 0.9717 F 0.9800 | vs F: off 0.9875 on 0.9948 | argmax E 24849 F 24849 off 24849 on 24849
+[img glm_ocr/table.png                rows 1390 k=6] vs E: off 0.9897 on 0.9897 F 0.9920 | vs F: off 0.9912 on 0.9979 | argmax E 330 F 330 off 330 on 330
+[img glm_ocr/table.png                rows 1390 k=7] vs E: off 0.9908 on 0.9909 F 0.9929 | vs F: off 0.9950 on 0.9982 | argmax E 2556 F 2556 off 2556 on 2556
+[img glm_ocr/table.png                rows 1390 k=8] vs E: off 0.9863 on 0.9891 F 0.9918 | vs F: off 0.9874 on 0.9962 | argmax E 220 F 220 off 220 on 220
+[summary 36 steps] vs E: off mean 0.9485 worst 0.8412 | on mean 0.9480 worst 0.8227 ; vs F: off mean 0.9766 worst 0.8554 | on mean 0.9902 worst 0.9559
+--- PASS: TestZZQ25VLImageTruth (352.45s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	353.485s

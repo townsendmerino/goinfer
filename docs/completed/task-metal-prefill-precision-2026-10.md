@@ -1,6 +1,6 @@
 # Task — Metal's batched prefill loses precision on Qwen2.5 (scoped 2026-10-09)
 
-**Status:** **STEP 0 DONE 2026-10-09 — THE PREMISE IS REFUTED. Recommended close; no fix written.** The batched f16
+**Status:** **CLOSED 2026-10-09 (owner: "close it") — STEP 0 REFUTED THE PREMISE; no fix written.** The batched f16
 pass is the MOST precise of the four prefill arms, not the lossy one: against an f64 truth on the same int4 weights it
 is 27-54x closer than the decode path at layer 0, and 4-8x closer per layer at depth. The collapses S16's control saw
 are W4A8's per-row int8 activation scale on Qwen2.5-VL-3B, and they hit the CPU-throughout arm too. Fixes (a)-(c) and
@@ -114,7 +114,7 @@ which is W4A8, so it measured agreement with the less precise arm.
 
 **What follows:**
 - **This task:** no change to the batched pass. Fixes (a)-(c) would make the most precise arm more precise. G-P1 to
-  G-P3 are moot. Recommended close.
+  G-P3 are moot. Closed (owner, 2026-10-09).
 - **S16 for Qwen2.5-VL:** the reason it was held ("the lossy batched pass") is void. Turning it on moves image turns
   from the W4A8 CPU prefill onto the more precise arm. Its control needs a reference that is not W4A8 before it means
   anything: the per-32 CPU arm, or E. This is a re-registration of S16's bar for this family, so it is the owner's
