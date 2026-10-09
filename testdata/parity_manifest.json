@@ -800,6 +800,26 @@
         "cosine_mean": 0.99644
       }
     },
+    "qwen3_asr": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:7d40cc5c83eff865db58789ae0ab7bc17d690ed317ee508c1e8aa436662b9d95",
+      "status": "validated",
+      "validated_at": "4f84f2c1",
+      "date": "2026-10-08",
+      "reference": "HF f32 (Qwen/Qwen3-ASR-0.6B, converted by a pure rename because transformers 5.15.0 cannot read the shipped layout; the conversion is proved by its transcription of a LibriSpeech clip): the decoder's text path (TestQwen3ASRReal_gate c1) and a real clip through the Go front end, encoder, projector, soft-token splice and decoder (c3: prompt ids equal the processor's, 26 teacher-forced positions at logit cosine 1.000000000, the greedy transcription equal)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
     "qwen3_moe": {
       "uses": [
         "core",
@@ -863,26 +883,6 @@
       "validated_at": "7ee05f0a",
       "date": "2026-10-08",
       "reference": "HF f32 (Qwen/Qwen3-VL-2B-Instruct): the text forward (TestQwen3VLReal_gate: logit cosine 1.000000, argmax and a 6-token continuation equal) and a real image prompt through the tower with DeepStack (TestQwen3VLImageReal, table.png: last-position cosine 1.000000, argmax equal, 15/15 text positions after the image; three planted defects red)",
-      "machine": "linux-amd64",
-      "method": "full-forward-oracle",
-      "metrics": {
-        "argmax_pct": 100.0,
-        "cosine_min": 1.00000,
-        "cosine_mean": 1.00000
-      }
-    },
-    "qwen3_asr": {
-      "uses": [
-        "core",
-        "loaders",
-        "quant"
-      ],
-      "own": [],
-      "deps_hash": "sha256:7d40cc5c83eff865db58789ae0ab7bc17d690ed317ee508c1e8aa436662b9d95",
-      "status": "validated",
-      "validated_at": "4f84f2c1",
-      "date": "2026-10-08",
-      "reference": "HF f32 (Qwen/Qwen3-ASR-0.6B, converted by a pure rename because transformers 5.15.0 cannot read the shipped layout; the conversion is proved by its transcription of a LibriSpeech clip): the decoder's text path (TestQwen3ASRReal_gate c1) and a real clip through the Go front end, encoder, projector, soft-token splice and decoder (c3: prompt ids equal the processor's, 26 teacher-forced positions at logit cosine 1.000000000, the greedy transcription equal)",
       "machine": "linux-amd64",
       "method": "full-forward-oracle",
       "metrics": {
