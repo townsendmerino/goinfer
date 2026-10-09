@@ -101,6 +101,9 @@ func resolveGemma3VisionQuant(cfg config, note io.Writer) config {
 	return cfg
 }
 
+// sidecarFresh is prequant.SidecarPathIfFresh, a variable so a test can see which sidecar the Metal choice asks for.
+var sidecarFresh = prequant.SidecarPathIfFresh
+
 // metalFreeBytes is the Metal resident budget (the memory guard's ceiling: the lower of 70% of RAM and the live available); a variable so the tests can
 // stand in for a Mac.
 var metalFreeBytes = func() (int64, bool) { return decoder.FreeBytesFor("metal") }
@@ -135,7 +138,10 @@ func resolveGemma3VisionQuantMetal(cfg config, note io.Writer) config {
 	w = w * 34 / 27 // gemma3ResidentWeightsEstimate's 0.27 is CUDA's; Metal's int4 layout and int8-pinned head read about 0.34
 	dec := w
 	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-		if _, fresh := prequant.SidecarPathIfFresh(path, cfg.load.Quant, "metal", cfg.load.EmbedInt4); !fresh {
+		// The sidecar the load will look for: the RESOLVED quant and embed-int4 (Options: off by default on Metal, whose
+		// resident takes no int4 head), not the raw flags, which asked for the ".e4h" sidecar a Metal load never reads.
+		o := cfg.load.Options()
+		if _, fresh := sidecarFresh(path, o.Quant, "metal", o.EmbedInt4); !fresh {
 			dec *= 2 // a heap load: the host copy stays beside the device one
 		}
 	}

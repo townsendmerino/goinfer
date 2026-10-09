@@ -3334,10 +3334,30 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     - The test probes with a Metal load: a CPU load prices more, since it keeps arm64-repacked weights.
   - **The arithmetic for G-S18a now:** the decoder through the sidecar is about 2.9 GB plus KV (to be measured), and
     the int8 tower 0.84 GB, so about 4.0 GB at a 2048 context, against a 4.2-4.9 GB budget.
+  - **G-S18a, the Mac cell: PASS, read 2026-10-08 17:57 by day** (`s18-mac/gs18a-run2/`; serve-metal at `95201adb`
+    plus the fix below).
+    - **The default arm** (`serve --model ~/models/gemma-3-4b-it --backend metal`, no sizing flags):
+      - `decode path: metal-resident (int4)`;
+      - `encoder f32/metal-resident` (the f16 Metal tower: the budget held it, so the default did not take int8);
+      - "metal: KV plan: 2 conversation(s) x 4096 positions (1.2 GB left for the vision tower or drafter)";
+      - `table.png`'s 32-token reply in 7.5 s.
+    - **The hand-set arm** (`--model <the sidecar> --vision <dir> -ctx 2048 -kv-sessions 1 -vision-quant f32`): the
+      same decode path and tower. Its reply and every token are **IDENTICAL**.
+    - **The budget it ran under:** 8.5 GB reclaimable, in the evening with the owner's apps open. The int8 tower and
+      the context shrink were not needed here. The tight case is G-S18g's tonight and the unit tests'.
+    - **The sidecar:** built once with the guard bypassed on the owner's word ("so do this now"), in 32 s. Max RSS
+      was 6.7-8.3 GB with the bf16 source mapped; swap grew 1-2 GB during each build.
+    - **A defect the first run found, fixed before the second:**
+      - On `--backend metal` the load's embed-int4 resolves OFF (the Metal resident takes no int4 head), so the
+        sidecar a Metal load reads is `<dir>.int4.metal.giw`, not `.int4.e4h.metal.giw`. The first build used
+        `-embed-int4`, and the default arm, finding no plain sidecar, tried to transcode one and was refused by the
+        guard (`s18-mac/gs18a/`).
+      - `resolveGemma3VisionQuantMetal` had the same fault: it asked about the `.e4h` sidecar, using the raw flag. It
+        now reads `cfg.load.Options()`, and `TestResolveGemma3VisionQuant` checks what it asks for.
+      - The two `.e4h` sidecars built today (the directory's and the GGUF's, 2.7 GB each) are read by no Metal load.
   - **Owed:**
     - G-S18g (the served reply, int8 tower against f16 on the same decoder: night);
-    - the one-time Gemma 3 sidecar (night: the heap load is refused by day);
-    - G-S18a by day after both.
+    - nothing else for the Mac half: G-S18a passed (above).
 - **Build-scratch / margin accounting on CUDA: finding and pre-registration, 2026-10-08, nobara (before the code).** Group 1 of the first heavy-tier gate's failures (`TestDefaultVerifyWidth_sweep`,
   `TestFlashDecodeBlockSpecLane`, `TestBlockSpec_twoTurnsMatchPlain`, `TestResidentDenseBytes_matchesCUDADevice/7b`, and the 256 MiB slack I put on the Qwen2.5-VL tower estimate) read as "the 384 MiB margin is too small".
   The measurement says the margin is not the quantity that is short. Raw: `~/goinfer-logs/margin/` (`accounting-*.log`, `traj.log`, `sizes.log`; archived into `docs/measurements/multimodal-support-2026-10/margin/` with the record).

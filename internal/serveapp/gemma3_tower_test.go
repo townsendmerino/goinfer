@@ -178,6 +178,20 @@ func TestResolveGemma3VisionQuant(t *testing.T) {
 			}
 		})
 	}
+	// The sidecar it asks about is the one a Metal load reads: int4 with the plain head (embed-int4 resolves off on Metal
+	// unless asked for). It asked for the ".e4h" one before, which a Metal load never builds or reads (found 2026-10-08
+	// by G-S18a: the default arm transcoded "gemma-3-4b-it.int4.metal.giw" beside a fresh ".e4h" one).
+	oldF := sidecarFresh
+	t.Cleanup(func() { sidecarFresh = oldF })
+	var askedE4H []bool
+	sidecarFresh = func(_, _, _ string, e4h bool) (string, bool) { askedE4H = append(askedE4H, e4h); return "", false }
+	metalFreeBytes = func() (int64, bool) { return 44_800_000_000, true }
+	c := mk(dir4b, "", "metal")
+	c.load.EmbedInt4 = true // the flag's default; Options resolves it off for Metal
+	resolveGemma3VisionQuant(c, io.Discard)
+	if len(askedE4H) != 1 || askedE4H[0] {
+		t.Errorf("the Metal choice asked for sidecars with embed-int4 %v, want one ask with it off", askedE4H)
+	}
 	metalFreeBytes = func() (int64, bool) { return 1, true }
 	if got := resolveGemma3VisionQuant(mk(dir4b, "f32", "metal"), io.Discard); got.visionQuant != "f32" {
 		t.Errorf("an explicit f32 on Metal became %q", got.visionQuant)
