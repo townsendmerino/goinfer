@@ -338,7 +338,7 @@ re-baked by the code it checks (G-04).
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:738-690,668-671` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,
-  a third copy); `decoder/fitguard.go:446-247` (the guard prices int4 at ~2× on arm64 because of
+  a third copy); `decoder/fitguard.go:444-245` (the guard prices int4 at ~2× on arm64 because of
   row4); commit `3931ae1` (log: "2365.1 MB (Backend:"cpu") vs 3254.7 MB (unspecified) — 889.6 MB
   saved").
 - **Mechanism and bound (record):** once resident the GPU reads only the MTLBuffer; the host row4
@@ -817,7 +817,7 @@ re-baked by the code it checks (G-04).
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular
   staging, scalar int8 — the shape CUDA's M-14 retired), `qwenmetal/encoder.go:188-213,311-334`
   (per-op `Run1D`/`Run2D`, each a commit + `waitUntilCompleted` + pool drain: 544–704 synchronous
-  submits per image at 32 blocks); aikit `CHANGELOG.md:303-304` (batched SigLIP tower 0.46×/0.33× of
+  submits per image at 32 blocks); aikit `CHANGELOG.md:314-315` (batched SigLIP tower 0.46×/0.33× of
   CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:172`
   ("Metal — still not started"), `docs/benchmarks.md:554-557` (CPU SigLIP 31.3 s/image).
 <!-- citation-lint: allow-path qwenmetal/encoder.go aikit's own SEPARATE Go module (own go.mod), added after the aikit/gpu v0.32.0 release goinfer's cuda/go.mod currently pins — goinfer does not depend on it yet (line 477's own "nothing imports qwenmetal" is this in prose), so no checked-out or module-cache root can verify it here. -->

@@ -63,7 +63,7 @@
 >
 > **2. `streamExperts` — THE ASSUMPTION DOES NOT MATCH THESE CHECKPOINTS.** The doc claimed the
 > gemma4 work "generalized `streamExperts` to *any* fused-stacked-expert MoE". That statement is true
-> and **the antecedent is false**: `streamExperts` (`decoder/weights.go:1038`) takes **one fused
+> and **the antecedent is false**: `streamExperts` (`decoder/weights.go:1139`) takes **one fused
 > `[nExpert, rows, cols]` tensor** and hard-validates `t.Elements() == nExpert*stride`. Both families
 > ship **one tensor per expert** — checked in the safetensors index without downloading weights:
 >
@@ -285,7 +285,7 @@ plausible-wrong output rather than an error.
 
 ### 4. `streamExperts` generalization — design note (shared with any future V4)
 
-Current contract (`decoder/weights.go:1038`): one fused `[nExpert, rows, cols]` tensor, hard-validated
+Current contract (`decoder/weights.go:1139`): one fused `[nExpert, rows, cols]` tensor, hard-validated
 `t.Elements() == nExpert*stride`, sliced per expert via `SubF32` so the 3-D f32 is never materialized.
 Both new families ship **one tensor per expert** (K3: 82 432 entries = 92 layers × 896 experts × 3).
 

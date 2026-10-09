@@ -131,7 +131,7 @@ Note `top_k_experts`, **not** `num_experts_per_tok` — see §A4.
 | per-layer FFN width dispatch | `arch.ffnAt` (`decoder/arch.go:244`) |
 | softmax top-k router + renorm | `routeExperts` (`decoder/mlp.go:160`) |
 | routed-expert MLP driver | `moeMLP` (`decoder/mlp.go:82`) |
-| **fused stacked expert loader** (`gate_up_proj` / `down_proj`) | `loadFusedExperts` (`decoder/weights.go:647`, gpt-oss path) |
+| **fused stacked expert loader** (`gate_up_proj` / `down_proj`) | `loadFusedExperts` (`decoder/weights.go:747`, gpt-oss path) |
 | GGUF stacked-expert reader | `stackedExperts` (`decoder/gguf.go:1212`) |
 
 That is most of the surface. The work below is genuinely five things.

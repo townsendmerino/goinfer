@@ -83,7 +83,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/embed.go:44` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/embed.go:56` | goinfer | `if m.resident != nil {` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:210` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:275` | goinfer | `_, own := arch.ownForward()` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:273` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:200` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1045` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
@@ -124,7 +124,7 @@ supports.
 | `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:908` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:154` | goinfer | `FeatPairwiseRoPE ResidentFeature = "pairwise-rope"` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:417` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
-| `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:446` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
+| `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:444` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1511` | goinfer | `var prefillDeclineDigitsRE = regexp.MustCompile(`\d+`)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1548` | goinfer | `func warnPrefillDeclined(n int, err error) {` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1588` | goinfer | `if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {` |
@@ -240,7 +240,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|decoder/embed.go:98` | goinfer | `cache := m.NewCache(len(ids))` |
 | `docs/audit-metal-2026-09-30.md|decoder/features.go:375` | goinfer | `anchor: func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string` |
 | `docs/audit-metal-2026-09-30.md|decoder/features.go:417` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
-| `docs/audit-metal-2026-09-30.md|decoder/fitguard.go:364` | goinfer | `func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {` |
+| `docs/audit-metal-2026-09-30.md|decoder/fitguard.go:362` | goinfer | `func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {` |
 | `docs/audit-metal-2026-09-30.md|decoder/fitplan.go:169` | goinfer | `func WebGPUCtxCeiling(kvF16, kvI8 bool) int {` |
 | `docs/audit-metal-2026-09-30.md|decoder/fitplan.go:184` | goinfer | `MetalCtxDefault = 4096` |
 | `docs/audit-metal-2026-09-30.md|decoder/fitplan.go:233` | goinfer | `var ctxCeiling int` |
@@ -303,7 +303,7 @@ supports.
 | `docs/audit-metal-2026-09-30.md|decoder/weightmat.go:78` | goinfer | `// 2, after the W4A8 plumbing phase found the LM head running weight-only Q8 was` |
 | `docs/audit-metal-2026-09-30.md|decoder/weightmat.go:95` | goinfer | `anchor: func (q quantMode) embedding() quantMode {` |
 | `docs/audit-metal-2026-09-30.md|decoder/weightmat.go:96` | goinfer | `// embeddingWith resolves the embed/head precision allowing the int8 pin to be` |
-| `docs/audit-metal-2026-09-30.md|decoder/weights.go:724` | goinfer | `loadMatQ := func(name string, rows, cols int) (linalg.WeightMat, error) {` |
+| `docs/audit-metal-2026-09-30.md|decoder/weights.go:824` | goinfer | `loadMatQ := func(name string, rows, cols int) (linalg.WeightMat, error) {` |
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:130` | goinfer | `// embedInt4 is --embed-int4 as the load should see it. The default is on, except on Met` |
 | `docs/audit-metal-2026-09-30.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
 | `docs/audit-metal-2026-09-30.md|internal/serveapp/banner.go:119` | goinfer | `anchor: func modelBannerFrom(f bannerFacts, cfg config) []string {` |
@@ -691,8 +691,8 @@ supports.
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2644` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:390` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/config.go:1426` | goinfer | `// under "text_config" rather than at the top level. Flatten it: decode` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:1310` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
-| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:645` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:1408` | goinfer | `if d.inProjQKV, err = mkQ(nm("linear_attn.in_proj_qkv.weight"), convDim, hidden); err !=` |
+| `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:745` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_real.py:65` | goinfer | `m = SentenceTransformer(model_dir, model_kwargs={"dtype": torch.float32}, device="cpu")` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_tiny.py:66` | goinfer | `cfg._attn_implementation = "eager"` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_vision.py:50` | goinfer | `m = SentenceTransformer(model_dir, model_kwargs={"dtype": torch.float32}, device="cpu")` |
@@ -781,7 +781,7 @@ supports.
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residency.go:976` | goinfer | `func (m *Model) KVSrcAtResident(i int) int { return m.w.arch.gemma4KVSrcAt(i) }` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/residentneed.go:46` | goinfer | `func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64 {` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weightbytes.go:184` | goinfer | `func (m *Model) ResidentHostCopyBytes(slots int) int64 {` |
-| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weights.go:901` | goinfer | `// Cross-layer KV sharing (num_kv_shared_layers, P7): the last N layers carry` |
+| `docs/measurements/multimodal-support-2026-10/s1-gate0.md|decoder/weights.go:1002` | goinfer | `// Cross-layer KV sharing (num_kv_shared_layers, P7): the last N layers carry` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|embeddinggemma2/model.go:306` | goinfer | `anchor: func (m *Model) forwardEmbeds(x []float32, T int, keepLayers bool) ([]float32, [` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|gpu/residency.go:649` | goinfer | `layerScalar: m.Gemma4DenseLayerScalarAtResident(i),` |
 | `docs/measurements/multimodal-support-2026-10/s1-gate0.md|metal/backend.go:1108` | goinfer | `func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos` |
@@ -874,7 +874,7 @@ supports.
 | `docs/ollama-chase.md|decoder/registry.go:1768` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:1622` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:792` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
-| `docs/ollama-chase.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
+| `docs/ollama-chase.md|decoder/weights.go:737` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:2610` | goinfer | `func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/queue-correctness.md|decoder/gguf.go:50` | goinfer | `anchor: func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {` |
@@ -914,7 +914,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/model.go:1327` | goinfer | `// Derived from the dispatch table's Captures bit rather than re-listed: the families wh` |
 | `docs/spec/09-mtp-heads.md|decoder/registry.go:1768` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
-| `docs/spec/09-mtp-heads.md|decoder/weights.go:637` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
+| `docs/spec/09-mtp-heads.md|decoder/weights.go:737` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/parked/task-constrained-confidence.md|constrain/constrain.go:148` | goinfer | `func (m *Masker) MaskAt(g Grammar, logits []float32) {` |
 | `docs/tasks/parked/task-constrained-confidence.md|constrain/constrain.go:98` | goinfer | `func (m *Masker) ForcedRun(max int) []int {` |
@@ -926,8 +926,8 @@ supports.
 | `docs/tasks/parked/task-constrained-confidence.md|decoder/lora.go:144` | goinfer | `func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer in` |
 | `docs/tasks/parked/task-constrained-confidence.md|decoder/lora.go:353` | goinfer | `func (m *Model) LoadAdapter(name, dir string) error {` |
 | `docs/tasks/parked/task-constrained-confidence.md|decoder/model.go:1325` | goinfer | `func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, ` |
-| `docs/tasks/parked/task-constrained-confidence.md|decoder/weights.go:705` | goinfer | `if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {` |
-| `docs/tasks/parked/task-constrained-confidence.md|decoder/weights.go:768` | goinfer | `if derr = lora.merge(name, data, out, in); derr != nil {` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/weights.go:805` | goinfer | `if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {` |
+| `docs/tasks/parked/task-constrained-confidence.md|decoder/weights.go:868` | goinfer | `if derr = lora.merge(name, data, out, in); derr != nil {` |
 | `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/main.go:704` | goinfer | `// the mux is built once, so these routes registered only when a model existed at startu` |
 | `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/openai.go:38` | goinfer | `const maxTopLogprobs = 20` |
 | `docs/tasks/parked/task-constrained-confidence.md|internal/serveapp/openai.go:600` | goinfer | `ResponseFormat      *respFormat     `json:"response_format"`` |
@@ -1048,7 +1048,7 @@ supports.
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:213` | goinfer | `if pool && giwPath != "" && len(poolMembers) == len(members) {` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/fitcmd/fit.go:107` | goinfer | `m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:194` | goinfer | `opts.StreamWeights = true` |
-| `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:229` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 boo` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:249` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 boo` |
 | `docs/tasks/task-never-swap-2026-09.md|metal/backend.go:201` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:568` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:98` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |

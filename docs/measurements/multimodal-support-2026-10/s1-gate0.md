@@ -155,7 +155,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
   - `PadTokenID` is **never set from GGUF** (no reference in `decoder/gguf*.go`). It stays 0, which is correct for
     E2B only because E2B's `pad_token_id` is 0.
 - **Safetensors:**
-  - shared-KV skip (`decoder/weights.go:901-919`).
+  - shared-KV skip (`decoder/weights.go:1002-1020`).
   - FFNPerLayer discovery, recorded only when it varies (:1160-1183).
   - **PLE refused**: the safetensors loader's gemma4 branch in `decoder/weights.go` (as of 2026-10-06, before S1.1 replaced the refusal).
 
