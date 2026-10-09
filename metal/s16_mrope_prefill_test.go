@@ -340,7 +340,16 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 			if fx.hybrid || fx.deep {
 				ctxLen = 2048 // the Qwen3.5+ / Qwen3-VL towers are capped at serve's 1,024 merged rows
 			}
-			m, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: ctxLen})
+			// Through the directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, what serve's Metal load reads):
+			// its int4 weights are mapped, not held twice, which is what the 2026-10-08 night's live budget (2.80 GB
+			// against 3.77 GB for Qwen2.5-VL) lacked. It generates exactly what the direct load does
+			// (prequant.TestDirSidecar_matchesDirectLoad).
+			src := dir
+			if g := dir + ".int4.metal.giw"; func() bool { _, err := os.Stat(g); return err == nil }() {
+				src = g
+				fmt.Fprintf(os.Stderr, "[S16] %s: the decoder through its sidecar\n", filepath.Base(fx.dir))
+			}
+			m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: ctxLen})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}

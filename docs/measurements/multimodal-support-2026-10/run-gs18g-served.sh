@@ -7,9 +7,9 @@
 # PASS: for every image, identical replies, or the first difference at an R10 near-tie in the reference's
 # log-probabilities (p(int8's token) >= half p(top)). A failure makes the int8 tower explicit-only, as registered.
 #
-# The decoder is the Q4_K_M GGUF through its streamed sidecar, with --vision on the safetensors directory: the
-# directory's own sidecar needs a whole-model heap load the guard refuses on this Mac (S18 finding 1), and the gate asks
-# for the same decoder under both towers, not a particular source.
+# The decoder is the safetensors directory through its sidecar (`<dir>.int4.metal.giw`, built once 2026-10-08), as
+# G-S18a served it. The first night (2026-10-08) used the ggml-org Q4_K_M GGUF instead, whose tokenizer has no
+# <image_soft_token>, so every arm exited at the vision setup: VOID by design error, re-queued on the directory.
 # Pinned: serve-metal from S18_REV in a detached worktree with its own go.work. Estimate: 3 servers x (load + 4 images
 # at ~2-4 s of tower and ~3 s of decode) ~= 3 x 60 s, ~5 min; queued at 15.
 set -uo pipefail
@@ -17,9 +17,8 @@ REV=${S18_REV:?set S18_REV to the pinned main commit}
 R=$HOME/tmcode/goinfer
 B=$HOME/goinfer-bench/s18
 OUT=${1:-$B/gs18g-$(date +%F)}
-GGUF=$HOME/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf
-VIS=$HOME/models/gemma-3-4b-it
-for p in "$GGUF" "$VIS"; do [ -e "$p" ] || { echo "FATAL: $p is missing"; exit 2; }; done
+DIR=$HOME/models/gemma-3-4b-it
+for p in "$DIR" "$DIR.int4.metal.giw"; do [ -e "$p" ] || { echo "FATAL: $p is missing"; exit 2; }; done
 mkdir -p "$OUT"
 if [ -z "${S18_LOCK_HELD:-}" ]; then
   python3 "$R/scripts/timing_lock.py" run --label gs18g -- env S18_LOCK_HELD=1 bash "$0" "$OUT"
@@ -38,7 +37,7 @@ PORT=18459
 rc=0
 for arm in f16 int8 f16b; do
   q=f32; [ "$arm" = int8 ] && q=int8
-  "$SERVE" --model "$GGUF" --vision "$VIS" --backend metal -vision-quant "$q" --addr 127.0.0.1:$PORT > "$OUT/serve-$arm.log" 2>&1 </dev/null &
+  "$SERVE" --model "$DIR" --backend metal -vision-quant "$q" --addr 127.0.0.1:$PORT > "$OUT/serve-$arm.log" 2>&1 </dev/null &
   pid=$!
   for _ in $(seq 1 600); do
     curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:$PORT/v1/models 2>/dev/null | grep -q 200 && break

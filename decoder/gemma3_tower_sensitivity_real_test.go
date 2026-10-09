@@ -68,8 +68,17 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the G-S3b arms' own decoder.
-	m, err := Load(dir, Options{Backend: backend, Quant: "int4", EmbedInt4: false, ResidentContext: 4096})
+	// EmbedInt4 off: what serve's --backend metal loads (loadflags.embedInt4), so the G-S3b arms' own decoder. Through the
+	// directory's sidecar when it exists (S18: `<dir>.int4.metal.giw`, the file serve's Metal load reads, int4 with the
+	// plain head), mapped rather than quantized into the heap, which the load guard refused on the 16 GB Mac (the
+	// 2026-10-08 night: 6.2 GB against 4.8). The sidecar generates exactly what the direct load does
+	// (prequant.TestDirSidecar_matchesDirectLoad).
+	src := dir
+	if g := dir + ".int4.metal.giw"; fileExistsG3(g) {
+		src = g
+		fmt.Fprintf(os.Stderr, "[g3] loading the decoder through its sidecar %s\n", filepath.Base(g))
+	}
+	m, err := Load(src, Options{Backend: backend, Quant: "int4", EmbedInt4: false, ResidentContext: 4096})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,4 +206,9 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		}
 		report(fmt.Sprintf("CPU tower + noise, seed %d", seed), f)
 	}
+}
+
+func fileExistsG3(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
