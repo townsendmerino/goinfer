@@ -1,0 +1,185 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func zzF16(h uint16) float64 { return float64(f16ToF32(h)) }
+
+// Throwaway (Step 0.2): per-layer K/V of Qwen2.5-VL-3B on S16's control prompt (seed 1, n=1024): Metal batched, Metal
+// sequential, and the CPU prefill uploaded, compared per layer (relative L2 and the worst row) against the sequential.
+func TestZZQ25VLKV(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	src := filepath.Join(home, "models", "qwen25vl-3b-instruct") + ".int4.metal.giw"
+	if s := os.Getenv("ZZ_SRC"); s != "" {
+		src = s
+	}
+	nF := 1024
+	if s := os.Getenv("ZZ_N"); s != "" {
+		fmt.Sscan(s, &nF)
+	}
+	tidsF := make([]int, nF)
+	for i := range tidsF {
+		tidsF[i] = 1000 + (i*7919+1*104729)%50000
+	}
+	mf, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "cpu", ActQuantGroup: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tcF := mf.NewCache(nF + 2)
+	if _, err := mf.PrefillLogitsForTest(context.Background(), tidsF, tcF); err != nil {
+		t.Fatal(err)
+	}
+	mf.Close()
+	m, err := decoder.Load(src, decoder.Options{Backend: "metal", ResidentContext: 2048})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	n := 1024
+	if s := os.Getenv("ZZ_N"); s != "" {
+		fmt.Sscan(s, &n)
+	}
+	tids := make([]int, n)
+	for i := range tids {
+		tids[i] = 1000 + (i*7919+1*104729)%50000
+	}
+	embs := make([][]float32, n)
+	for i, id := range tids {
+		embs[i] = m.EmbedResidentForTest(id)
+	}
+	nL := len(a.r.kc)
+	grab := func() [][]uint16 {
+		var out [][]uint16
+		for l := range nL {
+			out = append(out, slices.Clone(a.r.kc[l].U16s()[:a.r.kc[l].Len()/2]), slices.Clone(a.r.vc[l].U16s()[:a.r.vc[l].Len()/2]))
+		}
+		return out
+	}
+	a.Reset()
+	for i, e := range embs {
+		if _, err := a.Forward(e, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seq := grab()
+	a.Reset()
+	if _, err := a.batchedPrefill(embs, 0, 0, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	bat := grab()
+	tc := m.NewCache(n + 2)
+	if _, err := m.PrefillLogitsForTest(context.Background(), tids, tc); err != nil {
+		t.Fatal(err)
+	}
+	a.Reset()
+	if err := m.ResidentUploadPrefillForTest(tc); err != nil {
+		t.Fatal(err)
+	}
+	cpu := grab()
+	a.Reset()
+	if err := m.ResidentUploadPrefillForTest(tcF); err != nil {
+		t.Fatal(err)
+	}
+	ref := grab()
+	kvDim := len(seq[0]) / a.r.ctxCap
+	cmp := func(x, y []uint16) (rel float64, worstRow int, worstRel float64) {
+		var num, den float64
+		for r := range n {
+			var rn, rd float64
+			for j := r * kvDim; j < (r+1)*kvDim; j++ {
+				d := zzF16(x[j]) - zzF16(y[j])
+				rn, rd = rn+d*d, rd+zzF16(y[j])*zzF16(y[j])
+			}
+			num, den = num+rn, den+rd
+			if rr := math.Sqrt(rn / (rd + 1e-30)); rr > worstRel {
+				worstRel, worstRow = rr, r
+			}
+		}
+		return math.Sqrt(num / den), worstRow, worstRel
+	}
+	// Truth for layer 0's V: the same int4 weights dequantized, f64 activations and accumulation, no f16 or int8 step.
+	{
+		w := m.Weights()
+		L := &w.Layers[0]
+		H := L.VProj.Cols()
+		eps := m.Config().RMSNormEps
+		rowW := make([]float32, H)
+		wv := make([][]float64, kvDim)
+		for o := range kvDim {
+			L.VProj.Row(o, rowW)
+			wv[o] = make([]float64, H)
+			for j := range H {
+				wv[o][j] = float64(rowW[j])
+			}
+		}
+		truth := make([]float64, n*kvDim)
+		xn := make([]float64, H)
+		for r := range n {
+			var ss float64
+			for _, v := range embs[r] {
+				ss += float64(v) * float64(v)
+			}
+			inv := 1 / math.Sqrt(ss/float64(H)+eps)
+			for j := range H {
+				xn[j] = float64(embs[r][j]) * inv * float64(L.PreAttnNorm[j])
+			}
+			for o := range kvDim {
+				var acc float64
+				for j := range H {
+					acc += wv[o][j] * xn[j]
+				}
+				if L.VBias != nil {
+					acc += float64(L.VBias[o])
+				}
+				truth[r*kvDim+o] = acc
+			}
+		}
+		vs := func(x []uint16) (rel float64, maxAbs float64) {
+			var num, den float64
+			for i := range n * kvDim {
+				d := zzF16(x[i]) - truth[i]
+				num, den = num+d*d, den+truth[i]*truth[i]
+				maxAbs = max(maxAbs, math.Abs(truth[i]))
+			}
+			return math.Sqrt(num / den), maxAbs
+		}
+		for _, arm := range []struct {
+			name string
+			kv   [][]uint16
+		}{{"sequential", seq}, {"batched", bat}, {"cpu-uploaded", cpu}, {"F per-32", ref}} {
+			rel, mx := vs(arm.kv[1])
+			fmt.Fprintf(os.Stderr, "[truth n=%d] layer 0 V %-13s vs f64 truth: rel %.5f (max|truth| %.2f)\n", n, arm.name, rel, mx)
+		}
+	}
+	for l := range nL {
+		if l > 4 && l%5 != 0 && l != nL-1 {
+			continue
+		}
+		for kv, name := range []string{"K", "V"} {
+			bRel, bRow, bWorst := cmp(bat[2*l+kv], seq[2*l+kv])
+			cRel, cRow, cWorst := cmp(cpu[2*l+kv], seq[2*l+kv])
+			fmt.Fprintf(os.Stderr, "[kv n=%d] layer %2d %s: batched-vs-seq rel %.5f (worst row %4d %.4f) | cpu-vs-seq rel %.5f (worst row %4d %.4f)\n",
+				n, l, name, bRel, bRow, bWorst, cRel, cRow, cWorst)
+			b2, _, bw2 := cmp(bat[2*l+kv], ref[2*l+kv])
+			s2, _, sw2 := cmp(seq[2*l+kv], ref[2*l+kv])
+			c2, _, cw2 := cmp(cpu[2*l+kv], ref[2*l+kv])
+			fmt.Fprintf(os.Stderr, "[vsF n=%d] layer %2d %s: batched %.5f (worst %.4f) | seq %.5f (worst %.4f) | cpu-w4a8 %.5f (worst %.4f)\n",
+				n, l, name, b2, bw2, s2, sw2, c2, cw2)
+		}
+	}
+}
