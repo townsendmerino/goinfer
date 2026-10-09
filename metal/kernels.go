@@ -1078,6 +1078,34 @@ kernel void rope2(device float* x[[buffer(0)]], device const float* invf[[buffer
     if (isQ) { r0 *= qTempScale; r1 *= qTempScale; }
     x[base+dd]=r0; x[base+rhalf+dd]=r1;
 }
+// rope_pw / rope2_pw (docs/tasks/task-metal-pairwise-rope-2026-10.md): rope / rope2 for GPT-J PAIRWISE rotation (Cohere,
+// Command-R7B, Aya, GLM-OCR), pair dd = dims (2dd, 2dd+1) at invf[dd] instead of NeoX's (dd, rhalf+dd), as
+// decoder/rope.go's applyRoPEInterleaved. Same arguments and grid, bound into the same pipeline fields when
+// decoder.Model.PairwiseRoPEResident(); every other family keeps rope / rope2. Partial rotary rotates dims [0, 2*rhalf)
+// and leaves the tail as it is; scale and qTempScale are applied exactly where the NeoX kernels apply them.
+kernel void rope_pw(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& total[[buffer(4)]],
+    constant uint& rhalf[[buffer(5)]], constant float& scale[[buffer(6)]], uint gid[[thread_position_in_grid]]) {
+    if(gid>=total) return; uint head=gid/rhalf; uint dd=gid%rhalf; uint base=head*hd+2u*dd;
+    float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
+    float x0=x[base],x1=x[base+1u]; x[base]=x0*c-x1*s; x[base+1u]=x0*s+x1*c;
+}
+kernel void rope2_pw(device float* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], constant uint& pos[[buffer(3)]], constant uint& qTotal[[buffer(4)]],
+    constant uint& kTotal[[buffer(5)]], constant uint& rhalf[[buffer(6)]], constant float& scale[[buffer(7)]],
+    constant uint& kOff[[buffer(8)]], constant float& qTempScale[[buffer(9)]], uint gid[[thread_position_in_grid]]) {
+    uint total = qTotal + kTotal;
+    if (gid >= total) return;
+    bool isQ = gid < qTotal;
+    uint g = gid; uint off = 0u;
+    if (!isQ) { g = gid - qTotal; off = kOff; }
+    uint head = g/rhalf; uint dd = g%rhalf; uint base = off + head*hd + 2u*dd;
+    float th=float(pos)*invf[dd]; float c=cos(th)*scale,s=sin(th)*scale;
+    float x0=x[base],x1=x[base+1u];
+    float r0=x0*c-x1*s, r1=x0*s+x1*c;
+    if (isQ) { r0 *= qTempScale; r1 *= qTempScale; }
+    x[base]=r0; x[base+1u]=r1;
+}
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
     device half* kc[[buffer(2)]], device half* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {

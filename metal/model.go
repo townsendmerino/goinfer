@@ -371,6 +371,7 @@ type resident struct {
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	pairwiseRoPE  bool    // FeatPairwiseRoPE: pRope/pRope2 and the prefill's rope pipelines are the GPT-J pairwise twins (rope_pw, ...)
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
@@ -1112,6 +1113,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
 	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
+	// Pairwise rope (docs/tasks/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
+	// GLM-OCR) binds the pairwise twins into the same fields, so no dispatch site changes; every other family keeps these.
+	if r.pairwiseRoPE = m.PairwiseRoPEResident(); r.pairwiseRoPE {
+		r.pRope, r.pRope2 = pipe("rope_pw"), pipe("rope2_pw")
+	}
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pLayerScale = pipe("layer_scale")
 	if P := m.Gemma4PLEDimResident(); P > 0 {

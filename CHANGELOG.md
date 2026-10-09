@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — GLM-OCR, Command-R, Command-R7B and Aya run on the GPU on Apple silicon
+
+These families rotate their positions GPT-J pairwise, and Metal's rope kernels were NeoX half-split only, so Metal ran them
+on the CPU. Metal now has pairwise twins of its rope kernels, and every other family keeps exactly the kernels it had.
+- **GLM-OCR:** the test invoice decodes at 92-95 tok/s against about 42 and finishes in about 20 s on an M1 Pro, with a
+  reply byte-identical to the CPU decoder's (exploratory).
+- **Command-R7B:** against the CPU at int4 per position, mean cosine 0.989 and worst 0.946, with no flipped token. The
+  wrong kernels read -0.69.
+- **Not covered:** Aya was not run on its real checkpoint. Neither family has a batched prefill on Metal yet, so their
+  prompts prefill sequentially (Cohere) or on the CPU (GLM-OCR images).
+
 ### Changed — `goinfer-chat --image` runs GLM-OCR's vision tower on the GPU: an invoice in 23 s instead of 70 s on an M1 Pro
 
 `goinfer-chat --image` always ran GLM-OCR's float32 vision tower on the CPU, even in the Metal and CUDA builds, where

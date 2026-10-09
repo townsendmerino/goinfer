@@ -376,6 +376,39 @@ kernel void rope_mrope_f16(device half* x[[buffer(0)]], device const float* invf
     x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
 }
 
+// rope_f16_pw / rope_mrope_f16_pw (docs/tasks/task-metal-pairwise-rope-2026-10.md): rope_f16 / rope_mrope_f16 for GPT-J
+// PAIRWISE rotation, pair dd = dims (2dd, 2dd+1), as decoder/rope.go's applyRoPEInterleaved and applyMRoPEPairwise (GLM-OCR's
+// contiguous m-RoPE sections come in through the same host axis table). Same arguments and grid; bound for a model whose
+// decoder.Model.PairwiseRoPEResident() is true, and nowhere else.
+kernel void rope_f16_pw(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], device const uint* positions[[buffer(3)]],
+    constant uint& total[[buffer(4)]], constant uint& stride[[buffer(5)]],
+    constant uint& base0[[buffer(6)]], constant uint& rhalf[[buffer(7)]],
+    constant float& scale[[buffer(8)]],
+    uint gid[[thread_position_in_grid]]) {
+    uint pairsPerRow = (total/hd) * rhalf;
+    uint m = gid / pairsPerRow, p = gid % pairsPerRow;
+    uint head = p/rhalf, dd = p%rhalf;
+    uint base = m*stride + base0 + head*hd + 2u*dd;
+    float th = float(positions[m]) * invf[dd]; float c=cos(th)*scale, s=sin(th)*scale;
+    float x0=float(x[base]), x1=float(x[base+1u]);
+    x[base]=half(x0*c-x1*s); x[base+1u]=half(x0*s+x1*c);
+}
+kernel void rope_mrope_f16_pw(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],
+    constant uint& hd[[buffer(2)]], device const uint* pos3[[buffer(3)]],
+    constant uint& total[[buffer(4)]], constant uint& stride[[buffer(5)]],
+    constant uint& base0[[buffer(6)]], constant uint& rhalf[[buffer(7)]],
+    constant float& scale[[buffer(8)]], device const uint* axis[[buffer(9)]],
+    uint gid[[thread_position_in_grid]]) {
+    uint pairsPerRow = (total/hd) * rhalf;
+    uint m = gid / pairsPerRow, p = gid % pairsPerRow;
+    uint head = p/rhalf, dd = p%rhalf;
+    uint base = m*stride + base0 + head*hd + 2u*dd;
+    float th = float(pos3[m*3u + axis[dd]]) * invf[dd]; float c=cos(th)*scale, s=sin(th)*scale;
+    float x0=float(x[base]), x1=float(x[base+1u]);
+    x[base]=half(x0*c-x1*s); x[base+1u]=half(x0*s+x1*c);
+}
+
 // qk_norm_f16: per-head Q/K RMSNorm (Qwen3) on the f16 fused qkv[M×stride], before RoPE. One
 // threadgroup per (row m, head): head<nH is Q (weight qn), else K (kn, head-nH). Norm over hd.
 kernel void qk_norm_f16(device half* qkv[[buffer(0)]], device const float* qn[[buffer(1)]],
@@ -1056,6 +1089,19 @@ type prefillState struct {
 	pQGateSplit, pCopyCols, pAttnGate Pipeline
 }
 
+// ropeF16Name is the batched prefill's rope kernel: rope_f16, or rope_mrope_f16 for the m-RoPE pass, and their pairwise
+// twins for a GPT-J pairwise model (docs/tasks/task-metal-pairwise-rope-2026-10.md).
+func ropeF16Name(pairwise, mrope bool) string {
+	n := "rope_f16"
+	if mrope {
+		n = "rope_mrope_f16"
+	}
+	if pairwise {
+		n += "_pw"
+	}
+	return n
+}
+
 func (r *resident) ensurePrefill() {
 	if r.pf != nil {
 		return
@@ -1097,7 +1143,7 @@ func (r *resident) ensurePrefill() {
 	r.pf = &prefillState{
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
-		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p("rope_f16"), pRopeM: p("rope_mrope_f16"),
+		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p(ropeF16Name(r.pairwiseRoPE, false)), pRopeM: p(ropeF16Name(r.pairwiseRoPE, true)),
 		pPLEGeluMulF16: p("ple_gelu_mul_f16"), pLayerScaleF16: p("layer_scale_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),

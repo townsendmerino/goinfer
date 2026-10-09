@@ -1,0 +1,38 @@
+=== RUN   TestPairwiseRoPEResidentParityMetal
+=== RUN   TestPairwiseRoPEResidentParityMetal/cohere-tiny
+    pairwise_rope_resident_parity_test.go:226: batched prefill declined, NOT graded: metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+    pairwise_rope_resident_parity_test.go:243: PAIRWISE decode, 40 positions           worst cos 0.998722 relL2 0.0522
+    pairwise_rope_resident_parity_test.go:226: batched prefill declined, NOT graded: metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+    pairwise_rope_resident_parity_test.go:247: NeoX     decode, 40 positions           worst cos 0.431459 relL2 1.0817
+=== RUN   TestPairwiseRoPEResidentParityMetal/cohere2-tiny
+    pairwise_rope_resident_parity_test.go:226: batched prefill declined, NOT graded: metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+    pairwise_rope_resident_parity_test.go:243: PAIRWISE decode, 40 positions           worst cos 0.999315 relL2 0.0370
+    pairwise_rope_resident_parity_test.go:226: batched prefill declined, NOT graded: metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+    pairwise_rope_resident_parity_test.go:247: NeoX     decode, 40 positions           worst cos 0.271841 relL2 1.1035
+--- PASS: TestPairwiseRoPEResidentParityMetal (1.00s)
+    --- PASS: TestPairwiseRoPEResidentParityMetal/cohere-tiny (0.89s)
+    --- PASS: TestPairwiseRoPEResidentParityMetal/cohere2-tiny (0.11s)
+=== RUN   TestGlmOcrResidentParityMetal
+    pairwise_rope_resident_parity_test.go:356: text batched prefill declined, NOT graded: metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+    pairwise_rope_resident_parity_test.go:367: image m-RoPE prefill declined, NOT graded (the image turn takes the CPU prefill and the upload): metal: no m-RoPE axis table for this model; the image prefill runs on the CPU
+    pairwise_rope_resident_parity_test.go:393: PAIRWISE text decode, 48 positions      worst cos 0.997760 relL2 0.0671
+    pairwise_rope_resident_parity_test.go:393: PAIRWISE decode past the image          worst cos 0.999195 relL2 0.0402
+    pairwise_rope_resident_parity_test.go:356: text batched prefill declined, NOT graded: metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+    pairwise_rope_resident_parity_test.go:367: image m-RoPE prefill declined, NOT graded (the image turn takes the CPU prefill and the upload): metal: no m-RoPE axis table for this model; the image prefill runs on the CPU
+    pairwise_rope_resident_parity_test.go:397: NeoX     text decode, 48 positions      worst cos -0.328297 relL2 1.6900
+    pairwise_rope_resident_parity_test.go:397: NeoX     decode past the image          worst cos -0.081681 relL2 1.5020
+--- PASS: TestGlmOcrResidentParityMetal (0.37s)
+=== RUN   TestRopePairwise_f32Kernels
+    rope_pairwise_test.go:111: rope_pw full rotary                              pairwise max|diff| 7.98e-06 (tol 2e-05) | NeoX control 3.39
+    rope_pairwise_test.go:111: rope_pw partial rotary 8 of 16, mscale 0.85      pairwise max|diff| 8.16e-06 (tol 2e-05) | NeoX control 3.21
+    rope_pairwise_test.go:147: rope2_pw full rotary, qTemp 1.3                  pairwise max|diff| 5.85e-07 (tol 2e-05) | NeoX control 4.82
+    rope_pairwise_test.go:147: rope2_pw partial 6 of 16, mscale 0.85, qTemp 1.3 pairwise max|diff| 4.02e-06 (tol 2e-05) | NeoX control 3.05
+--- PASS: TestRopePairwise_f32Kernels (0.01s)
+=== RUN   TestRopePairwise_f16PrefillKernels
+    rope_pairwise_test.go:251: rope_f16_pw full rotary                          pairwise max|diff| 0.000975 (tol 4e-03) | NeoX control 5.12
+    rope_pairwise_test.go:253: rope_mrope_f16_pw full rotary                    pairwise max|diff| 0.000976 (tol 4e-03) | NeoX control 4.49
+    rope_pairwise_test.go:251: rope_f16_pw partial 6 of 16, mscale 0.85         pairwise max|diff| 0.00095 (tol 4e-03) | NeoX control 3.78
+    rope_pairwise_test.go:253: rope_mrope_f16_pw partial 6 of 16, mscale 0.85   pairwise max|diff| 0.000942 (tol 4e-03) | NeoX control 4.35
+--- PASS: TestRopePairwise_f16PrefillKernels (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	1.797s

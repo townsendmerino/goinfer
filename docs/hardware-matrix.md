@@ -11,12 +11,12 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 
 | Family | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
-| Command-R | ✅ | CPU | ✅ resident | CPU |
-| Command-R7B | ✅ | CPU | ✅ resident | CPU |
+| Command-R | ✅ | CPU | ✅ resident | ✅ resident |
+| Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
 | DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | CPU |
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| GLM-OCR | ✅ | CPU | ✅ resident | CPU |
+| GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 2 | ✅ | CPU | CPU | CPU |
@@ -78,15 +78,14 @@ features). Two load-time notes the taxonomy does not encode:
   WebGPU does not, so they run resident on Metal and CUDA and on the CPU under WebGPU (a WebGPU run
   prints `webgpu does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are
   resident as the row says. `DecodePath()` names the gap for a loaded model.
-- **Command-R, Command-R7B (Aya) and GLM-OCR are CUDA-only for a stated reason.** Their rotary
-  embedding is GPT-J PAIRWISE (dims 2d, 2d+1); the generic rope kernels on Metal and WebGPU are the
-  NeoX half-split (d, d+half), so those backends do not declare `pairwise-rope` / `pairwise-mrope`
-  and the families run on the CPU there. Running them on the NeoX kernels is exact at position 0 and
-  wrong from position 1 with no error (measured 2026-10-01 on the CUDA resident before its pairwise
-  kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst per-position cosine -0.075 /
-  -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu`. A Metal or WebGPU row returns once that
-  backend has pairwise rope kernels and a resident-vs-CPU gate on peaked attention
-  (docs/measurements/cuda-pairwise-rope-2026-10-01.md).
+- **Command-R, Command-R7B (Aya) and GLM-OCR run on the CPU under WebGPU for a stated reason.** Their
+  rotary embedding is GPT-J PAIRWISE (dims 2d, 2d+1); WebGPU's rope kernels are the NeoX half-split
+  (d, d+half), so it does not declare `pairwise-rope` / `pairwise-mrope`. Running them on the NeoX
+  kernels is exact at position 0 and wrong from position 1 with no error (measured 2026-10-01 on the
+  CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst
+  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `cuda/rope_pairwise.cu` and Metal its
+  twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it
+  has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
 
 ## Verified on: what has actually run
 

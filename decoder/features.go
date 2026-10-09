@@ -834,5 +834,12 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// cache (residLayer.kvShared); each dense layer carries its FFN width (residLayer.ffnI). The f16 prefill and the
 		// MC3 batched step decline it.
 		FeatGemma4EModel: true,
+		// 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md): GPT-J PAIRWISE rotation, via the twins rope_pw,
+		// rope2_pw, rope_f16_pw and rope_mrope_f16_pw, bound in place of the NeoX pipelines when
+		// Model.PairwiseRoPEResident() (metal/model.go, metal/prefill.go); the MC3 batched step declines a pairwise model.
+		// Backed by the kernel gate (TestRopePairwise_*), the peaked-attention resident gates that go red on the NeoX
+		// kernels (TestPairwiseRoPEResidentParityMetal, TestGlmOcrResidentParityMetal) and the real checkpoints.
+		FeatPairwiseRoPE:  true,
+		FeatPairwiseMRoPE: true,
 	},
 }

@@ -109,7 +109,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   all three uniformly until an E-model bridge lands (the dense bridges were built PLE-free and
   would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
   cannot distinguish E2B/E4B from the dense shape it actually measures.
-- **Command-R / Command-R7B** — **CORRECTION 2026-10-01: resident on CUDA ONLY; CPU on WebGPU and Metal.**
+- **Command-R / Command-R7B** — **2026-10-09: resident on CUDA and Metal; CPU on WebGPU.** Metal has pairwise twins of its
+  rope kernels since 2026-10-09 (`docs/tasks/task-metal-pairwise-rope-2026-10.md`). Metal's batched prefill does not run
+  this family (parallel-block FFN), so it prefills sequentially. The correction below is the 2026-10-01 state.
+  **CORRECTION 2026-10-01: resident on CUDA ONLY; CPU on WebGPU and Metal.**
   The paragraph below was written when all three backends ran Cohere's rotation on the NeoX half-split
   kernels. Cohere rotates GPT-J pairwise (dims 2d, 2d+1), so those kernels are exact at position 0 and wrong
   after it: the CUDA resident measured worst per-position cosine -0.075 (Command-R7B) and -0.041 (Aya-expanse-8B)
@@ -121,7 +124,12 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
-- **GLM-OCR (`glm_ocr`)** — resident on CUDA ONLY (pairwise `rope` / `rope_kv` / `rope_kv_mrope_batched`, `a306d33e`, which also gave the Cohere families their pairwise kernels); Metal declines it to the CPU
+- **GLM-OCR (`glm_ocr`)** — **2026-10-09: resident on Metal too** (the pairwise twins,
+  `docs/tasks/task-metal-pairwise-rope-2026-10.md`). An image turn takes the CPU prefill and the upload, then Metal
+  decode; Metal's batched prefill does not run this FFN shape.
+  - Real invoice on the M1 Pro (exploratory): reply byte-identical to the CPU decoder's, decode 92-95 tok/s against
+    about 42, the whole run about 20 s.
+  - What follows is the earlier state. Resident on CUDA ONLY (pairwise `rope` / `rope_kv` / `rope_kv_mrope_batched`, `a306d33e`, which also gave the Cohere families their pairwise kernels); Metal declines it to the CPU
   (`metal does not implement [pairwise-mrope pairwise-rope]`) and WebGPU runs it staged. **The same port as Command-R**: pairwise rope variants on Metal and WebGPU behind a peaked-attention resident-vs-CPU
   gate, with the steps in `docs/measurements/cuda-pairwise-rope-2026-10-01.md`, "What the Mac session must do for Metal". **Measured 2026-10-09 (M1 Pro, the 1,656-token test invoice, `metal/cmd/chat`; exploratory, one run each):** the tower now
   runs on Metal in chat as in serve (S2; it was CPU f32 in chat until that day), 5 s against 48 s on the CPU. What is
