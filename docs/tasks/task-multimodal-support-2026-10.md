@@ -1,13 +1,25 @@
 # Multimodal support: every image and audio model on every backend, at a usable speed (2026-10)
 
-**Status: ACTIVE (2026-10-07 evening).** The phases' state:
-- **S1 (E-model decode on the GPU):** done on Metal and CUDA.
-- **Correctness passed on the Mac or nobara** for S2 (Qwen3.5+ and GLM-OCR towers), S3 (Gemma 3 and Qwen2.5-VL towers
-  on Metal), S4 steps 0-5 (the CUDA towers), S5 (E2B audio into the model, its tower on Metal included), S9 on Metal,
-  and S10 for Qwen3-VL. Most of that code is on `s2-towers`, not `main` ("Where it stands" marks which).
-- **In flight:** S3's night root-cause steps, S4's speed record, S9's CUDA half, S6 (E4B, 31B), and the 2026-10-07
-  audit's fixes.
-- **New and not started:** S15-S18.
+**Status: ACTIVE (refreshed 2026-10-09).** The phases' state:
+- **Done:**
+  - S1 (E-model decode on the GPU), Metal and CUDA.
+  - S2 (Qwen3.5+ and GLM-OCR towers); `s2-towers` is merged into `main` (`471a500e`, 2026-10-08).
+  - S3 (Gemma 3 and Qwen2.5-VL on Metal), root cause and follow-ups included.
+  - S4 steps 0-5 (the CUDA towers) and the float32 SigLIP addendum.
+  - S5 (E2B audio into the model; G-S5b PASS).
+  - S9 on Metal and CUDA.
+  - S10 for Qwen3-VL.
+  - S16 for Qwen2.5-VL and Qwen3-VL.
+  - S17's levers A (Metal, CUDA) and B (Metal), and Gemma 3's resident image prefill on Metal, with the f16 residual
+    fix it needed (2026-10-09).
+  - S18's gates on both boxes, all but G-S18g.
+- **In flight:**
+  - S6: Qwen3.6-35B images served on CUDA, the 31B's step (b'), E4B on Metal.
+  - S14 (speech).
+  - The Mac's third S7/S13-lite pass.
+  - The `--embed-int4` default (option D).
+  - G-IP4 (S17's served TTFT).
+- **Not started:** S8, S10's remaining families, S11, S12, full S13, S15.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
 measurement (CLAUDE.md, "Pre-registration").
@@ -20,33 +32,33 @@ The owner, 2026-10-06, after the multimodal plan (`docs/multimodal.md`) was fini
 
 The last phase puts the answer where users look first, the README, with a check that keeps it true.
 
-## Where it stands (rebuilt 2026-10-07 evening, from the gate readings below)
+## Where it stands (refreshed 2026-10-09, from the gate readings below; the speed list is not refreshed)
 
 "Tower / decoder": where the image or audio encoder runs, then where the language model runs after it.
-- **Branches:** **[s2]** marks code on `s2-towers` only; aikit v1.59.0, which it needs, is tagged, but the branch is not
-  merged into `main`. Unmarked cells are on `main`.
+- **Branches:** everything is on `main`. `s2-towers` was merged on 2026-10-08 (`471a500e`).
 - **Image turns on Metal:** "prefill CPU" means the image turn prefills on the CPU and uploads its KV before decoding on
-  the GPU. Every Qwen-family image turn does this, because Metal has no m-RoPE prefill (S16).
+  the GPU. Since 2026-10-09 only the Qwen3.5+ hybrid still does this, because S16's hybrid half is parked. Qwen2.5-VL
+  and Qwen3-VL (S16), Gemma 3 (S17) and GLM-OCR (pairwise RoPE, Part A) prefill on the GPU.
 
 | | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 | CPU / CPU | GPU (int8 SigLIP: lossy, see below) / GPU | GPU, float32 [s2] / CPU by default on a 16 GB Mac (its resident needs 5.15 GB against a 4.2-4.9 GB budget; S18) | GPU (int8) / GPU |
-| Gemma 4 E2B | CPU / CPU | GPU [s2] / GPU, image prefill CPU (S9 on CUDA owed) | GPU / GPU, layer-major prefill (S9) | CPU / CPU |
-| Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU [s2] / GPU | CPU / CPU |
-| Gemma 4 E4B | CPU / CPU, not yet validated | not validated | not validated (S6 queued tonight) | CPU / CPU |
-| Gemma 4 26B | CPU / CPU | GPU (checked on E2B) [s2] / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
-| Gemma 4 31B | not validated (nobara, S6) | not validated | too large for the Mac | not validated |
-| Qwen2.5-VL | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / GPU |
-| Qwen3.5+ dense | CPU / CPU | GPU [s2] / GPU | GPU [s2] / GPU, prefill CPU | CPU / CPU |
-| Qwen3.5+ MoE | never run | never run | never run | never run |
-| Qwen3-VL (dense) | CPU [s2] / CPU [s2] | CPU (int8 by default until the fix on `s2-towers`; no DeepStack tap on CUDA) / GPU, not served | GPU with DeepStack [s2] / GPU, prefill CPU [s2] | not run |
-| GLM-OCR | CPU / CPU | GPU [s2] / GPU | GPU [s2] / CPU (Metal does not run its decoder) | CPU / staged |
+| Gemma 3 | CPU / CPU | GPU, float32 by default (int8 when the card cannot hold it; 2026-10-08) / GPU | GPU, float32 / GPU, resident by default on the 16 GB Mac (G-S18a), image prefill on the GPU (S17) | GPU (int8) / GPU |
+| Gemma 4 E2B | CPU / CPU | GPU / GPU, batched image prefill (S9 on CUDA) | GPU / GPU, layer-major prefill (S9) | CPU / CPU |
+| Gemma 4 E2B audio | CPU / CPU | CPU / GPU (not run served) | GPU / GPU | CPU / CPU |
+| Gemma 4 E4B | CPU / CPU, not yet validated | validated (S6: G-E4B-C1b, G-E4B-C2) | not validated (the Mac's sidecar build was refused by the fit guard) | CPU / CPU |
+| Gemma 4 26B | CPU / CPU | GPU (checked on E2B) / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
+| Gemma 4 31B | in flight on nobara (S6, step (b')) | not validated | too large for the Mac | not validated |
+| Qwen2.5-VL | CPU / CPU | GPU / GPU | GPU / GPU, image prefill on the GPU (S16) | CPU / GPU |
+| Qwen3.5+ dense | CPU / CPU | GPU / GPU | GPU / GPU, prefill CPU (S16's hybrid half parked) | CPU / CPU |
+| Qwen3.5+ MoE | not run | GPU tower gate passed; the served check is in flight (S6) | not run | not run |
+| Qwen3-VL (dense) | CPU / CPU | GPU with DeepStack (S10) / GPU, resident DeepStack prefill on (owner, 2026-10-09, over G-S10k's FAIL) | GPU with DeepStack / GPU, image prefill on the GPU (S16) | not run |
+| GLM-OCR | CPU / CPU | GPU / GPU | GPU / GPU, batched image prefill (pairwise RoPE, 2026-10-09) | CPU / staged |
 | EmbeddingGemma 2 (text, image, audio) | CPU | CPU | GPU | CPU |
 
 **Gaps in coverage:**
 - **Models:**
-  - Qwen3.5+ MoE and Qwen3-VL MoE images have never been run.
-  - Gemma 4 E4B and 31B are not validated; S6 has them queued on both boxes.
+  - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images are in S6's served check on CUDA.
+  - Gemma 4 E4B is validated on CUDA, not on Metal. The 31B's validation is in flight (S6).
   - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
   - Several images per message (S11) and video (S15) are not supported.
 - **Audio:**
@@ -54,13 +66,15 @@ The last phase puts the answer where users look first, the README, with a check 
   - Chat audio takes 16-bit WAV at any rate, mono or stereo (G-S5e). EmbeddingGemma 2's audio embeddings still take 16 kHz
     mono only.
   - E4B audio rides on S6.
-  - G-S5b, the HF anchor for audio into the model, has no result yet.
-- **Precision:** under `--backend cuda|webgpu`, serve gives Gemma 3 an int8 SigLIP tower. At real size that tower is
-  relative L2 0.16-0.52 from float32, worst token 0.01-0.17 (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`).
-  Changing the default waits for the owner; nobara builds the float32 CUDA tower (S4).
+  - G-S5b, the HF anchor for audio into the model, PASS.
+  - Speech beyond Gemma 4 is S14: Qwen3-ASR's decoder runs (S14.3); Whisper and Voxtral are not started.
+- **Precision:** under `--backend webgpu`, serve gives Gemma 3 an int8 SigLIP tower (no float32 WebGPU tower; S12). At
+  real size that tower is relative L2 0.16-0.52 from float32, worst token 0.01-0.17
+  (`docs/measurements/siglip-int8-fidelity-2026-10-07.md`). CUDA's default became float32 on 2026-10-08 (owner).
 - **Release binaries:** WebGPU needs cgo and is in no release binary.
 
-**Speed** (the most recent read of each, exploratory unless marked; S7 measures every cell against the 5 s bar):
+**Speed** (the most recent read of each, exploratory unless marked; S7 measures every cell against the 5 s bar; not
+refreshed 2026-10-09. Gemma 3's Metal image turn has prefilled on the GPU since then, and G-IP4 reads its TTFT):
 - **Under 5 s:**
   - Gemma 3 on CUDA: a 4.1 s tower (2026-09-21).
   - Qwen3.5 on CUDA: 3.6 s for a new image.
@@ -3690,6 +3704,7 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
       - `resolveGemma3VisionQuantMetal` had the same fault: it asked about the `.e4h` sidecar, using the raw flag. It
         now reads `cfg.load.Options()`, and `TestResolveGemma3VisionQuant` checks what it asks for.
       - The two `.e4h` sidecars built today (the directory's and the GGUF's, 2.7 GB each) are read by no Metal load.
+        (Gone from the Mac's `~/models` by 2026-10-09.)
   - **Owed:**
     - G-S18g (the served reply, int8 tower against f16 on the same decoder: night);
     - nothing else for the Mac half: G-S18a passed (above).
@@ -4304,7 +4319,10 @@ Desk read, 2026-10-08 (transformers 5.15.0 `models/whisper`, `models/voxtral`; H
   - **Image (table.png, 32 greedy tokens):** the CUDA arm `decode path: cuda-resident (int4)`; its reply first differs from the CPU's at generated token 3 (CPU ' a' 0.488, CUDA ' me' 0.459, p(other) over half p(top): a near-tie); the CPU repeat IDENTICAL.
   - **Audio (the three clips):** the CUDA arm `prefill resident`, `cuda-resident` on all three; short first differs at token 10 ('\n' 0.300 against ' I' 0.268, near-tie), mid IDENTICAL, long at token 24 (' mechanical' 0.053 against ' bird' 0.042, near-tie); the CPU repeats IDENTICAL on all three. (The clips are synthetic tones, so the replies describe sounds and are not transcripts; the gate is CUDA against CPU, as registered.)
 - **What is and is not established:** the E-model shape (PLE width 256, 18 KV-shared layers, two KV heads, no double-wide FFN) runs on CUDA and agrees with the CPU at the E2B's level on the QAT checkpoint; goinfer's CPU float32 agrees with HF float32 at 435 of 435 positions on the plain checkpoint. Not done: a CUDA speed record for E4B, and the E4B on Metal
-  (the Mac's, whose sidecar build failed the fit guard last night). The `gemma-4-E4B-it` bf16 directory (16 GB) is on the box only because of the first gate; it can be removed.
+  (the Mac's, whose sidecar build failed the fit guard last night). The `gemma-4-E4B-it` bf16 directory (16 GB) is on the box only because of the first gate; it can be removed. **Moved to
+the archive 2026-10-09** (`/srv/models/gemma-4-E4B-it`, sizes verified, synced). It was never archived before, and the
+G-31a/G-31b scripts read it as a control, so it was moved rather than deleted. `models-pull gemma-4-E4B-it` brings it
+back.
 
 #### S6, Qwen3.6-35B-A3B images on CUDA: the tower gate PASSES (read 2026-10-08, nobara); the served check is registered below before it runs (raw `docs/measurements/multimodal-support-2026-10/s6-moe/`)
 
@@ -4409,6 +4427,12 @@ re-queued as `s6-moe-image-3`.**
 - **Same staleness, not fixed here:** all four of nobara's Qwen3.5-9B sidecars (`Qwen3.5-9B-Q4_K_M.int4.cuda`,
   `.int4.e4h.cuda`, `.int4.e4h.cpu-amd64`, `.int8int8.e4h.cpu-amd64`) lack the section. The sidecar freshness check
   does not see it (source mtime and layout only), so a 9B image turn there would be refused until they are rebuilt.
+  - **Rebuilt 2026-10-09 by day** (`prequant` at `ebce2b4d`, from the same GGUF, the same quant, target and
+    embed-int4 for each). Each now carries `mrope_section` and passed its self-check (98, 119, 119 and 27 s).
+  - A header scan of every `.giw` on both boxes found no other Qwen-family sidecar without it.
+  - Of the nine families' sidecars (below), none holds a stale head. The only one keyed embed-int4 is nobara's phi3
+    `int8int8.e4h`, and int8int8 never takes an int4 head (`embeddingWith`). The Mac's `glm-ocr.int4.e4h.cpu-arm64`
+    was built after the fix.
 
 ##### Gemma 4 31B, step (b'): the 31B against a layer-streaming Hugging Face float32 reference. Registered 2026-10-09 before any code (owner: "register it")
 
@@ -4563,6 +4587,10 @@ Owner choice of 2026-10-08, "(b') with (a) as its first step"; (a) is G-31a (rea
 
 S8's drift check keeps the README true through S14, which updates the table as part of its own work.
 
+**Where the order stands, 2026-10-09:** item 1 is done except S6. Item 2 is read (the Mac's third pass is queued). In
+item 3, S16 and S17 have shipped their levers and S18 owes only G-S18g. Next by the owner's word ("lets do your
+suggestion"): G-IP4, then S11 (it unblocks S15), then S8.
+
 ## Decisions for the owner
 
 **Decided 2026-10-07 evening** (after the Cowork audit of this doc):
@@ -4580,9 +4608,9 @@ S8's drift check keeps the README true through S14, which updates the table as p
 
 **Still open:**
 
-- Gemma 3's int8 SigLIP default under `--backend cuda|webgpu` (`siglip-int8-fidelity-2026-10-07.md`); nobara builds
-  the float32 CUDA tower and the served comparison first.
-- Whether `s2-towers` is merged and pushed (aikit's side, v1.59.0, is tagged).
+- ~~Gemma 3's int8 SigLIP default under `--backend cuda|webgpu`.~~ Decided 2026-10-08: float32 on CUDA ("float32 it
+  is"); WebGPU stays int8 until S12 gives it a float32 tower.
+- ~~Whether `s2-towers` is merged and pushed.~~ Merged 2026-10-08 (`471a500e`).
 - serve's `--embed-int4` default differing by backend on tied-head families (the int4 head measured 3.5x the int8
   head's KL to HF on a real image). Option D's first night (2026-10-09 read, above): at most +1.66 points and 1.23x KL on
   four models; the flag is inert on nine families; Qwen2.5-VL-3B (where the 3.5x was seen) is read on the second night.
