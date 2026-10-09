@@ -20,6 +20,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU | Served on CUDA (S6, 2026-10-09). |
 | Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09). |
 | GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | One image per request (2026-10-09). |
+| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU | Pixtral tower, CPU float32 (S10, 2026-10-09). |
 
 <!-- END images-and-audio support table -->
 

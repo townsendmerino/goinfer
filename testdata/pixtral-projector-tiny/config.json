@@ -1,0 +1,14 @@
+{
+ "model_type": "mistral3",
+ "spatial_merge_size": 2,
+ "projector_hidden_act": "gelu",
+ "multimodal_projector_bias": false,
+ "text_config": {
+  "hidden_size": 24,
+  "rms_norm_eps": 1e-05
+ },
+ "vision_config": {
+  "hidden_size": 16,
+  "patch_size": 4
+ }
+}

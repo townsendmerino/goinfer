@@ -94,7 +94,12 @@ func (m *Model) PrefillLogitsVLForTest(ctx context.Context, ids []int, imageFeat
 
 // PrefillLogitsVLSpansForTest exposes prefillLogitsVLSpans (S11, several images) for a backend's multi-block gate.
 func (m *Model) PrefillLogitsVLSpansForTest(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, cache *KVCache) ([]float32, error) {
-	return m.prefillLogitsVLSpans(ctx, ids, spans, imageFeats, cache)
+	return m.prefillLogitsVLSpans(ctx, ids, spans, imageFeats, cache, false)
+}
+
+// PrefillLogitsVLCausalSpansForTest is PrefillLogitsVLSpansForTest with the image tokens causal (Pixtral, S10).
+func (m *Model) PrefillLogitsVLCausalSpansForTest(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsVLSpans(ctx, ids, spans, imageFeats, cache, true)
 }
 
 // PrefillLogitsQwenVLForTest exposes prefillLogitsQwenVL — the bidirectional-image-block CPU

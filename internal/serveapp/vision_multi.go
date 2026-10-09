@@ -20,7 +20,9 @@ import (
 // imagePrep is one image of an image prompt: its block text, its placeholder count, the lazy tower that fills it, and
 // what decoding needs (the Qwen grid, the DeepStack set count).
 type imagePrep struct {
-	n        int
+	n        int // the image's feature rows
+	runs     int // placeholder runs it fills (0 = 1: one block; Pixtral: one per merged row, the breaks between them text)
+	runLen   int // each run's length (when runs > 1)
 	block    string
 	features func() ([]float32, error)
 	hash     uint64
@@ -32,6 +34,8 @@ type imagePrep struct {
 // Qwen3-ASR) keep their own one-media builders.
 func (lm *loadedModel) imageKind() string {
 	switch {
+	case lm.pixtral != nil:
+		return "pixtral"
 	case lm.qwenEnc != nil || lm.qwen3 != nil:
 		return "qwen"
 	case lm.gemma4Enc != nil:
@@ -43,6 +47,8 @@ func (lm *loadedModel) imageKind() string {
 // imageTok is the placeholder token id of kind's image block.
 func (lm *loadedModel) imageTok(kind string) int {
 	switch kind {
+	case "pixtral":
+		return lm.pixtral.imgTok
 	case "qwen":
 		return lm.qwenImgTok
 	case "gemma4":
@@ -53,6 +59,9 @@ func (lm *loadedModel) imageTok(kind string) int {
 
 // prepImage preprocesses one image for kind's family: nothing runs the tower until features is called.
 func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
+	if kind == "pixtral" {
+		return lm.pixtralPrep(img)
+	}
 	hiddenDim := lm.model.Config().HiddenDim
 	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
 	switch kind {
@@ -171,6 +180,9 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 		}
 		preps[k], blocks[k] = p, p.block
 	}
+	if kind == "pixtral" && len(imgs) == 1 {
+		ordered = false // the checkpoint's template moves a [text, image] message's one image first
+	}
 	turns[idx].Content = placeImageBlocks(turns[idx].Content, msgText, ordered, imgs, blocks)
 	segs, err := multimodal.SpliceImageBlocks(tm.RenderSegments(system, turns), blocks)
 	if err != nil {
@@ -181,21 +193,53 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
 	runs := multimodal.FindImageRuns(ids, lm.imageTok(kind))
-	if len(runs) != len(preps) {
-		return visionInput{}, fmt.Errorf("found %d image placeholder runs, want %d (tokenizer/template mismatch)", len(runs), len(preps))
+	spans, grids, err := imageSpans(runs, preps, kind)
+	if err != nil {
+		return visionInput{}, err
 	}
-	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", deepSets: preps[0].deepSets}
-	for k, p := range preps {
-		if runs[k][1] != p.n {
-			unit := map[string]string{"qwen": "pads", "gemma4": "soft tokens", "gemma3": "soft tokens"}[kind]
-			return visionInput{}, fmt.Errorf("image placeholder run = %d %s, want %d (tokenizer/template mismatch)", runs[k][1], unit, p.n)
-		}
-		vi.spans = append(vi.spans, decoder.ImageSpan{Pos: runs[k][0], Len: p.n, Hash: p.hash})
-		vi.grids = append(vi.grids, p.grid)
-	}
+	vi := visionInput{ids: ids, qwen: kind == "qwen", gemma4: kind == "gemma4", pixtral: kind == "pixtral", deepSets: preps[0].deepSets, spans: spans, grids: grids}
 	vi.imgPos, vi.imgLen, vi.imgHash, vi.grid = vi.spans[0].Pos, vi.spans[0].Len, vi.spans[0].Hash, preps[0].grid
+	if kind == "pixtral" {
+		vi.grids = nil // no m-RoPE
+	}
 	vi.features = concatImageFeatures(preps, lm.model.Config().HiddenDim)
 	return vi, nil
+}
+
+// imageSpans pairs the prompt's placeholder runs (FindImageRuns, in order) with the prepared images: one span per image,
+// or, for an image that fills several runs (Pixtral's merged rows, the breaks between them text), one span per run, each
+// with the image's hash. The Qwen grids come back one per image.
+func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageSpan, [][3]int, error) {
+	want := 0
+	for _, p := range preps {
+		want += max(p.runs, 1)
+	}
+	if len(runs) != want {
+		return nil, nil, fmt.Errorf("found %d image placeholder runs, want %d (tokenizer/template mismatch)", len(runs), want)
+	}
+	var spans []decoder.ImageSpan
+	var grids [][3]int
+	r := 0
+	for _, p := range preps {
+		if p.runs > 1 {
+			for range p.runs {
+				if runs[r][1] != p.runLen {
+					return nil, nil, fmt.Errorf("image placeholder run = %d tokens, want %d (tokenizer/template mismatch)", runs[r][1], p.runLen)
+				}
+				spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: p.runLen, Hash: p.hash})
+				r++
+			}
+			continue
+		}
+		if runs[r][1] != p.n {
+			unit := map[string]string{"qwen": "pads", "gemma4": "soft tokens", "gemma3": "soft tokens", "pixtral": "tokens"}[kind]
+			return nil, nil, fmt.Errorf("image placeholder run = %d %s, want %d (tokenizer/template mismatch)", runs[r][1], unit, p.n)
+		}
+		spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: p.n, Hash: p.hash})
+		grids = append(grids, p.grid)
+		r++
+	}
+	return spans, grids, nil
 }
 
 // concatImageFeatures runs every image's tower and lays the rows out as the decoder's span entries take them: every

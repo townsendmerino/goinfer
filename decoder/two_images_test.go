@@ -132,7 +132,7 @@ func TestTwoImages_gemma3(t *testing.T) {
 	const bar = 0.99 // TestGemma3VL_imageParity's (the batched-attention floor), with its exact last argmax
 	ctx := context.Background()
 	all := func(ids []int, spans []ImageSpan, feats []float32) [][]float32 {
-		hN, err := m.prefillHiddenVLSpans(ctx, ids, spans, feats, m.NewCache(len(ids)))
+		hN, err := m.prefillHiddenVLSpans(ctx, ids, spans, feats, m.NewCache(len(ids)), false)
 		if err != nil {
 			t.Fatalf("prefillHiddenVLSpans: %v", err)
 		}

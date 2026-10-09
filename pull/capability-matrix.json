@@ -621,9 +621,10 @@
     ],
     "display_name": "Ministral 3",
     "description": "Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window",
-    "summary": "Ministral 3, 3B to 14B. Text only: the vision tower is skipped.",
+    "summary": "Ministral 3, 3B to 14B. Reads images (Pixtral tower).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
@@ -634,7 +635,7 @@
     "activation": "SwiGLU",
     "tied_lm_head": false,
     "loaders": "safetensors",
-    "modality": "text (+ vision tower, ignored)",
+    "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
     "parity": "full-oracle 100.0%/1.00000"
   },
