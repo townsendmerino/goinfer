@@ -1,0 +1,28 @@
+{
+ "transformers": "5.15.0",
+ "torch": "2.12.0+cpu",
+ "transcription": "language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.<|im_end|>",
+ "cases": [
+  {
+   "name": "libri",
+   "samples": 93680,
+   "T": 600,
+   "valid": 585,
+   "tokens": 76
+  },
+  {
+   "name": "synth12s",
+   "samples": 192000,
+   "T": 1200,
+   "valid": 1200,
+   "tokens": 156
+  },
+  {
+   "name": "long46s8",
+   "samples": 749440,
+   "T": 4700,
+   "valid": 4684,
+   "tokens": 609
+  }
+ ]
+}

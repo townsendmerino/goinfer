@@ -1,0 +1,11 @@
+=== RUN   TestQwenASREncoder_real
+    qwen3asr_real_test.go:51: loaded qwen3-asr-0.6b in 0.2s: {DModel:896 Layers:18 Heads:14 FFN:3584 Downsample:480 MelBins:128 NWindow:50 NWindowInfer:800 OutputDim:1024}
+    qwen3asr_real_test.go:74: (a) libri       76 tokens (T 600): tower worst cosine 1.00000000 (max |diff| 2.55e-05), projected 1.00000000 (1.15e-06); 2.1s for both passes
+    qwen3asr_real_test.go:90: (b) libri     Go front end -> encoder: projected worst cosine 1.00000000 (max |diff| 1.32e-06)
+    qwen3asr_real_test.go:74: (a) synth12s   156 tokens (T 1200): tower worst cosine 0.99999994 (max |diff| 9.06e-04), projected 0.99999995 (2.89e-05); 4.4s for both passes
+    qwen3asr_real_test.go:90: (b) synth12s  Go front end -> encoder: projected worst cosine 0.99999998 (max |diff| 2.00e-05)
+    qwen3asr_real_test.go:74: (a) long46s8   609 tokens (T 4700): tower worst cosine 1.00000000 (max |diff| 6.20e-05), projected 1.00000000 (2.37e-06); 15.1s for both passes
+    qwen3asr_real_test.go:90: (b) long46s8  Go front end -> encoder: projected worst cosine 1.00000000 (max |diff| 1.58e-06)
+--- PASS: TestQwenASREncoder_real (32.97s)
+PASS
+ok  	github.com/townsendmerino/goinfer/multimodal	32.986s

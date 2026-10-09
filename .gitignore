@@ -40,6 +40,10 @@ demo/chat/dist/
 !testdata/cohere-tiny/model.safetensors
 !testdata/cohere2-tiny/
 !testdata/cohere2-tiny/model.safetensors
+# EXCEPTION: qwen3asr-tiny is a 178 KB random-weight Qwen3-ASR (audio encoder, projector and a tiny Qwen3 decoder) in the REAL checkpoint's layout (scripts/pin_qwen3asr_tiny.py), committed so
+# the encoder gate (G-S14b2) is a real T1 that runs in CI instead of a golden that skips because its checkpoint is gitignored.
+!testdata/qwen3asr-tiny/
+!testdata/qwen3asr-tiny/model.safetensors
 # EXCEPTION: glm-ocr-tiny is a 760 KB deterministic random-weight GLM-OCR text decoder
 # (scripts/pin_glm_ocr_tiny.py), real tensor layout (model.language_model.*, lm_head.weight) plus a
 # fake multi-token-prediction layer at layers.<NumLayers> that the loader must skip. Committed on

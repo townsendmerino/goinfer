@@ -1,0 +1,111 @@
+{
+ "architectures": [
+  "Qwen3ASRForConditionalGeneration"
+ ],
+ "model_type": "qwen3_asr",
+ "thinker_config": {
+  "model_type": "qwen3_asr_thinker",
+  "architectures": [
+   "Qwen3ASRThinkerForConditionalGeneration"
+  ],
+  "audio_config": {
+   "architectures": null,
+   "output_hidden_states": false,
+   "return_dict": true,
+   "dtype": null,
+   "chunk_size_feed_forward": 0,
+   "is_encoder_decoder": false,
+   "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1"
+   },
+   "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1
+   },
+   "problem_type": null,
+   "num_mel_bins": 128,
+   "encoder_layers": 2,
+   "encoder_attention_heads": 2,
+   "encoder_ffn_dim": 64,
+   "d_model": 32,
+   "dropout": 0.0,
+   "attention_dropout": 0.0,
+   "activation_function": "gelu",
+   "activation_dropout": 0.0,
+   "scale_embedding": false,
+   "initializer_range": 0.02,
+   "n_window": 50,
+   "output_dim": 24,
+   "n_window_infer": 200,
+   "downsample_hidden_size": 8,
+   "max_position_embeddings": 13,
+   "_name_or_path": "",
+   "model_type": "qwen3_asr_encoder",
+   "output_attentions": false
+  },
+  "text_config": {
+   "architectures": null,
+   "output_hidden_states": false,
+   "return_dict": true,
+   "dtype": null,
+   "chunk_size_feed_forward": 0,
+   "is_encoder_decoder": false,
+   "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1"
+   },
+   "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1
+   },
+   "problem_type": null,
+   "vocab_size": 160,
+   "hidden_size": 24,
+   "intermediate_size": 48,
+   "num_hidden_layers": 2,
+   "num_attention_heads": 2,
+   "num_key_value_heads": 1,
+   "head_dim": 12,
+   "hidden_act": "silu",
+   "max_position_embeddings": 512,
+   "initializer_range": 0.02,
+   "rms_norm_eps": 1e-06,
+   "use_cache": true,
+   "tie_word_embeddings": true,
+   "rope_parameters": {
+    "interleaved": true,
+    "mrope_interleaved": true,
+    "mrope_section": [
+     2,
+     2,
+     2
+    ],
+    "rope_type": "default",
+    "type": "default",
+    "rope_theta": 1000000.0
+   },
+   "attention_bias": false,
+   "use_sliding_window": false,
+   "sliding_window": null,
+   "max_window_layers": 28,
+   "layer_types": [
+    "full_attention",
+    "full_attention"
+   ],
+   "attention_dropout": 0.0,
+   "pad_token_id": null,
+   "bos_token_id": null,
+   "eos_token_id": null,
+   "_name_or_path": "",
+   "model_type": "qwen3",
+   "output_attentions": false
+  },
+  "audio_token_id": 150,
+  "audio_start_token_id": 148,
+  "audio_end_token_id": 149,
+  "initializer_range": 0.02,
+  "dtype": "float32"
+ },
+ "transformers_version": "5.15.0"
+}
