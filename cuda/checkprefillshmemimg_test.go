@@ -145,19 +145,20 @@ func TestPrefillCoreCallsCheckPrefillShmemImg(t *testing.T) {
 		if !ok {
 			return true
 		}
+		// S11: prefillCore checks every image block through checkPrefillShmemImgBlocks (checkPrefillShmemImg is its one-block call).
 		switch f := call.Fun.(type) {
 		case *ast.Ident:
-			if f.Name == "checkPrefillShmemImg" {
+			if f.Name == "checkPrefillShmemImgBlocks" {
 				found = true
 			}
 		case *ast.SelectorExpr:
-			if f.Sel.Name == "checkPrefillShmemImg" {
+			if f.Sel.Name == "checkPrefillShmemImgBlocks" {
 				found = true
 			}
 		}
 		return true
 	})
 	if !found {
-		t.Error("prefillCore does not call checkPrefillShmemImg — the image-block shared-memory decline would never fire")
+		t.Error("prefillCore does not call checkPrefillShmemImgBlocks — the image-block shared-memory decline would never fire")
 	}
 }

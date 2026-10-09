@@ -63,7 +63,7 @@ func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Res
 		embs[i] = s.Emb
 		rows[i] = stepRow{slot: s.Slot, pos: s.Pos, draw: s.Draw}
 	}
-	outs, ids, err := r.prefillCore(context.Background(), embs, 0, tailAllLogits, 0, 0, nil, rows)
+	outs, ids, err := r.prefillCore(context.Background(), embs, 0, tailAllLogits, nil, nil, rows)
 	if err != nil {
 		return nil, err
 	}

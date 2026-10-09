@@ -18,7 +18,8 @@
   - S14 (speech).
   - The Mac's third S7/S13-lite pass.
   - The `--embed-int4` default (option D).
-- **Not started:** S8, S10's remaining families, S11, S12, full S13, S15.
+- **Done since:** S11 (several images per message, 2026-10-09).
+- **Not started:** S8, S10's remaining families, S12, full S13, S15.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
 measurement (CLAUDE.md, "Pre-registration").
@@ -59,7 +60,7 @@ The last phase puts the answer where users look first, the README, with a check 
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
   - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
   - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
-  - Several images per message (S11) and video (S15) are not supported.
+  - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
   - Chat audio takes 16-bit WAV at any rate, mono or stereo (G-S5e). EmbeddingGemma 2's audio embeddings still take 16 kHz
@@ -2782,7 +2783,34 @@ tokens, the first 32 compared.
   - Against the CPU arm it now first differs at token 1 (" are" 0.811 against "'" 0.069): that same token.
   - The single-image reply is still identical to the pre-S11 binary.
 
-**Still to do: S11 step 4** (CUDA's multi-block resident image prefill, G-S11c on CUDA), then G-S11g. Until then a
+#### S11 results, step 4, CUDA, and G-S11g (2026-10-09, built and tested on nobara in a detached worktree at `be41cc50`)
+
+- **Change:**
+  - `attn_img_batched` takes a block list and a count; its PTX was regenerated through `build_ptx.sh`, and every other
+    PTX is byte-identical.
+  - `prefillCore` takes `[][2]int`; shared memory is sized at the widest block (`imgBlocksMaxNWin`).
+  - `checkPrefillShmemImg` is a one-block call of `checkPrefillShmemImgBlocks`.
+  - `PrefillImageLast` is a one-block call of the new `PrefillImageBlocksLast`.
+- **G-S11c PASS on CUDA** (`TestImagePrefillResident_twoImagesTinyCUDA`): worst cosine 0.999784 (interleaved) and
+  0.999627 (adjacent), relL2 0.0208 / 0.0273.
+- **The one-block path unchanged:**
+  - The real-checkpoint kernel tests pass (`TestAttnImgBatched_*`): rows outside the block are bit-identical to causal,
+    and the decoupled window reaches its poison key.
+  - CUDA's real Gemma 3 4B single-image resident gate passes (`TestGemma3ImgPrefillResidentReal_gate`, cosine 0.996878,
+    argmax equal, `GenerateVL` on the resident path).
+  - The shared-memory guards pass. The structural test that `prefillCore` calls the image guard now names
+    `checkPrefillShmemImgBlocks`.
+- **G-S11g PASS:**
+  - `gate quick` green on the Mac (2,256 passed, 0 failed).
+  - The CUDA module's tagged vet and staticcheck are clean on nobara, as are the Metal and decoder vets and staticcheck.
+
+**S11 is done.** Several images per message work on every API surface and backend. What remains:
+- **Three items for the owner:**
+  1. Whether G-IP4's "keep it on" also covers the resident two-block prefill's stylistic-token flip on Gemma 3 (the
+     exploratory real check above).
+  2. Qwen2.5-VL's missing default system message, a template gap that predates S11.
+  3. transformers 5.15's change to a "vision" Gemma 4's bidirectional mask (step 2's finding).
+- **Not built:** a resident DeepStack prefill for several images (Qwen3-VL's multi-image turns take the bridge). Until then a
 Gemma 3 multi-image turn on CUDA prefills on the CPU and uploads (logged); on Metal it takes the resident two-block
 prefill (below). Qwen2.5-VL and Qwen3.5 take their
 resident m-RoPE prefill with several images already; Qwen3-VL's DeepStack resident prefill declines to the bridge; a

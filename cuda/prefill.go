@@ -172,13 +172,26 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 // the caller (decoder.GenerateVL) treats that as "fall through to the CPU-prefill+UploadKV bridge,
 // unchanged".
 func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
+	return r.PrefillImageBlocksLast(ctx, embeddings, startPos, [][2]int{{imgStart, imgEnd}})
+}
+
+// PrefillImageBlocksLast (decoder.ResidentImageBlocksPrefill; S11, several images) is PrefillImageLast for several blocks,
+// each [start, end), in order and disjoint, each attending bidirectionally within itself.
+func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
 	}
-	if imgStart < 0 || imgEnd <= imgStart || imgEnd > startPos+M {
-		return nil, fmt.Errorf("cuda prefill: image block [%d,%d) invalid for %d rows at startPos %d: %w",
-			imgStart, imgEnd, M, startPos, errPrefillDeclined)
+	prev := 0
+	for _, b := range blocks {
+		if b[0] < prev || b[1] <= b[0] || b[1] > startPos+M {
+			return nil, fmt.Errorf("cuda prefill: image blocks %v invalid for %d rows at startPos %d: %w",
+				blocks, M, startPos, errPrefillDeclined)
+		}
+		prev = b[1]
+	}
+	if len(blocks) == 0 {
+		return nil, fmt.Errorf("cuda prefill: no image block: %w", errPrefillDeclined)
 	}
 	if e := ctx.Err(); e != nil {
 		return nil, e
@@ -191,7 +204,7 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 		return nil, fmt.Errorf("cuda prefill: image prefill needs the whole %d-row prompt in one "+
 			"%d-row chunk (no chunked path for a bidirectional block): %w", M, chunk, errPrefillDeclined)
 	}
-	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd, nil, nil)
+	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, blocks, nil, nil)
 	if err != nil {
 		// N-41 (docs/audit-2026-09-10.md): unlike prefillChunked, this call cannot retry at a
 		// smaller width — a bidirectional image block has to land in one pass, and errPrefillOOM
@@ -352,7 +365,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailResidualAll, 0, 0, nil, nil)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailResidualAll, nil, nil, nil)
 		return outs, err
 	}
 	r.chunkOrdinary, r.chunkPromptLen = false, startPos+M
@@ -363,7 +376,7 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 			return nil, e
 		}
 		n := min(chunk, M-i)
-		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tailResidualAll, 0, 0, nil, nil)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tailResidualAll, nil, nil, nil)
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
@@ -422,7 +435,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail, 0, 0, mropePos, nil)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail, nil, mropePos, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -447,7 +460,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		if last {
 			tail = finalTail
 		}
-		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, 0, 0, mropePos, nil)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, nil, mropePos, nil)
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
@@ -472,7 +485,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 // final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
 // row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil, nil)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, nil, nil, nil)
 	return outs, err
 }
 
@@ -490,7 +503,7 @@ func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]f
 // weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
 // all. TestPrefillLastNArgmax_matchesPerRow gates it.
 func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, 0, 0, nil, nil)
+	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, nil, nil, nil)
 	return ids, err
 }
 
@@ -514,7 +527,7 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 	// cancelled block-spec seed runs to completion. It is not fixed here because the fix is another
 	// interface change on a different seam, and doing it silently as a side effect of this one is
 	// how a surface changes without anyone deciding to. Filed with the P20 cancellation item.
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, 0, 0, nil, nil)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, nil, nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -679,6 +692,16 @@ func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
 	return max(causalMaxNWin, blockMax)
 }
 
+// imgBlocksMaxNWin is imgBlockMaxNWin over several blocks (S11): each row sees at most its own block, so the widest
+// window is the widest over the blocks.
+func imgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
+	n := causalMaxNWin
+	for _, b := range blocks {
+		n = max(n, imgBlockMaxNWin(causalMaxNWin, window, b[0], b[1]))
+	}
+	return n
+}
+
 // checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentImagePrefill):
 // widens the per-layer shared-memory sizing check for a bidirectional [imgStart,imgEnd) image
 // block using imgBlockMaxNWin — the SAME formula the attn_img_batched launch site in prefillCore
@@ -686,6 +709,12 @@ func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
 // one it would fail. A SEPARATE call from checkPrefillShmem, not a replacement — see prefillCore's
 // call site comment for why.
 func (r *cudaResident) checkPrefillShmemImg(startPos, M, imgStart, imgEnd int) error {
+	return r.checkPrefillShmemImgBlocks(startPos, M, [][2]int{{imgStart, imgEnd}})
+}
+
+// checkPrefillShmemImgBlocks is checkPrefillShmemImg for several image blocks (S11), sized as prefillCore's launch is
+// (imgBlocksMaxNWin).
+func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]int) error {
 	for l := range r.layers {
 		Ly := &r.layers[l]
 		causalMaxNWin := startPos + M
@@ -693,7 +722,7 @@ func (r *cudaResident) checkPrefillShmemImg(startPos, M, imgStart, imgEnd int) e
 		if window > 0 && window < causalMaxNWin {
 			causalMaxNWin = window
 		}
-		maxNWin := imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
+		maxNWin := imgBlocksMaxNWin(causalMaxNWin, window, blocks)
 		if splitKVRequired(maxNWin) {
 			return fmt.Errorf("cuda prefill: layer %d image-block attention at %d attended keys "+
 				"needs %d B of shared memory, past this device's %d B limit: %w",
@@ -894,7 +923,7 @@ func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 // batched layer stack is unchanged; rope, the KV store and attention run per row through decode's own gap
 // (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row head is decode's, and a row
 // with a draw ends in ForwardSample's pick. nil is every other caller: behaviour unchanged.
-func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, imgStart, imgEnd int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
+func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -905,7 +934,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if r.eModel {
 		// Gemma 4 E-model (S9 on CUDA, part A): text prompts batch. What stays sequential, by name: a step (MC3 rows are per-sequence decode tokens whose PLE
 		// tails and KV slots the step path does not stage), an image block (part B), and m-RoPE (no E-model has it).
-		if rows != nil || imgEnd > imgStart || mropePos != nil {
+		if rows != nil || len(blocks) > 0 || mropePos != nil {
 			return nil, nil, fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no MC3 step, image block or m-RoPE yet): %w", errPrefillDeclined)
 		}
 		for m, e := range embeddings {
@@ -918,7 +947,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if rows != nil {
 		// A step: each row is one decode token at its own position, and its attention is decode's (whose own launch
 		// checks the shared-memory limit per row), so the whole-pass checks below do not apply.
-		if len(rows) != M || tail != tailAllLogits || imgEnd > imgStart || mropePos != nil {
+		if len(rows) != M || tail != tailAllLogits || len(blocks) > 0 || mropePos != nil {
 			return nil, nil, fmt.Errorf("cuda step: %d rows for %d embeddings, tail %d — a step is all-logits, text only", len(rows), M, tail)
 		}
 		for _, rw := range rows {
@@ -939,11 +968,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	// for why checkPrefillShmemImg's widened check is a SEPARATE call from checkPrefillShmem
 	// above rather than a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards statically
 	// pins prefillCore's call to checkPrefillShmem by name, and this must not remove it.
-	if imgEnd > imgStart {
+	if len(blocks) > 0 {
 		if !r.imgPrefillReady {
 			return nil, nil, fmt.Errorf("cuda prefill: image-block batched kernel unavailable: %w", errPrefillDeclined)
 		}
-		if e := r.checkPrefillShmemImg(startPos, M, imgStart, imgEnd); e != nil {
+		if e := r.checkPrefillShmemImgBlocks(startPos, M, blocks); e != nil {
 			return nil, nil, e
 		}
 	}
@@ -1109,6 +1138,18 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		// reused unchanged across every layer's rope_kv_mrope_batched launch below.
 		// mropePosWindow's own doc comment explains why the absolute-vs-chunk-relative slicing
 		// lives in a named, separately-tested function rather than an inline expression here.
+		// S11: every image block's [start, end), uploaded once for every layer's attn_img_batched launch.
+		var imgBlk Buffer
+		if len(blocks) > 0 {
+			flat := make([]int32, 0, 2*len(blocks))
+			for _, b := range blocks {
+				flat = append(flat, int32(b[0]), int32(b[1]))
+			}
+			imgBlk = ai(len(flat))
+			if e := gpu.Upload(imgBlk, flat); e != nil {
+				return e
+			}
+		}
 		var rposT, rposH, rposW Buffer
 		if mropePos != nil {
 			window := mropePosWindow(mropePos, startPos, M)
@@ -1289,10 +1330,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					if Ly.window > 0 && int(Ly.window) < maxNWin {
 						maxNWin = int(Ly.window)
 					}
-					if imgEnd > imgStart {
-						// Widened per checkPrefillShmemImg's SAME formula (imgBlockMaxNWin) — the two must
+					if len(blocks) > 0 {
+						// Widened per checkPrefillShmemImgBlocks's SAME formula (imgBlocksMaxNWin) — the two must
 						// never drift apart, or this allocation under-sizes the launch it is meant to cover.
-						maxNWin = imgBlockMaxNWin(maxNWin, int(Ly.window), imgStart, imgEnd)
+						maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
 					}
 					t = r.profTic()
 					// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
@@ -1317,7 +1358,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					// (TestFlashDecodeRowsBitIdentical), so a verified position scores exactly as plain lane decode scores it. Rows below
 					// laneFrom are under the attended-span floor and take the exact path below, as their M=1 decode would. laneFrom == M is
 					// "no lane rows" (the common case, and everything when the lane is off). laneFrom == 0 skips the exact launch entirely.
-					laneFrom := r.verifyLaneFrom(l, startPos, M, tail, imgEnd > imgStart)
+					laneFrom := r.verifyLaneFrom(l, startPos, M, tail, len(blocks) > 0)
 					// IMAGE BLOCK FIRST, unconditionally, before useAttnFused is even consulted — attn_fused's
 					// tile-level aggregates assume monotonic per-row nKeys across a 64-row tile, which an image
 					// block breaks (not supported; attn_batched's exact-path twin, attn_img_batched, is used
@@ -1325,9 +1366,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					// -token image prompt through the incompatible fused kernel instead of declining to it.
 					if laneFrom == 0 {
 						// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
-					} else if imgEnd > imgStart {
+					} else if len(blocks) > 0 {
 						imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
-							gpu.ArgValue(int32(imgStart)), gpu.ArgValue(int32(imgEnd)))
+							Arg(imgBlk), gpu.ArgValue(int32(len(blocks))))
 						attnErr = r.launch(r.bAttnImg, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
 							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, imgArgs...)
 					} else if fsh, use := r.useAttnFused(hd, M); use {

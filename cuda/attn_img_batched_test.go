@@ -41,13 +41,18 @@ func requireCUDAResident(t *testing.T) *cudaResident {
 }
 
 // attnImgBatchedArgs builds the argument list attn_img_batched and attn_batched share (identical
-// prefix; attn_img_batched appends imgStart/imgEnd). window=0 throughout unless a test overrides it.
-func attnImgBatchedArgs(q, kc, vc Buffer, nH, nKV, hd, startPos int, scale float32, window, M int, ctx Buffer, imgStart, imgEnd int) []gpu.KernelArg {
+// prefix; attn_img_batched appends the image blocks and their count, S11). One block [imgStart, imgEnd) here, uploaded to a
+// buffer of r's. window=0 throughout unless a test overrides it.
+func attnImgBatchedArgs(r *cudaResident, q, kc, vc Buffer, nH, nKV, hd, startPos int, scale float32, window, M int, ctx Buffer, imgStart, imgEnd int) ([]gpu.KernelArg, error) {
+	blk := r.ai(2)
+	if err := gpu.Upload(blk, []int32{int32(imgStart), int32(imgEnd)}); err != nil {
+		return nil, err
+	}
 	return []gpu.KernelArg{Arg(q), Arg(kc), Arg(vc),
 		gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 		gpu.ArgValue(int32(startPos)), gpu.ArgValue(scale),
 		gpu.ArgValue(int32(window)), gpu.ArgValue(int32(M)), Arg(ctx), ArgNull(),
-		gpu.ArgValue(int32(imgStart)), gpu.ArgValue(int32(imgEnd))}
+		Arg(blk), gpu.ArgValue(int32(1))}, nil
 }
 
 // TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal is attn_img_batched's twin of
@@ -119,7 +124,10 @@ func TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal(t *testing.T) 
 			return fmt.Errorf("attn_batched (causal reference) failed: %w", e)
 		}
 		cfgImg := cfgCausal // same M/nH grid, same shared-mem bound (no window here, nKeys<=startPos+M either way)
-		imgArgs := attnImgBatchedArgs(qb, kb, vb, nH, nKV, hd, startPos, scale, window, M, outB, imgStart, imgEnd)
+		imgArgs, e := attnImgBatchedArgs(r, qb, kb, vb, nH, nKV, hd, startPos, scale, window, M, outB, imgStart, imgEnd)
+		if e != nil {
+			return e
+		}
 		if e := r.launch(r.bAttnImg, cfgImg, imgArgs...); e != nil {
 			return e
 		}
@@ -255,7 +263,10 @@ func TestAttnImgBatched_windowDecoupled(t *testing.T) {
 		maxNWin := imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
 		cfg := LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((maxNWin + 128) * 4)}
-		args := attnImgBatchedArgs(qb, kb, vb, nH, nKV, hd, startPos, scale, window, M, outB, imgStart, imgEnd)
+		args, e := attnImgBatchedArgs(r, qb, kb, vb, nH, nKV, hd, startPos, scale, window, M, outB, imgStart, imgEnd)
+		if e != nil {
+			return e
+		}
 		if e := r.launch(r.bAttnImg, cfg, args...); e != nil {
 			return e
 		}

@@ -43,15 +43,18 @@ extern "C" {
 __global__ void attn_img_batched(const float* __restrict__ q, const float* __restrict__ kc,
                              const float* __restrict__ vc, int nH, int nKV, int hd, int startPos,
                              float scale, int window, int M, float* __restrict__ ctx,
-                             const float* __restrict__ sinks, int imgStart, int imgEnd) {
+                             const float* __restrict__ sinks, const int* __restrict__ blocks, int nBlocks) {
     int h = blockIdx.x; if (h >= nH) return;
     int m = blockIdx.y; if (m >= M) return;
     int pos = startPos + m;
     int nKeysCausal = pos + 1;
-    // IMAGE-BLOCK WIDENING: only a row whose OWN position lies inside [imgStart,imgEnd) sees the
-    // whole block; every other row (before or after it) stays exactly causal. imgEnd<=imgStart
-    // is the "no block" sentinel (matches this codebase's window==0 "no window" convention).
-    int nKeys = (imgEnd > imgStart && pos >= imgStart && pos < imgEnd) ? imgEnd : nKeysCausal;
+    // IMAGE-BLOCK WIDENING: only a row whose OWN position lies inside a block [blocks[2b], blocks[2b+1])
+    // sees that whole block (its own block only: several blocks for several images, S11); every other
+    // row stays exactly causal. nBlocks==0 is "no block".
+    int nKeys = nKeysCausal;
+    for (int b = 0; b < nBlocks; b++) {
+        if (pos >= blocks[2 * b] && pos < blocks[2 * b + 1]) { nKeys = blocks[2 * b + 1]; break; }
+    }
     // DECOUPLED from nKeys on purpose — see the file header. winStart is derived from the plain
     // CAUSAL count, never from the widened one.
     int winStart = (window > 0 && nKeysCausal > window) ? nKeysCausal - window : 0;
