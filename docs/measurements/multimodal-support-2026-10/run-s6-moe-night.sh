@@ -8,6 +8,7 @@
 # No HF anchor exists for the 35B on this box (70 GB of bf16 against 62 GB of RAM): the claim is "runs, and the CUDA tower is the CPU tower".
 # Estimate: three arms x (load ~9 min per memory of the 35B's cycles + a CPU-prefill image turn of a few minutes) = ~40 min, 60 with a cold page cache. Queue:
 #   python3 scripts/night.py add s6-moe-image --est 60 --by "nobara session, S6" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s6-moe-night.sh
+# Second night (2026-10-09): the first night's arms all declined the resident (cuMemAlloc out of memory: the 35B's int4 is 18.6 GB on an 8 GB card) because this script did not pass --moe-cache-experts, the C' expert streaming its header says it uses.
 # Pinned binary: $BIN/serve-cuda (built from the rev in $BIN/serve-cuda.rev). The giw and the tower directory are on the NVMe (~/models), never the archive.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -21,7 +22,7 @@ mkdir -p "$OUT"
 { echo "binary: $BIN/serve-cuda (rev $(cat "$BIN/serve-cuda.rev" 2>/dev/null))"; echo "started: $(date '+%F %T %Z')"; echo "gpu: $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "load: $(cat /proc/loadavg)"; df -h ~ | tail -1; } | tee "$OUT/provenance.txt"
 cd "$SRC" || exit 2
-GS3C_IMAGE=testdata/qwen35vl_preprocess_image.png GS3C_SETTLE=30 GS3C_EXTRA="--vision $VIS --kv-sessions 1 -ctx 4096" \
+GS3C_IMAGE=testdata/qwen35vl_preprocess_image.png GS3C_SETTLE=30 GS3C_EXTRA="--moe-cache-experts --vision $VIS --kv-sessions 1 -ctx 4096" \
   bash docs/measurements/multimodal-support-2026-10/run-gs3c-served.sh "$BIN/serve-cuda" "$OUT/served" cuda:auto,=cuda:cpu,cuda:cpu "$GIW" > "$OUT/served.log" 2>&1
 rc=$?
 grep -E "arm |decode path|prefill path|vision|IDENTICAL|differing|top-3|near-tie|exited|\(.*s\):" "$OUT/served.log" | cut -c1-220

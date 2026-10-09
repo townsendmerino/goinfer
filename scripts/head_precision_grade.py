@@ -2,15 +2,20 @@
 """Option D of the --embed-int4 decision, graded as registered (docs/tasks/task-multimodal-support-2026-10.md, "option D").
 Per model: d_agree = agree(int8 head) - agree(int4 head) in points, dKL = mean KL(int4 head) - mean KL(int8 head) in nats; paired by position, cluster bootstrap over prompts (32)
 (10,000 resamples, seed 20261008, 95% interval). OK: d_agree upper <= 2.3 AND dKL upper <= 0.02. COSTLY: d_agree point >= 4.3 OR dKL point >= 0.05. Else MIXED.
-A control result (both arms the int8 pin) must read exactly 0 / 0.   Usage: head_precision_grade.py <dump root>"""
+A control result (both arms the int8 pin) must read exactly 0 / 0.   Usage: head_precision_grade.py <dump root> [<dump root> ...]
+Several roots are one run split over nights: a model read in a later root replaces the same name in an earlier one (a NOT RUN is replaced by its re-run).
+"""
 import json, os, sys
 import numpy as np
-root = sys.argv[1]
+roots = sys.argv[1:]
 rng = np.random.default_rng(20261008)
 rows, bad = [], []
-for name in sorted(os.listdir(root)):
-    f = f"{root}/{name}/result.json"
-    if not os.path.exists(f): continue
+where = {}
+for root in roots:
+    for name in os.listdir(root):
+        if os.path.exists(f"{root}/{name}/result.json"): where[name] = root
+for name in sorted(where):
+    f = f"{where[name]}/{name}/result.json"
     r = json.load(open(f))
     if r.get("Error") or not r.get("Int8Head") or not r.get("Int4Head") or not r["Int4Head"].get("KL"):
         bad.append((name, r.get("Error") or "no result")); continue

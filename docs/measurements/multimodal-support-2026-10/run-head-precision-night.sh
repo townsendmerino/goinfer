@@ -7,13 +7,14 @@
 # Pinned in $BIN (main at the rev in $BIN/rev): decoder.test (realckpt), head_precision_hf.py, head_precision_grade.py. Checkpoints from ~/models (local NVMe).
 # Estimate ~110 min (HF ~45: the 7B and the 4B dominate; goinfer ~65). Queue:
 #   python3 scripts/night.py add head-precision --est 150 --by "nobara session, embed-int4 D" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-head-precision-night.sh
+#   Second night (amendment A2, 2026-10-09): HP_MODELS="qwen25vl-3b-instruct olmo3-7b-think" BIN=$HOME/goinfer-bench/hp2, graded together with the first night by head_precision_grade.py <root1>/hf <root2>/hf.
 # HP_DRY=1 checks the preconditions and prints the plan. A model whose HF side or goinfer load fails is recorded in its result and the others still run.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/hp}
 OUT=${1:-$HOME/goinfer-logs/head-precision-$(date +%F)}
 PY=$HOME/g4venv/bin/python
-MODELS="qwen2.5-0.5b-instruct tinyllama-1.1b-chat qwen3-1.7b-bf16 qwen25vl-3b-instruct phi3-mini-4k gemma-3-4b-it olmo3-7b-think"
+MODELS=${HP_MODELS:-"qwen2.5-0.5b-instruct tinyllama-1.1b-chat qwen3-1.7b-bf16 qwen25vl-3b-instruct phi3-mini-4k gemma-3-4b-it olmo3-7b-think"}  # HP_MODELS: the second night re-runs only the models the first could not read (amendment A2)
 fatal() { echo "FATAL: $*" >&2; exit 2; }
 for f in decoder.test head_precision_hf.py head_precision_grade.py; do [ -e "$BIN/$f" ] || fatal "$BIN/$f is missing"; done
 [ -x "$PY" ] || fatal "$PY is missing"

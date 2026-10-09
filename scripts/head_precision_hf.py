@@ -7,6 +7,10 @@ import json, os, sys, time, traceback
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+try:
+    from transformers import AutoModelForImageTextToText
+except ImportError:  # older transformers
+    AutoModelForImageTextToText = None
 
 MODELS = ["qwen2.5-0.5b-instruct", "qwen3-1.7b-bf16", "qwen25vl-3b-instruct", "gemma-3-4b-it", "tinyllama-1.1b-chat", "phi3-mini-4k", "olmo3-7b-think"]
 PROMPTS = [
@@ -54,12 +58,24 @@ for name in names:
     d = f"{home}/models/{name}"; od = f"{out_root}/{name}"; os.makedirs(od, exist_ok=True)
     try:
         tok = AutoTokenizer.from_pretrained(d)
+        # A checkpoint directory that ships no chat template (olmo3-7b-think was downloaded without its chat_template.jinja) takes the template its own repository
+        # publishes, kept beside this script as <name>.chat_template.jinja; the file's provenance is in the task doc (amendment A2).
+        tpl = None
+        if not getattr(tok, "chat_template", None):
+            tf = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{name}.chat_template.jinja")
+            if os.path.exists(tf):
+                tpl = open(tf).read(); hb(f"{name}: no chat template in the directory; using {tf}")
         hb(f"{name}: loading float32")
-        model = AutoModelForCausalLM.from_pretrained(d, torch_dtype=torch.float32); model.eval()
+        try:
+            model = AutoModelForCausalLM.from_pretrained(d, torch_dtype=torch.float32)
+        except ValueError:  # a vision-language config (Qwen2.5-VL): the text path of the same checkpoint, no image given
+            if AutoModelForImageTextToText is None: raise
+            model = AutoModelForImageTextToText.from_pretrained(d, torch_dtype=torch.float32)
+        model.eval()
         prompts, conts, p1 = [], [], []
         with open(f"{od}/logits.f32", "wb") as f:
             for i, p in enumerate(PROMPTS):
-                ids = tok.apply_chat_template([{"role": "user", "content": p}], add_generation_prompt=True, tokenize=True)
+                ids = tok.apply_chat_template([{"role": "user", "content": p}], add_generation_prompt=True, tokenize=True, **({"chat_template": tpl} if tpl else {}))
                 if not isinstance(ids, list): ids = ids["input_ids"]
                 if ids and isinstance(ids[0], list): ids = ids[0]
                 x = torch.tensor([ids])

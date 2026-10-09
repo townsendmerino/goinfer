@@ -56,5 +56,8 @@ print(f"\nG-S14c4b: WER_I - WER_F = {d0:+.2f} pts (95% interval [{lo:+.2f}, {hi:
 verdict = "PASS" if (d0 <= 0.5 and hi <= 1.5) else ("PARKED" if d0 <= 1.5 else "FAIL")
 if cI > 3 and verdict == "PASS": verdict = "PARKED (control tokens)"
 print(f"  verdict: {verdict}")
+if "int4h8" in go:  # amendment A1 (2026-10-09), record only: serve's int4 with the head table at the int8 pin; it moves no verdict
+    H8 = go["int4h8"]; eH8 = errs(H8)
+    print(f"\nA1 (record only) int4 body + int8 head: WER {wer(eH8):.2f}% (WER_H8 - WER_F = {wer(eH8) - wer(eF):+.2f} pts; int4 head: {wer(eI) - wer(eF):+.2f}); control tokens in {ctrl(H8)} replies (int4 head: {cI}); empty replies {sum(1 for i in ids if not norm(H8[i]))} (int4 head: {sum(1 for i in ids if not norm(I[i]))})")
 print(f"\nControls: F against F = {wer(eF) - wer(eF):+.2f} pts (must be 0); S WER {wer(eS):.1f}% (must be > 80)")
 print("G-S14c4a:", "PASS" if okA else "NOT MET", "| G-S14c4b:", verdict, "| controls:", "ok" if wer(eS) > 80 else "S TOO LOW")

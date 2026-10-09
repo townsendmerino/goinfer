@@ -102,7 +102,9 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 	for _, arm := range []struct {
 		name string
 		opts Options
-	}{{"f32", Options{Backend: "cpu"}}, {"int4", Options{Backend: "cpu", Quant: "int4", EmbedInt4: true}}} {
+	}{{"f32", Options{Backend: "cpu"}}, {"int4", Options{Backend: "cpu", Quant: "int4", EmbedInt4: true}},
+		// Amendment A1 (2026-10-09), record only: serve's int4 with the head table at the int8 pin, to see whether the int4 head is what damages the first token.
+		{"int4h8", Options{Backend: "cpu", Quant: "int4", EmbedInt4: false}}} {
 		m, err := Load(dir, arm.opts)
 		if err != nil {
 			t.Fatalf("%s: Load: %v", arm.name, err)
@@ -131,5 +133,5 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 	if err := os.WriteFile(out, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	hb("done: %d clips, 2 arms, wrote %s", len(ids), out)
+	hb("done: %d clips, 3 arms, wrote %s", len(ids), out)
 }

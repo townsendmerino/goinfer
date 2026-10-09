@@ -20,4 +20,4 @@ if big['NonFinite'] or sib['NonFinite'] or big['Synthetic'] or sib['Synthetic']:
 elif gap <= 5.0: v = "PASS"
 elif gap <= 10.0: v = "PARKED"
 else: v = "FAIL"
-print(f"G-31a2: the 31B is {gap:+.2f} points below the sibling -> {v}")
+print(f"G-31a2: sibling minus 31B = {gap:+.2f} points (negative: the 31B agrees MORE than the sibling; the bar is <= +5.0) -> {v}")
