@@ -1,0 +1,7 @@
+new-metal-two (69.8s, 2958 prompt tokens): 'Table 2. Quarterly unit sales by region (thousands).'
+new-cpu-two (97.5s, 2958 prompt tokens): 'Table 2. Quarterly unit sales by region (thousands).'
+new-metal-one (9.4s, 1395 prompt tokens): 'Table 2. Quarterly unit sales by region (thousands)'
+old-metal-one (8.1s, 1395 prompt tokens): 'Table 2. Quarterly unit sales by region (thousands)'
+qwen25vl-3b: names both: table True, formula False
+qwen25vl-3b: two images, Metal against the CPU (reference): IDENTICAL (first 32 tokens)
+qwen25vl-3b: one image, new binary against the pre-S11 one: IDENTICAL (first 32 tokens)

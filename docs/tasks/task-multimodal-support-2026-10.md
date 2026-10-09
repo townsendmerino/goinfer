@@ -2716,6 +2716,48 @@ per backend. Nothing in it needs the night queue.
 - `go test ./internal/serveapp/ ./multimodal/` green; gofmt, vet (plain, realckpt, windows) and staticcheck (linux
   target) clean.
 
+#### S11 results, G-S11e (served, real, 2026-10-09 by day, the M1 Pro; `docs/measurements/multimodal-support-2026-10/s11-gs11e/`)
+
+**Arms.** `serve-metal` at `c8f1b475` (S11) and `80be9921` (before S11). The two-image request is `table.png`, then
+`formula.png`, interleaved with text, "What does each image show? Answer briefly, one line per image.":
+- Metal, with the tower on the CPU (`-vision-device cpu`, G-S3c's method, so only the decoder differs);
+- `--backend cpu`.
+
+The one-image request is `table.png`, Metal, default flags, on both binaries. Greedy, top-3 logprobs, replies to 96
+tokens, the first 32 compared.
+
+- **Two driver fixes after the first Gemma 3 run, neither a bar change:**
+  1. Its Metal arm ran the tower on the GPU, unlike the CPU arm. That differed at token 18, not at a near-tie.
+  2. Its 32-token reply ended before the second image's line.
+
+  The re-run fixed both.
+
+| model | names both | two images, Metal against CPU (first 32) | one image, against before S11 |
+|---|---|---|---|
+| Gemma 3 4B | yes (the table; the Gaussian integral) | identical | identical |
+| Qwen2.5-VL-3B | **no, as registered** (the table only) | identical | identical |
+| Qwen3-VL-2B | yes | first differs at token 0, an R10 near-tie (0.270 against 0.492) | identical |
+| Gemma 4 E2B | yes | first differs at token 31, an R10 near-tie (0.349 against 0.520) | identical |
+
+- **Qwen2.5-VL's miss is a template gap, not S11's:**
+  - HF (transformers 5.12, `~/.venv-vl` on nobara, `hf_two_qwen25.py`) answers the same two images with both: "Image
+    1: Quarterly unit sales by region (thousands) / Image 2: A Note on the Gaussian Integral".
+  - Its prompt is 2,969 tokens against goinfer's 2,958, and the grids match ([1,64,86], [1,86,72]). The 11 tokens are
+    the checkpoint template's default system message ("You are a helpful assistant."), which serve's detected
+    `chatml` rendering leaves out.
+  - Sent explicitly, goinfer's prompt is HF's 2,969 tokens and the reply names both ("The first image shows a table
+    of quarterly unit sales by region in thousands. The second image shows a note on the Gaussian integral.").
+  - The gap affects every Qwen2.5-VL request, text included, and predates S11. Recorded for the owner, not fixed here.
+- **The swap guard tripped** on that follow-up request: the Mac started at 7.0 GB of swap and grew past it by 1 GB. The
+  guard refused the request with a 503, as designed; it was not an S11 defect.
+- **G-S11e reads:** single-image identity and Metal-against-CPU agreement hold on all four models. "Names both" holds on
+  three, and on Qwen2.5-VL only with the model's own default system message.
+
+**Still to do: S11 step 4** (Metal and CUDA multi-block resident image prefill, G-S11c), then G-S11g. Until then a
+Gemma 3 multi-image turn on Metal or CUDA prefills on the CPU and uploads (logged). Qwen2.5-VL and Qwen3.5 take their
+resident m-RoPE prefill with several images already; Qwen3-VL's DeepStack resident prefill declines to the bridge; a
+Gemma 4 E-model's resident prefill takes them directly.
+
 ### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
 
 WebGPU today: Gemma 3 GPU/GPU, Qwen2.5-VL decode on the GPU, GLM-OCR staged, Gemma 4 and Qwen3.5 on the CPU, and no

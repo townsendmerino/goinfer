@@ -1,0 +1,7 @@
+new-metal-two (61.7s, 2021 prompt tokens): 'Table 2 shows quarterly unit sales by region, with data in thousands. The second image shows a note on the Gaussian integral, including its formula and the normal distribution formula.'
+new-cpu-two (58.2s, 2021 prompt tokens): 'The first image shows a table with quarterly unit sales data for six regions, measured in thousands of units, with columns for Q1 to Q4 and a total column. The second image shows a mathematical explanation of the Gaussian integral and the normal distribution, including the formula for the normal density function.'
+new-metal-one (6.4s, 991 prompt tokens): 'Table 2. Quarterly unit sales by region (thousands)'
+old-metal-one (5.5s, 991 prompt tokens): 'Table 2. Quarterly unit sales by region (thousands)'
+qwen3vl-2b: names both: table True, formula True
+qwen3vl-2b: two images, Metal against the CPU (reference): first difference at token 0: new-cpu-two 'The', new-metal-two 'Table'; new-cpu-two top-3 'The' 0.492, 'Table' 0.270, 'Image' 0.182; R10 near-tie True
+qwen3vl-2b: one image, new binary against the pre-S11 one: IDENTICAL (first 32 tokens)
