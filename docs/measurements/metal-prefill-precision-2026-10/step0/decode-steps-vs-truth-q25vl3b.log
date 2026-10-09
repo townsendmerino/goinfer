@@ -1,0 +1,40 @@
+=== RUN   TestZZQ25VLDecodeDiag
+decoder: context capped at 28956 (model allows 128000) so that KV fits: weights 3.6 GB + KV 2.0 GB of budget 5.5 GB — pass -ctx to choose, or -stream-weights to lift
+[E done n=512]
+[E done n=1024]
+[E done n=1500]
+decoder: .giw context capped at 67584 (model allows 128000) so that KV+scratch fits: needs ~4.89 GB of 5.89 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[F done n=512]
+[F done n=1024]
+[F done n=1500]
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[dec n= 512 k=0] vs E: D 0.9741 A 0.9741 B 0.9755 C 0.9600 F 0.9714 | vs F: D 0.9824 A 0.9824 B 0.9956 C 0.9769 | argmax E 271 F 271 D 271 A 271 B 271 C 271
+[dec n= 512 k=1] vs E: D 0.9929 A 0.9933 B 0.9922 C 0.9939 F 0.9921 | vs F: D 0.9944 A 0.9943 B 0.9990 C 0.9943 | argmax E 13874 F 73594 D 73594 A 73594 B 73594 C 73594
+[dec n= 512 k=2] vs E: D 0.9685 A 0.9601 B 0.9477 C 0.9524 F 0.9658 | vs F: D 0.9832 A 0.9721 B 0.9799 C 0.9749 | argmax E 19324 F 19324 D 3989 A 19324 B 19324 C 19324
+[dec n= 512 k=3] vs E: D 0.9950 A 0.9940 B 0.9955 C 0.9933 F 0.9946 | vs F: D 0.9968 A 0.9964 B 0.9979 C 0.9961 | argmax E 71703 F 71703 D 71703 A 14374 B 71703 C 71703
+[dec n= 512 k=4] vs E: D 0.8838 A 0.8602 B 0.8604 C 0.8601 F 0.8664 | vs F: D 0.9906 A 0.9957 B 0.9949 C 0.9958 | argmax E 25 F 25 D 25 A 25 B 25 C 25
+[dec n= 512 k=5] vs E: D 0.9851 A 0.9854 B 0.9814 C 0.9811 F 0.9849 | vs F: D 0.9914 A 0.9901 B 0.9940 C 0.9884 | argmax E 1084 F 1084 D 1084 A 1084 B 1084 C 1084
+[dec n= 512 k=6] vs E: D 0.9887 A 0.9881 B 0.9868 C 0.9898 F 0.9901 | vs F: D 0.9943 A 0.9960 B 0.9965 C 0.9961 | argmax E 5868 F 4977 D 4977 A 4977 B 4977 C 4977
+[dec n= 512 k=7] vs E: D 0.9869 A 0.9852 B 0.9845 C 0.9822 F 0.9873 | vs F: D 0.9951 A 0.9950 B 0.9952 C 0.9938 | argmax E 1075 F 1075 D 1075 A 1075 B 1075 C 1075
+[dec n= 512 k=8] vs E: D 0.9915 A 0.9904 B 0.9906 C 0.9907 F 0.9916 | vs F: D 0.9973 A 0.9970 B 0.9980 C 0.9979 | argmax E 498 F 498 D 498 A 498 B 498 C 498
+[dec n=1024 k=0] vs E: D 0.9417 A 0.9417 B 0.9176 C 0.9330 F 0.9159 | vs F: D 0.9652 A 0.9652 B 0.9967 C 0.9749 | argmax E 198 F 220 D 220 A 220 B 220 C 220
+[dec n=1024 k=1] vs E: D 0.9744 A 0.9671 B 0.8923 C 0.9679 F 0.9472 | vs F: D 0.9780 A 0.9877 B 0.9540 C 0.9875 | argmax E 319 F 151645 D 198 A 151645 B 81581 C 151645
+[dec n=1024 k=2] vs E: D 0.9863 A 0.9330 B 0.9887 C 0.9638 F 0.9876 | vs F: D 0.9954 A 0.9423 B 0.9971 C 0.9734 | argmax E 73594 F 73594 D 73594 A 71341 B 73594 C 6365
+[dec n=1024 k=3] vs E: D 0.9523 A 0.9558 B 0.9469 C 0.9579 F 0.9593 | vs F: D 0.9822 A 0.9803 B 0.9761 C 0.9848 | argmax E 871 F 871 D 15352 A 15352 B 871 C 871
+[dec n=1024 k=4] vs E: D 0.9903 A 0.9905 B 0.9843 C 0.9901 F 0.9871 | vs F: D 0.9934 A 0.9937 B 0.9971 C 0.9954 | argmax E 40 F 785 D 785 A 785 B 14374 C 785
+[dec n=1024 k=5] vs E: D 0.9883 A 0.9889 B 0.9859 C 0.9886 F 0.9867 | vs F: D 0.9931 A 0.9927 B 0.9956 C 0.9932 | argmax E 2776 F 2776 D 2776 A 2776 B 2776 C 2776
+[dec n=1024 k=6] vs E: D 0.9724 A 0.9714 B 0.9680 C 0.9720 F 0.9684 | vs F: D 0.9863 A 0.9840 B 0.9864 C 0.9881 | argmax E 14589 F 14589 D 14589 A 14589 B 537 C 14589
+[dec n=1024 k=7] vs E: D 0.9934 A 0.9949 B 0.9935 C 0.9949 F 0.9946 | vs F: D 0.9970 A 0.9977 B 0.9985 C 0.9978 | argmax E 11 F 11 D 11 A 11 B 11 C 11
+[dec n=1024 k=8] vs E: D 0.9917 A 0.9916 B 0.9925 C 0.9917 F 0.9925 | vs F: D 0.9963 A 0.9958 B 0.9964 C 0.9964 | argmax E 714 F 714 D 714 A 714 B 714 C 714
+[dec n=1500 k=0] vs E: D 0.9824 A 0.9824 B 0.9742 C 0.9828 F 0.9833 | vs F: D 0.9882 A 0.9882 B 0.9935 C 0.9899 | argmax E 271 F 198 D 151645 A 151645 B 198 C 151645
+[dec n=1500 k=1] vs E: D 0.9824 A 0.9814 B 0.9205 C 0.9845 F 0.9559 | vs F: D 0.9668 A 0.9697 B 0.9659 C 0.9676 | argmax E 13874 F 82 D 71703 A 73594 B 11 C 71703
+[dec n=1500 k=2] vs E: D 0.9504 A 0.9511 B 0.9422 C 0.9467 F 0.9177 | vs F: D 0.9354 A 0.9213 B 0.9524 C 0.9462 | argmax E 19324 F 3989 D 19324 A 19324 B 3989 C 3989
+[dec n=1500 k=3] vs E: D 0.9940 A 0.9941 B 0.9943 C 0.9943 F 0.9921 | vs F: D 0.9952 A 0.9949 B 0.9969 C 0.9948 | argmax E 71703 F 1249 D 71703 A 71703 B 14374 C 785
+[dec n=1500 k=4] vs E: D 0.8140 A 0.8401 B 0.8393 C 0.8064 F 0.8193 | vs F: D 0.9919 A 0.9893 B 0.9948 C 0.9904 | argmax E 25 F 25 D 25 A 25 B 25 C 25
+[dec n=1500 k=5] vs E: D 0.9760 A 0.9806 B 0.9721 C 0.9791 F 0.9783 | vs F: D 0.9894 A 0.9907 B 0.9929 C 0.9900 | argmax E 1084 F 1084 D 1084 A 1084 B 1084 C 1084
+[dec n=1500 k=6] vs E: D 0.9879 A 0.9912 B 0.9865 C 0.9902 F 0.9909 | vs F: D 0.9926 A 0.9962 B 0.9931 C 0.9949 | argmax E 5868 F 4977 D 4977 A 5868 B 4977 C 4977
+[dec n=1500 k=7] vs E: D 0.9847 A 0.9873 B 0.9860 C 0.9882 F 0.9893 | vs F: D 0.9941 A 0.9955 B 0.9941 C 0.9956 | argmax E 1075 F 1075 D 1075 A 1075 B 1075 C 1075
+[dec n=1500 k=8] vs E: D 0.9882 A 0.9912 B 0.9909 C 0.9924 F 0.9910 | vs F: D 0.9969 A 0.9978 B 0.9967 C 0.9976 | argmax E 498 F 498 D 498 A 498 B 498 C 498
+--- PASS: TestZZQ25VLDecodeDiag (339.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	340.639s

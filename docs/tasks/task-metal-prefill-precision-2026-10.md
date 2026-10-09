@@ -1,6 +1,11 @@
 # Task — Metal's batched prefill loses precision on Qwen2.5 (scoped 2026-10-09)
 
-**Status:** SCOPED 2026-10-09, gates registered below before any code (owner: "yes" to scoping it). Not started.
+**Status:** **STEP 0 DONE 2026-10-09 — THE PREMISE IS REFUTED. Recommended close; no fix written.** The batched f16
+pass is the MOST precise of the four prefill arms, not the lossy one: against an f64 truth on the same int4 weights it
+is 27-54x closer than the decode path at layer 0, and 4-8x closer per layer at depth. The collapses S16's control saw
+are W4A8's per-row int8 activation scale on Qwen2.5-VL-3B, and they hit the CPU-throughout arm too. Fixes (a)-(c) and
+gates G-P1 to G-P3 were not run: there is nothing in the batched pass for them to fix. See "Step 0 — result" below.
+(Scoped 2026-10-09, gates registered before any code; owner: "yes" to scoping it and to starting Step 0.)
 **Prompted by:** S16's real gate (`docs/tasks/task-multimodal-support-2026-10.md`, "By day 2026-10-09"). S16 stays off
 for Qwen2.5-VL until this is fixed, because turning it on would move image turns onto the lossy pass.
 
@@ -46,7 +51,81 @@ for Qwen2.5-VL until this is fixed, because turning it on would move image turns
    - If not, the next prototype is f32 GEMM outputs, then f32 GEMM inputs (lever B's shape).
 4. The same control on Qwen2.5-1.5B and 7B: whether the defect is the family's or this checkpoint's.
 
-## The fix, chosen by Step 0's result
+## Step 0 — result (2026-10-09, by day, the M1 Pro; exploratory diagnostics, not a graded gate)
+
+Records: `docs/measurements/metal-prefill-precision-2026-10/step0/` (four logs; the two throwaway probes kept as
+`.go.txt`, deleted from `metal/`; tree at 33ee6a01; checkpoints from `~/models`, Qwen2.5-VL-3B through its
+`.int4.metal.giw`, Qwen2.5-Coder-1.5B through its `q4_k_m.int4.metal.giw`).
+
+**The decode path quantizes activations; the batched pass does not.** Metal's decode GEMVs and every CPU int4 projection
+are W4A8: each activation row is scaled by one max/127 into int8 (`decoder/actquant_hazard.go` describes the same
+mechanism for Phi-3). The batched pass's GEMMs read f16 activations, about 11 significant bits against int8's 7 for the
+row's largest value and far fewer for the small ones. S16's control graded the batched pass against the CPU prefill,
+which is W4A8, so it measured agreement with the less precise arm.
+
+1. **Residual magnitudes (step 0.1).** On the CPU forward, dimension 318 sits at about 1,500-2,500 from layer 2 to 31,
+   with at most one value per layer above 2,048. The f16-residual hypothesis was already weak.
+2. **Layer 0's V against an f64 truth.** The truth uses the same int4 weights dequantized, with f64 activations and
+   accumulation and no f16 or int8 step (the K/V probe, n = 1,024, seed 1). It needs no residual, so any difference
+   is the projection's own arithmetic.
+
+   | layer-0 V, relative L2 vs f64 truth | Qwen2.5-VL-3B | Qwen2.5-Coder-1.5B |
+   |---|---|---|
+   | Metal batched (f16 activations) | **0.00045** | **0.00037** |
+   | CPU int4, per-32 activation scales (`ActQuantGroup` 32) | 0.00814 | 0.00499 |
+   | Metal sequential (W4A8) | 0.02453 | 0.01190 |
+   | CPU prefill uploaded (W4A8) | 0.02453 | 0.01190 |
+
+3. **Per layer, against the per-32 CPU arm ("F": the same int4 weights, near-f32 activations).** On Qwen2.5-VL-3B the
+   batched K/V sits at relative L2 0.04-0.08 from layer 2 on. Both W4A8 arms sit at 0.14-0.42, with worst rows above
+   1.0. On the 1.5B, batched is at 0.005-0.024 and W4A8 at 0.03-0.12. The large layer-2 V gap that started this
+   (batched against sequential 0.457) is the sequential arm's error, not the batched pass's.
+4. **Decode steps against two references,** 8 teacher-forced steps from five arms with E's greedy chain as the
+   teacher:
+   - **E** is CPU weight-only int8 from the safetensors directory: f32 activations and better weights, the near-truth.
+   - **F** is the per-32 CPU arm above.
+
+   Two runs: seed 1 at n = 512/1,024/1,500 (27 steps), and seeds 1-4 at n = 20 and 1,562, the S16 control's worst
+   lengths (72 steps).
+
+   | arm | mean cosine vs E | mean vs F |
+   |---|---|---|
+   | D, CPU throughout (W4A8) | 0.841 | 0.880 |
+   | A, CPU prefill uploaded, Metal decode | 0.837 | 0.881 |
+   | **B, Metal batched, Metal decode** | **0.878** | **0.943** |
+   | C, Metal sequential, Metal decode | 0.838 | 0.881 |
+   | F, CPU per-32 | 0.917 | n/a |
+
+   The table is the 72 steps of the n = 20/1,562 four-seed cells. The 27 seed-1 steps at 512/1,024/1,500 had no
+   collapse in any arm, and there B is the closest arm to F (mean 0.990, better than A in 20/27 steps) but not to E
+   (0.963 against A's 0.969, better in 7/27). That is a small, unresolved difference on correlated steps, and it is
+   not the effect S16 saw. The collapses below 0.3 hit **every W4A8 arm, CPU included**:
+   - n = 1,562 seed 1 step 4: D -0.41, C -0.39, while A and B hold 0.94.
+   - n = 20 seed 4 step 6: D 0.01, A -0.02, C 0.22, while B holds 0.986.
+   - n = 1,562 seed 2 step 4: A 0.06, C 0.24, while B holds 0.95 and D 0.91.
+
+   B collapses too on some steps, because its decode steps are W4A8 (n = 1,562 seed 4 step 1: -0.40, while F holds
+   0.71). A few steps are low in every int4 arm and in F, against E only: int4 weight error, not activations.
+5. **Hypotheses refuted on the way, recorded so they are not re-chased:**
+   - an f16 residual stream (step 0.1);
+   - f16 GEMM rounding (step 2: the batched pass is the closest arm);
+   - f16 K/V storage or Metal decode attention mishandling W4A8 K/V: the CPU-throughout arm collapses on steps where
+     the f16-cache arms do not.
+
+**What follows:**
+- **This task:** no change to the batched pass. Fixes (a)-(c) would make the most precise arm more precise. G-P1 to
+  G-P3 are moot. Recommended close.
+- **S16 for Qwen2.5-VL:** the reason it was held ("the lossy batched pass") is void. Turning it on moves image turns
+  from the W4A8 CPU prefill onto the more precise arm. Its control needs a reference that is not W4A8 before it means
+  anything: the per-32 CPU arm, or E. This is a re-registration of S16's bar for this family, so it is the owner's
+  call, not made here.
+- **Found, not owned by this task:** Qwen2.5-VL-3B is unstable under per-row W4A8 on these random-token prompts, on
+  every backend. Per-32 activation scales recover most of it: mean 0.917 against 0.84, worst 0.25 against -0.47. That
+  is `ActivationQuantHazard`'s territory, the Phi-3 guard. Whether real text shows it is unmeasured (S16's real-text
+  control ran against the same W4A8 reference). Metal has no per-group activation kernel and declines `ActQuantGroup`
+  to the CPU.
+
+## The fix, chosen by Step 0's result (SUPERSEDED 2026-10-09: Step 0 found nothing to fix; kept as registered)
 
 In order of cost, the first one that clears G-P1:
 
@@ -58,7 +137,7 @@ In order of cost, the first one that clears G-P1:
 Whichever lands, decide by the measurement whether it applies to every family (more precise everywhere, if the speed
 gate allows it) or only where Step 0 shows the loss.
 
-## Gates, registered before any code
+## Gates, registered before any code (not run: Step 0 refuted the premise)
 
 - **G-P1, decode-step agreement** (by day, the real checkpoints):
   - **The prompts:** S16's control (random tokens, seeds 1-4, n = 512, 1024, 1,500) and three real-text prompts of

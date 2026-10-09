@@ -1,0 +1,178 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// Throwaway (Step 0, truth arms): S16's text control (random tokens, seed 1), 8 teacher-forced decode steps.
+// References, each loaded and closed before the Metal model:
+//
+//	E: CPU weight-only int8 from the safetensors dir (f32 activations): the near-truth, and the teacher;
+//	F: CPU int4 (the same .giw weights as every Metal arm) with per-32 activation scales.
+//
+// int4 arms: D CPU throughout (W4A8, per-row), A CPU prefill uploaded to Metal, B Metal batched, C Metal sequential.
+func TestZZQ25VLDecodeDiag(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	name := os.Getenv("ZZ_MODEL")
+	if name == "" {
+		name = "qwen25vl-3b-instruct"
+	}
+	dir := filepath.Join(home, "models", name)
+	src := dir
+	if _, err := os.Stat(dir + ".int4.metal.giw"); err == nil {
+		src = dir + ".int4.metal.giw"
+	}
+	ctx := context.Background()
+	const steps = 8
+	type cell struct{ n, seed int }
+	var ns []cell
+	nList, seeds := []int{512, 1024, 1500}, []int{1}
+	if s := os.Getenv("ZZ_NS"); s != "" {
+		nList = nil
+		for _, f := range strings.Split(s, ",") {
+			v, _ := strconv.Atoi(f)
+			nList = append(nList, v)
+		}
+	}
+	if s := os.Getenv("ZZ_SEEDS"); s != "" {
+		seeds = nil
+		for _, f := range strings.Split(s, ",") {
+			v, _ := strconv.Atoi(f)
+			seeds = append(seeds, v)
+		}
+	}
+	for _, n := range nList {
+		for _, sd := range seeds {
+			ns = append(ns, cell{n, sd})
+		}
+	}
+	prompt := func(c cell) []int {
+		tids := make([]int, c.n)
+		for i := range tids {
+			tids[i] = 1000 + (i*7919+c.seed*104729)%50000
+		}
+		return tids
+	}
+	// cpuRun prefills tids and decodes the teacher tokens; with teach nil it makes the greedy chain its teacher.
+	cpuRun := func(m *decoder.Model, tids, teach []int) (out [][]float32, tch []int) {
+		tc := m.NewCache(len(tids) + steps + 1)
+		first, err := m.PrefillLogitsForTest(ctx, tids, tc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = [][]float32{append([]float32(nil), first...)}
+		tch = teach
+		if tch == nil {
+			tch = []int{argmaxF(first)}
+		}
+		for k := range steps {
+			lg, err := m.ForwardForTest(tch[k], tc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, append([]float32(nil), lg...))
+			if teach == nil {
+				tch = append(tch, argmaxF(lg))
+			}
+		}
+		return out, tch
+	}
+	eOut, teach := map[cell][][]float32{}, map[cell][]int{}
+	{
+		me, err := decoder.Load(dir, decoder.Options{Quant: "int8", Backend: "cpu"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range ns {
+			eOut[n], teach[n] = cpuRun(me, prompt(n), nil)
+			fmt.Fprintf(os.Stderr, "[E done %v]\n", n)
+		}
+		me.Close()
+	}
+	fOut := map[cell][][]float32{}
+	{
+		mf, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "cpu", ActQuantGroup: 32})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range ns {
+			fOut[n], _ = cpuRun(mf, prompt(n), teach[n])
+			fmt.Fprintf(os.Stderr, "[F done %v]\n", n)
+		}
+		mf.Close()
+	}
+	m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "metal", ResidentContext: 2048})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	for _, c := range ns {
+		n := c.n
+		tids, tch := prompt(c), teach[c]
+		dOut, _ := cpuRun(m, tids, tch)
+		dec := func(first []float32) [][]float32 {
+			out := [][]float32{append([]float32(nil), first...)}
+			for k := range steps {
+				lg, err := a.Forward(m.EmbedResidentForTest(tch[k]), n+k)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = append(out, append([]float32(nil), lg...))
+			}
+			return out
+		}
+		tcA := m.NewCache(n + steps + 1)
+		fa, err := m.PrefillLogitsForTest(ctx, tids, tcA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.Reset()
+		if err := m.ResidentUploadPrefillForTest(tcA); err != nil {
+			t.Fatal(err)
+		}
+		aOut := dec(fa)
+		embs := make([][]float32, n)
+		for i, id := range tids {
+			embs[i] = m.EmbedResidentForTest(id)
+		}
+		a.Reset()
+		fb, err := a.batchedPrefill(embs, 0, 0, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bOut := dec(append([]float32(nil), fb...))
+		a.Reset()
+		var fc []float32
+		for i, e := range embs {
+			lg, err := a.Forward(e, i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if i == n-1 {
+				fc = append([]float32(nil), lg...)
+			}
+		}
+		cOut := dec(fc)
+		e, f := eOut[c], fOut[c]
+		for k := 0; k <= steps; k++ {
+			fmt.Fprintf(os.Stderr, "[dec n=%4d s=%d k=%d] A-B %.4f | vs E: D %.4f A %.4f B %.4f C %.4f F %.4f | vs F: D %.4f A %.4f B %.4f C %.4f | argmax E %d F %d D %d A %d B %d C %d\n",
+				n, c.seed, k, cosF(aOut[k], bOut[k]), cosF(e[k], dOut[k]), cosF(e[k], aOut[k]), cosF(e[k], bOut[k]), cosF(e[k], cOut[k]), cosF(e[k], f[k]),
+				cosF(f[k], dOut[k]), cosF(f[k], aOut[k]), cosF(f[k], bOut[k]), cosF(f[k], cOut[k]),
+				argmaxF(e[k]), argmaxF(f[k]), argmaxF(dOut[k]), argmaxF(aOut[k]), argmaxF(bOut[k]), argmaxF(cOut[k]))
+		}
+	}
+}

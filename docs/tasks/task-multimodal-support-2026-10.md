@@ -2356,6 +2356,14 @@ different rows.
         (0.95-1.0) onto the lossy batched pass.
       - **Owed:** a task for Qwen2.5-VL's batched prefill precision (f32 activations, as lever B), with a decode-step gate
         against the CPU on the control.
+    - **CORRECTION, 2026-10-09 (later the same day): the "likely mechanism" above is refuted, and so is "lossy".** Step 0
+      of `docs/tasks/task-metal-prefill-precision-2026-10.md` measured the batched pass as the MOST precise prefill:
+      layer 0's V against an f64 truth on the same int4 weights is 0.00045 against 0.0245 for the CPU prefill and the
+      sequential path. Both of those run W4A8, one int8 scale per activation row. The control's reference was the
+      less precise arm. The collapses come from W4A8 on this model, and the CPU-throughout arm shows them too (n =
+      1,562 seed 1 step 4: -0.41 against the near-truth, while the batched arm holds 0.94). The reason S16 stays off for
+      Qwen2.5-VL is therefore void. Re-grading it needs a control whose reference is not W4A8, which is the owner's
+      call (that task doc, "What follows").
 
 ### S10 — Towers for the families that have none
 
