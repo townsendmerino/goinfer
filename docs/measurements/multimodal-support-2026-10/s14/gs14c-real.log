@@ -1,0 +1,10 @@
+=== RUN   TestQwen3ASRReal_gate
+    qwen3asr_real_test.go:68: loaded in 0.4s: arch qwen3_asr, 28 layers, hidden 1024, vocab 151936, quant native
+    qwen3asr_real_test.go:80: c1 text path: last-row cosine 1.000000000, argmax 12095 (HF 12095), continuation [12095 13 576 6722 315 15344] (HF [12095 13 576 6722 315 15344])
+    qwen3asr_real_test.go:110: c3 instrument: the Go prompt (91 ids, 76 audio tokens at 9) equals the processor's; the encoder took 1.1s
+    qwen3asr_real_test.go:137: c3 teacher-forced: 26 positions, worst logit cosine 1.000000000, positions where goinfer's argmax is not transformers' token: 0
+    qwen3asr_real_test.go:152: c3 free run (3.4s): "language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel."
+    qwen3asr_real_test.go:153: c3 transformers:      "language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.<|im_end|>"
+--- PASS: TestQwen3ASRReal_gate (9.53s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	9.544s

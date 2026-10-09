@@ -1,0 +1,13 @@
+    qwen3asr_test.go:111: text path: last-row cosine 1.000000000, argmax 145 (want 145), continuation [145 78 78 78 78 78 78 78] (want [145 78 78 78 78 78 78 78])
+--- PASS: TestQwen3ASR_tinyTextParity (0.02s)
+    qwen3asr_test.go:175: clip2s   composition: last-position cosine 1.000000000, argmax 80 (want 80), continuation [80 80 80 80 80 80 80 80] (want [80 80 80 80 80 80 80 80])
+    qwen3asr_test.go:175: clip5s3  composition: last-position cosine 1.000000000, argmax 13 (want 13), continuation [13 13 13 13 13 13 13 13] (want [13 13 13 13 13 13 13 13])
+    qwen3asr_test.go:175: clip7s   composition: last-position cosine 1.000000000, argmax 80 (want 80), continuation [80 80 80 80 80 80 80 80] (want [80 80 80 80 80 80 80 80])
+--- PASS: TestQwen3ASR_tinyCompositionParity (0.14s)
+    qwen3asr_test.go:198: planted defect 1 (splice one position early): worst last-position cosine 0.993025, continuation differs: true
+    qwen3asr_test.go:198: planted defect 2 (one audio row short): worst last-position cosine 0.993592, continuation differs: true
+    qwen3asr_test.go:198: planted defect 3 (added to the pad embeddings): worst last-position cosine 0.961266, continuation differs: true
+    qwen3asr_test.go:198: planted defect 4 (bidirectional block (Gemma 3's prefill)): worst last-position cosine 0.996553, continuation differs: true
+    qwen3asr_test.go:208: planted defect 5 (projector GELU removed): last-position cosine 0.456838
+--- PASS: TestQwen3ASR_tinyCompositionPlantedDefectsAreRed (0.63s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.793s

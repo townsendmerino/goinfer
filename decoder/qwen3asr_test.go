@@ -95,7 +95,7 @@ func loadTinyASR(t *testing.T) *Model {
 	return m
 }
 
-func TestQwen3ASR_tinyTextPath(t *testing.T) {
+func TestQwen3ASR_tinyTextParity(t *testing.T) {
 	files := q3aGolden(t)
 	m := loadTinyASR(t)
 	ids := q3aInts(t, files["text.ids.json"])
@@ -160,7 +160,7 @@ func qwen3ASRCompose(t *testing.T, m *Model, enc *audio.QwenASREncoder, files ma
 	return slices.Clone(logits), q3aGreedy(t, m, cache, logits, 8)
 }
 
-func TestQwen3ASR_tinyComposition(t *testing.T) {
+func TestQwen3ASR_tinyCompositionParity(t *testing.T) {
 	files := q3aGolden(t)
 	m := loadTinyASR(t)
 	enc, err := audio.LoadQwenASREncoder(filepath.Join("..", "testdata", "qwen3asr-tiny"))

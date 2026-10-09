@@ -43,6 +43,8 @@ var parityGates = []gateCheck{
 	{"qwen2", "TestQwen2_forwardParity"},
 	{"qwen2-gguf", "TestGGUF_qwen2_parity"},
 	{"qwen3", "TestQwen3_forwardParity"},
+	{"qwen3_asr-text", "TestQwen3ASR_tinyTextParity"},               // 2026-10-08: Qwen3-ASR's decoder from the checkpoint's own layout, against transformers
+	{"qwen3_asr-composition", "TestQwen3ASR_tinyCompositionParity"}, // audio samples -> front end -> encoder -> splice -> decoder, against transformers
 	{"qwen3-gguf", "TestGGUF_qwen3_parity"},
 	{"qwen2moe", "TestQwen2Moe_forwardParity"},
 	{"qwen3moe", "TestQwen3Moe_forwardParity"},
@@ -804,6 +806,8 @@ var awaitingFirstConfirmation = map[string]string{}
 // on a family that already has a canonical gate. A new entry claiming anything else is a coverage
 // hole wearing a reason, and reviewing it is the point of making it a code change.
 var realckptNotRequired = map[string]string{
+	"TestQwen3ASRReal_gate": "qwen3_asr is required through the tiny gates (decoder TestQwen3ASR_tinyTextParity and TestQwen3ASR_tinyCompositionParity); this adds the real Qwen3-ASR-0.6B, whose reference " +
+		"needs scripts/pin_qwen3asr_real.py's output directory (GOINFER_QWEN3ASR_REF), not a plain registered asset",
 	"TestGemma3Real_gate": "unregistered asset (GEMMA3_4B, not even GOINFER_-prefixed); gemma3 is " +
 		"required through TestGGUF_gemma3_parity + TestForward_logitParity",
 	"TestGemma4_26B_gate": "unregistered asset (GOINFER_GEMMA4_26B); gemma4 is required through " +

@@ -712,6 +712,24 @@
       "value": "PASS"
     },
     {
+      "commit": "2083e745",
+      "date": "2026-10-08",
+      "gate": "TestQwen3ASR_tinyCompositionParity",
+      "note": "Qwen3-ASR tiny checkpoint against transformers 5.15.0 (in-memory model, the real checkpoint's layout), nobara-pc, 2026-10-08: last-position cosine 1.000000000 and an equal greedy continuation; the composition test runs the Go front end, encoder, projector and soft-token splice into the Go decoder on three clips; planted defects red (docs/measurements/multimodal-support-2026-10/s14/gs14c-tiny.log)",
+      "promoted_by": "claude",
+      "source_sha256": "2dc908cfb9d5bd39",
+      "value": "PASS"
+    },
+    {
+      "commit": "2083e745",
+      "date": "2026-10-08",
+      "gate": "TestQwen3ASR_tinyTextParity",
+      "note": "Qwen3-ASR tiny checkpoint against transformers 5.15.0 (in-memory model, the real checkpoint's layout), nobara-pc, 2026-10-08: last-position cosine 1.000000000 and an equal greedy continuation; the composition test runs the Go front end, encoder, projector and soft-token splice into the Go decoder on three clips; planted defects red (docs/measurements/multimodal-support-2026-10/s14/gs14c-tiny.log)",
+      "promoted_by": "claude",
+      "source_sha256": "ad2874ae4cf02be2",
+      "value": "PASS"
+    },
+    {
       "commit": "70be7081",
       "date": "2026-10-01",
       "gate": "TestQwen3MoeReal_oracle",
