@@ -60,7 +60,7 @@ The last phase puts the answer where users look first, the README, with a check 
 - **Models:**
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
   - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
-  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
+  - Ministral 3 (Pixtral) and LFM2.5-VL have no tower (S10). North was dropped, never identified.
   - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
@@ -2471,6 +2471,11 @@ different rows.
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
+
+**2026-10-09: "North" is dropped** (owner: "i have no idea what north meant"). No checkpoint or repo was ever recorded
+for it; re-add it with one if it resurfaces. Order from here (owner, 2026-10-09: "on to s10s families, s12 and s15, and
+then full s13"): Ministral 3 (Pixtral), whose 3B is on nobara; then LFM2.5-VL; then Qwen3-VL MoE. Qwen3-VL MoE's 30B
+cannot hold a float32 HF reference in nobara's 62 GB, so it would need the 31B's layer-streaming reference (step (b')).
 
 - **Pattern:** the Gemma 4 and Qwen ones: the tower in aikit (batched into the cycle's one release), the decoder splice
   and prompt layout in goinfer, then serve. One sub-phase per family, in order of what users ask for; each starts with
