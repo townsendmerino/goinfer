@@ -120,22 +120,21 @@ func representativeConfig(modelType string) *Config {
 			HiddenAct: "silu",
 		}
 	case "qwen2_5_vl":
-		// The qwen2_5_vl adapter degenerates to qwen2 for the text path; a top-level
-		// rope_theta (no nested mrope_section) resolves with m-RoPE inactive.
+		// The qwen2_5_vl adapter degenerates to qwen2 for the text path. It carries an m-RoPE section (head_dim/2 = 2
+		// split [1, 1, 0]): a Qwen-VL without one is refused since 2026-10-09 (a .giw used to drop it silently).
 		return &Config{
 			ModelType: "qwen2_5_vl", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
 			NumKVHeads: 2, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
-			HiddenAct: "silu",
+			HiddenAct: "silu", MRopeSection: []int{1, 1, 0},
 		}
 	case "qwen3_vl":
-		// The qwen3_vl adapter degenerates to qwen3 for the text path (P8 Phase 0, no vision) — a
-		// top-level rope_theta (no nested mrope_section) resolves with m-RoPE inactive, same as
-		// qwen2_5_vl above. HeadDim set explicitly, mirroring qwen3's own case (qwen3Architecture
-		// requires it — unlike qwen2, which derives it).
+		// The qwen3_vl adapter degenerates to qwen3 for the text path (P8 Phase 0, no vision), with an m-RoPE section as
+		// qwen2_5_vl above. HeadDim set explicitly, mirroring qwen3's own case (qwen3Architecture requires it — unlike
+		// qwen2, which derives it).
 		return &Config{
 			ModelType: "qwen3_vl", VocabSize: 128, HiddenDim: 16, NumLayers: 2, NumHeads: 4,
 			NumKVHeads: 2, HeadDim: 4, IntermediateDim: 32, RMSNormEps: 1e-5, RoPEGlobalBase: 1000000,
-			HiddenAct: "silu",
+			HiddenAct: "silu", MRopeSection: []int{1, 1, 0},
 		}
 	case "qwen3_asr":
 		// Qwen3-ASR's text decoder is plain Qwen3 (the checkpoint's interleaved m-RoPE section is dropped: audio positions are sequential); the audio encoder is aikit's.

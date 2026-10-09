@@ -2269,6 +2269,50 @@ different rows.
     `<image_soft_token>` token"). The directory decoder, whose sidecar now exists, serves the same request: G-S18a's
     two arms ran that way by day.
 
+- **By day 2026-10-09 (owner: "re-pin and run now", "run with latest code now").**
+  - **A silent defect in S18 part 1, found and fixed: a Qwen-VL loaded through a sidecar lost its m-RoPE section.**
+    - **The mechanism:** the qwen2_5_vl and qwen3_vl adapters read `mrope_section` from `rope_scaling` (where the
+      released checkpoints carry it), clear `rope_scaling`, and keep the section in `Config.MRopeSection`, which was
+      `json:"-"`. A `.giw` therefore dropped it, and a model loaded from one ran plain RoPE on image positions, with
+      text unaffected (the three axes coincide on text).
+    - **Live since part 1:** serve loads a Qwen-VL directory through its sidecar by default. GGUF-sourced Qwen-VL
+      sidecars had the same loss before part 1.
+    - **Why G-S18d missed it:** its text-only greedy streams cannot see image positions, and the tiny fixtures carry
+      the section in `rope_parameters`, a raw field that survives. CLAUDE.md's "minimal in exactly the dimension that
+      hides the bug".
+    - **Found by** S16's real gate loading through the new sidecars: "not Metal-resident with an m-RoPE axis table"
+      (`s16/real-2026-10-09/real-run1-sidecars-without-mrope.log`).
+    - **The fix:**
+      - `MRopeSection` is serialized (`json:"mrope_section,omitempty"`), and the two adapters take it from a `.giw`'s
+        config.
+      - A Qwen-VL config with no section is refused ("no m-RoPE section ... rebuild it"), so a stale sidecar fails
+        its freshness self-check and rebuilds instead of being trusted.
+      - `prequant.TestDirSidecar_keepsMRopeSection`: each Qwen-VL fixture is copied with the section moved into
+        `rope_scaling` as released, and its m-RoPE axis table through the sidecar must equal the direct load's (red
+        with the old tag); a config with no section must be refused.
+  - **G-S16c real: PASS on both models, through the rebuilt sidecars** (`s16/real-2026-10-09/real.log`, 535 s), under
+    the re-registered bar:
+
+    | model | image | worst cosine | text control min | argmax |
+    |---|---|---|---|---|
+    | Qwen2.5-VL-3B | gemma3_preprocess_image | 0.913 | 0.335 | 0 real |
+    | Qwen2.5-VL-3B | qwen25vl_preprocess_image | 0.950 | -0.022 | 0 real (3 near-ties) |
+    | Qwen2.5-VL-3B | formula | 0.836 | -0.356 | 0 real (1 near-tie) |
+    | Qwen2.5-VL-3B | table | 0.892 | 0.387 | 0 real |
+    | Qwen3-VL-2B | gemma3_preprocess_image | 0.972 | 0.875 | 0 real (1 near-tie) |
+    | Qwen3-VL-2B | qwen25vl_preprocess_image | 0.978 | 0.954 | 0 real (1 near-tie) |
+    | Qwen3-VL-2B | formula | 0.985 | 0.958 | 0 real |
+    | Qwen3-VL-2B | table | 0.986 | 0.866 | 0 real |
+
+    - **But Qwen2.5-VL's text control is itself broken.** Its minimum cosine against the CPU falls to 0.33, -0.02 and
+      -0.36 on same-length text prompts (about 1,000-1,600 rows): unrelated logits. The relative bar then passes
+      vacuously.
+    - **The plan:**
+      - Qwen3-VL's PASS stands on healthy controls (0.87-0.95).
+      - Qwen2.5-VL's long-prompt Metal prefill is a defect to find before S16 is claimed for it. It is not S16's own:
+        the control is today's path.
+      - S16 goes on for Qwen3-VL only, pending the owner.
+
 ### S10 — Towers for the families that have none
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).

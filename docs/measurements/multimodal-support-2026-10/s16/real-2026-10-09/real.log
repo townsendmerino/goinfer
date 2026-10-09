@@ -1,0 +1,20 @@
+=== RUN   TestS16MRoPEPrefill_real
+=== RUN   TestS16MRoPEPrefill_real/qwen25vl-3b-instruct
+[S16] qwen25vl-3b-instruct: the decoder through its sidecar
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[S16 G-S16c] qwen25vl-3b-instruct gemma3_preprocess_image.png (1038 rows, 1024 image): worst cosine 0.9126856 against the text control's minimum 0.3345484 (4 prompts); argmax: 0 near-ties, 0 real: PASS
+[S16 G-S16c] qwen25vl-3b-instruct qwen25vl_preprocess_image.png (20 rows, 6 image): worst cosine 0.9501890 against the text control's minimum -0.0221906 (4 prompts); argmax: 3 near-ties, 0 real: PASS
+[S16 G-S16c] qwen25vl-3b-instruct glm_ocr/formula.png (1562 rows, 1548 image): worst cosine 0.8359126 against the text control's minimum -0.3556468 (4 prompts); argmax: 1 near-ties, 0 real: PASS
+[S16 G-S16c] qwen25vl-3b-instruct glm_ocr/table.png (1390 rows, 1376 image): worst cosine 0.8922929 against the text control's minimum 0.3870534 (4 prompts); argmax: 0 near-ties, 0 real: PASS
+=== RUN   TestS16MRoPEPrefill_real/qwen3-vl-2b-instruct
+[S16] qwen3-vl-2b-instruct: the decoder through its sidecar
+[metal] weights aliased from qwen3-vl-2b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1053 MB bound in place, 1 MB copied (anonymous) — 672 MB int4 nibbles (56 single tensors + 56 fused groups = 448 MB) + 297 MB int8 codes (1 matrices) + 84 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[S16 G-S16c] qwen3-vl-2b-instruct gemma3_preprocess_image.png (798 rows, 784 image): worst cosine 0.9718256 against the text control's minimum 0.8745833 (4 prompts); argmax: 1 near-ties, 0 real: PASS
+[S16 G-S16c] qwen3-vl-2b-instruct qwen25vl_preprocess_image.png (84 rows, 70 image): worst cosine 0.9776144 against the text control's minimum 0.9537060 (4 prompts); argmax: 1 near-ties, 0 real: PASS
+[S16 G-S16c] qwen3-vl-2b-instruct glm_ocr/formula.png (1029 rows, 1015 image): worst cosine 0.9845718 against the text control's minimum 0.9579256 (4 prompts); argmax: 0 near-ties, 0 real: PASS
+[S16 G-S16c] qwen3-vl-2b-instruct glm_ocr/table.png (986 rows, 972 image): worst cosine 0.9864695 against the text control's minimum 0.8663697 (4 prompts); argmax: 0 near-ties, 0 real: PASS
+--- PASS: TestS16MRoPEPrefill_real (535.42s)
+    --- PASS: TestS16MRoPEPrefill_real/qwen25vl-3b-instruct (355.81s)
+    --- PASS: TestS16MRoPEPrefill_real/qwen3-vl-2b-instruct (179.61s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	536.269s

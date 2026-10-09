@@ -1,0 +1,9 @@
+a87304e3 dec
+tree: main + uncommitted (S9 on, the S16 test's sidecar load)
+started 2026-10-09 06:45:20 PDT
+total = 3072.00M  used = 2215.38M  free = 856.62M  (encrypted)
+ 6:45  up 14 days, 20:40, 1 user, load averages: 2.52 2.78 2.49
+rc=1
+--- run 2 2026-10-09 06:48:19 PDT: the sidecars rebuilt with the m-RoPE section (Config.MRopeSection serialized)
+total = 3072.00M  used = 2215.38M  free = 856.62M  (encrypted)
+rc=0
