@@ -209,23 +209,21 @@ func (f fitCheck) warning() string {
 // input — so the flag was being recommended as a fix that could not possibly change anything,
 // producing an identical refusal after the user did what they were told.
 //
-// cmd/prequant CAN build a streamable .giw from a directory (transcodeDir) — but it is not
-// offered as the remedy here, because transcodeDir loads the checkpoint fully resident to
-// serialize it (unlike the .gguf path's true one-layer-at-a-time streaming transcode), so it
-// hits this exact guard for the exact same reason and cannot help a checkpoint that genuinely
-// does not fit. GOINFER_NO_FIT_GUARD=1 is named directly instead — it is already the correct,
-// working escape hatch for the case this guard's own 70% margin is being conservative about (a
-// checkpoint that would actually fit), and cmd/prequant becomes a real, valuable one-time step
-// only once that variable lets its own internal load through.
+// cmd/prequant builds a .giw from a directory one layer at a time since 2026-10-09 (StreamTranscodeDir,
+// docs/tasks/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
+// guard, and it is the remedy for a directory (goinfer-serve and goinfer-chat already take that route unless --direct-load).
+// Before that, the directory transcode loaded fully resident and could not help, so GOINFER_NO_FIT_GUARD=1 was named
+// instead; it stays in the text for the case the 70% margin is being conservative about.
 func (f fitCheck) remedy() string {
 	if f.isGGUF {
 		return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
 			"then pages weights out of it on demand instead of holding them all resident."
 	}
-	return "This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you " +
-		"believe this machine can actually hold it (this guard's 70% margin is deliberately " +
-		"conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a " +
-		"streamable .giw from it once, for every later run."
+	return "This is a safetensors checkpoint — -stream-weights only helps a .gguf source. Build a .giw " +
+		"from it once with cmd/prequant (-quant <q> -o <name>.giw <dir>), which streams one layer at a time " +
+		"and does not need this load's memory, then load the .giw (goinfer-serve and goinfer-chat do this " +
+		"for you unless --direct-load). If you believe this machine can hold it as it is (this guard's 70% " +
+		"margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway."
 }
 
 // ErrWontFitResident is wrapped into every load-time fit-guard refusal (declineErr), so a caller

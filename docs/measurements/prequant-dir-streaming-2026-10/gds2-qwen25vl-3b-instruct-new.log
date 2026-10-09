@@ -1,0 +1,19 @@
+wrote /private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/qwen25vl-3b-instruct-new.giw: 2124 MB (int4)
+       36.91 real        21.91 user         3.77 sys
+          5492506624  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               71542  page reclaims
+              512221  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                3188  signals received
+                 756  voluntary context switches
+              266499  involuntary context switches
+        184059960291  instructions retired
+         81183025007  cycles elapsed
+          1023576440  peak memory footprint

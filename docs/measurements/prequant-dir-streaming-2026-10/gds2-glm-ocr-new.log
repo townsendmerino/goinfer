@@ -1,0 +1,19 @@
+wrote /private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/glm-ocr-new.giw: 503 MB (int4)
+        4.45 real         4.07 user         0.36 sys
+          2284044288  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              171789  page reclaims
+                   1  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                 504  signals received
+                 198  voluntary context switches
+                3525  involuntary context switches
+         33205647422  instructions retired
+         14116063847  cycles elapsed
+           934282920  peak memory footprint

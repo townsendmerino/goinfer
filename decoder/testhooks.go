@@ -497,3 +497,11 @@ func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 
 // CapturedForTest returns the rows SetCaptureLayersForTest armed the cache to record, one slice per requested layer.
 func (c *KVCache) CapturedForTest() [][]float32 { return c.captured }
+
+// SetStreamDirSwapForTest turns on StreamTranscodeDir's planted defect (layers 0 and 1 written in each other's place) and
+// returns the restore (docs/tasks/task-prequant-dir-streaming-2026-10.md, G-DS1).
+func SetStreamDirSwapForTest(on bool) func() {
+	prev := streamDirSwapForTest
+	streamDirSwapForTest = on
+	return func() { streamDirSwapForTest = prev }
+}

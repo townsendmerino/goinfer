@@ -568,6 +568,106 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // tensor-name + shape contract — a schema change is one edit, not two.
 // Mirrors encoder.buildWeightsFromSafetensors.
 func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter) (*Weights, error) {
+	return buildWeightsFromSafetensorsTo(cfg, arch, s, st, quant, embedInt4, needCanonical, skipRow4, lora, nil, "")
+}
+
+// errDirNoStream is buildWeightsFromSafetensorsTo's answer, given a sink, for a family whose dedicated builder does not
+// stream yet; StreamTranscodeDir's caller then takes the resident transcode instead
+// (docs/tasks/task-prequant-dir-streaming-2026-10.md).
+type errDirNoStream struct{ family string }
+
+func (e errDirNoStream) Error() string {
+	return fmt.Sprintf("decoder: the %s safetensors loader does not stream layer by layer", e.family)
+}
+
+// IsDirNoStream reports whether err is StreamTranscodeDir declining a family whose loader does not stream.
+func IsDirNoStream(err error) bool {
+	var e errDirNoStream
+	return errors.As(err, &e)
+}
+
+// loadEmbedTable loads a [rows, cols] logit table (the token embedding or an untied head) at the embedding precision mode:
+// whole and then quantized for the resident build, a row at a time when streaming (a 256k x 4096 table is 4.2 GB as f32,
+// the largest single allocation of a transcode). Both give the same bytes (G-DS1, docs/tasks/task-prequant-dir-streaming-2026-10.md).
+func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode quantMode, needCanonical, stream bool) (linalg.WeightMat, error) {
+	if !stream {
+		m, err := loadMat(st, name, rows, cols)
+		if err != nil {
+			return m, err
+		}
+		return quantizeEmbedWM(m, mode, needCanonical), nil
+	}
+	t, err := st.Tensor(name)
+	if err != nil {
+		return linalg.WeightMat{}, err
+	}
+	if len(t.Shape) != 2 || t.Shape[0] != rows || t.Shape[1] != cols {
+		return linalg.WeightMat{}, fmt.Errorf("decoder: %q shape %v, want [%d %d]", name, t.Shape, rows, cols)
+	}
+	// Read in blocks of rows: one bf16->f32 conversion per block instead of per row (a 262k-row table is 262k calls
+	// otherwise). A block of the widest table here is about 10 MB.
+	const block = 1024
+	var buf []float32
+	base := -1
+	return streamQuantizedEmbed(rows, cols, mode, needCanonical, func(r int, dst []float32) error {
+		if base < 0 || r >= base+block {
+			base = r - r%block
+			var rerr error
+			if buf, rerr = t.SubF32(base*cols, min(block, rows-base)*cols); rerr != nil {
+				return rerr
+			}
+		}
+		copy(dst, buf[(r-base)*cols:(r-base+1)*cols])
+		return nil
+	})
+}
+
+// finishLayers runs a builder's per-layer loads. Resident (sink nil): in parallel, as every safetensors builder did. Streaming:
+// the bundle head (every global exists by now), then each layer loaded, written and freed in order, so the model is never
+// resident at once; the head records no quant label (B11), as StreamTranscodeGGUF's does.
+func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, sink *giwWriter, id string) (*Weights, error) {
+	n := len(w.Layers)
+	if sink == nil {
+		if err := parallelLayers(n, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
+			return nil, err
+		}
+		return w, nil
+	}
+	sink.arch = arch
+	if err := sink.writeHeadGlobals(w, id); err != nil {
+		return nil, err
+	}
+	// The logit tables and Gemma 4's per-layer token table are written; nothing after the head reads them.
+	w.Embed, w.LMHead, w.PerLayerTokenEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
+	for k := range n {
+		i := k
+		if streamDirSwapForTest && n > 1 && k < 2 {
+			i = 1 - k // G-DS1's planted defect: layers 0 and 1 written in each other's place
+		}
+		if err := loadLayer(i); err != nil {
+			return nil, err
+		}
+		sink.layer(&w.Layers[i])
+		if sink.err != nil {
+			return nil, sink.err
+		}
+		w.Layers[i] = LayerWeights{} // release before the next layer
+	}
+	return w, nil
+}
+
+// buildWeightsFromSafetensorsTo is buildWeightsFromSafetensors with an optional sink. With sink nil it is the resident build,
+// unchanged. With a sink (StreamTranscodeDir) the generic builder writes the bundle head once the globals exist, then
+// loads, writes and frees one layer at a time, and loads the embedding (and an untied head) a row at a time, so peak
+// memory is about the globals plus one layer rather than the whole model. Six dedicated builders stream their layers the same
+// way (their embedding still loads whole); gpt2, internlm2 and gpt-oss do not stream yet and return errDirNoStream.
+func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, sink *giwWriter, id string) (*Weights, error) {
+	if sink != nil {
+		switch {
+		case arch.Name == "gpt2", arch.Name == "internlm2", arch.gptoss != nil:
+			return nil, errDirNoStream{arch.Name}
+		}
+	}
 	if arch.Name == "gpt2" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
@@ -578,25 +678,25 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the granitemoehybrid (Mamba-2 + fused-MoE) layout")
 		}
-		return buildGraniteWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // per-layer mamba/attention + fused experts
+		return buildGraniteWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id) // per-layer mamba/attention + fused experts
 	}
 	if arch.nemotron != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the nemotron_h (single-op-block) layout")
 		}
-		return buildNemotronWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // per-layer mamba | attention | mlp
+		return buildNemotronWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id) // per-layer mamba | attention | mlp
 	}
 	if arch.Name == "phi3" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the phi3 (fused qkv/gate_up) layout")
 		}
-		return buildPhi3Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // split fused qkv_proj + gate_up_proj → generic forward
+		return buildPhi3Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id) // split fused qkv_proj + gate_up_proj → generic forward
 	}
 	if arch.Name == "glm_ocr" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the glm_ocr (fused gate_up) layout")
 		}
-		return buildGlmOcrWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // split fused gate_up_proj; the MTP layer is never requested
+		return buildGlmOcrWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id) // split fused gate_up_proj; the MTP layer is never requested
 	}
 	if arch.Name == "internlm2" {
 		return buildInternLM2Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // renamed tensors + GROUPED fused wqkv
@@ -605,13 +705,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the spark2_5 (fused qkv) layout")
 		}
-		return buildSpark25Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // split fused q_k_v_proj → generic forward
+		return buildSpark25Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id) // split fused q_k_v_proj → generic forward
 	}
 	if arch.llama4 != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the llama4_text (iRoPE + fused-expert) layout")
 		}
-		return buildLlama4Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // per-layer dense/MoE + transposed fused experts
+		return buildLlama4Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4, sink, id) // per-layer dense/MoE + transposed fused experts
 	}
 	if arch.gptoss != nil {
 		// gpt-oss safetensors: MXFP4 experts as paired U8 *_blocks/*_scales tensors with
@@ -818,10 +918,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// Input embedding + final norm. The embedding is the (tied or untied) LM
 	// head, so it is logit-critical — quantize it with the embedding policy
 	// (int8 even in int4 mode), not the projection mode.
-	if w.Embed, err = loadMat(st, mp(s.Embed), cfg.VocabSize, hd); err != nil {
+	embedTable := func(name string, rows int) (linalg.WeightMat, error) {
+		return loadEmbedTable(st, name, rows, hd, quant.embeddingWith(embedInt4), needCanonical, sink != nil)
+	}
+	if w.Embed, err = embedTable(mp(s.Embed), cfg.VocabSize); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32(mp(s.FinalNorm), hd); err != nil {
 		return nil, err
 	}
@@ -830,8 +932,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	// checkpoint that ties despite its family default still loads.
 	arch.TiedLMHead = true
 	if s.LMHead != "" {
-		if head, herr := loadMat(st, s.LMHead, cfg.VocabSize, hd); herr == nil {
-			head = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+		if head, herr := embedTable(s.LMHead, cfg.VocabSize); herr == nil {
 			w.LMHead = head
 			arch.TiedLMHead = false
 		}
@@ -1221,10 +1322,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			arch.gemma4.FFNPerLayer = ffnPerLayer
 		}
 	}
-	if err := parallelLayers(cfg.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // loadQwen35Attn loads one qwen3_5_moe layer's attention tensors as f32 (the
@@ -2402,7 +2500,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 // [E, hidden, inter] = down) are exactly the loadFusedExperts layout, so the routed
 // FFN reuses moeMLP unchanged once split; the ungated shared_mlp loads into
 // SharedExpert. Embeddings/experts/attention quantize; the Mamba-2 mixer stays f32.
-func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
 	g := arch.granite
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
@@ -2416,16 +2514,15 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+		w.LMHead = head
 		arch.TiedLMHead = false
 	}
 
@@ -2511,17 +2608,14 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		lw.SharedExpert.Down = q(linalg.WrapF32(append([]float32(nil), dn...), hidden, sInter))
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // buildNemotronWeights loads a Nemotron-H (nemotron_h) checkpoint: a single-op-per-
 // block stack where each layer (under a "mixer" prefix) is a Mamba-2 mixer (f32,
 // parity-first, reusing the Granite conventions), a NoPE GQA attention, or a
 // non-gated relu² MLP — keyed by arch.nemotron.blockKind. Plain RMSNorm per layer.
-func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
 	np := arch.nemotron
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
@@ -2538,18 +2632,17 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 	// transformers' own NemotronH names it backbone.embedding.weight, which is the only
 	// spelling the tiny fixture (built by instantiating the config) ever produced. Every
 	// other tensor name agrees, so this one word is the whole delta — try both.
-	if w.Embed, err = loadMat(st, "backbone.embedding.weight", vocab, hidden); err != nil {
-		if w.Embed, err = loadMat(st, "backbone.embeddings.weight", vocab, hidden); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "backbone.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+		if w.Embed, err = loadEmbedTable(st, "backbone.embeddings.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
 			return nil, err
 		}
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("backbone.norm_f.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+		w.LMHead = head
 		arch.TiedLMHead = false
 	}
 
@@ -2659,10 +2752,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 		}
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // buildPhi3Weights loads a Phi-3 / Phi-4 (phi3) checkpoint. Phi-3 is the llama skeleton
@@ -2672,7 +2762,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 // output rows (split at NumHeads*HeadDim, then +NumKVHeads*HeadDim), and mlp.gate_up_proj
 // is gate‖up (split in half). The fused tensors load to f32, slice by rows, and quantize
 // per the resident mode (the GPT-2 fused-QKV precedent).
-func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -2686,16 +2776,15 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+		w.LMHead = head
 		arch.TiedLMHead = false
 	}
 
@@ -2734,10 +2823,7 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		l.DownProj = q(l.DownProj)
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // buildGlmOcrWeights loads the GLM-OCR text decoder (model_type glm_ocr / glm_ocr_text; the vision
@@ -2752,7 +2838,7 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 // NumLayers, so it is skipped by construction; the vision tower (model.visual.*) is never requested
 // either. The head is untied on the real checkpoint but finalized from lm_head.weight presence, like
 // phi3, so a tied re-save would still load.
-func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	s := &glmOcrTensorSchema
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
@@ -2765,16 +2851,15 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadMat(st, s.Embed, vocab, hidden); err != nil {
+	if w.Embed, err = loadEmbedTable(st, s.Embed, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32(s.FinalNorm, hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadMat(st, s.LMHead, vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := loadEmbedTable(st, s.LMHead, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+		w.LMHead = head
 		arch.TiedLMHead = false
 	}
 
@@ -2823,10 +2908,7 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		l.DownProj = q(l.DownProj)
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // buildSpark25Weights loads Spark-X2.5 (model_type spark2_5): fused q_k_v_proj splits by
@@ -2840,7 +2922,7 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 // as Laguna's own GProj (see the generic loader's own comment on why: deliberately excluded from
 // quantization). No bias tensors: spark25Architecture rejects attention_bias=true before this
 // runs, so every released config's shape is the only one this function needs to handle.
-func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd, nH := arch.HeadDim, arch.NumHeads
 	qDim, kvDim := nH*hd, arch.NumKVHeads*hd
@@ -2852,16 +2934,15 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadMat(st, "model.embedding.weight", vocab, hidden); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+		w.LMHead = head
 		arch.TiedLMHead = false
 	}
 
@@ -2907,10 +2988,7 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		l.DownProj = q(l.DownProj)
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // buildLlama4Weights loads a Llama 4 text decoder (llama4_text). Attention is separate
@@ -2921,7 +2999,7 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 // FUSED and TRANSPOSED for a bmm — gate_up_proj is [nE, hidden, 2*inter] and down_proj is
 // [nE, inter, hidden] ([in, out] per expert) — so each expert is transposed to goinfer's
 // [out, in] WeightMat and the gate‖up halves split out.
-func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -2939,16 +3017,15 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+		w.LMHead = head
 		arch.TiedLMHead = false
 	}
 
@@ -3042,10 +3119,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
-		return nil, err
-	}
-	return w, nil
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
 
 // lagunaTensorSchema: Laguna (poolside). Read from the REAL Laguna-XS.2 checkpoint

@@ -1,0 +1,23 @@
+prequant: load /Users/francistownsend-merino/models/gemma-3-4b-it (int4): decoder: gemma-3-4b-it needs ~5.6 GB resident at quant int4 + 0.0 GB KV = 5.6 GB; this machine currently has 6.6 GB of memory available (budget 4.6 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  This is a safetensors checkpoint — -stream-weights only helps a .gguf source. If you believe this machine can actually hold it (this guard's 70% margin is deliberately conservative), set GOINFER_NO_FIT_GUARD=1 and re-run; cmd/prequant can then build a streamable .giw from it once, for every later run.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+        0.96 real         0.93 user         0.06 sys
+           467288064  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               29315  page reclaims
+                  13  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                 107  signals received
+                  18  voluntary context switches
+                2552  involuntary context switches
+          7670483774  instructions retired
+          2930927876  cycles elapsed
+           448414560  peak memory footprint

@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — building a `.giw` from a safetensors directory streams one layer at a time
+
+`prequant` (and the sidecar `goinfer-serve` and `goinfer-chat` build for a model directory) loaded the whole model into
+memory before writing the `.giw`. It now writes the header, then builds, writes and frees one layer at a time, and reads
+the embedding in blocks of rows.
+- **Memory:** on an M1 Pro, Command-R7B's sidecar peaks at 2.3 GB instead of the 8.3 GB that was refused without a fit-guard
+  bypass, and GLM-OCR at 0.41 GB instead of 1.67 GB. The bundle is identical apart from the recorded quant label, which a
+  streamed bundle leaves for the reader to infer, as streamed GGUF bundles already do.
+- **Time:** the build is slower where the old one loaded layers in parallel (GLM-OCR 3.2 to 7.5 s).
+- **Not covered:** a LoRA merge and the gpt2 layout still build the whole model.
+
 ### Changed — GLM-OCR, Command-R, Command-R7B and Aya run on the GPU on Apple silicon
 
 These families rotate their positions GPT-J pairwise, and Metal's rope kernels were NeoX half-split only, so Metal ran them
