@@ -389,10 +389,10 @@ func TestMC3MMA8(t *testing.T) {
 	e.DispatchTG(pipe("mc3_te_layout"), 32, 32, 0, lay)
 	e.End()
 	lv := lay.Floats()[:64]
-	for l := 0; l < 32; l++ {
+	for l := range 32 {
 		q := l / 4
 		fm, fn := (q&4)+((l/2)%4), (q&2)*2+(l%2)*2
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if got := lv[fm*8+fn+i]; got != float32(l*2+i) {
 				t.Fatalf("thread_elements mapping: lane %d element %d expected at (%d,%d), found %v there", l, i, fm, fn+i, got)
 			}
@@ -409,9 +409,9 @@ func TestMC3MMA8(t *testing.T) {
 	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
-		for r := 0; r < reps+1; r++ {
+		for r := range reps + 1 {
 			e := cq.Begin()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				enc(e, i)
 			}
 			e.End()
@@ -442,7 +442,7 @@ func TestMC3MMA8(t *testing.T) {
 			av[i] = int8(rnd()%255) - 127
 		}
 		ah := make([]uint16, s.K*8) // A^T [K][8]
-		for m := 0; m < M; m++ {
+		for m := range M {
 			for k := 0; k < s.K; k++ {
 				ah[k*8+m] = f32ToF16(float32(av[m*s.K+k]))
 			}
@@ -455,7 +455,7 @@ func TestMC3MMA8(t *testing.T) {
 		asc := NewBufferFloats(d, ascs)
 		uK, uN, uM := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, M)
 		var ws, ss []Buffer
-		for c := 0; c < copies; c++ {
+		for range copies {
 			nw := s.N * s.K / 8
 			wb := d.NewBufferLen(nw)
 			v := wb.U32s()[:nw]
@@ -587,9 +587,9 @@ func TestMC3MMA8Down(t *testing.T) {
 	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
-		for r := 0; r < reps+1; r++ {
+		for r := range reps + 1 {
 			e := cq.Begin()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				enc(e, i)
 			}
 			e.End()
@@ -615,7 +615,7 @@ func TestMC3MMA8Down(t *testing.T) {
 			av[i] = int8(rnd()%255) - 127
 		}
 		ah := make([]uint16, s.K*8)
-		for m := 0; m < M; m++ {
+		for m := range M {
 			for k := 0; k < s.K; k++ {
 				ah[k*8+m] = f32ToF16(float32(av[m*s.K+k]))
 			}
@@ -628,7 +628,7 @@ func TestMC3MMA8Down(t *testing.T) {
 		asc := NewBufferFloats(d, ascs)
 		uK, uN, uM := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, M)
 		var ws, ss []Buffer
-		for c := 0; c < copies; c++ {
+		for range copies {
 			nw := s.N * s.K / 8
 			wb := d.NewBufferLen(nw)
 			v := wb.U32s()[:nw]
@@ -718,9 +718,9 @@ func TestMC3MMA8LMHead(t *testing.T) {
 	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
-		for r := 0; r < reps+1; r++ {
+		for r := range reps + 1 {
 			e := cq.Begin()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				enc(e, i)
 			}
 			e.End()
@@ -744,10 +744,10 @@ func TestMC3MMA8LMHead(t *testing.T) {
 			av[i] = int8(rnd()%255) - 127
 		}
 		ah := make([]uint16, s.H*8) // permuted A^T, see mc3_lm_mma
-		for m := 0; m < M; m++ {
+		for m := range M {
 			for sl := 0; sl < s.H/32; sl++ {
-				for kb := 0; kb < 4; kb++ {
-					for kk := 0; kk < 8; kk++ {
+				for kb := range 4 {
+					for kk := range 8 {
 						k := sl*32 + 8*(kk>>1) + 2*kb + (kk & 1)
 						ah[(sl*32+kb*8+kk)*8+m] = f32ToF16(float32(av[m*s.H+k]))
 					}

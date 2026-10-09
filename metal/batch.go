@@ -522,7 +522,7 @@ func batchSimdSumTreeOK(d *Device, p Pipeline) bool {
 		return false
 	}
 	o := ob.Floats()[:W*2]
-	for w := 0; w < W; w++ {
+	for w := range W {
 		if math.Float32bits(o[w*2]) != math.Float32bits(o[w*2+1]) {
 			return false
 		}

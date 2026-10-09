@@ -89,7 +89,7 @@ func TestAttentionFA_positionSweep(t *testing.T) {
 		if _, err := r.ForwardBatch(embs, 0); err != nil {
 			t.Fatalf("ForwardBatch: %v", err)
 		}
-		for step := 0; step < nSteps; step++ {
+		for step := range nSteps {
 			pos := prefillLen + step
 			emb := make([]float32, H)
 			for j := range emb {
@@ -110,13 +110,12 @@ func TestAttentionFA_positionSweep(t *testing.T) {
 	// load ("this machine currently has ~4.0 GB of memory available" against the ~4.9 GB the
 	// checkpoint needs), even though a single depth alone loads fine.
 	for _, prefillLen := range []int{1601, 1602, 1603} {
-		prefillLen := prefillLen
 		t.Run(strconv.Itoa(prefillLen), func(t *testing.T) {
 			_, shippedLogits := runOne(prefillLen, false)
 			_, faLogits := runOne(prefillLen, true)
 
 			firstBad := -1
-			for step := 0; step < nSteps; step++ {
+			for step := range nSteps {
 				pos := prefillLen + step
 				lShipped, lFA := shippedLogits[step], faLogits[step]
 				var dot, na, nb, maxabs float64
@@ -223,7 +222,7 @@ func TestAttentionFA_ulpPerturbationControl(t *testing.T) {
 		if _, err := r.ForwardBatch(embs, 0); err != nil {
 			t.Fatalf("ForwardBatch: %v", err)
 		}
-		for step := 0; step < nSteps; step++ {
+		for step := range nSteps {
 			pos := prefillLen + step
 			emb := make([]float32, H)
 			for j := range emb {
@@ -241,7 +240,7 @@ func TestAttentionFA_ulpPerturbationControl(t *testing.T) {
 	_, perturbed := runOne(true)
 
 	firstBad := -1
-	for step := 0; step < nSteps; step++ {
+	for step := range nSteps {
 		pos := prefillLen + step
 		a, bb := unperturbed[step], perturbed[step]
 		var dot, na, nb, maxabs float64

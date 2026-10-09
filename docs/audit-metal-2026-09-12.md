@@ -246,7 +246,7 @@ re-baked by the code it checks (G-04).
   declined via the fit-guard (same pre-existing memory gap as M-03's run).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
-- **Where:** `metal/prefill.go:1591-1599` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
+- **Where:** `metal/prefill.go:1591-1599` (`for m := range M { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:989-954`; `metal/model.go:1253-1141` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:796-585` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").

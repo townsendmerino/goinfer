@@ -94,8 +94,8 @@ func blkInputs(seed int64, G, nKV, nKeys int, peaked bool) (q []float32, kh, vh 
 	}
 	if peaked {
 		for _, s := range []int{0, nKeys / 3, nKeys - 1} {
-			for kvh := 0; kvh < nKV; kvh++ {
-				for dd := 0; dd < hd; dd++ { // align key s with the group's first query head: a large score
+			for kvh := range nKV {
+				for dd := range hd { // align key s with the group's first query head: a large score
 					kh[(s*nKV+kvh)*hd+dd] = f32ToF16(q[(kvh*G)*hd+dd] * 0.35)
 				}
 			}
@@ -111,12 +111,12 @@ func blkRef(G, nKV, nKeys int, q []float32, kh, vh []uint16) []float64 {
 	scale := float64(float32(1 / math.Sqrt(hd)))
 	ref := make([]float64, nH*hd)
 	sc := make([]float64, nKeys)
-	for h := 0; h < nH; h++ {
+	for h := range nH {
 		kvh := h / G
 		mx := math.Inf(-1)
-		for s := 0; s < nKeys; s++ {
+		for s := range nKeys {
 			var a float64
-			for dd := 0; dd < hd; dd++ {
+			for dd := range hd {
 				a += float64(q[h*hd+dd]) * float64(f16ToF32(kh[(s*nKV+kvh)*hd+dd]))
 			}
 			sc[s] = a * scale
@@ -127,9 +127,9 @@ func blkRef(G, nKV, nKeys int, q []float32, kh, vh []uint16) []float64 {
 			sc[s] = math.Exp(sc[s] - mx)
 			sum += sc[s]
 		}
-		for dd := 0; dd < hd; dd++ {
+		for dd := range hd {
 			var a float64
-			for s := 0; s < nKeys; s++ {
+			for s := range nKeys {
 				a += sc[s] * float64(f16ToF32(vh[(s*nKV+kvh)*hd+dd]))
 			}
 			ref[h*hd+dd] = a / sum
@@ -172,7 +172,7 @@ func TestAttnFABlkMatchesFloat64(t *testing.T) {
 				ref := blkRef(gc.G, gc.nKV, nKeys, q, kh, vh)
 				for h := 0; h < gc.G*gc.nKV; h++ {
 					var num, den float64
-					for dd := 0; dd < 128; dd++ {
+					for dd := range 128 {
 						x := float64(got[h*128+dd]) - ref[h*128+dd]
 						num, den = num+x*x, den+ref[h*128+dd]*ref[h*128+dd]
 					}

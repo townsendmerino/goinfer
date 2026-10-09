@@ -163,7 +163,7 @@ func g4BatchEntries(slots [][]uint32, topK int) []uint32 {
 	var order []uint32
 	pairs := map[uint32][]uint32{}
 	for i, si := range slots {
-		for j := 0; j < topK; j++ {
+		for j := range topK {
 			s := si[j]
 			if _, ok := pairs[s]; !ok {
 				order = append(order, s)
@@ -199,7 +199,7 @@ func (r *resident) encodeG4Phase2Batch(e *Encoder, pool *expertPool, b *g4Batch,
 	ent := g4BatchEntries(slots, k)
 	nEnt := len(ent) / (2 + moeBatchB)
 	r.g4BatchGroups++
-	for x := 0; x < nEnt; x++ {
+	for x := range nEnt {
 		r.g4BatchMaxCnt = max(r.g4BatchMaxCnt, int(ent[x*(2+moeBatchB)+1]))
 	}
 	r.g4BatchEnsure(b, n, nEnt, made)

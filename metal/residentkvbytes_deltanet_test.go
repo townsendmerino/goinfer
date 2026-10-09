@@ -28,7 +28,7 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var wantAttnLayers, wantLinearLayers int
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		if m.Qwen35LinearLayer(l) {
 			wantLinearLayers++
 		} else {
@@ -54,7 +54,7 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	// re-implementation of the function under test.
 	const bytesPerElem = 2
 	var want int64
-	for l := 0; l < nLayers; l++ {
+	for l := range nLayers {
 		if m.Qwen35LinearLayer(l) {
 			continue
 		}

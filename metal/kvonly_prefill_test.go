@@ -58,7 +58,7 @@ func TestForwardNoLogits_byteIdenticalKV(t *testing.T) {
 
 	// KV-only: ForwardNoLogits for every position but the last, then Forward for the last.
 	kvOnly := load()
-	for i := 0; i < n-1; i++ {
+	for i := range n - 1 {
 		if err := kvOnly.ForwardNoLogits(embs[i], i); err != nil {
 			t.Fatalf("ForwardNoLogits(%d): %v", i, err)
 		}
@@ -130,7 +130,7 @@ func TestForwardNoLogits_pagedMoEFallback(t *testing.T) {
 	}
 
 	kvOnly := load()
-	for i := 0; i < n-1; i++ {
+	for i := range n - 1 {
 		if err := kvOnly.ForwardNoLogits(embs[i], i); err != nil {
 			t.Fatalf("ForwardNoLogits(%d): %v", i, err)
 		}
@@ -275,7 +275,7 @@ func BenchmarkForwardNoLogits_SyncVsPipe(b *testing.B) {
 		r := load()
 		b.ResetTimer()
 		for it := 0; it < b.N; it++ {
-			for i := 0; i < nTokens; i++ {
+			for i := range nTokens {
 				if _, err := r.forwardHiddenNoHead(embs[i], i, false); err != nil {
 					b.Fatalf("sync pos %d: %v", i, err)
 				}
@@ -287,7 +287,7 @@ func BenchmarkForwardNoLogits_SyncVsPipe(b *testing.B) {
 		r := load()
 		b.ResetTimer()
 		for it := 0; it < b.N; it++ {
-			for i := 0; i < nTokens; i++ {
+			for i := range nTokens {
 				r.ForwardEmbNoLogitsPipe(embs[i], i)
 			}
 		}

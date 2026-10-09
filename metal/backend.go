@@ -1269,9 +1269,9 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 		vc := a.r.vc[layer].Int8s()
 		ks := a.r.ks[layer].Floats()
 		vs := a.r.vs[layer].Floats()
-		for p := 0; p < n; p++ {
+		for p := range n {
 			pos := base + p
-			for h := 0; h < nKV; h++ {
+			for h := range nKV {
 				kHead := keys[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
 				vHead := vals[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
 				var amaxK, amaxV float32
@@ -1297,7 +1297,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 				vs[pos*nKV+h] = scV
 				invK := 1.0 / scK
 				invV := 1.0 / scV
-				for d := 0; d < hd; d++ {
+				for d := range hd {
 					kc[pos*kvDim+h*hd+d] = int8(math.Round(float64(kHead[d] * invK)))
 					vc[pos*kvDim+h*hd+d] = int8(math.Round(float64(vHead[d] * invV)))
 				}

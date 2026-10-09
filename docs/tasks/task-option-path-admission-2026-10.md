@@ -6,8 +6,8 @@
 > put one scoping choice to the owner: options are 22 of the 71, families 20, limits 19 and state kinds 10. **Decided
 > 2026-10-08: kinds of state join options as the grid's columns; limits stay out (§4.0).** Step 2 built the same day
 > as two registries (§4.1 state × lifecycle, behaviour-changing where a cell was unsafe; §4.2 options × paths, a
-> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 27 option
-> cells admitted untested (57 at build; 30 moved out the same day), all on the GPU-resident paths.
+> ratchet with no behaviour change, owner's call): [`option-state-grid.md`](../option-state-grid.md). Open: 9 option
+> cells admitted untested (57 at build; 48 moved out the same day), each held open by a finding in §4.3.
 
 ## 1. The class, and why it keeps coming back
 
@@ -194,10 +194,10 @@ the bullets below on one point: cells do not "start declined" — they start hon
   `TestKVI8_batchedPrefill` set the internal `kvI8` themselves; the Metal int8-KV parity tests drive kernels;
   `TestMC5_prefillChunkInvariance` chunks `PrefillLast` itself and never sets `ResidentPrefillChunk`. Each of those
   shows the path works, not that the option reaches it.
-- **Where it stands: 27 cells admitted untested, 31 tested, 6 declined** (KVPrecision at Metal's `PrefillPath`, Quant
+- **Where it stands: 9 cells admitted untested, 46 tested, 8 declined** (KVPrecision at Metal's `PrefillPath`, Quant
   int4 at `SpecDecodeConflict`, KVQuant at `cpuBatchCacheEligible`, the three MoE paging options at
-  `cpuBatchModelEligible`). 57 at build; 30 moved out on 2026-10-08 by table-driven tests that run in CI. Every
-  untested cell left is on a GPU-resident path. First round, ten cells:
+  `cpuBatchModelEligible`, EmbedInt4 on both resident paths at Metal's `int8Buf`). 57 at build; 48 moved out on
+  2026-10-08. The CPU columns' tests run in CI; the GPU columns' (§4.3) run on a Mac only. First round, ten cells:
   - `TestOptionPath_cpuBatchedPrefill` (CPU batched prefill × Quant, KVQuant, ActQuantGroup, ExactPrefill, EmbedInt4):
     a Session's batched prefill must leave the same K/V, bit for bit, and pick the same first token as the per-token
     prefill on the same model.
@@ -240,7 +240,7 @@ the bullets below on one point: cells do not "start declined" — they start hon
     expert's slot mapping; the mmap pager never touching (budget unenforced); Load ignoring WeightCacheBytes; the
     batcher admitting MoE. StreamWeights on a dense .giw streams layers instead (layerPager), which llama-tiny is
     too small to engage; that branch stays with TestLayerPaging_bitExact, which needs a downloaded GGUF.
-  - Left: the 27 GPU-resident cells, which need Metal or CUDA hardware.
+  - Fourth round: the GPU-resident columns on Metal (18 cells), below in §4.3.
 - **What fails closed:** a new `Options` field until it is classified on every path
   (`TestOptionGrid_everyOptionClassified`); a cell naming a test or decline that does not exist in any module
   (`TestOptionGrid_cellsCarryEvidence`); a rise in the untested count, or a fall not booked into the ceiling
@@ -267,6 +267,61 @@ the bullets below on one point: cells do not "start declined" — they start hon
   declined and move to supported only with a test.
 - **Pattern to copy:** A-C01's fix (`!r.kvI8` in `prefillOK`, a named decline in `PrefillPath`/`PrefillLast`, and
   `TestPrefill_declinesInt8KV` red without it) is one cell of this matrix done by hand.
+
+### 4.3 The GPU-resident columns on Metal (2026-10-08), and three findings
+
+`metal/optiongrid_metal_test.go` (darwin, `goinfer_testhooks`) drives each option through `decoder.Options` on the
+committed llama-tiny at int8int8 (Metal runs int8 or int4 weights; an f32 load stays on the CPU), checks the option
+took hold and the model went Metal-resident, and uses the generation's reported log-probabilities (chosen token and
+top five) as a numeric fingerprint through the public entry points.
+
+- `TestOptionPathMetal_neutralOptions`: ResidentContext and ResidentKVSlots size the KV allocation and may not change
+  a number; on resident decode, resident prefill, speculative verify and session reuse they match the baseline
+  exactly (8 cells).
+- `TestOptionPathMetal_quant`: Quant on resident decode (teacher-forced logits, every position within cosine 0.999 of
+  the CPU at the same Quant) and resident prefill (the CPU's first token, log-probabilities within 0.02) (2 cells).
+- `TestOptionPathMetal_kvPrecision`: KVPrecision f16 equals Metal's default exactly (Metal keeps resident KV at f16
+  whatever is asked; `ResidentKVPrecision` says so, the Options doc's "f32 default" does not hold on Metal); i8 decode
+  within cosine 0.999 of f16; speculative verify equal to plain decoding; session reuse within 0.02 of a cold run.
+  Resident prefix reuse on Metal is not bit-identical to a cold prefill even at f16 (about 0.004 here), and
+  `resident_reuse.go` does not claim it is (3 cells).
+- `TestOptionPathMetal_exactPrefill`: the prefill equals a knob-forced sequential prefill exactly and differs from
+  the batched f16 one (1 cell).
+- `TestOptionPathMetal_prefillChunk`: under MC3 with another generation decoding, a 96-token prompt prefilled in
+  32-token chunks matches the same prompt prefilled whole; the batcher's prefill-pass count shows the chunks ran
+  (1 cell). Speculative verify × ResidentPrefillChunk is n/a: chunking is `mc3Prefill`'s, and the speculative paths
+  claim the resident exclusively and prefill whole.
+- `TestOptionPathMetal_embedInt4Declines`: int4 with EmbedInt4 is declined at Metal's `int8Buf` and its output is the
+  CPU's exactly (2 declined cells).
+- Planted defects, each red: ResidentContext leaking into KV precision; the resident speculative rollback keeping a
+  rejected position; Load dropping KVPrecision, ExactPrefill or EmbedInt4; a chunk boundary skipping a position; the
+  resident embedding scaled 5% (decode); the resident prefill's positions shifted by one (prefill). Two first attempts
+  were harmless and replaced: re-prefilling a chunk's last position rewrites identical values, and a uniform
+  embedding scale is mostly removed by the RMS norm before the prefill's first token.
+- **Metal only.** The grid has no backend axis, and finding 1 shows a cell can hold on CUDA and not on Metal. CUDA's
+  resident columns are proven where CUDA tests exist (ActQuantGroup) and not otherwise.
+
+**Findings, behaviour unchanged pending the owner:**
+
+1. **ActQuantGroup is silently ignored by Metal.** Nothing in `metal/` reads it, and for a family without the
+   activation hazard `residentAdmission` admits the load: `Quant: "int8int8", ActQuantGroup: 32` on llama-tiny runs
+   Metal-resident with log-probabilities identical, bit for bit, to the same load without the option. The Options
+   doc says resident backends other than CUDA decline to the CPU when it is set. Reachable from a library caller;
+   the CLIs set the group only for hazard families, which Metal does decline (to the CPU, not resident, although
+   `internal/modelload`'s `activationSafeQuant` comment says Metal runs them resident at per-32). Fix candidates: a
+   named decline in `residentAdmission` when the group is set on Metal or WebGPU, or the doc and comment corrected.
+   ActQuantGroup × resident prefill stays untested.
+2. **MoECacheExperts on Metal is not bit-identical to fully resident.** The doc's claim cites CUDA tests. On
+   mixtral-tiny at int4 with fewer slots than experts (2 or 3 of 8), decode-only log-probabilities differ from the
+   fully resident model by about 0.004; with slots for all experts they are identical. With int8 experts Metal's
+   build panics ("experts are not int4-direct") and the recover turns it into a decline, rather than a named refusal.
+   The eight MoECacheExperts and MoECacheSlots resident cells stay untested.
+3. **ResidentPrefillChunk below Metal's batched-prefill floor breaks chunk invariance.** With two KV slots the floor
+   is 32 tokens; at chunk 8 or 16 a prompt prefilled in chunks while another generation decodes differs from the same
+   prompt prefilled whole by 0.003-0.004 in log-probability, so the reply depends on whether someone else was
+   decoding, which `mc3_batch.go`'s comment rules out. At chunk 32 and above the results are identical. serve's
+   default (512) is unaffected; a library caller choosing a small chunk is not. A fix candidate: raise the chunk to
+   the floor, or decline below it.
 
 ## 5. Not in scope
 

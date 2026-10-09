@@ -28,7 +28,7 @@ func TestMetalHardwareInfo_factsAndPrivacy(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	private := map[string]string{"hostname": strings.TrimSuffix(host, ".local"), "user": os.Getenv("USER"), "home directory": home}
 	if out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output(); err == nil {
-		for _, l := range strings.Split(string(out), "\n") {
+		for l := range strings.SplitSeq(string(out), "\n") {
 			if strings.Contains(l, `"IOPlatformSerialNumber"`) {
 				if i := strings.LastIndex(l, `"`); i > 0 {
 					if j := strings.LastIndex(l[:i], `"`); j >= 0 {

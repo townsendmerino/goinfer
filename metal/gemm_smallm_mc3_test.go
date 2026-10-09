@@ -168,9 +168,9 @@ func TestMC3SmallMProbe(t *testing.T) {
 	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
-		for r := 0; r < reps+1; r++ {
+		for r := range reps + 1 {
 			e := cq.Begin()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				enc(e, i)
 			}
 			e.End()
@@ -207,7 +207,7 @@ func TestMC3SmallMProbe(t *testing.T) {
 		asc := NewBufferFloats(d, ascs)
 		uK, uN := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N))
 		var ws, ss []Buffer
-		for c := 0; c < copies; c++ {
+		for range copies {
 			nw := s.N * s.K / 8
 			wb := d.NewBufferLen(nw)
 			v := wb.U32s()[:nw]
@@ -347,9 +347,9 @@ func TestMC3S0PrefillGEMMSmallM(t *testing.T) {
 	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
-		for r := 0; r < reps+1; r++ {
+		for r := range reps + 1 {
 			e := cq.Begin()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				enc(e, i)
 			}
 			e.End()
@@ -388,7 +388,7 @@ func TestMC3S0PrefillGEMMSmallM(t *testing.T) {
 		bias := d.NewBufferLen(s.N)
 		uK, uN, uMode := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, 0)
 		var ws, ss []Buffer
-		for c := 0; c < copies; c++ {
+		for range copies {
 			nw := s.N * s.K / 8
 			wb := d.NewBufferLen(nw)
 			v := wb.U32s()[:nw]

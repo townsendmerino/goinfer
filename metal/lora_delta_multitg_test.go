@@ -66,16 +66,16 @@ func TestLoRADelta_multiThreadgroupMatchesReference(t *testing.T) {
 		x[k] = float32(aq[k]) * asc
 	}
 	tRef := make([]float32, R)
-	for r := 0; r < R; r++ {
+	for r := range R {
 		var s float32
-		for k := 0; k < K; k++ {
+		for k := range K {
 			s += f16ToF32(aHalf[r*K+k]) * x[k]
 		}
 		tRef[r] = s
 	}
-	for o := 0; o < Out; o++ {
+	for o := range Out {
 		var acc float32
-		for r := 0; r < R; r++ {
+		for r := range R {
 			acc += f16ToF32(bHalf[o*R+r]) * tRef[r]
 		}
 		want[o] += scale * acc

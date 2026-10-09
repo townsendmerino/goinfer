@@ -24,7 +24,7 @@ func TestAuditDB01_prefillTiming(t *testing.T) {
 	Ks := []int{128, 512, 2048}
 	if v := os.Getenv("GOINFER_DB01_KS"); v != "" {
 		Ks = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && n > 0 {
 				Ks = append(Ks, n)
 			}

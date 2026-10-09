@@ -333,11 +333,11 @@ func vmStat(t *testing.T) map[string]int64 {
 	sc := bufio.NewScanner(strings.NewReader(string(out)))
 	for sc.Scan() {
 		line := sc.Text()
-		i := strings.Index(line, ":")
-		if i < 0 {
+		_, after, ok := strings.Cut(line, ":")
+		if !ok {
 			continue
 		}
-		v, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(line[i+1:]), "."), 10, 64)
+		v, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(after), "."), 10, 64)
 		if err != nil {
 			continue
 		}
@@ -392,11 +392,11 @@ func reportSamples(t *testing.T, path string) {
 		if cur == nil {
 			continue
 		}
-		i := strings.Index(line, ":")
-		if i < 0 {
+		_, after, ok := strings.Cut(line, ":")
+		if !ok {
 			continue
 		}
-		v, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(line[i+1:]), "."), 10, 64)
+		v, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(after), "."), 10, 64)
 		if err != nil {
 			continue
 		}

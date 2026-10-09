@@ -70,7 +70,7 @@ func TestGemmW8Tile_matchesReference(t *testing.T) {
 				resid[i] = f32ToF16(float32(int(rnd()%2001)-1000) * 1e-2)
 			}
 			a, uM := NewBufferU16s(d, av), NewBufferU32(d, uint32(rows))
-			for mode := uint32(0); mode < 3; mode++ {
+			for mode := range uint32(3) {
 				uMode := NewBufferU32(d, mode)
 				var first []uint16
 				for ti, tl := range tiles {

@@ -110,9 +110,9 @@ func TestMetalGEMVS0(t *testing.T) {
 	// timeIt runs `per` dispatches per command buffer via enc, reps times, and returns the median ms per dispatch.
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
-		for r := 0; r < reps+1; r++ {
+		for r := range reps + 1 {
 			e := cq.Begin()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				enc(e, i)
 			}
 			e.End()

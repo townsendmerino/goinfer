@@ -72,7 +72,7 @@ func TestPrefillLast_startPosGreaterThanZero(t *testing.T) {
 	// Fast arm: build the SAME [0,from) prefix via Forward (shared with the reference by
 	// construction), then continue via PrefillLast(embs[from:], from) — startPos > 0.
 	fast := load()
-	for i := 0; i < from; i++ {
+	for i := range from {
 		if _, err := fast.Forward(embs[i], i); err != nil {
 			t.Fatalf("fast prefix Forward(%d): %v", i, err)
 		}
