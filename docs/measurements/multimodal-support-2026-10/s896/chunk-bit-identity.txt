@@ -1,0 +1,9 @@
+# sha256 (first 8 hex) of every dumped logits file: G-S10j round 3, the default chunk (512) and the chunk raised to 2048 (803, 991 and 1034 rows then run as ONE pass instead of two)
+table.png                        on  r3 3295dd4c  c512 3295dd4c  c2048 3295dd4c
+table.png                        off r3 424a40b4  c512 424a40b4  c2048 424a40b4
+gemma3_preprocess_image.png      on  r3 5b2c7d92  c512 5b2c7d92  c2048 5b2c7d92
+gemma3_preprocess_image.png      off r3 64ff0f0f  c512 64ff0f0f  c2048 64ff0f0f
+formula.png                      on  r3 77591cee  c512 77591cee  c2048 77591cee
+formula.png                      off r3 ff45d77c  c512 ff45d77c  c2048 ff45d77c
+qwen25vl_preprocess_image.png    on  r3 fa09af3b  c512 fa09af3b  c2048 fa09af3b
+qwen25vl_preprocess_image.png    off r3 17b4a1f8  c512 17b4a1f8  c2048 17b4a1f8

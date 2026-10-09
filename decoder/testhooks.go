@@ -482,3 +482,18 @@ func SetGemma4VLRowsDefectForTest(d int) { gemma4VLRowsDefectForTest = d }
 func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, imgPos, imgLen int) ([][]float32, error) {
 	return m.gemma4EModelImageRows(ids, imageEmbeds, imgPos, imgLen)
 }
+
+// SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual add and DeepStack add) on c for the
+// next CPU prefill: CapturedForTest then holds one [rows*hidden] float32 copy per requested layer, the residual AFTER that layer, as HF's hidden_states[l+1] is. The
+// 896-pixel investigation's per-layer differencing uses it from the cuda package. nil disarms.
+func (c *KVCache) SetCaptureLayersForTest(layers []int) {
+	if layers == nil {
+		c.captureLayers, c.captured = nil, nil
+		return
+	}
+	c.captureLayers = append([]int(nil), layers...)
+	c.captured = make([][]float32, len(layers))
+}
+
+// CapturedForTest returns the rows SetCaptureLayersForTest armed the cache to record, one slice per requested layer.
+func (c *KVCache) CapturedForTest() [][]float32 { return c.captured }

@@ -1,0 +1,10 @@
+per image, step 0: cos(arm,HF); delta = cos(on) - cos(off). base = the baseline CPU arm, var = the variant, on = the resident prefill (unchanged)
+image             cos base  cos var  A/A var-base  cos on |  delta on-base  delta on-var | 9-step mean delta:  on-base   on-var | KL base  var   on
+896² (803 rows)     0.8836   0.8253       -0.0583  0.8282 |        -0.0554       +0.0029 |                    -0.0200  +0.0408 | 0.341 0.190 0.607
+4x6 (89)            0.9429   0.9429       +0.0000  0.9423 |        -0.0005       -0.0005 |                    +0.0022  +0.0022 | 0.177 0.177 0.068
+formula (1034)      0.9652   0.9503       -0.0149  0.9567 |        -0.0085       +0.0064 |                    -0.0048  -0.0002 | 0.149 0.356 0.317
+table (991)         0.9586   0.9531       -0.0055  0.9482 |        -0.0104       -0.0048 |                    -0.0129  +0.0070 | 0.321 0.712 0.749
+
+A/A (var - base) over all 36 (image, step) pairs: mean -0.0240, sd 0.0506, |max| 0.1995
+registered rule's mean delta (FAIL below -0.005, PASS from -0.002): on-base -0.0089, on-var +0.0124; swing from the CPU attention variant alone +0.0213
+registered step-0 deltas on-base [-0.0554, -0.0005, -0.0085, -0.0104], on-var [0.0029, -0.0005, 0.0064, -0.0048]
