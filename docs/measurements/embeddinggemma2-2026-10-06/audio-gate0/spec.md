@@ -386,7 +386,7 @@ e = embedding_projection(RMSNorm_noscale(h))
   (`MEG2:576-579`).
 - `embedding_projection` is a Linear `output_proj_dims` → `text_config.hidden_size` with no bias. That is 1536→**512**
   for EmbeddingGemma 2. For Gemma 4 E2B it is 1536→its text hidden size (INFERRED: 1536 for E2B, per
-  `docs/multimodal.md:326`).
+  `docs/multimodal.md:349`).
 - Call path: `get_audio_features` = tower, then `embed_audio(last_hidden_state)` (`MEG2:859-880`, `MG4:2447-2468`).
 
 ---
