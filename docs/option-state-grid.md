@@ -7,7 +7,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 ## Load options × execution paths
 
 **tested** names a test that drives the option through the path; **declined** names the function where the path refuses it;
-**untested** runs today with no test that drives it (27 cells; `TestOptionGrid_ratchet` lets that number only fall);
+**untested** runs today with no test that drives it (9 cells; `TestOptionGrid_ratchet` lets that number only fall);
 **n/a**: the option does not reach the path (reasons below the table).
 
 | option | CPU decode | CPU batched prefill | CPU batched decode | GPU resident decode | GPU resident prefill | speculative verify | session reuse and snapshot |
@@ -15,18 +15,18 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `ActQuantGroup` | tested: `TestActQuantGroup_perModel` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestActGroup_phi3ResidentMatchesCPU` | untested | tested: `TestOptionPath_specVerify` | n/a |
 | `Backend` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
-| `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | untested | untested | tested: `TestOptionPath_specVerify` | n/a |
-| `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | untested | tested: `TestOptionPath_specVerify` | n/a |
-| `KVPrecision` | n/a | n/a | n/a | untested | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | untested | untested |
+| `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8Buf` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
+| `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
+| `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision` | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | tested: `TestOptionPathMetal_kvPrecision` | tested: `TestOptionPathMetal_kvPrecision` |
 | `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `MoECacheSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
 | `MoEPager` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
-| `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | untested | untested | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
-| `ResidentContext` | n/a | n/a | n/a | untested | untested | untested | untested |
-| `ResidentKVSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
-| `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | untested | untested | n/a |
+| `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestOptionPathMetal_quant` | tested: `TestOptionPathMetal_quant` | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
+| `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
+| `ResidentKVSlots` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
+| `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | tested: `TestOptionPathMetal_prefillChunk` | n/a | n/a |
 | `StreamWeights` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `WeightCacheBytes` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 
@@ -51,6 +51,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 - `ResidentKVSlots`: asks a GPU-resident backend for independent KV caches
 - `ResidentPrefillChunk`: chunks a resident's batched prefill under MC3
 - `ResidentPrefillChunk`: chunks prefill; decode is one token
+- `ResidentPrefillChunk`: chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative paths claim the resident exclusively (claimExclusive) and prefill whole
 - `ResidentPrefillChunk`: schedules a prefill; the session's cache is the same either way (chunk-invariant)
 - `StreamWeights`: CPU expert paging of an mmap-backed .giw ("the CPU's expert paging is StreamWeights")
 - `StreamWeights`: pages weights, not the session's cache

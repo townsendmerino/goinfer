@@ -117,6 +117,8 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 		pathSessionLifecycle: ogTestedBy("TestOptionPath_sessionSnapshot"),
 		pathSpecVerify:       ogDeclinedAt("SpecDecodeConflict", "TestSpecDecodeConflict_refusesStagedWebGPUInt4"),
+		pathResidentDecode:   ogTestedBy("TestOptionPathMetal_quant"),
+		pathResidentPrefill:  ogTestedBy("TestOptionPathMetal_quant"),
 	}, ogUntestedCell()),
 	"EmbedInt4": ogFill(map[ogPath]ogCell{
 		// TestOptionPath_cpuBatchedPrefill's sequential reference is this path (runLayers per token); a defect
@@ -126,9 +128,16 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("a weight format; the session's cache does not depend on it"),
+		// Metal's resident needs an int8 embedding table; an int4 one is declined at build and runs on the CPU.
+		pathResidentDecode:  ogDeclinedAt("int8Buf", "TestOptionPathMetal_embedInt4Declines"),
+		pathResidentPrefill: ogDeclinedAt("int8Buf", "TestOptionPathMetal_embedInt4Declines"),
 	}, ogUntestedCell()),
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
-		pathCPUDecode:        ogTestedBy("TestActQuantGroup_perModel"),
+		pathCPUDecode: ogTestedBy("TestActQuantGroup_perModel"),
+		// Tested on CUDA. Metal ignores the setting (2026-10-08): no code in metal/ reads it, and for a family
+		// without the activation hazard residentAdmission admits the load, so a Metal resident runs per-vector
+		// scales while the option asked for per-32 — the Options doc says other resident backends decline.
+		// Recorded in docs/tasks/task-option-path-admission-2026-10.md; the resident prefill cell stays untested.
 		pathResidentDecode:   ogTestedBy("TestActGroup_phi3ResidentMatchesCPU"),
 		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
@@ -151,13 +160,17 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	"KVPrecision": ogMerge(
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogUntestedCell(), // the Metal int8-KV parity tests drive kernels, not Options.KVPrecision
+			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_kvPrecision"),
 			pathResidentPrefill:  ogDeclinedAt("PrefillPath", "TestPrefill_declinesInt8KV"),
-			pathSpecVerify:       ogUntestedCell(),
-			pathSessionLifecycle: ogUntestedCell(),
+			pathSpecVerify:       ogTestedBy("TestOptionPathMetal_kvPrecision"),
+			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_kvPrecision"),
 		},
 	),
 
+	// Untested on purpose (2026-10-08): the option's doc says bit-identical to fully resident, citing CUDA tests.
+	// On Metal, with fewer slots than experts so experts are re-staged, mixtral-tiny at int4 decodes about 0.004
+	// apart in log-probability from fully resident; nothing tests Metal's claim. With int8 experts Metal's build
+	// panics (recovered into a decline). Recorded in docs/tasks/task-option-path-admission-2026-10.md.
 	"MoECacheExperts": ogMerge(
 		ogCPUNA("\"CUDA and Metal residency; the CPU's expert paging is StreamWeights\""),
 		map[ogPath]ogCell{
@@ -213,27 +226,28 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	"ResidentContext": ogMerge(
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogUntestedCell(),
-			pathResidentPrefill:  ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
-			pathSessionLifecycle: ogUntestedCell(),
+			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_neutralOptions"),
+			pathResidentPrefill:  ogTestedBy("TestOptionPathMetal_neutralOptions"),
+			pathSpecVerify:       ogTestedBy("TestOptionPathMetal_neutralOptions"),
+			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_neutralOptions"),
 		},
 	),
 	"ResidentKVSlots": ogMerge(
 		ogCPUNA("asks a GPU-resident backend for independent KV caches"),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogUntestedCell(),
-			pathResidentPrefill:  ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
-			pathSessionLifecycle: ogUntestedCell(),
+			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_neutralOptions"),
+			pathResidentPrefill:  ogTestedBy("TestOptionPathMetal_neutralOptions"),
+			pathSpecVerify:       ogTestedBy("TestOptionPathMetal_neutralOptions"),
+			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_neutralOptions"),
 		},
 	),
 	"ResidentPrefillChunk": ogMerge(
 		ogCPUNA("chunks a resident's batched prefill under MC3"),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogNACell("chunks prefill; decode is one token"),
-			pathResidentPrefill:  ogUntestedCell(), // TestMC5_prefillChunkInvariance chunks PrefillLast itself; it never sets the option
-			pathSpecVerify:       ogUntestedCell(),
+			pathResidentDecode:  ogNACell("chunks prefill; decode is one token"),
+			pathResidentPrefill: ogTestedBy("TestOptionPathMetal_prefillChunk"), // at a chunk >= the batched-prefill floor; below it, see the test
+			pathSpecVerify: ogNACell("chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative " +
+				"paths claim the resident exclusively (claimExclusive) and prefill whole"),
 			pathSessionLifecycle: ogNACell("schedules a prefill; the session's cache is the same either way (chunk-invariant)"),
 		},
 	),
@@ -242,7 +256,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 		pathCPUBatchDecode:   ogNACell("selects how a prompt is ingested; decode is one token"),
 		pathResidentDecode:   ogNACell("selects how a prompt is ingested; decode is one token"),
-		pathResidentPrefill:  ogUntestedCell(),
+		pathResidentPrefill:  ogTestedBy("TestOptionPathMetal_exactPrefill"),
 		pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 		pathSessionLifecycle: ogNACell("selects prefill numerics; a session's reuse rules do not depend on them"),
 	},
@@ -261,4 +275,4 @@ var ogGrid = map[string]map[ogPath]ogCell{
 // optionGridUntestedCeiling is the ratchet: the number of ogUntested cells may not rise above it,
 // and when it falls the constant must be lowered to match (TestOptionGrid_ratchet), so a cell
 // that gains a test cannot quietly lose it again.
-const optionGridUntestedCeiling = 27
+const optionGridUntestedCeiling = 9
