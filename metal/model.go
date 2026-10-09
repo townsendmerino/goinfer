@@ -127,6 +127,12 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	// rope_mrope_f16_pw, bound in place of the NeoX prefill kernels for a pairwise model (ropeF16Name).
 	decoder.FeatPairwiseRoPE:  true,
 	decoder.FeatPairwiseMRoPE: true,
+	// Cohere / Command-R7B (Part B): a bias-free LayerNorm (layernorm_f16, layernorm_quant_f16), the parallel block (the
+	// MLP reads the attention's shared input norm) and the host-side logit scale. A biased LayerNorm, or LayerNorm with
+	// QK-norm, is declined in batchedPrefill.
+	decoder.FeatLayerNorm:     true,
+	decoder.FeatParallelBlock: true,
+	decoder.FeatLogitScale:    true,
 }
 
 type residLayer struct {

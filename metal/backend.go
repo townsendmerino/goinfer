@@ -989,6 +989,9 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 	if !a.r.prefillOK && !a.emodelBatched() {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}
+	if a.r.layerNorm && (a.r.layerNormBias || a.r.qkNorm) {
+		return nil, fmt.Errorf("metal: the prefill's LayerNorm is bias-free with no QK-norm, and this model has a LayerNorm bias or QK-norm; using sequential path")
+	}
 	if why := a.r.prefillUnaligned(); why != "" {
 		return nil, fmt.Errorf("metal: the prefill GEMMs need every reduction length a multiple of 32 and %s; using sequential path", why)
 	}

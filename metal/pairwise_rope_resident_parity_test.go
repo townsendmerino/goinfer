@@ -222,10 +222,8 @@ func TestPairwiseRoPEResidentParityMetal(t *testing.T) {
 				}
 				a.Reset()
 				if _, err := a.PrefillLast(context.Background(), embs, 0); err != nil {
-					// Production prefills this family sequentially on Metal (the batched pass has no parallel-block FFN), so
-					// the batched paths do not exist to grade; glm-ocr-tiny carries the batched and m-RoPE coverage.
-					t.Logf("batched prefill declined, NOT graded: %v", err)
-					return map[string]pwMetric{"decode, 40 positions": dec}
+					// Cohere takes the batched pass since Part B of docs/tasks/task-metal-pairwise-followups-2026-10.md.
+					t.Fatalf("batched prefill declined: %v", err)
 				}
 				pre.add(func() []float32 { l, _ := a.PrefillLast(context.Background(), embs, 0); return l }(), last32)
 				a.Reset()
@@ -246,6 +244,19 @@ func TestPairwiseRoPEResidentParityMetal(t *testing.T) {
 			neox := measure()
 			restore()
 			pwGrade(t, "NeoX    ", neox, true)
+			// G-B2's planted defect: the parallel block's MLP fed from the post-attention residual must read red.
+			prefillParallelDefectForTest = true
+			a.Reset()
+			bad, err := a.PrefillLast(context.Background(), embs, 0)
+			prefillParallelDefectForTest = false
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := cosF(bad, last32)
+			t.Logf("planted defect (parallel-block MLP from the post-attention residual): batched prefill cos %.6f", c)
+			if c >= pwCosBar {
+				t.Errorf("the gate is BLIND to the parallel block: with the MLP fed from the post-attention residual it reads %.6f >= %.3f", c, pwCosBar)
+			}
 		})
 	}
 }

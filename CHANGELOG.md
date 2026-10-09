@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed — Command-R7B and Command-R prefill on the GPU on Apple silicon
+
+Metal's batched prefill now runs the Cohere family: a bias-free LayerNorm, its parallel attention-and-MLP block, and its logit scale
+are in the pass. On an M1 Pro a 512-token Command-R7B prompt prefills in 2.5 s instead of 23.4 s (exploratory). Against the CPU at int4
+the batched prefill's last token reads cosine 0.996 and the decode after it flips no token.
+
 ### Changed — GLM-OCR prefills on the GPU on Apple silicon, image turns included
 
 Metal's batched prefill now runs GLM-OCR (its pairwise rotation kernels were already built), and so does the GPU image prefill for

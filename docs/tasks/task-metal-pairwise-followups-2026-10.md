@@ -1,6 +1,6 @@
 # Task — the two limits left by Metal pairwise RoPE (2026-10)
 
-**Status:** Part A BUILT 2026-10-09 (results below). Parts B and C not started. Gates were registered before any code
+**Status:** Parts A and B BUILT 2026-10-09 (results below). Part C not started. Gates were registered before any code
 (owner: "lets fix these 2 limits").
 
 The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
@@ -86,6 +86,37 @@ The limits, from `docs/tasks/task-metal-pairwise-rope-2026-10.md`:
 - **G-B4, speed, exploratory by day:** Command-R7B TTFT on about 512 tokens, batched against sequential. It ships if
   batched >= 1.02x; anything below is reported. A served night gate is optional, at the owner's call.
 - **G-B5:** `gate quick` green.
+
+### Part B results, 2026-10-09 (by day, the M1 Pro)
+
+- **Change:** `layernorm_f16` and `layernorm_quant_f16` (bias-free); the pre-attention, pre-MLP and final norms swap to
+  them for a LayerNorm family; a parallel block's MLP reads the attention's shared input norm; the logit scale is applied
+  to the batched pass's logits. FeatLayerNorm, FeatParallelBlock and FeatLogitScale joined `prefillFeatures`. A biased
+  LayerNorm (GPT-2), or LayerNorm with QK-norm, is declined by name.
+- **G-B1 PASS:** `layernorm_f16` max |diff| 9.45e-4 (tolerance 4e-3); the `rmsnorm_f16` control missed by 1.17. The
+  quantized final norm (`layernorm_quant_f16`) landed within half a step (0.00998 against 0.01).
+- **G-B2 PASS** (peaked tiny fixtures, int4):
+
+  | | cohere-tiny | cohere2-tiny |
+  |---|---|---|
+  | batched prefill, last token | cos 0.999021, relL2 0.0443 | 0.999393, 0.0352 |
+  | decode after a 32-row batched prefill | worst 0.998191, relL2 0.0609 | worst 0.998660, 0.0519 |
+  | NeoX control | batched 0.856, decode 0.437 | batched 0.924, decode 0.833 |
+  | planted defect (parallel MLP from the post-attention residual) | batched -0.132 | -0.076 |
+
+- **G-B3 PASS as registered** (real Command-R7B, `gb3-real-r7b.log`; the CPU reference under the owner-approved
+  guard bypass, the Metal arm through its sidecar):
+  - batched-prefill last token: cosine 0.995699 against the CPU int4 (bar >= 0.98);
+  - 16 teacher-forced decode steps after it: 0 non-tie flips.
+
+  The decode after it reads mean 0.985772, worst 0.944647: the same Metal decode gap as the plain path (mean 0.989242,
+  owner-accepted). It is logged, not graded, and Part C owns it.
+  - The test first also asserted a 0.99 decode mean on the batched path, which was never registered; that assertion
+    was removed.
+  - The plain path's mean bar for Command-R7B now records the owner's 0.989 acceptance by name and date instead of
+    failing every run.
+- **G-B4, exploratory** (one run each): Command-R7B prefill of 512 README tokens took 2.52 s batched against 23.40 s
+  sequential, 9.3x. Ships (bar 1.02x).
 
 ## Part C — the Command-R7B gap (localize first; no fix registered yet)
 

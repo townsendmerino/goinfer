@@ -290,6 +290,53 @@ kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w
     for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; orow[i]=half(float(xr[i])*rms*g); }
 }
 
+// layernorm_f16 / layernorm_quant_f16 (docs/tasks/task-metal-pairwise-followups-2026-10.md, Part B): rmsnorm_f16 and
+// rmsnorm_quant_f16 for a bias-free LayerNorm (Cohere / Command-R7B): out = (x - mean) * rsqrt(var + eps) * w, the math of
+// the decode path's layernorm_quant with hasBias 0. Same signatures as the RMSNorm twins (addOne is accepted and unused:
+// no LayerNorm family carries Gemma's 1+w), so a dispatch site only swaps the pipeline. A biased LayerNorm (GPT-2) does not
+// take the pass (batchedPrefill declines it).
+kernel void layernorm_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    device half* out[[buffer(2)]], constant uint& H[[buffer(3)]], constant float& eps[[buffer(4)]],
+    constant uint& addOne[[buffer(5)]],
+    uint row[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256];
+    device const half* xr = x + row*H; device half* orow = out + row*H;
+    float s=0; for(uint i=tid;i<H;i+=tgs) s+=float(xr[i]);
+    red[tid]=s; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2u;st>0u;st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float mean=red[0]/float(H); threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ss=0; for(uint i=tid;i<H;i+=tgs){ float d=float(xr[i])-mean; ss+=d*d; }
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2u;st>0u;st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float inv=rsqrt(red[0]/float(H)+eps);
+    for(uint i=tid;i<H;i+=tgs) orow[i]=half((float(xr[i])-mean)*inv*w[i]);
+}
+kernel void layernorm_quant_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    device char* aq[[buffer(2)]], device float* asc[[buffer(3)]], constant uint& H[[buffer(4)]],
+    constant float& eps[[buffer(5)]], constant uint& addOne[[buffer(6)]],
+    uint tid[[thread_position_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256];
+    float s=0; for(uint i=tid;i<H;i+=tgs) s+=float(x[i]);
+    red[tid]=s; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2u;st>0u;st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float mean=red[0]/float(H); threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ss=0; for(uint i=tid;i<H;i+=tgs){ float d=float(x[i])-mean; ss+=d*d; }
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint st=tgs/2u;st>0u;st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float inv=rsqrt(red[0]/float(H)+eps); threadgroup_barrier(mem_flags::mem_threadgroup);
+    float mx=0; for(uint i=tid;i<H;i+=tgs) mx=max(mx,fabs((float(x[i])-mean)*inv*w[i]));
+    mx = simd_max(mx);
+    uint sgid = tid >> 5u, lane = tid & 31u;
+    if (lane == 0) red[sgid] = mx;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsg = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsg; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float sc=red[0]/127.0f; if(sc==0)sc=1; if(tid==0)asc[0]=sc; float qi=1/sc;
+    for(uint i=tid;i<H;i+=tgs) aq[i]=char(clamp(int(round((float(x[i])-mean)*inv*w[i]*qi)),-127,127));
+}
+
 // residual_f16: x += y (element-wise, grid = M*H).
 kernel void residual_f16(device half* x[[buffer(0)]], device const half* y[[buffer(1)]],
     uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])); }
@@ -1057,6 +1104,7 @@ type prefillState struct {
 	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
+	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
 	pRopeM                                                     Pipeline // S16: rope_mrope_f16
 	pPLEGeluMulF16, pLayerScaleF16                             Pipeline // S9 step 2: the E-model PLE gate and layer scalar
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
@@ -1143,6 +1191,7 @@ func (r *resident) ensurePrefill() {
 	r.pf = &prefillState{
 		pGemmStore: p("gemm_w4f16_store"), pRms: p("rmsnorm_f16"),
 		pGemmM32N64: p("gemm_w4f16_m32n64"), pGemmM64N32: p("gemm_w4f16_m64n32"), pGemmM32N32: p("gemm_w4f16_m32n32"), pGemmM16N32: p("gemm_w4f16_m16n32"),
+		pLN: p("layernorm_f16"), pLNQ: p("layernorm_quant_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p(ropeF16Name(r.pairwiseRoPE, false)), pRopeM: p(ropeF16Name(r.pairwiseRoPE, true)),
 		pPLEGeluMulF16: p("ple_gelu_mul_f16"), pLayerScaleF16: p("layer_scale_f16"),
 		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
@@ -1268,11 +1317,19 @@ type prefillDeep struct {
 // prefillLast is PrefillLast with optional m-RoPE positions (S16): mrope, when non-nil, holds every absolute position's
 // (temporal, height, width) triple from 0 to startPos+len(embs), and the pass rotates q and k by them through
 // rope_mrope_f16 and r.mropeAxis. The K/V cache rows are still placed by sequence position.
+// prefillParallelDefectForTest is Part B's planted defect (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-B2): a
+// parallel block's MLP fed from the post-attention residual instead of the layer's shared input norm. Tests set it.
+var prefillParallelDefectForTest bool
+
 func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	d, pf := r.d, r.pf
+	normPipe := pf.pRms // the GEMM-input norms: RMSNorm, or a bias-free LayerNorm for Cohere (Part B)
+	if r.layerNorm {
+		normPipe = pf.pLN
+	}
 	M := len(embs)
 	Mpad := (M + 7) / 8 * 8
 	H, I, V := r.H, r.I, r.V
@@ -1545,7 +1602,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			if r.postOnly {
 				inAttn = xF
 			} else {
-				e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
+				e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
 			}
 			// fused QKV (+bias)
 			if L.qGate {
@@ -1794,12 +1851,17 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			}
 			continue
 		}
-		// pre-MLP norm
+		// pre-MLP norm. A parallel block (Cohere) has none: its MLP reads the same shared norm of the layer's input that the
+		// attention read, which normF still holds (the o-proj added into xF directly), so x ends as x + attn + mlp.
 		inFFN := normF
-		if r.postOnly {
+		switch {
+		case r.parallelBlock && !prefillParallelDefectForTest:
+		case r.parallelBlock: // Part B's planted defect: the MLP fed from the post-attention residual
+			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
+		case r.postOnly:
 			inFFN = xF
-		} else {
-			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
+		default:
+			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
 		}
 		// S9 step 2: this layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
 		// layers are the model's I).
@@ -1846,7 +1908,11 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
 	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing
 	// NaN logits. Norm-quant the last token's f16 residual row to int8, then run the decode head.
-	e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
+	finalNormQ := pf.pRmsQ
+	if r.layerNorm {
+		finalNormQ = pf.pLNQ
+	}
+	e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
 	if db02Trace != nil {
@@ -1862,6 +1928,12 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	// non-softcapped family (softcapParallel no-ops).
 	if r.finalSoftcap > 0 {
 		softcapParallel(out, r.finalSoftcap)
+	}
+	// Cohere's logit scale (FeatLogitScale), as finalizeLogits applies it for decode.
+	if r.logitScale != 0 && r.logitScale != 1 {
+		for i, v := range out {
+			out[i] = v * r.logitScale
+		}
 	}
 	return out
 }
