@@ -4241,6 +4241,24 @@ The positive control reads **exactly 0 / 0** (`qwen2.5-0.5b-instruct`, both arms
 
 All three arms were void by the harness's own check (`decode path` was `cpu (int4mix)`, not `cuda-resident`): the 35B's int4 weights are 18.6 GB on an 8 GB card, and `run-s6-moe-night.sh` did not pass `--moe-cache-experts`, the C' expert streaming its own header says it uses, so the CUDA build declined with `cuMemAlloc ... CUDA_ERROR_OUT_OF_MEMORY` and said so ("Try -moe-cache-experts"). The harness stopped after the first arm. **No reading was made and none is claimed.** The script now passes the flag. **Plumbing control, by day (not a result):** the same pinned binary with the same flags loads in 1m44s and logs `decode path: cuda-resident (int4mix)`, KV plan 1 x 4,096 positions, 2.1 GB held back for the tower; stopped by pid, GPU back to 468 MiB. The registration (G-S6m above) is unchanged; it is queued again at est 60.
 
+**Second night's run (`s6-moe-image-2`, run by day 2026-10-09 09:43): no reading again, for a different reason. It was
+re-queued as `s6-moe-image-3`.**
+- **What failed:** the first arm's image request returned HTTP 500 and the harness stopped. "Arm cuda/cuda2 log is
+  missing" followed from that; those arms never ran.
+- **The error,** reproduced by day with the same pinned binary and flags: `qwen3_5_moe has no mrope_section in
+  rope_parameters; refusing an image turn`.
+- **The cause:** `~/models/qwen3.6-35b-a3b-int4.giw` was built on 2026-09-24 from `qwen3.6-35b-a3b-Q8_0.gguf`, before
+  45ac1c07 (2026-10-06) made a Qwen3.5+ GGUF carry its m-RoPE split. Its embedded config had no `mrope_section`.
+  The binary (8ff9a57e) is newer and was not at fault.
+- **The fix:** the bundle was rebuilt from the same Q8_0 GGUF by `prequant -quant int4` at `origin/main` afb50500
+  (2.5 min). It now carries `mrope_section [11,11,10]`, interleaved, and replaces the old file under the same name.
+  Re-running the request got past the refusal.
+- **That check is plumbing, not a result.** That run's swap guard then tripped, because `g31b` started loading the 31B
+  at the same moment.
+- **Same staleness, not fixed here:** all four of nobara's Qwen3.5-9B sidecars (`Qwen3.5-9B-Q4_K_M.int4.cuda`,
+  `.int4.e4h.cuda`, `.int4.e4h.cpu-amd64`, `.int8int8.e4h.cpu-amd64`) lack the section. The sidecar freshness check
+  does not see it (source mtime and layout only), so a 9B image turn there would be refused until they are rebuilt.
+
 ##### Gemma 4 31B, step (b'): the 31B against a layer-streaming Hugging Face float32 reference. Registered 2026-10-09 before any code (owner: "register it")
 
 Owner choice of 2026-10-08, "(b') with (a) as its first step"; (a) is G-31a (read above), and this bar is set from what it showed. **Why it exists:** the 31B is 59 GB in bf16, so an ordinary float32 Hugging Face run (about 124 GB) cannot be held in this box's 62 GB of RAM, and the 8 GB card cannot hold it either. Every other family was validated by comparing against Hugging Face; the 31B has no such comparison, so its status row says "not validated". (b') builds the comparison by running Hugging Face's own decoder layers **one at a time, layer-major**: all 12 sequences go through layer 0 (its weights read from the safetensors shards, cast to float32, used, dropped), then through layer 1, and so on, keeping only the hidden states ([tokens, 5376] float32, a few MB) between layers; the token embedding (262,144 x 5,376, 5.6 GB in float32) stays resident and the tied head is applied to the needed positions at the end.
