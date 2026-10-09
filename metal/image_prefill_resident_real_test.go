@@ -211,3 +211,148 @@ func TestImagePrefillResident_gemma3Real(t *testing.T) {
 		t.Errorf("the gate is BLIND: with no image block the pass reads %.6f >= the bar %.6f", badWorst, prodWorst-0.005)
 	}
 }
+
+// TestImagePrefillResident_gemma3TwoImagesReal (S11 step 4; an exploratory real check at G-IP3's bar, not a registered gate):
+// Gemma 3 4B with table.png and formula.png in one prompt, the shape serve builds. Against the CPU's two-image prefill at int4
+// per-32 (the reference), the last row and 8 teacher-forced steps: today's CPU W4A8 bridge uploaded, and the resident
+// two-block prefill. Asserted: the resident path's worst cosine >= the bridge's worst - 0.005. Logged, not asserted: argmax
+// differences against the reference and whether each is an R10 near-tie. The first read (2026-10-09) had one that is not
+// (step 1, " are" 0.819 against "'" 0.143 in the reference), the G-IP4 pattern; whether it is accepted for several images is
+// the owner's open decision (docs/tasks/task-multimodal-support-2026-10.md, S11 step 4). GOINFER_HEAVY_TESTS=1.
+func TestImagePrefillResident_gemma3TwoImagesReal(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	src := dir + ".int4.metal.giw"
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := vision.LoadEncoder(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj, err := multimodal.LoadProjector(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var feats []float32
+	for _, name := range []string{"glm_ocr/table.png", "glm_ocr/formula.png"} {
+		data, err := os.ReadFile(filepath.Join("../testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pv, err := vision.Preprocess(data, vision.Gemma3())
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := enc.Forward(pv.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := proj.Forward(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		feats = append(feats, f...)
+	}
+	block := multimodal.Gemma3PromptBlock(256)
+	ids, err := tk.Encode("<start_of_turn>user\nHere are two images. "+block+" and "+block+" What does each image show? Answer briefly, one line per image.<end_of_turn>\n<start_of_turn>model\n", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	soft, _ := tk.TokenID("<image_soft_token>")
+	var spans []decoder.ImageSpan
+	for _, r := range multimodal.FindImageRuns(ids, soft) {
+		spans = append(spans, decoder.ImageSpan{Pos: r[0], Len: r[1]})
+	}
+	if len(spans) != 2 || spans[0].Len != 256 || spans[1].Len != 256 {
+		t.Fatalf("image runs %v, want two of 256", spans)
+	}
+	const steps = 8
+	ctx := context.Background()
+	var ref [][]float32
+	var teach []int
+	{
+		mc, err := decoder.Load(src, decoder.Options{Backend: "cpu", Quant: "int4", ActQuantGroup: 32})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := mc.NewCache(len(ids) + steps + 1)
+		l, err := mc.PrefillLogitsVLSpansForTest(ctx, ids, spans, feats, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref, teach = [][]float32{append([]float32(nil), l...)}, []int{argmaxF(l)}
+		for k := range steps {
+			l, err := mc.ForwardForTest(teach[k], c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref = append(ref, append([]float32(nil), l...))
+			teach = append(teach, argmaxF(l))
+		}
+		mc.Close()
+	}
+	m, err := decoder.Load(src, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+	}
+	grade := func(first []float32) (worst float64, real int) {
+		got := [][]float32{first}
+		for k := range steps {
+			l, err := a.Forward(m.EmbedResidentForTest(teach[k]), len(ids)+k)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, append([]float32(nil), l...))
+		}
+		worst = 1
+		for k := range got {
+			worst = math.Min(worst, cosF(got[k], ref[k]))
+			if ra, ga := argmaxF(ref[k]), argmaxF(got[k]); ra != ga {
+				lp, gp := logSoftmaxF(ref[k]), logSoftmaxF(got[k])
+				rs, _ := tk.Decode([]int{ra})
+				gs, _ := tk.Decode([]int{ga})
+				fmt.Fprintf(os.Stderr, "[S11 real]   step %d: reference %q p %.3f, this arm %q (reference p %.3f; this arm's own p %.3f vs %.3f)\n", k, rs, math.Exp(lp[ra]), gs, math.Exp(lp[ga]), math.Exp(gp[ga]), math.Exp(gp[ra]))
+				if math.Exp(lp[ga]) < math.Exp(lp[ra])/2 {
+					real++
+				}
+			}
+		}
+		return
+	}
+	c := m.NewCache(len(ids) + steps + 1)
+	l, err := m.PrefillLogitsVLSpansForTest(ctx, ids, spans, feats, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l = append([]float32(nil), l...)
+	a.Reset()
+	if err := m.ResidentUploadPrefillForTest(c); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(os.Stderr, "[S11 real] the bridge:")
+	bw, br := grade(l)
+	a.Reset()
+	ln, _, err := m.ResidentImagePrefillSpansForTest(ctx, a, ids, feats, spans)
+	if err != nil {
+		t.Fatalf("the resident two-image prefill declined: %v", err)
+	}
+	fmt.Fprintln(os.Stderr, "[S11 real] the resident two-block prefill:")
+	rw, rr := grade(append([]float32(nil), ln...))
+	fmt.Fprintf(os.Stderr, "[S11 real] %d positions, blocks %v: worst cos: bridge %.6f (%d non-tie) | resident two-block %.6f (%d non-tie) | bar %.6f\n", len(ids), spans, bw, br, rw, rr, bw-0.005)
+	if rw < bw-0.005 {
+		t.Errorf("the resident two-block prefill: worst %.6f against the bar %.6f", rw, bw-0.005)
+	}
+	if rr > 0 {
+		t.Logf("the resident two-block prefill has %d argmax differences that are not R10 near-ties (logged above); open for the owner, see the doc comment", rr)
+	}
+}

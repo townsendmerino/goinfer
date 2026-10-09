@@ -970,7 +970,7 @@ func (r *resident) prefillUnaligned() string {
 // int8 KV cache, a family the pass does not implement, the resident's cap, the exact attention kernel's key limit), the
 // same recovery of a request-time panic, and the same non-finite-logit check. mrope is nil for a text prompt.
 func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep) ([]float32, error) {
-	return a.batchedPrefillImg(embeddings, startPos, floor, mrope, deep, 0, 0)
+	return a.batchedPrefillImg(embeddings, startPos, floor, mrope, deep, nil)
 }
 
 // PrefillImageLast (decoder.ResidentImagePrefill; S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md) is
@@ -980,11 +980,24 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 // inputs this route does not build), a layer-major family or a recurrent hybrid declines, and the decoder then takes its
 // CPU-prefill and upload bridge, unchanged.
 func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
+	return a.PrefillImageBlocksLast(ctx, embeddings, startPos, [][2]int{{imgStart, imgEnd}})
+}
+
+// PrefillImageBlocksLast (decoder.ResidentImageBlocksPrefill; S11) is PrefillImageLast for several images: each block
+// [start, end), in order and disjoint, attends bidirectionally within itself.
+func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	if imgStart < startPos || imgEnd <= imgStart || imgEnd > startPos+len(embeddings) {
-		return nil, fmt.Errorf("metal: image block [%d,%d) invalid for %d rows at %d", imgStart, imgEnd, len(embeddings), startPos)
+	prev := startPos
+	for _, b := range blocks {
+		if b[0] < prev || b[1] <= b[0] || b[1] > startPos+len(embeddings) {
+			return nil, fmt.Errorf("metal: image blocks %v invalid for %d rows at %d", blocks, len(embeddings), startPos)
+		}
+		prev = b[1]
+	}
+	if len(blocks) == 0 {
+		return nil, fmt.Errorf("metal: no image block")
 	}
 	if !a.r.prefillOK || a.r.pleP > 0 || a.r.dnet != nil || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
 		return nil, fmt.Errorf("metal: the resident image prefill takes the plain uniform pass; this model's image turn prefills on the CPU")
@@ -997,13 +1010,16 @@ func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]flo
 		return nil, fmt.Errorf("metal: an image turn of %d positions is past the image prefill's %d-key limit; the image prefill runs on the CPU",
 			startPos+len(embeddings), prefillExactAttnMaxKeys)
 	}
-	return a.batchedPrefillImg(embeddings, startPos, 0, nil, nil, imgStart, imgEnd)
+	return a.batchedPrefillImg(embeddings, startPos, 0, nil, nil, blocks)
 }
 
-var _ decoder.ResidentImagePrefill = (*metalResident)(nil)
+var (
+	_ decoder.ResidentImagePrefill       = (*metalResident)(nil)
+	_ decoder.ResidentImageBlocksPrefill = (*metalResident)(nil)
+)
 
-// batchedPrefillImg is batchedPrefill with an optional bidirectional image block (imgEnd <= imgStart: none).
-func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, imgStart, imgEnd int) ([]float32, error) {
+// batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
+func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
 	promptLen := startPos + len(embeddings)
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
@@ -1058,7 +1074,7 @@ func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floo
 				err = fmt.Errorf("metal: batched prefill aborted: %v", p)
 			}
 		}()
-		logits = a.r.prefillLastImg(embeddings, startPos, mrope, deep, imgStart, imgEnd)
+		logits = a.r.prefillLastImg(embeddings, startPos, mrope, deep, blocks)
 		return nil
 	}(); err != nil {
 		return nil, err

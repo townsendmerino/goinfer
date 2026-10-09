@@ -100,6 +100,11 @@ func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip ResidentIma
 	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
+// ResidentImagePrefillSpansForTest is ResidentImagePrefillForTest for several images (S11's G-S11c).
+func (m *Model) ResidentImagePrefillSpansForTest(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, spans []ImageSpan) ([]float32, int, error) {
+	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, spans)
+}
+
 // ResidentMRoPEPrefillForTest wraps residentMRoPEPrefillDeep (no DeepStack sets) — the exact primitive GenerateQwenVL's
 // resident m-RoPE prefill fast path calls internally — mirroring ResidentImagePrefillForTest
 // exactly, for a real-checkpoint gate comparing its logits against PrefillLogitsQwenVLForTest.

@@ -527,16 +527,17 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
 }
 
-// attention_prefill_img (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md): attention_prefill with an
-// image block [img.x, img.y) in absolute positions that attends BIDIRECTIONALLY, as the CPU's KVCache.attendHi and CUDA's
-// PrefillImageLast: a query inside the block sees keys up to img.y - 1, every other query stays causal, and the sliding
-// window's lower bound stays at the causal position's (pos + 1), as the CPU's WindowStart. img.y == 0 is no block (then this
-// is attention_prefill exactly). A separate kernel so every existing dispatch of attention_prefill stays as it was.
+// attention_prefill_img (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md): attention_prefill with
+// image blocks [b.x, b.y) in absolute positions that attend BIDIRECTIONALLY, as the CPU's KVCache.attendHi and CUDA's
+// PrefillImageLast: a query inside a block sees keys up to that block's b.y - 1 (its own block only; several blocks for
+// several images, S11), every other query stays causal, and the sliding window's lower bound stays at the causal
+// position's (pos + 1), as the CPU's WindowStart. nBlocks == 0 is no block (then this is attention_prefill exactly). A
+// separate kernel so every existing dispatch of attention_prefill stays as it was.
 kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
     device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
-    constant uint2& img[[buffer(11)]],
+    device const uint2* blocks[[buffer(11)]], constant uint& nBlocks[[buffer(12)]],
     uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
     uint tgs[[threads_per_threadgroup]]) {
     uint m = gid / nH, qh = gid % nH;
@@ -544,7 +545,8 @@ kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device co
     uint pos = startPos + m;
     uint causal = pos + 1u;
     uint winStart = (window>0u && causal>window) ? causal-window : 0u;
-    uint nKeys = (pos >= img.x && pos < img.y) ? img.y : causal;
+    uint nKeys = causal;
+    for (uint b=0u; b<nBlocks; b++) { if (pos >= blocks[b].x && pos < blocks[b].y) { nKeys = blocks[b].y; break; } }
     uint qDim = nH*hd;
     device const half* qr = qkv + m*qStride + qh*hd;
     device const half* kb = kc + kvh*hd;
@@ -1406,13 +1408,14 @@ func (r *resident) prefillResidScale(deep *prefillDeep) float32 {
 }
 
 func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep) []float32 {
-	return r.prefillLastImg(embs, startPos, mrope, deep, 0, 0)
+	return r.prefillLastImg(embs, startPos, mrope, deep, nil)
 }
 
-// prefillLastImg is prefillLast with an image block [imgStart, imgEnd) in absolute positions that attends bidirectionally
-// (S17's Metal image prefill): every layer's attention then runs attention_prefill_img, the exact kernel with the block,
-// in place of the fused and steel kernels, which carry no block mask. imgEnd <= imgStart is no block: prefillLast exactly.
-func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, imgStart, imgEnd int) []float32 {
+// prefillLastImg is prefillLast with image blocks, each [start, end) in absolute positions, that attend bidirectionally
+// (S17's Metal image prefill; several blocks for several images, S11): every layer's attention then runs
+// attention_prefill_img, the exact kernel with the blocks, in place of the fused and steel kernels, which carry no block
+// mask. No blocks: prefillLast exactly.
+func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1587,10 +1590,14 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		u2NHhd, u2KvDim, uGateN = NewBufferU32(d, uint32(2*nHhd)), NewBufferU32(d, uint32(2*kvDim)), NewBufferU32(d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
 	}
-	var imgB Buffer // the bidirectional image block, when there is one (attention_prefill_img)
-	if imgEnd > imgStart {
-		imgB = NewBufferUint32s(d, []uint32{uint32(imgStart), uint32(imgEnd)})
-		scratch = append(scratch, imgB)
+	var imgB, imgN Buffer // the bidirectional image blocks and their count, when there are any (attention_prefill_img)
+	if len(blocks) > 0 {
+		flat := make([]uint32, 0, 2*len(blocks))
+		for _, b := range blocks {
+			flat = append(flat, uint32(b[0]), uint32(b[1]))
+		}
+		imgB, imgN = NewBufferUint32s(d, flat), NewBufferU32(d, uint32(len(blocks)))
+		scratch = append(scratch, imgB, imgN)
 	}
 	defer func() {
 		for _, b := range scratch {
@@ -1770,7 +1777,7 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 			}
 			// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
 			if imgB != (Buffer{}) {
-				e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB)
+				e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN)
 			} else if lu.steel {
 				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else if lu.fused {

@@ -1,0 +1,7 @@
+new-metal-two (55.7s, 551 prompt tokens): "Here's a brief description of what each image shows:\n\n*   **Image 1:** A table displaying quarterly unit sales by region.\n*   **Image 2:** A mathematical note explaining the Gaussian integral and its relation to the normal distribution."
+new-cpu-two (61.6s, 551 prompt tokens): 'Here are the brief descriptions of each image:\n\n*   **Image 1:** This image presents a table showing quarterly unit sales by region.\n*   **Image 2:** This image provides a mathematical definition of the Gaussian integral and the normal distribution formula.'
+new-metal-one (6.6s, 278 prompt tokens): 'The image shows a table of quarterly unit sales by region (North, South, East, West, and Central) for the fiscal year 2025. It presents the sales data in thousands of units for each quarter.'
+old-metal-one (5.4s, 278 prompt tokens): 'The image shows a table of quarterly unit sales by region (North, South, East, West, and Central) for the fiscal year 2025. It presents the sales data in thousands of units for each quarter.'
+gemma-3-4b: names both: table True, formula True
+gemma-3-4b: two images, Metal against the CPU (reference): first difference at token 1: new-cpu-two ' are', new-metal-two "'"; new-cpu-two top-3 ' are' 0.811, '’' 0.119, "'" 0.069; R10 near-tie False
+gemma-3-4b: one image, new binary against the pre-S11 one: IDENTICAL (first 32 tokens)

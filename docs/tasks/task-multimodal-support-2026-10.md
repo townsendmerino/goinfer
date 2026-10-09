@@ -2753,8 +2753,38 @@ tokens, the first 32 compared.
 - **G-S11e reads:** single-image identity and Metal-against-CPU agreement hold on all four models. "Names both" holds on
   three, and on Qwen2.5-VL only with the model's own default system message.
 
-**Still to do: S11 step 4** (Metal and CUDA multi-block resident image prefill, G-S11c), then G-S11g. Until then a
-Gemma 3 multi-image turn on Metal or CUDA prefills on the CPU and uploads (logged). Qwen2.5-VL and Qwen3.5 take their
+#### S11 results, step 4, Metal (2026-10-09, by day)
+
+- **Change:**
+  - `attention_prefill_img` takes a block list and a count in place of one `uint2`; a query takes its own block's end.
+  - `prefillLastImg` and `batchedPrefillImg` take `[][2]int`.
+  - `PrefillImageLast` is a one-block call of the new `PrefillImageBlocksLast` (`decoder.ResidentImageBlocksPrefill`).
+- **Kernel (G-IP1, extended):**
+  - Every case matches its float64 reference at max |diff| <= 0.00024 against a 4e-3 tolerance: three single blocks,
+    two blocks with text between, two adjacent blocks, and two blocks under a sliding window of 6.
+  - The causal control misses by 0.31-0.86.
+  - **New planted defect, the adjacent blocks merged into one:** misses by 0.347 on the first block's rows, so the
+    kernel can see pairing.
+- **G-S11c PASS on Metal** (`TestImagePrefillResident_twoImagesTiny`): the resident two-image prefill against the CPU's
+  at int4 per-32, the last token plus 8 teacher-forced steps. Worst cosine 0.999765 (interleaved) and 0.999796
+  (adjacent), relL2 0.0217 / 0.0202. G-IP2's single-image numbers are unchanged (0.999674, 0.0256).
+- **Exploratory real check, not a registered gate** (`TestImagePrefillResident_gemma3TwoImagesReal`; Gemma 3 4B,
+  `table.png` and `formula.png`, 551 positions; `s11-two-images-real-metal.log`):
+  - Against the CPU per-32 reference, the resident two-block prefill's worst cosine is 0.988801. The bridge's is
+    0.984450 (G-IP3's bar 0.979450 holds).
+  - **One argmax difference is not an R10 near-tie.** At step 1, after "Here", the reference gives " are" 0.819 and "'"
+    0.143; the resident arm gives "'" 0.673 and " are" 0.084. The bridge has none.
+  - This is G-IP4's pattern: on Gemma 3 the f16 pass can swing a stylistic token hard while the whole vector stays
+    closer to the reference. The test now asserts the cosine bar and logs the flips.
+  - **Open for the owner:** whether G-IP4's "keep it on" covers several images too. It is on as built.
+- **Served (G-S11e's Gemma 3 arms on this build, `s11-gs11e-step4`):**
+  - The two-image Metal reply names both images.
+  - Against the CPU arm it now first differs at token 1 (" are" 0.811 against "'" 0.069): that same token.
+  - The single-image reply is still identical to the pre-S11 binary.
+
+**Still to do: S11 step 4** (CUDA's multi-block resident image prefill, G-S11c on CUDA), then G-S11g. Until then a
+Gemma 3 multi-image turn on CUDA prefills on the CPU and uploads (logged); on Metal it takes the resident two-block
+prefill (below). Qwen2.5-VL and Qwen3.5 take their
 resident m-RoPE prefill with several images already; Qwen3-VL's DeepStack resident prefill declines to the bridge; a
 Gemma 4 E-model's resident prefill takes them directly.
 

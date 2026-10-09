@@ -92,6 +92,11 @@ func (m *Model) PrefillLogitsVLForTest(ctx context.Context, ids []int, imageFeat
 	return m.prefillLogitsVL(ctx, ids, imageFeats, imgPos, imgLen, cache)
 }
 
+// PrefillLogitsVLSpansForTest exposes prefillLogitsVLSpans (S11, several images) for a backend's multi-block gate.
+func (m *Model) PrefillLogitsVLSpansForTest(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsVLSpans(ctx, ids, spans, imageFeats, cache)
+}
+
 // PrefillLogitsQwenVLForTest exposes prefillLogitsQwenVL — the bidirectional-image-block CPU
 // prefill GenerateQwenVL drives — so a cross-package real-checkpoint gate (gap 0, docs/
 // multimodal.md) can build a real image's CPU-computed KVCache directly, without going through
