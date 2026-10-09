@@ -44,6 +44,9 @@ demo/chat/dist/
 # the encoder gate (G-S14b2) is a real T1 that runs in CI instead of a golden that skips because its checkpoint is gitignored.
 !testdata/qwen3asr-tiny/
 !testdata/qwen3asr-tiny/model.safetensors
+# EXCEPTION: whisper-tiny-rand is a 444 KB random-weight Whisper (encoder and decoder; scripts/pin_whisper_tiny.py) that transformers reloads, committed so the Whisper encoder gate (G-S14d1) runs in CI.
+!testdata/whisper-tiny-rand/
+!testdata/whisper-tiny-rand/model.safetensors
 # EXCEPTION: glm-ocr-tiny is a 760 KB deterministic random-weight GLM-OCR text decoder
 # (scripts/pin_glm_ocr_tiny.py), real tensor layout (model.language_model.*, lm_head.weight) plus a
 # fake multi-token-prediction layer at layers.<NumLayers> that the loader must skip. Committed on

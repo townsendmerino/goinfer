@@ -1,0 +1,9 @@
+=== RUN   TestWhisperEncoder_real
+    whisper_encoder_real_test.go:47: loaded whisper-small in 0.0s: {DModel:768 Layers:12 Heads:12 FFN:3072 MelBins:80 MaxPositions:1500}
+    whisper_encoder_real_test.go:63: (a) libri     reference features: worst per-frame cosine 0.999999995, max |diff| 1.49e-03; 12.8s
+    whisper_encoder_real_test.go:76: (b) libri     Go front end:        worst per-frame cosine 0.999999996, max |diff| 1.40e-03
+    whisper_encoder_real_test.go:63: (a) synth25s  reference features: worst per-frame cosine 0.999999935, max |diff| 5.98e-03; 12.1s
+    whisper_encoder_real_test.go:76: (b) synth25s  Go front end:        worst per-frame cosine 0.999999806, max |diff| 1.03e-02
+--- PASS: TestWhisperEncoder_real (47.73s)
+PASS
+ok  	github.com/townsendmerino/goinfer/multimodal	47.740s
