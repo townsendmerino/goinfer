@@ -347,8 +347,11 @@ type Options struct {
 	// MoECacheExperts streams routed MoE experts host→VRAM per token instead of holding the whole
 	// expert stack resident — the path to running a model whose experts exceed VRAM with every
 	// expert still executing on the GPU. Off by default; bit-identical to fully-resident when on
-	// (cuda.TestGemma4MoE_cacheExpertsBitExact_*). CUDA and Metal residency; the CPU's expert
-	// paging is StreamWeights.
+	// (cuda.TestGemma4MoE_cacheExpertsBitExact_*; on Metal metal.TestMoECacheExperts_bitExactMetal, against
+	// a resident load that prefills the same way: a paged Metal model's prompt takes a prefill
+	// bit-identical to sequential, so beside the default batched f16 prefill a prompt over its floor
+	// differs exactly as ExactPrefill does). The experts must be int4: Metal declines int8 experts by
+	// name. CUDA and Metal residency; the CPU's expert paging is StreamWeights.
 	MoECacheExperts bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,

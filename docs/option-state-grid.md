@@ -7,7 +7,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 ## Load options × execution paths
 
 **tested** names a test that drives the option through the path; **declined** names the function where the path refuses it;
-**untested** runs today with no test that drives it (9 cells; `TestOptionGrid_ratchet` lets that number only fall);
+**untested** runs today with no test that drives it (1 cells; `TestOptionGrid_ratchet` lets that number only fall);
 **n/a**: the option does not reach the path (reasons below the table).
 
 | option | CPU decode | CPU batched prefill | CPU batched decode | GPU resident decode | GPU resident prefill | speculative verify | session reuse and snapshot |
@@ -20,8 +20,8 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design and history
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision` | declined at `PrefillPath` (`TestPrefill_declinesInt8KV`) | tested: `TestOptionPathMetal_kvPrecision` | tested: `TestOptionPathMetal_kvPrecision` |
 | `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
-| `MoECacheExperts` | n/a | n/a | n/a | untested | untested | untested | untested |
-| `MoECacheSlots` | n/a | n/a | n/a | untested | untested | untested | untested |
+| `MoECacheExperts` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
+| `MoECacheSlots` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
 | `MoEPager` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestOptionPathMetal_quant` | tested: `TestOptionPathMetal_quant` | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
 | `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |

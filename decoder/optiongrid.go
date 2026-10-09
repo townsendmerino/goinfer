@@ -167,26 +167,27 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 	),
 
-	// Untested on purpose (2026-10-08): the option's doc says bit-identical to fully resident, citing CUDA tests.
-	// On Metal, with fewer slots than experts so experts are re-staged, mixtral-tiny at int4 decodes about 0.004
-	// apart in log-probability from fully resident; nothing tests Metal's claim. With int8 experts Metal's build
-	// panics (recovered into a decline). Recorded in docs/tasks/task-option-path-admission-2026-10.md.
+	// Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2, closed 2026-10-08): bit-identical
+	// to fully resident when both prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical
+	// to sequential, so the reference is the resident load with ExactPrefill; the 0.004 first recorded here was the
+	// default resident's batched f16 prefill, which --exact-prefill alone reproduces. int8 experts decline by name
+	// (errPagedExpertsNotInt4) instead of a recovered panic.
 	"MoECacheExperts": ogMerge(
 		ogCPUNA("\"CUDA and Metal residency; the CPU's expert paging is StreamWeights\""),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogUntestedCell(),
-			pathResidentPrefill:  ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
-			pathSessionLifecycle: ogUntestedCell(),
+			pathResidentDecode:   ogTestedBy("TestMoECacheExperts_bitExactMetal"),
+			pathResidentPrefill:  ogTestedBy("TestMoECacheExperts_bitExactMetal"),
+			pathSpecVerify:       ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
+			pathSessionLifecycle: ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
 		},
 	),
 	"MoECacheSlots": ogMerge(
 		ogCPUNA("\"Only meaningful with MoECacheExperts\", a residency option"),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogUntestedCell(),
-			pathResidentPrefill:  ogUntestedCell(),
-			pathSpecVerify:       ogUntestedCell(),
-			pathSessionLifecycle: ogUntestedCell(),
+			pathResidentDecode:   ogTestedBy("TestMoECacheExperts_bitExactMetal"),
+			pathResidentPrefill:  ogTestedBy("TestMoECacheExperts_bitExactMetal"),
+			pathSpecVerify:       ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
+			pathSessionLifecycle: ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
 		},
 	),
 
@@ -275,4 +276,4 @@ var ogGrid = map[string]map[ogPath]ogCell{
 // optionGridUntestedCeiling is the ratchet: the number of ogUntested cells may not rise above it,
 // and when it falls the constant must be lowered to match (TestOptionGrid_ratchet), so a cell
 // that gains a test cannot quietly lose it again.
-const optionGridUntestedCeiling = 9
+const optionGridUntestedCeiling = 1

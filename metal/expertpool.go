@@ -86,9 +86,10 @@ type expertPool struct {
 	// byte offset s*nGuW*4 (etc, uint16 fields use *2).
 	guW, guS, dW, dS     Buffer
 	nGuW, nGuS, nDW, nDS int
-	slotExpert           []int       // slot index → expert id resident there (-1 = free)
-	where                map[int]int // expert id → slot index
-	lru                  []int       // slot indices, most-recently-used at front
+	slotExpert           []int        // slot index → expert id resident there (-1 = free)
+	evictedFrom          map[int]bool // planted defect 1 only (expertPoolDefect): slots whose expert was evicted
+	where                map[int]int  // expert id → slot index
+	lru                  []int        // slot indices, most-recently-used at front
 	stage                stageFn
 
 	// preads counts miss-stages served by the pread fast path (0 ⇒ the mmap byte-copy path ran).
@@ -363,6 +364,9 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		if old := p.slotExpert[s]; old >= 0 {
 			delete(p.where, old)
 			p.evictions++
+			if expertPoolDefect == 1 {
+				p.markEvicted(s)
+			}
 		} else {
 			p.coldStarts++
 		}
@@ -424,14 +428,40 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 	return out
 }
 
+// expertPoolDefect plants G-1's defects (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2); 0 in
+// production. 1: a slot whose expert is evicted keeps the evicted expert's bytes (the new one is not staged). 2: the
+// GPU is told the next slot along. 3: each staged expert takes the next expert's scales.
+var expertPoolDefect int
+
+func (p *expertPool) markEvicted(s int) {
+	if p.evictedFrom == nil {
+		p.evictedFrom = map[int]bool{}
+	}
+	p.evictedFrom[s] = true
+}
+
+// expertPoolSlotForTest is the pool row a paged forward writes into slotIdx: s, or under planted defect 2 the next row.
+func expertPoolSlotForTest(s, n int) int {
+	if expertPoolDefect == 2 {
+		return (s + 1) % n
+	}
+	return s
+}
+
 // stageInto reads expert e's weights into slot s's buffers (pread, or the mmap byte-copy).
 func (p *expertPool) stageInto(e, s int) {
 	sv := p.slotView(s)
-	if p.stagePread != nil {
+	if expertPoolDefect == 1 && p.evictedFrom[s] {
+		return // planted: the evicted expert's bytes stay
+	}
+	if p.stagePread != nil && expertPoolDefect != 3 {
 		p.stagePread(e, sv)
 		return
 	}
 	guW, guS, dW, dS := p.stage(e)
+	if expertPoolDefect == 3 {
+		_, guS, _, dS = p.stage(e ^ 1) // a neighbour's scales (in range for an even expert count)
+	}
 	copyBytesToU32Buf(sv.guW, guW)
 	copyU16sToBuf(sv.guS, guS)
 	copyBytesToU32Buf(sv.dW, dW)

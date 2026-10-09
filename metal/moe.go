@@ -11,6 +11,7 @@ package metal
 // would have broken that pipeline. See docs/task-metal-moe.md.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -587,6 +588,20 @@ type moeResident struct {
 // dense-shaped model that actually declares an MoE FFN. Returns nil when the model is not MoE,
 // and an error for an MoE variant this path does not implement (so BuildResident declines →
 // CPU fallback rather than running wrong).
+// errPagedExpertsNotInt4 is the expert cache's decline for experts it cannot stage (the option-path admission doc's
+// §4.3 finding 2, G-2). Paging copies each expert's int4 bytes into a slot as they are stored; a non-paged resident
+// re-quantizes int8 experts to int4 while it stacks them, which a per-token stage cannot afford. Checked before the
+// build, so it is a named decline rather than the panic buildMoELayer and buildGemma4MoELayer used to raise (a
+// recovered "metal build panicked").
+var errPagedExpertsNotInt4 = errors.New("the expert cache (--moe-cache-experts / --moe-cache-slots) pages int4 experts only, and this model's experts are not int4 (group-32): load it with --quant int4, or drop --moe-cache-experts and --moe-cache-slots to hold every expert resident")
+
+// skipPagedInt4CheckForTest drops the errPagedExpertsNotInt4 check, so G-2 can show the gate goes red without it.
+var skipPagedInt4CheckForTest bool
+
+// moePagedAllSlotsForTest pages a model even when its slot request holds every expert, so a test can run the paged
+// forward with no eviction possible (the option-path admission doc's finding 2, step 0). False in production.
+var moePagedAllSlotsForTest bool
+
 func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*moeResident, error) {
 	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.MoEResidentParams()
 	if !ok {
@@ -668,9 +683,23 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		if err != nil || n < k {
 			return nil, fmt.Errorf("expert-slot request %q invalid (need integer >= topK=%d)", s, k)
 		}
-		if n < nE { // n>=nE would hold every expert — no paging, just build the stacked path
+		if n < nE || moePagedAllSlotsForTest { // n>=nE would hold every expert — no paging, just build the stacked path
 			mo.paged, mo.slots = true, n
 			mo.slotIdx = NewBufferUint32s(d, make([]uint32, k))
+			w := m.Weights()
+			for l := range w.Layers {
+				if skipPagedInt4CheckForTest {
+					break
+				}
+				if ex := w.Layers[l].Experts; len(ex) > 0 {
+					_, _, okg := int4DirectWords(&ex[0].Gate)
+					_, _, oku := int4DirectWords(&ex[0].Up)
+					_, _, okd := int4DirectWords(&ex[0].Down)
+					if !okg || !oku || !okd {
+						return nil, errPagedExpertsNotInt4
+					}
+				}
+			}
 		}
 	}
 	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of byte-copying
@@ -717,7 +746,7 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		uw0, us0, ok1u := int4DirectWords(&lw.Experts[0].Up)
 		dw0, ds0, ok2 := int4DirectWords(&lw.Experts[0].Down)
 		if !ok1 || !ok1u || !ok2 {
-			panic("metal MoE paging: experts are not int4-direct (group-32) — cannot stage without a re-quant")
+			panic("metal MoE paging: experts are not int4-direct (unreachable: buildMoE declines first, errPagedExpertsNotInt4)")
 		}
 		nGuW, nGuS := len(gw0)+len(uw0), len(gs0)+len(us0)
 		experts := lw.Experts // capture (aliases the model's own weights; kept alive by the Model)
@@ -1155,7 +1184,7 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 			// write, not a re-encode. slotIdx replaces the old idxZeros (see moeResident's own doc).
 			moIdx := mo.slotIdx.U32s()
 			for j, s := range slots {
-				moIdx[j] = uint32(s.slot)
+				moIdx[j] = uint32(expertPoolSlotForTest(s.slot, len(L.moe.pool.slotExpert)))
 			}
 			var e2 *Encoder // phase 2: experts from slots (+ shared expert)
 			if async {

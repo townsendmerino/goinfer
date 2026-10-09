@@ -232,6 +232,18 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 			g.paged, g.slots = true, n
 			g.slotIdx = NewBufferUint32s(d, make([]uint32, b.TopK))
 			g.fence = newPagedFence(d, nL, b.TopK)
+			for l := range nL {
+				if skipPagedInt4CheckForTest {
+					break
+				}
+				if bl, ok := m.Gemma4MoEResidentLayer(l); ok && len(bl.ExpertsGateUp) > 0 {
+					_, _, ok1 := int4DirectWords(bl.ExpertsGateUp[0])
+					_, _, ok2 := int4DirectWords(bl.ExpertsDown[0])
+					if !ok1 || !ok2 {
+						return nil, errPagedExpertsNotInt4
+					}
+				}
+			}
 		}
 	}
 	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
@@ -288,7 +300,7 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		gw0, gs0, ok1 := int4DirectWords(b.ExpertsGateUp[0])
 		dw0, ds0, ok2 := int4DirectWords(b.ExpertsDown[0])
 		if !ok1 || !ok2 {
-			panic("metal gemma4 MoE paging: experts are not int4-direct (group-32) — cannot stage without a re-quant")
+			panic("metal gemma4 MoE paging: experts are not int4-direct (unreachable: buildGemma4MoE declines first, errPagedExpertsNotInt4)")
 		}
 		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
 		down := b.ExpertsDown
@@ -648,7 +660,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 			// not a re-encode. slotIdx replaces the old idxZeros (see gemma4MoeResident's doc comment).
 			gIdx := g.slotIdx.U32s()
 			for j, s := range slots {
-				gIdx[j] = uint32(s.slot)
+				gIdx[j] = uint32(expertPoolSlotForTest(s.slot, len(L.g4moe.pool.slotExpert)))
 			}
 			w2 := time.Now()
 			e2 := begin()                        // phase 2: experts from slots + join

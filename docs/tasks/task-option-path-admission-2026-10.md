@@ -343,6 +343,36 @@ top five) as a numeric fingerprint through the public entry points.
        reached without the panic recovery (a test asserts it). Removing the check turns it red. The two panics
        (`metal/moe.go`, `metal/gemma4_moe.go`) become unreachable assertions.
      - **Afterwards:** the eight cells move to tested; the Options doc cites the Metal test beside the CUDA ones.
+   - **CLOSED 2026-10-08: no numeric defect; G-1 PASS with its reference amended; G-2 PASS.**
+     - **Step 0 found the cause, and it is not the expert cache.** On mixtral-tiny int4, through `Generate` with top-5
+       log-probabilities:
+       - **Short prompt (under the batched-prefill floor):** fully resident, resident with ExactPrefill, paged at 2
+         slots and paged with no eviction possible (`moePagedAllSlotsForTest`) all agree exactly.
+       - **The 40-token prompt:** all three differ from the default resident load by the same 0.004416, and from each
+         other by exactly 0.
+       - **Teacher-forced decode with no prompt phase:** paged at 2 and 8 slots equals fully resident bit for bit.
+       - **The gap is the batched f16 prefill.** A paged model's prompt takes the layer-major prefill (bit-identical to
+         sequential, `prefillMoEPaged`), while the default resident load takes the batched pass. The finding compared
+         paging against a resident load that prefilled differently.
+     - **G-1, amended 2026-10-08 with that mechanism before its test ran:** the reference is the fully resident load
+       with ExactPrefill (the same prefill path). Still bit-identity.
+       - **PASS** (`metal.TestMoECacheExperts_bitExactMetal`): tokens, top-5 log-probabilities and every layer's K/V,
+         over both prompts.
+       - mixtral-tiny at 2, 3, 4 and 7 of 8 slots (317, 250, 172 and 31 evictions); gemma4-moe-tiny at 2 and 3 of 4
+         (102 and 56).
+       - Every planted defect is red on both paths: an evicted slot not restaged (log-probabilities 0.072 apart on
+         mixtral, the tokens on Gemma 4), the GPU told the next slot (0.0072 / tokens), a neighbour's scales (tokens /
+         tokens).
+     - **The last two cells** (`metal.TestMoECacheExperts_specAndSessionMetal`): on 2 of 8 slots, speculative verify
+       (both drafters) emits plain decode's tokens. A two-turn Session equals the resident ExactPrefill load's bit for
+       bit, 14 positions reused by both.
+     - **G-2 PASS** (`metal.TestMoECacheExperts_int8DeclinesByName`): int8 experts under the cache decline on both
+       paths with "the expert cache ... pages int4 experts only, and this model's experts are not int4 ...". The check
+       runs before the build (`errPagedExpertsNotInt4` in `buildMoE` and `buildGemma4MoE`). With it skipped
+       (`skipPagedInt4CheckForTest`), the decline is the recovered panic again; the two panics are now unreachable
+       assertions.
+     - **The grid:** the eight MoECacheExperts and MoECacheSlots resident cells are tested, and the untested ceiling
+       falls 9 -> 1. The Options doc names the Metal test, the prefill condition and the int4 requirement.
 3. **ResidentPrefillChunk below Metal's batched-prefill floor breaks chunk invariance.** With two KV slots the floor
    is 32 tokens; at chunk 8 or 16 a prompt prefilled in chunks while another generation decodes differs from the same
    prompt prefilled whole by 0.003-0.004 in log-probability, so the reply depends on whether someone else was
