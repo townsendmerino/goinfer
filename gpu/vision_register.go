@@ -2,7 +2,11 @@
 
 package gpu
 
-import "github.com/townsendmerino/aikit/vision"
+import (
+	"github.com/townsendmerino/aikit/vision"
+
+	"github.com/townsendmerino/goinfer/multimodal"
+)
 
 // init plugs the resident WebGPU SigLIP encoder into the vision package, so a
 // `-tags gpu` build that blank-imports gpu lets vision.Encoder.EnableResident()
@@ -24,6 +28,7 @@ func init() {
 		}
 		return &residentVision{c: c, ve: ve}, nil
 	})
+	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "webgpu") // S8: aikit's slot cannot be asked what is registered
 }
 
 // residentVision owns the encoder's WebGPU Context so Close tears down both the

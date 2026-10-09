@@ -2,7 +2,11 @@
 
 package cuda
 
-import "github.com/townsendmerino/aikit/vision"
+import (
+	"github.com/townsendmerino/aikit/vision"
+
+	"github.com/townsendmerino/goinfer/multimodal"
+)
 
 // init plugs the resident CUDA SigLIP encoder into the vision package, so a `-tags cuda` build
 // that blank-imports cuda lets vision.Encoder.EnableResident() run the tower on the device.
@@ -22,4 +26,5 @@ func init() {
 		}
 		return NewVisionEncoder(w)
 	})
+	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "cuda") // S8: aikit's slot cannot be asked what is registered
 }

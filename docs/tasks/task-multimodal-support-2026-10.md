@@ -18,8 +18,9 @@
   - S14 (speech).
   - The Mac's third S7/S13-lite pass.
   - The `--embed-int4` default (option D).
-- **Done since:** S11 (several images per message, 2026-10-09).
-- **Not started:** S8, S10's remaining families, S12, full S13, S15.
+- **Done since:** S11 (several images per message) and S8 (the README and doc support table, computed from code and
+  drift-checked), both 2026-10-09.
+- **Not started:** S10's remaining families, S12, full S13, S15.
 
 The order is in "Order of work". Each phase writes its own gates into this doc, and commits them, before its first
 measurement (CLAUDE.md, "Pre-registration").
@@ -1805,6 +1806,35 @@ proves its implementation matches that declaration.
 - **G-S8d:** `gate quick` green.
 
 **Cost:** half a day by day.
+
+#### S8 results (2026-10-09, by day)
+
+- **Declarations:**
+  - `multimodal.DeclaredTowers` and `LiveTowers` / `TowerDrift`.
+  - `MarkResidentTower`, called beside aikit's unnamed SigLIP and Qwen2.5-VL slots on Metal, CUDA and WebGPU.
+  - `decoder.HybridImagePrefillDeclared` (CUDA, dense hybrids).
+  - `imageTurnDecodesResident`, the decoder cell. It shares Gemma 4's rule with `GenerateGemma4VLSpans`
+    (`gemma4ImageDecodeResident`), so the two cannot drift.
+- **The table:** generated into `docs/multimodal.md`, after the title, with the 2026-10-02 audit block below it kept as
+  the record. The README has a new "Images and audio" section with the same cells, without notes.
+- **G-S8a PASS:**
+  - `TestSupportTable_fresh` (decoder).
+  - `TestSupportTable_everyFamilyHasALoader` (serveapp, over `loadVisionTower`'s `mt ==` branches, gemma3 by fallback).
+- **G-S8b PASS** (`TestSupportTable_plantedDefects` and the loader test's planted row):
+  - Qwen3.5+ dense on Metal reads GPU / CPU, and no Metal hybrid prefill is declared. That is this morning's error,
+    now computed.
+  - Qwen3.5+ dense on CUDA reads GPU / GPU.
+  - A Gemma 4 tower on WebGPU reads CPU.
+  - A causal non-E Gemma 4 decodes on the CPU.
+  - The README and doc rows agree.
+  - A planted `mistral3` row is reported as having no loader.
+- **G-S8c PASS:** `TestSupportTable_metalDeclarations` on the Mac (planted: a tower dropped from the declaration is
+  reported), and `_cudaDeclarations` and `_webgpuDeclarations` on nobara. Each build's live towers equal its declared
+  row; the hybrid image prefill is implemented exactly where declared.
+- **G-S8d PASS:** `gate quick` green (2,261 passed, 0 failed); vet and staticcheck clean on every touched module.
+- **What the computed table says that the hand-kept one did not:**
+  - Qwen3.5+ MoE decodes an image turn on the CPU on CUDA too: CUDA's hybrid prefill excludes MoE hybrids.
+  - Gemma 4 31B on WebGPU is CPU tower, GPU decoder.
 
 #### Night 2026-10-07 on the Mac, read 2026-10-08 (raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-07-mac/`)
 

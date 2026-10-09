@@ -150,7 +150,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 			return
 		}
 		bidirectional := m.w.Cfg.UseBidirectionalAttention != ""
-		eModel := m.w.arch.gemma4.HiddenSizePerLayerInput > 0 || m.w.arch.gemma4.SharedKVLayers > 0
+		eModel := gemma4IsEModel(m.w.arch)
 		// S9 (docs/tasks/task-multimodal-support-2026-10.md): an E-model's image turn prefills on the resident when the
 		// backend takes it (Metal's layer-major pass), from the rows the CPU path would run: a text position's resident
 		// embedding ([h ‖ PLE]), an image position's projected feature, unscaled, with PLE from PAD's token identity. A
@@ -175,7 +175,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 		useGPU := false
 		gpuPos := 0
 		committed := false
-		if (bidirectional || eModel) && m.tryClaimResident() {
+		if gemma4ImageDecodeResident(bidirectional, eModel) && m.tryClaimResident() { // S8's table reads the same rule
 			// The resident cache is about to hold THIS turn's content. If decode
 			// completes naturally, residentCommitIDs below records it and this
 			// defer's forget is skipped (committed=true); any other exit (error,
