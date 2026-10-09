@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.2
 
 require (
-	github.com/townsendmerino/aikit v1.60.0
+	github.com/townsendmerino/aikit v1.61.0
 	golang.org/x/text v0.40.0
 )
 
