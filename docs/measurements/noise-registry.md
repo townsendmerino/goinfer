@@ -85,7 +85,7 @@ not a distribution.**
 - goinfer, phi3-mini, temperature-only sampling, CUDA, driver 595.58.03;
 - the same binary, 686c9f8, read 112.4 tok/s in one session and 116.5 in another (ln ratio 0.036);
 - the two readings also came from different scripts: the original row was an add-on script's
-  (`docs/legacy-benchmarks.md:908`, `:910`; restated at `docs/benchmarks.md:2415`).
+  (`docs/legacy-benchmarks.md:908`, `:910`; restated at `docs/benchmarks.md:2427`).
 
 **In the same gap, the peer moved 0.16% and 0.33%** (Ollama 125.8 → 125.6 and 121.8 → 121.4,
 `docs/legacy-benchmarks.md:913`). That is the size TE2(b) measures for peers.
