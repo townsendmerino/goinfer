@@ -316,6 +316,33 @@ top five) as a numeric fingerprint through the public entry points.
    fully resident model by about 0.004; with slots for all experts they are identical. With int8 experts Metal's
    build panics ("experts are not int4-direct") and the recover turns it into a decline, rather than a named refusal.
    The eight MoECacheExperts and MoECacheSlots resident cells stay untested.
+   - **The fix, planned and registered 2026-10-08 before any code** (owner: "go", taking the recommendations: a named
+     decline for int8, bit-identity as the bar).
+     - **What the code says about the cause.** With slots >= experts Metal does not page at all (`metal/moe.go`,
+       `n < nE`), so the identical case runs the normal forward. With fewer slots, the whole token runs
+       `forwardLogitsMoEPaged`, a separate forward with a per-layer submit, its own router encode and its own LM-head
+       encode. The two expert dispatches use the same kernels, and the stage fn copies the same int4 bytes and f16
+       scales the stacked build reads. So the measured gap is the paged forward against the normal one; eviction is
+       one candidate among several.
+     - **Step 0, the cause, by day on tiny fixtures:**
+       1. Reproduce the cell.
+       2. Add a third arm, paged with no possible eviction (a test seam: the paged forward with slots = experts). If
+          it already differs, the paged forward is the cause.
+       3. Difference the residual per layer to name the first divergent layer and op.
+       4. Compare each staged slot's bytes and scales with the stacked rows, after a first stage and after an
+          evict-and-restage.
+       5. The same for Gemma 4's paging (`metal/gemma4_moe.go`).
+     - **Step 1:** fix by the cause found, to bit-identity. If that turns out expensive, a stated tolerance is the
+       owner's decision then, not before.
+     - **G-1, the gate:** through the real caller (`decoder.Load` with MoECacheExperts and MoECacheSlots, then
+       generate), decode log-probabilities and the K/V are bit-identical to the fully resident load. At 2, 3 and 4 of
+       8 slots and at nE-1, on mixtral-tiny int4, and on a Gemma 4 MoE tiny for its path. Planted defects, each red:
+       an evicted expert not restaged; a slot index off by one; a scale from the wrong expert.
+     - **G-2, int8 experts:** checked before the build, a decline that names the reason ("pages int4 experts only;
+       this model's experts are int8 — load with --quant int4, or drop --moe-cache-experts/--moe-cache-slots"),
+       reached without the panic recovery (a test asserts it). Removing the check turns it red. The two panics
+       (`metal/moe.go`, `metal/gemma4_moe.go`) become unreachable assertions.
+     - **Afterwards:** the eight cells move to tested; the Options doc cites the Metal test beside the CUDA ones.
 3. **ResidentPrefillChunk below Metal's batched-prefill floor breaks chunk invariance.** With two KV slots the floor
    is 32 tokens; at chunk 8 or 16 a prompt prefilled in chunks while another generation decodes differs from the same
    prompt prefilled whole by 0.003-0.004 in log-probability, so the reply depends on whether someone else was
