@@ -1,8 +1,9 @@
 # Task: review the Go library as the embedding developer's product, before v1.0 binds it (2026-10)
 
-> **Status: SCOPED 2026-10-01, not started.** To run after v0.20.0 is tagged, in a session with no access to this
-> repository, against the published tag. The pre-registration below (§3) is written before any program is, and a
-> finding is graded against it rather than argued about afterwards.
+> **Status: RUN 2026-10-09** against v0.22.0 (the latest tag; the plan said v0.20.0), by a fresh agent with no
+> access to this repository, on the M1 Pro. Report verbatim:
+> [`library-surface-2026-10-09.md`](../measurements/library-surface-2026-10-09.md). **9 must-fix, 19 should-fix,
+> 4 notes.** Under §3's outcome rule v1.0 waits on the nine; §5 maps each to its tier and a change.
 
 ## 1. Why now
 
@@ -98,3 +99,28 @@ empty directory, the published tag only, declared prior contact with the project
 provenance, and the findings graded by §3. This session then maps each finding to a change.
 
 Not in scope: the HTTP server's API (`docs/server.md`), the CLIs, and performance. Each has its own instruments.
+
+## 5. Outcome (2026-10-09)
+
+Each must-fix below is graded by the run, not re-argued here. "Checked" is this session reading the source at
+`origin/main` 5802692a to confirm the mechanism; a row not checked rests on the run's evidence alone.
+
+| id | kind | surface | tier (`api-tiers.md`) | checked | change it becomes |
+|---|---|---|---|---|---|
+| M1 | a | `constrain.JSONSchema` `format` | **unlisted** | yes: `constrain/schema.go:120` lists `format` among the ignored annotation keywords beside `title` and `description` | refuse `format` like `pattern`, or enforce the common ones; the doc promise stands either way |
+| M2 | c | `chat` + `tokenizer` + `decoder` render, encode, stop ids | Hard (`Detect`, `RenderSegments`, `EncodeSegments`, `Generate`, `chat.Stops`) | no | a `Template.StopIDs(tok)` (or a chat-level prompt builder) so the 12-line loop leaves every caller |
+| M3 | c | `tokenizer.Decode` / `DecodePiece` for streaming | Hard | partly: `docs/use-from-go.md:94` streams with per-token `Decode` | a streaming detokenizer (UTF-8 and leading-space state); fix the doc's smallest program |
+| M4 | c | tool-call wiring: `ToolCallWrapper`, `ToolCallOpener`, `ToolCallsGrammar`, `NewLazyMasker`, `ParseToolCallsFor`, `SplitThink` | `ParseToolCalls` Hard; the rest **unlisted** | no | a `Template.ToolGrammar(tools)`-style helper returning the lazy masker; state the empty `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` |
+| M5 | b | `decoder.Load` of a cpu-arm64 `.giw` with the zero `Options.Backend` | `Load` Hard; `Backend` Experimental | yes: `wantsCanonicalInt4` (`decoder/weightmat.go:497`) treats `""` as a non-CPU backend, so the zero value fails where `"cpu"` loads | normalise `""` to `"cpu"` before that check |
+| M6 | d | `Model.Close` during a generation | Hard | yes, structurally: `metal.(*resident).Close` (`metal/model.go:2631`) releases the device with no wait for an open chain (`chainOpen`, `metal/greedy_chain.go:167`) | Close waits for, or cancels and drains, in-flight generations; write the contract |
+| M7 | d | GPU-resident `Model.Generate` concurrency | Hard (`Generate`); `CPUConcurrentSafe` unlisted | no | one written statement on `Model`: concurrent calls are safe; extras decode on the CPU while the resident KV is claimed |
+| M8 | d | `Generate` / `Generation.Err` cancellation | Hard | no | document that `Err` wraps `ctx.Err()` and the prefill check granularity |
+| M9 | d | `decoder.Load` error kinds | `Load` Hard; `ResidentDeclineError` unlisted | no | typed errors for unsupported family, quant and backend; an `Options` way to make a backend decline an error |
+
+**Unlisted surfaces the five programs needed** (each a kind-d finding by §3's own rule, to be placed before v1.0):
+`constrain.JSONSchema`, `constrain.GrammarFromStruct`, the tool-grammar set in M4, `decoder.FitDeclineError` and
+`ErrWontFitResident`, `Model.EffectiveBackend` / `BackendReport` / `CPUConcurrentSafe`, and the `embeddinggemma2`
+package. The run's S12 says the same of the README's headline API.
+
+**Should-fix worth naming now:** S1 (a long prompt silently leaves the Metal resident path: 40 s against 4.9 s to
+first token) and S5 (use after `Close` on a `.giw` is a SIGSEGV) are the two a user would hit first.

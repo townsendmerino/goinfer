@@ -696,6 +696,23 @@ supports.
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_real.py:65` | goinfer | `m = SentenceTransformer(model_dir, model_kwargs={"dtype": torch.float32}, device="cpu")` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_tiny.py:66` | goinfer | `cfg._attn_implementation = "eager"` |
 | `docs/measurements/embeddinggemma2-2026-10-06/audio-gate0/spec.md|scripts/pin_embeddinggemma2_vision.py:50` | goinfer | `m = SentenceTransformer(model_dir, model_kwargs={"dtype": torch.float32}, device="cpu")` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/anthropic.go:34` | goinfer | `// Thinking: {type: enabled\|adaptive\|disabled, budget_tokens}. enabled/adaptive render t` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/anthropic.go:94` | goinfer | `// system field and message content. Unknown block types and cache_control` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/anthropic_stream.go:65` | goinfer | `anthropicEvent(ss, "ping", map[string]any{"type": "ping"}) // liveness check; cheap insu` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/helpers.go:328` | goinfer | `ss.frame(": ping\n\n")` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/helpers.go:357` | goinfer | `IncludeUsage bool `json:"include_usage"`` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/openai.go:1399` | goinfer | `case "system", "developer":` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/openai.go:214` | goinfer | `return fmt.Errorf("prompt is too large for the model's context window of %d tokens (cont` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/openai.go:564` | goinfer | `f["context_window"] = ctx` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/openai.go:594` | goinfer | `MaxCompletionTokens *int            `json:"max_completion_tokens"` // current OpenAI SDK` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/openai.go:689` | goinfer | `type toolSpec struct {` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses.go:236` | goinfer | `sseEvent(ss, "response.completed", map[string]any{` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses.go:328` | goinfer | `sseEvent(ss, "response.completed", map[string]any{` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses.go:35` | goinfer | `Tools              []toolSpec      `json:"tools"`` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses.go:358` | goinfer | `tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Paramet` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses.go:437` | goinfer | `sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "respons` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses.go:481` | goinfer | `sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "respons` |
+| `docs/measurements/harness-dialects-2026-10-09.md|internal/serveapp/responses_test.go:137` | goinfer | `"tools":[{"type":"function","function":{"name":"get_weather","description":"Get weather ` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|decoder/swapwatch.go:103` | goinfer | `t := time.NewTicker(opts.PollInterval)` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|internal/serveapp/swapguard.go:73` | goinfer | `fmt.Fprintf(os.Stderr, "swap guard: armed, threshold +%d MB over baseline\n", thresholdM` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|metal/alias.go:102` | goinfer | `func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {` |
@@ -1034,6 +1051,10 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:796` | goinfer | `return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kin` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:716` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:138` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
+| `docs/tasks/task-library-surface-review-2026-10.md|constrain/schema.go:120` | goinfer | `"title": true, "description": true, "default": true, "examples": true, "format": true,` |
+| `docs/tasks/task-library-surface-review-2026-10.md|decoder/weightmat.go:497` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
+| `docs/tasks/task-library-surface-review-2026-10.md|metal/greedy_chain.go:167` | goinfer | `func (r *resident) chainOpen(q chainReq) error {` |
+| `docs/tasks/task-library-surface-review-2026-10.md|metal/model.go:2631` | goinfer | `func (r *resident) Close() error {` |
 | `docs/tasks/task-mellum21-2026-10.md|internal/servecheck/check.go:183` | goinfer | `if len(ev.Choices) > 0 && ev.Choices[0].Delta.Content != "" {` |
 | `docs/tasks/task-minimax-code-compat-2026-09.md|cuda/resident.go:48` | goinfer | `const cudaCtxCapDefault = 4096` |
 | `docs/tasks/task-minimax-code-compat-2026-09.md|decoder/fitplan.go:184` | goinfer | `MetalCtxDefault = 4096` |
