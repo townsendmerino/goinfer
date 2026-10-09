@@ -11,7 +11,7 @@ TITLES = {"mr": "mister", "mrs": "missus", "dr": "doctor"}
 def norm(t, hyp=True):
     if hyp:
         t = t.split("<asr_text>", 1)[-1]
-        t = re.sub(r"<\|[^|>]*\|>", " ", t)
+        t = re.sub(r"<[^<>]{1,40}>", " ", t)  # any special-token form: <|im_start|>, Gemma's <channel|>, <|channel>
     t = t.lower().replace("-", " ")
     t = re.sub(r"\b(mr|mrs|dr)\.", lambda m: TITLES[m.group(1)], t)
     t = re.sub(r"[^a-z0-9' ]", " ", t)
@@ -27,7 +27,7 @@ def errs(hyps):  # per clip (errors, ref words)
     return {i: (dist(norm(refs[i], False), norm(hyps.get(i, ""))), len(norm(refs[i], False))) for i in ids}
 def wer(e, sel=None):
     sel = sel or ids; return 100.0 * sum(e[i][0] for i in sel) / sum(e[i][1] for i in sel)
-ctrl = lambda h: sum(1 for i in ids if re.search(r"<\|[^|>]*\|>", h.get(i, "")))
+ctrl = lambda h: sum(1 for i in ids if re.search(r"<[^<>]{1,40}\|>|<\|[^<>]{1,40}>", h.get(i, "").split("<asr_text>", 1)[0] if "<asr_text>" in h.get(i, "") else h.get(i, "")))
 R, F, I = hf, go["f32"], go["int4"]
 S = {ids[k]: F[ids[(k + 1) % len(ids)]] for k in range(len(ids))}
 eR, eF, eI, eS = errs(R), errs(F), errs(I), errs(S)
@@ -35,7 +35,10 @@ print(f"{len(ids)} clips, {sum(eF[i][1] for i in ids)} reference words")
 for name, e, h in (("R  transformers float32", eR, R), ("F  goinfer native weights", eF, F), ("I  goinfer int4 (serve defaults)", eI, I), ("S  control: F on the next clip's audio", eS, S)):
     print(f"  {name:42s} WER {wer(e):6.2f}%   control tokens in {ctrl(h)} replies")
 if gemma:
-    eD = errs(gemma); print(f"  {'D  Gemma 4 E4B (record only)':42s} WER {wer(eD):6.2f}%   ({sum(1 for i in ids if i in gemma)} replies)")
+    quoted = lambda t: max(re.findall(r'"([^"]{8,})"', t), key=len) if re.findall(r'"([^"]{8,})"', t) else t
+    eD = errs(gemma); eD2 = errs({i: quoted(gemma.get(i, "")) for i in ids})
+    print(f"  {'D  Gemma 4 E4B, raw replies (record only)':42s} WER {wer(eD):6.2f}%   ({sum(1 for i in ids if i in gemma)} replies)")
+    print(f"  {'D' + chr(39) + ' Gemma 4 E4B, longest quoted span':42s} WER {wer(eD2):6.2f}%   (its replies carry a preamble and thinking-channel markers; the quoted span is a best-effort extraction)")
 # G-S14c4a
 eq = [i for i in ids if R[i].replace("<|im_end|>", "").strip() == F[i].strip()]
 print(f"\nG-S14c4a: F byte-equal to R on {len(eq)}/{len(ids)} clips (bar >= 70/73 scaled: {0.95 * len(ids):.1f}); |WER_F - WER_R| = {abs(wer(eF) - wer(eR)):.2f} pts (bar <= 0.30)")
