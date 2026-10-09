@@ -3290,6 +3290,41 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
   - **Purpose:** re-rank the failing cells for S17/S18's next lever, since three of the five moved by day.
   - **Queue:** `s7-mac-0909` and `s13lite-mac-0909`, 20 minutes each, tonight.
 
+- **S17's next Metal lever: Gemma 3's image turn prefills on the CPU. A resident image prefill on Metal, registered
+  2026-10-09 before any code** (owner: "continue with image/audio track").
+  - **Measured by day (exploratory, one run each; `metal/zz_g3_prefill_probe_test.go`, not committed):**
+    - Gemma 3 4B's image turn (282 positions, 256 of them the image) prefills on the CPU in 3.67-3.86 s, then
+      uploads its K/V (0.04 s).
+    - Metal implements no `ResidentImagePrefill`, so every non-Qwen image turn takes that bridge.
+    - The same 282 positions through Metal's batched pass take 0.93 s (causal, so for scale only).
+    - With the tower at about 2.8 s, that CPU prefill is most of the gap between S7's 6.6 s and the peers' 4.7-5.0 s.
+  - **Change:**
+    - `metalResident.PrefillImageLast` (`decoder.ResidentImagePrefill`): the batched f16 pass with the image block
+      `[imgStart, imgEnd)` attending bidirectionally, as the CPU's `KVCache.attendHi` and CUDA's
+      `PrefillImageLast` do.
+    - `attention_prefill` (the exact kernel) takes the block. A query inside it sees keys up to `imgEnd - 1`; every
+      other query stays causal; the sliding window's lower bound stays at the causal position's.
+    - When a block is present the pass runs the exact kernel on every layer; the fused and steel kernels carry no
+      mask. Gemma 3's head dim (256) uses the exact kernel anyway.
+    - The whole prompt in one pass (no chunking across a bidirectional block, as on CUDA).
+  - **G-IP1, kernel:** `attention_prefill` with a block against a float64 reference, covering causal rows, block
+    rows, a block at a non-zero start and a sliding window that cuts in. Max abs diff <= 4e-3 (f16 output).
+    Control: the same kernel with no block must miss by at least 10x on the block's rows.
+  - **G-IP2, tiny** (`gemma3-vl-tiny`, its image golden's prompt): the resident image prefill's last-token logits
+    and 8 teacher-forced decode steps after it, against the CPU's image prefill (`prefillLogitsVL`) at int4 per-32.
+    - Bars: cosine >= 0.995, relL2 <= 0.15.
+    - Planted defect: the block ignored (causal everywhere) must read red, or the fixture is blind and the gate moves
+      to G-IP3 alone, recorded.
+  - **G-IP3, real** (Gemma 3 4B, S3's four images, through its sidecar): last row plus 8 teacher-forced steps, against
+    the CPU image prefill at per-32.
+    - Bar: the resident path's worst cosine >= today's production path's worst minus 0.005, where today's path is the
+      CPU W4A8 prefill uploaded, graded against the same reference. Every argmax difference is an R10 near-tie.
+    - Planted defect as in G-IP2.
+  - **G-IP4, served** (by day, exploratory): S3's served comparison (`run-gs3c-served.sh`, arms `metal` against the
+    CPU bridge). Replies identical or first diverging at a near-tie. TTFT reported; tonight's S7 pass, if queued
+    after this lands, carries the record.
+  - **Speed:** ships at >= 1.02x TTFT (the bar), which the measurement above expects to clear by about 1.7x.
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common
