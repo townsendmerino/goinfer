@@ -2426,6 +2426,27 @@ The owner put this last, after the WebGPU work. It starts with the choice P11 le
 Whisper encoder (which serves Voxtral), toward pure-Go Whisper; or Voxtral Realtime. Gates are written once the family
 is chosen.
 
+#### S14, the family chosen: owner 2026-10-08, "b then c". Registered before any code.
+
+**Order:** (b) a Whisper-style front end plus Qwen3-ASR, then (c) the Whisper encoder (which also serves Voxtral Mini) toward pure-Go Whisper. (d) Voxtral Realtime and (e) CTC encoders are not in this tranche. Each stage's gates are registered when it starts; only S14.1 is registered here. The owner did not ask for the do-nothing measurement first (Gemma 4 E4B's word error rate against Qwen3-ASR's on the same clips); it stays as a record-only side measurement at S14.3, not a gate and not a precondition.
+
+- **S14.1 · the Whisper front end** (aikit `audio`, a second extractor beside Gemma 4's; shared by every later stage).
+- **S14.2 · Qwen3-ASR's audio encoder and projector** (AuT: three stride-2 Conv2d, sinusoidal positions, windowed attention).
+- **S14.3 · Qwen3-ASR end to end:** the prompt layout, the soft-token splice into the `qwen3` decoder (full-oracle already), served transcription; WER against Hugging Face.
+- **S14.4 · (c):** the Whisper encoder, Voxtral Mini through the `llama` decoder, then the cross-attention decoder and the decode policy.
+  Hardware reference: Qwen3-ASR-0.6B is 0.94B parameters, Apache-2.0, ungated, on the NVMe after S14.2 starts.
+
+##### G-S14a, the Whisper front end (S14.1), registered 2026-10-08 before any code
+
+- **Reference:** transformers 5.15.0 (`~/g4venv`) `WhisperFeatureExtractor`. It has two implementations and `__call__` uses the torch (float32) one when torch is present; the NumPy (float64) one is the other. **Measured before registering, to set the bar:** on the LibriSpeech clip padded to 30 s the two differ by at most 1.657e-05 (mean 2.85e-08), 128 mels, n_fft 400, hop 160, output [128, 3000], values in [-0.76, 1.24].
+- **Function:** `audio.WhisperFeatures(samples []float32, mels int)` returns the [mels x 3000] features, row-major, exactly as the extractor does with its defaults: the clip zero-padded to 30 s (480,000 samples) or truncated to 30 s, a periodic Hann window of 400, centre-padded by reflection, power spectrum, the Slaney mel bank with Slaney area normalisation (mels 80 or 128, fmax 8 kHz), `log10` with each clip clamped to its maximum minus 8, then `(x + 4) / 4`, the last STFT frame dropped. A mel count other than 80 or 128, or an empty clip, is refused. A second function gives the number of valid (non-padding) frames for a sample count, pinned to the extractor's own attention mask.
+- **Bars (per case):** the output shape equal to the reference's; the largest absolute difference against EACH of the two reference paths **<= 5e-05** (three times their own spread) and the mean absolute difference **<= 1e-06**; the valid-frame count equal to the mask's sum for lengths 1, 159, 160, 161, 16,000, 93,680, 480,000 and 500,000.
+- **Cases (8):** the LibriSpeech clip (93,680 samples); its 44.1 kHz and 48 kHz-stereo 16 kHz references (`testdata/speech/*.ref16k.f32`); a synthetic 30.0 s signal (tones plus seeded noise, exactly 480,000 samples); a synthetic 31.5 s signal (truncated); an 800-sample clip (0.05 s); 2 s of silence (every value equals the clamp, no NaN); the LibriSpeech clip with 80 mels.
+- **Planted defects, each alone, each must put some case over the 5e-05 bar** (a test-only seam, in the manner of the DeepStack gates): (1) the HTK mel scale; (2) the magnitude spectrum for the power one; (3) no `max - 8` clamp; (4) the symmetric Hann window; (5) zero padding at the edges instead of reflection; (6) no `(x + 4) / 4`. If a planted defect stays under the bar, the bar is too loose and that is recorded, not argued.
+- **Where the code lives:** the extractor in aikit (`audio/whisper_features.go`; aikit is a separate repo with its own release, so goinfer's push waits on an aikit tag, as before); the golden, its pin script (`scripts/pin_whisper_features.py`) and the numeric test in goinfer (the golden is gzip-compressed, per the repo's convention for large raw data).
+- **Prediction, written now:** the Go output is within 3e-06 of the NumPy path and within 2e-05 of the torch path on every case (it does float64 arithmetic and rounds once, like the NumPy path); every planted defect exceeds 1e-03 on the speech clip. The most likely surprise is the 400-point FFT (not a power of two) and the exact framing at the clip edges.
+- **Tier and cost:** quick, by day: the pin script seconds, the Go tests seconds, about two hours of work.
+
 ### S15 — Video (back in scope, owner 2026-10-07 evening)
 
 Depends on S11 (several images per message). They share:
