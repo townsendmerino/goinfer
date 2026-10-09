@@ -34,6 +34,7 @@ const (
 	histQwen3
 	histQwen35
 	histGemma4
+	histMellum21 // Qwen3's rule except that the block is written only for a turn that HAS reasoning, never an empty one for the last message
 )
 
 // historyKind is the rule this Template applies to assistant turns (histNone unless managed and not ThinkAsIs).
@@ -57,6 +58,11 @@ func detectHistoryKind(tmpl string) histKind {
 		strings.Contains(tmpl, `reasoning_content|trim`) &&
 		strings.Contains(tmpl, `'\n<think>\n' + reasoning_content + '\n</think>\n\n' + content }}`):
 		return histQwen35
+	// Mellum2.1 (JetBrains/Mellum2.1-12B-A2.5B-Thinking, 2026-10-07): Qwen3's strip and extraction, but `{%- if reasoning_content %}` decides whether an after-query turn gets a block.
+	case strings.Contains(tmpl, afterQuery) && strings.Contains(tmpl, "{%- if reasoning_content %}") &&
+		strings.Contains(tmpl, `'\n<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n')`) &&
+		!strings.Contains(tmpl, `loop.last or (not loop.last and reasoning_content)`):
+		return histMellum21
 	}
 	return histNone
 }
@@ -131,6 +137,10 @@ func qwenAssistant(kind histKind, t Turn, idx, lq, n int) (block bool, reasoning
 		}
 	case histQwen3:
 		if after && (idx == n-1 || reasoning != "") {
+			return true, strings.Trim(reasoning, "\n"), strings.TrimLeft(content, "\n")
+		}
+	case histMellum21:
+		if after && reasoning != "" {
 			return true, strings.Trim(reasoning, "\n"), strings.TrimLeft(content, "\n")
 		}
 	}

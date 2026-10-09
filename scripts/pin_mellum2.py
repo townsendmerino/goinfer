@@ -16,12 +16,34 @@ Writes two forwardGolden records (the format decoder/forward_test.go consumes):
 import json
 import os
 
+PROV = None
+
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-PATH = os.path.expanduser("~/models/mellum2-unq")
-TD = os.path.expanduser("~/mycode/goinfer/testdata")
+# Defaults pin Mellum2 2.0 exactly as before. For another checkpoint (Mellum2.1) set MELLUM_PIN_PATH, MELLUM_PIN_PREFIX (the golden files become <prefix>_forward_golden.json and
+# <prefix>_window_golden.json), MELLUM_PIN_MODEL_ID, MELLUM_PIN_REVISION and, for a thinking checkpoint, MELLUM_PIN_NOTHINK=1 (the chat golden is rendered with enable_thinking=False); MELLUM_PIN_TESTDATA overrides the output directory. The records carry a "provenance" block
+# (checkpoint revision, per-shard sha256 of the weights actually read, transformers and torch versions) that the Go test ignores.
+PATH = os.path.expanduser(os.environ.get("MELLUM_PIN_PATH", "~/models/mellum2-unq"))
+TD = os.path.expanduser(os.environ.get("MELLUM_PIN_TESTDATA", "~/mycode/goinfer/testdata"))
+PREFIX = os.environ.get("MELLUM_PIN_PREFIX", "mellum2")
+MODEL_ID = os.environ.get("MELLUM_PIN_MODEL_ID", "JetBrains/Mellum2-12B-A2.5B-Instruct")
+
+
+def provenance():
+    import hashlib
+    import transformers
+    shards = {}
+    for f in sorted(os.listdir(PATH)):
+        if f.endswith(".safetensors"):
+            h = hashlib.sha256()
+            with open(os.path.join(PATH, f), "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 24), b""):
+                    h.update(chunk)
+            shards[f] = h.hexdigest()
+    return {"model_id": MODEL_ID, "revision": os.environ.get("MELLUM_PIN_REVISION", ""), "shard_sha256": shards,
+            "transformers": transformers.__version__, "torch": torch.__version__}
 
 
 def record(model, tok, ids, prompt_note):
@@ -33,7 +55,8 @@ def record(model, tok, ids, prompt_note):
     samp = rng.choice(len(logits), 256, replace=False)
     lf = logits.astype(np.float64)
     return {
-        "model_id": "JetBrains/Mellum2-12B-A2.5B-Instruct",
+        "model_id": MODEL_ID,
+        "provenance": PROV,
         "note": prompt_note,
         "dtype": "bfloat16",
         "prompt": "",
@@ -51,6 +74,8 @@ def record(model, tok, ids, prompt_note):
 
 
 def main():
+    global PROV
+    PROV = provenance() if os.environ.get("MELLUM_PIN_PATH") else None
     tok = AutoTokenizer.from_pretrained(PATH)
     model = AutoModelForCausalLM.from_pretrained(PATH, dtype=torch.bfloat16, low_cpu_mem_usage=True).eval()
 
@@ -60,10 +85,11 @@ def main():
     chat_text = tok.apply_chat_template(
         [{"role": "user", "content": "What is the capital of France? Answer in one word."}],
         add_generation_prompt=True, tokenize=False,
+        **({"enable_thinking": False} if os.environ.get("MELLUM_PIN_NOTHINK") else {}),  # Mellum2.1-Thinking opens its own <think> block by default; with thinking off the argmax is the answer token, as for 2.0
     )
     chat_ids = tok(chat_text, add_special_tokens=False)["input_ids"]
     g1 = record(model, tok, chat_ids, "chat-templated (HF bf16, CPU); first answer token. Inc2 parity gate.")
-    json.dump(g1, open(os.path.join(TD, "mellum2_forward_golden.json"), "w"), indent=1)
+    json.dump(g1, open(os.path.join(TD, PREFIX + "_forward_golden.json"), "w"), indent=1)
     print(f"chat golden: {len(chat_ids)} ids, argmax {g1['argmax']} = {g1['argmax_token']!r}")
 
     # 2. Long prompt past the 1024 sliding window (Inc3) — pins eviction + YaRN.
@@ -74,7 +100,7 @@ def main():
     long_ids = tok(long_text, add_special_tokens=False)["input_ids"]
     assert len(long_ids) > 1100, f"long prompt only {len(long_ids)} tokens; need > window 1024"
     g2 = record(model, tok, long_ids, f"long prompt ({len(long_ids)} tok > window 1024); pins sliding eviction + YaRN-on-full. Inc3.")
-    json.dump(g2, open(os.path.join(TD, "mellum2_window_golden.json"), "w"), indent=1)
+    json.dump(g2, open(os.path.join(TD, PREFIX + "_window_golden.json"), "w"), indent=1)
     print(f"window golden: {len(long_ids)} ids (> 1024), argmax {g2['argmax']} = {g2['argmax_token']!r}")
 
 

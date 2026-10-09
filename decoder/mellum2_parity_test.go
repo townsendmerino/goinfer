@@ -31,10 +31,7 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 	}
 	prog := newProgress(t, t.Name(), len(g.IDs)-1)
 	prog.Phase("load 12B checkpoint")
-	path := os.Getenv("HOME") + "/models/mellum2-unq"
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no Mellum2 checkpoint (%v)", err)
-	}
+	path := assetPath(t, "GOINFER_MELLUM_CKPT") // the checkpoint under test, registered in testdata/assets.json (the P18 gate reads the same one); default $MODELS/mellum2-unq is Mellum2 2.0
 	m, err := Load(path, Options{Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -83,7 +80,7 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 	// The method string is the T3 vocabulary name, checked by emitParityRow: "real-oracle" was
 	// written here for months and reached the manifest verbatim (B15).
 	// Emit only from the forward gate (not the window gate) to avoid a double row.
-	if emit {
+	if emit && os.Getenv("GOINFER_MELLUM_GOLDEN_PREFIX") == "" { // a pair pinned from another checkpoint never writes the 2.0 family's manifest row
 		emitParityRow(t, "mellum", "real-model-oracle", "HF bf16 (Mellum2-12B-A2.5B-Instruct)", 100.0, cos, cos)
 	}
 }
@@ -94,7 +91,7 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 // "Paris"), so this also gates coherence. int8int8 (the serve default) vs bf16:
 // measured sample-256 cosine 0.99955 (floor 0.98, the Gemma 4 12B reference).
 func TestMellum2_logitParity(t *testing.T) {
-	runMellum2Golden(t, "../testdata/mellum2_forward_golden.json", 0.98, true)
+	runMellum2Golden(t, mellum2GoldenPath("forward"), 0.98, true)
 }
 
 // TestMellum2_windowParity pins the sliding-window EVICTION path on the real
@@ -104,5 +101,16 @@ func TestMellum2_logitParity(t *testing.T) {
 // (Inc3 real-model proof; the synthetic unit-level proof is
 // TestMellum2_slidingWindowEviction.)
 func TestMellum2_windowParity(t *testing.T) {
-	runMellum2Golden(t, "../testdata/mellum2_window_golden.json", 0.98, false)
+	runMellum2Golden(t, mellum2GoldenPath("window"), 0.98, false)
+}
+
+// mellum2GoldenPath is the golden pair the two parity tests read. Default: the 2.0 pair (testdata/mellum2_{forward,window}_golden.json). GOINFER_MELLUM_GOLDEN_PREFIX
+// (e.g. ../testdata/mellum21) selects another checkpoint's pair, pinned by scripts/pin_mellum2.py from that checkpoint's own Hugging Face weights; with it set the tests never write the
+// 2.0 family's parity-manifest row.
+func mellum2GoldenPath(kind string) string {
+	prefix := "../testdata/mellum2"
+	if v := os.Getenv("GOINFER_MELLUM_GOLDEN_PREFIX"); v != "" {
+		prefix = v
+	}
+	return prefix + "_" + kind + "_golden.json"
 }
