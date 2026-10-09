@@ -1,0 +1,87 @@
+=== RUN   TestZZQ25VLFixDiag
+decoder: context capped at 29222 (model allows 128000) so that KV fits: weights 3.6 GB + KV 2.0 GB of budget 5.6 GB — pass -ctx to choose, or -stream-weights to lift
+[cpu arm done]
+decoder: .giw context capped at 67505 (model allows 128000) so that KV+scratch fits: needs ~4.89 GB of 5.89 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[cpu arm done]
+decoder: .giw context capped at 53352 (model allows 128000) so that KV+scratch fits: needs ~3.91 GB of 4.91 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[cpu arm done]
+[metal] weights aliased from qwen25vl-3b-instruct.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1785 MB bound in place, 1 MB copied (anonymous) — 1323 MB int4 nibbles (72 single tensors + 72 fused groups = 864 MB) + 297 MB int8 codes (1 matrices) + 165 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[rand n=20 s=1 k=0] vs E: F 0.8573 D 0.9222 B 0.8596 H 0.8596
+[rand n=20 s=1 k=1] vs E: F 0.9904 D 0.9933 B 0.9899 H 0.9899
+[rand n=20 s=1 k=2] vs E: F 0.9725 D 0.9399 B 0.9420 H 0.9498
+[rand n=20 s=1 k=3] vs E: F 0.9904 D 0.9943 B 0.9895 H 0.9904
+[rand n=20 s=1 k=4] vs E: F 0.9935 D 0.9906 B 0.9929 H 0.9926
+[rand n=20 s=1 k=5] vs E: F 0.9972 D 0.9967 B 0.9963 H 0.9965
+[rand n=20 s=1 k=6] vs E: F 0.9958 D 0.9938 B 0.9941 H 0.9944
+[rand n=20 s=1 k=7] vs E: F 0.9953 D 0.9940 B 0.9932 H 0.9934
+[rand n=20 s=1 k=8] vs E: F 0.9923 D 0.9861 B 0.9898 H 0.9901
+[rand n=20 s=2 k=0] vs E: F 0.9418 D 0.9017 B 0.9359 H 0.9359
+[rand n=20 s=2 k=1] vs E: F 0.9181 D 0.9340 B 0.9202 H 0.9313
+[rand n=20 s=2 k=2] vs E: F 0.9724 D 0.9811 B 0.9692 H 0.9715
+[rand n=20 s=2 k=3] vs E: F 0.8650 D 0.8611 B 0.8616 H 0.8683
+[rand n=20 s=2 k=4] vs E: F 0.9381 D 0.9161 B 0.7100 H 0.8935
+[rand n=20 s=2 k=5] vs E: F 0.2503 D 0.1686 B 0.1770 H 0.2032
+[rand n=20 s=2 k=6] vs E: F 0.8782 D 0.8849 B 0.6806 H 0.7579
+[rand n=20 s=2 k=7] vs E: F 0.9690 D 0.9641 B 0.9342 H 0.9673
+[rand n=20 s=2 k=8] vs E: F 0.7271 D 0.7854 B 0.7734 H 0.5924
+[rand n=20 s=3 k=0] vs E: F 0.9920 D 0.9903 B 0.9907 H 0.9907
+[rand n=20 s=3 k=1] vs E: F 0.9774 D 0.9700 B 0.9682 H 0.9722
+[rand n=20 s=3 k=2] vs E: F 0.9713 D 0.9628 B 0.9663 H 0.9644
+[rand n=20 s=3 k=3] vs E: F 0.9726 D 0.9706 B 0.9688 H 0.9674
+[rand n=20 s=3 k=4] vs E: F 0.9578 D 0.9439 B 0.9536 H 0.9551
+[rand n=20 s=3 k=5] vs E: F 0.8861 D 0.9118 B 0.9233 H 0.8866
+[rand n=20 s=3 k=6] vs E: F 0.9740 D 0.9806 B 0.9787 H 0.9634
+[rand n=20 s=3 k=7] vs E: F 0.9841 D 0.9894 B 0.9882 H 0.9605
+[rand n=20 s=3 k=8] vs E: F 0.8964 D 0.8878 B 0.8991 H 0.8986
+[rand n=20 s=4 k=0] vs E: F 0.9569 D 0.9638 B 0.9589 H 0.9589
+[rand n=20 s=4 k=1] vs E: F 0.9272 D 0.9235 B 0.9160 H 0.9170
+[rand n=20 s=4 k=2] vs E: F 0.9810 D 0.9821 B 0.9821 H 0.9782
+[rand n=20 s=4 k=3] vs E: F 0.9705 D 0.9664 B 0.9722 H 0.9689
+[rand n=20 s=4 k=4] vs E: F 0.9787 D 0.9742 B 0.9784 H 0.9750
+[rand n=20 s=4 k=5] vs E: F 0.9873 D 0.9843 B 0.9879 H 0.9836
+[rand n=20 s=4 k=6] vs E: F 0.9848 D 0.0142 B 0.9862 H 0.9819
+[rand n=20 s=4 k=7] vs E: F 0.8774 D 0.8762 B 0.8780 H 0.8729
+[rand n=20 s=4 k=8] vs E: F 0.9730 D 0.9796 B 0.9831 H 0.9679
+[rand n=1562 s=1 k=0] vs E: F 0.9702 D 0.9634 B 0.9641 H 0.9641
+[rand n=1562 s=1 k=1] vs E: F 0.9854 D 0.9819 B 0.9791 H 0.8795
+[rand n=1562 s=1 k=2] vs E: F 0.3573 D -0.1963 B -0.5793 H -0.1996
+[rand n=1562 s=1 k=3] vs E: F 0.9961 D 0.9963 B 0.9953 H 0.9954
+[rand n=1562 s=1 k=4] vs E: F 0.9073 D -0.4105 B 0.9399 H 0.9609
+[rand n=1562 s=1 k=5] vs E: F 0.9973 D 0.9965 B 0.9959 H 0.9962
+[rand n=1562 s=1 k=6] vs E: F 0.4340 D 0.3093 B 0.2091 H -0.0074
+[rand n=1562 s=1 k=7] vs E: F 0.9966 D 0.9955 B 0.9946 H 0.9946
+[rand n=1562 s=1 k=8] vs E: F 0.9823 D 0.9827 B 0.9791 H 0.9918
+[rand n=1562 s=2 k=0] vs E: F 0.9582 D 0.9528 B 0.9596 H 0.9596
+[rand n=1562 s=2 k=1] vs E: F 0.4685 D 0.1608 B 0.2819 H 0.3649
+[rand n=1562 s=2 k=2] vs E: F 0.9939 D 0.9933 B 0.9927 H 0.9935
+[rand n=1562 s=2 k=3] vs E: F 0.9422 D 0.9457 B 0.9316 H 0.9473
+[rand n=1562 s=2 k=4] vs E: F 0.9050 D 0.9132 B 0.9503 H 0.8854
+[rand n=1562 s=2 k=5] vs E: F 0.9563 D 0.9561 B 0.9541 H 0.9497
+[rand n=1562 s=2 k=6] vs E: F 0.9500 D 0.9250 B 0.9296 H 0.9544
+[rand n=1562 s=2 k=7] vs E: F 0.9590 D 0.9592 B 0.9583 H 0.9599
+[rand n=1562 s=2 k=8] vs E: F 0.9583 D 0.9570 B 0.9431 H 0.9501
+[rand n=1562 s=3 k=0] vs E: F 0.9849 D 0.9904 B 0.9874 H 0.9874
+[rand n=1562 s=3 k=1] vs E: F 0.8348 D -0.1372 B 0.8656 H 0.8643
+[rand n=1562 s=3 k=2] vs E: F 0.9854 D 0.9862 B 0.9840 H 0.9810
+[rand n=1562 s=3 k=3] vs E: F 0.9935 D 0.9942 B 0.9936 H 0.9932
+[rand n=1562 s=3 k=4] vs E: F 0.9931 D 0.9927 B 0.9921 H 0.9925
+[rand n=1562 s=3 k=5] vs E: F 0.9811 D 0.9712 B 0.9803 H 0.9779
+[rand n=1562 s=3 k=6] vs E: F 0.9821 D 0.9780 B 0.9830 H 0.9840
+[rand n=1562 s=3 k=7] vs E: F 0.9185 D 0.8651 B 0.9103 H 0.9063
+[rand n=1562 s=3 k=8] vs E: F 0.9618 D 0.9239 B 0.9591 H 0.9551
+[rand n=1562 s=4 k=0] vs E: F 0.9497 D 0.9486 B 0.9426 H 0.9426
+[rand n=1562 s=4 k=1] vs E: F 0.7047 D -0.4691 B -0.3950 H 0.2083
+[rand n=1562 s=4 k=2] vs E: F 0.9746 D 0.9589 B 0.9755 H 0.9689
+[rand n=1562 s=4 k=3] vs E: F 0.9833 D 0.9879 B 0.9875 H 0.9576
+[rand n=1562 s=4 k=4] vs E: F 0.7659 D 0.8580 B 0.8723 H 0.8250
+[rand n=1562 s=4 k=5] vs E: F 0.9591 D 0.9608 B 0.9678 H 0.9547
+[rand n=1562 s=4 k=6] vs E: F 0.9632 D 0.9664 B 0.9665 H 0.9682
+[rand n=1562 s=4 k=7] vs E: F 0.9605 D 0.9510 B 0.9568 H 0.9529
+[rand n=1562 s=4 k=8] vs E: F 0.9331 D 0.9252 B 0.9185 H 0.9283
+[summary 72 steps] F: mean 0.9172 worst 0.2503 argmax==E 49
+[summary 72 steps] D: mean 0.8405 worst -0.4691 argmax==E 49
+[summary 72 steps] B: mean 0.8780 worst -0.5793 argmax==E 47
+[summary 72 steps] H: mean 0.8879 worst -0.1996 argmax==E 47
+--- PASS: TestZZQ25VLFixDiag (538.46s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	539.283s
