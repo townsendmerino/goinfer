@@ -211,7 +211,7 @@ re-baked by the code it checks (G-04).
   on this run (an environmental memory gap on this Mac at the time, unrelated to the change).
 
 #### M-04 · `attention_prefill_fused` keeps O in threadgroup memory and rescales it with 8 scalar lanes — ~34 barrier-separated phases per 8-key tile, the residual O(K²) term
-- **Where:** `metal/prefill.go:592-633` (`threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD]`),
+- **Where:** `metal/prefill.go:594-635` (`threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD]`),
   `:342-400` (tile loop; `if (lane < 8u)` softmax at `:352-380`, per-`cc` `pTile` reload + store +
   barrier + 8-lane rescale at `:383-399`), `:601-604` (grid = nH × ⌈M/8⌉ simdgroups).
 - **Mechanism and bound (counted + record):** Σ tiles ≈ nH·M²/128 iterations per layer (1.43 M at
@@ -246,7 +246,7 @@ re-baked by the code it checks (G-04).
   declined via the fit-guard (same pre-existing memory gap as M-03's run).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
-- **Where:** `metal/prefill.go:1806-1814` (`for m := range M { … r.encodeMoEExperts(e, L, moeDst) }`),
+- **Where:** `metal/prefill.go:1813-1821` (`for m := range M { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:1018-983`; `metal/model.go:1273-1161` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:796-585` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
@@ -307,11 +307,11 @@ re-baked by the code it checks (G-04).
 #### M-06 · Gemma 3 never reaches the batched prefill — `prefillFeatures` still lacks `FeatPerLayerRoPE` (prior audit M-23, open)
 - **Where:** `metal/model.go:110-165` (the map: no `FeatPerLayerRoPE`), `decoder/features.go:154`
   (`add(!a.ropeUniform(), FeatPerLayerRoPE)` — every shipped Gemma 3, 5:1 local/global, derives it),
-  `metal/prefill.go:1543-1223` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
+  `metal/prefill.go:1546-1225` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
   at `:624-625` says the feature "is not claimed").
 - **Mechanism and bound:** every real Gemma 3 prompt is sequential: M-01's 671 MB head per token on
   4B, at 13.5 ms/token. Note admitting it would still route Gemma 3 (hd=256) to the *exact*
-  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:1499`) — the 46 GB/layer re-read shape — so the
+  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:1502`) — the 46 GB/layer re-read shape — so the
   fused kernel needs an hd=256 variant for the full win.
 - **Fix:** `decoder.FeatPerLayerRoPE: true` in `prefillFeatures` (safe: `FeatRopeMscale` stays
   undeclared so per-layer *mscale* families still decline); give `testdata/gemma3-vl-tiny` a global
@@ -922,7 +922,7 @@ re-baked by the code it checks (G-04).
 ## 2. Correctness
 
 #### C-01 · `attention_prefill_fused` reads K/V rows past `nKeysMax` on a ragged last tile — past the cache end when `ctxCap % 8 ≠ 0` (prior audit N-46, open)
-- **Where:** `metal/prefill.go:605-650` (`for (uint j0=j0start; j0<nKeysMax; j0+=8u)` with
+- **Where:** `metal/prefill.go:607-652` (`for (uint j0=j0start; j0<nKeysMax; j0+=8u)` with
   `simdgroup_load(kT, kBase + j0*kvDim …)` — full 8-row tiles, mask applied after the load at
   `:352-363`), `metal/model.go:1630-1504` (`kc/vc` sized `ctxCap*kvDim*2`), `:57-74` (`ctxCap` = the
   user's request, unrounded), `metal/attention_prefill_fused_test.go:39,63-65` (M=37, exactly
@@ -947,7 +947,7 @@ re-baked by the code it checks (G-04).
   discriminates: fails red (2368 vs 2560 bytes) with the fix reverted, passes with it restored.
 
 #### C-02 · `HiddenLast` (serve `/v1/embeddings`), `Forward(id,pos)` and `ForwardArgmax` on a paged MoE bind the zero-value stacked-expert buffers — C-08's defect on three more entry points
-- **Where:** `metal/backend.go:1176` (`HiddenLast` → `forwardHiddenNoHead` per position),
+- **Where:** `metal/backend.go:1192` (`HiddenLast` → `forwardHiddenNoHead` per position),
   `metal/model.go:2234-2031` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:518-508`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
@@ -1335,7 +1335,7 @@ re-baked by the code it checks (G-04).
   CI on real cross-machine/quantization variance.
 
 **Cold-path waste and small levers:**
-- N-15 `metal/prefill.go:1499-1228` (`PrefillLast`) — 26 per-request scratch buffers built from
+- N-15 `metal/prefill.go:1502-1230` (`PrefillLast`) — 26 per-request scratch buffers built from
   `make`d, zero-filled Go slices then copied (`guF` alone 140 MB at M=3900; ≈262 MB memset + ≈262 MB
   memcpy per long prompt); `gpu.NewBufferLenOf` exists and goinfer never calls it; only `xF` needs
   zeroed pad rows. A high-water-mark cache across calls removes the allocation entirely. Tens of ms
@@ -1355,7 +1355,7 @@ re-baked by the code it checks (G-04).
   actual cross-call high-water-mark cache design (which buffers can safely persist across calls of
   different M, and which need re-zeroing on every call regardless), is a dedicated task on its own,
   not attempted in this sitting — same treatment as M-05/N-25's larger kernel-composition items.
-- N-16 `metal/prefill.go:706-772` — the 13-kernel prefill library + 12 pipelines compile lazily inside
+- N-16 `metal/prefill.go:708-774` — the 13-kernel prefill library + 12 pipelines compile lazily inside
   the first `PrefillLast` (the first request's TTFT); `buildResident` could do it. Also N-47: a failed
   `ensurePrefill` re-panics per call (no latch). **N-47 half FIXED 2026-09-13** (see N-47's own entry,
   audit-2026-09-10.md). The eager-compile half (moving the compile from first-`PrefillLast` into
@@ -1378,7 +1378,7 @@ re-baked by the code it checks (G-04).
   deleted alongside `gemm_w4f16` (documented in place instead, see `metal/kernels.go:5`) so its
   history stays visible next to the others' rather than singled out. Verified `TestPrefillGemmW4`
   (direct `gemm_w4f16_store` parity, cos=1.0) plus the full prefill suite still pass.
-- N-18 `metal/prefill.go:653` — `pTile` reloaded from `pScr` per `cc` (16×/tile); subsumed by M-04.
+- N-18 `metal/prefill.go:655` — `pTile` reloaded from `pScr` per `cc` (16×/tile); subsumed by M-04.
 - N-19 `metal/prefill.go:396` (`rope_f16`) — computes cos/sin per (row, pair) with no table; a
   second reason to fuse RoPE-K into `kv_store_f16`. **NOT ATTEMPTED**: a genuine kernel-fusion
   design task (write a new fused kernel, verify parity at the S-cell bar `PrefillLast`'s own batched
@@ -1445,7 +1445,7 @@ re-baked by the code it checks (G-04).
 - N-24 `metal/moe.go:31-38,924` — f32 router weight: 84 MB/token on the 35B (deliberate, ≤0.4 ms).
   `moe_route` on one GPU thread (deliberate, value-independent dispatch; ~10% of a fitting ~5 ms
   MoE token).
-- N-25 `metal/backend.go:1176` — `HiddenLast` is one synchronous command buffer per position
+- N-25 `metal/backend.go:1192` — `HiddenLast` is one synchronous command buffer per position
   (≈K × 13–18 ms; ~7–9 s for 512 tokens) where the batched trunk would take ~1.8 s; the stated
   rationale ("declined by default") is stale. Fix is `PrefillLast` minus its last two dispatches.
   **PARTIALLY CLOSED 2026-09-13**: the stale rationale was real — `HiddenLast`'s doc comment said
@@ -1458,7 +1458,7 @@ re-baked by the code it checks (G-04).
   kind of S-cell tolerance gate PrefillLast passed, verified against the current sequential
   `HiddenLast` as the oracle) — left as follow-up work, not attempted same-sitting, similar to
   M-05/M-15's treatment.
-- N-26 `metal/backend.go:1209` (retargeted 2026-09-16: `ForwardN` itself was rewritten by the aikit
+- N-26 `metal/backend.go:1225` (retargeted 2026-09-16: `ForwardN` itself was rewritten by the aikit
   v1.44.0 batch/pipeline optimization pass to actually batch into one command buffer, which is what
   this finding asked for — frozen record below describes the PRE-fix state) — `ForwardN` is a
   per-token loop allocating 608 KB per row; cold
