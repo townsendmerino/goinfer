@@ -100,7 +100,7 @@ func TestQwen3ASRReal_gate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, pos, err := multimodal.QwenASRPrompt(tk, n, "")
+	ids, pos, err := multimodal.QwenASRPrompt(tk, "", n, "")
 	if err != nil {
 		t.Fatal(err)
 	}

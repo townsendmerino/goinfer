@@ -242,6 +242,14 @@ func Load(path string) (*Tokenizer, error) {
 	}
 	raw, err := os.ReadFile(jsonPath)
 	if err != nil {
+		// A Qwen2-class repo without a tokenizer.json (Qwen3-ASR's) is assembled from its vocab.json + merges.txt, as transformers does.
+		if isNotExist(err) && jsonPath != path {
+			if t, verr := LoadVocabMerges(path); verr == nil {
+				return t, nil
+			} else if !errors.Is(verr, ErrNoVocabMerges) {
+				return nil, verr
+			}
+		}
 		return nil, fmt.Errorf("tokenizer.Load: %w", err)
 	}
 	return parseTokenizerJSON(raw, jsonPath, filepath.Dir(jsonPath))

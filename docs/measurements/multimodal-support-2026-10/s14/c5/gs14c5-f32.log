@@ -1,0 +1,13 @@
+  decode path: cpu (native)
+  head table: f32
+[original16k] 4.7s prompt_tokens 91 completion_tokens 25
+    reply: 'language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.'
+    (a) byte-equal to the library path: True; (c) prompt_tokens == 91: True
+[resample44k1] 4.4s prompt_tokens 91 completion_tokens 25
+    reply: 'language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.'
+    (b) word error rate 0.000
+[stereo48k] 4.5s prompt_tokens 91 completion_tokens 25
+    reply: 'language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.'
+    (b) word error rate 0.000
+[text only] answers: 'language None<asr_text>Say hello.'
+G-S14c5: PASS

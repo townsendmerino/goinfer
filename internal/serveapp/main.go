@@ -1139,6 +1139,8 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if visionModelType(cand) == "gemma4" {
 					dir = cand
+				} else if visionModelType(cand) == "qwen3_asr" {
+					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
 				}
@@ -1171,6 +1173,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" { // qwen3_vl: the same tower plus DeepStack (S10)
 		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
+	}
+	if mt == "qwen3_asr" { // S14.3: speech to text; the audio encoder is in the model's own directory
+		return s.loadQwenASR(dir)
 	}
 	if mt == "glm_ocr" {
 		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
@@ -1391,6 +1396,20 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 			}
 			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, %s) from %s\n", lm.name, id, where, dir)
 		}
+	}
+	return nil
+}
+
+// loadQwenASR turns on audio input for a Qwen3-ASR model (S14.3): the audio encoder lives beside the decoder in the same safetensors, so there is no tower to attach, only the placeholder
+// id to find and the directory to load the encoder from on the first clip.
+func (s *server) loadQwenASR(dir string) error {
+	for _, lm := range s.models {
+		id, ok := lm.tk.TokenID("<|audio_pad|>")
+		if !ok {
+			return fmt.Errorf("audio: %s is a Qwen3-ASR checkpoint but its tokenizer has no <|audio_pad|> token", dir)
+		}
+		lm.qwenASRDir, lm.qwenASRTok = dir, id
+		fmt.Fprintf(os.Stderr, "Qwen3-ASR audio input on for %q (audio-pad id %d; the encoder loads on the first clip, CPU float32) from %s\n", lm.name, id, dir)
 	}
 	return nil
 }

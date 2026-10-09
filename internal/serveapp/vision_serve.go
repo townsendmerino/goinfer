@@ -46,6 +46,7 @@ type visionInput struct {
 	qwen           bool
 	deepSets       int  // Qwen3-VL (S10): features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
+	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR)
 }
 
 // visionPrompt runs img through the tower and assembles the multimodal prompt: the
@@ -107,6 +108,9 @@ func (lm *loadedModel) visionFeatureCache() *featureCache {
 }
 
 func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
+	if img.audio && lm.qwenASRDir != "" { // Qwen3-ASR has a fixed prompt layout: no user-turn text, no template rendering
+		return lm.qwenASRPrompt(system, img)
+	}
 	if lm.tmpl == nil {
 		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
 	}
@@ -224,6 +228,8 @@ func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []floa
 // towerFamily names this model's tower for an error message.
 func (lm *loadedModel) towerFamily(audio bool) string {
 	switch {
+	case audio && lm.qwenASRDir != "":
+		return "Qwen3-ASR audio"
 	case audio:
 		return "Gemma 4 audio"
 	case lm.glm != nil:
@@ -734,4 +740,52 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},
 	})
+}
+
+// qwenASRMaxSeconds is the longest clip a request may carry. The model has no 30 s window (its encoder attends within 8 s blocks), so this is a cost bound, not the model's limit: a
+// clip over it is refused rather than cut.
+const qwenASRMaxSeconds = 600
+
+// qwenASREncoder is the Qwen3-ASR audio encoder and projector, loaded on the first clip (aikit's, CPU, float32), so a server that never hears audio never pays for it.
+func (lm *loadedModel) qwenASREncoder() (*audio.QwenASREncoder, error) {
+	lm.qwenASROnce.Do(func() { lm.qwenASR, lm.qwenASRErr = audio.LoadQwenASREncoder(lm.qwenASRDir) })
+	return lm.qwenASR, lm.qwenASRErr
+}
+
+// qwenASRPrompt is the Qwen3-ASR path (S14.3): the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for Gemma 4's audio) through the Qwen3-ASR front end, whose
+// frame count fixes the number of audio tokens, into the fixed prompt layout (multimodal.QwenASRPrompt). The encoder runs lazily inside features(). The reply is the model's raw
+// "language <Name><asr_text><transcription>"; text in the user turn is not part of the template and is ignored, the system message is passed through.
+func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput, error) {
+	samples, err := multimodal.DecodeWAVAnyRate(clip.data)
+	if err != nil {
+		return visionInput{}, err
+	}
+	if len(samples) > qwenASRMaxSeconds*audio.WhisperSampleRate {
+		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(len(samples))/audio.WhisperSampleRate, qwenASRMaxSeconds)
+	}
+	f, err := audio.QwenASRFeatures(samples)
+	if err != nil {
+		return visionInput{}, fmt.Errorf("audio features: %w", err)
+	}
+	n := audio.QwenASRTokenCount(f.Valid)
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		enc, err := lm.qwenASREncoder()
+		if err != nil {
+			return nil, fmt.Errorf("qwen3-asr audio encoder: %w", err)
+		}
+		emb, got, err := enc.Forward(f.Data, f.T, f.Valid)
+		if err != nil {
+			return nil, fmt.Errorf("qwen3-asr audio encoder: %w", err)
+		}
+		if got != n || len(emb) != n*hiddenDim {
+			return nil, fmt.Errorf("qwen3-asr audio encoder emitted %d tokens (%d values), want %d x %d", got, len(emb), n, hiddenDim)
+		}
+		return emb, nil
+	}
+	ids, pos, err := multimodal.QwenASRPrompt(lm.tk, system, n, "")
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
+	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true}, nil
 }

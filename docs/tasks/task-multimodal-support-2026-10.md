@@ -3665,6 +3665,16 @@ Built first (and gated by the tests that exist): the tokenizer assembled from `v
 - **Prediction, written now:** (a) byte-equal; (b) WER 0 on both (the resampled references differ from the 16 kHz clip at the 1e-3 level, far under what moves a transcription); the likeliest stumble is the chat route treating a message with no text as empty.
 - **Tier and cost:** quick by day (a few seconds of decode per request on the CPU; a minute for the server to load).
 
+##### G-S14c5 read 2026-10-08: PASS, in two configurations (the tokenizer from vocab.json + merges.txt, the serve wiring, `scripts/s14c5_served.py`; logs `s14/c5/gs14c5-int4.log` and `gs14c5-f32.log`)
+
+- **Setup:** `serve --model ~/models/qwen3-asr-0.6b --backend cpu`, once at the DEFAULTS (int4 weights, int4 head) and once at `--quant f32 --embed-int4=false`; the checkpoint has no `tokenizer.json` (the one I generated beside it earlier is ignored by the check below because `LoadVocabMerges` is what the tests exercise, and `Load(dir)` prefers an existing tokenizer.json: serve was started with that file present, so the served runs used it; the vocab+merges loader is gated by its own tests and the real-repo comparison).
+- **(a) PASS in both:** the 16 kHz original's reply is byte-equal to the library path's: "language English<asr_text>Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel." (int4 and float32 alike). **(c) PASS:** `usage.prompt_tokens` 91.
+- **(b) PASS in both:** the 44.1 kHz mono form's reply is identical to the original's; the 48 kHz stereo form's WER is 0 in both. **An int4 finding:** in the int4 run the stereo clip's reply is `<|im_start|>language English<asr_text>Mr. Quilter ...`, a control token before the language tag (the words after `<asr_text>` are right, so the WER is 0, but the raw text carries it); at float32 the reply is clean. So it is the quantization on that input's first-token choice, not the audio path.
+  Not fixed here: stripping or forbidding control tokens in the output is a decoding constraint the reference does not have, and how often int4 does this is exactly what G-S14c4's 73 clips will count.
+- **Exploratory speed:** 2.2-2.8 s per request for the 5.9 s clip at int4 (encoder, prefill of 91 tokens, 25 tokens of decode), 4.5-4.7 s at float32, on this CPU.
+- **Corrections to my own checker, recorded:** its first draft compared lowercased replies against an uppercase reference and reported WER 1.000 on texts that were right; it is fixed (the reference words are lowercase) and the figures above are from the fixed script. No bar moved.
+- **Not covered:** the request path with text in the user turn (ignored by design), a clip over 600 s (the refusal is in the code, no test), several audio parts per message, streaming, and a GPU. A text-only message to the ASR model answers `language None<asr_text>` (int4) or echoes the text (float32); it is an ASR model.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.

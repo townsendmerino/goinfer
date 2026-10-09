@@ -152,7 +152,13 @@ type loadedModel struct {
 	// Gemma 4 audio (S5 of docs/tasks/task-multimodal-support-2026-10.md): set when the checkpoint has an audio_config.
 	// The tower loads on the first audio request (gemma4AudioEncoder), so a server that never hears audio never pays
 	// its memory. gemma4AudioTok is <|audio|>.
-	gemma4AudioDir  string
+	gemma4AudioDir string
+	// Qwen3-ASR (S14.3): the checkpoint directory (its audio encoder is in the same safetensors as the decoder), the <|audio_pad|> id, and the encoder, loaded on the first clip.
+	qwenASRDir      string
+	qwenASRTok      int
+	qwenASR         *audio.QwenASREncoder
+	qwenASRErr      error
+	qwenASROnce     sync.Once
 	gemma4AudioTok  int
 	gemma4AudioOnce sync.Once
 	gemma4Audio     *audio.Gemma4AudioEncoder
@@ -290,8 +296,8 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 		cpuBatched: cpuBatched}, cfg)
 }
 
-// audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower).
-func (lm *loadedModel) audioCapable() bool { return lm.gemma4AudioDir != "" }
+// audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, or a Qwen3-ASR checkpoint).
+func (lm *loadedModel) audioCapable() bool { return lm.gemma4AudioDir != "" || lm.qwenASRDir != "" }
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
@@ -1693,7 +1699,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	defer cancel()
 	var stream <-chan int
 	var gen *decoder.Generation
-	if vi.qwen && vi.deepSets > 0 { // Qwen3-VL (S10): split the flat features into the merged rows and the DeepStack sets
+	if vi.asr { // Qwen3-ASR (S14.3): the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
+		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, gr.sp)
+	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL (S10): split the flat features into the merged rows and the DeepStack sets
 		n := vi.imgLen * lm.model.Config().HiddenDim
 		stream, gen = lm.model.GenerateQwenVLDeepstack(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHash, func() ([]float32, [][]float32, error) {
 			flat, err := vi.features()
