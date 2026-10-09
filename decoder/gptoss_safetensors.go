@@ -25,7 +25,7 @@ import (
 // MEMORY. The experts never materialize as f32: gpt-oss-20b is ~76GB dequantized across
 // all layers. Each output row is dequantized on demand straight into streamQuantized,
 // which emits the quantized WeightMat row by row.
-func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -54,12 +54,12 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	} else {
 		arch.TiedLMHead = true // gpt-oss ships lm_head; tie only if a variant omits it

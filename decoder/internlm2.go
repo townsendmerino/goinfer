@@ -30,7 +30,7 @@ import (
 //     keeps meeting. The de-interleave below is the only new code, and gathering group by
 //     group yields head order directly (head = g*groups + j), so no permutation is needed
 //     beyond the gather.
-func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	nH, nKV := arch.NumHeads, arch.NumKVHeads
@@ -55,7 +55,7 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 	if w.Embed, err = loadMat(st, "model.tok_embeddings.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 	if herr != nil {
 		return nil, fmt.Errorf("decoder(internlm2): output.weight: %w", herr)
 	}
-	w.LMHead = quantizeWM(head, quant.embedding())
+	w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 	arch.TiedLMHead = false
 
 	for i := range arch.NumLayers {

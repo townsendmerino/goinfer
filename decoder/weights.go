@@ -572,46 +572,46 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the gpt2 (Conv1D/fused-QKV) layout")
 		}
-		return buildGPT2Weights(cfg, arch, st, quant, skipRow4) // Conv1D layout + fused QKV need a dedicated path
+		return buildGPT2Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // Conv1D layout + fused QKV need a dedicated path
 	}
 	if arch.granite != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the granitemoehybrid (Mamba-2 + fused-MoE) layout")
 		}
-		return buildGraniteWeights(cfg, arch, st, quant, skipRow4) // per-layer mamba/attention + fused experts
+		return buildGraniteWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // per-layer mamba/attention + fused experts
 	}
 	if arch.nemotron != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the nemotron_h (single-op-block) layout")
 		}
-		return buildNemotronWeights(cfg, arch, st, quant, skipRow4) // per-layer mamba | attention | mlp
+		return buildNemotronWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // per-layer mamba | attention | mlp
 	}
 	if arch.Name == "phi3" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the phi3 (fused qkv/gate_up) layout")
 		}
-		return buildPhi3Weights(cfg, arch, st, quant, skipRow4) // split fused qkv_proj + gate_up_proj → generic forward
+		return buildPhi3Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // split fused qkv_proj + gate_up_proj → generic forward
 	}
 	if arch.Name == "glm_ocr" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the glm_ocr (fused gate_up) layout")
 		}
-		return buildGlmOcrWeights(cfg, arch, st, quant, skipRow4) // split fused gate_up_proj; the MTP layer is never requested
+		return buildGlmOcrWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // split fused gate_up_proj; the MTP layer is never requested
 	}
 	if arch.Name == "internlm2" {
-		return buildInternLM2Weights(cfg, arch, st, quant, skipRow4) // renamed tensors + GROUPED fused wqkv
+		return buildInternLM2Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // renamed tensors + GROUPED fused wqkv
 	}
 	if arch.Name == "spark2_5" {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the spark2_5 (fused qkv) layout")
 		}
-		return buildSpark25Weights(cfg, arch, st, quant, skipRow4) // split fused q_k_v_proj → generic forward
+		return buildSpark25Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // split fused q_k_v_proj → generic forward
 	}
 	if arch.llama4 != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the llama4_text (iRoPE + fused-expert) layout")
 		}
-		return buildLlama4Weights(cfg, arch, st, quant, skipRow4) // per-layer dense/MoE + transposed fused experts
+		return buildLlama4Weights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4) // per-layer dense/MoE + transposed fused experts
 	}
 	if arch.gptoss != nil {
 		// gpt-oss safetensors: MXFP4 experts as paired U8 *_blocks/*_scales tensors with
@@ -619,7 +619,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		// GGUF path reads the same family through a different layout entirely (llama.cpp's
 		// converter separates gate/up and re-packs the nibbles), so it gets its own loader
 		// rather than a shared one with branches.
-		return buildGptOssWeights(cfg, arch, st, quant, skipRow4)
+		return buildGptOssWeights(cfg, arch, st, quant, embedInt4, needCanonical, skipRow4)
 	}
 	// LoRA merge-at-load validation is deferred until after tn is defined (below) so it validates
 	// against the SAME prefixed names merge actually looks up (M18).
@@ -2290,7 +2290,7 @@ func conv1DTransposed(st *embed.SafetensorsFile, name string, in, out int) ([]fl
 // projection weights use the Conv1D [in, out] layout (transposed on load), and
 // it carries a learned position table (wpe) plus LayerNorm biases. Tensor names
 // are the flat h.N.* / wte / wpe / ln_f scheme.
-func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
@@ -2315,7 +2315,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 	if w.Embed, err = loadMat(st, "wte.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.PosEmbed, err = loadMat(st, "wpe.weight", arch.MaxPositions, hidden); err != nil {
 		return nil, err
 	}
@@ -2402,7 +2402,7 @@ func buildGPT2Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 // [E, hidden, inter] = down) are exactly the loadFusedExperts layout, so the routed
 // FFN reuses moeMLP unchanged once split; the ungated shared_mlp loads into
 // SharedExpert. Embeddings/experts/attention quantize; the Mamba-2 mixer stays f32.
-func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
 	g := arch.granite
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
@@ -2419,13 +2419,13 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
 	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	}
 
@@ -2521,7 +2521,7 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 // block stack where each layer (under a "mixer" prefix) is a Mamba-2 mixer (f32,
 // parity-first, reusing the Granite conventions), a NoPE GQA attention, or a
 // non-gated relu² MLP — keyed by arch.nemotron.blockKind. Plain RMSNorm per layer.
-func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, vocab, inter := arch.HiddenDim, arch.VocabSize, arch.IntermediateDim
 	np := arch.nemotron
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
@@ -2543,13 +2543,13 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 			return nil, err
 		}
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("backbone.norm_f.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
 	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	}
 
@@ -2672,7 +2672,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 // output rows (split at NumHeads*HeadDim, then +NumKVHeads*HeadDim), and mlp.gate_up_proj
 // is gate‖up (split in half). The fused tensors load to f32, slice by rows, and quantize
 // per the resident mode (the GPT-2 fused-QKV precedent).
-func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -2689,13 +2689,13 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
 	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	}
 
@@ -2752,7 +2752,7 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 // NumLayers, so it is skipped by construction; the vision tower (model.visual.*) is never requested
 // either. The head is untied on the real checkpoint but finalized from lm_head.weight presence, like
 // phi3, so a tied re-save would still load.
-func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	s := &glmOcrTensorSchema
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd := arch.HeadDim
@@ -2768,13 +2768,13 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 	if w.Embed, err = loadMat(st, s.Embed, vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32(s.FinalNorm, hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
 	if head, herr := loadMat(st, s.LMHead, vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	}
 
@@ -2840,7 +2840,7 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 // as Laguna's own GProj (see the generic loader's own comment on why: deliberately excluded from
 // quantization). No bias tensors: spark25Architecture rejects attention_bias=true before this
 // runs, so every released config's shape is the only one this function needs to handle.
-func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
 	hd, nH := arch.HeadDim, arch.NumHeads
 	qDim, kvDim := nH*hd, arch.NumKVHeads*hd
@@ -2855,13 +2855,13 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 	if w.Embed, err = loadMat(st, "model.embedding.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
 	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	}
 
@@ -2921,7 +2921,7 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 // FUSED and TRANSPOSED for a bmm — gate_up_proj is [nE, hidden, 2*inter] and down_proj is
 // [nE, inter, hidden] ([in, out] per expert) — so each expert is transposed to goinfer's
 // [out, in] WeightMat and the gate‖up halves split out.
-func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
 	hidden, vocab := arch.HiddenDim, arch.VocabSize
 	hd := arch.HeadDim
 	qDim, kvDim := arch.NumHeads*hd, arch.NumKVHeads*hd
@@ -2942,13 +2942,13 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 	if w.Embed, err = loadMat(st, "model.embed_tokens.weight", vocab, hidden); err != nil {
 		return nil, err
 	}
-	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	w.Embed = quantizeEmbedWM(w.Embed, quant.embeddingWith(embedInt4), needCanonical)
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
 	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
-		w.LMHead = quantizeWM(head, quant.embedding())
+		w.LMHead = quantizeEmbedWM(head, quant.embeddingWith(embedInt4), needCanonical)
 		arch.TiedLMHead = false
 	}
 
