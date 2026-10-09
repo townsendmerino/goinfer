@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/vision"
@@ -93,6 +94,20 @@ func TestS10DeepstackPrefillCUDA_anchorDump(t *testing.T) {
 		opts.ResidentContext = 2048
 		embed4 = opts.EmbedInt4
 		t.Logf("served options: quant %q embedInt4 %v kv %q/%q fit-disabled %v exactPrefill %v knobs %v", opts.Quant, opts.EmbedInt4, opts.KVPrecision, opts.KVQuant, opts.DisableFit, opts.ExactPrefill, opts.Knobs)
+	}
+	if kv := os.Getenv("GOINFER_S10H_KNOBS"); kv != "" { // the 896 investigation: operator knobs added to the arm's Options, "NAME=VALUE,NAME=VALUE" (e.g. GOINFER_PREFILL_CHUNK=2048)
+		knobs := decoder.Knobs{}
+		if opts.Knobs != nil {
+			for k, v := range *opts.Knobs {
+				knobs[k] = v
+			}
+		}
+		for _, p := range strings.Split(kv, ",") {
+			k, v, _ := strings.Cut(p, "=")
+			knobs[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+		opts.Knobs = &knobs
+		t.Logf("knobs: %v", knobs)
 	}
 	m, err := decoder.Load(dir, opts)
 	if err != nil {

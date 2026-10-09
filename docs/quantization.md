@@ -128,7 +128,7 @@ Stated so nobody reads absence as endorsement:
   since 2026-09-28 (owner decision: the CPU decode-gap work made the LM head a bigger share of a
   token — `docs/measurements/cpu-decode-peer-gap-2026-09-27.md` — and the quality re-eval was
   explicitly parked, not re-run, before the flip); pass `--embed-int4=false` for the int8 pin
-  instead. It works with the sidecar `.giw` cache (baked into its own `e4h`-suffixed cache key,
+  instead. **Since 2026-10-09 it reaches every safetensors loader**: before, gpt2, granite, nemotron_h, phi3, glm_ocr, spark2_5, llama4_text, gpt_oss and internlm2 built their head at int8 whatever the flag said (found by option D's `HeadTable()` assertion), so on those families a default load now holds an int4 head. A sidecar built before the change keeps its int8 head until rebuilt; serve's banner line `head table:` reports which. It works with the sidecar `.giw` cache (baked into its own `e4h`-suffixed cache key,
   distinct from a plain-head sidecar of the same source and quant — `internal/prequant.go`'s
   `streamCachePath`) as well as a direct load.
   - **On Metal the default is off (since 2026-09-30),** whether `--backend metal` is named or chosen by
