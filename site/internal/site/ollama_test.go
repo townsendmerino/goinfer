@@ -22,7 +22,7 @@ func TestCheckOllama_theRealDataHolds(t *testing.T) {
 	for _, e := range m.Ollama.Entries {
 		status[e.Tag] = e.Status
 	}
-	for tag, want := range map[string]string{"gemma3": "S", "gemma4": "S", "qwen2.5vl": "S", "qwen3-vl": "T",
+	for tag, want := range map[string]string{"gemma3": "S", "gemma4": "S", "qwen2.5vl": "S", "qwen3-vl": "S",
 		"mistral-small3.2": "T", "nemotron-3-super": "U", "gemma2": "S", "codegemma": "S", "llava": "N", "nomic-embed-text": "S"} {
 		if status[tag] != want {
 			t.Errorf("%s: derived %q, want %q", tag, status[tag], want)
@@ -39,7 +39,7 @@ func TestCheckOllama_refuses(t *testing.T) {
 		name, want string
 		edit       func(in *Inputs)
 	}{
-		{"a mistyped pull count", "pulls 120.0", func(in *Inputs) { in.Ollama.Rows[0].PullsM = 119.8 }},
+		{"a mistyped pull count", "row 1 (llama3.1): pulls", func(in *Inputs) { in.Ollama.Rows[0].PullsM -= 0.4 }}, // relative: a refresh moves the printed count
 		{"a family changed", "families", func(in *Inputs) { in.Ollama.Rows[4].Families = []string{"qwen3"} }},
 		{"the matrix moved (qwen3_5 loses its images)", "new snapshot needed", func(in *Inputs) {
 			for i := range in.Rows {
