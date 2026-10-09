@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -1351,7 +1352,9 @@ func (c *Config) gemma4RopeBases() (local, global float64) {
 // scalar (eos_token_id: 1) and list (eos_token_id: [1, 106]) JSON shapes HF
 // emits. Empty when the field is absent.
 func (c *Config) EOSIDs() []int {
-	if len(c.EOSTokenID) == 0 {
+	// A JSON null is "no id here" (transformers writes eos_token_id: null when generation_config.json carries it). Unmarshalled into an int it
+	// would read as 0, and id 0 would end generation: "!" in Qwen's vocabulary, so every Qwen3-ASR transcription stopped at its first "!".
+	if len(c.EOSTokenID) == 0 || string(bytes.TrimSpace(c.EOSTokenID)) == "null" {
 		return nil
 	}
 	var one int
