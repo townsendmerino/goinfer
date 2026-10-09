@@ -49,7 +49,7 @@ The last phase puts the answer where users look first, the README, with a check 
 | Gemma 4 26B | CPU / CPU | GPU (checked on E2B) / GPU | GPU (checked on E2B) / GPU | CPU / CPU |
 | Gemma 4 31B | CPU / CPU: runs, coherent (G-31a: text and one table image); text logits agree with Hugging Face float32 as well as the E4B's do ((b'), 12 prompts, CPU); the image path is not checked against Hugging Face | not validated (8 GB card) | too large for the Mac | not validated |
 | Qwen2.5-VL | CPU / CPU | GPU / GPU | GPU / GPU, image prefill on the GPU (S16) | CPU / GPU |
-| Qwen3.5+ dense | CPU / CPU | GPU / GPU | GPU / GPU, prefill CPU (S16's hybrid half parked) | CPU / CPU |
+| Qwen3.5+ dense | CPU / CPU | GPU / GPU | GPU / CPU: an image turn prefills and decodes on the CPU (Metal has no hybrid m-RoPE prefill; S16's hybrid half is parked); text turns are resident | CPU / CPU |
 | Qwen3.5+ MoE | not run | GPU: tower gate passed, served check passed (G-S6m, 2026-10-09) | not run | not run |
 | Qwen3-VL (dense) | CPU / CPU | GPU with DeepStack (S10) / GPU, resident DeepStack prefill on (owner, 2026-10-09, over G-S10k's FAIL) | GPU with DeepStack / GPU, image prefill on the GPU (S16) | not run |
 | GLM-OCR | CPU / CPU | GPU / GPU | GPU / GPU, batched image prefill (pairwise RoPE, 2026-10-09) | CPU / staged |
@@ -1762,6 +1762,49 @@ output directories are dated 2026-10-08 because the jobs ran after midnight.
 
   A cell the code cannot answer (a speed figure) carries a date instead.
 - **Size:** S, once S7 has numbers.
+
+#### S8, plan and gates, registered 2026-10-09 before any code (owner: "G-IP4, then S11, then S8")
+
+**Why the design changed from the description above.** Writing this morning's "Where it stands" table by hand put a
+wrong cell in it within hours. It said Qwen3.5+ on Metal decodes an image turn on the GPU, but a recurrent family takes
+neither the resident reuse path nor the upload bridge unless the backend implements `ResidentHybridMRoPEPrefill`, and
+only CUDA does. So every cell the code can answer is computed from one declaration in code, and each backend module
+proves its implementation matches that declaration.
+
+**Steps:**
+1. **Declarations, in one place each:**
+   - **Towers:** a static table in `multimodal` of which tower families each backend registers. `metal`, `cuda` and
+     `gpu` each get a test that its live registries equal its row: `Gemma4Towers`, `Qwen3Towers`, `GlmOcrTowers`,
+     `AudioAccelerators`, `embeddinggemma2.Accelerators`, and a new goinfer-side name for the SigLIP and Qwen2.5-VL
+     resident towers, whose aikit slots cannot be queried.
+   - **The hybrid image-prefill capability:** declared beside the backends' resident features in `decoder`, with each
+     backend's test asserting its `ResidentHybridMRoPEPrefill` implementation matches.
+2. **The table:** `docs/multimodal.md`'s status block holds it between markers, one row per family: a `model_type`,
+   a tiny fixture whose config resolves the architecture, and per backend `tower / decoder` from {GPU, CPU}. A notes
+   column holds what the code cannot answer (validation status, speed), each with a date.
+   - The README gets a short "Images and audio" section with the same cells.
+3. **The drift test, in `decoder` (root, no GPU):**
+   - Every row's decoder cell is GPU exactly when `ResidentEligible(arch, backend)` holds and, for a recurrent family,
+     the backend declares the hybrid image prefill.
+   - Every tower cell is GPU exactly when the backend declares that tower family; the CPU column is all CPU.
+   - The README's cells equal the doc's.
+   - In `internal/serveapp`: every row's `model_type` reaches a case of serve's vision dispatch (`loadVisionTower`).
+
+**Gates:**
+- **G-S8a:** the root drift test passes on the committed table.
+- **G-S8b, planted defects** (each run on a mutated copy of the table, each must fail):
+  - Qwen3.5+ on Metal marked GPU for decode, this morning's real error;
+  - a WebGPU tower marked GPU for Gemma 4;
+  - a README cell that differs from the doc;
+  - a row whose `model_type` has no loader.
+- **G-S8c:** the backend declaration tests pass:
+  - `metal` on the Mac;
+  - `cuda` and `gpu` on nobara.
+
+  The same check is planted red once on Metal, a tower dropped from the declaration.
+- **G-S8d:** `gate quick` green.
+
+**Cost:** half a day by day.
 
 #### Night 2026-10-07 on the Mac, read 2026-10-08 (raw in `docs/measurements/multimodal-support-2026-10/night-2026-10-07-mac/`)
 
