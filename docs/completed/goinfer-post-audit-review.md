@@ -80,7 +80,7 @@ The C-06 disposition says the per-layer accessors "cover gemma-4 too", but that 
 Fix shape: extend validateShapes to the gemma4moe sub-block (cross-check `ne == arch.NumExperts`, router rows, scale lengths) and add a vector-length pass for biases/norms.
 
 ### R-08 · Anthropic `/v1/messages` silently drops `tools` when the request carries an image
-`internal/serveapp/anthropic.go:404` · **silent capability loss** · residual of N-16 (fixed on the OpenAI surface only)
+`internal/serveapp/anthropic.go:410` · **silent capability loss** · residual of N-16 (fixed on the OpenAI surface only)
 
 `handleMessages` dispatches to `serveVisionMessages` the moment image blocks exist — before any tools check — and the vision path never renders or parses tools (`vision_serve.go` has zero tool handling). The OpenAI path got exactly this guard as the N-16 fix (openai.go:351: "tools are not supported together with image inputs"). The named consumer of this endpoint (Claude Code) sends its toolset on every request; against a vision model, a screenshot turn silently loses all tools and comes back as prose with `stop_reason:"end_turn"`.
 

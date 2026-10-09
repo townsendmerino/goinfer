@@ -585,8 +585,8 @@ only when it is `true`, which is the "per-model capability check" this row asked
 server's own answer rather than a guess from the model's name.
 
 What the server allows decided most of the rest:
-- **One image per request, counted across the whole history** (`maxImagesPerTurn = 1`,
-  `internal/serveapp/vision_serve.go:23`). The server attaches it to the *latest* user turn, wherever it
+- **One image per request, counted across the whole history** (`maxImagesPerTurn` was 1 then; S11 raised it to 8
+  images in the newest message on 2026-10-09, `internal/serveapp/vision_serve.go:23`). The server attaches it to the *latest* user turn, wherever it
   was sent. So the page sends **only the most recent image**, as an `image_url` part on the message it
   came with; earlier ones go as plain text. Follow-up questions about that image still work. Attaching
   a second image says it replaces the first in what the model sees.

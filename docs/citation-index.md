@@ -724,7 +724,7 @@ supports.
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/loadflags/loadflags.go:62` | goinfer | `fs.StringVar(&f.Backend, "backend", "auto", backendHelp)` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/serveapp/halt.go:73` | goinfer | `// S3 (docs/tasks/task-never-swap-2026-09.md, swapguard.go): a second, independent` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/serveapp/main.go:1129` | goinfer | `// Auto-discover: a single --model dir that holds a vision tower — either the` |
-| `docs/measurements/multimodal-audit-2026-10-02.md|internal/serveapp/openai.go:1718` | goinfer | `stream, gen = lm.model.GenerateQwenVL(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.imgHas` |
+| `docs/measurements/multimodal-audit-2026-10-02.md|internal/serveapp/openai.go:1707` | goinfer | `if vi.asr { // Qwen3-ASR (S14.3): the encoder's embeddings replace the <\|audio_pad\|> run` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/serveapp/qwen35_vision.go:24` | goinfer | `const qwen3MaxImageTokens = 1024` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|internal/serveapp/qwen35_vision.go:93` | goinfer | `func isQwen35VisionDir(dir string) bool {` |
 | `docs/measurements/multimodal-audit-2026-10-02.md|metal/backend.go:1330` | goinfer | `func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {` |
@@ -1087,7 +1087,7 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:556` | goinfer | `"quant":          lm.model.Quant(),` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:581` | goinfer | `names = append(names, s.embedID)` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:591` | goinfer | `TopP                *float64        `json:"top_p"`` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:23` | goinfer | `maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:23` | goinfer | `maxImagesPerTurn = 8 // S11: images in the newest message, each its own block; a guard o` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:217` | goinfer | `func fitEstimate(fileSize, free int64) string {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:51` | goinfer | `//go:embed webui` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:547` | goinfer | `func webLoadPath(p string) (string, error) {` |
@@ -1099,7 +1099,7 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:335` | goinfer | `func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:156` | goinfer | `func Main() {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/loadflags/loadflags.go:70` | goinfer | `fs.IntVar(&f.MoECacheSlots, "moe-cache-slots", 0, moeCacheSlotsHelp)` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:621` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:627` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:72` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/helpers.go:86` | goinfer | `// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot i` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/liveness.go:69` | goinfer | `func (s *server) resolveAndLock(name string) (*loadedModel, func()) {` |

@@ -52,11 +52,11 @@ memory. Seven handlers share the shape:
 |---|---|
 | `handleChat` | internal/serveapp/openai.go:465 |
 | `handleCompletions` | internal/serveapp/openai.go:543 |
-| `handleMessages` | internal/serveapp/anthropic.go:406 |
-| `handleCountTokens` | internal/serveapp/anthropic.go:535 |
+| `handleMessages` | internal/serveapp/anthropic.go:412 |
+| `handleCountTokens` | internal/serveapp/anthropic.go:541 |
 | `handleChatTools` | internal/serveapp/tools.go:19 |
 | `handleResponses` | internal/serveapp/responses.go:86 |
-| `serveVisionChat` | internal/serveapp/vision_serve.go:119 |
+| `serveVisionChat` | internal/serveapp/vision_serve.go:124 |
 
 The in-generation case is already safe (past `enter`, the request holds `lm.mu`, so a mid-stream
 unload 409s — verified on Metal). The hole is the preamble.
