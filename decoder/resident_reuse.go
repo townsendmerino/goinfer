@@ -362,24 +362,24 @@ func findImageClaim(imgs []residentImageClaim, pos int) (residentImageClaim, boo
 
 // residentCommitIDs records the exact token sequence now committed to the resident KV: the
 // prompt followed by everything decode emitted, since decode writes its own K/V at each
-// position as it goes. newBlock records an image block this turn added or re-verified (nil for
-// plain text — the common case).
+// position as it goes. newBlocks records the image blocks this turn added or re-verified, in
+// prompt order (nil for plain text — the common case; several for a multi-image turn, S11).
 //
 // Called ONLY on the fully-completed path. Everything else leaves resIDs (and resImgBlocks) nil.
-func (m *Model) residentCommitIDs(prompt, generated []int, newBlock *residentImageBlock, lora *loraRuntime) {
+func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentImageBlock, lora *loraRuntime) {
 	ids := make([]int, 0, len(prompt)+len(generated))
 	ids = append(ids, prompt...)
 	ids = append(ids, generated...)
 	m.resIDs = ids
 	m.resIDsLora = lora
-	if newBlock != nil {
+	if len(newBlocks) > 0 {
 		kept := m.resImgBlocks[:0:0]
 		for _, b := range m.resImgBlocks {
-			if b.end <= newBlock.start { // still valid: append-only, earlier positions unchanged
+			if b.end <= newBlocks[0].start { // still valid: append-only, earlier positions unchanged
 				kept = append(kept, b)
 			}
 		}
-		m.resImgBlocks = append(kept, *newBlock)
+		m.resImgBlocks = append(kept, newBlocks...)
 	}
 }
 

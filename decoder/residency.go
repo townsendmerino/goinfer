@@ -365,12 +365,20 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 // v1 (CUDA only) REQUIRES the whole prompt — the image block included — to fit in ONE
 // weight-stationary pass; a longer prompt, or any other decline (kernel unavailable, invalid
 // range), returns an error rather than chunking, because a bidirectional block split across a
-// chunk boundary is unverified. Backends may skip implementing it — only cuda implements it today;
-// metal and webgpu image turns take the CPU-prefill + UploadKV bridge (residentUploadPrefill)
-// instead — and GenerateVL's image-prefill fast path then never engages, same as any other
-// optional resident capability gap.
+// chunk boundary is unverified. Backends may skip implementing it — cuda and metal (S17) implement it;
+// webgpu image turns take the CPU-prefill + UploadKV bridge (residentUploadPrefill) instead — and
+// GenerateVL's image-prefill fast path then never engages, same as any other optional resident
+// capability gap.
 type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
+}
+
+// ResidentImageBlocksPrefill is ResidentImagePrefill for a prompt with several images (S11,
+// docs/tasks/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
+// own bidirectional block. OPTIONAL: a backend without it takes a multi-image turn through the CPU-prefill + UploadKV
+// bridge, which handles any number of blocks.
+type ResidentImageBlocksPrefill interface {
+	PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) (logits []float32, err error)
 }
 
 // ResidentHybridMRoPEPrefill is an OPTIONAL marker for a ResidentMRoPEPrefill implementer: its batched m-RoPE prefill is correct for a

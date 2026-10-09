@@ -97,20 +97,20 @@ func (m *Model) AutoPinResidentContextForTest(ctx int) { m.resCtxReq, m.resCtxPi
 // real-checkpoint gate (cuda/) can compare its logits directly against PrefillLogitsVLForTest's
 // CPU reference, matched precision, on the SAME model instance and the SAME real image.
 func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
-	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, imgPos, imgLen)
+	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
 // ResidentMRoPEPrefillForTest wraps residentMRoPEPrefillDeep (no DeepStack sets) — the exact primitive GenerateQwenVL's
 // resident m-RoPE prefill fast path calls internally — mirroring ResidentImagePrefillForTest
 // exactly, for a real-checkpoint gate comparing its logits against PrefillLogitsQwenVLForTest.
 func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
-	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos, nil)
+	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, nil)
 }
 
 // ResidentMRoPEDeepstackPrefillForTest wraps residentMRoPEPrefillDeep (S16): the resident m-RoPE prefill with Qwen3-VL's
 // DeepStack sets, for the Metal gate that compares it with the CPU prefill.
 func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
-	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, imgPos, imgLen, mropePos, deep)
+	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, deep)
 }
 
 // SetDeepstackForTest gives c the DeepStack sets its next prefill adds after each decoder layer (GenerateQwenVLDeepstack's
@@ -120,7 +120,7 @@ func (c *KVCache) SetDeepstackForTest(start, n int, rows [][]float32) {
 		c.deepstack = nil
 		return
 	}
-	c.deepstack = &deepstackRows{start: start, n: n, rows: rows}
+	c.deepstack = &deepstackRows{spans: []ImageSpan{{Pos: start, Len: n}}, rows: rows}
 }
 
 // ResidentUploadPrefillForTest wraps residentUploadPrefill (decoder/generate_vl_resident.go) —
@@ -480,7 +480,7 @@ func SetGemma4VLRowsDefectForTest(d int) { gemma4VLRowsDefectForTest = d }
 
 // Gemma4EModelImageRowsForTest exposes the E-model image-row builder (G1q/G2q build the rows, then hand them to the resident's PrefillLast).
 func (m *Model) Gemma4EModelImageRowsForTest(ids []int, imageEmbeds []float32, imgPos, imgLen int) ([][]float32, error) {
-	return m.gemma4EModelImageRows(ids, imageEmbeds, imgPos, imgLen)
+	return m.gemma4EModelImageRowsSpans(ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
 // SetCaptureLayersForTest arms the batched hidden-state capture (the seam forwardn.go's layer loop fills after layer l's residual add and DeepStack add) on c for the

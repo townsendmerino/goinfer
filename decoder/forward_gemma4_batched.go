@@ -12,10 +12,8 @@ import (
 // means no block: plain causal/windowed, identical to cache.WindowStart(pos,
 // global)..pos, the same range the sequential path implicitly uses).
 //
-// v1 supports exactly one contiguous block per prefill, matching
-// maxImagesPerTurn=1 (internal/serveapp/vision_serve.go) and
-// prefillLogitsGemma4VL's own single-block signature — multi-block is an
-// explicit non-goal.
+// v1 supported exactly one contiguous block per prefill; S11 takes several,
+// each its own block (below).
 //
 // PROOF this is always a single interval, never two disjoint ones: for a query
 // at pos inside block [b0,b1), the causal/windowed interval is
@@ -30,15 +28,21 @@ import (
 // with NO layer-type gate — see docs/multimodal.md's P7 entry for the full
 // citation and the correction to this doc's own earlier, wrong claim that only
 // sliding layers get this treatment).
-func gemma4AttendRange(cache *KVCache, pos int, global bool, imgPos, imgLen int) (lo, hi int) {
+//
+// Several blocks (S11, docs/tasks/task-multimodal-support-2026-10.md): a query sees its OWN block only, so the same
+// proof holds block by block, and a query outside every block gets the plain range.
+func gemma4AttendRange(cache *KVCache, pos int, global bool, spans []ImageSpan) (lo, hi int) {
 	lo = cache.WindowStart(pos, global)
 	hi = pos
-	if imgLen > 0 && pos >= imgPos && pos < imgPos+imgLen {
-		if imgPos < lo {
-			lo = imgPos
-		}
-		if end := imgPos + imgLen - 1; end > hi {
-			hi = end
+	for _, s := range spans {
+		if pos >= s.Pos && pos < s.Pos+s.Len {
+			if s.Pos < lo {
+				lo = s.Pos
+			}
+			if end := s.Pos + s.Len - 1; end > hi {
+				hi = end
+			}
+			break
 		}
 	}
 	return
@@ -64,7 +68,7 @@ func gemma4AttendRange(cache *KVCache, pos int, global bool, imgPos, imgLen int)
 // gemma4AttendRange — the existing kernel already accepts an arbitrary
 // [start,nKeys) range into the full cache arrays, which the proof above shows
 // is exactly sufficient. No new attention math is introduced.
-func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	g4 := arch.gemma4
 	be := m.be
@@ -98,7 +102,7 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 		inv2 := float32(1.0 / math.Sqrt2)
 		for row := range K {
 			tid := ids[row]
-			if row >= imgPos && row < imgPos+imgLen {
+			if _, in := imageSpanRow(spans, row); in {
 				tid = g4.PadTokenID
 			}
 			rowPL := perLayer[row*rowStride : (row+1)*rowStride]
@@ -214,7 +218,7 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 		ctx := make([]float32, K*nH*hd)
 		for row := range K {
 			pos := startPos + row
-			lo, hi := gemma4AttendRange(cache, pos, global, imgPos, imgLen)
+			lo, hi := gemma4AttendRange(cache, pos, global, spans)
 			gemma4Attend(q[row*nH*hd:(row+1)*nH*hd], ctx[row*nH*hd:(row+1)*nH*hd], keys, vals, nH, nKV, hd, lo, hi+1, arch.AttnScale, &g4sc)
 		}
 

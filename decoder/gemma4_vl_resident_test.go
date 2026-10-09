@@ -348,7 +348,7 @@ func TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse(t *testing.T)
 	// [text 100,101] [image: 3 soft-tokens, all id 900 — content-independent] [text 200,201]
 	prompt := []int{100, 101, 900, 900, 900, 200, 201}
 	generated := []int{300, 301}
-	m.residentCommitIDs(prompt, generated, &residentImageBlock{start: 2, end: 5, hash: 0xC0FFEE}, nil)
+	m.residentCommitIDs(prompt, generated, []residentImageBlock{{start: 2, end: 5, hash: 0xC0FFEE}}, nil)
 
 	if len(m.resImgBlocks) != 1 {
 		t.Fatalf("resImgBlocks = %v, want exactly 1 entry", m.resImgBlocks)

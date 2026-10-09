@@ -1702,24 +1702,34 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 // embeddings are RAW (the projector output), matching HF's masked_scatter, which
 // overwrites the scaled placeholder embed. See docs/multimodal.md §4–5.
 func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageEmbeds, cache)
+}
+
+// prefillLogitsVLSpans is prefillLogitsVL for several images (S11): each span is its own bidirectional block, and
+// imageEmbeds holds every span's rows concatenated in span order.
+func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
+	hN, err := m.prefillHiddenVLSpans(ctx, ids, spans, imageEmbeds, cache)
+	if err != nil {
+		return nil, err
+	}
+	hidden := m.w.arch.HiddenDim
+	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+}
+
+// prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
+// the LM head), so a test can grade every position, not only the last, through the production path.
+func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: multimodal prefill needs the batched path (canBatchN false)")
 	}
 	hidden := m.w.arch.HiddenDim
-	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
-		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
-	}
-	if len(imageEmbeds) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens × %d)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
-	}
-	h := m.embedN(ids)
-	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
-	cache.SetImageBlocks([][2]int{{imgPos, imgPos + imgLen}})
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
-	if err != nil {
+	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
-	return m.lmHeadN(hN[(len(ids)-1)*hidden:], 1), nil
+	h := m.embedN(ids)
+	spliceImageSpans(h, spans, imageEmbeds, hidden) // raw projected features, no embed scale
+	cache.SetImageBlocks(imageSpanBlocks(spans))
+	return m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
 }
 
 // prefillLogitsQwenVL prefills a Qwen2.5-VL multimodal prompt and returns the
@@ -1732,26 +1742,30 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 // cache.mropePos). The merged features are RAW (no embed scale), matching HF's
 // scatter into inputs_embeds. (P5)
 func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsQwenVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageFeats, mropePos, cache)
+}
+
+// prefillLogitsQwenVLSpans is prefillLogitsQwenVL for several images (S11): every span's merged rows, concatenated in
+// span order in imageFeats, replace that span's placeholder run, and mropePos covers them all (mropePositions with one
+// grid per image).
+func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	if m.w.arch.qwen35 != nil { // the Gated-DeltaNet hybrids have no batched prefill: per-token, P8a
-		return m.prefillLogitsQwen35VL(ctx, ids, imageFeats, imgPos, imgLen, mropePos, cache)
+		return m.prefillLogitsQwen35VL(ctx, ids, imageFeats, spans, mropePos, cache)
 	}
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: Qwen2.5-VL prefill needs the batched path (canBatchN false)")
 	}
 	hidden := m.w.arch.HiddenDim
-	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
-		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
-	}
-	if len(imageFeats) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageFeats len %d, want %d (%d tokens × %d)", len(imageFeats), imgLen*hidden, imgLen, hidden)
+	if err := checkImageSpans(spans, len(ids), imageFeats, hidden); err != nil {
+		return nil, err
 	}
 	if len(mropePos) != len(ids) {
 		return nil, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
 	}
 	h := m.embedN(ids)
-	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
-	cache.mropePos = mropePos                                 // ropeAt switches to m-RoPE for this prefill
-	cache.mropeDelta = mropeDelta(mropePos, len(ids))         // decode past the prefill rotates at seqPos+delta
+	spliceImageSpans(h, spans, imageFeats, hidden)    // raw merged features, no embed scale
+	cache.mropePos = mropePos                         // ropeAt switches to m-RoPE for this prefill
+	cache.mropeDelta = mropeDelta(mropePos, len(ids)) // decode past the prefill rotates at seqPos+delta
 	hN, err := m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
 	if err != nil {
 		return nil, err
@@ -1763,11 +1777,15 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 // run (S10): HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l], after decoder layer l.
 func addDeepstack(h []float32, ds *deepstackRows, l, startPos, K, hidden int) {
 	set := ds.rows[l]
-	for p := max(ds.start, startPos); p < min(ds.start+ds.n, startPos+K); p++ {
-		dst := h[(p-startPos)*hidden : (p-startPos+1)*hidden]
-		src := set[(p-ds.start)*hidden : (p-ds.start+1)*hidden]
-		for j := range dst {
-			dst[j] += src[j]
+	off := 0 // the first row of this span within the set
+	for _, s := range ds.spans {
+		for p := max(s.Pos, startPos); p < min(s.Pos+s.Len, startPos+K); p++ {
+			dst := h[(p-startPos)*hidden : (p-startPos+1)*hidden]
+			src := set[(off+p-s.Pos)*hidden : (off+p-s.Pos+1)*hidden]
+			for j := range dst {
+				dst[j] += src[j]
+			}
 		}
+		off += s.Len
 	}
 }

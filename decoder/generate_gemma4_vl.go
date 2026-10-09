@@ -27,16 +27,19 @@ import (
 // GenerateGemma4VL dispatches to the right one; this function itself is never
 // called for a "vision"-mode checkpoint.
 func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsGemma4VLSpans(ctx, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}}, cache)
+}
+
+// prefillLogitsGemma4VLSpans is prefillLogitsGemma4VL for several images (S11): every span's rows, concatenated in span
+// order in imageEmbeds, replace that span's placeholders.
+func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if arch.gemma4 == nil {
 		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VL called on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim
-	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
-		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
-	}
-	if len(imageEmbeds) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens x %d hidden)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
+	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
+		return nil, err
 	}
 	padID := arch.gemma4.PadTokenID
 	var h []float32
@@ -45,8 +48,8 @@ func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbed
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		if i >= imgPos && i < imgPos+imgLen {
-			off := (i - imgPos) * hidden
+		if r, in := imageSpanRow(spans, i); in {
+			off := r * hidden
 			// runLayersGemma4FromEmbed's own doc comment names exactly this case: a
 			// multimodal caller substitutes a projected embedding for the normal
 			// token-id lookup, and pleTokenID must be the checkpoint's pad_token_id
@@ -77,20 +80,23 @@ func (m *Model) prefillLogitsGemma4VL(ctx context.Context, ids []int, imageEmbed
 // (decoder/forward_gemma4_batched.go) for the batched forward and
 // gemma4AttendRange for the masking primitive + its correctness proof.
 func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+	return m.prefillLogitsGemma4VLBidirectionalSpans(ctx, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}}, cache)
+}
+
+// prefillLogitsGemma4VLBidirectionalSpans is prefillLogitsGemma4VLBidirectional for several images (S11): each span is
+// its own bidirectional block (gemma4AttendRange).
+func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if arch.gemma4 == nil {
 		return nil, fmt.Errorf("decoder: prefillLogitsGemma4VLBidirectional called on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim
-	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
-		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
-	}
-	if len(imageEmbeds) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens x %d hidden)", len(imageEmbeds), imgLen*hidden, imgLen, hidden)
+	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
+		return nil, err
 	}
 	h := m.embedN(ids)
-	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale — same convention as embedN's own doc comment (forwardn.go)
-	hLast, err := m.runLayersGemma4FromEmbedN(ctx, h, ids, imgPos, imgLen, cache)
+	spliceImageSpans(h, spans, imageEmbeds, hidden) // raw projected features, no embed scale — same convention as embedN's own doc comment (forwardn.go)
+	hLast, err := m.runLayersGemma4FromEmbedN(ctx, h, ids, spans, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -123,10 +129,21 @@ func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []in
 // produce IDENTICAL ids, and without a block record the scan cannot tell them apart (M-07,
 // docs/audit-2026-09-10.md).
 func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	return m.GenerateGemma4VLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen, Hash: imgHash}}, features, maxTokens, sp)
+}
+
+// GenerateGemma4VLSpans is GenerateGemma4VL for several images (S11, docs/tasks/task-multimodal-support-2026-10.md):
+// spans in prompt order, features every span's rows concatenated in span order. A bidirectional checkpoint gives each
+// span its own block; an E-model is causal, so its resident prefill takes several images unchanged.
+func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
 	go func() {
 		defer close(out)
+		if len(spans) == 0 {
+			g.err = fmt.Errorf("decoder: GenerateGemma4VLSpans needs at least one image span")
+			return
+		}
 		feats, err := features()
 		if err != nil {
 			g.err = err
@@ -139,16 +156,16 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 		// embedding ([h ‖ PLE]), an image position's projected feature, unscaled, with PLE from PAD's token identity. A
 		// decline falls through to the CPU prefill and upload below, unchanged.
 		if eModel && !bidirectional {
-			if done := m.gemma4VLResidentPrefill(ctx, out, g, ids, feats, imgPos, imgLen, imgHash, maxTokens, sp); done {
+			if done := m.gemma4VLResidentPrefill(ctx, out, g, ids, feats, spans, maxTokens, sp); done {
 				return
 			}
 		}
 		cache := m.NewCache(len(ids) + maxTokens)
 		var logits []float32
 		if bidirectional {
-			logits, err = m.prefillLogitsGemma4VLBidirectional(ctx, ids, feats, imgPos, imgLen, cache)
+			logits, err = m.prefillLogitsGemma4VLBidirectionalSpans(ctx, ids, feats, spans, cache)
 		} else {
-			logits, err = m.prefillLogitsGemma4VL(ctx, ids, feats, imgPos, imgLen, cache)
+			logits, err = m.prefillLogitsGemma4VLSpans(ctx, ids, feats, spans, cache)
 		}
 		if err != nil {
 			g.err = err
@@ -203,7 +220,7 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 			// and GenerateQwenVL do, so residentReuseLen's prefix scan has something to key a
 			// later turn's reuse check on instead of falling through to a plain id comparison
 			// that Gemma4's content-independent soft-token ids can satisfy by coincidence.
-			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 			committed = true
 		}
 	}()
@@ -214,12 +231,12 @@ func (m *Model) GenerateGemma4VL(ctx context.Context, ids []int, imgPos, imgLen 
 // backend's Prefiller, then resident decode. It reports whether it ran the turn (true: the generation is done, g holds
 // its result); false means the backend has no prefill, the resident is busy, or the prefill declined, and the caller
 // runs the CPU path. A cancelled prefill is not a decline: it ends the turn.
-func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *Generation, ids []int, feats []float32, imgPos, imgLen int, imgHash uint64, maxTokens int, sp SamplingParams) bool {
+func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *Generation, ids []int, feats []float32, spans []ImageSpan, maxTokens int, sp SamplingParams) bool {
 	pf, ok := m.resident.(Prefiller)
 	if !ok || m.knobs.get(knobBatchedPrefill) == "0" || !m.tryClaimResident() {
 		return false
 	}
-	rows, err := m.gemma4EModelImageRows(ids, feats, imgPos, imgLen)
+	rows, err := m.gemma4EModelImageRowsSpans(ids, feats, spans)
 	if err != nil { // a malformed image run is the CPU path's to report; it is not this one's to panic on
 		atomic.StoreInt32(&m.resBusy, 0)
 		return false
@@ -251,7 +268,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 		return l, err
 	})
 	if g.err == nil {
-		m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+		m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 	} else {
 		m.residentForgetIDs()
 	}
@@ -272,28 +289,26 @@ func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
 	return row
 }
 
-// gemma4EModelImageRows builds the resident rows of an E-model image prompt: a text position's row is embedResident's ([h ‖ PLE]); an image position's is
+// gemma4EModelImageRowsSpans builds the resident rows of an E-model image prompt (any number of images, S11): a text position's row is embedResident's ([h ‖ PLE]); an image position's is
 // gemma4ResidentMediaRow of its projected feature. It checks the image run against the prompt and the feature count, and returns an error (a decline) rather
 // than slice out of range. S9 on CUDA part B's G2q plants its defects here through gemma4VLRowsDefectForTest.
-func (m *Model) gemma4EModelImageRows(ids []int, feats []float32, imgPos, imgLen int) ([][]float32, error) {
+func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []ImageSpan) ([][]float32, error) {
 	arch := m.w.arch
 	if arch.gemma4 == nil {
 		return nil, fmt.Errorf("decoder: gemma4EModelImageRows on a non-gemma4 model")
 	}
 	hidden := arch.HiddenDim
-	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
-		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
-	}
-	if len(feats) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageEmbeds len %d, want %d (%d tokens x %d hidden)", len(feats), imgLen*hidden, imgLen, hidden)
+	if err := checkImageSpans(spans, len(ids), feats, hidden); err != nil {
+		return nil, err
 	}
 	rows := make([][]float32, len(ids))
 	for i, id := range ids {
-		if i < imgPos || i >= imgPos+imgLen || gemma4VLRowsDefectForTest == 4 {
+		r, in := imageSpanRow(spans, i)
+		if !in || gemma4VLRowsDefectForTest == 4 {
 			rows[i] = m.embedResident(id)
 			continue
 		}
-		f := feats[(i-imgPos)*hidden : (i-imgPos+1)*hidden]
+		f := feats[r*hidden : (r+1)*hidden]
 		switch gemma4VLRowsDefectForTest {
 		case 1: // planted: the placeholder's own id instead of the pad id
 			row := make([]float32, m.ResidentEmbedLen())

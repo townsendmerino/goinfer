@@ -79,7 +79,7 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 	// Batched path (imgLen=0: no image, exercises the same "no block" case).
 	batCache := m.NewCache(len(g.PromptIDs) + g.NNew)
 	h := m.embedN(g.PromptIDs)
-	hLast, err := m.runLayersGemma4FromEmbedN(context.Background(), h, g.PromptIDs, 0, 0, batCache)
+	hLast, err := m.runLayersGemma4FromEmbedN(context.Background(), h, g.PromptIDs, nil, batCache)
 	if err != nil {
 		t.Fatalf("batched forward: %v", err)
 	}

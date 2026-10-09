@@ -844,8 +844,9 @@ func (c *KVCache) attendHi(pos int) int {
 	return pos
 }
 
-// deepstackRows is KVCache.deepstack: the image run's absolute start, its length and one [n*hidden] set per early layer.
+// deepstackRows is KVCache.deepstack: the image runs (absolute, in prompt order; several for a multi-image turn, S11) and
+// one set per early layer, each holding every run's rows concatenated in run order.
 type deepstackRows struct {
-	start, n int
-	rows     [][]float32
+	spans []ImageSpan
+	rows  [][]float32
 }

@@ -2492,6 +2492,10 @@ type Generation struct {
 	// real-checkpoint gate asserting end-to-end correctness needs this to confirm the fast path
 	// actually fired rather than passing vacuously via the (already-correct) fallback.
 	ImgPrefillResident bool
+	// ImgPrefillDecline is the reason the resident image prefill declined this turn, when a backend that implements it
+	// was asked and said no (S11: a multi-image turn on a backend whose resident prefill takes one block). Empty when it
+	// ran, or when no resident implements it.
+	ImgPrefillDecline string
 	// DecodeResident reports whether a multimodal turn's DECODE ran on the resident after its CPU prefill was
 	// uploaded (GenerateGemma4VL's bridge). Diagnostic, for the same reason as ImgPrefillResident: S1's G4
 	// (docs/tasks/task-multimodal-support-2026-10.md) must show the image turn decoded resident, not on the CPU.

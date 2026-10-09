@@ -14,14 +14,11 @@ import (
 //
 // It leaves cache.mropePos / cache.mropeDelta set so decode past the prompt rotates at
 // seqPos+delta, exactly as prefillLogitsQwenVL does.
-func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	hidden := arch.HiddenDim
-	if imgPos < 0 || imgLen <= 0 || imgPos+imgLen > len(ids) {
-		return nil, fmt.Errorf("decoder: image run [%d,%d) out of range for %d tokens", imgPos, imgPos+imgLen, len(ids))
-	}
-	if len(imageFeats) != imgLen*hidden {
-		return nil, fmt.Errorf("decoder: imageFeats len %d, want %d (%d tokens × %d)", len(imageFeats), imgLen*hidden, imgLen, hidden)
+	if err := checkImageSpans(spans, len(ids), imageFeats, hidden); err != nil {
+		return nil, err
 	}
 	if len(mropePos) != len(ids) {
 		return nil, fmt.Errorf("decoder: mropePos len %d, want %d (one per token)", len(mropePos), len(ids))
@@ -32,9 +29,9 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 	cache.mropePos = mropePos
 	cache.mropeDelta = mropeDelta(mropePos, len(ids))
 	if !qwen35VLPerToken && m.qwen35BatchNAnyPos(len(ids), cache) {
-		return m.prefillQwen35VLBatched(ctx, ids, imageFeats, imgPos, imgLen, cache)
+		return m.prefillQwen35VLBatched(ctx, ids, imageFeats, spans, cache)
 	}
-	return m.prefillQwen35VLPerToken(ctx, ids, imageFeats, imgPos, imgLen, cache)
+	return m.prefillQwen35VLPerToken(ctx, ids, imageFeats, spans, cache)
 }
 
 // prefillQwen35VLBatched is P26: every projection one M=len(ids) matmul, so each weight is read once for the prompt instead of
@@ -43,17 +40,13 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 // per-token loop does. NOT bit-identical to that loop (a batched matmul can reduce in a different order):
 // TestQwen35VL_batchedPrefillMatchesPerToken bounds the difference, and the HF-golden tests hold either path to the same bars.
 // The caller has checked qwen35BatchNAnyPos and set cache.mropePos / mropeDelta.
-func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	hidden := m.w.arch.HiddenDim
 	h := make([]float32, len(ids)*hidden)
 	for i := range ids {
-		row := h[i*hidden : (i+1)*hidden]
-		if i >= imgPos && i < imgPos+imgLen {
-			copy(row, imageFeats[(i-imgPos)*hidden:(i-imgPos+1)*hidden])
-		} else {
-			m.w.Embed.Row(ids[i], row)
-		}
+		m.w.Embed.Row(ids[i], h[i*hidden:(i+1)*hidden])
 	}
+	spliceImageSpans(h, spans, imageFeats, hidden)
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
 		cache.scr = newDecodeScratch(m.w.arch)
 	}
@@ -66,19 +59,19 @@ func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeat
 
 // prefillQwen35VLPerToken is the original loop, kept for the families and caches qwen35BatchNAnyPos excludes (a layer pager, a
 // capture request, Olmo Hybrid) and as the reference the batched path is tested against.
-func (m *Model) prefillQwen35VLPerToken(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
+func (m *Model) prefillQwen35VLPerToken(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	hidden := m.w.arch.HiddenDim
+	all := make([]float32, len(ids)*hidden)
+	for i := range ids {
+		m.w.Embed.Row(ids[i], all[i*hidden:(i+1)*hidden])
+	}
+	spliceImageSpans(all, spans, imageFeats, hidden)
 	var last []float32
 	for i := range ids {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		h := make([]float32, hidden)
-		if i >= imgPos && i < imgPos+imgLen {
-			copy(h, imageFeats[(i-imgPos)*hidden:(i-imgPos+1)*hidden])
-		} else {
-			m.w.Embed.Row(ids[i], h)
-		}
+		h := all[i*hidden : (i+1)*hidden]
 		var err error
 		if last, err = m.runLayersQwen35FromEmbed(h, cache); err != nil {
 			return nil, err

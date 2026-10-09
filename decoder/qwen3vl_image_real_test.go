@@ -116,7 +116,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 		}
 		return all[(len(in.IDs)-1)*V:], am
 	}
-	real := &deepstackRows{start: imgPos, n: imgLen, rows: deep}
+	real := &deepstackRows{spans: []ImageSpan{{Pos: imgPos, Len: imgLen}}, rows: deep}
 	last, am := prefill(real)
 
 	// The production path, through GenerateQwenVLDeepstack's own cache setup, must give the open loop's last logits.
@@ -146,7 +146,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 	}
 
 	zero := make([]float32, imgLen*hidden)
-	textToo := &deepstackRows{start: 0, n: len(in.IDs)}
+	textToo := &deepstackRows{spans: []ImageSpan{{Pos: 0, Len: len(in.IDs)}}}
 	for _, set := range deep {
 		mean := make([]float32, hidden)
 		for r := range imgLen {
@@ -169,7 +169,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 		ds   *deepstackRows
 	}{
 		{"(1) DeepStack not added", nil},
-		{"(2) added one layer late", &deepstackRows{start: imgPos, n: imgLen, rows: append([][]float32{zero}, deep...)}},
+		{"(2) added one layer late", &deepstackRows{spans: []ImageSpan{{Pos: imgPos, Len: imgLen}}, rows: append([][]float32{zero}, deep...)}},
 		{"(3) added to the text positions too", textToo},
 	} {
 		l, _ := prefill(d.ds)

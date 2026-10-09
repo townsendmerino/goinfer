@@ -257,7 +257,7 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 // sanity check on residentCommitIDs' bookkeeping, not a reuse-correctness test by itself.
 func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
-	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, &residentImageBlock{start: 8, end: 11, hash: 42}, nil)
+	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 8, end: 11, hash: 42}}, nil)
 	if len(m.resImgBlocks) != 2 {
 		t.Fatalf("resImgBlocks = %v, want 2 entries (old block kept, new block added)", m.resImgBlocks)
 	}

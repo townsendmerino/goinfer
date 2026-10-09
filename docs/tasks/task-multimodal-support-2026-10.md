@@ -2646,6 +2646,50 @@ Added 2026-10-07. Today a second image in one message is a 400.
 **Cost:** about two days by day. Step 1 is an hour on nobara, step 2 most of a day, step 3 half a day, step 4 half a day
 per backend. Nothing in it needs the night queue.
 
+#### S11 results, steps 1 and 2 (2026-10-09, by day)
+
+- **Step 1, goldens** (`scripts/pin_two_images_tiny.py`, from the Mac's fixture bytes copied to nobara):
+  - Gemma 3, Qwen2.5-VL and Qwen3.5 are pinned under transformers 5.15.0.
+  - Gemma 4 (bidirectional tiny) is pinned under 5.12, for the reason in the finding below.
+  - Each golden holds both layouts, every position's logits and a 4-token greedy continuation. Gemma also holds HF's
+    own second-block-causal forward: the defect moves its logits by up to 0.29-0.65.
+- **Step 2, decoder:**
+  - `ImageSpan` and span-slice entries (`GenerateVLSpans`, `GenerateQwenVLDeepstackSpans`, `GenerateGemma4VLSpans`);
+    the single-image entries are now one-span wrappers.
+  - The CPU prefills splice every span; DeepStack rows cover several runs; `gemma4AttendRange` takes the span list (a
+    query sees its own block).
+  - Reuse claims and commits take every block.
+  - `ResidentImageBlocksPrefill` is the optional multi-block resident interface. Without it a multi-image turn takes
+    the bridge, with the reason in `Generation.ImgPrefillDecline`. The resident DeepStack prefill (one run) declines a
+    multi-image turn the same way.
+- **G-S11a PASS** (`decoder/two_images_test.go`):
+  - Gemma 3: every position at cosine 1.000000.
+  - Qwen2.5-VL and Qwen3.5: last position 1.000000; m-RoPE positions and rope delta exact; continuation exact.
+  - Gemma 4: last position 1.000000; continuation exact.
+- **G-S11b:**
+  - **Features swapped:** red on Gemma 3 (0.24), Qwen3.5, Gemma 4 (0.992 and 0.995 against 0.999), and Qwen2.5-VL's
+    adjacent layout.
+  - **Known blind: Qwen2.5-VL's interleaved layout** reads 0.9933 against its 0.99 bar. Its fixture keeps the released
+    rope theta, so the last position barely sees the image rows. Logged as BLIND, as registered.
+  - **Pairing** (the adjacent pair as one image's temporal halves): red through the exact-position check on both Qwen
+    families.
+  - **Second block left causal:** red on Gemma 3 (0.85 / 0.88) and Gemma 4 (0.76 / 0.93). On both, the mutant
+    reproduces HF's own defect forward at 1.000000.
+- **G-S11d PASS** (`TestTwoImages_reuse`, Gemma 3 through the fake resident):
+  - The same two images reuse 22 of 23 positions without re-running the tower.
+  - A changed second image stops at its block's start (12); a changed first image stops at 4.
+- **Regression:** the decoder's image, Qwen, Gemma 4, reuse and resident tests are green. The parity hashes were
+  refreshed through `refresh_parity_hashes.sh` (43 forward goldens passed, 0 failed).
+- **Found on the way: transformers 5.15 changed a "vision" Gemma 4's bidirectional mask.**
+  - 5.12 applied Gemma 3's mask on every layer. That is what goinfer's `gemma4AttendRange` implements, and what the
+    committed single-image golden was pinned under.
+  - 5.15 makes global layers causal only and, on sliding layers, applies the window after the block OR. Its own
+    docstring: "Gemma 4 explicitly disables bidirectional attention on global attention layers".
+  - Measured: the single-image golden re-pinned under 5.15 reads cosine 0.99982 against the committed one. Its image
+    features and causal-only logits are identical.
+  - **This concerns goinfer's 26B/31B image turns, not S11.** Which semantics the real checkpoints were trained with
+    is open (Google's reference, not transformers, decides). It is recorded for the owner, not fixed here.
+
 ### S12 — WebGPU for multimodal (owner: invest, 2026-10-07)
 
 WebGPU today: Gemma 3 GPU/GPU, Qwen2.5-VL decode on the GPU, GLM-OCR staged, Gemma 4 and Qwen3.5 on the CPU, and no

@@ -43,9 +43,9 @@ func TestQwen35VL_batchedPrefillMatchesPerToken(t *testing.T) {
 				if !m.qwen35BatchNAnyPos(len(ids), cache) {
 					t.Fatalf("%s: the batched path is not eligible on this fixture, so the comparison would be the per-token loop against itself", L.name)
 				}
-				lg, err = m.prefillQwen35VLBatched(context.Background(), ids, feats, imgPos, g.NImageTokens, cache)
+				lg, err = m.prefillQwen35VLBatched(context.Background(), ids, feats, []ImageSpan{{Pos: imgPos, Len: g.NImageTokens}}, cache)
 			} else {
-				lg, err = m.prefillQwen35VLPerToken(context.Background(), ids, feats, imgPos, g.NImageTokens, cache)
+				lg, err = m.prefillQwen35VLPerToken(context.Background(), ids, feats, []ImageSpan{{Pos: imgPos, Len: g.NImageTokens}}, cache)
 			}
 			if err != nil {
 				t.Fatalf("%s (batched=%v): %v", L.name, batched, err)

@@ -80,26 +80,42 @@ func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation,
 // returned channel: range over it to consume tokens, then check Generation.Err for
 // a terminal error.
 func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	return m.GenerateVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen, Hash: imgHash}}, features, maxTokens, sp)
+}
+
+// GenerateVLSpans is GenerateVL for a prompt with several images (S11, docs/tasks/task-multimodal-support-2026-10.md):
+// spans are the images' placeholder runs in prompt order, each its own bidirectional block, and features returns every
+// span's rows concatenated in span order. Reuse claims every span; the resident image prefill takes them all when the
+// backend implements ResidentImageBlocksPrefill (one span needs only ResidentImagePrefill), and otherwise the turn
+// takes the CPU-prefill + UploadKV bridge with the reason in Generation.ImgPrefillDecline.
+func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
 	go func() {
 		defer close(out)
 
-		if err := m.checkImageBlockFitsWindow(imgLen); err != nil {
-			g.err = err
+		if len(spans) == 0 {
+			g.err = fmt.Errorf("decoder: GenerateVLSpans needs at least one image span")
 			return
 		}
+		for _, s := range spans {
+			if err := m.checkImageBlockFitsWindow(s.Len); err != nil {
+				g.err = err
+				return
+			}
+		}
+		lastEnd := spans[len(spans)-1].Pos + spans[len(spans)-1].Len
 
 		// P9a fast path: peek the resident KV for a full-image reuse before touching the
 		// tower or the CPU prefill. Held only long enough to check+use; released either way.
 		if m.tryClaimResident() {
-			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
+			claim := residentImageClaimsOf(spans)
 			// M-01 (docs/audit-2026-09-10.md): a prompt in (ResidentContextCap, MaxPositions) has
 			// already passed prepare's own MaxPositions check, so residentPrefillSeed below would
 			// die mid-prefill with no CPU fallback (its error just sets g.err and returns) — decline
 			// the fast path up front when it would overrun the cap instead, falling through to the
 			// SAME "not fully reused" path below (release resBusy, tower + CPU prefill + re-claim).
-			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= imgPos+imgLen {
+			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= lastEnd {
 				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
 					// FULL reuse: the image, and everything before it, is already resident.
 					// Stay inside THIS claim (no release/reclaim) — reseed via the ordinary
@@ -128,7 +144,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 						return l, err
 					})
 					if g.err == nil {
-						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 					} else {
 						m.residentForgetIDs()
 					}
@@ -157,7 +173,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 		// through UNCHANGED to the CPU-prefill+UploadKV bridge; the claim is released before
 		// falling through so the tower/CPU-prefill work below never runs while holding it.
 		if rip, ok := m.resident.(ResidentImagePrefill); ok && m.tryClaimResident() {
-			if logits, gpuPos, ferr := m.residentImagePrefill(ctx, rip, ids, feats, imgPos, imgLen); ferr == nil {
+			if logits, gpuPos, ferr := m.residentImagePrefill(ctx, rip, ids, feats, spans); ferr == nil {
 				g.ImgPrefillResident = true
 				if capper, ok := m.resident.(ResidentCapped); ok {
 					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
@@ -181,16 +197,18 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 					return l, err
 				})
 				if g.err == nil {
-					m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+					m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 					committed = true
 				}
 				return
+			} else {
+				g.ImgPrefillDecline = ferr.Error()
 			}
 			atomic.StoreInt32(&m.resBusy, 0) // declined: release before falling through
 		}
 
 		cache := m.NewCache(len(ids) + maxTokens)
-		logits, err := m.prefillLogitsVL(ctx, ids, feats, imgPos, imgLen, cache)
+		logits, err := m.prefillLogitsVLSpans(ctx, ids, spans, feats, cache)
 		if err != nil {
 			g.err = err
 			return
@@ -237,7 +255,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 			return m.forward(next, cache)
 		})
 		if useGPU && g.err == nil {
-			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 			committed = true
 		}
 	}()
@@ -274,10 +292,23 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 // The sets touch only the prefill; a resident whose m-RoPE prefill cannot inject them (CUDA's) is not offered it, and
 // the CPU prefill carries them before the usual upload.
 func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, [][]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
+	return m.GenerateQwenVLDeepstackSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen, Hash: imgHash}}, features, gridTHW, merge, imageToken, maxTokens, sp)
+}
+
+// GenerateQwenVLDeepstackSpans is GenerateQwenVLDeepstack for several images (S11, docs/tasks/task-multimodal-support-2026-10.md):
+// spans are the images' placeholder runs in prompt order and gridTHW holds one (t, h, w) per image in the same order —
+// each image its own t = 1 grid, never a pair merged into one (docs/multimodal.md, "Do not pair images"). features
+// returns every span's merged rows concatenated in span order and, per DeepStack layer, a set laid out the same way.
+func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, [][]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
 	go func() {
 		defer close(out)
+		if len(spans) == 0 || len(gridTHW) != len(spans) {
+			g.err = fmt.Errorf("decoder: %d image spans and %d grids; each image needs its own grid", len(spans), len(gridTHW))
+			return
+		}
+		lastEnd := spans[len(spans)-1].Pos + spans[len(spans)-1].Len
 		mropePos, err := mropePositions(ids, imageToken, gridTHW, merge)
 		if err != nil {
 			g.err = err
@@ -297,13 +328,13 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 		recurrent := m.hasRecurrentState()
 
 		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
-			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
+			claim := residentImageClaimsOf(spans)
 			// M-01 (docs/audit-2026-09-10.md): same cap decline as GenerateVL's identical P9a
 			// site above — a prompt in (ResidentContextCap, MaxPositions) already passed
 			// prepare's MaxPositions check, so residentPrefillSeedMRoPE below would die
 			// mid-prefill with no CPU fallback; decline up front and fall through to the "not
 			// fully reused" release/re-claim path instead.
-			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= imgPos+imgLen {
+			if reuseFrom := m.residentReuseLen(ids, claim, nil); reuseFrom >= lastEnd {
 				if ctxCap := m.ResidentContextCap(); ctxCap <= 0 || len(ids) <= ctxCap {
 					g.PrefillReused = reuseFrom // observable proof the fast path actually fired
 					m.residentForgetIDs()
@@ -330,7 +361,7 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 						return l, err
 					})
 					if g.err == nil {
-						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 					} else {
 						m.residentForgetIDs()
 					}
@@ -343,7 +374,7 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 
 		feats, deep, err := features()
 		if err == nil {
-			err = m.checkDeepstack(deep, imgLen)
+			err = m.checkDeepstack(deep, imageSpansTotal(spans))
 		}
 		if err != nil {
 			g.err = err
@@ -376,7 +407,7 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 				if recurrent {
 					m.residentForgetIDs()
 				}
-				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, rmp, ids, feats, imgPos, imgLen, mropePos, deep); ferr == nil {
+				if logits, gpuPos, ferr := m.residentMRoPEPrefillDeep(ctx, rmp, ids, feats, spans, mropePos, deep); ferr == nil {
 					g.ImgPrefillResident = true
 					if capper, ok := m.resident.(ResidentCapped); ok {
 						if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
@@ -401,10 +432,12 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 						return l, err
 					})
 					if g.err == nil {
-						m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+						m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 						committed = true
 					}
 					return
+				} else {
+					g.ImgPrefillDecline = ferr.Error()
 				}
 				atomic.StoreInt32(&m.resBusy, 0) // declined: release before falling through
 			}
@@ -412,9 +445,9 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 
 		cache := m.NewCache(len(ids) + maxTokens)
 		if deep != nil {
-			cache.deepstack = &deepstackRows{start: imgPos, n: imgLen, rows: deep}
+			cache.deepstack = &deepstackRows{spans: spans, rows: deep}
 		}
-		logits, err := m.prefillLogitsQwenVL(ctx, ids, feats, imgPos, imgLen, mropePos, cache)
+		logits, err := m.prefillLogitsQwenVLSpans(ctx, ids, spans, feats, mropePos, cache)
 		cache.deepstack = nil // the prefill's alone; nothing after it may see the sets
 		if err != nil {
 			g.err = err
@@ -462,7 +495,7 @@ func (m *Model) GenerateQwenVLDeepstack(ctx context.Context, ids []int, imgPos, 
 			return m.forward(next, cache) // decode m-RoPE via cache.mropeDelta
 		})
 		if useGPU && g.err == nil {
-			m.residentCommitIDs(ids, generated, &residentImageBlock{start: imgPos, end: imgPos + imgLen, hash: imgHash}, nil)
+			m.residentCommitIDs(ids, generated, residentImageBlocksOf(spans), nil)
 			committed = true
 		}
 	}()
@@ -483,7 +516,8 @@ func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
 	return nil
 }
 
-// checkDeepstack validates GenerateQwenVLDeepstack's sets: at most one per decoder layer, each imgLen rows of hidden.
+// checkDeepstack validates GenerateQwenVLDeepstack's sets: at most one per decoder layer, each imgLen rows of hidden
+// (every image's rows, for several images).
 func (m *Model) checkDeepstack(deep [][]float32, imgLen int) error {
 	if len(deep) > m.w.arch.NumLayers {
 		return fmt.Errorf("decoder: %d DeepStack sets for %d layers", len(deep), m.w.arch.NumLayers)

@@ -6,7 +6,7 @@ import "testing"
 // image run, at the right offsets, whatever the batch's start position (a chunked or resumed prefill), and nowhere else.
 func TestAddDeepstack(t *testing.T) {
 	const hidden = 2
-	ds := &deepstackRows{start: 3, n: 3, rows: [][]float32{{10, 11, 20, 21, 30, 31}}}
+	ds := &deepstackRows{spans: []ImageSpan{{Pos: 3, Len: 3}}, rows: [][]float32{{10, 11, 20, 21, 30, 31}}}
 	for _, tc := range []struct {
 		startPos, K int
 		want        []float32
