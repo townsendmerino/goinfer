@@ -3325,6 +3325,89 @@ S15 adds temporal patching, frame timestamps and video placeholder tokens.
     after this lands, carries the record.
   - **Speed:** ships at >= 1.02x TTFT (the bar), which the measurement above expects to clear by about 1.7x.
 
+- **G-IP3's first run found a shipped bug: Gemma 3 4B's batched pass on Metal returns garbage, text or image** (by day,
+  2026-10-09; probes in `metal/zz_g3_prefill_probe_test.go`, not committed).
+  - The resident image prefill and the planted no-block arm both read cosine NaN. That was a cosine of all-zero logits.
+  - **Text alone does it too.** A 31-token text prompt through `Generate` on Metal answers `<pad>` and then unrelated
+    tokens; the sequential path's first token is 818.
+    - Every Gemma 3 prompt of 16 tokens or more on Metal has taken this pass since `84c3f29f` (2026-09-13, audit M-06,
+      which admitted Gemma 3 and graded it on tiny fixtures only).
+    - Image turns were spared: they prefill on the CPU (above).
+  - **Mechanism, measured:** the pass keeps the residual in f16 (max 65,504), and Gemma 3 4B's residual outgrows it.
+    - The `<bos>` row reaches 50,752 by layer 5 and is inf at layer 6. At layer 7 its K/V are NaN, attention spreads
+      NaN to every row, and the int8 LM head turns a NaN row into finite zeros.
+    - So A-C02's non-finite-logit check (`batchedPrefillImg`) passes it.
+    - Computing `<bos>` on decode's f32 kernels and the rest batched does not help: every ordinary row climbs to about
+      60,000 by layer 26 and overflows at layer 27.
+  - **Fix 1, safety (registered before code):** the pass declines when its last residual row is non-finite after the
+    trunk, and the decoder re-runs the prompt sequentially, as A-C02 does for a non-finite logit.
+    - The last row is enough. A row that overflows before the final layer writes NaN K/V, which reaches the last row
+      through attention. A row that overflows only in the final layer writes no further K/V. A NaN K/V row that only
+      sliding-window layers hold, outside the last row's window, is never attended again.
+    - **G-NF1, real** (Gemma 3 4B, the 31-token prompt): the batched pass declines, naming the overflow, and
+      `Generate`'s 24 greedy tokens equal the sequential path's (fast prefill off). The planted defect, the guard off,
+      is today's garbage (above).
+    - **G-NF2, tiny:** a test seam that writes inf into the last residual row makes the pass decline. Every family
+      that does not overflow keeps its path; `gate quick` green.
+  - **Fix 2, the lever (registered before code): store the residual scaled by 1/s.**
+    - **Applies to:** a sandwich-norm family with no PLE, MoE, post-only norm or DeepStack (Gemma 3, on this pass).
+      - Every read of its residual there is an RMSNorm (pre-attention, pre-MLP, final), and RMSNorm ignores scale
+        except through eps.
+      - Every write is an embedding upload or a post-normed branch's `residual_f16` add.
+      - So the pass uploads the embeddings times 1/s and adds each branch times 1/s.
+      - s is a power of two, so the scaling is exact in floating point. The scaled pass equals today's wherever today's
+        does not overflow, except through eps and subnormals.
+    - **s:** the smallest power of two that leaves at least 4x headroom over the largest residual measured on Gemma 3
+      4B (the pass's largest finite value times s) across the G-RS2 prompts and S3's four image turns. Recorded.
+    - **G-RS1, identity (tiny, `gemma3-vl-tiny`, which does not overflow):** last-token logits scaled against unscaled,
+      cosine >= 0.99999. Families without the scale run the unchanged kernels, so they are identical by construction,
+      and their existing tests are unchanged.
+    - **G-RS2, real Gemma 3 4B text:**
+      - Batched last token against the CPU at int4 per-32: cosine >= 0.98 (G-B3's real tier).
+      - 16 teacher-forced decode steps after it, with no non-tie flip.
+      - The guard of Fix 1 does not fire on prompts of 31, about 450 and about 2,000 tokens.
+      - Planted defect: s = 1 must trip the guard.
+    - **G-RS3, speed, exploratory by day:** TTFT on about 512 tokens, batched against sequential. Ships at >= 1.02x.
+    - G-IP3 then runs as registered.
+  - **Results, 2026-10-09 (by day, the M1 Pro; logs `docs/measurements/multimodal-support-2026-10/s17-*.log`, probes
+    archived as `zz_g3_prefill_probe_test.go.txt` there):**
+    - **G-NF1 PASS** (`TestGemma3PrefillOverflow_declinesReal`, run at s = 1): the batched pass declines, naming the
+      overflow, and `Generate`'s 24 greedy tokens equal the sequential path's ("The bicycle's origins can be traced back
+      to 1817 in Germany, ...").
+    - **G-NF2 PASS** (`TestPrefill_declinesNonFiniteLogits`): an inf in the last residual row declines; the next clean
+      pass does not.
+    - **s = 32.** The measured peak was 295,936 on every prompt (the `<bos>` row, after layer 31; prompts of 31, 716 and
+      3,094 tokens and an image turn). s = 16 would leave 3.5x headroom, under the registered 4x; s = 32 leaves 7.1x.
+    - **G-RS1 PASS, bit-identical** (`TestPrefillResidScale_identityTiny`): s = 32 against s = 1, max |diff| 0.
+      - The first build read cosine 0.99994, under the 0.99999 bar. **Mechanism:** the tiny fixture's residual is
+        small, so after dividing by s² its mean square sat near eps (1e-6).
+      - **Fix, inside the registered design:** the three norms that read the residual (pre-attention, pre-MLP, final)
+        take eps/s². Then x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly.
+    - **G-RS2 PASS** (`TestGemma3PrefillResidScaleReal`; batched last token against the CPU at int4 per-32, then 16
+      teacher-forced steps). The overflow guard fired on none of the three prompts at s = 32 and on all of them at
+      s = 1.
+
+      | prompt | last token | worst over the 16 steps | flips |
+      |---|---|---|---|
+      | 31 tokens | 0.999596 | 0.982823 | 0 |
+      | 468 tokens | 0.999085 | 0.960446 | 2 near-tie, 0 real |
+      | 1,894 tokens | 0.999030 | 0.958636 | 0 |
+
+    - **G-RS3, exploratory:** 538 tokens, batched 2.06-2.33 s against sequential 15.05-15.16 s (three runs each, warm),
+      about 7x. Ships (bar 1.02x).
+    - **G-IP3 PASS** (`TestImagePrefillResident_gemma3Real`, S3's four images through the sidecar):
+      - The resident image prefill's worst cosine is 0.991388, against a bar of 0.968103 (production's worst, 0.973103,
+        minus 0.005), with 0 non-tie argmax differences.
+      - It sits closer to the reference than today's CPU W4A8 bridge on every image (0.991-0.993 against 0.973-0.986).
+      - The planted no-block arm reads 0.962159 over the four, under the bar, so the gate is not blind. On one image
+        alone (table.png) it reads 0.989773, which is above it.
+      - The prompt is serve's shape (`Gemma3PromptBlock`, `<bos>`). The first run used the bare block without `<bos>`;
+        corrected before grading.
+    - **G-IP2 PASS** (tiny), as before: 0.999674 / relL2 0.0256. The planted defect is blind there, as registered, so
+      G-IP3 carries it.
+    - `gate quick` green (2,237 passed, 0 failed); staticcheck clean on the darwin `metal` package and the linux target.
+    - **G-IP4 (served TTFT) is still owed.**
+
 ### S18 — Defaults that fit (added 2026-10-07 evening)
 
 - **The gap:** with a tower loaded, the out-of-the-box plan puts the decoder or the tower on the CPU on common

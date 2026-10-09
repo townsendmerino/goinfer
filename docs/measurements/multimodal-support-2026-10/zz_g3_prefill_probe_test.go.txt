@@ -1,0 +1,571 @@
+//go:build darwin && goinfer_testhooks
+
+package metal
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/aikit/vision"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/multimodal"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// Throwaway (S17/S18 next lever, exploratory): where a Gemma 3 image turn's non-tower time goes on Metal. The CPU image prefill
+// (what GenerateVL runs, since Metal has no ResidentImagePrefill), the K/V upload, and the first Metal decode step.
+func TestZZG3PrefillProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	src := dir
+	if _, err := os.Stat(dir + ".int4.metal.giw"); err == nil {
+		src = dir + ".int4.metal.giw"
+	}
+	m, err := decoder.Load(src, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	hidden, _, _, _, _, _, _ := m.Dims()
+	const imgPos, imgLen, n = 6, 256, 282
+	ids := make([]int, n)
+	for i := range ids {
+		ids[i] = 1000 + i
+	}
+	for i := imgPos; i < imgPos+imgLen; i++ {
+		ids[i] = 262144
+	}
+	feats := make([]float32, imgLen*hidden)
+	for i := range feats {
+		feats[i] = float32(i%97)/970 - 0.05
+	}
+	for rep := range 2 {
+		c := m.NewCache(n + 8)
+		t0 := time.Now()
+		if _, err := m.PrefillLogitsVLForTest(context.Background(), ids, feats, imgPos, imgLen, c); err != nil {
+			t.Fatal(err)
+		}
+		tp := time.Since(t0)
+		a.Reset()
+		t1 := time.Now()
+		if err := m.ResidentUploadPrefillForTest(c); err != nil {
+			t.Fatal(err)
+		}
+		tu := time.Since(t1)
+		t2 := time.Now()
+		if _, err := a.Forward(m.EmbedResidentForTest(1000), n); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(os.Stderr, "[g3 image turn, %d positions, rep %d] CPU prefill %.2fs | upload %.3fs | first Metal step %.3fs\n", n, rep, tp.Seconds(), tu.Seconds(), time.Since(t2).Seconds())
+	}
+	// For scale: the same positions through Metal's batched text prefill (causal everywhere, so not a correct image turn).
+	embs := make([][]float32, n)
+	for i, id := range ids {
+		if id == 262144 {
+			id = 1000
+		}
+		embs[i] = m.EmbedResidentForTest(id)
+	}
+	a.Reset()
+	t3 := time.Now()
+	if _, err := a.PrefillLast(context.Background(), embs, 0); err != nil {
+		t.Logf("batched prefill declined: %v", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "[g3 for scale] Metal batched prefill of %d positions %.2fs\n", n, time.Since(t3).Seconds())
+	}
+}
+
+// Throwaway: does Gemma 3 4B's batched f16 pass produce NaN on a text-only prompt, and on the image turn's rows?
+func TestZZG3BatchedNaNProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	src := filepath.Join(home, "models", "gemma-3-4b-it") + ".int4.metal.giw"
+	m, err := decoder.Load(src, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	for _, n := range []int{8, 32, 64, 271} {
+		rows := make([][]float32, n)
+		rows[0] = m.EmbedResidentForTest(2) // <bos>
+		for i := 1; i < n; i++ {
+			rows[i] = m.EmbedResidentForTest(1000 + 7*i)
+		}
+		a.Reset()
+		l, err := a.batchedPrefill(rows, 0, 0, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nan := 0
+		for _, v := range l {
+			if v != v {
+				nan++
+			}
+		}
+		mx := 0.0
+		for _, r := range rows {
+			for _, v := range r {
+				mx = max(mx, float64(abs32(v)))
+			}
+		}
+		nz := 0
+		for _, v := range l {
+			if v != 0 {
+				nz++
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[probe] text n=%d: %d/%d NaN logits, %d non-zero, argmax %d, max|emb| %.2f\n", n, nan, len(l), nz, argmaxF(l), mx)
+	}
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// Throwaway: real image rows through the batched pass; NaN in the prefill logits, or only in decode after?
+func TestZZG3ImageNaNProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	enc, _ := vision.LoadEncoder(dir, false)
+	proj, _ := multimodal.LoadProjector(dir)
+	data, _ := os.ReadFile("../testdata/gemma3_preprocess_image.png")
+	pv, _ := vision.Preprocess(data, vision.Gemma3())
+	h, _ := enc.Forward(pv.Data)
+	f, _ := proj.Forward(h)
+	ids, _ := tk.Encode("<start_of_turn>user\n"+multimodal.Gemma3PromptBlock(256)+"Describe this image.<end_of_turn>\n<start_of_turn>model\n", true)
+	if os.Getenv("ZZ_CPU_FIRST") == "1" {
+		mc, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "cpu", Quant: "int4", ActQuantGroup: 32})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cc := mc.NewCache(len(ids) + 1)
+		if _, err := mc.PrefillLogitsVLForTest(context.Background(), ids, f, 5, 256, cc); err != nil {
+			t.Fatal(err)
+		}
+		mc.Close()
+	}
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	hidden, _, _, _, _, _, _ := m.Dims()
+	const imgPos = 5
+	nanOf := func(l []float32) int {
+		n := 0
+		for _, v := range l {
+			if v != v {
+				n++
+			}
+		}
+		return n
+	}
+	for _, c := range []struct {
+		name  string
+		scale float32
+		n     int
+	}{{"image rows", 1, len(ids)}, {"after upload", 1, len(ids)}, {"after upload+dec", 1, len(ids)}} {
+		if c.name != "image rows" {
+			cc := m.NewCache(len(ids) + 9)
+			if _, err := m.PrefillLogitsVLForTest(context.Background(), ids, f, imgPos, 256, cc); err != nil {
+				t.Fatal(err)
+			}
+			a.Reset()
+			if err := m.ResidentUploadPrefillForTest(cc); err != nil {
+				t.Fatal(err)
+			}
+			if c.name == "after upload+dec" {
+				for k := range 8 {
+					if _, err := a.Forward(m.EmbedResidentForTest(ids[k]), len(ids)+k); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+		}
+		rows := make([][]float32, c.n)
+		for j := range rows {
+			if j >= imgPos && j < imgPos+256 {
+				r := make([]float32, hidden)
+				for k := range r {
+					r[k] = f[(j-imgPos)*hidden+k] * c.scale
+				}
+				rows[j] = r
+			} else {
+				rows[j] = m.EmbedResidentForTest(ids[j])
+			}
+		}
+		a.Reset()
+		l, err := a.batchedPrefill(rows, 0, 0, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pre := nanOf(l)
+		d, err := a.Forward(m.EmbedResidentForTest(ids[len(ids)-1]), c.n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cc := m.NewCache(len(ids) + 1)
+		lc, _ := m.PrefillLogitsVLForTest(context.Background(), ids, f, imgPos, 256, cc)
+		nrm := func(v []float32) float64 {
+			s := 0.0
+			for _, x := range v {
+				s += float64(x) * float64(x)
+			}
+			return math.Sqrt(s)
+		}
+		fmt.Fprintf(os.Stderr, "[probe] %-16s n=%d: prefill NaN %d |l| %.3g argmax %d (cpu |l| %.3g argmax %d, cos %.6f), next decode NaN %d |d| %.3g\n",
+			c.name, c.n, pre, nrm(l), argmaxF(l), nrm(lc), argmaxF(lc), cosF(l, lc), nanOf(d), nrm(d))
+	}
+	fmt.Fprintln(os.Stderr, "[probe] ids[:8]", ids[:8])
+}
+
+// Throwaway: the production text path. Generate on Metal, greedy, a 40-token prompt; the reply should read as text.
+func TestZZG3GenerateProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	ids, _ := tk.Encode("<start_of_turn>user\nWrite one sentence about the history of the bicycle, mentioning at least one inventor and one country by name please.<end_of_turn>\n<start_of_turn>model\n", true)
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		rows[i] = m.EmbedResidentForTest(id)
+	}
+	a.Reset()
+	l, err := a.PrefillLast(context.Background(), rows, 0)
+	fmt.Fprintf(os.Stderr, "[probe] PrefillLast on %d tokens: err=%v argmax=%d\n", len(ids), err, func() int {
+		if l == nil {
+			return -1
+		}
+		return argmaxF(l)
+	}())
+	a.Reset()
+	ch, _ := m.Generate(context.Background(), ids, 24, decoder.SamplingParams{})
+	var out []int
+	for id := range ch {
+		out = append(out, id)
+	}
+	txt, _ := tk.Decode(out)
+	fmt.Fprintf(os.Stderr, "[probe] Generate: %v %q\n", out, txt)
+}
+
+// Throwaway: the batched pass with the trunk cut to k layers; the first k whose logits go to zero names the layer.
+func TestZZG3LayerCutProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	ids, _ := tk.Encode("<start_of_turn>user\nWrite one sentence about the history of the bicycle, mentioning at least one inventor and one country by name please.<end_of_turn>\n<start_of_turn>model\n", true)
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		rows[i] = m.EmbedResidentForTest(id)
+	}
+	// The sequential reference on the full trunk.
+	a.Reset()
+	var seq []float32
+	for i, r := range rows {
+		seq, _ = a.Forward(r, i)
+	}
+	seq = append([]float32(nil), seq...)
+	full := a.r.nL
+	zzResidDump = func(x Buffer, M, H int) {
+		u := x.U16s()[:M*H]
+		inf, nan, worstRow := 0, 0, -1
+		mx := 0.0
+		for i, h := range u {
+			v := float64(f16ToF32(h))
+			switch {
+			case v != v:
+				nan++
+			case math.IsInf(v, 0):
+				inf++
+				if worstRow < 0 {
+					worstRow = i / H
+				}
+			default:
+				mx = math.Max(mx, math.Abs(v))
+			}
+		}
+		rowMax := make([]float64, M)
+		for i, h := range u {
+			v := math.Abs(float64(f16ToF32(h)))
+			if v == v && !math.IsInf(v, 0) {
+				rowMax[i/H] = math.Max(rowMax[i/H], v)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[probe]   residual: %d inf (first row %d), %d NaN, max finite %.0f; row max [0..4] %.0f %.0f %.0f %.0f %.0f\n", inf, worstRow, nan, mx, rowMax[0], rowMax[1], rowMax[2], rowMax[3], rowMax[4])
+	}
+	defer func() { zzResidDump = nil }()
+	for _, k := range []int{1, 2, 3, 4, 5, 6, 7, 8, full} {
+		a.r.nL = k
+		a.Reset()
+		l, err := a.batchedPrefill(rows, 0, 0, nil, nil)
+		a.r.nL = full
+		if err != nil {
+			t.Fatal(err)
+		}
+		nz := 0
+		for _, v := range l {
+			if v != 0 {
+				nz++
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[probe] layers=%2d: %d non-zero logits, argmax %d\n", k, nz, argmaxF(l))
+	}
+	fmt.Fprintf(os.Stderr, "[probe] sequential full trunk argmax %d\n", argmaxF(seq))
+}
+
+// Throwaway: <bos> on decode's kernels (f32 residual), the rest batched from position 1. Finite? Close to sequential?
+func TestZZG3BOSSplitProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	zzResidDump = func(x Buffer, M, H int) {
+		u := x.U16s()[:M*H]
+		bad, mx, at := 0, 0.0, 0
+		for i, h := range u {
+			v := float64(f16ToF32(h))
+			if v != v || math.IsInf(v, 0) {
+				bad++
+			} else if math.Abs(v) > mx {
+				mx, at = math.Abs(v), i/H
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[probe]   residual after the trunk: %d non-finite, max finite %.0f at row %d of %d\n", bad, mx, at, M)
+	}
+	defer func() { zzResidDump = nil }()
+	for _, text := range []string{
+		"<start_of_turn>user\nWrite one sentence about the history of the bicycle, mentioning at least one inventor and one country by name please.<end_of_turn>\n<start_of_turn>model\n",
+		"<start_of_turn>user\n" + strings.Repeat("The quick brown fox jumps over the lazy dog.\n\n", 40) + "Summarise.<end_of_turn>\n<start_of_turn>model\n",
+	} {
+		ids, _ := tk.Encode(text, true)
+		rows := make([][]float32, len(ids))
+		for i, id := range ids {
+			rows[i] = m.EmbedResidentForTest(id)
+		}
+		a.Reset()
+		var seq []float32
+		for i, r := range rows {
+			seq, _ = a.Forward(r, i)
+		}
+		seq = append([]float32(nil), seq...)
+		a.Reset()
+		if _, err := a.Forward(rows[0], 0); err != nil {
+			t.Fatal(err)
+		}
+		l, err := a.batchedPrefill(rows[1:], 1, 0, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(os.Stderr, "[probe] %d tokens, <bos> split: argmax %d vs sequential %d, cos %.6f\n", len(ids), argmaxF(l), argmaxF(seq), cosF(l, seq))
+	}
+}
+
+// Throwaway: with <bos> split off, which rows overflow first, at which layer, and the per-row max just before.
+func TestZZG3SplitLayerProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	ids, _ := tk.Encode("<start_of_turn>user\nWrite one sentence about the history of the bicycle, mentioning at least one inventor and one country by name please.<end_of_turn>\n<start_of_turn>model\n", true)
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		rows[i] = m.EmbedResidentForTest(id)
+	}
+	var k int
+	zzResidDump = func(x Buffer, M, H int) {
+		u := x.U16s()[:M*H]
+		badRows := map[int]int{}
+		rmax := make([]float64, M)
+		for i, h := range u {
+			v := float64(f16ToF32(h))
+			if v != v || math.IsInf(v, 0) {
+				badRows[i/H]++
+			} else {
+				rmax[i/H] = math.Max(rmax[i/H], math.Abs(v))
+			}
+		}
+		top := []string{}
+		for r := range M {
+			if rmax[r] > 8000 || badRows[r] > 0 {
+				top = append(top, fmt.Sprintf("row%d(id %d):max %.0f bad %d", r+1, ids[r+1], rmax[r], badRows[r]))
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[probe] layers=%2d: %d bad rows; %v\n", k, len(badRows), top)
+	}
+	defer func() { zzResidDump = nil }()
+	full := a.r.nL
+	for k = 1; k <= full; k++ {
+		a.r.nL = k
+		a.Reset()
+		if _, err := a.Forward(rows[0], 0); err != nil {
+			t.Fatal(err)
+		}
+		_, err := a.batchedPrefill(rows[1:], 1, 0, nil, nil)
+		a.r.nL = full
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Throwaway (G-RS2's s): the residual's peak per layer with s = 64, on 31-, ~450- and ~2000-token text and an image turn.
+func TestZZG3ResidPeakProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	hidden, _, _, _, _, _, _ := m.Dims()
+	const s = 64
+	prefillResidScaleForTest = s
+	defer func() { prefillResidScaleForTest = 0 }()
+	var peak float64
+	var bad int
+	zzResidDump = func(x Buffer, M, H int) {
+		for _, h := range x.U16s()[:M*H] {
+			v := float64(f16ToF32(h))
+			if v != v || math.IsInf(v, 0) {
+				bad++
+			} else {
+				peak = math.Max(peak, math.Abs(v))
+			}
+		}
+	}
+	defer func() { zzResidDump = nil }()
+	enc, _ := vision.LoadEncoder(dir, false)
+	proj, _ := multimodal.LoadProjector(dir)
+	data, _ := os.ReadFile("../testdata/glm_ocr/table.png")
+	pv, _ := vision.Preprocess(data, vision.Gemma3())
+	hs, _ := enc.Forward(pv.Data)
+	f, _ := proj.Forward(hs)
+	readme, _ := os.ReadFile("../README.md")
+	words := strings.Fields(string(readme))
+	type prompt struct {
+		name string
+		rows [][]float32
+	}
+	var ps []prompt
+	for _, c := range []struct {
+		name string
+		n    int
+	}{{"31 tok", 0}, {"~450 tok", 300}, {"~2000 tok", 1400}} {
+		body := "Write one sentence about the history of the bicycle, mentioning at least one inventor and one country by name please."
+		if c.n > 0 {
+			body = strings.Join(words[:c.n], " ") + "\n\nSummarise the text above."
+		}
+		ids, _ := tk.Encode("<start_of_turn>user\n"+body+"<end_of_turn>\n<start_of_turn>model\n", true)
+		rows := make([][]float32, len(ids))
+		for i, id := range ids {
+			rows[i] = m.EmbedResidentForTest(id)
+		}
+		ps = append(ps, prompt{fmt.Sprintf("%s (%d)", c.name, len(ids)), rows})
+	}
+	{
+		ids, _ := tk.Encode("<start_of_turn>user\n"+multimodal.Gemma3PromptBlock(256)+"Describe this image.<end_of_turn>\n<start_of_turn>model\n", true)
+		rows := make([][]float32, len(ids))
+		for i, id := range ids {
+			if i >= 5 && i < 261 {
+				rows[i] = f[(i-5)*hidden : (i-4)*hidden]
+			} else {
+				rows[i] = m.EmbedResidentForTest(id)
+			}
+		}
+		ps = append(ps, prompt{fmt.Sprintf("image turn (%d)", len(ids)), rows})
+	}
+	full := a.r.nL
+	for _, p := range ps {
+		peak, bad = 0, 0
+		at := 0
+		for k := 1; k <= full; k++ {
+			before := peak
+			a.r.nL = k
+			a.Reset()
+			_, err := a.batchedPrefill(p.rows, 0, 0, nil, nil)
+			a.r.nL = full
+			if err != nil {
+				t.Fatalf("%s at %d layers: %v", p.name, k, err)
+			}
+			if peak > before {
+				at = k
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[probe] %-22s peak |x| %.0f (stored %.1f at s=%d, after %d layers), non-finite %d\n", p.name, peak*s, peak, s, at, bad)
+	}
+}
+
+// Throwaway (G-RS3, exploratory): ~512-token TTFT, batched (scaled residual) against sequential, warm, two runs each.
+func TestZZG3TTFTProbe(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "models", "gemma-3-4b-it")
+	tk, _ := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	readme, _ := os.ReadFile("../README.md")
+	words := strings.Fields(string(readme))
+	ids, _ := tk.Encode("<start_of_turn>user\n"+strings.Join(words[:200], " ")+"\n\nSummarise.<end_of_turn>\n<start_of_turn>model\n", true)
+	m, err := decoder.Load(dir+".int4.metal.giw", decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	a := m.ResidentForwardForTest().(*metalResident)
+	rows := make([][]float32, len(ids))
+	for i, id := range ids {
+		rows[i] = m.EmbedResidentForTest(id)
+	}
+	for rep := range 3 {
+		a.Reset()
+		t0 := time.Now()
+		if _, err := a.PrefillLast(context.Background(), rows, 0); err != nil {
+			t.Fatal(err)
+		}
+		tb := time.Since(t0)
+		a.Reset()
+		t1 := time.Now()
+		for i, r := range rows {
+			if _, err := a.Forward(r, i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ts := time.Since(t1)
+		fmt.Fprintf(os.Stderr, "[probe] rep %d, %d tokens: batched %.3f s, sequential %.3f s, %.2fx\n", rep, len(ids), tb.Seconds(), ts.Seconds(), ts.Seconds()/tb.Seconds())
+	}
+}

@@ -340,6 +340,10 @@ kernel void layernorm_quant_f16(device const half* x[[buffer(0)]], device const 
 // residual_f16: x += y (element-wise, grid = M*H).
 kernel void residual_f16(device half* x[[buffer(0)]], device const half* y[[buffer(1)]],
     uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])); }
+// residual_f16_scaled: x += y*inv, inv = 1/s a power of two: the add into a residual stored scaled by 1/s (S17,
+// resident.prefillResidScale).
+kernel void residual_f16_scaled(device half* x[[buffer(0)]], device const half* y[[buffer(1)]], constant float& inv[[buffer(2)]],
+    uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])*inv); }
 
 // residual_f16_from_f32: x += y, x is f16, y is f32 (G8, docs/tasks/task-gpu-paths-2026-09.md). The
 // batched-prefill MoE row loop's expert-combine dispatches (encodeMoEExperts/
@@ -502,6 +506,53 @@ kernel void attention_prefill(device const half* qkv[[buffer(0)]], device const 
     for (uint s=winStart+tid; s<nKeys; s+=tgs) {
         float a=0; device const half* k=kb+s*kvDim; uint d=0;
         // half4 vectorized K-read (coalescing fix, bit-identical; guarded on hd%4==0, scalar tail).
+        if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
+        for (; d<hd; d++) a += float(qr[d])*float(k[d]);
+        sc[s]=a*scale;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float mmax=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) mmax=max(mmax,sc[s]);
+    mmax = simd_max(mmax);
+    uint sgidA = tid >> 5u, laneA = tid & 31u;
+    if (laneA == 0) red[sgidA] = mmax;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint nsgA = tgs >> 5u;
+    if (tid == 0) { float v = red[0]; for (uint k=1; k<nsgA; k++) v = max(v, red[k]); red[0] = v; }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint st=tgs/2u; st>0u; st>>=1u){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*float(vb[s*kvDim+d]); out[m*qDim + qh*hd + d]=half(a/sum); }
+}
+
+// attention_prefill_img (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md): attention_prefill with an
+// image block [img.x, img.y) in absolute positions that attends BIDIRECTIONALLY, as the CPU's KVCache.attendHi and CUDA's
+// PrefillImageLast: a query inside the block sees keys up to img.y - 1, every other query stays causal, and the sliding
+// window's lower bound stays at the causal position's (pos + 1), as the CPU's WindowStart. img.y == 0 is no block (then this
+// is attention_prefill exactly). A separate kernel so every existing dispatch of attention_prefill stays as it was.
+kernel void attention_prefill_img(device const half* qkv[[buffer(0)]], device const half* kc[[buffer(1)]],
+    device const half* vc[[buffer(2)]], device half* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
+    constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& startPos[[buffer(7)]],
+    constant float& scale[[buffer(8)]], constant uint& qStride[[buffer(9)]], constant uint& window[[buffer(10)]],
+    constant uint2& img[[buffer(11)]],
+    uint gid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]],
+    uint tgs[[threads_per_threadgroup]]) {
+    uint m = gid / nH, qh = gid % nH;
+    uint kvDim = nKV*hd, kvh = qh/(nH/nKV);
+    uint pos = startPos + m;
+    uint causal = pos + 1u;
+    uint winStart = (window>0u && causal>window) ? causal-window : 0u;
+    uint nKeys = (pos >= img.x && pos < img.y) ? img.y : causal;
+    uint qDim = nH*hd;
+    device const half* qr = qkv + m*qStride + qh*hd;
+    device const half* kb = kc + kvh*hd;
+    device const half* vb = vc + kvh*hd;
+    threadgroup float sc[4096];
+    threadgroup float red[128];
+    for (uint s=winStart+tid; s<nKeys; s+=tgs) {
+        float a=0; device const half* k=kb+s*kvDim; uint d=0;
         if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=float(qr[d])*float(k4.x); a+=float(qr[d+1u])*float(k4.y); a+=float(qr[d+2u])*float(k4.z); a+=float(qr[d+3u])*float(k4.w); }
         for (; d<hd; d++) a += float(qr[d])*float(k[d]);
         sc[s]=a*scale;
@@ -1105,6 +1156,7 @@ type prefillState struct {
 	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
+	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
 	pRopeM                                                     Pipeline // S16: rope_mrope_f16
 	pPLEGeluMulF16, pLayerScaleF16                             Pipeline // S9 step 2: the E-model PLE gate and layer scalar
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
@@ -1117,6 +1169,7 @@ type prefillState struct {
 	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
+	pResScaled        Pipeline // S17: residual_f16_scaled, the add into a residual stored scaled by 1/s
 	// L2-Metal (docs/completed/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
 	// pAttn. Default ON since §3 gate passed 2026-09-10 (metalFusedAttentionEnabled, backend.go);
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
@@ -1194,9 +1247,9 @@ func (r *resident) ensurePrefill() {
 		pLN: p("layernorm_f16"), pLNQ: p("layernorm_quant_f16"),
 		pRes: p("residual_f16"), pSw: p("swiglu_f16"), pRope: p(ropeF16Name(r.pairwiseRoPE, false)), pRopeM: p(ropeF16Name(r.pairwiseRoPE, true)),
 		pPLEGeluMulF16: p("ple_gelu_mul_f16"), pLayerScaleF16: p("layer_scale_f16"),
-		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pQK: p("qk_norm_f16"),
+		pKv: p("kv_store_f16"), pAttn: p("attention_prefill"), pAttnImg: p("attention_prefill_img"), pQK: p("qk_norm_f16"),
 		pRmsQ:   p("rmsnorm_quant_f16"),
-		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"),
+		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"), pResScaled: p("residual_f16_scaled"),
 		pAttnFused: p("attention_prefill_fused"), pAttnSteel: p("attention_prefill_steel"),
 
 		pRouterGemm:       p("router_gemm_f16"),
@@ -1226,13 +1279,19 @@ func (r *resident) ensurePrefill() {
 // flatten-then-call would pay its own copy, so this splits by row directly instead, over M×H
 // rather than a flat index range, but is otherwise the same threshold/worker shape.
 func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {
+	parallelEmbedsF32ToF16Scaled(dst, embs, H, 1)
+}
+
+// parallelEmbedsF32ToF16Scaled is parallelEmbedsF32ToF16 with every value times inv first (S17's scaled residual; inv is
+// a power of two, so the product is exact, and inv = 1 is the plain conversion bit for bit).
+func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv float32) {
 	M := len(embs)
 	workers := min(runtime.GOMAXPROCS(0), 8)
 	if M*H < 8192 || workers <= 1 || M < 2 {
 		for m := range M {
 			row := embs[m]
 			for i := range H {
-				dst[m*H+i] = f32ToF16(row[i])
+				dst[m*H+i] = f32ToF16(row[i] * inv)
 			}
 		}
 		return
@@ -1247,7 +1306,7 @@ func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {
 			for m := lo; m < hi; m++ {
 				row := embs[m]
 				for i := range H {
-					dst[m*H+i] = f32ToF16(row[i])
+					dst[m*H+i] = f32ToF16(row[i] * inv)
 				}
 			}
 		}(lo, hi)
@@ -1321,7 +1380,39 @@ type prefillDeep struct {
 // parallel block's MLP fed from the post-attention residual instead of the layer's shared input norm. Tests set it.
 var prefillParallelDefectForTest bool
 
+// prefillResidScaleForTest, when > 0, replaces prefillResidScale's s for every family it applies to (1 turns the scale
+// off: G-RS2's planted defect; a large s measures the residual's peak).
+var prefillResidScaleForTest float32
+
+// gemmaPrefillResidScale is s for the families prefillResidScale applies to: the smallest power of two leaving 4x headroom
+// under f16's 65,504 over Gemma 3 4B's measured residual peak, 295,936 (its <bos> row after layer 31, the same on prompts
+// of 31 to 3,094 tokens and an image turn; S17's G-RS2 record).
+const gemmaPrefillResidScale = 32
+
+// prefillResidScale is the s the batched pass stores its residual divided by (S17,
+// docs/tasks/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows f16 (inf at layer 6). It applies where
+// every read of the residual is an RMSNorm, which ignores scale except through eps, and every write is an embedding
+// upload or a post-normed branch's residual add: sandwich norms with no post-only norm, PLE, MoE or DeepStack rows. s is
+// a power of two, so the scaled pass equals the unscaled one wherever that one does not overflow (eps and subnormals
+// aside). 1 everywhere else: those families run the unchanged kernels.
+func (r *resident) prefillResidScale(deep *prefillDeep) float32 {
+	if !r.sandwich || r.postOnly || r.pleP != 0 || r.moe != nil || deep != nil {
+		return 1
+	}
+	if prefillResidScaleForTest > 0 {
+		return prefillResidScaleForTest
+	}
+	return gemmaPrefillResidScale
+}
+
 func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep) []float32 {
+	return r.prefillLastImg(embs, startPos, mrope, deep, 0, 0)
+}
+
+// prefillLastImg is prefillLast with an image block [imgStart, imgEnd) in absolute positions that attends bidirectionally
+// (S17's Metal image prefill): every layer's attention then runs attention_prefill_img, the exact kernel with the block,
+// in place of the fused and steel kernels, which carry no block mask. imgEnd <= imgStart is no block: prefillLast exactly.
+func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, imgStart, imgEnd int) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1365,7 +1456,8 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	// xF too (R-20): the embeddings are converted straight into the buffer's M rows, its pad rows left as Metal zeroed
 	// them, instead of into a zeroed Go slice of Mpad rows that was then copied in whole.
 	xF := prefillScratchU16(d, Mpad*H)
-	parallelEmbedsF32ToF16(xF.U16s()[:M*H], embs, H)
+	residInv := 1 / r.prefillResidScale(deep)
+	parallelEmbedsF32ToF16Scaled(xF.U16s()[:M*H], embs, H, residInv)
 	normF := prefillScratchU16(d, Mpad*H)
 	qkvF := prefillScratchU16(d, Mpad*qkvDim)
 	ctxF := prefillScratchU16(d, Mpad*qDim)
@@ -1458,6 +1550,15 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	if r.moe != nil {
 		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
 	}
+	// S17: the scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
+	// that x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly (s is a power of two).
+	var uResidInv Buffer
+	uEpsX := r.uEps
+	if residInv != 1 {
+		uResidInv = NewBufferFloats(d, []float32{residInv})
+		uEpsX = NewBufferFloats(d, []float32{r.uEps.Floats()[0] * residInv * residInv})
+		scratch = append(scratch, uResidInv, uEpsX)
+	}
 	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
 	// gate's scratch.
 	var pleInB, pleGF, uP, uLP Buffer
@@ -1485,6 +1586,11 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		gateF = prefillScratchU16(d, M*nHhd)
 		u2NHhd, u2KvDim, uGateN = NewBufferU32(d, uint32(2*nHhd)), NewBufferU32(d, uint32(2*kvDim)), NewBufferU32(d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
+	}
+	var imgB Buffer // the bidirectional image block, when there is one (attention_prefill_img)
+	if imgEnd > imgStart {
+		imgB = NewBufferUint32s(d, []uint32{uint32(imgStart), uint32(imgEnd)})
+		scratch = append(scratch, imgB)
 	}
 	defer func() {
 		for _, b := range scratch {
@@ -1602,7 +1708,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			if r.postOnly {
 				inAttn = xF
 			} else {
-				e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
+				e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
 			}
 			// fused QKV (+bias)
 			if L.qGate {
@@ -1663,7 +1769,9 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 				kc, vc = zeroKV, zeroKV
 			}
 			// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
-			if lu.steel {
+			if imgB != (Buffer{}) {
+				e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB)
+			} else if lu.steel {
 				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
 			} else if lu.fused {
 				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal)
@@ -1683,7 +1791,11 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 			if r.sandwich || r.postOnly {
 				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, lu.uQDim, dummyBias, m0)
 				e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
-				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+				if uResidInv != (Buffer{}) {
+					e.Dispatch(pf.pResScaled, M*H, 256, xF, normF, uResidInv)
+				} else {
+					e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+				}
 			} else {
 				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, lu.uQDim, dummyBias, m2)
 			}
@@ -1707,7 +1819,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 
 			// --- EXPERT-MAJOR PATH ---
 			// 1. Pre-norm all M rows into normF
-			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
 
 			// 2. Batched Router GEMM: normF [M, H] x routerW [nE, H] -> moeLogits [M, nE]
 			totalRouterThreads := (M*r.moe.nE*32 + 255) / 256 * 256
@@ -1857,11 +1969,11 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		switch {
 		case r.parallelBlock && !prefillParallelDefectForTest:
 		case r.parallelBlock: // Part B's planted defect: the MLP fed from the post-attention residual
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
+			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
 		case r.postOnly:
 			inFFN = xF
 		default:
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
+			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
 		}
 		// S9 step 2: this layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
 		// layers are the model's I).
@@ -1884,7 +1996,11 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 		if r.sandwich || r.postOnly {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
-			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+			if uResidInv != (Buffer{}) {
+				e.Dispatch(pf.pResScaled, M*H, 256, xF, normF, uResidInv)
+			} else {
+				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
+			}
 		} else {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uFI, dummyBias, m2)
 		}
@@ -1912,9 +2028,23 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 	if r.layerNorm {
 		finalNormQ = pf.pLNQ
 	}
-	e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, r.uEps, r.uAddOne)
+	e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, uEpsX, r.uAddOne)
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
+	// The int8 head turns a NaN row into finite zeros, which the caller's non-finite-logit check (A-C02) passes, so the
+	// residual itself is checked. Its last row is enough: a row that overflows before the final layer writes NaN K/V,
+	// which reaches the last row through attention; a row that overflows in the final layer writes no further K/V.
+	last := xF.U16s()[(M-1)*H : M*H]
+	if r.poisonPrefillResidForTest {
+		last[0] = 0x7c00 // +inf
+	}
+	r.prefillResidNonFinite = false
+	for _, h := range last {
+		if h&0x7c00 == 0x7c00 {
+			r.prefillResidNonFinite = true
+			break
+		}
+	}
 	if db02Trace != nil {
 		db02Trace(db02Event{layer: r.nL, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
 	}

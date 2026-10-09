@@ -489,6 +489,10 @@ type resident struct {
 	// dense FFN buffers unset entirely) MUST decline prefill and let the caller fall back to
 	// the sequential Forward loop: correct, just a slower TTFT.
 	prefillOK bool
+	// prefillResidNonFinite reports that the last batched pass ended with a non-finite value in its last residual row: the
+	// f16 residual overflowed (Gemma 3 4B's outgrows 65,504 by layer 6, docs/tasks/task-multimodal-support-2026-10.md S17).
+	// batchedPrefillImg declines on it. poisonPrefillResidForTest writes an inf there first, for the test of that decline.
+	prefillResidNonFinite, poisonPrefillResidForTest bool
 
 	// w8: every dense body projection runs as W8A8 on its int8 weights instead of being re-quantized to int4
 	// (docs/tasks/task-metal-int8-2026-10.md, slice 1). Set by buildResident (w8Eligible). The GEMV pipelines are then

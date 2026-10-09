@@ -970,6 +970,40 @@ func (r *resident) prefillUnaligned() string {
 // int8 KV cache, a family the pass does not implement, the resident's cap, the exact attention kernel's key limit), the
 // same recovery of a request-time panic, and the same non-finite-logit check. mrope is nil for a text prompt.
 func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep) ([]float32, error) {
+	return a.batchedPrefillImg(embeddings, startPos, floor, mrope, deep, 0, 0)
+}
+
+// PrefillImageLast (decoder.ResidentImagePrefill; S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md) is
+// the batched f16 pass over an image turn's spliced embeddings with the image block [imgStart, imgEnd) attending
+// bidirectionally (attention_prefill_img), as CUDA's PrefillImageLast and the CPU's prefillLogitsVL. The whole prompt in one
+// pass, never chunked across the block. It takes the plain uniform pass only: a Gemma 4 E-model (its rows carry per-layer
+// inputs this route does not build), a layer-major family or a recurrent hybrid declines, and the decoder then takes its
+// CPU-prefill and upload bridge, unchanged.
+func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
+	if e := ctx.Err(); e != nil {
+		return nil, e
+	}
+	if imgStart < startPos || imgEnd <= imgStart || imgEnd > startPos+len(embeddings) {
+		return nil, fmt.Errorf("metal: image block [%d,%d) invalid for %d rows at %d", imgStart, imgEnd, len(embeddings), startPos)
+	}
+	if !a.r.prefillOK || a.r.pleP > 0 || a.r.dnet != nil || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
+		return nil, fmt.Errorf("metal: the resident image prefill takes the plain uniform pass; this model's image turn prefills on the CPU")
+	}
+	if !a.fastPrefill() {
+		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill); the image prefill runs on the CPU")
+	}
+	// attention_prefill_img is the exact kernel: its score buffer holds prefillExactAttnMaxKeys keys.
+	if startPos+len(embeddings) > prefillExactAttnMaxKeys {
+		return nil, fmt.Errorf("metal: an image turn of %d positions is past the image prefill's %d-key limit; the image prefill runs on the CPU",
+			startPos+len(embeddings), prefillExactAttnMaxKeys)
+	}
+	return a.batchedPrefillImg(embeddings, startPos, 0, nil, nil, imgStart, imgEnd)
+}
+
+var _ decoder.ResidentImagePrefill = (*metalResident)(nil)
+
+// batchedPrefillImg is batchedPrefill with an optional bidirectional image block (imgEnd <= imgStart: none).
+func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, imgStart, imgEnd int) ([]float32, error) {
 	promptLen := startPos + len(embeddings)
 	if floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
@@ -1024,13 +1058,18 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 				err = fmt.Errorf("metal: batched prefill aborted: %v", p)
 			}
 		}()
-		logits = a.r.prefillLast(embeddings, startPos, mrope, deep)
+		logits = a.r.prefillLastImg(embeddings, startPos, mrope, deep, imgStart, imgEnd)
 		return nil
 	}(); err != nil {
 		return nil, err
 	}
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // C-09
+	}
+	// S17 (docs/tasks/task-multimodal-support-2026-10.md): the f16 residual overflowed. The head reads the NaN row as
+	// finite zeros, so the logit check below cannot see it.
+	if a.r.prefillResidNonFinite {
+		return nil, fmt.Errorf("metal: batched prefill's f16 residual overflowed (its last row is non-finite after the trunk); using sequential path")
 	}
 	if a.poisonPrefillLogitsForTest {
 		logits[0] = float32(math.NaN())
