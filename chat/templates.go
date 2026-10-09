@@ -450,20 +450,30 @@ func Mistral() *Template {
 // the existing "mistral" tool dialect (a JSON array of call objects) enough that reusing it would
 // silently mis-render/mis-parse rather than simply be incomplete — declining is the honest choice
 // until that dialect is built for real, not a guess dressed up as support.
+//
+// Segments (M25): every marker is a single control token of Ministral 3's tokenizer (<s> 1, </s> 2, [INST] 3,
+// [/INST] 4, [SYSTEM_PROMPT] 17, [/SYSTEM_PROMPT] 18), so they are sp() and the system and turn texts ct(): a marker a
+// user types stays literal, and an image block in a user turn is a content gap the vision splice can find (S10: as one
+// Special segment the whole prompt hid it, and every Pixtral request was refused).
 func Ministral() *Template {
 	return &Template{name: "ministral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
-		var sb strings.Builder
-		sb.WriteString("<s>")
+		var b segBuf
+		b.sp("<s>")
 		if system != "" {
-			sb.WriteString("[SYSTEM_PROMPT]" + system + "[/SYSTEM_PROMPT]")
+			b.sp("[SYSTEM_PROMPT]")
+			b.ct(system)
+			b.sp("[/SYSTEM_PROMPT]")
 		}
 		for _, t := range turns {
 			if t.Role == "assistant" {
-				sb.WriteString(t.Content + "</s>")
+				b.ct(t.Content)
+				b.sp("</s>")
 				continue
 			}
-			sb.WriteString("[INST]" + t.Content + "[/INST]")
+			b.sp("[INST]")
+			b.ct(t.Content)
+			b.sp("[/INST]")
 		}
-		return []Segment{{Text: sb.String(), Special: true}}
+		return b.segs
 	}}
 }

@@ -30,6 +30,11 @@ func checkFamily(t *testing.T, path string, tmpl *Template, endMarker string) {
 	if err != nil {
 		t.Fatalf("LoadGGUF(%s): %v", path, err)
 	}
+	checkFamilyTokenizer(t, tk, tmpl, endMarker)
+}
+
+// checkFamilyTokenizer is checkFamily on a loaded tokenizer (a safetensors checkpoint's tokenizer.json).
+func checkFamilyTokenizer(t *testing.T, tk *tokenizer.Tokenizer, tmpl *Template, endMarker string) {
 	markerIDs, err := tk.Encode(endMarker, false)
 	if err != nil {
 		t.Skipf("tokenizer can't encode (decode-only vocab): %v", err) // e.g. a GGUF with no merge ranks
@@ -108,6 +113,23 @@ func TestRenderSegments_llama3(t *testing.T) {
 		modelPath("llama-3.2-1b-instruct-q4_k_m.gguf"),
 	)
 	checkFamily(t, p, Llama3(), "<|eot_id|>")
+}
+
+// TestRenderSegments_ministral: Ministral 3's tokenizer.json (GOINFER_MINISTRAL3, default ~/models/ministral3-3b-bf16).
+func TestRenderSegments_ministral(t *testing.T) {
+	dir := os.Getenv("GOINFER_MINISTRAL3")
+	if dir == "" {
+		dir = modelPath("ministral3-3b-bf16")
+	}
+	p := firstExisting(dir + "/tokenizer.json")
+	if p == "" {
+		t.Skip("no Ministral 3 tokenizer.json")
+	}
+	tk, err := tokenizer.Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkFamilyTokenizer(t, tk, Ministral(), "[/INST]")
 }
 
 func TestRenderSegments_gemma3(t *testing.T) {
