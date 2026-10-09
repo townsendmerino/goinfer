@@ -2883,7 +2883,15 @@ tokens, the first 32 compared.
      exploratory real check above).
   2. Qwen2.5-VL's missing default system message, a template gap that predates S11.
   3. transformers 5.15's change to a "vision" Gemma 4's bidirectional mask (step 2's finding).
-- **Not built:** a resident DeepStack prefill for several images (Qwen3-VL's multi-image turns take the bridge). Until then a
+- **Not built:** a resident DeepStack prefill for several images (Qwen3-VL's multi-image turns take the bridge).
+
+**Owner decisions on S11's three open items, 2026-10-09:**
+1. **Keep the resident two-block prefill on**, as G-IP4's single-image one.
+2. **Fix the default system message, for every template that has one.** Done: `Detect` reads the default from the
+   checkpoint's own ChatML template (`chat/default_system.go`), and every render path applies it when a request has
+   none. Qwen 2.5's no-system rendering is now its template's byte for byte. The prompt change for bench comparability
+   is recorded in `docs/benchmarks.md`, "Prompt changes that move comparability".
+3. **transformers 5.15's Gemma 4 mask:** recorded, unchanged ("sounds good"). Until then a
 Gemma 3 multi-image turn on CUDA prefills on the CPU and uploads (logged); on Metal it takes the resident two-block
 prefill (below). Qwen2.5-VL and Qwen3.5 take their
 resident m-RoPE prefill with several images already; Qwen3-VL's DeepStack resident prefill declines to the bridge; a

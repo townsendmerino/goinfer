@@ -18,14 +18,12 @@
 //     wrong in a way that looks right, the same reasoning that kept the other three families'
 //     no-system goldens unmade below. Single-turn harmony (no prior assistant turn) is
 //     unaffected.
-//   - The NO-SYSTEM shape is byte-exact only where a family's template has no default system
-//     prompt. ChatML is the exception and it is DELIBERATE: Qwen 2.5's template inserts "You
-//     are Qwen, created by Alibaba Cloud…" when the conversation has no system turn, and this
-//     renderer emits no system turn at all. Adopting that string would be wrong — ChatML() is
-//     the GENERIC ChatML renderer, shared with families that are not Qwen and have no such
-//     default. The divergence is pinned by TestChatML_noSystem_documentedDivergence against a
-//     golden rendered from Qwen's own template, so it cannot drift unnoticed in either
-//     direction.
+//   - The NO-SYSTEM shape: a ChatML template that declares a default system message (Qwen 2.5's
+//     "You are Qwen, created by Alibaba Cloud…", Qwen2.5-VL's "You are a helpful assistant.") gets
+//     it, read from the checkpoint's own template by Detect (default_system.go; owner, 2026-10-09),
+//     so the no-system rendering is that template's byte for byte (TestDetect_chatMLDefaultSystemIsTheTemplates).
+//     The bare ChatML() renderer, shared with families that declare no default, still emits no
+//     system turn: TestChatML_noSystem_documentedDivergence pins that against the same golden.
 //   - Tool rendering is byte-exact for GEMMA 4 ONLY, whose tool syntax is a micro-language the
 //     model parses. For the JSON families the embedded tool JSON's spacing follows Jinja's
 //     tojson and is checked structurally — see TestRenderTools_declarations (M-20).
@@ -84,6 +82,10 @@ type Template struct {
 	render func(system string, turns []Turn) []Segment
 	stops  []string
 
+	// defaultSystem is the system message the checkpoint's own template inserts when the conversation has none (ChatML
+	// families only, read from the template by chatMLDefaultSystem); "" for none. Every render path applies it (systemOr).
+	defaultSystem string
+
 	// reason is this checkpoint's declared thinking behaviour (reasoning.go); nil = the family does not think in its
 	// template, or the template's control was not recognised. think is the mode WithThinking selected; the zero value
 	// ThinkAsIs renders exactly what render renders.
@@ -129,6 +131,7 @@ func (t *Template) Render(system string, turns []Turn) string {
 // content as non-special ones (tokenized without it). Feed to Tokenizer.
 // EncodeSegments. On legitimate input the token stream equals Encode(Render(...)).
 func (t *Template) RenderSegments(system string, turns []Turn) []Segment {
+	system = t.systemOr(system)
 	if t.reason != nil && t.think != ThinkAsIs {
 		return t.renderThinking(system, turns)
 	}
@@ -184,6 +187,7 @@ func Detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "normalize_content") && strings.Contains(t, "<|im_start|>"):
 			// Mellum2.1's template adds Qwen3's thinking control and history rule to the same ChatML body; 2.0's has neither, so the detectors return nil for it.
 			m := Mellum2()
+			m.defaultSystem = chatMLDefaultSystem(t)
 			m.reason = detectChatMLReasoning(t)
 			m.nativeTools = declaresQwen35XMLTools(t, m.reason)
 			m.groupsToolResults = detectGroupedToolResults(t)
@@ -219,6 +223,7 @@ func Detect(meta Meta) (*Template, error) {
 			return Phi3Orig(), nil
 		case strings.Contains(t, "<|im_start|>"):
 			c := ChatML()
+			c.defaultSystem = chatMLDefaultSystem(t)
 			c.reason = detectChatMLReasoning(t)
 			c.nativeTools = declaresQwen35XMLTools(t, c.reason)
 			c.groupsToolResults = detectGroupedToolResults(t)
