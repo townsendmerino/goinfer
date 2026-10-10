@@ -9,11 +9,14 @@
 // prompt and teacher-forces every arm along the CPU-tower arm's own greedy path: the CPU tower's features (the
 // reference), each Metal tower's, and for each of those the CPU tower's plus random noise matched per soft token to
 // that tower's relative L2 deviation (three seeds; shipped-path-is-not-ground-truth's perturbation control). Each arm
-// reports its first step whose argmax differs, the reference's probabilities there, and the mean and worst
-// KL(reference || arm) over the steps. A tower arm inside its own noise arms is the decoder's sensitivity to a
-// perturbation of that size; one above them costs more than its size alone explains. A measurement, not a gate.
+// reports its first step whose argmax differs, the reference's probabilities there, how many steps keep the reference's
+// argmax, and the mean and worst KL(reference || arm) over the steps, which end at the reference's end of turn. A tower
+// arm inside its own noise arms is the decoder's sensitivity to a perturbation of that size; one above them costs more
+// than its size alone explains. Two controls come first: the reference's features again (zero) and the same features
+// negated (far from zero). A measurement; scripts/gs18g2_grade.py grades its GOINFER_G3_OUT lines.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_G3_FEATS=<phase 1 file> [GOINFER_GEMMA3_4B=<dir>] [GOINFER_G3_BACKEND=metal] \
+//	  [GOINFER_G3_PROMPT=<text>] [GOINFER_G3_IMAGE=<label>] [GOINFER_G3_OUT=<jsonl>] \
 //	  go test -tags realckpt ./decoder/ -run TestGemma3TowerSensitivity -v -timeout 30m
 package decoder
 
@@ -95,8 +98,12 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	prompt := os.Getenv("GOINFER_G3_PROMPT")
+	if prompt == "" {
+		prompt = "What does this image show? Answer briefly."
+	}
 	block := multimodal.Gemma3PromptBlock(n)
-	segs, err := multimodal.SpliceImageBlock(tm.RenderSegments("", []chat.Turn{{Role: "user", Content: block + "What does this image show? Answer briefly."}}), block)
+	segs, err := multimodal.SpliceImageBlock(tm.RenderSegments("", []chat.Turn{{Role: "user", Content: block + prompt}}), block)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +120,15 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		t.Fatalf("%d soft tokens in the prompt, want %d (the tokenizer split the special tokens)", imgLen, n)
 	}
 
-	const steps = 32
-	// run teacher-forces forced (nil: greedy, recording its own argmax path) and returns the logits at every step.
+	const maxSteps = 32
+	// run teacher-forces forced (nil: greedy for maxSteps, recording its own argmax path) and returns the logits at every
+	// step.
 	run := func(f []float32, forced []int) (path []int, logits [][]float32) {
-		cache := m.NewCache(len(ids) + steps + 1)
+		steps := maxSteps
+		if forced != nil {
+			steps = len(forced)
+		}
+		cache := m.NewCache(len(ids) + maxSteps + 1)
 		l, err := m.prefillLogitsVL(context.Background(), ids, f, imgPos, imgLen, cache)
 		if err != nil {
 			t.Fatal(err)
@@ -137,6 +149,14 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 	refPath, refLogits := run(cpuF, nil)
 	refText, _ := tk.Decode(refPath)
 	fmt.Fprintf(os.Stderr, "[g3] reference (CPU tower) greedy: %q\n", refText)
+	// The graded positions end with the reference's end of turn: a step forced past it predicts nothing a reply contains.
+	if eot, ok := tk.TokenID("<end_of_turn>"); ok {
+		if i := slices.Index(refPath, eot); i >= 0 {
+			refPath, refLogits = refPath[:i+1], refLogits[:i+1]
+		}
+	}
+	steps := len(refPath)
+	fmt.Fprintf(os.Stderr, "[g3] %d graded positions\n", steps)
 	// GOINFER_G3_SERVED_REPLY names the served CPU-tower arm's reply on this decoder (G-S3b's day run): the reference path
 	// must reproduce it, or the steps below do not measure the served split and the run is void.
 	if f := os.Getenv("GOINFER_G3_SERVED_REPLY"); f != "" {
@@ -151,30 +171,55 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[g3] the reference path reproduces the served reply (%s)\n", filepath.Base(f))
 	}
 
-	report := func(name string, f []float32) {
+	type armResult struct {
+		Name     string  `json:"name"`
+		KLMean   float64 `json:"kl_mean"`
+		KLMax    float64 `json:"kl_max"`
+		Agree    int     `json:"agree"` // steps whose argmax is the reference's token
+		FirstOff int     `json:"first_change"`
+		RelL2    float64 `json:"rel_l2,omitempty"` // a tower arm's mean relative L2 from the CPU tower, per soft token
+	}
+	var results []armResult
+	report := func(name string, f []float32) armResult {
 		_, ls := run(f, refPath)
-		first := -1
-		var sumKL, maxKL float64
+		r := armResult{Name: name, FirstOff: -1}
+		var sumKL float64
 		for k, l := range ls {
 			kl := klTo(refLogits[k], l)
 			sumKL += kl
-			maxKL = math.Max(maxKL, kl)
-			if first < 0 && argmax(l) != refPath[k] {
-				first = k
+			r.KLMax = math.Max(r.KLMax, kl)
+			if argmax(l) == refPath[k] {
+				r.Agree++
+			} else if r.FirstOff < 0 {
+				r.FirstOff = k
 			}
 		}
-		line := fmt.Sprintf("[g3] %-26s KL mean %.5f, max %.5f nats; ", name, sumKL/steps, maxKL)
-		if first < 0 {
-			line += "argmax agrees at every step"
+		r.KLMean = sumKL / float64(steps)
+		line := fmt.Sprintf("[g3] %-28s KL mean %.5f, max %.5f nats; argmax agrees at %d of %d; ", name, r.KLMean, r.KLMax, r.Agree, steps)
+		if r.FirstOff < 0 {
+			line += "no change"
 		} else {
-			lp := logSoftmax64(refLogits[first])
-			other := argmax(ls[first])
-			line += fmt.Sprintf("first argmax change at step %d: reference %q p %.3f, this %q (reference p %.3f)",
-				first, layoutPiece(tk, refPath[first]), math.Exp(lp[refPath[first]]), layoutPiece(tk, other), math.Exp(lp[other]))
+			lp := logSoftmax64(refLogits[r.FirstOff])
+			other := argmax(ls[r.FirstOff])
+			line += fmt.Sprintf("first change at step %d: reference %q p %.3f, this %q (reference p %.3f)",
+				r.FirstOff, layoutPiece(tk, refPath[r.FirstOff]), math.Exp(lp[refPath[r.FirstOff]]), layoutPiece(tk, other), math.Exp(lp[other]))
 		}
 		fmt.Fprintln(os.Stderr, line)
+		results = append(results, r)
+		return r
 	}
-	// Every tower arm in the file, each followed by its own control: per soft token, Gaussian noise scaled to that
+
+	// Two controls on the instrument itself. The CPU tower's features again must read exactly zero (the decoder is
+	// deterministic), and the same features negated must read far from zero (a wrong image is visible, whatever the
+	// image: a mirrored gradient is still a gradient, so reordering the soft tokens would not do).
+	report("control: CPU tower again", cpuF)
+	neg := make([]float32, len(cpuF))
+	for i, v := range cpuF {
+		neg[i] = -v
+	}
+	report("control: features negated", neg)
+
+	// Every tower arm in the file, each followed by its own noise control: per soft token, Gaussian noise scaled to that
 	// tower's relative L2 deviation from the CPU tower there (three seeds).
 	arms := []struct {
 		name string
@@ -187,7 +232,6 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		}{"Metal int8 tower", f8})
 	}
 	for _, arm := range arms {
-		report(arm.name, arm.f)
 		rel := make([]float64, n)
 		var sumRel float64
 		for i := range n {
@@ -199,6 +243,8 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 			rel[i] = math.Sqrt(dd / nn)
 			sumRel += rel[i]
 		}
+		report(arm.name, arm.f)
+		results[len(results)-1].RelL2 = sumRel / float64(n)
 		fmt.Fprintf(os.Stderr, "[g3]   (its mean relative L2 from the CPU tower: %.3g)\n", sumRel/float64(n))
 		for seed := int64(1); seed <= 3; seed++ {
 			rng := rand.New(rand.NewSource(seed))
@@ -217,7 +263,24 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 					row[j] += float32(s * noise[j])
 				}
 			}
-			report(fmt.Sprintf("  noise at that size, seed %d", seed), f)
+			report(fmt.Sprintf("noise at %s's size, seed %d", arm.name, seed), f)
+		}
+	}
+
+	// GOINFER_G3_OUT: one JSON line per run, appended, for a grader (GOINFER_G3_IMAGE names the image the features are of).
+	if out := os.Getenv("GOINFER_G3_OUT"); out != "" {
+		line, err := json.Marshal(map[string]any{"image": os.Getenv("GOINFER_G3_IMAGE"), "prompt": prompt, "steps": steps,
+			"reference": refText, "decode_path": m.DecodePath(), "arms": results})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.Write(append(line, '\n')); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
