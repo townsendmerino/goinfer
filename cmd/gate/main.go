@@ -71,6 +71,10 @@ usage:
                [-quant q,…] [-steps N] [-only asset,…] [-keep]
                                                    inherit validation by identity (TE6(b)): dump full logits of
                                                    each family's parity prompt at both revs, compare bytes
+  gate identity <old-rev> <new-rev> -giw bytes|logits [-configs quant:target[:e4h],…] [-assets tiny|real] …
+                                                   the same, through each rev's OWN transcode: every source's .giw
+                                                   by sha256 (bytes), or the logits dumped from each side's own
+                                                   .giw (logits)
   gate comments-only <base> [--worktree] [-no-checks] [-v]
                                                    a diff changed Go comments and docs and nothing else (code-comments
                                                    CC2): token streams equal, directives and Example comments byte-identical,

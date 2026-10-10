@@ -1,0 +1,209 @@
+//go:build synthprofile
+
+package decoder
+
+import (
+	"fmt"
+	"math"
+	"math/rand/v2"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
+
+func bf16ToF32(raw []uint16, start, count int) []float32 { // SubF32's BF16 branch, verbatim in effect
+	out := make([]float32, count)
+	for i := range count {
+		out[i] = math.Float32frombits(uint32(raw[start+i]) << 16)
+	}
+	return out
+}
+
+// One layer of Qwen3-VL-30B-A3B experts (hidden 2048, moe_inter 768, 128 experts, transposed fused layout),
+// the loadFusedExperts body per expert, phase-timed. Exploratory.
+func TestFusedExpertCostProto(t *testing.T) {
+	const hidden, inter, nE = 2048, 768, 128
+	guStride, dnStride, half := 2*inter*hidden, hidden*inter, inter*hidden
+	r := rand.New(rand.NewPCG(1, 2))
+	gu := make([]uint16, nE*guStride)
+	dn := make([]uint16, nE*dnStride)
+	for i := range gu {
+		gu[i] = uint16(math.Float32bits(float32(r.NormFloat64()*0.02)) >> 16)
+	}
+	for i := range dn {
+		dn[i] = uint16(math.Float32bits(float32(r.NormFloat64()*0.02)) >> 16)
+	}
+	var tConv, tTrans, tCopy, tQuant time.Duration
+	t0 := time.Now()
+	for e := range nE {
+		a := time.Now()
+		guE := bf16ToF32(gu, e*guStride, guStride)
+		dnE := bf16ToF32(dn, e*dnStride, dnStride)
+		b := time.Now()
+		guE = transposeF32(guE, hidden, 2*inter)
+		dnE = transposeF32(dnE, inter, hidden)
+		c := time.Now()
+		g := append([]float32(nil), guE[:half]...)
+		u := append([]float32(nil), guE[half:]...)
+		d := append([]float32(nil), dnE...)
+		dd := time.Now()
+		_ = quantizeWM(linalg.WrapF32(g, inter, hidden), quantInt4)
+		_ = quantizeWM(linalg.WrapF32(u, inter, hidden), quantInt4)
+		_ = quantizeWM(linalg.WrapF32(d, hidden, inter), quantInt4)
+		ee := time.Now()
+		tConv += b.Sub(a)
+		tTrans += c.Sub(b)
+		tCopy += dd.Sub(c)
+		tQuant += ee.Sub(dd)
+	}
+	tot := time.Since(t0)
+	fmt.Printf("RESULT one layer (128 experts) total=%.2fs conv=%.2fs transpose=%.2fs copies=%.2fs quant=%.2fs; x48 layers ≈ %.0fs\n",
+		tot.Seconds(), tConv.Seconds(), tTrans.Seconds(), tCopy.Seconds(), tQuant.Seconds(), 48*tot.Seconds())
+}
+
+// bf16TransposeBlocked writes the f32 transpose of a row-major [rows, cols] bf16 matrix in 32x32 tiles, converting on the
+// way: one pass, one allocation. PROTOTYPE.
+func bf16TransposeBlocked(raw []uint16, rows, cols int) []float32 {
+	const bs = 32
+	out := make([]float32, rows*cols)
+	for r0 := 0; r0 < rows; r0 += bs {
+		r1 := min(r0+bs, rows)
+		for c0 := 0; c0 < cols; c0 += bs {
+			c1 := min(c0+bs, cols)
+			for r := r0; r < r1; r++ {
+				src := raw[r*cols : r*cols+cols]
+				for c := c0; c < c1; c++ {
+					out[c*rows+r] = math.Float32frombits(uint32(src[c]) << 16)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func TestTransposeProto(t *testing.T) {
+	const hidden, inter = 2048, 768
+	r := rand.New(rand.NewPCG(3, 4))
+	raw := make([]uint16, hidden*2*inter)
+	for i := range raw {
+		raw[i] = uint16(r.Uint32())
+	}
+	const reps = 64
+	a := time.Now()
+	var ref []float32
+	for range reps {
+		ref = transposeF32(bf16ToF32(raw, 0, len(raw)), hidden, 2*inter)
+	}
+	ta := time.Since(a)
+	b := time.Now()
+	var got []float32
+	for range reps {
+		got = bf16TransposeBlocked(raw, hidden, 2*inter)
+	}
+	tb := time.Since(b)
+	for i := range ref {
+		if math.Float32bits(ref[i]) != math.Float32bits(got[i]) {
+			t.Fatalf("mismatch at %d", i)
+		}
+	}
+	fmt.Printf("RESULT gate_up [2048x1536] x%d: convert+naive transpose %.3fs, fused blocked %.3fs (%.1fx), bit-identical\n", reps, ta.Seconds(), tb.Seconds(), ta.Seconds()/tb.Seconds())
+}
+
+func bf16TransposeBlockedInto(out []float32, raw []uint16, rows, cols int) {
+	const bs = 32
+	for r0 := 0; r0 < rows; r0 += bs {
+		r1 := min(r0+bs, rows)
+		for c0 := 0; c0 < cols; c0 += bs {
+			c1 := min(c0+bs, cols)
+			for r := r0; r < r1; r++ {
+				src := raw[r*cols : r*cols+cols]
+				for c := c0; c < c1; c++ {
+					out[c*rows+r] = math.Float32frombits(uint32(src[c]) << 16)
+				}
+			}
+		}
+	}
+}
+
+func bf16TransposeNaiveInto(out []float32, raw []uint16, rows, cols int) {
+	for r := range rows {
+		for c := range cols {
+			out[c*rows+r] = math.Float32frombits(uint32(raw[r*cols+c]) << 16)
+		}
+	}
+}
+
+func TestTransposeReuseProto(t *testing.T) {
+	const hidden, inter = 2048, 768
+	r := rand.New(rand.NewPCG(3, 4))
+	raw := make([]uint16, hidden*2*inter)
+	for i := range raw {
+		raw[i] = uint16(r.Uint32())
+	}
+	out := make([]float32, len(raw))
+	const reps = 64
+	a := time.Now()
+	for range reps {
+		bf16TransposeNaiveInto(out, raw, hidden, 2*inter)
+	}
+	ta := time.Since(a)
+	b := time.Now()
+	for range reps {
+		bf16TransposeBlockedInto(out, raw, hidden, 2*inter)
+	}
+	tb := time.Since(b)
+	c := time.Now()
+	for range reps {
+		_ = make([]float32, len(raw))[len(raw)-1]
+	}
+	tc := time.Since(c)
+	fmt.Printf("RESULT reused buffer x%d: naive %.3fs, blocked %.3fs (%.1fx); fresh 12.6MB make alone x%d: %.3fs\n", reps, ta.Seconds(), tb.Seconds(), ta.Seconds()/tb.Seconds(), reps, tc.Seconds())
+}
+
+// bf16TransposeTileBuf transposes through a local 16x16 tile so each output row segment is written as one contiguous run.
+func bf16TransposeTileBuf(out []float32, raw []uint16, rows, cols int) {
+	const bs = 16
+	var tile [bs][bs]float32
+	for r0 := 0; r0 < rows; r0 += bs {
+		for c0 := 0; c0 < cols; c0 += bs {
+			for i := range bs { // read 16 contiguous bf16 from each of 16 source rows
+				src := raw[(r0+i)*cols+c0 : (r0+i)*cols+c0+bs]
+				for j := range bs {
+					tile[j][i] = math.Float32frombits(uint32(src[j]) << 16)
+				}
+			}
+			for j := range bs { // write 16 contiguous f32 to each of 16 output rows
+				copy(out[(c0+j)*rows+r0:(c0+j)*rows+r0+bs], tile[j][:])
+			}
+		}
+	}
+}
+
+func TestTransposeTileProto(t *testing.T) {
+	const hidden, inter = 2048, 768
+	r := rand.New(rand.NewPCG(3, 4))
+	raw := make([]uint16, hidden*2*inter)
+	for i := range raw {
+		raw[i] = uint16(r.Uint32())
+	}
+	ref := make([]float32, len(raw))
+	out := make([]float32, len(raw))
+	const reps = 64
+	a := time.Now()
+	for range reps {
+		bf16TransposeNaiveInto(ref, raw, hidden, 2*inter)
+	}
+	ta := time.Since(a)
+	b := time.Now()
+	for range reps {
+		bf16TransposeTileBuf(out, raw, hidden, 2*inter)
+	}
+	tb := time.Since(b)
+	for i := range ref {
+		if math.Float32bits(ref[i]) != math.Float32bits(out[i]) {
+			t.Fatalf("mismatch at %d", i)
+		}
+	}
+	fmt.Printf("RESULT naive %.3fs, 16x16 tile-buffer %.3fs (%.1fx), bit-identical\n", ta.Seconds(), tb.Seconds(), ta.Seconds()/tb.Seconds())
+}

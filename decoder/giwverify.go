@@ -18,8 +18,8 @@ import (
 //
 // The marker is best-effort in both directions. A marker that cannot be written (read-only
 // directory, an SMB mount) simply means the CRC runs every load, as before; a missing, malformed
-// or mismatched marker means the CRC runs. It can only ever remove work from a file that has
-// already been verified at exactly this size and mtime.
+// or mismatched marker means the CRC runs. It can only ever remove work from a file that passed
+// the CRC at exactly this size and mtime, or that this box wrote at them (MarkGIWWritten).
 
 // giwVerifiedSuffix is appended to a .giw's path to name its marker.
 const giwVerifiedSuffix = ".verified"
@@ -54,4 +54,14 @@ func giwVerified(path string, fi os.FileInfo) bool {
 // ignored: see the file comment, an unwritable marker only costs the next load a CRC pass.
 func markGIWVerified(path string, fi os.FileInfo) {
 	_ = os.WriteFile(GIWVerifiedMarkerPath(path), []byte(giwMarkerBody(fi)), 0o644)
+}
+
+// MarkGIWWritten records the same marker for a .giw this process has just written and closed without error. The caller
+// vouches for the bytes: it is for a writer that has already read the file back against its CRC, so that the next load
+// does not read it all again. A file from anywhere else earns its marker by passing the CRC in a load.
+// GOINFER_GIW_VERIFY=always still forces the pass.
+func MarkGIWWritten(path string) {
+	if fi, err := os.Stat(path); err == nil {
+		markGIWVerified(path, fi)
+	}
 }

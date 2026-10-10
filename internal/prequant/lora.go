@@ -51,8 +51,14 @@ func loraSidecarBytes(adapterDir string) ([]byte, error) {
 // TranscodeLoRA builds a .giw from a safetensors model directory with a PEFT adapter merged into it at load, and
 // records the adapter beside the bundle. A GGUF base is refused: an adapter names HF tensors, which a GGUF does not use.
 func TranscodeLoRA(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
+	_, err := TranscodeLoRATimed(ctx, dir, adapter, out, quant, embedInt4, target)
+	return err
+}
+
+// TranscodeLoRATimed is TranscodeLoRA, and reports where the time went (Phases).
+func TranscodeLoRATimed(ctx context.Context, dir, adapter, out, quant string, embedInt4 bool, target decoder.GIWTarget) (Phases, error) {
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		return fmt.Errorf("-lora needs a safetensors model directory as the input, not %s: a PEFT adapter names HF tensors", dir)
+		return Phases{}, fmt.Errorf("-lora needs a safetensors model directory as the input, not %s: a PEFT adapter names HF tensors", dir)
 	}
 	return transcodeDir(ctx, dir, adapter, out, quant, embedInt4, target)
 }

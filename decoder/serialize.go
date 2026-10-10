@@ -932,6 +932,10 @@ type giwWriter struct {
 	// kind 3 for every int4 tensor. Checked ahead of row4 in weightMat: if a caller set both, the newer, narrower promise
 	// (one target) wins over the older, broader one (any core).
 	target GIWTarget
+
+	// layerBudget is the memory streamLayers may hold in built, unwritten layers (stream mode). Zero builds one layer at
+	// a time.
+	layerBudget int64
 }
 
 func (w *giwWriter) raw(b []byte) {

@@ -61,7 +61,9 @@ type identityOpts struct {
 	ModelsDir   string
 	LogDir      string
 	Keep        bool
-	Record      string        // -record: write eligible families' PARITY_ROW lines here (identity_record.go)
+	Record      string        // -record: write eligible families' PARITY_ROW lines here (identity_record.go); with -giw bytes, one JSON line per cell
+	Giw         string        // "" | bytes | logits: compare through each revision's own transcode (identity_giw.go)
+	Configs     []giwConfig   // -giw bytes: the transcode configurations; nil = defaultGiwConfigs
 	Timeout     time.Duration // per dumper process
 	Progress    io.Writer
 	// DumperSource replaces the embedded template (the equivalence tests inject a nondeterministic
@@ -73,7 +75,7 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate identity", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var o identityOpts
-	var fams, quants, only string
+	var fams, quants, only, configs string
 	fs.StringVar(&o.Backend, "backend", "cpu", "cpu | metal | webgpu")
 	fs.StringVar(&fams, "families", "", "comma-separated parity-manifest families (default: all)")
 	fs.StringVar(&o.Assets, "assets", "tiny", "tiny (the forward goldens' fixtures) | real (small checkpoints under ~/models)")
@@ -83,7 +85,9 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs.StringVar(&o.LogDir, "logdir", os.TempDir(), "where the run directory (worktrees, builds, dumps, logs) is created")
 	fs.BoolVar(&o.Keep, "keep", false, "keep the dumps, binaries and logs (worktrees are always removed)")
 	fs.StringVar(&o.Record, "record", "", "write PARITY_ROW lines for families whose T3 validation this run inherits (TE6(b)); merge them with the decoder's TestParityManifest_merge")
-	fs.DurationVar(&o.Timeout, "timeout", 15*time.Minute, "per dumper process")
+	fs.DurationVar(&o.Timeout, "timeout", 15*time.Minute, "per dumper process, and per transcode with -giw")
+	fs.StringVar(&o.Giw, "giw", "", "compare through each revision's OWN transcode of the source: bytes (the two .giw files' sha256) | logits (the dumper on each side's own .giw)")
+	fs.StringVar(&configs, "configs", "", "-giw bytes: comma-separated quant:target[:e4h] (default: tiny int4:metal:e4h,int4:metal,int4:cpu,int8int8:cpu,int4:cpu-arm64; real int4:cpu and int4 for this box's GPU)")
 	// Positionals may sit before, between or after the flags.
 	var pos []string
 	rest := argv
@@ -98,11 +102,31 @@ func runIdentity(argv []string, w io.Writer) int {
 		rest = fs.Args()[1:]
 	}
 	if len(pos) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu] [-families a,b] [-assets tiny|real] [-quant q,…] [-steps N] [-keep]")
+		fmt.Fprintln(os.Stderr, "usage: gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu] [-families a,b] [-assets tiny|real] [-quant q,…] [-steps N] [-keep] [-giw bytes|logits [-configs q:target[:e4h],…]]")
 		return 2
 	}
 	o.OldRev, o.NewRev = pos[0], pos[1]
 	o.Families, o.Quants, o.Only = splitList(fams), splitList(quants), splitList(only)
+	switch o.Giw {
+	case "", "bytes":
+	case "logits":
+		if o.Record != "" {
+			fmt.Fprintln(os.Stderr, "gate identity: -record does not apply to -giw logits (a transcoded sidecar's logits inherit no parity row)")
+			return 2
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "gate identity: -giw %q: want bytes or logits\n", o.Giw)
+		return 2
+	}
+	if configs != "" && o.Giw != "bytes" {
+		fmt.Fprintln(os.Stderr, "gate identity: -configs applies to -giw bytes only")
+		return 2
+	}
+	var cerr error
+	if o.Configs, cerr = parseGiwConfigs(configs); cerr != nil {
+		fmt.Fprintf(os.Stderr, "gate identity: %v\n", cerr)
+		return 2
+	}
 	switch o.Backend {
 	case "cpu", "metal", "webgpu":
 	default:
@@ -135,16 +159,18 @@ func splitList(s string) []string {
 
 // identitySide is one revision's worktree and dumper build.
 type identitySide struct {
-	Label  string // old | new
-	Rev    string // as given
-	SHA    string
-	Short  string
-	Title  string
-	WT     string
-	Bin    string
-	BuildT time.Duration
-	Err    error
-	Log    string
+	Label string // old | new
+	Rev   string // as given
+	SHA   string
+	Short string
+	Title string
+	WT    string
+	Bin   string
+	// Prequant is this revision's cmd/prequant, built when -giw is set.
+	Prequant string
+	BuildT   time.Duration
+	Err      error
+	Log      string
 }
 
 // identityRun is one execution of a dumper over all cells: new#1, old, new#2.
@@ -183,16 +209,13 @@ func identityMain(o identityOpts, w io.Writer) int {
 	if o.Backend == "metal" && runtime.GOOS != "darwin" {
 		return refuse("-backend metal needs darwin (this is %s)", runtime.GOOS)
 	}
+	if o.Giw == "bytes" {
+		return identityGiwBytes(o, w)
+	}
 	old := &identitySide{Label: "old", Rev: o.OldRev}
 	nw := &identitySide{Label: "new", Rev: o.NewRev}
-	for _, s := range []*identitySide{old, nw} {
-		sha, err := gitOut(o.Repo, "rev-parse", "--verify", "--quiet", s.Rev+"^{commit}")
-		if err != nil || sha == "" {
-			return refuse("%s rev %q does not resolve to a commit in %s", s.Label, s.Rev, o.Repo)
-		}
-		s.SHA = sha
-		s.Short, _ = gitOut(o.Repo, "rev-parse", "--short", sha)
-		s.Title, _ = gitOut(o.Repo, "log", "-1", "--format=%s", sha)
+	if why := resolveIdentitySides(o, old, nw); why != "" {
+		return refuse("%s", why)
 	}
 
 	fams, err := readManifestFamilies(o.FixtureRoot)
@@ -205,65 +228,26 @@ func identityMain(o identityOpts, w io.Writer) int {
 	}
 	runnable := 0
 	for _, c := range cells {
+		if o.Giw == "logits" && c.NotRun == "" && strings.HasSuffix(c.Path, ".giw") {
+			c.NotRun = "already a .giw: -giw logits transcodes a source at each revision"
+		}
 		if c.NotRun == "" {
 			runnable++
 		}
 	}
 
-	if err := os.MkdirAll(o.LogDir, 0o755); err != nil {
-		return refuse("logdir: %v", err)
-	}
-	wd, err := os.MkdirTemp(o.LogDir, "gate-identity-"+t0.Format("20060102-150405")+"-")
+	wd, logs, cleanup, err := identityRunDir(o, t0, old, nw, "")
 	if err != nil {
-		return refuse("run dir: %v", err)
-	}
-	if r, err := filepath.EvalSymlinks(wd); err == nil {
-		wd = r
-	}
-	logs := filepath.Join(wd, "logs")
-	_ = os.MkdirAll(logs, 0o755)
-
-	// Cleanup: worktrees always; the rest unless -keep. A deferred call does not run on a signal, so
-	// the handler is explicit (the same shape as gate mutation's restore).
-	var once sync.Once
-	cleanup := func() {
-		once.Do(func() {
-			for _, s := range []*identitySide{old, nw} {
-				if s.WT == "" {
-					continue
-				}
-				if _, err := gitOut(o.Repo, "worktree", "remove", "--force", s.WT); err != nil {
-					_ = os.RemoveAll(s.WT)
-				}
-			}
-			_, _ = gitOut(o.Repo, "worktree", "prune")
-			if !o.Keep {
-				for _, sub := range []string{"dumps", "bin", "spec"} {
-					_ = os.RemoveAll(filepath.Join(wd, sub))
-				}
-			}
-		})
+		return refuse("%v", err)
 	}
 	defer cleanup()
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-sigs:
-			fmt.Fprintln(os.Stderr, "gate identity: interrupted — removing the worktrees")
-			cleanup()
-			os.Exit(130)
-		case <-done:
-		}
-	}()
-	defer func() { close(done); signal.Stop(sigs) }()
 
 	scrubbed := identityScrubbedVars()
 	prov := gatherProvenanceIn(o.Repo, [][2]string{
 		{"old", fmt.Sprintf("%s %s", old.Short, trunc(old.Title, 70))},
 		{"new", fmt.Sprintf("%s %s", nw.Short, trunc(nw.Title, 70))},
 		{"backend", o.Backend},
+		{"mode", identityModeDesc(o)},
 		{"assets", identityAssetsDesc(o)},
 		{"quants", strings.Join(orDefaultQuants(o), ",")},
 		{"steps", fmt.Sprintf("%d per prompt (the first dumped step is the prefill's logits)", o.Steps)},
@@ -288,23 +272,12 @@ func identityMain(o identityOpts, w io.Writer) int {
 	fmt.Fprintf(progress, "== identity: %d cell(s) over %d family(ies), started %s — building %s and %s ==\n",
 		runnable, len(selected), t0.Format("15:04:05"), old.Short, nw.Short)
 	tb := time.Now()
-	var wg sync.WaitGroup
-	for _, s := range []*identitySide{old, nw} {
-		wg.Add(1)
-		go func(s *identitySide) {
-			defer wg.Done()
-			s.Err = buildIdentitySide(o, wd, s)
-		}(s)
-	}
-	wg.Wait()
-	for _, s := range []*identitySide{old, nw} {
-		if s.Err != nil {
-			fmt.Fprintf(w, "\n  %s%s build (%s) failed%s: %v\n", red, s.Label, s.Short, off, s.Err)
-			for _, ln := range tailLines(s.Log, 20) {
-				fmt.Fprintf(w, "    %s\n", ln)
-			}
-			return refuse("the dumper did not build at %s %s — see above (an old rev may predate the public API it uses)", s.Label, s.Short)
+	if failed := buildIdentitySides(o, wd, old, nw); failed != nil {
+		fmt.Fprintf(w, "\n  %s%s build (%s) failed%s: %v\n", red, failed.Label, failed.Short, off, failed.Err)
+		for _, ln := range tailLines(failed.Log, 20) {
+			fmt.Fprintf(w, "    %s\n", ln)
 		}
+		return refuse("the dumper did not build at %s %s — see above (an old rev may predate the public API it uses)", failed.Label, failed.Short)
 	}
 	buildWall := time.Since(tb)
 	fmt.Fprintf(progress, "   built both in %s (old %s, new %s)\n", buildWall.Round(time.Second), old.BuildT.Round(time.Second), nw.BuildT.Round(time.Second))
@@ -331,7 +304,17 @@ func identityMain(o identityOpts, w io.Writer) int {
 		var parts []string
 		for _, r := range runs {
 			rt := time.Now()
-			why := runIdentityDumper(o, wd, r, f, byFam[f])
+			var paths map[string]string
+			var giwDirs []string
+			if o.Giw == "logits" {
+				paths, giwDirs = giwTranscodeCells(o, wd, r, f, byFam[f])
+			}
+			why := runIdentityDumper(o, wd, r, f, byFam[f], paths)
+			if !o.Keep {
+				for _, d := range giwDirs {
+					_ = os.RemoveAll(d)
+				}
+			}
 			if why != "" {
 				crash[r.Name+"/"+f] = why
 			}
@@ -363,6 +346,91 @@ func identityMain(o identityOpts, w io.Writer) int {
 	return reportIdentity(w, o, old, nw, fams, selected, outs, t0, buildWall, runWall, logs)
 }
 
+// resolveIdentitySides fills each side's SHA, short SHA and title from its rev; a non-empty return is why it refused.
+func resolveIdentitySides(o identityOpts, sides ...*identitySide) string {
+	for _, s := range sides {
+		sha, err := gitOut(o.Repo, "rev-parse", "--verify", "--quiet", s.Rev+"^{commit}")
+		if err != nil || sha == "" {
+			return fmt.Sprintf("%s rev %q does not resolve to a commit in %s", s.Label, s.Rev, o.Repo)
+		}
+		s.SHA = sha
+		s.Short, _ = gitOut(o.Repo, "rev-parse", "--short", sha)
+		s.Title, _ = gitOut(o.Repo, "log", "-1", "--format=%s", sha)
+	}
+	return ""
+}
+
+// identityRunDir creates the run directory and its logs/, and returns the cleanup that removes the sides' worktrees
+// (always) and the run's bulky output (unless -keep). The cleanup also runs on SIGINT and SIGTERM, which a deferred call
+// would not; calling it twice is safe. extra names one more subdirectory to remove.
+func identityRunDir(o identityOpts, t0 time.Time, old, nw *identitySide, extra string) (wd, logs string, cleanup func(), err error) {
+	if err := os.MkdirAll(o.LogDir, 0o755); err != nil {
+		return "", "", nil, fmt.Errorf("logdir: %v", err)
+	}
+	wd, err = os.MkdirTemp(o.LogDir, "gate-identity-"+t0.Format("20060102-150405")+"-")
+	if err != nil {
+		return "", "", nil, fmt.Errorf("run dir: %v", err)
+	}
+	if r, err := filepath.EvalSymlinks(wd); err == nil {
+		wd = r
+	}
+	logs = filepath.Join(wd, "logs")
+	_ = os.MkdirAll(logs, 0o755)
+	var once sync.Once
+	remove := func() {
+		once.Do(func() {
+			for _, s := range []*identitySide{old, nw} {
+				if s.WT == "" {
+					continue
+				}
+				if _, err := gitOut(o.Repo, "worktree", "remove", "--force", s.WT); err != nil {
+					_ = os.RemoveAll(s.WT)
+				}
+			}
+			_, _ = gitOut(o.Repo, "worktree", "prune")
+			if !o.Keep {
+				for _, sub := range []string{"dumps", "bin", "spec", "giw", extra} {
+					if sub != "" {
+						_ = os.RemoveAll(filepath.Join(wd, sub))
+					}
+				}
+			}
+		})
+	}
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-sigs:
+			fmt.Fprintln(os.Stderr, "gate identity: interrupted — removing the worktrees")
+			remove()
+			os.Exit(130)
+		case <-done:
+		}
+	}()
+	return wd, logs, func() { remove(); close(done); signal.Stop(sigs) }, nil
+}
+
+// buildIdentitySides builds both sides in parallel and returns the first that failed, or nil.
+func buildIdentitySides(o identityOpts, wd string, old, nw *identitySide) *identitySide {
+	var wg sync.WaitGroup
+	for _, s := range []*identitySide{old, nw} {
+		wg.Add(1)
+		go func(s *identitySide) {
+			defer wg.Done()
+			s.Err = buildIdentitySide(o, wd, s)
+		}(s)
+	}
+	wg.Wait()
+	for _, s := range []*identitySide{old, nw} {
+		if s.Err != nil {
+			return s
+		}
+	}
+	return nil
+}
+
 func orDefaultQuants(o identityOpts) []string {
 	if len(o.Quants) > 0 {
 		return o.Quants
@@ -382,6 +450,13 @@ func identityAssetsDesc(o identityOpts) string {
 		return "real — checkpoints under " + o.ModelsDir + ", L1's two prose prompts tokenized by this build"
 	}
 	return "tiny — the forward goldens' fixtures under " + o.FixtureRoot + ", each golden's prompt ids (+ a longer cycled prompt where the context allows)"
+}
+
+func identityModeDesc(o identityOpts) string {
+	if o.Giw == "logits" {
+		return "giw logits: each revision's own cmd/prequant transcodes the cell's source for target " + giwTargetForBackend(o.Backend) + "; the dumper loads that file"
+	}
+	return "logits from each cell's own checkpoint"
 }
 
 func identityBuildDesc(backend string) string {
@@ -447,6 +522,14 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 		s.WT = ""
 		return err
 	}
+	if o.Giw != "" {
+		if err := buildIdentityPrequant(o, wd, s); err != nil {
+			return err
+		}
+		if o.Giw == "bytes" {
+			return nil // no dumper: the files themselves are compared
+		}
+	}
 	modDir, register, tags := s.WT, "", ""
 	set := map[string]string{}
 	switch o.Backend {
@@ -505,8 +588,9 @@ func buildIdentitySide(o identityOpts, wd string, s *identitySide) error {
 
 // runIdentityDumper runs one side's dumper over one family's cells, into dumps/<run>/<family>/. It
 // returns "" on a clean exit, else why the process did not finish (its cells then have no result
-// and are judged on that).
-func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, cells []*identityCell) string {
+// and are judged on that). A non-nil paths maps a cell's ID to the checkpoint this run loads for it in
+// place of the cell's own, and a cell it does not name is left out.
+func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, cells []*identityCell, paths map[string]string) string {
 	out := filepath.Join(wd, "dumps", r.Name, family)
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err.Error()
@@ -524,7 +608,17 @@ func runIdentityDumper(o identityOpts, wd string, r identityRun, family string, 
 		Cells   []cellSpec `json:"cells"`
 	}{Backend: o.Backend, Steps: o.Steps, Out: out}
 	for _, c := range cells {
-		spec.Cells = append(spec.Cells, cellSpec{c.ID, c.Path, c.Quant, c.Prompts})
+		path := c.Path
+		if paths != nil { // -giw logits: this side's own transcode of the cell; a cell it could not transcode has its failure written already
+			var ok bool
+			if path, ok = paths[c.ID]; !ok {
+				continue
+			}
+		}
+		spec.Cells = append(spec.Cells, cellSpec{c.ID, path, c.Quant, c.Prompts})
+	}
+	if len(spec.Cells) == 0 {
+		return ""
 	}
 	b, _ := json.Marshal(spec)
 	sp := filepath.Join(wd, "spec", r.Name+"-"+sanitize(family)+".json")
@@ -691,11 +785,19 @@ func reportIdentity(w io.Writer, o identityOpts, old, nw *identitySide, manifest
 		cov := fmt.Sprintf("%d/%d cell(s) ran", f.Ran, f.Ran+f.NotRun)
 		switch f.Verdict {
 		case vIdentical:
-			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s validation inheritable from %s\n", col, f.Verdict, off, f.Name, cov, old.Short)
+			note := "validation inheritable from " + old.Short
+			if o.Giw != "" {
+				note = "the two builds' sidecars give the same logits"
+			}
+			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s %s\n", col, f.Verdict, off, f.Name, cov, note)
 		case vTolerant:
 			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s not byte-identical (nondeterministic backend); tolerance-inheritable only if the owner accepts it\n", col, f.Verdict, off, f.Name, cov)
 		case vDifferent:
-			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s goes to its reference gate\n", col, f.Verdict, off, f.Name, cov)
+			note := "goes to its reference gate"
+			if o.Giw != "" {
+				note = "the two builds' sidecars do not give the same logits"
+			}
+			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s %s\n", col, f.Verdict, off, f.Name, cov, note)
 		case vNotRun:
 			fmt.Fprintf(w, "  %s%-16s%s %-18s %s\n", col, f.Verdict, off, f.Name, "nothing ran — see NOT RUN")
 			continue
@@ -718,8 +820,12 @@ func reportIdentity(w io.Writer, o identityOpts, old, nw *identitySide, manifest
 	host := strings.ReplaceAll(gatherProvenanceIn(o.Repo, nil).Host, " ", "/")
 	anyRec := false
 	var notValidated []string
+	if o.Giw != "" {
+		anyRec = true
+		fmt.Fprintf(w, "  nothing — -giw compares two builds' sidecars of one source; no family's parity row is inherited from it\n")
+	}
 	for _, f := range fams {
-		if f.Verdict != vIdentical {
+		if f.Verdict != vIdentical || o.Giw != "" {
 			continue
 		}
 		anyRec = true
