@@ -246,6 +246,11 @@ func Detect(meta Meta) (*Template, error) {
 			return Gemma4(), nil
 		case has("<|start_header_id|>"):
 			return Llama3(), nil
+		case has("[SYSTEM_PROMPT]") && has("[INST]"):
+			// Ministral 3 (and the Mistral 3 VL saves) ship no chat template; their tekken vocab carries [SYSTEM_PROMPT] as
+			// a control token, which Mistral v0.3's [INST]-only vocab does not (S10: without this a Ministral 3 image request
+			// was refused, "no chat template for vision", and text fell back to raw completion).
+			return Ministral(), nil
 		}
 	}
 	return nil, ErrUnknownTemplate
