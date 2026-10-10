@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// TestOnOff_accepts is M-14 (audit-2026-09-10): --fit=off is the spelling --fit's own help text
-// and tasks/task-fit-to-hardware.md promise, but a plain flag.Bool rejected it with exit 2.
+// TestOnOff_accepts pins that OnOff accepts the on/off spellings: --fit=off is the spelling --fit's own help text and
+// docs/tasks/task-fit-to-hardware.md promise, and a plain flag.Bool rejects it with exit 2. Origin (M-14):
+// docs/code-notes/internal-cliutil.md#TestOnOff_accepts.
 func TestOnOff_accepts(t *testing.T) {
 	cases := []struct {
 		in   string
