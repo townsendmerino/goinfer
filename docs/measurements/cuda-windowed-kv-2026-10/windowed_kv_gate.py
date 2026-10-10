@@ -140,6 +140,10 @@ def session(binary, model_dir, arm, outdir, tag, ctx, windowed, workloads, requi
 def main():
     binary, model_dir, outdir = sys.argv[1], sys.argv[2], sys.argv[3]
     smoke = "--smoke" in sys.argv
+    # --order=WFFW: the sessions' arm order (default FWWF, G-W3's); --no-load skips the two ctx-4096 load sessions (the G-W3b order-reversed pass
+    # re-measures speed only; G-W2's load claim was read in pass 1).
+    order_arg = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--order=")), "FWWF")
+    no_load = "--no-load" in sys.argv
     os.makedirs(outdir, exist_ok=True)
     try:
         http("/v1/models", timeout=2)
@@ -150,17 +154,20 @@ def main():
         pass
     lp = long_prompt(27)
     work = [("short", SHORT[:1], 2, 32), ("long", [lp], 1, 64)] if smoke else [("short", SHORT, 3, 128), ("long", [lp], 3, 384)]
-    order = [("F", "s1F"), ("W", "s2W")] if smoke else [("F", "s1F"), ("W", "s2W"), ("W", "s3W"), ("F", "s4F")]
+    order = [("F", "s1F"), ("W", "s2W")] if smoke else [(a, f"s{i + 1}{a}") for i, a in enumerate(order_arg)]
     rows, meta = [], []
     for arm, tag in order:
         r, m = session(binary, model_dir, arm, outdir, tag, 2048, arm == "W", work)
         rows += r
         meta.append(m)
     # the load claim at ctx 4096: the full-KV plan declines (control), the windowed one is fully resident and decodes (speed not graded)
-    _, metaC = session(binary, model_dir, "F4096", outdir, "s5F4096", 4096, False, [], require_resident=False)
-    r, m = session(binary, model_dir, "W4096", outdir, "s6W4096", 4096, True, [("short", SHORT[:1] if smoke else SHORT, 1, 64 if smoke else 128)])
-    rows16, meta16 = r, m
-    json.dump({"rows": rows, "rows4096": rows16, "sessions": meta + [metaC, meta16]}, open(os.path.join(outdir, "rows.json"), "w"), indent=1)
+    if no_load:
+        metaC, rows16, meta16 = {"tag": "-", "resident": False, "vram_mib_idle": 0, "vram_mib_after": 0}, [], {"tag": "-", "vram_mib_idle": 0, "vram_mib_after": 0}
+    else:
+        _, metaC = session(binary, model_dir, "F4096", outdir, "s5F4096", 4096, False, [], require_resident=False)
+        r, m = session(binary, model_dir, "W4096", outdir, "s6W4096", 4096, True, [("short", SHORT[:1] if smoke else SHORT, 1, 64 if smoke else 128)])
+        rows16, meta16 = r, m
+    json.dump({"rows": rows, "rows4096": rows16, "sessions": meta + ([] if no_load else [metaC, meta16])}, open(os.path.join(outdir, "rows.json"), "w"), indent=1)
     out, ratios, identical = [], {}, True
     for cls in ("short", "long"):
         prompts = sorted({x["prompt"] for x in rows if x["cls"] == cls})
@@ -181,11 +188,14 @@ def main():
         if len(ss) == 2:
             a, b = (statistics.median([x["rate"] for x in rows if x["tag"] == t]) for t in ss)
             out.append(f"arm {arm} session medians {a:.2f} vs {b:.2f} tok/s (drift {100 * (b / a - 1):+.1f}%)")
-    out.append("VRAM MiB (idle/after): " + "; ".join(f"{m['tag']} {m['vram_mib_idle']}/{m['vram_mib_after']}" for m in meta + [metaC, meta16]))
-    ok16 = all(x["n"] > 8 and x["text"].strip() for x in rows16)
+    out.append("VRAM MiB (idle/after): " + "; ".join(f"{m['tag']} {m['vram_mib_idle']}/{m['vram_mib_after']}" for m in meta + ([] if no_load else [metaC, meta16])))
+    ok16 = no_load or all(x["n"] > 8 and x["text"].strip() for x in rows16)
     same16 = [x["text"] == next(y["text"] for y in rows if y["cls"] == "short" and y["prompt"] == x["prompt"] and y["arm"] == "W") for x in rows16 if x["cls"] == "short"]
-    ctrl = not metaC["resident"]
-    out.append(f"G-W2 ctx 4096 load: full-KV control declined (not resident): {ctrl}; windowed resident and decoded {len(rows16)} requests non-empty: {ok16}; text equals the ctx-2048 windowed text: {same16} (reported, not graded)")
+    ctrl = no_load or not metaC["resident"]
+    if no_load:
+        out.append("G-W2 ctx 4096 load: not run in this pass (--no-load)")
+    else:
+        out.append(f"G-W2 ctx 4096 load: full-KV control declined (not resident): {ctrl}; windowed resident and decoded {len(rows16)} requests non-empty: {ok16}; text equals the ctx-2048 windowed text: {same16} (reported, not graded)")
     worst = min(ratios.values())
     g3 = "PASS" if worst >= 0.98 else ("FAIL" if worst < 0.97 else "AMBIGUOUS -> parked")
     out.append(f"G-W2 (texts identical across arms and sessions, 4096 windowed load decodes, full-KV 4096 declines): {'PASS' if identical and ok16 and ctrl else 'FAIL'}")
