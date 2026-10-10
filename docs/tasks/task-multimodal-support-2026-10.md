@@ -3021,7 +3021,17 @@ aikit expected 0: L, as registered for S10's MoE variants.
     back for the vision tower, KV plan 1 conversation x 4096), the vision tower on CUDA; the job's one-image request answered in
     52.4 s (cold) with a reply that is close to the CPU arm's but not identical ("...quarterly unit sales by region in thousands, with
     data for Q1, Q2, Q3, Q4..." against the CPU's "...for different regions (North, South, East, West, Central)..."), the expected
-    difference between CPU and CUDA kernels, which is why this arm is reported and never graded.
+    difference between CPU and CUDA kernels.
+  - **Amendment A2 (owner, 2026-10-10, before the second run; the graded CPU arms' bar does not move): the CUDA arm is graded.**
+    The registration said "reported, not graded", because the plain CUDA build was expected to decline on the 8 GB card. It declines, and
+    the paged build (`--moe-cache-experts`, above) loads resident, so there is a CUDA path to grade. Rule, G-S10m-d's for a non-reference
+    arm: against the CPU arm's reply on each of the two requests, **PASS** = identical, or the first differing token is a near-tie (the
+    CPU arm's probability of the CUDA arm's token is at least half of its own top token's); **FAIL** = a first differing token that is not
+    a near-tie on either request; **VOID** (not graded either way) = the server did not come up, fell back to the CPU path, or did not
+    print `decode path: cuda-resident`. The job's exit code is the CPU arms' if they failed, else 0 / 3 / 4 for PASS / FAIL / VOID.
+    One arm, one load: determinism of the CUDA arm across loads is not asked here. **Disclosure:** the prep run showed the one-image CUDA
+    and CPU replies differ in text; I did not read the log-probabilities at the differing token, so the near-tie reading is unseen.
+    **Prediction (written now):** PASS at 0.60, FAIL at 0.25, VOID at 0.15 (a cold-run OOM at the first image, or a paged-build decline).
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the

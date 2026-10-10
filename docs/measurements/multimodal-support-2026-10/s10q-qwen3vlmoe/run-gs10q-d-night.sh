@@ -6,9 +6,9 @@
 #                outlasts: the first run of this job was void that way (gs10q-d-void/).
 #   1. graded    two CPU arms through ONE pinned serve binary (=cpu,cpu), G-S10m-d's driver (run-gs10m-served.sh, the
 #                same one-image and two-image requests, 48 greedy tokens): PASS is identical replies on both requests.
-#   2. reported  one --backend cuda --moe-cache-experts arm on the 8 GB card (expert paging: the plain resident build declines
+#   2. graded    (amendment A2) one --backend cuda --moe-cache-experts arm on the 8 GB card (expert paging: the plain resident build declines
 #                for memory, checked by day 2026-10-10; with the flag it loads at 22 of 64 expert slots per layer, ctx 4096, the
-#                vision tower on CUDA), its replies set beside the CPU arm's. Not graded.
+#                vision tower on CUDA), graded against the CPU arm by G-S10m-d's near-tie rule; exit code 0 pass, 3 fail, 4 void.
 # Pinned in $BIN: serve (built at the rev in $BIN/rev) and run-gs10m-served.sh from that rev. Runs from $SRC (the driver
 # reads testdata/ images relative to it). Checkpoints from ~/models (local NVMe), never the archive. Correctness gate,
 # not timed.
@@ -31,7 +31,7 @@ free_gb=$(df -BG --output=avail "$HOME/models" | tail -1 | tr -dc '0-9'); [ "$fr
 mkdir -p "$OUT/graded" "$OUT/cuda"
 { echo "binaries: $BIN (rev $(cat "$BIN/rev"))"; echo "started: $(date '+%F %T %Z')"; echo "free: ${free_gb} GB; load: $(cat /proc/loadavg)"; free -g | sed -n 2p; nvidia-smi --query-gpu=driver_version,memory.total,memory.used --format=csv,noheader 2>/dev/null; } | tee "$OUT/provenance.txt"
 SIDECAR=$MODEL.int4.cpu-amd64.giw
-[ -n "${GS10QD_DRY:-}" ] && { echo "DRY: preconditions hold; plan = sidecar ($([ -e "$SIDECAR" ] && echo present || echo "to build")), graded =cpu,cpu at int4, then the reported cuda arm"; exit 0; }
+[ -n "${GS10QD_DRY:-}" ] && { echo "DRY: preconditions hold; plan = sidecar ($([ -e "$SIDECAR" ] && echo present || echo "to build")), graded =cpu,cpu at int4, then the graded cuda arm (--moe-cache-experts)"; exit 0; }
 cd "$SRC"
 # int4 is serve's default and is left unset on purpose: at the pinned rev an explicit --quant int4 on a MoE directory is
 # refused against the sidecar the same load builds (its header says int4mix; the task doc's G-S10q-d record).
@@ -63,7 +63,7 @@ GS10M_PORT=$PORT bash "$BIN/run-gs10m-served.sh" "$BIN/serve" "$OUT/graded" =cpu
 rc1=${PIPESTATUS[0]}
 echo "[$(date +%T)] graded step rc=$rc1"
 
-echo "[$(date +%T)] 2/2 reported: --backend cuda"
+echo "[$(date +%T)] 2/2 graded (A2): --backend cuda --moe-cache-experts"
 "$BIN/serve" "${FLAGS[@]}" --backend cuda --embed-int4=false --moe-cache-experts --addr 127.0.0.1:$PORT >"$OUT/cuda/serve-cuda.log" 2>&1 </dev/null &
 pid=$!
 trap 'kill $pid 2>/dev/null || true' EXIT
@@ -99,6 +99,7 @@ for name, content in reqs.items():
         print(f"  cuda {name}: request failed: {e}"); continue
     c = r["choices"][0]["message"]["content"]
     open(f"{out}/reply-{name}-cuda.txt", "w").write(c)
+    json.dump((r["choices"][0].get("logprobs") or {}).get("content") or [], open(f"{out}/logprobs-{name}-cuda.json", "w"))
     try:
         cpu = open(f"{graded}/reply-{name}-cpu.txt").read()
         same = "IDENTICAL to the cpu arm" if cpu == c else "differs from the cpu arm"
@@ -108,10 +109,45 @@ for name, content in reqs.items():
         same = "no cpu reply to compare"
     print(f"  cuda {name} ({time.time() - t:.1f}s): {same}: {c[:160]!r}", flush=True)
 EOF
+  # GRADED (amendment A2 to the registration, 2026-10-10, before the run): the cuda arm is graded with the near-tie rule G-S10m-d uses for a non-reference arm.
+  CUDA_VOID=""
+  [ "$FELL_BACK" = 1 ] && CUDA_VOID="the server fell back to the CPU path"
+  grep -q "decode path: cuda-resident" "$OUT/cuda/serve-cuda.log" 2>/dev/null || CUDA_VOID="${CUDA_VOID:-the build is not cuda-resident}"
+  CUDA_VOID="$CUDA_VOID" python3 - "$OUT/cuda" "$OUT/graded" <<'EOF'
+import json, math, os, sys
+cuda, graded = sys.argv[1:3]
+if os.environ.get("CUDA_VOID"):
+    print(f"G-S10q-d CUDA GRADE: VOID ({os.environ['CUDA_VOID']})"); sys.exit(4)
+ok = True
+for clip in ("one-image", "two-image"):
+    try:
+        rd = json.load(open(f"{graded}/logprobs-{clip}-cpu.json")); od = json.load(open(f"{cuda}/logprobs-{clip}-cuda.json"))
+        rt = open(f"{graded}/reply-{clip}-cpu.txt").read(); ot = open(f"{cuda}/reply-{clip}-cuda.txt").read()
+    except OSError as e:
+        print(f"G-S10q-d CUDA GRADE: VOID ({clip}: {e})"); sys.exit(4)
+    if rt == ot:
+        print(f"{clip}: cuda against cpu: IDENTICAL replies: PASS"); continue
+    i = 0
+    while i < min(len(rd), len(od)) and rd[i]["token"] == od[i]["token"]:
+        i += 1
+    if i >= min(len(rd), len(od)):
+        print(f"{clip}: cuda against cpu: replies differ in length only: PASS"); continue
+    top = rd[i]["top_logprobs"]; ptop = math.exp(top[0]["logprob"])
+    po = [math.exp(c["logprob"]) for c in top if c["token"] == od[i]["token"]]
+    near = bool(po and po[0] >= ptop / 2)
+    ok &= near
+    print(f"{clip}: cuda against cpu: first differing token {i}: cpu {rd[i]['token']!r}, cuda {od[i]['token']!r}; cpu top-3 "
+          + ", ".join(f"{c['token']!r} {math.exp(c['logprob']):.3f}" for c in top) + f"; near-tie {near}: {'PASS' if near else 'FAIL'}")
+print(f"G-S10q-d CUDA GRADE: {'PASS' if ok else 'FAIL'}")
+sys.exit(0 if ok else 3)
+EOF
+  rc2=$?
 else
   echo "  the cuda arm did not come up (a decline or a failed load): see $OUT/cuda/serve-cuda.log"
   tail -5 "$OUT/cuda/serve-cuda.log" | sed 's/^/  /'
+  echo "G-S10q-d CUDA GRADE: VOID (the arm did not come up)"; rc2=4
 fi
 kill $pid 2>/dev/null; wait $pid 2>/dev/null || true
-echo "[$(date +%T)] done; graded rc=$rc1"
-exit "$rc1"
+echo "[$(date +%T)] done; graded (cpu) rc=$rc1, cuda grade rc=$rc2 (0 pass, 3 fail, 4 void)"
+[ "$rc1" -ne 0 ] && exit "$rc1"
+exit "$rc2"
