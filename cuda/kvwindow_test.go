@@ -354,3 +354,213 @@ func windowedReuseFloor(t *testing.T, fx string) {
 		t.Fatalf("base %d after restarting at position 0", win.kvBase)
 	}
 }
+
+// TestWindowedKV_slotsIdentity is G-W1 for MC1: three KV slots, each its own base, interleaved at different rates (a switch is a pointer swap, and the
+// base must swap with it), byte-identical to the full-KV resident under the same schedule.
+func TestWindowedKV_slotsIdentity(t *testing.T) { eachWindowFixture(t, windowedSlotsIdentity) }
+
+func windowedSlotsIdentity(t *testing.T, fx string) {
+	full, win, _, mw := loadWindowedPair(t, fx, 3)
+	if win.KVSlots() != 3 || full.KVSlots() != 3 {
+		t.Fatalf("slots granted: windowed %d, full %d, want 3", win.KVSlots(), full.KVSlots())
+	}
+	_, _, _, _, _, _, vocab := mw.Dims()
+	pace := []int{7, 3, 11}
+	pos := make([]int, 3)
+	for round := 0; pos[0] < 300; round++ {
+		for s := range 3 {
+			if err := full.UseKVSlot(s); err != nil {
+				t.Fatal(err)
+			}
+			if err := win.UseKVSlot(s); err != nil {
+				t.Fatal(err)
+			}
+			// binding alone (no forward yet) must expose the slot's own base: ReusableKV answers from it
+			if win.kvBase != win.kvBases[s] {
+				t.Fatalf("round %d: bound slot %d but kvBase %d != its base %d", round, s, win.kvBase, win.kvBases[s])
+			}
+			for range pace[s] {
+				emb := mw.EmbedResidentForTest((pos[s]*29 + s*13 + 5) % vocab)
+				a, err := full.Forward(emb, pos[s])
+				if err != nil {
+					t.Fatal(err)
+				}
+				b, err := win.Forward(emb, pos[s])
+				if err != nil {
+					t.Fatalf("slot %d pos %d: %v", s, pos[s], err)
+				}
+				if j, ok := sameBits(a, b); !ok {
+					t.Fatalf("round %d slot %d pos %d: logits differ at %d (bases %v)", round, s, pos[s], j, win.kvBases)
+				}
+				pos[s]++
+			}
+		}
+	}
+	if win.kvBases[0] == 0 || win.kvBases[1] == 0 || win.kvBases[0] == win.kvBases[1] {
+		t.Fatalf("slot bases %v: the slots did not each compact on their own schedule", win.kvBases)
+	}
+}
+
+// TestWindowedKV_stepIdentity is G-W1 for MC3: StepBatch rows, each on its own slot at its own depth with its own base, byte-identical to the
+// full-KV resident's step.
+func TestWindowedKV_stepIdentity(t *testing.T) { eachWindowFixture(t, windowedStepIdentity) }
+
+func windowedStepIdentity(t *testing.T, fx string) {
+	full, win, _, mw := loadWindowedPair(t, fx, 4)
+	if lo, hi := win.BatchStepRange(); lo != 2 || hi != 4 {
+		t.Skipf("BatchStepRange = (%d, %d): the step does not engage on %s", lo, hi, fx)
+	}
+	_, _, _, _, _, _, vocab := mw.Dims()
+	depths := []int{9, 70, 130, 33}
+	pos := make([]int, 4)
+	for b := range 4 {
+		prompt := make([][]float32, depths[b])
+		for i := range prompt {
+			prompt[i] = mw.EmbedResidentForTest((i*37 + b*11 + 3) % vocab)
+		}
+		for _, r := range []*cudaResident{full, win} {
+			if err := r.UseKVSlot(b); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.PrefillLast(context.Background(), prompt, 0); err != nil {
+				t.Fatalf("prefill slot %d: %v", b, err)
+			}
+		}
+		pos[b] = depths[b]
+	}
+	for step := range 120 {
+		B := 2 + step%3 // 2..4 rows
+		seqs := make([]decoder.ResidentBatchSeq, B)
+		for b := range B {
+			seqs[b] = decoder.ResidentBatchSeq{Slot: b, Pos: pos[b], Emb: mw.EmbedResidentForTest((step*17 + b*5 + 1) % vocab)}
+		}
+		a, err := full.StepBatch(seqs)
+		if err != nil {
+			t.Fatalf("full step %d: %v", step, err)
+		}
+		bOut, err := win.StepBatch(seqs)
+		if err != nil {
+			t.Fatalf("windowed step %d: %v", step, err)
+		}
+		for b := range B {
+			if j, ok := sameBits(a[b].Logits, bOut[b].Logits); !ok {
+				t.Fatalf("step %d row %d (slot %d pos %d): logits differ at %d (bases %v)", step, b, b, pos[b], j, win.kvBases)
+			}
+			pos[b]++
+		}
+	}
+	if win.kvBases[0] == 0 {
+		t.Fatalf("bases %v: no row compacted", win.kvBases)
+	}
+}
+
+// TestWindowedKV_uploadKV is G-W1 for the CPU-prefill bridge: the full resident's K and V for the first n positions are uploaded (every layer, as
+// the bridge does) into the windowed one, which keeps the last window-1 positions of its windowed layers; decode from there is byte-identical.
+func TestWindowedKV_uploadKV(t *testing.T) { eachWindowFixture(t, windowedUploadKV) }
+
+func windowedUploadKV(t *testing.T, fx string) {
+	full, win, _, mw := loadWindowedPair(t, fx, 1)
+	const n = 100
+	_, _, _, _, _, _, vocab := mw.Dims()
+	for pos := range n { // only the full resident decodes: the windowed one is fresh and gets its history from the upload alone
+		if _, err := full.Forward(mw.EmbedResidentForTest((pos*29+5)%vocab), pos); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for l := range full.layers {
+		Ly := &full.layers[l]
+		if Ly.kvShared || Ly.isDeltaNet || Ly.isMLA {
+			continue
+		}
+		keys, vals := make([]float32, n*Ly.kvDim), make([]float32, n*Ly.kvDim)
+		if err := full.do(func() error {
+			if e := full.stream.Sync(); e != nil {
+				return e
+			}
+			if e := gpu.Download(full.kc[l], keys); e != nil {
+				return e
+			}
+			return gpu.Download(full.vc[l], vals)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := win.UploadKV(l, 0, keys, vals); err != nil {
+			t.Fatalf("UploadKV layer %d: %v", l, err)
+		}
+	}
+	if win.kvBase != n-(win.kvWindow-1) {
+		t.Fatalf("base after the upload = %d, want %d (the last window-1 of %d positions)", win.kvBase, n-(win.kvWindow-1), n)
+	}
+	decodeSteps(t, full, win, mw, n, 150)
+}
+
+// TestWindowedKV_agentTurns drives the real entry point: Model.Generate over a conversation of continuing turns (each prompt is the last one, its
+// reply and a short suffix, so the decoder reuses the committed prefix), then an EDITED turn that shares only a short lead with the history. The
+// windowed load must emit the same ids as the full-KV one on every turn, reuse the whole committed prefix on a continuation, and fall back to a cold
+// prefill (PrefillReused 0) on the edit, whose short lead's window the slot no longer holds.
+func TestWindowedKV_agentTurns(t *testing.T) { eachWindowFixture(t, windowedAgentTurns) }
+
+func windowedAgentTurns(t *testing.T, fx string) {
+	_, _, _, mw := loadWindowedPair(t, fx, 1)
+	_, _, _, _, _, _, vocab := mw.Dims()
+	path := filepath.Join("..", "testdata", fx)
+	type turn struct {
+		ids    []int
+		reused int
+	}
+	play := func(on bool) []turn {
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentWindowedKV: on})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		prompt := make([]int, 40)
+		for i := range prompt {
+			prompt[i] = (i*31 + 7) % vocab
+		}
+		var out []turn
+		gen := func(p []int) []int {
+			ch, g := m.Generate(context.Background(), p, 30, decoder.SamplingParams{})
+			var ids []int
+			for id := range ch {
+				ids = append(ids, id)
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("windowed=%v: %v", on, err)
+			}
+			out = append(out, turn{ids, g.PrefillReused})
+			return ids
+		}
+		for tn := range 8 {
+			ids := gen(prompt)
+			prompt = append(append(append([]int(nil), prompt...), ids...), (tn*7+3)%vocab, (tn*11+5)%vocab)
+		}
+		edited := append(append([]int(nil), prompt[:20]...), (3*vocab/4)%vocab, 9, 8, 7)
+		gen(edited)
+		return out
+	}
+	want, got := play(false), play(true)
+	for i := range want {
+		if len(want[i].ids) != len(got[i].ids) {
+			t.Fatalf("turn %d: %d ids windowed, %d full", i, len(got[i].ids), len(want[i].ids))
+		}
+		for j := range want[i].ids {
+			if want[i].ids[j] != got[i].ids[j] {
+				t.Fatalf("turn %d: id %d = %d windowed, %d full", i, j, got[i].ids[j], want[i].ids[j])
+			}
+		}
+		t.Logf("turn %d: reused %d windowed, %d full", i, got[i].reused, want[i].reused)
+	}
+	last := len(want) - 1
+	if want[last].reused == 0 {
+		t.Fatalf("the full-KV control reused nothing on the edited turn: the test does not exercise the floor")
+	}
+	if got[last].reused != 0 {
+		t.Fatalf("the windowed load reused %d tokens of an edited turn whose window it no longer holds", got[last].reused)
+	}
+	for i := 1; i < last; i++ {
+		if got[i].reused != want[i].reused {
+			t.Errorf("turn %d: a continuation reused %d windowed but %d full", i, got[i].reused, want[i].reused)
+		}
+	}
+}
