@@ -156,7 +156,7 @@ of every `launchToken` and every `prefillCore`, and every attention launch now t
 unmeasured, and the branch edits `decoder/` (pricing, the reuse floor) as well.
 
 **Instrument.** `docs/measurements/cuda-windowed-kv-2026-10/aa_default_path.py` (via `run-windowed-kv-aa.sh`): Mellum2.1 at ctx 2048, neither arm passing `--windowed-kv`: M, `serve-cuda-main`, built at the branch's merge base with main
-(`bdde4175`); B, `serve-cuda`, built at the branch tip. Sessions M B B M, the workloads of G-W3 (3 short prompts x 3 reps of 128 tokens; one prompt of 1,500+ tokens x 3 reps of 384, decode past the window).
+(`bdde4175`); B, `serve-cuda`, built at `4521a62a` (every later commit on the branch changes only docs, scripts, goldens and tests: `git diff 4521a62a HEAD` outside those is empty, so its production code is the tip's). Sessions M B B M, the workloads of G-W3 (3 short prompts x 3 reps of 128 tokens; one prompt of 1,500+ tokens x 3 reps of 384, decode past the window).
 **Bars (the ones G-W3 uses, written now).** Texts of one prompt identical across both arms and all four sessions: a difference FAILS (the default path's output changed). Per class the ratio B/M of the medians in [0.98, 1.02] PASS,
 below 0.97 FAIL, 0.97 to 0.98 ambiguous and parked; the verdict is the worse class. **Void:** a server not cuda-resident, or windowed KV engaged in either arm. **Cost:** about 10 minutes (queue est 20). **Prediction:** PASS at 0.8: the added work
 is a handful of integer comparisons per token against a 11 ms token; the 0.2 is the box's own session drift (about 0.8 percent on this card in follow-up C) and the first-vs-second-session ordering effect the smoke showed (0.968 against 1.065 at n=2).
