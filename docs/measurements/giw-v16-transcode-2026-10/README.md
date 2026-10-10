@@ -263,6 +263,24 @@ normal weights four times per round, 9.2M elements, group 32), and compared for 
 - A kernel microbenchmark gives direction, not size. The harness was a scratch test in aikit's `linalg` and is not
   committed.
 
+## T4a on amd64, 2026-10-10: the branch-free form wins and ships; the task doc's form is slower there too
+
+The same harness as a self-contained module, on nobara (Ryzen 7 3700X, Go 1.27.0, linux/amd64), run directly under the
+timing lock at 11:34 after the owner freed the box. Two passes of 31 rounds; log `t4a-ab-amd64-nobara.log`.
+
+| form | time against `math.Round`, median (range), pass 1 | pass 2 | faster in |
+|---|---|---|---|
+| `if f < 0 { int(f - 0.5) } else { int(f + 0.5) }` (the task doc's) | 1.158 (1.136–1.176) | 1.158 (1.141–1.169) | 0 of 31, twice |
+| `int(f + math.Copysign(0.5, f))` | 0.698 (0.681–0.715) | 0.698 (0.689–0.713) | 31 of 31, twice |
+
+- **Equality:** the three agree on all 2³² float32 bit patterns on amd64: 0 mismatches. NaN, +Inf and −Inf all convert
+  to the int64 minimum there, in all three (on arm64: 0, the maximum, the minimum).
+- **Reading:** on weights of random sign the sign test mispredicts on amd64 as on arm64, so the task doc's form loses
+  on both. The audit's −17% for it was exploratory, on a synthetic file, and does not reproduce here.
+- **What ships:** aikit's `roundInt4` is the `Copysign` form on amd64 and `math.Round` elsewhere (arm64: 1.007×, so no
+  gain to take). It changes no output. Size is not claimed from this: the transcode's ratio is G-T2's, at night.
+
+
 ## T5, 2026-10-10: built, interim identity only (the gate waits for an aikit release)
 
 T5 reads the transposed fused-expert layout through a new aikit call, `embed.Tensor.SubF32Transposed`, and stops
@@ -283,10 +301,30 @@ yet. What was checked instead, on this box:
 
 G-T1 for T5 is owed once the pin is bumped.
 
+## G-T1 for T5 and aikit v1.65.0, 2026-10-10: PASS, every cell that ran is IDENTICAL
+
+aikit v1.65.0 was tagged the same day (the transposing read, and T4a's rounding on amd64), goinfer's pin was bumped
+(`05e8aeeb`) and T5 went onto the branch (`a8263c3b`). Same instrument and box; base `eee75d83`, new `fe8f8136`, which
+has all of it.
+
+| run | cells | IDENTICAL | DIFFERENT | NOT RUN | wall |
+|---|---|---|---|---|---|
+| tiny fixtures, six configurations | 384 | 330 | 0 | 54 | 1 min 18 s |
+| the 0.5B and 1.5B Q4_K_M GGUFs, four configurations each | 8 | 8 | 0 | 0 | 2 min 6 s |
+
+- The NOT RUN set is T6's, source for source. The eight real files have the sha256 of the runs above.
+- **T5's cells:** `qwen3vlmoe-tiny` (the transposed layout) and `granite-tiny` (the row layout), six configurations
+  each, 12 of 12 IDENTICAL. Both are F32. No bf16 fused stack is on this box.
+- **T4a's cells: none here.** The rounding changes code on amd64 only; on this box the new pin runs the same
+  `math.Round` as before. Its bytes rest on aikit's oracle tests, which pass with their full sweeps natively on amd64,
+  and on this gate's amd64 cells, which are nobara's at night.
+- Phase lines, exploratory: `g-t1-t5-real-lines.txt`.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
 - `g-t1-t6-tiny.jsonl`, `g-t1-t6-real.jsonl`: one line per cell (verdict, both builds' sha256 and byte counts).
 - `g-t1-t6-real-lines.txt`: each transcode's own "wrote" line from the real run.
-- `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`: the same five files for T1's run, for T2's, for the run that
-  carries the self-check change and T3, and for the read-back's.
+- `t4a-ab-amd64-nobara.log`: the rounding A/B's log from nobara, both passes.
+- `g-t1-t1-*`, `g-t1-t2-*`, `g-t1-t3-*`, `g-t1-rb-*`, `g-t1-t5-*`: the same five files for T1's run, for T2's, for the
+  run that carries the self-check change and T3, for the read-back's, and for T5's on aikit v1.65.0.

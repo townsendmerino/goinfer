@@ -1,0 +1,26 @@
+started 2026-10-10 11:34:33 PDT
+Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+go version go1.27.0 linux/amd64
+model name	: AMD Ryzen 7 3700X 8-Core Processor
+ 11:34:33 up 6 days, 14:57,  4 users,  load average: 1.16, 4.31, 5.27
+== pass 1 ==
+exhaustive: 2^32 float32 bit patterns, 0 mismatches, linux/amd64
+NaN -> -9223372036854775808, +Inf -> -9223372036854775808, -Inf -> -9223372036854775808 (old); branch -9223372036854775808 -9223372036854775808 -9223372036854775808; copysign -9223372036854775808 -9223372036854775808 -9223372036854775808
+--- PASS: TestZZT4aExhaustive (1.35s)
+linux/amd64, 9175040 elements per arm per round, old 110.3 ms per round
+branch/old time ratio: median 1.158, min 1.136, max 1.176; faster than old in 0 of 31
+copysign/old time ratio: median 0.698, min 0.681, max 0.715; faster than old in 31 of 31
+--- PASS: TestZZT4aAB (10.09s)
+PASS
+ok  	t4aab	11.450s
+== pass 2 ==
+exhaustive: 2^32 float32 bit patterns, 0 mismatches, linux/amd64
+NaN -> -9223372036854775808, +Inf -> -9223372036854775808, -Inf -> -9223372036854775808 (old); branch -9223372036854775808 -9223372036854775808 -9223372036854775808; copysign -9223372036854775808 -9223372036854775808 -9223372036854775808
+--- PASS: TestZZT4aExhaustive (1.35s)
+linux/amd64, 9175040 elements per arm per round, old 109.9 ms per round
+branch/old time ratio: median 1.158, min 1.141, max 1.169; faster than old in 0 of 31
+copysign/old time ratio: median 0.698, min 0.689, max 0.713; faster than old in 31 of 31
+--- PASS: TestZZT4aAB (10.06s)
+PASS
+ok  	t4aab	11.410s
+finished 11:34:57

@@ -1,11 +1,11 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
-**Status:** scoped 2026-10-10. **T0, T6, T1, T2 and T3 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
-the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). The self-check no longer reads the
-file back; the weights are read back behind the write instead, and a bundle larger than available RAM keeps the CRC
-pass (Decision 5, as amended). T4a is measured on arm64 and not adopted there; its amd64 measurement is queued on nobara. T5 is
-built on a held branch (`giw-v16-t5`) and waits for aikit v1.65.0, whose release waits for its vulnerability scan on
-nobara. T7 and V are not started. The gates
+**Status:** scoped 2026-10-10. **T0, T6, T1, T2, T3, T4a and T5 are built (2026-10-10, branch `giw-v16-2026-10`, on
+aikit v1.65.0), and G-T1 is PASS on the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)).
+T4a changes code on amd64 only, so its bytes rest on aikit's oracle tests there and on G-T1's amd64 cells at night. The
+self-check no longer reads the file back; the weights are read back behind the write instead, and a bundle larger than
+available RAM keeps the CRC pass (Decision 5, as amended). Next: the night runs (G-T1's real cells on both boxes, G-T2,
+G-T3, G-T2c). T4b, T7 and V are not started. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -139,7 +139,8 @@ Wall 18.7 s with 18.3 s of CPU: **one core busy out of two.** The same model at 
 - **F5. `loadFusedExperts` spends half its time not quantizing.** One Qwen3-VL-30B-A3B layer (128 experts, the
   transposed transformers-4.57 layout), single core: 22.1 s. Quantize 52%, transpose 29%, bf16-to-f32 conversion
   10%, copies 8%.
-  - `decoder/weights.go:transposeF32` writes with an 8 KB stride, so every column of a tile lands in the same L1 set.
+  - The plain transpose `loadFusedExperts` used then (`transposeF32`, removed by T5 on 2026-10-10) writes with an
+    8 KB stride, so every column of a tile lands in the same L1 set.
     Plain 32×32 blocking does not help (1.0×), and neither does reusing the buffer (it is not page faults). Transposing
     through a 16×16 local tile buffer and writing contiguous runs is **5.2× faster, bit-identical**.
   - `append([]float32(nil), guE[:half]...)` copies gate, up and down into fresh slices. Those slices already are fresh:
@@ -312,6 +313,25 @@ change what runs when and how fast, never what is written.
       log is `~/goinfer-logs/t4a-ab-<stamp>.log` on nobara. If amd64 resolves in favour of a new form, the change is
       amd64-only (an arch-split helper) and its aikit release needs perfgate, a timed run, so it is its own patch
       release at night and not part of v1.65.0.
+    - **Measured on amd64, 2026-10-10, 11:34 (nobara, Ryzen 7 3700X; the owner freed the box and said to run now, so
+      the job was run directly under the timing lock and dropped from the queue; the same harness, two passes):**
+      - **The form above is slower on amd64 too:** 1.158× the time of `math.Round` in both passes, faster in 0 of 31.
+        The audit's exploratory −17% does not reproduce on weights of random sign.
+      - **The branch-free form wins:** `int(f + math.Copysign(0.5, f))` takes 0.698× in both passes (0.681–0.715),
+        faster in 31 of 31. A resolved direction, so it is acted on by day (TE5(b)); the size is the night gate's.
+      - All three forms agree on all 2³² float32 bit patterns on amd64 (NaN and both infinities give the int64 minimum
+        there, in all three, which the quantizer clamps to −7 as before).
+    - **T4a as built (aikit `395f5ba`, in v1.65.0):** `linalg.roundInt4`, the `Copysign` form on amd64 and
+      `math.Round` everywhere else. No output changes on any architecture. aikit's oracle tests
+      (`TestRoundInt4_matchesMathRound`, `TestQuantizeGroupInt4Row_matchesReference`) pass with their full sweeps on
+      amd64 (natively on nobara, and under Rosetta on the Mac) and on arm64. It goes into v1.65.0 with perfgate run
+      the same day, not into a later patch release.
+    - **aikit v1.65.0 tagged 2026-10-10.** perfgate on nobara: PASS against v1.64.0 (15 of 47 shapes resolve the 5%
+      class; none of its shapes is a benchmark of the quantizer, so it says the release disturbed nothing else).
+      Vulnerability scan: 16 of 16 modules clean. goinfer pins it from `05e8aeeb`.
+    - **G-T1 for T4a:** on the Mac the gate ran on the new pin and passed (330 tiny and 8 real cells), but arm64 keeps
+      `math.Round`, so that run does not exercise the change. The amd64 cells are the night's, on nobara, as
+      registered.
   - **T4b, SIMD.** `QuantizeGroupInt4Row` gets the int8 treatment.
     - Arch dispatch, with the current scalar body kept verbatim as `quantizeGroupInt4RowScalar`, the oracle.
     - Per 32-element group: SIMD max-abs (exact and order-independent, already argued for int8), the scalar scale and
@@ -341,6 +361,10 @@ change what runs when and how fast, never what is written.
       real file only on nobara's Qwen3-VL-30B.
     - **Owed, in order:** tag aikit v1.65.0 and run `gpupins --fix`; bump goinfer's aikit pin in every module; put
       `giw-v16-t5` on this branch; refresh the parity hashes; `gate quick`; G-T1 for T5 through `gate identity`.
+    - **Done 2026-10-10: on this branch as `a8263c3b`, on aikit v1.65.0.**
+  - **G-T1 for T5: PASS on the Mac, 2026-10-10** (330 tiny cells and 8 real cells IDENTICAL, 0 DIFFERENT; the twelve
+    cells of the two fused-expert fixtures among them). A bf16 fused stack has still not gone through it: that is
+    nobara's Qwen3-VL-30B, at night.
 - **T6. No in-RAM repack while building for a sink.** In a streaming transcode nothing decodes, so no layout but
   canonical is needed in RAM.
   - Route every repack decision through one predicate that is false when building for a sink. That covers
