@@ -48,17 +48,15 @@ type SamplingParams struct {
 	// the forward pass and before sampling and the stop check, so a constraint
 	// can also gate EOS (mask it until the output is a complete document).
 	LogitProcessor func(generated []int, logits []float32)
-	// LogitProcessorGate, when set together with LogitProcessor, makes the processor LAZY: it is
-	// asked after every emitted token (with the ids generated so far) whether the NEXT step needs
-	// the processor. While it answers false the processor is not called and the step keeps every
-	// on-device fast path (greedy argmax, device sampling, device top-K) exactly as if there were
-	// no processor; a step it answers true for reads the full logits and runs the processor. It
-	// exists for a constraint that only switches on partway through a turn (a tool call under
-	// tool_choice auto, constrain.LazyMasker): an ungated processor costs every token of the turn
-	// its fast path, prose included — measured 0.81x decode at T=0.7 on a 1.5B
-	// (docs/measurements/tool-union-2026-09-24.md). The gate must be a pure function of generated
-	// ids. It is consulted only on the decode loop in model.go; the speculative paths still refuse
-	// any LogitProcessor, gated or not, and callers fall back to Generate as before.
+	// LogitProcessorGate, when set with LogitProcessor, makes the processor lazy: it is asked after every emitted token
+	// (with the ids generated so far) whether the next step needs the processor. While it answers false the processor is
+	// not called and the step keeps every on-device fast path (greedy argmax, device sampling, device top-K) as if there
+	// were no processor; a step it answers true for reads the full logits and runs the processor. It is for a constraint
+	// that switches on partway through a turn (a tool call under tool_choice auto, constrain.LazyMasker): an ungated
+	// processor costs every token of the turn its fast path, prose included
+	// (docs/measurements/tool-union-2026-09-24.md). The gate must be a pure function of generated ids. It is consulted
+	// only on the decode loop in model.go; the speculative paths still refuse any LogitProcessor, gated or not, and
+	// callers fall back to Generate.
 	LogitProcessorGate func(generated []int) bool
 }
 
@@ -79,61 +77,41 @@ type SampleInfo struct {
 // Sampler turns a logit vector into a token id. It owns its RNG so a run is
 // reproducible from Seed, and tracks the token history the penalties read.
 type Sampler struct {
-	p        SamplingParams
-	rng      *rand.Rand
-	gseed    uint64    // Philox key for the temperature-only Gumbel-max draw (sampler_gumbel.go)
-	gdraw    uint64    // index of the next such draw: the counter, so the stream is (seed, step, logits) only
-	history  []int     // tokens seen so far: prompt (via Observe) + each drawn token
-	vocabBuf []float64 // [vocab] scratch shared by sampleChunked's e and chunkedZ's tmp — one full-vocab
-	// allocation reused every token instead of a fresh make() each draw; the two are never live
-	// simultaneously (Sample's branches are mutually exclusive per call, so one buffer covers both).
-	distBuf []float64 // [vocab] scratch for distVectorFrom's returned distribution (P-14). Each
-	// speculative verify position calls dist(...), which is consumed synchronously by specStep /
-	// drawDist / traceFromDist before the loop moves to the next position — never two positions'
-	// vectors live at once (spec_ngram.go's verify loop) — so one buffer covers the whole round.
-	specLogitsBuf []float32 // [vocab] scratch for distVectorHist's history-dependent copy (P-14):
-	// same one-position-at-a-time lifetime as distBuf.
-	workBuf []float32 // [vocab] scratch for SampleWithInfo's bias/penalty-mutated copy (P-07,
-	// audit-2026-09-10). Replaces a fresh slices.Clone(logits) every token a penalty or bias is
-	// active: `work` is read by argmax/drawFiltered/softmaxStable/sampleChunked/computeLogprobs
-	// within that same SampleWithInfo call and never stored or returned, so one buffer reused
-	// every token is safe — the same reasoning distBuf/specLogitsBuf already document above.
-	candBuf []int // [vocab] scratch for topFilterLogits' candidate-id list in its no-filter
-	// default case (P-07). Consumed synchronously by the SAME call's indexedProb pass
-	// immediately below it, never retained past topFilterLogits' own return.
-	ipsBuf []indexedProb // [vocab] scratch for topFilterLogits' indexed-probability pairs (P-07)
-	// — the audit's own "2.4 MB" figure, the largest single allocation topFilterLogits made, on
-	// EVERY call regardless of which candidate branch ran. Consumed synchronously by
-	// drawFiltered/distVectorFrom immediately after topFilterLogits returns, never retained.
-	histCounts map[int]int // per-id occurrence count over the WHOLE of history, maintained
-	// incrementally by recordHistory (P-15) so applyPenalties' unbounded-window case (the
-	// default: RepeatLastN ≤ 0) never rebuilds a map by rescanning all of history — every
-	// history mutation MUST go through recordHistory, or this desyncs from s.history.
+	p       SamplingParams
+	rng     *rand.Rand
+	gseed   uint64 // Philox key for the temperature-only Gumbel-max draw (sampler_gumbel.go)
+	gdraw   uint64 // index of the next such draw: the counter, so the stream is (seed, step, logits) only
+	history []int  // tokens seen so far: prompt (via Observe) + each drawn token
+
+	// Scratch, each [vocab]-sized and grown on demand by the *BufN helpers. Every buffer is consumed synchronously by the
+	// call that requested it and never retained, which is what makes reuse safe.
+	vocabBuf      []float64     // shared by sampleChunked's e and chunkedZ's tmp, which are never live together (Sample's branches are exclusive per call)
+	distBuf       []float64     // distVectorFrom's returned distribution; each speculative verify position consumes it before the next, so one covers a round
+	specLogitsBuf []float32     // distVectorHist's history-dependent copy; same lifetime as distBuf
+	workBuf       []float32     // SampleWithInfo's bias/penalty-mutated copy of the logits
+	candBuf       []int         // topFilterLogits' candidate-id list in its no-filter case
+	ipsBuf        []indexedProb // topFilterLogits' indexed-probability pairs
+
+	// histCounts is the per-id occurrence count over the whole of history, maintained incrementally by recordHistory so
+	// applyPenalties' unbounded-window case never rescans history. Every history mutation MUST go through recordHistory,
+	// or this desyncs from history.
+	histCounts map[int]int
 }
 
 // NewSampler builds a sampler from params.
 func NewSampler(p SamplingParams) *Sampler {
-	// M-08: MinP > 1 asks for "keep tokens with probability ≥ 1.2× the maximum", which is
-	// nothing — the threshold maxL + T·ln(minP) sits ABOVE maxL, so the candidate set comes
-	// back empty and the always-keep-the-top-token clamps then index ips[:1] on an empty
-	// slice or ips[-1]. Measured before the fix: `index out of range [-1]`, panicking inside
-	// the Generate goroutine. min_p is not on the HTTP surface, so this reached users through
-	// the library and `goinfer-chat --min-p`.
-	//
-	// Clamped rather than rejected: SamplingParams has no error return here, every other
-	// degenerate value in this struct is clamped or ignored, and 1.0 is the identity for
-	// min-p (keep only what ties the max) — the nearest meaningful reading of "more than
-	// everything". The docstring's "min_p at any value are safe" is now true rather than
-	// aspirational.
+	// MinP > 1 asks for tokens with probability >= 1.2x the maximum, which is nothing: the threshold maxL + T*ln(minP) sits
+	// above maxL, the candidate set comes back empty, and the keep-the-top-token clamps would index an empty slice (a
+	// panic in the Generate goroutine). Clamp to 1.0 rather than reject: SamplingParams has no error return here, every
+	// other degenerate value is clamped or ignored, and 1.0 is the identity for min-p (keep only what ties the max).
 	if p.MinP > 1 {
 		p.MinP = 1
 	}
 	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed)), gseed: uint64(p.Seed)}
 }
 
-// vocabBufN returns a length-n float64 scratch buffer, reusing the backing array when it is
-// already large enough and growing it (once) otherwise — the sampler_chunked.go grow-on-demand
-// pattern (mirrors decoder/scratch.go's scoresBuf).
+// vocabBufN returns a length-n float64 scratch buffer, reusing the backing array when it is large enough and growing
+// it once otherwise.
 func (s *Sampler) vocabBufN(n int) []float64 {
 	if cap(s.vocabBuf) < n {
 		s.vocabBuf = make([]float64, n)
@@ -141,7 +119,7 @@ func (s *Sampler) vocabBufN(n int) []float64 {
 	return s.vocabBuf[:n]
 }
 
-// distBufN is vocabBufN's counterpart for distVectorFrom's returned distribution (P-14).
+// distBufN is vocabBufN's counterpart for distBuf.
 func (s *Sampler) distBufN(n int) []float64 {
 	if cap(s.distBuf) < n {
 		s.distBuf = make([]float64, n)
@@ -149,8 +127,7 @@ func (s *Sampler) distBufN(n int) []float64 {
 	return s.distBuf[:n]
 }
 
-// specLogitsBufN is vocabBufN's counterpart for distVectorHist's history-dependent
-// logits copy (P-14): a []float32 scratch instead of []float64.
+// specLogitsBufN is vocabBufN's counterpart for specLogitsBuf, a []float32.
 func (s *Sampler) specLogitsBufN(n int) []float32 {
 	if cap(s.specLogitsBuf) < n {
 		s.specLogitsBuf = make([]float32, n)
@@ -158,8 +135,7 @@ func (s *Sampler) specLogitsBufN(n int) []float32 {
 	return s.specLogitsBuf[:n]
 }
 
-// workBufN is vocabBufN's counterpart for SampleWithInfo's bias/penalty-mutated logits copy
-// (P-07): a []float32 scratch the same shape as the caller's own logits.
+// workBufN is vocabBufN's counterpart for workBuf, a []float32.
 func (s *Sampler) workBufN(n int) []float32 {
 	if cap(s.workBuf) < n {
 		s.workBuf = make([]float32, n)
@@ -167,7 +143,7 @@ func (s *Sampler) workBufN(n int) []float32 {
 	return s.workBuf[:n]
 }
 
-// candBufN is vocabBufN's counterpart for topFilterLogits' no-filter candidate-id list (P-07).
+// candBufN is vocabBufN's counterpart for candBuf.
 func (s *Sampler) candBufN(n int) []int {
 	if cap(s.candBuf) < n {
 		s.candBuf = make([]int, n)
@@ -175,7 +151,7 @@ func (s *Sampler) candBufN(n int) []int {
 	return s.candBuf[:n]
 }
 
-// ipsBufN is vocabBufN's counterpart for topFilterLogits' indexed-probability pairs (P-07).
+// ipsBufN is vocabBufN's counterpart for ipsBuf.
 func (s *Sampler) ipsBufN(n int) []indexedProb {
 	if cap(s.ipsBuf) < n {
 		s.ipsBuf = make([]indexedProb, n)
@@ -192,9 +168,8 @@ func (s *Sampler) Observe(ids ...int) {
 	}
 }
 
-// recordHistory appends id to history and keeps histCounts (P-15) in sync. Every
-// history mutation must go through this — appending to s.history directly would
-// silently desync histCounts from the count applyPenalties' fast path relies on.
+// recordHistory appends id to history and keeps histCounts in sync. Every history mutation must go through it:
+// appending to s.history directly would silently desync histCounts from the counts applyPenalties' fast path reads.
 func (s *Sampler) recordHistory(id int) {
 	s.history = append(s.history, id)
 	if s.penaltiesConfigured() && s.p.RepeatLastN <= 0 {
@@ -218,47 +193,36 @@ func (s *Sampler) Sample(logits []float32) (int, error) {
 	return info.ID, err
 }
 
-// SampleWithInfo is Sample plus log-probability reporting (when
-// SamplingParams.Logprobs is set): the chosen token's logprob and, if
-// TopLogprobs > 0, that many highest-probability alternatives.
-// ArgmaxEquivalent reports whether this sampler's pick is exactly argmax(raw logits): no
-// logit bias, no penalties, no temperature/filtering, and no logprob reporting that would
-// need the distribution. When true (and SamplingParams.LogitProcessor is nil), a backend that
-// can compute the argmax on-device may return just the id and skip the full-logits readback —
-// the emitted tokens are identical.
+// ArgmaxEquivalent reports whether this sampler's pick is exactly argmax(raw logits): no logit bias, no penalties, no
+// temperature or filtering, and no logprob reporting that would need the distribution. When true (and
+// SamplingParams.LogitProcessor is nil), a backend that can compute the argmax on-device may return just the id and
+// skip the full-logits readback; the emitted tokens are identical.
 //
-// THIS AND GreedyEquivalent BELOW LIVE NEXT TO EVERY LOGIT-TOUCHING PARAMETER ON PURPOSE:
-// adding a new parameter that mutates or reads logits must be reflected in BOTH, so a fast path
-// can never silently diverge. They are separate predicates, not one widened one, so that call
-// sites choose deliberately which notion of "deterministic" they need (see GreedyEquivalent).
+// This and GreedyEquivalent live next to every logit-touching parameter on purpose: a new parameter that mutates or
+// reads logits must be reflected in both, so a fast path can never silently diverge. They are separate predicates,
+// not one widened one, so call sites choose which notion of "deterministic" they need (see GreedyEquivalent).
 func (s *Sampler) ArgmaxEquivalent() bool {
 	return s.p.Temperature <= 0 && len(s.p.LogitBias) == 0 && !s.penaltiesActive() && !s.p.Logprobs
 }
 
-// GreedyEquivalent reports whether this sampler's pick is deterministically the argmax token even
-// though a temperature is set — the `top_k=1` shape. It is TRUE at any temperature, which is not a
-// loophole: temperature scaling is strictly monotone, so it preserves the ordering of logits, and a
-// distribution restricted to ONE token is deterministic regardless of that token's probability.
-// So `top_k=1` at temperature 1.5 emits exactly what greedy emits.
+// GreedyEquivalent reports whether this sampler's pick is deterministically the argmax token even though a
+// temperature is set: the top_k=1 shape. It is true at any temperature: scaling is strictly monotone and preserves
+// the logit ordering, and a distribution restricted to one token is deterministic. top_p and min_p at any value are
+// safe alongside it, because both cuts keep at least one token (topFilterLogits), so the retained set is exactly the
+// top-1. The tie-break agrees: topFilterLogits orders ties by ascending id and argmax uses a strict >, both selecting
+// the lowest tied index, which is the contract the device argmax is aligned to (cuda.TestArgmaxTieBreak).
 //
-// `top_p` / `min_p` at any value are safe alongside it: both cuts clamp at ≥1 retained token
-// (topFilterLogits, "always keep the top token"), so the retained set is exactly the top-1 either
-// way. The tie-break agrees too — topFilterLogits orders ties by ascending id and argmax() uses a
-// strict `>`, both selecting the LOWEST tied index, which is the contract the device argmax was
-// aligned to (audit C-14, gate cuda.TestArgmaxTieBreak).
-//
-// It uses HistoryDependent, NOT penaltiesActive: penaltiesActive() is computed from the sampler's
-// observed history, so it is false before the first Observe and true after. A backend consults this
-// predicate ONCE per request, before any token is observed, and would latch the wrong answer.
-// HistoryDependent asks the question that is actually stable — "are penalties/bias CONFIGURED" —
-// which is the right shape for a per-request routing decision.
-//
-// Logprobs is excluded for the same reason as in ArgmaxEquivalent: reporting a distribution needs
-// the logits the fast path is skipping.
+// It uses HistoryDependent, not penaltiesActive: penaltiesActive depends on the observed history, so it is false
+// before the first Observe and true after, and a backend consults this predicate once per request, before any token
+// is observed, and would latch the wrong answer. HistoryDependent asks whether penalties or bias are configured,
+// which is stable. Logprobs is excluded as in ArgmaxEquivalent: reporting a distribution needs the logits the fast
+// path skips.
 func (s *Sampler) GreedyEquivalent() bool {
 	return s.p.TopK == 1 && !s.p.HistoryDependent() && !s.p.Logprobs
 }
 
+// SampleWithInfo is Sample plus log-probability reporting (when SamplingParams.Logprobs is set): the chosen token's
+// logprob and, if TopLogprobs > 0, that many highest-probability alternatives.
 func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	if len(logits) == 0 {
 		return SampleInfo{}, fmt.Errorf("decoder.Sample: empty logits")
@@ -267,8 +231,7 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	// the no-op path (greedy parity) keeps using the caller's slice directly.
 	work := logits
 	if len(s.p.LogitBias) > 0 || s.penaltiesActive() {
-		// P-07 (audit-2026-09-10): reused workBuf instead of a fresh slices.Clone every token —
-		// same reasoning as vocabBuf/distBuf above, work never escapes this call.
+		// work never escapes this call, so the reused workBuf is safe in place of a fresh clone each token.
 		work = s.workBufN(len(logits))
 		copy(work, logits)
 		s.applyLogitBias(work)
@@ -279,20 +242,17 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 	if s.p.Temperature <= 0 {
 		info.ID = argmax(work)
 	} else if s.p.TopK > 0 || s.p.TopP > 0 || s.p.MinP > 0 {
-		// Bounded selection in logit space — no softmax over the whole vocabulary
-		// (amendment 3). The old path softmaxed all V then full-sorted all V; both
-		// are gone for the filtered case, replaced by topFilterLogits below.
+		// Bounded selection in logit space, with no softmax over the whole vocabulary (topFilterLogits).
 		info.ID = s.drawFiltered(topFilterLogits(work, s.p.Temperature, s.p.TopK, s.p.TopP, s.p.MinP, s.vocabBufN(len(work)), s.candBufN(len(work)), s.ipsBufN(len(work))))
 		if info.ID < 0 {
-			// Unreachable: every filter is documented to keep at least the top token, and
-			// NewSampler clamps the one input that could empty the set (M-08). If it ever
-			// happens, the argmax is the answer those clamps were reaching for — a valid id
-			// beats a −1 propagating out as a token, and beats a panic in this goroutine.
+			// Unreachable: every filter keeps at least the top token and NewSampler clamps the one input that could
+			// empty the set. If it happens, argmax is the answer: a valid id beats a -1 propagating out as a token or a
+			// panic in this goroutine.
 			info.ID = argmax(work)
 		}
 	} else {
-		// Temperature-only, with or without logprobs: Gumbel-max (sampler_gumbel.go, R7b). One draw for
-		// every variant, so asking for logprobs or a penalty cannot change which token a seed produces.
+		// Temperature-only, with or without logprobs: Gumbel-max (sampler_gumbel.go). One draw for every variant, so asking
+		// for logprobs or a penalty cannot change which token a seed produces.
 		info.ID = s.gumbelDraw(work, s.p.Temperature)
 	}
 	if s.p.Logprobs {
@@ -339,12 +299,10 @@ func (s *Sampler) penaltiesConfigured() bool {
 		s.p.PresencePenalty != 0 || s.p.FrequencyPenalty != 0
 }
 
-// HistoryDependent reports whether any history-dependent logit transform is
-// configured: repetition/presence/frequency penalties or LogitBias. Greedy
-// speculative decoding verifies with argmax over the target's raw logits, so it
-// cannot honor these — its validators reject them to keep "token-identical to plain
-// greedy" true (M13). The sampled speculative path threads them per-position
-// instead (see needsHistory, which mirrors this check).
+// HistoryDependent reports whether any history-dependent logit transform is configured: repetition, presence or
+// frequency penalties or LogitBias. Greedy speculative decoding verifies with argmax over the target's raw logits and
+// cannot honor these, so its validators reject them to keep "token-identical to plain greedy" true. The sampled
+// speculative path threads them per position instead (see needsHistory, which mirrors this check).
 func (p SamplingParams) HistoryDependent() bool {
 	return len(p.LogitBias) > 0 ||
 		(p.RepeatPenalty > 0 && p.RepeatPenalty != 1) ||
@@ -361,17 +319,11 @@ func penaltyWindowOf(history []int, n int) []int {
 	return history[len(history)-n:]
 }
 
-// applyPenalties applies repeat/presence/frequency penalties to the logits of
-// tokens in the sampler's own penalty window. Repeat scales (llama.cpp);
-// presence/frequency subtract (OpenAI). They compose.
-//
-// P-15: the default (RepeatLastN ≤ 0) window is the WHOLE history, which grows
-// by one token per step — applyPenaltiesOver used to rebuild a fresh counts map
-// by rescanning all of it every call (O(n) per token, O(n²) over a generation).
-// That window is exactly what histCounts already tracks incrementally (kept in
-// sync by recordHistory), so this case skips the rescan entirely. The windowed
-// case (RepeatLastN > 0) keeps the rebuild — its window is bounded and small, not
-// the O(n²) shape this fixes.
+// applyPenalties applies repeat, presence and frequency penalties to the logits of tokens in the sampler's own penalty
+// window. Repeat scales (llama.cpp); presence and frequency subtract (OpenAI); they compose. The default window
+// (RepeatLastN <= 0) is the whole history, which histCounts already tracks incrementally, so that case skips
+// rebuilding a counts map every token (O(n^2) over a generation). The windowed case rebuilds: its window is bounded
+// and small.
 func (s *Sampler) applyPenalties(logits []float32) {
 	if !s.penaltiesActive() {
 		return
@@ -392,9 +344,8 @@ func (s *Sampler) applyPenaltiesOver(logits []float32, window []int) {
 	s.applyPenaltiesFromCounts(logits, counts)
 }
 
-// applyPenaltiesFromCounts is applyPenaltiesOver's counts-already-known half,
-// factored out so applyPenalties' fast path (P-15) can feed it an incrementally
-// maintained map instead of one rebuilt from a window slice every call.
+// applyPenaltiesFromCounts is applyPenaltiesOver's counts-already-known half, so applyPenalties' fast path can feed it
+// the incrementally maintained histCounts.
 func (s *Sampler) applyPenaltiesFromCounts(logits []float32, counts map[int]int) {
 	rep := s.p.RepeatPenalty
 	for id, c := range counts {
@@ -417,12 +368,10 @@ func (s *Sampler) applyPenaltiesFromCounts(logits []float32, counts map[int]int)
 	}
 }
 
-// computeLogprobs returns log P(chosen) and the topN highest-prob (id, logprob)
-// pairs, over the full-vocab softmax at the sampling temperature (1 when greedy
-// — temperature 0 would be a degenerate point mass). dst is the softmax scratch (P-07,
-// audit-2026-09-10): pass s.distBufN(len(logits)) from a *Sampler's own per-token loop to reuse
-// its buffer instead of paying a fresh full-vocab make() on every logprobs:true request; nil
-// (from the free-standing tests below) falls back to softmaxStableInto's own fresh allocation.
+// computeLogprobs returns log P(chosen) and the topN highest-prob (id, logprob) pairs, over the full-vocab softmax at
+// the sampling temperature (1 when greedy: temperature 0 would be a degenerate point mass). dst is the softmax
+// scratch: a Sampler passes s.distBufN(len(logits)) to avoid a full-vocab allocation per logprobs request; nil
+// allocates fresh.
 func computeLogprobs(logits []float32, chosen int, temperature float64, topN int, dst []float64) (float64, []TokenLogprob) {
 	t := temperature
 	if t <= 0 {
@@ -436,13 +385,10 @@ func computeLogprobs(logits []float32, chosen int, temperature float64, topN int
 	if topN > len(probs) {
 		topN = len(probs)
 	}
-	// P-13: topKByLogit finds the top-N indices in O(V·log N) instead of a full
-	// O(V·log V) sort of every id. Ranking by logit agrees with ranking by prob
-	// (softmax is strictly monotone in the logit at a fixed positive temperature),
-	// so the index set is identical; only the N-element result needs a final sort.
-	// Its deterministic ties-toward-smaller-id also replaces sort.Slice's
-	// unspecified tie order (Go's sort.Slice is not required to be stable) with a
-	// reproducible one.
+	// topKByLogit finds the top-N indices in O(V log N) instead of sorting every id. Ranking by logit agrees with ranking
+	// by prob (softmax is strictly monotone in the logit at a fixed positive temperature), so the index set is identical;
+	// only the N-element result needs a final sort. Its deterministic ties-toward-smaller-id also replaces sort.Slice's
+	// unspecified tie order with a reproducible one.
 	idx := topKByLogit(logits, topN)
 	sort.Slice(idx, func(a, b int) bool {
 		if probs[idx[a]] != probs[idx[b]] {
@@ -460,10 +406,9 @@ func computeLogprobs(logits []float32, chosen int, temperature float64, topN int
 // drawFiltered samples one id from the renormalized (id, prob) pairs that
 // survived top-k/top-p/min-p filtering (the trailing return guards float rounding).
 func (s *Sampler) drawFiltered(ips []indexedProb) int {
-	// Defence in depth for M-08: the caller's filters are supposed to keep at least the top
-	// token, and NewSampler now clamps the one input that could empty them. An empty set here
-	// would still be a −1 index, so return a sentinel the CALLER converts to the argmax,
-	// instead of panicking in the generation goroutine.
+	// Defence in depth: the filters keep at least the top token and NewSampler clamps the one input that could empty
+	// them, but an empty set would still be a -1 index. Return a sentinel the caller converts to argmax instead of
+	// panicking in the generation goroutine.
 	if len(ips) == 0 {
 		return -1
 	}
@@ -491,14 +436,9 @@ func (s *Sampler) drawFull(probs []float64) int {
 	return lastWithMass(probs, 0, len(probs))
 }
 
-// lastWithMass is the float-rounding fall-through for a cumulative draw: the last index in
-// [lo,hi) whose probability is non-zero, or hi-1 when every one of them is zero.
-//
-// N-02. The draws returned `hi-1` outright. The vector is MASKED — top-k and top-p zero the
-// excluded tail — so hi-1 is very often a token the filter deliberately removed, and returning it
-// emits something the caller configured to be impossible. spec_sample.go's drawTree already walked
-// back like this; drawFull and drawChunked did not. ~1e-16 per draw, so a contract nick rather
-// than a live bug, but it is the contract top-k and top-p exist to provide.
+// lastWithMass is the float-rounding fall-through for a cumulative draw: the last index in [lo,hi) whose probability
+// is non-zero, or hi-1 when every one is zero. The vector is masked (top-k and top-p zero the excluded tail), so
+// returning hi-1 outright would often emit a token the filter removed, which the caller configured to be impossible.
 func lastWithMass(p []float64, lo, hi int) int {
 	for i := hi - 1; i >= lo; i-- {
 		if p[i] > 0 {
@@ -543,18 +483,15 @@ func argmax(logits []float32) int {
 	return bi
 }
 
-// softmaxStable converts logits to probabilities (numerically stable). Always allocates fresh —
-// softmaxStableInto is the scratch-reusing sibling for callers on a per-token hot path (P-04/P-07,
-// audit-2026-09-10).
+// softmaxStable converts logits to probabilities (numerically stable). It always allocates; softmaxStableInto is the
+// scratch-reusing sibling for per-token hot paths.
 func softmaxStable(logits []float32, temperature float64) []float64 {
 	return softmaxStableInto(logits, temperature, nil)
 }
 
-// softmaxStableInto is softmaxStable with a caller-owned destination: dst is reused when its
-// capacity already fits (grown once otherwise), eliminating the make() softmaxStable pays every
-// call. Safe ONLY where the caller consumes the result synchronously before requesting the next
-// one — same one-position-at-a-time contract as distBufN/specLogitsBufN, which this now shares
-// its buffer with rather than allocating its own each call.
+// softmaxStableInto is softmaxStable with a caller-owned destination: dst is reused when its capacity fits, grown once
+// otherwise. Safe only where the caller consumes the result before requesting the next one (the same
+// one-position-at-a-time contract as distBufN and specLogitsBufN, whose buffers it shares).
 func softmaxStableInto(logits []float32, temperature float64, dst []float64) []float64 {
 	if len(logits) == 0 {
 		return nil
@@ -594,37 +531,24 @@ type indexedProb struct {
 	p  float64
 }
 
-// topFilterLogits applies top-k, then min-p, then top-p to a LOGIT vector,
-// returning the surviving (id, renormalized-prob) pairs in descending order.
-// It replaces the old topFilter, which softmaxed all V then full-sorted all V.
+// topFilterLogits applies top-k, then min-p, then top-p to a logit vector, returning the surviving (id,
+// renormalized-prob) pairs in descending order.
 //
-// TIE-BREAK CONTRACT (amendment 1): entries with equal probability are ordered by
-// ASCENDING token id. The old path used sort.Slice, which is not stable, so the order
-// of tied entries was arbitrary — and since that order feeds the cumulative-CDF draw,
-// it was an unspecified part of the sampling result. It is now specified. The test-only
-// reference (refTopFilter, sampler_selection_test.go) carries the identical tie-break
-// and this path is gated bit-for-bit against it. (Same defect class as the CUDA
-// argmax-reduce index tie-break, which is FIXED — audit C-14, c6600fc: argmax_reduce returns the
-// lowest index on an exact tie, matching this contract. Gate: cuda.TestArgmaxTieBreak.)
+// Tie-break contract: entries with equal probability are ordered by ascending token id. That order feeds the
+// cumulative-CDF draw, so it is part of the sampling result (sort.Slice would leave it arbitrary). The test-only
+// reference refTopFilter (sampler_selection_test.go) carries the same tie-break and this path is gated bit for bit
+// against it. The CUDA argmax reduce returns the lowest index on an exact tie to match (cuda.TestArgmaxTieBreak).
 //
-// SUMMATION-ORDER CONTRACT (amendment 2): every probability sum below — the top-p
-// cumulative and the final renormalization — runs in DESCENDING probability order.
-// The denominator is load-bearing: summing in a different order moves it by ULPs and
-// can flip which side of the cumulative-p boundary a token lands on, changing the draw.
-// Do not reorder these loops. (Same treatment as the Metal reduction widths.)
+// Summation-order contract: every probability sum below, the top-p cumulative and the final renormalization, runs in
+// descending probability order. Summing in another order moves the denominator by ULPs and can flip which side of the
+// cumulative-p boundary a token lands on, changing the draw. Do not reorder these loops.
 //
-// LOGIT-SPACE SELECTION (amendment 3): temperature scaling and exp are monotone, so
-// top-k and min-p are decided on the raw logits with no softmax over V; exp is applied
-// only to the (small) retained set. top-p is the one filter whose cutoff is defined on
-// the NORMALIZED mass, so it needs the full-vocab softmax denominator Z — computed as a
-// single O(V) exp-sum, with no full probability array and no O(V·log V) sort. That Z
-// pass is irreducible for an exact nucleus; the sort it replaces is not.
+// Logit-space selection: temperature scaling and exp are monotone, so top-k and min-p are decided on raw logits with no
+// softmax over V; exp is applied only to the retained set. top-p's cutoff is defined on the normalized mass, so it
+// needs the full-vocabulary denominator Z: one O(V) exp-sum, with no full probability array and no sort.
 //
-// candScratch/ipsScratch (P-07, audit-2026-09-10): caller-owned scratch for the no-filter
-// default case's candidate list and for the indexed-probability pairs every case builds — the
-// audit's own "2.4 MB" figure, previously a fresh make() on every call regardless of branch. Both
-// are consumed synchronously within this call (by the sort/cut logic below and by the caller
-// immediately after return) and never retained, the same lifetime vocabScratch already has.
+// candScratch and ipsScratch are caller-owned scratch for the no-filter candidate list and the indexed-probability
+// pairs. Both are consumed within this call and by the caller immediately after, never retained.
 func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP float64, vocabScratch []float64, candScratch []int, ipsScratch []indexedProb) []indexedProb {
 	texp := temperature
 	if texp <= 0 {
@@ -652,9 +576,8 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	topPActive := topP > 0 && topP < 1
 	var Z float64
 	if topPActive {
-		// P2b step 3: the same fixed-chunk fold as the temperature-only path. This Z feeds the
-		// nucleus cut, so regrouping it also moves boundary draws — which is exactly why it lands in
-		// the SAME release rather than dribbling out later as a second seed change.
+		// Z uses the same fixed-chunk fold as the temperature-only path; regrouping it moves boundary draws, which is a
+		// seed-visible change.
 		Z = chunkedZ(logits, maxL, texp, vocabScratch)
 	}
 

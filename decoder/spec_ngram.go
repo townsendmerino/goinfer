@@ -8,12 +8,9 @@ import (
 	"sync/atomic"
 )
 
-// Drafter is the cheap half of speculative decoding: it proposes continuation
-// tokens for a context, which the target model then verifies in one batched pass.
-// Because the target holds the true distribution and decides what commits, a
-// Drafter can never change the output — only the speed. This is the seam the
-// speculation spokes plug into (n-gram here; grammar and a feature head later);
-// see docs/spec for the design.
+// Drafter is the cheap half of speculative decoding: it proposes continuation tokens for a context, which the target
+// model verifies in one batched pass. The target holds the true distribution and decides what commits, so a Drafter
+// changes only speed, never output. Design: docs/spec.
 type Drafter interface {
 	// Draft proposes up to k continuation tokens for the token context ctx
 	// (ctx[len-1] is the most recent confirmed token). It returns fewer than k
@@ -22,17 +19,13 @@ type Drafter interface {
 	Draft(ctx []int, k int) []int
 }
 
-// NgramDrafter is a zero-model "prompt-lookup" drafter (02-cache-ngram): it finds
-// the most recent earlier occurrence of the current token suffix within the
-// running context (prompt + everything generated so far) and proposes the tokens
-// that followed it. It costs no model compute and works on a single model — no
-// separate draft model is needed. It earns its keep when the output echoes the
-// input (code edits, RAG, agent loops with a fixed system prompt); on novel prose
-// it simply misses, which is free.
+// NgramDrafter is a zero-model "prompt-lookup" drafter: it finds the most recent earlier occurrence of the current
+// token suffix within the running context (prompt plus everything generated so far) and proposes the tokens that
+// followed it. It costs no model compute and needs no draft model. It earns its keep when the output echoes the input
+// (code edits, RAG, agent loops with a fixed system prompt); on novel prose it misses, which is free.
 //
-// This is the deliberate "n-gram hash" baseline from the design doc, not yet the
-// suffix automaton — start simple, measure the gap. Matching is exact-suffix and
-// greedy-longest: try the longest pattern first, take the most recent earlier hit.
+// Matching is exact-suffix and greedy-longest: the longest pattern first, the most recent earlier hit. It is a hash-style
+// baseline, not a suffix automaton.
 type NgramDrafter struct {
 	MinMatch int // shortest suffix length trusted as a match (default 2)
 	MaxMatch int // longest suffix length probed (default 16); caps the scan
@@ -58,13 +51,9 @@ type TracingDrafter interface {
 // LastDraftInfo reports the suffix-match length behind the most recent Draft.
 func (d *NgramDrafter) LastDraftInfo() DraftInfo { return DraftInfo{MatchLen: d.lastMatch} }
 
-// Confidence is the router score of the last Draft: the suffix-match length. A
-// longer matched suffix is a more specific, more reliable copy (a long verbatim
-// repeat ⇒ high acceptance), so it should outrank grammar's forced proposal; a short
-// (possibly spurious) match should not. Returns the CALIBRATED acceptance probability
-// α̂_ngram(match_len) ∈ [0,1] (the §06 artifact), so the router compares sources on a
-// common accept-prob scale instead of raw, incomparable match-length units. 0 on a
-// miss (the router skips empty proposals before consulting Confidence anyway).
+// Confidence is the router score of the last Draft: the calibrated acceptance probability ngramAlpha(match length) in
+// [0,1], and 0 on a miss. A longer matched suffix is a more specific copy, so it outranks grammar's forced proposal;
+// scoring in accept-probability rather than raw match length lets the router compare sources on one scale.
 func (d *NgramDrafter) Confidence() float64 {
 	if d.lastMatch == 0 {
 		return 0
@@ -72,14 +61,10 @@ func (d *NgramDrafter) Confidence() float64 {
 	return ngramAlpha(d.lastMatch)
 }
 
-// ngramAlphaAnchors is α̂_ngram(match_len) — the calibrated acceptance probability by
-// suffix match length, fit (monotone non-decreasing, noise-smoothed) from the §06
-// trace measurement (TestNgramAlphaPredictor: AUC 0.818 for match_len → accept; copy-
-// heavy workloads, qwen2.5-coder-0.5b). The measured buckets were len2→0.70, len3→0.86,
-// len4→0.83 (noise), len11→0.92, len16(capped)→0.97. This is the tiny "coefficient
-// table" the §06 boundary permits in the pure-Go runtime — fit offline, evaluated as a
-// cheap interpolation on the hot path. Re-fit when a new family/workload lands (§06 §9);
-// an online per-source rate is the documented drift fallback.
+// ngramAlphaAnchors is the calibrated acceptance probability by suffix match length (monotone non-decreasing),
+// evaluated by interpolation on the hot path. It was fit offline on copy-heavy traces of one model family
+// (TestNgramAlphaPredictor); re-fit it when a new family or workload lands. The measured buckets:
+// docs/code-notes/decoder.md#ngramAlphaAnchors.
 var ngramAlphaAnchors = [...]struct {
 	matchLen int
 	alpha    float64
@@ -141,25 +126,19 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 	return nil
 }
 
-// GenerateNgramSpeculative is single-model greedy speculative decoding driven by
-// an n-gram (prompt-lookup) Drafter instead of a draft model. Each round the
-// drafter proposes up to K tokens from the running context; the target verifies
-// [cur, draft…] in one batched ForwardN, keeps the matching prefix, replaces the
-// first mismatch with its own argmax, and rolls the cache back with TruncateTo.
+// GenerateNgramSpeculative is single-model speculative decoding driven by an n-gram (prompt-lookup) Drafter instead of
+// a draft model. Each round the drafter proposes up to K tokens from the running context; the target verifies
+// [cur, draft...] in one batched ForwardN, keeps the matching prefix, replaces the first mismatch with its own token,
+// and rolls the cache back with TruncateTo.
 //
-// It is **lossless**: with Temperature==0 the output is token-identical to plain
-// greedy (the target's argmax decides every position; TestNgramSpeculativeGreedyParity
-// gates it); with Temperature>0 it reproduces the target sampler's distribution
-// exactly via rejection sampling (point-mass q ⇒ accept x w.p. p(x), residual
-// correction on reject — see spec_sample.go). On a drafter miss the round degenerates
-// to one plain decode step. The win is amortizing the target's weight stream over
-// (accepted+1) tokens whenever the context repeats.
+// It is lossless. With Temperature==0 the output is token-identical to plain greedy (TestNgramSpeculativeGreedyParity);
+// with Temperature>0 it reproduces the target sampler's distribution by rejection sampling (spec_sample.go). A drafter
+// miss degenerates to one plain decode step.
 //
-// Sampled mode supports temperature + top-k/top-p/min-p and threads the
-// history-dependent transforms (repetition/presence/frequency penalties, LogitBias)
-// per position via distVectorHist; greedy mode rejects them (argmax can't apply them
-// losslessly — M13). LogitProcessor (constrained/tool decoding) is unsupported in
-// either mode. The returned Generation's Spec field carries acceptance telemetry.
+// Sampled mode supports temperature, top-k/top-p/min-p and the history-dependent transforms (repetition, presence and
+// frequency penalties, LogitBias), threaded per position via distVectorHist. Greedy mode rejects those transforms,
+// because argmax cannot apply them losslessly. LogitProcessor (constrained or tool decoding) is unsupported in either
+// mode. Generation.Spec carries acceptance telemetry.
 func (target *Model) GenerateNgramSpeculative(ctx context.Context, prompt []int, maxTokens int, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
 	return target.genNgram(ctx, prompt, maxTokens, drafter, K, sp, nil, nil)
 }
@@ -173,9 +152,8 @@ func validateNgramSpec(m *Model, drafter Drafter, sp SamplingParams) error {
 	if sp.LogitProcessor != nil {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: LogitProcessor (constrained/tool decoding) not supported yet; use Generate")
 	}
-	// Greedy verify is argmax over raw target logits; it cannot apply penalties or
-	// logit bias, so honoring them would silently diverge from plain greedy (M13).
-	// Sampled mode (Temperature>0) threads them per-position and is fine.
+	// Greedy verify is argmax over raw target logits; it cannot apply penalties or logit bias, so honoring them would
+	// silently diverge from plain greedy. Sampled mode threads them per position and is fine.
 	if sp.Temperature <= 0 && sp.HistoryDependent() {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: repetition penalties / logit bias are not supported in greedy speculative decoding; use Generate")
 	}
@@ -213,14 +191,11 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 	return out, g, nil
 }
 
-// specRoundDraftWidth clamps a speculative round's draft width (k proposed tokens, verified
-// together with `cur` at absolute position pos as a [1+k]-row batch) to what's left under the
-// resident context cap — the shared M-03 (docs/audit-2026-09-10.md) shape used by both
-// genNgramInto (this file) and GenerateSpeculative (speculative.go), mirroring
-// blockSpecRoundWidth's (blockspec.go) identical M-13 fix for block speculation. Returns k
-// unchanged when ctxCap doesn't bind (<=0) or there's already room. Returns -1 when there is no
-// room even for `cur` alone (pos >= ctxCap) — the caller's signal to stop cleanly rather than
-// attempt a verify round, exactly like blockSpecRoundWidth's own width<1 case.
+// specRoundDraftWidth clamps a speculative round's draft width k (verified with cur at absolute position pos as a
+// [1+k]-row batch) to what remains under the resident context cap ctxCap, so a verify never makes checkCap refuse the
+// whole round. genNgramInto and GenerateSpeculative share it; blockSpecRoundWidth makes the same clamp for block
+// speculation. It returns k unchanged when ctxCap <= 0 or there is room, and -1 when there is no room even for cur
+// (pos >= ctxCap): the caller's signal to stop cleanly.
 func specRoundDraftWidth(k, pos, ctxCap int) int {
 	if ctxCap <= 0 {
 		return k
@@ -235,15 +210,13 @@ func specRoundDraftWidth(k, pos, ctxCap int) int {
 	return k
 }
 
-// genNgramInto is the synchronous speculative decode loop, mirroring generateInto:
-// it assumes cache already holds prompt[:prefillFrom] (a Session's warm prefix; 0
-// and a nil cache for a fresh run), prefills the rest, then runs the n-gram verify
-// loop streaming each committed token to out. commit, if non-nil, is invoked with
-// each token as its forward commits it to the cache (the Session seam — note the
-// final pending token is emitted but not committed, exactly one behind the cache,
-// so reconciliation matches the cache contents). It does NOT close out. When cache
-// is non-nil the device-resident path is bypassed (sessions use the CPU cache, as
-// generateInto does); tr enables §06 trace emission.
+// genNgramInto is the synchronous speculative decode loop, mirroring generateInto: it assumes cache already holds
+// prompt[:prefillFrom] (a Session's warm prefix; 0 and a nil cache for a fresh run), prefills the rest, then runs the
+// n-gram verify loop streaming each committed token to out. commit, if non-nil, is invoked with each token as its
+// forward commits it to the cache (the Session seam); the final pending token is emitted but not committed, exactly
+// one behind the cache, so reconciliation matches the cache contents. It does not close out. When cache is non-nil the
+// device-resident path is bypassed (sessions use the CPU cache, as generateInto does); tr, if non-nil, receives
+// SpecTrace events.
 func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Generation, stats *SpecStats, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, sp SamplingParams, tr specTracer, ad *AdaptiveDepth, cache *KVCache, commit func(int)) {
 	if len(prompt) == 0 {
 		g.err = fmt.Errorf("decoder.GenerateNgramSpeculative: empty prompt")
@@ -270,33 +243,26 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		return sampler.distVector(logits)
 	}
 
-	// Resident verify on the device when the target's GPU-resident decode path is
-	// built (webgpu + eligible arch) AND no session cache was handed in: prompt seeds
-	// the resident KV via per-token Forward, the verify is a single batched ForwardN,
-	// rollback is the resident no-op TruncateTo. There is no draft model to place —
-	// the drafter is pure-Go — so this path adds no GPU memory. A session passes its
-	// CPU cache, which forces the staged path (as generateInto does).
+	// Resident verify on the device when the target has a built GPU-resident decode path and no session cache was passed:
+	// the prompt seeds the resident KV, verify is one batched ForwardN, and rollback is the resident no-op TruncateTo.
+	// The drafter is pure Go, so this adds no GPU memory. A session's CPU cache forces the staged path.
 	resident := cache == nil && target.resident != nil && target.DecodeRunnerEligible()
-	// MC4 candidate (docs/tasks/task-concurrency-2026-09.md): "speculate when alone, batch under load".
-	// adaptive claims the resident PER ROUND (below) instead of once for the whole generation, so MC3's
-	// batcher can admit other generations between rounds. Scoped to greedy: a sampled generation takes
-	// today's always-exclusive path unchanged — the batch-yield round needs a device-side greedy verify
-	// via the batcher, which does not exist for a sampled draw here.
+	// adaptive claims the resident per round instead of once per generation, so MC3's batcher can admit other generations
+	// between rounds ("speculate when alone, batch under load"; docs/tasks/task-concurrency-2026-09.md). Greedy only: a
+	// sampled generation takes the always-exclusive path, because the yield round needs a device-side greedy verify through
+	// the batcher, which does not exist for a sampled draw.
 	adaptive := resident && target.specAdaptive && target.batcher != nil && !sampled
 	mc3Slot := -1
 	if resident && !adaptive {
-		// The resident path drives the model's ONE shared positional KV; two concurrent generations would
-		// interleave writes at overlapping positions and corrupt it. Claim it non-blockingly (mirroring
-		// generateInto's M9 guard) — a loser falls back to the staged CPU path with this call's own cache,
-		// so both still complete correctly, only the loser loses resident speed. Released on return.
+		// The resident path drives the model's one shared positional KV; two concurrent generations would interleave writes at
+		// overlapping positions and corrupt it. Claim it without blocking, as generateInto does: a loser falls back to the
+		// staged CPU path on this call's own cache. Released on return.
 		//
-		// Through the batcher's claimExclusive when one exists, not a bare CAS on resBusy: a plain
-		// concurrent generation becomes an MC3 holder via bt.claim, which only READS resBusy (it never
-		// sets it) — a bare CAS here would succeed at the same time a holder is mid-step, corrupting the
-		// resident. claimExclusive additionally requires holders == 0, which bt.claim's own bookkeeping
-		// makes correct. Production never exercises this combination (-spec without -spec-adaptive forces
-		// concurrency to 1, so a spec generation and an MC3 holder never coexist), but the guard should not
-		// depend on that — found by TestSpecAdaptiveSwitch_offByDefaultUnaffected, which deliberately does.
+		// Claim through the batcher's claimExclusive when one exists, not a bare CAS on resBusy: a plain concurrent generation
+		// becomes an MC3 holder via bt.claim, which only reads resBusy, so a bare CAS would succeed while a holder is mid-step
+		// and corrupt the resident. claimExclusive also requires holders == 0. Production does not combine the two (-spec
+		// without -spec-adaptive forces concurrency to 1), but the guard must not depend on that;
+		// TestSpecAdaptiveSwitch_offByDefaultUnaffected exercises the combination.
 		claimed := false
 		if target.batcher != nil {
 			claimed = target.batcher.claimExclusive(&target.resBusy)
@@ -333,10 +299,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			return target.forwardN(ctx, seq, tc)
 		}
-		// targetVerifyBatch is targetVerify's adaptive-mode "batch under load" side: ONE token, submitted
-		// through MC3's coalescer on our own reserved slot instead of run exclusively. A batched step has
-		// no argmax-only fast path (generateInto's own MC3 path always reads back full logits too), so
-		// this always returns one full logits row; greedy-only, matching adaptive's own scope above.
+		// targetVerifyBatch is targetVerify's adaptive "batch under load" side: one token through MC3's coalescer on our own
+		// reserved slot. A batched step has no argmax-only fast path, so it always returns one full logits row; greedy only,
+		// as adaptive is.
 		targetVerifyBatch := func(tok, base int) ([][]float32, error) {
 			emb := target.embedResident(tok)
 			var row []float32
@@ -356,12 +321,12 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			return [][]float32{row}, nil
 		}
-		// ARGMAX-ONLY VERIFY (greedy, resident, no tracer): the accept decision compares each draft token with the target's argmax, so the full logits row
-		// per verified row — 608 KB of device-to-host at a 152k vocab, plus a host argmax over it — is pure overhead. A one-row round (no draft, i.e. a plain decode
-		// step) takes the same device-argmax fast path Model.Generate uses (ResidentGreedy: a 4-byte readback); a multi-row round takes the batched argmax pass block
-		// speculation already verifies with (PrefillLastNArgmax). The ids equal the logits path's argmax (TestPrefillLastNArgmax_matchesPerRow; the M=1 path is the one
-		// plain decode takes), so output is unchanged. Any error falls back to the full-logits ForwardN once and turns this path off, so a backend whose batched pass
-		// declines (MoE) keeps working. nil when not applicable.
+		// Argmax-only verify (greedy, resident, no tracer): the accept decision only compares draft tokens with the target's
+		// argmax, so reading back and arg-maxing a full logits row per verified row is overhead. A one-row round takes the
+		// device-argmax fast path Model.Generate uses (ResidentGreedy); a multi-row round takes the batched argmax pass block
+		// speculation uses (PrefillLastNArgmax). The ids equal the logits path's argmax (TestPrefillLastNArgmax_matchesPerRow),
+		// so output is unchanged. Any error falls back once to the full-logits ForwardN and turns this path off, so a backend
+		// whose batched pass declines (MoE) keeps working. nil when not applicable.
 		var idsVerify func(seq []int, base int) ([]int, error)
 		if resident && !sampled && tr == nil {
 			rg, hasG := target.resident.(ResidentGreedy)
@@ -410,35 +375,18 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		var seedLogits []float32
 		var err error
 		if resident {
-			// Shared with generateInto (model.go). This used to be its own per-token
-			// Forward loop, which is how it missed batched prefill entirely when that
-			// landed in c36698a — 6.3x per prompt token, and `off` beating speculation
-			// 3-4.5x on realistic prompts. See residentPrefillSeed's comment.
+			// Shared with generateInto (residentPrefillSeed), so batched prefill applies here too.
 			//
-			// P-05 (audit-2026-09-10): R-03 already made this function COMMIT the accepted
-			// sequence correctly on exit (target.residentCommitIDs below), but until now nothing
-			// on ENTRY ever consulted what that commit left behind — every round cold-prefilled
-			// the whole prompt from 0 regardless, so a --spec/--drafter agent loop got no prefix
-			// reuse at all despite committing one every round. residentReuseLen answers the exact
-			// same question generateInto already asks before its own forget (model.go) — it is
-			// safe here for the same reason: resIDs is accurate BECAUSE the commit below keeps it
-			// so, and this is the entry moment, not the "verify writes positions this function
-			// owns" moment the forget below is about.
-			//
-			// Speculative verify (this round) writes the resident KV at positions this function
-			// owns, not generateInto's, so the recorded id list stops being an accurate
-			// description of PAST-THIS-POINT state as soon as verify runs. Forget it AFTER
-			// computing reuseFrom, not before: the next turn's commit is what makes it true
-			// again, and forgetting first would only lose the reuse this round could have had —
-			// the same ordering generateInto already uses (resident_reuse.go).
+			// Prefix reuse: residentAcquire and residentAcquireSlot return the reusable prefix reuseFrom, so a --spec or --drafter
+			// agent loop does not cold-prefill the whole prompt every round. resIDs is accurate here because commitResident below
+			// keeps it so. Compute reuseFrom first, then forget the recorded ids: verify writes positions this function owns, so
+			// the list stops describing the resident past this point, and the next turn's commit makes it true again. Forgetting
+			// first would only lose reuse. generateInto uses the same order (resident_reuse.go).
 			var reuseFrom int
 			if adaptive {
-				// Our own slot, reserved for the whole generation (not re-acquired per round): MC3's
-				// busySlots() keeps this pick from colliding with another generation's. residentAcquireSlot
-				// itself calls residentBind (picking a slot rebinds the resident to it immediately), so it
-				// needs the resident to itself exactly like generateInto's own MC3 prefill does (model.go)
-				// — the slot pick and the forget below are NOT safe bare, only prefillExclusive's own
-				// residentPrefillSeed call was protected before this fix.
+				// Our own slot, reserved for the whole generation: busySlots keeps this pick from colliding with another generation's.
+				// residentAcquireSlot rebinds the resident to the slot it picks, so the pick and the forget below need the resident to
+				// themselves, as generateInto's MC3 prefill does (model.go); neither is safe bare.
 				target.batcher.exclusive(func() {
 					reuseFrom, mc3Slot = target.residentAcquireSlot(prompt, nil, nil, target.batcher.busySlots())
 					if mc3Slot >= 0 {
@@ -447,19 +395,15 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 					}
 				})
 				if mc3Slot < 0 {
-					// No free slot: fall back to the staged CPU path, same as the M9 guard above — this
-					// generation is not resident at all this call, adaptive or otherwise.
+					// No free slot: not resident for this call; fall back to the staged CPU path, as the claim above does.
 					resident, adaptive = false, false
 				}
 			}
 			if resident && adaptive {
 				target.batcher.prefillExclusive(func() {
-					// Re-bind: the slot-acquisition exclusive() section above already ended, so another
-					// generation's own exclusive section or batched run could have rebound the resident to
-					// a DIFFERENT slot in between (mc3Prefill, model.go, does this same rebind for exactly
-					// this reason — it never assumes a slot stays bound across two separate exclusive
-					// sections). Skipping this was the bug TestSpecAdaptiveSwitch_matchesPlainDecode caught
-					// intermittently (~1 run in 10-20): the prefill silently wrote another generation's slot.
+					// Re-bind: the slot-acquisition section above has ended, so another generation could have rebound the resident to a
+					// different slot since (mc3Prefill, model.go, rebinds for the same reason). Skipping this made the prefill write
+					// another generation's slot, intermittently (TestSpecAdaptiveSwitch_matchesPlainDecode).
 					if err = target.residentBind(mc3Slot); err != nil {
 						return
 					}
@@ -523,20 +467,13 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			stats.Emitted++
 			return stats.Emitted < maxTokens
 		}
-		// audit R-03: every return below that follows a successful (or stop/cancelled) emit —
-		// as opposed to a targetVerify/prefill error, which can leave a partial write and must
-		// stay forgotten (resIDs is already nil from the forget above) — happens at a point
-		// where hist is exactly what the resident cache holds, NEVER ahead of it: targetVerify's
-		// ForwardN writes a round's [cur, accepted draft…] K/V before this loop streams any of
-		// them, and hist is appended in the same step. The one asymmetry is the round's OWN
-		// trailing token: `cur = nextTok` is streamed here but not forwarded until the START of
-		// the NEXT round (as that round's targetVerify seq[0]), so a return right after that
-		// specific emit leaves hist one token BEHIND what was just streamed — safe (the cache
-		// is never claimed to hold more than it does), just one token short of the reuse this
-		// round could otherwise offer, at exactly the exit that also ends the whole generation.
-		// Recurrent families never reach here at all (validateNgramSpec's specRollbackSafe check
-		// rejects them before this goroutine starts), so there is no forget-otherwise branch to
-		// add, unlike R-01/R-03's general shape.
+		// commitResident records the accepted sequence in the resident so the next turn can reuse its prefix. Every return
+		// that follows a successful, stop or cancelled emit calls it, at a point where hist is exactly what the resident holds,
+		// never ahead: targetVerify writes a round's [cur, accepted draft...] K/V before this loop streams any of them, and
+		// hist is appended in the same step. A targetVerify or prefill error does not call it: the partial write must stay
+		// forgotten. The round's trailing token is streamed but forwarded only at the start of the next round, so a return
+		// right after that emit leaves hist one token behind (safe; finishTrailing forwards it when the generation ended at
+		// maxTokens). Recurrent families never reach here (validateNgramSpec rejects them).
 		commitResident := func() {
 			if !resident {
 				return
@@ -553,22 +490,17 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				})
 				target.batcher.markSlot(mc3Slot, false)
 			} else {
-				// The whole-generation exclusive claim held throughout means our slot (if the resident
-				// has more than one) is already the bound one — no residentBind needed, exactly as
-				// before this change.
+				// The whole-generation exclusive claim means our slot is already the bound one; no residentBind needed.
 				target.residentCommitIDs(prompt, hist[len(prompt):], nil, nil)
 			}
 		}
-		// finishTrailing forwards the round's trailing token when the generation ended by reaching maxTokens just
-		// after streaming it. Plain decode forwards every token it emits, the last included, so its cache holds
-		// prompt + every emitted token. Here a round's trailing token is otherwise forwarded only as the NEXT
-		// round's seq[0], so the cache ended one token short of plain's.
-		//
-		// Left short, the next turn re-prefills that one position. On a backend whose batched prefill is not
-		// bit-identical to decode, that changes the next turn's output: Metal's f16-MMA prefill runs whenever the
-		// whole prompt is past its floor, so every W7 turn after the first diverged from plain decode
-		// (docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). The forward is the one a one-row round would
-		// make, and a stop, a cancel or a full context takes no forward, as in plain decode.
+		// finishTrailing forwards the round's trailing token when the generation ended by reaching maxTokens just after
+		// streaming it. Plain decode forwards every token it emits, so its cache holds the prompt plus every emitted token;
+		// here a trailing token is otherwise forwarded only as the next round's seq[0], which leaves the cache one short. A
+		// short cache makes the next turn re-prefill that position, which changes its output on a backend whose batched
+		// prefill is not bit-identical to decode (Metal's f16-MMA prefill past its floor;
+		// docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). The forward is the one a one-row round makes; a stop, a
+		// cancel or a full context takes none, as in plain decode.
 		finishTrailing := func(tok int) {
 			if g.err != nil || stats.Emitted < maxTokens || target.isStop(tok, sp) {
 				return
@@ -609,20 +541,17 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		var lookupBuf []int
 		var seqBuf []int
 		var phBuf []int
-		// MC4 candidate state (adaptive only). yielding: the previous round joined MC3's batch instead of
-		// speculating. aloneStreak: consecutive rounds this generation found itself alone — resuming
-		// multi-token drafting after a yield needs specAdaptiveResumeStreak of them (the doc's hysteresis,
-		// so a briefly idle second client does not thrash the switch); a generation that was never
-		// yielding keeps drafting every alone round without rebuilding the streak. holdingExclusive tracks
-		// whether resBusy is ours right now, so the safety-net defer below can never leave it stuck on an
-		// error return mid-round — the per-round release further down is the fast path, this is the net.
+		// Adaptive state. yielding: the previous round joined MC3's batch instead of speculating. aloneStreak: consecutive
+		// rounds this generation was alone; resuming multi-token drafting after a yield takes specAdaptiveResumeStreak of them
+		// (hysteresis, so a briefly idle second client does not thrash the switch), while a generation that never yielded keeps
+		// drafting every alone round. holdingExclusive tracks whether resBusy is ours, so the safety-net defer below cannot
+		// leave it stuck on an error return; the per-round release further down is the fast path.
 		const specAdaptiveResumeStreak = 8
 		yielding, aloneStreak := false, 0
 		holdingExclusive := false
-		// MC4 "spec inside a batch" premise measurement (docs/tasks/task-concurrency-2026-09.md): forces
-		// this generation to wait for exclusive access rather than ever yielding, reproducing today's plain
-		// -spec ngram behavior (one at a time) even with -spec-adaptive on. Not a shipped policy — see the
-		// knob's own comment (decoder/knobs.go).
+		// neverYield makes this generation wait for exclusive access rather than ever yielding, reproducing plain -spec ngram
+		// (one at a time) with -spec-adaptive on. A measurement control, not a shipped policy; see knobSpecAdaptiveNeverYield
+		// (docs/tasks/task-concurrency-2026-09.md).
 		neverYield := adaptive && target.knobs.get(knobSpecAdaptiveNeverYield) != ""
 		if adaptive {
 			defer func() {
@@ -663,8 +592,8 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// 1. Draft up to K tokens from the context ending at cur (zero on a miss).
 			lookupBuf = append(lookupBuf[:0], hist...)
 			lookupBuf = append(lookupBuf, cur)
-			// When the depth controller is already at 0 for any proposal (its acceptance estimate says even one node is not worth it, and no probe is due),
-			// the round is a plain decode step, so the drafter's scan of the whole context (88 us at 4.9k tokens, growing with it) is skipped.
+			// When the depth controller is at 0 for any proposal (its acceptance estimate says even one node is not worth it and no
+			// probe is due), the round is a plain decode step, so the drafter's scan of the whole context is skipped.
 			var proposed []int
 			if !yieldThisRound && (ad == nil || ad.Depth(K) > 0) {
 				// A yield round never drafts: it is one plain token through MC3's batch, exactly what a
@@ -678,14 +607,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			if ad != nil && !yieldThisRound {
 				draftTok = proposed[:ad.Depth(len(proposed))]
 			}
-			// M-03 (docs/audit-2026-09-10.md): trim the draft further so verifying [cur,
-			// draft…] never asks the backend to write past the resident context cap — same
-			// M-13 shape blockSpecRoundWidth (blockspec.go) already fixed for block
-			// speculation: verifying past the cap makes checkCap refuse the WHOLE round
-			// with a hard error instead of finishing cleanly at the limit like plain decode
-			// does. Applied AFTER the adaptive-depth clamp above, not instead of it — this
-			// only tightens an already-chosen depth. A -1 means no room even for `cur`
-			// alone: stop, don't attempt a verify round at all.
+			// Trim the draft so verifying [cur, draft...] never writes past the resident context cap: verifying past it makes
+			// checkCap refuse the whole round with a hard error instead of finishing cleanly like plain decode. Applied after the
+			// adaptive-depth clamp, only tightening it. w < 0 means no room even for cur: stop without a verify round.
 			if w := specRoundDraftWidth(len(draftTok), tpos, target.ResidentContextCap()); w < 0 {
 				commitResident()
 				return
@@ -726,13 +650,10 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 					}
 				}
 				if adaptive {
-					// resBusy (claimExclusive above) keeps MC3's HOLDERS off the resident, but it is not the flag another
-					// generation's own exclusive sections wait on: the slot pick, the prefill and the commit all run under
-					// the batcher's busy flag (exclusive / prefillExclusive) and never read resBusy. Verifying here without
-					// busy let that generation's residentBind-then-prefill interleave with this round's residentBind-then-
-					// ForwardN, and each wrote the other's slot (first token already wrong, then garbage, from two
-					// generations on; MC4 graded run 2026-10-01, docs/measurements/mc4-candidate-cuda-2026-10-01.md). The
-					// round therefore takes busy too, as the design said it would ("each round runs in exclusive").
+					// resBusy (claimExclusive above) keeps MC3's holders off the resident, but other generations' exclusive sections (slot
+					// pick, prefill, commit) wait on the batcher's busy flag and never read resBusy. Verifying without busy let their
+					// residentBind-then-prefill interleave with this round's residentBind-then-ForwardN, and each wrote the other's slot.
+					// The round therefore takes busy too (docs/measurements/mc4-candidate-cuda-2026-10-01.md).
 					target.batcher.exclusive(verifyRound)
 				} else {
 					verifyRound()

@@ -2,37 +2,26 @@ package decoder
 
 // One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
 //
-// Before this, Plan("metal") — what `fit` reports — and Metal's own pre-build guard priced the same
-// load differently, measured on an M1 Pro (2026-09-25, qwen2.5-coder-1.5b at ctx 4096):
+// ResidentNeedBytes is the single definition that Plan("metal") (what `fit` reports) and Metal's own pre-build guard
+// both use, so they cannot price the same load differently. Its KV half is ResidentKVBytes, which prices a backend's KV
+// the way that backend allocates it. The layout differs per backend, so "one formula" has to be one function with a
+// per-backend layout, not one flat formula:
 //
-//   - a direct .gguf: the guard 4.33 GB, Plan 2.34 GB. Plan had no term for Metal's second copy of
-//     the dense weights (unified memory holds the host WeightMat AND the re-packed device buffer —
-//     ResidentHostCopyBytes), 2.1 GB here, so `fit` could say "resident" for a load the guard refuses;
-//   - a v14 .giw (weights aliased, host copy 0): the guard 1.40 GB, Plan 1.52 GB. Plan priced Metal's
-//     KV at f32; Metal only allocates f16 (the f32 KV kernels are compiled out, metal/model.go's
-//     r.kvF32), so Plan's KV was twice the real one.
-//
-// ResidentNeedBytes is now the single definition both use. The KV half is ResidentKVBytes, which
-// prices a backend's KV the way that backend ALLOCATES it — the layout differs per backend, so "one
-// formula" has to be one function with a per-backend layout, not one flat formula (Metal allocates
-// the full context for every attention layer, sliding-window ones included, padded to 8 positions;
-// kvBytesForCtx's sliding-window cap models the CPU ring buffer and would under-count Metal).
-//
-// CUDA got its own layout on 2026-09-25 (docs/measurements/memory-accounting-cuda-2026-09-25.md), after
-// measuring real CUDA residents against Plan's per-position formula: CUDA allocates f32 K/V whatever
-// KV precision was asked for (it reads no KV-precision option), so a requested f16 / i8 halved or
-// quartered Plan's figure below what CUDA builds; and an MLA layer holds ONE latent buffer, not K and
-// V, so Plan doubled a DeepSeek-class model's KV. Dense, sliding-window (full context, no ring buffer),
-// per-layer-geometry and DeltaNet-hybrid models already agreed. Other backends (webgpu, cpu) keep Plan's
-// existing per-position formula unchanged.
+//   - Metal allocates f16 only (the f32 KV kernels are compiled out, metal/model.go's r.kvF32) and the full context for
+//     every attention layer, sliding-window ones included, padded to 8 positions; kvBytesForCtx's sliding-window cap
+//     models the CPU ring buffer and would under-count Metal. Metal also holds a second copy of the dense weights in
+//     unified memory (the host WeightMat and the re-packed device buffer, ResidentHostCopyBytes), which Plan must count.
+//   - CUDA allocates f32 K/V whatever KV precision was requested (it reads no KV-precision option), and an MLA layer
+//     holds one latent buffer rather than K and V (docs/measurements/memory-accounting-cuda-2026-09-25.md).
+//   - Other backends (webgpu, cpu) keep Plan's per-position formula.
 
 // WeightsMemFraction is the share of a memory figure the weights (and the rest of a resident build)
 // may occupy before a load is refused — the load-time fit guard applies it to available host memory,
 // Metal's resident guard to physical RAM. One constant, so the two cannot drift.
 const WeightsMemFraction = 0.70
 
-// metalKVPad is the position granularity Metal rounds each KV buffer up to (metal/model.go, C-01:
-// attention_prefill_fused reads whole 8-row tiles).
+// metalKVPad is the position granularity Metal rounds each KV buffer up to (metal/model.go: attention_prefill_fused
+// reads whole 8-row tiles).
 const metalKVPad = 8
 
 // ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions. On "metal"
@@ -63,7 +52,7 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 			continue // no KV cache on a linear-attention layer (metal/model.go leaves r.kc[l]/r.vc[l] zero)
 		}
 		if m.KVSrcAtResident(l) != l {
-			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (metal/model.go, S1.4)
+			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (metal/model.go)
 		}
 		nKV := int64(m.KVHeadsAtResident(l))
 		kvDim := nKV * int64(m.HeadDimAtResident(l))
@@ -108,7 +97,7 @@ func (m *Model) cudaKVBytes(ctx int) int64 {
 	var perPos int64
 	for l := range nLayers {
 		if m.KVSrcAtResident(l) != l {
-			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (cuda/backend.go, S1 on CUDA)
+			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (cuda/backend.go)
 		}
 		kvDim := int64(a.kvDimAt(l)) // 0 for a no-attention-KV layer; the latent width on MLA
 		if a.mla != nil {

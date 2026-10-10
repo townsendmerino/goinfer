@@ -7,24 +7,24 @@ import (
 	"time"
 )
 
-// MC3 (docs/tasks/task-concurrency-2026-09.md): several generations decoding on ONE resident at once, each on its own
+// MC3 (docs/tasks/task-concurrency-2026-09.md): several generations decoding on one resident at once, each on its own
 // resident KV slot, their decode tokens joined into shared steps.
 //
-// A resident is one command queue with one set of scratch buffers, so everything that touches it — a prefill, a
-// single-sequence forward, a batched step, the slot bookkeeping — runs one at a time, inside the batcher's exclusive
-// section. What MC3 adds is WHAT runs there at a decode token: the batcher coalesces the tokens every decoding
+// A resident is one command queue with one set of scratch buffers, so everything that touches it (a prefill, a
+// single-sequence forward, a batched step, the slot bookkeeping) runs one at a time, inside the batcher's exclusive
+// section. What MC3 adds is what runs there at a decode token: the batcher coalesces the tokens every decoding
 // generation submits into one run. A run of at least lo batch-eligible tokens goes to ResidentBatchStepper.StepBatch
-// (every row bit-identical to that sequence's own Forward); anything else — a lone generation above all — runs
-// production's own per-sequence call, unchanged, so a request served alone takes exactly the path it takes today.
+// (every row bit-identical to that sequence's own Forward); anything else, a lone generation above all, runs
+// production's own per-sequence call unchanged, so a request served alone takes exactly the path it takes without MC3.
 //
 // Generations join at token boundaries: a run starts once every decoding generation has submitted, or once the oldest
 // submission has waited batchStragglerWait (a generation whose consumer is slow to read its stream must not stall the
-// rest). A newcomer's prefill runs between runs, whole, and takes precedence over the next run — chunked prefill
-// interleaved with decode is MC5, not this.
+// rest). A newcomer's prefill runs between runs, whole or in chunks (Options.ResidentPrefillChunk, with yieldToDecode
+// between chunks), and takes precedence over the next run.
 
 // batchStragglerWait bounds how long a submitted token waits for the other decoding generations' tokens before its run
-// starts without them. Host work between two tokens is well under a millisecond per generation; a batched step costs
-// 20+ ms (MC3 S1), so this is at most a few percent of a step when it fires, and it fires only for a straggler.
+// starts without them. Host work between two tokens is far below a batched step's cost, so this is a small fraction of
+// a step when it fires, and it fires only for a straggler.
 const batchStragglerWait = 4 * time.Millisecond
 
 // tokenCoalescer is the token-joining core shared by MC3's residentBatcher and MC3c step 2's cpuBatcher
@@ -60,8 +60,8 @@ type residentBatcher struct {
 
 	holders  int    // generations holding a slot (claimed, not yet released); guarded by mu
 	slotBusy []bool // resident KV slots a holder is using; guarded by mu
-	// holding: the one holder, decoding alone, keeps the resident (busy) across its tokens (holdSolo), so a chained
-	// forward (C-B01 / C-P02) stays queued on the device between them; guarded by mu.
+	// holding: the one holder, decoding alone, keeps the resident (busy) across its tokens (holdSolo), so a chained forward
+	// stays queued on the device between them; guarded by mu.
 	holding bool
 }
 
@@ -70,9 +70,8 @@ type residentBatcher struct {
 // because the straggler window expired rather than because every decoding generation had submitted.
 //
 // The durations are wall time with the resident held: RunNs inside decode runs, ExclusiveNs inside every exclusive
-// section, and PrefillNs inside the ones that are prefill passes (PrefillPasses of them). ExclusiveNs − PrefillNs is
-// slot bookkeeping. They attribute a served cell's time without timing anything else (docs/tasks/task-concurrency-
-// 2026-09.md, the per-pass prefill cost item).
+// section, and PrefillNs inside the ones that are prefill passes (PrefillPasses of them). ExclusiveNs - PrefillNs is
+// slot bookkeeping. They attribute a served cell's time without timing anything else.
 type ResidentBatchStats struct {
 	Runs, Steps, StepTokens, SoloTokens, StragglerRuns int
 	// HeldTokens are the tokens a lone holder ran with the resident held across them (holdSolo: the chained decode), and
@@ -175,11 +174,11 @@ func (b *residentBatcher) release() {
 
 // holdSolo runs this holder's token fn with the resident kept between calls, while it is the only generation that wants
 // the resident: one holder, decoding, nothing pending and no exclusive section waiting. That is how a chained decode
-// (C-B01 / C-P02) runs under MC3: the chain keeps the next token's forward queued on the device between tokens, and
-// nothing else may touch the resident until it stops. ok is false, with fn not run, when the holder is not alone; if a
-// hold was kept from an earlier call, release (the chain's Stop) runs first with the resident still held, then the hold
-// ends. The caller then submits the token through forward as usual. A newcomer (another holder's claim, its prefill's
-// exclusive section) therefore waits at most until this holder's next token.
+// runs under MC3: the chain keeps the next token's forward queued on the device between tokens, and nothing else may
+// touch the resident until it stops. ok is false, with fn not run, when the holder is not alone; if a hold was kept
+// from an earlier call, release (the chain's Stop) runs first with the resident still held, then the hold ends. The
+// caller then submits the token through forward as usual. A newcomer (another holder's claim, its prefill's exclusive
+// section) therefore waits at most until this holder's next token.
 func (b *residentBatcher) holdSolo(fn func() error, release func()) (ok bool, err error) {
 	b.mu.Lock()
 	alone := b.holders == 1 && b.decoders == 1 && b.exclWaiting == 0 && len(b.pending) == 0
@@ -274,11 +273,11 @@ func (b *tokenCoalescer) exclusiveKind(prefill bool, fn func()) {
 	fn()
 }
 
-// prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk; docs/tasks/task-concurrency-
-// 2026-09.md, chunked prefill, unparked by the owner 2026-09-27): residentPrefillSeed takes a suffix of at least 8
-// tokens through the batched prefill, and the chunks must all run that same path. Chunking is sound only where the
-// resident's prefill is chunk-invariant — the same bits whole or in chunks (TestMC5_prefillChunkInvariance on Metal) —
-// so a reply never depends on whether others were decoding.
+// prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk;
+// docs/tasks/task-concurrency-2026-09.md): residentPrefillSeed takes a suffix of at least 8 tokens through the batched
+// prefill, and the chunks must all run that same path. Chunking is sound only where the resident's prefill is
+// chunk-invariant, the same bits whole or in chunks (TestMC5_prefillChunkInvariance on Metal), so a reply never depends
+// on whether others were decoding.
 const prefillTailMin = 8
 
 // decoding reports how many holders are inside their decode loop.
@@ -341,11 +340,9 @@ func (b *tokenCoalescer) forward(q *batchReq) error {
 	b.cond.Broadcast()
 	for !q.done {
 		if !b.busy && b.exclWaiting == 0 && len(b.pending) > 0 {
-			// The straggler window opens when a run COULD start: at the oldest submission or when the resident came
-			// free, whichever is later. Timed from submission alone, a token submitted during a run has "waited" the
-			// whole run when it ends, starts one at once without the others, and the generations phase-lock into
-			// split runs every token (measured 2026-09-26: 4 generations ran as 3 batched + 1 solo on all 128 tokens,
-			// 255 of 256 runs straggler-started).
+			// The straggler window opens when a run could start: at the oldest submission or when the resident came free,
+			// whichever is later. Timed from submission alone, a token submitted during a run has already "waited" the whole run
+			// when it ends, starts one at once without the others, and the generations phase-lock into split runs every token.
 			start := b.pending[0].at
 			if b.freeAt.After(start) {
 				start = b.freeAt

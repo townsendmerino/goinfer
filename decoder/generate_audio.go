@@ -5,10 +5,11 @@ import (
 	"fmt"
 )
 
-// Soft-token audio prefill and generation for Qwen3-ASR (docs/tasks/task-multimodal-support-2026-10.md, S14.3). The audio encoder's projected embeddings replace the input
-// embeddings of the run of <|audio_pad|> placeholders; everything else is an ordinary causal text prefill and decode. That is the whole difference from the image paths: no
-// bidirectional block (GenerateVL's Gemma 3 mask), no m-RoPE grid (GenerateQwenVL), the positions are 0..n-1 as in text. CPU only: a GPU-resident decoder is not claimed, so a
-// model loaded on a GPU backend still decodes this turn on the CPU weights.
+// Soft-token audio prefill and generation for Qwen3-ASR (docs/tasks/task-multimodal-support-2026-10.md). The audio
+// encoder's projected embeddings replace the input embeddings of the run of <|audio_pad|> placeholders; everything else
+// is an ordinary causal text prefill and decode. That is the whole difference from the image paths: no bidirectional
+// block (GenerateVL's Gemma 3 mask), no m-RoPE grid (GenerateQwenVL), the positions are 0..n-1 as in text. CPU only: a
+// GPU-resident decoder is not claimed, so a model loaded on a GPU backend still decodes this turn on the CPU weights.
 
 // prefillLogitsAudio prefills ids with feats ([n][HiddenDim], the projected audio embeddings) written over the embeddings of ids[pos : pos+n], and returns the last position's logits.
 func (m *Model) prefillLogitsAudio(ctx context.Context, ids []int, feats []float32, pos, n int, cache *KVCache) ([]float32, error) {

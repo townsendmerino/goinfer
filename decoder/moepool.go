@@ -9,23 +9,17 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Lever 1b (docs/completed/task-moe-streaming.md): an owned-buffer pread cache for MoE expert
-// weights, replacing expertPager's mmap+madvise mode. Darwin's MADV_DONTNEED is a documented
-// no-op (madvise_darwin.go) -- an mmap-aliased cache can WILLNEED bytes in but can never
-// actually release them, so it gives NO real RAM cap on macOS. Owned buffers the pool itself
-// allocates and reuses give a firm cap on every platform: eviction here means "this slot's
-// bytes may now be overwritten", genuinely freeing that RAM for the next miss.
+// expertBufferPool is an owned-buffer pread cache for MoE expert weights, replacing expertPager's mmap+madvise mode
+// where that mode cannot cap RAM: darwin's MADV_DONTNEED is a documented no-op (madvise_darwin.go), so an mmap-aliased
+// cache can WILLNEED bytes in but never release them. Owned buffers the pool allocates and reuses give a firm cap on
+// every platform: eviction here means "this slot's bytes may now be overwritten", which genuinely frees that RAM for
+// the next miss. It is the default on darwin; elsewhere --moe-pager=pool (Options.MoEPager) selects it. Design:
+// docs/completed/task-moe-streaming.md (Lever 1b); darwin rates: docs/measurements/moe-pager-mode-darwin-2026-09-23.md.
 //
-// Mirrors metal/expertpool.go's shape (measured 1.26x faster darwin cold-stage vs mmap
-// byte-copy, zero page faults -- gemma4_moe.go) translated from GPU Buffer writes to plain
-// []byte + WeightMat repointing via aikit/linalg's exported Wrap*/accessor API. No aikit API
-// change is needed: scales/rows/cols/group are already heap copies untouched by paging (only
-// the packed nibble/code payload bytes ever alias the mmap -- decoder/serialize.go's
+// It mirrors metal/expertpool.go's shape, translated from GPU Buffer writes to plain []byte plus WeightMat repointing
+// via aikit/linalg's exported Wrap*/accessor API. No aikit API change is needed: scales, rows, cols and group are heap
+// copies untouched by paging (only the packed nibble/code payload bytes alias the mmap, decoder/serialize.go's
 // giwReader.weightMat), and a WeightMat can be rebuilt from those plus a freshly pread payload.
-//
-// The default on darwin since S5 (2026-09-24), where mmap mode cannot enforce its budget;
-// measured at 1.02x the mmap decode rate (docs/measurements/moe-pager-mode-darwin-2026-09-23.md).
-// Elsewhere --moe-pager=pool (Options.MoEPager) selects it.
 
 // expertFieldKind selects which WeightMat representation a paged field holds, and therefore
 // which Wrap* constructor rebuilds it after a pread refill.

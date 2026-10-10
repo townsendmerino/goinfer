@@ -2,34 +2,28 @@ package decoder
 
 import "fmt"
 
-// moePreadRateBytesPerSec is S4 item 5's own default pread-rate prior
-// (task-never-swap-2026-09.md): docs/completed/task-w4a8-neon-bandwidth.md measured ~3.7 GB/s at
-// concurrency 1 on this Mac's SSD. A DEFAULT, not a live measurement — the brief's own "Read
-// first" note names the eventual improvement ("until the guard measures its own, one 64 MB pread
-// at load"), not built here; this constant is what stands in for it until that lands.
+// moePreadRateBytesPerSec is the default pread-rate prior for the paged-MoE working-set prediction: about 3.7 GB/s at
+// concurrency 1 on the dev Mac's SSD (docs/completed/task-w4a8-neon-bandwidth.md). It is a default, not a live
+// measurement of the machine at hand. Having the guard measure its own rate (one 64 MB pread at load) is not built;
+// docs/tasks/task-never-swap-2026-09.md names it.
 const moePreadRateBytesPerSec = 3.7e9
 
-// moeSlowTokPerSecThreshold is S4 item 5's registered rule (c): below this predicted rate, a
-// paged-MoE load is refused without an explicit --accept-slow. A var, not a const, so a test can
-// override it without needing a fixture whose real byte counts happen to predict a rate this low
-// (a fixture that big is exactly what this session cannot safely load — see S5's own scoping note).
+// moeSlowTokPerSecThreshold is the refusal rule: below this predicted rate, a paged-MoE load is refused without an
+// explicit --accept-slow. A var, not a const, so a test can override it without a fixture whose real byte counts
+// predict a rate this low.
 var moeSlowTokPerSecThreshold = 2.0
 
-// moeHitRatePrior maps a residency fraction (pager budget / total mapped expert bytes) to a
-// predicted LRU cache hit rate, interpolated from the only measured hit-rate curve in this tree —
-// CUDA's C′ expert cache, Gemma 4 26B-A4B int4, benchmarks.md §B4.1 (12.5% residency -> 57.3% hit
-// rate, 23.4% -> 76.1%, 31.25% -> 82.2%).
+// moeHitRatePrior maps a residency fraction (pager budget / total mapped expert bytes) to a predicted LRU cache hit
+// rate, piecewise-linearly between calibration points taken from the only measured hit-rate curve in this tree: CUDA's
+// C' expert cache on Gemma 4 26B-A4B int4 (docs/benchmarks.md §B4.1).
 //
-// BORROWED, NOT MEASURED FOR THIS PAGER — stated as a PRIOR, per the brief's own wording, not a
-// claim about this pager's real behavior: a different architecture (CUDA host<->VRAM streaming vs
-// this pager's mmap/pread), though the SAME eviction discipline (LRU over routed-expert demand),
-// which is why the SHAPE is expected to transfer even though the exact numbers will not.
+// It is a borrowed prior, not a measurement of this pager: a different architecture (CUDA host-to-VRAM streaming
+// against this pager's mmap or pread) with the same eviction discipline (LRU over routed-expert demand), so the shape
+// is expected to transfer and the exact numbers are not. Say "prior" in any message that quotes the result.
 //
-// Piecewise-linear between the calibration points; clamped to [0, 0.999] so a zero budget predicts
-// a zero hit rate (no free lunch) and a budget covering every expert predicts NEAR-certainty
-// rather than exactly 1.0 — an exact 1.0 would make predictedMoETokPerSec's miss-bytes term
-// vanish and report +Inf, which is a worse failure mode (an unusable number) than a merely
-// optimistic finite one.
+// The output is clamped to [0, 0.999]: a zero budget predicts a zero hit rate, and a budget covering every expert
+// predicts near-certainty rather than 1.0, which would make predictedMoETokPerSec's miss-bytes term vanish and report
+// +Inf, a worse failure (an unusable number) than a merely optimistic finite one.
 func moeHitRatePrior(residencyFraction float64) float64 {
 	type point struct{ x, y float64 }
 	pts := [...]point{{0, 0}, {0.125, 0.573}, {0.234, 0.761}, {0.3125, 0.822}, {1.0, 0.999}}
@@ -49,22 +43,16 @@ func moeHitRatePrior(residencyFraction float64) float64 {
 	return pts[len(pts)-1].y // unreachable given the clamps above; keeps the compiler happy
 }
 
-// predictedMoETokPerSec is S4 item 5's own arithmetic: predicted tok/s ~= 1 / (missBytes /
-// preadRate). Compute time is deliberately OMITTED — this repo has no measured CPU-paged-MoE
-// compute-only (I/O-free) per-token cost to anchor it on, and guessing one wrong would be worse
-// than leaving it out (a confidently wrong estimate is worse than none, per this repo's own
-// measurement discipline). Omitting it makes this an UPPER BOUND on tok/s (an optimistic
-// prediction), not a point estimate: I/O dominates a CPU-paged MoE's per-token cost in every real
-// measurement this tree has (R-05, task-recompute-audit.md: "MoE is ~70% of a CPU-paged 35B
-// token"), so the omitted compute term can only make the real rate SMALLER, never larger — the
-// same "can only get stricter" direction S4 items 1/3 already use for their own margins, applied
-// here to a prediction rather than a refusal threshold.
+// predictedMoETokPerSec predicts tok/s as 1 / (missBytes / preadRate), where missBytes = activeBytesPerToken x
+// (1 - hitRate). Compute time is deliberately omitted: there is no measured I/O-free CPU-paged-MoE per-token cost to
+// anchor it, and a confidently wrong estimate is worse than none. That makes this an upper bound on tok/s, not a point
+// estimate: I/O dominates a CPU-paged MoE's per-token cost, so the omitted compute term can only make the real rate
+// smaller.
 //
-// activeBytesPerToken is topK x expertBytes + denseCoreBytes — the caller's job to resolve
-// (moeWorkingSetPrediction, below); this function is pure arithmetic over numbers already known.
-// hitRate is clamped to [0, 0.999] for the same reason moeHitRatePrior clamps its own output.
-// Returns 0 (not a rate) for any input this function cannot turn into a positive, finite
-// prediction — "don't know" is what the caller should treat that as, not "zero tok/s".
+// activeBytesPerToken is topK x expertBytes + denseCoreBytes; resolving it is the caller's job
+// (moeWorkingSetPrediction). hitRate is clamped to [0, 0.999] as moeHitRatePrior clamps its output. It returns 0,
+// meaning "don't know", for any input it cannot turn into a positive finite prediction; a caller must not read that as
+// zero tok/s.
 func predictedMoETokPerSec(activeBytesPerToken int64, hitRate float64) float64 {
 	if activeBytesPerToken <= 0 {
 		return 0
@@ -130,13 +118,10 @@ func moeWorkingSetPrediction(m *Model) (tokPerSec float64, ok bool) {
 	return predicted, true
 }
 
-// moeWorkingSetRefusal is S4 item 5's registered rule (c): below moeSlowTokPerSecThreshold, a
-// paged-MoE load is refused unless acceptSlow. Pure threshold logic, split out from
-// moeWorkingSetPrediction's own real-number arithmetic so the refusal path can be tested with a
-// synthetic predicted rate instead of needing a fixture large enough to genuinely predict a slow
-// one (this session has no such fixture it can safely load — see S5's own scoping note in this
-// same task doc). predicted <= 0 ("don't know") never refuses — same "every unknown proceeds"
-// discipline as the rest of this file.
+// moeWorkingSetRefusal is the refusal rule: below moeSlowTokPerSecThreshold, a paged-MoE load is refused unless
+// acceptSlow. It is pure threshold logic, split from moeWorkingSetPrediction's arithmetic so the refusal path can be
+// tested with a synthetic predicted rate. predicted <= 0 ("don't know") never refuses: every unknown proceeds, as with
+// every guard in this file.
 func moeWorkingSetRefusal(modelName string, predicted float64, acceptSlow bool) error {
 	if predicted <= 0 || predicted >= moeSlowTokPerSecThreshold || acceptSlow {
 		return nil

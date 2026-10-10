@@ -8,32 +8,27 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 )
 
-// ConfidentDrafter reports a confidence for its most recent Draft, so RouterDrafter
-// can order sources by predicted acceptance per position (03 inc 3) rather than a
-// fixed priority. Higher = more likely accepted. (A heuristic stand-in for the §06
-// trained α̂; calibration is a follow-up.)
+// ConfidentDrafter reports a confidence for its most recent Draft, so RouterDrafter can order sources by predicted
+// acceptance per position rather than a fixed priority (docs/spec/03-router-tree.md). Higher is more likely accepted;
+// implementations return an acceptance probability in [0,1] on one scale (see ngramAlpha).
 type ConfidentDrafter interface {
 	Drafter
 	Confidence() float64
 }
 
-// OutcomeRecorder is an optional Drafter capability: the verify loop reports how the
-// last Draft's proposal fared (accepted of drafted) so a router can maintain a running
-// per-source accept rate — the §06 §9 online correction that keeps a STATIC α̂ honest
-// when the live workload drifts from the mix it was calibrated on.
+// OutcomeRecorder is an optional Drafter capability: the verify loop reports how the last Draft's proposal fared
+// (accepted of drafted) so a router can keep a running per-source accept rate, which corrects a static estimate when
+// the live workload drifts from the mix it was calibrated on.
 type OutcomeRecorder interface {
 	RecordOutcome(accepted, drafted int)
 }
 
-// RouterDrafter fuses drafters (03 router): each round it polls every source and returns
-// the proposal of the one with the highest EFFECTIVE confidence — the source's static α̂
-// (Confidence, the §06 per-source predictor) shrunk toward its running realized accept
-// rate as outcomes accumulate (§06 §9). The static α̂ is fit on a fixed workload mix, so
-// on a drifting workload it can mis-rank (e.g. α̂_ngram, fit on copy-heavy traffic,
-// over-trusts a spurious short match in prose); the running rate corrects that within a
-// few rounds. Sources without a Confidence() score rank at 0; ties keep source order. On
-// a constrained request all ride the same masked verify, so the choice only affects
-// speed, never correctness.
+// RouterDrafter fuses drafters: each round it polls every source and returns the proposal of the one with the highest
+// effective confidence, the source's static estimate (Confidence) shrunk toward its running realized accept rate as
+// outcomes accumulate. The static estimate is fit on a fixed workload mix, so on a drifting workload it can mis-rank
+// (ngram's, fit on copy-heavy traffic, over-trusts a spurious short match in prose); the running rate corrects that
+// within a few rounds. Sources without a Confidence score rank 0; ties keep source order. On a constrained request all
+// ride the same masked verify, so the choice affects only speed, never correctness.
 type RouterDrafter struct {
 	Sources []Drafter
 	Prior   float64 // shrinkage strength: pseudo-rounds of the static α̂ (0 ⇒ routerPrior)
@@ -108,12 +103,11 @@ func (r *RouterDrafter) RecordOutcome(accepted, drafted int) {
 	}
 }
 
-// GrammarDrafter proposes the grammar's FORCED byte-run as draft tokens (01
-// grammar-fused). At positions where the grammar determines the bytes (inside object
-// keys, enum/const values), it extracts that byte run from the masker's current state
-// and retokenizes it canonically — the tokens the model most likely emits there. The
-// verifier confirms under the same mask, so it is lossless; acceptance is < 1 only
-// where the model tokenizes the forced bytes differently than `encode`.
+// GrammarDrafter proposes the grammar's forced byte-run as draft tokens (docs/spec/01-grammar-fused.md). At positions
+// where the grammar determines the bytes (inside object keys, enum and const values), it extracts that byte run from
+// the masker's current state and retokenizes it canonically: the tokens the model most likely emits there. The
+// verifier confirms under the same mask, so it is lossless; acceptance is below 1 only where the model tokenizes the
+// forced bytes differently than Encode.
 type GrammarDrafter struct {
 	Mask     *constrain.Masker  // the live grammar mask (advanced over committed tokens)
 	Encode   func(string) []int // tokenizer: forced bytes → canonical token ids
@@ -122,22 +116,14 @@ type GrammarDrafter struct {
 	lastForced int // bytes in the most recent forced run (0 = abstained); for Confidence
 }
 
-// grammarConf is α̂_grammar: the calibrated acceptance probability of a forced grammar
-// proposal, on the SAME accept-prob scale as α̂_ngram (ngramAlpha) so the router (03)
-// compares sources principally (§06). TRACE-FIT (TestGrammarAlphaPredictor, qwen2.5-
-// coder-0.5b, JSON-schema workloads): forced tokens accept only ~0.20 — far below the
-// "forced ⇒ ≈1" intuition — because the drafter's CANONICAL retokenization of the
-// forced bytes usually differs from how the model tokenizes the same bytes under the
-// mask, and the mismatch compounds within a run (depth-0 ~0.24 → depth-1 ~0.08). Read
-// 0.20 precisely: it indicts THIS drafter, not grammar speculation in principle — free
-// grammar drafting must GUESS the tokenization of the forced bytes (canonical
-// retokenization), and getting it right fundamentally needs the model; a tokenizer-
-// aligned forced drafter (unbuilt, §01/§06) is the headroom. So grammar ranks LAST *as
-// currently built*: any n-gram copy (ngramAlpha ≥ 0.70) outranks it and the router
-// treats it as the floor (it drafts only when n-gram has no copy — a 20% free-token
-// shot still beats nothing, and a miss costs ~nothing). Cross-model STABLE: 0.205 on
-// llama-3.2-1b (a different tokenizer), so the fragility is a property of canonical-
-// bytes drafting, not one model — grammarConf holds. Re-fit per model/tokenizer (§06 §9).
+// grammarConf is the acceptance probability of a forced grammar proposal, on the same scale as ngramAlpha so the router
+// compares sources like for like. It is a trace fit (TestGrammarAlphaPredictor) and it is low, about 0.20: the
+// drafter's canonical retokenization of the forced bytes usually differs from how the model tokenizes the same bytes
+// under the mask, and the mismatch compounds along a run. Read it as a verdict on this drafter, not on grammar
+// speculation in principle: free grammar drafting must guess the tokenization, and a tokenizer-aligned forced drafter
+// (unbuilt; docs/spec/01-grammar-fused.md) is the headroom. So grammar ranks last as currently built: any n-gram copy
+// (ngramAlpha >= 0.70) outranks it, and the router uses it as the floor, since a miss costs almost nothing. Re-fit per
+// model and tokenizer.
 const grammarConf = 0.20
 
 // Confidence reports the calibrated acceptance probability α̂_grammar when the grammar
@@ -178,8 +164,8 @@ func validateGrammarSpec(target *Model, mask *constrain.Masker, drafter Drafter,
 	if sp.Temperature != 0 {
 		return fmt.Errorf("decoder.GenerateGrammarSpeculative: greedy only for now (Temperature must be 0)")
 	}
-	// The masked verify argmaxes; penalties / logit bias can't be applied losslessly
-	// there, so reject them rather than silently drop them (M13).
+	// The masked verify argmaxes; penalties and logit bias cannot be applied losslessly there, so reject them rather than
+	// silently drop them.
 	if sp.HistoryDependent() {
 		return fmt.Errorf("decoder.GenerateGrammarSpeculative: repetition penalties / logit bias not supported in greedy speculative decoding; use Generate")
 	}
@@ -189,16 +175,14 @@ func validateGrammarSpec(target *Model, mask *constrain.Masker, drafter Drafter,
 	return nil
 }
 
-// GenerateGrammarSpeculative is grammar-masked speculative decode (01 / 03): the
-// drafter proposes tokens (a GrammarDrafter's forced byte-run, an n-gram copy, or a
-// RouterDrafter fusing them, 03), and the verify applies the grammar mask at every
-// position so the output is exactly what constrained Generate (sp.LogitProcessor =
-// mask.Process) would produce — bit-exact greedy (TestGrammarSpecParity). The grammar
-// forces structural tokens; an n-gram source additionally copies free values that
-// echo the context, all validated by the mask.
+// GenerateGrammarSpeculative is grammar-masked speculative decode: the drafter proposes tokens (a GrammarDrafter's
+// forced byte-run, an n-gram copy, or a RouterDrafter fusing them) and the verify applies the grammar mask at every
+// position, so the output is exactly what constrained Generate (sp.LogitProcessor = mask.Process) would produce:
+// bit-exact greedy (TestGrammarSpecParity). The grammar forces structural tokens; an n-gram source additionally copies
+// free values that echo the context, all validated by the mask.
 //
-// First cut: greedy + CPU staged path. Sampling and the resident path are follow-ups;
-// the recurrent-family guard (specRollbackSafe) applies as for the n-gram path.
+// Limitations: greedy and the CPU staged path only (no sampling, no resident path). The recurrent-family guard
+// (specRollbackSafe) applies as for the n-gram path.
 func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []int, maxTokens int, mask *constrain.Masker, drafter Drafter, K int, sp SamplingParams) (<-chan int, *Generation, error) {
 	if err := validateGrammarSpec(target, mask, drafter, sp); err != nil {
 		return nil, nil, err
@@ -226,9 +210,8 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 	if K < 1 {
 		K = 8
 	}
-	// source label for §06 traces: a pure GrammarDrafter pins forced bytes (forced=true,
-	// the α̂_grammar support); other drafters ride the same masked verify but aren't
-	// grammar-forced. (Per-round source attribution inside a RouterDrafter is a follow-up.)
+	// Source label for traces: a pure GrammarDrafter pins forced bytes (forced=true); other drafters ride the same masked
+	// verify but are not grammar-forced. Per-round attribution inside a RouterDrafter is not recorded.
 	traceSource, traceForced := "router", false
 	if _, ok := drafter.(*GrammarDrafter); ok {
 		traceSource, traceForced = "grammar", true
@@ -263,10 +246,10 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		return stats.Emitted < maxTokens
 	}
 	// finishTrailing forwards cur when the generation ended by reaching maxTokens just after streaming it, so the cache
-	// holds prompt + every emitted token, as plain constrained decode's does. A round's trailing token is otherwise
-	// forwarded only as the next round's seq[0], leaving the cache one token short for the next turn to re-prefill
-	// (the n-gram loop's same defect, which on Metal changed every later turn:
-	// docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). A stop or a cancel takes no forward.
+	// holds the prompt plus every emitted token, as plain constrained decode's does. Otherwise a round's trailing token is
+	// forwarded only as the next round's seq[0], and the next turn re-prefills that position, which changes its output on a
+	// backend whose batched prefill is not bit-identical to decode (see genNgramInto's finishTrailing). A stop or a cancel
+	// takes no forward.
 	finishTrailing := func(tok int) {
 		if g.err != nil || stats.Emitted < maxTokens || target.isStop(tok, sp) {
 			return
@@ -347,8 +330,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 			evaluated = accepted + 1
 		}
 		stats.Evaluated += evaluated
-		// §06 §9 online correction: tell the drafter how its proposal fared so a router
-		// can shrink each source's static α̂ toward its running realized accept rate.
+		// Tell the drafter how its proposal fared, so a router can shrink each source's static estimate toward its running rate.
 		if rec, ok := drafter.(OutcomeRecorder); ok && kEff > 0 {
 			rec.RecordOutcome(accepted, kEff)
 		}

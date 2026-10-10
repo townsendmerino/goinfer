@@ -6,11 +6,9 @@ import (
 	"sync/atomic"
 )
 
-// SpecStats accumulates CPU speculative-decoding telemetry for one Generate run. The GPU
-// backend's batched-verify counters are a DISTINCT type, cuda.GPUSpecStats (audit M-22 —
-// renamed off this shared name so the two can't be silently conflated); their fields do
-// not map 1:1 (e.g. this Evaluated stops at the first reject, cuda.VerifyToks counts every
-// position fed to the batched verify).
+// SpecStats accumulates CPU speculative-decoding telemetry for one Generate run. The GPU backend's batched-verify
+// counters are a distinct type, cuda.GPUSpecStats, because the fields do not map 1:1 (this Evaluated stops at the
+// first reject; cuda.VerifyToks counts every position fed to the batched verify).
 type SpecStats struct {
 	Rounds    int // verification passes (one expensive target forwardN each)
 	Drafted   int // draft tokens proposed (== Rounds*K)
@@ -49,18 +47,14 @@ func (s *SpecStats) TokensPerRound() float64 {
 	return float64(s.Emitted) / float64(s.Rounds)
 }
 
-// GenerateSpeculative runs greedy speculative decoding: the small draft model
-// proposes K tokens autoregressively, and this (target) model verifies them in a
-// single batched forward pass, keeping the matching prefix and replacing the
-// first mismatch with its own token. The streamed output is **token-identical to
-// plain target greedy** (TestSpeculativeGreedyParity is the gate) — a pure
-// speedup, not an approximation. The win comes from amortizing the target's
-// expensive weight stream over (accepted+1) tokens per pass instead of 1.
+// GenerateSpeculative runs greedy speculative decoding: the small draft model proposes K tokens autoregressively, and
+// this (target) model verifies them in one batched forward pass, keeping the matching prefix and replacing the first
+// mismatch with its own token. The streamed output is token-identical to plain target greedy
+// (TestSpeculativeGreedyParity): a speedup, not an approximation.
 //
-// Greedy only: Temperature must be 0 (sampled speculative needs the
-// rejection-sampling residual rule — a follow-up). draft and target must share
-// the exact vocab/tokenizer; this is asserted. The returned Generation's Spec
-// field carries acceptance telemetry.
+// Greedy only: Temperature must be 0 (sampled speculation needs the rejection-sampling residual rule, which this path
+// does not implement). LogitProcessor and penalties are refused. draft and target must share the exact vocab and
+// tokenizer, which is asserted. The returned Generation's Spec field carries acceptance telemetry.
 func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxTokens int, draft *Model, K int, sp SamplingParams) (<-chan int, *Generation, error) {
 	if draft == nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: nil draft model")
@@ -71,8 +65,8 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	if sp.LogitProcessor != nil {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: LogitProcessor (constrained decoding) not supported yet; use Generate")
 	}
-	// Greedy verify argmaxes raw target logits; penalties / logit bias would be
-	// silently dropped, diverging from plain greedy (M13).
+	// Greedy verify argmaxes raw target logits; penalties or logit bias would be silently dropped, diverging from plain
+	// greedy.
 	if sp.HistoryDependent() {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: repetition penalties / logit bias are not supported in greedy speculative decoding; use Generate")
 	}
@@ -85,10 +79,9 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	if K < 1 {
 		K = 4
 	}
-	// Rollback safety (audit C-02): verify advances the target's KV by K per round and
-	// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged
-	// sliding-window cache cannot losslessly restore that — the other three speculative
-	// entry points guard this; GenerateSpeculative did not.
+	// Rollback safety: verify advances the target's KV by K per round and rolls back the rejected tail, which a recurrent
+	// (Mamba-2 / Gated DeltaNet) or staged sliding-window cache cannot losslessly restore. Every speculative entry point
+	// guards this.
 	if !target.specRollbackSafe() {
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")
 	}
@@ -98,21 +91,15 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: %w; use Generate", err)
 	}
 
-	// When the target's GPU-resident decode path is built (webgpu + eligible arch),
-	// run its verify on the device: the prompt seeds the resident KV via per-token
-	// Forward, the K+1-token verify is a single batched ForwardN (one Submit/Poll —
-	// the speculative win amortizes the cgo-encode glue over K), and the rollback is
-	// the resident no-op TruncateTo. The draft stays CPU (small). Output is still
-	// token-identical to plain greedy (TestSpeculativeResident_parity).
+	// When the target's GPU-resident decode path is built, verify runs on the device: the prompt seeds the resident KV via
+	// per-token Forward, the K+1-token verify is a single batched ForwardN, and rollback is the resident no-op TruncateTo.
+	// The output is token-identical to plain greedy (TestSpeculativeResident_parity).
 	resident := target.resident != nil && target.DecodeRunnerEligible()
-	// The draft runs on the GPU too when it was loaded --backend webgpu and is
-	// eligible. This is the decisive lever: a CPU draft is slower PER TOKEN than the
-	// GPU target it feeds (measured ~4.9× on the 2070S), so K CPU draft tokens/round
-	// cost far more than they save and speculation is a net loss; a resident draft is
-	// ~0.5× the target's per-token cost, which is the only regime where it can pay.
-	// Draft + target are separate Contexts (one device/queue each), driven
-	// sequentially here. Output stays token-identical to plain target greedy — the
-	// draft is only a proposer; the target decides (so its backend can't change it).
+	// The draft runs on the GPU too when it was loaded with a GPU backend and is eligible. A CPU draft is slower per token
+	// than the GPU target it feeds, so K CPU draft tokens per round cost more than they save and speculation is a net loss;
+	// a resident draft is the only regime where it can pay. Draft and target are separate Contexts (one device and queue
+	// each), driven sequentially here. The draft is only a proposer and the target decides, so the draft's backend cannot
+	// change the output.
 	draftResident := draft.resident != nil && draft.DecodeRunnerEligible()
 
 	out := make(chan int)
@@ -125,22 +112,18 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	go func() {
 		defer close(out)
 		defer leaveExact()
-		// Claim the single shared resident KV before any device write (audit C-03): both
-		// generateInto and the n-gram path CAS this, GenerateSpeculative did not — so a
-		// second concurrent Generate on the same *Model would prefill into the same
-		// positional device KV, interleaving writes and corrupting both streams against a
-		// Model doc that promises concurrent distinct sequences. On loss, fall back to the
-		// staged CPU cache. Draft is a separate Model with its own claim.
-		// tryClaimResident, not a bare CAS on resBusy: MC3's batched holders never set resBusy, so only the claim
-		// that also requires no holder keeps this off a resident mid-batch (docs/completed/task-audit-followups-2026-10-06.md, A1).
+		// Claim the single shared resident KV before any device write: a second concurrent Generate on the same *Model would
+		// otherwise prefill into the same positional device KV, interleaving writes and corrupting both streams, against a
+		// Model doc that promises concurrent distinct sequences. On loss, fall back to the staged CPU cache. The draft is a
+		// separate Model with its own claim. tryClaimResident, not a bare CAS on resBusy: MC3's batched holders never set
+		// resBusy, so only the claim that also requires no holder keeps this off a resident mid-batch
+		// (docs/completed/task-audit-followups-2026-10-06.md, A1).
 		if resident {
 			if target.tryClaimResident() {
 				defer atomic.StoreInt32(&target.resBusy, 0)
-				// Forget FIRST (audit R-00) — from here until this generation completes (or
-				// returns early) the resident KV is mid-write, so the next turn must
-				// cold-prefill rather than trust a half-written cache
-				// (decoder/resident_reuse.go). This path always seeds from position 0 (no
-				// reuse attempted below), so there is nothing to preserve by deferring it.
+				// Forget first: from here until this generation completes, the resident KV is mid-write, so the next turn must
+				// cold-prefill rather than trust a half-written cache (resident_reuse.go). This path always seeds from position 0, so
+				// there is nothing to preserve by deferring it.
 				target.residentForgetIDs()
 			} else {
 				resident = false
@@ -149,11 +132,8 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		if draftResident {
 			if draft.tryClaimResident() {
 				defer atomic.StoreInt32(&draft.resBusy, 0)
-				// R-00's shape on the second Model (V-09, docs/review-2026-09-04.md): the
-				// target's own claim just above forgets first for exactly this reason — from
-				// here until this generation completes, draft's resident KV is mid-write, so a
-				// later unrelated generation on this SAME draft model must not trust whatever
-				// resIDs happened to be set from before. Missed when R-00 fixed the target half.
+				// Same as the target's claim above, for the draft model: until this generation completes its resident KV is
+				// mid-write, so a later generation on the same draft Model must not trust a stale resIDs.
 				draft.residentForgetIDs()
 			} else {
 				draftResident = false
@@ -184,10 +164,8 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		}
 		draftPrefill := func() error {
 			if draftResident {
-				// P-06 (audit-2026-09-10): same fix as the target's own prefill above — the
-				// returned logits are discarded either way (the draft just needs its KV filled),
-				// so residentPrefillSeed's batched/KV-only path is a strict improvement here
-				// with nothing to lose.
+				// As for the target's prefill: the logits are discarded (the draft only needs its KV filled), so
+				// residentPrefillSeed's batched or KV-only path is a strict improvement.
 				if _, err := draft.residentPrefillSeed(ctx, prompt, 0, false); err != nil {
 					return err
 				}
@@ -230,12 +208,9 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			}
 		}
 
-		// Prefill the prompt. The target's last-token logits seed cur; the draft's are
-		// discarded (it just needs its KV filled). Resident: residentPrefillSeed (P-06,
-		// audit-2026-09-10) — the batched/KV-only-prefill helper generateInto and genNgramInto
-		// already share, in place of this function's own third copy of the per-token Forward
-		// loop the helper was unified to prevent (+2.66 ms/token vs 0.42 batched, per the audit's
-		// own measurement). CPU: batched prefillLogits, unchanged.
+		// Prefill the prompt. The target's last-token logits seed cur; the draft's are discarded. Resident:
+		// residentPrefillSeed, the batched or KV-only prefill helper generateInto and genNgramInto share, rather than a
+		// per-token Forward loop of its own. CPU: batched prefillLogits.
 		var seedLogits []float32
 		var err error
 		if resident {
@@ -279,11 +254,9 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			return
 		}
 		for {
-			// M-03 (docs/audit-2026-09-10.md): clamp this round's fixed K to what's left under
-			// the resident context cap, fresh each round — see specRoundDraftWidth
-			// (spec_ngram.go) for the shared shape and rationale (mirrors blockSpecRoundWidth's
-			// M-13 fix). A -1 means no room even for `cur` alone: stop cleanly rather than
-			// attempt a verify round the backend's checkCap would refuse with a hard error.
+			// Clamp this round's fixed K to what is left under the resident context cap, fresh each round (specRoundDraftWidth).
+			// A -1 means no room even for cur: stop cleanly rather than attempt a verify round the backend's checkCap would refuse
+			// with a hard error.
 			kRound := specRoundDraftWidth(K, tpos, target.ResidentContextCap())
 			if kRound < 0 {
 				return
@@ -356,10 +329,9 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 					return
 				}
 			case allAccept:
-				// M-03: kRound==0 — no draft ran this round, so `cur` itself was never fed to
-				// the draft's cache (the loop above only starts feeding from `cur` when
-				// kRound>=1). Feed it now so the draft cache stays in sync with the target's
-				// confirmed position before next round's draft resumes from nextTok.
+				// kRound == 0: no draft ran this round, so cur itself was never fed to the draft's cache (the loop above feeds from
+				// cur only when kRound >= 1). Feed it now so the draft cache stays in sync with the target's confirmed position before
+				// next round's draft resumes from nextTok.
 				if _, err := draftForward(cur); err != nil {
 					g.err = err
 					return

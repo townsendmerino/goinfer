@@ -2,26 +2,18 @@ package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// The read-only view a backend needs to make a block drafter GPU-resident.
+// BlockDrafterWeights is the read-only view a backend needs to make a block drafter GPU-resident.
 //
-// WHY AN INTERFACE RATHER THAN EXPORTED FIELDS. The alternative was exporting `blockTrunk`'s
-// fields so `cuda` could reach them, which publishes the drafter's LAYOUT as API — and
-// `blockTrunk` is deliberately shared between DFlash and DSpark precisely so it can be
-// refactored as more families land. This exports the CAPABILITY instead: a backend learns the
-// geometry and gets the weights, and the struct behind them stays free to change.
+// It is an interface rather than exported blockTrunk fields because exporting those would publish the drafter's layout
+// as API, and blockTrunk is shared between DFlash and DSpark so that it can be refactored as more families land. A
+// backend learns the geometry and gets the weights; the struct behind them stays free to change. It also inverts the
+// dependency the way ResidentForward does: decoder declares what a backend may read and the backend consumes it.
 //
-// It also inverts the dependency the way `ResidentForward` already does — `decoder` declares
-// what a backend may read, and `cuda` (or `metal`, or `gpu`) consumes it, rather than a backend
-// importing a concrete drafter type and hard-coupling to one family.
+// Both families satisfy it through blockTrunk, which DFlashDrafter and DSparkDrafter embed, so a resident path written
+// against it serves either without a type switch.
 //
-// BOTH FAMILIES SATISFY IT FOR FREE. The methods are implemented once on `*blockTrunk`, which
-// DFlashDrafter and DSparkDrafter both embed — so a resident path written against this interface
-// serves either without a type switch. That is the property that made an interface worth writing
-// now: there are two implementations to generalize over, not one to guess from.
-//
-// Everything returned is READ-ONLY. The WeightMat pointers alias the drafter's own storage
-// (they are hundreds of MB; copying them to hand out would defeat the purpose), so a backend
-// packs and uploads from them and must not write through them.
+// Everything returned is read-only. The WeightMat pointers alias the drafter's own storage (hundreds of MB), so a
+// backend packs and uploads from them and must not write through them.
 type BlockDrafterWeights interface {
 	// DrafterGeometry describes the shapes a backend must allocate for.
 	DrafterGeometry() DrafterGeometry
@@ -33,16 +25,13 @@ type BlockDrafterWeights interface {
 	DrafterFinalNorm() []float32
 	// DrafterLayer is layer i's weights, 0 <= i < DrafterGeometry().Layers.
 	DrafterLayer(i int) DrafterLayerWeights
-	// MaskTokenID is the TRAINED token the drafter expects at unfilled block positions. It is
-	// on the interface because getting it wrong is silent and expensive: the drafter still
-	// runs, still produces lossless output, and simply drafts badly. Measured cost of passing
-	// any other id — 1.77 tok/round against a known 4.97, turning a 1.60x speedup into 0.66x.
+	// MaskTokenID is the trained token the drafter expects at unfilled block positions. It is on the interface because
+	// passing any other id fails silently: the drafter still runs and stays lossless, and simply drafts badly.
 	MaskTokenID() int
-	// BlockSize is the trained block width — how many positions the drafter drafts at once.
-	// It lives on the concrete family rather than the shared trunk (the trunk runs whatever
-	// width it is handed), and both families already expose it. How many of those positions
-	// the TARGET then verifies is a separate, tunable choice — docs/spec/08 measures the
-	// optimum as NARROWER than the trained width, which is why these are not the same number.
+	// BlockSize is the trained block width: how many positions the drafter drafts at once. It lives on the concrete family
+	// rather than the shared trunk, which runs whatever width it is handed. How many positions the target then verifies is
+	// a separate, tunable choice, and the optimum is narrower than the trained width (docs/spec/08), so the two are not the
+	// same number.
 	BlockSize() int
 }
 
@@ -111,33 +100,19 @@ var (
 	_ BlockDrafterWeights = (*DSparkDrafter)(nil)
 )
 
-// DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw
-// — tasks/task-fit-to-hardware.md §2's "the drafter's weights (~500 MB for the 4B pairing, uploaded to
-// the target's device at attach)" term, computed instead of quoted, so a caller (a fit guard
-// pricing a --drafter attach BEFORE the target's own residency is built) has a real number rather
-// than a fixed constant that drifts from whatever pairing is actually loaded.
+// DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather
+// than quoted so a caller (a fit guard pricing a --drafter attach before the target's own residency is built) gets a
+// number that tracks the pairing actually loaded (docs/tasks/task-fit-to-hardware.md §2).
 //
-// EVERY DRAFTER MATRIX IS f32 ON HOST (loaded straight from safetensors via WrapF32 — dflash.go's
-// loadMat, never QuantizeInt8/QuantizeInt4) and the only backend that hosts one today, CUDA's
-// AttachDrafter (cuda/drafter.go), packs every f32 matrix through packWeight's f32 branch, which
-// is ALWAYS int8 (linalg.QuantizeRowsInt8) regardless of the target model's own quant — a drafter
-// is never packed to int4. So this is not a generic multi-quant estimate the way
-// decoder/fitguard.go's quantBytesPerElem is for the main model: it prices int8 specifically,
-// because that is the one encoding an attach can actually produce today. Per-row scale (one f32
-// per row) is included; the norm vectors and RoPE table are f32 already and round to nothing
-// beside the matrices, the same exemption ResidentWeightBytes' own doc comment gives the main
-// model's norms/biases.
+// It prices int8 specifically, not a generic multi-quant estimate as decoder/fitguard.go's quantBytesPerElem is for the
+// main model: every drafter matrix is f32 on the host, and the only backend that hosts one (CUDA's AttachDrafter,
+// cuda/drafter.go) packs every f32 matrix through packWeight's f32 branch, which is always int8 whatever the target's
+// quant. Per-row scales (one f32 per row) are included; the norm vectors and RoPE table are f32 already and round to
+// nothing beside the matrices.
 //
-// NOT included: the verify/capture buffers NewBlockSpec allocates (SetBatchedCapture's batched
-// logits, FuseContext's per-call context scratch) — a few MB at the default verify width against
-// hundreds of MB of weights, and already the kind of small residual the existing 384 MiB
-// ctxCapMarginBytes/slotMarginBytes margins in cuda/resident.go are there to absorb. Naming this
-// rather than silently folding it into "close enough": the weights are the term this function
-// computes for real, not the whole attach.
-//
-// ALSO NOT included: the drafter's own K/V (M-22, docs/audit-2026-09-10.md) — see
-// DrafterKVBytesPerPosition below for why that term needs a ctx to multiply by that this function,
-// called before the target's own residency is built, does not yet have.
+// Not included: the verify and capture buffers NewBlockSpec allocates (a few MB at the default verify width, which the
+// ctxCapMarginBytes and slotMarginBytes margins in cuda/resident.go absorb), and the drafter's own K/V, which scales
+// with the target's context: see DrafterKVBytesPerPosition.
 func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 	int8Bytes := func(w *linalg.WeightMat) int64 {
 		if w == nil {
@@ -157,20 +132,15 @@ func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {
 	return total
 }
 
-// DrafterKVBytesPerPosition is M-22's own fix (docs/audit-2026-09-10.md): the drafter's device K/V
-// scales with the TARGET's own resident context, not a fixed size of its own —
-// cuda/drafter.go's ExtendContext sizes d.kc/d.vc at capRows = max(need+512, r.ctxCap) — so a
-// 5-layer trunk at a large target context is hundreds of MB, not the "few MB" the scratch-buffer
-// exemption on DrafterResidentBytesEstimate is about, and DrafterResidentBytesEstimate itself
-// cannot price it: it runs BEFORE the target's own residency (and so its chosen ctx) exists.
+// DrafterKVBytesPerPosition returns the drafter's device K/V bytes per context position: layers x kvDim x 2 (K and V) x
+// 4 (f32), matching cuda/drafter.go's d.kc/d.vc sizing. That K/V scales with the target's own resident context
+// (ExtendContext sizes it at capRows = max(need+512, r.ctxCap)), so a multi-layer trunk at a large context is hundreds
+// of MB, and DrafterResidentBytesEstimate cannot price it: it runs before the target's residency, and so its chosen
+// ctx, exists.
 //
-// Returns bytes PER POSITION (layers × kvDim × 2 for K+V × 4 bytes, matching cuda/drafter.go's
-// own d.kc[l]/d.vc[l] = af(capRows*kvDim) sizing exactly) so the caller — resolveCtxCapFit, which
-// already knows the candidate ctx it is about to ask Plan to fit, and the real build, which knows
-// the FINAL ctxCap once chosen — can each multiply by the ctx value they actually have in hand,
-// rather than this function guessing one. Both multiplications land on a real, non-circular bound:
-// Plan's chooseCtx only ever SHRINKS from the candidate it is asked with, never grows past it, so
-// pricing the planning-time call against the candidate can only over-estimate (safe) or be exact.
+// It is per position so each caller multiplies by the ctx it has in hand: resolveCtxCapFit by its candidate, the real
+// build by the final ctxCap. Plan's chooseCtx only shrinks from the candidate it is asked with, so pricing the
+// planning-time call against the candidate can only over-estimate (safe) or be exact.
 func DrafterKVBytesPerPosition(dw BlockDrafterWeights) int64 {
 	geo := dw.DrafterGeometry()
 	kvDim := int64(geo.NumKVHeads) * int64(geo.HeadDim)
