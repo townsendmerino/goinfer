@@ -321,7 +321,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      compile is reported as "selected … but reported nothing". Recorded only in `docs/completed/audit-2026-09-02.md` (N-41).
    - **`tokenizer`, `byteLevelKnobs`**: a GGUF with `pre="default"` (or none) is walked with GPT-2's shape; llama.cpp's default is a
      different multi-pass shape and needs a new `splitShape` and goldens. Recorded only in `docs/completed/audit-2026-09-10.md` (N-72).
-   - **`decoder/model.go:Options.LoadAbort`** is checked only on the GGUF direct-build path (the safetensors direct build and
+   - **`Options.LoadAbort` (`decoder/model.go:Options`)** is checked only on the GGUF direct-build path (the safetensors direct build and
      `StreamTranscodeGGUF` ignore it): owned by `docs/tasks/task-never-swap-2026-09.md`. **`kdaParams`**: the LoRA'd KDA path is not
      implemented; no queue entry.
    - **`decoder/weights.go:LoadWeights`**: bf16/f16 weights widen to f32 on load, roughly doubling RAM (the old `TODO(M8)`: per-tile
@@ -331,11 +331,11 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      the n-gram speculative entry points refuse them. **`decoder/deltanet.go`** (file comment): the Gated DeltaNet recurrence is the
      sequential reference, no chunked or parallel scan. **`decoder/kvcache.go:KVCache.resetMultimodal`**: not a live leak until VL
      goes through the session path. **`decoder/mlp.go:moeMLPBatch`**: expert-major order for paging is unmeasured. No owner.
-   - **`decoder/hostram_linux.go:HostRAMBytes`**: the cgroup `memory.max` is not read, so a container over-reports. **`dspark.go`**:
-     reusing the resident target's embed/head is unproven. **`gptq.go:parseQuantConfig`**: GPTQModel v2 is refused for want of a
-     checkpoint to validate against. **`actquant_hazard.go:ActivationQuantHazard`** is a guard until per-group activation scales land.
+   - **`decoder/hostram_linux.go:HostRAMBytes`**: the cgroup `memory.max` is not read, so a container over-reports. **`decoder/dspark.go`**:
+     reusing the resident target's embed/head is unproven. **`decoder/gptq.go:parseQuantConfig`**: GPTQModel v2 is refused for want of a
+     checkpoint to validate against. **`decoder/actquant_hazard.go:ActivationQuantHazard`** is a guard until per-group activation scales land.
      No owner for any of the four.
-   - **`chat/tools.go:RenderToolsSegments`** and **`chat/templates.go:Mistral`**: with tools declared, non-Harmony families return one
+   - **`chat/tools.go:Template.RenderToolsSegments`** and **`chat/templates.go:Mistral`**: with tools declared, non-Harmony families return one
      Special segment, so their content spans get no injection hardening (a "follow-up" in the old comments). No owner.
    - **`internal/serveapp`**: compute-time LoRA is not wired into the resident prefix-reuse path (`loadedModel.drive`), no owner;
      `pathFields` publishes `context_window` using `lm.adapter == ""` while the text routes enforce with `lm.residentPath()`, so an
