@@ -10,10 +10,10 @@ import (
 	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
-// J4 (task-work-queue-2026-09.md): the two batch APIs, both thin translations onto the job store
-// J2/J3 already built — see batches_run.go for the per-line execution and batches_finalize.go for
-// completion + output assembly. This file is HTTP-shape only: decode, project, translate status
-// vocabulary. Text-only chat scope this pass, matching J3's own line.
+// The two batch APIs (OpenAI /v1/batches, Anthropic /v1/messages/batches): thin translations onto the job store.
+// batches_run.go does the per-line execution and batches_finalize.go completion and output assembly. This file is
+// HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope
+// (docs/tasks/task-work-queue-2026-09.md).
 
 const maxFileUploadMemory = 32 << 20 // in-memory threshold before ParseMultipartForm spills to disk
 
@@ -107,10 +107,9 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	for _, l := range lines {
 		var creq chatReq
 		if err := json.Unmarshal(l.Body, &creq); err != nil {
-			// A malformed per-line BODY is that line's own problem, not the whole batch's — record
-			// it as a request whose validation will fail immediately in runBatchChatLine instead of
-			// rejecting the batch outright (matches real batch-API "one bad line never blocks the
-			// rest" semantics, task doc's own framing).
+			// A malformed per-line BODY is that line's own problem, not the whole batch's: record it as a request whose
+			// validation fails immediately in runBatchChatLine instead of rejecting the batch outright (one bad line
+			// never blocks the rest).
 			creq = chatReq{}
 		}
 		customIDs = append(customIDs, l.CustomID)

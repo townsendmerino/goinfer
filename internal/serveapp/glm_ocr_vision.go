@@ -14,26 +14,24 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// GLM-OCR image serving (O3, docs/tasks/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one —
-// preprocess -> tower -> GenerateQwenVL with m-RoPE, the merged tower rows replacing the <|image|> run — with these
-// differences, all of which live here or in the loadedModel.glm branches of vision_serve.go:
-//   - the tower is aikit's GlmOcrVisionEncoder, loaded on first use (like qwen3Tower);
-//   - the preprocessing config halves the file's pixel bounds (multimodal.LoadGlmOcrPreprocessConfig);
-//   - the image block and the template are GLM's, image first (multimodal.GlmOcrImageBlock, chat.GlmOCR);
-//   - NO per-image token cap here, unlike Qwen3.5's qwen3MaxImageTokens: the processor's own ceiling is 6,144 tokens
-//     (4.82 MP) and the serve-side default is O4's decision (the owner picks it), so serve accepts what the processor
-//     does and an image that does not fit the context is refused by name (imageFitsContext), never truncated.
+// GLM-OCR image serving (docs/tasks/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one (preprocess ->
+// tower -> GenerateQwenVL with m-RoPE, the merged tower rows replacing the <|image|> run) with these differences, all of
+// which live here or in the loadedModel.glm branches of vision_serve.go:
 //
-// The tower stays f32 unless -vision-quant int8 is given: serve's usual "a GPU backend implies an int8 tower" rule is for
-// the resident GPU encoders. Under --backend metal the f32 tower runs on Metal (S2, planGridTower); its int8 form is not
-// gated on the real checkpoint.
+//   - the tower is aikit's GlmOcrVisionEncoder, loaded on first use (like qwen3Tower);
+// !  - the preprocessing config halves the file's pixel bounds (multimodal.LoadGlmOcrPreprocessConfig);
+// !  - the image block and the template are GLM's, image first (multimodal.GlmOcrImageBlock, chat.GlmOCR);
+// !  - NO per-image token cap here, unlike Qwen3.5's qwen3MaxImageTokens: serve accepts what the processor's own ceiling (6,144 tokens, 4.82 MP) does, and an image that does not fit the context is refused by name (imageFitsContext), never truncated.
+//
+// The tower stays f32 unless -vision-quant int8 is given: serve's usual "a GPU backend implies an int8 tower" rule is
+// for the resident GPU encoders. Placement is planGridTower's; the int8 form is not gated on the real checkpoint.
 
 // glmOcrTower is a GLM-OCR vision tower that loads on first use; safe for concurrent callers, a failed load is
 // remembered rather than retried on every request.
 type glmOcrTower struct {
 	dir   string
 	quant bool
-	plan  gridTowerPlan // where the tower runs (S2): the device it is built on at first use
+	plan  gridTowerPlan // where the tower runs: the device it is built on at first use
 	once  sync.Once
 	enc   *vision.GlmOcrVisionEncoder
 	acc   multimodal.GridTowerAccelerator // nil: aikit's CPU tower
@@ -158,16 +156,16 @@ func (lm *loadedModel) imageFitsContext(n int, grid [3]int) error {
 	return nil
 }
 
-// glmOcrExtractionTurn is O5 (docs/tasks/task-glm-ocr-2026-10.md): a GLM-OCR image request that carries response_format
-// json_schema is an EXTRACTION request. The model's extraction prompt is a JSON template (an object of empty values), not a
-// schema, so the template is built from the request's own schema (constrain.TemplateFromSchema: the same document the
-// grammar is compiled from, so the two cannot disagree) and becomes the last user turn's text, with the card's instruction in
-// front of it. The grammar itself is installed by prepare, exactly as on the text route (the vision route has always passed
-// the request's sampling, response_format included, through prepare and driveVL).
+// glmOcrExtractionTurn handles extraction: a GLM-OCR image request that carries response_format json_schema is an
+// EXTRACTION request. The model's extraction prompt is a JSON template (an object of empty values), not a schema, so the
+// template is built from the request's own schema (constrain.TemplateFromSchema: the same document the grammar is
+// compiled from, so the two cannot disagree) and becomes the last user turn's text, with the card's instruction in front
+// of it. The grammar itself is installed by prepare, exactly as on the text route.
 //
-// The rule (multimodal.GlmOcrExtractionText): the template prompt REPLACES the user's text only when that text is empty or a
-// bare task prompt ("Text Recognition:", "Table Recognition:", "Formula Recognition:"); any other text is the user's own prompt
-// and is sent unchanged, still under the grammar. json_object (no schema) has no template to build and is left alone.
+// The rule (multimodal.GlmOcrExtractionText): the template prompt REPLACES the user's text only when that text is empty
+// or a bare task prompt ("Text Recognition:", "Table Recognition:", "Formula Recognition:"); any other text is the
+// user's own prompt and is sent unchanged, still under the grammar. json_object (no schema) has no template to build and
+// is left alone (docs/tasks/task-glm-ocr-2026-10.md).
 func (lm *loadedModel) glmOcrExtractionTurn(rf *respFormat, turns []chat.Turn) error {
 	if lm.glm == nil || rf == nil || rf.Type != "json_schema" || rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
 		return nil
@@ -184,15 +182,16 @@ func (lm *loadedModel) glmOcrExtractionTurn(rf *respFormat, turns []chat.Turn) e
 	return nil
 }
 
-// gridTowerPlan is where a Qwen3.5+ or GLM-OCR tower will run (S2 of docs/tasks/task-multimodal-support-2026-10.md):
-// device is the registered accelerator to build at first use ("" = aikit's CPU tower), where the banner's word for it.
+// gridTowerPlan is where a Qwen3.5+ or GLM-OCR tower will run: device is the registered accelerator to build at first
+// use ("" = aikit's CPU tower), where the banner's word for it.
 type gridTowerPlan struct {
 	device, where string
 	require       bool
 }
 
-// deviceTowerName is the banner's word for a backend that can host a device vision tower ("Metal", "CUDA"), and false for every other backend (the CPU).
-// S4 (docs/tasks/task-multimodal-support-2026-10.md) made the placement rules backend-generic: Metal's towers and CUDA's follow the same plan.
+// deviceTowerName is the banner's word for a backend that can host a device vision tower ("Metal", "CUDA"), and false
+// for every other backend (the CPU). The placement rules are backend-generic: Metal's towers and CUDA's follow the same
+// plan.
 func deviceTowerName(backend string) (string, bool) {
 	switch backend {
 	case "metal":

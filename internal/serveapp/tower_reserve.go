@@ -10,12 +10,13 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The VRAM a CUDA vision tower will claim, priced before the decoder builds (S4 of docs/tasks/task-multimodal-support-2026-10.md, Gate 0 step 4). A tower loads lazily on
-// the first image, after the resident decoder, and nothing used to reserve room for it: serve's default KV plan took every free byte, the tower's upload failed
-// (`CUDA_ERROR_OUT_OF_MEMORY`) and it ran on the CPU, so a served run on the default plan read as a pass for the wrong reason (G-S4q's first served run). The resident build
-// already reserves for a drafter through Options.ExtraResidentBytes; a tower rides the same field. The figure is the tower's float32 weights plus the scratch its largest
-// image needs (the tower releases its scratch after each call, so this is a peak, not a standing cost), from the checkpoint's own vision_config: an estimate, deliberately
-// not exact, and a ceiling the elastic terms (the KV context, the expert cache) give way to.
+// The VRAM a CUDA vision tower will claim, priced before the decoder builds (docs/tasks/task-multimodal-support-2026-10.md). A
+// tower loads lazily on the first image, after the resident decoder; without a reserve, serve's default KV plan takes every
+// free byte, the tower's upload fails (`CUDA_ERROR_OUT_OF_MEMORY`) and it runs on the CPU, so a served run on the default plan
+// reads as a pass for the wrong reason. The resident build already reserves for a drafter through Options.ExtraResidentBytes;
+// a tower rides the same field. The figure is the tower's float32 weights plus the scratch its largest image needs (the tower
+// releases its scratch after each call, so this is a peak, not a standing cost), from the checkpoint's own vision_config: an
+// estimate, deliberately not exact, and a ceiling the elastic terms (the KV context, the expert cache) give way to.
 
 type towerDims struct {
 	hidden, inter, layers, patch, temporal, inChan, merge int
@@ -74,7 +75,7 @@ func towerParts(mt string, d towerDims, maxPixels int) (params, scratch int64) {
 		patchIn = 3 * d.patch * d.patch
 		mlpMats = 3
 		np = max(d.outputLength, 1) * d.pool * d.pool
-	case "qwen3_5", "qwen3_5_moe", "qwen3_vl": // Qwen3-VL's is the same tower (S10 on CUDA); its DeepStack mergers run on the host
+	case "qwen3_5", "qwen3_5_moe", "qwen3_vl": // Qwen3-VL's is the same tower; its DeepStack mergers run on the host
 		mlpMats = 2
 		np = qwen3MaxImageTokens * d.merge * d.merge // serve's cap on the Qwen3.5 tower
 	case "glm_ocr":
@@ -83,8 +84,8 @@ func towerParts(mt string, d towerDims, maxPixels int) (params, scratch int64) {
 		if px <= 0 {
 			px = 4816896 // the model's own ceiling, serve's default (-vision-max-pixels 0)
 		}
-		// The ceiling's scratch alone is ~2.5 GB and, reserved, took GLM-OCR's CUDA context from 16384 to 4931 positions on the 8 GB card (measured 2026-10-07). Reserve for
-		// about 1.5 MP and let a larger image fall back to the CPU tower (deviceFallback) instead.
+		// Reserve for about 1.5 MP and let a larger image fall back to the CPU tower (deviceFallback) instead: reserving the
+		// ceiling's scratch (~2.5 GB) would starve the CUDA context of positions.
 		np = min(px, 1_500_000) / (d.patch * d.patch)
 	case "qwen2_5_vl":
 		// The CUDA reserve is qwen25VLTowerEstimate's calibrated figure; this is the arithmetic form, for Metal: the gated MLP and a ceiling of 8192 patches.
@@ -106,11 +107,11 @@ func towerParts(mt string, d towerDims, maxPixels int) (params, scratch int64) {
 	return params, scratch
 }
 
-// metalTowerEstimate is what a Metal device tower holds of the Mac's memory (S18 on the Mac): the projections at the form Metal uploads, the rest in float32, plus
-// the scratch. The grid towers (SigLIP, Qwen2.5-VL, Qwen3.5+, GLM-OCR) upload f16 projections since S17's lever B, or int8 in groups of 32 for Gemma 3's
-// int8 tower (S18, tower_gemm_w8: a byte plus an f32 scale per 32); Gemma 4's Metal tower is float32. Calibrated against Gemma 3's measured footprint
-// (G-S18h, metal TestS18TowerHostMemory, 2026-10-08): 1172 MB f16 and 843 MB int8 against 1292 and 932 from this, about 10% over, the safe direction (the
-// scratch term is towerParts', which over-counts Metal's).
+// metalTowerEstimate is what a Metal device tower holds of the Mac's memory: the projections at the form Metal uploads, the
+// rest in float32, plus the scratch. The grid towers (SigLIP, Qwen2.5-VL, Qwen3.5+, GLM-OCR) upload f16 projections, or int8
+// in groups of 32 for Gemma 3's int8 tower (tower_gemm_w8: a byte plus an f32 scale per 32); Gemma 4's Metal tower is float32.
+// Calibrated against Gemma 3's measured footprint (metal TestS18TowerHostMemory); it runs about 10% over, the safe direction
+// (the scratch term is towerParts', which over-counts Metal's).
 func metalTowerEstimate(mt string, d towerDims, maxPixels int, int8 bool) int64 {
 	params, scratch := towerParts(mt, d, maxPixels)
 	if params == 0 {
@@ -155,8 +156,8 @@ func towerReserve(cfg config, modelPath string) int64 {
 	}
 	mt := visionModelType(dir)
 	if cfg.towerBackend() == "metal" {
-		// S18 on the Mac: Metal's device memory is the Mac's RAM, and its guard now prices this beside the decoder. Gemma 3's int8 tower is Metal's own
-		// (tower_gemm_w8); every other family's int8 tower is the CPU's.
+		// Metal's device memory is the Mac's RAM, and its guard prices this beside the decoder. Gemma 3's int8 tower is
+		// Metal's own (tower_gemm_w8); every other family's int8 tower is the CPU's.
 		i8 := towerInt8(mt, cfg.visionQuant, "metal")
 		if !metalTowerRegistered(mt) || i8 && mt != "gemma3" {
 			return 0
@@ -168,8 +169,9 @@ func towerReserve(cfg config, modelPath string) int64 {
 		return metalTowerEstimate(mt, d, cfg.visionMaxPixels, i8)
 	}
 	if towerInt8(mt, cfg.visionQuant, "cuda") {
-		// Gemma 3's SigLIP is the one family with an int8 DEVICE tower on CUDA (the shipped default, and `-vision-quant int8`); every other int8 tower is the CPU's and holds no VRAM. It used to be
-		// priced at zero, so the default plan took every free byte and the tower then loaded beside a decoder with nothing left (S18, G-S18c).
+		// Gemma 3's SigLIP is the one family with an int8 DEVICE tower on CUDA (chosen when the card is too tight for float32,
+		// or by `-vision-quant int8`); every other int8 tower is the CPU's and holds no VRAM. Pricing it at zero would let the
+		// default plan take every free byte and the tower then load beside a decoder with nothing left.
 		if mt == "gemma3" {
 			if d, ok := readTowerDims(dir); ok {
 				return towerInt8VRAMEstimate(d)
@@ -188,9 +190,9 @@ func towerReserve(cfg config, modelPath string) int64 {
 	return towerVRAMEstimate(mt, d, cfg.visionMaxPixels)
 }
 
-// towerInt8VRAMEstimate is the Gemma 3 W8A8 SigLIP tower's footprint on the device: the block weights at one byte, the patch embed and position table in float32, and the fixed scratch (about nine
-// hidden-wide float32 buffers per patch). Calibrated against a measurement, not derived: the tower held 558 MiB of the 8 GB card after attaching and after a forward (cuda TestSiglipCUDA_int8VRAM,
-// 2026-10-07), against 575 MiB from this formula.
+// towerInt8VRAMEstimate is the Gemma 3 W8A8 SigLIP tower's footprint on the device: the block weights at one byte, the patch
+// embed and position table in float32, and the fixed scratch (about nine hidden-wide float32 buffers per patch). Calibrated
+// against a measurement, not derived (cuda TestSiglipCUDA_int8VRAM).
 func towerInt8VRAMEstimate(d towerDims) int64 {
 	h, i := int64(d.hidden), int64(d.inter)
 	side := int64(d.imageSize) / int64(max(d.patch, 1))
@@ -200,8 +202,9 @@ func towerInt8VRAMEstimate(d towerDims) int64 {
 	return weights + f32 + np*4*9*h
 }
 
-// cudaTowerRegistered says whether this binary registers a CUDA device tower for the model type: the registries are filled by a cuda build's blank import, so a plain build (and a unit test) sees none. A variable
-// so G-S18c's table test can stand in for a cuda build.
+// cudaTowerRegistered says whether this binary registers a CUDA device tower for the model type: the registries are filled by
+// a cuda build's blank import, so a plain build (and a unit test) sees none. A variable so a table test can stand in for a
+// cuda build.
 var cudaTowerRegistered = func(mt string) bool {
 	switch mt {
 	case "gemma3":
@@ -218,8 +221,9 @@ var cudaTowerRegistered = func(mt string) bool {
 	return false
 }
 
-// metalTowerRegistered says whether this binary has a Metal device tower for the model type: a metal binary registers the metal backend and its towers in
-// the same package init, so a plain build (and a unit test) sees none. A variable so G-S18c-Mac's table test can stand in for a metal build.
+// metalTowerRegistered says whether this binary has a Metal device tower for the model type: a metal binary registers the
+// metal backend and its towers in the same package init, so a plain build (and a unit test) sees none. A variable so a table
+// test can stand in for a metal build.
 var metalTowerRegistered = func(mt string) bool {
 	if !slices.Contains(decoder.RegisteredBackends(), "metal") {
 		return false
@@ -231,17 +235,17 @@ var metalTowerRegistered = func(mt string) bool {
 	return false
 }
 
-// qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (cuda/qwen25_vision.go), calibrated to a measurement and not derived (S7 on CUDA's fix, 2026-10-08). On the 8 GB card the tower's weights took
-// 2758 MiB, 337 MiB over the arithmetic size (about 570 separate buffers, each rounded up to the allocator's 2 MiB quantum); the first image's scratch is np * (7 hidden + 2 padded intermediate + patch dim + 2 head dim) * 4
-// bytes, 270 MiB at 4096 patches. The ceiling stays 8192 patches (about 1.6 MP); a larger image falls back to the CPU tower by name (deviceFallback).
-//
-// There used to be a further 256 MiB of "slack for the resident build's scratch beyond the plan's reading, measured 535 MiB against the 384 MiB margin". That was a misattribution: the text build's scratch after the plan's
-// probe is 0 MiB, and the shortfall it was patching was the allocator rounding of the TEXT model's weights, which the CUDA plan now prices itself (cuda.packedAllocSlack, 2026-10-08). Removed after a served probe on the
-// card: serve's defaults on the 3B, a ~8,000-patch image (2,014 prompt tokens) then a small one, the tower on CUDA, no failure, 1152 MiB of the 8192 still free after all three requests.
+// qwen25VLTowerEstimate prices goinfer's float32 Qwen2.5-VL tower on CUDA (cuda/qwen25_vision.go), calibrated to a
+// measurement, not derived: the weights take more than their arithmetic size (about 570 separate buffers, each rounded up to
+// the allocator's 2 MiB quantum), and the first image's scratch is np * (7 hidden + 2 padded intermediate + patch dim + 2 head
+// dim) * 4 bytes. The ceiling stays 8192 patches (about 1.6 MP); a larger image falls back to the CPU tower by name
+// (deviceFallback). There is deliberately no extra slack for the resident build's scratch: the text build's scratch after the
+// plan's probe is 0, and the allocator rounding of the TEXT model's weights is priced by the CUDA plan itself
+// (cuda.packedAllocSlack).
 func qwen25VLTowerEstimate(d towerDims) int64 {
 	const (
 		np         = 8192
-		allocExtra = 337 << 20 // weights' allocator overhead, measured
+		allocExtra = 337 << 20 // weights' allocator overhead
 	)
 	h, i := int64(d.hidden), (int64(d.inter)+63)/64*64 // the tower pads the intermediate width to a multiple of 64
 	patchIn := int64(d.inChan * d.temporal * d.patch * d.patch)

@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-// -log-requests (R25, docs/tasks/task-first-hour.md): one line per generation request on stderr — route, model, status, prompt and completion tokens,
-// time to first token, total time. A cold-user run on goinfer-serve learned its prompt sizes only from error bodies: nothing said what a client had sent.
-// Off by default, so a quiet server stays quiet.
+// -log-requests: one line per generation request on stderr: route, model, status, prompt and completion tokens, time to first
+// token, total time. Off by default, so a quiet server stays quiet (docs/tasks/task-first-hour.md).
 //
-// The middleware owns the status and the clock; the token counts and the first-token time can only be known where tokens are read, which is
-// streamTokens — the shared tail of every generation (drive and driveVL), so a request that makes several generations (a tool loop) is counted once
-// per request: prompt tokens of its first generation, completion tokens summed, first token of the first.
+// The middleware owns the status and the clock; the token counts and the first-token time can only be known where tokens are
+// read, which is streamTokens, the shared tail of every generation (drive and driveVL). A request that makes several
+// generations (a tool loop) is counted once per request: prompt tokens of its first generation, completion tokens summed,
+// first token of the first.
 
 type reqTrace struct {
 	start time.Time

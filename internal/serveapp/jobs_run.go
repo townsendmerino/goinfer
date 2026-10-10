@@ -18,10 +18,10 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-// refusal says why tryEnter did not admit a background request, which it reports only as ok=false plus a
-// halt reason. Three different things hide behind that: a halt, the request's own context ending
-// (DELETE /v1/jobs/{id} while it waited), and the model's queue being full. The last one used to be
-// recorded as "cancelled before a turn was granted" — telling a user they cancelled something they did not.
+// refusal says why tryEnter did not admit a background request, which it reports only as ok=false plus a halt reason. Three
+// different things hide behind that: a halt, the request's own context ending (DELETE /v1/jobs/{id} while it waited), and the
+// model's queue being full. Keep the queue-full case distinct: reporting it as a cancellation tells a user they cancelled
+// something they did not.
 type refusal struct {
 	state   jobState
 	status  int    // for a batch line's per-line error
@@ -40,11 +40,10 @@ func notAdmitted(ctx context.Context, haltReason string, lm *loadedModel) refusa
 	}
 }
 
-// jobTerminalEvents are the closing events of a job's stream, built from its final record (W27): the same
-// shapes /v1/chat/completions ends a stream with — a chunk carrying finish_reason, and a usage chunk — or,
-// for a job that failed, an OpenAI-style error event. Without them a client re-attaching through
-// GET /v1/jobs/{id}/events got the text and then [DONE], and had to poll to learn whether the reply was
-// complete, how many tokens it used, or that it had failed at all.
+// jobTerminalEvents are the closing events of a job's stream, built from its final record: the same shapes
+// /v1/chat/completions ends a stream with (a chunk carrying finish_reason, and a usage chunk) or, for a job that failed, an
+// OpenAI-style error event. Without them a client re-attaching through GET /v1/jobs/{id}/events gets the text and then [DONE],
+// and has to poll to learn whether the reply was complete, how many tokens it used, or that it failed at all.
 func jobTerminalEvents(j job, created int64, errType string) [][]byte {
 	var out [][]byte
 	switch {
@@ -66,14 +65,11 @@ func jobTerminalEvents(j job, created int64, errType string) [][]byte {
 	return out
 }
 
-// runJob is J3's asynchronous counterpart to serveChatText (task-work-queue-2026-09.md): the same
-// admission + drive() pipeline, but decoupled from any HTTP request's lifetime. Launched with
-// `go runJob(...)` from handleCreateJob, BEFORE that handler returns.
-//
-// release is s.resolveAndLock's own release func (liveness.go:69) — normally deferred by
-// withModel for the span of one synchronous handler; here it must be deferred for the span of
-// this WHOLE job instead, so /admin unload still can't free the model out from under a
-// generation that is still running after its submitting POST request has already returned.
+// runJob is the asynchronous counterpart to serveChatText: the same admission + drive() pipeline, decoupled from any HTTP
+// request's lifetime. Launched with `go runJob(...)` from handleCreateJob BEFORE that handler returns. release is
+// s.resolveAndLock's release func: normally deferred by withModel for one synchronous handler, here it is deferred for this
+// WHOLE job, so /admin unload cannot free the model out from under a generation still running after its submitting POST has
+// returned (docs/tasks/task-work-queue-2026-09.md).
 func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admissionRecord, created int64) {
 	defer release()
 	log := newJobEventLog()
@@ -88,7 +84,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	s.jobs.setCancel(gr.id, bgCancel)
 	defer bgCancel() // release resources tied to bgCtx once this job is fully done, either way
 
-	rec.id = gr.id // W28: so GET /v1/jobs/{id} can report this job's place in line while it waits
+	rec.id = gr.id // so GET /v1/jobs/{id} can report this job's place in line while it waits
 	ok, haltReason := lm.tryEnter(bgCtx, rec, s.haltState)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm)

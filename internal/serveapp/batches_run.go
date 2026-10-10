@@ -7,10 +7,9 @@ import (
 	"time"
 )
 
-// setResult records line i's outcome under the batch's own lock. Safe to call concurrently from
-// every line's goroutine: each writes a disjoint index, so only Status/the file-id fields
-// (untouched here) actually need the lock — taken anyway for the same reason job.go's mu is,
-// rather than reasoning a slice-index write never needs it.
+// setResult records line i's outcome under the batch's own lock. Safe to call concurrently from every line's goroutine:
+// each writes a disjoint index, so only Status and the file-id fields (untouched here) actually need the lock; it is
+// taken anyway, as jobStore's mu is, rather than reasoning that a slice-index write never needs it.
 func setResult(batch *batchRecord, i int, r batchLineResult) {
 	batch.mu.Lock()
 	batch.Results[i] = r
@@ -21,26 +20,23 @@ func lineError(customID string, status int, errType, msg string) batchLineResult
 	return batchLineResult{CustomID: customID, StatusCode: status, ErrType: errType, ErrMsg: msg}
 }
 
-// setJobID records line i's job id under the batch's own lock. Found by -race, not by
-// inspection, the same way job.go's own mu gained coverage in J3 (job.go:142's doc comment):
-// requestCancel (batches.go) reads the whole JobIDs slice from a different goroutine while lines
-// are still writing their own slot — disjoint indices don't save a plain slice write from racing a
-// concurrent read of the slice's backing array with no synchronization between them.
+// setJobID records line i's job id under the batch's own lock. requestCancel (batches.go) reads the whole JobIDs slice
+// from a different goroutine while lines are still writing their own slot; disjoint indices do not save a plain slice
+// write from racing a concurrent read of the slice's backing array.
 func setJobID(batch *batchRecord, i int, id string) {
 	batch.mu.Lock()
 	batch.JobIDs[i] = id
 	batch.mu.Unlock()
 }
 
-// runBatchChatLine is one line of an OpenAI batch (task-work-queue-2026-09.md J4): the same
-// validate → resolveAndLock → encode → prepare → admission → drive pipeline handleCreateJob
-// (jobs_http.go) and runJob (jobs_run.go) already run, replicated rather than called directly —
-// both are tied to a single HTTP handler's or a fire-and-forget job's own lifecycle, neither of
-// which fits "run synchronously in this line's own goroutine and hand back a result." Every
-// EXPENSIVE step (admission, lm.drive) is the identical shared call, not a second implementation.
+// runBatchChatLine is one line of an OpenAI batch: the same validate -> resolveAndLock -> encode -> prepare -> admission
+// -> drive pipeline that handleCreateJob (jobs_http.go) and runJob (jobs_run.go) run, replicated rather than called
+// because both are tied to a single HTTP handler's or a fire-and-forget job's lifecycle, neither of which fits "run
+// synchronously in this line's own goroutine and hand back a result." Every EXPENSIVE step (admission, lm.drive) is the
+// identical shared call, not a second implementation.
 //
-// A validation failure here is THIS LINE'S error, never the whole batch's — matches real batch-API
-// semantics (task doc: "a line that asks for [scope this pass excludes] gets a per-line error").
+// A validation failure is THIS LINE'S error, never the whole batch's, as in the real batch API
+// (docs/tasks/task-work-queue-2026-09.md).
 func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	customID := batch.CustomIDs[i]
 	defer batch.wg.Done()

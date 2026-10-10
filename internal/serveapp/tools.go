@@ -27,12 +27,8 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, http.StatusBadRequest, "this model has no tool-calling template")
 		return
 	}
-	// G1c, extended (audit-2026-09-02 M-21). The guard reached three routes; this was one of the
-	// five that still ran a full O(n) tokenize over an arbitrary body before rejecting it — the
-	// G1c comment prices what it removes at "~27 s of BPE + gigabytes of ids" on a multi-MiB body.
-	// M-15 (audit-2026-09-10): tools are ACTIVE on this path (that's why serveChatToolsWith was
-	// reached at all), so req.Tools' schema bytes are added here — RenderToolsSegments below
-	// renders every one of them into the prompt.
+	// Reject an input that cannot fit the context window BEFORE the O(n) tokenize. Tools are ACTIVE on this path, so
+	// req.Tools' schema bytes are added: RenderToolsSegments below renders every one of them into the prompt.
 	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages) + toolSchemaBytes(req.Tools)); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -51,7 +47,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
 		tm = lm.constrainedTemplate(ts)
 	}
-	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25: harden the no-tools/content spans
+	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // hardens the no-tools/content spans
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
@@ -62,10 +58,8 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	// Tight when unambiguous: a forced function or a lone tool ⇒ constrain the
-	// call to that tool's schema (when the family has a JSON call form). A NAMED
-	// tool_choice that cannot be constrained is a 400, not a silent unconstrained
-	// decode (audit M-05).
+	// Tight when unambiguous: a forced function or a lone tool constrains the call to that tool's schema (when the family has
+	// a JSON call form). A NAMED tool_choice that cannot be constrained is a 400, not a silent unconstrained decode.
 	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
@@ -81,19 +75,14 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	gr.id = id
 	created := time.Now().Unix()
 
-	// Tool decisions need the whole output, so buffer (even when streaming).
+	// Tool decisions need the whole output, so buffer (even when streaming). When streaming, SSE starts BEFORE the generation
+	// and a keep-alive comment frame ticks while the buffer fills: without it this path sends zero bytes for the whole
+	// generation, which no harness idle timeout survives however correct the output is. The buffering is unchanged, and
+	// comment frames carry no data, so tool-call parsing sees exactly what it would otherwise.
 	//
-	// G19: when streaming, SSE now starts BEFORE the generation and a keep-alive
-	// comment frame ticks while the buffer fills. Without it this path sent zero
-	// bytes for the whole generation — measured at 1682.6s to first byte against a
-	// harness whose idle timeout was 300s, which no output can survive however
-	// correct it is. The buffering itself is unchanged, and comment frames carry no
-	// data, so tool-call parsing sees exactly what it saw before.
-	//
-	// The cost of starting SSE early: a generation error can no longer be a 500 on
-	// the streaming path, because the headers are already flushed. That is the M1
-	// convention sseErr exists for and what the non-tool streaming paths already do.
-	// The non-streaming path below keeps its 500 unchanged.
+	// The cost of starting SSE early: a generation error can no longer be a 500 on the streaming path, because the headers are
+	// already flushed, so it goes out as an sseErr frame like the non-tool streaming paths. The non-streaming path keeps its
+	// 500.
 	var ss *sseWriter
 	if req.Stream {
 		var ok bool
@@ -101,8 +90,8 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 	}
-	// The shared tool turn (tool_turn.go): heartbeats while streaming (G19), prose streamed as content
-	// deltas as the model writes it where the family allows (G21), then the parse.
+	// The shared tool turn (tool_turn.go): heartbeats while streaming, prose streamed as content deltas as the model writes it
+	// where the family allows, then the parse.
 	var onProse func(string)
 	var rb strings.Builder
 	if ss != nil {
@@ -128,10 +117,9 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	finish, nComp, reused := t.finish, t.nComp, t.reused
 	if t.cancelReason != "" {
-		// K1: cancelled mid-generation, so the buffer is partial — no tool call is parsed out of it.
-		// Reported the same way a generation error is: an SSE error frame if streaming (already
-		// flushed headers, see G19's note above), a statusCancelled JSON error otherwise. sendUsage
-		// still runs — real tokens were generated before the cancel landed (M-26's reasoning).
+		// Cancelled mid-generation, so the buffer is partial and no tool call is parsed out of it. Reported the way a
+		// generation error is: an SSE error frame if streaming (headers already flushed), a statusCancelled JSON error
+		// otherwise. sendUsage still runs: real tokens were generated before the cancel landed.
 		if ss != nil {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": t.cancelReason}})
 			sendUsage(ss, req.StreamOptions, id, created, lm.name,
@@ -161,9 +149,8 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
 	if req.Stream {
-		// Whatever prose already left as deltas (G21) is not sent twice: only t.rest, the part of
-		// the parsed prose still held back. On a non-incremental family that is the whole message —
-		// exactly the G19 behavior.
+		// Whatever prose already left as deltas is not sent twice: only t.rest, the part of the parsed prose still held back.
+		// On a non-incremental family that is the whole message.
 		d := map[string]any{"role": "assistant"}
 		if len(t.calls) > 0 {
 			d["tool_calls"] = streamToolCalls(t.calls)
@@ -201,19 +188,17 @@ func toolsConstrainedFromStart(forced *chat.Tool, namedForce bool, union string,
 	return !namedForce && len(tools) >= 1 && union == "required" && toolUnionEnabled
 }
 
-// constrainForcedTool wires constrained decoding for a forced/lone tool call. When the
-// caller explicitly NAMED the function (namedForce), a family/schema that cannot be
-// constrained returns an error the handler renders as a 400: OpenAI and Anthropic both
-// guarantee a named tool_choice produces that call, so silently decoding unconstrained
-// (the model may emit prose, or a different tool) defeats the guarantee (audit M-05). The
-// lone-tool convenience (namedForce=false) never errors — it is only an optimization, and
-// the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses,
-// and the Anthropic Messages surface so all three degrade identically.
+// constrainForcedTool wires constrained decoding for a forced/lone tool call. When the caller explicitly NAMED the function
+// (namedForce), a family/schema that cannot be constrained returns an error the handler renders as a 400: OpenAI and Anthropic
+// both guarantee a named tool_choice produces that call, so silently decoding unconstrained (the model may emit prose, or a
+// different tool) defeats the guarantee. The lone-tool convenience (namedForce=false) never errors: it is only an
+// optimization, and the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses and the
+// Anthropic Messages surface so all three degrade identically.
 //
-// union ("", "auto" or "required") says what to do when no single tool is forced (usually two or
-// more tools; also Anthropic auto's lone tool) (T1-T3, docs/tasks/task-tool-grammar-union-2026-09.md): "required" (OpenAI
-// required, Anthropic any) constrains the call to ANY supplied tool from token 1; "auto" arms the
-// same union lazily, on the family's call opener, so a prose answer stays legal (ground rule 1).
+// union ("", "auto" or "required") says what to do when no single tool is forced (usually two or more tools; also Anthropic
+// auto's lone tool; docs/tasks/task-tool-grammar-union-2026-09.md): "required" (OpenAI required, Anthropic any) constrains the
+// call to ANY supplied tool from token 1; "auto" arms the same union lazily, on the family's call opener, so a prose answer
+// stays legal.
 func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool, union string, tools []chat.Tool) error {
 	// len >= 1, not 2: Anthropic auto never forces a lone tool (anthropicForcedTool), and the lazy
 	// union cannot force anything either, so it is the constraint that path was missing.
@@ -222,12 +207,8 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 		return nil
 	}
 	if forced == nil {
-		// N-18: a NAMED tool_choice that matched no tool used to land here and return nil —
-		// the request then generated completely unconstrained, having asked for one specific
-		// function. The 2026-08-05 audit made "named but unconstrainable" a 400 and left
-		// "named but nonexistent" falling through, which is the louder of the two errors: the
-		// caller has a typo or a stale tool list, and a prose answer looks like the model
-		// simply chose not to call anything.
+		// A NAMED tool_choice that matched no tool is an error, not an unconstrained generation: the caller has a typo or a
+		// stale tool list, and a prose answer would look like the model chose not to call anything.
 		if namedForce {
 			names := make([]string, 0, len(tools))
 			for _, t := range tools {
@@ -256,26 +237,19 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 		return nil
 	}
 	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
-	// N-23: lm.cachedTokenBytes(), not a fresh constrain.TokenBytes. The table is ~152k entries and
-	// this site rebuilt it PER REQUEST, before the queue — the 2026-08-05 audit's N-14 disposition
-	// says it is built once per model, and openai.go:767 does exactly that. One call site kept the
-	// uncached form.
+	// lm.cachedTokenBytes(), not a fresh constrain.TokenBytes: the table is ~152k entries and is built once per model;
+	// rebuilding it per request, before the queue, is the cost this avoids.
 	m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
 	gr.sp.LogitProcessor = m.Process
 	gr.masker = m // enables grammar-fused speculative decode (drive)
 	return nil
 }
 
-// toolUnionEnabled / toolUnionAuto are GOINFER_TOOL_UNION: on by default for both required /
-// Anthropic any (from token 1) and auto (lazily, on the opener); "0" turns both off (decoding
-// exactly as before T1). docs/measurements/tool-union-2026-09-24.md:
-//
-//   - auto first shipped default-OFF: an UNGATED processor disabled the decoder's on-device
-//     greedy/sampling fast paths for the whole turn, and prose auto turns decoded 0.81-0.99x (gate B).
-//   - the gated build (LazyMasker.Gate → SamplingParams.LogitProcessorGate) keeps those paths until
-//     the opener: prose turns 0.999-1.001x (gate B'), and a turn that never arms is byte-identical to
-//     "=0" at greedy AND T=0.7 (630/630, gate A'). The 7B's T0 turns then produce 0 invented or
-//     broken calls and 0 invalid arguments (gate C).
+// toolUnionEnabled / toolUnionAuto are GOINFER_TOOL_UNION: on by default for both required / Anthropic any (from token 1) and
+// auto (lazily, on the opener); "0" turns both off (decoding as before the union existed). The auto path depends on the GATED
+// processor (LazyMasker.Gate -> SamplingParams.LogitProcessorGate): an ungated processor disables the decoder's on-device
+// greedy/sampling fast paths for the whole turn and slows prose auto turns, while the gated build keeps them until the opener.
+// Evidence: docs/measurements/tool-union-2026-09-24.md.
 var (
 	toolUnionEnabled = os.Getenv("GOINFER_TOOL_UNION") != "0"
 	toolUnionAuto    = toolUnionEnabled
@@ -288,10 +262,10 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
 	}
-	// A server started with speculative decoding keeps its pre-T1 auto behaviour: every speculative
-	// path refuses a LogitProcessor (gated or not), so arming the lazy union would silently cost such
-	// a server its drafter on every multi-tool auto turn — a regression it opted out of by opting in.
-	// required is unaffected: it rides the grammar-fused speculative path.
+	// A server started with speculative decoding keeps its pre-union auto behaviour: every speculative path refuses a
+	// LogitProcessor (gated or not), so arming the lazy union would silently cost such a server its drafter on every
+	// multi-tool auto turn, a regression it opted out of by opting in. required is unaffected: it rides the grammar-fused
+	// speculative path.
 	if mode == "auto" && (lm.spec || lm.blockSpec != nil) {
 		return
 	}
@@ -305,8 +279,8 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	}
 	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
 	if mode == "required" {
-		// T3: the model must call something, and cannot call it badly. Forced from token 1
-		// exactly like a named tool, so grammar-fused speculative decode applies.
+		// The model must call something, and cannot call it badly. Forced from token 1 exactly like a named tool, so
+		// grammar-fused speculative decode applies.
 		g, err := constrain.ToolCallsGrammar(prefix, suffix, argsKey, array, specs)
 		if err != nil {
 			return
@@ -316,9 +290,8 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		gr.masker = m
 		return
 	}
-	// T2, auto: arm on the opener. A family whose call has no opener (llama3's bare JSON) arms
-	// instead on the output beginning with a call object's name key — the task's option (c):
-	// nothing is masked before the model has written `{"name": "`, so a prose answer (or JSON
+	// auto: arm on the opener. A family whose call has no opener (llama3's bare JSON) arms instead on the output beginning
+	// with a call object's name key: nothing is masked before the model has written `{"name": "`, so a prose answer (or JSON
 	// with another first key) is never touched and there is nothing to back out of.
 	trigger := strings.TrimRight(prefix, " \t\r\n")
 	if trigger == "" {
@@ -395,14 +368,13 @@ func openAIUnionMode(toolChoice json.RawMessage) string {
 	return ""
 }
 
-// forcedTool returns the single tool the call must be (a forced function, or the
-// lone tool) — the "tight when unambiguous" case. nil means don't constrain.
+// forcedTool returns the single tool the call must be (a forced function, or the lone tool): the "tight when unambiguous"
+// case. nil means don't constrain.
 //
-// The lone-tool convenience is for the model's FIRST call. afterToolResult (the conversation already ends in a tool
-// result, endsWithToolResult) lifts it under auto: forced on every turn it left a client with exactly one tool unable to
-// ever get an answer, the agent-livelock `serve check` reported as "turn two asked for the tool again instead of
-// answering" on Qwen2.5-Coder-7B and Qwen2.5-7B-Instruct alike (G39). An explicit "required" or a named function is the
-// client's own request and is forced on every turn, as before; "none" is never forced.
+// The lone-tool convenience is for the model's FIRST call. afterToolResult (the conversation already ends in a tool result,
+// endsWithToolResult) lifts it under auto: forcing it on every turn leaves a client with exactly one tool unable to ever get
+// an answer (the agent livelock `serve check` reports as "turn two asked for the tool again instead of answering"). An
+// explicit "required" or a named function is the client's own request and is forced on every turn; "none" is never forced.
 func forcedTool(toolChoice json.RawMessage, tools []chat.Tool, afterToolResult bool) *chat.Tool {
 	switch toolChoiceMode(toolChoice) {
 	case "none":

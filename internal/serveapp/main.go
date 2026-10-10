@@ -165,9 +165,8 @@ func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
 	return err
 }
 
-// explicitQuant returns the quant the user EXPLICITLY chose for this model — the per-model
-// `quant=` override if present, else the global --quant if it was actually passed — or "" if
-// neither was set (the process default). Used only for the .giw mismatch check (T1-7): a bare
+// explicitQuant returns the quant the user EXPLICITLY chose for this model: the per-model `quant=` override, else the
+// global --quant if it was actually passed, else "" (the process default). Used only for the .giw mismatch check: a bare
 // default must never conflict with an already-baked bundle.
 func (s modelSpec) explicitQuant(cfg config) string {
 	if s.quant != nil {
@@ -181,7 +180,7 @@ func (s modelSpec) explicitQuant(cfg config) string {
 func (s modelSpec) options(cfg config) decoder.Options {
 	o := cfg.load.Options()
 	o.Quant = orStr(s.quant, o.Quant)
-	if s.head != nil || isClefDir(s.path) { // a decision head (JEV or Clef) loads at the decision models' default unless a quant was chosen (D6b)
+	if s.head != nil || isClefDir(s.path) { // a decision head (JEV or Clef) loads at the decision models' default unless a quant was chosen
 		o.Quant = decide.HeadQuant(s.explicitQuant(cfg), s.quant != nil || cfg.load.QuantSet)
 	}
 	o.LoRA = orStr(s.lora, o.LoRA)
@@ -191,17 +190,17 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	o.WeightCacheBytes = int64(orFloat(s.weightCache, cfg.load.WeightCacheGB) * 1e9)
 	o.EmbedInt4 = orBool(s.embedInt4, o.EmbedInt4)
 	o.ResidentContext = orInt(s.ctxSize, o.ResidentContext)
-	// MC1 (docs/tasks/task-concurrency-2026-09.md): -kv-sessions also asks a GPU-resident backend for that many KV
-	// slots, so interleaved conversations keep their own prefix resident. The backend clamps it to its memory guard;
-	// the banner reports what it allocated.
+	// -kv-sessions also asks a GPU-resident backend for that many KV slots, so interleaved conversations keep their own prefix
+	// resident; the backend clamps it to its memory guard and the banner reports what it allocated
+	// (docs/tasks/task-concurrency-2026-09.md).
 	o.ResidentKVSlots = cfg.kvSessions
-	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // E-P09: Metal keeps 2 slots unless -kv-sessions was given
-	o.ResidentPrefillChunk = cfg.prefillChunk     // MC3 chunked prefill (docs/tasks/task-concurrency-2026-09.md); 0 = off
-	o.CPUBatchDecode = cfg.cpuBatch               // MC3c step 2: batched CPU decode (-cpu-batch)
+	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // Metal keeps 2 slots unless -kv-sessions was given
+	o.ResidentPrefillChunk = cfg.prefillChunk     // chunked prefill under concurrent generation; 0 = off
+	o.CPUBatchDecode = cfg.cpuBatch               // batched CPU decode (-cpu-batch)
 	return o
 }
 
-// specHead loads a --model entry's head= (a trained decision head, D4) and, for a head whose adapter is unmerged, makes
+// specHead loads a --model entry's head= (a trained decision head) and, for a head whose adapter is unmerged, makes
 // that adapter the model's LoRA so it is merged at load, as goinfer-chat decide --head does. A different lora= is
 // refused rather than one of the two silently winning. nil, nil when the entry has no head.
 func specHead(s modelSpec, o *decoder.Options) (*decide.Head, error) {
@@ -226,9 +225,8 @@ func specHead(s modelSpec, o *decoder.Options) (*decide.Head, error) {
 	return h, nil
 }
 
-// adapterSpec is one --adapter entry (#7): a served name, the --model it attaches
-// to (base), and the PEFT adapter dir. The base's resident weights are shared, so
-// each adapter costs only its low-rank A/B bytes — N fine-tunes off one base.
+// adapterSpec is one --adapter entry: a served name, the --model it attaches to (base), and the PEFT adapter dir. The
+// base's resident weights are shared, so each adapter costs only its low-rank A/B bytes.
 type adapterSpec struct {
 	name, base, dir string
 }
@@ -305,8 +303,7 @@ func addrIsLoopback(addr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// config is the resolved command line for newServer (the flag set outgrew a
-// positional signature once embeddings landed).
+// config is the resolved command line for newServer.
 type config struct {
 	models   modelFlag   // decoder(s) (-model, repeatable); empty = no generative endpoints
 	adapters adapterFlag // compute-time LoRA adapters (-adapter, repeatable); each shares a base model's resident weights (#7)
@@ -321,21 +318,21 @@ type config struct {
 	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
 	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
 	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (MC3c; default 4, owner 2026-09-26; 1 = serialized)
-	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff (MC3c step 2)
-	prefillChunk    int           // -prefill-chunk: under MC3, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
-	jobDir          string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
+	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (1 = serialized)
+	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff
+	prefillChunk    int           // -prefill-chunk: under concurrent generation, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
+	jobDir          string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
 	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
 	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
-	specAdaptive    bool          // -spec-adaptive: MC4 candidate, "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
+	specAdaptive    bool          // -spec-adaptive: "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
 	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	logRequests     bool          // -log-requests: one stderr line per generation request (R25)
-	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
-	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence (K2); 0 = stay up
-	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener (K5); "" = off
+	logRequests     bool          // -log-requests: one stderr line per generation request
+	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed
+	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence; 0 = stay up
+	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener; "" = off
 	web             bool          // -web: serve the local browser UI + its model-pull routes
 	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
@@ -371,10 +368,8 @@ type config struct {
 	embedResize string
 }
 
-// serveFlags is what the serve flags parse into: the config every model shares, the four listener flags that
-// are not part of it, --version, and the model-loading flags goinfer-chat shares (loadflags).
-// markGivenFlags records, after fs is parsed, which of cfg's flags the command line gave rather than defaulted: today
-// -kv-sessions, whose default 4 Metal lowers to 2 GPU KV slots (E-P09) while a given count is kept.
+// markGivenFlags records, after fs is parsed, which of cfg's flags the command line gave rather than defaulted:
+// -kv-sessions, whose default lowers Metal to 2 GPU KV slots while a given count is kept.
 func markGivenFlags(fs *flag.FlagSet, cfg *config) {
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "kv-sessions" {
@@ -383,6 +378,8 @@ func markGivenFlags(fs *flag.FlagSet, cfg *config) {
 	})
 }
 
+// serveFlags is what the serve flags parse into: the config every model shares, the four listener flags that
+// are not part of it, --version, and the model-loading flags goinfer-chat shares (loadflags).
 type serveFlags struct {
 	cfg                           config
 	addr, apiKey, tlsCert, tlsKey *string
@@ -486,32 +483,18 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(servecheck.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
-	// K5 (docs/tasks/task-halt-2026-09.md): `status|ls|cancel|halt|resume` are a CLIENT talking to a
-	// RUNNING server's admin socket (-admin-socket), not the server itself — same dispatch shape
-	// as pull/check above, so the operator's command is one word instead of a raw curl-to-a-Unix-
-	// socket incantation.
+	// `status|ls|cancel|halt|resume` are a CLIENT talking to a RUNNING server's admin socket (-admin-socket), not the
+	// server itself: the same dispatch shape as pull/check above (docs/tasks/task-halt-2026-09.md).
 	if len(os.Args) > 1 && isAdminCLICmd(os.Args[1]) {
 		os.Exit(runAdminCLI(os.Args[1], os.Args[2:], filepath.Base(os.Args[0])))
 	}
-	// A SKIMMABLE HELP HEADER, printed before the 39-flag dump.
-	//
-	// Cold-user run 2026-09-06, scenario B: "--help is 13,583 bytes / 39 flags / 100 lines, with
-	// paragraph-length prose per flag containing commit SHAs and self-critique. Unusable as a quick
-	// reference; I could not skim it for the flag I needed." That is not a style complaint — the
-	// SAME tester then drove a 16 GB machine +7.8 GB into swap because they did not find
-	// -stream-weights, whose help text names their exact model and their exact RAM. The flag was
-	// there and the document was too long to find it in.
-	//
-	// The long text stays: every paragraph in it is a disclosure some measurement earned, and
-	// deleting disclosures to shorten a page is how a trade-off stops being disclosed. This adds a
-	// map ABOVE it rather than trimming it, so skimming and reading are both possible.
+	// A skimmable help header, printed before the flag dump. The per-flag text stays long on purpose: each paragraph is a
+	// disclosure a measurement earned, and deleting disclosures to shorten the page is how a trade-off stops being
+	// disclosed. This adds a map ABOVE it rather than trimming it. Do not shorten the flag help to fix a long --help.
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
-		// The examples use the name the binary was actually INVOKED as, not a hardcoded
-		// "goinfer-serve". `go install .../cmd/serve@latest` drops a binary called `serve`, which
-		// the same cold run flagged ("Not goinfer-serve. On $PATH that is a collision waiting to
-		// happen"), so a help page that shows a name the reader does not have is one more thing to
-		// translate.
+		// The examples use the name the binary was actually INVOKED as, not a hardcoded "goinfer-serve": `go install
+		// .../cmd/serve@latest` installs a binary called `serve`.
 		self := filepath.Base(os.Args[0])
 		fmt.Fprintf(out, `%[1]s — OpenAI/Anthropic-compatible local inference server.
 
@@ -541,10 +524,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		flag.PrintDefaults()
 	}
 
-	// --version answers "what is in this binary" WITHOUT a model, which is the question the
-	// cold run could not ask (R2). Handled here rather than only as a parsed flag so it works
-	// on a binary whose other required flags are absent — and registered below as well, so it
-	// appears in --help.
+	// --version answers "what is in this binary" WITHOUT a model, so it is handled here and works on a binary whose other
+	// required flags are absent; it is registered below as well so it appears in --help.
 	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
@@ -560,9 +541,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if cfg.noSelfTest {
 		decoder.SkipSelfTests() // before the first Load, which is what runs the cpu self-test
 	}
-	// R6's other half (docs/measurements/cold-user-2026-09-06-nobara-pc.md): an unrecognized
-	// subcommand/positional falls through silently otherwise. Every argument here is a --flag;
-	// anything flag.Parse left in flag.Args() is a typo, not a feature.
+	// Every argument is a --flag, so anything flag.Parse left in flag.Args() is a typo: refuse it rather than fall through
+	// silently.
 	if args := flag.Args(); len(args) > 0 {
 		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <ref>, check, --version. Or pass --model <file.gguf|dir|hf:owner/repo:quant>.\n",
 			filepath.Base(os.Args[0]), args[0])
@@ -588,8 +568,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		flag.Usage()
 		os.Exit(2)
 	}
-	// Resolve the optional shared secret (flag wins over env). -allow-admin exposes an
-	// arbitrary-path model load + sidecar write, so it must not run unauthenticated (B-14).
+	// Resolve the optional shared secret (flag wins over env). -allow-admin exposes an arbitrary-path model load + sidecar
+	// write, so it must not run unauthenticated.
 	authKey := *apiKey
 	if authKey == "" {
 		authKey = os.Getenv("GOINFER_API_KEY")
@@ -598,11 +578,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintln(os.Stderr, "error: -allow-admin requires -api-key (or $GOINFER_API_KEY) — admin load/unload must be authenticated")
 		os.Exit(2)
 	}
-	// Mirrors the -allow-admin check above: the -addr help text itself invites
-	// 0.0.0.0 exposure with "set -api-key when you do", but nothing previously
-	// enforced the second half — a non-loopback bind with no key started up fully
-	// open to the network. Loopback stays key-free by default (no auth friction
-	// for the common single-user desktop case).
+	// Mirrors the -allow-admin check above: the -addr help invites 0.0.0.0 exposure, and a non-loopback bind with no key
+	// would start fully open to the network. Loopback stays key-free by default (no auth friction for the single-user desktop
+	// case).
 	if !addrIsLoopback(*addr) && authKey == "" {
 		fmt.Fprintf(os.Stderr, "error: -addr %s is not loopback-only — requires -api-key (or $GOINFER_API_KEY), or bind to 127.0.0.1 instead\n", *addr)
 		os.Exit(2)
@@ -670,42 +648,37 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}
 	}
 
-	// Every POST body is size-bounded (M3): the chat/messages endpoints carry
-	// base64 image_url data, so they get the larger vision cap; the rest a few MB.
-	// auth wraps a handler with the optional shared-secret check (no-op when authKey
-	// is ""); every route below goes through it so a set key protects the whole surface.
+	// Every POST body is size-bounded: the chat/messages endpoints carry base64 image_url data, so they get the larger
+	// vision cap; the rest a few MB. auth wraps a handler with the optional shared-secret check (no-op when authKey is "");
+	// every route below goes through it so a set key protects the whole surface.
 	auth := func(h http.HandlerFunc) http.HandlerFunc { return requireAuth(authKey, h) }
-	// inflight is the global concurrency cap over the inference POST handlers (the pre-queue
-	// stage), shared across all of them (audit M-01). GET/health and admin stay uncapped so an
-	// operator's health probe is always answered and never consumes a slot. Order: auth outermost
-	// (reject bad auth without taking a slot), then the inflight gate, then the body cap.
+	// inflight is the global concurrency cap over the inference POST handlers (the pre-queue stage), shared across all of
+	// them. GET/health and admin stay uncapped so an operator's health probe is always answered and never consumes a slot.
+	// Order: auth outermost (reject bad auth without taking a slot), then the inflight gate, then the body cap.
 	var inflight chan struct{}
 	if cfg.maxInflight > 0 {
 		inflight = make(chan struct{}, cfg.maxInflight)
 	}
 	inf := func(h http.HandlerFunc) http.HandlerFunc { return limitInflight(inflight, h) }
-	// Resolve the request-body caps (G1d). The largest servable text prompt is ctx tokens ×
-	// the longest token's bytes; ×4 covers JSON structure/escaping. Derived per the largest
-	// served model's context window, floored at the historical constants so a small-context
-	// model keeps a usable body budget (the per-request tokenization guard, not this cap,
-	// protects it), and overridable with -max-body-bytes. Reported on the startup line.
+	// Request-body caps: the largest servable text prompt is ctx tokens x the longest token's bytes, x4 for JSON
+	// structure/escaping, derived per the largest served model's context window, floored at fixed minimums so a
+	// small-context model keeps a usable body budget (the per-request tokenization guard, not this cap, protects it), and
+	// overridable with -max-body-bytes. Reported on the startup line.
 	textCap, visionCap, embedCap, fileCap := srv.resolveBodyCaps(cfg.maxBodyBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/models", auth(srv.handleModels))
 	// Operator surface for the resolved compute paths — same fields as the /v1/models vendor
 	// extension, on a payload with no OpenAI-schema contract to break. See handleHealth.
 	mux.HandleFunc("GET /health", auth(srv.handleHealth))
-	// K2 (docs/tasks/task-halt-2026-09.md): halt is checked AFTER auth (a bad key is still rejected
-	// during a halt) and BEFORE inf (a halt must not wait for an inflight slot — "a halt that
-	// has to wait for a slot is not a halt", the doc's own words). /admin/* and /health are
-	// deliberately NOT wrapped in this — an operator must always be able to resume/check status.
-	// Registered whether or not a model is loaded at startup. A server started with only --web,
-	// --allow-admin or --admin-socket loads its model later (the web UI's Models tab, /admin/models/load);
-	// the mux is built once, so these routes registered only when a model existed at startup left that
-	// server with no /v1/chat/completions and no /v1/jobs for its whole life, and the web UI's own chat
-	// got a 404. Every handler resolves its model through resolveAndLock, which answers an unknown or
-	// absent model with the OpenAI-shaped 404 "model not found (served: …)".
-	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is logged with its status too.
+	// haltGate runs AFTER auth (a bad key is still rejected during a halt) and BEFORE inf (a halt must not wait for an
+	// inflight slot). /admin/* and /health are deliberately NOT wrapped in it: an operator must always be able to resume and
+	// check status (docs/tasks/task-halt-2026-09.md).
+	// These routes are registered whether or not a model is loaded at startup: a server started with only --web,
+	// --allow-admin or --admin-socket loads its model later, and the mux is built once. Every handler resolves its model
+	// through resolveAndLock, which answers an unknown or absent model with the OpenAI-shaped 404 "model not found (served:
+	// ...)".
+	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is
+	// logged with its status too.
 	var reqLogOut io.Writer
 	if cfg.logRequests {
 		reqLogOut = os.Stderr
@@ -716,26 +689,21 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
 	mux.HandleFunc("POST /v1/messages", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages))))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
-	// Decisions (D5, docs/tasks/task-constrained-confidence.md): TypeSafe's POST /v1/systemone wire shape, served by
-	// label scoring (internal/decide), so jevx and the TypeSafe SDKs work against goinfer through their base-URL override.
+	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
+	// work against goinfer through their base-URL override (docs/tasks/task-constrained-confidence.md).
 	mux.HandleFunc("POST /v1/systemone", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleSystemOne)))))
-	// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets the
-	// same haltGate/inf/maxBytes stack as every other POST above. Polling state (GET), reading
-	// the event stream (GET .../events), and cancelling (DELETE) are NOT new inference work —
-	// haltGate'ing them would 503 a client just trying to learn that its job was halted, and
-	// inf's inflight cap exists to bound pre-queue JSON/image decode + tokenization, none of
-	// which these three do — so they get auth only.
+	// Submitting a job starts new admission, so POST /v1/jobs gets the same haltGate/inf/maxBytes stack as every other POST
+	// above. Polling (GET), the event stream and cancel (DELETE) are not new inference work: haltGate would 503 a client
+	// trying to learn that its job was halted, and inf's cap bounds pre-queue decode and tokenization, which these do not
+	// do. They get auth only (docs/tasks/task-work-queue-2026-09.md).
 	mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
 	mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
 	mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
 	mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
-	// J4 (task-work-queue-2026-09.md): the two batch APIs, over the same job store. POST
-	// /v1/files is an upload, not inference — it carries no generation work by itself, so it
-	// follows /web/models/pull's own precedent (main.go, below) rather than /v1/jobs': auth +
-	// maxBytes only, no haltGate/inf (those bound decode concurrency/backpressure, not upload
-	// I/O). POST /v1/batches and POST /v1/messages/batches DO queue real generation work (one
-	// job per line, same pipeline as /v1/jobs), so they get the full stack. Every GET and every
-	// .../cancel gets auth only, same reasoning as /v1/jobs' own GET/DELETE routes above.
+	// The two batch APIs, over the same job store. POST /v1/files is an upload, not inference, so like /web/models/pull it
+	// gets auth + maxBytes only (haltGate and inf bound decode concurrency, not upload I/O). POST /v1/batches and POST
+	// /v1/messages/batches queue real generation work (one job per line, the /v1/jobs pipeline) and get the full stack.
+	// Every GET and every .../cancel gets auth only, as /v1/jobs' own GET/DELETE do.
 	mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
 	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
 	mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
@@ -746,65 +714,52 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	mux.HandleFunc("GET /v1/messages/batches/{id}", auth(srv.handleGetMessageBatch))
 	mux.HandleFunc("GET /v1/messages/batches/{id}/results", auth(srv.handleGetMessageBatchResults))
 	mux.HandleFunc("POST /v1/messages/batches/{id}/cancel", auth(srv.handleCancelMessageBatch))
-	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
-	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
+	// Registered unconditionally: with no embedding model, handleEmbeddings returns a JSON error naming -embed-model rather
+	// than a bare 404, so an SDK sees "unconfigured", not "wrong URL".
 	mux.HandleFunc("POST /v1/embeddings", auth(srv.haltGate(inf(maxBytes(embedCap, srv.handleEmbeddings,
 		// The per-input / per-batch bounds are per-DIMENSION and multiply out past any body cap, so
 		// name all three: a client within both per-dimension limits can still exceed the total.
 		fmt.Sprintf("this route also limits each request to %d inputs of at most %d bytes each; "+
 			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
-	// /admin/* (load/unload, K1's cancel-by-id, K2's halt/resume, K5's status) lives on EITHER
-	// the TCP listener (gated by auth+ -allow-admin, as always) OR the admin socket (K5,
-	// docs/tasks/task-halt-2026-09.md) when -admin-socket is set — never both, so a request against
-	// the surface that was deliberately not chosen 404s instead of merely being refused (a 403
-	// would confirm the surface exists; a 404 does not). See admin_socket.go for the socket side.
+	// /admin/* lives on EITHER the TCP listener (auth + -allow-admin) OR the admin socket when -admin-socket is set, never
+	// both, so a request against the surface that was not chosen 404s instead of being refused: a 403 would confirm the
+	// surface exists. See admin_socket.go for the socket side (docs/tasks/task-halt-2026-09.md).
 	if cfg.adminSocket == "" {
 		registerAdminRoutes(mux, srv, textCap, func(h http.HandlerFunc) http.HandlerFunc { return auth(srv.requireAdmin(h)) })
 	}
 	if cfg.web {
-		// "GET /{$}" matches the root path EXACTLY. A bare "GET /" would be a catch-all and
-		// would turn every unknown GET into the UI page instead of a 404, which is worse than
-		// unhelpful for an API server — a typo'd route would render HTML to an SDK.
-		//
-		// UNAUTHENTICATED on purpose (V-02, docs/review-2026-09-04.md): the page embeds no
-		// secrets (handleWebUI's own comment), but a browser's plain navigation sends no
-		// Authorization header, and the page is the ONLY place a user could type the key in —
-		// its own JS holds it for the fetch() calls to /web/models/*. Wrapping this route in
-		// auth() made that impossible whenever -api-key was set (required off loopback): the
-		// page needed the key to load, and there was nowhere to enter the key without the page.
-		// auth stays on the two routes below, which actually act (list a repo, pull a model).
+		// "GET /{$}" matches the root path EXACTLY; a bare "GET /" is a catch-all that would answer every unknown GET with the
+		// UI page instead of a 404.
+		// UNAUTHENTICATED on purpose: the page embeds no secrets (handleWebUI) and is the only place a user can type the key in,
+		// so auth() here would make the key unenterable whenever -api-key is set. auth stays on the routes below, which act
+		// (docs/completed/review-2026-09-04.md, V-02).
 		mux.HandleFunc("GET /{$}", srv.handleWebUI)
-		// The page's own CSS and JS (task-web-ui-2026-09.md §6.1). Unauthenticated for the same
-		// V-02 reason as the page: it cannot load, and so the key cannot be entered, without them.
+		// The page's own CSS and JS (docs/tasks/task-web-ui-2026-09.md §6.1), unauthenticated for the same reason as the page.
 		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
 		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
-		// sameOrigin (V-20, docs/review-2026-09-04.md): on the key-free loopback default,
-		// auth() alone is a no-op, and these two routes act — pull triggers a caller-named
-		// multi-gigabyte download. See sameOrigin's own doc comment in webui.go.
+		// sameOrigin: on the key-free loopback default auth() alone is a no-op, and these routes act (pull starts a caller-named
+		// multi-gigabyte download). See sameOrigin in webui.go (docs/completed/review-2026-09-04.md, V-20).
 		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
-		// Live search-as-you-type suggestions over the repo box (pull.Search, GGUF only today):
-		// read-only, same origin/auth stack as list/list-adjacent routes above.
+		// Live search-as-you-type suggestions over the repo box (pull.Search): read-only, same origin/auth stack as list.
 		mux.HandleFunc("POST /web/models/search", sameOrigin(auth(maxBytes(textCap, srv.handleWebSearch))))
 		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
 		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
 		// its own (pullState), which is the bound that actually fits it.
 		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
-		// W5 (task-web-ui-2026-09.md): load what the pull just downloaded. NOT the admin load —
-		// that takes any caller-named path and stays behind -allow-admin. This one is confined to
-		// regular .gguf files under the pull cache (webLoadPath), and gets the same stack as pull:
-		// it is at least as heavy an action. Not in inf() either, for the pull's reason.
+		// Load what the pull just downloaded. NOT the admin load, which takes any caller-named path and stays behind
+		// -allow-admin: this one is confined to regular .gguf files under the pull cache (webLoadPath) and gets the same stack
+		// as pull, since it is at least as heavy an action. Not in inf() either, for the pull's reason.
 		mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebLoad))))
-		// W32 (task-web-ui-2026-09.md): unload a currently-loaded model. Needs no path policy the way
-		// load does — the only names it can act on are ones GET /v1/models already publishes — so it
-		// reuses unloadByName directly rather than gating a new admin surface. Same stack as load.
+		// Unload a currently-loaded model. It needs no path policy: the only names it can act on are ones GET /v1/models already
+		// publishes, so it reuses unloadByName directly. Same stack as load.
 		mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWebUnload))))
-		// P8 (task-checkpoint-fetch-2026-09.md): what the pull cache holds on disk, for the page's "On disk" card. Read-only,
-		// and it names only paths under the pull cache, the ones the load route above would accept anyway.
+		// What the pull cache holds on disk, for the page's "On disk" card. Read-only, and it names only paths under the pull
+		// cache, the ones the load route above would accept anyway.
 		mux.HandleFunc("GET /web/models/cache", sameOrigin(auth(srv.handleWebCache)))
 	}
 
-	// K5 (docs/tasks/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when
-	// -admin-socket is unset, so the shutdown handler below can call it unconditionally.
+	// The admin socket (docs/tasks/task-halt-2026-09.md). closeAdminSock is a no-op when -admin-socket is unset, so the
+	// shutdown handler below can call it unconditionally.
 	closeAdminSock := func() {}
 	if cfg.adminSocket != "" {
 		var err error
@@ -816,23 +771,16 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintf(os.Stderr, "admin socket: %s (mode 0600, no api-key — file permissions are the auth; /admin/* is NOT registered on the TCP listener while this is set)\n", cfg.adminSocket)
 	}
 
-	// ReadHeaderTimeout + ReadTimeout + IdleTimeout bound slow-header (slowloris), slow-body
-	// dribble, and idle keep-alive connections. ReadTimeout is the whole-request read deadline
-	// (60s: generous for a 32 MiB vision body on a slow link) — before it, ReadHeaderTimeout
-	// bounded only the headers, so a client sending the body one byte per minute pinned a
-	// goroutine indefinitely (audit M-01). It only bounds the request READ; the SSE response is a
-	// write, so a long stream is unaffected. WriteTimeout stays 0: SSE responses are long-lived
-	// and a write deadline would truncate a legitimate stream (M3).
-	// srvCtx is the server-lifetime context. BaseContext makes every request's r.Context() a child of
-	// it, so cancelling srvCtx at shutdown cancels every in-flight generation (drive derives its
-	// context from r.Context()). Without this, httpSrv.Shutdown waits for a long streaming generation
-	// but never cancels it, so it runs past the 30s timeout — the checkpoint loop below no longer
-	// deadlocks on that specific generation's lm.sessMu (J1, task-work-queue-2026-09.md, split
-	// sessMu out from the admission turn it used to share: sessMu is now held only briefly, around
-	// sessions.acquire, not for the whole generation), but Shutdown itself still waits for the
-	// handler to return, so cancelling the generation is still what bounds the overall shutdown
-	// (audit C-22); tryLockUntil's own deadline is the remaining belt-and-braces bound on sessMu
-	// specifically, for whatever brief window a generation is actually inside sessions.acquire.
+	// The timeouts bound slow-header (slowloris), slow-body dribble and idle keep-alive connections. ReadTimeout is the
+	// whole-request read deadline (60s: generous for a 32 MiB vision body on a slow link); it bounds only the request READ,
+	// so a long SSE stream is unaffected. WriteTimeout stays 0 on purpose: a write deadline would truncate a legitimate
+	// stream.
+	// srvCtx is the server-lifetime context. BaseContext makes every request's r.Context() a child of it, so cancelling it at
+	// shutdown cancels every in-flight generation (drive derives its context from r.Context()). Without that,
+	// httpSrv.Shutdown waits for a long streaming generation but never cancels it, and the shutdown runs past its 30s
+	// timeout. sessMu is held only briefly (around sessions.acquire), so the checkpoint loop does not deadlock on a running
+	// generation, but Shutdown still waits for the handler to return: cancelling is what bounds it. tryLockUntil's deadline
+	// is the remaining bound on sessMu itself.
 	srvCtx, srvCancel := context.WithCancel(context.Background())
 	defer srvCancel()
 	httpSrv := &http.Server{
@@ -852,8 +800,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	if cfg.kvIdleDemote > 0 {
 		go demoteLoop(srv, cfg.kvIdleDemote, stopDemote)
 	}
-	// K2's -halt-file poller stop channel; declared here (not beside its goroutine start below)
-	// so the shutdown handler just below can close it alongside stopDemote.
+	// stopHaltPoll stops the -halt-file poller; declared here so the shutdown handler below can close it alongside stopDemote.
 	stopHaltPoll := make(chan struct{})
 
 	// Graceful shutdown: on SIGINT/SIGTERM, stop accepting, drain in-flight
@@ -866,8 +813,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		defer close(done)
 		<-sig
 		fmt.Fprintln(os.Stderr, "\nshutting down…")
-		// A SECOND signal during the drain force-exits instead of being swallowed by the buffered
-		// channel — so Ctrl-C twice always kills the server, not only SIGKILL (audit C-22).
+		// A SECOND signal during the drain force-exits instead of being swallowed by the buffered channel, so Ctrl-C twice
+		// always kills the server, not only SIGKILL.
 		go func() {
 			<-sig
 			fmt.Fprintln(os.Stderr, "second signal — forcing exit")
@@ -875,13 +822,12 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}()
 		close(stopDemote)   // stop demoting before we checkpoint
 		close(stopHaltPoll) // stop polling -halt-file; nothing left to react to it after shutdown
-		closeAdminSock()    // close + unlink the admin socket (K5), if one was started
+		closeAdminSock()    // close + unlink the admin socket, if one was started
 		srvCancel()         // cancel in-flight generations (via BaseContext) so they release lm.mu
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
-		// MC3c step 2: what the CPU batcher did over this server's life — the record that decode tokens actually ran
-		// in batched steps, and how wide (docs/tasks/task-concurrency-2026-09.md).
+		// What the CPU batcher did over this server's life: that decode tokens actually ran in batched steps, and how wide.
 		for _, lm := range srv.modelList() {
 			if lm.model != nil && lm.model.CPUBatchActive() {
 				st := lm.model.CPUBatchStats()
@@ -889,7 +835,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
 			}
 			if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
-				// MC3 (Metal, CUDA): the resident batcher's counters, the same shape.
+				// The resident batcher's counters, the same shape.
 				st := lm.model.ResidentBatchStats()
 				fmt.Fprintf(os.Stderr, "resident batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
@@ -904,10 +850,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 			deadline := time.Now().Add(5 * time.Second)
 			for _, lm := range srv.modelList() {
-				// TryLock with a deadline: srvCancel above should have freed a generation still
-				// inside sessions.acquire (a generation mid-forward, not yet at a ctx check, could
-				// briefly still hold lm.sessMu) — skip its checkpoint rather than deadlock the
-				// whole shutdown (audit C-22).
+				// TryLock with a deadline: srvCancel above should have freed a generation still inside sessions.acquire (one
+				// mid-forward, not yet at a ctx check, could briefly still hold lm.sessMu). Skip its checkpoint rather than deadlock the
+				// whole shutdown.
 				if !tryLockUntil(&lm.sessMu, deadline) {
 					fmt.Fprintf(os.Stderr, "shutdown: model %q still busy — skipping its session checkpoint\n", lm.name)
 					continue
@@ -919,17 +864,14 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		}
 	}()
 
-	// K2 (docs/tasks/task-halt-2026-09.md): SIGUSR1 halts, SIGUSR2 resumes — a supervisor can pull
-	// this switch without opening a socket or an HTTP client. Separate from the SIGINT/SIGTERM
-	// channel above: those are one-shot (shutdown then exit), these repeat for the life of the
-	// process, so they get their own Notify and a loop rather than a single <-sig receive.
-	// Platform-specific (haltsignal_unix.go / haltsignal_windows.go): SIGUSR1/SIGUSR2 are
-	// undefined identifiers on Windows, not just signals it never raises.
+	// SIGUSR1 halts, SIGUSR2 resumes, so a supervisor can pull this switch without a socket or an HTTP client
+	// (docs/tasks/task-halt-2026-09.md). Separate from the one-shot SIGINT/SIGTERM channel above: these repeat for the life
+	// of the process, so they get their own Notify and a loop. Platform-specific (haltsignal_unix.go /
+	// haltsignal_windows.go): SIGUSR1/SIGUSR2 are undefined identifiers on Windows.
 	startHaltSignalLoop(srv)
 
-	// K2: -halt-file. Polled in its own goroutine; stopHaltPoll (declared above, closed
-	// alongside stopDemote at shutdown) is best-effort background work with no result main()
-	// waits on.
+	// -halt-file is polled in its own goroutine; stopHaltPoll is closed alongside stopDemote at shutdown. It is best-effort
+	// background work with no result main waits on.
 	if cfg.haltFile != "" {
 		go haltFilePoller(srv, cfg.haltFile, stopHaltPoll)
 	}
@@ -1001,20 +943,17 @@ func newServer(cfg config) (*server, error) {
 		responses: newResponseStore(256),
 		gens:      newGenerationRegistry(),
 		jobs:      jobs,
-		// 256 matches jobs'/responses' own bound above — no dedicated -file-cap/-batch-cap flag
-		// yet, same reasoning as jobs' own comment (J3): a size past this many old is only evicted
+		// 256 matches the bounds above: no dedicated -file-cap/-batch-cap flag, and a record past this many old is only evicted
 		// once terminal.
 		files:   newFileStore(256),
 		batches: newBatchStore(256),
 	}
 	for _, spec := range cfg.models {
-		// An `hf:`/`demo:` spec is fetched (or found in the cache) inside loadDecoder
-		// (modelload.Resolve), before anything else, so the served name derives from the real
-		// filename. A plain path is returned untouched, so no existing --model changes meaning —
-		// the property that lets a reference form be added to a Hard-tier flag.
-		// Startup load: a transparent .gguf→.giw transcode here isn't request-scoped, so
-		// context.Background() (a Ctrl-C during startup already ends the process). The admin
-		// load path below passes the request context so a disconnect cancels it (M-21).
+		// An `hf:`/`demo:` spec is fetched (or found in the cache) inside loadDecoder (modelload.Resolve), before anything else,
+		// so the served name derives from the real filename. A plain path is returned untouched, so no existing --model changes
+		// meaning: that is what lets a reference form be added to a Hard-tier flag.
+		// Startup load: context.Background() (a Ctrl-C during startup already ends the process). The admin load path passes the
+		// request context so a disconnect cancels it.
 		lm, err := loadDecoder(context.Background(), spec, cfg)
 		if err != nil {
 			return nil, err
@@ -1043,27 +982,25 @@ func newServer(cfg config) (*server, error) {
 	if err := s.loadVisionTower(cfg); err != nil {
 		return nil, err
 	}
-	// MC3c: decided last, once adapters and vision towers are attached — a vision model runs one generation at a time.
+	// Decided last, once adapters and vision towers are attached: a vision model runs one generation at a time.
 	for _, lm := range s.models {
 		if line := lm.setConcurrency(cfg); line != "" {
 			fmt.Fprintf(os.Stderr, "%q %s\n", lm.name, line) // decided only now, so not part of its load banner
 		}
 	}
-	// S3 (docs/tasks/task-never-swap-2026-09.md): armed last, after every startup load that could
-	// itself grow swap has already finished — the guard's baseline should be "steady state after
-	// startup," not a reading taken mid-load that then reads every startup byte as its own delta.
+	// Armed last, after every startup load that could itself grow swap has finished: the guard's baseline should be steady
+	// state after startup, not a mid-load reading that counts every startup byte as its own delta
+	// (docs/tasks/task-never-swap-2026-09.md).
 	s.startSwapGuard()
 	return s, nil
 }
 
-// loadAdapters registers each --adapter (#7) against its base --model: it shares
-// the base's resident decoder.Model (the RAM win — only the low-rank A/B bytes are
-// new) but gets its own served name, KV-session LRU, decode mutex, and queue. A
-// request routes to the fine-tune via the OpenAI `model` field; the per-LRU
-// adapter binding makes each session project through it. The shared all-resident
-// weights are read-only during a forward (per-stream scratch + KV), so the base
-// and its adapters run as independent decode workers safely — hence --stream-weights
-// (mutable per-layer paging on the shared model) is rejected.
+// loadAdapters registers each --adapter against its base --model: it shares the base's resident decoder.Model (the RAM
+// win: only the low-rank A/B bytes are new) but gets its own served name, KV-session LRU, decode mutex, and queue. A
+// request routes to the fine-tune via the OpenAI `model` field; the per-LRU adapter binding makes each session project
+// through it. The shared all-resident weights are read-only during a forward (per-stream scratch + KV), so the base and
+// its adapters run as independent decode workers safely; --stream-weights (mutable per-layer paging on the shared model)
+// is therefore rejected.
 func (s *server) loadAdapters(cfg config) error {
 	for _, spec := range cfg.adapters {
 		if cfg.load.StreamWeights {
@@ -1102,17 +1039,9 @@ func (s *server) loadAdapters(cfg config) error {
 	return nil
 }
 
-// loadVisionTower attaches a vision tower to the (single) loaded model, making it
-// vision-capable (serve then accepts image content parts). Per-family, not SigLIP-only
-// (N-35, docs/audit-2026-09-10.md): Gemma 3 gets a SigLIP encoder + projector, Qwen2.5-VL
-// its own ViT, Gemma 4 its own encoder — visionModelType below picks the family. The
-// dir is -vision if set, else the sole --model's own dir when it carries a vision
-// tower (auto-discovery). A multimodal tower only makes sense for a single model,
-// so it errors if -vision is set with a model zoo. Absent a tower it is a no-op:
-// text-only serving is unchanged.
 // towerBackend is the backend a device vision tower is chosen for: the model's own, unless -vision-device cpu keeps the
-// tower on the CPU (S2, docs/tasks/task-multimodal-support-2026-10.md: it also isolates the tower in a served comparison,
-// with the language model on the same backend in both arms).
+// tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
+// both arms (docs/tasks/task-multimodal-support-2026-10.md).
 func (cfg config) towerBackend() string {
 	if cfg.visionDevice == "cpu" {
 		return "cpu"
@@ -1120,6 +1049,10 @@ func (cfg config) towerBackend() string {
 	return cfg.load.Backend
 }
 
+// loadVisionTower attaches a vision tower to the (single) loaded model, making it vision-capable (serve then accepts
+// image content parts). The family is chosen by visionModelType. The dir is -vision if set, else the sole --model's own
+// dir when it carries a vision tower (auto-discovery). A tower needs exactly one --model, so -vision with a model zoo
+// is an error. Absent a tower it is a no-op: text-only serving is unchanged.
 func (s *server) loadVisionTower(cfg config) error {
 	if cfg.visionDevice != "" && cfg.visionDevice != "auto" && cfg.visionDevice != "cpu" { // "" (a config built without flags) is auto
 		return fmt.Errorf("-vision-device %q: want auto or cpu", cfg.visionDevice)
@@ -1141,7 +1074,7 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if visionModelType(cand) == "qwen3_asr" {
 					dir = cand
-				} else if visionModelType(cand) == "mistral3" { // Ministral 3's Pixtral tower (S10)
+				} else if visionModelType(cand) == "mistral3" { // Ministral 3's Pixtral tower
 					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
@@ -1155,11 +1088,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	if err := visionPathError(dir); err != nil {
 		return err
 	}
-	// N-28 (docs/audit-2026-09-10.md): cfg.models, not s.models — loadAdapters (called just
-	// above) already populated s.models with each --adapter's OWN served name too, so
-	// `--model base --adapter ft=…` counted 2 and refused a perfectly valid single-base-model
-	// vision setup. cfg.models is the raw --model list, matching the auto-discovery branch's
-	// own len(cfg.models) == 1 check above.
+	// cfg.models, not s.models: loadAdapters (called just above) already put each --adapter's own served name in s.models, so
+	// `--model base --adapter ft=...` would count 2 and refuse a valid single-base-model vision setup. cfg.models is the raw
+	// --model list, matching the auto-discovery branch's len(cfg.models) == 1 check.
 	if len(cfg.models) != 1 {
 		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
@@ -1168,15 +1099,15 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	mt := visionModelType(dir)
 	// cfg.towerBackend(), not the model's backend: -vision-device cpu keeps Gemma 3's SigLIP tower on the CPU, in f32, under
-	// --backend cuda or webgpu too (it used to load int8 and attach the device tower whatever the flag said).
+	// --backend cuda or webgpu too.
 	int8Tower := towerInt8(mt, cfg.visionQuant, cfg.towerBackend())
 	if mt == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
-	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" { // qwen3_vl: the same tower plus DeepStack (S10)
+	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" { // qwen3_vl: the same tower plus DeepStack
 		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
-	if mt == "qwen3_asr" { // S14.3: speech to text; the audio encoder is in the model's own directory
+	if mt == "qwen3_asr" { // speech to text; the audio encoder is in the model's own directory
 		return s.loadQwenASR(dir)
 	}
 	if mt == "glm_ocr" {
@@ -1185,17 +1116,16 @@ func (s *server) loadVisionTower(cfg config) error {
 	if mt == "gemma4" {
 		return s.loadGemma4VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
-	if mt == "mistral3" { // S10: Ministral 3's Pixtral tower, on the CPU in float32
+	if mt == "mistral3" { // Ministral 3's Pixtral tower, on the CPU in float32
 		return s.loadPixtralVisionTower(dir)
 	}
-	// On CUDA the unset default is the float32 tower (towerInt8); if it does not attach, attachGemma3Tower releases it and attaches the int8 device
-	// tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset default was already settled before the plan was made:
-	// resolveGemma3VisionQuant makes it int8 on a card too tight for the decoder, one KV slot and the float32 tower. Both are in gemma3_tower.go.
-	// The default flipped on the S13-lite float32 arm (2.40 s against 4.59 s a new image) and on G-S3b/d (the int8 tower changes the reply); see
-	// docs/tasks/task-multimodal-support-2026-10.md, "Gemma 3's CUDA default is now float32". The float32 tower holds about 1.7 GiB against 0.56, which on
-	// the 8 GB card is 2 resident KV slots at the 4096 floor instead of 3.
-	// M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision tower's own leak/threading bugs are fixed
-	// (cuda/vision_encoder.go); cuda/vision_register.go registered its factory with vision.RegisterResident via cuda/cmd/serve's blank import.
+	// On CUDA the unset default is the float32 tower (towerInt8); if it does not attach, attachGemma3Tower releases it and
+	// attaches the int8 device tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset
+	// default was settled before the plan was made: resolveGemma3VisionQuant makes it int8 on a card too tight for the
+	// decoder, one KV slot and the float32 tower. Both are in gemma3_tower.go. The CUDA default is float32 because the int8
+	// tower changes the reply, at the cost of about 1.7 GiB of VRAM against 0.56 (docs/tasks/task-multimodal-support-2026-10.md,
+	// "Gemma 3's CUDA default is now float32"). The CUDA resident tower registers its factory with vision.RegisterResident
+	// (cuda/vision_register.go) through cuda/cmd/serve's blank import.
 	enc, int8Tower, residentOK, err := attachGemma3Tower(siglipLoader(dir, cfg.towerBackend() == "metal"), int8Tower, gemma3FloatDefault(cfg, int8Tower), cfg.towerBackend(), cfg.requireBE, os.Stderr)
 	if err != nil {
 		return err
@@ -1225,22 +1155,19 @@ func (s *server) loadVisionTower(cfg config) error {
 	return nil
 }
 
-// towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP: WebGPU's device tower needs int8 (W8A8), so --backend webgpu
-// implies it without --vision-quant; CUDA's default is float32 since 2026-10-08 (owner; gemma3_tower.go) and Metal's (S3) is float32. The int8 tower
-// is lossy at real size (relative L2 0.16-0.52 against float32: docs/measurements/siglip-int8-fidelity-2026-10-07.md) and slower on CUDA (4.6 s against
-// 2.4 s a new image). Every other tower (Qwen2.5-VL, Qwen3.5+, Qwen3-VL, Gemma 4, GLM-OCR) gets int8 only when asked for, whatever
-// the backend: its device towers are float32, and its gates ran float32. (Qwen3-VL was missing from this list until 2026-10-07, so under
-// cuda/webgpu it got an int8 CPU tower nobody had validated, under a banner naming a -vision-quant the user never passed.) The old rule forced int8
-// on three of them under cuda/webgpu, which bought no speed (the CPU int8 tower is not faster) and cost fidelity: measured 2026-10-02
-// against each tower's own f32 on the same image, relative L2 0.21 (Qwen2.5-VL), 0.14 (Qwen3.5-0.8B), 0.31 (Gemma 4), per-token
-// cosine mean 0.975 / 0.992 / 0.950 (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). The gates for all of them ran f32.
+// towerInt8 says whether a vision tower loads with int8 matmul weights. Only Gemma 3's SigLIP has a backend default:
+// WebGPU's device tower needs int8 (W8A8), so --backend webgpu implies it without --vision-quant; CUDA and Metal default
+// to float32. The int8 tower is lossy at real size and slower on CUDA (docs/measurements/siglip-int8-fidelity-2026-10-07.md).
+// Every other tower gets int8 only when asked for, whatever the backend: its device towers are float32 and its gates ran
+// float32, and forcing int8 under cuda/webgpu bought no speed (the CPU int8 tower is not faster) and cost fidelity
+// (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). A new vision model type must be added to the list below,
+// or it falls into the backend default and gets an int8 CPU tower nobody validated under cuda/webgpu.
 func towerInt8(modelType, visionQuant, backend string) bool {
 	switch visionQuant {
 	case "int8":
 		return true
 	case "f32":
-		// Explicit, and the only way to ask for Gemma 3's float32 device tower on CUDA (S4 addendum); unset keeps the old rule below. On webgpu there is no float32
-		// device tower, so the attach declines by name and the CPU tower runs.
+		// Explicit f32. On webgpu there is no float32 device tower, so the attach declines by name and the CPU tower runs.
 		return false
 	}
 	switch modelType {
@@ -1250,11 +1177,10 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 	return backend == "webgpu" || (backend == "cuda" && modelType != "gemma3") // gemma3 on cuda: float32 by default
 }
 
-// enableResidentTower attaches the device-resident vision tower when the backend is webgpu, cuda or metal and reports whether it
-// is attached. A failed attach (no VRAM left for the tower, a build without the backend) is a warning, not an error: it used to
-// abort serve startup and throw away the model already loaded on the GPU, but EnableResident leaves the CPU path intact, so the
-// tower runs there (slower) and the banner does not claim "-resident". Metal's towers (SigLIP and Qwen2.5-VL, S3) are float32
-// and decline an int8 tower, which lands here as that warning.
+// enableResidentTower attaches the device-resident vision tower when the backend is webgpu, cuda or metal and reports
+// whether it is attached. A failed attach (no VRAM left for the tower, a build without the backend, an int8 request for a
+// float32-only device tower) is a warning, not an error: EnableResident leaves the CPU path intact, so the tower runs
+// there (slower) and the banner does not claim "-resident".
 func enableResidentTower(enc interface{ EnableResident() error }, backend string, warn io.Writer) bool {
 	ok, _ := attachResidentTower("", enc, backend, false, warn)
 	return ok
@@ -1291,9 +1217,9 @@ func visionModelType(dir string) string {
 }
 
 // soleModelSource is the single --model as loadDecoder resolved it: for an `hf:<repo>:safetensors` reference, the
-// checkpoint directory it fetched, which is where a VL repo's tower lives (task-checkpoint-fetch P7). The typed string
-// names no directory, so stat-ing it found no tower and served the model text-only without a word. Falls back to the
-// typed path for an entry built without a source.
+// checkpoint directory it fetched, which is where a VL repo's tower lives (the typed string names no directory, so
+// stat-ing it would find no tower and serve the model text-only without a word). Falls back to the typed path for an
+// entry built without a source.
 func (s *server) soleModelSource(cfg config) string {
 	for _, lm := range s.models {
 		if lm.source != "" {
@@ -1313,8 +1239,8 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 	if err != nil {
 		return fmt.Errorf("load qwen2.5-vl vision encoder (%s): %w", dir, err)
 	}
-	// Metal's tower (S3) attaches through attachResidentTower; CUDA's (aikit's gpu/qwencuda, S4: G-S4q correct at real size and 1.6-2.7x the CPU tower)
-	// through qwenTowerPlacement, which names every CPU fallback; every other backend runs the CPU tower.
+	// Metal's tower attaches through attachResidentTower; CUDA's (aikit's gpu/qwencuda) through qwenTowerPlacement, which
+	// names every CPU fallback; every other backend runs the CPU tower.
 	where := "CPU"
 	if backend == "metal" {
 		ok, err := attachResidentTower("Qwen2.5-VL", enc, backend, require, os.Stderr)
@@ -1348,17 +1274,12 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 	return nil
 }
 
-// loadGemma4VisionTower attaches the Gemma 4 vision tower (aikit) to the single
-// loaded model. No separate projector — Gemma4Encoder.Forward bakes the
-// embed_vision projection in. decoder.GenerateGemma4VL dispatches between two
-// forwards depending on the checkpoint: the E2B/E4B-class sequential/causal
-// path (use_bidirectional_attention unset) and the 26B-A4B/31B-class batched
-// path (use_bidirectional_attention: "vision", decoder/forward_gemma4_batched.go).
-// Any OTHER value is refused at load time — rather than silently serving it
-// with the wrong mask — since only those two are implemented. No GPU-resident
-// vision path either way: aikit's Gemma4Encoder has no EnableResident method
-// (unlike vision.Encoder), so --backend webgpu has no effect on this tower
-// beyond the optional int8 CPU weight format.
+// loadGemma4VisionTower attaches the Gemma 4 vision tower (aikit) to the single loaded model. There is no separate
+// projector: Gemma4Encoder.Forward bakes in the embed_vision projection. decoder.GenerateGemma4VL implements two
+// forwards, chosen by the checkpoint's use_bidirectional_attention: unset (the E2B/E4B-class sequential/causal path)
+// and "vision" (the 26B-A4B/31B-class batched path, decoder/forward_gemma4_batched.go). Any other value is refused at
+// load rather than served with the wrong mask. Placement is chooseGemma4Tower's; aikit's Gemma4Encoder has no
+// EnableResident method.
 func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend string, require bool) error {
 	for _, lm := range s.models {
 		if bd := lm.model.Config().UseBidirectionalAttention; bd != "" && bd != "vision" {
@@ -1388,7 +1309,7 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.Gemma4ImageSoftToken)
 		}
 		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d, tower on %s) from %s\n", lm.name, lm.gemma4MaxSoft, lm.gemma4ImgTok, where, dir)
-		// S5: a checkpoint with an audio_config also takes audio clips; its tower loads on the first one.
+		// A checkpoint with an audio_config also takes audio clips; its tower loads on the first one.
 		if hasAudioConfig(dir) {
 			id, ok := lm.tk.TokenID(multimodal.Gemma4AudioSoftToken)
 			if !ok {
@@ -1396,7 +1317,7 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 			}
 			lm.gemma4AudioDir, lm.gemma4AudioTok = dir, id
 			where := "CPU"
-			if backend == "metal" && slices.Contains(embeddinggemma2.AudioAccelerators(), "metal") { // G-S5d: the blocks on Metal
+			if backend == "metal" && slices.Contains(embeddinggemma2.AudioAccelerators(), "metal") { // the conformer blocks run on Metal
 				lm.gemma4AudioDevice, where = "metal", "Metal (the conformer blocks; subsample and tail on the CPU)"
 			}
 			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, %s) from %s\n", lm.name, id, where, dir)
@@ -1405,8 +1326,9 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 	return nil
 }
 
-// loadQwenASR turns on audio input for a Qwen3-ASR model (S14.3): the audio encoder lives beside the decoder in the same safetensors, so there is no tower to attach, only the placeholder
-// id to find and the directory to load the encoder from on the first clip.
+// loadQwenASR turns on audio input for a Qwen3-ASR model: the audio encoder lives beside the decoder in the same
+// safetensors, so there is no tower to attach, only the placeholder id to find and the directory to load the encoder from
+// on the first clip.
 func (s *server) loadQwenASR(dir string) error {
 	for _, lm := range s.models {
 		id, ok := lm.tk.TokenID("<|audio_pad|>")
@@ -1432,9 +1354,9 @@ func hasAudioConfig(dir string) bool {
 }
 
 // chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal and this binary registers a Metal
-// tower (docs/multimodal.md, "Finishing this doc", F2), and says where it runs. The Metal tower is float32, so an int8
-// tower (-vision-quant int8) stays on the CPU; a tower that fails to start falls back to the CPU with the reason,
-// unless -require-backend asks for a refusal. Other backends run it on the CPU.
+// tower, and says where it runs. The Metal tower is float32, so an int8 tower (-vision-quant int8) stays on the CPU; a
+// tower that fails to start falls back to the CPU with the reason, unless -require-backend asks for a refusal. Other
+// backends run it on the CPU.
 func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
 	name, ok := deviceTowerName(backend)
 	if !ok {
@@ -1509,15 +1431,12 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
 
-	// tasks/task-fit-to-hardware.md §2's drafter-aware sizing: --drafter attaches AFTER this model's own
-	// residency is built (below, attachBlockDrafter), but the elastic terms BuildResident sizes
-	// against live free VRAM (CUDA's expert-cache slots, its unpinned ctx-by-default) have no way
-	// to know it is coming unless something prices it first. Load the drafter HERE, before
-	// decoder.Load, so Options.ExtraResidentBytes carries a real number into BuildResident — this
-	// is the §2 example itself: a 26B auto-sized its expert cache to every free byte, then
-	// --drafter attached and NewBlockSpec failed with nowhere left to go. Loaded once and reused
-	// at the attach call site below, so pricing and the actual attach see the same weights rather
-	// than two independent reads of the same file.
+	// --drafter attaches AFTER this model's own residency is built (attachBlockDrafter), but the elastic terms BuildResident
+	// sizes against live free VRAM (CUDA's expert-cache slots, its unpinned ctx-by-default) cannot know it is coming unless
+	// something prices it first. So the drafter is loaded HERE, before decoder.Load, and Options.ExtraResidentBytes carries
+	// its size into BuildResident: without that a 26B auto-sizes its expert cache to every free byte and the later attach
+	// fails with nowhere left to go (docs/tasks/task-fit-to-hardware.md §2). Loaded once and reused at the attach call site,
+	// so pricing and the actual attach see the same weights.
 	var drafter *decoder.DFlashDrafter
 	if cfg.drafter != "" {
 		var derr error
@@ -1525,10 +1444,8 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			return nil, fmt.Errorf("--drafter %q: load drafter: %w", cfg.drafter, derr)
 		}
 		opts.ExtraResidentBytes = decoder.DrafterResidentBytesEstimate(drafter)
-		// M-22 (docs/audit-2026-09-10.md): the drafter's own device K/V scales with whatever
-		// resident context the target ends up choosing, which is not known yet here — see
-		// Options.ExtraResidentKVPerPosition's own doc comment for why this is a rate, not a
-		// total, and who multiplies it by what.
+		// The drafter's own device K/V scales with whatever resident context the target ends up choosing, which is not known yet:
+		// see Options.ExtraResidentKVPerPosition for why this is a rate, not a total, and who multiplies it by what.
 		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
 	}
 	// A CUDA vision tower loads after this model and claims VRAM too (tower_reserve.go): price it the same way, so the KV plan leaves room for it.
@@ -1569,13 +1486,11 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		// this exact model+quant so a -session-dir reused across models is rejected.
 		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),
 	}
-	// --drafter: attach a pretrained block drafter ONCE, here, on the BASE model only.
-	// Adapter-bearing requests route down the session path (audit R-01) where the block-spec
-	// branch does not run, so attaching one there would upload ~500 MB and never be used.
-	//
-	// It fails startup rather than degrading silently: an operator who passed --drafter wants
-	// block drafting, and a wrong pairing or an incapable backend should be one startup error
-	// they see, not a fleet quietly serving at 1x.
+	// --drafter: attach a pretrained block drafter ONCE, here, on the BASE model only. Adapter-bearing requests route down
+	// the session path, where the block-spec branch does not run, so attaching one there would upload ~500 MB and never be
+	// used.
+	// It fails startup rather than degrading silently: an operator who passed --drafter wants block drafting, and a wrong
+	// pairing or an incapable backend should be one startup error they see, not a fleet quietly serving at 1x.
 	if drafter != nil {
 		if err := attachBlockDrafter(lm, drafter); err != nil {
 			return nil, fmt.Errorf("--drafter %q: %w", cfg.drafter, err)
@@ -1612,10 +1527,9 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fmt.Fprintf(os.Stderr, "loaded %q: %d-layer model (vocab %d) in %s [chat: %s]\n",
 		name, mcfg.NumLayers, mcfg.VocabSize, time.Since(t0).Round(time.Millisecond), templateName(lm.tmpl))
-	// State the RESOLVED paths, not the requested ones. Both the resident decode path and the batched
-	// prefill are optional capabilities that fall back silently — a model can load clean, report a GPU
-	// backend, and still take one forward per prompt token (cuda int8int8: ~9× TTFT). Printing them at
-	// load is what makes that visible; -require-backend turns a decline into a startup failure.
+	// State the RESOLVED paths, not the requested ones. The resident decode path and the batched prefill are optional
+	// capabilities that fall back silently: a model can load clean, report a GPU backend, and still take one forward per
+	// prompt token. Printing them at load makes that visible; -require-backend turns a decline into a startup failure.
 	batched, why := lm.model.PrefillPath()
 	// The rest of the resolved state — context cap, KV precision, session reuse (and WHY when
 	// it is off), and the features a harness asks about — comes from modelBanner so a test can
@@ -1635,11 +1549,9 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		}
 		fmt.Fprintf(os.Stderr, "  decisions: route B, head %s %s (%s), POST /v1/systemone\n", h.Name, h.Version, how)
 	}
-	// C-10: the same reasoning one line up, applied to the TOKENIZER. A pre-tokenizer this build
-	// does not walk produces a different id stream from HF and from llama.cpp with no error
-	// anywhere — count_tokens and usage drift by the same amount — and the only way anyone finds
-	// out is by diffing ids against AutoTokenizer. Say it at load, where the other silent
-	// fallbacks are already said.
+	// The same reasoning applied to the TOKENIZER: a pre-tokenizer this build does not walk produces a different id stream
+	// from HF and from llama.cpp with no error anywhere (count_tokens and usage drift by the same amount). Say it at load,
+	// where the other silent fallbacks are already said.
 	if lm.tk != nil {
 		if d := lm.tk.PreTokenizerDecline(); d != "" {
 			fmt.Fprintf(os.Stderr, "  !! tokenizer: %s\n", d)
@@ -1691,11 +1603,11 @@ func requireAutoBackend(cfg config) error {
 		cfg.load.Auto.Reason)
 }
 
-// embedEncoderLoads is the plan check for an -embed-model safetensors checkpoint (task-checkpoint-fetch P7). loadEncoder's
-// directory path is aikit's encoder.Load, which loads a NomicBert (CodeRankEmbed, nomic-embed-text) and checks no
-// model_type itself, so anything else would fail late, or load a foreign checkpoint's tensors under the wrong
-// architecture. It is refused here instead, after config.json and before any weight. A decoder used as an embedder
-// comes as a GGUF (hf:<repo>:<quant>), which is not a checkpoint plan at all.
+// embedEncoderLoads is the plan check for an -embed-model safetensors checkpoint. loadEncoder's directory path is aikit's
+// encoder.Load, which loads a NomicBert (CodeRankEmbed, nomic-embed-text) and checks no model_type itself, so anything
+// else would fail late, or load a foreign checkpoint's tensors under the wrong architecture. It is refused here instead,
+// after config.json and before any weight. A decoder used as an embedder comes as a GGUF (hf:<repo>:<quant>), which is
+// not a checkpoint plan at all.
 func embedEncoderLoads(modelType string) (string, error) {
 	if fam, err := pull.EncoderLoads(modelType); err == nil {
 		return fam, nil
@@ -1786,18 +1698,8 @@ func (s *server) endpointSummary() string {
 	return strings.Join(parts, " | ")
 }
 
-// demoteLoop periodically demotes idle KV sessions across all models to disk
-// (tiered KV). It polls at a fraction of the idle threshold (clamped to [5s, 1m])
-// and takes each model's lock per sweep, so it stalls no in-flight generation and
-// skips a busy model until its lock is free. Returns when stop is closed.
-// modelList snapshots the registry under regMu. Background sweeps (demote, shutdown
-// checkpoint) must iterate this, not range s.models directly: admin load/unload mutate the
-// map under regMu (admin.go), and a concurrent map iteration+write is a runtime-fatal panic,
-// not just a race (M4). The returned slice is a copy of the pointers; each loadedModel is
-// still locked via its own lm.mu by the caller.
-// tryLockUntil acquires mu, giving up at deadline instead of blocking forever, so the shutdown
-// checkpoint can never deadlock on a generation that outlived the drain (audit C-22). Returns false
-// if the lock was not taken by the deadline.
+// tryLockUntil acquires mu, giving up at deadline instead of blocking forever, so the shutdown checkpoint can never
+// deadlock on a generation that outlived the drain. Returns false if the lock was not taken by the deadline.
 func tryLockUntil(mu *sync.Mutex, deadline time.Time) bool {
 	for {
 		if mu.TryLock() {
@@ -1810,6 +1712,10 @@ func tryLockUntil(mu *sync.Mutex, deadline time.Time) bool {
 	}
 }
 
+// modelList snapshots the registry under regMu. Background sweeps (demote, shutdown checkpoint) must iterate this, not
+// range s.models directly: admin load/unload mutate the map under regMu (admin.go), and a concurrent map iteration plus
+// write is a runtime-fatal panic, not just a race. The returned slice is a copy of the pointers; the caller still locks
+// each loadedModel via its own lm.mu.
 func (s *server) modelList() []*loadedModel {
 	s.regMu.RLock()
 	defer s.regMu.RUnlock()
@@ -1820,6 +1726,9 @@ func (s *server) modelList() []*loadedModel {
 	return out
 }
 
+// demoteLoop periodically demotes idle KV sessions across all models to disk (tiered KV). It polls at a fraction of the
+// idle threshold (clamped to [5s, 1m]) and takes each model's lock per sweep, so it stalls no in-flight generation and
+// skips a busy model until its lock is free. Returns when stop is closed.
 func demoteLoop(srv *server, idle time.Duration, stop <-chan struct{}) {
 	period := min(max(idle/4, 5*time.Second), time.Minute)
 	t := time.NewTicker(period)
@@ -1899,24 +1808,24 @@ func thinkingNote(t *chat.Template) string {
 	return fmt.Sprintf(", thinking: template default %s, serving %s", def, t.ThinkMode())
 }
 
-// visionPathError is -vision's refusal for a path that is a file, not a vision-tower directory (R22, docs/tasks/task-first-hour.md).
-// A GGUF mmproj handed to it used to fail inside the encoder loader as ".../mmproj-....gguf/config.json: not a directory". A path that
-// does not exist, or a directory, is the loaders' to judge, with their own messages.
+// visionPathError refuses a -vision path that is a file, other than a GGUF mmproj (which loadVisionTower routes to
+// loadQwen35MMProj). A path that does not exist, or a directory, is the loaders' to judge, with their own messages.
 func visionPathError(dir string) error {
 	fi, err := os.Stat(dir)
 	if err != nil || fi.IsDir() {
 		return nil
 	}
 	if strings.HasSuffix(strings.ToLower(dir), ".gguf") {
-		return nil // a GGUF mmproj: loadVision routes it (Qwen3.5+ only, P8b), with its own refusals
+		return nil // a GGUF mmproj: loadVisionTower routes it (Qwen3.5+ only), with its own refusals
 	}
 	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
 }
 
-// qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/tasks/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
-// tower under --backend cuda when the binary registers one (cuda/vision_towers.go imports it) and the tower is float32 (G-S4q: correct at real size, 1.6-2.7x the
-// CPU tower); the CPU everywhere else, with the reason named. -require-backend turns each CPU fallback under cuda into a refusal. -vision-device cpu arrives
-// here as backend "cpu". Metal has no Qwen2.5-VL device tower yet (the owner's rebuild on the Metal base is the Mac's), so only cuda asks for one.
+// qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it: aikit's gpu/qwencuda tower under
+// --backend cuda when the binary registers one (cuda/vision_towers.go imports it) and the tower is float32; the CPU
+// everywhere else, with the reason named (docs/tasks/task-multimodal-support-2026-10.md). -require-backend turns each CPU
+// fallback under cuda into a refusal. -vision-device cpu arrives here as backend "cpu". Metal's tower is attached by
+// loadQwenVisionTower, so only cuda asks for one here.
 func qwenTowerPlacement(backend string, int8Tower, require bool, attach func() error, warn io.Writer) (string, error) {
 	if backend != "cuda" {
 		return "CPU", nil
