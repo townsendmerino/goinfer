@@ -60,8 +60,8 @@ func TestFlashDecodeOracleRealKVGemma(t *testing.T) {
 
 // flashOracleRealKV: strict=true is the registered precondition (lane no worse than exact vs f64, per layer). strict=false
 // is a sanity bound for geometries outside the gate: on gemma3-1b's 512-key windows the exact fold is already accurate to
-// ~1e-8, so the lane can sit a few ulp above it (measured: 2 of 26 layers, by <= 2.5e-7 relative); there the check is that
-// the lane's error stays under 1e-5 of max|ref| at every layer, and the comparison is logged.
+// ~1e-8, so the lane can sit a few ulp above it; there the check is that the lane's error stays under 1e-5 of max|ref| at
+// every layer, and the comparison is logged.
 func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
 	t.Helper()
 	if _, err := os.Stat(path); err != nil {

@@ -12,12 +12,11 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestAttnBatchedBandwidth times attn_batched in isolation at the real qwen2.5-coder-1.5b attention
-// shape and M=2048 (nH=12, nKV=2, hd=128, full attention), the ncu target for the attention-lever
-// decision. It exists to be profiled: `ncu --kernel-name attn_batched ... /tmp/attnbench
-// -test.run TestAttnBatchedBandwidth`. The question it must answer BEFORE any tiling design — is the
-// 33×-off-compute a TRAFFIC bound (K/V re-read from L2, which shared-memory tiling fixes) or a LATENCY
-// bound (like the GEMV, where the same shared-staging change bought only 1.2×)?
+// TestAttnBatchedBandwidth times attn_batched in isolation at the real qwen2.5-coder-1.5b attention shape and
+// M=2048 (nH=12, nKV=2, hd=128, full attention). It exists to be profiled: `ncu --kernel-name attn_batched
+// ... /tmp/attnbench -test.run TestAttnBatchedBandwidth`. The question it answers before any tiling design:
+// is the kernel's distance from compute peak a TRAFFIC bound (K/V re-read from L2, which shared-memory
+// tiling fixes) or a LATENCY bound (as the GEMV was, where the same shared-staging change bought little)?
 func TestAttnBatchedBandwidth(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1")

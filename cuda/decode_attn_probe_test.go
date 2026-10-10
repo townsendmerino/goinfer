@@ -11,12 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDecodeAttn2048Probe drives the DECODE (M=1) attention kernel at ~2048 KV depth on the real
-// 1.5B, so ncu can profile it: PrefillLast builds the 2048-token cache (using attn_batched), then a
-// run of Forward calls decode at pos 2048+ — those launch the M=1 `attention` kernel (glue.ptx) at
-// nKeys≈2048. Prefill used attn_batched, so `--kernel-name attention` targets ONLY decode attention.
-// Investigating the comparative deficit (goinfer decode 221→97 tok/s from 128→2048 ctx vs current
-// Ollama holding ~188) — a HYPOTHESIS to test at the hardware, not a diagnosis carried from prefill.
+// TestDecodeAttn2048Probe drives the DECODE (M=1) attention kernel at ~2048 KV depth on the real 1.5B, so ncu
+// can profile it: PrefillLast builds the 2048-token cache (using attn_batched), then a run of Forward calls
+// decode at pos 2048+, which launch the M=1 `attention` kernel (glue.ptx) at nKeys≈2048. Prefill used
+// attn_batched, so `--kernel-name attention` targets ONLY decode attention. It tests the long-context decode
+// deficit as a HYPOTHESIS at the hardware, not as a diagnosis carried from prefill.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -c -o /tmp/decattn && \
 //	  sudo env ... ncu --kernel-name attention --launch-skip N /tmp/decattn -test.run TestDecodeAttn2048Probe

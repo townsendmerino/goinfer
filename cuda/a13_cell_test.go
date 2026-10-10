@@ -11,26 +11,17 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestA13_LoadModuleOnResidentExecutor fills the missing cell of the 1×2 and is the CONTROL that
-// decides whether the multi-model unload null means anything.
+// TestA13_LoadModuleOnResidentExecutor is the control cell of the A13 factor grid: module route
+// (ctx.LoadModule of prebuilt PTX vs CompileLibrary) x launch site (test goroutine vs the resident's
+// pinned executor). The resident and a test share the device's primary context (gocudrv never binds
+// cuCtxCreate), so the context is not a factor. This cell loads a prebuilt PTX module, launches and
+// applies the stimulus entirely on the resident's executor thread.
 //
-// The context factor is already eliminated by reading: CreateSystemDefaultDevice calls dev.Primary(),
-// gocudrv never binds cuCtxCreate, so the resident's context and a test's context are THE SAME
-// primary context. Two factors remain:
+//	poisons -> resident-executor launches are poisonable, so the multi-model null is real evidence,
+//	           and the variable is the module route rather than the thread
+//	clean   -> nothing has ever poisoned this route; the multi-model null means nothing yet
 //
-//	A — module route : ctx.LoadModule(prebuilt PTX)   vs  CompileLibrary (NVRTC at runtime)
-//	B — launch site  : test goroutine                 vs  the resident's pinned executor
-//
-//	known: (LoadModule, test)          POISONS
-//	known: (CompileLibrary, resident)  does not, with the stimulus applied through rf.do
-//
-// This is (LoadModule, resident): a prebuilt PTX module loaded, launched, and stimulated entirely on
-// the resident's executor thread.
-//
-//	poisons -> resident-executor launches ARE poisonable, so the multi-model null is real evidence,
-//	           and the variable is the MODULE ROUTE rather than the thread
-//	clean   -> nothing has ever poisoned this route; the multi-model null means nothing yet and the
-//	           harness question is still open
+// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_LoadModuleOnResidentExecutor.
 func TestA13_LoadModuleOnResidentExecutor(t *testing.T) {
 	if os.Getenv("GOINFER_A13_CELL") == "" {
 		t.Skip("set GOINFER_A13_CELL=1 — A13 probe, deliberately not part of the tier")

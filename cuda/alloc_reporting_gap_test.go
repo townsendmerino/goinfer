@@ -13,14 +13,12 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// A10 model under test: cuMemGetInfo reports ~151,191,552 B more free than is allocatable, by
-// anyone, so usable = reported_free - gap.
-//
-// TestA10ReportingGap is the cheap cross-check: no launch, no balloon-and-bisect. Allocate directly
-// in a fresh context until even a 1 MiB request fails, and compare the total actually obtained
-// against the free figure reported at the start. If the shortfall is ~151 MiB, the reporting gap is
-// confirmed with no kernel involved at all — which separates "the allocator reserves" from anything
-// about launches.
+// TestA10ReportingGap is the cheap cross-check of the A10 reporting-gap model (cuMemGetInfo reports more
+// free than is allocatable, so usable = reported_free - gap): no launch, no balloon-and-bisect. It
+// allocates directly in a fresh context until even a 1 MiB request fails and logs the shortfall between the
+// total obtained and the free figure reported at the start, to be read against the floor TestAllocFloor
+// pins. That separates "the allocator reserves" from anything about launches. The body asserts only that
+// the instrument ran (obtained < reported); it does not assert the size of the gap. Record: docs/code-notes/cuda.md#TestA10ReportingGap.
 func TestA10ReportingGap(t *testing.T) {
 	drainsDevice(t, "drains to refusal in-process to measure the reported-vs-obtained shortfall")
 	dev, err := CreateSystemDefaultDevice()
@@ -51,8 +49,8 @@ func TestA10ReportingGap(t *testing.T) {
 	t.Logf("  reported free at end     %13d B", end)
 	t.Logf("  SHORTFALL (start-got)    %13d B  (%.1f MiB)", start-got, float64(start-got)/(1<<20))
 	t.Logf("  measured floor           %13d B  (TestAllocFloor)", 151191552)
-	// The shortfall is the requested total against reported free; per-allocation 2 MiB rounding
-	// inflates what the driver actually took, so the shortfall is an UPPER bound on the gap.
+	// The shortfall is the requested total against reported free; per-allocation 2 MiB rounding inflates what
+	// the driver actually took, so the shortfall is an UPPER bound on the gap.
 	if start-got <= 0 {
 		t.Fatalf("obtained %d B against %d B reported — the instrument is wrong", got, start)
 	}
@@ -65,27 +63,8 @@ func TestA10ReportingGap(t *testing.T) {
 	hold = nil
 }
 
-// TestA10FloorIsPerProcessOrPerDevice varies the CONTEXT rather than the kernel — the axis the floor
-// has never been tested against.
-//
-// A child process drains to the floor and HOLDS. This process, with its own context, then reads free
-// and tries to allocate.
-//
-//	parent can still allocate -> the floor is per-process/per-context; N contexts cost N x the
-//	                             reserve, and the margin is NOT a constant
-//	parent cannot             -> one device-wide reserve, and the margin CAN be derived from it
-//
-// RESULT 2026-08-12: NEITHER — the parent cannot create a context at all while the child holds
-// (cuDevicePrimaryCtxRetain: CUDA_ERROR_OUT_OF_MEMORY at 151,191,552 B reported free). That is a
-// finding on its own — the floor is not available for context setup either — but it means this arm
-// cannot measure what it was built to measure. The in-process arm is blocked too: gocudrv exposes
-// only primary-context retain, not cuCtxCreate, so a second simultaneous context cannot be made.
-//
-// What IS established: the floor is 151,191,552 B in every separate process measured, so it is a
-// stable per-device property rather than something accumulating per process. Whether two SIMULTANEOUS
-// contexts each pay it is untested and untestable with the current API surface.
-// probeFreeWithoutContext reads free VRAM from nvidia-smi, which needs no CUDA context — so it can
-// be read BEFORE this process retains one, which cuMemGetInfo cannot.
+// probeFreeWithoutContext reads free VRAM from nvidia-smi, which needs no CUDA context, so it can be read
+// BEFORE this process retains one, which cuMemGetInfo cannot.
 func probeFreeWithoutContext(t *testing.T) int64 {
 	t.Helper()
 	out, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits").Output()
@@ -97,11 +76,22 @@ func probeFreeWithoutContext(t *testing.T) int64 {
 	return mib << 20
 }
 
+// TestA10FloorIsPerProcessOrPerDevice varies the CONTEXT rather than the kernel. A child process drains to
+// the floor and HOLDS; this process, with its own context, then reads free and tries to allocate.
+//
+//	parent can still allocate -> the floor is per-process/per-context; N contexts cost N x the
+//	                             reserve, and the margin is NOT a constant
+//	parent cannot             -> one device-wide reserve, and the margin CAN be derived from it
+//
+// Known limitation: with the child holding the floor the parent cannot create a context at all, and
+// gocudrv exposes only primary-context retain, so this arm cannot tell the two apart and whether two
+// simultaneous contexts each pay the floor is untestable with the current API surface. What it does
+// establish is that the floor is stable per device across separate processes. Result:
+// docs/code-notes/cuda.md#TestA10FloorIsPerProcessOrPerDevice.
 func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
-	// Marked AFTER the child branch is checked, not before: the child arm IS the drain, and it is
-	// spawned with GOINFER_A10_DRAIN_CHILD set, so gating it on the group flag as well would be
-	// redundant. The parent is marked because it holds a live context against a device its own child
-	// has taken to ~300 MiB — the near-floor half of the same hazard.
+	// Marked AFTER the child branch is checked: the child arm IS the drain and is spawned with
+	// GOINFER_A10_DRAIN_CHILD set. The parent is marked because it holds a live context against a device its
+	// own child has taken to ~300 MiB, the near-floor half of the same hazard.
 	if os.Getenv("GOINFER_A10_DRAIN_CHILD") == "" {
 		drainsDevice(t, "spawns a child that holds the device near the floor while this context works")
 	}
@@ -121,9 +111,8 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 			hold = append(hold, gpu.NewBufferLenOf[byte](dev, n))
 			return true
 		}
-		// Leave ~300 MiB reported free rather than draining to the floor. The first attempt drained
-		// completely, and the parent then could not create a context at all — context setup needs
-		// memory the floor does not provide, so the arm could not measure what it was built for.
+		// Leave ~300 MiB reported free rather than draining to the floor: context setup needs memory the floor
+		// does not provide, so the parent could not create a context at all.
 		leave := int64(300 << 20)
 		if os.Getenv("GOINFER_A10_DRAIN_CHILD") == "roomy" {
 			leave = 620 << 20 // room for three contexts, not two
@@ -209,10 +198,8 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 		}
 	}
 
-	// BOTH readings from nvidia-smi. An earlier version took `pre` from nvidia-smi and `post` from
-	// cuMemGetInfo, so the delta silently carried the disagreement between two instruments (~832 KiB
-	// here) as if it were context cost. Same shape as the measurement-shape class: the number was
-	// real and the comparison was not like-for-like.
+	// BOTH readings from nvidia-smi: mixing an nvidia-smi `pre` with a cuMemGetInfo `post` would carry the
+	// disagreement between the two instruments into the delta as if it were context cost.
 	pre := probeFreeWithoutContext(t)
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {

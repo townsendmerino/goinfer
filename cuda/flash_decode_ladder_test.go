@@ -29,9 +29,9 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 		t.Skip("set GOINFER_HEAVY_TESTS=1")
 	}
 	// The ladder's top S. The suite's TestMain pins GOINFER_CUDA_FLASH_DECODE=0 (vramtrace_test.go) so that other tests
-	// never exercise the lane by accident — which left this test, the one that exists to time the lane, unable to run
-	// without a hand-set variable: it failed with faSplit=0 on every clean invocation. A caller's positive S is kept;
-	// "0" (the pin, or an explicit off, meaningless for a lane ladder) becomes the registered default S.
+	// never exercise the lane by accident, which would leave this test, the one that times the lane, with faSplit=0. A
+	// caller's positive S is kept; "0" (the pin, or an explicit off, meaningless for a lane ladder) becomes the
+	// registered default S.
 	if v, _ := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE"); flashDecodeSplit(v, true) < 1 {
 		t.Setenv("GOINFER_CUDA_FLASH_DECODE", strconv.Itoa(flashDecodeDefaultSplit))
 	}

@@ -21,7 +21,7 @@ import (
 //     cache, so as attention drifts a top-k flip at position N becomes possible even though pos 0 is
 //     clean — and a flipped expert reads IDENTICAL to accumulation in a cosine (same shape, same
 //     "grows with position"). If resident idx == CPU idx at every position, accumulation is the only
-//     explanation left; a flip means the 0.87 has a discrete component.
+//     explanation left; a flip means the drift has a discrete component.
 //  2. A CALIBRATED curve: CUDA-int4-vs-CPU-int4 vs CPU-int4-vs-CPU-f32 at the same positions. The
 //     latter is "as well as int4 arithmetic can agree with f32". CUDA-vs-CPU-int4 (same weights, only
 //     W4A8 activation rounding differs) should track it or sit ABOVE it. If CUDA drops FASTER than the
@@ -54,9 +54,9 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 	}
 	defer mcF.Close()
 
-	// 16 positions: pos 7 was the only inversion AND the endpoint (max accumulation), so run out to
-	// 2× to see whether the CUDA-vs-CPUint4 / CPUint4-vs-f32 gap STABILIZES or keeps widening — a
-	// widening gap at the tail would flake the tolerance for reasons unrelated to a bug.
+	// 16 positions: run well past the endpoint of a short run (maximum accumulation) to see whether the
+	// CUDA-vs-CPUint4 / CPUint4-vs-f32 gap STABILIZES or keeps widening; a widening gap at the tail would flake the
+	// tolerance for reasons unrelated to a bug.
 	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 128, 9, 250, 17, 60, 200}
 
 	// CPU int4 over the prompt, capturing its per-decision idx (the routing reference).
@@ -112,29 +112,25 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 
 	// ---- MARGIN-GATED routing agreement (the reusable cross-backend MoE instrument) ----
 	//
-	// Unconditional resident-idx == CPU-idx is an INVALID gate for MoE, and the 26B established why:
-	// a top-k router is a DISCRETE function of a continuously-drifting input, so where two selected
-	// experts are near-tied in router probability, the tiny W4A8-activation delta between resident and
-	// CPU legitimately FLIPS the selection — a different-but-correct expert, not a bug (the resident
-	// and CPU routers are each bit-exact given their own input; only the input differs by rounding).
-	// Past such a flip the two backends compute different experts, so a hidden-state cosine CLIFFS and
-	// per-position argmax vs CPU goes to noise; neither is a defect. But at WIDE margin a flip is NOT
-	// explainable by rounding — it means the dispatch fed the wrong activation, or the router itself
-	// diverged — a real bug. So gate on the margin: assert index agreement only where the top-k
-	// boundary margin (smallest-selected minus largest-rejected softmax prob) exceeds a threshold;
-	// below it, record the disagreement as expected sensitivity rather than failing.
+	// Unconditional resident-idx == CPU-idx is an INVALID gate for MoE: a top-k router is a DISCRETE function of a
+	// continuously-drifting input, so where two selected experts are near-tied in router probability, the tiny
+	// W4A8-activation delta between resident and CPU legitimately FLIPS the selection — a different-but-correct
+	// expert, not a bug (the resident and CPU routers are each bit-exact given their own input; only the input
+	// differs by rounding). Past such a flip the two backends compute different experts, so a hidden-state cosine
+	// CLIFFS and per-position argmax vs CPU goes to noise; neither is a defect. But at WIDE margin a flip is NOT
+	// explainable by rounding — it means the dispatch fed the wrong activation, or the router itself diverged — a
+	// real bug. So gate on the margin: assert index agreement only where the top-k boundary margin (smallest-
+	// selected minus largest-rejected softmax prob) exceeds a threshold; below it, record the disagreement as
+	// expected sensitivity rather than failing.
 	//
-	// THRESHOLD (marginGate = 0.01), chosen from the MEASURED margin distribution, which is bimodal by
-	// ~2 orders of magnitude (metal/gemma4_moe_noisefloor_test.go + metal/gemma4_26b_routing_test.go):
-	//   - THIS fixture, gemma4-moe-tiny (nE=4, top-2): min margin 0.2679 — every decision well-separated
-	//   - real width, 26B (nE=128, top-8): flips sit at 0.00115, matched at 0.00218 — the near-tie band
-	//   - the degenerate control, gemma4-moe-kv-tiny: 0.0001 — routing is a coin-flip, non-gating
-	// 0.01 sits 5x above the near-tie band (0.002) and 27x below this fixture's min (0.268) — an order
-	// of magnitude clear of both regimes, so it is robust to per-arch softmax-scale drift. On moe-tiny
-	// every margin is >> 0.01, so this gate stays FULLY STRICT here (a real nE=4 dispatch bug still
-	// fails); the sensitivity exemption only ever fires at real width, where unconditional agreement is
-	// the wrong bar. To reuse on another MoE family, confirm its well-separated band still clears 0.01
-	// (wider nE compresses margins) and re-pick from that family's distribution if it does not.
+	// THRESHOLD (marginGate = 0.01) was chosen from the MEASURED margin distributions, which are bimodal by ~2
+	// orders of magnitude (metal/gemma4_moe_noisefloor_test.go + metal/gemma4_26b_routing_test.go): it sits an
+	// order of magnitude clear of both the real-width near-tie band and this fixture's minimum margin, so it is
+	// robust to per-arch softmax-scale drift. On moe-tiny every margin is >> 0.01, so this gate stays FULLY STRICT
+	// here (a real nE=4 dispatch bug still fails); the sensitivity exemption only ever fires at real width, where
+	// unconditional agreement is the wrong bar. To reuse on another MoE family, confirm its well-separated band
+	// still clears 0.01 (wider nE compresses margins) and re-pick from that family's distribution if it does not.
+	// The distribution: docs/code-notes/cuda.md#TestGemma4MoE_residentParity.marginGate.
 	const marginGate = 0.01
 	nMoE := len(idxCpu4) / len(prompt)
 	if len(r.g4capIdx) != len(idxCpu4) {
@@ -180,7 +176,7 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		pos0, meanCuda, meanCpu)
 
 	// ---- gates ----
-	// S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.999581 -> 1.000000, run mean 0.947512 -> 1.000000.
+	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): the 0.9999 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
 	if pos0 < 0.9999 {
 		t.Errorf("pos-0 cosine %.6f < 0.9999 — kernel divergence at the first token (GOINFER_G4_CAPTURE / "+
 			"TestGemma4MoE_localize to localize)", pos0)
@@ -191,12 +187,11 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 	// CALIBRATED, RUN-LEVEL. A per-position CUDA ≥ CPUint4-vs-f32 gate is too literal: the two curves
 	// measure DIFFERENT perturbations (CUDA differs from CPU only in W4A8 activation rounding; the
 	// baseline is the full int4 weight quantization), so they legitimately CROSS position-to-position
-	// (run to 16 and CUDA dips under at pos 7/9/15 — with routing bit-equal at all 32 decisions, i.e.
-	// no flip, those are conditioning, not bugs). The property that survives a prompt/length change is
-	// the run mean: CUDA must agree with CPU-int4 AT LEAST AS WELL, on average, as int4 agrees with
-	// f32 — the activation perturbation is smaller than the weight one, so this holds by construction
-	// and by a wide margin (~0.95 vs ~0.87). A real divergence (CUDA dropping FASTER than the fixture's
-	// own quantization across the run) sinks the mean below the baseline; conditioning cannot.
+	// (with routing bit-equal, i.e. no flip, a dip is conditioning, not a bug). The property that survives a
+	// prompt/length change is the run mean: CUDA must agree with CPU-int4 AT LEAST AS WELL, on average, as int4
+	// agrees with f32 — the activation perturbation is smaller than the weight one, so this holds by construction
+	// and by a wide margin. A real divergence (CUDA dropping FASTER than the fixture's own quantization across
+	// the run) sinks the mean below the baseline; conditioning cannot.
 	if meanCuda < meanCpu {
 		t.Errorf("mean CUDA-vs-CPUint4 %.6f < mean CPUint4-vs-f32 %.6f — CUDA agrees with CPU-int4 WORSE than "+
 			"int4 agrees with f32, i.e. it diverges faster than the fixture's own quantization: a real bug, not conditioning",

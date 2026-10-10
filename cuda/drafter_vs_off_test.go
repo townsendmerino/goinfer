@@ -1,12 +1,8 @@
 //go:build cuda && goinfer_testhooks
 
-// Per-suite drafter-vs-OFF comparison, including the mixed-content suite.
-//
-// Born as the adaptive-width ship-gates; the adaptive arm and its gates came out when Phase 2's
-// premise died and took the controller with it. What remains is the part that earned its keep:
-// every static width scored against running NO drafter at all, per traffic class. Runs the REAL BlockSpec path on a CUDA-resident target, not a reimplemented loop:
-// cuda/drafter_loop_test.go's dflashLoop is a standalone copy of the round loop and would
-// measure a controller that is not in it.
+// Per-suite drafter-vs-OFF comparison, including the mixed-content suite: every static width scored against
+// running NO drafter at all, per traffic class. Runs the REAL BlockSpec path on a CUDA-resident target, not a
+// reimplemented loop (cuda/drafter_loop_test.go's dflashLoop is a standalone copy of the round loop).
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 //	  -run TestDrafterVsOff -v -timeout 4h
@@ -25,14 +21,10 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// adaptiveSuites: the three existing traffic classes plus MIXED, which is new and is the case
-// the whole idea exists for.
-//
-// WHY MIXED HAD TO BE BUILT. code/math/chat each sit in ONE regime for a whole generation, so
-// a static width can be optimal for the entire run and adaptivity has nothing to win. The
-// claimed advantage lives at a prose->structured BOUNDARY, where no single static value is
-// right for both halves. Every prompt here forces the transition mid-generation: explain in
-// prose first, THEN emit something structured.
+// adaptiveSuites: the three traffic classes plus MIXED. code/math/chat each sit in ONE regime for a whole
+// generation, so a static width can be optimal for the entire run. MIXED forces a prose->structured BOUNDARY
+// mid-generation (every prompt explains in prose first, THEN emits something structured), where no single
+// static value is right for both halves.
 var adaptiveSuites = map[string][]string{
 	"code": {
 		"Write a Python function that returns the nth Fibonacci number.",
@@ -145,10 +137,9 @@ func TestDrafterVsOff_perSuite(t *testing.T) {
 	maxNew := 96
 	blockSize := dr.BlockSize()
 
-	// THE COMPARISON SET INCLUDES OFF. Adaptive beating every static width proves nothing on a
-	// suite where running no drafter at all is faster -- which is precisely the guard's answer
-	// for chat (it disables, measuring 0.92x). Without this column the chat cell cannot answer
-	// the only question that matters there.
+	// THE COMPARISON SET INCLUDES OFF. A width beating every other static width proves nothing on a suite where
+	// running no drafter at all is faster (the guard disables the drafter for chat). Without this column the chat
+	// cell cannot answer the only question that matters there.
 	staticWidths := []int{2, 3, 4, 5, 6, 7, 8, 10, 12, 16}
 
 	suiteNames := make([]string, 0, len(adaptiveSuites))
@@ -201,8 +192,7 @@ func TestDrafterVsOff_perSuite(t *testing.T) {
 					r := run(fmt.Sprintf("static%d", w), decoder.BlockSpecOptions{VerifyWidth: w})
 					results[r.label] = append(results[r.label], r.tokPerSec/offRate)
 				}
-				// The mixed suite's per-round trace is kept: it is how Finding 2 was found
-				// and how the next drafter change gets checked against it. Recorded at the
+				// The mixed suite's per-round trace is kept so a drafter change can be checked against it. Recorded at the
 				// widest arm, since that is where a transition shows most.
 				if suite == "mixed" {
 					tr := run("trace", decoder.BlockSpecOptions{VerifyWidth: blockSize})
@@ -229,10 +219,8 @@ func TestDrafterVsOff_perSuite(t *testing.T) {
 					bestStatic, bestStaticLabel = r.ratio, r.label
 				}
 			}
-			// THE SURVIVING GATE: does the drafter beat NO drafter at all on this suite?
-			// The adaptive arm and its two gates were removed with the controller (Phase 2's
-			// premise died, so nothing was left to reuse it) — but `off` as a competitor is
-			// the part that earned its keep, and it stays.
+			// THE GATE: does the drafter beat NO drafter at all on this suite? `off` as a competitor is what earns its
+			// keep here.
 			if bestStatic < 1.0 {
 				t.Logf("NOTE: no width beats OFF on %s (best %s %.3fx) — block drafting does not "+
 					"pay on this traffic class with this pairing", suite, bestStaticLabel, bestStatic)

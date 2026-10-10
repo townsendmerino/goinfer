@@ -21,10 +21,9 @@ import (
 // "isolation proves the primitive, never the composition." Each stage is scored separately so a
 // failure names the culprit instead of the chain.
 //
-// WHY THIS STARTS AT delta_conv AND THE WEBGPU TEST DID NOT. WebGPU's causal conv IS the Mamba-2
-// conv, already gated there. CUDA has no SSM engine — no conv-ring, no persistent state, nothing
-// recurrent in any of its 24 kernels — so delta_conv is new code and has to be gated from its own
-// input. That is why the capture hook grew a `mixed` slot.
+// WHY THIS STARTS AT delta_conv AND THE WEBGPU TEST DID NOT. WebGPU's causal conv IS the Mamba-2 conv, already
+// gated there. CUDA has no Mamba-2 conv kernel to reuse, so delta_conv is new code and has to be gated from
+// its own input. That is why the capture hook grew a `mixed` slot.
 //
 // WHY COMPARE TO THE CPU AND NOT TO HF. The CPU recurrence is already gated against transformers'
 // torch_recurrent_gated_delta_rule, so this makes the chain kernel ≡ CPU ≡ HF. A reference written

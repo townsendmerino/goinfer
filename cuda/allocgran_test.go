@@ -8,31 +8,12 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// TestAllocGranularity records what this driver actually charges for a device allocation. It exists
-// because the expert-cache sizing arithmetic must predict device consumption, and summing requested
-// bytes does not.
-//
-// MEASURED (RTX 2070 SUPER, driver 595.58.03, 2026-08-11) — the numbers, not just the conclusion:
-//
-//	request         actual/alloc   overhead
-//	1 048 576 B ->   1 048 576 B     +0.0%
-//	1 048 577 B ->   2 097 152 B   +100.0%
-//	1 052 672 B ->   2 097 152 B    +99.2%
-//	2 973 696 B ->   4 194 304 B    +41.0%   (int4 weights, one 26B expert)
-//	3 490 000 B ->   4 194 304 B    +20.2%
-//
-// Those four large samples ALL sit just above a power of two, where next-power-of-two and 2 MiB
-// granularity predict identically — so they cannot separate the two hypotheses, and reading them as
-// "rounds to the next power of two" was a name asserted from data that did not constrain it. The
-// discriminating requests are 5 / 6 / 9 MiB:
-//
-//	5 MiB -> actual  6.00 MiB    nextPow2 says  8    2 MiB-granular says  6
-//	6 MiB -> actual  6.00 MiB    nextPow2 says  8    2 MiB-granular says  6
-//	9 MiB -> actual 10.00 MiB    nextPow2 says 16    2 MiB-granular says 10
-//
-// Unanimous for 2 MiB granularity. nextPow2 would over-charge by up to 2x on any buffer that does
-// not happen to sit just above a power of two, under-granting slots on a future geometry — a new
-// mis-estimate introduced by the fix for the old one.
+// TestAllocGranularity records what this driver actually charges for a device allocation, because the
+// expert-cache sizing arithmetic must predict device consumption and summing requested bytes does not.
+// The charge is 2 MiB granular, not next-power-of-two: the discriminating requests are 5 / 6 / 9 MiB
+// (2 MiB granularity charges 6 / 6 / 10, next-power-of-two would charge 8 / 8 / 16), and the test fails
+// when the quantum changes. Modelling it as a power of two would over-charge by up to 2x and under-grant
+// slots. Measured table: docs/code-notes/cuda.md#TestAllocGranularity.
 func TestAllocGranularity(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -63,20 +44,10 @@ func TestAllocGranularity(t *testing.T) {
 	}
 }
 
-// TestSmallAllocPool records that sub-granularity allocations are NOT free, which a single
-// allocation appears to show and cannot: one 371 712-byte request measured ZERO device bytes,
-// because the pool page had already been charged.
-//
-// MEASURED, same box, 371 712 B (f16 scales for one 26B expert):
-//
-//	after   1 alloc  ->   2.00 MiB total   (the page, charged once)
-//	after 2..4       ->   +0.00 MiB        (drawn down, marginal cost zero)
-//	after  64        ->  +24.00 MiB
-//	after 128..512   ->  +26.00 MiB per 64
-//	512 allocs       -> 206.00 MiB total = 421 888 B/alloc amortised
-//
-// So the marginal cost is zero until the page exhausts and then it steps. 421 888 B amortised
-// against a 371 712 B request is the honest figure at the counts that matter (30 layers x N slots).
+// TestSmallAllocPool records that sub-granularity allocations are NOT free, which a single allocation
+// appears to show and cannot: a pool page is charged once, so the marginal cost is zero until the page
+// exhausts and then steps. The amortised cost per request is above the request size at the counts that
+// matter (layers x slots), and the test fails if it is not. Measured table: docs/code-notes/cuda.md#TestSmallAllocPool.
 func TestSmallAllocPool(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {

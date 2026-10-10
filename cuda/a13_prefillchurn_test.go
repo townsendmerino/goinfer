@@ -11,37 +11,22 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestA13_PrefillChurnPoisons is the tag-blocking measurement.
+// TestA13_PrefillChurnPoisons measures the one shipped path that releases a large buffer inside a live
+// context: the prefill's per-call M-sized scratch, freed through ReleaseBuf -> Buffer.Close ->
+// cudaresult.MemFree with no pool, so every long prompt does a multi-hundred-MB free. Whether that
+// poisons later launches is a measurement, not an argument; a synthetic hold-and-release sweep is not
+// evidence for or against it (it proved intermittent).
 //
-// A13 established that a large hold-and-release INSIDE A LIVE CONTEXT can leave later launches
-// returning success and writing nothing. Four production paths were enumerated and are clean by
-// construction — admin unload destroys the context, capSlots is pure arithmetic, allocSlots discards
-// the resident on failure, and no mid-life KV/expert resize exists. One is not:
+// Two symptoms, reported separately:
 //
-//	cuda/prefill.go:200 allocates `scratch` per call and releases it with a deferred
-//	r.dev.ReleaseBuf loop, inside the live resident context. Its own comment: "at M=3000 this is
-//	hundreds of MB".
-//
-// And that release really does return memory to the driver: ReleaseBuf -> Buffer.Close ->
-// cudaresult.MemFree. No pool, no reuse. So the stimulus occurs on the hot path on every long
-// prompt, and whether it poisons is a measurement rather than an argument.
-//
-// SIZE IS NOT AN ARGUMENT HERE, and the percentages this comment used to quote are WITHDRAWN. They
-// came from a synthetic hold-and-release probe that later proved INTERMITTENT (C C C C P C on a
-// repeat), so its "reliably clean <=12%" and "poisons at >=25%" bands were reading noise as
-// structure. The real trigger is DRAIN TO REFUSAL — deterministic, 5/5. What actually closes prefill
-// is a measurement of its own peak: min free 5752.2 MiB during a real-model prefill, 39.9x the
-// refusal floor. Only measurements count, and the one that counts here is that one.
-//
-// TWO SYMPTOMS, reported separately because they mean different things:
-//
-//	(a) the prefill's own logits degrading across repetitions -> a correctness bug in SHIPPED output
+//	(a) the prefill's own logits degrading across repetitions -> a correctness bug in shipped output
 //	(b) a probe launch on the same context failing afterwards  -> narrower, still real
 //
-// POSITIVE CONTROL (GOINFER_A13_CHURN_CONTROL=1): reproduce the known poisoning stimulus in this same
-// process and code path and confirm it DOES poison. A clean result from a harness that cannot poison
-// is not evidence — the fourth time in this campaign a null needed its forcing mechanism verified
-// before it meant anything.
+// Positive control (GOINFER_A13_CHURN_CONTROL=1): reproduce the known poisoning stimulus in this same
+// process and code path and confirm it does poison. A clean result from a harness that cannot poison
+// is not evidence.
+//
+// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_PrefillChurnPoisons.
 func TestA13_PrefillChurnPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_CHURN") == "" {
 		t.Skip("set GOINFER_A13_CHURN=1 — A13 probe, deliberately not part of the tier")
@@ -91,14 +76,8 @@ func TestA13_PrefillChurnPoisons(t *testing.T) {
 	// POSITIVE CONTROL: force the known stimulus first, so a later clean result cannot be a harness
 	// that is simply incapable of showing the effect.
 	if os.Getenv("GOINFER_A13_CHURN_CONTROL") != "" {
-		// THE CONTROL MUST STIMULATE THE CONTEXT UNDER TEST. A first version allocated through
-		// dev.Primary() and showed nothing — because BuildResident creates its OWN context, so the
-		// primary context is a different one and the control never touched the subject. That is the
-		// "harness that cannot poison" failure, caught by running the control before believing a
-		// clean result rather than after.
-		//
-		// So this allocates and frees through the RESIDENT's device, on the resident's pinned
-		// executor thread (r.do), which is the only place its context is current.
+		// The control must stimulate the context under test: allocate and free through the resident's device
+		// on its pinned executor thread (r.do), the only place its context is current. Detail: docs/code-notes/cuda.md#TestA13_PrefillChurnPoisons.control.
 		if e := rf.do(func() error {
 			free, _, _ := rf.dev.Context().MemInfo()
 			var held []Buffer

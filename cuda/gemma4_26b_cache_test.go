@@ -194,11 +194,10 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 	t.Logf("C′ cache: %d hits / %d misses = %.1f%% hit rate (each hit is one skipped expert DMA; nSlots=%d, "+
 		"topK=%d, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse", hits, misses, hitRate*100, r.cacheSlots, r.topK)
 
-	// PRICE THE ROUTING ROUND TRIP. cacheProf has existed and been read by nothing; this wires it
-	// up. It decomposes loadRoutedExperts into the three things it actually does per MoE layer per
-	// token — the pipeline drain, the host-side slot bookkeeping, and the expert DMAs — which is the
-	// number that decides whether speculative prefetch is worth its complexity (G30, spec/10's
-	// standing verdict). Zero unless GOINFER_MOE_CACHE_PROF is set.
+	// PRICE THE ROUTING ROUND TRIP. cacheProf decomposes loadRoutedExperts into the three things it does per MoE
+	// layer per token (the pipeline drain, the host-side slot bookkeeping, the expert DMAs), which is the number that
+	// decides whether speculative prefetch is worth its complexity (G30, spec/10's standing verdict). Zero unless
+	// GOINFER_MOE_CACHE_PROF is set.
 	if stall, host, dma, calls := r.CacheProfForTest(); calls > 0 {
 		tot := stall + host + dma
 		nsPerTok := float64(genDur) / float64(len(gen)) // ns per token
@@ -210,12 +209,9 @@ func TestGemma4_26B_cache_B(t *testing.T) {
 			(tot / time.Duration(calls)).Round(time.Microsecond),
 			float64(tot)/float64(len(gen))/1e6, nsPerTok/1e6)
 
-		// PHASE 0 ANSWERED IT, AND THE FIX IS IN. The question was whether the expert DMA is
-		// bandwidth-bound or per-call-overhead bound: each miss used to issue FOUR blocking
-		// null-stream uploads, and the tiny scale copy costing comparable per-call time to the big
-		// weight copy would mean fixed per-call cost dominated. It did, so the copies are now
-		// QUEUED and issued per layer by one gpu.UploadBatch. Copy count is therefore unchanged
-		// and sync count is what moved, which is why the two are reported separately below.
+		// Each miss's expert copies are QUEUED and issued per layer by one gpu.UploadBatch (fixed per-call cost, not
+		// bandwidth, dominated the old per-copy blocking uploads). Copy count is therefore unchanged and sync count is
+		// what moved, which is why the two are reported separately below.
 		wB, sB, wC, sC := r.UploadProfForTest()
 		batchTime, syncCalls := r.BatchProfForTest()
 		rate := func(b uint64, d time.Duration) float64 {

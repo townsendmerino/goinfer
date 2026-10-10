@@ -9,7 +9,7 @@ import (
 )
 
 // R20's gate: a resident decline's reason names a remedy, and a recovered executor panic's stack is not part of it. The two inputs
-// are the errors the real 26B q4_0 produced on the 8 GB RTX 2070 SUPER (2026-10-01, device OOM through runJob's panic boundary)
+// are the errors the real 26B q4_0 produced on the 8 GB RTX 2070 SUPER (device OOM through runJob's panic boundary)
 // and the cold-user run's (an empty weight), not strings written to suit the function.
 func TestDeclineAdvice(t *testing.T) {
 	oom := "cuda: executor job panicked: cuda: device allocation failed (typed-len, 253755392 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY\n" +

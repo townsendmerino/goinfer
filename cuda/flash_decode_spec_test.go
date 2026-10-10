@@ -17,7 +17,7 @@ import (
 // the flash-decode lane ON, speculative generations no longer refuse; they hold an exact-attention scope so decode and verify
 // share ONE tree. It asserts, on the real 1.5B with a copy-heavy prompt (so drafts are accepted and verify rounds really run):
 //
-//  1. the guard reports no conflict with the lane on (it used to refuse);
+//  1. the guard reports no conflict with the lane on;
 //
 //  2. a plain lane generation launches the lane (the scope is not stuck on);
 //

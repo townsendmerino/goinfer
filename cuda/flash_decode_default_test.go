@@ -18,7 +18,7 @@ func unsetenv(t *testing.T, key string) {
 	}
 }
 
-// TestFlashDecodeSplit_default pins how GOINFER_CUDA_FLASH_DECODE resolves now that the lane is default ON (R6, 2026-09-23):
+// TestFlashDecodeSplit_default pins how GOINFER_CUDA_FLASH_DECODE resolves with the lane default ON (R6):
 // unset or empty is the registered S, an explicit 0/off/false is the exact path, a positive integer picks S, and anything that
 // is not a positive integer is OFF — a typo must never enable a non-exact attention path at some other S.
 func TestFlashDecodeSplit_default(t *testing.T) {

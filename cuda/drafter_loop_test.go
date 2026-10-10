@@ -64,10 +64,9 @@ func dflashLoop(t *testing.T, mc *decoder.Model, r *cudaResident, rd *residentDr
 	}
 	fuse(cap0, len(prompt))
 
-	// THE MASK TOKEN IS TRAINED, not a placeholder. DFlash learned to see this specific
-	// embedding at unfilled block positions; feeding any other id puts the drafter
-	// off-distribution and it drafts badly while everything still runs. Measured cost of
-	// getting this wrong: 1.77 tok/round against the CPU sweep's 4.97 at the same width.
+	// THE MASK TOKEN IS TRAINED, not a placeholder. DFlash learned to see this specific embedding at unfilled
+	// block positions; feeding any other id puts the drafter off-distribution and it drafts badly while
+	// everything still runs (acceptance collapses).
 	maskID := maskTok
 	for len(out) < maxNew {
 		// --- draft ---
@@ -201,17 +200,14 @@ func TestDFlashLoop_lossless(t *testing.T) {
 	t.Logf("LOSSLESS: %d tokens identical to plain greedy", len(want))
 }
 
-// TestDFlashLoop_gate3 is GATE 3: the end-to-end wall-clock the whole projection has been
-// standing in for.
-//
-// docs/spec/08 projects code 1.52x / math 1.96x at verify widths 7/8, composed from separately
-// measured terms — draft 8.82 ms, the batched-head verify curve, a 1.09 ms batched seam,
-// acceptance from a 7-width CPU sweep. Every term is measured; the COMPOSITION was arithmetic.
+// TestDFlashLoop_gate3 is GATE 3: the end-to-end wall-clock the whole projection (docs/spec/08) has been
+// standing in for. The projection composes separately measured terms (draft, the batched-head verify curve,
+// the batched seam, acceptance from a CPU sweep); every term is measured but the COMPOSITION was arithmetic.
 // This runs the real loop against plain greedy on the same resident and divides.
 //
-// REAL PROMPTS, chat-templated, because acceptance is a property of real text: the lossless gate
-// above reads 1.56 tok/round on random ids, which says nothing about anything. The suite is the
-// same one the CPU acceptance sweep used, so the numbers are comparable.
+// REAL PROMPTS, chat-templated, because acceptance is a property of real text: the lossless gate above runs on
+// random ids, which says nothing about acceptance. The suite is the one the CPU acceptance sweep used, so the
+// numbers are comparable. Projected and measured figures: docs/code-notes/cuda.md#TestDFlashLoop_gate3.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashLoop_gate3 -v -timeout 2h
@@ -243,8 +239,8 @@ func TestDFlashLoop_gate3(t *testing.T) {
 	if err != nil {
 		t.Skipf("tokenizer: %v", err)
 	}
-	// The same prompts and the same non-thinking template the CPU acceptance sweep used, so
-	// tok/round here is comparable to the 4.97 that sweep measured at width 7.
+	// The same prompts and the same non-thinking template the CPU acceptance sweep used, so tok/round here is
+	// comparable to that sweep's.
 	prompts := map[string][]string{
 		"code": {
 			"Write a Python function that returns the nth Fibonacci number.",
@@ -254,10 +250,9 @@ func TestDFlashLoop_gate3(t *testing.T) {
 			"What is 17 * 23? Show your working.",
 			"A train travels 120 km in 1.5 hours. What is its average speed in km/h?",
 		},
-		// chat is the class the projection says LOSES (0.78x), and gate 4's router exists for
-		// it. Measured here rather than projected, because a router should be designed against
-		// the real number: if chat is a mild loss the router is an optimization, and if it is a
-		// severe one the router is a correctness-of-economics requirement.
+		// chat is the class the projection says LOSES, and gate 4's router exists for it. Measured here rather than
+		// projected, because a router should be designed against the real number: if chat is a mild loss the router is
+		// an optimization, and if it is a severe one the router is a correctness-of-economics requirement.
 		"chat": {
 			"Explain what a hash table is, in two sentences.",
 			"Give me three tips for keeping houseplants alive.",
@@ -281,10 +276,9 @@ func TestDFlashLoop_gate3(t *testing.T) {
 			rounds += rd2
 			rd.TruncateContext(0)
 
-			// THE BASELINE IS Model.Generate — what a server actually runs. An earlier version
-			// looped PrefillLastNArgmax(M=1), which downloads the full 608 KB logit row per
-			// token where Generate uses the GPU argmax fast-path (4-byte readback). That made
-			// every ratio here ~10% optimistic.
+			// THE BASELINE IS Model.Generate, what a server actually runs: it uses the GPU argmax fast path (a 4-byte
+			// readback), where a PrefillLastNArgmax(M=1) loop downloads the full logit row per token and makes every
+			// ratio here optimistic.
 			t0 := time.Now()
 			ch, gen := mc.Generate(context.Background(), ids, len(got), decoder.SamplingParams{})
 			for range ch {

@@ -12,32 +12,24 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestA13_SingleFailedAllocPoisons asks the question that decides whether A13 is a test defect or a
-// production bug: does ONE failed allocation poison the context, or does it take a full drain?
-//
-// A13 established that after draining the device to exhaustion, a later `attention` launch returns
-// success and writes nothing. Every draining test allocates until refusal — hundreds of failures and
-// gigabytes held. Production never does that deliberately. But production DOES hit a failed
-// allocation: BuildResident sizes the expert cache against free VRAM and can have an allocation
-// refused, and a multi-model server can have one model's OOM land in a process another model is
-// using.
-//
-// So the shape that matters is not "drain" but "how little is enough".
+// TestA13_SingleFailedAllocPoisons asks whether ONE failed allocation poisons the context, or whether it
+// takes a full drain (after which a later `attention` launch returns success and writes nothing).
+// Production does hit a failed allocation: BuildResident sizes the expert cache against free VRAM and can
+// be refused, and one model's OOM can land in a process another model is using.
 //
 //	(c) correct -> one failure does not poison; bisect upward to bound what does
-//	(c) zeros   -> ANY failed allocation poisons, multi-model servers are exposed, and one model's
-//	               OOM silently breaks another model's CUDA path in the same process with no error
+//	(c) zeros   -> any failed allocation poisons; one model's OOM silently breaks another model's CUDA
+//	               path in the same process with no error
 //
 // Three repeats either way: A13's failures vary run to run, so a single negative clears nothing.
+// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_SingleFailedAllocPoisons.
 func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_SINGLEFAIL") == "" {
 		t.Skip("set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier")
 	}
-	// A13 item 1: PIN THE GOROUTINE. Every observed poisoning has been on a test goroutine, which Go
-	// is free to migrate across OS threads; the resident's executor is LockOSThread-pinned and has
-	// never poisoned. If pinning alone makes this clean, the mechanism is unpinned CUDA usage from a
-	// migrating goroutine rather than driver-side module eviction — and the eviction story, the
-	// cache-site comment, and everything downstream of it are wrong.
+	// GOINFER_A13_PIN: pin the goroutine (LockOSThread). The resident's executor is pinned and has never
+	// poisoned; if pinning alone makes this clean, the mechanism is unpinned CUDA use from a migrating
+	// goroutine rather than driver-side module eviction.
 	if os.Getenv("GOINFER_A13_PIN") != "" {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
@@ -87,14 +79,9 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	free0, _, _ := ctx.MemInfo()
 	t.Logf("(a) baseline OK, free=%.1f MiB", float64(free0)/(1<<20))
 
-	// A13 item 1: PERSISTENT ALLOCATION (GOINFER_A13_KEEP=<MiB>). Held for the whole test and never
-	// freed, so the context's LIVE SET never collapses to empty.
-	//
-	// The hypothesis it tests: the trigger is not memory pressure but the live set going (near)
-	// empty — every poisoning run frees everything it allocated, while a resident context always
-	// holds a model's weights. If holding ~1 GB makes the known-poisoning sequence clean, that one
-	// variable explains the resident executor, prefill churn and multi-model unload together, and
-	// converts four separately-measured nulls into one predicted property.
+	// PERSISTENT ALLOCATION (GOINFER_A13_KEEP=<MiB>): held for the whole test and never freed, so the
+	// context's live set never collapses to empty. Tests whether the trigger is the live set going near
+	// empty rather than memory pressure (a resident context always holds a model's weights).
 	if v := os.Getenv("GOINFER_A13_KEEP"); v != "" {
 		mib, _ := strconv.Atoi(v)
 		var keep []*gc.Buffer[float32]
@@ -115,12 +102,9 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 		}()
 	}
 
-	// (b) EXACTLY ONE failed allocation. Not a drain: one request, larger than the whole device, and
-	// nothing retained. If it succeeds the probe is void, so that is checked rather than assumed.
-	// N failed allocations, N=1 by default. GOINFER_A13_NFAIL bisects upward: the point of the
-	// sweep is to bound how little is enough, since "a full drain poisons" and "one refusal does
-	// not" leave the interesting range unmeasured — and the decline path's own attempt count has
-	// to sit inside whatever bound comes out.
+	// (b) EXACTLY ONE failed allocation: one request larger than the whole device, nothing retained. If it
+	// succeeds the probe is void, so that is checked. GOINFER_A13_NFAIL=N bisects upward to bound how little
+	// is enough; the decline path's own attempt count has to sit inside whatever bound comes out.
 	nfail := 1
 	if v := os.Getenv("GOINFER_A13_NFAIL"); v != "" {
 		if k, e := strconv.Atoi(v); e == nil {
@@ -140,10 +124,8 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 		}
 		aerr = e
 	}
-	// PARTIAL DRAIN (GOINFER_A13_HOLDPCT): successfully hold a percentage of free VRAM, then
-	// release it. 1000 refusals turned out to be harmless, which points at the SUCCESSFUL
-	// allocation rather than the refusal — the draining tests hold gigabytes before anything is
-	// refused. This is the knob that separates the two.
+	// PARTIAL DRAIN (GOINFER_A13_HOLDPCT): successfully hold a percentage of free VRAM, then release it.
+	// Separates a successful large allocation from a refusal as the trigger. Detail: docs/code-notes/cuda.md#TestA13_SingleFailedAllocPoisons.holdpct.
 	if v := os.Getenv("GOINFER_A13_HOLDPCT"); v != "" {
 		pct, _ := strconv.Atoi(v)
 		want := int(free0) * pct / 100

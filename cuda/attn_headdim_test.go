@@ -11,20 +11,16 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestAttention_TailPoison is the scratch-to-max gate for the per-layer geometry port
-// (9a-P2). The runner allocates ONE Q/context scratch sized to the WIDEST layer (maxQDim =
-// nH*512 for Gemma 4's global head), then runs the NARROW hd=16 local layer into it. If the
-// attention kernel — or anything sizing off the allocation — reads past nH*hd, it picks up
-// the residue a previous wide layer left in the tail.
+// TestAttention_TailPoison is the scratch-to-max gate for the per-layer geometry port. The runner allocates
+// ONE Q/context scratch sized to the WIDEST layer (maxQDim = nH*512 for Gemma 4's global head), then runs the
+// NARROW hd=16 local layer into it. If the attention kernel, or anything sizing off the allocation, reads
+// past nH*hd, it picks up the residue a previous wide layer left in the tail.
 //
-// A zeroed scratch cannot catch that: an over-read folds in zeros, contributes nothing to
-// the dot products / accumulations, and the hd=16 result stays correct — so
-// TestAttention_HeadDimWidths passing at hd=16 proves nothing about tail-reads. The residue
-// is non-zero, so the tail is memset to a sentinel and only the live hd=16 region written;
-// the kernel then either stays byte-identical to the tight run (no over-read) or diverges
-// (found the bug the zeroed test structurally could not see). It also closes the consumer-
-// sizes-off-the-buffer gap the compiler removal alone cannot: anything deriving its extent
-// from the wide allocation processes sentinel and diverges.
+// A zeroed scratch cannot catch that: an over-read folds in zeros and the hd=16 result stays correct, so
+// TestAttention_HeadDimWidths passing at hd=16 proves nothing about tail-reads. Here the tail is memset to a
+// sentinel and only the live hd=16 region written; the kernel must then stay byte-identical to the tight
+// run. It also closes the consumer-sizes-off-the-buffer gap: anything deriving its extent from the wide
+// allocation processes the sentinel and diverges.
 func TestAttention_TailPoison(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
@@ -109,16 +105,13 @@ func TestAttention_TailPoison(t *testing.T) {
 	t.Logf("tail poison clean: hd=16 attention byte-identical in tight vs %dx-wide sentinel-tailed scratch", maxHd/hd)
 }
 
-// TestAttention_HeadDimWidths guards that the shipped `attention` kernel is correct across the
-// head-dim widths goinfer's arch set uses — including the ones NO other cuda test exercises. It drives the SHIPPED `attention` kernel at hd 16/64/128/256/512 through
-// the known-good validateGlue oracle (cosine vs a CPU GQA online-softmax reference). 128 is the
-// existing green control; 256 is gemma3's width (already resident); 512 is the gemma4 global-head
-// question the Phase-9a spec gates on; 16 and 64 are the SMALL end — gemma4's local layer is
-// hd=16, below every previously-tested width. The kernel decomposes each head over a fixed
-// 128-thread block, so the large end (512 = 4 elems/thread) and the small end (16 = 112 of 128
-// threads idle) stress different assumptions: any hd ≥ blockDim or blockDim % hd == 0 dependence
-// would break at 16, not 512. Adding these rows keeps a red on the Split-A resident run
-// attributable to the geometry seam, not to the tiny head. Single variable = hd.
+// TestAttention_HeadDimWidths guards that the shipped `attention` kernel is correct across the head-dim
+// widths goinfer's arch set uses, including ones no other cuda test exercises: hd 16/64/128/256/512 through
+// the validateGlue oracle (cosine vs a CPU GQA online-softmax reference). The kernel decomposes each head
+// over a fixed 128-thread block, so the large end (512 = 4 elems/thread) and the small end (16 = 112 of 128
+// threads idle) stress different assumptions: any hd >= blockDim or blockDim % hd == 0 dependence would
+// break at 16, not 512. Single variable = hd, so a red on a resident run stays attributable to the geometry
+// seam, not to the tiny head.
 func TestAttention_HeadDimWidths(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)

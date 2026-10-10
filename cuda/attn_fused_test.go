@@ -12,40 +12,22 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TOLERANCE — PRE-REGISTERED, THEN MEASURED TO BE MIS-DERIVED, AND CORRECTED IN THE OPEN.
+// TOLERANCE. The bars are scaled by max |V| over the head, not by each row's own |ctx|: with synthetic V of
+// quasi-random sign the weighted average can cancel far more deeply than |V|/sqrt(nKeys), and a row whose
+// context cancels to a few parts in thousands is ill-conditioned by construction (rounding the INPUTS alone
+// rotates it), so no kernel can meet a bar scaled by that row's |ctx|. The derivation that failed, and the
+// run that settled it: docs/measurements/prefill-l2l3-phase1-2026-09-05.md; detail docs/code-notes/cuda.md#attnFusedTolerance.
 //
-// The first version of this file pre-registered "max |delta| <= 1e-3 of THE ROW'S OWN max |ctx|"
-// plus "cosine >= 0.9999 per row", derived from f16 operand rounding. That bar failed widely --
-// worst cosine 0.9642, worst row-relative delta 1.6 -- and the failure was NOT the kernel.
+//	attnFusedMaxDeltaVsV -- max |delta| relative to max |V| over the head. |V| does not collapse, so this is
+//	well-conditioned everywhere, and a real defect (wrong keys, a mismapped fragment, a dropped seam) is wrong
+//	by a fraction of |V|.
 //
-// What settled it (docs/measurements/prefill-l2l3-phase1-2026-09-05.md records the run): scoring
-// attn_fused against exact f64 math on inputs FIRST ROUNDED TO f16 -- which is what the kernel
-// actually receives -- gives cosine 1.00000000, worst 0.99999996 over 64 rows x 4 heads. The kernel
-// reproduces its own inputs' arithmetic essentially exactly. Meanwhile attn_batched scores
-// 1.00000000 against the f32 reference, so the exact path is sound too, and the gap between them is
-// the f16 operand precision and nothing else.
+//	attnFusedMinCosine -- applied only to rows conditioned enough to carry a direction (|ctx| >=
+//	attnFusedCondFloor * rms|V|). The conditioning of every row and the count of rows excluded are REPORTED,
+//	so this cannot silently become a bar that tests nothing.
 //
-// THE DERIVATION'S ERROR was the DENOMINATOR, not the numerator. It assumed |ctx| ~ |V|/sqrt(nKeys).
-// With synthetic V of quasi-random sign the weighted average can cancel far more deeply than that:
-// measured here, |ctx|/rms|V| ran from 1.02 down to 0.000211, and the cosine gap tracked it
-// monotonically (1.02 -> 0.99999997; 0.0099 -> 0.99996; 0.00021 -> 0.9642). A row whose context
-// cancels to one part in 4700 is ill-conditioned by construction: rounding the INPUTS alone rotates
-// it 27%, so no kernel of any quality can meet a bar scaled by that row's own |ctx|.
-//
-// THE CORRECTED BARS, and why each is the right shape:
-//
-//	attnFusedMaxDeltaVsV -- max |delta| relative to max |V| over the head, NOT to |ctx|. |V| is the
-//	scale the output is drawn from and does not collapse, so this is well-conditioned everywhere
-//	while still catching any real defect: a kernel that attends the wrong keys, mismaps a fragment
-//	or drops a seam is wrong by a fraction of |V|, not of |ctx|.
-//
-//	attnFusedMinCosine -- kept, but applied only to rows that are actually conditioned enough to
-//	carry a direction (|ctx| >= attnFusedCondFloor * rms|V|). The conditioning of every row is
-//	REPORTED either way, and the count of rows excluded is reported too, so this cannot silently
-//	become a bar that tests nothing.
-//
-// TestAttnFused_vsF16Reference below is the logic gate that does not depend on any of this: it is
-// immune to conditioning because it compares the kernel against its own inputs' exact arithmetic.
+// TestAttnFused_vsF16Reference is the logic gate that does not depend on any of this: it compares the kernel
+// against its own inputs' exact arithmetic.
 const (
 	attnFusedMaxDeltaVsV = 1e-3
 	attnFusedMinCosine   = 0.9999
@@ -398,21 +380,18 @@ func f16rne(x float32) float32 {
 	return math.Float32frombits(out)
 }
 
-// TestAttnFused_vsF16Reference is THE logic gate for attn_fused, and the one assertion here that
-// no amount of input conditioning can distort.
+// TestAttnFused_vsF16Reference is THE logic gate for attn_fused, and the one assertion here that no amount
+// of input conditioning can distort.
 //
-// TestAttnFused_vsExact compares two GPU kernels that use different operand precision, so a
-// disagreement there cannot by itself say which one is wrong — the same trap docs/task-prefill-
-// gap.md §3.1 corrected at the model level, where a fast path was scored against an exact path that
-// was itself a quantisation, and the distance was booked against the faster one. This test avoids
-// it by scoring attn_fused against EXACT f64 arithmetic on ITS OWN INPUTS, rounded to f16 exactly
-// as the kernel rounds them. Any error left is the kernel's logic: a mismapped mma fragment, a
-// dropped seam, the wrong keys attended, a botched online rescale. Operand precision is factored
-// out by construction rather than budgeted for.
+// TestAttnFused_vsExact compares two GPU kernels that use different operand precision, so a disagreement
+// there cannot say which one is wrong (the trap docs/completed/task-prefill-gap.md §3.1 describes at the
+// model level: a fast path scored against an exact path that is itself a quantisation). This test scores
+// attn_fused against EXACT f64 arithmetic on ITS OWN INPUTS, rounded to f16 as the kernel rounds them, so
+// any error left is the kernel's logic (a mismapped mma fragment, a dropped seam, the wrong keys, a botched
+// online rescale) and operand precision is factored out by construction.
 //
-// Small shapes on purpose: the reference is O(M · nH · nKeys · hd) in Go and this needs to stay a
-// test, not a benchmark. Seam BREADTH is TestAttnFused_vsExact's job; DEPTH of correctness is this
-// one's. Both are needed — neither substitutes for the other.
+// Small shapes on purpose: the reference is O(M · nH · nKeys · hd) in Go. Seam BREADTH is
+// TestAttnFused_vsExact's job and DEPTH of correctness is this one's; neither substitutes for the other.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FAST_PREFILL=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestAttnFused_vsF16Reference -v
 func TestAttnFused_vsF16Reference(t *testing.T) {
@@ -482,18 +461,12 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 					}
 				}
 
-				// Reference: exact f64 over f16-rounded operands, ROUNDED AND SEQUENCED THE WAY THE
-				// KERNEL DOES IT.
-				//
-				// A one-pass softmax over the global max is mathematically equal to the online form but
-				// NOT numerically equal, and modelling it that way is a real error rather than a nicety:
-				// the kernel rounds each tile's PROVISIONAL weights exp(s - m_running) to f16 and then
-				// rescales the f32 accumulator by exp(m_old - m_new), so the f16 rounding happens at a
-				// different scale than a global-max reference would apply. Measured, before this was
-				// fixed: a global-max reference put the multi-tile cases at cosine 0.9992-0.9994 while
-				// single-tile cases sat at 0.99999996 — a gap that reads exactly like a rescale defect
-				// and is in fact the reference not modelling the algorithm. So the reference walks the
-				// same BN-key tiles in the same order and carries the same running state.
+				// Reference: exact f64 over f16-rounded operands, ROUNDED AND SEQUENCED THE WAY THE KERNEL DOES IT. A
+				// one-pass softmax over the global max equals the online form mathematically but not numerically: the
+				// kernel rounds each tile's PROVISIONAL weights exp(s - m_running) to f16 and then rescales the f32
+				// accumulator by exp(m_old - m_new), so the rounding happens at a different scale. A global-max reference
+				// makes multi-tile cases read like a rescale defect that is really the reference not modelling the
+				// algorithm; so this walks the same BN-key tiles in the same order and carries the same running state.
 				ref := make([]float64, c.M*qDim)
 				for m := 0; m < c.M; m++ {
 					nk := c.startPos + m + 1

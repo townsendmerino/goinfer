@@ -11,24 +11,18 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDFlashDispatchAmortization settles the ONE assumption gate 3's draft term still rests on.
+// TestDFlashDispatchAmortization settles the ONE assumption gate 3's draft term rests on: that per-layer cost
+// is independent of how many layers are in the stack. The draft is projected as `5.33 × per-layer(M=16)`, with
+// per-layer taken from the 36-layer target's batched verify divided by 36, which silently assumes a 5-layer
+// model costs 5/36ths of a 36-layer one. It need not: a 36-layer forward has 36 dispatches to hide launch
+// latency behind and five have far less (CPU dispatch overlaps GPU compute differently at different scales).
+// If per-layer cost RISES as the stack shortens, the drafter is more expensive than projected and every
+// projected speedup drops. Origin of the projection: docs/spec/08 (and docs/code-notes/cuda.md#TestDFlashDispatchAmortization).
 //
-// The 6.6 ms draft in docs/spec/08 is `5.33 × per-layer(M=16)`, where per-layer comes from
-// dividing the 36-layer target's batched verify by 36. That silently assumes **a 5-layer model
-// costs 5/36ths of a 36-layer one** — i.e. that per-layer cost is independent of how many layers
-// are in the stack. It need not be: a 36-layer forward has 36 dispatches to hide launch latency
-// behind, and five have far less. If per-layer cost RISES as the stack shortens, the drafter is
-// more expensive than 6.6 ms and every projected speedup drops.
-//
-// This is not hypothetical in this repo. It is the mechanism that landed the CUDA-graphs
-// projection (1.4–1.7×) at a measured 1.01× — CPU dispatch overlaps GPU compute differently at
-// different scales — and the mechanism behind Lever 2's "the draft was the wall, not the verify".
-//
-// METHOD: run the resident forward with the layer loop truncated (`r.nLayers`), at both M=1
-// (`launchToken`) and M=16 (`PrefillLast`, the regime the block draft actually runs in), and
-// compare per-layer cost across stack depths. The outputs are numerically meaningless — a
-// truncated stack is not a model — but the TIMING is exactly the quantity in question, and the
-// weights for every layer are already resident so no reload is involved.
+// METHOD: run the resident forward with the layer loop truncated (`r.nLayers`), at both M=1 (`launchToken`) and
+// M=16 (`PrefillLast`, the regime the block draft actually runs in), and compare per-layer cost across stack
+// depths. The outputs are numerically meaningless (a truncated stack is not a model) but the TIMING is exactly
+// the quantity in question, and every layer's weights are already resident, so no reload is involved.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashDispatchAmortization -v
@@ -114,8 +108,8 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 	}
 	r.nLayers = full
 
-	// The verdict: per-layer cost at 5 layers against per-layer cost at the full stack. The
-	// 6.6 ms draft assumes this ratio is 1.0.
+	// The verdict: per-layer cost at 5 layers against per-layer cost at the full stack. The projection assumes
+	// this ratio is 1.0.
 	var short, long row
 	for _, x := range rows {
 		if x.n == 5 {
@@ -135,18 +129,13 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 		5.33*short.pl16, 5.33*long.pl16)
 }
 
-// TestDFlashCaptureSeamCost measures a composition cost the gate-3 arithmetic omits entirely.
-//
-// The projection composes draft + verify, where verify is the measured `W + C*k` curve. But that
-// curve was measured with the HIDDEN-STATE SEAM OFF. In the real loop the drafter needs the
-// target's residual at 5 tap layers for every token the target commits, and `capVec` implements
-// that as a full `r.stream.Sync()` followed by a device->host `Download` — **per tap**. Five taps
-// is five pipeline stalls per token, mid-forward.
-//
-// That is not a hypothetical cost: it is the difference between the verify the projection prices
-// and the verify the loop would actually run. If it is large, every speedup figure is optimistic
-// by that margin, and the fix (capture into a device buffer, download once, or overlap on a
-// second stream) becomes a prerequisite rather than an optimization.
+// TestDFlashCaptureSeamCost measures a composition cost the gate-3 arithmetic omits. The projection composes
+// draft + verify, with verify the measured `W + C*k` curve, but that curve was measured with the HIDDEN-STATE
+// SEAM OFF. In the real loop the drafter needs the target's residual at 5 tap layers for every token the target
+// commits, and `capVec` implements that as a full `r.stream.Sync()` followed by a device->host `Download` PER
+// TAP: five pipeline stalls per token, mid-forward. If that is large, every speedup figure is optimistic by
+// that margin, and the fix (capture into a device buffer, download once, or overlap on a second stream)
+// becomes a prerequisite rather than an optimization.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashCaptureSeamCost -v
@@ -223,21 +212,20 @@ func TestDFlashCaptureSeamCost(t *testing.T) {
 
 // TestDFlashRoundComposition measures the LOOP, not its parts.
 //
-// Every term in gate 3's projection is now measured — acceptance, the verify curve, decode, the
-// draft (8.82 ms), the capture seam (0.465 ms/token). What is still arithmetic is the
-// COMPOSITION: that a round costs draft + verify + seam and nothing else. Real loops have costs
-// between their operations — host round-trips, stream syncs at the boundaries, the argmax and
-// accept comparison, cache rollback — that a sum of independently-timed parts cannot show.
+// Every term in gate 3's projection is measured elsewhere (acceptance, the verify curve, decode, the draft, the
+// capture seam). What is still arithmetic is the COMPOSITION: that a round costs draft + verify + seam and
+// nothing else. Real loops have costs between their operations (host round-trips, stream syncs at the
+// boundaries, the argmax and accept comparison, cache rollback) that a sum of independently-timed parts cannot
+// show.
 //
-// The real drafter kernel does not exist yet, so this substitutes the TARGET's stack truncated to
-// 5 layers as a timing stand-in. Its OUTPUT is meaningless — a truncated stack is not the
-// drafter — but its COST is the right shape: 5 layers at M=16 over the same geometry, which is
-// exactly what TestDFlashDispatchAmortization measured at 8.273 ms. What this adds is the
-// sequencing: draft, then verify at M=k with capture live, then the host-side accept, per round.
+// The TARGET's stack truncated to 5 layers stands in for the drafter as a timing stand-in: its OUTPUT is
+// meaningless but its COST is the right shape (5 layers at M=16 over the same geometry, what
+// TestDFlashDispatchAmortization measures). What this adds is the sequencing: draft, then verify at M=k with
+// capture live, then the host-side accept, per round.
 //
-// Reading: if measured/round ≈ predicted/round, the arithmetic composes and the projection's only
-// remaining risk is the drafter kernel's own efficiency. If it exceeds the prediction, there is
-// per-round overhead the projection never priced.
+// Reading: if measured/round ≈ predicted/round, the arithmetic composes and the projection's only remaining
+// risk is the drafter kernel's own efficiency. If it exceeds the prediction, there is per-round overhead the
+// projection never priced.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashRoundComposition -v
@@ -332,14 +320,11 @@ func TestDFlashRoundComposition(t *testing.T) {
 	t.Logf("  => composition overhead is %.0f%% of the round", 100*(perRound-predicted)/perRound)
 }
 
-// TestDFlashCompositionResidual decomposes the +4.37 ms/round that TestDFlashRoundComposition
-// found unaccounted, because how much of it is REAL decides two things: whether code clears the
-// 1.3x bar, and whether the optimum verify width shifts.
-//
-// A fixed per-round cost is amortized better by a WIDER block — so if the residual is genuinely
-// fixed, the optimum moves away from the k=7 the acceptance sweep found, and increment 4 should
-// be built for a different width. That is why this belongs before the kernel work.
-//
+// TestDFlashCompositionResidual decomposes the per-round time TestDFlashRoundComposition found unaccounted,
+// because how much of it is REAL decides two things: whether code clears the 1.3x bar, and whether the optimum
+// verify width shifts. A fixed per-round cost is amortized better by a WIDER block, so if the residual is
+// genuinely fixed the optimum moves away from the k the acceptance sweep found, and the kernel work should be
+// built for a different width.
 // Four variants, differing only in what the round does around the same GPU calls:
 //
 //	full     draft + verify + per-round SetHiddenCapture + host argmax   (what was measured)
@@ -459,13 +444,13 @@ func TestDFlashCompositionResidual(t *testing.T) {
 		11.12/((fullMs+0.55)/tpr), 11.12/((noSet+0.55)/tpr), 11.12/((bare+0.55)/tpr))
 }
 
-// TestDFlashVerifyHeadCost isolates the 3.09 ms the residual decomposition could not explain.
+// TestDFlashVerifyHeadCost isolates the part of the composition residual that TestDFlashCompositionResidual
+// could not explain.
 //
-// HYPOTHESIS: the verify curve `T(M) = W + C*M` was measured with `PrefillLast`, which applies
-// the LM head to the LAST row only. The spec-decode loop needs `PrefillLastN` — logits at ALL M
-// positions, because every drafted token must be compared against the target's own argmax there.
-// That is M head applications, not one, and the head is 8% of an M=1 decode. The curve therefore
-// prices a verify the loop cannot use.
+// HYPOTHESIS: the verify curve `T(M) = W + C*M` was measured with `PrefillLast`, which applies the LM head to
+// the LAST row only. The spec-decode loop needs `PrefillLastN`: logits at ALL M positions, because every
+// drafted token must be compared against the target's own argmax there. That is M head applications, not one,
+// and the head is a substantial share of an M=1 decode, so the curve prices a verify the loop cannot use.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashVerifyHeadCost -v

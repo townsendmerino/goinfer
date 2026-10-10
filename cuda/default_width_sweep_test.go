@@ -2,22 +2,19 @@
 
 // Does defaultVerifyWidth = 8 hold, or is 7 better?
 //
-// The ship-gate run (docs/measurements/adaptive-width-shipgates-2026-08-25.md) found static7
-// beating static8 by +7.1% on code and +5.1% on math -- a free win for every `--drafter` user
-// from a one-character change. It was NOT acted on, because that evidence was two prompts per
-// suite, one session, one target quant. This sweep is what clearing that bar looks like on the
-// box that has a viable pairing:
+// The ship-gate run (docs/measurements/adaptive-width-shipgates-2026-08-25.md) found static7 beating static8,
+// which was NOT acted on because that evidence was two prompts per suite, one session, one target quant. This
+// sweep is what clearing that bar looks like on the box that has a viable pairing:
 //
-//   - more prompts per suite (6 code / 6 math, not 2)
-//   - REPEATS, so within-condition spread is visible and the 5-7% claim can be read against it
-//   - BOTH target quants. This is the substantive addition, not padding: optimal width is set
-//     by the ratio between a plain decode step and a batched verify, and changing the target's
-//     quantization moves exactly that ratio. If 7 wins at int4 and 8 wins at int8, the default
-//     is quant-dependent and neither constant is right.
+//   - more prompts per suite (6 code / 6 math)
+//   - REPEATS, so within-condition spread is visible
+//   - BOTH target quants. Optimal width is set by the ratio between a plain decode step and a batched verify,
+//     and the target's quantization moves exactly that ratio. If 7 wins at int4 and 8 wins at int8, the
+//     default is quant-dependent and neither constant is right.
 //
-// What it still is NOT: a second PAIRING. This box has one viable one (qwen3-4b dense + DFlash);
-// the other drafters are absent and their targets are MoE, where batched verify touches ~8x the
-// expert weight. The cross-pairing cell belongs on the Mac -- docs/prompts/mac-default-verify-width.md.
+// What it still is NOT: a second PAIRING. This box has one viable one (qwen3-4b dense + DFlash); the other
+// drafters are absent and their targets are MoE, where batched verify touches many more expert weights. The
+// cross-pairing cell belongs on the Mac -- docs/prompts/mac-default-verify-width.md.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 //	  -run TestDefaultVerifyWidth -v -timeout 4h

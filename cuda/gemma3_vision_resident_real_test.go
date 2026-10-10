@@ -11,28 +11,18 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// TestGemma3VisionResidentReal_gate is P6's real-checkpoint gate (docs/multimodal.md's "P6's
-// other half"): the resident CUDA SigLIP tower vs its own CPU path, on the real gemma-3-4b-it
-// vision tower, matched precision (both int8 — vision.LoadEncoder(dir, quant=true) puts BOTH the
-// CPU and resident paths on the same W8A8 weights; this is not an int8-vs-f32 comparison).
+// TestGemma3VisionResidentReal_gate is P6's real-checkpoint gate (docs/multimodal.md's "P6's other half"): the
+// resident CUDA SigLIP tower vs its own CPU path, on the real gemma-3-4b-it vision tower, matched precision
+// (both int8: vision.LoadEncoder(dir, quant=true) puts BOTH paths on the same W8A8 weights; this is not an
+// int8-vs-f32 comparison).
 //
-// THE THRESHOLD IS NOT THE USUAL ≥0.99. Measured directly on this checkpoint (real image pixels,
-// 4096 patches, 27 layers): patch-embed alone already matches the CPU path at cosine 0.999999,
-// and a matched-precision CPU probe reconstructed from the SAME int8 weight data (linalg.WrapInt8
-// + MatmulBTInto) reproduces one layer's raw FC2 GEMV output at cosine 1.000000 — i.e. the KERNELS
-// are exact. What is NOT bit-identical is the ACCUMULATION ORDER between the CPU's and CUDA's
-// per-layer reductions (LayerNorm's mean/variance sums, the attention softmax denominator, the
-// int8 GEMV's own accumulation) — a real but ordinary "not bit-identical, cosine-gated" property
-// already true of this repo's other batched kernels (rmsnorm_quant_batched's own header makes
-// the same point). Compounded over 27 layers — SigLIP so400m is unusually deep for a vision tower
-// this project has resident-ported — that ordinary per-layer rounding difference accumulates to
-// cosine ~0.91-0.96 end-to-end depending on the input pixel pattern (measured directly, both
-// arms — not a single lucky run), confirmed via the matched-precision probe above to be genuine
-// accumulated rounding, NOT a wiring bug. The floor below (0.80) sits with real margin under the
-// lower end of that measured range — loose enough that ordinary input-dependent variance in the
-// accumulated rounding doesn't flake the gate, tight enough that an actual wiring regression
-// (which produced cosine ~0.09-0.18 before the posEmb bug in this file's own history was found
-// and fixed) still fails it by a wide margin.
+// THE THRESHOLD IS NOT THE USUAL ≥0.99. The kernels are exact (patch-embed matches the CPU path at cosine
+// 0.999999, and a matched-precision CPU probe on the SAME int8 weight data reproduces a layer's FC2 GEMV at
+// 1.000000). What is not bit-identical is the ACCUMULATION ORDER of the per-layer reductions (LayerNorm sums,
+// the attention softmax denominator, the int8 GEMV's own accumulation), an ordinary cosine-gated property that
+// compounds over SigLIP so400m's 27 layers to an input-dependent end-to-end cosine well below 0.99. The floor
+// (0.80) sits with margin under that range: loose enough not to flake on input-dependent rounding, tight enough
+// that a wiring regression fails by a wide margin. The measured range: docs/code-notes/cuda.md#TestGemma3VisionResidentReal_gate.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3VisionResidentReal_gate -v -timeout 10m
 func TestGemma3VisionResidentReal_gate(t *testing.T) {

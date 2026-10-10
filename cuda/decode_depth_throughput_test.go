@@ -12,11 +12,9 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDecodeDepthThroughput measures real decode tok/s at a shallow (128) and a deep (2048) KV
-// depth on the 1.5B. §B2 recorded the deep number collapsing to ~97 tok/s vs ~221 shallow — the
-// long-context deficit ncu traced to the uncoalesced glue decode-attention K read. This is the
-// A/B instrument for the coalesced (attn_batched M=1) decode swap: run it on the coalesced build,
-// then `git stash` resident.go and run it on the glue build, to attribute the recovery.
+// TestDecodeDepthThroughput measures real decode tok/s at a shallow (128) and a deep (2048) KV depth on the
+// 1.5B: the A/B instrument for decode-attention changes at depth (the long-context deficit §B2 recorded was
+// the uncoalesced glue decode-attention K read). Run it on each build to attribute a recovery.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestDecodeDepthThroughput -v
 func TestDecodeDepthThroughput(t *testing.T) {

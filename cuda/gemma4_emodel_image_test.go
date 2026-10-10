@@ -12,7 +12,7 @@ import (
 )
 
 // S9 on CUDA, part B: the Gemma 4 E-model image turn prefilled on the resident in one batched pass, from rows the decoder builds. The plan, the gates and the
-// bars are registered in docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA, part B") before the code was written.
+// bars: docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA, part B").
 
 // eModelImageLayouts are the three places the image block can sit in the 18-position prompt (the golden's prompt plus its continuation): the start, the
 // middle and the end, 6 soft tokens each, so the PLE tails of image rows meet text rows on both sides and the shared layers attend across the boundary.

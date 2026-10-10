@@ -99,11 +99,10 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 		t.Logf("%s: %d positions, cosine min %.6f p10 %.6f median %.6f", name, len(ids), cs[0], cs[len(cs)/10], cs[len(cs)/2])
 		return cs[len(cs)/10], cs[len(cs)/2]
 	}
-	// The kernels are responsible for matching the CPU per-32 path, not for the prompt's own
-	// difficulty: on this prompt the CPU per-32 path itself sits at p10 ~0.93 against f32 (measured
-	// 2026-09-25; the gate's prompt, without the "\n\n", gave 0.973). So the bars are relative:
-	// median agreement with CPU per-32, and quality no worse than CPU per-32's on the same prompt.
-	// Measured: agreement median 0.99983; quality p10 0.934 (CUDA) vs 0.930 (CPU).
+	// The kernels are responsible for matching the CPU per-32 path, not for the prompt's own difficulty:
+	// on this prompt the CPU per-32 path itself sits below the gate's quality on the gate's own prompt. So
+	// the bars are relative: median agreement with CPU per-32, and quality no worse than CPU per-32's on
+	// the same prompt. Figures: docs/code-notes/cuda.md#TestActGroup_phi3ResidentMatchesCPU.bars.
 	cpuG, f32 := cpuLogits(decoder.Options{Quant: "int8int8", ActQuantGroup: 32}), cpuLogits(decoder.Options{})
 	_, agreeMed := stats("cuda per-32 vs cpu per-32", cpuG)
 	cudaQ, _ := stats("cuda per-32 vs cpu f32", f32)

@@ -15,8 +15,7 @@ import (
 // TestB2DenseFlagship measures a fitting dense flagship (qwen2.5-7B int4, resident on the 2070 SUPER
 // with real KV headroom) end-to-end, §B2 method: TTFT at 128/512/2048 + all-in and decode-only tok/s,
 // best of 3 warm with the first discarded. Pair the goinfer column with pinned Ollama 0.5.7 for the
-// published §B2 row. The claim here is the honest one: faster decode, prefill within a stated multiple,
-// crossover at a measured prompt length.
+// published §B2 row.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestB2DenseFlagship -v -timeout 900s
 func TestB2DenseFlagship(t *testing.T) {

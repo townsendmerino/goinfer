@@ -13,21 +13,14 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestGemma3ResidentReal_gate is gap 0's real-checkpoint gate for GenerateVL (Gemma 3) — the
-// Gemma-3 twin of qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate, closing the
-// gap that file's own doc comment and docs/multimodal.md's gap-0 entry both name: "no real-image
-// end-to-end gate yet" for GenerateVL specifically. Simpler than the Qwen twin — Gemma 3 has no
-// m-RoPE, so plain Forward (not ForwardMRoPE) is the whole story once the CPU prefill's KV is
-// uploaded.
+// TestGemma3ResidentReal_gate is gap 0's real-checkpoint gate for GenerateVL (Gemma 3), the twin of
+// qwen25vl_resident_real_test.go's TestQwen25VLResidentReal_gate. Simpler than the Qwen twin: Gemma 3 has no
+// m-RoPE, so plain Forward (not ForwardMRoPE) is the whole story once the CPU prefill's KV is uploaded.
 //
-// Same methodology as the Qwen gate, for the same reason (see that file's doc comment for the
-// full rationale): one forced-trajectory decode step, matched precision (int4 both arms), cosine
-// on raw logits rather than sampled greedy-token-stream identity — comparing SAMPLED tokens
-// across a multi-step free-running rollout would conflate this design's own correctness with
-// ordinary f32-vs-int4 quantization noise compounding through greedy decode, which is an
-// orthogonal, pre-existing property this repo already understands (measured directly on this
-// same box's Qwen2.5-VL checkpoint via a throwaway probe before the Qwen gate was rebuilt this
-// way).
+// Same methodology as the Qwen gate (see its doc comment for the rationale): one forced-trajectory decode
+// step, matched precision (int4 both arms), cosine on raw logits rather than sampled greedy-token-stream
+// identity. Comparing SAMPLED tokens across a multi-step free-running rollout would conflate this design's
+// correctness with ordinary f32-vs-int4 quantization noise compounding through greedy decode.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3ResidentReal_gate -v -timeout 30m
 func TestGemma3ResidentReal_gate(t *testing.T) {
