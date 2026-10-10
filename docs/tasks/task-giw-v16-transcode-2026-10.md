@@ -2,8 +2,9 @@
 
 **Status:** scoped 2026-10-10. **T0, T6, T1, T2 and T3 are built (2026-10-10, branch `giw-v16-2026-10`), and G-T1 is PASS on
 the Mac for each** ([record](../measurements/giw-v16-transcode-2026-10/README.md)). The self-check no longer reads the
-file back (Decision 5). T4a is measured on arm64 and not adopted there; its amd64 measurement is owed. T5, T7 and V are
-not started. The gates
+file back (Decision 5). T4a is measured on arm64 and not adopted there; its amd64 measurement is queued on nobara. T5 is
+built on a held branch (`giw-v16-t5`) and waits for aikit v1.65.0, whose release waits for its vulnerability scan on
+nobara. T7 and V are not started. The gates
 below were registered before any code. Two parts, in this
 order: **T, transcode speed** (byte-identical output, so it ships on identity), then **V, format v16** (a breaking
 format change; every existing sidecar rebuilds once, which T makes cheap). Owner decisions: § Decisions. Branch:
@@ -287,6 +288,10 @@ change what runs when and how fast, never what is written.
       there, +Inf the int64 maximum, −Inf the minimum, each in all three).
     - **Owed: the same A/B and the same exhaustive check on amd64**, with the branch-free form as a third arm, before
       anything ships. nobara was holding a timed run when this was written.
+    - **Queued 2026-10-10 on nobara's queue** (`t4a-round-ab`, 5 min; a self-contained module, no aikit checkout): its
+      log is `~/goinfer-logs/t4a-ab-<stamp>.log` on nobara. If amd64 resolves in favour of a new form, the change is
+      amd64-only (an arch-split helper) and its aikit release needs perfgate, a timed run, so it is its own patch
+      release at night and not part of v1.65.0.
   - **T4b, SIMD.** `QuantizeGroupInt4Row` gets the int8 treatment.
     - Arch dispatch, with the current scalar body kept verbatim as `quantizeGroupInt4RowScalar`, the oracle.
     - Per 32-element group: SIMD max-abs (exact and order-independent, already argued for int8), the scalar scale and
@@ -300,6 +305,22 @@ change what runs when and how fast, never what is written.
     unexported, for example `Tensor.SubF32Transposed(start, rows, cols)`. 16×16 tiles through a local buffer, written
     out as contiguous runs.
   - Drop the three `append` copies except where the slice aliases the mapping and the mode keeps f32 (F5).
+  - **Built 2026-10-10, not yet on this branch.** aikit: `embed.Tensor.SubF32Transposed(start, rows, cols)` (aikit
+    `d7f903e`, in v1.65.0's release prep `babd539`; the tag waits for the vulnerability scan, queued on nobara as
+    `aikit-v1650-vulncheck`). goinfer: `loadFusedExperts` on branch `giw-v16-t5` (worktree `../goinfer-t5`), which
+    builds only against the local aikit checkout until the pin is bumped.
+    - The copy rule as built: a matrix that stays f32 after `quantizeWM` and was read in place from an F32 tensor gets
+      a slice of its own. Every other read is already a fresh slice.
+    - `transposeF32` had no other caller and is removed.
+    - Exploratory, the Mac, in-process and interleaved (direction only): reading one [2048 × 1536] slice through the
+      tiled call takes 0.32× (bf16) and 0.26× (f32) of the time of `SubF32` plus `transposeF32`, faster in 21 of 21
+      rounds each.
+    - Interim identity, not the gate: the old build and the T5 build write the same bytes for `qwen3vlmoe-tiny` (the
+      transposed layout) and `granite-tiny` (the row layout) in six configurations each, 12 of 12. Both fixtures are
+      F32; the bf16 conversion is pinned in aikit (`TestTensor_SubF32Transposed`, bit-equal to `SubF32`) and reaches a
+      real file only on nobara's Qwen3-VL-30B.
+    - **Owed, in order:** tag aikit v1.65.0 and run `gpupins --fix`; bump goinfer's aikit pin in every module; put
+      `giw-v16-t5` on this branch; refresh the parity hashes; `gate quick`; G-T1 for T5 through `gate identity`.
 - **T6. No in-RAM repack while building for a sink.** In a streaming transcode nothing decodes, so no layout but
   canonical is needed in RAM.
   - Route every repack decision through one predicate that is false when building for a sink. That covers

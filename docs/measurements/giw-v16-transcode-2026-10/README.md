@@ -229,6 +229,26 @@ normal weights four times per round, 9.2M elements, group 32), and compared for 
 - A kernel microbenchmark gives direction, not size. The harness was a scratch test in aikit's `linalg` and is not
   committed.
 
+## T5, 2026-10-10: built, interim identity only (the gate waits for an aikit release)
+
+T5 reads the transposed fused-expert layout through a new aikit call, `embed.Tensor.SubF32Transposed`, and stops
+copying matrices that are already fresh slices. It is on branch `giw-v16-t5` and builds only against the local aikit
+checkout until aikit v1.65.0 is tagged, so `gate identity`, which builds each revision with `GOWORK=off`, cannot run it
+yet. What was checked instead, on this box:
+
+- **Bytes, by hand:** `cmd/prequant` built from `ddd84996` and from the T5 worktree, each transcoding `qwen3vlmoe-tiny`
+  (the transposed layout) and `granite-tiny` (the row layout) in six configurations (`int4:metal:e4h`, `int4:metal`,
+  `int4:cpu-arm64`, `int4:cpu-arm64:e4h`, `int8int8:cpu`, `int8:cpu`): the same sha256 in 12 of 12.
+- **In test:** `TestLoadFusedExperts_transposedLayoutGivesTheRowLayout` (the same experts in both layouts build the same
+  matrices in f32, int8, int8int8 and int4, with a sink and without) and `TestLoadFusedExperts_f32ExpertsOwnTheirData`.
+- **Not covered here:** a bf16 fused stack. Both fixtures are F32. The conversion is pinned in aikit, bit-equal to
+  `SubF32` in every dtype; a real bf16 stack is nobara's Qwen3-VL-30B.
+- **Speed, exploratory (in-process, interleaved, direction only):** one [2048 × 1536] slice, eight per round, 21 rounds.
+  The tiled call against `SubF32` plus the plain transpose: 0.324 (0.312–0.334) for bf16 and 0.261 (0.250–0.265) for
+  f32, faster in 21 of 21 each.
+
+G-T1 for T5 is owed once the pin is bumped.
+
 ## Files
 
 - `g-t1-t6-tiny.log`, `g-t1-t6-real.log`: the two reports (colour codes removed, the run directory shortened).
