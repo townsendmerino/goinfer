@@ -61,7 +61,7 @@ The last phase puts the answer where users look first, the README, with a check 
 - **Models:**
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
   - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
-  - LFM2.5-VL has no tower (S10). Ministral 3 (Pixtral) reads images since 2026-10-09 (S10, G-S10m-a to d), its tower on the CPU in float32 on every backend. North was dropped, never identified.
+  - Ministral 3 (Pixtral) and LFM2.5-VL read images since 2026-10-09 (S10: G-S10m-a to d; G-S10l-a, b, d and c's reading, its planted defect 1 blind), their towers on the CPU in float32 on every backend; LFM2.5-VL's decoder is CPU only. North was dropped, never identified.
   - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
@@ -2727,6 +2727,102 @@ these gates.
 - **Tier:** b and c hold about 8 GB in float32 on nobara, each well under 10 minutes, so by day.
 
 **Size:** aikit about 400 lines, goinfer about 900, both with tests: M, as registered for S10.
+
+**S10 LFM2.5-VL progress (2026-10-09, Mac and nobara): G-S10l-a, b and d PASS; c PASS on its bar with one of its three
+planted defects BLIND, the cover accepted by the owner. S10 LFM2.5-VL is DONE.**
+- **The code:**
+  - aikit, local branch `s10-lfm2vl` (6f73bb5; not pushed):
+    - `Siglip2NaFlexEncoder` and `PatchifyNaFlex`: SigLIP's blocks through a `runBlocks(h, np)` split out of
+      `forwardBlocks`, so Gemma 3's tower is unchanged;
+    - `ResizeBilinearAA` (uint8) and `ResizeBilinearAAFloat`.
+    - Against HF on a tiny random tower (three tiles that grow, shrink and keep the position table): every stage at
+      cosine 1.000000000, planted defects red. Without antialias the shrinking tile reads 0.999581; the control, the
+      growing tile, agrees. Channel-major patches are red, and so is a dropped post-layernorm. The uint8 resize is
+      bit-identical to torchvision on four sizes.
+  - goinfer, worktree branch `s10-lfm2vl`:
+    - preprocessing, the projector and the prompt block (`multimodal`);
+    - `lfm2_vl` registered as the `lfm2` architecture, with `runLayersLFM2FromEmbed` and a per-token causal image
+      prefill;
+    - serve's tower, with one span per tile and thumbnail;
+    - the support-table row.
+  - The tiny tests:
+    - the layout against HF's processor on 21 sizes. Planted: dropping the area rule changes 3 layouts.
+    - the projector at 7.15e-7. Planted: the channel-major unshuffle reads 3.13.
+    - the lfm2 image prefill on `lfm2-tiny`. With the text's own rows spliced in it is bit-identical to the token
+      forward.
+- **The ratio order is not a defect site.** HF sorts `_target_ratios` from a Python set, and its order within one tile
+  count looked like an exactness trap. It cannot decide a layout: two grids of one count tie only at an aspect midway
+  between theirs, and the square grid of that range is always nearer. The planted "plainly sorted" defect was blind for
+  that reason. It was replaced by the rule that does decide ties, the area test: 1200x1000 and 1000x1250 are exact ties
+  that it resolves to 3x3.
+- **Three defects found on the way, all fixed:**
+  1. **No BOS.** goinfer's ChatML rendered no BOS, while LFM2's template opens with `bos_token` and serve encodes with
+     `addBOS=false`, so every LFM2 chat prompt (the text family's too) lacked HF's `<|startoftext|>`. A ChatML template
+     that opens with `bos_token` now renders it when the vocab has that token (`TestDetect_chatMLBOS`).
+  2. **The tokenizer would not load.** The VL checkpoint's tokenizer.json wraps its ByteLevel decoder in a `Sequence`,
+     which routed it to the SentencePiece path ("required token `<unk>`", G-S10l-c's ids step). A Sequence of ByteLevel
+     decoders now loads as byte-level.
+  3. **The FFN width.** LFM2-1.2B's text_config sets `block_auto_adjust_ff_dim`, and HF's `Lfm2MLP` then derives the
+     width: 12288 becomes 8192. goinfer read the stated width, and the checkpoint's shapes refused the load (G-S10l-c's
+     first compare). The rule is ported exactly, including HF's rounding sitting inside the multiplier branch
+     (`TestLfm2FFNDim`).
+  - With all three fixed, goinfer's 1,810 prompt ids equal those from HF's own chat template and processor.
+- **G-S10l-a, preprocessing: PASS.** transformers 5.12.0, `~/.venv-vl`. The four F2a images and three layout cases
+  (a 1000x20 strip, a 3000x2000 image, 84x56 upscaled to the 64-token floor) give every tile, grid and run equal and
+  every pixel bit-identical (0 levels). The tiles: 896x896 is 2x2 plus thumbnail; formula.png 3x3 plus thumbnail;
+  table.png 2x3 plus thumbnail; the rest single.
+- **G-S10l-b, the tower and projector: PASS.** From HF's own patches, every stage of every tile (embeddings, 27 blocks,
+  post_layernorm, the unshuffle, linear_1, linear_2):
+
+  | image | tiles | worst stage |
+  |---|---|---|
+  | gemma3_preprocess_image.png | 5 | 0.999999950 (tile 3, block 25) |
+  | qwen25vl_preprocess_image.png | 1 | 0.999999995 (post_layernorm) |
+  | glm_ocr/formula.png | 10 | 0.999999985 (tile 7, block 25) |
+  | glm_ocr/table.png | 7 | 0.999999973 (tile 6, block 25) |
+
+- **G-S10l-c, the full model: the reading PASSES; planted defect 1 is BLIND.** `table.png` (2x3 tiles plus a thumbnail,
+  1,810 ids, 17 text positions after the image). goinfer float32 CPU, end to end: last-position cosine 1.000000, argmax
+  7491 equal, agreement 17/17. The production entry also reads 1.000000.
+
+  | planted defect | last cosine | argmax | agreement | verdict |
+  |---|---|---|---|---|
+  | the tiles' features in column-major order | 0.999541 | equal | 17/17 | **BLIND** |
+  | the thumbnail's features first | 0.997643 | equal | 13/17 | red |
+  | features over the tile markers | 0.990344 | equal | 16/17 | red |
+
+  - As registered, each planted defect must be red, and defect 1 is not. This prompt's answer does not depend on which
+    tile's features sit in which tile's slot, beyond 0.9995. The bar is not moved.
+  - What does carry tile order:
+    - G-S10l-a checks tile k's pixels against HF's tile k (bit-identical);
+    - the layout golden checks the markers' row-major order;
+    - goinfer concatenates the features in that same layout order (`lfm2vlPrep`).
+  - A per-position check over the image span would see the swap. That is an amendment for the owner, not something to
+    add after the reading.
+  - **Owner decision, 2026-10-09 21:30 PDT: accept the cover.** G-S10l-c stands as PASS with planted defect 1 BLIND,
+    carried by G-S10l-a's per-tile pixel identity and the layout golden (the Qwen2.5-VL two-image BLIND precedent).
+    No amendment, no re-run.
+- **G-S10l-d, served: PASS.** Read 2026-10-09 20:59-21:17 PDT on the Mac. The Metal serve binary was built from the
+  branch, with `--model`/`--vision ~/models/lfm25-vl-1.6b` (copied from nobara, byte counts checked) and
+  `--embed-int4=false` on every arm. Arms `=cpu`, `cpu`, `metal`.
+  - Both requests give identical replies on every arm: "Quarterly unit sales by region." for one image; for two, "The
+    first image is a table of quarterly unit sales by region in thousands, while the second image is a gradient of
+    colors ranging from black to pink."
+  - The one-image prompt is 1,810 tokens, G-S10l-c's count.
+  - The Metal arm declined by name ("arch is not eligible for the resident decode runner, and metal has no staged decode
+    path") and ran on the CPU, as registered.
+  - Request times were 121-237 s, exploratory: the lfm2 image prefill is per token on the CPU.
+- **Tier, a miss to record:** the registration said b and c were each well under 10 minutes. b took 1.2 min, but c took
+  30 min. Each 1,810-token float32 per-token prefill is about 6 minutes on nobara (0.19 s a token), and c runs five of
+  them (the reading, the production entry, three planted).
+- **Raw:** `docs/measurements/multimodal-support-2026-10/s10l-lfm2vl/` (the drivers, each step's log including the two
+  refused runs, the reference summary, and G-S10l-d's run in `gs10l-d/`).
+- **Released and merged:** aikit v1.64.0 (tagged on the Mac 2026-10-09 21:38 PDT: releasegate 5/5, preflight 10/10,
+  vulncheck 16/16 clean at c605ba6 on nobara, perfgate exception, root CI green at 302bca2; backends re-pinned), and
+  goinfer on it.
+- **Owed:**
+  - A batched lfm2 prefill: the per-token image prefill is the slow part of a served image turn.
+  - The 450M and 3B sizes, never run.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the

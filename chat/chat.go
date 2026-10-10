@@ -65,6 +65,10 @@ type Template struct {
 	render func(system string, turns []Turn) []Segment
 	stops  []string
 
+	// bos is a BOS token the checkpoint's template emits first and the family's renderer does not (S10, LFM2: ChatML after
+	// {{- bos_token -}}), prepended as a Special segment; "" for none. Detect sets it (chatMLBOS).
+	bos string
+
 	// defaultSystem is the system message the checkpoint's own template inserts when the conversation has none (ChatML
 	// families only, read from the template by chatMLDefaultSystem); "" for none. Every render path applies it (systemOr).
 	defaultSystem string
@@ -113,10 +117,29 @@ func (t *Template) Render(system string, turns []Turn) string {
 // EncodeSegments. On legitimate input the token stream equals Encode(Render(...)).
 func (t *Template) RenderSegments(system string, turns []Turn) []Segment {
 	system = t.systemOr(system)
+	var segs []Segment
 	if t.reason != nil && t.think != ThinkAsIs {
-		return t.renderThinking(system, turns)
+		segs = t.renderThinking(system, turns)
+	} else {
+		segs = t.render(system, turns)
 	}
-	return t.render(system, turns)
+	if t.bos != "" {
+		segs = append([]Segment{{Text: t.bos, Special: true}}, segs...)
+	}
+	return segs
+}
+
+// chatMLBOS is the BOS a ChatML template emits before its first turn, when goinfer can name it: the template opens with
+// bos_token and the vocab holds LFM2's <|startoftext|> control token. Other ChatML templates that open with bos_token keep
+// rendering without one (their BOS is unnamed here), as before.
+func chatMLBOS(t string, has func(string) bool) string {
+	s := strings.TrimLeft(t, " \t\r\n")
+	for _, p := range []string{"{{- bos_token", "{{bos_token", "{{ bos_token"} {
+		if strings.HasPrefix(s, p) && has != nil && has("<|startoftext|>") {
+			return "<|startoftext|>"
+		}
+	}
+	return ""
 }
 
 // Stops returns the turn-stop marker strings for this family.
@@ -190,6 +213,7 @@ func Detect(meta Meta) (*Template, error) {
 			return Phi3Orig(), nil
 		case strings.Contains(t, "<|im_start|>"):
 			c := ChatML()
+			c.bos = chatMLBOS(t, meta.HasToken)
 			c.defaultSystem = chatMLDefaultSystem(t)
 			c.reason = detectChatMLReasoning(t)
 			c.nativeTools = declaresQwen35XMLTools(t, c.reason)

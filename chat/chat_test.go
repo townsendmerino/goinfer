@@ -173,3 +173,39 @@ func TestDetect_fallback(t *testing.T) {
 		t.Errorf("unknown template: err = %v, want ErrUnknownTemplate", err)
 	}
 }
+
+// TestDetect_chatMLBOS (S10, LFM2-VL): a ChatML template that opens with bos_token (LFM2's) renders LFM2's
+// <|startoftext|> first, as a control token, when the vocab has it; without that token in the vocab, and for a ChatML
+// template that does not open with bos_token (Qwen's), nothing is prepended.
+func TestDetect_chatMLBOS(t *testing.T) {
+	const lfm2 = "{{- bos_token -}}\n{%- for message in messages -%}{{- \"<|im_start|>\" + message[\"role\"] + \"\\n\" -}}{{- message[\"content\"] + \"<|im_end|>\\n\" -}}{%- endfor -%}{%- if add_generation_prompt -%}{{- \"<|im_start|>assistant\\n\" -}}{%- endif -%}"
+	const qwen = "{%- for message in messages %}{{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}{%- endfor %}"
+	vocab := func(withBOS bool) func(string) bool {
+		return func(s string) bool {
+			return s == "<|im_start|>" || s == "<|im_end|>" || (withBOS && s == "<|startoftext|>")
+		}
+	}
+	turns := []Turn{{Role: "user", Content: "hi"}}
+	for _, c := range []struct {
+		name, tmpl string
+		withBOS    bool
+		want       bool
+	}{
+		{"lfm2 template, lfm2 vocab", lfm2, true, true},
+		{"lfm2 template, no <|startoftext|> in the vocab", lfm2, false, false},
+		{"qwen template, a vocab that has <|startoftext|>", qwen, true, false},
+	} {
+		tm, err := Detect(Meta{ChatTemplate: c.tmpl, HasToken: vocab(c.withBOS)})
+		if err != nil || tm.Name() != "chatml" {
+			t.Fatalf("%s: %v, %v; want chatml", c.name, tm, err)
+		}
+		segs := tm.RenderSegments("", turns)
+		got := len(segs) > 0 && segs[0].Text == "<|startoftext|>" && segs[0].Special
+		if got != c.want {
+			t.Errorf("%s: leading <|startoftext|> %v, want %v (render %q)", c.name, got, c.want, tm.Render("", turns))
+		}
+		if strings.HasPrefix(tm.RenderTools("", turns, []Tool{{Name: "f"}}), "<|startoftext|>") != c.want {
+			t.Errorf("%s: the tools render disagrees with RenderSegments on the BOS", c.name)
+		}
+	}
+}

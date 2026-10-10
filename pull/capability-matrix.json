@@ -495,13 +495,15 @@
   {
     "name": "lfm2",
     "model_types": [
-      "lfm2"
+      "lfm2",
+      "lfm2_vl"
     ],
     "display_name": "LFM2.5",
     "description": "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)",
-    "summary": "Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention.",
+    "summary": "Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention. LFM2.5-VL reads images (SigLIP2 tower).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
@@ -512,7 +514,7 @@
     "activation": "SwiGLU",
     "tied_lm_head": true,
     "loaders": "safetensors",
-    "modality": "text",
+    "modality": "text (+ vision tower)",
     "gpu_residency_eligible": false,
     "parity": "full-oracle 100.0%/1.00000"
   },

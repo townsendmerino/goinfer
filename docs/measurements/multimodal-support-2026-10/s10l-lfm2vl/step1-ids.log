@@ -1,0 +1,5 @@
+=== RUN   TestLfm2VLFull
+[G-S10l-c   0.2s] wrote 1810 ids (template chatml, first id 1), 2x3 tiles + thumbnail, runs [256 256 256 256 256 256 234]: /home/francis/goinfer-logs/lfm2vl-real/ids.json
+--- PASS: TestLfm2VLFull (0.16s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.165s

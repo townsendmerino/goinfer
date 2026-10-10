@@ -1,0 +1,165 @@
+[20:41:46] 1/4 ids
+=== RUN   TestLfm2VLFull
+[G-S10l-c   0.2s] wrote 1810 ids (template chatml, first id 1), 2x3 tiles + thumbnail, runs [256 256 256 256 256 256 234]: /home/francis/goinfer-logs/lfm2vl-real/ids.json
+--- PASS: TestLfm2VLFull (0.16s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.165s
+[20:41:52] 2/4 transformers references
+Loading weights:   0%|          | 0/589 [00:00<?, ?it/s]Loading weights:   7%|▋         | 43/589 [00:00<00:01, 421.88it/s]Loading weights:  15%|█▍        | 86/589 [00:00<00:01, 294.65it/s]Loading weights:  20%|██        | 118/589 [00:00<00:01, 281.35it/s]Loading weights:  25%|██▌       | 148/589 [00:00<00:01, 261.62it/s]Loading weights:  47%|████▋     | 275/589 [00:00<00:00, 557.92it/s]Loading weights:  69%|██████▊   | 404/589 [00:00<00:00, 775.09it/s]Loading weights:  92%|█████████▏| 539/589 [00:00<00:00, 944.38it/s]Loading weights: 100%|██████████| 589/589 [00:00<00:00, 675.75it/s]
+[   1.6s] loaded (Lfm2VlImageProcessor, transformers 5.12.0, image token 396)
+[   3.2s] a: gemma3_preprocess_image.png 896x896 -> 5 tile(s) [32, 32], runs [256, 256, 256]...
+[   3.2s] a: qwen25vl_preprocess_image.png 84x56 -> 1 tile(s) [14, 20], runs [70]...
+[   3.3s] a: glm_ocr/formula.png 1000x1200 -> 10 tile(s) [34, 28], runs [256, 256, 256]...
+[   3.3s] a: glm_ocr/table.png 1200x900 -> 7 tile(s) [26, 36], runs [256, 256, 256]...
+[   3.3s] a: strip_1000x20.png 1000x20 -> 1 tile(s) [4, 114], runs [114]...
+[   3.5s] a: big_3000x2000.png 3000x2000 -> 7 tile(s) [26, 38], runs [256, 256, 256]...
+[   3.5s] a: small_84x56.png 84x56 -> 1 tile(s) [14, 20], runs [70]...
+[  25.3s] b: gemma3_preprocess_image.png 5 tile(s), 32 stages each
+[  26.5s] b: qwen25vl_preprocess_image.png 1 tile(s), 32 stages each
+[  69.4s] b: glm_ocr/formula.png 10 tile(s), 32 stages each
+[  99.6s] b: glm_ocr/table.png 7 tile(s), 32 stages each
+[ 126.2s] c: 1810 ids (HF's own template: 1810, equal True), last argmax 7491
+[ 126.2s] wrote /home/francis/goinfer-logs/lfm2vl-real/golden.json
+[20:44:01] 3/4 G-S10l-a and b
+=== RUN   TestLfm2VLReal_preprocess
+[G-S10l-a] gemma3_preprocess_image.png         896x896  -> 5 tile(s) [2 2] (thumbnail/single [32 32]), runs [256 256 256 256 256]; pixels max|diff| 0.00000 (0.00 levels), mean 5.41e-08
+[G-S10l-a] qwen25vl_preprocess_image.png        84x56   -> 1 tile(s) [1 1] (thumbnail/single [14 20]), runs [70]; pixels max|diff| 0.00000 (0.00 levels), mean 5.41e-08
+[G-S10l-a] glm_ocr/formula.png                1000x1200 -> 10 tile(s) [3 3] (thumbnail/single [34 28]), runs [256 256 256 256 256 256 256 256 256 238]; pixels max|diff| 0.00000 (0.00 levels), mean 3.28e-09
+[G-S10l-a] glm_ocr/table.png                  1200x900  -> 7 tile(s) [2 3] (thumbnail/single [26 36]), runs [256 256 256 256 256 256 234]; pixels max|diff| 0.00000 (0.00 levels), mean 1.33e-08
+[G-S10l-a] strip_1000x20.png                  1000x20   -> 1 tile(s) [1 1] (thumbnail/single [4 114]), runs [114]; pixels max|diff| 0.00000 (0.00 levels), mean 5.52e-08
+[G-S10l-a] big_3000x2000.png                  3000x2000 -> 7 tile(s) [2 3] (thumbnail/single [26 38]), runs [256 256 256 256 256 256 247]; pixels max|diff| 0.00000 (0.00 levels), mean 5.68e-08
+[G-S10l-a] small_84x56.png                      84x56   -> 1 tile(s) [1 1] (thumbnail/single [14 20]), runs [70]; pixels max|diff| 0.00000 (0.00 levels), mean 5.26e-08
+--- PASS: TestLfm2VLReal_preprocess (0.98s)
+=== RUN   TestLfm2VLReal_towerAndProjector
+[G-S10l-b] gemma3_preprocess_image.png    tile 0 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 3.815e-06
+[G-S10l-b] gemma3_preprocess_image.png    tile 0 [32 32] post_layernorm  worst row cosine 0.999999996  max|diff| 2.896e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 0 [32 32] proj_unshuffle  worst row cosine 0.999999999  max|diff| 2.896e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 0 [32 32] proj_linear_1   worst row cosine 0.999999999  max|diff| 5.868e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 0 [32 32] proj_linear_2   worst row cosine 0.999999995  max|diff| 1.639e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 1 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 2.861e-06
+[G-S10l-b] gemma3_preprocess_image.png    tile 1 [32 32] post_layernorm  worst row cosine 0.999999997  max|diff| 2.064e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 1 [32 32] proj_unshuffle  worst row cosine 0.999999999  max|diff| 2.064e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 1 [32 32] proj_linear_1   worst row cosine 0.999999999  max|diff| 3.412e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 1 [32 32] proj_linear_2   worst row cosine 0.999999998  max|diff| 1.591e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 2 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 2.861e-06
+[G-S10l-b] gemma3_preprocess_image.png    tile 2 [32 32] post_layernorm  worst row cosine 0.999999990  max|diff| 3.984e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 2 [32 32] proj_unshuffle  worst row cosine 0.999999996  max|diff| 3.984e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 2 [32 32] proj_linear_1   worst row cosine 0.999999998  max|diff| 8.351e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 2 [32 32] proj_linear_2   worst row cosine 0.999999996  max|diff| 2.261e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 3 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 2.772e-06
+[G-S10l-b] gemma3_preprocess_image.png    tile 3 [32 32] post_layernorm  worst row cosine 0.999999992  max|diff| 4.644e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 3 [32 32] proj_unshuffle  worst row cosine 0.999999998  max|diff| 4.644e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 3 [32 32] proj_linear_1   worst row cosine 0.999999997  max|diff| 5.281e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 3 [32 32] proj_linear_2   worst row cosine 0.999999993  max|diff| 1.911e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 4 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 2.503e-06
+[G-S10l-b] gemma3_preprocess_image.png    tile 4 [32 32] post_layernorm  worst row cosine 0.999999998  max|diff| 2.180e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 4 [32 32] proj_unshuffle  worst row cosine 0.999999999  max|diff| 2.180e-04
+[G-S10l-b] gemma3_preprocess_image.png    tile 4 [32 32] proj_linear_1   worst row cosine 0.999999999  max|diff| 4.578e-05
+[G-S10l-b] gemma3_preprocess_image.png    tile 4 [32 32] proj_linear_2   worst row cosine 0.999999998  max|diff| 1.258e-05
+[G-S10l-b] gemma3_preprocess_image.png: PASS, worst 0.999999950 (tile 3 block25) over 5 tile(s)
+[G-S10l-b] qwen25vl_preprocess_image.png  tile 0 [14 20] embeddings      worst row cosine 1.000000000  max|diff| 7.629e-06
+[G-S10l-b] qwen25vl_preprocess_image.png  tile 0 [14 20] post_layernorm  worst row cosine 0.999999995  max|diff| 2.742e-04
+[G-S10l-b] qwen25vl_preprocess_image.png  tile 0 [14 20] proj_unshuffle  worst row cosine 0.999999997  max|diff| 2.742e-04
+[G-S10l-b] qwen25vl_preprocess_image.png  tile 0 [14 20] proj_linear_1   worst row cosine 0.999999996  max|diff| 7.725e-05
+[G-S10l-b] qwen25vl_preprocess_image.png  tile 0 [14 20] proj_linear_2   worst row cosine 0.999999997  max|diff| 3.150e-05
+[G-S10l-b] qwen25vl_preprocess_image.png: PASS, worst 0.999999995 (tile 0 post_layernorm) over 1 tile(s)
+[G-S10l-b] glm_ocr/formula.png            tile 0 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 2.861e-06
+[G-S10l-b] glm_ocr/formula.png            tile 0 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 4.017e-05
+[G-S10l-b] glm_ocr/formula.png            tile 0 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 4.017e-05
+[G-S10l-b] glm_ocr/formula.png            tile 0 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 7.868e-06
+[G-S10l-b] glm_ocr/formula.png            tile 0 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 2.589e-06
+[G-S10l-b] glm_ocr/formula.png            tile 1 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 1 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 6.086e-05
+[G-S10l-b] glm_ocr/formula.png            tile 1 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 6.086e-05
+[G-S10l-b] glm_ocr/formula.png            tile 1 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.571e-05
+[G-S10l-b] glm_ocr/formula.png            tile 1 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 5.454e-06
+[G-S10l-b] glm_ocr/formula.png            tile 2 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 2 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 4.771e-05
+[G-S10l-b] glm_ocr/formula.png            tile 2 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 4.771e-05
+[G-S10l-b] glm_ocr/formula.png            tile 2 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 7.689e-06
+[G-S10l-b] glm_ocr/formula.png            tile 2 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 2.593e-06
+[G-S10l-b] glm_ocr/formula.png            tile 3 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 3 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 2.289e-05
+[G-S10l-b] glm_ocr/formula.png            tile 3 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 2.289e-05
+[G-S10l-b] glm_ocr/formula.png            tile 3 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 5.543e-06
+[G-S10l-b] glm_ocr/formula.png            tile 3 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 1.210e-06
+[G-S10l-b] glm_ocr/formula.png            tile 4 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 4 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 5.423e-05
+[G-S10l-b] glm_ocr/formula.png            tile 4 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 5.423e-05
+[G-S10l-b] glm_ocr/formula.png            tile 4 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 4.310e-06
+[G-S10l-b] glm_ocr/formula.png            tile 4 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 1.814e-06
+[G-S10l-b] glm_ocr/formula.png            tile 5 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 5 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 7.951e-05
+[G-S10l-b] glm_ocr/formula.png            tile 5 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 7.951e-05
+[G-S10l-b] glm_ocr/formula.png            tile 5 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.083e-05
+[G-S10l-b] glm_ocr/formula.png            tile 5 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 3.867e-06
+[G-S10l-b] glm_ocr/formula.png            tile 6 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 6 [32 32] post_layernorm  worst row cosine 0.999999999  max|diff| 9.084e-05
+[G-S10l-b] glm_ocr/formula.png            tile 6 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 9.084e-05
+[G-S10l-b] glm_ocr/formula.png            tile 6 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.600e-05
+[G-S10l-b] glm_ocr/formula.png            tile 6 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 4.351e-06
+[G-S10l-b] glm_ocr/formula.png            tile 7 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 7 [32 32] post_layernorm  worst row cosine 0.999999999  max|diff| 9.310e-05
+[G-S10l-b] glm_ocr/formula.png            tile 7 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 9.310e-05
+[G-S10l-b] glm_ocr/formula.png            tile 7 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.574e-05
+[G-S10l-b] glm_ocr/formula.png            tile 7 [32 32] proj_linear_2   worst row cosine 0.999999999  max|diff| 5.692e-06
+[G-S10l-b] glm_ocr/formula.png            tile 8 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/formula.png            tile 8 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 7.416e-05
+[G-S10l-b] glm_ocr/formula.png            tile 8 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 7.416e-05
+[G-S10l-b] glm_ocr/formula.png            tile 8 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 8.583e-06
+[G-S10l-b] glm_ocr/formula.png            tile 8 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 4.172e-06
+[G-S10l-b] glm_ocr/formula.png            tile 9 [34 28] embeddings      worst row cosine 1.000000000  max|diff| 4.053e-05
+[G-S10l-b] glm_ocr/formula.png            tile 9 [34 28] post_layernorm  worst row cosine 1.000000000  max|diff| 4.721e-05
+[G-S10l-b] glm_ocr/formula.png            tile 9 [34 28] proj_unshuffle  worst row cosine 1.000000000  max|diff| 4.721e-05
+[G-S10l-b] glm_ocr/formula.png            tile 9 [34 28] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.481e-05
+[G-S10l-b] glm_ocr/formula.png            tile 9 [34 28] proj_linear_2   worst row cosine 1.000000000  max|diff| 2.608e-06
+[G-S10l-b] glm_ocr/formula.png: PASS, worst 0.999999985 (tile 7 block25) over 10 tile(s)
+[G-S10l-b] glm_ocr/table.png              tile 0 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/table.png              tile 0 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 4.089e-05
+[G-S10l-b] glm_ocr/table.png              tile 0 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 4.089e-05
+[G-S10l-b] glm_ocr/table.png              tile 0 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 6.199e-06
+[G-S10l-b] glm_ocr/table.png              tile 0 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 1.438e-06
+[G-S10l-b] glm_ocr/table.png              tile 1 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/table.png              tile 1 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 5.734e-05
+[G-S10l-b] glm_ocr/table.png              tile 1 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 5.734e-05
+[G-S10l-b] glm_ocr/table.png              tile 1 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 2.193e-05
+[G-S10l-b] glm_ocr/table.png              tile 1 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 5.074e-06
+[G-S10l-b] glm_ocr/table.png              tile 2 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 2.146e-06
+[G-S10l-b] glm_ocr/table.png              tile 2 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 1.010e-05
+[G-S10l-b] glm_ocr/table.png              tile 2 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 1.010e-05
+[G-S10l-b] glm_ocr/table.png              tile 2 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 2.861e-06
+[G-S10l-b] glm_ocr/table.png              tile 2 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 6.910e-07
+[G-S10l-b] glm_ocr/table.png              tile 3 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/table.png              tile 3 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 1.051e-04
+[G-S10l-b] glm_ocr/table.png              tile 3 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 1.051e-04
+[G-S10l-b] glm_ocr/table.png              tile 3 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.187e-05
+[G-S10l-b] glm_ocr/table.png              tile 3 [32 32] proj_linear_2   worst row cosine 0.999999999  max|diff| 3.668e-06
+[G-S10l-b] glm_ocr/table.png              tile 4 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/table.png              tile 4 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 2.116e-05
+[G-S10l-b] glm_ocr/table.png              tile 4 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 2.116e-05
+[G-S10l-b] glm_ocr/table.png              tile 4 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 5.215e-06
+[G-S10l-b] glm_ocr/table.png              tile 4 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 1.982e-06
+[G-S10l-b] glm_ocr/table.png              tile 5 [32 32] embeddings      worst row cosine 1.000000000  max|diff| 1.907e-06
+[G-S10l-b] glm_ocr/table.png              tile 5 [32 32] post_layernorm  worst row cosine 1.000000000  max|diff| 5.245e-05
+[G-S10l-b] glm_ocr/table.png              tile 5 [32 32] proj_unshuffle  worst row cosine 1.000000000  max|diff| 5.245e-05
+[G-S10l-b] glm_ocr/table.png              tile 5 [32 32] proj_linear_1   worst row cosine 1.000000000  max|diff| 6.966e-06
+[G-S10l-b] glm_ocr/table.png              tile 5 [32 32] proj_linear_2   worst row cosine 1.000000000  max|diff| 1.671e-06
+[G-S10l-b] glm_ocr/table.png              tile 6 [26 36] embeddings      worst row cosine 1.000000000  max|diff| 2.289e-05
+[G-S10l-b] glm_ocr/table.png              tile 6 [26 36] post_layernorm  worst row cosine 0.999999999  max|diff| 4.169e-05
+[G-S10l-b] glm_ocr/table.png              tile 6 [26 36] proj_unshuffle  worst row cosine 1.000000000  max|diff| 4.169e-05
+[G-S10l-b] glm_ocr/table.png              tile 6 [26 36] proj_linear_1   worst row cosine 1.000000000  max|diff| 1.619e-05
+[G-S10l-b] glm_ocr/table.png              tile 6 [26 36] proj_linear_2   worst row cosine 0.999999998  max|diff| 5.957e-06
+[G-S10l-b] glm_ocr/table.png: PASS, worst 0.999999973 (tile 6 block25) over 7 tile(s)
+--- PASS: TestLfm2VLReal_towerAndProjector (74.55s)
+PASS
+ok  	github.com/townsendmerino/goinfer/multimodal	75.547s
+[20:45:17] 4/4 G-S10l-c
+=== RUN   TestLfm2VLFull
+[G-S10l-c   0.2s] goinfer's ids against HF's own chat template and processor: equal true (HF 1810 ids, goinfer 1810)
+[G-S10l-c  22.8s] tower and projector: 7 tiles
+    lfm2vl_real_test.go:190: safetensors: tensor "model.language_model.layers.14.feed_forward.w1.weight" shape [8192 2048] != want [12288 2048]
+--- FAIL: TestLfm2VLFull (23.17s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	23.198s
+FAIL
+[20:45:41] done: a/b rc=0, c rc=1

@@ -19,6 +19,7 @@ const (
 	TowerGlmOcr          = "glm-ocr"         // GLM-OCR's grid tower (RegisterGlmOcrTower)
 	TowerGemma4          = "gemma4-vision"   // Gemma 4's vision tower (RegisterGemma4Tower)
 	TowerPixtral         = "pixtral"         // Ministral 3's Pixtral tower (S10; CPU only, no backend declares it)
+	TowerSiglip2NaFlex   = "siglip2-naflex"  // LFM2-VL's SigLIP2 NaFlex tower (S10; CPU only, no backend declares it)
 	TowerGemma4Audio     = "gemma4-audio"    // Gemma 4's audio tower (embeddinggemma2.RegisterAudioAccelerator)
 	TowerEmbeddingGemma2 = "embeddinggemma2" // EmbeddingGemma 2's text accelerator (embeddinggemma2.RegisterAccelerator)
 )

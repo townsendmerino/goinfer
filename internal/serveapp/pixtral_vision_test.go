@@ -14,7 +14,7 @@ func TestImageSpans_pixtralRows(t *testing.T) {
 	const img, brk, end = 10, 12, 13
 	// Text, a 2x3 image (two rows of three), text, a 1x4 image (one row, no break), text.
 	ids := []int{1, 2, img, img, img, brk, img, img, img, end, 5, img, img, img, img, end, 6}
-	preps := []imagePrep{{n: 6, runs: 2, runLen: 3, hash: 7}, {n: 4, runs: 1, runLen: 4, hash: 8}}
+	preps := []imagePrep{{n: 6, runLens: []int{3, 3}, hash: 7}, {n: 4, runLens: []int{4}, hash: 8}}
 	spans, _, err := imageSpans(multimodal.FindImageRuns(ids, img), preps, "pixtral")
 	if err != nil {
 		t.Fatal(err)

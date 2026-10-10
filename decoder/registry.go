@@ -62,6 +62,7 @@ var registry = map[string]archAdapter{
 	"granitemoehybrid": graniteArchitecture,       // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
 	"granite":          graniteDenseArchitecture,  // Granite 4.2 (3B/8B/30B) dense: llama skeleton + Granite's four scalar multipliers
 	"lfm2":             lfm2Architecture,          // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
+	"lfm2_vl":          lfm2Architecture,          // LFM2-VL / LFM2.5-VL (S10): the lfm2 decoder of an Lfm2VlForConditionalGeneration, text_config extracted; its SigLIP2 tower is multimodal/aikit's
 	"nemotron_h":       nemotronhArchitecture,     // Nemotron-H: single-op-per-block hybrid (mamba | NoPE-attention | relu² MLP)
 	"deepseek_v2":      deepseekArchitecture,      // DeepSeek-V2 (MLA + DeepSeekMoE; softmax routing, V2-Lite has no q-LoRA)
 	"deepseek_v3":      deepseekArchitecture,      // DeepSeek-V3 (MLA + DeepSeekMoE; sigmoid + e_score_correction_bias group-limited routing)
@@ -1695,6 +1696,24 @@ func nopePredicate(kind string) func(int) bool {
 	return nil
 }
 
+// lfm2FFNDim is HF's Lfm2MLP width: intermediate_size, or with block_auto_adjust_ff_dim int(2*intermediate_size/3) and,
+// only when block_ffn_dim_multiplier is set, int(multiplier*width) rounded up to block_multiple_of (HF's rounding sits
+// inside the multiplier branch).
+func lfm2FFNDim(cfg *Config) int {
+	d := cfg.IntermediateDim
+	if !cfg.BlockAutoAdjustFFDim {
+		return d
+	}
+	d = int(2 * float64(d) / 3)
+	if cfg.BlockFFNDimMultiplier != nil {
+		d = int(*cfg.BlockFFNDimMultiplier * float64(d))
+		if m := cfg.BlockMultipleOf; m > 0 {
+			d = m * ((d + m - 1) / m)
+		}
+	}
+	return d
+}
+
 // lfm2Architecture expresses LFM2 / LFM2.5 (model_type lfm2): a gated-short-convolution + softmax-attention hybrid. Every layer has a SwiGLU
 // FFN; layer_types decides whether its mixer is a conv block or GQA attention with per-head RMSNorm on Q and K. EXPERIMENTAL tier: validated
 // against the HF reference on a real checkpoint, not against a full-model T3.
@@ -1703,10 +1722,12 @@ func nopePredicate(kind string) func(int) bool {
 // uses Lfm2RMSNorm(head_dim) per head and the checkpoint carries q_layernorm.weight with no bias tensor), which is the difference between
 // reusing the existing QK-norm path and writing a bias-carrying LayerNorm variant; and intermediate_size is stated, not computed from
 // block_multiple_of, so the block_ffn_dim_multiplier / block_multiple_of machinery is inert here and is not read.
+// LFM2-VL's text_config sets block_auto_adjust_ff_dim, in which case the width is computed (lfm2FFNDim: 12288 -> 8192).
 func lfm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.validateLFM2(); err != nil {
 		return nil, nil, err
 	}
+	cfg.IntermediateDim = lfm2FFNDim(cfg)
 	hd := cfg.HeadDim
 	if hd == 0 {
 		hd = cfg.HiddenDim / cfg.NumHeads

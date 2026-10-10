@@ -127,6 +127,9 @@ type loadedModel struct {
 	// Ministral 3's Pixtral image path (nil: not Ministral 3, or no tower); see pixtral_vision.go.
 	pixtral *pixtralTower
 
+	// LFM2-VL's image path (nil: not LFM2-VL, or no tower), lfm2vl_vision.go.
+	lfm2vl *lfm2vlTower
+
 	// Gemma 4 vision tower (nil: not gemma4, or no tower). There is no separate projector: Gemma4Encoder.Forward
 	// includes the embed_vision projection. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
 	// (vision.Gemma4Preprocess's maxSoftTokens); the actual per-image token count is data-dependent and computed per
@@ -281,7 +284,7 @@ func (lm *loadedModel) audioCapable() bool { return lm.gemma4AudioDir != "" || l
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
-	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.glm != nil || lm.gemma4Enc != nil || lm.pixtral != nil
+	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.glm != nil || lm.gemma4Enc != nil || lm.pixtral != nil || lm.lfm2vl != nil
 }
 
 // tryEnter claims a queue slot, then waits for this model's turn. It returns (false, "") when the queue is full, so
@@ -1593,7 +1596,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
 	} else if vi.gemma4 {
 		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
-	} else if vi.pixtral { // Ministral 3's image tokens are causal, one span per merged row
+	} else if vi.causal { // causal image tokens (Ministral 3, LFM2-VL), one span per run
 		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
 	} else {
 		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)

@@ -1,0 +1,7 @@
+[20:39:48] 1/4 ids
+=== RUN   TestLfm2VLFull
+    lfm2vl_real_test.go:86: tokenizer.Load: required token "<unk>" not in vocab
+--- FAIL: TestLfm2VLFull (0.20s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.205s
+FAIL

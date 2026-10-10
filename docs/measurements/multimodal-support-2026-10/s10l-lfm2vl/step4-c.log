@@ -1,0 +1,14 @@
+=== RUN   TestLfm2VLFull
+[G-S10l-c   0.2s] goinfer's ids against HF's own chat template and processor: equal true (HF 1810 ids, goinfer 1810)
+[G-S10l-c  22.0s] tower and projector: 7 tiles
+[G-S10l-c 376.4s] goinfer                                            last cosine 1.000000, argmax 7491 (HF 7491), agreement 17/17 = 100.0% over the text after the image
+[G-S10l-c 376.4s] G-S10l-c PASS
+[G-S10l-c 727.4s] prefillLogitsVLSpans (production) against HF: last cosine 1.000000
+[G-S10l-c 1074.0s] planted 1: the tiles in column-major order         last cosine 0.999541, argmax 7491 (HF 7491), agreement 17/17 = 100.0% over the text after the image
+    lfm2vl_real_test.go:268: planted 1: the tiles in column-major order stayed green: the gate cannot see it
+[G-S10l-c 1427.8s] planted 2: the thumbnail's features first          last cosine 0.997643, argmax 7491 (HF 7491), agreement 13/17 = 76.5% over the text after the image
+[G-S10l-c 1786.1s] planted 3: features over the tile markers          last cosine 0.990344, argmax 7491 (HF 7491), agreement 16/17 = 94.1% over the text after the image
+--- FAIL: TestLfm2VLFull (1786.06s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	1786.084s
+FAIL

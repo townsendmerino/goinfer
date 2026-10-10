@@ -47,7 +47,7 @@ type visionInput struct {
 	deepSets       int  // Qwen3-VL: features() returns the merged rows, then this many DeepStack sets of the same size
 	gemma4         bool // selects GenerateGemma4VL in driveVL
 	asr            bool // selects GenerateAudio in driveVL (Qwen3-ASR)
-	pixtral        bool // Ministral 3, causal image tokens (GenerateVLCausalSpans)
+	causal         bool // Ministral 3 and LFM2-VL, causal image tokens (GenerateVLCausalSpans)
 	images         int  // the images in the turn (a Pixtral image is one span per merged row, so not len(spans))
 	// Every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then returns
 	// every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the one-media builders
@@ -203,6 +203,8 @@ func (lm *loadedModel) towerFamily(audio bool) string {
 		return "GLM-OCR"
 	case lm.pixtral != nil:
 		return "Pixtral"
+	case lm.lfm2vl != nil:
+		return "LFM2-VL"
 	case lm.qwen3 != nil:
 		return "Qwen3.5+ vision"
 	case lm.qwenEnc != nil:

@@ -20,6 +20,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU | Served on CUDA (S6, 2026-10-09). |
 | Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU | DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09). |
 | GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU | One image per request (2026-10-09). |
+| LFM2.5-VL (`lfm2_vl`) | CPU / CPU | CPU / CPU | CPU / CPU | CPU / CPU | SigLIP2 NaFlex tower, CPU float32; the lfm2 decoder runs on the CPU only (no backend implements its short convolution) (S10, 2026-10-09). |
 | Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU | Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU. |
 
 <!-- END images-and-audio support table -->
@@ -32,7 +33,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 >
 > Images are accepted on the OpenAI `image_url` and Anthropic `image` surfaces (base64 / `data:` URIs only; the newest message's images, up to 8 and each its own block in place (S11), while earlier images are replaced by a note, `internal/serveapp/image_history.go`; GLM-OCR takes one) for **Gemma 3** (SigLIP),
 > **Gemma 4** (E2B/E4B/26B-A4B/31B), **Qwen2.5-VL**, **Qwen3.5+ dense** (0.8B and 9B gated; the MoE sizes are accepted by serve's auto-discovery and have never been
-> run), **GLM-OCR**, **Qwen3-VL** (S10) and **Ministral 3** (the Pixtral tower, CPU float32; S10, G-S10m-a to d, 2026-10-09).
+> run), **GLM-OCR**, **Qwen3-VL** (S10), **Ministral 3** (the Pixtral tower, CPU float32; S10, G-S10m-a to d, 2026-10-09) and **LFM2.5-VL** (the SigLIP2 NaFlex tower and the lfm2 decoder, both CPU only; S10, G-S10l, 2026-10-09).
 > In each cell, the first half is where the vision **tower** runs, the second where the **decoder** runs after the image.
 >
 > | | CPU | CUDA | Metal | WebGPU |

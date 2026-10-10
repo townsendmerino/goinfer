@@ -125,7 +125,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision tower) | yes | full-oracle 100.0%/0.98972 |
 | Granite 4.2 | `granite` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
 | InternLM2 | `internlm2` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
-| LFM2.5 | `lfm2` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | yes | safetensors | text | no | full-oracle 100.0%/1.00000 |
+| LFM2.5 | `lfm2`, `lfm2_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | yes | safetensors | text (+ vision tower) | no | full-oracle 100.0%/1.00000 |
 | Laguna | `laguna` | sparse +shared | interleave | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | real-oracle 100.0%/0.99884 |
 | Llama | `internlm3`, `llama` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF, GPTQ, AWQ | text | yes | full-oracle 100.0%/1.00000 |
 | Llama 4 | `llama4_text` | sparse +shared | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 +coherent |

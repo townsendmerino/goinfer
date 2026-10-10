@@ -134,6 +134,7 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// {FeatQKNorm} — which every resident backend implements, so all three would admit a
 	// family none of them can run. Same shape as laguna's FeatAttnOutputGate above.
 	"lfm2":             {FeatQKNorm, FeatShortConv},
+	"lfm2_vl":          {FeatQKNorm, FeatShortConv}, // S10: LFM2-VL's text_config is lfm2
 	"qwen3_5_moe_text": {FeatMoE, FeatMoEGatedShared, FeatPartialRotary, FeatQKNorm, FeatRMSAddOne, FeatDeltaNet},
 	// Gemma, VERIFIED against the real checkpoints via RequiredResidentFeatures. gemma4 needs the FINAL-logit softcap (one
 	// host-side tanh, FeatFinalLogitSoftcap), not the attention softcap; its own forward (per-layer head_dim / K=V) is what
@@ -216,8 +217,9 @@ var admissionGolden = map[string][]string{
 	"spark2_5": {},
 	// lfm2: no resident backend implements the gated short conv (FeatShortConv) or its
 	// rolling window, so every one declines. CPU-only until a bridge lands.
-	"lfm2": {},
-	"gpt2": {"metal"},
+	"lfm2":    {},
+	"lfm2_vl": {}, // the same lfm2 decoder
+	"gpt2":    {"metal"},
 	// gpt_oss reaches ALL THREE backends, each on end-to-end evidence: metal on the tiny fixture (TestGptOssResidentParity);
 	// cuda on the real 20B, resident on an 8 GB card through --moe-cache-experts (TestGptOssResidentParityCUDA), the stronger
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels

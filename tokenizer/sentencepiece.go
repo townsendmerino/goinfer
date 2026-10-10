@@ -174,9 +174,14 @@ type tokenizerJSON struct {
 		Merges json.RawMessage `json:"merges"`
 	} `json:"model"`
 	// Decoder.Type selects the pipeline family: "ByteLevel" → modeByteLevel
-	// (GPT-2/Qwen/Llama-3), anything else → modeGemma (SentencePiece-style).
+	// (GPT-2/Qwen/Llama-3), anything else → modeGemma (SentencePiece-style). A
+	// "Sequence" whose every member is ByteLevel counts as ByteLevel (LFM2-VL's
+	// tokenizer.json wraps its one ByteLevel decoder so; S10).
 	Decoder struct {
-		Type string `json:"type"`
+		Type     string `json:"type"`
+		Decoders []struct {
+			Type string `json:"type"`
+		} `json:"decoders"`
 	} `json:"decoder"`
 	// Normalizer + PreTokenizer drive the two byte-level knobs that vary by
 	// family (NFC-or-none, digit-run cap); kept raw and parsed in initByteLevel.
@@ -289,7 +294,7 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 		ignoreMerges: tj.Model.IgnoreMerges,
 		byteToVal:    make(map[int32]byte, 256),
 	}
-	if tj.Decoder.Type == "ByteLevel" {
+	if byteLevelDecoder(&tj) {
 		t.mode = modeByteLevel
 	}
 
@@ -924,4 +929,24 @@ func (t *Tokenizer) markAdded(id int) {
 		t.isAdded = grown
 	}
 	t.isAdded[id] = true
+}
+
+// byteLevelDecoder reports whether tokenizer.json's decoder is GPT-2 byte-level: a ByteLevel decoder, or a Sequence of
+// ByteLevel decoders only. A Sequence with anything else in it keeps the SentencePiece routing it had.
+func byteLevelDecoder(tj *tokenizerJSON) bool {
+	switch tj.Decoder.Type {
+	case "ByteLevel":
+		return true
+	case "Sequence":
+		if len(tj.Decoder.Decoders) == 0 {
+			return false
+		}
+		for _, d := range tj.Decoder.Decoders {
+			if d.Type != "ByteLevel" {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
