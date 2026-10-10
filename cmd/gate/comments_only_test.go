@@ -121,6 +121,18 @@ func TestCommentsOnly_exampleComments(t *testing.T) {
 	}
 }
 
+func TestCommentsOnly_rewrapThatCreatesADirectiveLookalikeIsRed(t *testing.T) {
+	cur := strings.Replace(coBase, "// Greet says hello.", "// Greet says hello and\n//     go:embed list is not a directive.", 1)
+	v := compareComments("p.go", []byte(coBase), []byte(cur))
+	if len(v.reds) == 0 || !strings.Contains(v.reds[0], "SA9009") {
+		t.Errorf("want an SA9009 red, got %v", v.reds)
+	}
+	// the same line already in the base file is not this diff's doing
+	if v := compareComments("p.go", []byte(cur), []byte(cur+"\n// more\n")); len(v.reds) != 0 {
+		t.Errorf("a lookalike already present before: want green, got %v", v.reds)
+	}
+}
+
 func TestCommentsOnly_unparseableIsRedNotAPanic(t *testing.T) {
 	v := compareComments("p.go", []byte(coBase), []byte(coBase+"\nfunc broken( {\n"))
 	if len(v.reds) == 0 {

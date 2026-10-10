@@ -268,6 +268,9 @@ func compareComments(path string, old, cur []byte) fileVerdict {
 	if !slices.Equal(oldProt, newProt) {
 		v.reds = append(v.reds, fmt.Sprintf("%s: PROTECTED COMMENT CHANGED — %s", path, describeProtectedDifference(oldProt, newProt)))
 	}
+	if line := directiveLookalike(nf, nfs); line != "" && directiveLookalike(of, ofs) == "" {
+		v.reds = append(v.reds, fmt.Sprintf("%s: a comment line starts `//` + spaces + `go:` (%s); staticcheck SA9009 reads it as an ineffectual directive, so rewrap it", path, line))
+	}
 	v.commentLinesOld, v.commentLinesNew = commentLineCount(of, ofs), commentLineCount(nf, nfs)
 	v.removed = removedRuns(path, of, ofs, nf, nfs)
 	return v
@@ -373,6 +376,23 @@ func protectedComments(path string, f *ast.File, fset *token.FileSet) []string {
 		}
 	}
 	return out
+}
+
+// directiveLookalike returns the first comment line of the form `//   go:word`, which staticcheck SA9009 reports as an ineffectual
+// compiler directive; a rewrap that leaves "go:embed" at the start of a line produces one.
+func directiveLookalike(f *ast.File, fset *token.FileSet) string {
+	for _, g := range f.Comments {
+		for _, c := range g.List {
+			if !strings.HasPrefix(c.Text, "//") {
+				continue
+			}
+			s := strings.TrimLeft(c.Text[2:], " \t")
+			if len(s) != len(c.Text)-2 && strings.HasPrefix(s, "go:") {
+				return fmt.Sprintf("line %d", fset.Position(c.Pos()).Line)
+			}
+		}
+	}
+	return ""
 }
 
 func describeProtectedDifference(a, b []string) string {
