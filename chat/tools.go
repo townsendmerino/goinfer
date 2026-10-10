@@ -6,13 +6,10 @@ import (
 	"strings"
 )
 
-// Tool calling. Each family declares tools in the prompt, emits a call, and feeds
-// a result back in its own syntax — so (per Ollama's lesson) we render and PARSE
-// against the model's template, not by blindly scanning for JSON. RenderTools
-// builds the tool-aware prompt; ParseToolCalls turns the model's output back into
-// structured calls. Supported: ChatML/Qwen (Hermes <tool_call>), Mistral
-// ([TOOL_CALLS]), Llama-3 (bare {name,parameters}), and Gemma 4 (its bespoke
-// <|tool_call> micro-language).
+// Tool calling. Each family declares tools in the prompt, emits a call, and feeds a result back in its own syntax, so goinfer renders
+// and PARSES against the model's template rather than scanning for JSON. RenderTools builds the tool-aware prompt; ParseToolCalls
+// turns the model's output back into structured calls. Supported: ChatML/Qwen (Hermes <tool_call>, or Qwen3.5's XML), Mistral
+// ([TOOL_CALLS]), Llama-3 (bare {name,parameters}), Gemma 4 (its <|tool_call> micro-language) and Harmony.
 
 // Tool is a function the model may call (OpenAI "function" shape).
 type Tool struct {
@@ -61,12 +58,10 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	return t.Render(system, turns) // gemma3 etc.: no native tool template
 }
 
-// RenderToolsSegments is RenderTools for the EncodeSegments path (M25). With no
-// tools it delegates to RenderSegments, so ordinary chat (including tool RESULTS fed
-// back with no new tool declarations) gets injection hardening. With tools declared
-// it returns the tool-rendered prompt as a single Special segment — identical to the
-// whole-string Encode path (no regression); segmenting the per-family tool templates
-// so their content spans are hardened too is a follow-up.
+// RenderToolsSegments is RenderTools for the EncodeSegments path. With no tools it delegates to RenderSegments, so ordinary chat
+// (including tool RESULTS fed back with no new declarations) gets injection hardening. With tools declared, Harmony returns its own
+// segments; every other family returns the tool-rendered prompt as a single Special segment, identical to whole-string Encode but
+// with no hardening of its content spans.
 func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool) []Segment {
 	if len(tools) == 0 {
 		return t.RenderSegments(system, turns)
@@ -133,30 +128,20 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 	return nil, out
 }
 
-// ParseToolCallsFor is ParseToolCalls with the request's tool list in hand, which
-// lets it recover one more shape: a BARE call — the call object with its wrapper
-// left off — on the families whose wrapper is `<tool_call>` (AcceptsBareToolCall).
+// ParseToolCallsFor is ParseToolCalls with the request's tool list in hand, which lets it recover one more shape: a BARE call, the
+// call object with its wrapper left off, on the families whose wrapper is `<tool_call>` (AcceptsBareToolCall). Small Qwen2.5-Coder
+// models practically never write the wrapper under tool_choice "auto"; they emit `{"name": ..., "arguments": {...}}` on its own,
+// which ParseToolCalls reads as prose. Evidence: docs/code-notes/chat.md#Template.ParseToolCallsFor.
 //
-// Why it exists: Qwen2.5-Coder at 0.5B, 1.5B and 7B practically never writes the
-// wrapper under tool_choice "auto"; it emits `{"name": ..., "arguments": {...}}` on
-// its own, which ParseToolCalls reads as prose, so the harness never gets a call.
-// Measured in docs/measurements/tool-call-failure-t0-2026-09-23.md: 0 wrapped calls
-// in 1,200 samples, and the same on Ollama. llama.cpp makes the same allowance for
-// Qwen3-Coder's first call.
+// It is deliberately narrow, because a prose answer that happens to be JSON must stay prose:
+//   - only when ParseToolCalls found no call: a wrapped call is never re-read;
+//   - only when the output's first non-space byte opens a JSON object (a bare call has an empty lead; prose-then-JSON is left alone);
+//   - the object's "name" must be a string EXACTLY equal to a supplied tool's name, and its "arguments" (or "parameters") must be a
+//     JSON object, so this can never produce a call to a tool the caller did not offer;
+//   - the FIRST object only: a small model emits runs of speculative calls, and executing all of them is worse than the prose.
 //
-// It is deliberately narrow, because a prose answer that happens to be JSON must
-// stay prose:
-//   - only when ParseToolCalls found no call — a wrapped call is never re-read;
-//   - only when the output's first non-space byte opens a JSON object (a bare call
-//     has an empty lead, and prose-then-JSON is left alone);
-//   - the object's "name" must be a string EXACTLY equal to a supplied tool's name,
-//     and its "arguments" (or "parameters") must be a JSON object — so this can
-//     never produce a call to a tool the caller did not offer;
-//   - the FIRST object only. The 0.5B emits runs of speculative calls one after
-//     another; executing all of them would be worse than the prose it replaces.
-//
-// Every other output, and every other family, gets exactly what ParseToolCalls
-// returns.
+// With WithLenientToolCalls on, a last fenced block is tried after that (fencedToolCall). Every other output, and every other
+// family, gets exactly what ParseToolCalls returns.
 func (t *Template) ParseToolCallsFor(out string, tools []Tool) ([]ToolCall, string) {
 	var calls []ToolCall
 	var lead string
@@ -246,18 +231,11 @@ func funcDefJSON(t Tool) string {
 
 func jsonStr(s string) string { b, _ := json.Marshal(s); return tojsonEscape(string(b)) }
 
-// tojsonEscape applies the one HTML-safety substitution encoding/json's default escaping
-// (SetEscapeHTML's true default, on by construction here since we never turn it off) leaves out.
-// N-80 (docs/audit-2026-09-10.md): encoding/json already turns the raw bytes for less-than,
-// greater-than and ampersand into their six-character backslash-u-NNNN escapes — the same
-// substitution Jinja2's own htmlsafe_json_dumps (what the `| tojson` filter these chat templates
-// use calls) makes for those three. The fourth one, an apostrophe, is the one encoding/json has
-// no flag for, so it was missing here — a tool description or default value containing one
-// rendered one byte different from what the reference Jinja template would produce. (The
-// audit's own citation for this said Jinja renders it as the HTML entity for an apostrophe;
-// verified 2026-09-16 against jinja2's actual source (src/jinja2/utils.py,
-// htmlsafe_json_dumps) and it is the same backslash-u-NNNN form as the other three, not an
-// entity — correcting the claim rather than reproducing it.)
+// tojsonEscape applies the one HTML-safety substitution encoding/json's default escaping leaves out. encoding/json already turns
+// the raw bytes for less-than, greater-than and ampersand into their six-character backslash-u-NNNN escapes, the same substitution
+// Jinja2's htmlsafe_json_dumps (what the `| tojson` filter these chat templates use calls) makes for those three. The apostrophe is
+// the one encoding/json has no flag for, and Jinja writes it in the same backslash-u-NNNN form (not an HTML entity); without this a
+// tool description or default value containing one renders a byte different from the reference template.
 func tojsonEscape(s string) string {
 	return strings.ReplaceAll(s, "'", apostropheEscape)
 }
@@ -268,8 +246,7 @@ func tojsonEscape(s string) string {
 // apostrophe, which is exactly the bug this function exists to avoid reintroducing.
 var apostropheEscape = fmt.Sprintf(`\u%04x`, '\'')
 
-// callObjectJSON renders {"name":..,"arguments":{...}} (argsKey lets Llama-3 use
-// "parameters"); used to render assistant tool-call history.
+// callObjectJSON renders {"name":..,"arguments":{...}} for assistant tool-call history (argsKey lets Llama-3 use "parameters").
 func callObjectJSON(c ToolCall, argsKey string) string {
 	args := string(c.Arguments)
 	if args == "" {
@@ -550,25 +527,19 @@ func normalizeArgs(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-// ToolCallOpener reports the literal that bounds the prose lead for this family,
-// and whether prose may be streamed INCREMENTALLY before the generation ends
-// (G21).
+// ToolCallOpener reports the literal that bounds the prose lead for this family, and whether prose may be streamed INCREMENTALLY
+// before the generation ends.
 //
-// The contract is exact and narrow: ok is true only when ParseToolCalls computes
-// its lead as the RAW, UNTRIMMED prefix of the output up to the first occurrence
-// of the returned literal. That is what lets a caller emit text early and still
-// guarantee the bytes it sent are a prefix of the lead the parser will compute —
-// a delta cannot be unsent, so an over-eager emit is unrecoverable corruption.
+// The contract is exact and narrow: ok is true only when ParseToolCalls computes its lead as the RAW, UNTRIMMED prefix of the output
+// up to the first occurrence of the returned literal. That is what lets a caller emit text early and still guarantee the bytes it
+// sent are a prefix of the lead the parser will compute; a delta cannot be unsent, so an over-eager emit is unrecoverable corruption.
 //
-//   - chatml/mellum2, gemma4: lead is strings.Cut(out, opener) — a raw prefix. ok.
-//   - mistral: lead is TrimSpace(before "[TOOL_CALLS]"). The trim means streamed
-//     bytes need not equal the lead. NOT ok.
-//   - llama3: the output is TrimSpace'd, a "<|python_tag|>" prefix is stripped, and
-//     a lead exists only if the JSON at the first "{" actually parses — nothing is
-//     known until then. NOT ok.
+//   - chatml/mellum2, gemma4: lead is strings.Cut(out, opener), a raw prefix. ok.
+//   - mistral: lead is TrimSpace(before "[TOOL_CALLS]"); the trim means streamed bytes need not equal the lead. NOT ok.
+//   - llama3: the output is TrimSpace'd, a "<|python_tag|>" prefix is stripped, and a lead exists only if the JSON at the first "{"
+//     actually parses, so nothing is known until then. NOT ok.
 //
-// A family added here must have its parser checked against this contract, not
-// assumed to match: the two that fail it fail it for different reasons.
+// A family added here must have its parser checked against this contract, not assumed to match.
 func (t *Template) ToolCallOpener() (string, bool) {
 	switch t.name {
 	case "chatml", "mellum2":
@@ -609,23 +580,19 @@ func StreamableLen(pending, opener string) int {
 	return len(pending)
 }
 
-// ProseStreamer releases the prose part of a tool-capable generation as it
-// arrives, holding back exactly what could still turn out not to be prose (G21).
+// ProseStreamer releases the prose part of a tool-capable generation as it arrives, holding back exactly what could still turn out not
+// to be prose.
 //
-// It exists because the safety property is subtler than "split at the opener".
-// Every family's ParseToolCalls returns strings.TrimSpace(lead), so a streamer
-// that emitted the raw prefix would send leading and trailing whitespace the
-// parser later discards — and a delta cannot be unsent. So this normalizes the
-// SAME way the parsers do:
+// The safety property is subtler than "split at the opener". Every family's ParseToolCalls returns strings.TrimSpace(lead), so a
+// streamer that emitted the raw prefix would send leading and trailing whitespace the parser later discards, and a delta cannot be
+// unsent. So it normalizes the SAME way the parsers do:
 //
 //   - leading whitespace is never emitted (dropped until the first non-space),
-//   - a trailing whitespace run is held back until a non-space byte follows it,
-//     and is dropped entirely if the opener arrives instead,
+//   - a trailing whitespace run is held back until a non-space byte follows it, and is dropped entirely if the opener arrives instead,
 //   - a partial opener at the tail is held (StreamableLen).
 //
-// The guarantee, asserted by TestProseStreamerMatchesParser against every
-// streamable family: the concatenation of everything Push returns is always a
-// PREFIX of the lead ParseToolCalls will compute over the full output.
+// The guarantee, asserted by TestProseStreamerMatchesParser against every streamable family: the concatenation of everything Push
+// returns is always a PREFIX of the lead ParseToolCalls will compute over the full output.
 type ProseStreamer struct {
 	opener     string
 	bareAware  bool // hold an output that opens with '{' (NewBareAwareProseStreamer)

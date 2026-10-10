@@ -2,7 +2,7 @@ package chat
 
 // The history rule: how a family's own chat template re-renders an assistant turn's REASONING when the conversation is
 // replayed to it, and the same rule here so a client's replay of the model's reasoning reaches the model the way the model's
-// template would have put it there. Read from the three real templates (2026-09-30) and pinned per checkpoint against
+// template would have put it there. Read from the three real templates and pinned per checkpoint against
 // HuggingFace (testdata/chat_think_goldens/think_history.json, scripts/pin_chat_think_history.py):
 //
 //	Qwen3.5   An assistant turn AFTER the last user query (the tool loop in progress) is rendered
@@ -58,7 +58,7 @@ func detectHistoryKind(tmpl string) histKind {
 		strings.Contains(tmpl, `reasoning_content|trim`) &&
 		strings.Contains(tmpl, `'\n<think>\n' + reasoning_content + '\n</think>\n\n' + content }}`):
 		return histQwen35
-	// Mellum2.1 (JetBrains/Mellum2.1-12B-A2.5B-Thinking, 2026-10-07): Qwen3's strip and extraction, but `{%- if reasoning_content %}` decides whether an after-query turn gets a block.
+	// Mellum2.1 (JetBrains/Mellum2.1-12B-A2.5B-Thinking): Qwen3's strip and extraction, but `{%- if reasoning_content %}` decides whether an after-query turn gets a block.
 	case strings.Contains(tmpl, afterQuery) && strings.Contains(tmpl, "{%- if reasoning_content %}") &&
 		strings.Contains(tmpl, `'\n<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n')`) &&
 		!strings.Contains(tmpl, `loop.last or (not loop.last and reasoning_content)`):

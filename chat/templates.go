@@ -2,17 +2,14 @@ package chat
 
 import "strings"
 
-// Each constructor returns the family's renderer. The render funcs are written
-// to match HuggingFace apply_chat_template byte-for-byte (testdata/chat_goldens).
+// Each constructor returns the family's renderer, written to match HuggingFace apply_chat_template byte for byte
+// (testdata/chat_goldens).
 //
-// Renderers emit []Segment, not a raw string (Render concatenates them). A Special
-// segment is a genuine single special token of the family (its control markers); a
-// non-special segment is a whole gap BETWEEN two special tokens — trusted structure
-// (role names, newlines, date preambles) and untrusted content together. Because the
-// non-special segments are exactly the gaps the whole-string encoder would form,
-// EncodeSegments reproduces Encode(Render(...)) on legitimate input while refusing to
-// promote a marker string a user typed into a real control token (M25). The rule when
-// editing a renderer: sp() ONLY genuine special tokens; everything else via ct().
+// Renderers emit []Segment, not a raw string (Render concatenates them). A Special segment is one genuine special token of the
+// family (its control markers); a non-special segment is a whole gap BETWEEN two special tokens: trusted structure (role names,
+// newlines, date preambles) and untrusted content together. Those gaps are exactly what the whole-string encoder would form, so
+// EncodeSegments reproduces Encode(Render(...)) on legitimate input while refusing to promote a marker string a user typed into a
+// control token. The rule when editing a renderer: sp() ONLY genuine special tokens; everything else via ct().
 
 // segBuf accumulates render segments.
 type segBuf struct{ segs []Segment }
@@ -132,35 +129,25 @@ func gemma4Segments(system string, turns []Turn, think, hist, old bool) []Segmen
 	return b.segs
 }
 
-// Harmony (gpt-oss) — "<|start|>{role}<|message|>{content}<|end|>", with a REQUIRED
-// system message that gpt-oss's template synthesizes rather than taking from the caller,
-// and a generation prompt of a bare "<|start|>assistant".
+// Harmony (gpt-oss) is "<|start|>{role}<|message|>{content}<|end|>", with a required system message that gpt-oss's template
+// synthesizes rather than takes from the caller, and a generation prompt of a bare "<|start|>assistant".
 //
-// Three things make this family unlike the others here, all of them load-bearing:
+// Three things make this family unlike the others, all load-bearing:
 //
-//  1. THE SYSTEM MESSAGE IS SYNTHESIZED, NOT PASSED THROUGH. gpt-oss's own template emits a
-//     fixed identity line, a knowledge cutoff, TODAY'S DATE, a reasoning-effort line and the
-//     valid-channel declaration — whether or not the caller supplied a system prompt. A
-//     caller-supplied system prompt is a DEVELOPER message in harmony, which is a separate
-//     role, so it is rendered as one rather than replacing the preamble.
-//  2. THE DATE IS LIVE. `Current date:` comes from strftime_now in the upstream template, so
-//     it is read from timeNow (the same injectable clock Llama-3's preamble uses) and a
-//     byte-exactness test must pin the clock.
-//  3. THE CHANNEL SET IS DECLARED, NOT OPTIONAL. "Channel must be included for every message"
-//     — gpt-oss always answers on a channel (analysis / commentary / final), so there is no
-//     non-thinking form of this prompt the way Qwen3 and Gemma-4 both have. Callers that want
-//     only the answer must strip the analysis channel from the OUTPUT; it cannot be suppressed
-//     in the prompt.
+//  1. THE SYSTEM MESSAGE IS SYNTHESIZED, NOT PASSED THROUGH. The template emits a fixed identity line, a knowledge cutoff, today's
+//     date, a reasoning-effort line and the valid-channel declaration whether or not the caller supplied a system prompt. A
+//     caller's system prompt is a DEVELOPER message (a separate role), rendered as one rather than replacing the preamble.
+//  2. THE DATE IS LIVE. `Current date:` comes from strftime_now upstream, so it is read from timeNow (the injectable clock
+//     Llama-3's preamble also uses); a byte-exactness test must pin the clock.
+//  3. THE CHANNEL SET IS DECLARED, NOT OPTIONAL ("Channel must be included for every message"). There is no non-thinking form of
+//     this prompt as Qwen3 and Gemma 4 have; a caller that wants only the answer strips the analysis channel from the OUTPUT.
 //
-// Reasoning effort defaults to "medium", matching the upstream template's own default.
+// Reasoning effort defaults to "medium", the upstream template's default.
 //
-// STOPS ARE UPSTREAM'S, NOT "EVERY END MARKER". gpt-oss-20b's generation_config.json lists
-// eos_token_id [200002, 199999, 200012] = <|return|>, <|endoftext|>, <|call|>. <|end|> is NOT a stop:
-// it closes each MESSAGE, and one reply is several — the analysis message ends in <|end|>, then the
-// model opens <|start|>assistant<|channel|>final<|message|> and ends the turn with <|return|> (or
-// <|call|> for a tool call). Stopping on <|end|> ended every reply after its thinking: through serve,
-// gpt-oss streamed only its analysis channel and never an answer (found 2026-09-14 by the web UI's W6
-// capture, docs/tasks/task-web-ui-2026-09.md).
+// STOPS ARE UPSTREAM'S, NOT "EVERY END MARKER": <|return|>, <|endoftext|> and <|call|> (gpt-oss's generation_config eos_token_id).
+// <|end|> is NOT a stop: it closes each MESSAGE and one reply is several (the analysis message ends in <|end|>, then the model opens
+// the final channel and ends the turn with <|return|>, or <|call|> for a tool call). Stopping on <|end|> ends every reply after its
+// thinking, so serve streams only the analysis channel. Evidence: docs/code-notes/chat.md#Harmony.
 func Harmony() *Template { return harmonyTemplate("medium") }
 
 // harmonyTemplate is Harmony with the system block's `Reasoning:` line set to effort ("low" | "medium" | "high" — the values gpt-oss's
@@ -240,15 +227,8 @@ func chatMLSegments(system string, turns []Turn, hist histKind) []Segment {
 	return b.segs
 }
 
-// Phi3 — microsoft/Phi-3-mini-4k-instruct's current template: per turn
-// "<|{role}|>\n{content}<|end|>\n", a leading system turn when given, generation prompt
-// "<|assistant|>\n". No BOS in the template, and the HF tokenizer adds none
-// (add_bos_token false).
-//
-// Before this renderer existed Detect matched no Phi-3 template, so chat and serve fed Phi-3
-// a raw completion with no turn markers at all: the model wrote its own "<|assistant|>" and
-// answered the benchmark's filler prompt with newlines (found 2026-09-25,
-// docs/measurements/peer-claim-2026-09-25.md).
+// Phi3 is microsoft/Phi-3-mini-4k-instruct's current template: per turn "<|{role}|>\n{content}<|end|>\n", a leading system turn when
+// given, generation prompt "<|assistant|>\n". No BOS in the template, and the HF tokenizer adds none (add_bos_token false).
 func Phi3() *Template {
 	return &Template{name: "phi3", stops: []string{"<|end|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
 		var b segBuf
@@ -298,19 +278,17 @@ func Phi3Orig() *Template {
 	}}
 }
 
-// GlmOCR — zai-org/GLM-OCR's template (the GLM-4.1V family's `[gMASK]<sop>` shape): "[gMASK]<sop>", an optional
-// "<|system|>\n{system}", then per turn "<|user|>\n{content}" or "<|assistant|>\n<think></think>\n{content}" (a prior
-// assistant turn; the template writes an EMPTY think block there when the turn carries no reasoning, and this renderer
-// carries none), and the generation prompt "<|assistant|>\n". No end-of-turn marker: the next role marker closes a turn,
-// and a reply ends at <|endoftext|> or the next <|user|> (the checkpoint's eos_token_id is [59246, 59253], hence the stops).
+// GlmOCR is zai-org/GLM-OCR's template (the GLM-4.1V family's `[gMASK]<sop>` shape): "[gMASK]<sop>", an optional
+// "<|system|>\n{system}", then per turn "<|user|>\n{content}" or "<|assistant|>\n<think></think>\n{content}" (the template writes an
+// EMPTY think block for a prior assistant turn with no reasoning, and this renderer carries none), and the generation prompt
+// "<|assistant|>\n". No end-of-turn marker: the next role marker closes a turn, and a reply ends at <|endoftext|> or the next
+// <|user|> (the checkpoint's eos_token_id is [59246, 59253], hence the stops).
 //
-// Verified byte-for-byte against HF's apply_chat_template on the checkpoint at revision 2e85a628
-// (testdata/chat_goldens/glm_ocr.json, text turns), and for the image shape by the O3 gate
-// (multimodal.GlmOcrImageBlock + the golden's input_ids). NOT rendered: tools (`<|observation|>` turns and the
-// `<tool_call>` XML), `enable_thinking`'s `<think></think>` generation-prompt suffix and `/nothink` — the OCR model is
-// prompted with a task string, not a conversation, and none of those is a path it is used on. Detect matches only this
-// checkpoint's template (the image markers are in the fingerprint), so GLM-4.5's text template, which shares the
-// `[gMASK]<sop>` opening and is rendered differently, is not captured by it.
+// Byte-for-byte against HF's apply_chat_template for text turns (testdata/chat_goldens/glm_ocr.json), and for the image shape through
+// multimodal.GlmOcrImageBlock. NOT rendered: tools (`<|observation|>` turns, the `<tool_call>` XML), `enable_thinking`'s
+// `<think></think>` generation-prompt suffix and `/nothink` (the OCR model is prompted with a task string, not a conversation).
+// Detect matches only this checkpoint's template (the image markers are in the fingerprint), so GLM-4.5's text template, which
+// shares the `[gMASK]<sop>` opening and renders differently, is not captured by it.
 func GlmOCR() *Template {
 	return &Template{name: "glm_ocr", stops: []string{"<|endoftext|>", "<|user|>"}, render: func(system string, turns []Turn) []Segment {
 		var b segBuf
@@ -381,18 +359,13 @@ func Llama3() *Template {
 	}}
 }
 
-// Mistral — "<s>" once, each user turn "[INST] {content}[/INST]", each assistant
-// turn " {content}</s>". No system role: the system is folded into the LAST user
-// turn ("{system}\n\n{content}").
+// Mistral is "<s>" once, each user turn "[INST] {content}[/INST]", each assistant turn " {content}</s>". No system role: the system is
+// folded into the LAST user turn ("{system}\n\n{content}").
 //
-// NOTE: unlike the families above, Mistral's structural markers are version-
-// dependent — [INST]/[/INST] are plain text in v0.1 but real special tokens in
-// v0.3+, and <s>/</s> placement interleaves with content inside a single encoder
-// gap. Statically deciding the special/content split would risk changing the
-// tokenization of legitimate prompts, so this renderer emits ONE Special segment
-// (identical to whole-string Encode — no regression) and forgoes the injection
-// hardening the others get. Splitting it safely needs the loaded tokenizer's
-// added-vocabulary, a follow-up.
+// Unlike the families above its markers are version-dependent ([INST]/[/INST] are plain text in v0.1 but special tokens in v0.3+, and
+// <s>/</s> interleave with content inside one encoder gap), so a static special/content split could change the tokenization of
+// legitimate prompts. It emits ONE Special segment (identical to whole-string Encode) and so gets no injection hardening; splitting
+// it safely needs the loaded tokenizer's added vocabulary.
 func Mistral() *Template {
 	return &Template{name: "mistral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
 		lastUser := -1
@@ -418,43 +391,26 @@ func Mistral() *Template {
 	}}
 }
 
-// Ministral — Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's real
-// chat_template.jinja, fetched and read 2026-09-16, not guessed from Mistral v0.3's shape): "<s>"
-// once, an EXPLICIT system message as its own "[SYSTEM_PROMPT]{system}[/SYSTEM_PROMPT]" block —
-// no "[INST] " space before user content (unlike v0.3's Mistral(), which has one), and no eos
-// leading space before an assistant turn either.
+// Ministral is Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's chat_template.jinja): "<s>" once, an explicit system
+// message as its own "[SYSTEM_PROMPT]{system}[/SYSTEM_PROMPT]" block, no "[INST] " space before user content (unlike Mistral()), and
+// no leading space before an assistant turn. Detect must not route it to Mistral(): it shares the "[INST]" substring but is a
+// different template version.
 //
-// M-36 (audit-2026-09-10): this family was previously misdetected as Mistral() via the shared
-// "[INST]" substring — a different template version with a different id stream on every turn
-// (no [SYSTEM_PROMPT] at all, "[INST] " WITH a space, system folded into the last user turn
-// instead of rendered as its own block).
+// The system block is rendered FIRST, right after "<s>": the real template writes it wherever a system message falls, and the
+// caller's separate system parameter can only be the first message.
 //
-// System placement: the real template emits [SYSTEM_PROMPT]...[/SYSTEM_PROMPT] wherever a
-// role=="system" message naturally falls in the conversation (validated to be first or absent by
-// its own role-ordering pass in the common case) — this renders it FIRST, right after "<s>" and
-// before any turn, which is exactly what the real template produces when the caller's system
-// message is the conversation's first message, the only shape goinfer's system-as-a-separate-
-// parameter Render(system, turns) interface can represent (there is no per-turn system Turn).
+// NOT implemented: the template's default system message (injected only when the caller gives none: a long, Mistral-product-branded
+// prompt naming the model and "Le Chat"). It is deliberately not replicated, as ChatML() leaves out Qwen's default; injecting
+// Mistral's product identity into a self-hosted response would be wrong, not just an omission. So the no-system case is NOT
+// byte-exact for this family, and the goldens cover explicit-system cases only.
 //
-// NOT implemented: the real template's default system message (injected only when the caller
-// provides NONE at all — a long, Mistral-product-branded prompt naming "Ministral-3-8B-
-// Instruct-2512" and "Le Chat" by identity, with {today}/{yesterday} date substitutions) is
-// deliberately NOT replicated here, the same documented divergence ChatML() already has for
-// Qwen's own default system message (chat.go's own "byte-exact" scope note) — injecting
-// Mistral's own product identity into a self-hosted goinfer response would be actively wrong, not
-// just an omission. The no-system-message case is therefore NOT byte-exact for this family
-// (goldens below cover explicit-system cases only, same convention as ChatML's).
+// Tool calling is NOT wired (SupportsTools declines it): the real format ([TOOL_CALLS]name[ARGS]{json}, no JSON-array wrapping)
+// differs from the "mistral" dialect enough that reusing it would mis-render and mis-parse silently rather than be visibly incomplete.
 //
-// Tool calling is NOT wired for this family (SupportsTools() declines it, chat/tools.go): the
-// real wire format ([TOOL_CALLS]name[ARGS]{json} per call, no JSON-array wrapping) differs from
-// the existing "mistral" tool dialect (a JSON array of call objects) enough that reusing it would
-// silently mis-render/mis-parse rather than simply be incomplete — declining is the honest choice
-// until that dialect is built for real, not a guess dressed up as support.
-//
-// Segments (M25): every marker is a single control token of Ministral 3's tokenizer (<s> 1, </s> 2, [INST] 3,
-// [/INST] 4, [SYSTEM_PROMPT] 17, [/SYSTEM_PROMPT] 18), so they are sp() and the system and turn texts ct(): a marker a
-// user types stays literal, and an image block in a user turn is a content gap the vision splice can find (S10: as one
-// Special segment the whole prompt hid it, and every Pixtral request was refused).
+// Every marker is a single control token of Ministral 3's tokenizer (<s> 1, </s> 2, [INST] 3, [/INST] 4, [SYSTEM_PROMPT] 17,
+// [/SYSTEM_PROMPT] 18), so they are sp() and the system and turn texts ct(): a marker a user types stays literal, and an image block in
+// a user turn is a content gap the vision splice can find (as one Special segment the whole prompt would hide it, and every Pixtral
+// request would be refused).
 func Ministral() *Template {
 	return &Template{name: "ministral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
 		var b segBuf

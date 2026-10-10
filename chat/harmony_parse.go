@@ -11,9 +11,8 @@ package chat
 //
 //	<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{"city":"Paris"}
 //
-// (the first message has no <|start|>assistant because the generation prompt already ends with it). Measured on
-// gpt-oss-20b-MXFP4 2026-09-30, docs/measurements/harmony-parser-2026-09-30/: the decoded stream carries these markers as literal
-// text and never carries the turn stops, which are stop ids. Before this parser every marker reached `content`.
+// (the first message has no <|start|>assistant because the generation prompt already ends with it). The decoded stream carries these
+// markers as literal text and never carries the turn stops, which are stop ids (docs/measurements/harmony-parser-2026-09-30/).
 //
 // Routing, what a client is shown:
 //
@@ -70,8 +69,8 @@ const (
 	hmToCall
 )
 
-// harmonyCall is a message addressed to a recipient — a function call the model made. The parser keeps it so the tool-call work
-// has one place to read it from; nothing surfaces it yet.
+// harmonyCall is a message addressed to a recipient — a function call the model made. The parser keeps it, shown in neither stream;
+// harmonyToolCalls turns the kept calls into ToolCalls (ReplySplitter.ToolCalls).
 type harmonyCall struct {
 	Channel, Recipient, Constrain string
 	Args                          string

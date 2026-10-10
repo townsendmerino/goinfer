@@ -8,9 +8,8 @@ import (
 
 // WithLenientToolCalls returns a copy of the template that also reads ONE fenced JSON call at the end of a reply
 // as a tool call (docs/queue-correctness.md G39). Off by default, and a no-op for every family that does not accept a
-// bare call (chatml, mellum2): the rule exists because Qwen2.5-Coder-7B, told to edit a file by opencode, answered
-// with the call in a ```json block twice and no edit happened. It is a separate, opt-in rule because the shape it
-// accepts is also what a model writes when asked to SHOW an example call; see fencedToolCall for how narrow it is made.
+// bare call (chatml, mellum2). It is a separate, opt-in rule because the shape it accepts is also what a model writes when
+// asked to SHOW an example call; see fencedToolCall for how narrow it is made.
 func (t *Template) WithLenientToolCalls(on bool) *Template {
 	if t == nil || t.lenientFenced == on {
 		return t

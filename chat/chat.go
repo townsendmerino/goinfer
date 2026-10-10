@@ -1,37 +1,21 @@
-// Package chat renders a conversation into the exact prompt string a model's
-// chat template expects — no Jinja engine. goinfer loads a handful of families
-// (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral, Ministral 3); each has a small native Go
-// renderer here, checked against HuggingFace's apply_chat_template (see the
-// testdata/chat_goldens fixtures).
+// Package chat renders a conversation into the exact prompt string a model's chat template expects, with no Jinja engine, and
+// parses a reply back into reasoning, answer and tool calls. Each family (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral, Ministral 3,
+// Phi-3, Harmony/gpt-oss, GLM-OCR) has a small native Go renderer, checked against HuggingFace's apply_chat_template
+// (testdata/chat_goldens, testdata/chat_think_goldens).
 //
-// WHAT "BYTE-EXACT" COVERS, precisely (N-37 — the claim here used to be unqualified):
+// What "byte-exact" covers, precisely:
 //
-//   - The `sys_user` and `sys_multi` shapes are byte-exact for every family EXCEPT Harmony
-//     (gpt-oss)'s multi-turn case: a prior ASSISTANT turn re-rendered into history is emitted
-//     as `<|start|>assistant<|message|>{content}<|end|>` with no `<|channel|>` marker at all —
-//     this file's own Harmony() doc comment says the channel is declared, never optional
-//     ("gpt-oss always answers on a channel... Channel must be included for every message"), so
-//     a real gpt-oss conversation's prior turns would carry `<|channel|>final` and this
-//     rendering diverges from it. NOT fixed here: unlike ChatML's no-system case there is no
-//     harmony golden to render the correct channel marker against (checked 2026-09-11 — none
-//     exists in testdata/chat_goldens), so guessing the exact byte sequence would risk being
-//     wrong in a way that looks right, the same reasoning that kept the other three families'
-//     no-system goldens unmade below. Single-turn harmony (no prior assistant turn) is
-//     unaffected.
-//   - The NO-SYSTEM shape: a ChatML template that declares a default system message (Qwen 2.5's
-//     "You are Qwen, created by Alibaba Cloud…", Qwen2.5-VL's "You are a helpful assistant.") gets
-//     it, read from the checkpoint's own template by Detect (default_system.go; owner, 2026-10-09),
-//     so the no-system rendering is that template's byte for byte (TestDetect_chatMLDefaultSystemIsTheTemplates).
-//     The bare ChatML() renderer, shared with families that declare no default, still emits no
-//     system turn: TestChatML_noSystem_documentedDivergence pins that against the same golden.
-//   - Tool rendering is byte-exact for GEMMA 4 ONLY, whose tool syntax is a micro-language the
-//     model parses. For the JSON families the embedded tool JSON's spacing follows Jinja's
-//     tojson and is checked structurally — see TestRenderTools_declarations (M-20).
+//   - A system prompt with one or more turns, for every family.
+//   - The no-system shape. A ChatML template that declares a default system message (Qwen 2.5's, Qwen2.5-VL's) gets it, read
+//     from the checkpoint's own template by Detect (default_system.go), so its no-system rendering is that template's byte for
+//     byte. The bare ChatML() renderer, shared with families that declare none, emits no system turn
+//     (TestChatML_noSystem_documentedDivergence). Ministral's default system message is deliberately not replicated (see Ministral).
+//   - Tool rendering is byte-exact where the tool syntax is a micro-language the model parses or the template's own form is selected
+//     (Gemma 4, Harmony, Qwen3.5's XML). For the JSON families the embedded tool JSON's spacing follows Jinja's tojson and is
+//     checked structurally (TestRenderTools_declarations).
 //
-// Detect picks the renderer from the GGUF/HF tokenizer.chat_template string
-// (fingerprinted against the known families); for a bare checkpoint with no
-// template, it falls back to the special-token heuristic. An unrecognized
-// template is an explicit error — the caller then does a raw completion.
+// Detect picks the renderer from the GGUF/HF tokenizer.chat_template string, falling back to a special-token heuristic for a bare
+// checkpoint with no template. An unrecognized template is an explicit error; the caller then does a raw completion.
 package chat
 
 import (
@@ -42,10 +26,9 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// Segment is a span of the rendered prompt tagged special (structural markers —
-// tokenize WITH the added-token trie) or not (untrusted content — tokenize WITHOUT
-// it). RenderSegments emits these so EncodeSegments can keep a marker string typed
-// by a user from becoming a real control token (M25).
+// Segment is a span of the rendered prompt tagged special (structural markers: tokenize WITH the added-token trie) or not
+// (untrusted content: tokenize WITHOUT it). RenderSegments emits these so EncodeSegments can keep a marker string typed by a user
+// from becoming a real control token.
 type Segment = tokenizer.Segment
 
 // Turn is one conversation message. Role is "user", "assistant", or "tool" (a
@@ -113,11 +96,9 @@ type Template struct {
 // "mistral", "ministral", "phi3", "phi3_orig").
 func (t *Template) Name() string { return t.name }
 
-// Render builds the complete prompt string (including any leading BOS marker the
-// family's template emits — encode with addBOS=false) for the system prompt and
-// turns, ending with the generation prompt for the model to continue. It is the
-// concatenation of RenderSegments; for tokenization prefer RenderSegments +
-// EncodeSegments so untrusted content can't forge control tokens (M25).
+// Render builds the complete prompt string, including any leading BOS marker the family's template emits (encode with
+// addBOS=false), for the system prompt and turns, ending with the generation prompt. It is the concatenation of RenderSegments;
+// for tokenization prefer RenderSegments + EncodeSegments so untrusted content cannot forge control tokens.
 func (t *Template) Render(system string, turns []Turn) string {
 	var b strings.Builder
 	for _, s := range t.RenderSegments(system, turns) {
@@ -160,12 +141,9 @@ var ErrUnknownTemplate = errors.New("chat: unrecognized chat template (raw-compl
 func Detect(meta Meta) (*Template, error) {
 	if t := meta.ChatTemplate; t != "" {
 		switch {
-		// Order matters: Gemma 4's template also mentions turns/channels, so test
-		// its distinctive markers before the generic ones.
-		// Harmony BEFORE Gemma 4: both mention channels, and harmony's "<|channel|>"
-		// does NOT contain Gemma's "<|channel>" (the trailing pipe breaks the substring),
-		// so the two are distinguishable — but only if harmony's own marker is tested,
-		// and only in this order.
+		// Order matters: the more specific fingerprint is tested before its generic sibling. Harmony before Gemma 4 (both
+		// mention channels; Harmony's "<|channel|>" does not contain Gemma's "<|channel>", so each is distinguishable only if its own marker is
+		// tested), Mellum2 before ChatML, and the three declines below before Mistral and ChatML.
 		case strings.Contains(t, "<|start|>") && strings.Contains(t, "<|message|>"):
 			return Harmony(), nil
 		case strings.Contains(t, "<|turn>") || strings.Contains(t, "<|channel>"):
@@ -192,23 +170,12 @@ func Detect(meta Meta) (*Template, error) {
 			m.nativeTools = declaresQwen35XMLTools(t, m.reason)
 			m.groupsToolResults = detectGroupedToolResults(t)
 			return m, nil
-		// M-36 (audit-2026-09-10): three fingerprints checked BEFORE their generic siblings,
-		// same "more specific first" discipline already used above (Harmony-before-Gemma4,
-		// Mellum2-before-ChatML) — each of these three otherwise matches a generic branch's
-		// substring test and would get silently misrendered rather than refused or routed
-		// correctly. All three verified 2026-09-16 against real, live checkpoint templates,
-		// not guessed:
-		//   - SmolLM3 (HuggingFaceTB/SmolLM3-3B): <|im_start|> markers (matches ChatML's own
-		//     test) but always emits its own "## Metadata" system preamble the caller never
-		//     asked for — declined rather than silently rendered as plain ChatML.
-		//   - Olmo 3 (allenai/Olmo-3-7B-Instruct): <|im_start|> markers too, but its tool
-		//     syntax is <functions>/<function_calls> XML, not ChatML/Qwen's Hermes
-		//     <tool_call> JSON dialect — a tool-calling request would render/parse the wrong
-		//     shape under generic ChatML, so this declines too rather than guessing.
-		//   - Ministral 3 (mistralai/Ministral-3-8B-Instruct-2512): contains "[INST]" (matches
-		//     Mistral()'s own test) but is [SYSTEM_PROMPT]-based, not v0.3's system-folded-
-		//     into-the-last-user-turn shape — routed to the real Ministral() renderer instead
-		//     of silently misrendering under the wrong Mistral version.
+		// Each of these three would otherwise match a generic branch below and be silently misrendered:
+		//   - SmolLM3: ChatML markers, but the template always writes its own "## Metadata" system preamble the caller never asked for;
+		//     declined, not rendered as plain ChatML.
+		//   - Olmo 3: ChatML markers, but its tools are <functions>/<function_calls> XML, not the Hermes <tool_call> JSON dialect; declined.
+		//   - Ministral 3: contains "[INST]" like Mistral(), but is [SYSTEM_PROMPT]-based; routed to Ministral() (see there).
+		// Details: docs/code-notes/chat.md#Detect.fingerprints.
 		case strings.Contains(t, "## Metadata"):
 			return nil, ErrUnknownTemplate
 		case strings.Contains(t, "<function_calls>"):
@@ -247,9 +214,8 @@ func Detect(meta Meta) (*Template, error) {
 		case has("<|start_header_id|>"):
 			return Llama3(), nil
 		case has("[SYSTEM_PROMPT]") && has("[INST]"):
-			// Ministral 3 (and the Mistral 3 VL saves) ship no chat template; their tekken vocab carries [SYSTEM_PROMPT] as
-			// a control token, which Mistral v0.3's [INST]-only vocab does not (S10: without this a Ministral 3 image request
-			// was refused, "no chat template for vision", and text fell back to raw completion).
+			// Ministral 3 (and the Mistral 3 VL saves) ship no chat template; their tekken vocab carries [SYSTEM_PROMPT] as a control token,
+			// which Mistral v0.3's [INST]-only vocab does not. Without this branch an image request on one is refused.
 			return Ministral(), nil
 		}
 	}

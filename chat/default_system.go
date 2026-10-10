@@ -11,8 +11,7 @@ var chatMLDefaultSystemRe = regexp.MustCompile(`<\|im_start\|>system(?:\\n|\n)([
 // chatMLDefaultSystem returns the system message a ChatML template inserts when the conversation has none, "" when it
 // inserts none. Qwen 2.5's templates do ("You are Qwen, created by Alibaba Cloud. You are a helpful assistant."; Qwen2.5-VL's
 // "You are a helpful assistant."); Qwen 3's do not. Taken from the checkpoint's own template, never assumed per family:
-// ChatML() is generic, and a default is only right for the model whose template declares it (owner, 2026-10-09: "every
-// template with one").
+// ChatML() is generic, and a default is only right for the model whose template declares it.
 func chatMLDefaultSystem(tmpl string) string {
 	if m := chatMLDefaultSystemRe.FindStringSubmatch(tmpl); m != nil {
 		return m[1]

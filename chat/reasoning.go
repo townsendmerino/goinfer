@@ -3,22 +3,21 @@ package chat
 // Reasoning: the two halves of "this family thinks before it answers", declared once per family so they cannot disagree.
 //
 //   - PROMPT half: what the checkpoint's own chat template writes after the assistant tag for each thinking setting
-//     (nothing, an open `<think>\n`, or a closed empty block), and — for Gemma 4 — a `<|think|>` marker in the system
+//     (nothing, an open `<think>\n`, or a closed empty block), and, for Gemma 4, a `<|think|>` marker in the system
 //     turn. The setting is a ThinkMode; WithThinking returns a Template that renders it.
 //   - OUTPUT half: how the reply delimits its reasoning (`<think>…</think>`, Gemma 4's `<|channel>thought\n…<channel|>`).
 //     ThinkSplitter separates it into reasoning and content, chunk-boundary safe, so a wire layer can put the answer in
 //     `content` and the reasoning somewhere a client can ignore.
 //
-// WHY THIS EXISTS (docs/tasks/task-qwen35-think-prompt-2026-09.md): the generic ChatML renderer wrote nothing after
-// "<|im_start|>assistant\n" for every Qwen, but Qwen3.5's own template writes a think block there, and WHICH block depends on
-// the checkpoint — the 0.8B defaults to thinking OFF (closed empty block), the 9B to ON (open `<think>\n`), Qwen3 to ON
-// with nothing written. Measured on the real templates, not assumed. The same knob name (`enable_thinking`) therefore
-// means different things per family and per size, so nothing here hard-wires "Qwen does X".
+// Why it is per checkpoint (docs/tasks/task-qwen35-think-prompt-2026-09.md): the generic ChatML renderer writes nothing after
+// "<|im_start|>assistant\n", but Qwen3.5's own template writes a think block there, and WHICH block depends on the checkpoint: the
+// 0.8B defaults to thinking OFF (closed empty block), the 9B to ON (open `<think>\n`), Qwen3 to ON with nothing written. The same knob
+// (`enable_thinking`) means different things per family and size, so nothing here hard-wires "Qwen does X".
 //
-// FAIL TOWARD TODAY'S BYTES. A template whose thinking control is not recognised gets no Reasoning spec at all: no
-// prefill change, no splitting, exactly the bytes and text it produced before this file existed. A default is never
-// guessed — it is read from the template's own generation-prompt block, and pinned per checkpoint by
-// TestThinkModes_matchHF against prompts rendered by HuggingFace from each real template.
+// FAIL TOWARD TODAY'S BYTES. A template whose thinking control is not recognised gets no Reasoning spec at all: no prefill change,
+// no splitting, exactly the bytes and text it produced before thinking was modelled. A default is never guessed: it is read from the
+// template's own generation-prompt block, and pinned per checkpoint by TestThinkModes_matchHF against prompts HuggingFace renders from
+// each real template.
 
 import (
 	"strings"
@@ -121,9 +120,8 @@ var (
 	openSegs   = []Segment{special("<think>"), plain("\n")}
 )
 
-// detectChatMLReasoning reads a ChatML-family template's generation-prompt block — the text after the LAST
-// "add_generation_prompt" — and classifies it. The three shapes below are the ones read from real checkpoints on
-// 2026-09-30; anything else returns nil (unmanaged), never a guess.
+// detectChatMLReasoning reads a ChatML-family template's generation-prompt block (the text after the LAST "add_generation_prompt")
+// and classifies it. The three shapes below are the ones read from real checkpoints; anything else returns nil (unmanaged), never a guess.
 //
 //	Qwen3 (1.7B/4B/30B-A3B): `enable_thinking is false` → closed block; otherwise nothing (model opens it itself).
 //	Qwen3.5 0.8B:            `enable_thinking is true`  → open `<think>\n`; otherwise the closed block.
@@ -174,11 +172,11 @@ func detectGemma4Reasoning(tmpl string) *Reasoning {
 	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true, hist: detectGemma4History(tmpl)}
 }
 
-// detectOldGemma4Reasoning recognises the earlier Gemma 4 template (read from the E2B GGUF, 2026-10-01): thinking is
-// `enable_thinking is defined and enable_thinking` → a `<|think|>` line in the system turn, the generation prompt is
-// `<|turn>model\n` in every mode (no closed scaffold anywhere in the template), and the only channel it writes is the
-// reasoning of a tool-calling turn in the loop in progress. Its history rule is not the canonical one, so hist stays none and
-// history is rendered generically (reasoning of earlier turns dropped, which is what the template does for turns without calls).
+// detectOldGemma4Reasoning recognises the earlier Gemma 4 template (the E2B GGUF's): thinking is `enable_thinking is defined and
+// enable_thinking` → a `<|think|>` line in the system turn, the generation prompt is `<|turn>model\n` in every mode (no closed
+// scaffold anywhere), and the only channel it writes is the reasoning of a tool-calling turn in the loop in progress. Its history
+// rule is not the canonical one, so hist stays none and history is rendered generically (reasoning of earlier turns dropped, which is
+// what the template does for turns without calls).
 func detectOldGemma4Reasoning(tmpl string) *Reasoning {
 	g := strings.LastIndex(tmpl, "add_generation_prompt")
 	if g < 0 || !strings.Contains(tmpl, "enable_thinking is defined and enable_thinking") || strings.Contains(tmpl, "default(false)") ||

@@ -29,8 +29,7 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, o
 		b.WriteString("<|think|>\n")
 	}
 	// No separator between the system text and the first declaration: upstream's template renders
-	// "<|turn>system\n{system}<|tool>declaration:…" (measured against HF with a system prompt, 2026-09-30 —
-	// the golden's only cases had none, so the "\n" that used to be written here was never compared).
+	// "<|turn>system\n{system}<|tool>declaration:…".
 	if s := strings.TrimSpace(system); s != "" {
 		b.WriteString(s)
 	}
@@ -39,14 +38,9 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, o
 			",parameters:" + gemmaSchema(tl.Parameters) + "}<tool|>")
 	}
 	b.WriteString("<turn|>\n")
-	// M-20: THE TOOL RESPONSES SIT INSIDE THE MODEL TURN THAT MADE THE CALL. goinfer used to
-	// close the turn with "<turn|>\n" after the calls and then re-open a
-	// "<|turn>model\n<|channel>thought\n<channel|>" scaffold after the response; the upstream
-	// template does neither. Both are visible in testdata/chat_goldens/tools_gemma4.json's
-	// `call_result` case, which was committed and never read by any test.
-	//
-	// So the turn is closed lazily: an assistant turn whose calls are answered by tool turns
-	// stays open until something that is not a tool response follows it.
+	// THE TOOL RESPONSES SIT INSIDE THE MODEL TURN THAT MADE THE CALL (testdata/chat_goldens/tools_gemma4.json, `call_result`): the turn
+	// is not closed after the calls and no scaffold is re-opened after the response. So it is closed lazily: an assistant turn whose
+	// calls are answered by tool turns stays open until something that is not a tool response follows it.
 	openModelTurn := false
 	closeModelTurn := func() {
 		if openModelTurn {
@@ -243,13 +237,9 @@ func gemmaArgs(raw json.RawMessage) string {
 	return strings.Join(parts, ",")
 }
 
-// gemmaValue renders one argument value in Gemma's micro-language.
-//
-// M-20: the default arm used to json.Marshal, so an object-typed parameter came out as
-// {"limit":5} — JSON, not Gemma syntax — inside a body the model reads as Gemma syntax. Upstream
-// renders a mapping as {k:v,…} with the same quoting as the top level, which is what the
-// declaration half of this file already does for schemas (gemmaSchema). Any tool with an
-// object-typed or array-typed parameter hit this.
+// gemmaValue renders one argument value in Gemma's micro-language. A mapping is {k:v,…} with the same quoting as the top level
+// (as gemmaSchema does), not JSON: JSON inside a body the model reads as Gemma syntax is wrong for any object- or array-typed
+// parameter.
 func gemmaValue(v any) string {
 	switch x := v.(type) {
 	case string:
@@ -300,12 +290,9 @@ func gemmaBodyToJSON(body string) json.RawMessage {
 	return b
 }
 
-// gemmaParseValue is gemmaValue's inverse for one rendered value: <|"|>-quoted → string,
-// true/false → bool, {…} → object, […] → array, else a number, else the bare text.
-//
-// M-20: nested values had no case at all, so an object argument came back as two broken string
-// keys. Recursive here for the same reason gemmaValue is recursive — a renderer and a parser
-// that disagree about nesting produce arguments the tool silently mis-receives.
+// gemmaParseValue is gemmaValue's inverse for one rendered value: <|"|>-quoted → string, true/false → bool, {…} → object,
+// […] → array, else a number, else the bare text. Recursive for the same reason gemmaValue is: a renderer and a parser that
+// disagree about nesting produce arguments the tool silently mis-receives.
 func gemmaParseValue(val string) any {
 	switch {
 	case strings.HasPrefix(val, gq):
@@ -342,11 +329,8 @@ func gemmaParseValue(val string) any {
 	return val
 }
 
-// splitGemmaPairs splits on commas that are neither inside a <|"|>…<|"|> string nor inside a
-// nested {…} / […].
-//
-// M-20: it used to track quoting only, so opts:{limit:5,sort:<|"|>asc<|"|>} split at the INNER
-// comma and parsed to {"opts":"{limit:5","sort":"asc}"} — two keys, both wrong, no error.
+// splitGemmaPairs splits on commas that are neither inside a <|"|>…<|"|> string nor inside a nested {…} / […]. Tracking quoting
+// alone would split opts:{limit:5,sort:<|"|>asc<|"|>} at the INNER comma into two wrong keys with no error.
 func splitGemmaPairs(body string) []string {
 	var pairs []string
 	inStr := false
@@ -389,18 +373,18 @@ func toStr(v any) string {
 	return string(b)
 }
 
-// renderGemma4NativeTools renders system + turns + tool declarations the way Gemma 4's CANONICAL chat template does — a port of its
-// message loop, not a variation on renderGemma4Tools — and is what `-tool-format template` selects for such a checkpoint. The variable
-// names are the template's (prev_message_type, prev_non_tool_role, continues_into_next) so the two can be read side by side. Three
-// things differ from goinfer's own rendering, all of them the template's:
+// renderGemma4NativeTools renders system + turns + tool declarations the way Gemma 4's CANONICAL chat template does: a port of its
+// message loop, not a variation on renderGemma4Tools. It is what `-tool-format template` selects, and what `auto` selects for such a
+// template (Template.nativeByDefault; docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md). The variable names are the
+// template's (prev_message_type, prev_non_tool_role, continues_into_next) so the two can be read side by side. Three things differ
+// from goinfer's own rendering, all of them the template's:
 //
 //   - an assistant message's TEXT is written after its calls and their results, not before the calls;
 //   - the model turn is CLOSED (`<turn|>`) right after that text, when the message has results and text;
 //   - the generation prompt writes no turn header after a tool result, whether or not the turn was closed.
 //
-// The last two make a prompt that ends `…<tool_response|>text<turn|>\n` with nothing after it when an agent client replays a turn that
-// had a preamble. Whether that is better or worse for the model than goinfer's own order is a question for a measurement, not for this
-// file: the format is opt-in.
+// The last two make a prompt that ends `…<tool_response|>text<turn|>\n` with nothing after it when an agent client replays a turn
+// that had a preamble.
 func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bool) string {
 	var b strings.Builder
 	b.WriteString("<bos>")
