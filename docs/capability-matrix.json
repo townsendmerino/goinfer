@@ -998,7 +998,7 @@
     ],
     "display_name": "Voxtral",
     "description": "Mistral Voxtral Mini 3B: a Llama decoder (tensors under language_model.*, head_dim 128) fed by a Whisper-style audio tower, four-frame stacking and a two-linear projector",
-    "summary": "Mistral's Voxtral Mini 3B, speech understanding and transcription. Not yet served, and checked against transformers on a tiny checkpoint only: the real Voxtral Mini is not yet verified.",
+    "summary": "Mistral's Voxtral Mini 3B, speech understanding and transcription. Reads audio in the library (verified on Voxtral Mini 3B: the LibriSpeech clip transcribed token for token against transformers); not yet served.",
     "tasks": [
       "audio"
     ],
@@ -1013,7 +1013,7 @@
     "loaders": "safetensors",
     "modality": "text (+ audio encoder)",
     "gpu_residency_eligible": true,
-    "parity": "experimental: tiny-oracle 100.0%/1.00000"
+    "parity": "full-oracle 100.0%/1.00000"
   },
   {
     "name": "gpt-oss",

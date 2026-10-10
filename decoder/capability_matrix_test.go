@@ -637,7 +637,7 @@ var siteDocs = map[string]siteDoc{
 	"qwen3_moe":        {"Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.", []string{"chat", "code"}},
 	"qwen3_vl":         {"Qwen3-VL. Reads images (verified on Qwen3-VL-2B).", []string{"chat", "vision"}},
 	"qwen3_asr":        {"Qwen3-ASR, speech to text in 30 languages (0.6B and 1.7B). Reads audio (verified on Qwen3-ASR-0.6B).", []string{"audio"}},
-	"voxtral":          {"Mistral's Voxtral Mini 3B, speech understanding and transcription. Not yet served, and checked against transformers on a tiny checkpoint only: the real Voxtral Mini is not yet verified.", []string{"audio"}},
+	"voxtral":          {"Mistral's Voxtral Mini 3B, speech understanding and transcription. Reads audio in the library (verified on Voxtral Mini 3B: the LibriSpeech clip transcribed token for token against transformers); not yet served.", []string{"audio"}},
 	"smollm3":          {"Hugging Face's SmolLM3, 3B.", []string{"chat"}},
 	"spark2_5":         {"XHToken's Spark-X2.5, 1.7B and 4B.", []string{"chat"}},
 	"gpt-oss":          {"OpenAI's open-weight gpt-oss, 20B and 120B.", []string{"chat"}},

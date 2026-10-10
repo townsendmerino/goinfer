@@ -144,7 +144,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen3-VL | `qwen3_vl` | dense | none | yes | m-RoPE | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/1.00000 |
 | SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Spark-X2.5 | `spark2_5` | dense | interleave | no | partial | RMSNorm, pre-norm | GELU (gated) | no | safetensors | text | no | full-oracle 100.0%/1.00000 |
-| Voxtral | `voxtral` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ audio encoder) | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Voxtral | `voxtral` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ audio encoder) | yes | full-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |
 
 ## state-space hybrid (Mamba-2)

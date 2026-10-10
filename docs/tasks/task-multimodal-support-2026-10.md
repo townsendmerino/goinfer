@@ -4671,6 +4671,22 @@ Desk read, 2026-10-08 (transformers 5.15.0 `models/whisper`, `models/voxtral`; H
 - **Prediction scored (written before):** G-S14e2 at cosine 1.00000000 with every planted defect far under 0.999 (held for the registered ones; the tanh-GELU defect I added is the exception); the likeliest stumble "the loader's nested prefixes and an explicit `head_dim`" (the prefixes were fine; the head's prefix was the bug).
 - **Still open:** G-S14e3 (the real checkpoint by night; the 9.4 GB is on disk at `~/models/voxtral-mini-3b-2507`), served `input_audio` for Voxtral, a GPU path. The aikit commit `e5d586e` is local and goinfer's push waits on an aikit tag, as for the earlier S14 pieces.
 
+##### G-S14e3 read 2026-10-09, the graded case: PASS on the first run, every bar met by a wide margin (`decoder/voxtral_real_test.go` under `-tags realckpt`, `scripts/pin_voxtral_real.py`; reference `~/goinfer-logs/s14e/ref-smoke/`, gate log `~/goinfer-logs/s14e/gate-libri-smoke.log`; pinned binary `~/goinfer-bench/s14e/real/decoder-real.test` at `8494de25`; 115 s)
+
+The real Voxtral Mini 3B (`mistralai/Voxtral-Mini-3B-2507`, shards sha256 `1facdc4c...` and `0a103ba7...`), goinfer float32 on the CPU, against transformers 5.15.0 / torch 2.12.0+cpu float32:
+- **The reference is the real model.** It loaded with **zero missing and zero unexpected keys** and transcribed the LibriSpeech clip as "Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel." (23 tokens, 62 s), asserted in the script before anything was written.
+- **The prompt:** the Go prompt (Tekken tokenizer on the real `tekken.json` and `multimodal.VoxtralPrompt`) equals the processor's 383 ids exactly (instrument).
+- **The front end:** the Go features (one pass over the padded signal) against the processor's: worst cosine 1.000000000, max |diff| 1.7e-05.
+- **The tower, 1500 rows:** worst row cosine **0.999999849** (row 309); first and last rows 1.000000000. **The projector, 375 rows:** worst **0.999999930** (row 77); first and last 1.000000000. Bar 0.9999 on each.
+- **The prompt logits:** cosine **1.000000000**, argmax 27118 equal (bar 0.9999 and argmax equal).
+- **The transcription: byte-equal.** 23 tokens against 23, no difference at any position, the decoded text identical; the stop token is `</s>` (2).
+- **Teacher-forced:** the reference's own tokens through goinfer, 23 positions, worst logit cosine **1.000000000**, **0** positions where goinfer's argmax is not the reference's token (bar 0.9999).
+- **Timings (exploratory, one run on an otherwise idle CPU):** tower and projector 55 s, prompt prefill 11 s, the whole gate 115 s.
+- **Prediction scored (written before):** byte-equal with the encoder at cosine >= 0.99999: held, and the one place I expected a last-digit difference (`rope_theta` 1e8 in float32) did not show: the logit cosines read 1.000000000. The e1/e2 stumbles (the untied head's prefix, which the tiny gate caught and fixed before this run) are the reason this one passed first time.
+- **The manifest row** moves from `experimental` / `tiny-golden` to **`validated` / `full-forward-oracle`** at `8494de25` (a real-checkpoint T3 method; the capability matrix, the hardware matrix and the pull copy are regenerated). **Not claimed:** Voxtral is not served (no `input_audio` route, no Tekken wiring in `serve`), and no GPU path has been run; the matrix entry says so.
+- **Settles G-S14d3 as amended:** the Voxtral tower IS the large-v3 shape (1280, 32 layers, 128 mels) and it matches transformers at worst row cosine 0.999999849 in situ, so the 3 GB `whisper-large-v3` download is not needed.
+- **Still to read:** the RECORD-ONLY two-window case (the clip six times, 36 s, 750 audio tokens: chunking on real weights) is in tonight's queue as `voxtral-real` (est 45 min, about 20 expected); its readings are logged and never graded. The local aikit commits (`e5d586e` and the tower accessor) wait on an aikit tag before goinfer can be pushed.
+
 #### S6 on nobara, registered 2026-10-08 before any run
 
 - **Gemma 4 E4B on CUDA.** The checkpoint is `~/models/gemma-4-E4B-it` (`google/gemma-4-E4B-it`, 15.99 GB `model.safetensors`, downloaded today onto the NVMe): 42 layers, hidden 2560, 18 KV-shared layers, PLE width 256, vision and audio configs. It goes through S1's E-model gates, which are the Mac's rules unchanged.
