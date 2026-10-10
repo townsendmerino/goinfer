@@ -143,11 +143,16 @@ type loadedModel struct {
 	gemma4AudioDir string
 	// Qwen3-ASR: the checkpoint directory (its audio encoder is in the same safetensors as the decoder), the
 	// <|audio_pad|> id, and the encoder, loaded on the first clip.
-	qwenASRDir      string
-	qwenASRTok      int
-	qwenASR         *audio.QwenASREncoder
-	qwenASRErr      error
-	qwenASROnce     sync.Once
+	qwenASRDir  string
+	qwenASRTok  int
+	qwenASR     *audio.QwenASREncoder
+	qwenASRErr  error
+	qwenASROnce sync.Once
+	// Voxtral Mini: the checkpoint directory (the audio tower and projector are in its own safetensors) and the encoder, loaded on the first clip.
+	voxtralDir      string
+	voxtral         *audio.VoxtralAudio
+	voxtralErr      error
+	voxtralOnce     sync.Once
 	gemma4AudioTok  int
 	gemma4AudioOnce sync.Once
 	gemma4Audio     *audio.Gemma4AudioEncoder
@@ -279,8 +284,10 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 		cpuBatched: cpuBatched}, cfg)
 }
 
-// audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, or a Qwen3-ASR checkpoint).
-func (lm *loadedModel) audioCapable() bool { return lm.gemma4AudioDir != "" || lm.qwenASRDir != "" }
+// audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, a Qwen3-ASR checkpoint, or Voxtral Mini).
+func (lm *loadedModel) audioCapable() bool {
+	return lm.gemma4AudioDir != "" || lm.qwenASRDir != "" || lm.voxtralDir != ""
+}
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
@@ -365,7 +372,8 @@ type server struct {
 	// drains in-flight requests through liveness before freeing the model.
 	regMu  sync.RWMutex
 	models map[string]*loadedModel
-	cfg    config // backend/quant/lora/kv/session-dir/allow-admin for admin loads
+	speech map[string]*speechModel // Whisper models (speech.go), by served name; guarded by regMu
+	cfg    config                  // backend/quant/lora/kv/session-dir/allow-admin for admin loads
 
 	// pulls serialises -web model downloads to one at a time (webui.go).
 	pulls pullState
@@ -531,8 +539,11 @@ func (s *server) pathFields(name string) map[string]any {
 // servedNames lists the loaded generative and embedding model ids, sorted.
 func (s *server) servedNames() []string {
 	s.regMu.RLock()
-	names := make([]string, 0, len(s.models)+1)
+	names := make([]string, 0, len(s.models)+len(s.speech)+1)
 	for n := range s.models {
+		names = append(names, n)
+	}
+	for n := range s.speech {
 		names = append(names, n)
 	}
 	s.regMu.RUnlock()
@@ -707,6 +718,9 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 		// another language may reject them: GET /health carries the same fields on a payload with no compatibility
 		// contract, for operators who need a surface that cannot break a client.
 		maps.Copy(e, s.pathFields(name))
+		if s.speechByName(name) != nil {
+			e["capabilities"] = []string{"audio.transcriptions"} // a speech model: no decoder paths, one route
+		}
 		if d := s.decisionsField(name); d != nil {
 			e["decisions"] = d // vendor extension, same convention: POST /v1/systemone's support for this entry
 		}

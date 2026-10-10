@@ -15,7 +15,7 @@ import argparse, hashlib, json, os, re, time, wave
 import numpy as np, torch, transformers
 from transformers import AutoProcessor, VoxtralForConditionalGeneration
 
-ap = argparse.ArgumentParser(); ap.add_argument("--model", required=True); ap.add_argument("--out", required=True); ap.add_argument("--smoke", action="store_true"); a = ap.parse_args()
+ap = argparse.ArgumentParser(); ap.add_argument("--model", required=True); ap.add_argument("--out", required=True); ap.add_argument("--smoke", action="store_true"); ap.add_argument("--language", default="en", help="the request language; 'none' sends language=None (G-S14e4)"); a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 CORPUS = "mister quilter is the apostle of the middle classes and we are glad to welcome his gospel"
 
@@ -48,7 +48,7 @@ f32 = lambda t: t.detach().float().numpy().astype("<f4").tofile
 for name, x, max_new in (("libri", libri, 96), ("libri6x", libri6x, 220)):
     if a.smoke and name != "libri":
         continue
-    inputs = proc.apply_transcription_request(language="en", audio=x, model_id=a.model, sampling_rate=16000, format="wav", return_tensors="pt")
+    inputs = proc.apply_transcription_request(language=None if a.language == "none" else a.language, audio=x, model_id=a.model, sampling_rate=16000, format="wav", return_tensors="pt")
     ids = inputs["input_ids"]; feats = inputs["input_features"]
     n_prompt = ids.shape[1]
     t1 = time.time()

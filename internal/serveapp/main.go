@@ -688,6 +688,12 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	mux.HandleFunc("POST /v1/completions", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions))))))
 	mux.HandleFunc("POST /v1/responses", rl(auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses))))))
 	mux.HandleFunc("POST /v1/messages", rl(auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages))))))
+	// Speech to text for a Whisper --model (speech.go). The body is audio, so it has its own cap: -max-body-bytes, else 256 MiB (over two hours of 16 kHz mono 16-bit).
+	audioCap := cfg.maxBodyBytes
+	if audioCap <= 0 {
+		audioCap = 256 << 20
+	}
+	mux.HandleFunc("POST /v1/audio/transcriptions", rl(auth(srv.haltGate(inf(maxBytes(audioCap, srv.handleTranscriptions))))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
 	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
 	// work against goinfer through their base-URL override (docs/tasks/task-constrained-confidence.md).
@@ -937,6 +943,7 @@ func newServer(cfg config) (*server, error) {
 	}
 	s := &server{
 		models:    map[string]*loadedModel{},
+		speech:    map[string]*speechModel{},
 		liveness:  map[*decoder.Model]*modelLiveness{},
 		draining:  map[string]struct{}{},
 		cfg:       cfg,
@@ -949,6 +956,17 @@ func newServer(cfg config) (*server, error) {
 		batches: newBatchStore(256),
 	}
 	for _, spec := range cfg.models {
+		if isWhisperDir(spec.path) { // an encoder-decoder speech model: its own registry and route (speech.go)
+			sm, err := loadSpeech(spec, cfg)
+			if err != nil {
+				return nil, err
+			}
+			if _, dup := s.models[sm.name]; dup || s.speech[sm.name] != nil {
+				return nil, fmt.Errorf("duplicate served model name %q (use --model name=path to disambiguate)", sm.name)
+			}
+			s.speech[sm.name] = sm
+			continue
+		}
 		// An `hf:`/`demo:` spec is fetched (or found in the cache) inside loadDecoder (modelload.Resolve), before anything else,
 		// so the served name derives from the real filename. A plain path is returned untouched, so no existing --model changes
 		// meaning: that is what lets a reference form be added to a Hard-tier flag.
@@ -1074,6 +1092,8 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if visionModelType(cand) == "qwen3_asr" {
 					dir = cand
+				} else if visionModelType(cand) == "voxtral" { // Voxtral Mini's audio tower, in the model's own directory
+					dir = cand
 				} else if visionModelType(cand) == "mistral3" { // Ministral 3's Pixtral tower
 					dir = cand
 				} else if visionModelType(cand) == "lfm2_vl" { // LFM2-VL's SigLIP2 NaFlex tower (S10)
@@ -1111,6 +1131,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if mt == "qwen3_asr" { // speech to text; the audio encoder is in the model's own directory
 		return s.loadQwenASR(dir)
+	}
+	if mt == "voxtral" { // speech to text; the audio tower and projector are in the model's own directory
+		return s.loadVoxtral(dir)
 	}
 	if mt == "glm_ocr" {
 		return s.loadGlmOcrVisionTower(dir, int8Tower, cfg.visionMaxPixels, cfg.towerBackend(), cfg.requireBE)
@@ -1342,6 +1365,19 @@ func (s *server) loadQwenASR(dir string) error {
 		}
 		lm.qwenASRDir, lm.qwenASRTok = dir, id
 		fmt.Fprintf(os.Stderr, "Qwen3-ASR audio input on for %q (audio-pad id %d; the encoder loads on the first clip, CPU float32) from %s\n", lm.name, id, dir)
+	}
+	return nil
+}
+
+// loadVoxtral turns on audio input for a Voxtral Mini model, as loadQwenASR does for Qwen3-ASR: the encoder lives beside the decoder in the same safetensors and loads on the first clip, so
+// there is only the [AUDIO] placeholder to check for and the directory to remember.
+func (s *server) loadVoxtral(dir string) error {
+	for _, lm := range s.models {
+		if _, ok := lm.tk.TokenID("[AUDIO]"); !ok {
+			return fmt.Errorf("audio: %s is a Voxtral checkpoint but its tokenizer has no [AUDIO] token (a Tekken tokenizer is needed: tekken.json beside the weights)", dir)
+		}
+		lm.voxtralDir = dir
+		fmt.Fprintf(os.Stderr, "Voxtral audio input on for %q (the encoder loads on the first clip, CPU float32; a clip over %d s is refused) from %s\n", lm.name, voxtralMaxSeconds, dir)
 	}
 	return nil
 }

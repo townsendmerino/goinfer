@@ -771,6 +771,22 @@ the replies are identical, line for line.
   the estimate appears after ten lines and is a mean — lines differ in cost) and a `… still running` line each minute inside a
   slow one. The exit status is 0 when every line produced a response, 1 when some failed, 130 when interrupted.
 
+**Speech to text.** Point `--model` at an OpenAI Whisper checkpoint in Hugging Face's layout (`config.json` with `model_type: whisper`, `tokenizer.json`, `generation_config.json`, the safetensors: `openai/whisper-small` and its siblings; a 128-mel
+checkpoint such as large-v3 loads the same way, but only whisper-small is checked) and the server answers OpenAI's `POST /v1/audio/transcriptions`. It is a pure-Go Whisper in float32 on the CPU, held to transformers' own generation token for
+token (docs/tasks/task-multimodal-support-2026-10.md, G-S14f to G-S14i). A Whisper model is served beside decoders, listed in `GET /v1/models` with `"capabilities": ["audio.transcriptions"]`, and has no chat route.
+
+```bash
+go run ./cmd/serve --model ~/models/whisper-small
+curl http://127.0.0.1:8080/v1/audio/transcriptions -F file=@clip.wav -F response_format=verbose_json
+```
+
+`file` is a 16-bit PCM WAV at any sample rate and channel count (other formats are a 400; mp3 and m4a are not decoded here), at most 600 s. Longer than 30 s is transcribed window by window, each window from the end of the last
+segment, as Whisper does. Fields: `model` (optional when one speech model is served), `language` (a code such as `en` or the English name; absent means detected), `response_format` (`json`, `text`, `srt`, `vtt`, `verbose_json`),
+`temperature`. With `temperature` absent or 0 the request runs OpenAI's decode policy: the temperature ladder 0 to 1.0, a window falling back when its compression ratio is over 2.4 or its average log-probability under -1.0, a silent
+window skipped, each window conditioned on the earlier text; a `temperature` above 0 is one attempt at that temperature. `verbose_json` carries each segment's `seek`, `start`, `end`, `text`, `tokens`, `temperature`,
+`avg_logprob`, `compression_ratio` and `no_speech_prob`. Not supported, and refused by name: `prompt`, `stream`, word-level `timestamp_granularities[]`. Sampling above temperature 0 draws from a seeded stream of this server's, not transformers';
+greedy decoding is what the checks compare. The request body is capped by `--max-body-bytes`, else 256 MiB; one transcription runs at a time per model.
+
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
 `--embed-model` are each optional and can run together — generation and
