@@ -12,19 +12,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoEStreamingDecodeProfile is the "measure before building" step for docs/completed/task-moe-streaming.md's
-// two open CUDA items (gocudrv async-H2D overlap of C′ miss DMAs; P20 redirected toward the expert-DMA
-// cost). Both turned out to be already-closed elsewhere this session: item 1 by
-// docs/completed/aikit-subrange-async-upload.md (2026-08-28 — declined as scoped, superseded by the
-// already-shipped gpu.UploadBatch, which IS what cuda/resident.go's C′ path uses today, +9.3% tok/s
-// measured on the 35B), item 2 by this session's own P20 expert-major build
-// (docs/measurements/p20-expert-major-m26-2026-09-21.md, 2.26-2.66x on the real M26 PREFILL). Neither
-// touches DECODE (M=1, no rows to bucket by expert), so this gets a FRESH, current-code reading of the
-// decode-side C′ DMA share specifically, using GOINFER_MOE_CACHE_PROF's existing stall/host/dma split,
-// to check whether the "genuine H2D/compute overlap" condition that decision doc's own §6 "Revisit if"
-// names has now fired. Synthetic embeddings (EmbedResidentForTest), not a real prompt — a DMA-timing
-// profile does not need real tokens, only real routing (the model's own trained router still decides
-// which experts, from an in-vocab embedding).
+// TestMoEStreamingDecodeProfile reads the decode-side C′ DMA share (M=1: no rows to bucket by
+// expert) using GOINFER_MOE_CACHE_PROF's existing stall/host/dma split, to check whether the
+// "genuine H2D/compute overlap" condition of docs/completed/task-moe-streaming.md §6 "Revisit if"
+// has fired. Synthetic embeddings (EmbedResidentForTest), not a real prompt — a DMA-timing profile
+// does not need real tokens, only real routing (the model's own trained router still decides which
+// experts, from an in-vocab embedding).
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestMoEStreamingDecodeProfile -v -timeout 20m
 func TestMoEStreamingDecodeProfile(t *testing.T) {
@@ -100,8 +93,8 @@ func TestMoEStreamingDecodeProfile(t *testing.T) {
 		t.Logf("dma-of-total-token time: %.1f%%", 100*float64(dma)/float64(genDur))
 	}
 	// Per-class split of the same token (sync-bounded, so every class carries its launch latency
-	// and the sum is slightly over the unprofiled token). Then the overlap ceilings, PRE-REGISTERED
-	// before this ran (docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md):
+	// and the sum is slightly over the unprofiled token). Then the overlap ceilings
+	// (docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md):
 	//   C1 = min(dense, dma)          — only the dense branch runs under the miss DMA
 	//   C2 = min(dense+segC, dma)     — plus the hit-expert prefix of segC, rank order kept
 	//   S  = clear + stall            — host syncs a stream-ordered design removes outright

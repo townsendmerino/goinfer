@@ -8,11 +8,9 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// TestCUDA_graphLiveNoSyncOrdering is the VALID inter-operation ordering test — no sync between the
-// interleaved ops, which is the regime the full forward runs in and the one my earlier volume tests
-// wrongly serialized away (a trailing per-iteration Sync hides an inter-op race exactly like
-// CUDA_LAUNCH_BLOCKING does; the per-layer-drain probe made the forward divergence vanish, proving the
-// race is inter-operation and sync-maskable).
+// TestCUDA_graphLiveNoSyncOrdering is the VALID inter-operation ordering test: no sync between the
+// interleaved ops, which is the regime the full forward runs in. A trailing per-iteration Sync hides
+// an inter-op race exactly like CUDA_LAUNCH_BLOCKING does (docs/code-notes/cuda.md#TestCUDA_graphLiveNoSyncOrdering).
 //
 // It builds a NON-COMMUTATIVE chain on r.x, alternating a LIVE launch and a GRAPH REPLAY with NO sync
 // between them, and one sync only at the very end:

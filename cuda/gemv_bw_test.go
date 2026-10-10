@@ -16,14 +16,11 @@ import (
 //go:embed testdata/gemv_w8a8.ptx
 var gemvPTX []byte
 
-// TestGemvW8A8Bandwidth is the spike's decisive-proxy experiment: decode is
-// weight-streaming-bound, and WebGPU sits ~37% below the 2070's bandwidth ceiling
-// because of its dispatch/glue wall. This measures what a *hand CUDA quant GEMV*
-// achieves in isolation — the ceiling a megakernel could approach once the glue is
-// gone. Correctness: exact int accumulation vs a CPU reference (the packing must
-// match); Bandwidth: weight bytes / CUDA-event kernel time, as % of the ~448 GB/s
-// peak. A high % here (≫ WebGPU's 37%) is the "the kernel is competent, the lane is
-// real" signal; a low % is an early NO-GO. Run: CGO_ENABLED=0 go test -tags cuda -run Bandwidth -v
+// TestGemvW8A8Bandwidth measures what a *hand CUDA quant GEMV* achieves in isolation: decode is
+// weight-streaming-bound, so this is the bandwidth ceiling a fused decode could approach once the
+// glue is gone. Correctness: exact int accumulation vs a CPU reference (the packing must match);
+// Bandwidth: weight bytes / CUDA-event kernel time, as % of the ~448 GB/s peak.
+// Run: CGO_ENABLED=0 go test -tags cuda -run Bandwidth -v
 func TestGemvW8A8Bandwidth(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)

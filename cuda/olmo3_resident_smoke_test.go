@@ -21,12 +21,11 @@ import (
 // ALREADY-SHIPPED, unmodified kernels (quant_vec, qk_norm) with different Go-side launch
 // arguments — no new .cu code, no PTX regeneration, unlike G5 row 2 (Ministral 3).
 //
-// Olmo Hybrid additionally exercises a REAL bug found while bringing this up: both backends
-// assumed every qwen35Params-carrying family's full-attention layer used qwen3.5's own
-// double-width q-gate scheme (Qwen35ResidentParams hardcoded attnGate=true) — Olmo Hybrid's is
-// plain (olmo3's own scheme), fixed via a new Architecture.qwen35.AttnGate field. This smoke test
-// going from "BuildResident declined: qwen35 softmax layer has empty q_norm/k_norm" to passing is
-// the regression gate for that fix.
+// Olmo Hybrid additionally gates a bug fix: both backends assumed every qwen35Params-carrying
+// family's full-attention layer used qwen3.5's own double-width q-gate scheme
+// (Qwen35ResidentParams hardcoded attnGate=true), while Olmo Hybrid's is plain (olmo3's own scheme);
+// Architecture.qwen35.AttnGate now carries it. This smoke test is the regression gate for that fix:
+// without it BuildResident declines ("qwen35 softmax layer has empty q_norm/k_norm").
 func TestOlmo3ResidentSmokeCUDA(t *testing.T) {
 	testOlmoFamilyResidentSmokeCUDA(t, "../testdata/olmo3-tiny")
 }

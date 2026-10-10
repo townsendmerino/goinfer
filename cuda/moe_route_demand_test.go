@@ -13,35 +13,11 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// A9 reopened here. The reservation is a confirmed COST and was not yet a confirmed CAUSE, because
-// the arithmetic does not close:
-//
-//	free immediately before the failing launch   198,836,224 B
-//	measured moe_route reservation               138,412,032 B
-//	spare                                         60,424,192 B
-//
-// The reservation fits, and the launch failed anyway. Worse, free after the failure was 265,945,088
-// — 67,108,864 B ABOVE the pre-attempt level. An unwind returns to the pre-attempt level; it cannot
-// exceed it. So something that existed BEFORE the attempt was released, which reads as the driver
-// trimming a cache to satisfy a request it still could not satisfy. If that is right the true demand
-// is above 265,945,088 and the 132 MiB reservation is one component of it.
-//
-// This measures the demand directly instead of inferring it: balloon the device to leave a chosen
-// number of bytes free, launch moe_route, and binary-search the pass/fail boundary.
-//
-// PRE-REGISTERED readings:
-//
-//	threshold ~= 138,412,032           the reservation is the whole demand, and the 34-slot failure
-//	                                   needs a different explanation entirely
-//	198,836,224 < threshold <= 265,945,088   consistent with the observed failure; the reservation is
-//	                                   one component and the remainder needs naming
-//	threshold > 265,945,088            demand exceeds even the post-trim free, and the trim behaviour
-//	                                   is part of the mechanism
-//
-// If the result VARIES run to run at the same balloon size, that is contiguity rather than capacity
-// and it is a different finding. Contiguity was refuted earlier in this campaign against a different
-// observation (a fresh heap had worse contiguity than the slot-loaded one at equal free); that
-// refutation was about slot buffers and does not carry here.
+// These tests measure moe_route's first-launch demand directly instead of inferring it from the
+// size of its reservation: balloon the device to leave a chosen number of bytes free, launch
+// moe_route in a fresh-context child, and binary-search the pass/fail boundary. A result that
+// varies run to run at the same balloon size is contiguity rather than capacity, a different
+// finding; the balloon-shape control exists to tell the two apart.
 
 const a9ChildEnv = "GOINFER_A9_LEAVE_FREE"
 
@@ -80,9 +56,8 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 		return true
 	}
 	// Everything the launch needs is allocated BEFORE ballooning: the module, the pipeline, and the
-	// four small buffers. That is both the right shape (in production they exist long before the
-	// launch) and the fix for a real bug in the first version, which ballooned first and then could
-	// not allocate 32 bytes for an argument buffer.
+	// four small buffers. That is the production shape (they exist long before the launch), and
+	// ballooning first leaves nothing to allocate an argument buffer from.
 	mod, err := dev.CompileLibrary(moePTXOrOverride())
 	if err != nil {
 		t.Fatalf("CompileLibrary(moePTX): %v", err)
@@ -122,11 +97,10 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 		rInv, rKc, rVc = gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64), gpu.NewBufferLenOf[float32](dev, 64)
 	}
 
-	// Back off on failure rather than stopping. A failed request does not mean the heap is full —
-	// it means THAT SIZE does not fit, which is a statement about contiguity, not capacity. Halving
-	// until the quantum is reached is what actually drains the pool; the first version gave up on
-	// the first refusal and left 307 MiB unballooned against a 64 MiB target. The bracket check in
-	// the parent caught that, which is the only reason it is not silently in the numbers below.
+	// Back off on failure rather than stopping. A failed request means THAT SIZE does not fit, which
+	// is a statement about contiguity, not capacity; halving until the quantum is reached is what
+	// drains the pool, and stopping at the first refusal leaves the balloon short of its target (the
+	// parent's bracket check catches that).
 	// Balloon SHAPE is a variable, not a detail. A deterministic balloon produces a deterministic
 	// heap layout, so identical repeats do NOT by themselves exclude contiguity — they only exclude
 	// run-to-run noise. Filling with many small blocks instead of a few large ones leaves the same
@@ -248,13 +222,11 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	if os.Getenv(a9ChildEnv) != "" {
 		t.Skip("running as the child worker")
 	}
-	// MARKED AS A DRAINER, and found by the gate rather than by the derivation — see the note in
-	// cuda/drain_marker_test.go. The bisection deliberately balloons the device to leave as little as
-	// 64 MiB (below the 144 MiB floor) and records the resulting refusal as data: `bracket low: leave
-	// 67108864 -> ok=false` IS a refusal, driven on purpose. It balloons through child processes, so
-	// each child's memory is returned when it exits, but a child that fails or hangs leaves the
-	// device at the floor for whatever runs next in this process — which is exactly what the log
-	// showed: the following test opened with `free at start 151191552 B`.
+	// MARKED AS A DRAINER (see cuda/drain_marker_test.go). The bisection deliberately balloons the
+	// device to as little as 64 MiB (below moe_route's launch demand) and records the resulting
+	// refusal as data: `bracket low: leave 67108864 -> ok=false` IS a refusal, driven on purpose. It
+	// balloons through child processes, so each child's memory is returned when it exits, but a child
+	// that fails or hangs leaves the device at the floor for whatever runs next in this process.
 	drainsDevice(t, "bisects by ballooning the device to as little as 64 MiB free, refusals included")
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no CUDA device: %v", err)
@@ -322,110 +294,23 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 		}
 	}
 
-	// PINNED (item 6). The threshold is the number the cap analysis depends on; leaving it unasserted
-	// makes this a report rather than a gate. Both bounds are pinned because the pair brackets the
-	// demand and a one-sided pin would drift.
+	// PINNED. The threshold is the number the slot-cap analysis depends on; leaving it unasserted
+	// makes this a report rather than a gate. The pins are the COMPONENTS, which are stable, and the
+	// assertion is the IDENTITY against the regime observed:
 	//
-	// RE-DERIVED 2026-08-12 (A11), not edited to match a red gate. The pins moved +589,824 B, and
-	// that is the number A9-RESID recorded as "baseline drift" — the amount by which
-	// demand = floor + residual failed to close at MOE_MAX_E=512 while closing EXACTLY at 256:
+	// 	demand = pinnedDeviceFloor + pinnedResidual
 	//
-	//     256:  151,191,552 + 54,525,952 = 205,717,504   measured 205,717,504   EXACT
-	//     512:  151,191,552 + 138,412,032 = 289,603,584   measured 289,013,760   short by 589,824
+	// where the floor is the device-wide reserve the FIRST context on the card pays and the residual
+	// is the launch's own reservation. A pin on the sum alone depends on preconditions this test does
+	// not control (whether another CUDA context is alive, the driver and distro build) and flips with
+	// its neighbours.
 	//
-	// The measurement now reads 289,603,584 — the closed form, to the byte. Both components were
-	// re-measured here and BOTH HELD: the floor is 151,191,552 (allocate-until-failure in a fresh
-	// context: 7,665,287,168 reported, 7,514,095,616 obtained) and the residual is 138,412,032.
-	// So nothing about the machine or the kernel moved; the OLD PIN was the outlier, recorded from
-	// the one measurement that did not close, and the 589,824 was misattributed to drift rather
-	// than read as a failure to close.
-	//
-	// The new values are therefore the DERIVED ones, and the identity is what justifies them. If
-	// these ever move again, check the identity first: if floor + residual still equals the demand,
-	// the components are what moved and this pin is downstream of them.
-	// RE-DERIVED 2026-08-19, because the old pin (287,506,432 / 289,603,584) failed — and it failed
-	// for a reason worth more than the number it was guarding.
-	//
-	// THE OLD PIN WAS A SUM WHOSE VALUE DEPENDS ON A PRECONDITION THIS TEST DOES NOT CONTROL:
-	// whether another CUDA context is alive on the device while the child launches. Measured both
-	// ways on one box, one commit, minutes apart:
-	//
-	//	child driven by this test (parent process holds a context):
-	//	  leave 141,819,904 -> freeBefore 141,557,760  ok=TRUE
-	//	child driven straight from a shell (nothing else on the card):
-	//	  leave 141,819,904 -> freeBefore 140,050,432  ok=FALSE
-	//	  leave 289,603,584 -> freeBefore 288,948,224  ok=TRUE
-	//
-	// So there are two regimes, and the launch's requirement differs by exactly the device-wide
-	// reserve that the FIRST context on the card pays:
-	//
-	//	WARM (another context alive)  demand = residual                     ~= 138.4 MiB
-	//	COLD (this is the first)      demand = deviceFloor + residual        = 289,603,584
-	//
-	// The RESIDUAL held bit-for-bit across every measurement (138,412,032), and the floor is the
-	// same 151,191,552 TestAllocFloor reports. Nothing about the kernel or the machine moved; the
-	// pin recorded the COLD sum and the test now runs WARM (it was moved into the drain group's own
-	// process, where the preceding A10 tests leave a context on the device). A pin that flips with
-	// its neighbours is measuring the neighbourhood.
-	//
-	// So pin the COMPONENTS, which are stable, and assert the IDENTITY against the regime actually
-	// observed. That is the re-derivation the old assertion demanded ("re-deriving, not editing") —
-	// and it now fails for a moved KERNEL rather than for a moved test-ordering.
-	// RE-DERIVED 2026-08-21, and this time the component that moved was the FLOOR — which the
-	// previous revision could not have discovered, because it asserted the opposite.
-	//
-	// The gate failed with "measured 192,675,840, expected 289,603,584..295,895,040" and concluded
-	// "a break here means the KERNEL's launch requirement moved". IT DID NOT. Three measurements
-	// settle it:
-	//
-	//	1. The value is bit-stable — 192,675,840 on four consecutive runs, not a wobble.
-	//	2. It is IDENTICAL at c6760d7, the commit that recorded 141,557,760 and pinned against it.
-	//	   Same commit, same box, two days apart, different number: nothing in the tree moved.
-	//	3. TestAllocFloor now measures the floor at 54,263,808, not 151,191,552.
-	//
-	// And then the identity closes to the byte:
-	//
-	//	54,263,808 (floor) + 138,412,032 (residual) = 192,675,840 = the measured demand
-	//
-	// So the model is exactly right and one of its INPUTS changed underneath it. The residual is
-	// unchanged (it is also what the launch actually consumes at the threshold: 192,675,840 ->
-	// 54,263,808 leaves precisely 138,412,032). The floor dropped by 96,927,744 B for a reason
-	// outside this repo — same driver, same uptime, no reboot between the two measurements.
-	//
-	// WHY THE GATE BLAMED THE KERNEL: its own comment claimed "the residual and the floor are each
-	// pinned by their own gate". That is TRUE of the residual and FALSE of the floor —
-	// TestAllocFloor says in as many words "Not a threshold assertion: the number is the finding",
-	// so a floor move cannot fail there and surfaces here instead, wearing a kernel move's clothes.
-	// The fix is not this constant; it is the missing pin, now added in TestAllocFloor, so the next
-	// component move fails where the component is.
-	//
-	// SAFETY DIRECTION, checked rather than assumed: a SMALLER floor means less memory is reported
-	// free but unallocatable, so there is MORE headroom than the cap analysis assumed, not less. The
-	// margin clears it by 332.2 MiB (slotMarginBytes 402,653,184 vs floor 54,263,808). A1/A5/A7/A9's
-	// conclusions are unaffected in the safe direction; the 33-slot cap stays safe and the 34-slot
-	// cap stays unsafe for the residual reason, which did not move.
-	// RE-DERIVED 2026-08-26 (P16, the driver/distro re-anchor): pinnedDeviceFloor 54,263,808 ->
-	// 1,769,472. This is the SECOND time this pin has moved for a reason outside the repo, and the
-	// second time the procedure the message below prescribes has been followed to the letter — with
-	// the same answer. Both components were re-measured independently before anything here was
-	// touched: the residual PASSES unchanged at 138,412,032, the floor is 1,769,472 (three separate
-	// processes, byte-identical), and
-	//
-	//	1,769,472 + 138,412,032 = 140,181,504 = the measured demand, to the byte.
-	//
-	// A COMPONENT moved; the kernel did not. Step (2) below — the branch that would require
-	// re-deriving A1/A5/A7/A9 — is NOT what happened, and must not be read as if it were. The cause
-	// is the 2026-08-25 Nobara 43 -> 44 upgrade (NVIDIA 595.58.03 -> 595.91.07, kernel 7.0.5 ->
-	// 7.2.0, glibc, CUDA 13.2). Safety direction unchanged and again in the safe sense: a smaller
-	// floor means MORE headroom, and the margin now clears the worst-regime demand by 250.3 MiB
-	// (slotMarginBytes 402,653,184 vs 140,181,504) where it cleared by 200.2 MiB before.
-	//
-	// KNOWN LATENT DEFECT, recorded here rather than fixed in the same change: the `warm`
-	// discriminator below reads `freeBefore < pinnedDeviceFloor`, which can only be true when the
-	// FLOOR EXCEEDS THE RESIDUAL. That held when the floor was 151,191,552 and has been false since
-	// 2026-08-21, so the WARM branch is now unreachable and a warm run would go red claiming a
-	// broken identity. The drain group always runs this cold, which is why it has never fired. See
-	// P16 in docs/queue-performance.md.
+	// A break here: check the components first (TestAllocFloor pins the floor,
+	// TestMoERouteFirstLaunchReservation the residual). The floor has moved for reasons outside the
+	// repo while the identity kept closing to the byte. Only if the identity does not close has the
+	// kernel's launch requirement moved. A smaller floor means MORE headroom against slotMarginBytes
+	// (asserted below), so a floor move is safe in that direction. Re-derivation records:
+	// docs/code-notes/cuda.md#TestMoERouteDemandThreshold.
 	const (
 		pinnedResidual    = 138412032 // moe_route's steady-state reservation (TestMoERouteFirstLaunchReservation)
 		pinnedDeviceFloor = 1769472   // the reserve a fresh context pays (TestAllocFloor, which PINS it)
@@ -434,25 +319,11 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 		// rather than to the byte. A byte-exact pin here is what made the old one brittle.
 		demandWindow = 6 << 20
 	)
-	// REGIME, asked of the device rather than inferred from a number.
-	//
-	// This used to read `warm := firstPass.freeBefore < pinnedDeviceFloor`, which
-	// can only be true when the floor EXCEEDS the residual. That stopped being
-	// true on 2026-08-21 and the comment above has carried the consequence as a
-	// KNOWN LATENT DEFECT since: the warm branch was unreachable, and a warm run
-	// would go red claiming a broken identity. On 2026-09-01 it did exactly that,
-	// on a desktop session where KDE's compositor held a context.
-	//
-	// The identity was never the problem. It closed to the byte in that very run
-	// once the floor was measured rather than assumed:
-	//
-	//	18,546,688 (measured floor) + 138,412,032 (residual) = 156,958,720 = demand
-	//
-	// What is NOT pinned is the floor in the presence of a foreign context (it was
-	// 16 MiB higher there). So when one exists this SKIPS rather than asserting a
-	// number nobody has pinned — a skip is not a pass, and the gate reports it as
-	// uncovered, which is the honest outcome. Asserting the cold pin anyway is
-	// what sent a reader toward re-deriving A1/A5/A7/A9 over a compositor.
+	// REGIME, asked of the device rather than inferred from a number. With another CUDA context alive
+	// (a desktop compositor counts) the device floor is not pinned, so this SKIPS rather than assert
+	// the cold pin: a skip is not a pass, and the gate reports it as uncovered. The demand identity
+	// itself still closes there (measured floor + residual = demand), so a failure from a foreign
+	// context is the environment, not the kernel.
 	foreign, known := foreignCUDAContexts()
 	if !known {
 		t.Skip("cannot determine whether another CUDA context is alive (no nvidia-smi): " +
@@ -470,11 +341,8 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	regime := "COLD (this launch is the first context on the device and pays the reserve itself)"
 	t.Logf("REGIME: %s — expected demand %d B, measured %d B", regime, wantDemand, firstPass.freeBefore)
 	if firstPass.freeBefore < wantDemand || firstPass.freeBefore > wantDemand+demandWindow {
-		// CHECK THE COMPONENTS BEFORE BLAMING THE KERNEL. An earlier revision of this message
-		// asserted flatly that a break here means the kernel moved, and it was wrong the first time
-		// it fired: the floor had halved and the identity still closed. So the message now says what
-		// is actually known — the SUM disagrees — and names the two ways that happens, in the order
-		// they should be checked.
+		// CHECK THE COMPONENTS BEFORE BLAMING THE KERNEL: the message says only what is known (the SUM
+		// disagrees) and names the two ways that happens, in the order they should be checked.
 		t.Errorf("demand identity BROKEN in the %s regime: measured %d B, expected %d..%d B "+
 			"(residual %d + floor %d when cold). "+
 			"CHECK THE COMPONENTS FIRST, in this order: "+
@@ -489,29 +357,25 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 			int64(pinnedResidual), int64(pinnedDeviceFloor))
 	}
 
-	// ---- the RELATIONSHIP, not just the figures (item 2) ----
+	// ---- the RELATIONSHIP, not just the figures ----
 	//
-	// The three per-kernel byte pins say "a number changed". This says "the safety property broke",
-	// which is the one that explains why anyone should care. slotMarginBytes exists to leave room
-	// for exactly the costs measured here, and nothing checked that it does.
+	// The per-kernel byte pins say "a number changed". This says "the safety property broke":
+	// slotMarginBytes exists to leave room for exactly the costs measured here.
 	//
-	// MAX, not SIGMA. Launching the whole census (moe_route + rope_kv + rope_kv_batched) gives a
-	// threshold and a residual IDENTICAL to moe_route alone, to the byte — the driver shares one
-	// local-memory backing store sized by the largest kernel rather than summing them. Summing would
-	// overstate the requirement, so the assertion is against the maximum, and the census gate is what
-	// guarantees the maximum is taken over every kernel rather than a remembered one.
+	// MAX, not SIGMA: launching the whole census (moe_route + rope_kv + rope_kv_batched) gives a
+	// threshold and residual identical to moe_route alone, because the driver shares one local-memory
+	// backing store sized by the largest kernel. The census gate is what guarantees the maximum is
+	// taken over every kernel rather than a remembered one.
 	//
-	// THE REGIME IS PART OF THE CLAIM. That measurement launched the census SEQUENTIALLY IN ONE
-	// CONTEXT, which is what goinfer does today: batch-1, single stream, one resident model. Under
-	// concurrent residency on separate streams there is no reason the bound stays `max` — two
-	// kernels in flight may each need their own backing store — and this assertion would then be
-	// wrong WITHOUT FAILING, which is the worse of the two ways to be wrong. If goinfer gains
-	// concurrent streams or multi-model residency on one context, re-measure before trusting this.
-	// AGAINST THE WORST REGIME, not the measured one (2026-08-19). The measurement above may be
-	// WARM, where the launch does not pay the device reserve — but the margin's job is to be
-	// sufficient whatever the card's state, and asserting it against the smaller warm figure would
-	// let the cold requirement exceed the margin without failing. So the safety check uses
-	// max(measured, cold), which is regime-independent by construction.
+	// THE REGIME IS PART OF THE CLAIM. That holds for SEQUENTIAL launch in one context (batch-1, single
+	// stream, one resident model). Under concurrent residency on separate streams two kernels in
+	// flight may each need their own backing store, and this assertion would be wrong WITHOUT
+	// FAILING. If goinfer gains concurrent streams or multi-model residency on one context,
+	// re-measure before trusting it.
+	//
+	// The check is against the WORST regime, not the measured one: the measurement may be warm and
+	// not pay the device reserve, but the margin must be sufficient whatever the card's state, so it
+	// uses max(measured, cold).
 	coldDemand := int64(pinnedDeviceFloor) + int64(pinnedResidual)
 	worstDemand := max(firstPass.freeBefore, coldDemand)
 	if int64(slotMarginBytes) < worstDemand {

@@ -24,14 +24,13 @@ type gemma4VLBidirScaledGolden struct {
 }
 
 // TestGemma4VLResident_bidirParity is the real-hardware gate for the GPU-resident decode bridge
-// GenerateGemma4VL now wires for 26B-A4B/31B-class (use_bidirectional_attention: "vision")
+// GenerateGemma4VL wires for 26B-A4B/31B-class (use_bidirectional_attention: "vision")
 // checkpoints (decoder/generate_gemma4_vl.go, decoder/generate_vl_resident.go's
-// residentUploadPrefill reused unmodified). Everything structural about this bridge was verified
-// by reading the code (see docs/multimodal.md's write-up): the ONE thing that needs numeric
-// proof on real hardware is whether a CPU-computed bidirectional-block prefill's K/V — including
-// the two K=V global layers' materialized v_norm(k) rows, at the REAL 256-local/512-global head
-// geometry a tiny fixture can't exercise — continues decode correctly once uploaded into the
-// resident CUDA cache.
+// residentUploadPrefill reused unmodified). The structure of the bridge is code-reviewed
+// (docs/multimodal.md); the ONE thing that needs numeric proof on real hardware is whether a
+// CPU-computed bidirectional-block prefill's K/V — including the two K=V global layers'
+// materialized v_norm(k) rows, at the REAL 256-local/512-global head geometry a tiny fixture can't
+// exercise — continues decode correctly once uploaded into the resident CUDA cache.
 //
 // Methodology mirrors TestGemma4DenseScaled_residentParity's calibrated-mean approach (same
 // fixture family: random weights over 12 layers are less int4-conditioned than a tiny fixture,
@@ -151,18 +150,15 @@ func TestGemma4VLResident_bidirParity(t *testing.T) {
 	t.Logf("bidirectional-prefill resident bridge (256-local/512-global, K=V): pos0(decode-step-0)=%.6f exact-argmax %d/%d | "+
 		"mean CUDA-vs-CPUint4=%.6f  CPUint4-vs-f32=%.6f (min floor %.4f)", pos0, exact, n, meanCuda, meanCpu, minFloor)
 
-	// NOTE: unlike TestGemma4DenseScaled_residentParity's own pos-0 (truly zero attention
-	// history, the least int4-noisy point it can measure), THIS pos0 is decode-step-0 AFTER a
-	// full bidirectional-block prefill (19-31 positions of history) — already deep in this
-	// fixture's own documented int4 chaos regime (that sibling test's own late positions, e.g.
-	// pos 15, land at cosine 0.68 with zero bridge involvement at all: self-consistent resident
-	// decode alone). An absolute bar at this depth would fail on ALREADY-ACCEPTED int4 noise, not
-	// on a bridge defect — confirmed by a same-session A/B diagnostic: resident computing every
-	// position itself vs CPU-prefill+upload for an equivalent prefix land EQUALLY far from the
-	// CPU reference (0.68 vs 0.72), and disagree with EACH OTHER by exactly that same margin
-	// (0.70) — two independent equally-noisy realizations, not a systematic upload defect. So
-	// the calibrated-mean check below (which already accounts for this fixture's own chaos,
-	// exactly TestGemma4DenseScaled_residentParity's reasoning) is the only valid bar here.
+	// NOTE: unlike TestGemma4DenseScaled_residentParity's own pos-0 (truly zero attention history, the
+	// least int4-noisy point it can measure), THIS pos0 is decode-step-0 AFTER a full bidirectional-block
+	// prefill (19-31 positions of history) — already deep in this fixture's int4 chaos regime (that sibling
+	// test's own late positions land at cosine ~0.68 with no bridge involvement). An absolute bar at this
+	// depth would fail on ALREADY-ACCEPTED int4 noise, not on a bridge defect: a resident computing every
+	// position itself and CPU-prefill+upload land equally far from the CPU reference and disagree with each
+	// other by the same margin, i.e. two independent equally-noisy realizations, not a systematic upload
+	// defect. So the calibrated-mean check below (which already accounts for this fixture's own chaos) is
+	// the only valid bar here.
 	if meanCuda < meanCpu {
 		t.Errorf("mean CUDA-vs-CPUint4 %.6f < mean CPUint4-vs-f32 %.6f — CUDA diverges faster than the fixture's own int4 quantization: a real bug, not conditioning",
 			meanCuda, meanCpu)

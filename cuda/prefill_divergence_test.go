@@ -11,13 +11,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillDivergenceRate is the tag-deciding measurement (Task 1): how often does
-// batched-prefill-then-decode produce a DIFFERENT greedy token stream than sequential-prefill-then-
-// decode, on a real model? The batched prefill writes KV that differs ~2e-6 from what sequential
-// decode writes (TestBatchedVsDecodeGap / the real-KV finding); "only bites at rare ties" is an
-// inference until measured. This runs many distinct prompts, generates the same length two ways
-// (only the prefill differs; the decode loop is identical), and reports how many streams diverge and
-// where. Heavy; gated.
+// TestPrefillDivergenceRate measures how often batched-prefill-then-decode produces a DIFFERENT
+// greedy token stream than sequential-prefill-then-decode, on a real model. The batched prefill
+// writes KV that differs ~2e-6 from what sequential decode writes (TestBatchedVsDecodeGap);
+// "only bites at rare ties" is an inference until measured. This runs many distinct prompts,
+// generates the same length two ways (only the prefill differs; the decode loop is identical), and
+// reports how many streams diverge and where. Heavy; gated.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestPrefillDivergenceRate -v -timeout 30m
 func TestPrefillDivergenceRate(t *testing.T) {

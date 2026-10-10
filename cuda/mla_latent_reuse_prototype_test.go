@@ -11,8 +11,8 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestMLALatentReuse_prototype is micro-leg B of docs/completed/task-mla-cuda-residency.md: the experiment
-// that decides that task's 3-days-vs-3-weeks fork, and the skeleton of its eventual parity gate.
+// TestMLALatentReuse_prototype is micro-leg B of docs/completed/task-mla-cuda-residency.md, and the
+// skeleton of its eventual parity gate.
 //
 // THE HYPOTHESIS. MLA's decode attention looks like a new kernel shape (score width latDim, value
 // width rank, one KV row shared by every query head) — but it is structurally nKV=1 with hd=latDim,

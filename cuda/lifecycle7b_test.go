@@ -10,17 +10,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestResidentCloseFreesVRAM_7B is TestResidentCloseFreesVRAM's shape at the scale that actually
-// reproduces A12: qwen2.5-7B and a real decode loop, rather than the 0.5B coder and one token.
+// TestResidentCloseFreesVRAM_7B is TestResidentCloseFreesVRAM's shape at the scale that reproduces
+// A12 (docs/QUEUE.md): qwen2.5-7B and a real decode loop, rather than the 0.5B coder and one token.
 //
-// WHY A SECOND GATE RATHER THAN WIDENING THE FIRST. A12 measured TestB2DenseFlagship losing
-// 1344 MiB and TestRealForwardParity 1166 MiB, each alone in its own process, each already
-// deferring Close(). The existing gate is green throughout — accurately, for what it covers. It is
-// not tautological and it is not exercised-but-never-triggered: it is CORRECTLY SCOPED AND SILENTLY
-// NARROW, which is the variant that looks most like a working gate. Keeping both makes the scopes
+// A SECOND GATE RATHER THAN WIDENING THE FIRST. The existing gate is correctly scoped and silently
+// narrow, which is the variant that looks most like a working gate; keeping both makes the scopes
 // visible side by side instead of hiding one inside the other.
 //
-// WHAT THIS DISTINGUISHES, pre-registered before the run (A12):
+// WHAT THIS DISTINGUISHES (read the per-cycle deltas):
 //
 //	loss on cycle 1, ~zero on 2 and 3   -> CONTEXT-level retention, almost certainly the
 //	                                       local-memory backing store A9/A10 measured. NOT a leak:
@@ -31,10 +28,6 @@ import (
 //	                                       Close can return.
 //	loss repeating every cycle          -> a genuine leak; hunt for what Close does not release.
 //	loss shrinking but not vanishing    -> both, and the components separate before either is fixed.
-//
-// The differing magnitudes (-1344 vs -1166 from the same 7310 MiB start) already favour the first:
-// a fixed per-model leak would repeat a fixed size, whereas different kernel sets reserving
-// different backing stores would not.
 func TestResidentCloseFreesVRAM_7B(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf")

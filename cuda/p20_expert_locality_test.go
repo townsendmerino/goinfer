@@ -14,12 +14,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestP20ExpertLocality is the "measure the split before building" step docs/queue-performance.md's
-// P20 entry asks for, before any expert-major kernel is written: expert-major batching only pays off
-// if a whole M-row prefill chunk touches FEW ENOUGH distinct experts per layer to stage them all on
-// the device at once — if it touches MORE than the box can hold, "fetch each distinct expert once per
-// chunk" is not achievable at that chunk width regardless of kernel design, and the item needs a
-// smaller batch width (or is dead on this box), not a kernel.
+// TestP20ExpertLocality measures the split expert-major batching depends on (docs/queue-performance.md,
+// P20): it only pays off if a whole M-row prefill chunk touches FEW ENOUGH distinct experts per layer
+// to stage them all on the device at once. If it touches MORE than the box can hold, "fetch each
+// distinct expert once per chunk" is not achievable at that chunk width regardless of kernel design,
+// and the item needs a smaller batch width (or is dead on this box), not a kernel.
 //
 // Uses routeRecord (cuda/resident.go), a test-only hook set on the already-loaded resident: for every
 // loadRoutedExperts call during ONE prefill, records (layer, routed expert ids) and, per layer,

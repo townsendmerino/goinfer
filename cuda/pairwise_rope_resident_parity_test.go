@@ -17,14 +17,12 @@ import (
 // WHY THIS GATE EXISTS. TestCohereResidentParityCUDA (cohere_resident_parity_test.go) loads the
 // committed cohere-tiny / cohere2-tiny, whose weights are ~0.02 std: attention is nearly UNIFORM
 // there, a softmax over near-equal scores is blind to which key is which, and so a WRONG ROTATION
-// (the NeoX half-split kernels run on a GPT-J pairwise family) leaves the logits at cosine 0.9997.
-// The real checkpoints were not blind: Command-R7B and Aya-expanse-8B at int4 on this very resident,
-// per-position resident-vs-CPU worst cosine -0.075 / -0.041 (docs/measurements/cuda-pairwise-rope-2026-10-01.md).
+// (the NeoX half-split kernels run on a GPT-J pairwise family) leaves the logits at cosine ~0.9997.
+// The real checkpoints were not blind (docs/measurements/cuda-pairwise-rope-2026-10-01.md).
 //
 // So this gate PEAKS the attention: it derives, at test time and in a temp dir, a checkpoint from the
-// committed fixture with every 2-D weight scaled by peakedScale (0.02 -> ~0.25 std, the factor the
-// owner's session measured: cosine 0.06 with NeoX kernels against 0.9997 flat). Deterministic, no new
-// binary in the tree, and the same bytes the CPU path loads.
+// committed fixture with every 2-D weight scaled by peakedScale (0.02 -> ~0.25 std). Deterministic,
+// no new binary in the tree, and the same bytes the CPU path loads.
 //
 // IT MUST BE ABLE TO FAIL, and proves that on every run: after the real measurement it swaps the NeoX
 // rope pipelines (rope_kv / rope_kv_batched) into the SAME resident and re-measures; that arm must

@@ -21,7 +21,7 @@ import (
 // testdata/llama-tiny fixture (GQA 4-heads/2-kv-heads so o-proj and the differently-widthed
 // q/k/v sites are all genuinely exercised), same synthetic 7-projection/4-layer adapter, same
 // 0.95 floor (gpt2_resident_parity_test.go's established resident-vs-CPU decode-logit bar on
-// Metal — the anchor every backend's LoRA parity test in this session uses), same vacuousness
+// Metal — the anchor every backend's LoRA parity test uses), same vacuousness
 // check. Drives decoder.ResidentAdapter directly via ResidentForwardForTest/
 // ResidentAdapterLayersForTest to isolate the KERNEL correctness question from the WIRING
 // question decoder/resident_adapter_seam_test.go already gates.

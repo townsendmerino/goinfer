@@ -21,9 +21,9 @@ import (
 //   - at every KV precision a caller can request — CUDA allocates f32 regardless, so the figure must not
 //     move with kvF16 / kvI8.
 //
-// Before the "cuda" branch, Plan's per-position formula priced MLA at twice the allocation and a requested
-// f16 / i8 at a half / ~0.28 of it (docs/measurements/memory-accounting-cuda-2026-09-25.md); deepseek-tiny
-// and the f16 / i8 rows fail without the branch. Three links are checked, so a drift anywhere shows:
+// Without the "cuda" branch Plan's per-position formula prices MLA at twice the allocation and a
+// requested f16 / i8 at a fraction of it (docs/measurements/memory-accounting-cuda-2026-09-25.md):
+// deepseek-tiny and the f16 / i8 rows fail. Three links are checked, so a drift anywhere shows:
 // the buffers' bytes == kvBytesForCap (the resident's own fit figure) == ResidentKVBytes("cuda"), and each
 // buffer's driver allocation stays within one allocQuantumBytes (2 MiB) of its bytes.
 //

@@ -83,34 +83,19 @@ func TestMLAResidentParityCUDA(t *testing.T) {
 		gpuToks = append(gpuToks, gTok)
 		t.Logf("[%s] gen %d (fed tok %d): cpu argmax=%d cuda argmax=%d cosine=%.8f", quant, i, fedTok, cTok, gTok, cos)
 		if cTok != gTok {
-			// The FULL sequence, not just the first token: found live reviewing this test — a
-			// deliberately-mutated nGroup/topkGroup transposition in the router launch
-			// (cuda/resident.go, the trap decoder/features.go's FeatMLA entry names) left the
-			// per-position forward-logit cosine check above untouched (worst cosine unchanged)
-			// AND left the first generated token matching, so a first-token-only assertion
-			// passed clean while later tokens had already diverged in this same run's own
-			// logged output. Discrete expert selection can stay identical for several tokens
-			// after a wrong-but-plausible routing decision and only visibly diverge once a
-			// different expert combination is actually selected — checking one prefix position
-			// is not enough for a selection bug the same way it would be for a smooth numerical
-			// one. So every divergence is still a HARD stop, UNLESS it passes the near-tie check
-			// immediately below.
+			// The FULL sequence, not just the first token: discrete expert selection can stay identical for
+			// several tokens after a wrong-but-plausible routing decision and only visibly diverge once a
+			// different expert combination is selected. A transposed nGroup/topkGroup in the router launch
+			// (cuda/resident.go, the trap decoder/features.go's FeatMLA entry names) leaves the per-position
+			// cosine check above and the first generated token untouched. So every divergence is a HARD stop,
+			// UNLESS it passes the near-tie check immediately below.
 			//
-			// NEAR-TIE, NOT A DEFECT (measured 2026-09-28, aikit v1.50.0's binary16 int4 group
-			// scales): on this synthetic/random-weight fixture, gen step 5 diverged (cpu=51,
-			// cuda=87) with cpu's own top1/top2 gap at 0.000746 and cuda's at 0.002231 — an
-			// order of magnitude tighter than every non-diverging step (0.008-0.046) — and each
-			// side's runner-up IS the other side's winner: token 51 is cuda's #2, token 87 is
-			// cpu's #2. That is the MoE router-flip noise floor this repo already has a memory
-			// for (a bit-identical router flips top-k under ~0.5% input noise): the f16-scale
-			// switch changed ONLY CPU's rounding (CUDA's own numerics were gated
-			// byte-identical old-vs-new by 2669bf11's own pre-registered gate 3), so an
-			// already-near-tied greedy pick on a random-weight fixture is now decided by
-			// backend-implementation noise, not by a wrong computation. A real routing defect
-			// (the transposition class above) produces a CONFIDENT wrong pick, not a swap
-			// between each side's own top-2 — so the check below still catches that class: it
-			// requires MUTUAL containment (each side's pick is in the OTHER side's own top-2),
-			// which a random unrelated token from a real bug would not satisfy.
+			// NEAR-TIE, NOT A DEFECT: on this synthetic random-weight fixture a greedy pick can be already
+			// near-tied and decided by backend rounding noise (the MoE router-flip noise floor; the int4
+			// group-scale precision change moved only CPU's rounding). A real routing defect (the transposition
+			// class above) produces a CONFIDENT wrong pick, not a swap between each side's own top-2, so the
+			// check requires MUTUAL containment: each side's pick is in the OTHER side's own top-2, which a
+			// random unrelated token from a real bug would not satisfy.
 			cRank2 := inTop2(lgC, gTok)
 			rRank2 := inTop2(lgR, cTok)
 			if !cRank2 || !rRank2 {

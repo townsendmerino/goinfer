@@ -52,9 +52,9 @@ func (r *cudaResident) captureResidualForTest(emb []float32, pos int) ([]float32
 //
 // This is a DIAGNOSTIC: it asserts nothing and prints the table. The massive-activation
 // channels are identified here by magnitude (top-|value| in the CPU-int4 residual) rather than
-// taken on faith from the relayed index list, which doubles as a cross-check — if my top-K by
-// magnitude matches the Mac's {1698,1730,...}, the two harnesses agree on WHICH channels; if
-// not, one of us is tapping the wrong thing.
+// taken on faith from the Metal harness's index list, which doubles as a cross-check: if the top-K
+// by magnitude matches that list ({1698,1730,...}), the two harnesses agree on WHICH channels; if
+// not, one of them is tapping the wrong thing.
 func TestGemmaOutlierTrace(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
@@ -169,16 +169,15 @@ func TestGemmaOutlierTrace(t *testing.T) {
 		t.Logf("  %-6d %14.4f %14.4f %14.4f   %9.2f%% %9.2f%%%s", c, v4, v8, vc, dc, d8, flag)
 	}
 
-	// The channels the Metal bisect fingered as the ACTUAL failure — mid-magnitude trunk
-	// channels Metal sign-flips or zeroes, which the final (1+w) norm (~16-20x) then amplifies
-	// into the head. The massive channel 443 both backends track; the catastrophe is here. This
-	// is the definitive oracle question: does CUDA keep these channels' SIGN, where Metal loses
-	// it? Neighbors +/-1 printed too, to catch any index-offset between the two harnesses (my
-	// drift table had 1697 with the opposite CPU sign the Mac reports at 1698).
-	// HANDSHAKE ANCHORS: the values the Mac must match to prove we run the same input. If f32@443
-	// differs across boxes on identical code, the inputs differ (checkpoint / aikit) and no oracle
-	// is valid yet. If f32 matches but their "CPU" == my f32, the earlier int4-vs-int4 mismatch was
-	// a precision-label confusion, not a bug.
+	// The channels the Metal bisect fingered as the ACTUAL failure — mid-magnitude trunk channels
+	// Metal sign-flips or zeroes, which the final (1+w) norm (~16-20x) then amplifies into the head. The
+	// massive channel 443 both backends track; the catastrophe is here. The oracle question: does CUDA
+	// keep these channels' SIGN, where Metal loses it? Neighbors +/-1 are printed too, to catch any
+	// index-offset between the two harnesses.
+	// HANDSHAKE ANCHORS: the values the Metal harness must match to prove both run the same input. If
+	// f32@443 differs across boxes on identical code, the inputs differ (checkpoint / aikit) and no oracle
+	// is valid yet. If f32 matches but their "CPU" == this f32, the earlier int4-vs-int4 mismatch was a
+	// precision-label confusion, not a bug.
 	for _, c := range []int{443, 19, 172, 1698} {
 		t.Logf("ANCHOR chan %-5d  f32=%14.4f  int4=%14.4f  int8=%14.4f  cuda-int4=%14.4f",
 			c, cpuF[c], cpu4[c], cpu8[c], cuda4[c])

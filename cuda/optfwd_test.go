@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The CUDA half of optimistic-forward (6a4e0ae), which was designed and verified entirely on Metal.
+// The CUDA half of optimistic-forward, which was designed and verified entirely on Metal.
 // Ported from metal/optfwd_test.go almost verbatim: the assertions ARE the Metal ones, because the
 // claim under test is that the mechanism carries over unchanged, and a test rewritten while porting
 // cannot answer that.

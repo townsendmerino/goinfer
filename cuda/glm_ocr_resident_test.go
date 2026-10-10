@@ -30,9 +30,9 @@ type glmOcrMRopeGolden struct {
 }
 
 // TestGlmOcrResidentParityCUDA: GLM-OCR's text decoder is CUDA-resident, with GPT-J PAIRWISE rotation
-// (cuda/rope_pairwise.cu). It was DECLINED until 2026-10-01 because every rope kernel was NeoX:
-// admitted anyway, resident-vs-CPU read worst cosine -0.34 on this fixture (int8int8, 48-token
-// prompt). The paths, each against the CPU at the same quantization:
+// (cuda/rope_pairwise.cu). Every other rope kernel is NeoX, and a resident built on them reads a
+// negative cosine against the CPU on this fixture. The paths, each against the CPU at the same
+// quantization:
 //
 //   - text only, 48 tokens, sequential decode (rope_kv_pw) and batched prefill (rope_kv_batched_pw);
 //   - an IMAGE prompt through the m-RoPE batched prefill (PrefillMRoPELast -> rope_kv_mrope_batched_pw)

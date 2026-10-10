@@ -10,9 +10,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillChunked_fastKernelsOnEveryChunk pins the fix for the chunk demotion (docs/measurements/prefill-chunk-demotion-2026-09-21.md): a prompt longer than one chunk (512 rows) is
-// prefilled in several passes, and BEFORE the fix every pass but the last ran tailKVOnly, which forceExactKernels (tail != tailLastLogits) sent to the slow exact GEMM and attention — 7 of 8
-// chunks at K=3900. It counts attn_fused / gemm_w4a8_mma launches directly instead of inferring them from timing:
+// TestPrefillChunked_fastKernelsOnEveryChunk pins that a prompt longer than one chunk (512 rows) runs the fast kernels on every pass (docs/measurements/prefill-chunk-demotion-2026-09-21.md): every pass but the last runs tailKVOnly, which forceExactKernels (tail != tailLastLogits) must not send to the slow exact GEMM and attention.
+// It counts attn_fused / gemm_w4a8_mma launches directly instead of inferring them from timing:
 //
 //   - PrefillLast over a 1300-row prompt (3 chunks: 512+512+276): the fast attention runs on ALL of them (layers x 3) and the fast GEMM likewise (counts equal those of a single-pass prompt scaled by
 //     chunk count is not asserted; what is asserted is that the chunked counts are >= 3x the per-pass layer count and equal the count with the chunk raised to one pass, per layer);

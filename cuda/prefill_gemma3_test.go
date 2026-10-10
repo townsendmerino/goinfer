@@ -11,13 +11,13 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefillLast_gemma3 extends the batched-prefill bit-identity gate to the SANDWICH-NORM family.
-// After the qk-norm guard was lifted, gemma3's only remaining decline was its 4-norm sandwich: the
-// attention and MLP sublayer outputs are RMSNorm'd BEFORE the residual add (postAttnNorm/postMLPNorm).
-// batched prefill now does that per row (o-proj/down → temp, rmsnorm_f32_batched, residual add),
-// mirroring segB's decode path. Real Gemma-3-4B at int4 (kEqV=0, no attn-softcap): asserts KV
-// bit-identical (all layers × rows), last-token logits bit-identical, 64-token decode byte-identical.
-// Heavy; gated. Green ⇒ gemma3 is a validated batched-prefill family.
+// TestPrefillLast_gemma3 extends the batched-prefill bit-identity gate to the SANDWICH-NORM family:
+// the attention and MLP sublayer outputs are RMSNorm'd BEFORE the residual add
+// (postAttnNorm/postMLPNorm), which batched prefill does per row (o-proj/down → temp,
+// rmsnorm_f32_batched, residual add), mirroring segB's decode path. Real Gemma-3-4B at int4
+// (kEqV=0, no attn-softcap): asserts KV bit-identical (all layers × rows), last-token logits
+// bit-identical, 64-token decode byte-identical. Heavy; gated. Green ⇒ gemma3 is a validated
+// batched-prefill family.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestPrefillLast_gemma3 -v
 func TestPrefillLast_gemma3(t *testing.T) {

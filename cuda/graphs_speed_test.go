@@ -13,9 +13,9 @@ import (
 )
 
 // TestGraphsDecodeSpeedup measures the real decode tok/s of graph replay vs live launch on a real
-// model, validating the ~1.4–1.7× dispatch-elimination prediction end-to-end through the safe-gate.
-// Graphs are enabled via the UNSAFE override (this idle box is DEFAULT compute mode; with no churn,
-// replay is bit-exact — the self-test in admitGraphs confirms it). Heavy; gated.
+// model, end-to-end through the safe-gate. Graphs are enabled via the UNSAFE override (this idle box is
+// DEFAULT compute mode; with no churn, replay is bit-exact — the self-test in admitGraphs confirms
+// it). Heavy; gated.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -run TestGraphsDecodeSpeedup -v
 func TestGraphsDecodeSpeedup(t *testing.T) {
@@ -82,16 +82,15 @@ func TestGraphsDecodeSpeedup(t *testing.T) {
 	t.Logf("decode tok/s (1.5B, greedy): live %.1f  |  graphs %.1f  →  %.2f×", base, g, g/base)
 }
 
-// TestGraphsDecode26B is the one measurement CUDA graphs were owed before deciding their fate
-// (docs/cuda-graphs-investigation.md: ~1.01x on the dense 1.5B; the 26B MoE was never measured). On
-// the C′ path graphs are not free to turn on: they force the DMA overlap off (a captured segment
-// cannot wait per miss) and block compute-time LoRA. So the comparison is the trade itself —
-// today's default (graphs off, overlap on) against graphs on (overlap off) — not graphs vs a
-// strawman. Greedy decode feeds each argmax back, so MoE routing and the expert cache see a real
-// continuation. Arms are separate loads (two 26B residents do not fit 8 GB), interleaved ABBA.
+// TestGraphsDecode26B measures CUDA graphs on the 26B C′ path, where they are not free to turn on:
+// they force the DMA overlap off (a captured segment cannot wait per miss) and block compute-time
+// LoRA. So the comparison is the trade itself — today's default (graphs off, overlap on) against
+// graphs on (overlap off) — not graphs vs a strawman (docs/cuda-graphs-investigation.md has the
+// dense-1.5B result). Greedy decode feeds each argmax back, so MoE routing and the expert cache see
+// a real continuation. Arms are separate loads (two 26B residents do not fit 8 GB), interleaved ABBA.
 //
-// Pre-registered decision rule (2026-09-24, before running): graphs >= 1.05x default → worth
-// keeping; <= 1.00x → remove graphs; between → ambiguous, back to the owner.
+// Pre-registered decision rule: graphs >= 1.05x default → worth keeping; <= 1.00x → remove graphs;
+// between → ambiguous, back to the owner.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestGraphsDecode26B -v -timeout 30m
 func TestGraphsDecode26B(t *testing.T) {

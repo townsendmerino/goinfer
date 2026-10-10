@@ -34,10 +34,8 @@ func (r *cudaResident) captureSublayersForTest(emb []float32, pos int) (attn, ml
 // channels 1723/227 (L31-33), or is CUDA's amplitude clean? If clean, Metal's blow-up is a
 // kernel scale bug separate from int4 quant-hostility.
 //
-// int4 = the byte-identical Q4_K_M gguf (sha 882e8d2d) run through the CUDA RESIDENT dp4a path
-// (not CPU int4); f32 truth = the real bf16 safetensors via decoder.ForwardSubCapture. Metal's
-// numbers (from the relay): 1723 L32 attn +175 vs truth +27 (~6.5x); 227 L33 attn +63 (flipped)
-// vs truth -12.
+// int4 = the byte-identical Q4_K_M gguf run through the CUDA RESIDENT dp4a path (not CPU int4);
+// f32 truth = the real bf16 safetensors via decoder.ForwardSubCapture.
 func TestGemmaSublayerCUDA(t *testing.T) {
 	requireHeavyModel(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")

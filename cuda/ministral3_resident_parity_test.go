@@ -15,18 +15,15 @@ import (
 // AttnTempParams), not just an admission unlock. testdata/ministral3-tiny's AttnTempOrigMaxPos=8
 // means even a modest token count steps through several distinct scale values.
 //
-// HONEST LIMIT, checked directly (not assumed): unlike G5 row 1's smollm3-tiny — where a whole
-// wrong-vs-right control experiment landed within noise on Metal — this cosine floor does NOT
-// discriminate the fix from a disabled one: with the real fix and with it force-disabled
-// (qTempScale always 1), the worst cosine over 32 tokens against the CPU reference was 0.999923
-// and 0.999916 respectively. That is NOT noise-dominance (CUDA's int4 path is far tighter than
-// Metal's int8 — see below), it is EFFECT SIZE: probing the two configurations' own resident
-// logits directly (bypassing the CPU reference entirely) shows positions 0-7 (floor=0, scale
-// exactly 1 either way) bit-identical between configs as expected, and positions 8+ (floor>0,
-// scale ~1.06-1.28) genuinely differing between them — small, real, reproducible, just too small
-// relative to this tiny/seeded model's own output variance for a whole-model cosine floor to
-// isolate. This test still proves the feature doesn't CORRUPT anything (32/32 exact argmax, no
-// NaN, no drift) — the feature-specific correctness proof is
+// HONEST LIMIT: unlike G5 row 1's smollm3-tiny, this cosine floor does NOT discriminate the fix from
+// a disabled one (qTempScale always 1): the worst cosine over 32 tokens against the CPU reference is
+// indistinguishable between the two. That is not noise-dominance (CUDA's int4 path is far tighter than
+// Metal's int8) but EFFECT SIZE: probing the two configurations' own resident logits directly shows
+// positions 0-7 (floor=0, scale exactly 1 either way) bit-identical and positions 8+ (floor>0, scale
+// ~1.06-1.28) genuinely differing — real and reproducible, but too small relative to this tiny seeded
+// model's own output variance for a whole-model cosine floor to isolate. What the body asserts is
+// that the feature does not CORRUPT anything: no NaN and worst cosine >= 0.98 (argmax agreement is
+// logged, not asserted). The feature-specific correctness proof is
 // decoder.TestAttnTempScale_matchesSequentialFormula (the exact formula, no GPU, no quantization
 // noise) plus the reviewed kernel math (gemv_fwd.cu/prefill_batched.cu's own comments).
 func TestMinistral3ResidentParityCUDA(t *testing.T) {

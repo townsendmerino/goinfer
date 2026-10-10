@@ -10,10 +10,9 @@ import (
 )
 
 // readGolden reads a test golden, gunzipping it when the name ends in .gz. Goldens over ~1 MB are
-// committed compressed (CLAUDE.md — the convention for new goldens, and the backlog of 24 large ones
-// was converted 2026-09-25), so a reader goes through this instead of os.ReadFile: the same call
-// reads a small .json and a large .json.gz. A missing file is still an os.IsNotExist error, which is
-// what the callers' "no golden — run the pin script" skips test for.
+// committed compressed (CLAUDE.md § Tests), so a reader goes through this instead of os.ReadFile: the
+// same call reads a small .json and a large .json.gz. A missing file is still an os.IsNotExist error,
+// which is what the callers' "no golden — run the pin script" skips test for.
 func readGolden(path string) ([]byte, error) {
 	if !strings.HasSuffix(path, ".gz") {
 		return os.ReadFile(path)

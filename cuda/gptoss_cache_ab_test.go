@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGptOssExpertCacheAB is the assertion the 2026-08-31 index-space fix was owed.
+// TestGptOssExpertCacheAB pins that expert caching does not change which expert's biases are used.
 //
 // THE BUG IT DISCRIMINATES. gpt-oss's gate‖up bias table is [nExpert][2*I], uploaded once for
 // all experts and never moved. expIdx() returns SLOT ids when expert caching is on and EXPERT
@@ -43,12 +43,10 @@ func TestGptOssExpertCacheAB(t *testing.T) {
 	run := func(cache bool) [][]float32 {
 		opts := decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: cache}
 		if cache {
-			// G-07: topK+1 = 3, not 2. The fixture is nE=4/topK=2, and a request of 2 was NOT
-			// honoured — `req > topK` was false, so cacheSlots stayed at min(8·topK, nE) = 4,
-			// i.e. one permanent slot per expert. This gate's whole premise is that slot ≠
-			// expert id, and it was getting the identity mapping; it discriminated on the
-			// 2026-08-31 run by routing luck. 3 is honoured, is below nE=4, and forces at
-			// least one eviction.
+			// topK+1 = 3, not 2. The fixture is nE=4/topK=2, and a request of 2 is NOT honoured — `req > topK`
+			// is false, so cacheSlots stays at min(8·topK, nE) = 4, one permanent slot per expert, and the
+			// identity mapping hides the bug this gate exists for (slot ≠ expert id). 3 is honoured, is below
+			// nE=4, and forces at least one eviction.
 			opts.MoECacheSlots = wantSlots
 		}
 		m, err := decoder.Load(path, opts)
@@ -60,11 +58,8 @@ func TestGptOssExpertCacheAB(t *testing.T) {
 		if rf == nil {
 			t.Skipf("gpt-oss not resident on cuda (%s) — declare FeatAttnSink+FeatOutBias to run this", m.ResidentDecline())
 		}
-		// G-07: ASSERT THE EFFECTIVE SLOT COUNT. Nothing did, and the request was being
-		// silently floored — with topK=2 the old `req > topK` was false for a request of 2, so
-		// cacheSlots stayed at min(8·topK, nE) = 4 = nE: one permanent slot per expert, and
-		// slot ≠ expert only by first-admit order. This gate's premise is that the two index
-		// spaces diverge, so the premise has to be checked rather than requested.
+		// ASSERT THE EFFECTIVE SLOT COUNT: this gate's premise is that the two index spaces diverge, so the
+		// premise has to be checked rather than requested (a request can be silently floored; see wantSlots).
 		if cache {
 			if cr, ok := rf.(interface{ CacheSlotsForTest() int }); ok {
 				if got := cr.CacheSlotsForTest(); got != wantSlots {
