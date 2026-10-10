@@ -120,10 +120,13 @@ func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, 
 	}
 	ph.Stream = time.Since(t0)
 
-	// 3) Verify the bundle round-trips through the real (mmap) load path — low RAM (file-backed
-	// pages) but a full read of the file for its CRC, which is what makes it a real integrity
-	// check and records the verified-marker carryVerifiedMarker carries over. On the TEMP file, so a
-	// bundle that fails it never becomes the sidecar even for an instant.
+	// 3) Verify the bundle loads through the real (mmap) load path: it deserializes and its shapes validate. The
+	// whole-file CRC is not recomputed (decoder.MarkGIWWritten). On the TEMP file, so a bundle that fails it never
+	// becomes the sidecar even for an instant.
+	decoder.MarkGIWWritten(tmp)
+	if afterWriteForTest != nil {
+		afterWriteForTest(tmp)
+	}
 	t1 := time.Now()
 	if err := selfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
@@ -205,6 +208,10 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
 	ph.Stream = time.Since(t0)
+	decoder.MarkGIWWritten(tmp)
+	if afterWriteForTest != nil {
+		afterWriteForTest(tmp)
+	}
 	t1 := time.Now()
 	if err := selfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
@@ -345,9 +352,10 @@ func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWT
 // mtime alone is not freshness: it cannot see a bundle that is truncated, written by an older writer,
 // or missing a tensor a newer reader requires, all of which are newer than the source and all of which
 // fail at load. So freshness ends with the question that matters, does it load?, using the same mmap
-// load selfCheck uses. That load runs the bundle's whole-payload CRC, which reads every byte of the
-// file; it is done once per (size, mtime) (decoder/giwverify.go), so a full pass is paid only the first
-// time a sidecar is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
+// load selfCheck uses. For a bundle with no verified-marker that load runs the whole-payload CRC, which
+// reads every byte of the file; it is done once per (size, mtime) (decoder/giwverify.go), and a bundle
+// this box transcoded is marked when it is written, so a full pass is paid only the first time a sidecar
+// from elsewhere is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
 // of failing at boot with an error that names the .giw rather than the cause.
 //
 // Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion DOES
@@ -455,9 +463,10 @@ func quantLabel(q string) string {
 	return q
 }
 
-// selfCheck verifies a freshly written bundle loads through the real mmap path: the streamed weights
-// deserialize, and the whole-payload CRC passes (a full read of the file; the pass is recorded so it is
-// not repeated for an unchanged file, decoder/giwverify.go).
+// selfCheck verifies a bundle loads through the real mmap path: the weights deserialize and their shapes validate
+// against the architecture. Whether the whole-payload CRC is recomputed is the load's own rule (decoder/giwverify.go):
+// it is for a file with no marker, such as a cache found on disk, and it is not for a bundle the transcode has just
+// marked as written.
 //
 // Backend:"cpu", not Options{}: an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's
 // literal-"cpu"-is-a-promise rule), so Options{} would decline every kind-5 (row4-only) bundle this
@@ -476,18 +485,20 @@ func selfCheck(path string) error {
 	return m.Close()
 }
 
-// removeTempGIW deletes a temp bundle and the verified-marker its self-check may have written.
+// afterWriteForTest, when set, is called with the temp bundle once it is written and marked, before its self-check.
+var afterWriteForTest func(tmp string)
+
+// removeTempGIW deletes a temp bundle and its verified-marker.
 func removeTempGIW(tmp string) {
 	_ = os.Remove(tmp)
 	_ = os.Remove(decoder.GIWVerifiedMarkerPath(tmp))
 }
 
-// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the
-// caller has os.Renamed tmp onto out (the rename stays at the call site because
-// TestTranscode_writesViaTempThenRenames asserts it structurally). selfCheck ran the full CRC on
-// tmp and recorded (size, mtime); a rename preserves both, so the marker is still true of out —
-// moving it means the first real load of a fresh sidecar does not read the whole file a second
-// time. Best-effort: a marker that fails to move only costs one pass, and none is left behind.
+// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the caller has os.Renamed
+// tmp onto out (the rename stays at the call site because TestTranscode_writesViaTempThenRenames asserts it
+// structurally). The transcode marked tmp at its (size, mtime) and a rename preserves both, so the marker is still true
+// of out: the first real load of a fresh sidecar does not read the whole file. Best-effort: a marker that fails to move
+// only costs that load one CRC pass, and none is left behind.
 func carryVerifiedMarker(tmp, out string) {
 	if err := os.Rename(decoder.GIWVerifiedMarkerPath(tmp), decoder.GIWVerifiedMarkerPath(out)); err != nil {
 		_ = os.Remove(decoder.GIWVerifiedMarkerPath(tmp))
