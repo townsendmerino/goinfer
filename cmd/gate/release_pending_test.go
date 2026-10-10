@@ -16,10 +16,10 @@ import (
 // awaitingFirstConfirmation exists so a newly required gate that has not run yet does not block
 // everything on the day it is added. But a failure in a pending gate reads as an ITEM, not a
 // blocker, so an entry that sits there indefinitely is a required gate that can never stop a
-// release. The audit proposed a calendar bound (older than 7 days). It was rejected on 2026-09-11:
-// it fails CI at the maintainer's pace, which says nothing about what shipped. The bound is the
-// release instead. At tag time, an entry dated before the PREVIOUS release has already ridden
-// through one release unconfirmed, and it blocks this one. Between releases nothing is enforced.
+// release. The bound is the release, not a calendar age (a day count fails CI at the maintainer's
+// pace, which says nothing about what shipped): at tag time, an entry dated before the PREVIOUS
+// release has already ridden through one release unconfirmed, and it blocks this one. Between
+// releases nothing is enforced.
 
 // changelogRelease matches a released CHANGELOG header, "## [v0.17.2] — 2026-09-08". The dates come
 // from the CHANGELOG rather than git tags because the release workflow's checkout carries no tags.

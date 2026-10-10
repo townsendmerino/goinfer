@@ -80,8 +80,7 @@ func TestMutation_falsifiableGatePasses(t *testing.T) {
 	}
 }
 
-// A sed expression that matches nothing leaves a green run that LOOKS like a verified mutation
-// check. It happened for real — float32(v/sc) where both operands were already float32.
+// A sed expression that matches nothing leaves a green run that LOOKS like a verified mutation check.
 func TestMutation_vacuousExpressionIsRejected(t *testing.T) {
 	dir, rel := scratchRepo(t, subjectOK)
 	var buf strings.Builder
@@ -170,9 +169,8 @@ func TestMutation_unstartableVerifyCommandIsNotGreen(t *testing.T) {
 
 // REGRESSION PIN. `sed -i` is not portable: GNU takes an optional suffix attached to the flag, BSD
 // (macOS) takes a required separate one, so `sed -i EXPR file` silently means "backup suffix EXPR,
-// script file" on a Mac. The shell script this replaced carried that bug its whole life unnoticed,
-// because nobody hand-ran it there; CI's darwin job failed on the Go port within one push. Reading
-// stdout is portable on both, and this test exists so the flag cannot come back.
+// script file" on a Mac. Reading stdout is portable on both; this test exists so the flag cannot
+// come back.
 func TestMutation_sedInvocationIsPortable(t *testing.T) {
 	args := sedArgs("s/a/b/", "some/file.go")
 	for _, a := range args {

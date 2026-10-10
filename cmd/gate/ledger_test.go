@@ -7,11 +7,8 @@ import (
 	"testing"
 )
 
-// `gate ledger` replaced scripts/gate_ledger.py (2026-09-25). Before the script was deleted the two were run
-// side by side: classify agreed on all 83 gates in testdata/gate_ledger.json (plus an unknown name), reconcile
-// printed the same 69 lines, and promote + seed wrote the same file bar the seed note's new command name. These
-// pin the parts of that equivalence that existing confirmations depend on, now that there is no script to
-// compare against.
+// `gate ledger` replaced scripts/gate_ledger.py. These pin the parts of the old equivalence that
+// existing confirmations depend on, now that there is no script to compare against.
 
 // The file format: loading the real ledger and writing it back must not change a byte — sorted keys, two-space
 // indent, and non-ASCII escaped as \uXXXX the way Python's json.dumps(ensure_ascii) wrote it. A drift here

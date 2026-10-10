@@ -1440,3 +1440,270 @@ Moved from `cmd/gate/identity_record.go` (comments that named retired scripts, d
 family's validation may be inherited by identity). It writes PARITY_ROW lines for the decoder package's
 TestParityManifest_merge, the manifest's one writer, and never writes the manifest itself.
 ```
+
+## TestParity_neverConfirmedIsNotABlockerEitherWay
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestParity_neverConfirmedIsNotABlockerEitherWay`) on 2026-10-09.
+
+```text
+A gate in neverConfirmed must not block on either outcome that made it neverConfirmed in the
+first place — a SKIP (asset absent, docs/measurements/... explains why) or a FAIL (the gate ran
+and genuinely failed on this box). Measured 2026-09-18: neverConfirmed's own doc comment already
+promised "never blocks a tag" but the live classifier never actually consulted the map — only
+the separate static TestParity_everyRequiredGateIsConfirmed did — so TestNemotron35LightningReal_oracle
+sat in neverConfirmed since 2026-09-13 while its SKIP kept counting as a blocker on every run.
+Both cases are covered here, plus the "unlisted gate is unaffected" control so the fix can't be
+satisfied by treating every skip/fail as non-blocking.
+```
+
+## TestRealckptCellCanReachEveryGate
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestRealckptCellCanReachEveryGate`) on 2026-10-09.
+
+```text
+A required gate that the cell's -run filter cannot match never executes, and the sweep reports
+it as DID NOT RUN — indistinguishable from a missing asset. That is exactly what happened to
+TestQwen3NextReal_oracle: named "Real_oracle" while the filter accepted only "Qwen35|Real_gate",
+so it was unreachable by construction while every investigation hunted the 163GB checkpoint.
+```
+
+## TestParity_missingGateSaysWhichCause
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestParity_missingGateSaysWhichCause`) on 2026-10-09.
+
+```text
+The two causes of "no result" are fixed in different places and used to read identically. A gate
+no -run pattern selects cannot be made to run by any asset or machine; one that IS selected and
+still reported nothing is a build failure, an absent asset, or a dead cell. TestQwen3NextReal_oracle
+was the first kind and the report implied the second, which sent three sessions after a 163 GB
+checkpoint that was fine.
+
+N-41 (audit-2026-09-02.md, found 2026-09-11): this test used to pass classifyChecks a cells list
+production never produces — a lone FILTERED cell, no unfiltered one — to exercise the
+"UNREACHABLE" branch. parityCells always prepends an unfiltered base cell (base.Run == "", see
+TestBaseCellIsUnfiltered), so whyNoResult's loop matches that FIRST for any test name and can
+never reach the UNREACHABLE fallthrough via the sweep's one real call site. Worse than dead code:
+with the REALISTIC list below, TestQwen3NextReal_oracle is diagnosed as "selected by cell
+...(unfiltered)... but reported nothing" — the WRONG cause, reproducing the exact five-week
+misdiagnosis this function exists to prevent, because whyNoResult's "unfiltered" check does not
+know that a cell's Pkgs/Tags might never even COMPILE a realckpt-tagged test. Fixing that needs
+a real reachability check (e.g. `go test -tags <cell> -list` per cell) rather than a -run regex
+match; not done here — this only stops the test from certifying a scenario that cannot occur and
+records the live gap plainly instead of leaving it invisible under a green mutation-adjacent test.
+```
+
+## TestParity_everyRequiredGateIsConfirmed
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestParity_everyRequiredGateIsConfirmed`) on 2026-10-09.
+
+```text
+EVERY REQUIRED GATE MUST HAVE A CONFIRMED PRIOR RESULT, OR SAY IN CODE WHY IT DOES NOT.
+
+B14's first-run outcome is only safe while the ledger is maintained: a gate with no entry fails
+as an ITEM, not a blocker, so an UNMAINTAINED ledger silently converts regressions into notes.
+That is not hypothetical — the ledger was bulk-seeded on 2026-08-14 and never touched again, and
+by 2026-09-02 five required gates were still first-run INCLUDING TestInt4_forwardParity, which
+the gate list itself calls "the broadest quant check here". Each of the five had a PASS sitting
+in the v0.15.0 sweep log the whole time; `reconcile` printed them every run and never exits
+non-zero (deliberately — see ledger.go's reconcileLedger), and nothing else looked. So the assertion lives
+here, where CI already runs it.
+
+A missing entry is a red test with one of two fixes, both deliberate: promote the gate from a
+sweep log, or add it to neverConfirmed with a written reason.
+```
+
+## TestParity_unlistedFailureIsABlocker
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestParity_unlistedFailureIsABlocker`) on 2026-10-09.
+
+```text
+A FAILURE IN A TEST NOBODY LISTED IS STILL A FAILURE. The sweep's decision is a checkset, so
+`blockers` came only from the named gates and a FAIL anywhere else changed nothing — 36 family
+parity tests (Cohere, LFM2, Laguna, InternLM, GLM4-MoE, the VL text parities, 12 *Real_gates)
+could go red and the verdict still read ALL REQUIRED GATES GREEN, exit 0.
+```
+
+## TestRealckptGateIsListedOrExplicitlyNotRequired
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestRealckptGateIsListedOrExplicitlyNotRequired`) on 2026-10-09.
+
+```text
+EVERY GATE-SHAPED realckpt TEST IS LISTED, ONE WAY OR THE OTHER.
+
+The five-week TestQwen3NextReal_oracle incident was a gate no -run could select. Five more were
+in that state on 2026-09-02 — TestGemma4_26B_gate, TestGlm4MoeAir_gate, TestLagunaGGUF_gate,
+TestQwen38GGUF_gate, TestGptOssReal_logitParity — and because they were also in no list, the
+sweep could not even report them as DID NOT RUN. It had no way to say a word about them.
+```
+
+## TestMetalGateIsListedOrExplicitlyNotRequired
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestMetalGateIsListedOrExplicitlyNotRequired`) on 2026-10-09.
+
+```text
+EVERY GATE-SHAPED, goinfer_testhooks-TAGGED METAL TEST IS LISTED, ONE WAY OR THE OTHER.
+
+V-07 (docs/review-2026-09-04.md): TestBatchedVerifyKernelParity — the Metal decode==verify
+bit-identity gate G-08 repaired — matched none of metal-parity's five -run alternatives, and
+neither did TestGemma4DenseScaled_metalParity or TestGemma4Router_residentIdxParity. Unlike the
+realckpt side (TestRealckptGateIsListedOrExplicitlyNotRequired above), there was no scan here
+at all: a regression of the exact class G-08 fixed could pass `gate gpu` on the Mac with
+nothing ever forwarded for it, and no report even naming the gap. This is that scan's Metal
+twin — checked against metalParityRun (a REGEX match, not a JSON-result tally like the
+realckpt side's parityRealckptGates, since the question here is narrower: does SOME cell's
+-run even reach this test at all).
+```
+
+## TestEmitterCoverage_joinedFamilies
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestEmitterCoverage_joinedFamilies`) on 2026-10-09.
+
+```text
+A gate that records more than one family is listed in emitGates as "a+b". The merged-row set holds the families
+one by one, so the coverage report must look the parts up separately: the v0.21.0 sweep printed "PASSED but
+emitted NO row for gemma+gemma2" while the manifest had both rows (TestGemma12Real_gate emits each).
+```
+
+## TestTimeoutPanic_namesBudgetAndInFlightTests
+
+Moved from `cmd/gate/parity_test.go` (the comment above `TestTimeoutPanic_namesBudgetAndInFlightTests`) on 2026-10-09.
+
+```text
+The v0.21.0 sweep's realckpt cell hit its -timeout and the verdict only said "crash, timeout or build failure".
+The panic text carries the budget and the tests in flight; the verdict has to name them.
+```
+
+## TestGPU_detailNamesTheCrashingTest
+
+Moved from `cmd/gate/gpu_test.go` (the comment above `TestGPU_detailNamesTheCrashingTest`) on 2026-10-09.
+
+```text
+The Metal gate reported a FAIL and then printed a dozen PASSING parity lines as
+its "detail", because failLineRe matched every `file.go:N:` line a t.Log emits.
+The real cause — a SIGSEGV in objc_msgSend — appeared nowhere, and detail()'s
+own crash fallback never fired because the filter had already matched. This
+pins both halves against the shape of the run that exposed it.
+```
+
+## TestGPUGate_emptyFilteredCellIsNotAPass
+
+Moved from `cmd/gate/gpu_test.go` (the comment above `TestGPUGate_emptyFilteredCellIsNotAPass`) on 2026-10-09.
+
+```text
+A filtered cell whose -run matches nothing is not a pass: zero tests ran, so it proves nothing,
+and the aggregate ran==0 check cannot see it once any other cell has run. This is the same shape
+as the qwen3next oracle, whose -run pattern could not match a required gate and reported
+"DID NOT RUN" for five weeks while the investigation went after a 163GB asset.
+```
+
+## TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged
+
+Moved from `cmd/gate/gpu_test.go` (the comment above `TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged`) on 2026-10-09.
+
+```text
+The guard must not fire on a cell that legitimately ran something, and must not fire on an
+UNFILTERED cell either (an empty -run means "everything", so emptiness there is a different bug).
+
+Driven through the results directly rather than by running a real cell: pointing a cell at "./"
+from inside cmd/gate makes `go test` re-run this very suite, which re-runs the cell, which... The
+first draft of this test did exactly that and sat there for ten minutes.
+```
+
+## TestGPU_metalPrefillCellChecksVacuous
+
+Moved from `cmd/gate/gpu_test.go` (the comment above `TestGPU_metalPrefillCellChecksVacuous`) on 2026-10-09.
+
+```text
+TestGPU_metalPrefillCellChecksVacuous pins V-21 (docs/review-2026-09-04.md): the sibling
+cells (metal-parity, metal-lifecycle) already gate on `cr.RC != 0 || cr.vacuous()`, but
+metal-prefill checked only cr.RC != 0 — a cell whose named tests (TestPrefillParity,
+TestPrefillNoNaN) all skipped for a reason unrelated to the os.Stat guard above it would have
+RC==0 and print PASS despite verifying nothing. Source-text guard rather than driving the real
+cell (which shells out to `go test` against a Metal checkpoint): the fix is a one-line addition
+to an existing condition, and what needs pinning is that the addition stays, not the mechanics
+of vacuous() itself (already exercised by the sibling cells' identical shape).
+```
+
+## TestGPU_metalPrefillCellChecksVacuous.scan
+
+Moved from `cmd/gate/gpu_test.go` (the comment above `TestGPU_metalPrefillCellChecksVacuous.scan`) on 2026-10-09.
+
+```text
+Comment lines are not the check — only look at actual code, or a stray comment mentioning
+cr.vacuous() near removed code would fool this the same way a doc comment fooled the audit's
+own G-07 finding.
+```
+
+## TestCellHeartbeatNamesLongestRunningTest
+
+Moved from `cmd/gate/heartbeat_test.go` (the comment above `TestCellHeartbeatNamesLongestRunningTest`) on 2026-10-09.
+
+```text
+The count of finished tests answers "is it moving?" but not "what is holding it up?" — and
+during the v0.15.0 sweep those diverged: the count sat at 430 for four minutes while the line
+kept naming a test that had already completed. So the heartbeat must name what is IN FLIGHT,
+and must prefer the longest-running one, because a slow parent's subtests churn beneath it and
+the parent is the name worth printing.
+```
+
+## ledger_test.header
+
+Moved from `cmd/gate/ledger_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+`gate ledger` replaced scripts/gate_ledger.py (2026-09-25). Before the script was deleted the two were run
+side by side: classify agreed on all 83 gates in testdata/gate_ledger.json (plus an unknown name), reconcile
+printed the same 69 lines, and promote + seed wrote the same file bar the seed note's new command name. These
+pin the parts of that equivalence that existing confirmations depend on, now that there is no script to
+compare against.
+```
+
+## TestMutation_vacuousExpressionIsRejected
+
+Moved from `cmd/gate/mutation_test.go` (the comment above `TestMutation_vacuousExpressionIsRejected`) on 2026-10-09.
+
+```text
+A sed expression that matches nothing leaves a green run that LOOKS like a verified mutation
+check. It happened for real — float32(v/sc) where both operands were already float32.
+```
+
+## TestMutation_sedInvocationIsPortable
+
+Moved from `cmd/gate/mutation_test.go` (the comment above `TestMutation_sedInvocationIsPortable`) on 2026-10-09.
+
+```text
+REGRESSION PIN. `sed -i` is not portable: GNU takes an optional suffix attached to the flag, BSD
+(macOS) takes a required separate one, so `sed -i EXPR file` silently means "backup suffix EXPR,
+script file" on a Mac. The shell script this replaced carried that bug its whole life unnoticed,
+because nobody hand-ran it there; CI's darwin job failed on the Go port within one push. Reading
+stdout is portable on both, and this test exists so the flag cannot come back.
+```
+
+## release_pending_test.rule
+
+Moved from `cmd/gate/release_pending_test.go` (the comment at the top of the file) on 2026-10-09.
+
+```text
+A pending gate may ride through one release unconfirmed, never two (audit-2026-09-10 G-03).
+
+awaitingFirstConfirmation exists so a newly required gate that has not run yet does not block
+everything on the day it is added. But a failure in a pending gate reads as an ITEM, not a
+blocker, so an entry that sits there indefinitely is a required gate that can never stop a
+release. The audit proposed a calendar bound (older than 7 days). It was rejected on 2026-09-11:
+it fails CI at the maintainer's pace, which says nothing about what shipped. The bound is the
+release instead. At tag time, an entry dated before the PREVIOUS release has already ridden
+through one release unconfirmed, and it blocks this one. Between releases nothing is enforced.
+```
+
+## TestWebGPUGateIsListedOrExplicitlyNotRequired
+
+Moved from `cmd/gate/webgpu_listing_test.go` (the comment above `TestWebGPUGateIsListedOrExplicitlyNotRequired`) on 2026-10-09.
+
+```text
+EVERY GATE-SHAPED, goinfer_testhooks-TAGGED WEBGPU TEST IS LISTED, ONE WAY OR THE OTHER.
+
+audit-2026-09-10 G-10: webgpu-parity's -run was "ResidentParity", so nine gate-shaped gpu/
+tests, among them the G6 staged-int4 matmul gate and ForwardN parity, matched no cell and ran
+in no CI runner, with nothing to say so. This is TestMetalGateIsListedOrExplicitlyNotRequired's
+WebGPU twin.
+```

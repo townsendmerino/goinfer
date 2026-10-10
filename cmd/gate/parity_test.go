@@ -118,12 +118,9 @@ func TestParity_assetNeverBuiltIsAGapNotABlocker(t *testing.T) {
 }
 
 // A gate in neverConfirmed must not block on either outcome that made it neverConfirmed in the
-// first place — a SKIP (asset absent, docs/measurements/... explains why) or a FAIL (the gate ran
-// and genuinely failed on this box). Measured 2026-09-18: neverConfirmed's own doc comment already
-// promised "never blocks a tag" but the live classifier never actually consulted the map — only
-// the separate static TestParity_everyRequiredGateIsConfirmed did — so TestNemotron35LightningReal_oracle
-// sat in neverConfirmed since 2026-09-13 while its SKIP kept counting as a blocker on every run.
-// Both cases are covered here, plus the "unlisted gate is unaffected" control so the fix can't be
+// first place: a SKIP (asset absent) or a FAIL (the gate ran and genuinely failed on this box). The
+// live classifier has to consult the map, not only the static TestParity_everyRequiredGateIsConfirmed.
+// Both cases are covered, plus the "unlisted gate is unaffected" control so the fix cannot be
 // satisfied by treating every skip/fail as non-blocking.
 func TestParity_neverConfirmedIsNotABlockerEitherWay(t *testing.T) {
 	neverConfirmed["TestDeferredSkip"] = "2026-09-18 — asset never pulled to this box, real reason"
@@ -313,9 +310,7 @@ func TestComposition_loaderAxisComesFromTheName(t *testing.T) {
 }
 
 // A required gate that the cell's -run filter cannot match never executes, and the sweep reports
-// it as DID NOT RUN — indistinguishable from a missing asset. That is exactly what happened to
-// TestQwen3NextReal_oracle: named "Real_oracle" while the filter accepted only "Qwen35|Real_gate",
-// so it was unreachable by construction while every investigation hunted the 163GB checkpoint.
+// it as DID NOT RUN, indistinguishable from a missing asset: it is unreachable by construction.
 func TestRealckptCellCanReachEveryGate(t *testing.T) {
 	rc := realckptCell(t)
 	re, err := regexp.Compile(rc.Run)
@@ -347,24 +342,16 @@ func TestBaseCellIsUnfiltered(t *testing.T) {
 // gate is reachable and "no result" means the test really did not report.
 var oneUnfilteredCell = []cell{{Name: "./decoder/", Pkgs: []string{"./decoder/"}}}
 
-// The two causes of "no result" are fixed in different places and used to read identically. A gate
+// The two causes of "no result" are fixed in different places and must read differently. A gate
 // no -run pattern selects cannot be made to run by any asset or machine; one that IS selected and
-// still reported nothing is a build failure, an absent asset, or a dead cell. TestQwen3NextReal_oracle
-// was the first kind and the report implied the second, which sent three sessions after a 163 GB
-// checkpoint that was fine.
+// still reported nothing is a build failure, an absent asset, or a dead cell.
 //
-// N-41 (audit-2026-09-02.md, found 2026-09-11): this test used to pass classifyChecks a cells list
-// production never produces — a lone FILTERED cell, no unfiltered one — to exercise the
-// "UNREACHABLE" branch. parityCells always prepends an unfiltered base cell (base.Run == "", see
-// TestBaseCellIsUnfiltered), so whyNoResult's loop matches that FIRST for any test name and can
-// never reach the UNREACHABLE fallthrough via the sweep's one real call site. Worse than dead code:
-// with the REALISTIC list below, TestQwen3NextReal_oracle is diagnosed as "selected by cell
-// ...(unfiltered)... but reported nothing" — the WRONG cause, reproducing the exact five-week
-// misdiagnosis this function exists to prevent, because whyNoResult's "unfiltered" check does not
-// know that a cell's Pkgs/Tags might never even COMPILE a realckpt-tagged test. Fixing that needs
-// a real reachability check (e.g. `go test -tags <cell> -list` per cell) rather than a -run regex
-// match; not done here — this only stops the test from certifying a scenario that cannot occur and
-// records the live gap plainly instead of leaving it invisible under a green mutation-adjacent test.
+// The cells below are the realistic list: parityCells always prepends an unfiltered base cell
+// (TestBaseCellIsUnfiltered), so whyNoResult matches that FIRST for any test name and never reaches
+// its UNREACHABLE fallthrough through the sweep's one real call site. Known limitation: whyNoResult
+// cannot tell that a cell's Pkgs/Tags never COMPILE a realckpt-tagged test; that needs a real
+// reachability check (`go test -tags <cell> -list` per cell), not done here. The assertions record
+// today's behaviour, not a claim that it is right. See docs/code-notes/cmd-gate.md#TestParity_missingGateSaysWhichCause.
 func TestParity_missingGateSaysWhichCause(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestPasses": "pass"})
 	checks := []gateCheck{{"a", "TestPasses"}, {"b", "TestQwen3NextReal_oracle"}}
@@ -424,12 +411,8 @@ func rowFor(t *testing.T, rows []checkRow, test string) string {
 //
 // B14's first-run outcome is only safe while the ledger is maintained: a gate with no entry fails
 // as an ITEM, not a blocker, so an UNMAINTAINED ledger silently converts regressions into notes.
-// That is not hypothetical — the ledger was bulk-seeded on 2026-08-14 and never touched again, and
-// by 2026-09-02 five required gates were still first-run INCLUDING TestInt4_forwardParity, which
-// the gate list itself calls "the broadest quant check here". Each of the five had a PASS sitting
-// in the v0.15.0 sweep log the whole time; `reconcile` printed them every run and never exits
-// non-zero (deliberately — see ledger.go's reconcileLedger), and nothing else looked. So the assertion lives
-// here, where CI already runs it.
+// `reconcile` prints the unconfirmed gates but never exits non-zero (deliberately; see ledger.go's
+// reconcileLedger), so the assertion lives here, where CI already runs it.
 //
 // A missing entry is a red test with one of two fixes, both deliberate: promote the gate from a
 // sweep log, or add it to neverConfirmed with a written reason.
@@ -537,9 +520,8 @@ func isoDatePrefix(s string) bool {
 }
 
 // A FAILURE IN A TEST NOBODY LISTED IS STILL A FAILURE. The sweep's decision is a checkset, so
-// `blockers` came only from the named gates and a FAIL anywhere else changed nothing — 36 family
-// parity tests (Cohere, LFM2, Laguna, InternLM, GLM4-MoE, the VL text parities, 12 *Real_gates)
-// could go red and the verdict still read ALL REQUIRED GATES GREEN, exit 0.
+// `blockers` came only from the named gates; a FAIL anywhere else must still block, or an unlisted
+// family parity test could go red and the verdict still read ALL REQUIRED GATES GREEN, exit 0.
 func TestParity_unlistedFailureIsABlocker(t *testing.T) {
 	res := parityResults(t, map[string]string{
 		"TestListedGate":           "pass",
@@ -595,10 +577,8 @@ func TestParity_unlistedFailureUsesTheLastCellsResult(t *testing.T) {
 
 // EVERY GATE-SHAPED realckpt TEST IS LISTED, ONE WAY OR THE OTHER.
 //
-// The five-week TestQwen3NextReal_oracle incident was a gate no -run could select. Five more were
-// in that state on 2026-09-02 — TestGemma4_26B_gate, TestGlm4MoeAir_gate, TestLagunaGGUF_gate,
-// TestQwen38GGUF_gate, TestGptOssReal_logitParity — and because they were also in no list, the
-// sweep could not even report them as DID NOT RUN. It had no way to say a word about them.
+// A gate no -run can select, and which is also in no list, cannot even be reported as DID NOT RUN:
+// the sweep has no way to say a word about it.
 func TestRealckptGateIsListedOrExplicitlyNotRequired(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
@@ -894,15 +874,11 @@ func TestExitsHard(t *testing.T) { os.Exit(3) }
 
 // EVERY GATE-SHAPED, goinfer_testhooks-TAGGED METAL TEST IS LISTED, ONE WAY OR THE OTHER.
 //
-// V-07 (docs/review-2026-09-04.md): TestBatchedVerifyKernelParity — the Metal decode==verify
-// bit-identity gate G-08 repaired — matched none of metal-parity's five -run alternatives, and
-// neither did TestGemma4DenseScaled_metalParity or TestGemma4Router_residentIdxParity. Unlike the
-// realckpt side (TestRealckptGateIsListedOrExplicitlyNotRequired above), there was no scan here
-// at all: a regression of the exact class G-08 fixed could pass `gate gpu` on the Mac with
-// nothing ever forwarded for it, and no report even naming the gap. This is that scan's Metal
-// twin — checked against metalParityRun (a REGEX match, not a JSON-result tally like the
-// realckpt side's parityRealckptGates, since the question here is narrower: does SOME cell's
-// -run even reach this test at all).
+// V-07 (docs/completed/review-2026-09-04.md): a Metal gate matched by none of metal-parity's -run
+// alternatives could pass `gate gpu` on the Mac with nothing ever forwarded for it, and no report
+// naming the gap. This is the Metal twin of TestRealckptGateIsListedOrExplicitlyNotRequired,
+// checked against metalParityRun (a REGEX match, not a JSON-result tally like the realckpt side's
+// parityRealckptGates): does SOME cell's -run even reach this test at all.
 func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
@@ -950,9 +926,9 @@ func TestMetalGateIsListedOrExplicitlyNotRequired(t *testing.T) {
 	}
 }
 
-// A gate that records more than one family is listed in emitGates as "a+b". The merged-row set holds the families
-// one by one, so the coverage report must look the parts up separately: the v0.21.0 sweep printed "PASSED but
-// emitted NO row for gemma+gemma2" while the manifest had both rows (TestGemma12Real_gate emits each).
+// A gate that records more than one family is listed in emitGates as "a+b". The merged-row set holds
+// the families one by one, so the coverage report must look the parts up separately
+// (TestGemma12Real_gate emits each).
 func TestEmitterCoverage_joinedFamilies(t *testing.T) {
 	res := newResults()
 	k := testKey{Test: "TestGemma12Real_gate"}
@@ -981,8 +957,8 @@ func TestEmitterCoverage_joinedFamilies(t *testing.T) {
 	}
 }
 
-// The v0.21.0 sweep's realckpt cell hit its -timeout and the verdict only said "crash, timeout or build failure".
-// The panic text carries the budget and the tests in flight; the verdict has to name them.
+// The verdict for a cell that hit its -timeout must name the budget and the tests in flight, which
+// the panic text carries, not only "crash, timeout or build failure".
 func TestTimeoutPanic_namesBudgetAndInFlightTests(t *testing.T) {
 	blob := "=== RUN   TestQwen3MoeReal_oracle\n" +
 		"panic: test timed out after 2h0m0s\n" +
