@@ -556,8 +556,8 @@ func IsDirNoStream(err error) bool {
 // loadEmbedTable loads a [rows, cols] logit table (the token embedding or an untied head) at the embedding precision mode:
 // whole and then quantized for the resident build, a row at a time when streaming (a 256k x 4096 table is 4.2 GB as f32,
 // the largest single allocation of a transcode). Both give the same bytes (G-DS1, docs/tasks/task-prequant-dir-streaming-2026-10.md).
-func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode quantMode, needCanonical, stream bool) (linalg.WeightMat, error) {
-	if !stream {
+func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode quantMode, needCanonical bool, sink *giwWriter) (linalg.WeightMat, error) {
+	if sink == nil {
 		m, err := loadMat(st, name, rows, cols)
 		if err != nil {
 			return m, err
@@ -572,26 +572,28 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 		return linalg.WeightMat{}, fmt.Errorf("decoder: %q shape %v, want [%d %d]", name, t.Shape, rows, cols)
 	}
 	// Read in blocks of rows: one bf16->f32 conversion per block instead of per row (a 262k-row table is 262k calls
-	// otherwise). A block of the widest table here is about 10 MB.
+	// otherwise). A block of the widest table here is about 10 MB, and each row range holds one (its reader's own).
 	const block = 1024
-	var buf []float32
-	base := -1
-	return streamQuantizedEmbed(rows, cols, mode, needCanonical, func(r int, dst []float32) error {
-		if base < 0 || r >= base+block {
-			base = r - r%block
-			var rerr error
-			if buf, rerr = t.SubF32(base*cols, min(block, rows-base)*cols); rerr != nil {
-				return rerr
+	return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), block, func() rowReader {
+		var buf []float32
+		base := -1
+		return func(r int, dst []float32) error {
+			if base < 0 || r < base || r >= base+block {
+				base = r - r%block
+				var rerr error
+				if buf, rerr = t.SubF32(base*cols, min(block, rows-base)*cols); rerr != nil {
+					return rerr
+				}
 			}
+			copy(dst, buf[(r-base)*cols:(r-base+1)*cols])
+			return nil
 		}
-		copy(dst, buf[(r-base)*cols:(r-base+1)*cols])
-		return nil
 	})
 }
 
 // finishLayers runs a builder's per-layer loads. Resident (sink nil): in parallel. Streaming: the bundle head (every
-// global exists by now), then each layer loaded, written and freed in order, so the model is never resident at once; the
-// head records no quant label, as StreamTranscodeGGUF's does.
+// global exists by now), then the layers through streamLayers, a window at a time, so the model is never resident at
+// once; the head records no quant label, as StreamTranscodeGGUF's does.
 func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, sink *giwWriter, id string) (*Weights, error) {
 	n := len(w.Layers)
 	if sink == nil {
@@ -606,19 +608,8 @@ func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, s
 	}
 	// The logit tables and Gemma 4's per-layer token table are written; nothing after the head reads them.
 	w.Embed, w.LMHead, w.PerLayerTokenEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
-	for k := range n {
-		i := k
-		if streamDirSwapForTest && n > 1 && k < 2 {
-			i = 1 - k // G-DS1's planted defect: layers 0 and 1 written in each other's place
-		}
-		if err := loadLayer(i); err != nil {
-			return nil, err
-		}
-		sink.layer(&w.Layers[i])
-		if sink.err != nil {
-			return nil, sink.err
-		}
-		w.Layers[i] = LayerWeights{} // release before the next layer
+	if err := streamLayers(w, arch, sink, loadLayer); err != nil {
+		return nil, err
 	}
 	return w, nil
 }
@@ -629,6 +620,7 @@ func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, s
 // about the globals plus one layer rather than the whole model. The dedicated builders stream their layers the same way
 // (their embedding still loads whole); a family whose builder does not stream returns errDirNoStream.
 func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, sink *giwWriter, id string) (*Weights, error) {
+	skipRow4 = skipRow4 || !repackForDecode(sink) // every builder below takes it from here
 	if sink != nil {
 		switch {
 		case arch.Name == "gpt2", arch.Name == "internlm2", arch.gptoss != nil:
@@ -872,7 +864,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 	// head, so it is logit-critical — quantize it with the embedding policy
 	// (int8 even in int4 mode), not the projection mode.
 	embedTable := func(name string, rows int) (linalg.WeightMat, error) {
-		return loadEmbedTable(st, name, rows, hd, quant.embeddingWith(embedInt4), needCanonical, sink != nil)
+		return loadEmbedTable(st, name, rows, hd, quant.embeddingWith(embedInt4), needCanonical, sink)
 	}
 	if w.Embed, err = embedTable(mp(s.Embed), cfg.VocabSize); err != nil {
 		return nil, err
@@ -1108,7 +1100,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 				}
 			}
 			if arch.MoE != nil {
-				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, skipRow4); err != nil {
+				if l.gemma4moe, err = loadGemma4MoE(st, i, cfg, arch, hd, l, quant, tn, skipRow4, sink); err != nil {
 					return err
 				}
 			}
@@ -1134,22 +1126,24 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			expInter := arch.MoE.IntermediateDim // expert FFN width (Mellum: moe_intermediate_size)
 			if fusedExperts {
 				// Real qwen3_5_moe: all experts in two stacked 3-D tensors.
-				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, skipRow4); err != nil {
+				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, skipRow4, sink); err != nil {
 					return err
 				}
 			} else {
 				l.Experts = make([]expertWeights, arch.MoE.NumExperts)
-				for e := 0; e < arch.MoE.NumExperts; e++ {
+				if err = forExperts(arch.MoE.NumExperts, sink, func(e int) error {
 					ex := &l.Experts[e]
+					var err error
 					if ex.Gate, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertGate, e)), expInter, hd); err != nil {
 						return err
 					}
 					if ex.Up, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertUp, e)), expInter, hd); err != nil {
 						return err
 					}
-					if ex.Down, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertDown, e)), hd, expInter); err != nil {
-						return err
-					}
+					ex.Down, err = loadMatQ(tn(i, fmt.Sprintf(s.ExpertDown, e)), hd, expInter)
+					return err
+				}); err != nil {
+					return err
 				}
 			}
 			// Shared expert (Qwen2-MoE): an always-on gated MLP + a scalar sigmoid
@@ -1218,11 +1212,12 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			if len(t.Shape) != 2 || t.Shape[0] != pleVocab || t.Shape[1] != pleTotal {
 				return nil, fmt.Errorf("gemma4: %q shape %v, want [%d %d]", name, t.Shape, pleVocab, pleTotal)
 			}
-			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, func(r int, dst []float32) error {
+			readPLE := func(r int, dst []float32) error { // keeps no state: every row range shares it
 				row, rerr := t.SubF32(r*pleTotal, pleTotal)
 				copy(dst, row)
 				return rerr
-			}); err != nil {
+			}
+			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.embeddingWith(embedInt4), needCanonical, !repackForDecode(sink), 1, func() rowReader { return readPLE }); err != nil {
 				return nil, err
 			}
 			if w.PerLayerModelProj, err = loadProj(mp("model.per_layer_model_projection.weight"), pleTotal, hd, false); err != nil {
@@ -1565,10 +1560,11 @@ func fusedLayout(name string, shape []int, nExpert, a, b int) (transposed bool, 
 // Qwen3.5-MoE row layout ([E, 2I, H] and [E, H, I]) or transformers 4.57's transposed one ([E, H, 2I] and [E, I, H],
 // Qwen3-VL-MoE's release), decided by shape as HF decides it (fusedLayout).
 //
-// It streams via Tensor.SubF32, one expert at a time, as streamExperts does for gemma4's fused experts: whole-tensor
-// TensorF32 reads would materialize both stacks as f32, a multi-GB transient per layer times every layer parallelLayers
-// has in flight.
-func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4 bool) ([]expertWeights, error) {
+// It streams one expert at a time, via Tensor.SubF32 or, for the transposed layout, Tensor.SubF32Transposed, as
+// streamExperts does for gemma4's fused experts: whole-tensor TensorF32 reads would materialize both stacks as f32, a
+// multi-GB transient per layer times every layer parallelLayers has in flight. The experts are built through
+// forExperts.
+func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nExpert, inter, hidden int, quant quantMode, skipRow4 bool, sink *giwWriter) ([]expertWeights, error) {
 	guT, err := st.Tensor(gateUpName)
 	if err != nil {
 		return nil, err
@@ -1595,46 +1591,52 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 	if fusedExpertsTransposedForTest {
 		guTrans, dnTrans = false, false
 	}
+	// A slice read in place from an F32 tensor is a view of the mapping; every other read is a slice of its own.
+	guView, dnView := guT.DType == "F32" && !guTrans, dnT.DType == "F32" && !dnTrans
+	// q quantizes one expert matrix. A matrix that stays f32 and was a view of the mapping gets a slice of its own.
+	q := func(data []float32, rows, cols int, view bool) linalg.WeightMat {
+		var m linalg.WeightMat
+		if skipRow4 {
+			m = quantizeWMSkipRow4(linalg.WrapF32(data, rows, cols), quant)
+		} else {
+			m = quantizeWM(linalg.WrapF32(data, rows, cols), quant)
+		}
+		if f, ok := m.F32(); ok && view {
+			m = linalg.WrapF32(append([]float32(nil), f...), rows, cols)
+		}
+		return m
+	}
 	experts := make([]expertWeights, nExpert)
-	for e := range experts {
-		guE, err := guT.SubF32(e*guStride, guStride)
-		if err != nil {
-			return nil, err
-		}
-		dnE, err := dnT.SubF32(e*downStride, downStride)
-		if err != nil {
-			return nil, err
-		}
+	err = forExperts(nExpert, sink, func(e int) error {
+		var guE, dnE []float32
+		var err error
 		if guTrans { // [H, 2I] -> [2I, H]: gate rows first, then up
-			guE = transposeF32(guE, hidden, 2*inter)
+			guE, err = guT.SubF32Transposed(e*guStride, hidden, 2*inter)
+		} else {
+			guE, err = guT.SubF32(e*guStride, guStride)
+		}
+		if err != nil {
+			return err
 		}
 		if dnTrans { // [I, H] -> [H, I]
-			dnE = transposeF32(dnE, inter, hidden)
-		}
-		var gate, up, dn linalg.WeightMat
-		if skipRow4 {
-			gate = quantizeWMSkipRow4(linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden), quant)
-			up = quantizeWMSkipRow4(linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden), quant)
-			dn = quantizeWMSkipRow4(linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter), quant)
+			dnE, err = dnT.SubF32Transposed(e*downStride, inter, hidden)
 		} else {
-			gate = quantizeWM(linalg.WrapF32(append([]float32(nil), guE[:half]...), inter, hidden), quant)
-			up = quantizeWM(linalg.WrapF32(append([]float32(nil), guE[half:]...), inter, hidden), quant)
-			dn = quantizeWM(linalg.WrapF32(append([]float32(nil), dnE...), hidden, inter), quant)
+			dnE, err = dnT.SubF32(e*downStride, downStride)
 		}
-		experts[e] = expertWeights{Gate: gate, Up: up, Down: dn}
+		if err != nil {
+			return err
+		}
+		experts[e] = expertWeights{
+			Gate: q(guE[:half:half], inter, hidden, guView),
+			Up:   q(guE[half:], inter, hidden, guView),
+			Down: q(dnE, hidden, inter, dnView),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return experts, nil
-}
-
-// transposeF32 returns the transpose of a row-major [rows, cols] matrix.
-func transposeF32(m []float32, rows, cols int) []float32 {
-	out := make([]float32, len(m))
-	for r := range rows {
-		for c := range cols {
-			out[c*rows+r] = m[r*cols+c]
-		}
-	}
-	return out
 }
 
 // loadGemma4MoE loads one gemma4 layer's parallel dense+MoE FFN sub-block (enable_moe_block) into a gemma4MoEWeights,
@@ -1646,7 +1648,7 @@ func transposeF32(m []float32, rows, cols int) []float32 {
 // Router weights stay f32 (loadMat, no quant: the router is logit-critical); the experts quantize at load through the
 // layer's quant mode. The experts stream one at a time via Tensor.SubF32, so a bf16 checkpoint never materializes the
 // whole [nExperts, 2*inter, hidden] gate_up, only one expert's f32 at a time.
-func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, quant quantMode, tn func(int, string) string, skipRow4 bool) (*gemma4MoEWeights, error) {
+func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architecture, hidden int, l *LayerWeights, quant quantMode, tn func(int, string) string, skipRow4 bool, sink *giwWriter) (*gemma4MoEWeights, error) {
 	m := arch.MoE
 	nm := func(s string) string { return tn(i, s) }
 	w := &gemma4MoEWeights{
@@ -1690,10 +1692,10 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architec
 	if err != nil {
 		return nil, err
 	}
-	if w.expertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, skipRow4); err != nil {
+	if w.expertsGateUp, err = streamExperts(guT, m.NumExperts, 2*m.IntermediateDim, hidden, quant, skipRow4, sink); err != nil {
 		return nil, err
 	}
-	if w.expertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, skipRow4); err != nil {
+	if w.expertsDown, err = streamExperts(dnT, m.NumExperts, hidden, m.IntermediateDim, quant, skipRow4, sink); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -1704,27 +1706,31 @@ func loadGemma4MoE(st *embed.SafetensorsFile, i int, cfg *Config, arch *Architec
 // so the whole 3-D f32 is never materialized (the bf16-26B transient win). Each
 // expert passes through quantizeWM: int8/int4 produces owned quantized data and the
 // f32 slice is dropped; f32/quantNone leaves an f32 WeightMat aliasing the mapping
-// (pageable, valid while w.st is retained) — no heap copy.
-func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, skipRow4 bool) ([]linalg.WeightMat, error) {
+// (pageable, valid while w.st is retained) — no heap copy. The experts are built through forExperts.
+func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, skipRow4 bool, sink *giwWriter) ([]linalg.WeightMat, error) {
 	stride := rows * cols
 	if t.Elements() != nExpert*stride {
 		return nil, fmt.Errorf("experts %q: %d elements, want %d (=%d×%d×%d)", t.Name, t.Elements(), nExpert*stride, nExpert, rows, cols)
 	}
 	out := make([]linalg.WeightMat, nExpert)
-	for e := range nExpert {
+	err := forExperts(nExpert, sink, func(e int) error {
 		f32, err := t.SubF32(e*stride, stride)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if fakeQuantScheme != "" && fakeQuantExpertsOnly { // DIAGNOSTIC (default-off): fake-4-bit the EXPERTS only; see fakequant.go
 			out[e] = fakeInt4WM(f32, rows, cols, fakeQuantScheme)
-			continue
+			return nil
 		}
 		if skipRow4 {
 			out[e] = quantizeWMSkipRow4(linalg.WrapF32(f32, rows, cols), quant)
 		} else {
 			out[e] = quantizeWM(linalg.WrapF32(f32, rows, cols), quant)
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -2452,14 +2458,14 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2528,7 +2534,7 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		if lw.Router, e = loadMat(st, tn("block_sparse_moe.router.layer.weight"), arch.MoE.NumExperts, hidden); e != nil {
 			return e
 		}
-		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant, skipRow4); e != nil {
+		if lw.Experts, e = loadFusedExperts(st, tn("block_sparse_moe.input_linear.weight"), tn("block_sparse_moe.output_linear.weight"), arch.MoE.NumExperts, inter, hidden, quant, skipRow4, sink); e != nil {
 			return e
 		}
 		sInter := arch.MoE.SharedIntermediateDim
@@ -2570,8 +2576,8 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 	// transformers' own NemotronH names it backbone.embedding.weight, which is the only
 	// spelling the tiny fixture (built by instantiating the config) ever produced. Every
 	// other tensor name agrees, so this one word is the whole delta — try both.
-	if w.Embed, err = loadEmbedTable(st, "backbone.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
-		if w.Embed, err = loadEmbedTable(st, "backbone.embeddings.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "backbone.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
+		if w.Embed, err = loadEmbedTable(st, "backbone.embeddings.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 			return nil, err
 		}
 	}
@@ -2579,7 +2585,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2667,8 +2673,9 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 				return e
 			}
 			lw.Experts = make([]expertWeights, moe.NumExperts)
-			for ei := range lw.Experts {
+			if e = forExperts(moe.NumExperts, sink, func(ei int) error {
 				ex := &lw.Experts[ei]
+				var e error
 				if ex.Up, e = loadMat(st, tn(fmt.Sprintf("mixer.experts.%d.up_proj.weight", ei)), moe.IntermediateDim, hidden); e != nil {
 					return e
 				}
@@ -2676,6 +2683,9 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 					return e
 				}
 				ex.Up, ex.Down = q(ex.Up), q(ex.Down)
+				return nil
+			}); e != nil {
+				return e
 			}
 			if moe.SharedIntermediateDim > 0 {
 				se := &lw.SharedExpert
@@ -2714,14 +2724,14 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2789,14 +2799,14 @@ func buildGlmOcrWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, s.Embed, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, s.Embed, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32(s.FinalNorm, hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, s.LMHead, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, s.LMHead, vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2872,14 +2882,14 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embedding.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -2955,14 +2965,14 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return quantizeWM(m, quant)
 	}
-	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); err != nil {
+	if w.Embed, err = loadEmbedTable(st, "model.embed_tokens.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); err != nil {
 		return nil, err
 	}
 	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
 		return nil, err
 	}
 	arch.TiedLMHead = true
-	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink != nil); herr == nil {
+	if head, herr := loadEmbedTable(st, "lm_head.weight", vocab, hidden, quant.embeddingWith(embedInt4), needCanonical, sink); herr == nil {
 		w.LMHead = head
 		arch.TiedLMHead = false
 	}
@@ -3033,7 +3043,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 			return derr
 		}
 		l.Experts = make([]expertWeights, nE)
-		for ex := range nE {
+		if err := forExperts(nE, sink, func(ex int) error {
 			guBase, dnBase := ex*hidden*2*expInter, ex*expInter*hidden
 			gate := make([]float32, expInter*hidden)
 			up := make([]float32, expInter*hidden)
@@ -3054,6 +3064,9 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 				Up:   q(linalg.WrapF32(up, expInter, hidden)),
 				Down: q(linalg.WrapF32(down, hidden, expInter)),
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		return nil
 	}

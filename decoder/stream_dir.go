@@ -53,9 +53,9 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 		return 0, err
 	}
 	defer st.Close()
-	// needCanonical=true, skipRow4=false: the writer chooses what to emit from canonical bytes in RAM, per layer, exactly
-	// as StreamTranscodeGGUF builds them.
-	wr := &giwWriter{sink: out, target: target}
+	// needCanonical=true: the writer chooses what to emit from canonical bytes in RAM, per layer, exactly as
+	// StreamTranscodeGGUF builds them. With a sink the build keeps nothing else in RAM (repackForDecode).
+	wr := &giwWriter{sink: out, target: target, layerBudget: streamLayerBudget()}
 	if _, err := buildWeightsFromSafetensorsTo(cfg, arch, schema, st, q, embedInt4, true, false, nil, wr, id); err != nil {
 		return wr.n, err
 	}

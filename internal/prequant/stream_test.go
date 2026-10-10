@@ -490,13 +490,13 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 	}
 	var fn *ast.FuncDecl
 	ast.Inspect(af, func(n ast.Node) bool {
-		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "Transcode" {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "TranscodeTimed" { // the GGUF branch's body; Transcode wraps it
 			fn = d
 		}
 		return true
 	})
 	if fn == nil {
-		t.Fatal("Transcode not found — this guard is watching nothing")
+		t.Fatal("TranscodeTimed not found — this guard is watching nothing")
 	}
 	render := func(e ast.Expr) string {
 		var b strings.Builder
@@ -527,7 +527,7 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 		return true
 	})
 	if creates == 0 {
-		t.Fatal("Transcode creates no file — the guard is watching the wrong function")
+		t.Fatal("TranscodeTimed creates no file — the guard is watching the wrong function")
 	}
 	if createdFinal > 0 {
 		t.Error("Transcode os.Creates the FINAL sidecar path directly. giw.WriteStream patches " +
@@ -622,7 +622,7 @@ func TestTranscodeDir_failedWriteLeavesNoFinalFile(t *testing.T) {
 	// failure. Instead force one directly: a bogus quant string makes decoder.Load itself fail,
 	// which is enough to prove no partial file is left at `out` (the property under test is
 	// "never publish an incomplete bundle," not "this specific step fails").
-	if err := transcodeDir(context.Background(), dir, "", out, "not-a-real-quant", false, decoder.GIWTargetNone); err == nil {
+	if _, err := transcodeDir(context.Background(), dir, "", out, "not-a-real-quant", false, decoder.GIWTargetNone); err == nil {
 		t.Fatal("transcodeDir accepted a bogus quant string")
 	}
 	if _, err := os.Stat(out); err == nil {

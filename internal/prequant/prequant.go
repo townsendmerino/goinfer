@@ -50,22 +50,40 @@ var freeDiskBytes = statfsFreeBytes
 // box (the repack functions are NEON-only in aikit); a shape the repack rejects, or a non-arm64
 // build, falls back to kind 3 for that tensor, so any target is always safe to pass.
 func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
+	_, err := TranscodeTimed(ctx, in, out, quant, embedInt4, target)
+	return err
+}
+
+// Phases is where a transcode's wall time went. Stream is building the bundle and writing it to disk; SelfCheck is
+// loading it back through the mmap path, whole-file CRC included.
+type Phases struct {
+	Stream, SelfCheck time.Duration
+}
+
+// String is the phase line's tail: "stream 20.1s, self-check 0.9s".
+func (p Phases) String() string {
+	return fmt.Sprintf("stream %.1fs, self-check %.1fs", p.Stream.Seconds(), p.SelfCheck.Seconds())
+}
+
+// TranscodeTimed is Transcode, and reports where the time went. A phase that did not finish reads zero.
+func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) (Phases, error) {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
 		return transcodeDir(ctx, in, "", out, quant, embedInt4, target)
 	}
+	var ph Phases
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
 	head, err := readHead(in, metaPrefixCap)
 	if err != nil {
-		return fmt.Errorf("read gguf head: %w", err)
+		return ph, fmt.Errorf("read gguf head: %w", err)
 	}
 	prefix, err := metadataPrefixLen(head)
 	if err != nil {
-		return fmt.Errorf("locate gguf metadata (header > %d MB?): %w", metaPrefixCap>>20, err)
+		return ph, fmt.Errorf("locate gguf metadata (header > %d MB?): %w", metaPrefixCap>>20, err)
 	}
 	tokBytes := head[:prefix]
 	if _, err := tokenizer.LoadGGUFBytes(tokBytes); err != nil {
-		return fmt.Errorf("metadata GGUF does not load a tokenizer: %w", err)
+		return ph, fmt.Errorf("metadata GGUF does not load a tokenizer: %w", err)
 	}
 
 	// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a time
@@ -84,11 +102,12 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 	// the bundle loader is strings.HasSuffix(dir, ".giw"). A plain `out + ".tmp"` fails selfCheck for every
 	// GGUF Transcode.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", tmp, err)
+		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
-	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
+	werr := writeBundle(f, tokBytes, func(w io.Writer) (int64, error) {
 		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, embedInt4, target, filepath.Base(in))
 	})
 	runtime.GC()
@@ -97,24 +116,30 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 	}
 	if werr != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("write bundle: %w", werr)
+		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
+	ph.Stream = time.Since(t0)
 
-	// 3) Verify the bundle round-trips through the real (mmap) load path — low RAM (file-backed
-	// pages) but a full read of the file for its CRC, which is what makes it a real integrity
-	// check and records the verified-marker carryVerifiedMarker carries over. On the TEMP file, so a
-	// bundle that fails it never becomes the sidecar even for an instant.
+	// 3) Verify the bundle loads through the real (mmap) load path: it deserializes and its shapes validate. Whether
+	// that load recomputes the whole-file CRC is markWritten's rule. On the TEMP file, so a bundle that fails it never
+	// becomes the sidecar even for an instant.
+	markWritten(tmp, in)
+	if afterWriteForTest != nil {
+		afterWriteForTest(tmp)
+	}
+	t1 := time.Now()
 	if err := selfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("self-check: %w", err)
+		return ph, fmt.Errorf("self-check: %w", err)
 	}
+	ph.SelfCheck = time.Since(t1)
 	if err := os.Rename(tmp, out); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("publish %s: %w", out, err)
+		return ph, fmt.Errorf("publish %s: %w", out, err)
 	}
 	carryVerifiedMarker(tmp, out)
 	_ = os.Remove(loraSidecar(out)) // a plain bundle carries no adapter, whatever an earlier build at this path did
-	return nil
+	return ph, nil
 }
 
 // transcodeDir builds a .giw from a safetensors model DIRECTORY (no GGUF available — the
@@ -123,9 +148,10 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 // does not stream loads the whole model instead), and carries the dir's tokenizer.json
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata).
-func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
+func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 bool, target decoder.GIWTarget) (Phases, error) {
+	var ph Phases
 	if err := ctx.Err(); err != nil {
-		return err
+		return ph, err
 	}
 	// Tokenizer half is best-effort: the resident/decode path never reads it (the Model
 	// is built from the serialized weights alone), so a missing or non-goinfer-loadable
@@ -145,7 +171,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if lora != "" {
 		var err error
 		if side, err = loraSidecarBytes(lora); err != nil {
-			return err
+			return ph, err
 		}
 		id += " + LoRA " + filepath.Base(filepath.Dir(lora)) + "/" + filepath.Base(lora)
 	}
@@ -153,9 +179,10 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	// path is the most exposed to an interrupted write, since the resident fallback holds the whole
 	// quantized model in RAM while writing.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", tmp, err)
+		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
 	// Streamed one layer at a time (docs/tasks/task-prequant-dir-streaming-2026-10.md): peak memory about the globals plus
 	// one layer, byte-identical to the resident transcode. A LoRA merge, and a family whose loader does not stream yet, take
@@ -171,22 +198,29 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 			return n, serr
 		}
 	}
-	werr := giw.WriteStream(f, tokBytes, body)
+	werr := writeBundle(f, tokBytes, body)
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
 	if werr != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("write bundle: %w", werr)
+		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
+	ph.Stream = time.Since(t0)
+	markWritten(tmp, dir)
+	if afterWriteForTest != nil {
+		afterWriteForTest(tmp)
+	}
+	t1 := time.Now()
 	if err := selfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("self-check: %w", err)
+		return ph, fmt.Errorf("self-check: %w", err)
 	}
+	ph.SelfCheck = time.Since(t1)
 	if err := os.Rename(tmp, out); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("publish %s: %w", out, err)
+		return ph, fmt.Errorf("publish %s: %w", out, err)
 	}
 	carryVerifiedMarker(tmp, out)
 	// The sidecar is published after the bundle, so a bundle never claims an adapter it was not built with; a crash in
@@ -194,9 +228,9 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if side == nil {
 		_ = os.Remove(loraSidecar(out))
 	} else if err := os.WriteFile(loraSidecar(out), side, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", loraSidecar(out), err)
+		return ph, fmt.Errorf("write %s: %w", loraSidecar(out), err)
 	}
-	return nil
+	return ph, nil
 }
 
 // residentDirBody is the resident directory transcode: Load the whole model at quant, then serialize it. A LoRA merge
@@ -253,12 +287,13 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ctx, ggufPath, cache, quant, embedInt4, target); err != nil {
+	ph, err := TranscodeTimed(ctx, ggufPath, cache, quant, embedInt4, target)
+	if err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {
-		fmt.Fprintf(os.Stderr, "stream-weights: cache ready (%.0f MB) in %s\n",
-			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second))
+		fmt.Fprintf(os.Stderr, "stream-weights: cache ready (%.0f MB) in %s: %s\n",
+			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second), ph)
 	}
 	return cache, nil
 }
@@ -317,9 +352,10 @@ func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWT
 // mtime alone is not freshness: it cannot see a bundle that is truncated, written by an older writer,
 // or missing a tensor a newer reader requires, all of which are newer than the source and all of which
 // fail at load. So freshness ends with the question that matters, does it load?, using the same mmap
-// load selfCheck uses. That load runs the bundle's whole-payload CRC, which reads every byte of the
-// file; it is done once per (size, mtime) (decoder/giwverify.go), so a full pass is paid only the first
-// time a sidecar is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
+// load selfCheck uses. For a bundle with no verified-marker that load runs the whole-payload CRC, which
+// reads every byte of the file; it is done once per (size, mtime) (decoder/giwverify.go), and a bundle
+// this box transcoded and read back is marked when it is written (markWritten), so a full pass is paid only
+// the first time a sidecar from elsewhere is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead
 // of failing at boot with an error that names the .giw rather than the cause.
 //
 // Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion DOES
@@ -427,9 +463,10 @@ func quantLabel(q string) string {
 	return q
 }
 
-// selfCheck verifies a freshly written bundle loads through the real mmap path: the streamed weights
-// deserialize, and the whole-payload CRC passes (a full read of the file; the pass is recorded so it is
-// not repeated for an unchanged file, decoder/giwverify.go).
+// selfCheck verifies a bundle loads through the real mmap path: the weights deserialize and their shapes validate
+// against the architecture. Whether the whole-payload CRC is recomputed is the load's own rule (decoder/giwverify.go):
+// it is for a file with no marker, such as a cache found on disk or a bundle markWritten left unmarked, and it is not
+// for a bundle the transcode has marked.
 //
 // Backend:"cpu", not Options{}: an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's
 // literal-"cpu"-is-a-promise rule), so Options{} would decline every kind-5 (row4-only) bundle this
@@ -448,18 +485,21 @@ func selfCheck(path string) error {
 	return m.Close()
 }
 
-// removeTempGIW deletes a temp bundle and the verified-marker its self-check may have written.
+// afterWriteForTest, when set, is called with the temp bundle once it is written and markWritten has run, before its
+// self-check.
+var afterWriteForTest func(tmp string)
+
+// removeTempGIW deletes a temp bundle and its verified-marker.
 func removeTempGIW(tmp string) {
 	_ = os.Remove(tmp)
 	_ = os.Remove(decoder.GIWVerifiedMarkerPath(tmp))
 }
 
-// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the
-// caller has os.Renamed tmp onto out (the rename stays at the call site because
-// TestTranscode_writesViaTempThenRenames asserts it structurally). selfCheck ran the full CRC on
-// tmp and recorded (size, mtime); a rename preserves both, so the marker is still true of out —
-// moving it means the first real load of a fresh sidecar does not read the whole file a second
-// time. Best-effort: a marker that fails to move only costs one pass, and none is left behind.
+// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the caller has os.Renamed
+// tmp onto out (the rename stays at the call site because TestTranscode_writesViaTempThenRenames asserts it
+// structurally). The transcode marked tmp at its (size, mtime) and a rename preserves both, so the marker is still true
+// of out: the first real load of a fresh sidecar does not read the whole file. Best-effort: a marker that fails to move
+// only costs that load one CRC pass, and none is left behind.
 func carryVerifiedMarker(tmp, out string) {
 	if err := os.Rename(decoder.GIWVerifiedMarkerPath(tmp), decoder.GIWVerifiedMarkerPath(out)); err != nil {
 		_ = os.Remove(decoder.GIWVerifiedMarkerPath(tmp))
