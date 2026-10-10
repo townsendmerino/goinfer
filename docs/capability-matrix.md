@@ -104,6 +104,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **Qwen3-VL** — Qwen3-VL (qwen3 + interleaved m-RoPE; the vision tower, with DeepStack injection into the first decoder layers)
 
+> **Qwen3-VL MoE** — Qwen3-VL-30B-A3B: qwen3_moe (QK-norm, 128 experts top 8, no shared expert) + interleaved m-RoPE; the Qwen3-VL vision tower with DeepStack
+
 > **SmolLM3** — HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings
 
 > **Spark-X2.5** — XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP
@@ -142,6 +144,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen3-ASR | `qwen3_asr` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ audio encoder) | yes | full-oracle 100.0%/1.00000 |
 | Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99834 |
 | Qwen3-VL | `qwen3_vl` | dense | none | yes | m-RoPE | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | full-oracle 100.0%/1.00000 |
+| Qwen3-VL MoE | `qwen3_vl_moe` | sparse, no-shared | none | yes | m-RoPE | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ vision tower) | yes | pending |
 | SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Spark-X2.5 | `spark2_5` | dense | interleave | no | partial | RMSNorm, pre-norm | GELU (gated) | no | safetensors | text | no | full-oracle 100.0%/1.00000 |
 | Voxtral | `voxtral` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text (+ audio encoder) | yes | full-oracle 100.0%/1.00000 |

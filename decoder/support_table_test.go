@@ -84,6 +84,8 @@ var supportRows = []supportRow{
 		"Served on CUDA (S6, 2026-10-09)."},
 	{"Qwen3-VL", "qwen3_vl", multimodal.TowerQwen3, rep("qwen3_vl", nil),
 		"DeepStack. Several images in one message take the CPU prefill and upload (2026-10-09)."},
+	{"Qwen3-VL MoE", "qwen3_vl_moe", multimodal.TowerQwen3, rep("qwen3_vl_moe", nil),
+		"Qwen3-VL-30B-A3B: too large for a 16 GB Mac or an 8 GB card at once; served on nobara's CPU (S10, G-S10q, 2026-10-09)."},
 	{"GLM-OCR", "glm_ocr", multimodal.TowerGlmOcr, rep("glm_ocr", nil),
 		"One image per request (2026-10-09)."},
 	{"LFM2.5-VL", "lfm2_vl", multimodal.TowerSiglip2NaFlex, rep("lfm2_vl", nil),

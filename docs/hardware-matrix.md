@@ -47,6 +47,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Qwen3-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3-Next | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3-VL | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Qwen3-VL MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.5-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen3.8 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | SmolLM3 | ✅ | CPU | ✅ resident | ✅ resident |

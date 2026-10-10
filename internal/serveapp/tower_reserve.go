@@ -75,7 +75,7 @@ func towerParts(mt string, d towerDims, maxPixels int) (params, scratch int64) {
 		patchIn = 3 * d.patch * d.patch
 		mlpMats = 3
 		np = max(d.outputLength, 1) * d.pool * d.pool
-	case "qwen3_5", "qwen3_5_moe", "qwen3_vl": // Qwen3-VL's is the same tower; its DeepStack mergers run on the host
+	case "qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe": // Qwen3-VL's is the same tower; its DeepStack mergers run on the host
 		mlpMats = 2
 		np = qwen3MaxImageTokens * d.merge * d.merge // serve's cap on the Qwen3.5 tower
 	case "glm_ocr":
@@ -211,7 +211,7 @@ var cudaTowerRegistered = func(mt string) bool {
 		return true // cuda/vision_register.go's factory builds the SigLIP tower (float32, or the int8 one) for either encoder
 	case "gemma4":
 		return slices.Contains(multimodal.Gemma4Towers(), "cuda")
-	case "qwen3_5", "qwen3_5_moe", "qwen3_vl":
+	case "qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe":
 		return slices.Contains(multimodal.Qwen3Towers(), "cuda")
 	case "glm_ocr":
 		return slices.Contains(multimodal.GlmOcrTowers(), "cuda")
@@ -229,7 +229,7 @@ var metalTowerRegistered = func(mt string) bool {
 		return false
 	}
 	switch mt {
-	case "gemma3", "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "glm_ocr", "gemma4":
+	case "gemma3", "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe", "glm_ocr", "gemma4":
 		return true
 	}
 	return false

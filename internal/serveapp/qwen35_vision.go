@@ -85,14 +85,26 @@ func (q *qwen3Tower) features(pv []float32, grid [3]int) ([]float32, error) {
 	})
 }
 
+// qwen3TowerFamily reports whether model_type mt takes the Qwen3.5+ / Qwen3-VL grid tower, and whether that tower
+// carries DeepStack (Qwen3-VL, dense and MoE; Qwen3.5+ never does).
+func qwen3TowerFamily(mt string) (ok, deepstack bool) {
+	switch mt {
+	case "qwen3_5", "qwen3_5_moe":
+		return true, false
+	case "qwen3_vl", "qwen3_vl_moe":
+		return true, true
+	}
+	return false, false
+}
+
 // isQwen35VisionDir reports whether dir is a checkpoint that carries a usable Qwen3.5+ family vision tower:
-// model_type qwen3_5, qwen3_5_moe or qwen3_vl, a non-empty vision_config (with DeepStack indexes for qwen3_vl and
-// none for the others), and a preprocessor config LoadQwen3PreprocessConfig accepts. For auto-discovery only: a
-// stripped text-only copy (no vision_config or no preprocessor_config.json) is simply not a vision model, not an
-// error.
+// a model_type qwen3TowerFamily accepts, a non-empty vision_config (with DeepStack indexes exactly when the family
+// carries them), and a preprocessor config LoadQwen3PreprocessConfig accepts. For auto-discovery only: a stripped
+// text-only copy (no vision_config or no preprocessor_config.json) is simply not a vision model, not an error.
 func isQwen35VisionDir(dir string) bool {
 	mt := visionModelType(dir)
-	if mt != "qwen3_5" && mt != "qwen3_5_moe" && mt != "qwen3_vl" {
+	ok, deep := qwen3TowerFamily(mt)
+	if !ok {
 		return false
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
@@ -108,7 +120,7 @@ func isQwen35VisionDir(dir string) bool {
 	if json.Unmarshal(raw, &c) != nil || c.Vision == nil || c.Vision.Depth <= 0 {
 		return false
 	}
-	if (mt == "qwen3_vl") != (len(c.Vision.Deepstack) > 0) { // Qwen3-VL carries DeepStack; Qwen3.5+ never does
+	if deep != (len(c.Vision.Deepstack) > 0) { // Qwen3-VL (dense and MoE) carries DeepStack; Qwen3.5+ never does
 		return false
 	}
 	_, err = multimodal.LoadQwen3PreprocessConfig(dir)

@@ -77,6 +77,8 @@ var censusList = []string{
 	// ministral3-tiny: AttnTempBeta/AttnTempOrigMaxPos are per-Architecture scalars, not per-layer state, so this repeats the
 	// llama field set every dense fixture covers; listed per the census's own default.
 	"../testdata/ministral3-tiny",
+	// qwen3vlmoe-tiny: qwen3_moe's fused experts, loaded from the 4.57 layout, plus the m-RoPE section.
+	"../testdata/qwen3vlmoe-tiny",
 	// smollm3-tiny: layerNoPE is a per-layer function, not per-layer state, so this is the generic dense field set; listed
 	// per the census's own default.
 	"../testdata/smollm3-tiny",

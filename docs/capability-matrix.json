@@ -947,6 +947,31 @@
     }
   },
   {
+    "name": "qwen3_vl_moe",
+    "model_types": [
+      "qwen3_vl_moe"
+    ],
+    "display_name": "Qwen3-VL MoE",
+    "description": "Qwen3-VL-30B-A3B: qwen3_moe (QK-norm, 128 experts top 8, no shared expert) + interleaved m-RoPE; the Qwen3-VL vision tower with DeepStack",
+    "summary": "Qwen3-VL-30B-A3B, the mixture-of-experts Qwen3-VL. Reads images.",
+    "tasks": [
+      "chat",
+      "vision"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "sparse, no-shared",
+    "sliding_window": "none",
+    "qk_norm": true,
+    "rope_style": "m-RoPE",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "SwiGLU",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text (+ vision tower)",
+    "gpu_residency_eligible": true,
+    "parity": "pending"
+  },
+  {
     "name": "smollm3",
     "model_types": [
       "smollm3"

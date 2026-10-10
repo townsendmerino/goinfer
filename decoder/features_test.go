@@ -91,8 +91,9 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// qwen3_moe: qwen3's QK-norm attention + a routed MoE FFN with NO shared expert (confirmed
 	// against the real Qwen3-30B-A3B config.json), so unlike qwen2_moe it does NOT need
 	// FeatMoEGatedShared.
-	"qwen3_moe": {FeatMoE, FeatQKNorm},
-	"glm4_moe":  {FeatMoE, FeatPartialRotary, FeatQKNorm},
+	"qwen3_moe":    {FeatMoE, FeatQKNorm},
+	"qwen3_vl_moe": {FeatMoE, FeatQKNorm}, // S10: qwen3_moe's needs; m-RoPE is the qwen3_vl image path's, as for qwen3_vl
+	"glm4_moe":     {FeatMoE, FeatPartialRotary, FeatQKNorm},
 	// Laguna: sigmoid-routed MoE with an UNGATED shared expert (so FeatMoE, not
 	// FeatMoEGatedShared), QK-norm, partial rotary on the full-attention layers, a
 	// sliding/full interleave with per-layer RoPE bases, YaRN mscale on the full
@@ -279,7 +280,8 @@ var admissionGolden = map[string][]string{
 	// both already admitted everywhere on those exact features, qwen3_moe's subset is
 	// too — no new kernel needed, same generic MoE + QK-norm dispatch every backend
 	// already has.
-	"qwen3_moe": {"cuda", "metal", "webgpu"},
+	"qwen3_moe":    {"cuda", "metal", "webgpu"},
+	"qwen3_vl_moe": {"cuda", "metal", "webgpu"}, // the same admission as qwen3_moe
 	// The Gated-DeltaNet family collapses to the backends that implement BOTH the recurrence AND the fused attention output
 	// gate (FeatDeltaNet): one taxon bundling both departures rather than two. Metal's declaration is gated by
 	// TestQwen35ResidentParityMetal.

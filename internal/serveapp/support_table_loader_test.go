@@ -95,8 +95,8 @@ func TestSupportTable_everyFamilyHasALoader(t *testing.T) {
 	if miss := unloaded(types, dispatch); len(miss) > 0 {
 		t.Errorf("the support table lists model_types serve has no vision loader for: %v (loadVisionTower dispatches on %v, gemma3 by fallback)", miss, dispatch)
 	}
-	// Planted: a family the table might grow before serve does (Qwen3-VL MoE's images, S10) must be reported.
-	if miss := unloaded(append(types, "qwen3_vl_moe"), dispatch); len(miss) != 1 || miss[0] != "qwen3_vl_moe" {
+	// Planted: a family the table might grow before serve does (LLaVA-NeXT, which Ollama's llava tag needs) must be reported.
+	if miss := unloaded(append(types, "llava_next"), dispatch); len(miss) != 1 || miss[0] != "llava_next" {
 		t.Errorf("a planted row with no loader was not reported: %v", miss)
 	}
 }

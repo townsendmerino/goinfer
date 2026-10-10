@@ -1106,7 +1106,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	if mt == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
-	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" { // qwen3_vl: the same tower plus DeepStack
+	if mt == "qwen3_5" || mt == "qwen3_5_moe" || mt == "qwen3_vl" || mt == "qwen3_vl_moe" { // qwen3_vl, qwen3_vl_moe: the same tower plus DeepStack; literals, which the support-table loader test reads
 		return s.loadQwen35VisionTower(dir, int8Tower, cfg.towerBackend(), cfg.requireBE)
 	}
 	if mt == "qwen3_asr" { // speech to text; the audio encoder is in the model's own directory
@@ -1176,7 +1176,7 @@ func towerInt8(modelType, visionQuant, backend string) bool {
 		return false
 	}
 	switch modelType {
-	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "gemma4", "glm_ocr", "mistral3", "lfm2_vl":
+	case "qwen2_5_vl", "qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe", "gemma4", "glm_ocr", "mistral3", "lfm2_vl":
 		return false
 	}
 	return backend == "webgpu" || (backend == "cuda" && modelType != "gemma3") // gemma3 on cuda: float32 by default
