@@ -3052,8 +3052,33 @@ aikit expected 0: L, as registered for S10's MoE variants.
       - **What changes for users:** an int4 MoE through a sidecar now reports `int4`. Its KV snapshots saved under the
         old label no longer match and are prefilled again. Under `-backend auto` on a Mac such a model is no longer
         held on the CPU for being "int4mix" (by reading `autoMetalPrecision`; not run).
-  - **Queued again on nobara for the night of 2026-10-10 as `gs10q-d-2`** (est. 1 h 30 min; the same serve binary). The
-    job now builds the CPU sidecar first under a 40 min wait, and leaves `--quant` at its int4 default.
+  - **Queued again on nobara for the night of 2026-10-10 as `gs10q-d-2`** (queued at est. 1 h 30 min, re-added by day at est. 30 min after the prep below; the same pinned serve binary, which predates the label fix). The
+    job builds the CPU sidecar first under a 40 min wait when it is missing, and leaves `--quant` at its int4 default.
+  - **Prep for the second run, 2026-10-10 by day (exploratory, nothing graded; logs `~/goinfer-logs/gs10q-d-prep-2026-10-10/`).**
+    The partial `.tmp.giw` was deleted and the CPU sidecar built with the job's own flags and pinned binary: **11m15s**,
+    `qwen3-vl-30b-a3b-instruct.int4.cpu-amd64.giw` (17.5 GB on disk, header int4mix), so step 0 of `gs10q-d-2` finds it present.
+    With it present serve is up in **1 s** (mmap), well inside the driver's 600 s wait. The job's exact one-image request
+    answered in **61.8 s** (1,004 prompt tokens, 42 completion tokens: "This table shows the quarterly unit sales ...") against the
+    job's 10-15 minutes per arm, so the job's wall time is nearer 15-20 minutes than 60. The CUDA arm, started exactly as the job
+    starts it: the resident build **declines by name** (`CUDA_ERROR_OUT_OF_MEMORY` allocating expert buffers, "Try -moe-cache-experts"),
+    serve then **continues on the CPU path** (`decode path: cpu`, 59 s load) with no `--quant` error: the default `--quant` leaves the
+    sidecar defect out of this job. So the plain CUDA arm yields CPU replies, and its comparison is labelled "(CPU fallback, not a
+    CUDA reply)" should it recur. **The CUDA arm now carries `--moe-cache-experts`** (the lever the decline names): checked by day, it
+    loads `decode path: cuda-resident (int4mix)` in 59 s, C' cache capped at 22 of 64 expert slots per layer (3.1 GB; 2.1 GB held
+    back for the vision tower, KV plan 1 conversation x 4096), the vision tower on CUDA; the job's one-image request answered in
+    52.4 s (cold) with a reply that is close to the CPU arm's but not identical ("...quarterly unit sales by region in thousands, with
+    data for Q1, Q2, Q3, Q4..." against the CPU's "...for different regions (North, South, East, West, Central)..."), the expected
+    difference between CPU and CUDA kernels.
+  - **Amendment A2 (owner, 2026-10-10, before the second run; the graded CPU arms' bar does not move): the CUDA arm is graded.**
+    The registration said "reported, not graded", because the plain CUDA build was expected to decline on the 8 GB card. It declines, and
+    the paged build (`--moe-cache-experts`, above) loads resident, so there is a CUDA path to grade. Rule, G-S10m-d's for a non-reference
+    arm: against the CPU arm's reply on each of the two requests, **PASS** = identical, or the first differing token is a near-tie (the
+    CPU arm's probability of the CUDA arm's token is at least half of its own top token's); **FAIL** = a first differing token that is not
+    a near-tie on either request; **VOID** (not graded either way) = the server did not come up, fell back to the CPU path, or did not
+    print `decode path: cuda-resident`. The job's exit code is the CPU arms' if they failed, else 0 / 3 / 4 for PASS / FAIL / VOID.
+    One arm, one load: determinism of the CUDA arm across loads is not asked here. **Disclosure:** the prep run showed the one-image CUDA
+    and CPU replies differ in text; I did not read the log-probabilities at the differing token, so the near-tie reading is unseen.
+    **Prediction (written now):** PASS at 0.60, FAIL at 0.25, VOID at 0.15 (a cold-run OOM at the first image, or a paged-build decline).
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
