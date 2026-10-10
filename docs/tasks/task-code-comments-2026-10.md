@@ -8,7 +8,7 @@
 > **CC0 DONE 2026-10-09/10 on `comment-diet-2026-10` (not merged, not pushed):** lint support (symbol citations, pinned records) with tests
 > first; 284 live-doc citations now name declarations; 35 records pinned (`docs/measurements/code-comments-2026-10/pins.tsv`); the door is
 > closed (`path:line` in an unpinned doc is red); `scripts/remap_gate_citations.py` is gone. CC2 (`gate comments-only`) built and
-> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A, B and C (CC5, the test files) done (§7). CC6 not started; the skipped files are listed in §7.
+> mutation-checked; CC3 pilot done and the rule adjusted (§6); CC4 waves A, B and C (CC5, the test files) and CC6 (the census and the pre-push warning, §9) done. What is left is the skipped files (§7), the §10 owner decisions, and merging.
 
 ## 1. Why
 
@@ -321,6 +321,28 @@ surroundings agree with the rule.
   carry a history marker (a date, a commit id, a tracker id, a figure with a unit, a `file.go:NNN` reference).
 
 A warning, not a refusal, to start: it will have false positives ("timeout in ms" is a contract, not history).
+
+> **CC6 done 2026-10-09.** `scripts/comment_census.py` (`report`, `diff`; tests in `scripts/test_comment_census.py`, three of its checks mutation-tested with
+> `gate mutation`), and `scripts/install-git-hooks.sh` now installs a pre-push step that runs `diff` against the pushed range and prints the warning (exit status
+> 0 always; `--strict` exits 1 for the day it becomes a refusal). The narrow marker is five kinds: a date, a commit id, a tracker id (`M-35`), a figure with a
+> unit, a `file.go:NNN` reference. It blanks file names and doc pointers first (`docs/measurements/x-2026-09-23.md` is a name, not a date) and ignores a tracker
+> id on a line that carries a doc pointer (a label on it), a marker the file's comments already carried at the base (a kept label, a rewrapped line), directives,
+> raw strings and code. Measured on this branch's whole diff against the pre-work base, it reports 35 comment lines (of the roughly 104 commits' worth of
+> rewrites): mostly figures and ids inside kept contract ("a 4x smaller int8 KV", "1.3x ... would justify the runner surgery") and re-spelled labels; the
+> rest are worth a read. Installing it is per clone (`bash scripts/install-git-hooks.sh`); nothing here installs it for anyone.
+>
+> The before/after census (`comment_census.py report`, base `6f494d79` = `origin/main` before CC0, now = the branch tip):
+>
+> | | before | after |
+> |---|---|---|
+> | non-test: comment lines (share of non-blank lines) | 37,121 (25%) | 29,990 (21%) |
+> | non-test: blocks of 10+ lines (their lines; those carrying a marker) | 837 (13,636; 641) | 464 (6,832; 274) |
+> | non-test: exported top-level doc comments in public packages carrying a marker | 261 of 1,128 | 150 of 1,133 |
+> | all `.go` files: comment lines (share) | 71,395 (18%) | 60,046 (15%) |
+> | all `.go` files: blocks of 10+ lines (their lines; marked) | 1,645 (26,504; 1,299) | 1,038 (14,986; 698) |
+>
+> What the numbers say: the long history-heavy blocks halved (10+-line blocks carrying a marker 641 → 274 outside the tests, 1,299 → 698 over everything) while the
+> comment share fell four points; the files not yet worked (the skipped ones) are most of what is left.
 
 ## 10. Owner decisions, and open work found
 

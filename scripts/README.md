@@ -48,6 +48,8 @@ format update) — the output is what's committed, not the script's own executio
 - [`kda_oracle.py`](kda_oracle.py) — NumPy reference for the Kimi Delta Attention recurrence, validated against `fla`'s own implementation; the durable deliverable for a future KDA parity gate, same pattern as `pin_qwen35_deltanet.py`.
 - [`asset_registry.py`](asset_registry.py) — the one canonical "is this test asset present" implementation (`testdata/assets.json`); subcommands `preflight`/`check --env`/`list`/`verdicts`/`census`. Cross-checked against a parallel Go implementation in `decoder/asset_registry_test.go`.
 - `gate_ledger.py` — **retired 2026-09-25**: the gate ledger (B14) is now `go run ./cmd/gate ledger promote|classify|reconcile|seed` (`cmd/gate/ledger.go`), same file format and source key, verified side by side before the script was removed.
+- [`comment_diet.py`](comment_diet.py) (+ [`test_comment_diet.py`](test_comment_diet.py)) — the Go comment-diet tooling (`blocks`, `census`, `apply` with verbatim move to `docs/code-notes/`, `pointers`); see `docs/tasks/task-code-comments-2026-10.md`.
+- [`comment_census.py`](comment_census.py) (+ [`test_comment_census.py`](test_comment_census.py)) — `report` is the per-package comment census; `diff` is the pre-push **warning** for history markers in added comments (never refuses; `--strict` exits 1).
 - [`refresh_parity_hashes.sh`](refresh_parity_hashes.sh) — refreshes the provably-non-numeric `deps_hash` in `testdata/parity_manifest.json` after a comment-only/non-semantic decoder edit re-stales `TestParityManifest_fresh`, without the multi-hour full T3 sweep. Commit with a `Deps-Hash-Refresh: <sha> goldens=<N> arch=<arch>` trailer.
 
 ## Benchmark harnesses

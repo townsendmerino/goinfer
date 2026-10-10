@@ -124,6 +124,7 @@ history comments; clearing them is `docs/tasks/task-code-comments-2026-10.md`'s 
 package with a comments-only gate. Do not rewrite comments in a file you are only passing through, and
 do not add to the history in one. Directive comments (`//go:build`, `//go:embed`, `//nolint`, an
 Example's `// Output:`) are code, not comments, for every purpose here.
+`scripts/comment_census.py diff` (run by the pre-push hook, a warning only) lists added comments that carry a history marker.
 
 ## Tests
 
