@@ -8,20 +8,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are G5's FeatPostOnlyNorm +
-// FeatQKNormWhole row (docs/tasks/task-gpu-paths-2026-09.md) smoke gates: the model actually goes
-// resident and produces finite, non-degenerate output.
+// TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are the smoke gates for FeatPostOnlyNorm + FeatQKNormWhole
+// (docs/tasks/task-gpu-paths-2026-09.md, G5): the model goes resident, no logit of a 24-token decode (or, for Olmo 3, of the
+// batched prefill) is NaN, and the prefill path is as expected (Olmo 3 batched; Olmo Hybrid declines it for its DeltaNet
+// recurrence).
 //
-// DELIBERATELY NOT a resident-vs-CPU cosine floor — same finding G5 rows 1-2 already recorded for
-// their own seeded/synthetic tiny fixtures (testdata/olmo3-tiny, testdata/olmo_hybrid-tiny are
-// both "seeded" per their own pin_*.py scripts, same pattern). This feature has no new pure-Go
-// formula the way FeatNoPE/FeatAttnTemp did, so the real correctness gate is one level lower:
-// TestQKNorm_wholeVector (qknorm_whole_test.go) proves the whole-vector qk_norm DISPATCH GEOMETRY
-// directly against the real production kernel with an exact per-component comparison (no GPU
-// quantization noise at all in that path) — the strongest evidence this row has. The postOnly
-// pre-norm skip (quant_vec instead of rmsnorm_quant) reuses an already-proven, unmodified kernel
-// (ctx-before-o-proj already dispatches it), so its own correctness rests on that kernel's
-// existing coverage plus this smoke test's admission-and-no-NaN check.
+// Deliberately NOT a resident-vs-CPU cosine floor: the seeded synthetic fixtures (testdata/olmo3-tiny, testdata/olmo_hybrid-tiny)
+// cannot separate a real bug from quantization noise. The correctness gate is one level lower: TestQKNorm_wholeVector
+// (qknorm_whole_test.go) compares the whole-vector qk_norm dispatch geometry against the production kernel with an exact
+// per-component comparison. The post-only pre-norm skip (quant_vec instead of rmsnorm_quant) reuses a kernel ctx-before-o-proj
+// already dispatches, so it rests on that coverage plus the admission and no-NaN checks here.
 func TestOlmo3ResidentSmokeMetal(t *testing.T) {
 	testOlmoFamilyResidentSmoke(t, "../testdata/olmo3-tiny")
 }

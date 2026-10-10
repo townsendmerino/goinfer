@@ -14,11 +14,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// pagedProfile decomposes the paged forward's per-token cost into ACTUAL GPU-busy time (per phase,
-// from the command buffer's GPU timestamps) vs wall time (GPU + submit/wait/encode coordination) vs
-// staging (the ensureResident pread body). It accumulates across calls; snapshot with PagedProfile()
-// and diff over a timed window. This is the DIRECT decomposition of "compute+coord" — not
-// total-minus-staging — so the ~70%-of-budget bucket is split into GPU execution vs host coordination.
+// pagedProfile decomposes the paged forward's per-token cost into GPU-busy time per phase (the command buffer's GPU timestamps),
+// wall time (GPU plus submit, wait and encode coordination) and staging (the ensureResident pread body). It accumulates across
+// calls: snapshot with PagedProfile() and diff over a timed window.
 type pagedProfile struct {
 	p1WallNanos, p1GpuNanos       int64 // phase 1 (attention + dense branch + router): wall incl submit+wait, GPU-busy
 	p1EncNanos, p1SubNanos        int64 // phase 1 wall split: encode (Begin→dispatches) vs submit+wait (End)
@@ -35,14 +33,10 @@ type pagedProfile struct {
 // and after a timed decode window and subtract for the window's breakdown.
 func (r *resident) PagedProfile() pagedProfile { return r.prof }
 
-// Gemma-4 enable_moe_block (26B-A4B) MSL kernels — the parallel dense‖MoE FFN that the generic
-// moe.go path (Mixtral/Qwen/GLM shape) cannot express. Kept in their OWN file/const, concatenated
-// after moeKernels, so moe.go's audited MoE kernels are not touched — the same discipline as CUDA's
-// separate router_f32.cu (which exists so adding a kernel doesn't rewrite the audited moe.ptx).
-//
-// The router-first step (9c Step 5a) added gemv_f32_f32. This block adds the remaining primitives
-// the parallel dense‖MoE forward needs — each verified in isolation against a CPU oracle before the
-// composition is wired (gemma4_moekernels_test.go), the same 2b→2c→2d order CUDA followed.
+// Gemma-4 enable_moe_block (26B-A4B) MSL kernels: the parallel dense||MoE FFN the generic moe.go path (Mixtral/Qwen/GLM shape)
+// cannot express. They live in their own const, concatenated after moeKernels, so moe.go's audited kernels are not touched (as
+// CUDA's separate router_f32.cu keeps moe.ptx unchanged). Each primitive was verified in isolation against a CPU oracle before
+// the composition was wired (gemma4_moekernels_test.go).
 const gemma4MoeKernels = `
 // gemv_f32_f32: pure-f32 GEMV — f32 weight [N,K] × f32 activation [K] → out[N], one simdgroup (32
 // lanes) per output row. This is the Gemma-4 MoE ROUTER projection, and it quantizes NOTHING on
@@ -106,10 +100,9 @@ kernel void scale_vec(device float* x[[buffer(0)]], device const float* s[[buffe
 kernel void zero_vec(device float* x[[buffer(0)]], uint i[[thread_position_in_grid]]) { x[i] = 0.0f; }
 `
 
-// gemma4MoeResident holds the Gemma-4 dense‖MoE pipelines, config, constant uniforms, and scratch
-// shared across all enable_moe_block layers. Kept SEPARATE from moeResident (moe.go): that is the
-// generic Mixtral/Qwen/GLM shape (one branch, SiLU experts, wacc straight into the residual), which
-// gemma4 is not. Routing is off the suspect list (Step 5a); this is the rest of the delta.
+// gemma4MoeResident holds the Gemma-4 dense||MoE pipelines, config, constant uniforms and scratch shared across all
+// enable_moe_block layers. It is separate from moeResident (moe.go), the generic one-branch SiLU shape with wacc straight into the
+// residual, which Gemma 4 is not.
 type gemma4MoeResident struct {
 	pRouterF32, pRoute, pGU, pDownWacc  Pipeline
 	guR, downR                          int // D-B04: rows per simdgroup of pGU / pDownWacc (moeExpertRows)
@@ -127,26 +120,21 @@ type gemma4MoeResident struct {
 	// Lever 3's guess at the next layer's experts (g4PrefetchOn): its router on this layer's residual, into its own
 	// buffers so the true route is never touched.
 	rLogitsP, rIdxP, rWgtP, g4rnP Buffer
-	fence                         *pagedFence // M-11 / C-B03 (paged_fence.go); nil unpaged or where MSL 3.2 does not compile
+	fence                         *pagedFence // the route fence (paged_fence.go); nil unpaged or where MSL 3.2 does not compile
 
-	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): the full expert set doesn't fit resident, so
-	// each layer keeps N experts in a slot pool and stages the routed top-k in per token. Off (all
-	// experts resident) when slots==0. slotIdx is a [topK] device buffer, HOST-WRITTEN each token
-	// with the POOL SLOT NUMBER holding each of the k routed experts (M-11, audit-metal-2026-09-12.md
-	// — was idxZeros, always 0, back when each slot was its own single-expert Buffer object; now the
-	// pool's storage is one contiguous per-field buffer, so which physical row holds a given expert
-	// varies token to token and must be told to the kernel). The reused gemv_w4a8_moe(_wacc) kernels
-	// read row slotIdx[slot] of the pool's contiguous buffer while still indexing rWgt by the
-	// selection slot uSlot[j] — makes paged dispatch byte-identical to the stacked path (a slot's
-	// bytes == the stacked buffer's rows for that expert). Fixed Buffer identity for the resident's
-	// whole lifetime — only its CONTENTS change — which is what lets phase 2's encode be
-	// value-independent (the actual point of this change: see expertpool.go's own doc comment).
+	// Synchronous paging (--moe-cache-slots; metalMoESlotsRequest): the full expert set does not fit resident, so each layer keeps N
+	// experts in a slot pool and stages the routed top-k in per token. Off (all experts resident) when slots==0. slotIdx is a [topK]
+	// device buffer, host-written each token with the pool slot number holding each routed expert: the pool's storage is one
+	// contiguous per-field buffer, so which physical row holds an expert varies token to token. The reused gemv_w4a8_moe(_wacc)
+	// kernels read row slotIdx[slot] of that buffer while still indexing rWgt by the selection slot uSlot[j], which makes paged
+	// dispatch byte-identical to the stacked path. slotIdx keeps one Buffer identity for the resident's lifetime (only its contents
+	// change), which keeps phase 2's encode value-independent (expertpool.go).
 	paged   bool
 	slots   int
 	slotIdx Buffer
 
-	// giwFile is the re-opened .giw for pread-staging (GOINFER_MOE_PREAD=1); nil ⇒ the mmap byte-copy
-	// path. Shared read-only fd across every layer's pool; closed by resident.Close.
+	// giwFile is the re-opened .giw for pread staging (GOINFER_MOE_PREAD, default on); nil means the mmap byte-copy path. A shared
+	// read-only fd across every layer's pool, closed by resident.Close.
 	giwFile *os.File
 
 	// alias is the S6 weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
@@ -216,13 +204,9 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	g.g4x1, g.g4x2, g.g4rn = d.NewBufferLen(H), d.NewBufferLen(H), d.NewBufferLen(H)
 	g.rLogitsP, g.rIdxP, g.rWgtP, g.g4rnP = d.NewBufferLen(b.NE), NewBufferUint32s(d, make([]uint32, b.TopK)), d.NewBufferLen(b.TopK), d.NewBufferLen(H)
 
-	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
-	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
-	// per token (the only way the 26B's 11.96 GB expert set runs on a 16 GB Mac). N must be >=
-	// topK (a token's own top-k must fit). N==0 / unset ⇒ all experts resident (the fitting
-	// path + the paged≡non-paged parity reference). slotIdx (M-11) is host-written each token with
-	// the pool slot holding each routed expert, so the paged expert GEMVs read the RIGHT row of the
-	// pool's contiguous buffer while rWgt is still indexed by the selection slot (byte-identical).
+	// Synchronous paging: --moe-cache-slots (GOINFER_METAL_MOE_SLOTS is the deprecated fallback; metalMoESlotsRequest) keeps only N
+	// experts per layer resident and stages the routed top-k in per token. N must be >= topK (a token's own top-k must fit); N==0 or
+	// unset keeps every expert resident (the fitting path and the paged-equals-non-paged parity reference).
 	if s := metalMoESlotsRequest(m); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < b.TopK {
@@ -246,24 +230,16 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 			}
 		}
 	}
-	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy
-	// off the mmap. DEFAULT ON (cold A/B verdict: total 1892→1488 ms/tok, 0.53→0.67 tok/s, 1.26×;
-	// major faults 92.8→0.0/stage — the mmap demand-fault page-in is gone). Needs a .giw-mmap'd model
-	// (offsets are into that file); re-open it once, shared across layers. GOINFER_MOE_PREAD=0 opts out
-	// (the mmap byte-copy baseline, kept for the A/B). If open fails or the model isn't .giw-backed,
-	// buildGemma4MoELayer falls back to the byte-copy.
+	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of a byte-copy off the mmap: default on,
+	// GOINFER_MOE_PREAD=0 opts out (the mmap byte-copy baseline). It needs a .giw-mmap'd model (the offsets are into that file),
+	// re-opened once and shared across layers. If the open fails or the model is not .giw-backed, buildGemma4MoELayer falls back to
+	// the byte-copy.
 	if g.paged && modelKnob(m, "GOINFER_MOE_PREAD") != "0" {
 		if p := m.GiwPath(); p != "" {
 			if f, err := os.Open(p); err == nil {
 				g.giwFile = f
-				// GOINFER_MOE_NOCACHE=1: F_NOCACHE on the pread fd — reads bypass the unified buffer
-				// cache. MEASURED AND DECLINED (cold A/B): NO effect — total 1535.3→1514.0 ms/tok
-				// (−1.4%, noise), and RSS-after-build (3306→5095) and compute+coord (1032→1056) both
-				// moved the WRONG way. The motivating cache-pressure hypothesis is refuted, AND its
-				// evidence was a CONFOUND: the ~+2 GB RSS-after-build growth lands on whichever arm runs
-				// SECOND, and RSS-after-build is sampled BEFORE the timed decode, so the pread cache flag
-				// cannot cause it (ordering artifact). The pread win's +365 ms compute+coord displacement
-				// remains UNEXPLAINED. Kept off by default, wired, so it isn't re-proposed.
+				// GOINFER_MOE_NOCACHE=1 sets F_NOCACHE on the pread fd, so reads bypass the unified buffer cache. Off by default and kept wired
+				// so it is not re-proposed: a cold A/B measured no effect (docs/code-notes/metal.md#buildGemma4MoE.nocache).
 				if modelKnob(m, "GOINFER_MOE_NOCACHE") == "1" {
 					if _, err := unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1); err != nil {
 						fmt.Fprintf(os.Stderr, "metal gemma4 MoE: F_NOCACHE failed (%v) — pread stays buffered\n", err)
@@ -293,10 +269,10 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		panic(e)
 	}
 	if g.paged {
-		// Paged: DON'T stack the experts (that is the 11.96 GB we can't afford). Build a bounded LRU
-		// slot pool + a stage fn that reads expert e's W4A8 bytes straight from the bundle's mmap-backed
-		// WeightMats on demand (int4DirectWords aliases the .giw). Per-expert buffer sizes come from
-		// expert 0. The .giw expert weights MUST be int4-direct (group-32) for this zero-intermediate path.
+		// Paged: do not stack the experts (the all-E buffers are what cannot be afforded). Build a bounded LRU slot pool and a stage fn
+		// that reads expert e's W4A8 bytes straight from the bundle's mmap-backed WeightMats on demand (int4DirectWords aliases the
+		// .giw). Per-expert buffer sizes come from expert 0. The .giw expert weights MUST be int4-direct (group-32) for this
+		// zero-intermediate path.
 		gw0, gs0, ok1 := int4DirectWords(b.ExpertsGateUp[0])
 		dw0, ds0, ok2 := int4DirectWords(b.ExpertsDown[0])
 		if !ok1 || !ok2 {
@@ -304,37 +280,24 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		}
 		experts := b.ExpertsGateUp // capture (aliases the model mmap; kept alive by the Model)
 		down := b.ExpertsDown
-		// C-P01 (audit-metal-2026-09-30.md): each expert's f16 scales are read from its own WeightMat
-		// (Int4ScalesF16), which a v14 metal or v15 .giw aliases from the mapping. This used to be a
-		// build-time heap cache (N-20, which replaced a per-page-in f32→f16 conversion), holding the
-		// same bits again: 1361 MB on the 26B, measured 2026-10-02 (T1.8).
+		// Each expert's f16 scales are read from its own WeightMat (Int4ScalesF16), which a v14 metal or v15 .giw aliases from the
+		// mapping; a build-time heap cache of them would hold the same bits again.
 		stage := func(ei int) ([]byte, []uint16, []byte, []uint16) {
 			gw, _ := int4DirectBytesOnly(experts[ei]) // nibble bytes aliased from mmap; no reconstruction/alloc
 			dw, _ := int4DirectBytesOnly(down[ei])
 			return gw, experts[ei].Int4ScalesF16(), dw, down[ei].Int4ScalesF16()
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
-		// MADV_WILLNEED over the routed experts' nibble spans before staging (was GOINFER_MOE_WILLNEED=1;
-		// the switch was REMOVED 2026-09-24 — this record is what stays). MEASURED AND DECLINED (cold A/B, sudo purge between arms, 2026-08-03): it does NOT
-		// help. major faults/stage ROSE 92.5→147.1 (readahead read MORE from disk, did not batch the
-		// serial faults), and the staging-line drop (−775 ms) was an ATTRIBUTION SHIFT into the residual
-		// compute+coord bucket (+700 ms), for a total move of 1851.8→1776.6 ms/tok (~4%, noise band).
-		// WILLNEED targets fault LATENCY/overlap, but the bound here is fault COUNT, and darwin
-		// MADV_WILLNEED on a span you touch immediately pays the read synchronously in the Advise call —
-		// the synchronous per-layer Advise→copy path has no lead time to hide it behind (the routed
-		// experts aren't known until phase-1 completes: the value-dependent seam). The extra faults are
-		// consistent with prefetched pages being evicted under memory pressure before use (RSS fell
-		// 3369→2870 MB). It stayed wired, off, for a while so nobody re-proposed it without re-reading this;
-		// the comment now does that job on its own.
-		// Lesson: when you optimize a measured sub-bucket, the TOTAL is the gate — a residual bucket
-		// absorbs displaced cost silently. See [[optimize-sub-bucket-total-is-the-gate]].
-		// pread staging (GOINFER_MOE_PREAD=1): resolve each expert's nibble file offset within the .giw
-		// mmap (pure pointer arithmetic, no page touch), then stage by pread'ing straight into the slot's
-		// UMA words — zero mmap faults, one big sequential read per expert. The f16 scales are pread the same way
-		// when every expert's lie in the mapping (a v14 metal or v15 .giw, C-P01), and copied from the WeightMat
-		// otherwise (an older file's scales are converted onto the heap at load). Falls back to the
-		// byte-copy path if the fd is absent or ANY expert's nibbles aren't .giw-mmap-backed (e.g. a
-		// requantized HF load) — the offsets must all resolve for pread to be correct.
+		// pread staging (GOINFER_MOE_PREAD, default on): resolve each expert's nibble file offset within the .giw mmap (pointer
+		// arithmetic, no page touch), then pread straight into the slot's unified-memory words: no mmap faults, one sequential read per
+		// expert. The f16 scales are pread the same way when every expert's lie in the mapping (a v14 metal or v15 .giw) and copied from
+		// the WeightMat otherwise. Falls back to the byte-copy path if the fd is absent or ANY expert's nibbles are not .giw-mmap-backed
+		// (a requantized HF load): the offsets must all resolve for pread to be correct.
+		//
+		// Do not add MADV_WILLNEED over the routed experts' spans before staging. A cold A/B showed it does not help: the routed experts
+		// are not known until phase 1 completes, so the synchronous Advise-then-copy path has no lead time to hide the read behind, and
+		// the staging time it removed reappeared in the compute+coord bucket. When optimizing a measured sub-bucket the total is the gate
+		// (docs/code-notes/metal.md#buildGemma4MoELayer.willneed).
 		if g.giwFile != nil {
 			guOff := make([]int64, len(experts))
 			dOff := make([]int64, len(down))
@@ -364,21 +327,18 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 				fd := int(g.giwFile.Fd())
 				pool := ml.pool
 				pool.stagePread = func(ei int, s expertSlot) {
-					// M-12 (audit-metal-2026-09-12.md), second half: gate|up and down are separate
-					// buffers (pool.guW, pool.dW) — disjoint destinations, safe to pread concurrently
-					// (same argument as moe.go's 3-way twin). Errors panic from THIS goroutine, not
-					// the spawned ones, so BuildResident's recover() still sees them.
+					// gate|up and down are separate buffers (pool.guW, pool.dW): disjoint destinations, safe to pread concurrently (as moe.go's 3-way
+					// twin). Errors panic from THIS goroutine, not the spawned ones, so BuildResident's recover() still sees them.
 					//
-					// M-11: preadIntoPoolSlot, not preadIntoU32Buf(fd, s.guW, ...) — s.guW is a
-					// Buffer.At()-offset VIEW, and preadIntoU32Buf's U32s() call ignores that offset
-					// (expertSlot's doc comment), which would silently pread every expert into slot
-					// 0. preadIntoPoolSlot addresses the pool's base buffer by slot NUMBER instead.
+					// preadIntoPoolSlot, not preadIntoU32Buf(fd, s.guW, ...): s.guW is a Buffer.At()-offset VIEW and U32s() ignores that offset
+					// (expertSlot's doc comment), which would silently pread every expert into slot 0. preadIntoPoolSlot addresses the pool's base
+					// buffer by slot NUMBER.
 					var wg sync.WaitGroup
 					var errGU, errD, errGS, errDS error
 					wg.Add(2)
 					go func() { defer wg.Done(); errGU = preadIntoPoolSlot(fd, pool.guW, s.slot, pool.nGuW, guOff[ei]) }()
 					go func() { defer wg.Done(); errD = preadIntoPoolSlot(fd, pool.dW, s.slot, pool.nDW, dOff[ei]) }()
-					if scalesInFile { // C-P01: the scales are four more disjoint destinations' worth of the same argument
+					if scalesInFile { // the scales are four more disjoint destinations' worth of the same argument
 						wg.Add(2)
 						go func() {
 							defer wg.Done()
@@ -422,10 +382,9 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 	return ml
 }
 
-// encodeGemma4MoEFFN records Gemma-4's parallel dense‖MoE FFN for one layer, replacing the dense
-// gate/up/swiglu/down block. Unlike the generic encodeMoEFFN (one branch, wacc straight into the
-// residual), TWO branches run off the SAME post-attention residual h through THREE independent
-// normalizations, then join under a shared post-norm with a per-layer scalar. Mirrors
+// encodeGemma4MoEFFN records Gemma-4's parallel dense||MoE FFN for one layer, replacing the dense gate/up/swiglu/down block.
+// Unlike the generic encodeMoEFFN (one branch, wacc straight into the residual), two branches run off the same post-attention
+// residual h through three independent normalizations, then join under a shared post-norm with a per-layer scalar. Mirrors
 // decoder/forward_gemma4_moe.go and cuda/resident.go gemma4MoeMLP exactly:
 //
 //	x1 = postFFN1( mlpDown( geluTanh(mlpGate·xd)·(mlpUp·xd) ) )   xd = preFFN(h)    [dense]
@@ -433,21 +392,18 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 //	x2 = postFFN2( Σ_j wgt[j]·expertDown_j( geluTanh(gu_j)·up_j ) ) xe = preFFN2(h) [MoE]
 //	h  = (h + postFFN(x1 + x2)) · layerScalar                                        [join]
 //
-// h (r.x) is read THREE times and written only at the very end. The dispatch sequence is
-// value-independent (the top-k loop count is the model constant topK; each expert GEMV reads its
-// own rIdx slot at execution time), so the command buffer is static every token and the encode-
-// ahead executor still pre-encodes token t+1 while t runs (task-metal-moe.md).
-// This is the NON-PAGED path: encodeG4Phase2NonPaged reads the stacked all-E buffers
-// (ml.expGuW/expGuS/expDW/expDS), which stay zero-value once the layer is paged. forwardLogitsPaged
-// never reaches here for a paged layer (it tears the layer into encodeG4Phase1 + encodeG4Phase2Paged
-// around a host readback instead) — the panic below is a chokepoint against every OTHER caller of
-// encodeLayer (Forward, ForwardArgmax, forwardHiddenNoHead's encodeTrunkInto) reaching a paged layer
-// through the non-paged encoder and silently computing off zero-value weights instead of failing
-// (audit-metal-2026-09-12.md C-02).
+// h (r.x) is read three times and written only at the very end. The dispatch sequence is value-independent (the top-k loop count
+// is the model constant topK; each expert GEMV reads its own rIdx slot at execution time), so the command buffer is static every
+// token and the encode-ahead executor still pre-encodes token t+1 while t runs.
 //
-// FinishEncoding before the panic — see encodeMoEFFN's twin comment (metal/moe.go): e already has
-// this layer's attention dispatches recorded, and Metal asserts on a command encoder released
-// without endEncoding.
+// This is the NON-PAGED path: encodeG4Phase2NonPaged reads the stacked all-E buffers (ml.expGuW/expGuS/expDW/expDS), which stay
+// zero-value once the layer is paged. forwardLogitsPaged never reaches here for a paged layer (it tears the layer into
+// encodeG4Phase1 and encodeG4Phase2Paged around a host readback); the panic below is a chokepoint against any other caller of
+// encodeLayer (Forward, ForwardArgmax, forwardHiddenNoHead's encodeTrunkInto) reaching a paged layer through the non-paged
+// encoder and silently computing off zero-value weights.
+//
+// FinishEncoding before the panic, as encodeMoEFFN does (moe.go): e already has this layer's attention dispatches recorded, and
+// Metal asserts on a command encoder released without endEncoding.
 func (r *resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
 	if L.g4moe.pool != nil {
 		e.FinishEncoding()
@@ -458,10 +414,9 @@ func (r *resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
 	r.encodeG4Join(e, L)           // postFFN2 + join
 }
 
-// encodeG4Phase1 is the value-INDEPENDENT head of the FFN: the dense branch (→g4x1) and the router
-// (→rIdx/rWgt device buffers), ending with the expert-branch input quant (preFFN2(h) → mq/mSc). In
-// the paged forward this is the first command buffer; the host then reads rIdx and stages the routed
-// experts before phase 2. Byte-identical to the old inline head (same dispatches, same order).
+// encodeG4Phase1 is the value-INDEPENDENT head of the FFN: the dense branch (to g4x1) and the router (to the rIdx/rWgt device
+// buffers), ending with the expert-branch input quant (preFFN2(h) to mq/mSc). In the paged forward this is the first command
+// buffer; the host then reads rIdx and stages the routed experts before phase 2.
 func (r *resident) encodeG4Phase1(e *Encoder, L *residLayer) {
 	g := r.g4moe
 	ml := L.g4moe
@@ -494,13 +449,11 @@ func (r *resident) encodeG4Phase2NonPaged(e *Encoder, L *residLayer) {
 	}
 }
 
-// encodeG4Phase2Paged runs the k selected experts out of the LAYER'S POOL — one contiguous buffer
-// per field (M-11) — accumulating into g4x2, the paged twin of encodeG4Phase2NonPaged. Dispatches
-// always bind pool.guW/guS/dW/dS (fixed identity for the layer's whole lifetime); slotIdx (already
-// written into g.slotIdx by the caller, one host write before this encode) tells the reused
-// gemv_w4a8_moe(_wacc) kernels which pool ROW holds each selected expert at kernel-execution time,
-// while rWgt stays indexed by the selection slot uSlot[j] — computes byte-identically to the stacked
-// path (a pool row's bytes == the stacked buffer's rows for that expert).
+// encodeG4Phase2Paged is encodeG4Phase2NonPaged over the layer's pool, one contiguous buffer per field. It always binds
+// pool.guW/guS/dW/dS (fixed identity for the layer's lifetime); slotIdx, written into g.slotIdx by the caller before this encode,
+// tells the reused gemv_w4a8_moe(_wacc) kernels which pool row holds each selected expert at execution time, while rWgt stays
+// indexed by the selection slot uSlot[j]. Byte-identical to the stacked path (a pool row's bytes are the stacked buffer's rows
+// for that expert).
 func (r *resident) encodeG4Phase2Paged(e *Encoder, pool *expertPool) {
 	g := r.g4moe
 	e.Dispatch(g.pZero, r.H, 256, g.g4x2)
@@ -511,33 +464,27 @@ func (r *resident) encodeG4Phase2Paged(e *Encoder, pool *expertPool) {
 	}
 }
 
-// forwardLogitsPaged is the SYNCHRONOUS expert-paging decode: the reference implementation that lets
-// the 26B (11.96 GB experts) run on a 16 GB Mac. Per layer, dense layers encode in one command
-// buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent seam Step-0 priced at
-// +43%): [attention + dense + router] → submit+wait → read rIdx → stage the routed top-k into the
-// layer's LRU slot pool → [experts-from-slots + join] → submit+wait. Assumes the caller filled r.x
-// with the embedding and holds the OS thread (ForwardEmb does both).
+// forwardLogitsPaged is the synchronous expert-paging decode: the reference implementation that lets an expert set larger than
+// RAM run. Dense layers encode in one command buffer; a paged Gemma-4 MoE layer is torn at the router (the value-dependent
+// seam): [attention + dense + router] -> submit+wait -> read rIdx -> stage the routed top-k into the layer's LRU slot pool ->
+// [experts-from-slots + join] -> submit+wait. Assumes the caller filled r.x with the embedding and holds the OS thread
+// (ForwardEmb does both).
 func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32) {
-	// The pread staging closure (stagePread) and the per-token MustBuf allocations panic on a
-	// transient .giw read error or OOM — deep inside expertPool.ensureResident, at DECODE time, where
-	// no recover otherwise exists (buildResident's is build-scoped). A single external-volume hiccup on
-	// the flagship 26B paged path would kill the whole server mid-token. Convert the panic to execErr
-	// so the metalResident adapter surfaces a failed request and drops the stale logits, rather than
-	// crashing the process (audit R-02; same runtime-abort discipline as C-09).
+	// The pread staging closure (stagePread) and the per-token MustBuf allocations panic on a transient .giw read error or OOM, deep
+	// inside expertPool.ensureResident at decode time, where no other recover exists (buildResident's is build-scoped). Convert the
+	// panic to execErr so the metalResident adapter surfaces a failed request and drops the stale logits instead of crashing the
+	// server.
 	defer func() {
 		if p := recover(); p != nil {
 			r.recordExecErr(fmt.Errorf("metal: paged forward aborted: %v", p))
 			logits = nil
-			// Accepted bounded side-effects on this rare abort path (audit F-06): the in-flight
-			// encoder is left un-ended (a small native cb/pool leak) and a slot's stale slotExpert tag
-			// may cost one spurious re-stage on a later eviction. Both are perf-only and bounded by the
-			// abort count. We deliberately do NOT drain/End the live encoder here: the path mixes
-			// Begin() (own autorelease pool) and BeginNP() (nil pool, shared arp), so a blind
-			// DrainPool/End would nil-panic or commit a half-encoded command buffer — worse than the leak.
+			// Accepted bounded side-effects on this rare abort path: the in-flight encoder is left un-ended (a small native cb/pool leak) and
+			// a slot's stale slotExpert tag may cost one spurious re-stage on a later eviction; both are perf-only and bounded by the abort
+			// count. Do NOT drain/End the live encoder here: the path mixes Begin() (own autorelease pool) and BeginNP() (nil pool, shared
+			// arp), so a blind DrainPool/End would nil-panic or commit a half-encoded command buffer, which is worse than the leak.
 		}
 	}()
-	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as
-	// metal/moe.go's paged path, see its own comment there.
+	// setPos, not a direct uPos/uNKeys write, as moe.go's paged path does.
 	rp := pos
 	if len(ropePos) > 0 {
 		rp = ropePos[0]
@@ -545,13 +492,10 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	r.setPos(pos, rp)
 	g := r.g4moe
 	p := &r.prof
-	// GOINFER_MOE_PROF_SPLIT: split each End() into commit() vs waitUntilCompleted() to locate the
-	// ~15 ms/boundary overhead (vs Step-0's 0.213 ms). Needs BeginNP (no per-call autorelease pool) +
-	// one long-lived pool drained per token, so the sub-steps can be called individually and the drain
-	// isn't per-boundary — which ALSO discriminates mechanism 2 (per-CB autorelease churn): if this
-	// path's per-boundary cost is much lower than the default End() path, the per-CB pool was the cost.
+	// GOINFER_MOE_PROF_SPLIT splits each End() into commit() vs waitUntilCompleted() to locate per-boundary overhead. It needs BeginNP
+	// (no per-call autorelease pool) and one long-lived pool drained per token, so the sub-steps can be called individually.
 	split := os.Getenv("GOINFER_MOE_PROF_SPLIT") == "1"
-	async := pagedAsyncPhase2On && !split // M-11: phase 2 committed, not waited (pagedAsyncPhase2On)
+	async := pagedAsyncPhase2On && !split // phase 2 committed, not waited (pagedAsyncPhase2On)
 	var arp ARPool
 	if split || async {
 		arp = NewARPool()
@@ -561,7 +505,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	end := func(e *Encoder, commitAcc, waitAcc *int64) {
 		if !split {
 			e.End()
-			r.recordExecErr(e.Err()) // C-09: catch an abort in any paged per-layer submit
+			r.recordExecErr(e.Err()) // catch an abort in any paged per-layer submit
 			return
 		}
 		e.FinishEncoding()
@@ -569,8 +513,8 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 		e.Commit()
 		*commitAcc += time.Since(tc).Nanoseconds()
 		tw := time.Now()
-		e.WaitDone()             // waitUntilCompleted + ReadTimes
-		r.recordExecErr(e.Err()) // C-09
+		e.WaitDone() // waitUntilCompleted + ReadTimes
+		r.recordExecErr(e.Err())
 		*waitAcc += time.Since(tw).Nanoseconds()
 	}
 	begin := func() *Encoder {
@@ -596,7 +540,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 						g.uNE, g.uK, g.uSig0, g.uNorm1, g.uScale1, g.uOne, g.uOne)
 				}
 			}
-			fenced := g.fence != nil && async // M-11 / C-B03: the route mirrored and fenced, the host spins (paged_fence.go)
+			fenced := g.fence != nil && async // the route mirrored and fenced, the host spins (paged_fence.go)
 			var seq uint32
 			if fenced {
 				var idx2 Buffer
@@ -651,20 +595,18 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 			}
 			p.idxCoordNanos += time.Since(c0).Nanoseconds()
 			s0 := time.Now()
-			// M-12 (audit-metal-2026-09-12.md): stage every miss in this token's top-k concurrently
-			// instead of one pread at queue depth 1 per expert — see ensureResidentBatch's own doc
-			// comment for why this is safe.
+			// Stage every miss in this token's top-k concurrently rather than one pread at queue depth 1 per expert (ensureResidentBatch's
+			// doc comment says why that is safe).
 			slots := L.g4moe.pool.ensureResidentBatch(ids)
 			p.stageWallNanos += time.Since(s0).Nanoseconds() // cross-check vs pool.stageNanos (same body)
-			// M-11: tell the GPU which pool row holds each routed expert — a small host→device write,
-			// not a re-encode. slotIdx replaces the old idxZeros (see gemma4MoeResident's doc comment).
+			// Tell the GPU which pool row holds each routed expert: a small host-to-device write, not a re-encode (gemma4MoeResident.slotIdx).
 			gIdx := g.slotIdx.U32s()
 			for j, s := range slots {
 				gIdx[j] = uint32(expertPoolSlotForTest(s.slot, len(L.g4moe.pool.slotExpert)))
 			}
 			w2 := time.Now()
 			e2 := begin()                        // phase 2: experts from slots + join
-			if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
+			if r.residency != (ResidencySet{}) { // per-encoder attach, phase 2 only
 				e2.UseResidencySet(r.residency)
 			}
 			r.encodeG4Phase2Paged(e2, L.g4moe.pool)
@@ -713,7 +655,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
-	r.recordExecErr(e.Err()) // C-09
+	r.recordExecErr(e.Err())
 	r.finalizeLogits()
 	return r.logitsHost
 }
@@ -737,13 +679,11 @@ func (r *resident) encodeG4Join(e *Encoder, L *residLayer) {
 // submit-and-wait round trips go; the arithmetic is unchanged. Both pagers (forwardLogitsPaged, forwardLogitsMoEPaged).
 var pagedAsyncPhase2On = true
 
-// g4PrefetchOn guesses a paged Gemma 4 MoE layer's experts from the layer before it and reads the misses in the
-// background (lever 3, docs/tasks/task-m26-mac-2026-10.md): phase 1 of layer l also runs layer l+1's router on layer l's
-// residual, the host starts reading those experts into layer l+1's pool, and the reads overlap the GPU's phase 2 of l and
-// phase 1 of l+1. The true router still picks; a wrong guess costs an evicted slot, never a wrong bit. OFF: on M26 at
-// 24 slots it read 0.894x a token guessing all 8 experts (43% of guesses used) and 0.947x guessing the top 2 (60%), 0
-// of 9 reps above 1 each: the extra reads compete with demand reads on the SSD (docs/tasks/task-m26-mac-2026-10.md,
-// "Lever 3"). Kept, gated bit-exact, for a better guess.
+// g4PrefetchOn guesses a paged Gemma 4 MoE layer's experts from the layer before it and reads the misses in the background:
+// phase 1 of layer l also runs layer l+1's router on l's residual, the host starts reading those experts into l+1's pool, and the
+// reads overlap the GPU's phase 2 of l and phase 1 of l+1. The true router still picks; a wrong guess costs an evicted slot,
+// never a wrong bit. OFF: the extra reads compete with demand reads on the SSD and it measured slower than not guessing
+// (docs/tasks/task-m26-mac-2026-10.md, "Lever 3"). Kept, gated bit-exact, for a better guess.
 var g4PrefetchOn = false
 
 // g4PrefetchTop is how many of the guess's experts are prefetched, highest score first.

@@ -14,16 +14,12 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledGumbelStreamIdentity is R7b's Mac end-to-end gate (docs/tasks/red-october.md),
-// a direct port of cuda's TestSampledGumbelStreamIdentity (cuda/sampled_gumbel_identity_test.go):
-// with a fixed seed, the token stream drawn on-device by Gumbel-max is IDENTICAL to the stream the
-// host draws (GOINFER_NO_SAMPLE_FASTPATH=1) — the host and the device implement one algorithm over
-// one Philox counter stream, so they may differ only where two candidates' scores are within an
-// f32 rounding. Real checkpoints, three temperatures, nTok tokens each.
-//
-// PRE-REGISTERED: any divergence fails, and is investigated, not tolerated — matching the CUDA
-// gate's own registered bar. The test also fails if the device path never engaged (DeviceSampled
-// == 0), so it cannot pass vacuously.
+// TestSampledGumbelStreamIdentity is the Mac end-to-end gate for the on-device sampler (docs/tasks/red-october.md, R7b), a port of
+// cuda's TestSampledGumbelStreamIdentity: with a fixed seed, the token stream drawn on-device by Gumbel-max is IDENTICAL to the
+// stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1), because both implement one algorithm over one Philox counter stream and may
+// differ only where two candidates' scores are within an f32 rounding. Real checkpoints, three temperatures, nTok tokens each.
+// Pre-registered: any divergence fails and is investigated, not tolerated; the test also fails if the device path never engaged
+// (DeviceSampled == 0), so it cannot pass vacuously.
 //
 // Run: GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks -run TestSampledGumbelStreamIdentity -v -timeout 30m ./metal/
 func TestSampledGumbelStreamIdentity(t *testing.T) {

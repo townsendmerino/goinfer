@@ -14,27 +14,19 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledDecodeLadder_speed is R7b Mac's speed measurement (docs/tasks/red-october.md),
-// following the same protocol docs/measurements/sampled-gumbel-2026-09-20.md's CUDA/WebGPU numbers
-// used (paired against greedy, same session, interleaved with a rotating start, a discarded
-// warm-up round, and a do-nothing arm) — CUDA's own TestSampledDecodeLadder was not found
-// committed anywhere in this tree to port directly (checked: no match repo-wide), so this is a
-// from-scratch harness built to the SAME protocol description, not a line-for-line port.
-//
-// THREE ARMS, one seed, one prompt, per round:
+// TestSampledDecodeLadder_speed is the Mac measurement of the on-device sampler (docs/tasks/red-october.md, R7b). It follows the
+// protocol of docs/measurements/sampled-gumbel-2026-09-20.md and of cuda/sampled_decode_ladder_test.go: paired against greedy, same
+// session, interleaved with a rotating start, a discarded warm-up round and a do-nothing arm. Three arms, one seed, one prompt,
+// per round:
 //   - greedy       (Temperature: 0)
-//   - host draw    (Temperature: 1.0, GOINFER_NO_SAMPLE_FASTPATH=1) -- the do-nothing arm: proves
-//     the device path is worth having at all, not just that it beats itself
+//   - host draw    (Temperature: 1.0, GOINFER_NO_SAMPLE_FASTPATH=1), the do-nothing arm: shows the device path is worth having at
+//     all, not just that it beats itself
 //   - device draw  (Temperature: 1.0, fastpath default)
 //
-// PAIRED, NOT POOLED (CLAUDE.md measurement discipline, rule 7): each round runs all three arms
-// back to back before the next round starts, and the ratio is computed PER ROUND, then those
-// per-round ratios are summarized (median + spread) -- never a ratio of pooled means, which would
-// carry between-round variance (thermal, scheduler noise) into the comparison.
-//
-// DECODE-ONLY: timed from the first emitted token to the last (time-to-first-token subtracted),
-// not from the call start, so prefill cost (paid once, off this measurement's critical path in a
-// real decode-bound workload) doesn't dilute the per-token rate.
+// Paired, not pooled (CLAUDE.md measurement discipline): each round runs all three arms back to back, the ratio is taken per round,
+// and those per-round ratios are summarized (median and spread), never a ratio of pooled means, which would carry between-round
+// variance into the comparison. Decode only: timed from the first emitted token to the last, so prefill cost does not dilute the
+// per-token rate. It asserts only that the device sampler engaged; the ratios are logged.
 //
 // Run: GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestSampledDecodeLadder_speed -v -timeout 30m
 func TestSampledDecodeLadder_speed(t *testing.T) {
