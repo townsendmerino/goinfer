@@ -50,22 +50,40 @@ var freeDiskBytes = statfsFreeBytes
 // box (the repack functions are NEON-only in aikit); a shape the repack rejects, or a non-arm64
 // build, falls back to kind 3 for that tensor, so any target is always safe to pass.
 func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
+	_, err := TranscodeTimed(ctx, in, out, quant, embedInt4, target)
+	return err
+}
+
+// Phases is where a transcode's wall time went. Stream is building the bundle and writing it to disk; SelfCheck is
+// loading it back through the mmap path, whole-file CRC included.
+type Phases struct {
+	Stream, SelfCheck time.Duration
+}
+
+// String is the phase line's tail: "stream 20.1s, self-check 0.9s".
+func (p Phases) String() string {
+	return fmt.Sprintf("stream %.1fs, self-check %.1fs", p.Stream.Seconds(), p.SelfCheck.Seconds())
+}
+
+// TranscodeTimed is Transcode, and reports where the time went. A phase that did not finish reads zero.
+func TranscodeTimed(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) (Phases, error) {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
 		return transcodeDir(ctx, in, "", out, quant, embedInt4, target)
 	}
+	var ph Phases
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
 	head, err := readHead(in, metaPrefixCap)
 	if err != nil {
-		return fmt.Errorf("read gguf head: %w", err)
+		return ph, fmt.Errorf("read gguf head: %w", err)
 	}
 	prefix, err := metadataPrefixLen(head)
 	if err != nil {
-		return fmt.Errorf("locate gguf metadata (header > %d MB?): %w", metaPrefixCap>>20, err)
+		return ph, fmt.Errorf("locate gguf metadata (header > %d MB?): %w", metaPrefixCap>>20, err)
 	}
 	tokBytes := head[:prefix]
 	if _, err := tokenizer.LoadGGUFBytes(tokBytes); err != nil {
-		return fmt.Errorf("metadata GGUF does not load a tokenizer: %w", err)
+		return ph, fmt.Errorf("metadata GGUF does not load a tokenizer: %w", err)
 	}
 
 	// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a time
@@ -84,9 +102,10 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 	// the bundle loader is strings.HasSuffix(dir, ".giw"). A plain `out + ".tmp"` fails selfCheck for every
 	// GGUF Transcode.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", tmp, err)
+		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
 		return decoder.StreamTranscodeGGUF(ctx, in, w, quant, embedInt4, target, filepath.Base(in))
@@ -97,24 +116,27 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 	}
 	if werr != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("write bundle: %w", werr)
+		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
+	ph.Stream = time.Since(t0)
 
 	// 3) Verify the bundle round-trips through the real (mmap) load path — low RAM (file-backed
 	// pages) but a full read of the file for its CRC, which is what makes it a real integrity
 	// check and records the verified-marker carryVerifiedMarker carries over. On the TEMP file, so a
 	// bundle that fails it never becomes the sidecar even for an instant.
+	t1 := time.Now()
 	if err := selfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("self-check: %w", err)
+		return ph, fmt.Errorf("self-check: %w", err)
 	}
+	ph.SelfCheck = time.Since(t1)
 	if err := os.Rename(tmp, out); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("publish %s: %w", out, err)
+		return ph, fmt.Errorf("publish %s: %w", out, err)
 	}
 	carryVerifiedMarker(tmp, out)
 	_ = os.Remove(loraSidecar(out)) // a plain bundle carries no adapter, whatever an earlier build at this path did
-	return nil
+	return ph, nil
 }
 
 // transcodeDir builds a .giw from a safetensors model DIRECTORY (no GGUF available — the
@@ -123,9 +145,10 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 // does not stream loads the whole model instead), and carries the dir's tokenizer.json
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata).
-func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
+func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 bool, target decoder.GIWTarget) (Phases, error) {
+	var ph Phases
 	if err := ctx.Err(); err != nil {
-		return err
+		return ph, err
 	}
 	// Tokenizer half is best-effort: the resident/decode path never reads it (the Model
 	// is built from the serialized weights alone), so a missing or non-goinfer-loadable
@@ -145,7 +168,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if lora != "" {
 		var err error
 		if side, err = loraSidecarBytes(lora); err != nil {
-			return err
+			return ph, err
 		}
 		id += " + LoRA " + filepath.Base(filepath.Dir(lora)) + "/" + filepath.Base(lora)
 	}
@@ -153,9 +176,10 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	// path is the most exposed to an interrupted write, since the resident fallback holds the whole
 	// quantized model in RAM while writing.
 	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	t0 := time.Now()
 	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", tmp, err)
+		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
 	// Streamed one layer at a time (docs/tasks/task-prequant-dir-streaming-2026-10.md): peak memory about the globals plus
 	// one layer, byte-identical to the resident transcode. A LoRA merge, and a family whose loader does not stream yet, take
@@ -178,15 +202,18 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	}
 	if werr != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("write bundle: %w", werr)
+		return ph, fmt.Errorf("write bundle: %w", werr)
 	}
+	ph.Stream = time.Since(t0)
+	t1 := time.Now()
 	if err := selfCheck(tmp); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("self-check: %w", err)
+		return ph, fmt.Errorf("self-check: %w", err)
 	}
+	ph.SelfCheck = time.Since(t1)
 	if err := os.Rename(tmp, out); err != nil {
 		removeTempGIW(tmp)
-		return fmt.Errorf("publish %s: %w", out, err)
+		return ph, fmt.Errorf("publish %s: %w", out, err)
 	}
 	carryVerifiedMarker(tmp, out)
 	// The sidecar is published after the bundle, so a bundle never claims an adapter it was not built with; a crash in
@@ -194,9 +221,9 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if side == nil {
 		_ = os.Remove(loraSidecar(out))
 	} else if err := os.WriteFile(loraSidecar(out), side, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", loraSidecar(out), err)
+		return ph, fmt.Errorf("write %s: %w", loraSidecar(out), err)
 	}
-	return nil
+	return ph, nil
 }
 
 // residentDirBody is the resident directory transcode: Load the whole model at quant, then serialize it. A LoRA merge
@@ -253,12 +280,13 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ctx, ggufPath, cache, quant, embedInt4, target); err != nil {
+	ph, err := TranscodeTimed(ctx, ggufPath, cache, quant, embedInt4, target)
+	if err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {
-		fmt.Fprintf(os.Stderr, "stream-weights: cache ready (%.0f MB) in %s\n",
-			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second))
+		fmt.Fprintf(os.Stderr, "stream-weights: cache ready (%.0f MB) in %s: %s\n",
+			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second), ph)
 	}
 	return cache, nil
 }
