@@ -8,18 +8,14 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSchemaMasker_reusesCachedTokenBytes is P-17's demo half (audit-2026-09-10): schemaMasker
-// used to rebuild the constraint masker's token→bytes table (constrain.TokenBytes(s.vocab,
-// s.tk.TokenText)) on every DECIDE turn — the same O(vocab) rebuild serve's own cachedTokenBytes
-// exists to avoid. newSession now builds it once into s.tokenBytes instead, and schemaMasker must
-// read that cached field rather than touching the tokenizer again.
+// TestSchemaMasker_reusesCachedTokenBytes pins that schemaMasker reads the token-to-bytes table newSession builds once
+// into s.tokenBytes, instead of rebuilding constrain.TokenBytes(s.vocab, s.tk.TokenText), an O(vocab) cost, on every
+// DECIDE turn (the rebuild serve's cachedTokenBytes exists to avoid).
 //
-// Proven by nil-ing s.tk AFTER building s.tokenBytes by hand (mirroring newSession's own one-line
-// wiring) and confirming schemaMasker still runs: if it still called s.tk.TokenText, this would
-// panic on the nil pointer instead of silently passing. No committed fixture pairs a real
-// tokenizer with a loadable model (internal/serveapp/prefillpath_test.go's tinyServed notes the
-// same gap), so newSession's own construction isn't exercised end-to-end here — its wiring is the
-// one-line `s.tokenBytes = constrain.TokenBytes(...)` this test's setup mirrors exactly.
+// Proof: s.tk is nil-ed after s.tokenBytes is built by hand (mirroring newSession's one-line wiring), so a call to
+// s.tk.TokenText panics. No committed fixture pairs a real tokenizer with a loadable model (see tinyServed in
+// internal/serveapp/prefillpath_test.go), so newSession's own construction is not exercised end to end. Origin (P-17):
+// docs/code-notes/demo-agent-agent.md#TestSchemaMasker_reusesCachedTokenBytes.
 func TestSchemaMasker_reusesCachedTokenBytes(t *testing.T) {
 	const vocab = 8
 	s := &Session{
@@ -35,17 +31,16 @@ func TestSchemaMasker_reusesCachedTokenBytes(t *testing.T) {
 	}
 }
 
-// TestSchemaMasker_holdsBackTemplateStopIDs is N-71 (docs/audit-2026-09-10.md): schemaMasker only
-// held back EOS/EndOfTurn, not the chat template's own turn-stop ids (s.stopIDs) — Llama-3's
-// <|eot_id|> and harmony's <|end|> are neither, so a constrained DECIDE turn for those families
-// could emit the real stop token mid-document instead of it being masked. A held-back id must be
-// masked to -Inf before the grammar can end (an empty document is not valid JSON yet, so CanEnd
-// is false here) — internal/serveapp/openai.go's own masker already unions eosIDs with stopIDs;
-// this pins the demo doing the same.
+// TestSchemaMasker_holdsBackTemplateStopIDs pins that schemaMasker holds back the chat template's own turn-stop ids
+// (s.stopIDs), not only EOS/EndOfTurn: Llama-3's <|eot_id|> and harmony's <|end|> are neither, so an unheld one could be
+// emitted mid-document on a constrained DECIDE turn. A held-back id must be masked to -Inf before the grammar can end
+// (an empty document is not valid JSON yet, so CanEnd is false here), as internal/serveapp/openai.go's masker does by
+// unioning eosIDs with stopIDs. Origin (N-71):
+// docs/code-notes/demo-agent-agent.md#TestSchemaMasker_holdsBackTemplateStopIDs.
 //
-// The stop id's own surface MUST be a byte the grammar would otherwise accept here (decisionSchema
-// requires an object, so its first byte is "{") — otherwise grammar-validity masking alone would
-// mask it regardless of EOS registration, and the test could not tell the fix apart from a no-op.
+// The stop id's own surface MUST be a byte the grammar would otherwise accept here (decisionSchema requires an object,
+// so its first byte is "{"); otherwise grammar-validity masking alone would mask it regardless of stop-id registration,
+// and the test could not tell the fix from a no-op.
 func TestSchemaMasker_holdsBackTemplateStopIDs(t *testing.T) {
 	const vocab = 8
 	const stopID = 5 // e.g. Llama-3's <|eot_id|> — not EOS, not EndOfTurn
