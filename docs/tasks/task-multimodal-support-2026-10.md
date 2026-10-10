@@ -5188,6 +5188,17 @@ The real Voxtral Mini 3B (`mistralai/Voxtral-Mini-3B-2507`, shards sha256 `1facd
 - **The transcription: byte-equal.** 23 tokens against 23, no difference at any position, the decoded text identical; the stop token is `</s>` (2).
 - **Teacher-forced:** the reference's own tokens through goinfer, 23 positions, worst logit cosine **1.000000000**, **0** positions where goinfer's argmax is not the reference's token (bar 0.9999).
 - **Timings (exploratory, one run on an otherwise idle CPU):** tower and projector 55 s, prompt prefill 11 s, the whole gate 115 s.
+
+##### G-S14e3, the record-only second case, read 2026-10-10 (night run `voxtral-real`, 23:31-23:43 PDT, queued at `8494de25`, pinned `~/goinfer-bench/s14e/real`; logs `~/goinfer-logs/night/runs/2026-10-09/voxtral-real.log`, `~/goinfer-logs/s14e/real-2026-10-09/`)
+
+The graded case was run again on the night queue and reproduced its reading (23 tokens byte-equal, worst tower row 0.999999849, worst teacher-forced logit cosine 1.000000000), so the PASS above is a two-run PASS. The second case, **the clip six times with half a second of silence between (36 s, two 30 s windows, 750 audio rows, 758 prompt ids), registered as RECORD ONLY and never graded**, exercises the chunked front end and the multi-window tower on real weights:
+- features, Go against the processor: worst window cosine 1.000000000, max |diff| 1.7e-05 (two windows);
+- tower, 3,000 rows: worst row cosine 0.999999569 (row 314); projector, 750 rows: worst 0.999999578 (row 70); first and last rows 1.000000000;
+- prompt logits: cosine 1.000000000, argmax 27118 equal; prompt prefill 18.8 s;
+- free-run greedy: **133 tokens against 133, no difference at any position**, the six repetitions transcribed; teacher-forced worst logit cosine **0.999999996**, 0 positions where the argmax differs;
+- the reference transcribed six sentences too (the transformers float32 run took 177 s for the 133 tokens).
+
+Nothing here moves a bar; it is the record the registration asked for, and it reads clean. What it does not cover: a signal longer than two windows, and any speech but this one clip.
 - **Prediction scored (written before):** byte-equal with the encoder at cosine >= 0.99999: held, and the one place I expected a last-digit difference (`rope_theta` 1e8 in float32) did not show: the logit cosines read 1.000000000. The e1/e2 stumbles (the untied head's prefix, which the tiny gate caught and fixed before this run) are the reason this one passed first time.
 - **The manifest row** moves from `experimental` / `tiny-golden` to **`validated` / `full-forward-oracle`** at `8494de25` (a real-checkpoint T3 method; the capability matrix, the hardware matrix and the pull copy are regenerated). **Not claimed:** Voxtral is not served (no `input_audio` route, no Tekken wiring in `serve`), and no GPU path has been run; the matrix entry says so.
 - **Settles G-S14d3 as amended:** the Voxtral tower IS the large-v3 shape (1280, 32 layers, 128 mels) and it matches transformers at worst row cosine 0.999999849 in situ, so the 3 GB `whisper-large-v3` download is not needed.

@@ -161,6 +161,32 @@ Three jobs on nobara-pc, `~/models`, one timed run per box (the queue serialises
 - **Limit, stated now.** ctx 2048 is the only context at which the two arms can both run; the prize at the context a harness needs (16384) is an extrapolation of this one, because attention cost differs. A smoke of the driver today (two requests per arm, 32 tokens) ran end to end and is **not a result**; it is not quoted here for that reason.
 - **Prediction.** Ratio in 1.05-1.15 (ambiguous) at 0.45; >= 1.15 at 0.35; < 1.05 at 0.20.
 
+## Night follow-ups, RESULTS 2026-10-10 (read the morning after; queue run `2026-10-09`, all three on the pinned binaries `~/goinfer-bench/mellum21/followups`, rev `51959f8d`, RTX 2070 SUPER, driver 595.91.07, checkpoint from `~/models`)
+
+Logs: `~/goinfer-logs/night/runs/2026-10-09/mellum21-fu-{a,c,b}.log`; records `~/goinfer-logs/mellum21-followup-{a,c}-2026-10-09/`. The three ran in 17, 3 and 19 minutes against estimates of 70, 30 and 130, which the cost bases overstated (the window gate's 883 s was the dump here too; the K=4096 pairs came in at 295 s per-row, 105 s expert-major per forward, against the 2.0 record's 1,207 s and 277 s: both arms moved, per-row more).
+
+### A. Where does 2.1's window-golden cosine come from? CLASS W by the registered rule, with a thin margin
+
+The instrument held: this run's own argmax is the golden's (233), its sample-256 logit cosine reproduces the gate's 0.98600, the four rotary `inv_freq` buffers are finite and in range, and the planted-defect self-test of the pipeline was proven before queueing.
+- `d_short(L27)` = 0.00106, `d_long(L27)` = 0.00594; relative L2 at the last layer 0.047-0.062 at positions 10-1000, **0.137 at 1030 and 0.145 at 1440**.
+- **Rule:** the first layer with `d_long > d_short + 0.005` is **layer 9, a sliding-attention layer** (`d_long` 0.00660 against `d_short` 0.00125, so over the bar by 0.00035: the margin is 6% of the threshold). That is class **W**: the window path is suspect.
+- **Corroboration in the per-layer table** (`layers_report.txt`, cosine goinfer against HF): position 1030, six tokens past the window edge, is the first to degrade, and it does so at layer 5, a sliding layer (0.99393 against 0.99896 at layer 4); position 1300 reaches 0.97005 at layer 10 (sliding) and 0.92538 at layer 15 (full attention), and position 1100 reaches 0.97191 at layer 11 (full), before both partly recover (to 0.98-0.99 by layer 27). Positions inside the first 1024 stay at or above 0.9942 through layer 13.
+- **Prediction scored:** N at 0.50, F at 0.25, W at 0.15, broken instrument 0.10: the reading is the 0.15 branch.
+- **What it does not establish** (the registration's own limit, still true): HF is bf16 and goinfer int8int8, so a per-layer int8 sensitivity at far positions cannot be separated from a window-path defect here, and there is no 2.0 weights copy to say whether 2.0 shows the same layer. W says "look at the window path for 2.1", not "the window path is wrong": the next step is the same dump against goinfer f32 (no int8) at positions 1030 and 1300, which separates the two in one run.
+
+### B. Does expert-major still earn its default on 2.1? FUND
+
+`TestMoEExpertMajor_endToEnd`, K=4096, 2 pairs interleaved: pair 1 294.8 s per-row / 105.3 s expert-major (2.80x), pair 2 294.0 / 105.4 (2.79x); **ratio 2.796x (+179.6%)**, the two pairs 0.4% apart. Bar (P18's own): >= 15% is FUND; **FUND**.
+- **Prediction scored:** "FUND with a ratio above 3x, at 0.90": FUND is right, the ratio is not (2.80x, against the 2.0 record's 4.36x). Both halves of the prediction were mine, so the miss is stated: the ratio fell because per-row sped up 4.1x against the 2.0 record while expert-major sped up 2.6x.
+- **Unexplained:** the absolute times are far below the 2.0 record's (1,207 s / 277 s); a different aikit, a different machine state or a different K-mix could each do it, and the record does not say which. The ratio is within one process and one run, so the verdict does not depend on it.
+
+### C. What is the prize for a windowed-KV plan on CUDA? WORTH BUILDING, with a determinism flag
+
+Sessions ABBA (R S S R), ctx 2048, 3 prompts x 3 reps, greedy, 128 tokens. Resident medians 87.5 / 87.6 / 87.8 tok/s; C' (`--moe-cache-experts`, 45 of 64 slots) 72.6 / 72.2 / 72.9; per-prompt ratios **1.206 / 1.214 / 1.204**; **overall 1.206 (>= 1.15: WORTH BUILDING)**. Session drift +0.8% (R) and -0.4% (S); the worst-case pairing in the min/max ranges (lowest R over highest S) is 1.178, so the verdict does not depend on the spread rule. VRAM 7,511 MiB resident, 7,375 MiB C'.
+- **Prediction scored:** ambiguous (1.05-1.15) at 0.45, >= 1.15 at 0.35: the reading is the 0.35 branch.
+- **Flag, reported not hidden (the registration said it would be):** "greedy texts identical across arms and sessions: **False**". The resident arm gives **one** text per prompt across both its sessions; the C' arm gives **two different texts per prompt** across its two sessions (s2 and s3), and neither equals the resident text (prompt 0 diverges at character 430, prompt 1 at the first token, prompt 2 at character 11). C' is documented bit-identical to resident, so two cold C' sessions of the same build disagreeing with each other is a determinism question for the streaming path on this checkpoint that the speed bar does not touch. It is not graded here; it is the next thing to look at before anyone builds on the C' arm's numbers.
+- **Limit stated beforehand, still true:** ctx 2048 only; the prize at 16,384 is an extrapolation.
+
 ## What this work touched
 
 - `chat/chat.go`, `chat/history.go` (the template work); `decoder/mellum2_parity_test.go` (env overrides); `scripts/pin_mellum2.py` (parameters and a provenance block, defaults unchanged).
