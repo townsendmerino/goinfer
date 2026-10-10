@@ -2,39 +2,31 @@
 
 package metal
 
-// deltaNetKernels — the Gated-DeltaNet decode mixer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8),
-// ported verbatim from cuda/deltanet.cu (read its header comment first; this file mirrors it
-// kernel-for-kernel and keeps the same five-stage split so the CPU capture hook
-// (decoder.deltaCapHook) gates each stage the same way on both backends).
+// deltaNetKernels is the Gated-DeltaNet decode mixer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8), ported verbatim from
+// cuda/deltanet.cu (read its header comment first): the same five-stage split, kernel for kernel, so the CPU capture hook
+// (decoder.deltaCapHook) gates each stage the same way on both backends. Metal had no recurrent-state kernel before this
+// file, so every kernel here is new code, gated from its own input via the hook's mixed slot.
 //
-// WHAT IS NEW HERE VS THE OTHER TWO PORTS. WebGPU reused its Mamba-2 engine for the causal conv
-// and the state plumbing, so only the delta rule was new there. Metal has no recurrent-state
-// kernel of any kind before this file (same starting point CUDA was in), so every kernel below is
-// new code, gated from its own input via the capture hook's mixed slot — not just delta_rule.
+// THE STATE IS STORED TRANSPOSED RELATIVE TO THE CPU, same as CUDA. decoder/deltanet.go holds S as [hk, hv] and walks it
+// column-wise with stride hv, in two passes. Here S is [hv, hk], so thread (headV, vd) owns a contiguous row
+// S[headV][vd][0:hk] and reads it stride-1.
 //
-// THE STATE IS STORED TRANSPOSED RELATIVE TO THE CPU, same as CUDA. decoder/deltanet.go holds S
-// as [hk, hv] and walks it column-wise with stride hv, in two passes. Here S is [hv, hk], so
-// thread (headV, vd) owns a contiguous row S[headV][vd][0:hk] and reads it stride-1.
+// delta_gnorm IS NOT the Mamba gated norm. Mamba normalizes the gated product; DeltaNet normalizes the recurrence output and
+// gates AFTERWARDS. Substituting one for the other gives a plausible tensor of the right shape and the wrong values
+// (measured on the WebGPU port: docs/code-notes/metal.md#deltaNetKernels).
 //
-// delta_gnorm IS NOT the Mamba gated norm. Mamba normalizes the gated product; DeltaNet
-// normalizes the recurrence output and gates AFTERWARDS. Substituting one for the other measured
-// cosine 0.986 with a 12x RMS error on the WebGPU side — a plausible tensor of the right shape
-// and the wrong values.
+// THE L2-NORM EPSILON (delta_norm) IS A ZERO-GUARD, NOT A PRECISION KNOB: sqrt(1/(ss+1e-6)), never rsqrt(ss). silu(0) is
+// exactly 0, so an all-zero head is reachable, and rsqrt(0) is +inf, poisoning every downstream state entry with NaN where
+// the reference yields a finite scale on a zero vector. This does not show in the chained-drift gate (1e-6 is below f32
+// resolution at normal magnitudes); TestDeltaNorm_zeroHead exists specifically to catch it.
 //
-// THE L2-NORM EPSILON (delta_norm) IS A ZERO-GUARD, NOT A PRECISION KNOB: sqrt(1/(ss+1e-6)),
-// never rsqrt(ss). silu(0) is exactly 0, so an all-zero head is reachable, and rsqrt(0) is +inf,
-// poisoning every downstream state entry with NaN where the reference yields a finite scale on a
-// zero vector. This does not show in the chained-drift gate (1e-6 is below f32 resolution at
-// normal magnitudes) — TestDeltaNorm_zeroHead exists specifically to catch it.
-//
-// FMA DISCIPLINE. Metal has no per-operation explicit-rounding intrinsics the way CUDA's
-// __fmaf_rn/__fmul_rn/__fadd_rn does; the whole kernel library compiles under one library-wide
-// fast-math setting (metal/model.go's preciseMathCompile). fma() below is used ONLY where the
-// CUDA reference explicitly fuses (__fmaf_rn); every site the CUDA reference deliberately leaves
-// unfused (__fmul_rn followed by a separate __fadd_rn) is written here as two separate
-// expressions, mirroring the CUDA source's literal shape rather than a mathematically-equivalent
-// rewrite — see docs/completed/task-metal-batched-verify-kernel.md on why literal source form, not just
-// arithmetic equivalence, is what fast-math contraction keys off.
+// FMA DISCIPLINE. Metal has no per-operation explicit-rounding intrinsics the way CUDA's __fmaf_rn/__fmul_rn/__fadd_rn does;
+// the whole kernel library compiles under one library-wide fast-math setting (metal/model.go's preciseMathCompile). fma()
+// below is used ONLY where the CUDA reference explicitly fuses (__fmaf_rn); every site the CUDA reference deliberately
+// leaves unfused (__fmul_rn followed by a separate __fadd_rn) is written here as two separate expressions, mirroring the
+// CUDA source's literal shape rather than a mathematically-equivalent rewrite: see
+// docs/completed/task-metal-batched-verify-kernel.md on why literal source form, not just arithmetic equivalence, is what
+// fast-math contraction keys off.
 const deltaNetKernels = `
 inline float dn_silu(float x) { return x / (1.0f + exp(-x)); }
 

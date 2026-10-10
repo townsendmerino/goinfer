@@ -12,27 +12,23 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode — one decode token for up to batchMaxSeqs sequences in
-// ONE command buffer, each sequence on its own MC1 resident KV slot at its own position, and every logit bit-identical
-// to production's single-token forward on that sequence (TestMC3Step_bitIdentical). Everything that is per-row work
-// runs production's own kernels, per sequence: norm + int8 quantisation, RoPE, the KV store into that sequence's slot,
-// attention over that slot (attention_fa at or above attnFADepthFloor, exactly as a single-token step would plan it),
-// ctx quantisation, SwiGLU + quantisation, the final norm. The five matmuls run once for all sequences, on the
-// matrix units, reproducing production's arithmetic:
-//   - W4A8 projections (mc3_bt: qkv +bias, o +residual, gate|up; mc3_btd: down +residual): an 8-token fragment column,
-//     weights built in registers through thread_elements(), each 32-k group's integer sum exact in the f32 fragment
-//     (nibble-8 and the int8 activations are exact in half), accumulated per lane residue in the decode GEMV's lane
-//     order and reduced by simd_sum's own xor tree 1, 2, 4, 8, 16 (batchSimdSumTreeOK checks that tree at build);
-//   - the int8 LM head (mc3_lm): slab integers converted and summed in int32 — the same integer in any order.
-// Measured: docs/measurements/concurrency-mc3-s0-2026-09-26.md (kernels), concurrency-mc3-s1-2026-09-26.md (in sequence:
-// B = 4 at 1.73–1.84x one stream's aggregate; B = 1 loses, so the decoder calls this at B >= batchMinSeqs only).
+// MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode, one decode token for up to batchMaxSeqs sequences in ONE
+// command buffer, each sequence on its own resident KV slot at its own position, and every logit bit-identical to
+// production's single-token forward on that sequence (TestMC3Step_bitIdentical). Per-row work runs production's own
+// kernels, per sequence: norm + int8 quantisation, RoPE, the KV store into that sequence's slot, attention over that slot
+// (attention_fa at or above attnFADepthFloor, as a single-token step would plan it), ctx quantisation, SwiGLU +
+// quantisation, the final norm. The five matmuls run once for all sequences on the matrix units and must reproduce
+// production's arithmetic, so do not reorder their accumulation: the W4A8 projections (mc3_bt, mc3_btd) sum each 32-k
+// group exactly in the f32 fragment, accumulate per lane residue in the decode GEMV's lane order and reduce by simd_sum's
+// own xor tree 1, 2, 4, 8, 16 (batchSimdSumTreeOK checks that tree at build); the int8 LM head (mc3_lm) sums in int32.
+// The decoder calls this at B >= batchMinSeqs only. Measurements: docs/code-notes/metal.md#batchMaxSeqs.
 
 // batchMaxSeqs is the fragment's token width: every batched matmul computes 8 token columns.
 const batchMaxSeqs = 8
 
-// batchMinSeqs is the smallest batch the decoder should send here. At B = 1 the step costs 1.6–1.95x a production
-// token (the fragment's cost does not shrink with the batch); B = 2 measured 0.98–1.10x (S1), about even, and it
-// spares the per-token KV-slot rebinding two interleaved single-token decodes would pay.
+// batchMinSeqs is the smallest batch the decoder should send here: the fragment's cost does not shrink with the batch,
+// so at B = 1 a step costs more than a production token, and B = 2 is about even but spares the per-token KV-slot
+// rebinding two interleaved single-token decodes would pay (docs/code-notes/metal.md#batchMinSeqs).
 const batchMinSeqs = 2
 
 // batchKernelsHeader is what batchKernels needs from allKernels' preamble: the Metal header and the rows kernels' unroll
@@ -277,19 +273,19 @@ type batchState struct {
 	amaxPart, amaxTok, uAmaxP      Buffer // E-P08: each greedy row's argmax partials, its id, and the partial count
 	greedyDevRows                  int    // E-P08: greedy-draw rows a step served from the device argmax (a test reads it)
 	noHeadSteps                    int    // R-19: steps that ran no head (prefillByStep's pieces before the last; a test reads it)
-	// S3: per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx
-	// quantisation runs over every row at once
+	// per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx quantisation
+	// runs over every row at once
 	posB, qtB, ctxB           Buffer
 	nKeysB, rowmapB, slotOffB Buffer // per-row key counts; the rows mc3_attention_rows serves; each row's slot offset
-	// E-P05: per-row split counts, the rows the multi-row flash attention serves, one partial region per row, and the
-	// uniforms for that region's length and the step's largest split count
+	// per-row split counts, the rows the multi-row flash attention serves, one partial region per row, and the uniforms for
+	// that region's length and the step's largest split count
 	nSplitB, rowmapFA, faPartB Buffer
 	uPartStride, uMaxS         Buffer
 	uCount                     []Buffer // uCount[k] holds k (0..batchMaxSeqs): a row count for a dispatch
 	noBias                     Buffer
 	qkvRows, nHhd, kOff, vOff  int
-	// S4: qkv / gate|up run as per-row production GEMVs at B <= rowsQKV / rowsGU, and as the fragment above that (0:
-	// always the fragment). Set by calibrateRows at build; tests set them to force either path.
+	// qkv / gate|up run as per-row production GEMVs at B <= rowsQKV / rowsGU, and as the fragment above that (0: always the
+	// fragment). Set by calibrateRows at build; tests set them to force either path.
 	rowsQKV, rowsGU int
 	// steps / seqs / maxSeqs count completed batched steps, the sequences they served, and the largest batch — read by
 	// tests to confirm a concurrent run really batched. Written only inside forwardMulti, which the decoder serialises.
@@ -414,10 +410,9 @@ func (r *resident) buildBatch() {
 // for the per-row arm.
 var mc3W8RowsOn = true
 
-// mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
-// mc3_attention_fa*_rows), bit-identical to their per-row pairs. ON since 2026-10-04 (owner: "turn E-P05 on"): faster in
-// every cell measured, 1.016x at 2 rows (serve's default slot count) to 1.06x at 8 rows on the 1.5B at depth 1100-2048,
-// 1.029x on the 7B (docs/tasks/task-metal-audit-2026-10.md, "E-P05").
+// mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair
+// (mc3_attention_fa*_rows), bit-identical to their per-row pairs. On by default; tests turn it off for the per-row arm.
+// Evidence: docs/code-notes/metal.md#mc3FARowsOn.
 var mc3FARowsOn = true
 
 // mc3DeviceArgmaxOn takes a batched step's greedy rows' argmax on the GPU (E-P08): argmax_rows_part then argmax_finish
@@ -429,20 +424,20 @@ var mc3DeviceArgmaxOn = true
 const batchArgmaxParts = 64
 
 // mc3AdjRowsOn runs the batched step's per-row qkv and gate|up GEMVs (the sizes calibrateRows gives to per-row) as one
-// dispatch with each weight tile's B threadgroups adjacent (E-P02, mc3_gemv_w4a8_sa_{bias_}rows_adj), bit-identical to
-// the B per-row dispatches. ON since 2026-10-04 (owner: "turn ... E-P02 on"); its kernel A/B read 1.11-1.15x on the 7B's
-// gate|up at B = 2-4 and 1.01-1.04x on the 1.5B's.
+// dispatch with each weight tile's B threadgroups adjacent (mc3_gemv_w4a8_sa_{bias_}rows_adj), bit-identical to the B
+// per-row dispatches. On by default; evidence: docs/code-notes/metal.md#mc3AdjRowsOn.
 var mc3AdjRowsOn = true
 
 // batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
 const batchTGBytes = 4 * 2 * 32 * 8
 
-// calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as
-// one fragment dispatch (MC3 S4, docs/tasks/task-concurrency-2026-09.md). The fragment's cost is fixed for any B up to
-// 8, and a GEMV's is per row. On the 7B's large shapes the GEMV is bandwidth-bound and the fragment ALU-bound, so two
-// GEMVs beat one fragment (gate|up 0.87 against 1.17 ms). Both run on the real weights of the first layers, one layer's
-// weights per dispatch so the cache does not serve them, median of 7 command buffers after 2 warm-ups. The choice
-// changes speed only: the per-row path is production's own kernel on each row.
+// calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as one
+// fragment dispatch (docs/tasks/task-concurrency-2026-09.md, MC3 S4). The fragment's cost is fixed for any B up to 8 and a
+// GEMV's is per row, so on large shapes (a bandwidth-bound GEMV against an ALU-bound fragment) the GEMVs win at small B.
+// Both arms run on the real weights of the first layers, one layer's weights per dispatch so the cache does not serve
+// them, and the fastest of 7 command buffers after 3 warm-ups decides. The choice changes speed only: the per-row path is
+// production's own kernel on each row.
+// History: docs/code-notes/metal.md#calibrateRows.
 func (r *resident) calibrateRows() {
 	b := r.batch
 	if r.w8 { // int8 slice 3: the fragment kernels read int4, so every projection runs production's int8 GEMV per row
@@ -468,8 +463,8 @@ func (r *resident) calibrateRows() {
 			e.DispatchTG(pg, ng, 256, r.H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH)
 		},
 	}
-	// The arms interleave rep by rep, so both of a pair see the same GPU state, and each keeps its fastest command
-	// buffer after 3 warm-ups: a first use of a pipeline, or a clock still ramping, only ever makes a buffer slower.
+	// The arms interleave rep by rep, so both of a pair see the same GPU state: a first use of a pipeline, or a clock still
+	// ramping, only ever makes a buffer slower.
 	best := make([]float64, len(arms))
 	for rep := range 10 {
 		for a, enc := range arms {
@@ -571,10 +566,10 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	return r.forwardMultiOut(seqs, multiFull)
 }
 
-// multiOut is what a step returns. multiNoHead and multiLastRow are R-19's (docs/tasks/task-recompute-audit.md), for a
-// prompt run on the step kernels (prefillByStep): a piece before the last needs only its K/V, so the step encodes no
-// final norm, LM head or argmax and returns nothing; the last piece needs only its last row's logits, so only that row
-// is copied out (the head still runs for every row: it reads the whole LM head's weights once at any row count).
+// multiOut is what a step returns. multiNoHead and multiLastRow serve a prompt run on the step kernels (prefillByStep, R-19,
+// docs/tasks/task-recompute-audit.md): a piece before the last needs only its K/V, so the step encodes no final norm, LM head
+// or argmax and returns nothing; the last piece needs only its last row's logits, so only that row is copied out (the head
+// still runs for every row: it reads the whole LM head's weights once at any row count).
 type multiOut int
 
 // stepPrefillAllHeads restores prefillByStep's pre-R-19 modes (every piece runs the head; the last converts every row),
@@ -929,10 +924,9 @@ func (a *metalResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Re
 	return out, nil
 }
 
-// stepVerifyCost is the step-kernel verify's measured cost in single-token steps, indexed by rows verified: the
-// conservative end of TestMC3Verify_rowCost on the M1 Pro (the 7B at depth 2048, the dearest cell of both models; the
-// 1.5B at depth 128 reads 1.59 / 1.71 / 1.76 at 2 / 4 / 8 rows). 1 row is production's own Forward; 3 and 5-7 are
-// interpolated; 9 rows are an 8-row step plus one Forward. docs/tasks/task-concurrency-2026-09.md, MC4.
+// stepVerifyCost is the step-kernel verify's cost in single-token steps, indexed by rows verified: the conservative end of
+// TestMC3Verify_rowCost (the dearest cell measured). 1 row is production's own Forward; 3 and 5-7 are interpolated; 9 rows
+// are an 8-row step plus one Forward. Derivation: docs/code-notes/metal.md#stepVerifyCost.
 var stepVerifyCost = []float64{0, 1, 1.79, 1.95, 2.11, 2.25, 2.38, 2.52, 2.65, 3.65}
 
 var (
@@ -986,9 +980,9 @@ func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int)
 	return ids, nil
 }
 
-// promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor).
-// T1.10 measured the step at 0.40× / 0.80× / 1.56× the pass at K = 16 / 32 / 64 on the 1.5B and the 7B
-// (docs/tasks/task-metal-audit-2026-10.md, Batch A), so it stops at the last K measured faster.
+// promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor): the
+// step is faster than the pass only up to this length, so it stops at the last K measured faster
+// (docs/code-notes/metal.md#promptStepMaxAboveFloor).
 const promptStepMaxAboveFloor = 32
 
 // promptStepAboveFloor turns on E-P01's above-floor half: a suffix of up to promptStepMaxAboveFloor tokens on a prompt
@@ -999,14 +993,12 @@ const promptStepMaxAboveFloor = 32
 // longer than promptStepMaxAboveFloor.
 var promptStepAboveFloor = false
 
-// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos (E-P01, audit-metal-2026-09-30):
-// the resident runs the step-kernel verify (VerifyCost: the batched step exists, and no logit transform separates its
-// rows from Forward's), and the prompt ends below the fast-prefill floor, where the batched pass declines and the
-// decoder would run the sequential loop. The step's rows are that loop's bits, so this route changes no output.
-//
-// Above the floor the step is faster than the pass up to K = 32 too, but there it would replace the pass's numerics with
-// decode's: promptStepAboveFloor, off. A short suffix there is also a chunked prefill's tail, and on the step it differed
-// from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's C = 81 case: 20480 of 20480 logits).
+// promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos: the resident runs the step-kernel
+// verify (VerifyCost: the batched step exists, and no logit transform separates its rows from Forward's), and the prompt ends
+// below the fast-prefill floor, where the batched pass declines and the decoder would run the sequential loop. The step's
+// rows are that loop's bits, so this route changes no output. Above the floor the route is promptStepAboveFloor, off: it
+// would replace the pass's numerics with decode's, and a chunked prefill's short tail must equal the whole pass
+// (TestMC5_prefillChunkInvariance; docs/code-notes/metal.md#promptStepOK).
 func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
 		return false
@@ -1017,13 +1009,13 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	return promptStepAboveFloor && n <= promptStepMaxAboveFloor
 }
 
-// prefillByStep is PrefillLast on the step kernels (E-P01): the prompt's positions run as consecutive rows of the bound
-// slot's sequence, batchMaxSeqs at a time, exactly as PrefillLastNArgmax runs a verify, and the last row's logits come
-// back. forwardMulti is bit-identical to production decode for such rows (TestMC3Verify_sameSlotRowsBitIdentical,
-// TestMC3Step_promptInRowsBitIdentical), so this is the sequential path's numerics at about a quarter of its time
-// (T1.10: 0.22× on the 1.5B, 0.25× on the 7B). Pieces before the last run no head at all (R-19, multiNoHead), and the
-// last piece copies out only its last row (multiLastRow); a one-row last piece runs production's own Forward.
-// Cancellation is checked between pieces.
+// prefillByStep is PrefillLast on the step kernels: the prompt's positions run as consecutive rows of the bound slot's
+// sequence, batchMaxSeqs at a time, exactly as PrefillLastNArgmax runs a verify, and the last row's logits come back.
+// forwardMulti is bit-identical to production decode for such rows (TestMC3Verify_sameSlotRowsBitIdentical,
+// TestMC3Step_promptInRowsBitIdentical), so this is the sequential path's numerics in a fraction of its time. Pieces before
+// the last run no head at all (multiNoHead), and the last piece copies out only its last row (multiLastRow); a one-row last
+// piece runs production's own Forward. Cancellation is checked between pieces.
+// History: docs/code-notes/metal.md#prefillByStep.
 func (a *metalResident) prefillByStep(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error) {
 	r := a.r
 	defer func() {

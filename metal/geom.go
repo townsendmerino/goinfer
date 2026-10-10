@@ -2,33 +2,25 @@
 
 package metal
 
-// attnGeom is one distinct per-layer attention geometry, shared by every layer that has it.
-// It exists because Gemma 4's own-forward residency (9c) interleaves two attention shapes in
-// one model — local (head_dim 256, kv_heads 8, full rotary) and global (head_dim 512, kv_heads
-// 2, partial rotary, K=V) — so geometry can no longer live model-level on *resident. A launch
-// site that read r.hd/r.nKV/... would silently run every layer at the model-level (uniform)
-// shape; those fields were REMOVED so binding the wrong source is a compile error, not a review
-// catch. On a uniform family every layer resolves to the SAME geometry, so geomFor dedups by
-// value and the whole model shares one attnGeom — byte-identical to the old model-level path.
+// attnGeom is one distinct per-layer attention geometry, shared by every layer that has it. Gemma 4's own-forward residency
+// interleaves two attention shapes in one model (local: head_dim 256, kv_heads 8, full rotary; global: head_dim 512,
+// kv_heads 2, partial rotary, K=V), so geometry cannot live model-level on *resident: it has no hd/nKV fields, so reading
+// the wrong source is a compile error. On a uniform family every layer resolves to the same geometry and geomFor dedups by
+// value, so the whole model shares one attnGeom. This mirrors the WebGPU bridge's value-keyed dedup (gpu/): one object per
+// distinct {hd, nKV, half, kEqV}.
 //
-// nH (query heads) is LOAD-BEARING as a model-level field: it is NOT part of the geom key
-// because it is constant across a family's layers (Gemma 4 varies head_dim and kv_heads, not the
-// query-head count — 16 in both the 12B and 26B variants), so it stays on *resident. A future
-// family with PER-LAYER query-head counts would break this: it would have to move nH onto attnGeom
-// and add it to the key. This comment is the marker that stops the next person bisecting for it.
-// nHhd = nH*hd DOES vary with hd, so uNHhd is derived per-geometry here. kEqV joins the key
-// because a K=V layer's V-store behaviour differs from a v_proj layer's even at identical dims
-// (9c Step 3: V = v_norm(raw k), its own cache) — two such layers must not share a geom.
-//
-// This mirrors the WebGPU bridge's value-keyed geometry dedup (gpu/, commit 9ec363f): one
-// geometry object per distinct {hd, nKV, half, kEqV}, shared across the layers that request it.
+// nH (query heads) is deliberately NOT in the key: it is constant across a family's layers (Gemma 4 varies head_dim and
+// kv_heads, not the query-head count), so it stays on *resident. A family with PER-LAYER query-head counts must move nH onto
+// attnGeom and add it to the key. nHhd = nH*hd does vary with hd, so uNHhd is derived per geometry. kEqV is in the key
+// because a K=V layer's V-store differs from a v_proj layer's at identical dims (V = v_norm(raw k), its own cache), so two
+// such layers must not share a geom.
+// History: docs/code-notes/metal.md#attnGeom.
 type attnGeom struct {
 	hd, nKV, kvDim, half int  // grid-sizing scalars; kvDim = nKV*hd, half = rotaryDim/2 (rotated pairs/head)
 	kEqV                 bool // attention_k_eq_v: V = v_norm(raw pre-RoPE k), no v_proj (Gemma 4 globals; 9c Step 3)
 
-	// Kernel-arg uniform buffers (Metal passes geometry as MTLBuffers, not scalars). uNHhd (= nH*hd)
-	// serves both the qk-norm and the o-proj/quant sites that previously used the two equal-valued
-	// r.uNHhd / r.uHH buffers.
+	// Kernel-arg uniform buffers (Metal passes geometry as MTLBuffers, not scalars). uNHhd (= nH*hd) serves both the qk-norm and
+	// the o-proj/quant sites.
 	uHd, uKvDim, uNKV, uNHhd, uHalf, uQtotal, uKtotal Buffer
 }
 

@@ -14,9 +14,8 @@ package metal
 // The window and state continue from whatever the resident holds, as M decode steps would: the decoder resets them for
 // a fresh sequence (resetDeltaNet) and leaves them for a continuation.
 
-// dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. ON since D-B01's grade (2026-10-04,
-// docs/tasks/task-metal-audit-2026-10.md: fidelity SHIPS on Qwen3.5-0.8B, the pass 8.06x the sequential loop at
-// K = 512); tests turn it off for the sequential arm.
+// dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. On by default; tests turn it off for the
+// sequential arm (docs/tasks/task-metal-audit-2026-10.md, D-B01; docs/code-notes/metal.md#dnetPrefillOn).
 var dnetPrefillOn = true
 
 // prefillDelta is one PrefillLast call's DeltaNet scratch, shared by every DeltaNet layer (each layer's own window and
@@ -31,8 +30,8 @@ type prefillDelta struct {
 
 func (r *resident) newPrefillDelta(M, Mpad int) *prefillDelta {
 	d, dp := r.d, r.dnet
-	// mixedF, zF and gatedH rely on Metal's zero-fill of a new buffer for their pad rows M..Mpad (aikit gpu.NewBufferLen* contract: Metal only; CUDA's is uninitialized) — see
-	// prefillScratchU16.
+	// mixedF, zF and gatedH rely on Metal's zero-fill of a new buffer for their pad rows M..Mpad (aikit gpu.NewBufferLen*
+	// contract: Metal only; CUDA's is uninitialized); see prefillScratchU16.
 	s := &prefillDelta{
 		mixedF: prefillScratchU16(d, Mpad*dp.convDim),
 		zF:     prefillScratchU16(d, Mpad*dp.valueDim),

@@ -7,13 +7,12 @@ import (
 	"time"
 )
 
-// pagedFenceOn: a paged MoE layer's phase 1 ends with paged_fence, and the host spins on its word instead of sleeping in
-// waitUntilCompleted (M-11 / C-B03, docs/audit-metal-2026-09-30.md). aikit's C-B03 probe measured the spin waking about
-// 88.5 us sooner per boundary (p50 101.8 against 190.3 us) on a one-word payload. OFF: on M26 (phase 2 async on both
-// arms) it read 0.878x a token with a busy spin and 0.848x with a 10 us nap, 0 of 9 reps above 1 each, every boundary
-// fenced and none stale; each fenced phase 1 took about 1.3-1.6 ms to be seen. The likely cost is the system-scope fence
-// publishing a whole decode layer's writes, which the probe's one word never priced (docs/tasks/task-m26-mac-2026-10.md,
-// "M-11"). Kept, gated bit-exact and not stale (TestPagedFence_bitExactAndNotStale).
+// pagedFenceOn: a paged MoE layer's phase 1 ends with paged_fence and the host spins on its word instead of sleeping in
+// waitUntilCompleted (docs/audit-metal-2026-09-30.md, C-B03). OFF: aikit's probe saw the spin wake sooner on a one-word
+// payload, but on M26 the fenced token measured slower than the sleep on both a busy spin and a 10 us nap. The likely cost
+// is the system-scope fence publishing a whole decode layer's writes, which the probe's one word never priced; re-measure on
+// M26 before turning it on (docs/tasks/task-m26-mac-2026-10.md, "M-11"; docs/code-notes/metal.md#pagedFenceOn). Kept, gated
+// bit-exact and not stale (TestPagedFence_bitExactAndNotStale).
 var pagedFenceOn = false
 
 // pagedFenceCheckForTest makes every fenced boundary also wait for its command buffer and compare the mirrored ids with
@@ -27,10 +26,11 @@ var pagedFenceNap = 10 * time.Microsecond
 const msl3_2 uint = (3 << 16) | 2
 
 // pagedFenceSrc follows aikit's C-B03 probe (gpu/metal_fence_probe_test.go, after MLX's kernels/fence.metal): the system
-// thread scope is not public MSL, so it is built from the compiler's __METAL_MEMORY_SCOPE_SYSTEM__. The router wrote its
-// ids with plain stores in an earlier dispatch of the same serial encoder; a system-scope fence does not publish
-// non-coherent stores (the probe saw such a payload stale on 47 of 50 boundaries), so this kernel copies the ids through
-// coherent(system) stores into a mirror the host reads, fences, then stores the sequence number the host spins on.
+// thread scope is not public MSL, so it is built from the compiler's __METAL_MEMORY_SCOPE_SYSTEM__. The router wrote its ids
+// with plain stores in an earlier dispatch of the same serial encoder, and a system-scope fence does not publish non-coherent
+// stores (the probe saw stale payloads), so this kernel copies the ids through coherent(system) stores into a mirror the host
+// reads, fences, then stores the sequence number the host spins on.
+// History: docs/code-notes/metal.md#pagedFenceSrc.
 const pagedFenceSrc = `
 #pragma METAL internals : enable
 #ifndef __METAL_MEMORY_SCOPE_SYSTEM__

@@ -2,18 +2,19 @@
 
 package metal
 
-// D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a
-// layer-major paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the
-// group routes to that expert in one pass over its weights, instead of row by row. Bit-identical to the per-row phase 2
+// D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a layer-major
+// paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the group routes to
+// that expert in one pass over its weights, instead of row by row. Bit-identical to the per-row phase 2
 // (encodeG4Phase2Paged) by construction:
-//   - gate|up and down run moe_batch_gemv, which computes sa_rows_acc's per-row sums for up to B activations at once:
-//     each (activation, weight row) accumulator sees exactly sa_rows_acc's operations in its order, and the weights are
-//     read once for all of them;
+//   - gate|up and down run moe_batch_gemv, which computes sa_rows_acc's per-row sums for up to B activations at once: each
+//     (activation, weight row) accumulator sees exactly sa_rows_acc's operations in its order, and the weights are read once
+//     for all of them;
 //   - SwiGLU and its int8 quantisation run mc3_swiglu_quant_rows, swiglu_quant's body per pair;
-//   - the down projection stores each pair's raw sum, and moe_batch_combine adds a row's k experts in route order with
-//     the per-row path's own epilogue, fma(wgt*acc, asc, out) from zero. The floating-point order is the per-row one.
+//   - the down projection stores each pair's raw sum, and moe_batch_combine adds a row's k experts in route order with the
+//     per-row path's own epilogue, fma(wgt*acc, asc, out) from zero. The floating-point order is the per-row one.
 //
-// g4ExpertBatchOn picks it in g4LayerMajorRows. ON once its gate passes and its speed read clears the owner's bar.
+// g4ExpertBatchOn picks it in g4LayerMajorRows; on by default.
+// History: docs/code-notes/metal.md#g4ExpertBatchOn.
 var g4ExpertBatchOn = true
 
 // moeBatchB is the most pairs one moe_batch_gemv threadgroup takes: B activations of K halves in threadgroup memory,
