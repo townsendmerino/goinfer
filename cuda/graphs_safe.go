@@ -10,12 +10,11 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// CUDA graph replay (r.graphs) is ~1.4–1.7× faster but is BIT-EXACT to live launch only under
-// EXCLUSIVE_PROCESS device tenancy or active CUDA MPS. Under DEFAULT compute mode (time-sliced
-// multi-context sharing) it silently mis-runs on this Turing box — proven by an MPS A/B (MPS-off
-// diverges, MPS-on bit-exact ×10; docs/cuda-graphs-investigation.md §5.1). The backend must be
-// "byte-identical or decline, never silently mis-run", so graphs are admitted only under a
-// driver-enforced safe condition and then confirmed with a startup self-test.
+// CUDA graph replay (r.graphs) is bit-exact to live launch only under EXCLUSIVE_PROCESS device tenancy or active CUDA
+// MPS. Under DEFAULT compute mode (time-sliced multi-context sharing) it silently mis-runs on a Turing box (an MPS A/B:
+// MPS-off diverges, MPS-on is bit-exact; docs/cuda-graphs-investigation.md §5.1). The backend must be "byte-identical or
+// decline, never silently mis-run", so graphs are admitted only under a driver-enforced safe condition and then
+// confirmed by a startup self-test.
 
 // CU_COMPUTEMODE_* (cuda.h).
 const (
@@ -64,15 +63,10 @@ func (r *cudaResident) graphsSelfTest() error {
 		emb[i] = float32((i%13)-6) * 0.05 // deterministic, non-trivial
 	}
 	read := func(useGraphs bool) ([]float32, error) {
-		// RESET FIRST, or this comparison is invalid for a recurrent model. The test's premise is
-		// "same input twice ⇒ same logits", which holds for attention because writing K/V at
-		// position 0 is idempotent — but a Gated-DeltaNet mixer ADVANCES {conv ring, matrix state}
-		// on every call, so the second run starts from state the first run left behind and the
-		// logits differ for reasons that have nothing to do with graph capture.
-		//
-		// Without this the self-test reported "graph replay diverged from live" for every DeltaNet
-		// model and graphs were declined on a false positive. Reset is a no-op for every other
-		// family, so the attention path is unchanged.
+		// Reset first, or this comparison is invalid for a recurrent model: its premise, that the same input twice gives the
+		// same logits, holds for attention (writing K/V at position 0 is idempotent), but a Gated-DeltaNet mixer advances its
+		// conv ring and matrix state on every call, so the second run would start from state the first left. Reset is a no-op
+		// for every other family.
 		if e := r.resetState(); e != nil { // already ON the executor: no r.do hop (that deadlocks)
 			return nil, e
 		}
@@ -115,13 +109,9 @@ func (r *cudaResident) admitGraphs() error {
 	if !r.graphs {
 		return nil
 	}
-	// NOTE: this used to decline outright for Gated-DeltaNet models, on the reasoning that the
-	// mixer's buffers ARE the per-token recurrent state and so could not be captured. That was
-	// wrong, and measurably so: a graph replay reads CURRENT buffer contents — which is precisely
-	// why the MoE routing, which changes every token, already flows through a captured segC. What
-	// matters is that the POINTERS and the launch geometry are fixed, and the mixer's are: it has
-	// no rope, no attention and no positional uniform at all. captureGraphs now takes mixer+FFN-pre
-	// as one segment, making a DeltaNet layer the most graph-friendly kind in the runner.
+	// Gated-DeltaNet models are admitted: a graph replay reads current buffer contents, and what must be fixed is the
+	// pointers and the launch geometry, which the mixer's are (it has no rope, attention or positional uniform).
+	// captureGraphs takes the mixer and the FFN pre-half as one segment.
 	unsafe := os.Getenv("GOINFER_CUDA_GRAPHS_UNSAFE") != ""
 	reason, ok := r.graphsTenancySafe()
 	switch {

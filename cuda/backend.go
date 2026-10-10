@@ -20,12 +20,9 @@ func init() {
 	decoder.RegisterBackend("cuda", func() (decoder.Backend, error) {
 		return &cudaBackend{}, nil
 	})
-	// A live query, unlike Metal's registered probe (metal/backend.go) — CUDA VRAM is a separate
-	// pool from host RAM, so "free" is a real, reliable driver-reported number here (no UBC-style
-	// reclaim-under-pressure ambiguity to work around). Creates a throwaway device with no kernels
-	// loaded and releases it immediately after the query — the same bare create→query→release
-	// shape cuda/alloc_floor_test.go already uses directly, not the persistent LockOSThread'd
-	// executor cudaResident needs for actual decode.
+	// A live query, unlike Metal's registered probe: CUDA VRAM is a separate pool from host RAM, so the driver's free figure
+	// is reliable. It creates a throwaway device with no kernels loaded and releases it right after the query (the bare
+	// create-query-release shape of cuda/alloc_floor_test.go), not the persistent executor cudaResident needs.
 	decoder.RegisterMemoryProbe("cuda", func() (int64, bool) {
 		dev, err := CreateSystemDefaultDevice()
 		if err != nil {
@@ -56,29 +53,24 @@ type cudaBackend struct {
 
 func (b *cudaBackend) Name() string { return "cuda" }
 
-// MatmulBT is the CPU fallback: dst[M,N] = a[M,K]·b[N,K]ᵀ on the shared SIMD linalg kernels,
-// the same as the CPU backend. CUDA has no partial (staged) GPU path — a model the resident
-// runner does not admit, or a box with no driver, runs entirely on the CPU, and DecodePath says
-// so — so this keeps `--backend cuda` correct in that case, not fast.
+// MatmulBT is the CPU fallback (the shared SIMD linalg kernels): CUDA has no partial GPU path, so a model the resident
+// runner does not admit, or a box with no driver, runs entirely on the CPU, and DecodePath says so.
 func (b *cudaBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 	linalg.MatmulBT(a, bmat, dst, M, K, N)
 }
 
-// layerFusable reports whether one layer permits the fused super-kernels (M23). fQKV always reads
-// Q/K/V, so those must be int4. fGU additionally reads gate/up/down as int4+f16-scales, but it runs
-// only on dense-FFN layers — MoE layers take moeMLP and leave g/u/d unpacked (kind==""), so gate/up
-// are exempt there. Requiring g/u/d on a MoE layer would wrongly strip fQKV from every MoE model;
-// omitting them on a dense int8-gate/up layer would pass fGU a nil ws16 and crash the executor.
+// layerFusable reports whether one layer permits the fused super-kernels. fQKV always reads Q/K/V, so those must be
+// int4. fGU also reads gate/up/down as int4+f16-scales but runs only on dense-FFN layers: MoE layers take moeMLP and
+// leave g/u/d unpacked, so they are exempt (requiring g/u/d there would strip fQKV from every MoE model), while skipping
+// the check on a dense int8 gate/up layer would pass fGU a nil ws16 and crash the executor.
 func layerFusable(qkvInt4, moe, guInt4 bool) bool {
 	return qkvInt4 && (moe || guInt4)
 }
 
-// BuildResident builds a resident CUDA decoder from a loaded dense Model: host-packs the
-// mixed int4/int8/f32 projections, spawns a LockOSThread-pinned CUDA executor, and uploads
-// weights + KV scratch once, returning a *cudaResident whose Forward the decode loop drives.
-// Declines gracefully (ok=false, no crash) when the driver is absent, dlopen fails, or a
-// projection shape isn't residency-compatible — the decoder then uses the staged/CPU path.
-// Callers gate on DecodeRunnerEligible (dense Qwen2/Llama) before reaching here.
+// BuildResident builds a resident CUDA decoder from a loaded Model: host-packs the int4/int8/f32 projections, spawns a
+// LockOSThread-pinned CUDA executor, and uploads weights and KV scratch once, returning a *cudaResident. It declines
+// (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
+// uses the staged/CPU path.
 func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
@@ -87,18 +79,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 	}()
 
-	// The reason is printed UNCONDITIONALLY, not behind a debug flag. Declining moves the whole
-	// forward to CPU, and v0.10.0's contract is that the runtime names the reason when it is not on
-	// the fast path — a reason nobody can see does not satisfy that. It cost a 307-second 26B run to
-	// learn "the experts do not fit VRAM", which the runtime knew at the moment it declined. One
-	// line at load, not a debug stream: it is the same "zero means either" shape as a skip census
-	// that prints nothing — a silent decline and a successful build look identical from outside.
-	//
-	// Since 2026-09-25 the reason travels as a typed decline (decoder.DeclineResident): decoder's load path
-	// prints it once and records it as the model's ResidentDecline, which DecodePath and `serve check`
-	// report — before, it reached stderr only, and the model's recorded reason was a generic string.
+	// The decline reason is printed unconditionally, not behind a debug flag: declining moves the whole forward to CPU, and
+	// the runtime must name why it is off the fast path. It travels as a typed decline (decoder.DeclineResident): decoder's
+	// load path prints it once and records it as the model's ResidentDecline, which DecodePath and `serve check` report.
 	declined := func(e error) (decoder.ResidentForward, bool, error) {
-		// R20: the reason an operator reads names the cause and what to try; a recovered panic's stack goes to stderr beside it.
+		// The reason names the cause and what to try; a recovered panic's stack goes to stderr beside it.
 		reason, detail := declineAdvice(e.Error(), m.MoECacheExperts())
 		if detail != "" {
 			fmt.Fprintf(os.Stderr, "[cuda] resident build failure, detail:\n%s\n", detail)
@@ -111,14 +96,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		return declined(fmt.Errorf("the model has no loaded layer weights"))
 	}
 
-	// Admission: DecodeRunnerEligible was scoped to the RICHER WebGPU runner (QK-norm,
-	// partial/scaled RoPE, sliding window, per-layer RoPE, MoE, MLA, SSM), so it is far too
-	// permissive for this backend, which implements the plain dense Qwen2/Llama block ONLY.
-	// Without this check the failure is silent — the feature is dropped and the logits are
-	// wrong (e.g. Qwen3's QK-norm ignored; Mistral run full-attention past its window; a
-	// partial-rotary model reading invFreq out of bounds because the rope kernel hardcodes
-	// half = hd/2). Same bug class the Metal backend hit; the taxonomy lives in
-	// decoder/features.go so all three backends share one source of truth.
+	// Admission: DecodeRunnerEligible was scoped to the richer WebGPU runner, so it is too permissive for this backend. A
+	// feature this backend does not implement must decline, or it is silently dropped and the logits are wrong (Qwen3's
+	// QK-norm ignored; a partial-rotary model reading invFreq out of bounds because the rope kernel hardcodes half = hd/2).
+	// The taxonomy is decoder/features.go, shared by all backends.
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("cuda")); len(missing) > 0 {
 		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
 	}
@@ -144,17 +125,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	isG4MoE := m.HasGemma4MoEResident()
 	isGemma4 := m.IsGemma4Resident()
 	if isMoE && !isG4MoE {
-		// Decline anything the dispatch does not implement, LOUDLY rather than by dropping it.
-		// Each of these would otherwise be silent-wrong, which is the whole point of the
-		// admission gate — and FeatMoE is one flag, so it cannot express these sub-shapes.
-		//
-		// The GATED shared expert (Qwen-MoE) is NOT declined here anymore: it is a derived
-		// feature (FeatMoEGatedShared, decoder/features.go) that CUDA does not declare, so the
-		// admission check above already declines it before this switch runs. Duplicating that
-		// decline here would be a hand-coded copy that could drift from the taxonomy (the exact
-		// class the hardware-matrix generator caught) — single source of truth instead.
-		// moe_route's MOE_MAX_E / MOE_MAX_G — decoder's declaration of them (ResidentBackendMoECap), which the
-		// load path's admission gate already applied; restating the numbers here is the M-31 class.
+		// Decline anything the dispatch does not implement loudly rather than dropping it; FeatMoE is one flag and cannot
+		// express these sub-shapes. The gated shared expert (Qwen-MoE) is a derived feature (FeatMoEGatedShared,
+		// decoder/features.go) that CUDA does not declare, so the admission check above declines it before this switch; a copy
+		// of that decline here could drift from the taxonomy. moe_route's MOE_MAX_E / MOE_MAX_G come from decoder's declaration
+		// (ResidentBackendMoECap), which the load path's admission gate already applied; do not restate the numbers here.
 		capE, capG, _ := decoder.ResidentBackendMoECap("cuda")
 		switch {
 		case nE > capE:
@@ -249,10 +224,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 
 	sandwich := m.SandwichNormResident()
-	// G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid.
+	// Olmo 3 / Olmo Hybrid: post-only norms.
 	postOnly := m.PostOnlyNormResident()
 	qkNormWhole := m.QKNormWholeResident()
-	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	// Cohere/Command-R and Cohere2/Command-R7B: LayerNorm and parallel blocks.
 	layerNorm := m.LayerNormResident()
 	parallelBlock := m.ParallelBlockResident()
 	logitScale, _ := m.LogitScaleResident() // ok=false ⇒ 1, already the applyLogitScale no-op value
@@ -318,14 +293,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			proj = []projEnt{{&hl.dnQKV, qkv}, {&hl.dnZ, z}, {&hl.dnOut, outP},
 				{&hl.dnB, &bWM}, {&hl.dnA, &aWM}}
 		case dnetOK && dnAttnGate:
-			// The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
-			// dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
-			// dnAttnGate=false, and falls through to default below — G5,
-			// docs/tasks/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
-			// wrong the moment a non-gated hybrid family reached residency, since
-			// Qwen35ResidentParams hardcoded attnGate=true). Its weights live off lw.QProj (the
-			// family keeps them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate]
-			// per head.
+			// The same family's gated softmax layer (qwen3_5/qwen3_5_moe/qwen3_next; not every dnetOK family: Olmo Hybrid's
+			// full-attention layer is olmo3's plain scheme, dnAttnGate=false, and falls through to default below). Its weights live
+			// off lw.QProj, and q_proj is double width, [query ‖ gate] per head.
 			hl.qGate = dnAttnGate
 			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(l)
 			hl.qNorm, hl.kNorm = qN, kN
@@ -358,9 +328,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				projEnt{&hl.mlaKVA, &kvaWM},
 				projEnt{&hl.o, &oWM},
 			)
-			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows).
-			// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and
-			// W_UV [nH, vHead, kvLoRA] (the lift, used as-is) — matching gpu/residency.go:880-893.
+			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows). Slice it into W_UKᵀ [nH, kvLoRA,
+			// qkNope] (transposed for the absorb GEMV) and W_UV [nH, vHead, kvLoRA] (the lift, as-is), as
+			// webgpuBackend.BuildResident does (gpu/residency.go).
 			hRow := qkNope + vHead
 			wuk := make([]float32, nH*kvLoRA*qkNope)
 			wuv := make([]float32, nH*vHead*kvLoRA)
@@ -535,10 +505,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 				hl.hasShared = true
 				if !sharedUngated {
-					// Qwen-MoE's sigmoid-gated shared expert: out += sigmoid(SharedGate·h)·shared(h).
-					// The KERNEL for this has been here all along — shared_gate_combine's ungated=0
-					// branch, documented "gated (Qwen-MoE)" — so the feature was declined for a
-					// missing [1,hidden] weight upload, not a missing kernel.
+					// Qwen-MoE's sigmoid-gated shared expert: out += sigmoid(SharedGate·h)·shared(h), shared_gate_combine's ungated=0
+					// branch; it needs the [1,hidden] SharedGate weight uploaded.
 					if lw.SharedGate.Rows() == 0 {
 						return declined(fmt.Errorf("layer %d: arch declares a GATED shared expert "+
 							"but SharedGate is empty — this loader did not populate it", l))
@@ -551,10 +519,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		hl.preNorm, hl.postNorm = lw.PreAttnNorm, lw.PreMLPNorm
 		if !dnetOK || !dnAttnGate {
-			// A GATED dnetOK family's softmax layer keeps its QK-norm weights off lw (packed with
-			// its projections above, in the dnetOK&&dnAttnGate case). Everyone else — including
-			// (G5) a dnetOK family whose softmax layer is NOT gated, Olmo Hybrid — reads them
-			// normally, exactly like an ordinary GQA/MHA layer's lw.QNorm/KNorm.
+			// A gated dnetOK family's softmax layer keeps its QK-norm weights off lw (packed with its projections above). Everyone
+			// else, including a dnetOK family whose softmax layer is not gated (Olmo Hybrid), reads them like an ordinary GQA/MHA
+			// layer's lw.QNorm/KNorm.
 			hl.qNorm, hl.kNorm = lw.QNorm, lw.KNorm
 		}
 		// Per-layer RoPE table (Gemma's local 10k vs global 1M base; Mellum's YaRN-on-global).
@@ -567,15 +534,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hl.window = int32(m.SlidingWindowResident())
 		}
 		if hl.isDeltaNet {
-			// A DeltaNet layer has no attention geometry, no QK-norm and no rope table; the
-			// checks below all read those. Its own shapes are validated at upload, where the
-			// state buffers are sized from dnetParams.
-			//
-			// postOnly is a MODEL-level flag (Olmo Hybrid's own model-level NormPlacement is
-			// NormPostOnly), but a DeltaNet layer reaches NormPre2 through NormPlacementLinear
-			// instead — it needs REAL preNorm/postNorm (checked below, unconditionally) and has
-			// no PostAttnNorm/PostMLPNorm tensors at all, so that pair is populated/validated
-			// AFTER this continue, never for a DeltaNet layer, regardless of the model-level flag.
+			// A DeltaNet layer has no attention geometry, QK-norm or rope table, which the checks below read; its own shapes are
+			// validated at upload, where the state buffers are sized from dnetParams. postOnly is a model-level flag, but a DeltaNet
+			// layer reaches NormPre2 through NormPlacementLinear: it needs real preNorm/postNorm (checked here) and has no
+			// PostAttnNorm/PostMLPNorm tensors, so that pair is never populated for it.
 			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
 				return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
 			}
@@ -589,10 +551,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hls[l] = hl
 			continue
 		}
-		// Gemma sandwich (both norms) / Olmo 3 postOnly (post-norm only, no pre-norm — see
-		// below): both dispatch PostAttnNorm/PostMLPNorm on the sublayer OUTPUT. Required to be
-		// present when the arch declares either — a silently-missing one would drop the norm,
-		// not error. Scoped to non-DeltaNet layers ONLY (see the comment on the continue above).
+		// Gemma sandwich / Olmo 3 postOnly: both dispatch PostAttnNorm/PostMLPNorm on the sublayer output, so they must be
+		// present when the arch declares either (a missing one would silently drop the norm). Non-DeltaNet layers only (see the
+		// continue above).
 		if sandwich || postOnly {
 			hl.postAttnNorm, hl.postMLPNorm = lw.PostAttnNorm, lw.PostMLPNorm
 			if len(hl.postAttnNorm) != H || len(hl.postMLPNorm) != H {
@@ -601,14 +562,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		if hdL := m.HeadDimAtResident(l); m.HasQKNorm() {
-			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim (512),
-			// not the model HeadDim (16 local) — validate against the layer's own width.
-			//
-			// QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the WHOLE q/k vector, so the
-			// weight is nH*hdL/nKV*hdL wide instead of hdL — and the resident kernel launch that
-			// reproduces this (collapsing the grid to one Q block + one K block, see segA) sizes
-			// BOTH blocks from a single hd argument, which is only correct when nH==nKV (MHA).
-			// Decline rather than silently mis-normalize a hypothetical future GQA family.
+			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim, not the model HeadDim, so validate
+			// against the layer's own width. QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the whole q/k vector, so the
+			// weight is nH*hdL / nKV*hdL wide, and the resident launch (one Q block plus one K block, see segA) sizes both blocks
+			// from a single hd, which is correct only when nH==nKV (MHA). Decline rather than mis-normalize a GQA family.
 			wantQ, wantK := hdL, hdL
 			nKVL := m.KVHeadsAtResident(l)
 			if qkNormWhole {
@@ -637,15 +594,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if lw.QBias != nil {
 			hl.qb, hl.kb, hl.vb, hl.hasBias = lw.QBias, lw.KBias, lw.VBias, true
 		}
-		// Captured INDEPENDENTLY of QBias: the two travel together in Qwen2 but not in general —
-		// GPT-2 carries an o_proj bias with no q/k/v bias, so folding this into the branch above
-		// would silently drop it for exactly the families FeatOutBias exists for.
-		//
-		// N-34: this used to name gpt-oss as that example, saying it carries an o_proj bias
-		// "with no q/k/v bias at all". It does carry them — gptoss_safetensors.go loads q/k/v
-		// bias as REQUIRED (a missing one is an error) and decoder/testdata/gptoss_tiny.gguf
-		// holds attn_q/k/v.bias. The code was right and the comment wrong, which is the
-		// dangerous direction: it invited exactly the fold it warns against.
+		// Captured independently of QBias: the two travel together in Qwen2 but not in general (GPT-2 carries an o_proj bias
+		// with no q/k/v bias), so folding this into the branch above would silently drop it for the families FeatOutBias exists
+		// for.
 		if lw.OBias != nil {
 			hl.ob, hl.hasOBias = lw.OBias, true
 		}
@@ -662,9 +613,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 
 	// ---- resident + pinned executor ----
 	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
-	// Computed once, referenced by both ctxCap and extraBytes below (M-22, docs/audit-2026-09-10.md
-	// — extraBytes now needs this same final ctxCap value, and a struct literal cannot reference a
-	// sibling field being set in the same literal).
+	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
+	// same literal.
 	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil)
 	allocSlack := packedAllocSlack([]any{hls, hlm})
 	if allocSlackOffForTest {
@@ -702,12 +652,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		allocSlackBytes: allocSlack,
 		ctxExplicit:     m.ResidentContextRequest() > 0,
 		kvSlotsReq:      kvSlotsReq,
-		// M-22 (docs/audit-2026-09-10.md): a drafter's device K/V is priced here at the FINAL,
-		// actually-chosen ctxCap — resolveCtxCapFit's own ExtraBytes consult (above, feeding
-		// residentCtxCap) already priced it at candidate, the widest ctx that call considered; this
-		// is the real number checkKVFits below enforces against the real allocation about to
-		// happen, which can only be <= candidate (fitplan.go's chooseCtx never grows past what it
-		// was asked), so this is never a smaller price than what was already planned against.
+		// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate,
+		// the widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller
+		// price than the one planned against; checkKVFits enforces it.
 		extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(residentCtxCap),
 	}
 	if moeSig {
@@ -719,57 +666,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if mlaOK && mlaAttnScale != 0 {
 		r.attnScale = float32(mlaAttnScale)
 	}
-	// C′ step 2: device slots per layer — an LRU cache of nSlots experts (clamped [topK, nE]).
-	// VRAM is nLayers·nSlots·perExpert, so more slots trades VRAM for fewer per-token DMAs.
-	// GOINFER_MOE_CACHE_SLOTS=N requests N explicitly.
+	// C' device expert slots per layer: an LRU cache of nSlots experts (clamped [topK, nE]), costing
+	// nLayers*nSlots*perExpert of VRAM; more slots trade VRAM for fewer per-token DMAs. The request comes from
+	// --moe-cache-slots (GOINFER_MOE_CACHE_SLOTS is still honoured).
 	//
-	// With caching ON and NO explicit request, ask for ALL experts and let allocSlots cap to
-	// measured free VRAM. This reverses a default of topK, which was the worst possible setting for
-	// the only situation this code runs in: at nSlots=topK the cache degenerates to fresh-loading
-	// every routed expert every token — ~714 MB/token on the 26B, ~5 tok/s against ~17 at the 38
-	// slots that fit. Nobody enables expert streaming to get the slow version of it, so the
-	// conservative default was really deferring a VRAM decision that allocSlots already makes
-	// properly: it measures free VRAM and caps-and-logs. An over-large request was never the hazard
-	// it looked like either — post-C-24 an alloc panic on the executor becomes a DECLINE (→ staged
-	// fallback), not a process kill.
-	//
-	// REVERTED to topK (2026-08-11). Defaulting to "ask for all, let allocSlots cap to free VRAM"
-	// was correct in intent and WRONG in practice, because allocSlots' cap is not the safety net it
-	// looks like: its headroom is a flat `marginBytes = 384 MB` described as covering "the
-	// greedy-argmax readback + driver overhead" — per-token costs — while what it must actually
-	// leave room for is everything the forward allocates AFTER it runs, which scales with layers,
-	// context and vocab. On the real 26B it capped 128 slots to 34 (3.4 GB of 3.8 GB free) and the
-	// warm forward then died with cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY.
-	//
-	// Measured, same test, same box, only this default differing:
-	//     GOINFER_MOE_CACHE_SLOTS=8  (this default) -> PASS 305s
-	//     unset -> 128, capped to 34               -> FAIL 477s (OOM)
-	//
-	// RAISED (2026-08-20) to a BOUNDED multiple of topK. This is the "change about defaults" the
-	// note above parked — its safety precondition (fix the margin, prove it on the 26B) was met by
-	// A5/A7, and what remained was only that a default change should not ride along inside an
-	// unrelated commit.
-	//
-	// WHY A BOUND AND NOT THE "ask for all, cap to VRAM" THE ACCESSOR DOCUMENTS. Measured on the
-	// real Qwen3.6-35B-A3B (nE=256, topK=8), sweeping slots/layer:
-	//
-	//     8 (topK)      6.77 tok/s   ~0% hit   ~630 MB expert DMA/token
-	//     48           10.09 tok/s   71.1%      265 MB
-	//     76           10.32 tok/s   77.7%      205 MB
-	//
-	// The knee is around 48: cutting DMA 630→265 MB bought 1.49x, cutting it 265→205 bought 1.02x.
-	// Past the knee, slots consume GB of VRAM for nothing — and every extra GB is more exposure to
-	// the deferred local-memory reservations that made the previous "ask for all" attempt OOM after
-	// allocSlots had already capped. A bound gets the whole win with a fraction of the risk, which
-	// "all" cannot claim.
-	//
-	// 8*topK sits just above the measured knee. It is a HEURISTIC from one sweep (plus the 26B's
-	// "~17 tok/s at the 38 slots that fit"), not a derived constant: where the knee falls depends on
-	// the model's routing entropy. Erring above it costs VRAM the cap will reclaim if it is short;
-	// erring below it costs throughput nothing reclaims.
-	//
-	// The floor stays topK — one token's routed set must be simultaneously resident — and allocSlots
-	// still caps to measured free VRAM, so this can only ever ask for less than the reverted default.
+	// With caching on and no explicit request the default is 8*topK (capped at nE): a bounded multiple, neither topK nor the
+	// "ask for all, let allocSlots cap to free VRAM" that MoECacheSlotsRequest documents for 0. The floor is topK (one
+	// token's routed set must be resident at once) and allocSlots still caps to measured free VRAM. Do not default to "ask
+	// for all": allocSlots's headroom (marginBytes) covers per-token costs, not what the forward allocates after it, so on
+	// the real 26B it capped 128 slots to 34 and the warm forward then died with CUDA_ERROR_OUT_OF_MEMORY. 8*topK sits just
+	// above the knee of one measured sweep; it is a heuristic, not a derived constant, because where the knee falls depends
+	// on the model's routing entropy. The sweep and the history: docs/code-notes/cuda.md#BuildResident: MoE cache slots
+	// default.
 	r.cacheSlots = topK
 	r.cacheSlotsReq = topK
 	if r.cacheExperts && nE > 0 {
@@ -779,25 +687,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 	}
 	if r.cacheExperts {
-		// The request now comes from Options (--moe-cache-slots), and MoECacheSlotsRequest still
-		// honours GOINFER_MOE_CACHE_SLOTS, so nothing that set the env var breaks.
-		//
-		// NOTE the accessor documents 0 as "ask for all, auto-cap to VRAM". That default is NOT
-		// taken here: unset leaves topK in place, exactly as before this branch. Raising it is a
-		// SEPARATE decision — main's comment above states its own precondition ("fixing the margin
-		// FIRST and proving it on the 26B"), which A5 (6091e7a) and A7 have now met — and a change
-		// of default belongs in a change about defaults, not in one promoting env vars to flags.
-		// G-07: `> topK` silently floored a request of topK or less. A request BELOW topK cannot
-		// be honoured — one token's own top-k must fit — but it was neither honoured nor
-		// refused: cacheSlots stayed at the 8·topK default, which on a small fixture is nE, so
-		// every expert gets a permanent slot and slot ≠ expert only by first-admit order. A gate
-		// asking for "fewer slots than experts" therefore got the identity mapping and
-		// discriminated by routing luck. Refuse what cannot be honoured; honour the rest exactly.
+		// The request comes from Options (--moe-cache-slots); unset keeps the 8*topK default above, not the accessor's "ask for
+		// all". A request BELOW topK cannot be honoured, since one token's own top-k must fit, so it is refused rather than
+		// floored: flooring left the 8*topK default in place, and a gate asking for fewer slots than experts got the identity
+		// mapping and discriminated by routing luck.
 		if req := m.MoECacheSlotsRequest(); req > 0 && req < topK {
-			// A hard error, NOT declined(): declined() swallows the error and falls back to the
-			// staged path, which is right for a shape this backend does not implement and wrong
-			// for an operator flag that cannot mean what it says. The user asked for something
-			// impossible; tell them.
+			// A hard error, not declined(): declined() swallows the error and falls back to the staged path, which suits a shape
+			// this backend does not implement but not an operator flag that cannot mean what it says.
 			return nil, false, fmt.Errorf("cuda: --moe-cache-slots %d is below top-k %d — one "+
 				"token's own routed experts must all be resident at once, so this cannot be "+
 				"honoured (G-07)", req, topK)
@@ -828,53 +724,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.dev, e = CreateSystemDefaultDevice(); e != nil {
 			return e
 		}
-		// M-02 (docs/audit-2026-09-02.md, docs/tasks/task-fit-to-hardware.md): CUDA had no memory-fit
-		// check at all for the FIXED (non-expert) part of a resident load — a dense model whose
-		// weights alone exceed free VRAM previously ran the full kernel-compile + upload sequence
-		// before failing on whatever CUDA allocation happened to be the first one that didn't fit,
-		// with a raw driver error rather than a clean decline. checkWeightsFit runs here, as early
-		// as possible (right after the device exists, before any of that), and is checked BEFORE
-		// this backend's other, more specific declines so an obviously-too-large model gets the
-		// clearest message rather than whichever unrelated shape check happens to run first.
+		// checkWeightsFit runs first, right after the device exists and before the kernel compiles and uploads, and before this
+		// backend's other declines, so a model whose fixed (non-expert) weights exceed free VRAM gets a clean decline naming
+		// that rather than whichever raw driver error the first oversized allocation produced.
 		if e := r.checkWeightsFit(m); e != nil {
 			return e
 		}
-		// THESE MODULE AND PIPELINE HANDLES DO NOT SURVIVE DEVICE EXHAUSTION. Read this before
-		// adding any path that recovers residency after memory pressure.
+		// The module and pipeline handles cached here do not survive device exhaustion. Once the device has been drained to
+		// refusal, a later launch through a cached handle returns SUCCESS and executes nothing (an all-zero output, no error,
+		// and cuFuncGetAttribute answers normally); only re-loading the module and re-resolving the function immediately before
+		// the launch restores it. goinfer avoids this because BuildResident declines on exhaustion and issues no more CUDA, and
+		// that decline is a safety property, not an incidental fallback.
 		//
-		// Measured (A13, docs/QUEUE.md): once the device has been drained to exhaustion, a later
-		// launch through a handle cached here returns SUCCESS and executes NOTHING — the output
-		// buffer is left untouched and surfaces downstream as an all-zero result, e.g. a cosine of
-		// exactly 0.000000. No CUDA call reports an error at any point, and free VRAM is back to
-		// ~7.3 GB by then, so neither an error check nor a memory check will catch it.
-		//
-		// AND cuFuncGetAttribute WILL NOT DETECT IT. Queried across a poisoned and a clean run it
-		// returns byte-identical valid values (maxThreadsPerBlock, numRegs, ptxVersion) because
-		// those come from metadata that outlives the device code. A handle that answers is not a
-		// handle that works.
-		//
-		// What restores it, measured 3/3: re-loading the module and re-resolving the function
-		// IMMEDIATELY BEFORE the launch. Re-loading earlier does not — allocations performed
-		// between the load and the launch re-invalidate it.
-		//
-		// goinfer does not hit this today only because BuildResident DECLINES on exhaustion
-		// ((nil,false,nil)) and cudaBackend.MatmulBT then runs linalg.MatmulBT with no CUDA at all.
-		// That decline is a safety property, not an incidental fallback. Any future residency
-		// recovery must RE-LOAD rather than reuse what is cached here.
-		//
-		// THE FALSIFIER, which is the one sentence to carry away from all of this:
-		//
-		//	ANY CHANGE THAT DRIVES THE DEVICE TO REFUSAL AND THEN CONTINUES USING THE SAME CONTEXT
-		//	BREAKS THIS.
-		//
-		// The whole tag rests on that single property holding across every shipped path — measured
-		// path by path in docs/QUEUE.md A13 (prefill peaks 39.9x clear of the floor; unload frees
-		// rather than exhausts; the cap search allocates nothing; the one path that DOES exhaust,
-		// resident build, then declines and issues no CUDA). It is not a guarantee the type system
-		// or any test can enforce for code that does not exist yet, so it is written here, where
-		// someone adding a retry loop, an eviction-and-rebuild, or a "just try a smaller cache"
-		// will be reading. If your change makes the device refuse and then keeps going on that
-		// context, the failure will be silent zeros, not an error.
+		// Any change that drives the device to refusal and then keeps using the same context breaks this, silently, as zeros. A
+		// retry loop, an eviction-and-rebuild or a "just try a smaller cache" must re-load rather than reuse these handles.
+		// Evidence, path by path: docs/QUEUE.md A13; the full record: docs/code-notes/cuda.md#BuildResident: device exhaustion.
 		gmod, e := r.dev.CompileLibrary(gemvFwdPTX)
 		if e != nil {
 			return e
@@ -883,24 +747,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if e != nil {
 			return e
 		}
-		// The generic quantized GEMVs come from aikit (gpu.QuantGEMVPTX), not from
-		// gemv_fwd.ptx — the Phase-1b blob-split. aikit owns the quantized matmul on
-		// the GPU exactly as linalg owns it on the CPU; gemv_fwd.cu keeps only the
-		// LLM-specific kv_store / rope_kv. The kernels are the same instructions this
-		// file shipped before the split, so decode stays bit-identical.
+		// The generic quantized GEMVs come from aikit (gpu.QuantGEMVPTX), not gemv_fwd.ptx; gemv_fwd.cu keeps only the
+		// LLM-specific kv_store / rope_kv, and decode stays bit-identical.
 		qgemv, e := r.dev.NewQuantGEMV()
 		if e != nil {
 			return e
 		}
 		r.gemvW4, r.gemvW8 = qgemv.W4A8, qgemv.W8A8
-		// kv_store and rope are NOT bound: the fused rope_kv below subsumes both (the Incr1
-		// decode-fusion win). They were left bound and dead after that fusion shipped, JIT-compiled
-		// into every model load and launched by nothing — see TestPipelineLint_boundKernelsAreLaunched.
-		// GPT-J pairwise rotation (Cohere/Cohere2/Aya, GLM-OCR): bind the pairwise twin of rope_kv
-		// (cuda/rope_pairwise.cu, same argument list and launch geometry) into the SAME field, so no
-		// launch site changes and every other family still gets exactly the NeoX kernel above.
-		// A load failure DECLINES — running the NeoX kernel on a pairwise model is silent-wrong from
-		// position 1 (real R7B/Aya at int4: worst cosine -0.075/-0.041), so there is no fallback.
+		// kv_store and rope are not bound: the fused rope_kv below subsumes both (TestPipelineLint_boundKernelsAreLaunched flags
+		// a pipeline bound and never launched). GPT-J pairwise rotation (Cohere/Cohere2/Aya, GLM-OCR) binds the pairwise twin of
+		// rope_kv (cuda/rope_pairwise.cu, same argument list and launch geometry) into the same field, so no launch site
+		// changes. A load failure declines: the NeoX kernel on a pairwise model is silently wrong from position 1, so there is
+		// no fallback.
 		r.pairwiseRoPE = m.PairwiseRoPEResident()
 		if r.pairwiseRoPE {
 			pwmod, pe := r.dev.CompileLibrary(ropePairwisePTX)
@@ -980,12 +838,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		// argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so the C-14 index tie-break
-		// fix didn't force a glue.ptx regen. (moe.ptx, glue.ptx and gemv_fwd.ptx are the audited
-		// artifacts, pinned at NVRTC 12.6.85 — audit R-26, restored per M-35/REGEN.md after drifting
-		// to this box's ambient 12.9.86 in 610ce7f/23c46b13/5b443834. Every other production PTX,
-		// including argmax.ptx, is built at whatever NVRTC was on hand when it was added — never
-		// claimed otherwise.) See cuda/argmax.cu.
+		// argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so a kernel fix does not force a glue.ptx
+		// regeneration. moe.ptx, glue.ptx and gemv_fwd.ptx are the audited artifacts, pinned at NVRTC 12.6.85
+		// (cuda/testdata/REGEN.md); every other production PTX, including argmax.ptx, is built at whatever NVRTC was on hand
+		// when it was added. See cuda/argmax.cu.
 		amod, e2 := r.dev.CompileLibrary(argmaxPTX)
 		if e2 != nil {
 			return e2
@@ -996,7 +852,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArgRows, e = r.dev.NewComputePipeline(amod, "argmax_rows"); e != nil {
 			return e
 		}
-		// topk_select (R7): its own module, same isolation as argmax_reduce above.
+		// topk_select: its own module, same isolation as argmax_reduce above.
 		tmod, e2 := r.dev.CompileLibrary(topkPTX)
 		if e2 != nil {
 			return e2
@@ -1004,7 +860,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fTopK, e = r.dev.NewComputePipeline(tmod, "topk_select"); e != nil {
 			return e
 		}
-		// gumbel_stage1/2 (R7b): own module, same isolation.
+		// gumbel_stage1/2: own module, same isolation.
 		gumod, e2 := r.dev.CompileLibrary(gumbelPTX)
 		if e2 != nil {
 			return e2
@@ -1015,9 +871,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fGumbel2, e = r.dev.NewComputePipeline(gumod, "gumbel_stage2"); e != nil {
 			return e
 		}
-		// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md) — own module, same isolation
-		// reasoning as argmax_reduce/router_f32 above. Loaded unconditionally: cheap, and whether
-		// this model will ever receive an adapter isn't known here.
+		// Compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md): own module, loaded unconditionally (cheap, and whether an
+		// adapter will arrive is not known here).
 		lmod, e2 := r.dev.CompileLibrary(loraPTX)
 		if e2 != nil {
 			return e2
@@ -1029,11 +884,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		}
 		r.loraT = r.af(loraRMax)
-		// Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
-		// untouched; the kernels come from prefill_batched.ptx. gemv_w4a8_batched's PTX is gone: its
-		// only entry was bound and never launched, so an entire module was JIT-compiled on every model
-		// load to feed a dead field (then left go:embed-ed but unused, until removed 2026-09-24). bGemvB
-		// dispatches int4 to bRN (gemv_w4a8_rn) unconditionally.
+		// Batched prefill kernels (weight-stationary M=len path): own module, prefill_batched.ptx, with the audited PTX
+		// untouched. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally; there is no gemv_w4a8_batched module.
 		{
 			if pbmod, e3 := r.dev.CompileLibrary(prefillBatchedPTX); e3 == nil {
 				ok := true
@@ -1049,7 +901,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				} else {
 					ok = false
 				}
-				// int8 batched GEMV (§C6): own module, own file; the audited PTX is untouched.
+				// int8 batched GEMV: own module, own file; the audited PTX is untouched.
 				if w8mod, e5 := r.dev.CompileLibrary(gemvW8BatchedPTX); e5 == nil {
 					load(&r.bW8, w8mod, "gemv_w8a8_batched")
 				} else {
@@ -1078,12 +930,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.prefillReady = ok
 			}
 		}
-		// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill). Own module,
-		// same isolation reason as attn_block.cu — prefill_batched.ptx is untouched. A load
-		// failure is not fatal: it leaves bAttnImg zero and PrefillImageLast declines, falling
-		// back to the CPU-prefill-then-UploadKV bridge, exactly the pattern bAttnFused64/128
-		// already establishes for L2 below. Depends on r.prefillReady the same way L2 does —
-		// meaningless without the rest of the batched stack it plugs into.
+		// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill): own module, prefill_batched.ptx untouched. A
+		// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
+		// It depends on r.prefillReady, as L2 does.
 		if r.prefillReady {
 			if imod, e8 := r.dev.CompileLibrary(attnImgPrefillPTX); e8 == nil {
 				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
@@ -1098,13 +947,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				loadImg(&r.bAttnImg, "attn_img_batched")
 			}
 		}
-		// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill). Own module, same
-		// isolation reason as attn_img_prefill.cu — prefill_batched.ptx is untouched. Gated on
-		// the model actually being m-RoPE (unlike bAttnImg above, which loads unconditionally):
-		// this kernel needs the model's own MRopeSection to compute sec0/sec1, so loading it for
-		// every non-VL model would waste NVRTC JIT time on parameters that mean nothing there. A
-		// load failure (or a non-m-RoPE model) is not fatal: PrefillMRoPELast declines, falling
-		// back to the CPU-prefill-then-UploadKV bridge.
+		// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill): own module, prefill_batched.ptx untouched. Loaded
+		// only for an m-RoPE model, since it needs the model's MRopeSection for sec0/sec1 (unlike bAttnImg above, which loads
+		// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the
+		// CPU-prefill-then-UploadKV bridge.
 		if r.prefillReady {
 			if sec := m.MRopeSectionResident(); len(sec) == 3 {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
@@ -1136,11 +982,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		// L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2). DEFAULT ON above
-		// fastPrefillFloor (512 prompt tokens) since 2026-09-05, when §3's reference gate passed on
-		// CUDA; GOINFER_CUDA_FAST_PREFILL=0 or Options.ExactPrefill keeps the exact path. Own module — prefill_batched.ptx is untouched, the isolation pattern
-		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and
-		// every selection site falls back to attn_batched, which is the exact path anyway.
+		// L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2): default on above fastPrefillFloor;
+		// GOINFER_CUDA_FAST_PREFILL=0 or Options.ExactPrefill keeps the exact path. Own module, prefill_batched.ptx untouched. A
+		// load failure is not fatal: bAttnFused* stay zero and every selection site falls back to attn_batched, the exact path.
 		r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
 		if m.ExactPrefill() { // Options.ExactPrefill: this model's prefill stays on the exact path
 			r.fastAttn, r.fastGemm = false, false
@@ -1177,10 +1021,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					}
 				}
 			}
-			// L3 tensor-core GEMM, its own module and its own half of the gate. Bound through the
-			// same &r.<field> loader closure as every other pipeline here, which is what
-			// TestPipelineLint_boundKernelsAreLaunched keys on: a plain `r.F = pl` assignment reads
-			// to that lint as a LAUNCH WITH NO BINDING, i.e. a nil-pipeline dispatch.
+			// L3 tensor-core GEMM: own module, own half of the gate. Bound through an &r.<field> loader closure, like every pipeline
+			// here: TestPipelineLint_boundKernelsAreLaunched reads a plain `r.F = pl` as a launch with no binding, i.e. a
+			// nil-pipeline dispatch.
 			if gmod, e7 := r.dev.CompileLibrary(gemmMMAPTX); r.fastGemm && e7 == nil {
 				loadG := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(gmod, name); pe == nil {
@@ -1190,36 +1033,25 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				loadG(&r.bGemmMMA, "gemm_w4a8_mma")
 			}
 		}
-		// Campaign-A split-KV decode attention: a high-occupancy, bit-identical alternative to the A1
-		// attn_batched(M=1) decode launch (it replaces exactly that launch, so it needs prefillReady).
-		// Opt-in via GOINFER_SPLITKV_ATTN so it can be A/B'd and gated before default-on. Own module.
-		// -1 ⇒ use the per-geometry table. Set before the load so a partial split-KV load can never
-		// leave the zero value (0) sitting here meaning "always split".
+		// Split-KV decode attention: a high-occupancy, bit-identical alternative to the attn_batched(M=1) decode launch (it
+		// replaces exactly that launch, so it needs prefillReady). Own module. skMinKeys -1 means use the per-geometry table;
+		// set it before the load so a partial split-KV load cannot leave the zero value, which would mean "always split".
 		r.skMinKeys = -1
-		// gpt-oss's clamped interleaved-SwiGLU expert epilogue, from its own module so the
-		// audited glue.ptx/moe.ptx stay untouched. Loaded only for that family: every other
-		// one keeps glu_quant, and launchGluSplitExpert branches on this pipeline being
-		// populated. A load failure is not fatal — it simply leaves gpt-oss on the CPU path,
-		// which is where it is today anyway.
+		// gpt-oss's clamped interleaved-SwiGLU expert epilogue: own module, so the audited glue.ptx/moe.ptx stay untouched.
+		// Loaded only for that family; launchGluSplitExpert branches on this pipeline being populated. A load failure is not
+		// fatal.
 		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
 			if gmod, ge := r.dev.CompileLibrary(gptOssActPTX); ge == nil {
-				// &r.field via a loader closure, matching every other pipeline here — the
-				// pipeline lint keys on that form (`&r.<field>`), and a plain assignment
-				// reads to it as a launch with no binding. That is not pedantry: an unbound
-				// launch is a null-pipeline dispatch, which is what the lint exists to stop.
+				// Loader closure, not a plain assignment: see the pipeline-lint note at the L3 load above.
 				loadG := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(gmod, name); pe == nil {
 						*dst = pl
 					}
 				}
 				loadG(&r.gptOssSw, "glu_quant_gptoss")
-				// gpt-oss's ROUTER. moe.cu's moe_route means something different by "bias" —
-				// it steers SELECTION only and takes the weight from the UNBIASED score, which
-				// is right for DeepSeek/GLM and wrong here: gpt-oss softmaxes over the SELECTED
-				// BIASED logits. Its own kernel comment calls running gpt-oss through moe_route
-				// "plausible mixing weights that are simply not this model's — a silent quality
-				// loss, not a crash". The kernel shipped 2026-08-18 and was never loaded, so
-				// that is exactly what the resident path has been doing.
+				// gpt-oss's router (route_gptoss): moe_route's "bias" steers expert selection only and takes the weight from the
+				// unbiased score, which is right for DeepSeek/GLM and wrong here, where softmax runs over the selected biased logits.
+				// Running gpt-oss through moe_route gives plausible mixing weights that are not this model's, a silent quality loss.
 				loadG(&r.gptOssRoute, "route_gptoss")
 				r.gptOssAlpha, r.gptOssLimit = alpha, limit
 			}
@@ -1303,15 +1135,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		// router_f32 module: Gemma-4's own kernels, kept off the audited moe.ptx (this box's 12.9
-		// NVRTC would rewrite every moe.ptx kernel). Pure-f32 router GEMV + per-expert-scale fold +
-		// weightless out-of-place norm + scalar-scale. gemma4Dense (broader than gemma4Moe: ANY
-		// gemma4 checkpoint, not just enable_moe_block ones) compiles the module too — scale_vec
-		// (fScaleVec) is segB's dense-tail per-layer-output-scalar kernel, nothing router-specific
-		// about it, and was previously compiled ONLY under the MoE-only gate even though every
-		// dense gemma4 layer needs it (a real gap: dense resident decode never applied the
-		// checkpoint's per-layer output scalar at all before this). The three genuinely
-		// router-specific kernels stay gemma4Moe-only — a dense-only build has no router to serve.
+		// router_f32 module: Gemma 4's own kernels, kept off the audited moe.ptx. gemma4Dense (any gemma4 checkpoint, not only
+		// enable_moe_block ones) compiles it too: scale_vec (fScaleVec) is segB's dense-tail per-layer-output-scalar kernel,
+		// which every dense gemma4 layer needs. The three router-specific kernels stay gemma4Moe-only.
 		if r.gemma4Moe || r.gemma4Dense {
 			rmod, e2 := r.dev.CompileLibrary(routerF32PTX)
 			if e2 != nil {
@@ -1345,12 +1171,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// activations. Both are nil for every other family, and r.af/r.up32 are not called
 		// at all in that case (Alloc(0) is an error, not a no-op).
 		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
-			// N-10: the glue `attention` fallback (taken when !prefillReady) has NO sink
-			// parameter in its signature at all — it cannot be passed one, only avoided. So a
-			// gpt-oss model whose prefill_batched.ptx fails to JIT would decode through a
-			// kernel that silently omits the learned per-head sink, with nothing declined and
-			// nothing logged. decoder/features.go says the sink reaches both paths; this is
-			// what makes that true, by refusing the case where it cannot.
+			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a gpt-oss model whose
+			// prefill_batched.ptx fails to JIT would decode through a kernel that silently omits the learned per-head sink. Refuse
+			// that case: decoder/features.go says the sink reaches both paths, and this is what makes that true.
 			if !r.prefillReady {
 				return fmt.Errorf("cuda: gpt-oss needs the batched attention kernel " +
 					"for its learned attention sink, and prefill_batched.ptx did not load — the " +
@@ -1367,9 +1190,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
 					r.gptOssExpBias[l] = r.up32(gb)
 				}
-				// The per-expert DOWN bias. Uploaded here with the others because it is a weight,
-				// not an activation; consumed by gemv_w4a8_moe_wacc_bias INSIDE the router-weight
-				// product. Never wired until 2026-08-31, which cost min cosine 0.75 vs 0.997.
+				// The per-expert DOWN bias, consumed by gemv_w4a8_moe_wacc_bias inside the router-weight product; omitting it costs min
+				// cosine 0.75 against 0.997.
 				if db := m.GptOssExpertDownBiasResident(l); len(db) > 0 {
 					r.gptOssDownBias[l] = r.up32(db)
 				}
@@ -1385,9 +1207,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			var lerr error
 			loadD := func(dst *Pipeline, name string) {
-				// &r.field via a loader closure, matching every other pipeline here — the
-				// pipeline lint keys on that form, and a plain assignment reads to it as a
-				// launch with no binding.
+				// Loader closure, not a plain assignment: see the pipeline-lint note at the L3 load above.
 				pl, pe := r.dev.NewComputePipeline(dmod, name)
 				if pe != nil {
 					lerr = fmt.Errorf("cuda: deltanet kernel %q: %w", name, pe)
@@ -1457,23 +1277,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			h := &hls[l]
 			L := cudaLayer{idx: l}
 			if !r.postOnly || h.isDeltaNet {
-				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight at all for its non-DeltaNet
-				// layers — h.preNorm is 0-length there (Alloc(0) is a hard error, not a no-op) —
-				// but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and
-				// DO carry a real one, already required non-empty above.
+				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
+				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
+				// non-empty above.
 				L.preNorm = r.up32(h.preNorm)
 			}
 			if (!r.postOnly && !r.parallelBlock) || h.isDeltaNet {
-				// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all — h.postNorm
-				// is 0-length there too (same Alloc(0) hazard) — segBFFN reuses segA's r.aq/r.aSc
-				// as the MLP's input instead (see Model.ParallelBlockResident's comment).
+				// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor (h.postNorm is 0-length, the same Alloc(0) hazard);
+				// segBFFN reuses segA's r.aq/r.aSc as the MLP input (see Model.ParallelBlockResident).
 				L.postNorm = r.up32(h.postNorm)
 			}
 			if h.isDeltaNet {
-				// Gated-DeltaNet mixer layer: no q/k/v/o, no rope table, no KV cache. Two
-				// persistent state buffers instead, both zeroed at build and re-zeroed per
-				// generation — the recurrence COMPOUNDS, so unlike a KV cache the next sequence
-				// cannot simply overwrite it.
+				// Gated-DeltaNet mixer layer: no q/k/v/o, rope table or KV cache. It has two persistent state buffers instead, zeroed at
+				// build and re-zeroed per generation: the recurrence compounds, so unlike a KV cache the next sequence cannot overwrite
+				// it.
 				dp := r.dnet
 				L.isDeltaNet = true
 				L.dnQKV, L.dnZ, L.dnOut = r.upW(h.dnQKV), r.upW(h.dnZ), r.upW(h.dnOut)
@@ -1518,19 +1335,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				if pleP > 0 {
 					L.pleGate, L.pleProj, L.postPLENorm = r.upW(h.pleGate), r.upW(h.pleProj), r.up32(h.postPLENorm)
 				}
-				// Gemma 4's per-layer output scalar (out = h*layerScalar, applied after the dense
-				// MLP residual add). A real, always-present multiply for every dense gemma4 layer
-				// (defaults to 1 when the checkpoint's tensor is absent, decoder/weights.go), NOT
-				// an edge case — was never wired here at all before, only for enable_moe_block
-				// layers via their own Gemma4MoEResidentBundle copy (set below, which overrides
-				// this for g4moe layers with its own authoritative value). Zero (the "skip"
-				// sentinel segB's dense tail checks) for every non-gemma4 family.
+				// Gemma 4's per-layer output scalar (out = h*layerScalar after the dense MLP residual add): present on every dense
+				// gemma4 layer (1 when the checkpoint's tensor is absent, decoder/weights.go); g4moe layers override it below with their
+				// bundle's value. Zero, the skip sentinel segB's dense tail checks, for every non-gemma4 family.
 				L.layerScalar = m.Gemma4DenseLayerScalarAtResident(l)
 			}
 			if (r.sandwich || r.postOnly) && !h.isDeltaNet {
-				// !h.isDeltaNet: postOnly is model-level (Olmo Hybrid's DeltaNet layers use
-				// NormPre2 instead and were never given postAttnNorm/postMLPNorm above — see the
-				// scoping comment on the validation loop's DeltaNet continue.
+				// h.isDeltaNet: postOnly is model-level, but Olmo Hybrid's DeltaNet layers use NormPre2 and were never given
+				// postAttnNorm/postMLPNorm (see the validation loop's DeltaNet continue).
 				L.postAttnNorm, L.postMLPNorm = r.up32(h.postAttnNorm), r.up32(h.postMLPNorm)
 			}
 			// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
@@ -1571,18 +1383,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.layerScalar = h.layerScalar
 			}
 			L.window = h.window
-			// Per-layer attention geometry (9a-P2), read from the SAME accessors the CPU forward
-			// uses (headDimAt/kvHeadsAt/isGlobalLayer via the *Resident wrappers) — never a
-			// recomputed interleave, so the runner can't drift from runLayersGemma4. Uniform
-			// families collapse to the model-level fields; Gemma 4's global layers report the wide
-			// head / fewer KV heads / partial rotary.
+			// Per-layer attention geometry, from the same accessors the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer through
+			// the *Resident wrappers), never a recomputed interleave, so the runner cannot drift from runLayersGemma4. Uniform
+			// families collapse to the model-level fields; Gemma 4's global layers report the wide head, fewer KV heads and partial
+			// rotary.
 			L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
 			if h.isDeltaNet {
-				// A DeltaNet layer has no attention geometry to validate and no rope table to
-				// bind. Leaving kvDim non-zero here would make the KV allocator below size a
-				// cache this layer never reads — real VRAM, silently wasted, on the one family
-				// that most needs it.
+				// A DeltaNet layer has no attention geometry to validate or rope table to bind. A non-zero kvDim would make the KV
+				// allocator below size a cache this layer never reads, wasting VRAM on the family that most needs it.
 				L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
 				r.layers[l] = L
 				continue
@@ -1598,7 +1407,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			if src := m.KVSrcAtResident(l); src != l {
 				if g4KVSrcOffForTest {
-					// G2c defect (3): the source one OWNING layer of the same attention type earlier (when there is one).
+					// Test defect: the source one OWNING layer of the same attention type earlier (when there is one).
 					for j := src - 1; j >= 0; j-- {
 						if m.KVSrcAtResident(j) == j && m.HeadDimAtResident(j) == m.HeadDimAtResident(src) {
 							src = j
@@ -1616,17 +1425,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.kvShared, L.kvSrc = true, src
 			}
 			L.kEqV = m.VFromKResident(l) && !L.kvShared
-			// Gemma 4 applies v_norm on every layer that owns its K/V (S1.0); K=V layers always did. g4DropVNormForTest
-			// re-drops it on the non-K=V layers so a test can reproduce the before-fix numbers.
+			// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
+			// non-K=V layers so a test can reproduce the pre-fix numbers.
 			L.vNorm = !L.kvShared && (L.kEqV || (isGemma4 && !g4DropVNormForTest))
 			if !L.kEqV && !L.kvShared {
 				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
 			}
-			// Per-layer rope-table invariant (9a-P2, the live version of ropeResidentCompatible):
-			// rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
-			// per-layer table MUST have exactly rhalf entries. Gemma 4's global (rhalf=headDim/2,
-			// tail zero-freq) and local (full) tables genuinely differ in length now — the generic
-			// finalizeRoPE check can't see this, so assert it per layer, loudly, at build.
+			// Per-layer rope-table invariant: rope_kv rotates L.rhalf pairs per head reading invFreq[0..rhalf), so the bound
+			// per-layer table must have exactly rhalf entries. Gemma 4's global and local tables differ in length and the generic
+			// finalizeRoPE check cannot see that, so assert it per layer at build.
 			if len(h.invFreq) != L.rhalf {
 				return fmt.Errorf("cuda: layer %d rope table len=%d != rhalf=%d — per-layer invFreq must match the rotated-pair count the kernel indexes", l, len(h.invFreq), L.rhalf)
 			}
@@ -1710,13 +1517,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return e
 		}
 		for l := range r.kc {
-			// Each layer's KV cache is sized by ITS OWN kvDim (Gemma 4's local 2048 vs global
-			// 1024), matching the pos*Ly.kvDim stride launchToken indexes it with. Cross-file
-			// invariant guard (the CUDA twin of the webgpu one — now non-tautological, since two
-			// layers genuinely differ): the kvDim the cache is SIZED with must equal the one the
-			// accessors derive and launchToken INDEXES with. A future edit that sized from a stale
-			// model-level kvDim while the launch indexed per-layer would index off the end into
-			// garbage output, not a panic — so fail loudly at plan time.
+			// Each layer's KV cache is sized by its own kvDim (Gemma 4's local 2048 vs global 1024), matching the pos*Ly.kvDim
+			// stride launchToken indexes it with. The kvDim the cache is sized with must equal the one the accessors derive: a stale
+			// model-level kvDim would index off the end into garbage output rather than panic, so fail loudly at plan time.
 			if r.layers[l].isDeltaNet {
 				// No KV cache for a recurrent mixer. Allocating one would be pure waste on the
 				// family least able to afford it: 3 of every 4 layers are this kind.
@@ -1744,17 +1547,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.kc[l], r.vc[l] = r.kc[r.layers[l].kvSrc], r.vc[r.layers[l].kvSrc]
 			}
 		}
-		// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (checkKVFits granted
-		// r.kvSlotsN of the request). Slot 0 is the set above; UseKVSlot rebinds r.kc/r.vc.
+		// Further resident KV slots, each a copy of the per-layer buffers just allocated (checkKVFits granted r.kvSlotsN of the
+		// request). Slot 0 is the set above; UseKVSlot rebinds r.kc/r.vc.
 		if n := r.kvSlotsN; n > 1 {
 			r.kvSlotBufs = make([]cudaKVSlot, n)
 			r.kvSlotBufs[0] = cudaKVSlot{r.kc, r.vc}
 			for s := 1; s < n; s++ {
 				b, ok := r.allocKVSlot(s, nLayers)
 				if !ok {
-					// S18 (docs/tasks/task-multimodal-support-2026-10.md): checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with
-					// the margin as the only slack (Gemma 3 4B on the 8 GB card: four slots fit with 1.2 MB to spare), so the last slot can miss by the scratch. Keep the
-					// slots that fit instead of dropping the whole resident to the CPU; the first slot is the build's own and still declines.
+					// checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with the margin as the
+					// only slack, so the last slot can miss by the scratch. Keep the slots that fit instead of dropping the whole resident
+					// to the CPU; the first slot is the build's own and still declines.
 					fmt.Fprintf(os.Stderr, "cuda: %d of %d resident KV slots granted: the device ran out of memory allocating slot %d beside the build's own scratch\n", s, n, s+1)
 					r.kvSlotsN, r.kvSlotBufs = s, r.kvSlotBufs[:s]
 					break
@@ -1786,18 +1589,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				return err
 			}
 		}
-		// DENSE-FFN scratch, and only if the model HAS a dense FFN. A model whose every layer is
-		// routed reports intermediate_size 0 — Qwen3.6-35B-A3B's config omits the key entirely —
-		// and these become 0-byte allocations, which this driver rejects as "invalid length". The
-		// dense branch of segBFFN is unreachable for such a model, so the buffers are simply never
-		// needed; allocating them anyway was the only thing standing between it and residency.
-		//
-		// Nothing hit this before because every previously-resident MoE (Mixtral, GLM, Mellum) has
-		// a real intermediate_size — dense prefix layers or a genuine dense width. Note that the
-		// tiny qwen3_5_moe fixture does NOT reproduce it either: it carries intermediate_size 128
-		// because HF's config defaults one in, so the fixture is less pure-MoE than the model it
-		// stands for. That is a fixture-fidelity gap, recorded rather than silently fixed here.
-		// Scratch is sized to the WIDEST dense layer: an E-model's layers differ and the launches take each layer's own width (cudaLayer.ffnI).
+		// Dense-FFN scratch, only if the model has a dense FFN: a model whose every layer is routed reports intermediate_size 0
+		// (Qwen3.6-35B-A3B's config omits the key), and these would be 0-byte allocations, which this driver rejects as "invalid
+		// length". The dense branch of segBFFN is unreachable for such a model. Scratch is sized to the widest dense layer: an
+		// E-model's layers differ, and the launches take each layer's own width (cudaLayer.ffnI).
 		maxI := I
 		for l := range r.layers {
 			maxI = max(maxI, r.layers[l].ffnI)
@@ -1844,45 +1639,22 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
 		}
-		// A9-FIX: pay the DEFERRED first-launch reservation BEFORE the free reading that sizes the
-		// cache, so the cap is correct by construction rather than covered by a margin.
+		// Pay moe_route's deferred first-launch local-memory reservation BEFORE the free reading that sizes the cache, so the
+		// cap is correct by construction rather than covered by a margin. moe_route declares per-thread local scratch, and the
+		// driver backs it for the device's occupancy the first time the kernel runs, not at module load; the launch demands
+		// about 289 MB and retains about 138 MB on the RTX 2070 SUPER, invisible to allocSlots, which reads free VRAM before any
+		// kernel has run. Forcing it here beats enlarging slotMarginBytes: the peak is transient, so paying it now means the
+		// reading below sees only what is retained, and a margin would bury a named consumer in an unnamed constant.
 		//
-		// moe_route declares per-thread local scratch (two float[MOE_MAX_E]), and the driver backs
-		// local memory for the device's occupancy the first time that kernel runs — not at module
-		// load, which costs a measured 0 B. On an RTX 2070 SUPER that launch DEMANDS 289,013,760 B
-		// and RETAINS 138,412,032 B. Both were invisible here: allocSlots reads free VRAM before any
-		// kernel has run, so it sized the cache against memory that was about to be taken.
-		//
-		// Forcing it here is strictly better than enlarging slotMarginBytes, which is the fix
-		// everyone reaches for first. The peak is 2.09x the residual, and it is TRANSIENT: paying it
-		// now, while ~3.8 GB is still free, means the free reading below sees only the 132 MiB that
-		// is actually retained. A margin bump would have to reserve the 275.6 MiB peak permanently
-		// to cover something needed for microseconds — and it would bury a named consumer inside an
-		// unnamed constant, so the next kernel with per-thread scratch reopens it silently.
-		//
-		// WHY BY NAME IS SAFE HERE, given that naming one member of a set is the sibling-drift shape:
-		// the backing store is SHARED and sized by the largest kernel, measured — launching the whole
-		// census gives a threshold and residual identical to moe_route alone, to the byte. So forcing
-		// the maximum forces the pool for every kernel. That moe_route IS the maximum is not assumed:
-		// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails
-		// if any other kernel declares more, naming this site.
-		//
-		// One kernel does: route_gptoss, at 4608 B/thread against moe_route's 4416. The census could
-		// not see it until its module list was derived from kernels.go's embeds (audit-2026-09-10
-		// G-13(b)); gptoss_act.ptx was one of the seven it missed. It is bound only on gpt-oss, the
-		// model the expert cache exists for, so on exactly that path the larger pool was left to grow
-		// on the first real token, after allocSlots had read free VRAM — by 8,388,608 B on the RTX
-		// 2070 SUPER (TestRouteGptOssGrowsPoolPastMoERoute; 0 B once both are forced). It is forced
-		// below wherever it is bound. Forcing both is right whether the pool is sized by the max or
-		// by the sum.
-		//
-		// REGIME: `max` was measured with sequential single-stream launch, which is what goinfer
-		// does. Concurrent streams would reopen whether the bound is max or a sum.
+		// Naming moe_route is safe because the backing store is shared and sized by the largest kernel, and
+		// TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if
+		// another kernel declares more. route_gptoss does (4608 B/thread against 4416), so it is forced below wherever it is
+		// bound (TestRouteGptOssGrowsPoolPastMoERoute). This was measured with sequential single-stream launches, which is what
+		// goinfer does; concurrent streams would reopen whether the bound is the max or a sum.
 		if r.moe && r.cacheExperts {
-			// nE=1, k=1, nGroup=1 does the least work the kernel can do. It writes rIdx[0]/rWgt[0],
-			// which every real token overwrites before reading, and reads rLogits as both logits and
-			// bias — allocated above, uninitialised, and never observed: the kernel's OUTPUT is
-			// discarded, only its allocation side effect is wanted.
+			// nE=1, k=1, nGroup=1 does the least work the kernel can do. Its outputs are discarded (rIdx/rWgt are overwritten by
+			// every real token before being read, and rLogits is read uninitialised as logits and bias): only the allocation side
+			// effect is wanted.
 			if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
 				Arg(r.rLogits), Arg(r.rLogits), Arg(r.rIdx), Arg(r.rWgt),
 				gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1)),
@@ -1913,25 +1685,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	})
 	if setupErr != nil {
 		r.Close()
-		// A silent decline is right for a shape this backend simply does not implement — the staged
-		// path serves it correctly, just slower. It is WRONG when the operator explicitly asked for a
-		// resident context that does not fit: they asked for a capability, we cannot provide it, and
-		// degrading quietly to the staged path means they discover it as a latency mystery under
-		// load. Surface that one as a hard startup error naming the GB (errKVWontFit); everything
-		// else keeps the historical decline, so the default path is byte-for-byte unchanged.
+		// A silent decline suits a shape this backend does not implement (the staged path serves it, slower). It is wrong when
+		// the operator explicitly asked for a resident context that does not fit: degrading quietly turns that into a latency
+		// mystery under load, so errKVWontFit is a hard startup error naming the GB. Everything else keeps the decline.
 		if errors.Is(setupErr, errKVWontFit) {
 			return nil, false, setupErr
 		}
 		return declined(setupErr)
 	}
-	// The fused path needs every projection it reads as int4: fQKV reads Q/K/V, and fGU reads
-	// gate/up as int4 + f16-scales (ws16). fuseQKV gated on Q/K/V ALONE, but it also switches on
-	// fGU — so an int4-QKV + int8-gate/up checkpoint passed fGU a nil ws16 and crashed the executor
-	// goroutine (no recover → process dies). Require Q/K/V int4 always, plus gate/up/down int4 on
-	// dense-FFN layers — the only layers fGU runs on. MoE layers take moeMLP and never pack g/u/d
-	// (kind==""), so requiring them there would wrongly strip fQKV from every MoE model. This is the
-	// measured q4_k_m reality (all layer projections int4, only the LM head int8); anything else
-	// falls back to the unfused chain, which handles mixed quant correctly (M23).
+	// The fused path needs int4 projections on the layers it runs on (layerFusable). Anything else falls back to the unfused
+	// chain, which handles mixed quant correctly.
 	r.fuseQKV = true
 	for l := range hls {
 		h := &hls[l]
@@ -1947,17 +1710,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.fuseQKV = false
 	}
 	if postOnly {
-		// fQKV (fused_qkv.cu) bakes a REAL pre-norm weight into its rmsnorm+quant dispatch — a
-		// postOnly arch has no pre-norm weight at all (Ly.preNorm is never uploaded, see below),
-		// so it must take the unfused segA chain, which quantizes the raw residual instead.
+		// fQKV bakes a real pre-norm weight into its rmsnorm+quant dispatch, and a postOnly arch has none (Ly.preNorm is never
+		// uploaded), so it takes the unfused segA chain, which quantizes the raw residual.
 		r.fuseQKV = false
 	}
 	if parallelBlock {
-		// fQKV never materializes an intermediate normed+quantized activation (it goes straight
-		// from x to Q/K/V), but segBFFN's MLP branch needs exactly that (segA's r.aq/r.aSc) to
-		// reuse as its own input — the whole point of FeatParallelBlock. Unlike postOnly this
-		// isn't about a missing pre-norm weight (parallelBlock DOES have one); it's that the fused
-		// path has nowhere to hand the normed activation back to the caller.
+		// fQKV goes straight from x to Q/K/V and never materializes the normed, quantized activation that segBFFN's MLP branch
+		// reuses as its own input (FeatParallelBlock: segA's r.aq/r.aSc); the fused path has nowhere to hand it back.
 		r.fuseQKV = false
 	}
 	if r.isMLA {
@@ -1966,13 +1725,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if r.actG32 {
 		// fused_rms_qkv / fused_rms_gu quantize per vector internally.
 		r.fuseQKV = false
-		// Their per-32 twins (fused_rms_qkv_g32 / fused_rms_gu_g32) take any of the per-32 weight kinds,
-		// per projection. Losing fusion measured ~23% of the 1.5B's decode (docs/tasks/
-		// task-int4-weight-quality-2026-09.md, lever 3); the per-32 kernels themselves ~3%. Same
-		// structural exclusions as fuseQKV (no pre-norm, parallel block, MLA, gated q, MoE layers).
-		// Size-gated (fusedG32MaxHidden): every block redoes the rmsnorm + per-32 quant, and that cost
-		// grows with H while the launches it saves matter less as the GEMVs grow. Measured fused ÷
-		// unfused: +10% at H=1536 (qwen2.5-coder-1.5b), −8% at 3072 (phi3-mini), −5% at 3584 (qwen2.5-7b).
+		// Their per-32 twins (fused_rms_qkv_g32 / fused_rms_gu_g32) take any per-32 weight kind, per projection, with fuseQKV's
+		// structural exclusions (no pre-norm, parallel block, MLA, gated q, MoE layers). Size-gated (fusedG32MaxHidden): every
+		// block redoes the rmsnorm and per-32 quant, which grows with H while the launches saved matter less as the GEMVs grow.
+		// Fusion paid off at H=1536 and lost at 3072 and 3584.
 		r.fuseG32 = r.knobValue("GOINFER_CUDA_NO_FUSE") == "" && !postOnly && !parallelBlock && !r.isMLA &&
 			H <= fusedG32MaxHidden
 		for l := range hls {
@@ -1983,12 +1739,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 	}
-	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV
-	// is final (segA/segB branch on it), so decode replays them instead of re-issuing the launches.
-	// Incompatible with the g4cap diagnostic (it syncs inside a segment). Off ⇒ launchToken is
-	// byte-identical to before. Promotion to "on" is safe-gated in admitGraphs (tenancy + self-test):
-	// replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT
-	// declines to the live path rather than silently mis-running (docs/cuda-graphs-investigation.md).
+	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV is final (segA/segB
+	// branch on it), so decode replays them instead of re-issuing the launches. Off, launchToken is unchanged. Incompatible
+	// with the g4cap diagnostic, which syncs inside a segment. admitGraphs gates it: replay is bit-exact only under
+	// EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT declines to the live path
+	// (docs/cuda-graphs-investigation.md).
 	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA
 	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
 	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
@@ -2009,14 +1764,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	return r, true, nil
 }
 
-// cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for (MC1,
-// docs/tasks/task-concurrency-2026-09.md): the model's request (decoder.Model.ResidentKVSlotsRequest, already 1 for a
-// family with recurrent state), and 1 in two cases the decoder cannot see:
-//   - a Gated-DeltaNet resident (recurrent): its state is mutated in place and is not part of a slot. The decoder's
-//     hasRecurrentState already keeps these at one; this refuses to allocate for a second slot anyway;
-//   - expert streaming (MoECacheExperts): that cache takes whatever VRAM is left after everything pinned, so every
-//     extra KV slot is expert-cache slots lost — the trade resolveCtxCapFit already declines to make with the context
-//     (48% decode lost on gemma4-26b when KV grew into the cache's share).
+// cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request
+// (decoder.Model.ResidentKVSlotsRequest, already 1 for a family with recurrent state), forced to 1 in two cases the
+// decoder cannot see. A Gated-DeltaNet resident mutates its state in place, outside any slot. Expert streaming
+// (MoECacheExperts) takes whatever VRAM is left, so every extra KV slot is an expert-cache slot lost
+// (docs/tasks/task-concurrency-2026-09.md).
 func cudaKVSlotsRequest(m *decoder.Model, recurrent bool) int {
 	if recurrent || m.MoECacheExperts() {
 		return 1
@@ -2024,11 +1776,8 @@ func cudaKVSlotsRequest(m *decoder.Model, recurrent bool) int {
 	return m.ResidentKVSlotsRequest()
 }
 
-// cudaBackend and cudaResident standardize teardown on Close() error and satisfy io.Closer, matching
-// gpu (webgpuBackend/Context/Resident* — Release() kept only as deprecated aliases) and metal (audit
-// B-12): one spelling of "free this GPU resource" across all three modules, so callers can write
-// generic cleanup. The assertions make the contract compiler-enforced (a signature drift back to a
-// no-error Close breaks the build, not a caller months later).
+// cudaBackend and cudaResident implement Close() error and io.Closer, the same spelling of "free this GPU resource" as
+// gpu and metal, so callers can write generic cleanup; a signature drift back to a no-error Close breaks the build here.
 var (
 	_ io.Closer = (*cudaBackend)(nil)
 	_ io.Closer = (*cudaResident)(nil)

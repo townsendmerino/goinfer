@@ -8,36 +8,22 @@ import (
 	"sync"
 )
 
-// softcapParallelMin is the vocabulary size above which splitting the softcap across cores pays.
-// MEASURED (this box, GOMAXPROCS 16, RTX 2070 SUPER host, 2026-08-12) — the crossover is real and
-// the small end is a LOSS, which is why there is a threshold rather than an unconditional fan-out:
-//
-//	vocab      serial    parallel   speedup
-//	  8 192   45.7 us    48.2 us     0.95x   <- slower
-//	 32 768  166.3 us   117.4 us     1.42x
-//	 65 536  422.9 us   207.9 us     2.03x
-//	131 072  747.5 us   371.9 us     2.01x
-//	262 144    1.47 ms   639.8 us    2.30x   <- Gemma 3/4
+// softcapParallelMin is the vocabulary size above which splitting the softcap across cores pays. Below it the fan-out
+// loses, which is why there is a threshold rather than an unconditional split (the measurement:
+// docs/code-notes/cuda.md#softcapParallelMin).
 const softcapParallelMin = 32768
 
-// applySoftcap applies softcap·tanh(x/softcap) elementwise and in place to a logit vector.
+// applySoftcap applies softcap*tanh(x/softcap) elementwise and in place to a logit vector. It runs on the sampling path
+// only: ForwardArgmax reduces on-device and reads back 4 bytes, so greedy decoding never pays it.
 //
-// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and reads back
-// 4 bytes, never materialising the logit vector, so greedy decoding does not pay this at all — the
-// cost lands exactly on the path that also does the ~1 MB readback.
+// Bit-identity is structural: every output element is a pure function of the single input element at the same index (no
+// reduction, no accumulation, no ordering freedom), so splitting the range cannot change a bit whatever the worker
+// count. That is why this stays float64 math.Tanh rather than a device kernel or a float32 approximation: both would be
+// faster and neither would be the same number the CPU path produces (decoder/forwardn.go, decoder/model.go).
 //
-// BIT-IDENTITY IS STRUCTURAL, not argued. Every output element is a pure function of the single
-// input element at the same index: there is no reduction, no accumulation, and therefore no ordering
-// or reassociation freedom for the split to exercise differently. Splitting the range cannot change
-// a bit, whatever the worker count or the split points. That is why this stays float64 `math.Tanh`
-// rather than becoming a device kernel or a float32 approximation — both would be faster and neither
-// would be the same number as the CPU path produces (decoder/forwardn.go, decoder/model.go).
-//
-// SIBLING SET. Six sites carry this identical loop: decoder/forwardn.go, decoder/model.go,
-// cuda/prefill.go, cuda/resident.go, metal/model.go, and gpu/softcap.go (G6,
-// docs/tasks/task-gpu-paths-2026-09.md). Both cuda/ callers now share this helper. The other three are
-// unchanged and deliberately so — decoder/ is under the 6edd1ca numerics freeze and metal/ is on
-// hold — which is recorded in docs/QUEUE.md B6 so the pair is not left implicit.
+// Sibling set: the identical loop also lives in decoder/forwardn.go, decoder/model.go, metal/model.go and
+// gpu/softcap.go. The decoder and metal copies are deliberately left alone (decoder/ is under a numerics freeze and
+// metal/ is on hold; docs/QUEUE.md B6 records the pair).
 func applySoftcap(logits []float32, sc float32) {
 	if sc <= 0 {
 		return
@@ -65,12 +51,10 @@ func applySoftcap(logits []float32, sc float32) {
 	wg.Wait()
 }
 
-// applyLogitScale multiplies a logit vector by scale in place — Cohere/Command-R's
-// logits_scaling (FeatLogitScale), via decoder.Model.LogitScaleResident. Unlike applySoftcap's
-// tanh, a multiply is memory- not compute-bound at any vocab size this repo has seen, so this
-// stays a single serial pass — no parallel-fan-out threshold to measure or maintain. scale==0 or
-// ==1 is every non-FeatLogitScale family's no-op case (LogitScaleResident's own ok=false
-// condition), kept here too so a caller need not branch before calling.
+// applyLogitScale multiplies a logit vector by scale in place: logits_scaling (FeatLogitScale) through
+// decoder.Model.LogitScaleResident. A multiply is memory-bound, not compute-bound, so this is a single serial pass with
+// no parallel threshold. scale==0 or ==1 is the no-op case of every family without the feature, kept here so a caller
+// need not branch.
 func applyLogitScale(logits []float32, scale float32) {
 	if scale == 0 || scale == 1 {
 		return

@@ -2,23 +2,17 @@
 
 package cuda
 
-// SetFastPrefillForTest flips the L2/L3 lever selection on an ALREADY-LOADED resident, loading the
-// fused kernels on first use if the env did not already ask for them.
+// SetFastPrefillForTest flips the L2/L3 lever selection on an already-loaded resident, loading the fused kernels on
+// first use if the env did not already ask for them. The seam exists because the fidelity gate
+// (docs/completed/task-prefill-gap.md Phase 3) must run the exact arm and the fast arm in one process, teacher-forced on
+// the reference's tokens, while the env var is read once at model load: two residents do not fit on the 8 GB card, and
+// two processes cannot share the KV cache the continuation walks. It is a test hook, behind goinfer_testhooks, because
+// it gates a measurement and not production inference; production selection stays fastPrefillEnabled() reading the env
+// at load.
 //
-// WHY THIS SEAM EXISTS. docs/completed/task-prefill-gap.md Phase 3 requires the exact arm and the fast arm to
-// run "in one process ... teacher-forced on the reference's tokens", and the env var is read once
-// at model load (backend.go). Without this hook the gate would have to load the model twice, which
-// is not merely wasteful: D7 at int4 is ~4 GB of an 8 GB card, so two residents do not fit at once,
-// and two sequential processes cannot share the resident KV cache that the teacher-forced
-// continuation walks position by position.
-//
-// It is a TEST HOOK, behind goinfer_testhooks, for the reason B-08 gives: it gates a measurement,
-// not production inference, so it stays off the public API surface. Production selection remains
-// exactly one thing — fastPrefillEnabled() reading the env at load.
-//
-// Returns an error if the PTX cannot be compiled; callers should skip rather than silently score a
-// "fast" arm that is quietly running the exact kernels — a gate that cannot tell those apart would
-// report the exact path's numbers twice and call the result a pass.
+// It returns an error if the PTX cannot be compiled; callers should skip rather than score a "fast" arm that quietly
+// runs the exact kernels, since a gate that cannot tell those apart would report the exact path's numbers twice and call
+// it a pass.
 func (r *cudaResident) SetFastPrefillForTest(attn, gemm bool) error {
 	if attn && (r.bAttnFused64 == (Pipeline{}) || r.bAttnFused128 == (Pipeline{})) {
 		mod, err := r.dev.CompileLibrary(attnFusedPTX)

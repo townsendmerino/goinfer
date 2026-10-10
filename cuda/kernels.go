@@ -7,256 +7,199 @@ import (
 	"math"
 )
 
-// The production decode kernels (NVRTC→PTX→go:embed→driver-JIT via cuModuleLoadDataEx).
-// These embeds live in a non-test file so the real backend (BuildResident/cudaResident)
-// can load them; the standalone bandwidth/parity tests reference the same vars.
+// The production decode kernels (NVRTC to PTX, go:embed, driver-JIT via cuModuleLoadDataEx), embedded in a non-test file
+// so BuildResident/cudaResident can load them; the standalone bandwidth/parity tests reference the same vars.
 //
-// EVERY .ptx below is a build artifact of the .cu of the same name in this directory, and
-// is byte-for-byte reproducible by running ./build_ptx.sh (which explains why the build
-// uses NVRTC rather than nvcc). Regenerate — never hand-edit — the PTX; a .ptx whose .cu
-// is missing is a kernel nobody can review or change.
+// Every .ptx below is a build artifact of the .cu of the same name, byte-for-byte reproducible by ./build_ptx.sh (NVRTC
+// rather than nvcc). Regenerate, never hand-edit: a .ptx whose .cu is missing is a kernel nobody can review or change.
+// Most kernels are their own module on purpose: adding a kernel to an existing .cu regenerates its PTX and risks
+// shifting codegen for the kernels the parity gates rest on. moe.ptx, glue.ptx and gemv_fwd.ptx are the audited
+// artifacts, pinned at NVRTC 12.6.85 (cuda/testdata/REGEN.md); the others are built at the ambient NVRTC.
 //
 //go:generate ./build_ptx.sh
 
-// gemvFwdPTX: the LLM-specific forward kernels — kv_store / rope_kv.
-//
-// The generic quantized GEMVs it used to carry (gemv_w4a8_fwd, gemv_w8a8_fwd) moved to
-// aikit/gpu >= v0.4.0 in the Phase-1b blob-split and are loaded via
-// gpu.QuantGEMVPTX / Device.NewQuantGEMV (backend.go). The name is kept for continuity
-// with the .cu it is built from.
+// gemvFwdPTX: the LLM-specific forward kernels, kv_store / rope_kv. The generic quantized GEMVs live in aikit/gpu
+// (gpu.QuantGEMVPTX, Device.NewQuantGEMV; see backend.go); the name is kept for continuity with the .cu it is built
+// from.
 //
 //go:embed testdata/gemv_fwd.ptx
 var gemvFwdPTX []byte
 
-// gemvW8BatchedPTX: gemv_w8a8_batched — the weight-stationary batched GEMV for M=len prefill on int8
-// bundles. Bit-identical to aikit's gemv_w8a8_fwd per output element BY CONSTRUCTION: int8 is per-row
-// symmetric, so the dot is an exact int32 __dp4a sum (reorder-independent) and the scales apply once
-// at the end with the same explicit __fmul_rn/__fmaf_rn form. Its own file (gemv_w8a8_batched.cu); the
-// audited PTX (moe.ptx, gemv_fwd/glue) is untouched.
+// gemvW8BatchedPTX: gemv_w8a8_batched, the weight-stationary batched GEMV for M=len prefill on int8 bundles.
+// Bit-identical to aikit's gemv_w8a8_fwd per output element by construction: int8 is per-row symmetric, so the dot is an
+// exact int32 __dp4a sum (reorder-independent) and the scales apply once at the end in the same explicit
+// __fmul_rn/__fmaf_rn form.
 //
 //go:embed testdata/gemv_w8a8_batched.ptx
 var gemvW8BatchedPTX []byte
 
-// prefillBatchedPTX: the batched (M=len) glue kernels for the weight-stationary prefill path —
-// rmsnorm_quant_batched, rope_kv_batched, attn_batched (causal + per-row sliding window),
-// glu_quant_batched, residual_batched. Each is the corresponding M=1 kernel (glue/gemv_fwd) with an
-// M dimension added and the per-row math copied verbatim, so each row is bit-identical to its
-// sequential counterpart. Its own file (prefill_batched.cu); the audited PTX is untouched.
+// prefillBatchedPTX: the batched (M=len) glue kernels of the weight-stationary prefill: rmsnorm_quant_batched,
+// rope_kv_batched, attn_batched (causal, per-row sliding window), glu_quant_batched, residual_batched. Each is the M=1
+// kernel with an M dimension added and the per-row math copied verbatim, so each row is bit-identical to its sequential
+// counterpart.
 //
 //go:embed testdata/prefill_batched.ptx
 var prefillBatchedPTX []byte
 
-// decodeSplitKVPTX: the high-occupancy, bit-identical decode attention (Campaign A) — splitkv_scores,
-// splitkv_softmax, splitkv_vsum. The single-block attn_batched(M=1) is split along its INDEPENDENT
-// axes (scores over keys, V-sum over dims) so every order-dependent softmax fold stays whole and
-// in-order → byte-identical to attn_batched(M=1), but fills the SMs. Own file (decode_splitkv.cu);
-// audited glue.ptx / moe.ptx untouched. See docs/tasks/task-decode-splitkv-attention.md.
+// decodeSplitKVPTX: the high-occupancy, bit-identical decode attention (splitkv_scores, splitkv_softmax, splitkv_vsum).
+// attn_batched(M=1) is split along its independent axes (scores over keys, V-sum over dims), so every order-dependent
+// softmax fold stays whole and in order and the result is byte-identical, but fills the SMs. See
+// docs/tasks/task-decode-splitkv-attention.md.
 //
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte
 
-// deltaNetPTX: the Gated-DeltaNet decode mixer (delta_conv / delta_gates / delta_norm /
-// delta_rule / delta_gnorm / delta_qsplit / delta_attn_gate) — Qwen3.5/3.6-MoE, Qwen3-Next,
-// Qwen3.8.
-//
-// OWN MODULE for the decode_splitkv.cu / gptoss_act.cu reason and one more: nothing else in this
-// directory carries recurrent state. There is no SSM, conv-ring or scan kernel here to extend, so
-// the conv and the state plumbing are new code rather than a reuse — unlike the WebGPU port, which
-// sat on its Mamba-2 engine. Loaded only for that family; a load failure leaves it on the CPU path.
+// deltaNetPTX: the Gated-DeltaNet decode mixer (delta_conv / delta_gates / delta_norm / delta_rule / delta_gnorm /
+// delta_qsplit / delta_attn_gate), loaded only for that family; a load failure declines the resident build. Nothing else
+// here carries recurrent state, so the conv and state plumbing are new code, not a reuse.
 //
 //go:embed testdata/deltanet.ptx
 var deltaNetPTX []byte
 
-// gptOssActPTX: glu_quant_gptoss — gpt-oss's clamped interleaved-SwiGLU expert epilogue
-// (per-expert biases, an asymmetric clamp, an alpha-scaled sigmoid gate and a +1 on the linear
-// branch). glue.cu's glu_quant serves every other family; this one is family-specific and would
-// otherwise have to live there. OWN FILE for the same reason decode_splitkv.cu is: glue.ptx and
-// moe.ptx are AUDITED artifacts, and a self-contained activation kernel should not drag a
-// re-audit with it. Everything after the activation — max-reduce, symmetric int8 quant, packed
-// store — is glu_quant's unchanged, so the down-projection GEMV consumes an identical format.
+// gptOssActPTX: glu_quant_gptoss, gpt-oss's clamped interleaved-SwiGLU expert epilogue (per-expert biases, an asymmetric
+// clamp, an alpha-scaled sigmoid gate and a +1 on the linear branch). Everything after the activation (max-reduce,
+// symmetric int8 quant, packed store) is glu_quant's unchanged, so the down-projection GEMV consumes an identical
+// format.
 //
 //go:embed testdata/gptoss_act.ptx
 var gptOssActPTX []byte
 
-// actGroupPTX: per-32 ACTIVATION quantization for the resident decode path — rmsnorm_quant_g32,
-// quant_vec_g32, glu_quant_g32 and the gemv_w4a8_g32 / gemv_w8a8_g32 GEMVs that read one activation
-// scale per 32 elements (actgroup.cu; docs/tasks/task-actquant-pergroup-2026-09.md). Own module, as
-// gptoss_act and decode_splitkv: the audited glue.ptx is untouched, and a per-row model never loads it.
+// actGroupPTX: per-32 activation quantization for the resident decode path: rmsnorm_quant_g32, quant_vec_g32,
+// glu_quant_g32 and the gemv_w4a8_g32 / gemv_w8a8_g32 GEMVs that read one activation scale per 32 elements (actgroup.cu;
+// docs/tasks/task-actquant-pergroup-2026-09.md). A per-row model never loads it.
 //
 //go:embed testdata/actgroup.ptx
 var actGroupPTX []byte
 
-// gemvRNPTX: gemv_w4a8_rn — register-blocked batched GEMV (RN output rows per warp), so each coalesced
-// activation load is reused across RN rows: RN× fewer L1TEX loads, the profile-justified latency fix.
-// Bit-identical (per-row facc, one reduce each). Own file (gemv_w4a8_rn.cu).
+// gemvRNPTX: gemv_w4a8_rn, the register-blocked batched GEMV (RN output rows per warp) that reuses each coalesced
+// activation load across RN rows. Bit-identical (per-row facc, one reduce each).
 //
 //go:embed testdata/gemv_w4a8_rn.ptx
 var gemvRNPTX []byte
 
-// gluePTX: the per-token elementwise/attention glue — rmsnorm_quant, quant_vec, rope,
-// attention (GQA online softmax), swiglu_quant, residual. (argmax_reduce moved to argmaxPTX;
-// see below. moe.ptx, glue.ptx and gemv_fwd.ptx are the audited artifacts (R-26); M-35 found
-// all three had drifted to this box's ambient NVRTC 12.9.86 — restored to the pinned 12.6.85
-// via cuda/testdata/REGEN.md's procedure, per-kernel hash audit recorded there. Only 2 of the
-// 16 kernels across the three files differ at all between the two toolchains (gemv_f32_a8,
-// glu_quant — both confirmed benign register/scheduling differences, not FMA-contraction: glu_quant
-// is FMA-linted, so its source already forces explicit ordering regardless of compiler discretion),
-// and the real MoE/glue resident-parity gates measure byte-identical before and after.)
+// gluePTX: the per-token elementwise/attention glue: rmsnorm_quant, quant_vec, rope, attention (GQA online softmax),
+// swiglu_quant, residual. The audited trio is pinned at NVRTC 12.6.85 by cuda/testdata/REGEN.md's procedure, which also
+// records the per-kernel hash audit.
 //
 //go:embed testdata/glue.ptx
 var gluePTX []byte
 
-// argmaxPTX: argmax_reduce — the greedy-decode reduction, split out of glue.ptx so the C-14 index
-// tie-break fix did not force a full glue.ptx regen at this box's 12.9 NVRTC (which would rewrite the
-// audited numeric glue kernels). Same isolation reasoning as routerF32PTX. See cuda/argmax.cu.
+// argmaxPTX: argmax_reduce, the greedy-decode reduction, split out of glue.ptx so a kernel fix does not regenerate the
+// audited glue kernels. See cuda/argmax.cu.
 //
 //go:embed testdata/argmax.ptx
 var argmaxPTX []byte
 
-// topkPTX: topk_select — the device-side bounded top-K the sampled-decode fast path reads instead of the
-// full logits row (R7). Its own module for the same reason as argmaxPTX: nothing audited is regenerated.
-// Built at the ambient NVRTC (12.9.86), never claimed otherwise. See cuda/topk.cu.
+// topkPTX: topk_select, the device-side bounded top-K the sampled-decode fast path reads instead of the full logits row.
+// Built at the ambient NVRTC (12.9.86). See cuda/topk.cu.
 //
 //go:embed testdata/topk.ptx
 var topkPTX []byte
 
-// gumbelPTX: gumbel_stage1/gumbel_stage2 — device-side temperature-only sampling by Gumbel-max (R7b). Its own
-// module for the same reason as argmaxPTX/topkPTX. Built at the ambient NVRTC. See cuda/gumbel.cu.
+// gumbelPTX: gumbel_stage1/gumbel_stage2, device-side temperature-only sampling by Gumbel-max. Built at the ambient
+// NVRTC. See cuda/gumbel.cu.
 //
 //go:embed testdata/gumbel.ptx
 var gumbelPTX []byte
 
-// decodeFAPTX: fa_partial_{64,128,256} / fa_combine — the flash-decode lane (R6, default ON since 2026-09-23; GOINFER_CUDA_FLASH_DECODE=0 turns it off).
-// Its own module, loaded only when the lane is requested. Built at the ambient NVRTC (12.9.86). See cuda/decode_fa.cu.
+// decodeFAPTX: fa_partial_{64,128,256} / fa_combine, the flash-decode lane (default on; GOINFER_CUDA_FLASH_DECODE=0
+// turns it off), loaded only when the lane is requested. Built at the ambient NVRTC (12.9.86). See cuda/decode_fa.cu.
 //
 //go:embed testdata/decode_fa.ptx
 var decodeFAPTX []byte
 
-// loraPTX: lora_delta_down/lora_delta_up — compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md).
-// A brand-new kernel pair, so per cuda/testdata/REGEN.md's rule ("adding a NEW kernel → new .cu
-// file, new .ptx, built at whatever NVRTC is present") this is its own module, never touching
-// glue.ptx's audited kernels. See cuda/lora.cu.
+// loraPTX: lora_delta_down/lora_delta_up, compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md). A new kernel pair is
+// its own module per cuda/testdata/REGEN.md's rule (new .cu, new .ptx, built at whatever NVRTC is present). See
+// cuda/lora.cu.
 //
 //go:embed testdata/lora.ptx
 var loraPTX []byte
 
-// attnBlockPTX: attn_block_full — the DFlash block drafter's NON-CAUSAL attention over
-// [ctx‖block]. A verbatim copy of prefill_batched.cu's attn_batched with ONE line changed
-// (nKeys = startPos+M for every row, not startPos+m+1), because the drafter's block is
-// bidirectional where the target's verify is causal. Its own module for the same isolation
-// reason as argmaxPTX and routerF32PTX: adding a kernel to prefill_batched.cu would regenerate
-// that PTX and risk shifting codegen for the kernels every batched-prefill parity gate rests on.
-// Verified at build time: prefill_batched.ptx and glue.ptx are byte-unchanged. See cuda/attn_block.cu.
+// attnBlockPTX: attn_block_full, the DFlash block drafter's non-causal attention over [ctx||block]. A verbatim copy of
+// prefill_batched.cu's attn_batched with one line changed (nKeys = startPos+M for every row, not startPos+m+1), because
+// the drafter's block is bidirectional where the target's verify is causal. See cuda/attn_block.cu.
 //
 //go:embed testdata/attn_block.ptx
 var attnBlockPTX []byte
 
-// attnImgPrefillPTX: attn_img_batched — Gemma 3's image-block bidirectional prefill attention
-// (decoder.ResidentImagePrefill / cuda.PrefillImageLast). A verbatim copy of
-// prefill_batched.cu's attn_batched, except a query row whose OWN position lies inside a
-// caller-supplied [imgStart,imgEnd) range sees the whole block instead of only its causal
-// prefix — text before and after the block stays exactly causal (NOT attn_block_full's uniform
-// widening, which is unconditional for every row). Its own module for the same isolation reason
-// argmaxPTX/routerF32PTX/attnBlockPTX state: adding a kernel to prefill_batched.cu would
-// regenerate that PTX and risk shifting codegen for kernels every batched-prefill parity gate
-// rests on. Verified at build time: prefill_batched.ptx and glue.ptx are byte-unchanged.
+// attnImgPrefillPTX: attn_img_batched, Gemma 3's image-block bidirectional prefill attention
+// (decoder.ResidentImagePrefill / cuda.PrefillImageLast). A verbatim copy of attn_batched, except that a query row whose
+// own position lies inside a caller-supplied [imgStart,imgEnd) range sees the whole block; text before and after stays
+// exactly causal (unlike attn_block_full's uniform widening).
 //
-// IMPORTANT (see cuda/attn_img_prefill.cu's own header for the full reasoning): the kernel's
-// sliding-window start is derived from the row's plain CAUSAL key count, never from the
-// image-widened one — decoupled on purpose, matching decoder/kvcache.go's WindowStart/attendHi
-// split, which the CPU reference this kernel must match bit-for-bit also keeps decoupled. A
-// future edit that "simplifies" this back to attn_batched's coupled formula would silently
-// under-size the shared-memory window for a windowed layer whenever an image block starts more
-// than one window-length into the sequence — a shared-memory out-of-bounds write, not a clean
-// wrong answer, and invisible on a real fixture whose image sits near the start of the prompt.
-// See cuda/attn_img_prefill.cu.
+// Guardrail: the kernel's sliding-window start is derived from the row's plain causal key count, never from the
+// image-widened one, matching decoder/kvcache.go's WindowStart/attendHi split, which the CPU reference this kernel must
+// match bit for bit also keeps decoupled. Re-coupling it to attn_batched's formula would under-size the shared-memory
+// window for a windowed layer whenever an image block starts more than one window-length into the sequence: a
+// shared-memory out-of-bounds write, not a clean wrong answer, and invisible on a fixture whose image sits near the
+// start of the prompt. Full reasoning: the header of cuda/attn_img_prefill.cu.
 //
 //go:embed testdata/attn_img_prefill.ptx
 var attnImgPrefillPTX []byte
 
-// ropeMRopePrefillPTX: rope_kv_mrope_batched — Qwen2.5-VL's m-RoPE batched-prefill rotation
-// (decoder.ResidentMRoPEPrefill / cuda.PrefillMRoPELast). A verbatim copy of
-// prefill_batched.cu's rope_kv_batched, except the rotation angle is a PER-ROW,
-// PER-FREQUENCY-SECTION lookup instead of a single row-sequential scalar — each frequency index
-// d rotates by pos[comp(d)]·invFreq[d], where comp(d) picks temporal/height/width per the
-// model's MRopeSection cumulative boundaries. Its own module for the same isolation reason
-// argmaxPTX/routerF32PTX/attnBlockPTX/attnImgPrefillPTX state: adding a kernel to
-// prefill_batched.cu would regenerate that PTX and risk shifting codegen for kernels every
-// batched-prefill parity gate rests on. Verified at build time: prefill_batched.ptx and glue.ptx
-// are byte-unchanged.
+// ropeMRopePrefillPTX: rope_kv_mrope_batched, Qwen2.5-VL's m-RoPE batched-prefill rotation (decoder.ResidentMRoPEPrefill
+// / cuda.PrefillMRoPELast). A copy of rope_kv_batched whose rotation angle is a per-row, per-frequency-section lookup:
+// frequency index d rotates by pos[comp(d)]*invFreq[d], where comp(d) picks temporal/height/width from the model's
+// MRopeSection cumulative boundaries.
 //
-// IMPORTANT (see cuda/rope_mrope_prefill.cu's own header): EVERY row needs the per-row lookup,
-// not just image-block rows — decoder/rope.go's mropePositions resumes scalar counting AFTER an
-// image block from a value COMPRESSED by the merged image grid, not the naive sequential count
-// rope_kv_batched's own formula assumes. The KV-cache STORE index (pos = startPos+m) stays
-// row-sequential and unchanged; only the rotation angle is widened — mirrors rope_kv's existing
-// pos/ropePos split (cuda/gemv_fwd.cu) for decode, generalized from one scalar to a per-row triple.
-// See cuda/rope_mrope_prefill.cu.
+// Every row needs the per-row lookup, not just image-block rows: decoder/rope.go's mropePositions resumes scalar
+// counting after an image block from a value compressed by the merged image grid, not the sequential count
+// rope_kv_batched assumes. The KV-cache store index (pos = startPos+m) stays row-sequential; only the rotation angle
+// widens, as rope_kv's pos/ropePos split does for decode (cuda/gemv_fwd.cu). See cuda/rope_mrope_prefill.cu.
 //
 //go:embed testdata/rope_mrope_prefill.ptx
 var ropeMRopePrefillPTX []byte
 
-// ropePairwisePTX: rope_kv_pw / rope_kv_batched_pw / rope_kv_mrope_batched_pw — the GPT-J PAIRWISE
-// (dims 2d, 2d+1) twins of rope_kv / rope_kv_batched / rope_kv_mrope_batched, with the SAME argument
-// lists and launch geometry, bound in their place when decoder.Model.PairwiseRoPEResident()
-// (Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR). The NeoX kernels rotate (d, d+half), so a
-// pairwise family run through them is exact at position 0 and wrong afterwards. Its own module so the
-// audited glue.ptx / gemv_fwd.ptx stay byte-identical (and prefill_batched.ptx / rope_mrope_prefill.ptx
-// are not regenerated). Built at NVRTC 12.6.85, the pinned toolchain, unlike the 12.9.86 builds of the
-// two neighbours; the control (glue.ptx and gemv_fwd.ptx rebuild byte-identically there) is recorded in
-// docs/measurements/cuda-pairwise-rope-2026-10-01.md. See cuda/rope_pairwise.cu.
+// ropePairwisePTX: rope_kv_pw / rope_kv_batched_pw / rope_kv_mrope_batched_pw, the GPT-J pairwise (dims 2d, 2d+1) twins
+// of rope_kv / rope_kv_batched / rope_kv_mrope_batched, with the same argument lists and launch geometry, bound in their
+// place when decoder.Model.PairwiseRoPEResident() says so. The NeoX kernels rotate (d, d+half), so a pairwise family run
+// through them is exact at position 0 and wrong afterwards. Built at NVRTC 12.6.85, the pinned toolchain (the control is
+// in docs/measurements/cuda-pairwise-rope-2026-10-01.md). See cuda/rope_pairwise.cu.
 //
 //go:embed testdata/rope_pairwise.ptx
 var ropePairwisePTX []byte
 
-// layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched — the resident SigLIP vision
-// tower's LayerNorm (P6, docs/multimodal.md's "P6's other half"), a genuinely new primitive: no
-// text family in this codebase uses LayerNorm (mean+variance, weight+bias), only RMSNorm. Own
-// module for the same isolation reason as every kernel above — prefill_batched.ptx/glue.ptx stay
-// untouched. See cuda/layernorm_quant.cu / cuda/vision_encoder.go.
+// layernormQuantPTX: layernorm_quant_batched / layernorm_f32_batched, LayerNorm (mean and variance, weight and bias) for
+// the resident SigLIP vision tower (docs/multimodal.md) and for LayerNorm text families; the primitive next to the
+// RMSNorm every other family uses. See cuda/layernorm_quant.cu, cuda/vision_encoder.go.
 //
 //go:embed testdata/layernorm_quant.ptx
 var layernormQuantPTX []byte
 
-// geluQuantPTX: gelu_quant_batched — the resident SigLIP vision tower's plain (non-gated) MLP
-// activation (h = FC2(GELU_tanh(FC1(x)))), distinct from glue.cu's glu_quant, which computes a
-// GATED act(gate)*up product for the SwiGLU/GeGLU MLP every text family here uses. Own module, same
-// isolation reason as above. See cuda/gelu_quant.cu / cuda/vision_encoder.go.
+// geluQuantPTX: gelu_quant_batched, the resident SigLIP vision tower's plain (non-gated) MLP activation,
+// FC2(GELU_tanh(FC1(x))), as opposed to glue.cu's gated glu_quant. See cuda/gelu_quant.cu, cuda/vision_encoder.go.
 //
 //go:embed testdata/gelu_quant.ptx
 var geluQuantPTX []byte
 
-// attnFusedPTX: attn_fused_hd64 / attn_fused_hd128 — the L2 FlashAttention-style fused prefill
-// attention (docs/completed/task-prefill-gap.md §4 L2). Its own module for the SAME isolation reason
-// attn_block.cu records: adding a kernel to prefill_batched.cu regenerates that PTX and risks
-// shifting codegen for the kernels every batched-prefill parity gate rests on. Verified at build
-// time: prefill_batched.ptx, moe.ptx and glue.ptx are byte-unchanged. See cuda/attn_fused.cu.
+// attnFusedPTX: attn_fused_hd64 / attn_fused_hd128, the L2 FlashAttention-style fused prefill attention
+// (docs/completed/task-prefill-gap.md §4 L2). See cuda/attn_fused.cu.
 //
 //go:embed testdata/attn_fused.ptx
 var attnFusedPTX []byte
 
-// attnFusedBMPTX: R5 phase-1 tile-shape variants of attn_fused (32-row query tile, 64- or 32-key tile), template
-// parameters of cuda/attn_fused_bm.cu. Its own module: attn_fused.ptx is audited and not regenerated.
-// Experiment arms (docs/measurements/attn-fused-tile-PREREGISTERED.md), selected only by attnTile.
+// attnFusedBMPTX: tile-shape variants of attn_fused (32-row query tile, 64- or 32-key tile), template parameters of
+// cuda/attn_fused_bm.cu. Experiment arms (docs/measurements/attn-fused-tile-PREREGISTERED.md), selected only by
+// attnTile.
 //
 //go:embed testdata/attn_fused_bm.ptx
 var attnFusedBMPTX []byte
 
-// attnFusedVitPTX: attn_vit_hd72_bm64 / attn_vit_hd72_bm128 — R8 phase A, the non-causal fused attention for the SigLIP vision
-// tower (hd 72 padded to 80). Own module; see cuda/attn_fused_vit.cu and docs/measurements/vision-tower-attn-PREREGISTERED.md.
+// attnFusedVitPTX: attn_vit_hd72_bm64 / attn_vit_hd72_bm128, the non-causal fused attention for the SigLIP vision tower
+// (hd 72 padded to 80); see cuda/attn_fused_vit.cu and docs/measurements/vision-tower-attn-PREREGISTERED.md.
 //
 //go:embed testdata/attn_fused_vit.ptx
 var attnFusedVitPTX []byte
 
-// towerBasePTX: tower_pos_add / tower_clamp / tower_clamp_copy / tower_rope_axial / tower_mul / tower_scale — the CUDA vision-tower base's own kernels
-// (S4, docs/tasks/task-multimodal-support-2026-10.md), added to aikit's gpu.ViT module. Own module, not one of the audited trio; built at NVRTC 12.9.86.
+// towerBasePTX: tower_pos_add / tower_clamp / tower_clamp_copy / tower_rope_axial / tower_mul / tower_scale, the CUDA
+// vision-tower base's own kernels (docs/tasks/task-multimodal-support-2026-10.md), added to aikit's gpu.ViT module.
+// Built at NVRTC 12.9.86.
 //
 //go:embed testdata/tower_base.ptx
 var towerBasePTX []byte
 
-// gemmMMAPTX: gemm_w4a8_mma — the L3 tensor-core int4xint8 GEMM with group scales
-// (docs/completed/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
-// audited moe.ptx / glue.ptx / prefill_batched.ptx must not be regenerated to add a kernel.
+// gemmMMAPTX: gemm_w4a8_mma, the L3 tensor-core int4xint8 GEMM with group scales (docs/completed/task-prefill-gap.md §4
+// L3).
 //
 //go:embed testdata/gemm_w4a8_mma.ptx
 var gemmMMAPTX []byte
@@ -267,27 +210,26 @@ var gemmMMAPTX []byte
 //go:embed testdata/moe.ptx
 var moePTX []byte
 
-// routerF32PTX: gemv_f32_f32 — pure-f32 router projection (NO activation quant) for Gemma-4's
-// router, the discrete-failure path. Kept in its own module so adding it did not force a
-// regeneration of the audited 12.6 moe.ptx at this box's 12.9 NVRTC. See cuda/router_f32.cu.
+// routerF32PTX: gemv_f32_f32, the pure-f32 router projection (no activation quant) for Gemma 4's router. See
+// cuda/router_f32.cu.
 //
 //go:embed testdata/router_f32.ptx
 var routerF32PTX []byte
 
-// fusedQKVPTX: K1 super-kernel — rmsnorm+quant folded into the Q/K/V GEMV via redundant
-// per-block recompute, killing a GridX:1 glue kernel and 3 launches (spec §5.2).
+// fusedQKVPTX: the K1 super-kernel: rmsnorm+quant folded into the Q/K/V GEMV by redundant per-block recompute, removing
+// a GridX:1 glue kernel and 3 launches.
 //
 //go:embed testdata/fused_qkv.ptx
 var fusedQKVPTX []byte
 
-// fusedQKVRowsPTX: fused_rms_qkv_rows — fused_rms_qkv with rows-per-warp as a runtime parameter (fewer redundant rmsnorm prologues).
-// Its own module so the audited fused_qkv.ptx is not regenerated at a different NVRTC; built at the ambient NVRTC (12.9.86). See cuda/fused_qkv_rows.cu.
+// fusedQKVRowsPTX: fused_rms_qkv_rows, fused_rms_qkv with rows-per-warp as a runtime parameter (fewer redundant rmsnorm
+// prologues). Built at the ambient NVRTC (12.9.86). See cuda/fused_qkv_rows.cu.
 //
 //go:embed testdata/fused_qkv_rows.ptx
 var fusedQKVRowsPTX []byte
 
-// fusedGURowsPTX: fused_rms_gu_rows — fused_rms_gu with rows-per-warp as a runtime parameter. Its own module (the audited fused_qkv.ptx is not regenerated); built at the
-// ambient NVRTC (12.9.86). See cuda/fused_gu_rows.cu.
+// fusedGURowsPTX: fused_rms_gu_rows, fused_rms_gu with rows-per-warp as a runtime parameter. Built at the ambient NVRTC
+// (12.9.86). See cuda/fused_gu_rows.cu.
 //
 //go:embed testdata/fused_gu_rows.ptx
 var fusedGURowsPTX []byte
@@ -320,13 +262,11 @@ func permuteFast(w uint32) uint32 {
 	return o
 }
 
-// f32tof16 encodes an IEEE-754 float32 into a float16 bit pattern, byte-for-byte identical to
-// decoder.f32ToF16bits — the CANONICAL resident-backend f16 scale representation that metal/pack.go,
-// aikit/linalg, and the GOINFER_INT4_F16_SCALES CPU diagnostic all replicate. The int4 group scales
-// this encodes (resident.go `ws16`) MUST match every other backend's f16 scales bit-for-bit (audit
-// C-15). Round-half-up + gradual underflow to subnormals. The OLD version TRUNCATED (m>>13, no
-// rounding — a systematic downward bias) and flushed the whole e<=0 range to zero, diverging CUDA's
-// scales from metal/aikit/CPU. NOT RNE/saturate: a lone RNE here would re-introduce that divergence.
+// f32tof16 encodes an IEEE-754 float32 into a float16 bit pattern, byte-for-byte identical to decoder.f32ToF16bits, the
+// canonical resident-backend f16 scale representation that metal/pack.go, aikit/linalg and the GOINFER_INT4_F16_SCALES
+// CPU diagnostic replicate. The int4 group scales it encodes (ws16 in resident.go) must match every other backend's f16
+// scales bit for bit. It rounds half up with gradual underflow to subnormals; it is not RNE or saturating, which would
+// reintroduce a divergence.
 func f32tof16(f float32) uint16 {
 	b := math.Float32bits(f)
 	sign := uint16((b >> 16) & 0x8000)

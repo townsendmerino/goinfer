@@ -8,62 +8,41 @@ import (
 	"github.com/townsendmerino/aikit/gpu"
 )
 
-// R11/P20 — CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/tasks/red-october.md R11(b),
-// docs/measurements/p20-expert-locality-2026-09-21.md). GENERIC MoE PATH ONLY (Ly.isMoE, moeMLPPre/moeMLPPost's
-// own shape) — gemma4's parallel dense‖MoE FFN (gemma4MoeMLPPre/Post) is NOT covered here; that is a separate,
-// structurally similar extension, not attempted in this pass (M26, the model the locality measurement used,
-// therefore does NOT yet benefit from this — a real, named remainder, not an oversight).
+// CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/measurements/p20-expert-locality-2026-09-21.md).
+// Generic MoE path only (Ly.isMoE, moeMLPPre/moeMLPPost's shape); gemma4's parallel dense||MoE FFN is
+// moe_expert_major_gemma4.go.
 //
-// MECHANISM: cuda/prefill.go's per-row MoE FFN loop admits/DMAs a routed expert once per (row, routing rank),
-// which the P20 locality measurement found re-fetches the SAME expert a mean of ~69x per 512-row chunk on M26
-// (a different model's C′ config, but the mechanism is model-independent) because only cacheSlots (as few as 10
-// on a tight card) can be resident at once and rows are visited in POSITIONAL order, not grouped by expert. This
-// reorders PROCESSING (not admission capacity) to group by expert: route every row in the chunk first, bucket
-// (row, rank) pairs by expert, then for each DISTINCT expert admit/DMA it ONCE and run every row assigned to it
-// before moving on. No new GEMV/SwiGLU/down-proj kernel: gemv_w4a8_moe(_wacc) and glu_quant are the SAME kernels
-// the per-row path already uses (moe.ptx is the audited 12.6.85 artifact and is NOT touched), called with a
-// dedicated one-entry "current slot" index instead of the live per-token r.slotIdx.
+// Mechanism: prefill.go's per-row MoE FFN loop admits/DMAs a routed expert once per (row, routing rank), re-fetching the
+// same expert many times per chunk because only cacheSlots experts fit and rows are visited in positional order. This
+// reorders processing (not admission capacity) to group by expert: route every row in the chunk first, bucket (row,
+// rank) pairs by expert, then for each distinct expert admit/DMA it once and run every row assigned to it. No new
+// GEMV/SwiGLU/down-proj kernel: gemv_w4a8_moe(_wacc) and glu_quant are the per-row path's own kernels (moe.ptx, the
+// audited artifact, is untouched), called with a dedicated one-entry "current slot" index instead of the live r.slotIdx.
 //
-// BIT-IDENTITY (required, not optional — the brief's own words): float addition is not associative, so folding
-// rank-major (today: for each row, rank 0..topK-1 in order) must produce the IDENTICAL term sequence as folding
-// expert-major would if experts happened to be visited in a different order per row (they do — expert iteration
-// order has nothing to do with any one row's own rank order). The fix, mirrored EXACTLY from the CPU precedent
-// (decoder/mlp.go's moeMLPBatch, P18): compute every (row, rank) expert output into a SEPARATE, rank-indexed
-// scratch buffer (moeScratch[rank], written via the UNCHANGED gemv_w4a8_moe_wacc kernel into a buffer that
-// starts at exactly zero — 0+x is exact in IEEE754, so this is not merely close to a plain write, it IS one),
-// then fold each row in RANK order at the end via topK sequential residual_batched launches (rank 0, then 1, ...
-// — same CUDA stream, so launch order IS per-row term order, for every row, regardless of what order the
-// experts were computed in). This is the CPU's own documented technique, restated for a stream-ordered GPU
-// instead of a single-threaded Go loop.
+// Bit-identity is required: float addition is not associative, and expert iteration order has nothing to do with any one
+// row's rank order. So every (row, rank) expert output goes into a separate rank-indexed scratch (moeScratch[rank],
+// written by the unchanged gemv_w4a8_moe_wacc into a buffer that starts at exactly zero, so 0+x is exact), and each row
+// is then folded in rank order by topK sequential residual_batched launches on one stream, so launch order is per-row
+// term order for every row. This is decoder/mlp.go's moeMLPBatch technique, restated for a stream-ordered GPU.
 //
-// REFUSES (falls through to the per-row path, exactly as CPU's moeMLPBatch does) on: a shared expert
-// (Ly.hasShared — a different combine shape, not attempted here, matching CPU's own refusal), any per-expert
-// bias table (gpt-oss; its bias lookup is keyed by the LIVE per-token slot index this rewrite does not use in
-// the same way, and it was never verified against this scheme), and gpt-oss's own route kernel.
+// It refuses (falls through to the per-row path, as moeMLPBatch does) on a shared expert (Ly.hasShared), on any
+// per-expert bias table (gpt-oss: its bias lookup is keyed by the live per-token slot index, which this scheme does not
+// use the same way and was never verified against), and on gpt-oss's own route kernel.
 
-// prefillExpertMajorEnabled reports whether the expert-major MoE prefill restructuring is on.
-// DEFAULT ON since 2026-09-21 (docs/measurements/p20-expert-major-m26-2026-09-21.md — the gemma4
-// extension, cuda/moe_expert_major_gemma4.go, measured 2.66x/2.50x/2.39x/2.26x at M=512/2048/4096/8012
-// on the real M26, sequential control unmoved within 0.3% noise), mirroring the CPU precedent this
-// build mirrors throughout (decoder/mlp.go's moeExpertMajor, P18: "GOINFER_MOE_EXPERT_MAJOR=0
-// restores the per-row path... an escape hatch and an A/B handle, not a user setting"). The generic
-// (non-gemma4) path's own measured win (Mellum2, 3.5-4.3%) is real but small — it rides the same
-// default because it is bit-identical and never measured a regression, not because it was the case
-// this default was chosen for.
-// GOINFER_CUDA_MOE_EXPERT_MAJOR=0 restores the per-row path.
+// prefillExpertMajorEnabled reports whether the expert-major MoE prefill restructuring is on: default on, and
+// GOINFER_CUDA_MOE_EXPERT_MAJOR=0 restores the per-row path (an escape hatch and A/B handle, as GOINFER_MOE_EXPERT_MAJOR
+// is for the CPU's moeExpertMajor in decoder/mlp.go). The default rests on bit-identity and no measured regression
+// (docs/measurements/p20-expert-major-m26-2026-09-21.md).
 func (r *cudaResident) prefillExpertMajorEnabled() bool {
 	return r.knobValue("GOINFER_CUDA_MOE_EXPERT_MAJOR") != "0"
 }
 
-// moeExpertMajorRuns counts chunks/layers that actually took this path — a non-vacuity counter, the same
-// discipline TestMoEExpertMajor_bitIdentical's CPU precedent uses, so a silent refusal cannot pass as a green.
+// cudaMoeExpertMajorRuns counts the layers/chunks that actually took this path: a non-vacuity counter, so a silent
+// refusal cannot pass as a green (TestMoEExpertMajor_bitIdentical).
 var cudaMoeExpertMajorRuns int64
 
-// prefillMoEExpertMajorRow is the CALLER'S per-row hook, replacing the ordinary segBFFN+layerTail pair for one
-// row of the batched MoE prefill loop — but it does NOT run the FFN itself; it only ROUTES this row and stashes
-// its quantized activation, deferring compute to prefillMoEExpertMajorFlush once every row in the chunk has been
-// routed. Declines (returns ok=false) on the FIRST row it sees anything it does not handle, so the caller can
-// fall back to the ordinary per-row path for the WHOLE chunk before any expert-major state exists.
+// moeExpertMajorState is the working set of one prefillMoEExpertMajorRun: the per-row quantized activations and routing
+// weights, and the rank-indexed accumulators that are folded in rank order.
 type moeExpertMajorState struct {
 	M, hidden, moeInter, topK int
 	mqAll, mScAll, wgtAll     Buffer   // per-row scratch: mqAll[row]=quantized activation, mScAll[row]=its scale, wgtAll[row*topK+j]=routing weight
@@ -72,8 +51,8 @@ type moeExpertMajorState struct {
 	emSlot                    Buffer   // 1-element: the CURRENTLY-resident expert's cache slot, for gemv_w4a8_moe's idx[0]
 }
 
-// prefillMoEExpertMajorEligible reports whether layer Ly can take the expert-major path at all — checked ONCE
-// per layer before the chunk's row loop starts, so a decline costs nothing (no state is built).
+// prefillMoEExpertMajorEligible reports whether layer Ly can take the expert-major path at all, checked once per layer
+// before the row loop so a decline builds no state.
 func (r *cudaResident) prefillMoEExpertMajorEligible(Ly *cudaLayer) bool {
 	if !r.prefillExpertMajorEnabled() || !Ly.isMoE || Ly.g4moe || Ly.hasShared || r.gptOssRoute != (Pipeline{}) {
 		return false
@@ -87,13 +66,11 @@ func (r *cudaResident) prefillMoEExpertMajorEligible(Ly *cudaLayer) bool {
 	return true
 }
 
-// prefillMoEExpertMajorRun replaces the per-row `for m := range M { segBFFN; layerTail }` loop for one MoE
-// layer of one prefill chunk, end to end: route every row, bucket by expert, run the expert-grouped compute
-// into rank-indexed scratch, then fold each row in rank order into xB. Callers must have already confirmed
-// prefillMoEExpertMajorEligible(Ly); this returns an error rather than declining once called, matching
-// loadRoutedExperts's own "propagate, don't swallow" convention — a mid-chunk failure has nowhere safe to
-// fall back to without redoing routing, and every allocation/launch here mirrors ones the per-row path already
-// makes successfully for the same layer.
+// prefillMoEExpertMajorRun replaces the per-row `for m := range M { segBFFN; layerTail }` loop for one MoE layer of one
+// prefill chunk: route every row, bucket by expert, run the expert-grouped compute into rank-indexed scratch, and fold
+// each row in rank order into xB. Callers must have confirmed prefillMoEExpertMajorEligible(Ly). Once called it returns
+// an error rather than declining (loadRoutedExperts's propagate-don't-swallow convention): a mid-chunk failure has
+// nowhere safe to fall back to without redoing routing.
 func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly *cudaLayer, xB Buffer, M, hidden int) error {
 	st := &moeExpertMajorState{M: M, hidden: hidden, moeInter: r.moeInter, topK: r.topK}
 	var scratch []Buffer
@@ -114,8 +91,9 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	st.scratch = make([]Buffer, r.topK)
 	for j := range st.scratch {
 		st.scratch[j] = af(M * hidden)
-		// The expert kernel ACCUMULATES into these, so they must start at zero. Stream-ordered on r.stream, where every kernel below launches: no host
-		// copy of a zero slice (46 MB per layer per chunk at M=512) and no context sync. The buffer is fresh, so there is no earlier reader to wait for.
+		// The expert kernel accumulates into these, so they must start at zero. Zeroed on r.stream, where every kernel below
+		// launches: no host copy of a zero slice and no context sync, and the buffer is fresh, so no earlier reader needs
+		// waiting for.
 		if e := r.stream.ZeroAsync(st.scratch[j], M*hidden*4); e != nil {
 			return e
 		}
@@ -146,9 +124,10 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 			gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup))); e != nil {
 			return e
 		}
-		// No per-row Sync and Downloads (audit R-22). Each row's route output lands in its own slice of idxAll/wgtAll; the loop is launches only, in
-		// stream order, and r.rLogits (the one scratch every row reuses) is written by row m's router GEMV and read by row m's route kernel before row
-		// m+1's GEMV overwrites it, exactly as before. The weights never come to the host: the host only buckets by expert id.
+		// No per-row Sync or Download: each row's route output lands in its own slice of idxAll/wgtAll, and the loop is launches
+		// only, in stream order. r.rLogits, the one scratch every row reuses, is written by row m's router GEMV and read by row
+		// m's route kernel before row m+1's GEMV overwrites it. The weights never come to the host; it only buckets by expert
+		// id.
 	}
 	if e := r.stream.Sync(); e != nil {
 		return e

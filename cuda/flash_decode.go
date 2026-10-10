@@ -20,19 +20,18 @@ const faWarps = 8
 // batch is processed in chunks of this many rows.
 const faMaxRows = 16
 
-// flashDecodeDefaultMinKeys is the attended-span floor for the lane: below it the exact
-// path runs. Set from the served forced-on ladder (docs/measurements/attn-decode-fa-served-2026-09-20.md): the 0.5B and
-// gemma3-1b lose 3-9% up to 1024 keys and win from 2048, so 2048 is the lowest floor with no measured regression.
+// flashDecodeDefaultMinKeys is the attended-span floor for the lane: below it the exact path runs. 2048 is the lowest
+// floor with no measured regression on the served forced-on ladder
+// (docs/measurements/attn-decode-fa-served-2026-09-20.md).
 const flashDecodeDefaultMinKeys = 2048
 
 // flashDecodeDefaultSplit is S, the key-split count per kv head, when GOINFER_CUDA_FLASH_DECODE is unset. 16 is the S the
 // fidelity gate was pre-registered and passed at (docs/measurements/attn-decode-fa-fidelity-2026-09-20.md).
 const flashDecodeDefaultSplit = 16
 
-// flashDecodeSplit resolves GOINFER_CUDA_FLASH_DECODE to S. DEFAULT ON since 2026-09-23 (owner decision, R6): unset means
-// flashDecodeDefaultSplit; "0", "off" and "false" turn the lane off (the exact attention path, bit-identical to what shipped
-// before the lane existed); a positive integer picks S; anything else that is not a positive integer is also off, as it always
-// was — a typo must not silently enable a non-exact path at some other S.
+// flashDecodeSplit resolves GOINFER_CUDA_FLASH_DECODE to S. Default on: unset means flashDecodeDefaultSplit; "0", "off"
+// and "false" turn the lane off (the exact attention path); a positive integer picks S; anything else is also off, since
+// a typo must not silently enable a non-exact path at some other S.
 func flashDecodeSplit(v string, set bool) int {
 	if !set || v == "" {
 		return flashDecodeDefaultSplit
@@ -47,15 +46,13 @@ func flashDecodeSplit(v string, set bool) int {
 	return 0
 }
 
-// loadFlashDecode wires the flash-decode lane. Default ON (flashDecodeSplit); GOINFER_CUDA_FLASH_DECODE=0 keeps the exact
-// path. It only ever acts once a layer's attended span reaches faMinKeys (2048 by default), so shallower decode is untouched.
-// Any failure leaves the lane OFF (faSplit 0), never half-on.
+// loadFlashDecode wires the flash-decode lane (default on; GOINFER_CUDA_FLASH_DECODE=0 keeps the exact path). It acts
+// only once a layer's attended span reaches faMinKeys, and any failure leaves the lane off (faSplit 0), never half-on.
 //
-// The DEFAULT does not reach a C′ expert-cache model (cacheExperts): those configurations are sized to the byte from free
-// VRAM (the 26B's 10-slot cache, docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md), and the lane's
-// partial buffer (faMaxRows*nH*S*faWarps*(hd+4) f32 — ~34 MB at the 26B's geometry, the same order as a cache slot) would
-// come out of that budget, and none of the lane's fidelity evidence covers a MoE. Setting the variable explicitly still turns
-// it on there, exactly as before.
+// The default does not reach a C' expert-cache model (cacheExperts): those are sized to the byte from free VRAM
+// (docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md), the lane's partial buffer
+// (faMaxRows*nH*S*faWarps*(hd+4) f32) would come out of that budget, and none of the lane's fidelity evidence covers a
+// MoE. Setting the variable explicitly still turns it on there.
 func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	v, explicit := r.lookupKnob("GOINFER_CUDA_FLASH_DECODE")
 	s := flashDecodeSplit(v, explicit)

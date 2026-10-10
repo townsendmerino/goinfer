@@ -11,17 +11,13 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MC3 on CUDA (docs/tasks/task-concurrency-2026-09.md, "MC3 on CUDA"): one decode token for each of several sequences,
-// each on its own resident KV slot at its own position, in one step. The S0 found a batched pass through the exact
-// kernels bit-identical to decode per row, and 1.75x (1.5B) / 2.04x (7B) cheaper than 4 decodes
-// (docs/measurements/concurrency-mc3-cuda-s0-2026-09-27.md).
-//
-// The step is prefillCore's batched layer stack in its multi-sequence mode (rows != nil): rms+quant, the q/k/v, o,
-// gate/up and down GEMVs, the batched qk-norm, SwiGLU and residuals run over the B rows through the exact kernels
-// (forceExactKernels holds for tailAllLogits). Rope, the KV store and attention run per sequence through decode's own
-// gap (decodeAttnGap) — every row gets exactly the kernel and position-dependent scales its own decode would, the
-// flash-decode lane past 2048 keys included. The head is per row, decode's, with Forward's host tail; a row whose token
-// is drawn on-device ends in ForwardSample's pick.
+// One decode token for each of several sequences, each on its own resident KV slot at its own position, in one step
+// (docs/tasks/task-concurrency-2026-09.md). The step is prefillCore's batched layer stack in its multi-sequence mode
+// (rows != nil): rms+quant, the q/k/v, o, gate/up and down GEMVs, the batched qk-norm, SwiGLU and residuals run over the
+// B rows through the exact kernels (forceExactKernels holds for tailAllLogits), bit-identical to decode per row. Rope,
+// the KV store and attention run per sequence through decode's own gap (decodeAttnGap), so every row gets exactly the
+// kernel and position-dependent scales its own decode would, the flash-decode lane past 2048 keys included. The head is
+// per row, decode's, with Forward's host tail; a row whose token is drawn on-device ends in ForwardSample's pick.
 
 var _ decoder.ResidentBatchStepper = (*cudaResident)(nil)
 

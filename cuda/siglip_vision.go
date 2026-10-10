@@ -10,11 +10,13 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// Gemma 3's SigLIP tower in float32 on the CUDA tower base (the S4 addendum, docs/tasks/task-multimodal-support-2026-10.md): the port of metal's siglipVResident
-// (metal/vl_towers.go). aikit's GridPatches (im2col) rows arrive on the host; the patch embed plus the fixed position table, every block over ONE segment of all
-// the patches with no RoPE, then FinishHidden (the post-layernorm) on the host. Blocks: LayerNorm with bias, biased separate q, k and v, attention at scale
-// 1/sqrt(head_dim) over every patch, biased o and residual, LayerNorm, biased fc1, GELU-tanh, biased fc2, residual. Float32 weights from Encoder.Weights
-// (LoadEncoder quant=false). Registered through cuda/vision_register.go's dispatching factory, which keeps the int8 NewVisionEncoder for an int8 encoder.
+// Gemma 3's SigLIP tower in float32 on the CUDA tower base (docs/tasks/task-multimodal-support-2026-10.md): the port of
+// metal's siglipVResident (metal/vl_towers.go). aikit's GridPatches (im2col) rows arrive on the host; the patch embed
+// plus the fixed position table, every block over ONE segment of all the patches with no RoPE, then FinishHidden (the
+// post-layernorm) on the host. Blocks: LayerNorm with bias, biased separate q, k and v, attention at scale
+// 1/sqrt(head_dim) over every patch, biased o and residual, LayerNorm, biased fc1, GELU-tanh, biased fc2, residual.
+// Float32 weights from Encoder.Weights (LoadEncoder quant=false). Registered through cuda/vision_register.go's
+// dispatching factory, which keeps the int8 NewVisionEncoder for an int8 encoder.
 
 // siglipTower is the SigLIP tower on CUDA (vision.ResidentEncoder).
 type siglipTower struct {
