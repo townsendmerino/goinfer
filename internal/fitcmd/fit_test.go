@@ -37,11 +37,10 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
-// TestFreeBytesFor_cpuUsesThePassedInValue is the M-19 gate (docs/audit-2026-09-10.md):
-// freeBytesFor's "cpu" branch must report EXACTLY the caller-supplied hostFreeBeforeLoad, proving
-// it no longer re-queries HostRAMAvailableBytes() itself after Run has already loaded the model
-// into that same RAM budget. A non-positive value must report unknown, matching the old
-// HostRAMAvailableBytes()-returns-0-means-unknown convention.
+// TestFreeBytesFor_cpuUsesThePassedInValue pins that freeBytesFor's "cpu" branch reports EXACTLY the caller-supplied
+// hostFreeBeforeLoad and does not re-query HostRAMAvailableBytes() after Run has loaded the model into that same RAM
+// budget; a non-positive value reports unknown (HostRAMAvailableBytes() returning 0 means unknown). Origin (M-19,
+// docs/audit-2026-09-10.md): docs/code-notes/internal-fitcmd.md#TestFreeBytesFor_cpuUsesThePassedInValue.
 func TestFreeBytesFor_cpuUsesThePassedInValue(t *testing.T) {
 	const want = 123456789
 	if got, ok := freeBytesFor("cpu", want); !ok || got != want {
@@ -143,13 +142,10 @@ func TestRun_measureOffByDefault(t *testing.T) {
 	}
 }
 
-// TestRun_measureRateExcludesPrefill is M-20's behavioral half (docs/audit-2026-09-10.md):
-// selfMeasure's printed rate used to be n/(prefill+decode) — roughly a third of the true decode
-// rate on the CPU staged path (the audit's own measurement) — because the clock started before
-// Generate was even called. It now starts after the FIRST token arrives, so the printed line must
-// say so explicitly (not the old "includes a N-token prompt prefill" phrasing, which described
-// the bug rather than a fix for it) and must report decode steps counted as probeDecode-1, not
-// probeDecode — proving the first step was excluded from the denominator, not just relabeled.
+// TestRun_measureRateExcludesPrefill pins that selfMeasure's printed rate excludes prefill: the clock starts after the
+// FIRST token arrives, so the printed line must say so explicitly and must report decode steps counted as probeDecode-1,
+// not probeDecode, which proves the first step was excluded from the denominator, not just relabeled. Origin (M-20,
+// docs/audit-2026-09-10.md): docs/code-notes/internal-fitcmd.md#TestRun_measureRateExcludesPrefill.
 func TestRun_measureRateExcludesPrefill(t *testing.T) {
 	out := captureStdout(t, func() {
 		Run([]string{"../../testdata/llama-tiny", "-ctx", "512", "-measure"})
@@ -169,15 +165,12 @@ func TestRun_measureRateExcludesPrefill(t *testing.T) {
 	}
 }
 
-// TestRun_closesFirstLoadBeforeMeasuring is M-20's other half: selfMeasure loads the SAME
-// checkpoint again, so Run must close its own first Load BEFORE calling selfMeasure — leaving it
-// open the whole time means two full quantized copies resident simultaneously on the CPU backend,
-// which can itself trip the memory guard the probe exists to measure honestly. The interruption
-// that matters (a real large checkpoint tripping the guard) can't be reproduced with this repo's
-// tiny fixtures, so this is asserted structurally instead, the same technique
-// TestTranscode_writesViaTempThenRenames (internal/prequant) uses for an analogous ordering
-// property: parse Run's AST and confirm the statement calling m.Close() appears BEFORE the `if
-// *measure` block that calls selfMeasure, not after.
+// TestRun_closesFirstLoadBeforeMeasuring (M-20): selfMeasure loads the SAME checkpoint again, so Run must close its own
+// first Load BEFORE calling selfMeasure; leaving it open holds two full quantized copies resident on the CPU backend,
+// which can itself trip the memory guard the probe exists to measure honestly. A real large checkpoint tripping the
+// guard can't be reproduced with this repo's tiny fixtures, so this is asserted structurally, the same technique
+// TestTranscode_writesViaTempThenRenames (internal/prequant) uses for an ordering property: parse Run's AST and confirm
+// the statement calling m.Close() appears BEFORE the `if *measure` block that calls selfMeasure.
 func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "fit.go", nil, 0)
@@ -240,10 +233,9 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 	}
 }
 
-// TestFreshSidecar_findsTheOneChatAndServeBuild: a default chat or serve load (--backend cpu) writes this
-// host's cpu target, <base>.int4.cpu-amd64.giw or .cpu-arm64.giw. fit used to look only for the canonical
-// target, so it never found that sidecar and did a full direct load of the .gguf instead (measured on the
-// 0.5B: 2.98 s and 1.0 GB RSS, against a mapped read through the sidecar).
+// TestFreshSidecar_findsTheOneChatAndServeBuild pins that freshSidecar finds the sidecar a default chat or serve load
+// (--backend cpu) writes: this host's cpu target, <base>.int4.cpu-amd64.giw or .cpu-arm64.giw, not only the canonical
+// target. Missing it means a full direct load of the .gguf instead of a mapped read through the sidecar.
 func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
 	for _, e4 := range []bool{false, true} {
 		t.Run(map[bool]string{false: "int8 head", true: "int4 head (the default since 2026-09-28)"}[e4], func(t *testing.T) {
@@ -253,8 +245,7 @@ func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
 }
 
 // testFreshSidecar builds the sidecar a load with the given --embed-int4 writes, and freshSidecar must find it. With
-// embedInt4 it is <base>.int4.e4h.<target>.giw, the one a default CPU/CUDA/WebGPU load writes; fit looked only for the
-// plain-head name and missed it.
+// embedInt4 it is <base>.int4.e4h.<target>.giw, the one a default CPU/CUDA/WebGPU load writes, not the plain-head name.
 func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	raw, err := os.ReadFile("../../testdata/glm-tiny.gguf")
 	if err != nil {
