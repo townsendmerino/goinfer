@@ -10,32 +10,21 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestQuantBar_CPUInt4VsInt8 answers the question every Metal Gemma parity number has been
-// unable to: how much of the gap is QUANTIZATION and how much is METAL?
+// TestQuantBar_CPUInt4VsInt8 separates how much of a Metal Gemma parity gap is QUANTIZATION and how much is METAL.
 //
-// The problem it solves: Metal has no like-for-like CPU reference by design. BuildResident
-// requires an int8 load and re-quantizes to its own W4A8, so residentParity is always
-// int4-GPU vs int8-CPU — a comparison that mixes two independent effects. Gemma measures
-// 0.818 there and the control 0.990, and for months that delta was read as "Metal has a Gemma
-// bug". It might instead be "int4 costs more at Gemma's shape", and the two are indistinguishable
-// from a single number.
-//
-// This fork separates them on the CPU alone, no GPU involved. decoder's int4 mode is the near-
-// exact quantization twin of Metal's resident W4A8: group-32 symmetric weights at scale=maxabs/7
-// (int4GroupSize, weightmat.go) and an int8 LM head + embedding (quantMode.embedding() pins them —
-// the same pin Metal ships). Same weights, same activations, same arithmetic class — the ONLY
-// thing that changes between the two runs is int4-vs-int8. So:
+// Metal has no like-for-like CPU reference by design: BuildResident requires an int8 load and re-quantizes to its own W4A8,
+// so residentParity is always int4-GPU vs int8-CPU, which mixes two independent effects. This fork separates them on the CPU
+// alone, no GPU involved. decoder's int4 mode is the near-exact quantization twin of Metal's resident W4A8: group-32 symmetric
+// weights at scale=maxabs/7 (int4GroupSize, weightmat.go) and an int8 LM head + embedding (quantMode.embedding() pins them, the
+// same pin Metal ships). Same weights, same activations, same arithmetic class: the ONLY thing that changes between the two
+// runs is int4-vs-int8. So:
 //
 //	cpu-int4 vs cpu-int8  =  the cost of the quantization class, at THIS model's shape
 //	metal    vs cpu-int8  =  that cost + whatever Metal adds
 //
-// If Gemma's CPU fork lands near its Metal number (~0.82), then 0.818 IS the int4 bar at Gemma's
-// shape and there is nothing left to fix — the model ships. If the fork comes back ~0.99 while
-// Metal stays at 0.82, the quantization is exonerated and Metal really does have a Gemma-specific
-// bug, which reopens the hunt with the suspect list cut in half either way.
-//
-// Both models run so the control calibrates the subject, per the lesson that a bar must be
-// measured on this box rather than assumed.
+// If a model's CPU fork lands near its Metal number, that number IS the int4 bar at that shape and there is nothing left to fix.
+// If the fork comes back near 0.99 while Metal stays low, the quantization is exonerated and Metal has a model-specific bug.
+// Both models run so the control calibrates the subject: a bar must be measured on this box rather than assumed.
 func TestQuantBar_CPUInt4VsInt8(t *testing.T) {
 	requireHeavyModel(t)
 	if testing.Short() {

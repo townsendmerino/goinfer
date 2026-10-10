@@ -12,25 +12,17 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestMoEExpertReuseProbe investigates M-05 (audit-metal-2026-09-12.md) cheaply, BEFORE building
-// the expert-major prefill restructuring it proposes: on a REAL paged MoE resident, run genuine
-// text through the EXACT path paged MoE prefill already uses today — prefillOK is hard-false for
-// a paged generic MoE (metal/model.go), so every prompt token already goes through the sequential
-// per-token decode loop, one router readback + stage per token per layer — and read off the
-// expert pool's own telemetry (stages / distinctExperts / nE) to see whether an expert-major
-// regroup (stage each routed expert ONCE per prefill instead of once per token that routes to it)
-// would converge close to nE (little win left — routing already touches most experts anyway) or
-// stay far below today's stage count (real cache churn from LRU thrashing, so M-05 is worth
-// building).
+// TestMoEExpertReuseProbe measures whether the expert-major prefill restructuring M-05 proposes (docs/audit-metal-2026-09-12.md)
+// is worth building. On a real paged MoE resident it runs genuine text through the path paged MoE prefill takes today
+// (prefillOK is hard-false for a paged generic MoE, so every prompt token goes through the sequential per-token decode loop:
+// one router readback + stage per token per layer) and reads the expert pool's telemetry (stages / distinctExperts / nE). If
+// distinctExperts converges close to nE, regrouping (stage each routed expert once per prefill) has little left to win; if it
+// stays far below today's stage count, LRU thrashing is real and M-05 is worth building.
 //
-// Manual/one-off by design (a real multi-GB checkpoint, several minutes of GPU time) — gated
-// behind GOINFER_MOE_REUSE_PROBE_CKPT rather than GOINFER_HEAVY_TESTS' usual asset registry, same
-// convention as TestMoEPrefillMeasure_batchedVsSequential (moe_prefill_measure_test.go). Unlike
-// that test, this one REQUESTS Metal's own GPU expert-cache paging (Options.MoECacheExperts) with
-// slots left at 0 (auto-sized, M-13) rather than requiring the whole expert set resident — the
-// qwen15-moe-a27b shape this repo already has on disk needs ~16.7 GB resident non-paged, which
-// does not fit a 16 GB Mac at all (confirmed 2026-09-10, ~/models/moe_prefill_measure.log), but
-// paged only holds N << nE experts per layer.
+// Manual by design (a multi-GB checkpoint, minutes of GPU time): gated behind GOINFER_MOE_REUSE_PROBE_CKPT rather than
+// GOINFER_HEAVY_TESTS' asset registry, like TestMoEPrefillMeasure_batchedVsSequential (moe_prefill_measure_test.go). Unlike
+// that test it requests Metal's GPU expert-cache paging (Options.MoECacheExperts) with slots left at 0 (auto-sized, M-13),
+// because the qwen15-moe-a27b shape needs ~16.7 GB resident non-paged and does not fit a 16 GB Mac.
 //
 //	GOINFER_MOE_REUSE_PROBE_CKPT=~/models/qwen15-moe-a27b GOINFER_MOE_REUSE_PROBE_M=512 \
 //	  go test -tags metal ./metal/ -run TestMoEExpertReuseProbe -v -timeout 30m
@@ -48,11 +40,9 @@ func TestMoEExpertReuseProbe(t *testing.T) {
 			t.Fatalf("GOINFER_MOE_REUSE_PROBE_M=%q: not an int", v)
 		}
 	}
-	// M-07's row4-skip extension (audit-metal-2026-09-12.md) lowered this checkpoint's resident
-	// footprint enough that autoMoESlots (M-13) now sizes ALL 60 experts resident on a quiet 16 GB
-	// Mac, so the default auto-sized MoECacheExperts no longer pages at all — defeating this
-	// probe's whole point. GOINFER_MOE_REUSE_PROBE_SLOTS forces a real slot count so the paged path
-	// still gets exercised; 0 (default) keeps the prior auto-sized behavior.
+	// autoMoESlots (M-13) can size all 60 experts resident on a quiet 16 GB Mac (M-07's row4-skip extension shrank the
+	// footprint), and the auto-sized MoECacheExperts then never pages. GOINFER_MOE_REUSE_PROBE_SLOTS forces a real slot count so
+	// the paged path is exercised; 0 (default) keeps the auto-sized behaviour.
 	slots := 0
 	if v := os.Getenv("GOINFER_MOE_REUSE_PROBE_SLOTS"); v != "" {
 		if n, err := fmt.Sscanf(v, "%d", &slots); err != nil || n != 1 {
@@ -115,13 +105,10 @@ func TestMoEExpertReuseProbe(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[moe-reuse-probe] resident: %d layers (%d paged MoE), nE=%d top-%d, hidden %d, M=%d real tokens\n",
 		nLayers, nPagedLayers, r.moe.nE, r.moe.k, r.H, M)
 
-	// Sequential pass: the EXACT path a prompt already takes today (prefillOK is false for paged
-	// MoE), one router readback + stage per token per layer. resident.Forward(id, pos) is the
-	// wrong entry point here — its forwardLogits/encodeTrunkInto path has no paged branch at all
-	// and panics on C-02's guard the moment it reaches a paged MoE layer (confirmed the hard way:
-	// this test originally called it and hit exactly that panic). ForwardEmb(emb, pos) is what
-	// actually branches to forwardLogitsMoEPaged for a paged generic MoE resident, so this embeds
-	// each token itself first, mirroring what Forward does internally for the non-paged case.
+	// Sequential pass: the path a prompt takes today (prefillOK is false for paged MoE), one router readback + stage per token per
+	// layer. resident.Forward(id, pos) is the wrong entry point: its forwardLogits/encodeTrunkInto path has no paged branch and
+	// panics on C-02's guard at a paged MoE layer. ForwardEmb(emb, pos) branches to forwardLogitsMoEPaged for a paged generic MoE
+	// resident, so this embeds each token itself first, as Forward does internally for the non-paged case.
 	embScratch := make([]float32, r.H)
 	tSeq := time.Now()
 	for i, id := range ids {

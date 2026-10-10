@@ -51,17 +51,16 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 	}
 	whole = append([]float32(nil), whole...)
 	wantKV := snapshot(0)
-	// 100 and 77 start chunks off the steel kernel's 32-row tiles; a prefix-reuse turn's startPos is arbitrary too. The
-	// aligned sizes cannot see a bug at a tile edge, which shows the same way whole and chunked: with the kernel's causal
-	// limit moved one key, every aligned size still matched bit for bit, and 100 and 77 differed from the first chunk
-	// boundary on (2026-10-01, F-G02). 512 is serve's default chunk. 81 leaves a 28-token tail at position 972: the
-	// step route (E-P01, promptStepOK) must not take a short chunk above the floor, or the tail runs decode's numerics
-	// and differs from the whole pass (measured with the route open there: all 20480 logits).
+	// 100 and 77 start chunks off the steel kernel's 32-row tiles; a prefix-reuse turn's startPos is arbitrary too. The aligned
+	// sizes cannot see a bug at a tile edge, which shows the same way whole and chunked (F-G02: with the kernel's causal limit
+	// moved one key, every aligned size still matched bit for bit). 512 is serve's default chunk. 81 leaves a 28-token tail at
+	// position 972: the step route (E-P01, promptStepOK) must not take a short chunk above the floor, or the tail runs decode's
+	// numerics and differs from the whole pass.
 	//
-	// 16, 32 and 48 cross A-P01's GEMM tile selector (gemmTile: 32-token tiles at <= 32 rows, 32-feature tiles for the
-	// narrow GEMMs at <= 64 rows), so their chunks run the smaller tiles where the whole pass runs 64 × 64. Their first
-	// chunk is 64 tokens: a chunk that ends below the fast-prefill floor never reaches the batched pass (it ran
-	// sequentially before E-P01 and on the step kernels since, decode's numerics either way), so it cannot equal it.
+	// 16, 32 and 48 cross A-P01's GEMM tile selector (gemmTile: 32-token tiles at <= 32 rows, 32-feature tiles for the narrow
+	// GEMMs at <= 64 rows), so their chunks run the smaller tiles where the whole pass runs 64 × 64. Their first chunk is 64
+	// tokens: a chunk that ends below the fast-prefill floor never reaches the batched pass (it runs on the step kernels, decode's
+	// numerics), so it cannot equal it.
 	for _, C := range []int{64, 128, 256, 384, 512, 100, 77, 81, 16, 32, 48} {
 		if err := r.useKVSlot(1); err != nil {
 			t.Fatal(err)

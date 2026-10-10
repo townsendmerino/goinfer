@@ -17,8 +17,8 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestW8Native_F3amended_closerToF32 is gate F3 as the owner amended it on 2026-10-04 (docs/tasks/task-metal-int8-2026-10.md,
-// "F3′"): Metal's native int8int8 (precise math, the owner's other decision that day) against the CPU's int8int8 at Metal's
+// TestW8Native_F3amended_closerToF32 is gate F3 as the owner amended it (docs/tasks/task-metal-int8-2026-10.md,
+// "F3′"): Metal's native int8int8 (precise math, the owner's other decision) against the CPU's int8int8 at Metal's
 // own KV precision (every K and V rounded to f16 as it is stored), over 8 prompts instead of one. Each prompt is the first
 // 16 tokens of a prefill-gate set-A file, then 16 tokens of the CPU f32 model's greedy continuation; positions 2-31 are
 // scored, 240 in all. Bar: the pooled mean KL(f32 ‖ Metal int8int8) is at most 1.10 × the pooled mean KL(f32 ‖ CPU
@@ -59,7 +59,7 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 	}
 
 	// Each arm keeps only its per-position KL against ref (once ref is set), not its logits: six arms of 8 × 32 ×
-	// vocab floats held at once cost about 0.9 GB, which pushed the MoE slice's run into swap (X3, 2026-10-04).
+	// vocab floats held at once cost about 0.9 GB, which pushed the MoE slice's run into swap (X3).
 	var ref [][][]float32
 	var toks [][]int
 	// cpu runs every prompt through one CPU model at quant: from the prompt then its own greedy continuation when forced

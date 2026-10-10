@@ -14,30 +14,26 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestMetalThetaAB — does wiring the MEASURED Theta actually make Metal faster?
+// TestMetalThetaAB: does wiring the MEASURED Theta make Metal faster?
 //
-// Theta was reachable only as 0.5 on every backend, because AdaptiveDepth's
-// domain was [0,1) and Metal measures 1.006-1.048. Under 0.5 the controller
-// drafts; under the measured value it declines to draft, because a Metal verify
-// node costs a full target step (ForwardN is a loop of single-token Forwards, so
-// T(n) = n*T(1) — measured linear to n=16).
+// Theta was once reachable only as 0.5 on every backend, because AdaptiveDepth's domain was [0,1) and Metal's measured Theta is
+// just above 1. Under 0.5 the controller drafts; under the measured value it declines to draft, because a Metal verify node was
+// measured to cost a full target step (T(n) = n*T(1)). That measurement predates metalResident.ForwardN running ForwardBatch's
+// layer-major single command buffer (the single-token loop remains for paged MoE and Gemma 4 E-models), so re-read Theta with
+// TestThetaProbe_Metal before trusting the prediction below.
 //
-// That predicts the speculative path under Theta=0.5 is SLOWER than not
-// speculating at all on Metal, and that the wired default recovers it by
-// declining. This measures that rather than asserting it. Three arms, one
-// prompt, interleaved:
+// The prediction: the speculative path under Theta=0.5 is SLOWER than not speculating at all on Metal, and the wired default
+// recovers it by declining. This measures that rather than asserting it. Three arms, one prompt, interleaved:
 //
-//	off        plain Generate, no speculation — the do-nothing arm, which is
+//	off        plain Generate, no speculation: the do-nothing arm, which is
 //	           the whole point: "beats every configuration" means nothing if
 //	           off wins, and here off is EXPECTED to win against Theta=0.5
-//	theta=0.5  the shipped-until-now behaviour, forced explicitly
-//	wired      Theta unset, so verifyTheta() supplies the measured 1.02
+//	theta=0.5  the former behaviour, forced explicitly
+//	wired      Theta unset, so verifyTheta() supplies the measured value
 //
-// The assertion is deliberately weak in one direction and strong in the other:
-// `wired` must not be materially slower than `off` (it should be within noise of
-// it, since it declines to draft), and it must beat `theta=0.5`. Nothing here
-// claims speculation is bad in general — it claims this backend's verify is not
-// batched, which is exactly what item (2) would change.
+// The assertion is deliberately weak in one direction and strong in the other: `wired` must not be materially slower than `off`
+// (it should be within noise of it, since it declines to draft), and it must beat `theta=0.5`. Nothing here claims speculation
+// is bad in general: it claims this backend's verify is not batched, which is exactly what item (2) would change.
 func TestMetalThetaAB(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("GOINFER_THETA_AB") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1")

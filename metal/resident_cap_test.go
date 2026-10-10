@@ -128,12 +128,10 @@ func TestMetalBuildResident_explicitCtxTooLargeRefusesNotDecline(t *testing.T) {
 	}
 }
 
-// TestMetalBuildResident_explicitCtxHonoured is the positive twin: a SMALLER explicit -ctx (well
-// within both ceilings) must actually build a working resident whose ContextCap() reflects the
-// request — not the historical metalCtxCapMax — and that resident must still decode correctly at
-// that smaller capacity. Before this fix, an explicit -ctx was silently ignored entirely; this
-// pins that the fix's honored path is not just accepted (BuildResident succeeds) but genuinely
-// EFFECTIVE (ContextCap changed, a real forward pass still runs).
+// TestMetalBuildResident_explicitCtxHonoured is the positive twin: a SMALLER explicit -ctx (well within both ceilings) must
+// build a working resident whose ContextCap() reflects the request, not the historical metalCtxCapMax, and that resident must
+// still decode correctly at that capacity. The honored path must be EFFECTIVE (ContextCap changed, a real forward pass runs),
+// not just accepted.
 func TestMetalBuildResident_explicitCtxHonoured(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

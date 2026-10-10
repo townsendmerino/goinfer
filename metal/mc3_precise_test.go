@@ -6,9 +6,9 @@ import "testing"
 
 // TestMC3Step_bitIdenticalPreciseMath is audit E-C02's probe (docs/audit-metal-2026-09-30.md): the batched step against
 // production's single-token decode with the resident library compiled without fast math, as a native int8 model's is
-// since 2026-10-04 (w8PreciseMath). The derived rows kernels are appended after the Gumbel block, whose closing pragma
-// restores fp contract(fast); under precise math that may compile them differently from the kernels they derive from.
-// Shallow and deep rows, as TestMC3Step_bitIdentical and _bitIdenticalDeep.
+// (w8PreciseMath). The derived rows kernels are appended after the Gumbel block, whose closing pragma restores fp
+// contract(fast); under precise math that may compile them differently from the kernels they derive from. Shallow and deep
+// rows, as TestMC3Step_bitIdentical and _bitIdenticalDeep.
 func TestMC3Step_bitIdenticalPreciseMath(t *testing.T) {
 	prev := preciseMathCompile
 	preciseMathCompile = true

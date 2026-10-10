@@ -9,23 +9,16 @@ import (
 	"time"
 )
 
-// TestSAQVFusion_correctnessAndThroughput is the measurement item #5 of the 9-finding audit
-// needs before it goes near a production dispatch site: does fusing quant_vec into
-// gemv_w4a8_sa (gemv_w4a8_sa_qv) actually win, given every threadgroup the fused kernel
-// launches redoes quant_vec's O(K) amax reduction independently (no cheap way for one
-// threadgroup to hand a computed scale to another within one Metal dispatch)? Unlike item #4
-// (the rope2 merge, a genuine reduction in total work), this trades one dispatch launch +
-// one K-element device-memory round-trip against (N/8 - 1) redundant K-element reductions.
+// TestSAQVFusion_correctnessAndThroughput measures whether fusing quant_vec into gemv_w4a8_sa (gemv_w4a8_sa_qv) wins (item #5 of
+// the 9-finding audit), given every threadgroup the fused kernel launches redoes quant_vec's O(K) amax reduction independently
+// (one threadgroup cannot hand a computed scale to another within one Metal dispatch). Unlike the rope2 merge (item #4, a real
+// reduction in total work), this trades one dispatch launch + one K-element device-memory round-trip against (N/8 - 1)
+// redundant K-element reductions.
 //
-// VERDICT (measured, not inspected): roughly NEUTRAL, leaning slightly negative — NOT the win
-// the audit's dispatch-count estimate implied. Four interleaved runs (see the interleaving
-// comment below for why non-interleaved gave a false 1.28x win) at real dims: 0.974x, 0.949x,
-// 0.992x, 0.972x speedup — a tight cluster around ~0.97x, i.e. the fused kernel is a few
-// percent SLOWER, not faster. The redundant per-threadgroup reduction cost roughly cancels the
-// removed-dispatch savings at this K/N. Kept in the tree as a correctness-proven (bit-identical
-// to the two-dispatch path) but NOT-production-worthwhile experiment — do not wire this into
-// model.go on the strength of the dispatch-count argument alone; the wall-clock number doesn't
-// back it up here.
+// VERDICT: roughly NEUTRAL, leaning slightly negative (a few percent slower, not faster; figures in
+// docs/code-notes/metal.md#TestSAQVFusion_correctnessAndThroughput). Kept as a correctness-proven (bit-identical to the
+// two-dispatch path) but NOT-production-worthwhile experiment: do not wire this into model.go on the strength of the
+// dispatch-count argument alone.
 //
 // Real dims (K=1536, N=1536): qwen2.5-coder-1.5b's o-proj (hidden=1536, 12 heads, headDim=128, nH*hd=1536=K; o-proj output=hidden=1536=N).
 func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
@@ -125,14 +118,10 @@ func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
 	// TestPrefillGemmW4's "measure all of A, then all of B" shape — that ordering turned out to
 	// be a real confound here (see the interleaving comment below).
 
-	// reps=20: NOT the real per-token count (a real decode token issues far fewer than this per
-	// layer) — chosen to stay clear of a real, separate, pre-existing issue: repeatedly calling
-	// Encoder.Dispatch on the SAME reused buffers hundreds of times in one encoder (via the
-	// general Dispatch path, which rebinds every buffer each call, unlike Run1DBatch's
-	// bind-once-dispatch-many) hits a probabilistic crash unrelated to gemv_w4a8_sa_qv's
-	// correctness (reproduces with the plain two-dispatch pattern alone, no fused kernel
-	// involved, and isn't a hard threshold — it can still fire occasionally even at reps=20).
-	// Worth its own investigation separately; out of scope here.
+	// reps=20: NOT the real per-token count. It is chosen to stay clear of a separate, pre-existing issue: repeatedly calling
+	// Encoder.Dispatch on the same reused buffers hundreds of times in one encoder hits a probabilistic crash unrelated to
+	// gemv_w4a8_sa_qv (it reproduces with the plain two-dispatch pattern alone and can still fire occasionally at reps=20). Not
+	// investigated; the original note is docs/code-notes/metal.md#TestSAQVFusion_correctnessAndThroughput.reps
 	const reps = 20
 	aq := byteBuf(d, K)
 	asc := NewBufferFloats(d, []float32{0})
@@ -154,14 +143,10 @@ func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
 		e.End()
 	}
 
-	// INTERLEAVED, not two separate blocks: measuring "all of A then all of B" confounds the
-	// comparison with whatever changes between the two blocks (thermal ramp, GPU contention
-	// drift) — measured directly here: a first pass with A-then-B block order showed fused
-	// WINNING 1.28x; two immediate re-runs of the same block order showed fused LOSING ~0.47x,
-	// consistently with each other but not with the first run. That is a confound, not a real
-	// effect, and it wouldn't have been visible without deliberately re-running. Alternating A/B
-	// every sample makes drift affect both roughly equally instead of favoring whichever block
-	// happens to run when conditions are better.
+	// INTERLEAVED, not two separate blocks: measuring all of A then all of B confounds the comparison with whatever changes between
+	// the blocks (thermal ramp, GPU contention drift), and a block-ordered pass here read fused WINNING where immediate re-runs of
+	// the same order read it LOSING. Alternating A/B every sample makes drift affect both roughly equally instead of favoring
+	// whichever block runs when conditions are better.
 	for range 4 { // warmup, matches prof()'s own warmup count
 		runTwoDispatch(reps)
 		runFused(reps)

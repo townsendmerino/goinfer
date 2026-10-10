@@ -15,14 +15,14 @@ import (
 // TestR1_laneVsCPU is experiment X2 of the R1 (W4F16 decode lane) re-investigation. X1
 // (r1_gu_reference_test.go) showed that, within the resident int4 model, the f16 lane's gate/up
 // GEMV sits on the f64 reference and the shipped W4A8 lane is the coarse arm (its single
-// per-tensor int8 activation scale zeroes 97% of the FFN-26 input at the attention-sink
+// per-tensor int8 activation scale zeroes most of the FFN input at the attention-sink
 // position). That leaves the one question that decides R1's fate: against an EXTERNAL
 // reference, is the f16 lane's full-model output better, equal, or worse than W4A8's?
 //
 // Reference: the CPU backend, Options{Backend:"cpu", Quant:"int8"} — weight-only per-row int8,
 // f32 activations, exact f64-accumulating attention (GOINFER_CPU_FAST_ATTENTION=0, as
 // decoder/prefill_ref_gen_test.go forces it). The repo's own S reference is Quant:"" (f32 weights,
-// ~6 GB) and does not fit beside anything on this 16 GB machine today (~5 GB free); "int8" is the
+// ~6 GB) and does not fit beside anything on this 16 GB machine; "int8" is the
 // same choice prefill_ref_gen_test.go's d7RefQuant documents for the same reason. It is an
 // external reference: its weight requantisation differs from Metal's int4-g32, so BOTH Metal arms
 // carry the same weight-quant noise floor against it and the PAIRED comparison between arms is

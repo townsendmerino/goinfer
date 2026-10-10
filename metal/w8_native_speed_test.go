@@ -18,7 +18,7 @@ import (
 
 // TestW8Native_S_decodeSpeed is gate S of docs/tasks/task-metal-int8-2026-10.md, a night-queue measurement: an
 // in-process, interleaved A/B of decode speed for an int8int8 model in four arms. They are Metal on the native int8
-// path (precise math since 2026-10-04), the same with fast math kept (reported: the precise-math decision's price),
+// path (precise math), the same with fast math kept (reported: the precise-math decision's price),
 // Metal re-quantized to int4 (what -backend metal ran before), and the CPU (what -backend auto gives an int8 model). Each sample loads one arm, prefills a deterministic prompt of the given depth through Generate, and times
 // the greedy decode steps after the first token, as `fit -measure` does, so prefill is excluded. The arm order rotates
 // every repetition. Samples go to stderr as they finish and, with GOINFER_W8_GATE_OUT set, to that JSONL file.

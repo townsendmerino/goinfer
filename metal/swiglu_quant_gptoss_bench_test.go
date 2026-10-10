@@ -8,7 +8,7 @@ import (
 )
 
 // BenchmarkSwigluQuantGptOss isolates swiglu_quant_gptoss's (metal/moe.go) own throughput at
-// gpt-oss-20b's real expert intermediate size (2880, per docs/task-mxfp4-gptoss.md) and its real
+// gpt-oss-20b's real expert intermediate size (2880, per docs/completed/task-mxfp4-gptoss.md) and its real
 // production dispatch shape (moe.go: mo.pActGptOss, (256, 256), hasBias=1, once per selected
 // expert per layer).
 func BenchmarkSwigluQuantGptOss(b *testing.B) {

@@ -174,7 +174,7 @@ func TestR1_guReference(t *testing.T) {
 		xAmax, xArg := amaxOf(toF64(xMid))
 		gw := L.postNorm.Floats()[:H]
 
-		// ---- f16 arm (verbatim production dispatches, model.go L2186 + L2191), then pSw ----
+		// ---- f16 arm (verbatim production dispatches: encodeLayerResidualWith's f16-lane FFN branch in model.go), then pSw ----
 		e = r.q.Begin()
 		e.Dispatch(r.pRmsF16, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mxF16, r.uH, r.uEps, r.uAddOne)
 		e.DispatchTG(r.pSAf16, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH)
@@ -184,7 +184,7 @@ func TestR1_guReference(t *testing.T) {
 		axHalf := append([]uint16(nil), r.mxF16.U16s()[:H]...)
 		dScF16 := float64(r.dSc.Floats()[0])
 
-		// ---- W4A8 arm (verbatim production dispatches, model.go L2188 + L2193), then pSw ----
+		// ---- W4A8 arm (verbatim production dispatches: encodeLayerResidualWith's default FFN branch in model.go), then pSw ----
 		e = r.q.Begin()
 		r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)

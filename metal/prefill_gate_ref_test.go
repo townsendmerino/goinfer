@@ -18,7 +18,7 @@ import (
 )
 
 // TestPrefillGateVsReference is Phase B of docs/completed/task-prefill-gap.md §4 L1's fresh-prompt decision
-// run (2026-09-09), superseding the §3.1 per-cell form this file used before. TestPrefillGate
+// run, superseding the §3.1 per-cell form this file used before. TestPrefillGate
 // (prefill_gate_test.go) scored Metal's fast (f16-activation) path against Metal's own exact
 // (int8-per-row-activation) path and treated the exact path as truth; §3.1 found that comparison
 // cannot distinguish a defect in the fast path from the exact path's own quantisation loss, since
@@ -39,10 +39,10 @@ import (
 // be used as the "ground truth" stream.
 //
 // §3.2's POOLED form (docs/completed/task-prefill-gap.md §3, as amended by §3.1 and §3.2) — the per-cell
-// binary form this file used on 2026-09-05 has NO resolving power at these sample sizes (§3.2's
+// binary form this file used has NO resolving power at these sample sizes (§3.2's
 // own arithmetic: a per-cell veto over N criteria fails an arm of EQUAL quality most of the time).
 // The decision is now pooled over every decision-set cell for one model (K ∈ {256, 512, 1024} —
-// 512 added 2026-09-09 as the measured floor candidate, matching how CUDA set its own floor from
+// 512 is the measured floor candidate, matching how CUDA set its own floor from
 // a measured K=512 cell rather than interpolating one; S's K=3900 is a confirmation cell, scored
 // and reported but never part of the pooled decision):
 //
@@ -59,7 +59,7 @@ import (
 //	    single cell's fast mean KL exceeds 1.1x that cell's exact mean KL
 //
 // Per-cell values are reported for all three (a table, printed and logged) but NEVER veto the
-// decision individually — that is the exact defect §3.2 found in the 2026-09-05 form.
+// decision individually — that is the exact defect §3.2 found in the earlier per-cell form.
 //
 // A model ships iff all three pooled criteria hold over its full decision set.
 //
@@ -103,7 +103,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 	// Pin the "exact" arm to the plain shipped kernel, independent of decode's own default: this
 	// test's exact-vs-fast comparison is about the PREFILL lane (PrefillLast), not R2's decode
 	// attention lane, and its K sweep reaches 3900 — above attnFADepthFloor (1024), where
-	// attention_fa is now default-on (2026-09-21). Without this, "exact" would silently start
+	// attention_fa is default-on. Without this, "exact" would silently start
 	// meaning "sequential Forward, with attention_fa engaged past 1536" on any future re-run,
 	// changing what this gate's already-recorded results compare against.
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
@@ -164,17 +164,14 @@ func TestPrefillGateVsReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s (set %s)", path, mc.pathEnv)
 			}
-			// Pin ResidentContext to metalCtxCapDefault (4096): the 0 (backend-default) auto-cap sizes ctx off
-			// AVAILABLE MEMORY, not this backend's fixed kernel-score-buffer ceiling, so on a box
-			// with generous free RAM it picks something above metalCtxCapMax and BuildResident
-			// declines outright ("resident context ... exceeds this backend's hard ceiling") —
-			// falling back to CPU/staged, which fails this test's *metalResident type assertion.
-			// 4096 comfortably covers every decision/confirm cell here (2026-09-25: this pin used to be metalCtxCapMax,
-			// written when that was 4096; it has been 32768 since 26f64807, so the fit guard priced a 32k KV — ~1.8 GB on
-			// the 1.5B — and refused loads that fit): the
-			// widest, K=3900 + continuationN(64) teacher-forced steps, tops out at pos 3962.
-			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/tasks/task-metal-int8-2026-10.md, slice
-			// 2): an int8int8 load with nativeInt8 on, both arms on its W8 kernels.
+			// Pin ResidentContext to metalCtxCapDefault (4096): the 0 (backend-default) auto-cap sizes ctx off AVAILABLE MEMORY, not this
+			// backend's fixed kernel-score-buffer ceiling, so on a box with generous free RAM it picks something above metalCtxCapMax and
+			// BuildResident declines outright ("resident context ... exceeds this backend's hard ceiling"), falling back to CPU/staged,
+			// which fails this test's *metalResident type assertion. Pinning to metalCtxCapMax instead would make the fit guard price a
+			// 32k KV and refuse loads that fit. 4096 covers every decision/confirm cell: the widest, K=3900 + continuationN(64)
+			// teacher-forced steps, tops out at pos 3962.
+			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/tasks/task-metal-int8-2026-10.md, slice 2): an int8int8
+			// load with nativeInt8 on, both arms on its W8 kernels.
 			quant := "int4"
 			switch q := os.Getenv("GOINFER_METAL_GATE_QUANT"); q {
 			case "int8int8", "int4mix": // the native int8 path (slice 2) or int4mix's (slice 4)
@@ -216,12 +213,9 @@ func TestPrefillGateVsReference(t *testing.T) {
 			shipped := runPrefillGateSet(t, rf, m, tk, mc.name, primaryLabel, primaryFiles,
 				refDirFor(home, primaryLabel), decisionKs, confirmKsByModel[mc.name], true)
 
-			// Set A's stored reference files, RE-SCORED under this same pooled form and printed
-			// beside the primary run's — informational only, per the brief ("not deciding"). Only
-			// when the primary run is NOT already set A (no point re-scoring a set against itself).
-			// Set A has no K=512 reference (it predates this session's floor work), so its decision
-			// set here is {256, 1024} only — narrower than the real run's, and that narrowing is
-			// itself part of why this is reported, not decided.
+			// Set A's stored reference files, re-scored under this same pooled form and printed beside the primary run's: informational
+			// only, not deciding, and only when the primary run is not already set A. Set A has no K=512 reference, so its decision set
+			// here is {256, 1024} only, narrower than the real run's, which is part of why this is reported, not decided.
 			if primaryLabel != "a" {
 				aFiles := decoder.PrefillGatePromptSetFor("a")
 				runPrefillGateSet(t, rf, m, tk, mc.name, "a", aFiles,
@@ -292,16 +286,10 @@ func runPrefillGateSet(t *testing.T, rf *metalResident, m *decoder.Model, tk *to
 		t.Logf("%s (%s, set %q): no decision-set reference cells found under %s — run TestPrefillGateReference (decoder package) first", modelName, role, setLabel, refDir)
 		return false
 	}
-	// G-02 (audit-metal-2026-09-12.md): a missing reference file used to silently drop that K
-	// from the pool (runPrefillRefGateCellK returns nil, the loop above just skips appending it) —
-	// so a pooled verdict that says "SHIPS" could rest on fewer decision cells than decisionKs
-	// names, with nothing in the output calling that out unless a reader compares the header's K
-	// list against decisionCells' own count by hand. Observed for real, repeatedly, this same
-	// audit: S set "a" K=512 has no reference file and was pooled over silently in every prior
-	// M-03/M-04 oracle run. A partial decision set is fine to REPORT (re-scoring, deciding=false,
-	// is explicitly "never fails the test on its own" per this function's own doc comment above)
-	// but must not silently DECIDE — Fatalf here, not there, so the message names exactly which K
-	// is missing rather than requiring a reader to diff the header against the cell count.
+	// G-02 (docs/audit-metal-2026-09-12.md): a missing reference file must not silently drop that K from the pool
+	// (runPrefillRefGateCellK returns nil and the loop above skips it), or a pooled verdict of "SHIPS" could rest on fewer
+	// decision cells than decisionKs names. A partial decision set is fine to REPORT (re-scoring, deciding=false, never fails the
+	// test on its own) but must not silently DECIDE: Fatalf here, naming which K is missing.
 	if deciding && len(decisionCells) != len(decisionKs) {
 		gotKs := make([]int, len(decisionCells))
 		for i, cs := range decisionCells {
@@ -376,10 +364,9 @@ type cellSummary struct {
 	promptsCounted    int // = n, named separately so pooling reads "prompts", not "cells"
 	worstExactGap     float64
 	worstFastGap      float64
-	// identityFail lists the prompts (1-based) whose reference fails the prompt-identity check: KL(reference
-	// prompt-final logits || the exact arm's) > 1.0, i.e. the reference was generated from different text (found
-	// 2026-09-26: set A's 2026-09-05 files at K = 512/1024/3900 predate the 2026-09-09 prompt snapshot —
-	// docs/measurements/prefill-ref-identity-2026-09-26.md). A cell with any is VOID, not scored.
+	// identityFail lists the prompts (1-based) whose reference fails the prompt-identity check: KL(reference prompt-final logits ||
+	// the exact arm's) > 1.0, i.e. the reference was generated from different text (set A's older files at K = 512/1024/3900
+	// predate the prompt snapshot; docs/measurements/prefill-ref-identity-2026-09-26.md). A cell with any is VOID, not scored.
 	identityFail []int
 }
 
@@ -477,7 +464,7 @@ type pooledStats struct {
 
 // poolCells implements §3.2's pooled criteria over a model's decision-set cells. No per-cell veto:
 // every quantity is summed/meaned across cells FIRST, and the three criteria are evaluated once,
-// on the pooled totals — the exact repair §3.2 made after the 2026-09-05 per-cell form failed an
+// on the pooled totals — the exact repair §3.2 made after the earlier per-cell form failed an
 // arm of equal quality most of the time by construction (a veto per cell per criterion multiplies
 // the false-fail rate by the cell count).
 func poolCells(cells []*cellSummary) pooledStats {

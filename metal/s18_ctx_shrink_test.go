@@ -14,8 +14,8 @@ import (
 // model alive. Red before S18: the 4096 build declined.
 func TestS18ShrinkCtxToFit(t *testing.T) {
 	const dir = "../testdata/llama-attnfa-tiny" // a 4096-position window: llama-tiny's is 128, which clamps a pinned 4096 into fitting
-	// The probe is a Metal load too: a CPU load prices more (it keeps arm64-repacked weights a Metal load does not), which put the budget above the
-	// Metal build's 4096 need on the first try.
+	// The probe is a Metal load too: a CPU load prices more (it keeps arm64-repacked weights a Metal load does not), which would put
+	// the budget above the Metal build's 4096 need.
 	probe, err := decoder.Load(dir, decoder.Options{Quant: "int4", Backend: "metal"})
 	if err != nil {
 		t.Skipf("llama-attnfa-tiny: %v", err)

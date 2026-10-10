@@ -8,15 +8,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSetAdapter_partialBindErrorReleasesBuffers gates C-04 (audit-metal-2026-09-12.md):
-// SetAdapter's conversion loop used to return immediately on the first bad projection, leaving
-// every earlier layer's already-converted device buffers (A/B plus their uniform buffers) on the
-// device ledger — referenced by nothing (r.loraLayers/r.loraCached are never set on an error
-// return), so they leaked until Close. Every failed bind attempt — a bad rank is the easy way to
-// trigger it, but any mid-loop error does — added to the leak.
+// TestSetAdapter_partialBindErrorReleasesBuffers pins C-04 (docs/audit-metal-2026-09-12.md): a failed SetAdapter must release
+// the device buffers (A/B plus their uniform buffers) of every layer it already converted. They are referenced by nothing
+// (r.loraLayers/r.loraCached are not set on an error return), so a leak lasts until Close, and every failed bind added to it.
 //
-// llama-tiny (4 layers) lets layer 0 convert cleanly before layer 1's invalid rank fails the bind,
-// exercising the actual partial-progress path rather than failing on the very first projection.
+// llama-tiny (4 layers) lets layer 0 convert cleanly before layer 1's invalid rank fails the bind, so the partial-progress
+// path runs rather than a failure on the first projection.
 func TestSetAdapter_partialBindErrorReleasesBuffers(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	const hidden = 64 // testdata/llama-tiny's hidden_size

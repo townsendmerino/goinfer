@@ -285,7 +285,7 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatal(err)
 	}
-	// Unpeaked, as CUDA's glm_ocr gate runs it (amendment 2026-10-09 in the task doc): GLM-OCR-tiny's NeoX control already
+	// Unpeaked, as CUDA's glm_ocr gate runs it (amendment in the task doc): GLM-OCR-tiny's NeoX control already
 	// reads -0.33 flat, and x12.5 makes its 48-wide attention near-argmax, which turns int8 activation rounding into
 	// isolated flips (one position at 0.989 against >= 0.9999 elsewhere, where the CPU's own two quantizations disagree by
 	// more) that say nothing about the rotation.

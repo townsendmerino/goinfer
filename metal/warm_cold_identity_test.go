@@ -65,8 +65,7 @@ func TestPrefillLast_tailContinuationMatchesCold(t *testing.T) {
 
 // TestGenerate_warmRepeatMatchesCold: the same prompt generated twice on one model emits the same tokens, the second time
 // reusing every cached position but the last. Before decoder.PrefillTailExact, a prompt the cold run had prefilled with
-// the batched pass ran its last position through decode on the repeat and diverged some tens of tokens later (on the
-// 2-slot fixture, token 42 of 160); TestMC3Chain_newcomerJoinsAndBothMatchAlone met it as an "MC3 identity defect"
+// the batched pass ran its last position through decode on the repeat and diverged some tens of tokens later; TestMC3Chain_newcomerJoinsAndBothMatchAlone met it as an "MC3 identity defect"
 // because its alone runs were cold and its joint runs warm. Single- and 2-slot models, at 12 tokens (below the 16-token
 // floor: the exact lane both ways), 40 (the pass on one slot, the step on two) and 100 (the pass), greedy.
 func TestGenerate_warmRepeatMatchesCold(t *testing.T) {

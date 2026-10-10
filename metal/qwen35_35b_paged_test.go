@@ -22,12 +22,10 @@ import (
 // a 16 GB box, so the expert set cannot be resident and paging is not an optimization but the only
 // way the model runs at all.
 //
-// WHAT THIS MEASURES AND WHAT IT DOES NOT. Steady-state decode rate through the pager, plus the
-// staging decomposition (how much of a token is expert I/O). It is NOT a peer comparison: no
-// Ollama/llama.cpp arm runs here, and the CPU-paged 1.3-1.4 tok/s figure this lane has quoted was
-// measured in another session on another path, so no ratio against it is computed. See
-// ~/goinfer-bench-logs/PREREGISTERED-qwen35-metal-paging.md for the rule this run was written
-// against, BEFORE it produced a number.
+// WHAT THIS MEASURES AND WHAT IT DOES NOT. Steady-state decode rate through the pager, plus the staging decomposition (how
+// much of a token is expert I/O). It is NOT a peer comparison: no Ollama/llama.cpp arm runs here, and the CPU-paged figure
+// this lane once quoted came from another session on another path, so no ratio against it is computed. The rule this run was
+// written against, before it produced a number, is ~/goinfer-bench-logs/PREREGISTERED-qwen35-metal-paging.md.
 //
 // DECODE IS GREEDY SELF-FEEDING (argmax -> next token), not a random token walk. Routing locality
 // is the whole mechanism under test: a random-ID sequence would destroy the temporal expert reuse
@@ -194,16 +192,13 @@ func TestQwen35_35B_pagedRuns(t *testing.T) {
 	t.Logf("35B paged steady-state %.3f tok/s (median), arm pread=%v slots=%d", 1/med, preadOn, N)
 }
 
-// TestQwen35_35B_cpuPagedBaseline is the DO-NOTHING ARM for the run above: the same checkpoint,
-// same box, same session, decoded through the CPU expert pager (StreamWeights, decoder/moepaging.go)
-// instead of the Metal one. Without it, "Metal paging is faster" would be a cross-session ratio
-// against a number measured on another day — exactly the comparison this repo's own
-// docs/completed/task-zeno-compare.md shows can drift 2.6x from machine load alone (kind-3 gemma4 at one identical
-// config read 1.128 and then 2.917 tok/s).
+// TestQwen35_35B_cpuPagedBaseline is the DO-NOTHING ARM for the run above: the same checkpoint, box and session, decoded
+// through the CPU expert pager (StreamWeights, decoder/moepaging.go) instead of the Metal one. Without it, "Metal paging is
+// faster" would be a cross-session ratio against a number measured on another day, which can drift by multiples from machine
+// load alone (docs/completed/task-zeno-compare.md).
 //
-// IT LIVES IN metal/ AND USES NO METAL. That is deliberate: its only reason to exist is to be the
-// baseline for the Metal number, and a baseline that drifts away from its comparand into another
-// package (and another run) is how the 1.3-1.4 figure went stale in the first place. Same helpers,
+// IT LIVES IN metal/ AND USES NO METAL. That is deliberate: its only reason to exist is to be the baseline for the Metal
+// number, and a baseline that drifts away from its comparand into another package (and another run) goes stale. Same helpers,
 // same seed token, same greedy self-feeding trajectory, same token count.
 //
 // STILL NOT PER-TOKEN INTERLEAVED. It is an adjacent run, not a matched-pair one: the two pagers

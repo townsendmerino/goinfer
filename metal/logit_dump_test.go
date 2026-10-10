@@ -11,12 +11,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestDumpLogitsForBisect writes the resident GPU logits for a fixed 4-token sequence to
-// $GOINFER_DUMP_LOGITS as raw little-endian float32. It exists to back the 9c Step-1
-// "byte-identical" claim with an actual BITWISE diff (parent commit vs HEAD), not just a
-// cosine-vs-CPU threshold: run it on the parent, run it on HEAD, `cmp` the two files. It uses
-// only BuildResident + ForwardEmb + EmbedResidentForTest — API identical across the refactor —
-// so the same source compiles and runs on both commits. Skips unless the env var is set.
+// TestDumpLogitsForBisect writes the resident GPU logits for a fixed 4-token sequence to $GOINFER_DUMP_LOGITS as raw
+// little-endian float32, so two builds can be compared bitwise with `cmp` rather than by a cosine-vs-CPU threshold. It uses
+// only BuildResident + ForwardEmb + EmbedResidentForTest, whose API must stay identical across a refactor so the same source
+// compiles on both builds. Skips unless the env var is set.
 func TestDumpLogitsForBisect(t *testing.T) {
 	requireHeavyModel(t)
 	out := os.Getenv("GOINFER_DUMP_LOGITS")

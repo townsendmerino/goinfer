@@ -8,27 +8,20 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMinistral3ResidentSmokeMetal is G5's FeatAttnTemp row (docs/tasks/task-gpu-paths-2026-09.md)
-// smoke gate: the model actually goes resident and produces finite, non-degenerate output when
-// the post-RoPE query scale is genuinely exercised (testdata/ministral3-tiny's
-// AttnTempOrigMaxPos=8, so a 32-token run steps through four distinct scale values, past the
+// TestMinistral3ResidentSmokeMetal is the smoke gate for G5's FeatAttnTemp row (docs/tasks/task-gpu-paths-2026-09.md): the
+// model goes resident and produces finite, non-degenerate output when the post-RoPE query scale is genuinely exercised
+// (testdata/ministral3-tiny has AttnTempOrigMaxPos=8, so a 32-token run steps through four distinct scale values, past the
 // identity-at-short-prompts trap AttnTempBeta's own comment warns about).
 //
-// This is DELIBERATELY NOT a resident-vs-CPU cosine floor — same finding as G5 row 1's
-// smollm3-tiny (metal/smollm3_resident_parity_test.go's TestSmolLM3ResidentSmokeMetal has the
-// full writeup). MEASURED here too, not assumed: with the real fix and with it force-disabled
-// (qTempScale always 1, i.e. the attn-temp scale silently dropped on every position), the worst
-// cosine against the CPU reference over 32 tokens was 0.96446 and 0.96525 respectively — a
-// ~0.0008 spread, indistinguishable from noise. testdata/ministral3-tiny is ALSO seeded/synthetic
-// (scripts/pin_ministral3_tiny.py), so despite its own test file's comment about deliberately
-// exercising AttnTempOrigMaxPos and a real YaRN mscale ratio nontrivially, int8-on-random-weights
-// noise still dominates a whole-model resident-vs-CPU comparison at this scale.
+// It is deliberately not a resident-vs-CPU cosine floor: with the attn-temp scale on and with it force-disabled (qTempScale
+// always 1) the worst cosine against the CPU reference was indistinguishable, because the fixture is seeded/synthetic
+// (scripts/pin_ministral3_tiny.py) and int8-on-random-weights noise dominates a whole-model comparison at this scale. The
+// write-up is in metal/smollm3_resident_parity_test.go's TestSmolLM3ResidentSmokeMetal; the figures are in
+// docs/code-notes/metal.md#TestMinistral3ResidentSmokeMetal.
 //
-// The actual correctness gate is decoder.TestAttnTempScale_matchesSequentialFormula — a pure,
-// backend-agnostic unit test of the exact formula both Model.AttnTempScale (decode) and
-// Model.AttnTempParams (CUDA's batched prefill, which must recompute it per row device-side)
-// expose, no GPU, no quantization noise. This test's only job: does declaring FeatAttnTemp let
-// the model go resident and run without error/NaN.
+// The correctness gate is decoder.TestAttnTempScale_matchesSequentialFormula, a pure unit test of the formula both
+// Model.AttnTempScale (decode) and Model.AttnTempParams (CUDA's batched prefill, which recomputes it per row device-side)
+// expose. This test's only job: declaring FeatAttnTemp lets the model go resident and run without error or NaN.
 func TestMinistral3ResidentSmokeMetal(t *testing.T) {
 	const ckpt = "../testdata/ministral3-tiny"
 

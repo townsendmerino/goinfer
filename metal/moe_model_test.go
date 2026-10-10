@@ -278,18 +278,14 @@ func writeSTF32(t *testing.T, path string, tensors map[string]stf32) {
 	}
 }
 
-// TestMoE_declinesPrefill: MoE moved from the decline side to the admit side on 2026-09-08 (G8
-// MoE half, docs/tasks/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
-// row by row off the batched residual, reusing the unchanged per-token decode MoE dispatch chain
-// (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, metal/moe.go); the name is historical
-// (kept so `git log -p` on it still tells the right story — decoder/gptoss_decline_test.go
-// precedent). Both MoE and its dense twin must now accept.
+// TestMoE_declinesPrefill: the name is historical (kept for `git log -p` on it, decoder/gptoss_decline_test.go precedent). MoE
+// is admitted by the f16 MMA prefill path (G8 MoE half, docs/tasks/task-gpu-paths-2026-09.md), which runs a MoE layer's FFN row
+// by row off the batched residual, reusing the per-token decode MoE dispatch chain
+// (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, metal/moe.go). Both MoE and its dense twin must accept.
 //
-// Reuses the same identical-experts trick as TestMoE_assemblyVsDense above (8 identical experts +
-// zeroed shared expert ⇒ MoE FFN is mathematically equal to the dense FFN regardless of routing),
-// so this also gets a free numeric check that the dst-redirection (moeDst, docs/task-gpu-paths-
-// 2026-09.md) didn't drop or double-count anything: MoE prefill logits must match dense prefill
-// logits closely, not just both "succeed".
+// Same identical-experts trick as TestMoE_assemblyVsDense above (8 identical experts + zeroed shared expert, so the MoE FFN
+// equals the dense FFN regardless of routing), so this also checks numerically that the dst-redirection (moeDst) dropped or
+// double-counted nothing: MoE prefill logits must match dense prefill logits closely, not just both succeed.
 func TestMoE_declinesPrefill(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -317,9 +313,8 @@ func TestMoE_declinesPrefill(t *testing.T) {
 		}
 		return &metalResident{r: r, hidden: r.H}
 	}
-	// This test exercises the ARCH admission (MoE now has a row-by-row FFN path) — not the
-	// bit-identity decline that gates the Metal backend by default (54% divergence, §A2-Metal).
-	// Opt past that outer gate so the arch logic is what's under test.
+	// This test exercises the arch admission (MoE has a row-by-row FFN path), not the bit-identity decline that gates the Metal
+	// backend by default (§A2-Metal). Opt past that outer gate so the arch logic is what's under test.
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
 	// 8 embeddings is below even the lowered 16-token floor (metalFastPrefillFloor); this test is
 	// about MoE arch admission, not the floor, so disable it the same way prefill_ttft_test.go does.

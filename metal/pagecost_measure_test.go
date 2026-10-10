@@ -38,22 +38,16 @@ func (r *resident) forwardLogitsPerLayerSubmit(pos int) []float32 {
 	return r.logitsHost
 }
 
-// TestPageCost_submissionStructure is Step-6 Step-0: PRICE what losing the value-independent
-// pre-encode costs, to decide whether a synchronous Metal expert-paging path is viable or whether
-// the speculative (prefetch-last-token's-experts) design is mandatory.
+// TestPageCost_submissionStructure prices what losing the value-independent pre-encode costs, to decide whether a synchronous
+// Metal expert-paging path is viable or the speculative (prefetch-last-token's-experts) design is mandatory (Step-6 Step-0).
 //
-// HONEST SCOPE (read this before trusting the number): the ask was to measure the GENERIC Mixtral-
-// class MoE path on a fitting checkpoint. There is NO such checkpoint on this Mac (only gemma4-26b,
-// which doesn't fit and is the new path), so this measures the SUBMISSION-STRUCTURE cost on a DENSE
-// model (qwen2.5-1.5b, 28 layers) — the dominant, architecture-independent term (1 command buffer/
-// token vs ~nL/token). It is a faithful LOWER BOUND on the per-layer MoE regime: MoE adds the router
-// readback + expert-stage host work at each boundary, which overlaps the GPU-idle gap this already
-// pays for. It is NOT the MoE-path number and is not reported as one. Option 3 (MTLSharedEvent
-// handshake — one submit/token + per-layer CPU↔GPU events) needs aikit bindings that don't exist yet;
-// it is measured only if regime (2) here is expensive enough to matter.
+// Scope: no Mixtral-class MoE checkpoint fits this Mac, so this measures the submission-structure cost on a DENSE model
+// (qwen2.5-1.5b, 28 layers), the dominant architecture-independent term (1 command buffer/token vs ~nL/token). It is a
+// lower bound on the per-layer MoE regime (MoE adds the router readback and expert-stage host work at each boundary) and is
+// not the MoE-path number. Option 3 (MTLSharedEvent handshake) is TestPageCost_sharedEventReal.
 //
-// Reports baseline (pipelined pre-encode) and per-layer-submit as tok/s + ms/token, best of 3 warm
-// runs (first discarded), greedy, same model + prompt. Heavy-gated (loads a ~1 GB checkpoint).
+// Reports baseline (pipelined pre-encode) and per-layer-submit as tok/s + ms/token, best of 3 warm runs (first discarded),
+// greedy, same model + prompt. Heavy-gated (loads a ~1 GB checkpoint).
 func TestPageCost_submissionStructure(t *testing.T) {
 	requireHeavyModel(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
@@ -105,12 +99,10 @@ func TestPageCost_submissionStructure(t *testing.T) {
 		t.Fatalf("per-layer-submit argmax %d != single-submit %d at pos 0 — the instrumented forward diverges; number would be meaningless", b, a)
 	}
 
-	// Baseline is ForwardEmb (INLINE single command buffer/token), NOT ForwardEmbPipe: the pipelined
-	// path runs a persistent executor GOROUTINE, and measuring the inline per-layer regime while that
-	// goroutine is alive contends the single Metal GPU and inflates per-layer (an earlier revision
-	// read +106% that way; clean it is ~+43%). Both regimes measured inline, same conditions. The
-	// encode-ahead OVERLAP that Pipe adds is small here anyway (~1-2%) — decode is GPU-bound, so the
-	// dominant cost is the SUBMISSION STRUCTURE (1 command buffer/token vs ~nL), which this isolates.
+	// Baseline is ForwardEmb (inline, one command buffer/token), not ForwardEmbPipe: the pipelined path runs a persistent executor
+	// goroutine, and measuring the inline per-layer regime while it is alive contends the single Metal GPU and inflates
+	// per-layer. Both regimes are measured inline, same conditions. Decode is GPU-bound, so the dominant cost is the submission
+	// structure, which this isolates.
 	baseMs := bestMsPerTok(func(pos int) []float32 { return r.ForwardEmb(emb[pos], pos) })
 	perLayerMs := bestMsPerTok(func(pos int) []float32 {
 		copy(r.x.Floats(), emb[pos])

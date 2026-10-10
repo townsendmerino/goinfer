@@ -25,11 +25,9 @@ func TestMaxThreadgroupStageBytes(t *testing.T) {
 		{"inter over limit", 1024, 1024, 16385, 0, 0, 32770, true},               // one past → declines
 		{"gemma4 moe inter over", 2048, 2048, 0, 20000, 0, 40000, true},
 		{"huge hidden over", 20000, 2048, 0, 0, 0, 40000, true},
-		// N-32: DeltaNet's out-proj staging (deltanet.go dispatches dp.valueDim*2) was missing
-		// from this budget, so a model whose value dim exceeds every other staged width passed
-		// the M-11 check and then exceeded the device limit at dispatch. Only these two rows
-		// exercise the new term — without them the fix is ungated, which is where this test was
-		// after the first attempt at adding them silently no-opped.
+		// N-32: DeltaNet's out-proj staging (deltanet.go dispatches dp.valueDim*2) must be in this budget, or a model whose value dim
+		// exceeds every other staged width passes the M-11 check and then exceeds the device limit at dispatch. Only these two rows
+		// exercise that term.
 		{"deltanet value dim dominates", 2048, 2048, 0, 0, 18000, 36000, true},
 		{"deltanet value dim under the others", 8192, 4096, 0, 0, 1024, 16384, false},
 	} {

@@ -30,12 +30,10 @@ func TestS2KernelsCompile(t *testing.T) {
 	}
 }
 
-// gemmS2Kernels holds R16's prototypes (1-4; prototype 4 became production 2026-09-25) and the retired production
-// kernel gemm_w4f16_store_r15. It began as R16's first prototype (docs/tasks/red-october.md; design in
-// docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): the int4 prefill GEMM restructured in the shape of
-// llama.cpp's classic kernel_mul_mm, which S1b measured at >= 2.96 TFLOPS on this machine against the current
-// gemm_w4f16_store's ~0.75 under sustained load. TEST-ONLY until R16's band is met — nothing in production
-// compiles it.
+// gemmS2Kernels holds R16's prototypes (1-4; prototype 4 became production) and the retired production kernel
+// gemm_w4f16_store_r15. It began as R16's first prototype (docs/tasks/red-october.md; design in
+// docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): the int4 prefill GEMM restructured in the shape of llama.cpp's
+// classic kernel_mul_mm. TEST-ONLY: nothing in production compiles it.
 //
 // Same inputs, outputs and epilogue as gemm_w4f16_store (A [M×K] f16 row-major, W [N×K/8] packed nibbles,
 // WS [N×K/32] f16 scales, C [M×N] f16; mode 0 plain / 1 +bias / 2 +residual), so the benchmark can swap it in

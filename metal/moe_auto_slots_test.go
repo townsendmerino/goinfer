@@ -93,10 +93,9 @@ func TestMoeTopK_realFixtures(t *testing.T) {
 	}
 }
 
-// TestMetalMoESlotsRequest_autoOnlyWithCacheExperts is the wiring half of M-13: --moe-cache-experts
-// alone (no --moe-cache-slots) must now reach autoMoESlots and produce a real, clamped slot
-// request — not the old "" (unpaged, every expert resident) metalMoESlotsRequest returned before
-// this fix, regardless of what number the machine's own RAM happens to produce.
+// TestMetalMoESlotsRequest_autoOnlyWithCacheExperts is the wiring half of M-13: --moe-cache-experts alone (no
+// --moe-cache-slots) must reach autoMoESlots and produce a real, clamped slot request, not "" (unpaged, every expert
+// resident), whatever number the machine's own RAM happens to produce.
 func TestMetalMoESlotsRequest_autoOnlyWithCacheExperts(t *testing.T) {
 	m, err := decoder.Load("../testdata/mixtral-tiny", decoder.Options{Quant: "int4"})
 	if err != nil {

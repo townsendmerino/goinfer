@@ -11,29 +11,25 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestThetaProbe_Metal measures Theta — the marginal cost of one extra verify node, in units
-// of one single-token target step — on the Metal resident path. Method is identical to the
-// CUDA probe (cuda/theta_probe_test.go) and the CPU control (decoder/theta_probe_test.go) so
-// the three numbers are directly comparable: seed `depth` positions, then time ForwardN over a
-// ladder of widths, and take Theta = (least-squares slope of T(n)) / T(1).
+// TestThetaProbe_Metal measures Theta, the marginal cost of one extra verify node in units of one single-token target step, on
+// the Metal resident path. Method is identical to the CUDA probe (cuda/theta_probe_test.go) and the CPU control
+// (decoder/theta_probe_test.go) so the numbers are directly comparable: seed `depth` positions, then time ForwardN over a ladder
+// of widths, and take Theta = (least-squares slope of T(n)) / T(1).
 //
-// decoder/spec_adaptive.go ships Theta = 0.5, calls it the batched-CPU value, and says
-// "measure it". CPU measured 0.456, CUDA 0.155-0.251. Metal was unmeasured.
+// decoder/spec_adaptive.go ships Theta = 0.5 as the batched-CPU value and says "measure it".
 //
-// WHAT TO EXPECT HERE, AND WHY IT IS NOT THE CUDA STORY. CUDA's low Theta comes from a verify
-// that streams the weights ONCE for the whole block, so the marginal node is far cheaper than a
-// step. Metal's ForwardN (metal/backend.go:187) is NOT a batched kernel — it is a plain loop of
-// single-token Forward calls. If that is the whole story then T(n) = n*T(1) and Theta ~ 1.0,
-// which would mean the controller is running Metal on a constant that is too LOW and therefore
-// OVER-drafting — the opposite direction from CUDA, where 0.5 is too high and under-drafts.
-// That is a prediction from reading the dispatch, and the point of this test is to measure it
-// rather than assert it.
+// WHAT TO EXPECT HERE, AND WHY IT IS NOT THE CUDA STORY. CUDA's low Theta comes from a verify that streams the weights ONCE for
+// the whole block, so the marginal node is far cheaper than a step. Metal's ForwardN (metalResident.ForwardN in metal/backend.go)
+// runs ForwardBatch, one command buffer with a layer-major schedule (weights streamed once per layer across the N tokens), and
+// falls back to a plain loop of single-token Forward calls only for paged MoE and Gemma 4 E-models. An earlier version of this
+// comment predicted T(n) = n*T(1) and Theta ~ 1.0 (a constant that is too LOW, so the controller over-drafts: the opposite
+// direction from CUDA) from reading the dispatch of the then-loop; that prediction predates ForwardBatch, and the point of this
+// test is to measure Theta rather than assert it.
 //
-// TruncateTo is a NO-OP on Metal (metal/backend.go:213), unlike CUDA where the probe leans on
-// it to hold context depth constant between timed calls. It is safe here for the reason its own
-// comment gives — KV positions are overwritten on write and attention reads only keys[0..pos],
-// so re-running ForwardN at the same startPos re-attends over the same span. It is called
-// anyway, so the two probes stay line-for-line comparable.
+// TruncateTo is a NO-OP on Metal (metalResident.TruncateTo in metal/backend.go), unlike CUDA where the probe leans on it to hold
+// context depth constant between timed calls. It is safe here for the reason its own comment gives: KV positions are overwritten
+// on write and attention reads only keys[0..pos], so re-running ForwardN at the same startPos re-attends over the same span. It
+// is called anyway, so the two probes stay line-for-line comparable.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1 \
 //	  go test -tags "darwin goinfer_testhooks" ./metal/ -run TestThetaProbe_Metal -v

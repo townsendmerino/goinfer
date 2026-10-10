@@ -15,16 +15,14 @@ import (
 // tokenizer.
 var gemmaPrefillPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88, 21, 64, 9, 150}
 
-// TestPrefillParityGemma is the G8 gate (docs/tasks/task-gpu-paths-2026-09.md): the batched f16 MMA
-// prefill path, extended this row to admit Gemma's sandwich norms / (1+w) RMS offset / GeGLU
-// (prefillFeatures, metal/model.go), must match the sequential Forward loop's last-token logits
-// on a REAL Gemma checkpoint — same structure as TestPrefillParity, same bar (argmax match,
-// cosine >= 0.95: prefill's f16 activations vs decode's int8 mean a high-but-not-exact cosine is
-// expected, not a bug).
+// TestPrefillParityGemma is the G8 gate (docs/tasks/task-gpu-paths-2026-09.md): the batched f16 MMA prefill path, which admits
+// Gemma's sandwich norms / (1+w) RMS offset / GeGLU (prefillFeatures, metal/model.go), must match the sequential Forward loop's
+// last-token logits on a REAL Gemma checkpoint: same structure as TestPrefillParity, same bar (argmax match, cosine >= 0.95;
+// prefill's f16 activations vs decode's int8 mean a high-but-not-exact cosine is expected, not a bug).
 //
-// testdata/gemma3-vl-tiny (not a downloaded heavy model): a real small Gemma3 VL checkpoint,
-// already used by gpu/gemma3_resident_parity_test.go (G6) for the identical reason — only its
-// text tower is exercised here (a plain int token prompt never touches the vision encoder).
+// testdata/gemma3-vl-tiny (not a downloaded heavy model): a real small Gemma3 VL checkpoint, already used by
+// gpu/gemma3_resident_parity_test.go (G6) for the identical reason; only its text tower is exercised here (a plain int token
+// prompt never touches the vision encoder).
 func TestPrefillParityGemma(t *testing.T) {
 	const ckpt = "../testdata/gemma3-vl-tiny"
 	if _, err := os.Stat(ckpt); err != nil {
@@ -91,15 +89,12 @@ func TestPrefillParityGemma(t *testing.T) {
 	t.Logf("gemma prefill last-token argmax matches sequential ✓ (cosine %.4f)", cos)
 }
 
-// TestPrefillDeclinesGemma4PerLayerGeom pins the OTHER half of G8's admission: dense Gemma 4's
-// local/global attention layers genuinely differ in head_dim (256 vs 512), which PrefillLast's
-// uniform-g0 fast path (reads r.layers[0].geom once, reuses it for every layer) cannot represent
-// — a family that shares Gemma 3's exact ResidentFeature set otherwise (see decoder/features.go's
-// residentPerLayerGeomBackends comment: "Gemma 3 and dense Gemma 4 derive the IDENTICAL feature
-// set"), so admitting FeatSandwichNorm/FeatGatedGELU/etc without this separate guard would have
-// silently admitted Gemma 4 here too, right after the Gemma 3 admission this row's whole point
-// was to land. testdata/gemma4-dense-twogeom-tiny is built specifically to have two distinct
-// head_dim geometries (unlike every other tiny fixture, which is uniform by construction).
+// TestPrefillDeclinesGemma4PerLayerGeom pins the other half of G8's admission: dense Gemma 4's local/global attention layers
+// differ in head_dim (256 vs 512), which PrefillLast's uniform-g0 fast path (reads r.layers[0].geom once, reuses it for every
+// layer) cannot represent. Gemma 4 shares Gemma 3's exact ResidentFeature set (decoder/features.go, residentPerLayerGeomBackends:
+// "Gemma 3 and dense Gemma 4 derive the IDENTICAL feature set"), so admitting FeatSandwichNorm/FeatGatedGELU/etc would
+// otherwise admit Gemma 4 here too. testdata/gemma4-dense-twogeom-tiny has two distinct head_dim geometries (every other tiny
+// fixture is uniform by construction).
 func TestPrefillDeclinesGemma4PerLayerGeom(t *testing.T) {
 	const ckpt = "../testdata/gemma4-dense-twogeom-tiny"
 	if _, err := os.Stat(ckpt); err != nil {

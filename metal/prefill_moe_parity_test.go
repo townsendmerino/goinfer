@@ -31,17 +31,15 @@ func TestPrefillParityMoE(t *testing.T) {
 	testPrefillParityMoEFixture(t, "../testdata/mixtral-tiny", false, 0.95)
 }
 
-// TestPrefillParityMoEGatedShared exercises the OTHER branch encodeMoESharedExpert's
-// parameterization (this row) must get right: a sigmoid-GATED always-on shared expert
-// (FeatMoEGatedShared, Qwen2-MoE), not just the ungated GLM/DeepSeek shape the plain mixtral
-// fixture above never touches at all (mixtral has no shared expert).
+// TestPrefillParityMoEGatedShared exercises the other branch encodeMoESharedExpert's parameterization must get right: a
+// sigmoid-GATED always-on shared expert (FeatMoEGatedShared, Qwen2-MoE), not just the ungated GLM/DeepSeek shape the plain
+// mixtral fixture above never touches (mixtral has no shared expert).
 //
 // The fixtures are the two committed gated-shared tiny checkpoints, both DeltaNet hybrids whose MoE layers take the same
-// batched shared-expert dispatch (since D-B01). It used to be testdata/tiny-qwen2-moe, a per-machine download whose
-// moe_intermediate_size of 44 the int4 group of 32 rejects, so BuildResident declined it and the test could only fail.
-// The cosine bar is 0.999, not the plain MoE test's 0.95: on these fixtures the gate is a small term, and dropping the
-// sigmoid (gate fixed at 1) still clears 0.95 on qwen35-tiny (0.99813) while reading 0.9998 / 0.9994 unmutated
-// (measured 2026-10-05). At 0.999 that mutation fails both.
+// batched shared-expert dispatch (D-B01). testdata/tiny-qwen2-moe, a per-machine download, cannot serve: its
+// moe_intermediate_size of 44 is rejected by the int4 group of 32, so BuildResident declines it. The cosine bar is 0.999, not
+// the plain MoE test's 0.95: on these fixtures the gate is a small term, and dropping the sigmoid (gate fixed at 1) still
+// clears 0.95 on qwen35-tiny while reading below 0.999 where unmutated runs read above it. At 0.999 that mutation fails both.
 func TestPrefillParityMoEGatedShared(t *testing.T) {
 	for _, ckpt := range []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny"} {
 		t.Run(ckpt[len("../testdata/"):], func(t *testing.T) { testPrefillParityMoEFixture(t, ckpt, true, 0.999) })

@@ -45,7 +45,7 @@ import (
 // Two more are REPORTED, not gating, per the doc's own table:
 //   - Seed-distribution KL divergence vs the exact path (decoder.KLDivergenceForTest).
 //   - Greedy stream divergence rate — NOT re-measured here. It was once measured and gated by
-//     TestMetalPrefillDivergenceRate (54%, docs/ollama-chase.md:623); that test no longer exists
+//     TestMetalPrefillDivergenceRate (docs/ollama-chase.md); that test no longer exists
 //     (superseded by TestPrefillGateVsReference's pooled §3.2 criteria, G-07 audit-
 //     metal-2026-09-12.md) — the number is historical record, not backed by a live test.
 //
@@ -64,14 +64,12 @@ func TestPrefillGate(t *testing.T) {
 		t.Skip("long-running gate: skipped in -short")
 	}
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1") // the FAST arm; the exact arm calls Forward directly
-	// Pin the "exact" arm off R2's decode attention lane (default-on since 2026-09-21, see
+	// Pin the "exact" arm off R2's decode attention lane (default-on, see
 	// prefill_gate_ref_test.go's identical pin for why) — this test is about the prefill lane.
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
-	// G-07 (audit-metal-2026-09-12.md): this test's K=256 decision cell used to Fatalf outright —
-	// metalFastPrefillFloor was 512 and nothing here overrode it, so PrefillLast declined before
-	// any comparison ran. The floor has since dropped to 256 (M-02) and then 64 (R3), which clears
-	// K=256 on its own, but disable it explicitly anyway so this test does not silently break
-	// again the next time the floor default moves.
+	// G-07 (docs/audit-metal-2026-09-12.md): the K=256 decision cell must not Fatalf because PrefillLast declined below
+	// metalFastPrefillFloor. The floor default has since dropped below 256, but disable it explicitly so this test does not
+	// silently break the next time the default moves.
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 
 	models := []struct {
@@ -183,10 +181,9 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 			modelName, K, seedHardFails, contHardFails, meanAgreement*100, meanSeedKL, meanKL,
 			map[bool]string{true: "FAILED", false: "PASSED"}[gateFail])
 	}
-	// G-07 (audit-metal-2026-09-12.md): TestMetalPrefillDivergenceRate, the test that originally
-	// measured this 54%, no longer exists in the tree (superseded by TestPrefillGateVsReference's
-	// pooled §3.2 criteria, which withdrew the exact-as-oracle scoring that number came from) —
-	// the figure itself is historical record, not a live test (docs/ollama-chase.md:623).
+	// G-07 (docs/audit-metal-2026-09-12.md): TestMetalPrefillDivergenceRate, which measured this figure, no longer exists
+	// (superseded by TestPrefillGateVsReference's pooled §3.2 criteria); the figure is historical record (docs/ollama-chase.md),
+	// not a live test.
 	fmt.Printf("[gate] %s: greedy stream divergence — NOT re-measured here; historical figure 54%% "+
 		"(docs/ollama-chase.md, exact-as-oracle scoring since withdrawn by §3.2 — no live test backs "+
 		"this number). Reported, not gating (§3).\n", modelName)
@@ -224,14 +221,9 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 
 	// EXACT — sequential Forward per token, today's shipped default.
 	//
-	// Forward's return is a REUSED buffer (metal/model.go ForwardEmbPipe: "Returns logits[V]
-	// (reused buffer; consume before the next call)") — every capture below is cloned
-	// immediately. Storing the raw slice instead silently aliases whatever the LAST Forward call
-	// in the whole cell wrote, which is exactly the bug this comment is here to stop someone
-	// from reintroducing: it first shipped that way, and the seed and every continuation position
-	// all came back reading the same final buffer, producing a self-contradictory result (a
-	// "42% seed gap" while position 0 of the continuation — which SHOULD be the same comparison —
-	// quietly agreed).
+	// Forward's return is a REUSED buffer (metal/model.go ForwardEmbPipe: "Returns logits[V] (reused buffer; consume before the
+	// next call)"), so every capture below is cloned immediately. Storing the raw slice would alias whatever the LAST Forward call
+	// in the whole cell wrote, and the seed and every continuation position would read the same final buffer.
 	lastLog := time.Now()
 	var exactSeed []float32
 	for i := range K {

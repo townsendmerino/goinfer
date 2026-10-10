@@ -39,7 +39,7 @@ func TestPrefillTTFT(t *testing.T) {
 		t.Skipf("no fixture at %s (set GOINFER_METAL_MODEL)", path)
 	}
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1") // measurement-only; see prior findings
-	// PrefillLast declines below metalFastPrefillFloor (512 when this sweep was written, 64 since R3), so the sweep
+	// PrefillLast declines below metalFastPrefillFloor, so the sweep
 	// turns the floor off, as the gate test does (metal/prefill_gate_ref_test.go), to measure every point it lists.
 	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 

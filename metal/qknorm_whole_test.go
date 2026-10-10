@@ -8,17 +8,13 @@ import (
 	"testing"
 )
 
-// TestQKNorm_wholeVector is G5's real gate for FeatQKNormWhole (docs/tasks/task-gpu-paths-2026-09.md,
-// Olmo 3/Olmo Hybrid): unlike the last two G5 rows, this feature has no new pure-Go formula to
-// unit-test — the whole change is a DISPATCH-GEOMETRY reinterpretation of the ALREADY-SHIPPED
-// per-head qk_norm kernel (encodeAttention passes nH=1,nKV=1,hd=nH_orig*hd_orig instead of the
-// per-head geometry). This test proves that reinterpretation directly against the real kernel
-// (compiled from allKernels, the production MSL source — same discipline as TestQKNorm above),
-// with an EXACT per-component comparison against a whole-vector CPU RMSNorm reference (rows=1,
-// dim=nH*hd, mirroring decoder/attention.go's rmsNorm(q,QNorm,1,nH*hd,...) exactly) — no GPU
-// quantization noise anywhere in this path (the kernel takes and returns plain f32), so this is
-// as decisive as G5 rows 1-2's pure decoder-level unit tests, just one level lower (kernel
-// instead of Go function).
+// TestQKNorm_wholeVector is G5's gate for FeatQKNormWhole (docs/tasks/task-gpu-paths-2026-09.md, Olmo 3/Olmo Hybrid). The
+// feature has no new pure-Go formula: it is a dispatch-geometry reinterpretation of the shipped per-head qk_norm kernel
+// (encodeAttention passes nH=1, nKV=1, hd=nH_orig*hd_orig instead of the per-head geometry). This test checks that
+// reinterpretation against the real kernel (compiled from allKernels, the production MSL, as in TestQKNorm) with a
+// per-component (max |diff| <= 1e-4) comparison against a whole-vector CPU RMSNorm reference (rows=1, dim=nH*hd, as
+// decoder/attention.go's rmsNorm(q,QNorm,1,nH*hd,...)); the kernel takes and returns plain f32, so no quantization noise
+// enters.
 func TestQKNorm_wholeVector(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

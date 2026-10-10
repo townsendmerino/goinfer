@@ -14,26 +14,19 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestLoRAResidentParityMetal is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-
-// time LoRA applied on Metal's resident decode path must match the CPU reference (the same
-// adapter applied via decoder's generic gatedMLP/causalAttention forward) to within the
-// established resident-vs-CPU floor. 0.95 is not a looser bar invented for this test — it is the
-// SAME floor gpt2_resident_parity_test.go established for whole-model resident-vs-CPU decode
-// logits (hiddenlast_resident_parity_test.go's comment explains why 0.9999 does not apply once
-// the LM head's vocab projection amplifies quantization noise); this is that same comparison,
-// with a LoRA delta riding on top of both sides.
+// TestLoRAResidentParityMetal is the G3 numeric gate (docs/tasks/task-gpu-paths-2026-09.md): compute-time LoRA on Metal's
+// resident decode path must match the CPU reference (the same adapter through decoder's generic gatedMLP/causalAttention
+// forward) within the resident-vs-CPU floor. 0.95 is the floor gpt2_resident_parity_test.go set for whole-model resident-vs-CPU
+// logits (hiddenlast_resident_parity_test.go explains why 0.9999 does not apply once the LM head amplifies quantization
+// noise), here with a LoRA delta on both sides.
 //
-// Drives decoder.ResidentAdapter directly via ResidentForwardForTest/ResidentAdapterLayersForTest
-// (bypassing Session/generateInto's session-cache plumbing) to isolate the KERNEL correctness
-// question — the WIRING question (does an adapter session's request actually reach
-// ResidentAdapter, does a backend without it decline correctly) is already gated by
+// It drives decoder.ResidentAdapter directly (ResidentForwardForTest/ResidentAdapterLayersForTest) to isolate kernel
+// correctness; the wiring (does an adapter session reach ResidentAdapter, does a backend without it decline) is gated by
 // decoder/resident_adapter_seam_test.go's fake-backend tests.
 //
-// llama-tiny (testdata/llama-tiny), not a hand-built fixture: a real safetensors checkpoint
-// already committed and already known resident-eligible, GQA (4 heads/2 kv heads) so the o-proj
-// and q/k/v-with-different-widths sites are all genuinely exercised, not degenerate MHA. Loaded
-// at int4 (not int8int8) since G10 already established int8int8 silently becomes int4 numerics
-// on Metal anyway — int4 is the honest, cheaper-to-load route to the same resident precision.
+// Fixture: testdata/llama-tiny, a committed resident-eligible safetensors checkpoint with GQA (4 heads/2 kv heads), so the
+// o-proj and q/k/v-of-different-widths sites are genuinely exercised. Loaded at int4: int8int8 becomes int4 numerics on Metal
+// anyway (G10).
 func TestLoRAResidentParityMetal(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	adapterDir := buildLlamaTinyLoRAFixture(t)
@@ -76,10 +69,8 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 		t.Fatalf("cpu compute-time prefill: %v", err)
 	}
 
-	// runResident drives ntok sequential Forward calls from a clean KV (Reset) and returns a COPY
-	// of the last one's logits — Forward's own doc says its returned slice is reused across calls
-	// (it aliases resident-owned storage), so a caller comparing two runs' results must copy
-	// before the second run's calls overwrite the first's.
+	// runResident drives ntok sequential Forward calls from a clean KV (Reset) and returns a copy of the last logits: Forward's
+	// slice aliases resident-owned storage and is reused across calls.
 	runResident := func() []float32 {
 		t.Helper()
 		rf.Reset()
@@ -101,26 +92,18 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 	cos, maxAbs := cosF32(want, got)
 	t.Logf("resident-with-adapter vs CPU-with-adapter: cosine=%.6f maxAbs=%.4g argmax_match=%v",
 		cos, maxAbs, argmaxF32(want) == argmaxF32(got))
-	// N-14/N-52 (audit-metal-2026-09-12.md, audit-2026-09-10.md): this floor is far looser than
-	// what a correct bind actually measures on this machine — 0.999969 here, 0.998835 on the
-	// armed-executor variant below (both this session's real runs, not a single cherry-picked
-	// number) — so a bug that drops one of the seven per-layer projections could plausibly still
-	// clear 0.95 if that projection's contribution is small relative to total variance; the
-	// vacuousness check below only proves "some effect survives", not "every targeted projection
-	// fired". NOT tightened here: two single-machine runs a few thousandths apart is not enough to
-	// pick a real "measured floor minus noise" number with confidence, and a mis-set tight floor
-	// risks flaking CI on legitimate cross-machine/quantization variance — parked per N-52's own
-	// recommendation, not rejected.
+	// N-14/N-52 (docs/audit-metal-2026-09-12.md, docs/audit-2026-09-10.md): 0.95 is far looser than a correct bind measures, so a
+	// bug dropping one of the seven per-layer projections could still clear it when that projection's share of the variance is
+	// small; the vacuousness check below proves only that some effect survives, not that every projection fired. Deliberately not
+	// tightened (parked, not rejected): two single-machine runs are too few to set a measured-floor-minus-noise bar without
+	// risking CI flakes. Figures: docs/code-notes/metal.md#TestLoRAResidentParityMetal.floor
 	if cos < 0.95 {
 		t.Errorf("resident LoRA cosine %.6f < 0.95 — below the established resident-vs-CPU floor", cos)
 	}
 
-	// Vacuousness check (mirrors decoder/lora_compute_test.go's own "the adapter is not vacuous"
-	// assertion, done here on Metal specifically): clearing the adapter and re-running the SAME
-	// prompt from a clean KV must produce DIFFERENT logits. If it didn't, every dispatch this row
-	// added could be silently no-op'ing (the exact class of bug G6 found twice this session) and
-	// the cosine check above would still pass by accident, since it would just be comparing the
-	// CPU adapter's effect against the (identical either way) unadapted resident output.
+	// Vacuousness check (as in decoder/lora_compute_test.go): clearing the adapter and re-running the same prompt from a clean
+	// KV must give different logits. Otherwise every dispatch this row added could be a silent no-op (the class of bug G6 found
+	// twice) and the cosine check above would still pass, comparing the CPU adapter's effect against identical unadapted output.
 	if err := ra.SetAdapter(nil); err != nil {
 		t.Fatalf("resident SetAdapter(nil): %v", err)
 	}
@@ -131,15 +114,12 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 	}
 }
 
-// TestLoRAResidentParityMetal_armedExecutorThenBind is C-07 (audit-2026-09-10), and closes G-06's
-// Metal half: the ORIGINAL gate above binds SetAdapter on a fresh, never-yet-used executor
-// (r.execReq == nil, nothing pre-encoded) and only compares the LAST token, so it is green over
-// C-07 by construction — that ordering can never observe a stale pre-encoded buffer. This test
-// drives the one ordering that can: arm the pipelined executor with a plain (no-adapter) Forward
-// call FIRST — which, before C-07's fix, leaves a "next" command buffer pre-encoded under
-// r.loraLayers == nil — then bind the adapter and re-run the SAME position. The KV cache is
-// positional, so the second call's write overwrites the first's; what survives is determined
-// entirely by which encode actually gets COMMITTED, which is exactly what C-07 got wrong.
+// TestLoRAResidentParityMetal_armedExecutorThenBind pins C-07 (docs/audit-2026-09-10.md) and closes G-06's Metal half. The gate
+// above binds SetAdapter on a fresh executor (r.execReq == nil, nothing pre-encoded) and compares only the last token, so it
+// can never observe a stale pre-encoded buffer. This test arms the pipelined executor with a plain (no-adapter) Forward first,
+// which pre-encodes the next command buffer under r.loraLayers == nil, then binds the adapter and re-runs the same position.
+// The KV cache is positional, so the second call overwrites the first and what survives is decided by which encode gets
+// committed.
 func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	adapterDir := buildLlamaTinyLoRAFixture(t)
@@ -198,8 +178,7 @@ func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 	cos, maxAbs := cosF32(want, got)
 	t.Logf("armed-then-bound resident vs CPU-with-adapter: cosine=%.6f maxAbs=%.4g argmax_match=%v",
 		cos, maxAbs, argmaxF32(want) == argmaxF32(got))
-	// N-14/N-52: same 0.95-vs-measured-~0.999 gap as TestLoRAResidentParityMetal's own floor above
-	// — see that check's comment for why it is parked, not tightened, here.
+	// N-14/N-52: the same 0.95 floor as TestLoRAResidentParityMetal's, parked there (see its floor comment).
 	if cos < 0.95 {
 		t.Errorf("cosine %.6f < 0.95 after binding on an already-armed executor — the pre-encoded "+
 			"buffer from the arming call was committed instead of a fresh encode under the bound "+
@@ -211,16 +190,12 @@ func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 	}
 }
 
-// TestSetAdapter_cachesDeviceBuffersAcrossRebind is P-10's Metal half (audit-2026-09-10):
-// SetAdapter used to release and re-upload every projection's device buffers on EVERY bind,
-// including a bind of the SAME adapter that was just cleared — the dominant real shape (one chat
-// session, many turns, bind→clear→bind→clear on the identical adapter every turn) paid the full
-// re-upload cost on every single turn for no reason. Verifies the cache directly at the pointer
-// level: a rebind of the SAME adapter must reuse the exact *residLoRAProj (same underlying device
-// buffers, no NewBufferFloats calls), while a bind of a DIFFERENT adapter must evict the cache
-// and upload fresh — proving the identity check is pointer-based, not accidentally
-// content-based, by binding two adapters built from IDENTICAL data (buildLlamaTinyLoRAFixture is
-// deterministic) but loaded as separate loraRuntime instances.
+// TestSetAdapter_cachesDeviceBuffersAcrossRebind pins P-10's Metal half (docs/audit-2026-09-10.md): SetAdapter must not
+// release and re-upload every projection's device buffers on each bind (one chat session binds and clears the same adapter every
+// turn). Pointer-level check: a rebind of the same adapter reuses the exact *residLoRAProj (no NewBufferFloats calls); a bind of
+// a different adapter evicts the cache and uploads fresh. The identity check is pointer-based, not content-based: the test binds
+// two adapters built from identical data (buildLlamaTinyLoRAFixture is deterministic) loaded as separate loraRuntime
+// instances.
 func TestSetAdapter_cachesDeviceBuffersAcrossRebind(t *testing.T) {
 	const ckpt = "../testdata/llama-tiny"
 	adapterDirA := buildLlamaTinyLoRAFixture(t)

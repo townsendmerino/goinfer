@@ -16,48 +16,35 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestMetalSpecPrefillRegression is the Metal half of the 2026-08-31 speculative-prefill
-// regression that was measured on CUDA and asserted on Metal by interface only.
+// TestMetalSpecPrefillRegression is the Metal half of the speculative-prefill regression that was measured on CUDA and
+// asserted on Metal by interface only.
 //
-// THE DEFECT: decoder/model.go's generateInto ingests a prompt through the batched Prefiller
-// seam (m.resident.(Prefiller).PrefillLast); decoder/spec_ngram.go's genNgramInto instead
-// loops target.resident.Forward(...) one token at a time. Speculative decode therefore pays a
-// per-prompt-token cost that plain generation does not, and the gap grows LINEARLY in prompt
-// length — on CUDA, 2.66 ms/prompt-token, R² 0.9977, which at 839 tokens made the speculative
-// path 4.1x SLOWER than not speculating at all.
+// THE DEFECT: decoder/model.go's generateInto ingests a prompt through the batched Prefiller seam
+// (m.resident.(Prefiller).PrefillLast); decoder/spec_ngram.go's genNgramInto instead loops target.resident.Forward(...) one
+// token at a time. Speculative decode therefore pays a per-prompt-token cost that plain generation does not, and the gap grows
+// LINEARLY in prompt length (on CUDA, 2.66 ms/prompt-token, enough to make the speculative path several times SLOWER than not
+// speculating at 839 tokens).
 //
-// THE GATE IS THE SLOPE, NOT THE RATIO. The spec-vs-off ratio moves with draft acceptance,
-// which moves with the corpus, so it flaps; the slope of (spec - off) against prompt length is
-// the defect's signature and is nearly acceptance-independent. Bar: 0.50 ms/prompt-token
-// (CUDA measured 2.66 with the bug, 0.12 without).
+// THE GATE IS THE SLOPE, NOT THE RATIO. The spec-vs-off ratio moves with draft acceptance, which moves with the corpus, so it
+// flaps; the slope of (spec - off) against prompt length is the defect's signature and is nearly acceptance-independent. Bar:
+// 0.50 ms/prompt-token (CUDA measured 2.66 with the bug, 0.12 without).
 //
-// WHY THIS ASSERTS RATHER THAN LOGS: gpu/spec_ngram_resident_test.go measures the right
-// quantity and only t.Logf's it — its own header says "speedup is logged per workload" — so a
-// 0.3x printed and failed nothing for six weeks. The slope check below is t.Fatalf.
+// WHY THIS ASSERTS RATHER THAN LOGS: gpu/spec_ngram_resident_test.go measures the right quantity and only t.Logf's it ("speedup
+// is logged per workload"), so a regression there printed and failed nothing. The slope check below is t.Fatalf.
 //
-// WHY THE CORPUS IS READ FROM DISK: specWorkloads/ngramWorkloads are hand-written and
-// deliberately copy-heavy (4-7x the copy density of real code) and only 36-74 tokens long,
-// which is precisely why a regression that needs LENGTH to show went unseen. This reads real
+// WHY THE CORPUS IS READ FROM DISK: specWorkloads/ngramWorkloads are hand-written, deliberately copy-heavy (4-7x the copy
+// density of real code) and only 36-74 tokens long, so a regression that needs LENGTH to show goes unseen. This reads real
 // repository source at run time instead.
 //
-// METAL-SPECIFIC PRECONDITION — GOINFER_METAL_BATCHED_PREFILL=1 IS MANDATORY HERE, and a green
-// without it is meaningless. Historically (when this test was written) Metal's PrefillLast
-// (metal/backend.go) declined by default — Metal's batched prefill was not bit-identical to its
-// decode path (54% stream divergence, a figure once measured by TestMetalPrefillDivergenceRate,
-// docs/ollama-chase.md:623; that test no longer exists — superseded by TestPrefillGateVsReference's
-// pooled §3.2 criteria, G-07 audit-metal-2026-09-12.md). Batched prefill is now default-ON above
-// metalFastPrefillFloor (M-06/M-02, same audit), so this override is no longer strictly load-
-// bearing for a prompt past the floor — kept anyway so this test's precondition never depends on
-// the floor's current value or default state. Below the floor (or with the override removed),
-// PrefillLast still declines and generateInto falls through to the same per-token loop the
-// speculative path already uses, so there would be NO asymmetry to measure and the slope would
-// come back ~0 for a reason that has nothing to do with the fix. Metal now ALSO implements
-// ResidentPrefillKV (M-01, same audit: ForwardNoLogits skips the LM head on every prefill token
-// but the last) — but that lives inside residentPrefillSeed, which genNgramInto already shares
-// with generateInto (see that call site's own comment), so both arms of THIS test's comparison
-// benefit from it identically. No new asymmetry: Metal still has exactly one exposure to the
-// original bug (the batched-vs-per-token prefill seam this test targets), gated behind this
-// variable.
+// METAL-SPECIFIC PRECONDITION: GOINFER_METAL_BATCHED_PREFILL=1 stays set, and a green without it is meaningless. Batched
+// prefill is default-ON above metalFastPrefillFloor (M-06/M-02, docs/audit-metal-2026-09-12.md), so the override is no longer
+// strictly load-bearing past the floor; it is kept so this test's precondition never depends on the floor's current value or
+// default. Below the floor (or with the override removed), PrefillLast declines and generateInto falls through to the same
+// per-token loop the speculative path uses, so there would be NO asymmetry to measure and the slope would read ~0 for a reason
+// unrelated to the fix. Metal also implements ResidentPrefillKV (M-01: ForwardNoLogits skips the LM head on every prefill token
+// but the last), but that lives inside residentPrefillSeed, which genNgramInto already shares with generateInto, so both arms of
+// this comparison benefit identically: Metal's one exposure to the original bug is the batched-vs-per-token prefill seam this
+// test targets, gated behind that variable.
 func TestMetalSpecPrefillRegression(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")

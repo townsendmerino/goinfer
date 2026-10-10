@@ -12,18 +12,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoEPrefillMeasure_batchedVsSequential is P-15's real-checkpoint measurement
-// (audit-2026-09-10): Metal's batched f16-MMA prefill (metal/prefill.go's PrefillLast) has been
-// default-ON above the 512-token floor for MoE since 306b16b, but §3.2's decision set that
-// justified default-ON was dense-only — nobody has actually timed the batched path against the
-// sequential per-token loop on a real, generic (non-Gemma-4) MoE. This times both, directly on
-// the raw resident (bypassing metalResident's floor/env-var wrapper, which only decides which
-// path a caller reaches — it does not change either kernel path's own cost), at K ∈ {512, 1024,
-// 2048}.
+// TestMoEPrefillMeasure_batchedVsSequential is P-15's real-checkpoint measurement (docs/audit-2026-09-10.md): it times Metal's
+// batched f16-MMA prefill (PrefillLast in metal/prefill.go) against the sequential per-token loop on a real generic
+// (non-Gemma-4) MoE, at K in {512, 1024, 2048}. The batched path is default-ON above the 512-token floor, and the §3.2
+// decision set that justified that was dense-only. It times the raw resident, bypassing metalResident's floor/env-var wrapper,
+// which only decides which path a caller reaches.
 //
-// Manual/one-off by design (real 28.6GB checkpoint, several minutes of GPU time) — gated behind
-// GOINFER_MOE_PREFILL_CKPT rather than GOINFER_HEAVY_TESTS' usual asset registry, since this is a
-// measurement script (docs/measurements/), not a correctness gate:
+// Manual by design (a 28.6GB checkpoint, minutes of GPU time): gated behind GOINFER_MOE_PREFILL_CKPT rather than
+// GOINFER_HEAVY_TESTS' asset registry, since this is a measurement script (docs/measurements/), not a correctness gate:
 //
 //	GOINFER_MOE_PREFILL_CKPT=~/models/qwen15-moe-a27b \
 //	  go test -tags metal ./metal/ -run TestMoEPrefillMeasure_batchedVsSequential -v -timeout 30m

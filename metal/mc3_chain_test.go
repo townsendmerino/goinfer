@@ -11,12 +11,11 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The greedy and sampled chains (C-B01 / C-P02) under MC3: a generation alone on the batcher runs the chain with the
-// resident held across its tokens (decoder's holdSolo), and hands the resident back the first token anyone else wants
-// it. Before this, every generation on a model with more than one KV slot took an MC3 place, the chains required
-// mc3 == nil, and serve (2 slots by default on Metal) never ran them (the post-merge peer read, 2026-10-03). These
-// tests drive production's Generate with the batcher on, which is where that gap hid: the chains' own A/Bs ran with
-// no batcher at all.
+// The greedy and sampled chains (C-B01 / C-P02) under MC3: a generation alone on the batcher runs the chain with the resident
+// held across its tokens (decoder's holdSolo), and hands the resident back the first token anyone else wants it. These tests
+// drive production's Generate with the batcher on, because the chains' own A/Bs ran with no batcher and so could not see a
+// multi-slot model (serve's default on Metal) never taking the chain; history in
+// docs/code-notes/metal.md#mc3ChainFixture.
 
 const mc3ChainFixture = "../testdata/llama-attnfa-tiny"
 

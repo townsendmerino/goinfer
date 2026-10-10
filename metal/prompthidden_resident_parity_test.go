@@ -16,10 +16,10 @@ import (
 // fallback), and it tracks the CPU path's (so the device kernels, DeltaNet included, compute the right thing). Two
 // prompt lengths, the second after the first, so a DeltaNet state left over from one call would show in the next.
 //
-// Both sides run int4. Metal has no int8 GEMV (its decode path reports int8int8 -> int4), so an int8int8 CPU side compares
-// two quantizations, not two executions: measured 2026-09-30 on this fixture, CPU int8int8 vs Metal read cosine 0.977 with
-// the adapter merged, while CPU int4 vs Metal int4 reads 0.99985 (0.99998 without it). The adapter-merged tiny weights are
-// unusually int4-sensitive (CPU f32 vs CPU int4 is 0.980), which is a property of the fixture, not of the resident path.
+// Both sides run int4. Metal has no int8 GEMV (its decode path reports int8int8 -> int4), so an int8int8 CPU side compares two
+// quantizations, not two executions (against Metal with the adapter merged it reads cosine 0.977, where CPU int4 vs Metal int4
+// reads above 0.9998). The adapter-merged tiny weights are unusually int4-sensitive, which is a property of the fixture, not of
+// the resident path.
 func TestPromptHiddenResidentMetal(t *testing.T) {
 	const ckpt, lora = "../decoder/testdata/qwen3_5-tiny", "../decoder/testdata/qwen3_5-tiny-lora"
 	opts := decoder.Options{Backend: "metal", Quant: "int4", LoRA: lora}

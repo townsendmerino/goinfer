@@ -20,8 +20,8 @@ import (
 // chosen token's log-probability and the top five (SamplingParams.Logprobs), which serves as a numeric
 // fingerprint: options that must not change the numbers are held to exact equality on it.
 //
-// These cover the Metal backend only. The grid has no backend axis, and a cell can hold on one GPU
-// backend and not another (ActQuantGroup is honoured by CUDA residency, and Metal used to ignore it).
+// These cover the Metal backend only. The grid has no backend axis, and a cell can hold on one GPU backend and not another
+// (ActQuantGroup is honoured by CUDA residency; Metal declines it).
 
 const mgFixture = "../testdata/llama-tiny"
 
@@ -317,13 +317,12 @@ func TestOptionPathMetal_quant(t *testing.T) {
 	}
 }
 
-// TestOptionPathMetal_kvPrecision: KVPrecision's resident decode, speculative verify and session
-// cells. Metal keeps its resident KV at f16 whatever is asked (ResidentKVPrecision says so), so "f16"
-// must match the baseline exactly; "i8" is lossy, so its decode is held to a cosine floor against the
-// f16 baseline, its speculative path to exact agreement with its own plain decoding, and its session
-// reuse to agreement with a cold run of the same turn. Not exactness there: resident prefix reuse on
-// Metal is not bit-identical to a cold prefill even at f16 (about 0.004 in log-probability on this
-// model, kernels differing between decode and prefill), and resident_reuse.go does not claim it is.
+// TestOptionPathMetal_kvPrecision: KVPrecision's resident decode, speculative verify and session cells. Metal keeps its
+// resident KV at f16 whatever is asked (ResidentKVPrecision says so), so "f16" must match the baseline exactly; "i8" is
+// lossy, so its decode is held to a cosine floor against the f16 baseline, its speculative path to exact agreement with its
+// own plain decoding, and its session reuse to agreement with a cold run of the same turn. Not exactness there: resident
+// prefix reuse on Metal is not bit-identical to a cold prefill even at f16 (kernels differ between decode and prefill), and
+// resident_reuse.go does not claim it is.
 func TestOptionPathMetal_kvPrecision(t *testing.T) {
 	ref := mgLoad(t, mgBase)
 	refT, refL := mgGen(t, ref, mgShort(), 24)
@@ -399,15 +398,14 @@ func TestOptionPathMetal_exactPrefill(t *testing.T) {
 	}
 }
 
-// TestOptionPathMetal_prefillChunk: ResidentPrefillChunk under MC3 prefills a long prompt in chunks while
-// another generation is decoding, and the chunked generation must match the same generation prefilled whole,
-// with the batcher's prefill-pass count showing the chunks ran.
+// TestOptionPathMetal_prefillChunk: ResidentPrefillChunk under MC3 prefills a long prompt in chunks while another generation
+// is decoding, and the chunked generation must match the same generation prefilled whole, with the batcher's prefill-pass
+// count showing the chunks ran.
 //
-// Chunk 8 and 16 are the regression case (option-path admission finding 3, 2026-10-08): with two KV slots
-// Metal's batched prefill runs decode rows below a 32-token whole-prompt floor and f16 MMA from it, so a first
-// chunk under the floor ran on the other kernel class, and the reply differed from the whole prefill by
-// 0.003-0.004 in log-probability: it depended on whether another generation was decoding. mc3Prefill now
-// raises a chunk below the resident's PrefillKernelFloor to the floor.
+// Chunk 8 and 16 are the regression case (option-path admission finding 3): with two KV slots Metal's batched prefill runs
+// decode rows below a 32-token whole-prompt floor and f16 MMA from it, so a first chunk under the floor ran on the other
+// kernel class and the reply depended on whether another generation was decoding. mc3Prefill raises a chunk below the
+// resident's PrefillKernelFloor to the floor.
 func TestOptionPathMetal_prefillChunk(t *testing.T) {
 	for _, chunk := range []int{8, 16, 32} {
 		t.Run(fmt.Sprintf("chunk %d", chunk), func(t *testing.T) {
@@ -463,10 +461,10 @@ func TestOptionPathMetal_prefillChunk(t *testing.T) {
 	}
 }
 
-// TestOptionPathMetal_actQuantGroupDeclines: Metal's resident projections use per-vector activation scales, so
-// a load asking for per-group scales is declined at residentAdmission (actGroupResidentDecline) and runs on the
-// CPU, which honours the group; its output must be the CPU's exactly. Before 2026-10-08 it went resident and
-// produced the per-vector numbers (option-path admission finding 1).
+// TestOptionPathMetal_actQuantGroupDeclines: Metal's resident projections use per-vector activation scales, so a load asking
+// for per-group scales is declined at residentAdmission (actGroupResidentDecline) and runs on the CPU, which honours the
+// group; its output must be the CPU's exactly (a regression goes resident and produces the per-vector numbers; option-path
+// admission finding 1).
 func TestOptionPathMetal_actQuantGroupDeclines(t *testing.T) {
 	opts := mgWith(func(o *decoder.Options) { o.ActQuantGroup = 32 })
 	m := mgLoad(t, opts)

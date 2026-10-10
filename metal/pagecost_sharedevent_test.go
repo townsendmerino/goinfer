@@ -44,17 +44,13 @@ func (r *resident) forwardLogitsSharedEvent(pos int, ev gpu.SharedEvent, base ui
 	return r.logitsHost
 }
 
-// TestPageCost_sharedEventReal is Step-6 Step-0 regime (3) on the REAL forward — the authoritative
-// measurement that the synthetic aikit probe (gpu/metal_sharedevent_test.go) understates. It reprices
-// all three regimes inline on qwen2.5-1.5b so shared-event is directly comparable to baseline and
-// per-layer-submit. FINDING (2026-08): shared-event handshake (~0.26 ms/boundary) is ≈ per-layer
-// submit (~0.23 ms/boundary) — recovers ~0%; both synchronous shapes cost ~+45%. Conclusion:
-// synchronous Metal MoE paging is not viable by either shape → speculative prefetch is the path.
+// TestPageCost_sharedEventReal is Step-6 Step-0 regime (3) on the real forward, the authoritative measurement that the
+// synthetic aikit probe (gpu/metal_sharedevent_test.go) understates: it reprices all three regimes inline on qwen2.5-1.5b so
+// shared-event is directly comparable to baseline and per-layer-submit. The finding (synchronous Metal MoE paging is not
+// viable by either shape, so speculative prefetch is the path) is in docs/code-notes/metal.md#TestPageCost_sharedEventReal.
 //
-// This is the committed, repo-reproducible form of the regime-3 result (was run under a local go.work
-//
-//	override at Step-0). Run: GOINFER_HEAVY_TESTS=1 GOINFER_HANDSHAKE_PROBE=1 go test ./metal/ \
-//	  -run TestPageCost_sharedEventReal -v  (loads a ~1 GB checkpoint; needs aikit/gpu >= v0.23.0).
+// Run: GOINFER_HEAVY_TESTS=1 GOINFER_HANDSHAKE_PROBE=1 go test ./metal/ -run TestPageCost_sharedEventReal -v (loads a ~1 GB
+// checkpoint; needs aikit/gpu >= v0.23.0).
 func TestPageCost_sharedEventReal(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_HANDSHAKE_PROBE") == "" {
