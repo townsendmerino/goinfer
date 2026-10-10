@@ -10,11 +10,10 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// Prefill kernels — the f16 simdgroup_matrix (MMA) path for fast prompt ingestion. Unlike the
-// int4/scalar-MAC decode path (which can't amortize batching), an MMA GEMM reuses each weight
-// across all M prompt rows → ~2.5× the per-token GEMV, flat with M. Activations flow in f16
-// (no int8 quant); weights stay int4 and are dequanted to f16 in-kernel (no extra RAM). Kept in
-// a SEPARATE library from allKernels so the decode path is unchanged and prefill is opt-in.
+// prefillKernels is the f16 simdgroup_matrix (MMA) prefill library, for fast prompt ingestion: an MMA GEMM reuses each
+// weight across all M prompt rows, which the int4 scalar-MAC decode path cannot. Activations flow in f16 (no int8
+// quant); weights stay int4 and are dequantized to f16 in-kernel. A separate library from allKernels, so the decode
+// path is unchanged; ensurePrefill compiles it lazily.
 const prefillKernels = `
 #include <metal_stdlib>
 using namespace metal;
@@ -1094,19 +1093,18 @@ var prefillSteelAttnOff bool
 // Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
 var gemmTilePolicy = ""
 
-// gemmTile is the tile selector for a rows × N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
+// gemmTile is the tile selector for a rows x N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
 // TestGemmTile_bitIdentical).
 //
-// The default (D-B02, docs/tasks/task-metal-audit-2026-10.md "D-B02: the 16-row tile"): a threadgroup costs the same
-// whatever share of its rows is real, so a smaller token tile is taken when it pads the pass to strictly fewer rows:
-// 32 tokens up to 128 rows, 16 up to 16 rows and, when N <= 8192, up to 48. Past those, more row tiles cost more than
-// the padding they save (TestGemmTile16_probe: 16-token tiles lose from 96 rows, and a 100-token pass ran 0.847x on
-// all-16-row tiles); a gate|up GEMM as wide as the 1.5B's or 7B's already fills the cores at 64 (the 7B's 40-token pass
-// ran 0.984x with it on 16-token tiles). A
-// 16-token tile always takes 32 features; otherwise A-P01's feature rule, 32 when N <= 2048 and rows <= 64, so the
-// narrow GEMMs fill more cores.
+// The default: a threadgroup costs the same whatever share of its rows is real, so a smaller token tile is taken when
+// it pads the pass to strictly fewer rows: 32 tokens up to 128 rows, 16 up to 16 rows and, when N <= 8192, up to 48.
+// Past those, more row tiles cost more than the padding they save, and a gate|up GEMM as wide as the 1.5B's or 7B's
+// already fills the cores at 64 (docs/tasks/task-metal-audit-2026-10.md "D-B02: the 16-row tile";
+// TestGemmTile16_probe). A 16-token tile always takes 32 features; otherwise 32 features when N <= 2048 and rows <=
+// 64, so the narrow GEMMs fill more cores.
 //
-// A-P01's rule ("a01"): 32 tokens when the pass has at most 32 rows, 32 features when N <= 2048 and rows <= 64.
+// gemmTilePolicy "a01" is the older rule: 32 tokens when the pass has at most 32 rows, 32 features when N <= 2048 and
+// rows <= 64.
 func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 	return pf.gemmTileFor(rows, N, pf.w8)
 }
@@ -1152,10 +1150,8 @@ func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
 	return pf.pGemmStore, 64, 64
 }
 
-// prefillState holds the lazily-compiled prefill pipelines (opt-in; decode-only builds skip it).
+// prefillState holds the lazily compiled prefill pipelines (ensurePrefill); a decode-only run never builds it.
 type prefillState struct {
-	// pGemm (gemm_w4f16, no store epilogue) was created but never dispatched — the prefill LM head
-	// moved to pRmsQ + pGemvW8, and every GEMM here uses pGemmStore. Removed (audit R-22 / N-09 class).
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
 	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
@@ -1172,8 +1168,8 @@ type prefillState struct {
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
 	pResScaled        Pipeline // S17: residual_f16_scaled, the add into a residual stored scaled by 1/s
-	// L2-Metal (docs/completed/task-prefill-gap.md §4): the simdgroup_matrix flash-attention twin of
-	// pAttn. Default ON since §3 gate passed 2026-09-10 (metalFusedAttentionEnabled, backend.go);
+	// attention_prefill_fused: the simdgroup_matrix flash-attention twin of pAttn
+	// (docs/completed/task-prefill-gap.md §4). On by default (metalFusedAttentionEnabled, backend.go);
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline
 	// R19: attention_prefill_steel, the head-dim-128 prefill attention (it replaces pAttnFused there).
@@ -1210,13 +1206,13 @@ func (r *resident) ensurePrefill() {
 		return
 	}
 	if r.pfErr != nil {
-		// N-47 (audit-2026-09-10.md): a prior attempt already failed — re-panic the SAME cached
-		// error instead of re-running the full MSL compile just to fail identically again.
+		// A prior attempt already failed: re-panic the same cached error instead of re-running the full MSL compile to
+		// fail identically.
 		panic(r.pfErr)
 	}
-	// M24(c): compile + pipeline creation here runs pool-less on an unpinned thread (PrefillLast
-	// calls this BEFORE its own LockOSThread). Pin + hold a pool so the autoreleased temporaries
-	// drain; the +1-owned library/pipelines are tracked on the Device and freed at Close.
+	// Compile and pipeline creation here run pool-less on an unpinned thread (PrefillLast calls this before its
+	// own LockOSThread). Pin and hold a pool so the autoreleased temporaries drain; the +1-owned library and
+	// pipelines are tracked on the Device and freed at Close.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
@@ -1271,15 +1267,11 @@ func (r *resident) ensurePrefill() {
 	}
 }
 
-// parallelEmbedsF32ToF16 converts M rows of embs (each H wide) into dst[m*H:(m+1)*H] as f16 bits,
-// splitting across up to 8 workers by ROW — P-14 (audit-2026-09-10): the serial scalar loop this
-// replaces was 7.3M f32ToF16 calls at M=2048, H=3584 on the TTFT path, and model.go's own
-// parallelF32ToF16 (built for exactly this conversion in the gemma4-26b expert-paging path)
-// already proved the parallel split is byte-identical to serial — every element is independent
-// and f32ToF16 is a pure function of its one input. Not reused directly: embs is [][]float32 (one
-// slice per row, not necessarily contiguous), where parallelF32ToF16 wants one flat []float32; a
-// flatten-then-call would pay its own copy, so this splits by row directly instead, over M×H
-// rather than a flat index range, but is otherwise the same threshold/worker shape.
+// parallelEmbedsF32ToF16 converts M rows of embs (each H wide) into dst[m*H:(m+1)*H] as f16 bits, splitting across up
+// to 8 workers by row. Every element is independent and f32ToF16 is a pure function of its input, so the split is
+// byte-identical to the serial loop, as parallelF32ToF16's is. It does not reuse parallelF32ToF16 because embs is
+// [][]float32 (one slice per row, not necessarily contiguous) where that wants one flat slice, and flattening first
+// would pay its own copy; the threshold and worker shape are the same.
 func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {
 	parallelEmbedsF32ToF16Scaled(dst, embs, H, 1)
 }
@@ -1316,17 +1308,12 @@ func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv flo
 	wg.Wait()
 }
 
-// PrefillLast ingests M prompt embeddings at positions startPos..startPos+M-1 in ONE command
-// buffer via the f16 MMA path (weights read once, amortized across M — unlike the token-by-token
-// decode loop), populating the resident KV cache, and returns the LAST token's logits[V] (what a
-// generator needs to sample the first output token). Correctness-gated vs the sequential path.
-// prefillExactAttnMaxKeys is the exact attention_prefill kernel's bound: it keeps one score per key in
-// `threadgroup float sc[4096]`, indexed by the key's absolute position, with no tiling (the decode kernels tile theirs,
-// attnScoreTileBound). F-C02 (docs/audit-metal-2026-09-30.md): above 4096 keys it wrote past threadgroup memory. The
-// exact kernel runs whenever the fused one cannot (head dim above 128 or not a multiple of 8, or
-// GOINFER_METAL_FUSED_ATTENTION off), and a resident context reaches 32768 for an explicit -ctx or a guard-pinned load,
-// so metalResident.PrefillLast declines such a pass to the sequential path. TestPrefillExactAttnBound ties this to the
-// kernel source.
+// prefillExactAttnMaxKeys is the exact attention_prefill kernel's bound: it keeps one score per key in `threadgroup
+// float sc[4096]`, indexed by the key's absolute position, with no tiling (the decode kernels tile theirs,
+// attnScoreTileBound), so above 4096 keys it writes past threadgroup memory. The exact kernel runs whenever the fused
+// one cannot (head dim above 128 or not a multiple of 8, or GOINFER_METAL_FUSED_ATTENTION off), and a resident context
+// reaches 32768 for an explicit -ctx or a guard-pinned load, so metalResident.PrefillLast declines such a pass to the
+// sequential path. TestPrefillExactAttnBound ties this to the kernel source.
 const prefillExactAttnMaxKeys = 4096
 
 // prefillAttnKernels is which attention kernel PrefillLast dispatches for this model: fused for hd%8==0 && hd<=128
@@ -1364,6 +1351,10 @@ func (r *resident) prefillGeom() *attnGeom {
 	return nil
 }
 
+// PrefillLast ingests M prompt embeddings at positions startPos..startPos+M-1 in one command buffer via the f16 MMA path
+// (weights read once, amortized across M, unlike the token-by-token decode loop), populating the resident KV cache, and
+// returns the last token's logits[V], what a generator needs to sample the first output token. Correctness-gated against
+// the sequential path.
 func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	return r.prefillLast(embs, startPos, nil, nil)
 }
@@ -1375,10 +1366,7 @@ type prefillDeep struct {
 	sets     [][]float32
 }
 
-// prefillLast is PrefillLast with optional m-RoPE positions (S16): mrope, when non-nil, holds every absolute position's
-// (temporal, height, width) triple from 0 to startPos+len(embs), and the pass rotates q and k by them through
-// rope_mrope_f16 and r.mropeAxis. The K/V cache rows are still placed by sequence position.
-// prefillParallelDefectForTest is Part B's planted defect (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-B2): a
+// prefillParallelDefectForTest is a planted defect (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-B2): a
 // parallel block's MLP fed from the post-attention residual instead of the layer's shared input norm. Tests set it.
 var prefillParallelDefectForTest bool
 
@@ -1386,9 +1374,9 @@ var prefillParallelDefectForTest bool
 // off: G-RS2's planted defect; a large s measures the residual's peak).
 var prefillResidScaleForTest float32
 
-// gemmaPrefillResidScale is s for the families prefillResidScale applies to: the smallest power of two leaving 4x headroom
-// under f16's 65,504 over Gemma 3 4B's measured residual peak, 295,936 (its <bos> row after layer 31, the same on prompts
-// of 31 to 3,094 tokens and an image turn; S17's G-RS2 record).
+// gemmaPrefillResidScale is s for the families prefillResidScale applies to: the smallest power of two that leaves 4x
+// headroom under f16's 65,504 over Gemma 3 4B's residual peak (its <bos> row after layer 31;
+// docs/code-notes/metal.md#gemmaPrefillResidScale).
 const gemmaPrefillResidScale = 32
 
 // prefillResidScale is the s the batched pass stores its residual divided by (S17,
@@ -1407,6 +1395,9 @@ func (r *resident) prefillResidScale(deep *prefillDeep) float32 {
 	return gemmaPrefillResidScale
 }
 
+// prefillLast is PrefillLast with optional m-RoPE positions: mrope, when non-nil, holds every absolute position's
+// (temporal, height, width) triple from 0 to startPos+len(embs), and the pass rotates q and k by them through
+// rope_mrope_f16 and r.mropeAxis. The K/V cache rows are still placed by sequence position.
 func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep) []float32 {
 	return r.prefillLastImg(embs, startPos, mrope, deep, nil)
 }
@@ -1538,13 +1529,12 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		}
 	}
 
-	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
-	// ReleaseAll frees only at Close — so before this fix each PrefillLast leaked ~24 buffers
-	// (~100–150 MB for a 7B; guF alone is Mpad*2I*2), ratcheting until the mustBuf OOM panic killed
-	// serve (that panic is recovered only on the BuildResident path, not here). e.End() below
-	// commits AND waits, so the GPU is finished with them by the time this returns — release each
-	// at end of call. (r.uH / r.uKvDim / r.uHd are resident-owned and reused — deliberately NOT in
-	// this list; releasing them would corrupt the decode path.)
+	// Every buffer above is per-call scratch or uniform allocated onto the device ledger, which ReleaseAll frees
+	// only at Close, so each is released at the end of the call (e.End() below commits and waits, so the GPU is
+	// finished with them by then). Unreleased they ratchet by a prompt's worth per call (guF alone is Mpad*2I*2)
+	// until the mustBuf OOM panic kills serve, which is recovered only on the BuildResident path, not here. r.uH,
+	// r.uKvDim and r.uHd are resident-owned and reused, so deliberately not in this list: releasing them would
+	// corrupt the decode path.
 	scratch := []Buffer{
 		xF, normF, qkvF, ctxF, guF, dqF, posB, moeDst,
 		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
@@ -1733,8 +1723,8 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 				qkNH, qkNKV, qkHD, qkNHhd := r.uNH, lu.g.uNKV, lu.g.uHd, lu.g.uNHhd
 				tgCount := r.nH + lu.g.nKV
 				if L.kvShared {
-					// Q heads only: a shared layer projects no K. The kernel maps a threadgroup to (row, head) by nH+nKV, so
-					// nKV must be 0 here too, or rows shift and the "K" head normalizes the next row's Q (found by G-S9d).
+					// Q heads only: a shared layer projects no K. The kernel maps a threadgroup to (row, head) by nH+nKV, so nKV
+					// must be 0 here too, or rows shift and the "K" head normalizes the next row's Q.
 					tgCount, qkNKV = r.nH, r.uZero
 				}
 				if r.qkNormWhole {
@@ -1750,12 +1740,10 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 				e.Dispatch(pf.pQK, M*lu.g.nKV*tgReduceAttn, tgReduceAttn, qkvF.At((lu.nHhd+lu.kvDim)*2), r.vNormUnit, r.vNormUnit,
 					r.uZero, lu.g.uNKV, lu.g.uHd, r.uZero, lu.uStride, r.uEps, r.uZero)
 			}
-			// rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as decode
-			// does (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window
-			// arch the global layers must see window=0, and each layer its own RoPE base; the model-level
-			// bindings applied the local window (and one RoPE table) to every layer (audit M-09). Admitted
-			// prefill archs have a uniform RoPE table (FeatPerLayerRoPE is not claimed), so L.invf equals
-			// r.invf there — this is behaviour-neutral for them and correct for the mixed-window case.
+			// rope q, k (per-row positions): bind the per-layer RoPE table and window, exactly as decode does
+			// (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window arch the global
+			// layers must see window=0, and each layer its own RoPE base; FeatPerLayerRoPE is in prefillFeatures, so the
+			// per-layer binding is not behaviour-neutral.
 			if mrope != nil { // S16: each row's own (t, h, w) rotation
 				e.Dispatch(pf.pRopeM, M*r.nH*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalQ, lu.uStride, uBase0, lu.g.uHalf, L.mscale, r.mropeAxis)
 				if !L.kvShared {
@@ -1788,13 +1776,11 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 			if L.qGate { // ctx *= sigmoid(gate), before o-proj, as decode does
 				e.Dispatch(pf.pAttnGate, M*nHhd, 256, ctxF, gateF, uGateN)
 			}
-			// o-proj, then either the plain residual epilogue, Gemma's sandwich norm (G8), or Olmo 3 postOnly:
-			// mode-0 write into normF (free scratch at this point — its last use, the fused-QKV
-			// input, already ran; its next use, the pre-MLP norm's output, is below), norm the
-			// sublayer OUTPUT in place (safe — rmsnorm_f16's read pass fully completes before its
-			// write pass touches the same buffer), then a separate residual add. Non-sandwich
-			// families skip straight to the fused mode-2 residual epilogue, byte-identical to before
-			// this row.
+			// o-proj, then either the plain residual epilogue, Gemma's sandwich norm, or Olmo 3 postOnly: mode-0 write
+			// into normF (free scratch here: its last use, the fused-QKV input, already ran, and its next use, the pre-MLP
+			// norm's output, is below), norm the sublayer output in place (safe: rmsnorm_f16's read pass completes before
+			// its write pass touches the same buffer), then a separate residual add. Other families take the fused mode-2
+			// residual epilogue.
 			if r.sandwich || r.postOnly {
 				gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, lu.uQDim, dummyBias, m0)
 				e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
@@ -2027,10 +2013,10 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 		}
 	}
 	addDeep(r.nL - 1)
-	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode
-	// path runs (rmsnorm→int8, then gemv_w8a8). The head weights are int8 (logit-critical); the
-	// int4 gemm_w4f16 used here previously misread them as packed nibbles + f16 scales, producing
-	// NaN logits. Norm-quant the last token's f16 residual row to int8, then run the decode head.
+	// Final norm and LM head for the last token only, through the same int8-pinned head the decode path runs
+	// (rmsnorm to int8, then gemv_w8a8): the head weights are int8 (logit-critical), and the int4 gemm_w4f16 would
+	// misread them as packed nibbles and f16 scales, producing NaN logits. Norm-quant the last token's f16
+	// residual row to int8, then run the decode head.
 	finalNormQ := pf.pRmsQ
 	if r.layerNorm {
 		finalNormQ = pf.pLNQ
@@ -2059,10 +2045,9 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 
 	out := make([]float32, V)
 	copy(out, r.logits.Floats()[:V])
-	// G8: Gemma's final-logit softcap — finalizeLogits (the decode path's own entry point) applies
-	// this to r.logitsHost, but PrefillLast copies straight out of r.logits into a fresh slice and
-	// returns before finalizeLogits ever runs, so it must be applied here too. 0 for every
-	// non-softcapped family (softcapParallel no-ops).
+	// Gemma's final-logit softcap: finalizeLogits (the decode path's entry point) applies it to r.logitsHost, but
+	// this pass copies straight out of r.logits into a fresh slice and returns before finalizeLogits runs, so it
+	// is applied here too. softcapParallel is a no-op for a non-softcapped family (0).
 	if r.finalSoftcap > 0 {
 		softcapParallel(out, r.finalSoftcap)
 	}
@@ -2075,15 +2060,14 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 	return out
 }
 
-// prefillScratchU16 allocates one of a pass's f16 scratch buffers, n halves, zero-filled. Metal fills a new buffer with
-// zeros itself (newBufferWithLength), so the pass no longer builds a zeroed Go slice of the same size and copies it in:
-// on the Qwen1.5-MoE slice that host work was 14.6 ms before a 512-token pass reached the GPU and 77.7 ms before a
-// 2048-token one (TestDB02_expertMajorProbe). prefillScratchCopy restores the copy, for the test that compares the two.
-//
-// THIS RELIES ON THE ZERO-FILL, and the zero-fill is a Metal property only: aikit's gpu.NewBufferLen* contract says Metal returns zeroed memory and CUDA returns
-// uninitialized memory, and that code shared across backends must not rely on zeros. These scratch buffers are sized to Mpad rows and the pass writes M of them, so the pad rows hold
-// the zeros Metal gave them. Metal-only code may do that; a CUDA port of the same pattern must zero the buffer explicitly (Queue.ZeroAsync) or it reads garbage.
-// TestPrefillScratch_zeroFilled pins the property on this backend.
+// prefillScratchU16 allocates one of a pass's f16 scratch buffers, n halves, zero-filled. Metal fills a new buffer
+// with zeros itself (newBufferWithLength), so the pass does not build a zeroed Go slice of the same size and copy it
+// in (prefillScratchCopy restores the copy, for the test that compares the two).
+// THIS RELIES ON THE ZERO-FILL, which is a Metal property only: aikit's gpu.NewBufferLen* contract says Metal returns
+// zeroed memory and CUDA uninitialized memory, and code shared across backends must not rely on zeros. These buffers
+// are sized to Mpad rows and the pass writes M of them, so the pad rows hold the zeros Metal gave them. A CUDA port of
+// this pattern must zero the buffer explicitly (Queue.ZeroAsync). TestPrefillScratch_zeroFilled pins the property on
+// this backend.
 func prefillScratchU16(d *Device, n int) Buffer {
 	if prefillScratchCopy {
 		return NewBufferU16s(d, make([]uint16, n))
@@ -2091,11 +2075,10 @@ func prefillScratchU16(d *Device, n int) Buffer {
 	return gpu.NewBufferLenOf[uint16](d, n)
 }
 
-// prefillScratch is prefillScratchU16 for any element type (R-20, docs/tasks/task-recompute-audit.md): the pass's f32
-// and u32 buffers that the router GEMM, the route kernels or the host fill before they are read (the expert-major MoE
-// branch's moeLogits, moeIdx, moeWgt, rowIdxBuf, rowWgtBuf), and xF, which the embeddings are converted straight into.
-// Same zero-fill reliance and the same copy arm, plus prefillR20Copy, which copies these alone so a test can time R-20
-// apart from the scratch ecafa0ae already moved.
+// prefillScratch is prefillScratchU16 for any element type: the f32 and u32 buffers that the router GEMM, the route
+// kernels or the host fill before they are read (the expert-major MoE branch's moeLogits, moeIdx, moeWgt, rowIdxBuf,
+// rowWgtBuf), and xF, which the embeddings are converted straight into. Same zero-fill reliance and the same copy arm,
+// plus prefillR20Copy, which copies these alone so a test can time them apart from the other scratch.
 func prefillScratch[T gpu.Scalar](d *Device, n int) Buffer {
 	if prefillScratchCopy || prefillR20Copy {
 		return gpu.NewBufferOf(d, make([]T, n))

@@ -2,13 +2,11 @@
 
 package metal
 
-// Mixture-of-experts (MoE) resident decode for the Metal backend — the FeatMoE lever.
-// Mirrors the WebGPU implementation (gpu/moe.go): the router runs entirely on-GPU and
-// writes idx[k]/wgt[k] device buffers, then the host records a FIXED k dispatches per
-// projection, each reading its expert index dynamically (weightRow = idx[slot]*rowsPerExpert
-// + n). The command buffer is static every token, so the encode-ahead executor
-// (ForwardEmbPipe) still pre-encodes token t+1 while t runs — a host-side top-k readback
-// would have broken that pipeline. See docs/task-metal-moe.md.
+// Mixture-of-experts (MoE) resident decode for the Metal backend (FeatMoE). Mirrors the WebGPU implementation
+// (gpu/moe.go): the router runs entirely on-GPU and writes idx[k]/wgt[k] device buffers, then the host records a fixed
+// k dispatches per projection, each reading its expert index dynamically (weightRow = idx[slot]*rowsPerExpert + n).
+// The command buffer is static every token, so the encode-ahead executor (ForwardEmbPipe) still pre-encodes token t+1
+// while t runs; a host-side top-k readback would have broken that pipeline. See docs/completed/task-metal-moe.md.
 
 import (
 	"errors"
@@ -499,13 +497,11 @@ type moeLayer struct {
 	shGateW      Buffer // f32 [1, H] sigmoid gate (gated variant only; zero if ungated)
 	// gpt-oss: per-expert stacked biases, packed to match the weight addressing swiglu_quant_gptoss
 	// / gemv_w4a8_moe_wacc_bias read (biasOff = idx[slot]*2*inter / idx[slot]*H). Zero-value Buffer
-	// for every other family — the gpt-oss dispatch path in encodeMoEFFN is the only reader.
+	// for every other family — the gpt-oss dispatch path in encodeMoEExperts is the only reader.
 	expGuBias, expDBias Buffer
-	// pool is non-nil when mo.paged: a bounded LRU slot pool + on-demand staging (expertpool.go),
-	// generalized from the gemma4-only path (gemma4_moe.go) — same mechanism, no gemma4-specific
-	// assumptions in expertPool itself, so this file supplies the stageFn instead of inventing one.
-	// expGuW/expGuS/expDW/expDS stay zero-value when paged (the stacked all-E buffer is exactly the
-	// 11.96 GB/19.2 GB this exists to avoid).
+	// pool is non-nil when mo.paged: a bounded LRU slot pool with on-demand staging (expertpool.go), shared with
+	// gemma4_moe.go's paging; this file supplies the stageFn. expGuW/expGuS/expDW/expDS stay zero-value when
+	// paged: the stacked all-E buffer is the multi-GB set paging exists to avoid.
 	pool *expertPool
 }
 
@@ -517,7 +513,7 @@ type moeResident struct {
 
 	// gpt-oss: its own router/activation/down-combine kernels (route_gptoss,
 	// swiglu_quant_gptoss, gemv_w4a8_moe_wacc_bias) replace pRoute/pGU+pSw/pDownWacc in
-	// encodeMoEFFN — the bias semantics genuinely differ (see the kernel docs in moeKernels),
+	// encodeMoERoute and encodeMoEExperts — the bias semantics genuinely differ (see the kernel docs in moeKernels),
 	// not just an added parameter. Zero-value Pipelines/Buffers for every other family.
 	isGptOss                 bool
 	pRouteGptOss, pActGptOss Pipeline
@@ -546,53 +542,42 @@ type moeResident struct {
 	guK, dqK, dScK, accK            Buffer
 	shGl, shDown                    Buffer // shared-expert scratch: gate logit[1], down out[H]
 
-	// Synchronous paging (GOINFER_METAL_MOE_SLOTS=N>0): generalizes gemma4_moe.go's paging to this
-	// generic MoE shape (Mixtral/Qwen/GLM/gpt-oss/qwen3_5_moe/qwen3_next) — same env var, same
-	// mechanism, same expertPool. N must be >= k (a token's own top-k must fit); N==0/unset ⇒ all
-	// experts resident (today's behavior, unchanged). slotIdx (M-11, audit-metal-2026-09-12.md) is
-	// host-written each token with the pool ROW holding each routed expert, so the paged expert
-	// GEMVs read the right row of the pool's contiguous buffer while rWgt is still indexed by the
-	// selection slot — the reused gemv_w4a8_moe(_wacc[_bias]) kernels compute byte-identically to
-	// the stacked path. Was idxZeros (always 0) back when each slot was its own single-expert
-	// Buffer object; see gemma4_moe.go's gemma4MoeResident.slotIdx doc comment for the full "why".
+	// Synchronous paging (--moe-cache-slots; GOINFER_METAL_MOE_SLOTS is the deprecated fallback,
+	// metalMoESlotsRequest): gemma4_moe.go's paging generalized to this generic MoE shape, with the same
+	// expertPool. N must be >= k (a token's own top-k must fit); N==0 or unset means every expert resident.
+	// slotIdx is host-written each token with the pool row holding each routed expert, so the paged expert GEMVs
+	// read the right row of the pool's contiguous buffer while rWgt stays indexed by the selection slot: the
+	// reused gemv_w4a8_moe(_wacc[_bias]) kernels then compute byte-identically to the stacked path
+	// (gemma4_moe.go's gemma4MoeResident.slotIdx comment has the full reason).
 	paged   bool
 	slots   int
 	slotIdx Buffer
 
-	// TWO INDEX SPACES, DIVERGING ONLY WHEN PAGING IS ON — the same doctrine as cuda/resident.go's
-	// expIdx / expertBiasIdx pair, and adopted here because Metal had the defect that pair exists
-	// to prevent (C-09).
+	// Two index spaces, diverging only when paging is on, as in cuda/resident.go's expIdx / expertBiasIdx pair:
 	//
 	//	the weight index  WHERE the weights live  → slotIdx when this LAYER is paged (the pool row
 	//	                                            currently holding the routed expert), rIdx
 	//	                                            otherwise; passed explicitly, see biasIdx's note
 	//	biasIdx()         WHICH expert is running → ALWAYS rIdx
 	//
-	// With paging off the two are the same buffer, so a site that binds the wrong one is correct in
-	// every configuration anyone has run and wrong — silently, with plausible logits — in the one
-	// configuration that needs it. That is exactly what shipped: the paged encoder passed idxZeros
-	// to both roles, so gpt-oss's stacked expGuBias/expDBias tables were addressed by a constant
-	// zero and every routed expert got expert 0's bias.
+	// With paging off the two are the same buffer, so a site that binds the wrong one is correct in every unpaged
+	// configuration and wrong, silently with plausible logits, in the paged one: gpt-oss's stacked
+	// expGuBias/expDBias tables must be addressed by the real expert id (biasIdx), never a constant or the slot
+	// index.
 
-	// giwFile is the re-opened .giw for pread-staging; nil ⇒ the mmap byte-copy path. Shared
-	// read-only fd across every layer's pool; closed by resident.Close. Same knob and default as
-	// gemma4_moe.go's (GOINFER_MOE_PREAD=0 opts out) — deliberately the same env var, since it is
-	// the same mechanism generalized.
+	// giwFile is the re-opened .giw for pread staging; nil means the mmap byte-copy path. A shared read-only fd
+	// across every layer's pool, closed by resident.Close. It has the same GOINFER_MOE_PREAD knob (0 opts out) and
+	// default as gemma4_moe.go's.
 	giwFile *os.File
 
 	// alias is the S6 weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
 	alias *weightAlias
 }
 
-// buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a
-// dense-shaped model that actually declares an MoE FFN. Returns nil when the model is not MoE,
-// and an error for an MoE variant this path does not implement (so BuildResident declines →
-// CPU fallback rather than running wrong).
-// errPagedExpertsNotInt4 is the expert cache's decline for experts it cannot stage (the option-path admission doc's
-// §4.3 finding 2, G-2). Paging copies each expert's int4 bytes into a slot as they are stored; a non-paged resident
-// re-quantizes int8 experts to int4 while it stacks them, which a per-token stage cannot afford. Checked before the
-// build, so it is a named decline rather than the panic buildMoELayer and buildGemma4MoELayer used to raise (a
-// recovered "metal build panicked").
+// errPagedExpertsNotInt4 is the expert cache's decline for experts it cannot stage. Paging copies each expert's int4
+// bytes into a slot as they are stored; a non-paged resident re-quantizes int8 experts to int4 while it stacks them,
+// which a per-token stage cannot afford. Checked before the build, so it is a named decline rather than the panic
+// buildMoELayer and buildGemma4MoELayer would raise.
 var errPagedExpertsNotInt4 = errors.New("the expert cache (--moe-cache-experts / --moe-cache-slots) pages int4 experts only, and this model's experts are not int4 (group-32): load it with --quant int4, or drop --moe-cache-experts and --moe-cache-slots to hold every expert resident")
 
 // skipPagedInt4CheckForTest drops the errPagedExpertsNotInt4 check, so G-2 can show the gate goes red without it.
@@ -602,24 +587,23 @@ var skipPagedInt4CheckForTest bool
 // forward with no eviction possible (the option-path admission doc's finding 2, step 0). False in production.
 var moePagedAllSlotsForTest bool
 
+// buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a dense-shaped model that
+// declares an MoE FFN. It returns nil when the model is not MoE, and an error for an MoE variant this path does not
+// implement, so BuildResident declines to the CPU rather than running wrong.
 func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*moeResident, error) {
 	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.MoEResidentParams()
 	if !ok {
 		return nil, nil // dense model — no MoE
 	}
-	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEResidentParams reports
-	// ok — but it is NOT the generic Mixtral/Qwen shape this path implements. It is a parallel
-	// dense‖MoE FFN with gelu-tanh experts (gemv_w4a8_moe's epilogue is SiLU), a weightless router
-	// pre-norm + learned [hidden] scale + per_expert_scale, and seven norms. Building it here would
-	// run a wrong (SiLU, plain-router) MoE. Decline until the Metal gemma4MoeMLP path lands (9c
-	// Step 5) so gemma4_text falls back to CPU rather than mis-running — same discipline as CUDA's
-	// isG4MoE split (cuda/backend.go). Dense Gemma 4 has no MoE, so it returns nil,nil above and
-	// admits normally; this only gates the MoE variant.
+	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEResidentParams reports ok, but it is
+	// not the generic Mixtral/Qwen shape this path implements: it is a parallel dense||MoE FFN with gelu-tanh
+	// experts (gemv_w4a8_moe's epilogue is SiLU), a weightless router pre-norm with a learned [hidden] scale and
+	// per_expert_scale, and seven norms. Building it here would run a wrong MoE. It runs encodeGemma4MoEFFN
+	// (gemma4_moe.go) instead, routed around here via HasGemma4MoEResident as CUDA's isG4MoE split does. Dense
+	// Gemma 4 has no MoE, so it returns nil,nil above and admits normally.
 	if m.HasGemma4MoEResident() {
-		// Gemma 4's parallel dense‖MoE is NOT this generic path — it runs encodeGemma4MoEFFN
-		// (its own router/experts/join, gemma4_moe.go), routed around here via HasGemma4MoEResident
-		// exactly like CUDA's isG4MoE split. Return nil (not MoE for THIS builder) so r.moe stays
-		// nil and BuildResident builds r.g4moe instead; the per-layer loop routes on the bundle.
+		// Return nil (not MoE for this builder): r.moe stays nil, BuildResident builds r.g4moe instead, and the
+		// per-layer loop routes on the bundle.
 		return nil, nil
 	}
 	// The router's fixed-size score/group arrays (moe_route); the cap is decoder's declaration, which the
@@ -702,16 +686,15 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 			}
 		}
 	}
-	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of byte-copying
-	// off the mmap — the refinement gemma4_moe.go measured (cold A/B: 1892→1488 ms/tok, 1.26×; major
-	// faults 92.8→0.0/stage, the demand-fault page-in gone) applied to this shape. DEFAULT ON; needs a
-	// .giw-mmap'd model, since the offsets are into that file. Re-opened once, shared across layers.
-	// GOINFER_MOE_PREAD=0 opts out (the mmap byte-copy baseline, kept for the A/B). If the open fails
-	// or the model isn't .giw-backed, buildMoELayer falls back to the byte-copy.
+	// Stage experts by pread'ing their nibbles straight into the slot buffers instead of byte-copying off the
+	// mmap: the refinement gemma4_moe.go measured (the demand-fault page-in gone), applied to this shape. On by
+	// default; needs a .giw-mmap'd model, since the offsets are into that file; re-opened once, shared across
+	// layers. GOINFER_MOE_PREAD=0 opts out (the mmap byte-copy baseline, kept for the A/B). If the open fails or
+	// the model is not .giw-backed, buildMoELayer falls back to the byte-copy.
 	//
-	// GOINFER_MOE_NOCACHE is deliberately NOT wired here: gemma4 measured it and DECLINED (no effect,
-	// and its motivating evidence was an ordering confound — see buildGemma4MoEResident). Porting a
-	// declined flag would re-open a settled question.
+	// GOINFER_MOE_NOCACHE is deliberately not wired here: gemma4 measured it and declined it (no effect, and its
+	// motivating evidence was an ordering confound; see buildGemma4MoE). Porting a declined flag would
+	// re-open a settled question.
 	if mo.paged && modelKnob(m, "GOINFER_MOE_PREAD") != "0" {
 		if p := m.GiwPath(); p != "" {
 			if f, err := os.Open(p); err == nil {
@@ -737,11 +720,10 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		ml.routerBias = NewBufferFloats(d, make([]float32, mo.nE)) // zeros → sel = score
 	}
 	if mo.paged {
-		// Paged: don't stack the experts (that is the multi-GB set this exists to avoid). Build a
-		// bounded LRU slot pool + a stage fn reading expert e's W4A8 bytes from the layer's own
-		// WeightMats on demand. Per-expert buffer sizes come from expert 0. Mirrors
-		// buildGemma4MoELayer's paged branch exactly (byte-copy staging; no pread fast path here —
-		// that was a later, separately-measured refinement on top of a working paged baseline).
+		// Paged: do not stack the experts (the multi-GB set paging exists to avoid). Build a bounded LRU slot pool and
+		// a stage fn reading expert e's W4A8 bytes from the layer's own WeightMats on demand; per-expert buffer sizes
+		// come from expert 0. Mirrors buildGemma4MoELayer's paged branch, with byte-copy staging as the baseline and
+		// the pread fast path below on top of it.
 		gw0, gs0, ok1 := int4DirectWords(&lw.Experts[0].Gate)
 		uw0, us0, ok1u := int4DirectWords(&lw.Experts[0].Up)
 		dw0, ds0, ok2 := int4DirectWords(&lw.Experts[0].Down)
@@ -750,10 +732,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 		nGuW, nGuS := len(gw0)+len(uw0), len(gs0)+len(us0)
 		experts := lw.Experts // capture (aliases the model's own weights; kept alive by the Model)
-		// C-P01 (audit-metal-2026-09-30.md): each expert's f16 scales are read from its own WeightMats
-		// (Int4ScalesF16), which a v14 metal or v15 .giw aliases from the mapping. This used to be a
-		// build-time heap cache (N-20, which replaced a per-page-in f32→f16 conversion), holding the
-		// same bits again (1361 MB on the Gemma 4 26B, measured 2026-10-02, T1.8).
+		// Each expert's f16 scales are read from its own WeightMats (Int4ScalesF16), which a v14 metal or v15 .giw
+		// aliases from the mapping, rather than from a build-time heap cache that would hold the same bits again.
 		stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
 			gw, _ := int4DirectBytesOnly(&experts[e].Gate)
 			uw, _ := int4DirectBytesOnly(&experts[e].Up)
@@ -766,21 +746,20 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			return guBytes, guS, dw, experts[e].Down.Int4ScalesF16()
 		}
 		ml.pool = newExpertPool(d, mo.slots, nGuW, nGuS, len(dw0), len(ds0), stage)
-		// pread staging: resolve each expert's nibble file offsets within the .giw mmap (pure pointer
-		// arithmetic — MmapByteOffset does NOT touch the pages), then stage by pread'ing straight into
-		// the slot's UMA words. Zero mmap faults, one large sequential read per projection.
+		// pread staging: resolve each expert's nibble file offsets within the .giw mmap (pure pointer arithmetic:
+		// MmapByteOffset does not touch the pages), then stage by pread'ing straight into the slot's UMA words: zero
+		// mmap faults, one large sequential read per projection.
 		//
-		// Three reads per expert, not gemma4's two: this shape keeps gate and up as SEPARATE tensors
-		// (gemma4's bundle hands over one already-fused gate|up span), so the slot's fused gate|up
-		// buffer is filled in two ranges — gate at byte 0, up at byte len(gate) — exactly reproducing
-		// the byte-copy path's append(gw, uw...) and hence the stacked layout gemv_w4a8_moe reads.
-		// The f16 scales are pread the same way, into the two halves of the slot's gate|up scale range and
-		// the down scale buffer, when every expert's lie in the mapping (a v14 metal or v15 .giw, C-P01);
+		// Three reads per expert, not gemma4's two: this shape keeps gate and up as separate tensors (gemma4's bundle
+		// hands over one already-fused gate|up span), so the slot's fused gate|up buffer is filled in two ranges, gate
+		// at byte 0 and up at byte len(gate), reproducing the byte-copy path's append(gw, uw...) and hence the stacked
+		// layout gemv_w4a8_moe reads. The f16 scales are pread the same way, into the two halves of the slot's gate|up
+		// scale range and the down scale buffer, when every expert's lie in the mapping (a v14 metal or v15 .giw);
 		// otherwise they are copied from the WeightMats (an older file converts them onto the heap at load).
 		//
-		// Falls back to the byte-copy path if the fd is absent or ANY expert's nibbles aren't
-		// .giw-mmap-backed (e.g. a requantized HF/safetensors load): every offset must resolve for
-		// pread to be correct, so this is all-or-nothing per layer, never per expert.
+		// Falls back to the byte-copy path if the fd is absent or any expert's nibbles are not .giw-mmap-backed (a
+		// requantized HF/safetensors load): every offset must resolve for pread to be correct, so this is
+		// all-or-nothing per layer, never per expert.
 		if mo.giwFile != nil {
 			type expertSpan struct {
 				gOff, uOff, dOff    int64
@@ -816,18 +795,16 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 				pool := ml.pool
 				pool.stagePread = func(ei int, sl expertSlot) {
 					sp := spans[ei]
-					// M-12 (audit-metal-2026-09-12.md), second half: the three spans write disjoint
-					// destination ranges (gate/up are different byte offsets within the slot's gate|up
-					// region; down is a separate buffer entirely), and pread on a shared fd is
-					// positional — safe to issue concurrently. Errors are collected and panicked from
-					// THIS goroutine (not inside the spawned ones) so BuildResident's recover() still
-					// sees them; a panic in an unrecovered goroutine would crash the whole process.
+					// The three spans write disjoint destination ranges (gate and up are different byte offsets within the slot's
+					// gate|up region; down is a separate buffer), and pread on a shared fd is positional, so they are issued
+					// concurrently. Errors are collected and panicked from this goroutine, not the spawned ones, so
+					// BuildResident's recover() still sees them; a panic in an unrecovered goroutine would crash the whole
+					// process.
 					//
-					// M-11: preadRangeIntoPoolSlot, not preadRangeIntoU32Buf(fd, sl.guW, ...) — sl.guW
-					// is a Buffer.At()-offset VIEW, and preadRangeIntoU32Buf's U32s() call ignores that
-					// offset (expertSlot's doc comment), which would silently pread every expert into
-					// slot 0. preadRangeIntoPoolSlot addresses the pool's base buffer by slot NUMBER
-					// (sl.slot) plus the within-slot sub-offset (0 for gate, sp.gLen for up).
+					// Use preadRangeIntoPoolSlot, not preadRangeIntoU32Buf(fd, sl.guW, ...): sl.guW is a Buffer.At()-offset view,
+					// and U32s() ignores that offset (expertSlot's comment), which would silently pread every expert into slot 0.
+					// preadRangeIntoPoolSlot addresses the pool's base buffer by slot number (sl.slot) plus the within-slot
+					// sub-offset (0 for gate, sp.gLen for up).
 					var wg sync.WaitGroup
 					var errG, errU, errD error
 					wg.Add(3)
@@ -936,27 +913,22 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 	return NewBufferFloats(d, f)
 }
 
-// encodeMoEFFNWithX records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down
-// dispatches. post-attn norm → router logits → on-GPU top-k → per-selected-expert
-// gate|up/swiglu/weighted-down → optional shared expert. Value-independent (idx/wgt read at
-// kernel-execution time), so the encode-ahead executor still pre-encodes it. x is the
-// post-attention hidden state to route from (r.x for the decode path; a caller-owned buffer for
-// batched prefill, hence the WithX form rather than a fixed r.x read).
+// encodeMoEFFNWithX records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down dispatches: post-attn
+// norm, router logits, on-GPU top-k, per-selected-expert gate|up/swiglu/weighted-down, then the optional shared
+// expert. Value-independent (idx/wgt are read at kernel-execution time), so the encode-ahead executor still
+// pre-encodes it. x is the post-attention hidden state to route from: r.x for decode, a caller-owned buffer for
+// batched prefill.
 //
-// This is the NON-PAGED path: it reads the stacked all-E buffers (ml.expGuW/expGuS/expDW/expDS),
-// which stay zero-value once the layer is paged (see moeLayer's own comment on the pool field).
-// forwardLogitsMoEPaged never reaches here for a paged layer (it tears the layer into
-// encodeMoERouter + encodeMoEExpertsPaged around a host readback instead) — the panic below is a
-// chokepoint against every OTHER caller of encodeLayer (Forward, ForwardArgmax,
-// forwardHiddenNoHead's encodeTrunkInto) reaching a paged layer through the non-paged encoder and
-// silently computing off zero-value weights instead of failing (audit-metal-2026-09-12.md C-02).
+// This is the non-paged path: it reads the stacked all-E buffers (ml.expGuW/expGuS/expDW/expDS), which stay zero-value
+// once the layer is paged (see moeLayer's comment on pool). forwardLogitsMoEPaged never reaches here for a paged layer
+// (it tears the layer into encodeMoERouter and encodeMoEExpertsPaged around a host readback), so the panic below is a
+// chokepoint against every other caller of encodeLayer (Forward, ForwardArgmax, forwardHiddenNoHead's encodeTrunkInto)
+// reaching a paged layer through the non-paged encoder and silently computing off zero-value weights.
 //
-// FinishEncoding before the panic: e already has this layer's attention/mixer dispatches recorded
-// (encodeLayer calls this after encodeAttention/encodeDeltaNetMixer), and Metal asserts if a command
-// encoder is released without endEncoding — an uncommitted, never-`.End()`'d Encoder left for the Go
-// GC to finalize hits exactly that assertion (observed: "[_MTLCommandEncoder dealloc]: failed
-// assertion" on the first version of this guard). Ending encoding without committing discards the
-// partial work cleanly with no GPU execution and no side effect on r.x.
+// FinishEncoding before the panic: e already holds this layer's attention or mixer dispatches, and Metal asserts if a
+// command encoder is released without endEncoding ("[_MTLCommandEncoder dealloc]: failed assertion"), as an
+// uncommitted, never-End()'d Encoder left for the Go GC to finalize would. Ending encoding without committing discards
+// the partial work cleanly, with no GPU execution and no side effect on r.x.
 func (r *resident) encodeMoEFFNWithX(e *Encoder, L *residLayer, x Buffer) {
 	if L.moe.pool != nil {
 		e.FinishEncoding()
@@ -979,12 +951,10 @@ func (r *resident) encodeMoERouterWithX(e *Encoder, L *residLayer, x Buffer) {
 	r.encodeMoERoute(e, L)
 }
 
-// encodeMoERoute is encodeMoERouter's route-SELECTION half, split out so G8's batched-prefill MoE
-// row loop (metal/prefill.go) can reuse it after its OWN norm step (rmsnorm_quant_f16 reading a
-// row of the F16 residual directly into r.mq/r.mSc — r.pRms above is F32-only, a type mismatch
-// for prefill's F16 residual, so prefill cannot call encodeMoERouter itself). Reads r.mq/r.mSc
-// (already normed+quantized by either caller); writes mo.rIdx/mo.rWgt. No r.x involvement at all,
-// so nothing here needed parameterizing the way encodeMoEExperts/encodeMoESharedExpert did.
+// encodeMoERoute is encodeMoERouter's route-selection half, split out so the batched-prefill MoE row loop (prefill.go)
+// can reuse it after its own norm step: rmsnorm_quant_f16 reading a row of the f16 residual directly into r.mq/r.mSc
+// (r.pRms above is f32-only, so prefill cannot call encodeMoERouter). Reads r.mq/r.mSc (already normed and quantized
+// by either caller); writes mo.rIdx/mo.rWgt. No r.x involvement.
 func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 	mo := r.moe
 	ml := L.moe
@@ -1001,20 +971,18 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 	}
 }
 
-// encodeMoEExperts runs the k selected experts out of the STACKED all-E buffer (ml.expGuW/expDW,
-// indexed by rIdx at kernel-execution time) plus the optional shared expert. The non-paged path.
-//
-// dst is the down-projection's accumulate target — decode's own caller (encodeMoEFFN) always
-// passes r.x (the shared F32 residual stream), but G8's batched-prefill MoE row loop
-// (metal/prefill.go, docs/tasks/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
-// accumulate into an isolated F32 scratch buffer instead, since prefill's own residual (xF) is
-// F16 and these kernels are F32-only — added into xF's row by a SEPARATE small kernel afterward,
-// not by pointing these dispatches at xF directly (a type mismatch: `device float*` vs `half*`).
-// moeKSlotsOn selects D-P03's k-slot dispatches where the shape admits them. Off: PARKED 2026-10-04, bit-identical
-// but 1.019x on the Qwen1.5-MoE slice's token (21.5 us per MoE layer at k = 4), the owner's park zone for speed
-// (docs/tasks/task-metal-audit-2026-10.md, "D-P03"). Tests turn it on for the k-slot arm.
+// moeKSlotsOn selects the k-slot dispatches (the k selected experts in four dispatches instead of 3k) where the shape
+// admits them. Off: parked, bit-identical but too small a gain (docs/tasks/task-metal-audit-2026-10.md, "D-P03").
+// Tests turn it on for the k-slot arm.
 var moeKSlotsOn = false
 
+// encodeMoEExperts runs the k selected experts out of the stacked all-E buffer (ml.expGuW/expDW, indexed by rIdx at
+// kernel-execution time) plus the optional shared expert: the non-paged path.
+//
+// dst is the down-projection's accumulate target. Decode's caller (encodeMoEFFNWithX) passes x, the shared f32 residual
+// stream; the batched-prefill MoE row loop (prefill.go) accumulates the same expert-loop math into an isolated f32
+// scratch instead, because prefill's own residual (xF) is f16 and these kernels are f32-only (`device float*` versus
+// `half*`), and adds that scratch into xF's row afterward with a separate small kernel.
 func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 	mo := r.moe
 	ml := L.moe
@@ -1047,14 +1015,6 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 	r.encodeMoESharedExpert(e, L, dst)
 }
 
-// encodeMoEExpertsPaged is encodeMoEExperts' paged twin: the k selected experts run out of the
-// LAYER'S POOL — one contiguous buffer per field (M-11) — instead of the stacked all-E buffer.
-// Dispatches always bind pool.guW/guS/dW/dS (fixed identity for the layer's whole lifetime);
-// slotIdx (already written into mo.slotIdx by the caller, one host write before this encode) tells
-// the reused gemv_w4a8_moe(_wacc[_bias]) kernels which pool ROW holds each selected expert at
-// kernel-execution time, while rWgt stays indexed by the selection slot uSlot[j] — computes
-// byte-identically to the stacked path (a pool row's bytes == the stacked buffer's rows for that
-// expert — see buildMoELayer's paged stage fn). Mirrors gemma4_moe.go's encodeG4Phase2Paged.
 // biasIdx is the index for PER-EXPERT TABLES that stay STACKED for all experts and are addressed
 // on the device — today gpt-oss's [nExpert][2*I] gate‖up bias and [nExpert][H] down bias. It is
 // always the router's real expert ids, NEVER the slot index: those tables do not move when an
@@ -1068,6 +1028,13 @@ func (mo *moeResident) biasIdx() Buffer { return mo.rIdx }
 // silent-plausible-logits failure this pair exists to prevent, reintroduced by the symmetry. The
 // weight index stays explicit at each call site, where which encoder you are in settles it.
 
+// encodeMoEExpertsPaged is encodeMoEExperts' paged twin: the k selected experts run out of the layer's pool (one
+// contiguous buffer per field) instead of the stacked all-E buffer. Dispatches always bind pool.guW/guS/dW/dS (fixed
+// identity for the layer's lifetime); slotIdx (written into mo.slotIdx by the caller, one host write before this encode)
+// tells the reused gemv_w4a8_moe(_wacc[_bias]) kernels which pool row holds each selected expert at kernel-execution
+// time, while rWgt stays indexed by the selection slot uSlot[j]. That computes byte-identically to the stacked path: a
+// pool row's bytes equal the stacked buffer's rows for that expert (see buildMoELayer's stage fn). Mirrors
+// gemma4_moe.go's encodeG4Phase2Paged.
 func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, pool *expertPool) {
 	mo := r.moe
 	ml := L.moe
@@ -1127,22 +1094,19 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 			logits = nil
 		}
 	}()
-	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — this paged path
-	// used to bypass it, so uQTempScale (Ministral 3, FeatAttnTemp) never refreshed here,
-	// contradicting setPos's own "called at every forward entry point" doc comment. Currently a
-	// no-op (no paged family has FeatAttnTemp: r.attnTempBeta==0 gives scale=1 unconditionally),
-	// but it silently stays stale the day one does.
+	// setPos, not a direct uPos/uNKeys write, so uQTempScale (FeatAttnTemp) refreshes on this path as setPos's
+	// "called at every forward entry point" contract says. Currently a no-op (no paged family has FeatAttnTemp:
+	// r.attnTempBeta==0 gives scale=1), but it would silently go stale the day one does.
 	rp := pos
 	if len(ropePos) > 0 {
 		rp = ropePos[0]
 	}
 	r.setPos(pos, rp)
 	mo := r.moe
-	// N-23 (audit-metal-2026-09-12.md): consecutive dense layers share ONE command buffer instead
-	// of a submit+wait each — only a paged MoE layer's router readback is a genuine value-dependent
-	// seam (idx/rWgt must land host-side before staging). dense is a Begin()-on-first-use, close on
-	// the next MoE layer (or the loop's end) run, mirroring encodeTrunkInto's own all-layers-in-one
-	// pattern for the pure-dense path.
+	// Consecutive dense layers share one command buffer instead of a submit and wait each: only a paged MoE
+	// layer's router readback is a value-dependent seam (idx/rWgt must land host-side before staging). dense is
+	// opened on first use and closed at the next MoE layer or the loop's end, as encodeTrunkInto does for the
+	// pure-dense path.
 	async := pagedAsyncPhase2On // M-11: phase 2 committed, not waited (gemma4_moe.go, pagedAsyncPhase2On)
 	var arp ARPool
 	if async {
@@ -1176,12 +1140,11 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 			for j := 0; j < mo.k; j++ {
 				ids[j] = int(idx[j])
 			}
-			// M-12 (audit-metal-2026-09-12.md): stage every miss in this token's top-k concurrently
-			// instead of one pread at queue depth 1 per expert — see ensureResidentBatch's own doc
-			// comment for why this is safe.
+			// Stage every miss in this token's top-k concurrently instead of one pread at queue depth 1 per expert
+			// (ensureResidentBatch's comment says why that is safe).
 			slots := L.moe.pool.ensureResidentBatch(ids)
-			// M-11: tell the GPU which pool row holds each routed expert — a small host→device
-			// write, not a re-encode. slotIdx replaces the old idxZeros (see moeResident's own doc).
+			// Tell the GPU which pool row holds each routed expert: a small host-to-device write, not a re-encode
+			// (moeResident.slotIdx).
 			moIdx := mo.slotIdx.U32s()
 			for j, s := range slots {
 				moIdx[j] = uint32(expertPoolSlotForTest(s.slot, len(L.moe.pool.slotExpert)))

@@ -1,9 +1,7 @@
 //go:build darwin
 
-// Real-model resident Metal decoder — the final GO/NO-GO piece of the spike. Loads a
-// dense Qwen2/Llama model's int8 weights out of the goinfer decoder, uploads them to
-// Metal once, and runs the full layer stack per token in ONE command buffer (the tax
-// requirement). cgo-free throughout (purego-objc + dlopen Metal).
+// Resident Metal decoder: BuildResident uploads a model's weights to the device once, and each token then runs the
+// full layer stack in one command buffer. cgo-free throughout (purego-objc plus dlopen of Metal).
 package metal
 
 import (
@@ -34,13 +32,12 @@ const metalCtxCapMax = decoder.MetalCtxCeiling
 // `threadgroup float sc[4096]` in kernels.go holds one score per key in the active tile.
 const attnScoreTileBound = 4096
 
-// resolveMetalCtxCap turns a request into the effective resident KV capacity, mirroring
-// cuda/resident.go's resolveCtxCap[Fit] in SHAPE: an unpinned load (req <= 0) gets metalCtxCapDefault (4096);
-// an explicit request up to metalCtxCapMax (32768) is honored (optionally clamped to the model's window);
-// and a request ABOVE metalCtxCapMax is REFUSED with the numbers. A context the load-time fit guard auto-pinned
-// (R13; the caller did not choose it) is a ceiling, not a request: it may lower the default, never raise it.
-// Read as a request it allocated KV several times the default on a tight machine and, above metalCtxCapMax, was
-// refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-09-30.md).
+// resolveMetalCtxCap turns a request into the effective resident KV capacity, in the shape of cuda's resolveCtxCap: an
+// unpinned load (req <= 0) gets metalCtxCapDefault; an explicit request up to metalCtxCapMax is honored, clamped to
+// the model's window; a request above metalCtxCapMax is refused with the numbers.
+// A context the load-time fit guard auto-pinned (the caller did not choose it) is a ceiling, not a request: it may
+// lower the default, never raise it. Read as a request it allocated several times the default KV on a tight machine,
+// or was refused, which moved the whole forward to the CPU.
 func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	req := m.ResidentContextRequest()
 	if req <= 0 {
@@ -68,24 +65,21 @@ func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	return req, nil
 }
 
-// Threadgroup widths for the kernels that contain a CROSS-THREAD FLOAT SUM reduction (a
-// `red[tid]+=red[tid+st]` tree): rmsnorm sum-of-squares, softmax denominator, qk-norm.
+// Threadgroup widths for the kernels that contain a cross-thread float sum reduction (a `red[tid]+=red[tid+st]` tree):
+// rmsnorm sum-of-squares, softmax denominator, qk-norm.
 //
-// THESE ARE BIT-IDENTITY-LOAD-BEARING, NOT PERFORMANCE KNOBS. Float add is non-associative, so a
-// tree reduction's result depends on its WIDTH: T threads sum N/T strided partials, then a T-wide
-// tree — change T and the last bits of the sum move. On CUDA the warp reduce is a fixed 32, so the
-// coupling can't exist; on Metal the threadgroup width is exactly what you'd sweep for a 5% win, so
-// every such kernel's numerics are wired to its launch configuration.
+// These are bit-identity-load-bearing, not performance knobs. Float add is non-associative, so a tree reduction's
+// result depends on its width: change T and the last bits of the sum move. On Metal the threadgroup width is also what
+// one would sweep for speed, so every such kernel's numerics are wired to its launch configuration.
 //
-// The existing gates will NOT catch a change here: paged≡non-paged compares the SAME kernel at the
-// SAME width (self-consistent — both move together), and GPU-vs-CPU parity is cosine/tolerance. The
-// coupling only surfaces when a NEW path computes the same reduction at a DIFFERENT width and is gated
-// byte-exact — which is exactly how the split/staged attention rewrites diverged (a 256-wide softmax
-// denom vs the shipped 128-wide tree; and it only appeared past nKeys>256, below a short fixture).
-// So: pin the width here, keep every dispatch of these kernels bound to it, and make any alternate
-// same-op kernel inherit it. A byte-exact fixture for such an op MUST use context > the width. Max
-// reductions and simd_sum (32, hardware-fixed) are exempt — associative+commutative, order-exact.
-// See docs/ollama-chase.md §2 (ground rules) and §A2-Metal.
+// The existing gates will not catch a change here: paged versus non-paged compares the same kernel at the same width
+// (both move together), and GPU-versus-CPU parity is a cosine tolerance. The coupling surfaces only when a new path
+// computes the same reduction at a different width and is gated byte-exact. So pin the width here, keep every dispatch
+// of these kernels bound to it, and make any alternate same-op kernel inherit it. A byte-exact fixture for such an op
+// must use a context longer than the width. Max reductions and simd_sum (32, hardware-fixed) are exempt: order-exact.
+//
+// See docs/ollama-chase.md §2 (ground rules) and §A2-Metal; the divergence that taught it:
+// docs/code-notes/metal.md#tgReduceNorm.
 const (
 	tgReduceNorm = 256 // rmsnorm_quant / rmsnorm_f32 / rmsnorm_quant_f16 / rmsnorm_f16 sum-of-squares
 	tgReduceAttn = 128 // attention / attention_f32 / attention_prefill softmax denom; qk_norm / qk_norm_f16
@@ -95,18 +89,14 @@ const (
 // the CompileLibrary call in BuildResident). Default false = current shipped behavior (fast-math on).
 var preciseMathCompile bool
 
-// prefillFeatures is what the f16 MMA prefill kernels (prefill.go) actually implement: a dense
-// gated FFN (SiLU or GeGLU), per-head QK-norm, a PER-LAYER rope table and window, Gemma's
-// sandwich norms and (1+w) RMS offset, the embed-scale/final-logit-softcap pair (both applied
-// OUTSIDE this file — embedResident scales the input embeddings before PrefillLast ever runs,
-// and PrefillLast's own final step applies softcap — so declaring them here is a pure capability
-// statement, no kernel change), and MoE (G8's second half, while the attention half batches
-// normally: by default the FFN half runs expert-major — one batched router GEMM and top-k over all
-// rows, host grouping, then each active expert over its rows — and GOINFER_MOE_EXPERT_MAJOR=0 keeps
-// the original row-by-row loop through the per-token decode MoE chain; PrefillLast's L.moe != nil
-// branch. A paged MoE declines batched prefill altogether; D-D01, audit-metal-2026-09-30.md).
-// FeatMoEGatedShared (Qwen2-MoE's sigmoid-gated shared expert) comes along for free: it's the
-// SAME encodeMoESharedExpert dispatch decode already uses, gated/ungated branch and all.
+// prefillFeatures is what the f16 MMA prefill kernels (prefill.go) implement: a dense gated FFN (SiLU or GeGLU),
+// per-head QK-norm, a per-layer rope table and window, Gemma's sandwich norms and (1+w) RMS offset, and the
+// embed-scale and final-logit-softcap pair. Declaring that pair here is a capability statement only: embedResident
+// scales the input embeddings before PrefillLast runs, and PrefillLast's final step applies the softcap.
+// MoE: the attention half batches normally. By default the FFN half runs expert-major (one batched router GEMM and
+// top-k over all rows, host grouping, then each active expert over its rows); GOINFER_MOE_EXPERT_MAJOR=0 keeps the
+// row-by-row loop through the per-token decode MoE chain (PrefillLast's L.moe != nil branch). A paged MoE declines
+// batched prefill. FeatMoEGatedShared comes along: it is the same encodeMoESharedExpert dispatch decode uses.
 var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatQKNorm:            true,
 	decoder.FeatSlidingWindow:     true,
@@ -174,11 +164,9 @@ type residLayer struct {
 	attnSinks, uHasSink Buffer
 	geom                *attnGeom // per-layer attention geometry (hd/nKV/half/kEqV + uniforms); see geom.go
 
-	// Gated-DeltaNet mixer layer (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8; see metal/deltanet.go).
-	// delta non-nil marks this layer's sequence mixer as the recurrent delta rule instead of
-	// attention: no KV cache, no q/k/v/o, no geom (a DeltaNet layer has no attention geometry —
-	// r.kc[l]/r.vc[l] are left as their zero Buffer for these layers, saving real memory on 3 of
-	// every 4 layers this family has, and encodeLayer never dispatches pKv/pAttn for them).
+	// Gated-DeltaNet mixer layer (see metal/deltanet.go). delta non-nil marks this layer's sequence mixer as the
+	// recurrent delta rule instead of attention: no KV cache, no q/k/v/o, no geom; r.kc[l]/r.vc[l] stay the zero
+	// Buffer, and encodeLayer never dispatches pKv/pAttn for it.
 	delta *deltaNetLayer
 	// qGate marks a SOFTMAX layer of the SAME family: q_proj emits [query ‖ gate] per head at
 	// double width and the attention context is scaled by sigmoid(gate) before o_proj. dnQw/dnQs
@@ -188,10 +176,8 @@ type residLayer struct {
 	dnQw, dnQs Buffer
 }
 
-// resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
-// per token only the embedding + pos uniforms change.
-// modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs
-// applied, never the live environment (docs/tasks/task-env-config-2026-09.md, phase 4). "" when unset.
+// modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs applied,
+// never the live environment (docs/tasks/task-env-config-2026-09.md, phase 4). "" when unset.
 func modelKnob(m *decoder.Model, name string) string { v, _ := m.Knob(name); return v }
 
 // knobValue reads one operator knob from the model this resident was built from. A resident built by hand in a
@@ -204,6 +190,8 @@ func (r *resident) knobValue(name string) string {
 	return v
 }
 
+// resident is a Metal-resident decoder: BuildResident uploads the weights once, and per token only the embedding and
+// position uniforms change.
 type resident struct {
 	// knob is the model's decoder.Model.Knob, for the knobs read per call (PrefillLast, the fast-prefill floor).
 	knob func(name string) (string, bool)
@@ -222,11 +210,9 @@ type resident struct {
 	uPleP                    Buffer
 	g4VNorm                  bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
 	pSA, pSABias, pSAResid   Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
-	// R1 (docs/tasks/red-october.md): the W4F16 decode lane — f16 activations, no int8
-	// quantization, gated by GOINFER_METAL_DECODE_LANE=w4f16 (decodeLaneW4F16). Pipelines are
-	// always built ("one binary carries both arms", per the brief); only DISPATCH is
-	// conditional. First slice only: plain dense QKV/o-proj/gate-up (see canUseF16Lane) — down-
-	// proj (the "coal" family) and every special-case path (MoE, paged, sandwich, postOnly,
+	// The W4F16 decode lane: f16 activations, no int8 quantization, selected by GOINFER_METAL_DECODE_LANE=w4f16
+	// (decodeLaneW4F16). The pipelines are always built; only dispatch is conditional (canUseF16Lane). It covers
+	// plain dense QKV, o-proj and gate-up only: down-proj and every special case (MoE, paged, sandwich, postOnly,
 	// parallelBlock, qGate, outBias, DeltaNet, nonGatedMLP) stay on the shipped W4A8 kernels.
 	pRmsF16                         Pipeline // rmsnorm_f16_act: f32 residual in, half activation out, no quant
 	pF32ToF16                       Pipeline // bare convert, for o-proj's input (no norm/weight there)
@@ -243,16 +229,12 @@ type resident struct {
 	axF32, swF32                                               Buffer
 	pArgFinish                                                 Pipeline // fused block-argmax lm head reduce
 	pArgRowsPart                                               Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
-	// R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
-	// split) instead of by query head, DEFAULT ON since 2026-09-21 (decodeAttnFA, set from
-	// metalAttnFAEnabled(); GOINFER_METAL_ATTN_FA=0 opts out) — see that function's own doc
-	// comment for the gate/speed/verify-oracle history. Pipelines always built; dispatch is
-	// conditional (canUseAttnFA), same "one binary carries both arms" shape as R1's f16 lane
-	// above. hd==128 (or hd==64 through B-P01's block twin, attnFAHeadDimOK), dense-GQA-only (no window/sinks/f32-KV) — see attention_fa's own doc
-	// comment in kernels.go for why, and §2.2/R2's own speed-probe record for why S must be sized
-	// for real occupancy (S=1 is UNIFORMLY worse than the shipped kernel at every depth measured,
-	// not just below some crossover — a correction to this brief's own original "S=1 below a
-	// measured crossover" text).
+	// The split-KV decode-attention lane, gridded by (kvHead, split) instead of by query head: on by default
+	// (decodeAttnFA, from metalAttnFAEnabled; GOINFER_METAL_ATTN_FA=0 opts out). The pipelines are always built;
+	// dispatch is conditional (canUseAttnFA). It covers hd==128 (or hd==64 through the block twin, attnFAHeadDimOK)
+	// on dense GQA only: no window, sinks or f32 KV. Why, and why S must be sized for real occupancy (S=1 is
+	// uniformly worse than the shipped kernel at every depth), is in attention_fa's comment in kernels.go and
+	// docs/code-notes/metal.md#resident.pAttnFA.
 	pAttnFA, pAttnFACombine Pipeline
 	// E-P05: pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
 	// row's partial region, attnFAPartial's.
@@ -263,11 +245,10 @@ type resident struct {
 	decodeAttnFA     bool
 	attnFAPartial    Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
 	attnFAMaxSplit   int
-	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
-	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
-	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
-	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
-	// (the grid's comes from planNKeys) — so the two cannot disagree.
+	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and attnFAMaxSplit
+	// caps still apply). Zero in production; set only by tests that sweep S. Read inside attnFASplitFor, the one
+	// function both the dispatch grid and setPos's uAttnFANSplit use, and both for the same key count (the grid's
+	// comes from planNKeys), so the two cannot disagree.
 	attnFASplitOverride int
 	// moeCap is D-G01's routing capture (metal/dg01_moe_gate_test.go). ZERO in production. With idx and wgt set, decode's
 	// non-paged MoE FFN copies each layer's selected experts and weights into slot l (k words each), and the batched
@@ -280,9 +261,8 @@ type resident struct {
 		major    func(l int, idx []uint32, wgt []float32)
 	}
 	// attnFAFloorOverride, when > 0, replaces attnFADepthFloor as the key count at which attention_fa takes over.
-	// ZERO in production — set only by tests (T1.2 of docs/tasks/task-metal-audit-2026-10.md: legacy-against-blk arms
-	// below the floor). Read through attnFAFloor by attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token
-	// step and the batched step plan alike.
+	// Zero in production; set only by tests (legacy-against-blk arms below the floor). Read through attnFAFloor by
+	// attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token step and the batched step plan alike.
 	attnFAFloorOverride int
 	// promptStepOff, when true, keeps PrefillLast off the step route (E-P01, prefillByStep). FALSE in production — set
 	// only by tests that measure the batched pass or the sequential decline on a resident that could take the route.
@@ -348,15 +328,9 @@ type resident struct {
 	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
 	attnFANKV                     int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit       Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
-	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
-	// encoding of the NEXT command buffer while the CURRENT one was still executing on the GPU (the
-	// pipelined executor's own "encode t+1 while t runs" design, execLoop). That is a raw CPU write to
-	// shared memory racing a concurrently-running GPU kernel's read of the SAME buffer — Metal's automatic
-	// hazard tracking covers GPU-encoded command dependencies, not this. Reproduced in isolation
-	// (TestAttentionFA_pipelinedEncodeRace, varying nSplit per iteration to make it observable) with
-	// EXACTLY R2's own real-generation signature: iterations 0-1 correct, iteration 2 wrong, an irregular
-	// pass/fail pattern across later iterations — the signature of a genuine race, not a deterministic
-	// logic bug. Root cause of the divergence r2-attn-fa-2026-09-19.md left unexplained.
+	// per-layer dispatch site: the pipelined executor encodes t+1 while t runs on the GPU (execLoop), so a per-layer
+	// CPU write would race the running kernel's read of the same buffer, which Metal's automatic hazard tracking
+	// does not cover. TestAttentionFA_pipelinedEncodeRace pins it.
 	pQKNorm              Pipeline // per-head QK-RMSNorm (Qwen3)
 	pRmsF32              Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
 	pGemvW8, pGemvW8Amax Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
@@ -405,22 +379,16 @@ type resident struct {
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
 
-	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
-	// allocated once in BuildResident unconditionally (cheap; same "always create, gate on the
-	// per-model state" shape every other optional pipeline in this struct already uses). Fused
-	// down+up into one kernel/dispatch (P-11, audit-2026-09-10) — t[R] lives in the kernel's own
-	// threadgroup memory now, no device-side scratch buffer to hold between dispatches.
-	// loraLayers is nil until SetAdapter binds one; the dispatch sites (encodeAttention/encodeLayer)
-	// no-op per projection when it is nil or the targeted projection's delta is nil.
+	// Compute-time LoRA (lora.go). pLoraDelta is always created in BuildResident and gated on the per-model state,
+	// like every other optional pipeline here. It is one fused down+up dispatch: t[R] lives in the kernel's own
+	// threadgroup memory. loraLayers is nil until SetAdapter binds one; the dispatch sites (encodeAttention,
+	// encodeLayer) skip a projection when it is nil or that projection's delta is nil.
 	pLoraDelta Pipeline
 	loraLayers []residLoRALayer
 
-	// loraCacheSrc/loraCached are P-10's single-adapter device cache (audit-2026-09-10): the
-	// source layers a bind's device buffers were built from, and those buffers themselves,
-	// KEPT ALIVE across a SetAdapter(nil) clear rather than released — a rebind of the SAME
-	// adapter (the common "one chat session, many turns" shape internal/serveapp/main.go's
-	// N-adapters-one-resident design produces) then skips the re-upload entirely instead of
-	// paying it on every generation. See SetAdapter's own comment for the identity check.
+	// loraCacheSrc and loraCached are the single-adapter device cache: the source layers a bind's device buffers
+	// were built from, and those buffers, kept alive across SetAdapter(nil) so a rebind of the same adapter (one
+	// chat session, many turns) skips the re-upload. SetAdapter's comment has the identity check.
 	loraCacheSrc []decoder.ResidentAdapterLayer
 	loraCached   []residLoRALayer
 
@@ -430,17 +398,14 @@ type resident struct {
 	// hd/nKV/kvDim/half and their uniform buffers — lives on residLayer.geom (see geom.go);
 	// it was REMOVED from here so a launch site cannot bind the uniform shape by mistake.
 	H, nL, nH, I, V int
-	// ctxCap is the resolved resident KV capacity in positions — resolveMetalCtxCap(m), set once
-	// in buildResident. Every r.kc[l]/r.vc[l] is sized ctxCap*kvDim; checkCap (metal/backend.go)
-	// guards writes against it. Always <= metalCtxCapMax (the kernel's hard ceiling); may be
-	// SMALLER when an explicit -ctx requested less (G6, docs/tasks/task-gpu-paths-2026-09.md).
+	// ctxCap is the resolved resident KV capacity in positions (resolveMetalCtxCap), set once in buildResident.
+	// Every r.kc[l]/r.vc[l] is sized ctxCap*kvDim; checkCap (metal/backend.go) guards writes against it. Always <=
+	// metalCtxCapMax (the kernel's hard ceiling); smaller when an explicit -ctx asked for less.
 	ctxCap       int
 	finalSoftcap float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in finalizeLogits (FeatFinalLogitSoftcap).
-	// embedScale is Gemma's √hidden token-embedding multiplier (FeatEmbedScale); 0/1 ⇒ none.
-	// Applied by the id-taking entry points (Forward / ForwardArgmax) right after the embedding
-	// lookup — the ONE place they differ from ForwardEmb, whose caller has already scaled
-	// (decoder.embedResident). Before audit G-02 this field did not exist and those two methods
-	// silently ran Gemma unscaled; see Forward.
+	// embedScale is Gemma's sqrt(hidden) token-embedding multiplier (FeatEmbedScale); 0 or 1 means none. The
+	// id-taking entry points (Forward, ForwardArgmax) apply it right after the embedding lookup; ForwardEmb does
+	// not, because its caller has already scaled (decoder.embedResident).
 	embedScale float32
 	embed      *linalg.WeightMat
 
@@ -521,32 +486,26 @@ type resident struct {
 	batchLogits                              Buffer
 	batchUPos, batchUNKeys, batchUQTempScale []Buffer
 
-	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
-	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
-	// host encode bubble. Lazily (re-)started on the first ForwardEmbPipe after execReq is nil —
-	// C-07: SetAdapter tears the executor down (stopExec) rather than a sync.Once, because its
-	// pre-encoded t+1 buffer bakes in r.loraLayers AT ENCODE TIME; a bind/switch/clear between
-	// two ForwardEmbPipe calls left that stale buffer to be committed under the NEW adapter
-	// state. ForwardEmbPipe and SetAdapter are never concurrent (the resBusy winner's own
-	// sequential SetAdapter → Forward* → SetAdapter(nil)), so the plain nil-check below needs no
-	// extra lock.
+	// The pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that commits token t,
+	// pre-encodes t+1 while the GPU runs t, then waits, hiding the host encode bubble. It starts lazily on the first
+	// ForwardEmbPipe while execReq is nil. SetAdapter tears it down (stopExec) because its pre-encoded t+1 buffer
+	// bakes in r.loraLayers at encode time; a bind, switch or clear between two ForwardEmbPipe calls would otherwise
+	// commit that stale buffer under the new adapter state. ForwardEmbPipe and SetAdapter are never concurrent, so
+	// the plain nil check needs no lock.
 	execReq  chan execJob
 	execAck  chan []float32
 	execDone chan struct{} // closed when execLoop returns — Close must WAIT on this before freeing
 
-	// execErr latches the first aborted-command-buffer error any forward path sees (audit C-09).
-	// waitUntilCompleted returns cleanly even on a GPU fault, so every completion site records
-	// enc.Err() here and the adapter consumes it (takeExecErr) after each forward — surfacing an
-	// error instead of the stale logits/token the aborted buffer left behind. Plain field: the
-	// pipelined executor is single-goroutine and writes it BEFORE the execAck send (which
-	// happens-before the adapter's read); the synchronous paths run on the caller's locked thread.
+	// execErr latches the first aborted-command-buffer error any forward path sees. waitUntilCompleted returns
+	// cleanly even on a GPU fault, so every completion site records enc.Err() here and the adapter consumes it
+	// (takeExecErr) after each forward, surfacing an error instead of the stale logits or token the aborted buffer
+	// left behind. Plain field: the pipelined executor is single-goroutine and writes it before the execAck send
+	// (which happens-before the adapter's read); the synchronous paths run on the caller's locked thread.
 	execErr error
 
 	pf *prefillState // lazily-compiled f16 MMA prefill pipelines (opt-in)
-	// pfErr latches a compile/pipeline-creation failure from ensurePrefill (N-47,
-	// audit-2026-09-10.md): without this, r.pf stays nil after a failure and every later
-	// PrefillLast call re-attempts the full MSL compile from scratch and re-panics identically —
-	// wasted work on every request for the rest of the process's life, not just the first.
+	// pfErr latches a compile or pipeline-creation failure from ensurePrefill, so r.pf staying nil does not make
+	// every later PrefillLast retry the full MSL compile and panic again.
 	pfErr error
 
 	// Gated-DeltaNet mixer (deltanet_kernels.go — own module, nothing else here is recurrent).
@@ -657,17 +616,12 @@ func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	return NewBufferInt8(d, q8), NewBufferFloats(d, sc), nil
 }
 
-// int4DirectWords converts a decoder int4 WeightMat's packed nibbles + f32 group scales straight
-// into Metal's W4A8 buffers (uint32 words + f16 scales) — NO int8 intermediate. aikit's group=32
-// packing (nib = q+8, byte k/2 low/high) and Metal's packW4A8Row (element k → word k/8, bit
-// 4·(k%8)) are the SAME bytes on little-endian, so the nibbles copy verbatim; only the group
-// scales narrow f32→f16. Returns ok=false if the weight is not group-32 int4.
-//
-// This is the fix for Gemma's dormant residual: BuildResident's default path double-quantizes
-// (f32→int8→int4), and Gemma's low-magnitude attention contexts amplify that int8-intermediate
-// drift into a catastrophic context error (metal/gemma_sublayer_test.go: L1 cosine craters to
-// 0.649 vs the direct-int4 reference's ~0.93). Consuming the decoder's int4 directly — exactly
-// what CUDA/WebGPU do — removes the int8 step. Qwen is insensitive to it (ships clean either way).
+// int4DirectWords converts a decoder int4 WeightMat's packed nibbles and f32 group scales straight into Metal's W4A8
+// buffers (uint32 words plus f16 scales), with no int8 intermediate. aikit's group=32 packing (nib = q+8, byte k/2
+// low/high) and Metal's packW4A8Row (element k to word k/8, bit 4*(k%8)) are the same bytes on little-endian, so the
+// nibbles copy verbatim; only the group scales narrow f32 to f16. Returns ok=false if the weight is not group-32 int4.
+// Consuming the int4 directly avoids the double quantization (f32 to int8 to int4) of BuildResident's default path,
+// which Gemma's low-magnitude attention contexts amplify into a large context error (metal/gemma_sublayer_test.go).
 func int4DirectWords(w *linalg.WeightMat) (words []uint32, scales []uint16, ok bool) {
 	q4, q4s, group, ok := decoder.Int4F32(w)
 	if !ok || group != 32 {
@@ -681,12 +635,9 @@ func int4DirectWords(w *linalg.WeightMat) (words []uint32, scales []uint16, ok b
 	return words, scales, true
 }
 
-// bytesToU32 reinterprets a little-endian byte slice as uint32 words (len must be a multiple of 4).
-// N-29 (audit-metal-2026-09-12.md): b is already the target little-endian word bytes (nothing to
-// reconstruct arithmetically) — a per-element shift-and-mask loop was doing a byte copy the slow
-// way. w is freshly allocated (always 4-aligned, unlike the mmap-backed sources int4DirectBytes
-// exists to avoid this same reinterpret on), so a single bulk copy into its own []byte view is
-// exactly as safe as manual shifts and orders of magnitude fewer instructions.
+// bytesToU32 reinterprets a little-endian byte slice as uint32 words (len must be a multiple of 4) with one bulk copy:
+// b already holds the target word bytes, and w is freshly allocated, so it is 4-aligned, unlike the mmap-backed
+// sources int4DirectBytesOnly exists to avoid reinterpreting.
 func bytesToU32(b []byte) []uint32 {
 	w := make([]uint32, len(b)/4)
 	if len(w) == 0 {
@@ -696,14 +647,12 @@ func bytesToU32(b []byte) []uint32 {
 	return w
 }
 
-// int4DirectBytesOnly returns a canonical group-32 int4 WeightMat's packed nibble bytes ALIASED straight from the
-// mmap: no bytesToU32 reconstruction and no per-stage []uint32 allocation (measured on the 26B: ~215 ms and 1.9 GB of
-// reconstruction per run, both removed). They are byte-for-byte the words int4DirectWords builds (little-endian), so a
-// byte-copy into a uint32 slot buffer reproduces them exactly (expertpool.copyBytesToU32Buf). The paged MoE stage
-// functions (buildMoELayer, buildGemma4MoELayer) pair it with the WeightMat's own Int4ScalesF16: re-deriving f16 scales
-// from an f32 copy on every page-in was ~2.85 GB/token of transient allocation on the 26B (N-20,
-// audit-metal-2026-09-12.md), and the build-time cache that replaced it duplicated 1361 MB of scales the mapping
-// already holds (C-P01, audit-metal-2026-09-30.md).
+// int4DirectBytesOnly returns a canonical group-32 int4 WeightMat's packed nibble bytes aliased straight from the
+// mmap: no bytesToU32 reconstruction and no per-stage []uint32 allocation. They are byte for byte the words
+// int4DirectWords builds (little-endian), so a byte copy into a uint32 slot buffer reproduces them exactly
+// (copyBytesToU32Buf). The paged MoE stage functions (buildMoELayer, buildGemma4MoELayer) pair it with the WeightMat's
+// own Int4ScalesF16, rather than re-deriving f16 scales from an f32 copy on every page-in or caching a duplicate of
+// what the mapping already holds.
 func int4DirectBytesOnly(w *linalg.WeightMat) (q4 []byte, ok bool) {
 	b, _, group, ok := w.Int4F16()
 	if !ok || group != 32 {
@@ -712,12 +661,10 @@ func int4DirectBytesOnly(w *linalg.WeightMat) (q4 []byte, ok bool) {
 	return b, true
 }
 
-// parallelF32ToF16 converts src (f32 group scales) to dst (f16 bits) across up to 8 workers. In the
-// gemma4-26b expert-paging path this f32→f16 conversion runs once per expert PER STAGE (~600 stages/
-// token × ~186K scales) and was ~228 ms/token of staging, arithmetic-dominated (alloc ~27 ms, copy
-// ~5 ms) — but every element is independent and f32ToF16 is deterministic, so splitting it across
-// cores is a free (no-memory) staging win that is BYTE-IDENTICAL to the serial loop. Serial for small
-// inputs (the non-paged one-time build, where goroutine spawn would not pay).
+// parallelF32ToF16 converts src (f32 group scales) to dst (f16 bits) across up to 8 workers. Every element is
+// independent and f32ToF16 is deterministic, so the split is byte-identical to the serial loop. It exists for the
+// expert-paging stage path, where the conversion runs once per expert per stage and is arithmetic-dominated; small
+// inputs (the one-time non-paged build) stay serial, where goroutine spawn would not pay.
 func parallelF32ToF16(dst []uint16, src []float32) {
 	n := len(src)
 	workers := min(runtime.GOMAXPROCS(0), 8)
@@ -742,33 +689,28 @@ func parallelF32ToF16(dst []uint16, src []float32) {
 	wg.Wait()
 }
 
-// int4Buf uploads a WeightMat as W4A8 (int4, group=32) + f16 group scales. If the weight is
-// ALREADY int4 (a Quant:"int4" load), it consumes the nibbles directly (int4-direct, no int8
-// step); otherwise it re-quantizes the int8 weight through the validated packer. One-time at build.
-// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) any resident
-// dispatch will request. The SA-GEMV / MoE kernels stage the GEMV's contraction row into threadgroup
-// memory at 2 bytes/element (DispatchTG tgBytes = 2·K); the widest staged K is `hidden` (qkv/gate-up),
-// the q-width `qWidth` = nH·hd (o-proj), or — for MoE — the expert intermediate `moeInter`/`g4moeInter`
-// (the expert down-proj stages `inter`). The dense down-proj uses the non-staging pGemv, so the dense
-// intermediate is deliberately NOT counted. Split out so the M-11 budget arithmetic is unit-testable.
-// N-32: dnValueDim is DeltaNet's out-projection staging width. deltanet.go dispatches pSAResid
-// with `dp.valueDim*2` threadgroup bytes, and that term was missing here — so on a DeltaNet model
-// whose value dim exceeds every other staged width, the M-11 budget under-counts and the check
-// passes on a configuration that then exceeds the device limit at dispatch.
+// maxThreadgroupStageBytes returns the largest threadgroup staging allocation (bytes) any resident dispatch will
+// request. The SA-GEMV and MoE kernels stage the contraction row into threadgroup memory at 2 bytes per element
+// (DispatchTG tgBytes = 2*K); the widest staged K is hidden (qkv, gate-up), qWidth = nH*hd (o-proj), the MoE expert
+// intermediate moeInter or g4moeInter (the expert down-proj stages inter), or dnValueDim (DeltaNet's out-projection,
+// which deltanet.go dispatches with dp.valueDim*2 bytes). The dense down-proj uses the non-staging pGemv, so the dense
+// intermediate is deliberately not counted. A separate function so the budget arithmetic is unit-testable.
 func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter, dnValueDim int) int {
 	return 2 * max(max(max(hidden, qWidth), max(moeInter, g4moeInter)), dnValueDim)
 }
 
+// int4Buf uploads a WeightMat as W4A8 (int4, group=32) plus f16 group scales. An int4 weight (a Quant:"int4" load) is
+// consumed directly, with no int8 step; an int8 weight is re-quantized through the validated packer. One-time at build.
 func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) { return int4BufA(d, nil, w) }
 
 // int4BufA is int4Buf with an optional weightAlias (S6): when a is non-nil and w's nibbles live in the
 // .giw mapping, the nibbles are bound in place instead of copied; the f16 scales are built exactly as the
 // copy path builds them.
 func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
-	// The W4A8 layout and every GEMV kernel hard-assume K is a multiple of the group (32): rows are
-	// packed K/8 words + K/32 scales with no partial-group handling. A K%32 != 0 weight would pack a
-	// truncated last group (trailing nibbles decode as −8) with a per-row stride the kernel disagrees
-	// with — silently wrong, or a panic at K<32. Decline so BuildResident falls back to CPU (M-10).
+	// The W4A8 layout and every GEMV kernel assume K is a multiple of the group (32): rows pack K/8 words and K/32
+	// scales with no partial-group handling. A weight with K%32 != 0 would pack a truncated last group with a row
+	// stride the kernel disagrees with, silently wrong or a panic at K<32. Decline, so BuildResident falls back to
+	// CPU.
 	if k := w.Cols(); k%32 != 0 {
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU (audit M-10)", k)
 	}
@@ -811,10 +753,8 @@ func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, e
 // int4Concat re-quantizes and row-concatenates several same-K WeightMats into ONE W4A8
 // buffer — the fusion enabler (combined QKV → one GEMV, combined gate/up → one GEMV).
 func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
-	// N-29 (audit-metal-2026-09-12.md): pre-size from the known final shape (N*K/8 words, N*K/32
-	// f16 scales per group-32 W4A8 tensor — the same formula int4Buf's own int8-fallback branch
-	// already allocates by) instead of growing two nil slices by append, which reallocates+copies
-	// on every capacity doubling across a fused tensor's weights.
+	// Pre-size from the final shape (N*K/8 words and N*K/32 f16 scales per group-32 tensor, the formula int4BufA's
+	// int8 branch allocates by) instead of growing two nil slices by append.
 	var totalWords, totalScales int
 	for _, w := range wms {
 		n, k := w.Rows(), w.Cols()
@@ -824,9 +764,9 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	words := make([]uint32, 0, totalWords)
 	scales := make([]uint16, 0, totalScales) // f16 group scales (L1)
 	for _, w := range wms {
-		// K%32==0 is a hard W4A8 invariant (group=32) — see int4Buf. int4Concat has no error return
-		// and is only called from the build path, so panic; buildResident's recover turns it into a
-		// clean CPU decline, the same as its existing wrong-kind panic below (audit M-10).
+		// K%32==0 is a hard W4A8 invariant (group=32); see int4BufA. int4Concat has no error return and runs only on the
+		// build path, so it panics; buildResident's recover turns that into a clean CPU decline, as with its wrong-kind
+		// panic below.
 		if k := w.Cols(); k%32 != 0 {
 			panic(fmt.Sprintf("metal: W4A8 concat needs K%%32==0 (group=32), got K=%d (audit M-10)", k))
 		}
@@ -837,17 +777,11 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 		}
 		q8, sc, _, ok := w.Int8()
 		if !ok {
-			// int4DirectWords already declined above (its own w.Int4() check failed), and this is
-			// not int8 either. The common real cause is the repacked-only int4 policy
-			// (wantsCanonicalInt4, aikit audit M-22): a tensor built with Options.Backend != "cpu"
-			// stays canonical, but one built WITH Backend:"cpu" (or loaded generically and handed
-			// to Metal's own BuildResident out of band — decoder.Load has no way to see that
-			// coming) may have no canonical bytes left at all. Name that condition specifically —
-			// the previous message ("weight kind %q not int8 or int4") both mis-stated the
-			// check (it read Int4()'s narrower "canonical present" ok, not Kind()) and gave no
-			// actionable next step. A tensor that is neither int8 nor int4 at all (a real
-			// programming error reaching this function) still gets a message, just the older,
-			// more generic one.
+			// int4DirectWords already declined (the weight has no canonical int4 bytes) and this is not int8 either. The
+			// common cause is the repacked-only int4 policy (wantsCanonicalInt4): a tensor built with Backend "cpu", or
+			// loaded generically and handed to BuildResident out of band, may have no canonical bytes left. Name that
+			// condition specifically; a tensor that is neither int8 nor int4 at all (a programming error) gets the generic
+			// message.
 			if w.IsInt4() {
 				panic(fmt.Sprintf("metal: int4 tensor has no canonical bytes (layout %s-only): "+
 					"model was loaded for a CPU-only backend; load with Options.Backend set to "+
@@ -867,18 +801,16 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	return NewBufferUint32s(d, words), NewBufferU16s(d, scales)
 }
 
-// nativeInt8 turns the native int8 path on (w8Eligible). ON since 2026-10-04: F3′, F2 (read as hard flips, owner
-// decision), P2, S and S-auto passed (docs/tasks/task-metal-int8-2026-10.md). Tests turn it off for the int4
-// re-quant arm; it is not an option or an environment variable.
+// nativeInt8 turns the native int8 path on (w8Eligible). Tests turn it off for the int4 re-quant arm; it is not an
+// option or an environment variable. Grades: docs/tasks/task-metal-int8-2026-10.md.
 var nativeInt8 = true
 
-// nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). ON since 2026-10-04: M1 and
-// M3 passed, and M2 is read as hard flips (owner decision; it passes, 1 against the re-quant's 3), with M4 the night's
-// prefill confirmation (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"). Tests turn it off for the re-quant arm.
+// nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). Tests turn it off for the
+// re-quant arm. Grades: docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix".
 var nativeInt4Mix = true
 
-// nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*).
-// ON since 2026-10-04: X1-X4 passed (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8"); tests turn it off.
+// nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*);
+// tests turn it off. Grades: docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8".
 var nativeInt8MoE = true
 
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
@@ -987,11 +919,10 @@ func f32Projection(m *decoder.Model) string {
 	return ""
 }
 
-// w8PreciseMath compiles the library of a model headed for the native int8 path without fast math (owner decision,
-// 2026-10-04, docs/tasks/task-metal-int8-2026-10.md): at int8int8 any difference from the CPU is amplified by the
-// activation quantization, and fast math was about 40% of gate F3's gap (KL(f32 ‖ Metal int8) 0.027917 fast, 0.025440
-// precise, against the f16-KV CPU's 0.024045). It is decided before the build from the model alone, so a model that
-// passes w8Weights but is MoE (Gemma 4's parallel dense‖MoE) is excluded here too.
+// w8PreciseMath compiles the library of a model headed for the native int8 path without fast math: at int8int8 any
+// difference from the CPU is amplified by the activation quantization, and fast math was a large part of gate F3's gap
+// (docs/tasks/task-metal-int8-2026-10.md). It is decided before the build from the model alone, so a model that passes
+// w8Weights but is MoE (Gemma 4's parallel dense||MoE) is excluded here too.
 func w8PreciseMath(m *decoder.Model) bool {
 	if !nativeInt8 || w8FastMath || m.HasGemma4MoEResident() {
 		return false
@@ -1030,42 +961,39 @@ func int8Concat(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, Bu
 	return NewBufferInt8(d, codes), NewBufferFloats(d, scales)
 }
 
-// BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
-// Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-scale
-// (the DecodeRunnerEligible dense shape), full RoPE via the model's own inv-freq table.
+// buildResident builds a Metal resident decoder from a loaded Model: it uploads the weights, creates the pipelines and
+// allocates the KV slots. It returns an error, which the caller treats as a decline to the CPU path, when the model's
+// shape or the device cannot run it resident.
 func buildResident(m *decoder.Model) (res *resident, err error) {
-	// Exported entry point: convert the build-time panics (pipeline-compile failure, non-int4
-	// expert weights, buffer OOM — model.go/moe.go/gemma4_moe.go) into the error this signature
-	// promises, so a caller using the documented entry point directly gets a decline, not a
-	// process-killing panic (audit B-10). Registered first ⇒ runs last, after the !ok cleanup
-	// defer below has released the partial device state. The backend wrapper keeps its own
-	// recover() as defence in depth.
+	// Entry point: convert the build-time panics (pipeline-compile failure, non-int4 expert weights, buffer OOM in
+	// model.go, moe.go and gemma4_moe.go) into the error this signature promises, so a direct caller gets a decline,
+	// not a process-killing panic. Registered first, so it runs last, after the cleanup defer below has released the
+	// partial device state. The backend wrapper keeps its own recover() as defence in depth.
 	defer func() {
 		if p := recover(); p != nil {
 			res, err = nil, fmt.Errorf("metal: BuildResident panicked: %v", p)
 		}
 	}()
-	// M24(c): pin the thread and hold ONE autorelease pool for the whole build — CompileLibrary,
-	// NewComputePipeline, and every NewBuffer*/nsString create autoreleased temporaries that would
-	// otherwise leak on this unpinned, pool-less thread.
+	// Pin the thread and hold one autorelease pool for the whole build: CompileLibrary, NewComputePipeline and every
+	// NewBuffer*/nsString create autoreleased temporaries that would otherwise leak on this unpinned, pool-less
+	// thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
 	defer pool.Drain()
-	// MC1's slot count is priced BEFORE any buffer below exists. Its budget, metalMemoryCeiling, reads the live
-	// available memory; asked after the weights were allocated (as it once was, at the slot-allocation site), that
-	// reading already excluded the resident's own buffers while the base it is compared with (residentNeedBytes)
-	// still counts them — the weights counted twice. Measured 2026-09-26 on the 1.5B at a 1024 context: 2 slots of 8
-	// granted (28 MB each) with a base of 4,044 MB against 5,531 MB live before the build, where 8 fit.
+	// MC1's slot count is priced before any buffer below exists. Its budget, metalMemoryCeiling, reads the live
+	// available memory; read after the weights were allocated, that figure already excludes the resident's own
+	// buffers while the base it is compared with (residentNeedBytes) still counts them, so the weights would be
+	// counted twice and too few slots granted.
 	kvSlots := metalKVSlots(m)
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
 	}
-	// M24(a): every buffer + objc object below lands on d's ledgers. On ANY early return or panic
-	// (a sandwich shape-check error, a buildMoE/int4/int8-kind error, or a mustBuf/pipe OOM panic
-	// that backend.go recovers into a clean CPU decline), release it all — otherwise a declined
-	// build leaks gigabytes while serve continues on CPU. Cleared once construction completes.
+	// Every buffer and objc object below lands on d's ledgers. On any early return or panic (a shape-check error, a
+	// buildMoE/int4/int8-kind error, or a mustBuf/pipe OOM panic that backend.go recovers into a clean CPU decline),
+	// release it all: otherwise a declined build leaks gigabytes while serve continues on CPU. Cleared once
+	// construction completes.
 	ok := false
 	defer func() {
 		if !ok {
@@ -1073,13 +1001,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			d.ReleaseObjects()
 		}
 	}()
-	// preciseMathCompile (test/measurement toggle, Task 3): fast-math OFF removes the compiler's
-	// contraction/reassociation/transcendental discretion — the axis that makes within-machine
-	// bit-identity fragile to an OS toolchain update. Measure its decode-tok/s cost before adopting.
-	// Default fast-math (measured 2026-08-04: precise costs ~4% @2048 / ~7% shallow and does NOT
-	// improve CPU parity — §A2-Metal). GOINFER_PRECISE_MATH is a documented opt-in for anyone who wants
-	// bits robust to an OS-toolchain update at that cost; the snapshot golden otherwise DETECTS such
-	// drift, which is the cheaper path we chose.
+	// preciseMathCompile (a test and measurement toggle) turns fast-math off, which removes the compiler's
+	// contraction, reassociation and transcendental discretion: the axis that makes within-machine bit-identity
+	// fragile to an OS toolchain update. The default is fast-math: precise costs a few percent of decode speed and
+	// does not improve CPU parity (docs/ollama-chase.md §A2-Metal). GOINFER_PRECISE_MATH is a documented opt-in for
+	// bits robust to a toolchain update; the snapshot golden otherwise detects such drift.
 	compile := d.CompileLibrary
 	preciseMath := preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != "" || w8PreciseMath(m)
 	if preciseMath {
@@ -1122,10 +1048,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pArgFinish = pipe("argmax_finish")
 	r.pArgRowsPart = pipe("argmax_rows_part") // E-P08: the batched step's greedy rows (batch.go)
 	r.pEmbedGather = pipe("embed_gather_i8")
-	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
-	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
-	// Dropped. If gemv_w4a8_sa_amax is wired later, it needs an N/row>=N guard — see the note on the
-	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
+	// gemv_w4a8_bias and gemv_w4a8_sa_amax are not built: nothing dispatches them (ForwardArgmax uses the int8
+	// pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally). If gemv_w4a8_sa_amax is wired, it needs an
+	// N/row>=N guard (see the note on the kernel in kernels.go): it is a reduction, so mask the logit to -INF, do
+	// not early-return past the barrier.
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
 	// Pairwise rope (docs/tasks/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
 	// GLM-OCR) binds the pairwise twins into the same fields, so no dispatch site changes; every other family keeps these.
@@ -1179,11 +1105,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.attnSink = true
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)
 	}
-	// f32 KV path (kv_store_f32/attention_f32) exists but is DISABLED: the matched-input confirmer
-	// proved f16-vs-f32 KV storage is NOT the Gemma crater. The whole crater is Metal's BOS
-	// (position-0) K/V being computed wrong (cos 0.40 vs goinfer); overwriting just that recovers
-	// the context to 0.999. So precision was a red herring (mine and the CUDA box's) — the real
-	// bug is the position-0/attention-sink K/V compute. Kept off until that's fixed.
+	// The f32 KV path (kv_store_f32, attention_f32) exists but is off: a matched-input confirmer showed f16 versus
+	// f32 KV storage is not what degrades Gemma's contexts. What was found, and the open claim about position-0 K/V,
+	// is in docs/code-notes/metal.md#buildResident.kvF32.
 	r.kvF32 = false
 	if r.kvF32 {
 		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
@@ -1233,10 +1157,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.uDnRep, r.uDnVBase = NewBufferU32(d, uint32(dp.rep)), NewBufferU32(d, uint32(2*dp.keyDim))
 		r.uDnValueDim = NewBufferU32(d, uint32(dp.valueDim))
 	}
-	// Native int8 (docs/tasks/task-metal-int8-2026-10.md, slice 1): a dense model whose body projections are all int8
-	// runs them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they
-	// are off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
-	// them through its W8 tiles (slice 2, gemm_w8f16_*).
+	// Native int8 (docs/tasks/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
+	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
+	// off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
+	// them through its W8 tiles (gemm_w8f16_*).
 	r.w8 = w8Eligible(m, r)
 	if r.w8 && r.moe != nil { // slice 4: the experts' GEMVs on their int8 weights (buildMoELayer uploads them as int8)
 		r.moe.w8 = true
@@ -1268,39 +1192,27 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.w8 {
 		r.decodeLaneW4F16 = false
 	}
-	// prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
-	// features below, so ANY model needing more (MoE — never packs the dense FFN buffers at all)
-	// declines prefill and falls back to the sequential Forward loop.
-	//
-	// G8's Gemma-set admission (prefillFeatures above) is NOT enough on its own for dense Gemma 4:
-	// PrefillLast reads g0 := r.layers[0].geom ONCE and reuses it for every layer's rope/attention
-	// dims — correct for every uniform-geometry family (including Gemma 3's dual-base RoPE, which
-	// keeps head_dim uniform), but Gemma 4's local/global split genuinely varies head_dim per
-	// layer (256 vs 512). decoder.Model.PerLayerGeomOK(backend) answers "does this arch need
-	// per-layer geometry, and does BACKEND declare support" — Metal's DECODE path does (it has
-	// its own per-layer geom seam, encodeAttention's geomFor), so calling it with "metal" would
-	// wrongly clear Gemma 4 here too. Checking !m.HasPerLayerGeometry() directly answers
-	// "does this arch vary per layer at all", the thing this uniform-g0 fast path can't handle
-	// regardless of what Metal's decode path separately supports.
-	// G8 MoE (docs/tasks/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
-	// dense‖MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a THIRD FFN shape this row's
-	// L.moe != nil branch in PrefillLast does not cover at all — declaring FeatMoE above would
-	// otherwise admit it if it happens to have uniform per-layer geometry (HasPerLayerGeometry alone
-	// only catches the local/global head_dim variance dense Gemma 4 has; nothing about g4moe's
-	// FFN shape is geometry). Explicit, checked directly rather than assumed caught by the other
-	// guard — the exact class of blind spot this doc's own G6 WebGPU incident already burned once.
-	// C-08 (audit-2026-09-10): a PAGED generic MoE's per-layer expGuW/expGuS/expDW/expDS buffers
-	// are zero-value (moe.go — the real weights live in the slot pool instead), but PrefillLast's
-	// row loop calls the same non-paged encodeMoERoute/encodeMoEExperts pair unconditionally.
-	// Same predicate as the dense Gemma-4 MoE guard above, generalized to the generic twin.
-	// A-C01 (docs/audit-metal-2026-09-30.md): the prefill kernels write K/V with kv_store_f16, half per element at
-	// pos*kvDim, but an int8 KV cache (-kv i8) is allocated at one byte per element with separate scale buffers, and
-	// PrefillLast's attention reads the cache as half too. So with -kv i8 every prompt position landed in the wrong
-	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
-	// whose decode kernels write and read the int8 cache.
-	// D-B01: a Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn (on since its grade, 2026-10-04), and only in the shape
-	// prefill_deltanet.go implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays
-	// sequential.
+	// prefillOK is derived, not hand-listed: the f16 prefill kernels implement exactly the features in
+	// prefillFeatures, so a model needing more (MoE never packs the dense FFN buffers at all) declines prefill and
+	// falls back to the sequential Forward loop. Admission by prefillFeatures alone is not enough, so these are
+	// declined explicitly:
+	// - Per-layer geometry. PrefillLast reads r.layers[0].geom once and reuses it for every layer's rope and
+	//   attention dims. That is right for every uniform-geometry family (Gemma 3's dual-base RoPE keeps head_dim
+	//   uniform) but not for Gemma 4's local/global split (head_dim 256 versus 512). Check !m.HasPerLayerGeometry()
+	//   directly: decoder.Model.PerLayerGeomOK("metal") answers whether Metal's decode path supports per-layer
+	//   geometry, so it would wrongly clear Gemma 4.
+	// - Gemma 4's enable_moe_block (parallel dense||MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a third FFN
+	//   shape that PrefillLast's L.moe != nil branch does not cover. Geometry does not catch it, so it is checked
+	//   directly.
+	// - A paged generic MoE: its per-layer expGuW/expGuS/expDW/expDS buffers are zero-value (the weights live in the
+	//   slot pool), but both of PrefillLast's MoE paths (the row loop's non-paged encodeMoERoute/encodeMoEExperts pair
+	//   and the expert-major pass) read those stacked buffers unconditionally.
+	// - An int8 KV cache (-kv i8). The prefill kernels write K/V with kv_store_f16 (half per element at pos*kvDim)
+	//   and PrefillLast's attention reads half, but the int8 cache is one byte per element with separate scale
+	//   buffers: every position would land in the wrong layout, and positions at or past ctxCap/2 would write past
+	//   the buffer. Such a model takes the sequential path, whose decode kernels write and read the int8 cache.
+	// - A Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn, and only in the shape prefill_deltanet.go
+	//   implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays sequential.
 	missing := m.MissingResidentFeatures(prefillFeatures)
 	dnetOK := r.dnet == nil
 	if r.dnet != nil && dnetPrefillOn && !r.postOnly {
@@ -1402,21 +1314,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			}
 			L.delta = DL
 		} else if dnetOK && attnGate {
-			// The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
-			// dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
-			// AttnGate=false, and falls through to the ordinary branch below — G5,
-			// docs/tasks/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
-			// wrong the moment a non-gated hybrid family reached residency, since
-			// Qwen35ResidentParams hardcoded attnGate=true). Its q/k/v/o live off qattn, not
-			// lw.QProj/KProj/VProj/OProj,
-			// and q_proj is DOUBLE WIDTH ([query ‖ gate] per head, interleaved — NOT two
-			// concatenated blocks; treating it as an ordinary q_proj yields the first nH/2
-			// heads' query+gate as "queries", plausible logits from the wrong tensor, measured
-			// cosine 0.90 on the WebGPU side). So the fused QKV path doesn't apply here: K‖V
-			// still fuse into L.qkvW (2-way, not 3-way); Q is a separate double-width projection
-			// (L.dnQw/dnQs), split on the ACTIVATION at encode time (delta_qsplit) because the
-			// weight is quantized and slicing rows out of an int4 bundle with per-group scales
-			// is real surgery.
+			// The same family's gated softmax layer (qwen3_5, qwen3_5_moe, qwen3_next), not every dnetOK family: Olmo
+			// Hybrid's full-attention layer is olmo3's plain scheme (AttnGate=false) and takes the ordinary branch below.
+			// Its q/k/v/o live off qattn, not lw.QProj/KProj/VProj/OProj, and q_proj is double width: [query || gate] per
+			// head, interleaved, not two concatenated blocks; treated as an ordinary q_proj it yields plausible logits
+			// from the wrong tensor. So the fused QKV path does not apply: K||V still fuse into L.qkvW (2-way), and Q is a
+			// separate double-width projection (L.dnQw/dnQs), split on the activation at encode time (delta_qsplit),
+			// because slicing rows out of a quantized int4 bundle with per-group scales is real surgery.
 			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(l)
 			if len(qN) == 0 || len(kN) == 0 {
 				return nil, fmt.Errorf("metal: layer %d: qwen35 softmax layer has empty q_norm/k_norm "+
@@ -1428,17 +1332,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.oW, L.oS = mk(oP)
 			L.qNorm, L.kNorm = NewBufferFloats(d, qN), NewBufferFloats(d, kN)
 		} else {
-			// The ORDINARY plain-attention layer: every non-DeltaNet, non-qGate layer, which
-			// includes both every family with no qwen35Params at all AND (G5) a dnetOK family's
-			// full-attention layer when AttnGate is false (Olmo Hybrid). lw.QProj/KProj/VProj/
-			// OProj/QNorm/KNorm are read normally, exactly as any other GQA/MHA layer.
+			// The ordinary plain-attention layer: every layer that is neither DeltaNet nor qGate, including a dnetOK
+			// family's full-attention layer when AttnGate is false (Olmo Hybrid). lw.QProj/KProj/VProj/OProj/QNorm/KNorm
+			// are read normally.
 			//
-			// K=V (attention_k_eq_v, Gemma 4 global layers): NO v_proj — V = v_norm(the RAW k_proj
-			// output). Fuse the V slot with k_proj (so the fused proj yields qkv=[Q|K_raw|K_raw]); the
-			// V slot is then scale-less-v_norm'd and left un-roped at encode time (encodeTrunkInto),
-			// while the K slot gets k_norm+RoPE. This is a BUILD-TIME weight-layout difference, so the
-			// value-independent ForwardEmbPipe pre-encode stays correct — see geom.kEqV. False (and a
-			// no-op) for every family without K=V layers, Olmo Hybrid included.
+			// K=V (attention_k_eq_v, Gemma 4 global layers): no v_proj; V = v_norm(the raw k_proj output). The V slot is
+			// fused with k_proj (the fused projection yields qkv=[Q|K_raw|K_raw]); at encode time (encodeTrunkInto) the V
+			// slot is scale-less-v_norm'd and left un-roped, while the K slot gets k_norm and RoPE. This is a build-time
+			// weight-layout difference, so the value-independent ForwardEmbPipe pre-encode stays correct (see geom.kEqV).
+			// False (and a no-op) for every family without K=V layers.
 			kEqV = m.VFromKResident(l)
 			if src := m.KVSrcAtResident(l); src != l {
 				// Gemma 4 E-model KV-shared layer (S1.4): the checkpoint has no k_proj/v_proj/k_norm here; it attends
@@ -1522,10 +1424,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.oSegs, L.dSegs = q4kLaneProj(d, &lw.OProj), q4kLaneProj(d, &lw.DownProj)
 			L.guSegs = q4kLaneProj(d, &lw.GateProj, &lw.UpProj)
 		}
-		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/tasks/task-gpu-paths-2026-09.md) is a MODEL-level flag,
-		// but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear instead and
-		// carry REAL pre-norm weights regardless — isDelta is already resolved above, so gate on
-		// the per-layer truth, not the bare model-level flag.
+		// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
+		// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
+		// so gate on the per-layer truth, not the model-level flag.
 		postOnlyHere := r.postOnly && !isDelta
 		if !postOnlyHere {
 			// A postOnly (non-delta) layer has NO pre-norm weight at all (lw.PreAttnNorm/
@@ -1533,11 +1434,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// not a no-op), so this is skipped entirely; segA/encodeLayer quantize the raw
 			// residual instead (see encodeAttention/encodeLayer's own postOnly branch).
 			L.preNorm = NewBufferFloats(d, lw.PreAttnNorm)
-			// parallelBlock (Cohere/Command-R, G5) has no pre-MLP norm tensor at all — the MLP
-			// reuses the SAME shared input norm the attention branch already computed
-			// (encodeLayer's r.aq/r.aSc reuse) — so lw.PreMLPNorm is empty for it too (see
-			// Model.ParallelBlockResident's comment), and NewBufferFloats on an empty slice is the
-			// same build-time-error hazard postOnly's own comment above already names.
+			// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all: the MLP reuses the shared input norm the
+			// attention branch computed (encodeLayer's r.aq/r.aSc reuse), so lw.PreMLPNorm is empty (see
+			// Model.ParallelBlockResident), with the same NewBufferFloats hazard postOnly's comment above names.
 			if L.g4moe == nil && !r.parallelBlock { // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
 				L.postNorm = NewBufferFloats(d, lw.PreMLPNorm)
 			}
@@ -1548,9 +1447,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 			}
 		}
-		// (qk-norm weights are set above: inside the isDelta/qGate/default branch, whichever
-		// applies — moved there so a qGate layer's qattn-sourced qNorm/kNorm isn't overwritten
-		// here by the generic lw.QNorm/lw.KNorm, which this family doesn't populate.)
+		// qk-norm weights are set above, in whichever of the isDelta/qGate/default branches applies: a qGate layer's
+		// qattn-sourced qNorm/kNorm must not be overwritten by the generic lw.QNorm/lw.KNorm, which this family does
+		// not populate.
 		// Gemma sandwich / Olmo 3 postOnly norms on each sublayer OUTPUT — postOnly is the
 		// post-norm half of sandwich, minus the pre half (see PostOnlyNormResident's own
 		// comment). Required to be present when the arch declares either — a silently-missing
@@ -1573,10 +1472,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				L.postMLPNorm = NewBufferFloats(d, lw.PostMLPNorm)
 			}
 		}
-		// Gemma 4's per-layer output scalar on a DENSE layer (h *= layer_scalar after the FFN residual,
-		// decoder/forward_gemma4.go; HF Gemma4DecoderLayer). The g4moe join applies its own; a dense layer had
-		// none here until S1.0 (docs/tasks/task-multimodal-support-2026-10.md). 1 and absent (0) are no-ops, as on
-		// the CPU, so no dispatch is encoded for them.
+		// Gemma 4's per-layer output scalar on a dense layer (h *= layer_scalar after the FFN residual;
+		// decoder/forward_gemma4.go, HF Gemma4DecoderLayer). The g4moe join applies its own. 1 and absent (0) are
+		// no-ops, as on the CPU, so no dispatch is encoded for them.
 		if L.g4moe == nil && m.IsGemma4Resident() {
 			if s := m.Gemma4DenseLayerScalarAtResident(l); s != 0 && s != 1 {
 				L.uLayerScalar = NewBufferFloats(d, []float32{s})
@@ -1621,12 +1519,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
 					maxAttnFAPartialElems = e
 				}
-				// R2 fix: cache nKV here (attention_fa is dense-GQA-only, so every
-				// eligible layer shares one nKV — canUseAttnFA's own layer.geom.nKV>0/
-				// hd==128 gate is this same condition) so setPos can compute G/nSplit
-				// ONCE per decode step instead of the per-layer dispatch site doing it
-				// during encode-ahead — see uAttnFAG/uAttnFANSplit's own field comment
-				// for why that was a real race, not just untidy.
+				// Cache nKV here: attention_fa is dense-GQA-only, so every eligible layer shares one nKV (canUseAttnFA's own
+				// gate is this same condition), and setPos can compute G and nSplit once per decode step instead of the
+				// per-layer dispatch site doing it during encode-ahead (see uAttnFAG/uAttnFANSplit's field comment for the
+				// race that would be).
 				if r.attnFANKV == 0 {
 					r.attnFANKV, r.attnFALayer = L.geom.nKV, l
 				}
@@ -1650,12 +1546,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 				L.qkvBias = NewBufferFloats(d, append(append(append([]float32{}, qb...), kb...), vb...))
 			}
-			// C-01 (audit-metal-2026-09-12.md): attention_prefill_fused's key loop reads whole
-			// 8-row simdgroup tiles and masks the ragged remainder AFTER the load (by position,
-			// not by skipping the read) — so when nKeysMax lands on the cache's last, ragged
-			// tile, the load can run up to 7 rows past ctxCap*kvDim. Round the ALLOCATION up to a
-			// multiple of 8 rows (r.ctxCap itself, the user-visible/checked capacity, is
-			// unchanged) so that read lands in the buffer's own padding, never past its end.
+			// attention_prefill_fused's key loop reads whole 8-row simdgroup tiles and masks the ragged remainder after
+			// the load (by position, not by skipping the read), so when nKeysMax lands on the cache's last, ragged tile
+			// the load can run up to 7 rows past ctxCap*kvDim. Round the allocation up to a multiple of 8 rows (r.ctxCap,
+			// the checked capacity, is unchanged) so that read lands in the buffer's own padding.
 			paddedCtxCap := (r.ctxCap + 7) / 8 * 8
 			kvBytes := paddedCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
 			if r.kvI8 {
@@ -1733,11 +1627,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		lm = &w.Embed // tied
 		r.lmTied = true
 	}
-	// The LM head is LOGIT-CRITICAL and must stay int8. decoder/weightmat.go: "at int4 they flip
-	// the argmax and tank the cosine (the tied head dots every logit against them)" — which is
-	// why the decoder PINS the embedding/LM-head at int8 even in int4 mode. Metal was
-	// int4-quantizing it anyway, violating that pin. Worst for Gemma: a TIED head, 262k x 2560,
-	// so every one of 262k logits is dotted against int4-mangled embedding rows.
+	// The LM head is logit-critical and must stay int8: at int4 it flips the argmax and tanks the cosine (a tied
+	// head dots every logit against it), which is why the decoder pins the embedding and LM head at int8 even in
+	// int4 mode (decoder/weightmat.go). Worst for a tied head such as Gemma's, 262k x 2560.
 	if r.lmW, r.lmS, err = int8BufA(d, alias, lm); err != nil {
 		return nil, err
 	}
@@ -1755,40 +1647,33 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.g4moe != nil { // Gemma-4 dense‖MoE: the gate|up/down scratch must fit BOTH the dense branch and the experts
 		guDim = max(guDim, max(r.g4moe.denseInter, r.g4moe.moeInter))
 	}
-	// C-10: the SA-GEMV decode kernels (gemv_w4a8_sa / _sa_bias / _sa_resid and the MoE variants)
-	// derive the output row from the runtime threadgroup size and — unlike gemv_w4a8_sa_bk — carry
-	// no `row >= N` guard. So an output width N%8 != 0 makes the tail threadgroup rewrite an
-	// already-written row while the true tail rows stay uninitialised scratch: plausible-looking
-	// wrong logits, no error. The attention widths (qDim = nH·hd, kvDim = nKV·hd) are structurally
-	// %8 (hd is 64/128), so the risk is the model-level FFN widths below. Decline any that isn't a
-	// multiple of 8 → the correct CPU path. Every shipped metal-eligible arch is %8 today, so this
-	// declines nothing now; it guards a future odd-width model from the silent corruption.
-	// (The deeper fix — an N param + `row >= N` guard in the SA-family/MoE kernels — touches every
-	// dispatch binding and is deferred as device-validation-gated; this build-time decline is the
-	// safe half for THOSE kernels.)
+	// The SA-GEMV decode kernels (gemv_w4a8_sa, _sa_bias, _sa_resid and the MoE variants) derive the output row
+	// from the runtime threadgroup size and, unlike gemv_w4a8_sa_bk, carry no `row >= N` guard. An output width
+	// N%8 != 0 therefore makes the tail threadgroup rewrite an already-written row while the true tail rows stay
+	// uninitialised scratch: plausible-looking wrong logits, no error. The attention widths (qDim = nH*hd, kvDim =
+	// nKV*hd) are structurally %8 (hd is 64 or 128), so the risk is the model-level FFN widths below: decline any
+	// that is not a multiple of 8, and the CPU path serves it. The deeper fix (an N parameter and a `row >= N`
+	// guard in the SA-family and MoE kernels) would touch every dispatch binding and is not done.
 	//
-	// Vocab is NOT checked here (2026-08-18): it never routes through an SA-family kernel — the LM
-	// head is pinned int8 (line ~624) and only ever dispatches gemv_w8a8_coal (forwardLogits) or
-	// gemv_w8a8_amax (ForwardArgmax). gemv_w8a8_coal addresses its row directly via
-	// threadgroup_position_in_grid, which Metal guarantees correct regardless of a threadgroup's
-	// uniformity — no hazard, %8 or not. gemv_w8a8_amax uses the SAME hazardous tgs-derived
-	// formula as the SA family, but ForwardArgmax now routes a non-%8 vocab around it (full logits
-	// + host argmax) rather than declining the whole family — see ForwardArgmax. GPT-2 (50257) is
-	// the first family this reaches.
+	// Vocab is not checked: it never routes through an SA-family kernel. The LM head is pinned int8 and dispatches
+	// only gemv_w8a8_coal (forwardLogits) or gemv_w8a8_amax (ForwardArgmax). gemv_w8a8_coal addresses its row
+	// directly via threadgroup_position_in_grid, correct whatever a threadgroup's uniformity. gemv_w8a8_amax uses
+	// the same hazardous tgs-derived formula as the SA family, so ForwardArgmax routes a non-%8 vocab around it
+	// (full logits plus host argmax) instead of declining the family; GPT-2 (50257) is the first family this
+	// reaches.
 	bad8 := func(name string, n int) error {
 		if n%8 != 0 {
 			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
 		}
 		return nil
 	}
-	// Include the attention widths too (audit R-28): the fused-QKV projection dispatches
-	// (nH·hd + 2·nKV·hd) rows through pSABias, so both the q-width (nH·hd) and kv-width (nKV·hd) — and
-	// hence their sum — must be %8. C-10 exempted them on the "hd is 64/128" assumption; check them
-	// explicitly so an admitted arch with hd%8 != 0 declines instead of corrupting.
+	// Include the attention widths too: the fused-QKV projection dispatches (nH*hd + 2*nKV*hd) rows through
+	// pSABias, so both the q-width (nH*hd) and the kv-width (nKV*hd), and hence their sum, must be %8. "hd is 64
+	// or 128" is not guaranteed for every admitted arch; one with hd%8 != 0 declines instead of corrupting.
 	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I)}
-	// Check EACH layer geom, not the maxima: a two-geom arch (Gemma-4 local/global) whose SMALLER
-	// q/kv width is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's
-	// SA-GEMV (audit F-04). Duplicate widths across uniform layers are harmless.
+	// Check each layer's geom, not the maxima: a two-geom arch (Gemma 4 local/global) whose smaller q or kv width
+	// is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's SA-GEMV. Duplicate
+	// widths across uniform layers are harmless.
 	for l := range r.layers {
 		if r.layers[l].delta != nil {
 			continue // Gated-DeltaNet layer: no attention geometry at all — L.geom is nil by design
@@ -1812,13 +1697,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			return nil, e
 		}
 	}
-	// M-11: the SA-GEMV / MoE kernels stage the GEMV's contraction row into threadgroup memory at
-	// 2 bytes/element (DispatchTG tgBytes = 2·K). The widest staged K is hidden, the q-width
-	// (nH·hd), or — for MoE — the expert intermediate (the expert down-proj stages `inter`). A
-	// dispatch whose threadgroup memory exceeds the device tile limit ABORTS the command buffer,
-	// and per C-09 the host would otherwise read stale logits. Decline here so the caller falls back
-	// to CPU. (Mixtral's inter=14336 → 28672 B is already 87% of a 32 KiB budget; inter≥16384 exceeds it.
-	// Dense down-proj is NOT counted: R18's staged kernel checks its own I-byte fit below, else coal.)
+	// The SA-GEMV and MoE kernels stage the contraction row into threadgroup memory (see
+	// maxThreadgroupStageBytes). A dispatch whose threadgroup memory exceeds the device tile limit aborts the
+	// command buffer, and the host would then read stale logits. Decline here so the caller falls back to CPU.
+	// (Mixtral's inter=14336 is 28672 B, already 87% of a 32 KiB budget; inter >= 16384 exceeds it. The dense
+	// down-proj is not counted: R18's staged kernel checks its own I-byte fit below, else coal.)
 	moeInter, g4Inter := 0, 0
 	if r.moe != nil {
 		moeInter = r.moe.inter
@@ -1914,15 +1797,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.qkv = d.NewBufferLen(maxNHhd + 2*maxKvDim) // fused [q | k | v], sized to the widest layer
 	r.gu = d.NewBufferLen(2 * guDim)             // fused [gate | up]
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(maxNHhd), byteBuf(d, maxNHhd), d.NewBufferLen(1)
-	// R2: attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional —
-	// see canUseAttnFA/attnFASplitFor), so it is sized once here, not per-token. Zero-size (no
-	// layer attnFAHeadDimOK admits) on a model this kernel can never engage for — canUseAttnFA's own hd guard
-	// then always declines, so the zero buffer is never dispatched into.
+	// attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional; see
+	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
+	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
+	// so the zero buffer is never dispatched into.
 	r.attnFAMaxSplit = 32
-	// R17: for the GQA group sizes it was graded at (G = 6, Qwen2.5-1.5B; G = 7, Qwen2.5-7B), attention_fa's first
-	// pass is the block-of-32 kernel attention_fa_blk at a fixed split count of 16 (same grid shape, partial layout
-	// and combine). Every other group size keeps attention_fa and its core-count rule — the block kernel is
-	// instantiated, measured and fidelity-gated only for these two.
+	// For the group sizes it was graded at (G = 6 and 7), attention_fa's first pass is the block-of-32 kernel
+	// attention_fa_blk at the fixed split count attnFABlkSplit (same grid shape, partial layout and combine). G =
+	// 2 to 8 take it too while attnFABlkAnyG; every other group size keeps attention_fa and its core-count rule.
 	if r.attnFANKV > 0 {
 		switch g := r.nH / r.attnFANKV; {
 		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
@@ -1950,11 +1832,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.dq, r.dSc, r.dO = byteBuf(d, guDim), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
-	// CEIL, not floor: ForwardArgmax dispatches V*32 threads = ceil(V/8) threadgroups and the amax
-	// kernel writes part[tgid] unconditionally, so a floor V/8 both under-sizes r.part (an 8-byte
-	// write past it — on UMA into an adjacent buffer) and leaves the last tile out of uP's reduce,
-	// so the greedy token could differ from argmax(Forward) (audit C-11). ceil(V/8) sizes the buffer
-	// for every tile and reduces all of them.
+	// Ceil, not floor: ForwardArgmax dispatches V*32 threads = ceil(V/8) threadgroups and the amax kernel writes
+	// part[tgid] unconditionally, so a floor V/8 would under-size r.part (an 8-byte write past it, on UMA into an
+	// adjacent buffer) and leave the last tile out of uP's reduce, so the greedy token could differ from
+	// argmax(Forward).
 	nTiles := (V + 7) / 8 // one (maxLogit,rowIdx) partial per threadgroup (8 rows)
 	r.part, r.tok, r.uP = d.NewBufferLen(nTiles*2), d.NewBufferLen(1), NewBufferU32(d, uint32(nTiles))
 	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
@@ -2010,20 +1891,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.logitsHost = make([]float32, V)
 	r.ensureBatchCap(16)
 
-	// Residency set (default ON when supported + paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged
-	// path submits per-layer, and the pread stage CPU-writes the slot buffers each token — dirtying
-	// their residency so the driver re-validates them every phase-2 commit (~9 ms/CB of GPU-idle-in-
-	// wait). Pinning the SLOT POOL resident holds it across those writes → ~0.44 ms/CB (measured
-	// −11%: 0.61→0.68 tok/s at N=32 on an idle 16 GB box). SLOTS ONLY: a five-arm bisect showed
-	// pinning anything more (weights/KV/scratch) regresses phase 1 in proportion to pin-set size,
-	// read/write-agnostic — pinning helps only the pread-INVALIDATED buffers. FOOTPRINT: the slot pool
-	// is N × MoE-layers × per-expert-bytes (≈3 GB at N=32), PERMANENTLY requested resident; re-measure
-	// the win if N grows or the box is under other load. Capability-gated (macOS 15+); older OSes keep
-	// the correct, slower per-submit path.
-	//
-	// P-22: this used to gate on g4moe alone, so a generic paged-MoE model (moe.go's path — same
-	// per-commit re-validation cost, same pread-invalidated slot buffers) never got a residency set
-	// built at all, regardless of what slotBuffers() enumerated.
+	// Residency set (on by default when supported and paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged path
+	// submits per layer, and the pread stage CPU-writes the slot buffers each token, dirtying their residency so
+	// the driver re-validates them on every phase-2 commit. Pinning the slot pool resident holds it across those
+	// writes. Slots only: pinning anything more (weights, KV, scratch) regresses phase 1 in proportion to the
+	// pin-set size, read/write-agnostic; pinning helps only the pread-invalidated buffers. Footprint: the slot
+	// pool is N x MoE-layers x per-expert-bytes, permanently requested resident, so re-measure the win if N grows
+	// or the box is under other load. Capability-gated (macOS 15+); older OSes keep the correct, slower per-submit
+	// path. It gates on any paged MoE, generic (moe.go) or Gemma 4 (g4moe): both have pread-invalidated slot
+	// buffers.
 	paged := (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged)
 	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
 		rs, rerr := d.NewResidencySet()
@@ -2034,10 +1910,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
 			kv := r.kvBuffers()
 			scratch := r.scratchBuffers()
-			// pinned accumulates EXACTLY what addAll() Adds, so r.residencyBufs is the true
-			// pinned list in EVERY slot-scoped arm, not just default (G-04: the teardown-
-			// consistency gate was silently disabled on the explicit `case "slots"` and the
-			// bisect arms, which left the field nil).
+			// pinned accumulates exactly what addAll() adds, so r.residencyBufs is the true pinned list in every
+			// slot-scoped arm, not just the default (the teardown-consistency gate reads it).
 			var pinned []Buffer
 			addAll := func(bs []Buffer) {
 				for _, b := range bs {
@@ -2068,12 +1942,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.residencyBufs = pinned
 			rs.Commit()
 			rs.RequestResidency()
-			// M-14 (audit-metal-2026-09-12.md): attaching the set at the QUEUE (r.q.AddResidencySet)
-			// used to ride it on EVERY command buffer, so phase 1 carried the ~3 GB of pinned slots in
-			// its referenced set even though it never touches them — +2.07 ms/CB → +62 ms/tok measured
-			// cost. r.residency is instead attached PER-ENCODER, only on phase 2's command buffers
-			// (encodeG4Phase2Paged's / encodeMoEExpertsPaged's callers, via Encoder.UseResidencySet —
-			// aikit gpu/v0.33.1+), which is the buffer category that actually reads it.
+			// Attach the set per encoder, only on phase 2's command buffers (the callers of encodeG4Phase2Paged and
+			// encodeMoEExpertsPaged, via Encoder.UseResidencySet, aikit gpu/v0.33.1+), the buffer category that reads it,
+			// not at the queue (r.q.AddResidencySet): at the queue it rides on every command buffer, and phase 1 carries
+			// the pinned slots in its referenced set though it never touches them.
 			r.residency = rs
 		}
 	}
@@ -2098,18 +1970,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	return r, nil
 }
 
-// loadEmbedRow dequantizes token `id`'s embedding into the shared input buffer and applies the
-// arch's embedding scale — the complete "token id → layer-0 input" step.
-//
-// AUDIT G-02. This exists so the two id-taking entry points cannot disagree with production. The
-// scale (Gemma's √hidden, FeatEmbedScale) was applied ONLY by decoder.embedResident, on the
-// ForwardEmb path; Forward and ForwardArgmax took a raw dequantized row straight into layer 0.
-// Metal declares FeatEmbedScale: true and admits gemma3/gemma4, so both methods returned wrong
-// logits for those families for any direct caller — and the snapshot golden, which drives exactly
-// these two methods, pinned that wrong computation as its stored reference. A regression confined
-// to the embed→layer-0 seam was therefore invisible to the one absolute gate in the Metal suite.
-//
-// The scale is a no-op (≤1) for every non-Gemma family, so this is inert on the dense archs.
+// loadEmbedRow dequantizes token id's embedding into the shared input buffer and applies the arch's embedding scale
+// (Gemma's sqrt(hidden), FeatEmbedScale; a no-op, <= 1, for every other family): the complete
+// token-id-to-layer-0-input step. It exists so the two id-taking entry points (Forward, ForwardArgmax) cannot disagree
+// with production, where decoder.embedResident applies the scale on the ForwardEmb path. The snapshot golden drives
+// exactly these two methods, so a regression confined to this seam would be invisible to the Metal suite's one
+// absolute gate.
 func (r *resident) loadEmbedRow(id, pos int) {
 	dst := r.x.Floats()
 	r.embed.Row(id, dst) // CPU dequant embedding into the shared buffer
@@ -2121,11 +1987,10 @@ func (r *resident) loadEmbedRow(id, pos int) {
 	r.addLearnedPos(pos)
 }
 
-// addLearnedPos adds wpe[pos] to the input embedding already in r.x — GPT-2's learned absolute
-// position embedding, host-side (CPU dequant straight into the shared buffer, same as the token
-// embedding lookup) since it happens once per token before any GPU dispatch, mirroring
-// decoder/model.go's ResidentForward (arch.LearnedPosEmbed: h[i] += wpe[pos][i]). A no-op for
-// every family without FeatLearnedPos.
+// addLearnedPosTo adds wpe[pos] to dst: GPT-2's learned absolute position embedding, host-side (CPU dequant, like the
+// token embedding lookup) since it happens once per token before any GPU dispatch, mirroring decoder/model.go's
+// ResidentForward (arch.LearnedPosEmbed: h[i] += wpe[pos][i]). A no-op for every family without FeatLearnedPos.
+// addLearnedPos applies it to the input embedding already in r.x.
 func (r *resident) addLearnedPosTo(dst []float32, pos int) {
 	if !r.learnedPos {
 		return
@@ -2188,13 +2053,10 @@ func (r *resident) writePosUniforms(u posUniforms, pos, rp int) {
 	u.uPos.SetU32(uint32(pos))
 	u.uNKeys.SetU32(uint32(pos + 1))
 	u.uRopePos.SetU32(uint32(rp))
-	// R2 fix: uAttnFAG/uAttnFANSplit written HERE, not at the per-layer dispatch
-	// site — see their own field comment. Same "safe because it happens before
-	// THIS buffer commits, not during the NEXT buffer's encode-ahead" argument
-	// uPos/uNKeys/uRopePos above already rely on. attnFANKV==0 means no layer is
-	// attention_fa-eligible on this model; the buffers stay unused (canUseAttnFA
-	// gates on it too) so writing garbage into them is harmless, but skip the
-	// divide-by-zero regardless.
+	// uAttnFAG and uAttnFANSplit are written here, not at the per-layer dispatch site (see their field comment):
+	// this happens before this buffer commits, not during the next buffer's encode-ahead, the same argument
+	// uPos/uNKeys/uRopePos above rely on. attnFANKV == 0 means no layer is attention_fa-eligible: the buffers stay
+	// unused (canUseAttnFA gates on it too), but skip the divide by zero regardless.
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 		u.uFANSplit.SetU32(uint32(r.attnFASplitFor(pos+1, r.attnFANKV)))
@@ -2219,16 +2081,10 @@ func (r *resident) Forward(id, pos int) []float32 {
 	return r.forwardLogits(pos)
 }
 
-// ForwardEmb is Forward given a precomputed embedding[H] (the decoder.ResidentForward shape)
-// instead of a token id — it copies the embedding into the shared input buffer and skips the
-// internal embedding lookup. This is the PRODUCTION path: decoder.embedResident does the lookup
-// and applies any embed scale before calling in.
-//
-// Numerically identical to Forward(id,pos) when emb is the SCALED embedding row. The previous
-// wording — "when emb = Embed.Row(id) (the eligible dense archs have no embed scale)" — was the
-// premise audit G-02 falsified: it stopped being true once Metal declared FeatEmbedScale and
-// admitted gemma3/gemma4, and Forward carried on ignoring the scale. Forward now applies it
-// (loadEmbedRow), so the two are equivalent again on every admitted family.
+// ForwardEmb is Forward given a precomputed embedding[H] (the decoder.ResidentForward shape) instead of a token id: it
+// copies the embedding into the shared input buffer and skips the internal lookup. This is the production path:
+// decoder.embedResident does the lookup and applies any embed scale before calling in. Numerically identical to
+// Forward(id, pos) when emb is the scaled embedding row (Forward applies the scale in loadEmbedRow).
 func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
 	return r.ForwardEmbMRoPE(emb, pos, pos)
 }
@@ -2248,19 +2104,14 @@ func (r *resident) ForwardEmbMRoPE(emb []float32, pos, ropePos int) []float32 {
 	return r.forwardLogits(pos, ropePos)
 }
 
-// forwardHiddenNoHead encodes the trunk (all layers + final norm) for one token at absolute
-// position pos, writing this position's K/V into the resident cache exactly like ForwardEmb
-// does, but never dispatches the LM head — G4's embedding seam (decoder.ResidentHiddenLast)
-// never needs logits, and the head is the single most expensive matmul in a forward (vocab×
-// hidden). want is false for every position but the last of a HiddenLast sequence: those still
-// need their K/V written (attention over the whole sequence, matching hiddenLastBatched's
-// causal chain) but their hidden state is never read, so this returns nil for them rather than
-// paying the int8→float32 dequant loop on rows nobody wants.
-//
-// Numerically: encodeNorm's rmsnorm_quant/layernorm_quant dispatch is the SAME kernel the LM
-// head reads from in Forward/ForwardEmb (r.aq/r.aSc) — this only omits the head dispatch that
-// follows it, so the returned hidden state is exactly what feeds the head on the decode path,
-// dequantized (matches forwardHeadForTest's act, which this generalizes into production use).
+// forwardHiddenNoHead encodes the trunk (all layers plus final norm) for one token at absolute position pos, writing
+// this position's K/V into the resident cache as ForwardEmb does, but never dispatching the LM head:
+// decoder.ResidentHiddenLast never needs logits, and the head is the most expensive matmul in a forward. want is false
+// for every position but the last of a HiddenLast sequence: those still need their K/V written (attention over the
+// whole sequence, matching hiddenLastBatched's causal chain) but their hidden state is never read, so nil comes back
+// without the int8-to-float32 dequant loop.
+// The returned hidden state is exactly what feeds the head on the decode path (encodeNorm's rmsnorm_quant or
+// layernorm_quant output in r.aq/r.aSc), dequantized; it matches forwardHeadForTest's act.
 func (r *resident) forwardHiddenNoHead(emb []float32, pos int, want bool) ([]float32, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -2322,21 +2173,14 @@ func (r *resident) finalizeLogits() {
 	}
 }
 
-// softcapParallel applies Gemma's final-logit softcap sc·tanh(x/sc) in place, across cores. Every
-// element is independent and math.Tanh is deterministic, so splitting the loop is BYTE-IDENTICAL to
-// the serial form (same per-element sc*float32(math.Tanh(float64(v/sc))); disjoint writes, no
-// reduction/ordering) — gated by TestMetalSoftcapParallel_bitIdentical.
-//
-// N-09 (audit-metal-2026-09-12.md): this does NOT skip on greedy decode in production, despite
-// argmax being softcap-invariant (the softcap is monotonic). finalizeLogits calls this whenever
-// r.finalSoftcap > 0 and runs on EVERY execLoop token (model.go's own call site,
-// unconditional on sampling mode) — the production decode path. The only site that genuinely
-// skips it is ForwardArgmax's on-device fused argmax dispatch (which never reads r.logitsHost at
-// all), and production greedy does not call that (N-03: ResidentGreedy is absent on Metal, so
-// greedy runs the same full-logits ForwardEmbPipe as sampling and argmaxes host-side). So a Gemma
-// family pays this 262k-wide tanh loop on every decode token regardless of temperature. At
-// Gemma's 256k vocab the serial float64 tanh loop is a real per-token tax this fans out over
-// GOMAXPROCS. Serial below the goroutine-spawn threshold (mirrors parallelF32ToF16).
+// softcapParallel applies Gemma's final-logit softcap sc*tanh(x/sc) in place, across cores. Every element is
+// independent and math.Tanh is deterministic, so the split is byte-identical to the serial form (disjoint writes, no
+// reduction or ordering; TestMetalSoftcapParallel_bitIdentical). Serial below the goroutine-spawn threshold (as
+// parallelF32ToF16).
+// It does not skip on greedy decode, although argmax is softcap-invariant: finalizeLogits calls it whenever
+// r.finalSoftcap > 0, on every execLoop token whatever the sampling mode. The paths that skip it never read
+// r.logitsHost (ForwardArgmax, and the greedy chain, which greedyChainWhyNot refuses for an embed-scaled family), so a
+// Gemma family pays this 262k-wide tanh loop on every decode token regardless of temperature.
 func softcapParallel(logits []float32, softcap float32) {
 	sc := softcap
 	n := len(logits)
@@ -2432,16 +2276,15 @@ func (r *resident) encodeLogitsCB() *Encoder {
 	return e
 }
 
-// execLoop is the pinned executor: pipeline commit(t) → pre-encode(t+1) → wait(t). One shared
-// autorelease pool, drained every drainEvery tokens (with a one-token non-overlapped hiccup so
-// no un-committed command buffer is live across the drain — keeps the pool LIFO-safe).
+// execLoop is the pinned executor: pipeline commit(t), pre-encode(t+1), wait(t). One shared autorelease pool, drained
+// every drainEvery tokens, with a one-token non-overlapped hiccup so no un-committed command buffer is live across the
+// drain (which keeps the pool LIFO-safe).
 //
-// A buffer is encoded for a KEY COUNT, not just a head mode: the attention plan (attnPlan) is baked in at
-// encode time. Each buffer is encoded for the job it will run — the current job's own key count when
-// encoded fresh, pos+2 when pre-encoded for the predicted next job (the same request, one position on) —
-// and a pre-encoded buffer whose plan is not the arriving job's is dropped uncommitted and re-encoded. So a
-// new request, the attnFADepthFloor crossing, or a toggle can never run another position's plan (found
-// 2026-09-25, R17: docs/measurements/metal-decode-attn-r17-2026-09-25.md; TestExecutorAttnPlan).
+// A buffer is encoded for a key count, not just a head mode: the attention plan (attnPlan) is baked in at encode time.
+// Each buffer is encoded for the job it will run (the current job's own key count when encoded fresh, pos+2 when
+// pre-encoded for the predicted next job), and a pre-encoded buffer whose plan is not the arriving job's is dropped
+// uncommitted and re-encoded. So a new request, the attnFADepthFloor crossing, or a toggle can never run another
+// position's plan (TestExecutorAttnPlan; docs/measurements/metal-decode-attn-r17-2026-09-25.md).
 func (r *resident) execLoop() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -2509,10 +2352,9 @@ func (r *resident) execLoop() {
 	pool.Drain()
 }
 
-// stopExec shuts down the executor goroutine (if started) and BLOCKS until it has returned —
-// which is what makes freeing safe. Closing the channel only signals; the loop may still be
-// waiting on an in-flight command buffer, and releasing a buffer it references is a
-// use-after-free. (CUDA hit the mirror-image ordering constraint in d8e81cb.)
+// stopExec shuts down the executor goroutine (if started) and blocks until it has returned, which is what makes
+// freeing safe: closing the channel only signals, the loop may still be waiting on an in-flight command buffer, and
+// releasing a buffer it references is a use-after-free.
 func (r *resident) stopExec() {
 	r.stopChain() // an open greedy chain has command buffers in flight on r.q too (greedy_chain.go)
 	if r.execReq != nil {
@@ -2522,21 +2364,14 @@ func (r *resident) stopExec() {
 	}
 }
 
-// slotBuffers returns the paged MoE slot-pool buffers — GPU-READ-ONLY (phase 2 reads them; the pread
-// stage CPU-writes their contents). Safe to pin resident.
-//
-// P-22: previously enumerated only g4moe's pool, leaving every OTHER paged-MoE family (Mixtral/
-// Qwen/GLM/gpt-oss/qwen3_5_moe/qwen3_next — moe.go's generic path, "same mechanism, same
-// expertPool" per its own doc comment) unpinned and paying the full per-commit re-validation cost
-// the residency set exists to remove. Both pools hold the identical buffer category the five-arm
-// bisect (buildResident, above) found the win in — pread-invalidated slot buffers — so this
-// extends the SAME category to a second architecture family rather than adding a new one.
+// slotBuffers returns the paged MoE slot-pool buffers, g4moe's and the generic MoE's: GPU-read-only (phase 2 reads
+// them; the pread stage CPU-writes their contents), so safe to pin resident. Both pools hold the buffer category the
+// residency-set bisect found the win in (the pread-invalidated slot buffers; see buildResident).
 func (r *resident) slotBuffers() []Buffer {
 	var out []Buffer
 	for l := range r.layers {
-		// M-11: the pool's storage is now ONE contiguous buffer per field (not N per-slot objects),
-		// so pinning it is one 4-buffer add per pool regardless of N — fewer distinct buffers for
-		// the residency set to track, a small side benefit of the same change.
+		// A pool's storage is one contiguous buffer per field (not N per-slot objects), so pinning it is one 4-buffer
+		// add per pool regardless of N.
 		if p := r.layers[l].g4moe; p != nil && p.pool != nil {
 			out = append(out, p.pool.guW, p.pool.guS, p.pool.dW, p.pool.dS)
 		}
@@ -2576,26 +2411,6 @@ func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated.
-// Returns error to satisfy io.Closer and match cuda/gpu's Close() error (audit B-12); teardown
-// itself can't fail (best-effort native releases), so it always returns nil.
-//
-// It used to do only the first of those, with the comment "Metal buffers are freed at process
-// exit (single-model lifetime)". That assumption was false and had teeth: cmd/serve is
-// multi-model (--model name=path is repeatable) with /admin/models/{load,unload}, so every
-// load+unload leaked the whole model — weights + per-layer KV + the MoE stacked experts, i.e.
-// GIGABYTES of unified (system) memory, until the process exited. purego has no ARC and Metal
-// has no context-destroy to reclaim in bulk, so each buffer must be released explicitly.
-// Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op (N-11).
-//
-// ⚠ THIS COMMENT IS WHY SOMEONE WILL ADD THE UNSAFE CALL. Read in isolation it says "unload leaks
-// gigabytes; Close reclaims them", which makes calling Close from handleAdminUnload look obviously
-// correct. It is not safe TODAY, and the reason is not in this file: serve's unload has a window
-// between pick() and enter() in which a request still holds lm.model with no lock held, so
-// TryLock grants the unload while a handler is mid-tokenize against those weights. Adding the call
-// turns a bounded leak into a use-after-free — on CUDA, a driver SIGSEGV that kills the server.
-// The blocker is serve's drain, not this teardown. Full account: internal/serveapp/admin.go,
-// handleAdminUnload. Close itself is correct and stays correct; it just has no safe caller yet.
 // kvSlotBuf is one resident KV slot's per-layer buffers (MC1).
 type kvSlotBuf struct{ kc, vc, ks, vs []Buffer }
 
@@ -2628,6 +2443,15 @@ func (r *resident) useKVSlot(i int) error {
 	return nil
 }
 
+// Close stops the executor, waits for it, then releases every MTLBuffer this resident allocated, so it must be called
+// once the model is unloaded: purego has no ARC and Metal has no context-destroy to reclaim in bulk, and cmd/serve loads
+// and unloads models at runtime, so an unclosed resident leaks its weights, per-layer KV and MoE experts until the
+// process exits. It returns error to satisfy io.Closer and match cuda/gpu's Close() error; teardown cannot fail, so it
+// always returns nil. Idempotent: ReleaseAll empties the ledger, so a second Close is a no-op.
+//
+// Close must not run while a request still holds the model: that is a use-after-free (on CUDA, a driver SIGSEGV that
+// kills the server). Serve's unload drains in-flight holders first (internal/serveapp/admin.go, handleAdminUnload;
+// docs/completed/task-admin-unload-drain.md); keep that ordering for any new caller.
 func (r *resident) Close() error {
 	if r.ctxCeilKey != nil {
 		metalCtxCeiling.Delete(r.ctxCeilKey) // S18: a ceiling must not keep its model alive past the resident
@@ -2656,42 +2480,30 @@ func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 	return r.gpuEnd - r.gpuStart, r.kernEnd - r.kernStart
 }
 
-// ForwardArgmax runs the identical trunk but replaces the full lm head + 608KB readback with
-// Fable's fused block-argmax (per-tile (maxLogit,rowIdx) → argmax_finish → 4-byte token). It
-// returns argmax(Forward's logits) — same values, tie-broken first-max-wins — without ever
-// materializing the logit vector.
-//
-// N-10 (audit-metal-2026-09-12.md): NOT actually production's greedy decode path — Metal has no
-// ResidentGreedy implementation, so generateInto's greedy case runs the same full-logits
-// ForwardEmbPipe every other sampling mode uses and argmaxes host-side (recorded speed-neutral on
-// UMA: the zero-copy logits view makes the host argmax ~30 µs, not a real cost). This method is
-// exercised only by tests/gates today; it is the fastest AVAILABLE greedy path, kept as API for a
-// future wiring, not a claim about what production calls.
+// ForwardArgmax runs the identical trunk but replaces the full lm head and logits readback with the fused block-argmax
+// (per-tile (maxLogit, rowIdx), then argmax_finish, then a 4-byte token). It returns argmax(Forward's logits), first
+// max wins, without materializing the logit vector. Production greedy decode does not call it: Metal has no
+// ResidentGreedy implementation, so greedy runs through the greedy chain (ResidentGreedyChain, greedy_chain.go) when
+// it is available and otherwise through the full-logits ForwardEmbPipe with a host argmax. Only tests and gates call
+// this.
 func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.loadEmbedRow(id, pos) // includes the arch embed scale — see loadEmbedRow (G-02)
 	if r.V%8 != 0 {
-		// gemv_w8a8_amax (like the SA-family decode kernels, C-10) derives its output row from
-		// tgid*(tgs>>5)+sgid: Metal's dispatchThreads: makes the LAST threadgroup non-uniform
-		// (fewer than 256 threads) whenever the dispatch total isn't a multiple of the
-		// threadgroup size, and that formula silently miscomputes for a non-uniform group —
-		// rewriting an already-written row while the true tail row is never computed. Padding
-		// the weight/output isn't a safe workaround here the way it is for a plain overwrite
-		// kernel: a padding row's score depends on the (unknown at load time) real activation,
-		// so it cannot be guaranteed to lose the argmax against real logits — it could just as
-		// easily win it. Route around the kernel entirely for a non-%8 vocab (GPT-2: 50257 —
-		// the first family this reaches) via the full-logits path instead: gemv_w8a8_coal
-		// (forwardLogits) addresses its row directly from threadgroup_position_in_grid, which
-		// Metal guarantees correct regardless of a threadgroup's uniformity, so it never had
-		// this hazard. Slower (materializes the whole vocab instead of the fused reduction),
-		// correct always beats fast-but-wrong, and GPT-2's vocab is cheap to materialize.
+		// gemv_w8a8_amax derives its output row from tgid*(tgs>>5)+sgid, as the SA-family decode kernels do (see
+		// buildResident's width checks): dispatchThreads: makes the last threadgroup non-uniform whenever the dispatch
+		// total is not a multiple of the threadgroup size, and that formula silently miscomputes for a non-uniform
+		// group, rewriting an already-written row while the true tail row is never computed. Padding the weight is not
+		// a safe workaround here: a padding row's score depends on the activation, which is unknown at load time, so
+		// it could win the argmax. Route a non-%8 vocab (GPT-2's 50257 is the first) through the full-logits path
+		// instead: gemv_w8a8_coal addresses its row directly from threadgroup_position_in_grid, which Metal guarantees
+		// correct whatever the threadgroup's uniformity. Slower, but correct.
 		return uint32(argmaxF32(r.forwardLogits(pos)))
 	}
-	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as the
-	// paged MoE forwards (metal/moe.go, gemma4_moe.go). Only tests and gates call this today (N-10
-	// above; this comment used to call it a production entry point, C-D01 in audit-metal-2026-09-30.md).
-	// Currently a no-op like the paged case (no family combining this dispatch with FeatAttnTemp today).
+	// setPos, not a direct uPos/uNKeys write: the same gap as the paged MoE forwards (moe.go, gemma4_moe.go). It
+	// matters only for FeatAttnTemp, which no family combines with this dispatch today, so it is currently a
+	// no-op, as in the paged case.
 	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
@@ -3029,11 +2841,9 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			r.encodeMoECapture(e, l)
 		}
 	} else if r.nonGatedMLP {
-		// GPT-2: up→act→down, no gate — a single up-proj (K=hidden, checked against the M-11
-		// threadgroup-memory guard at buildResident time for whichever GPT-2 size loads; not
-		// separately verified per size here) feeding
-		// act_quant (glu_act with no multiply), then the coal-family down-proj (K=intermediate,
-		// always past the SA cap) fused with its bias and the residual add.
+		// GPT-2: up, act, down with no gate: a single up-proj (K=hidden, covered by buildResident's threadgroup-memory
+		// check) feeding act_quant (glu_act with no multiply), then the coal-family down-proj (K=intermediate, always
+		// past the SA cap) fused with its bias and the residual add.
 		r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		e.DispatchTG(r.pSABias, r.I*32, 256, r.H*2, L.upW, L.upS, r.mq, r.mSc, r.gu, L.upBias, r.uH)
 		e.Dispatch(r.pActQuant, 256, 256, r.gu, r.dq, r.dSc, r.uI, r.uAct)
@@ -3187,14 +2997,12 @@ func saRowsPick(shipped, rowsKernel Pipeline, rows, R int) (Pipeline, int) {
 	return shipped, rows * 32
 }
 
-// canUseF16Lane reports whether layer l's attention block and FFN gate/up can use the R1 W4F16
-// decode lane (docs/tasks/red-october.md) instead of the shipped W4A8 path. First-slice scope
-// only: the plainest possible dense layer — every special case (Gemma sandwich, Olmo
-// postOnly/qkNorm-whole, Cohere parallelBlock, GPT-2 non-gated MLP or FeatOutBias, qGate's
-// double-width Q, MoE/Gemma-4-MoE, DeltaNet, compute-time LoRA) keeps the int8 path, since each
-// changes which kernel family or epilogue is dispatched and none of that has been ported here.
-// Down-proj (the "coal" family, a different kernel shape) is out of scope regardless — see
-// encodeLayer's default branch, which never checks this for r.pGemvResid.
+// canUseF16Lane reports whether layer l's attention block and FFN gate/up can use the W4F16 decode lane
+// (docs/tasks/red-october.md) instead of the shipped W4A8 path. It covers the plainest dense layer only: every special
+// case (Gemma sandwich, Olmo postOnly/qkNorm-whole, Cohere parallelBlock, GPT-2 non-gated MLP or FeatOutBias, qGate's
+// double-width Q, MoE/Gemma-4 MoE, DeltaNet, compute-time LoRA) keeps the int8 path, since each changes which kernel
+// family or epilogue is dispatched and none is ported. Down-proj (the coal family, a different kernel shape) is out of
+// scope regardless: encodeLayer's default branch never checks this for r.pGemvResid.
 func (r *resident) canUseF16Lane(l int) bool {
 	if !r.decodeLaneW4F16 {
 		return false
@@ -3209,41 +3017,26 @@ func (r *resident) canUseF16Lane(l int) bool {
 	return L.moe == nil && L.g4moe == nil && L.delta == nil && !L.qGate
 }
 
-// attnFACoreCount is the M1 Pro's GPU core count attention_fa's split count targets ("kvHead x S
-// >= 2x the core count", R2's own registered rule): 14 on the M1 Pro R2 was tuned on, which is this
-// repo's Mac (system_profiler, 2026-10-01; C-D01 in audit-metal-2026-09-30.md read it as 16). It sets
-// only the legacy kernel's split: the block kernel, which serves G = 6 and 7, uses attnFABlkSplit
-// (E-D01); changing it changes that split and so the legacy kernel's bits. It is hardcoded, not device-queried: aikit's Device
-// has no core-count accessor, and this kernel is default-on on every chip via metalAttnFAEnabled()
-// (2026-09-21) despite being tuned and measured on the M1 Pro alone; a wider port (other Apple
-// GPU core counts) would need this read from the device, not assumed.
+// attnFACoreCount is the GPU core count attention_fa's split count targets (kvHead x S >= 2x the core count): 14, the
+// M1 Pro it was tuned on. It sets only the legacy kernel's split (the block kernel uses attnFABlkSplit), so changing
+// it changes the legacy kernel's bits. It is hardcoded, not device-queried (aikit's Device has no core-count
+// accessor), although the kernel is default-on on every chip via metalAttnFAEnabled; a port to other Apple GPU core
+// counts would need it read from the device, not assumed.
 const attnFACoreCount = 14
 
-// attnFABlkSplit is the split count the R17 block kernel (attention_fa_blk) runs at. Its split response is not
-// monotone and not the legacy kernel's: measured 2026-09-25 on the 1.5B at 3900 keys, S = 8/14/16/24/32/48 gave
-// 2.61/2.82/3.37/2.15/2.90/2.36x in-sequence attention, and S = 16 was also best or near-best at 2048 keys and on the
-// 7B. The confirmation run and the fidelity decision were both at S = 16
-// (docs/measurements/metal-decode-attn-r17-2026-09-25.md). The nKeys/32 cap never binds above attnFADepthFloor.
+// attnFABlkSplit is the split count the block kernel (attention_fa_blk) runs at. Its split response is not monotone
+// and not the legacy kernel's; S = 16 was best or near-best at the depths and models measured, and was the setting of
+// the confirmation run and the fidelity decision (docs/measurements/metal-decode-attn-r17-2026-09-25.md). The nKeys/32
+// cap never binds above attnFADepthFloor.
 const attnFABlkSplit = 16
 
-// attnFADepthFloor is where attention_fa takes over from the shipped kernel. It is 1024 since B-P03
-// (docs/tasks/task-metal-audit-2026-10.md, night of 2026-10-03): T1.2 measured the block kernel at 1.167x the legacy
-// kernel at 1024 keys on the 1.5B and 1.056x on the 7B, and the fidelity gate at the new depths passed. P1 on both
-// models put the block kernel's median and p99 relative L2 against float64 below the exact kernel's at 1024, 1280 and
-// 1535 keys; P2 PASSES on the 1.5B at 1024 (KL ratio 0.9987). Below 1024 the two kernels were level (0.97-1.03x), so
-// the floor stays there. A same-day revert to 1536 was a test artifact: TestSpecNgram_copyOnStepVerify compared spec,
-// whose prompt reused the cache and re-decoded its last position, against a cold plain arm that had prefilled it, and the
-// f16 prefill is not bit-identical to decode; spec matches a plain arm on the same reuse exactly, tokens and K/V. The
-// history below is the original per-query-head kernel's, which set the old 1536 floor.
-//
-// The original floor, 1536: where attention_fa (at a properly-sized split count) started beating the
-// shipped kernel — measured directly (TestAttentionFA_speedProbe, since deleted; tight-interleaved min-of-40,
-// S sized to attnFACoreCount*2): 0.98x at K=1024 (not yet a win), 1.07x at K=1536, climbing to
-// 1.26x at K=3900. S=1 (no split) is NOT a shallow-depth fallback within this kernel — it measured
-// UNIFORMLY worse than shipped at every depth tried (0.38-0.53x even at K=1024), so below this
-// floor canUseAttnFA declines entirely and the shipped kernel runs, rather than this kernel at
-// S=1 as R2's own Build text first proposed ("S=1 below a measured crossover") — a correction the
-// speed probe surfaced, recorded here rather than silently overriding the brief's own text.
+// attnFADepthFloor is where attention_fa takes over from the shipped kernel: 1024 keys
+// (docs/tasks/task-metal-audit-2026-10.md, B-P03). Below it the two kernels were level. S=1 (no split) is not a
+// shallow-depth fallback within attention_fa: it measured uniformly worse than the shipped kernel at every depth, so
+// below the floor canUseAttnFA declines entirely and the shipped kernel runs.
+// A revert to 1536 on the evidence of TestSpecNgram_copyOnStepVerify was a test artifact (its spec arm reused the
+// cache while the cold plain arm prefilled it, and the f16 prefill is not bit-identical to decode). Before moving the
+// floor, read docs/code-notes/metal.md#attnFADepthFloor.
 const attnFADepthFloor = 1024
 
 // attnFAMaxG is the most query heads per KV head attention_fa holds: its per-thread arrays are sized
@@ -3266,11 +3059,10 @@ func attnFAHeadDimOK(hd, nH, nKV int) bool {
 	return hd == 64 && nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
 }
 
-// gemvExtOn routes the int4 GEMVs R18 never reached through its rows-per-simdgroup kernels (D-B04): DeltaNet's qkv and
-// z projections, and a shared expert's gate|up and down. Each rows kernel is bit-identical to the one it replaces
-// (same lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). ON since its grade passed
-// (docs/tasks/task-metal-audit-2026-10.md, "D-B04", night of 2026-10-03): the 9B decodes 1.064x faster at depth 128 and
-// 1.061x at 1024, 7 of 7 reps above 1, logits equal in every rep, against the pre-registered >= 1.02.
+// gemvExtOn routes the int4 GEMVs R18 never reached (DeltaNet's qkv and z projections, a shared expert's gate|up and
+// down) through the rows-per-simdgroup kernels. Each rows kernel is bit-identical to the one it replaces (same
+// lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). Grade:
+// docs/tasks/task-metal-audit-2026-10.md, "D-B04".
 var gemvExtOn = true
 
 // gemvExtKind names the shipped kernel family a gemvExt site runs: the plain coal projection, the SA projection, or
@@ -3318,21 +3110,15 @@ func (r *resident) gemvExt(e *Encoder, kind gemvExtKind, rows, K int, args ...Bu
 }
 
 // attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
-// 8; B-P02). ON since its grade passed (docs/tasks/task-metal-audit-2026-10.md, "B-P02", night of 2026-10-03): on the
-// two G = 2 models, legacy / block attention measured 2.37x and 2.32x (internlm2-1.8b) and 2.47x and 2.30x
-// (qwen3-0.6b) at 2048 and 3900 keys, 5 of 5 reps above 1, against the pre-registered >= 1.5. The kernel agrees with
-// g7 head for head (TestAttnFABlk_anyGMatchesG7).
+// 8). The kernel agrees with g7 head for head (TestAttnFABlk_anyGMatchesG7). Grade:
+// docs/tasks/task-metal-audit-2026-10.md, "B-P02".
 var attnFABlkAnyG = true
 
-// attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). ON since its
-// pre-registered grade passed (docs/tasks/task-metal-audit-2026-10.md, "B-P01", night of 2026-10-03), on the 0.5B:
-// P1, the twin's median and p99 relative L2 against float64 below the exact kernel's; P2 at 3900 keys, critA, critB and
-// the ceiling hold with a KL ratio of 1.0098 (<= 1.05); speed, legacy / block attention 3.17x at 2048 keys and 3.63x
-// at 3900 (>= 1.5). The twin is not bit-identical to the per-query-head kernel, which is why it was graded on fidelity.
+// attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin. The twin is not
+// bit-identical to the per-query-head kernel, which is why it was graded on fidelity rather than identity. Grade:
+// docs/tasks/task-metal-audit-2026-10.md, "B-P01".
 var attnFABlk64On = true
 
-// planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
-// it encodes, otherwise the position setPos last set.
 // fanSplitBuf is the attention_fa split-count uniform the command buffer being encoded binds: the greedy chain's own
 // set's while it encodes one of its buffers (encFANSplit), otherwise the resident's, which setPos writes.
 func (r *resident) fanSplitBuf() Buffer {
@@ -3342,6 +3128,8 @@ func (r *resident) fanSplitBuf() Buffer {
 	return r.uAttnFANSplit
 }
 
+// planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while it encodes,
+// otherwise the position setPos last set.
 func (r *resident) planNKeys() int {
 	if r.encNKeys > 0 {
 		return r.encNKeys
@@ -3380,11 +3168,10 @@ func (r *resident) attnPlanFor(nKeys int) attnPlan {
 	return p
 }
 
-// canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l in the command
-// buffer being encoded (at planNKeys keys). R2 (docs/tasks/red-october.md): dense-GQA only, hd==128
-// only (the kernel's own cooperative-load tiling is fixed to 32 lanes x half4) — sinks, windows,
-// and the f32-KV twin are explicitly out of scope until the dense-GQA kernel clears the band (the
-// brief's own text), same reasoning as canUseF16Lane's family exclusions above it.
+// canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l in the command buffer being
+// encoded (at planNKeys keys): dense GQA only, at a head dim attnFAHeadDimOK admits (the kernel's cooperative-load
+// tiling is fixed to 32 lanes x half4). Sinks, windows and the f32-KV twin are out of scope, for the reasons of
+// canUseF16Lane's family exclusions.
 func (r *resident) canUseAttnFA(l int) bool {
 	if !r.decodeAttnFA || r.attnFAPartial == (Buffer{}) {
 		return false
@@ -3452,16 +3239,13 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		qkvRows = nHhd // S1.4: Q only; K/V come from layer L.kvSrc's cache, which r.kc[l]/r.vc[l] alias
 	}
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4 // byte offsets of k, v within the fused qkv buffer
-	// --- attention block (7 dispatches in the baseline dense case — norm, fused QKV+bias, merged
-	// Q+K RoPE, KV store, attention, o-proj input quant, fused o-proj+residual — and 8 at
-	// attention_fa depths, whose combine is a second attention dispatch (B-D02,
-	// audit-metal-2026-09-30.md); N-10 audit-metal-2026-09-12.md: an earlier "11 vs 19" count here
-	// predates further fusion; qGate/qkNorm/kEqV/sandwich/LoRA each add their own extra dispatches) ---
-	// postOnly (Olmo 3/Olmo Hybrid, G5): no pre-norm at all — quantize the RAW residual
-	// (quant_vec, the same symmetric int8 quantizer ctx-before-o-proj already uses below)
-	// instead. encodeAttention is never called for a DeltaNet layer (encodeLayer routes those to
-	// encodeDeltaNetMixer instead), so the bare model-level flag is safe here unlike encodeLayer's
-	// shared FFN half below.
+	// --- attention block (7 dispatches in the baseline dense case: norm, fused QKV+bias, merged Q+K RoPE, KV
+	// store, attention, o-proj input quant, fused o-proj+residual; 8 at attention_fa depths, whose combine is a
+	// second attention dispatch; qGate, qkNorm, kEqV, sandwich and LoRA each add their own) ---
+	// postOnly (Olmo 3, Olmo Hybrid): no pre-norm at all, so quantize the raw residual (quant_vec, the symmetric
+	// int8 quantizer the ctx-before-o-proj step also uses) instead. encodeAttention is never called for a DeltaNet
+	// layer (encodeLayer routes those to encodeDeltaNetMixer), so the model-level flag is safe here, unlike
+	// encodeLayer's shared FFN half below.
 	f16Lane := r.canUseF16Lane(l)
 	if r.q4kLane {
 		e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, x, L.preNorm, r.axF32, r.uH, r.uEps, r.uAddOne)
@@ -3505,14 +3289,12 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		}
 	}
 	if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-		// QKNormWhole (Olmo 3/Olmo Hybrid, G5): the SAME kernel, grid collapsed to one Q block +
-		// one K block via the constant-1/whole-width buffers built in buildResident — qk_norm's
-		// block h<nH reduces [base, +hd) where base is head*hd, so nH=1,hd=nH_orig*hd spans the
-		// WHOLE contiguous Q vector for h=0 and the whole K vector for h=nH=1, matching
-		// decoder/attention.go's rmsNorm(q,QNorm,1,nH*hd,...) exactly. g.uNHhd (the K buffer
-		// OFFSET within the fused qkv buffer) is unchanged — it is independent of the
-		// reinterpreted reduction width. Only correct for MHA (nH==nKV); BuildResident already
-		// declines otherwise.
+		// QKNormWhole (Olmo 3, Olmo Hybrid): the same kernel with the grid collapsed to one Q block and one K block,
+		// via the constant-1 and whole-width buffers built in buildResident: qk_norm's block h<nH reduces [base, +hd)
+		// with base = head*hd, so nH=1, hd=nH_orig*hd spans the whole contiguous Q vector for h=0 and the whole K
+		// vector for h=nH=1, matching decoder/attention.go's rmsNorm(q,QNorm,1,nH*hd,...). g.uNHhd (the K offset
+		// within the fused qkv buffer) does not depend on the reinterpreted reduction width. Correct only for MHA
+		// (nH==nKV); buildResident declines otherwise.
 		qkNH, qkNKV, qkHD := r.uNH, g.uNKV, g.uHd
 		if r.qkNormWhole {
 			qkNH, qkNKV, qkHD = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD
@@ -3559,18 +3341,14 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
 		}
 		if r.canUseAttnFA(l) {
-			// nSplit here is for the DISPATCH GRID SIZE only (fixed once a command
-			// buffer's commands are encoded — it can't change later) — NOT written
-			// into r.uAttnFANSplit here; that happens once per decode step from
-			// setPos, before THIS buffer commits (see uAttnFAG/uAttnFANSplit's own
-			// field comment for why the old per-layer SetU32 here was a real race).
-			// The two agree by construction: both are attnFASplitFor of the key count
-			// this buffer runs at — planNKeys here, the job's own position in setPos —
-			// and the executor re-encodes a pre-encoded buffer whose plan does not match
-			// the arriving job (execLoop). (This used to read the key count at ENCODE
-			// time, the previous job's: one token late at the floor, and the previous
-			// request's depth on a new request's first step — with a grid sized for the
-			// old depth and a uniform for the new one below 32·S keys.)
+			// nSplit here sizes the dispatch grid only, which is fixed once a command buffer is encoded. It is not written
+			// into r.uAttnFANSplit here: setPos does that once per decode step, before this buffer commits (see
+			// uAttnFAG/uAttnFANSplit's field comment for the race a per-layer SetU32 was). The two agree by construction:
+			// both are attnFASplitFor of the key count this buffer runs at (planNKeys here, the job's own position in
+			// setPos), and the executor re-encodes a pre-encoded buffer whose plan does not match the arriving job
+			// (execLoop). Reading the key count at encode time instead would give the previous job's: one token late at
+			// the floor, and the previous request's depth on a new request's first step, with a grid sized for the old
+			// depth and a uniform for the new.
 			nSplit := r.attnFASplitFor(r.planNKeys(), g.nKV)
 			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
 				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
@@ -3641,13 +3419,11 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 		return nil, nil
 	}
 
-	// R2: this path drives encodeAttentionResidualWith with ITS OWN per-token r.batchUNKeys[m]
-	// buffers, never through setPos — so r.curNKeys (planNKeys, canUseAttnFA's depth gate here)
-	// would otherwise stay stale from whatever a PRIOR single-token call last set it to. Force it off
-	// for the whole batch rather than dispatch attention_fa off a stale depth reading: R2's kernel
-	// targets decode (M=1) specifically, so declining here (shipped kernel) is also the intended
-	// choice, not just a safe fallback. The executor does not read this zero: it encodes each job
-	// for that job's own key count (execLoop).
+	// This path drives encodeAttentionResidualWith with its own per-token r.batchUNKeys[m] buffers, never through
+	// setPos, so r.curNKeys (planNKeys, canUseAttnFA's depth gate) would otherwise stay stale from whatever a
+	// prior single-token call set. Force it to 0 for the whole batch rather than dispatch attention_fa off a stale
+	// depth: attention_fa targets decode (M=1), so the shipped kernel is the intended choice here too. The
+	// executor does not read this zero: it encodes each job for its own key count (execLoop).
 	r.curNKeys = 0
 
 	// Drain and stop the pipelined executor so we have exclusive, synchronous access to the queue
