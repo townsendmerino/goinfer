@@ -14,10 +14,9 @@ var errBlockSpecUnsupported = errors.New("decoder: backend does not support bloc
 // ErrBlockSpecUnsupported reports whether err is the decline above.
 func ErrBlockSpecUnsupported(err error) bool { return errors.Is(err, errBlockSpecUnsupported) }
 
-// errBlockSpecResidentBusy is returned when another generation already holds the model's single
-// shared resident KV (audit R-00). Returned before any device write, so a caller's existing
-// fallback to plain Generate (internal/serveapp/openai.go) is exact — Generate makes its own CAS
-// attempt and, finding the same claim held, drops to the staged CPU path itself (M9).
+// errBlockSpecResidentBusy is returned when another generation already holds the model's single shared resident KV. It is returned before
+// any device write, so a caller's fallback to plain Generate (internal/serveapp/openai.go) is exact: Generate makes its own claim attempt
+// and, finding it held, drops to the staged CPU path itself.
 var errBlockSpecResidentBusy = errors.New("decoder: resident KV is busy with another generation")
 
 // ErrBlockSpecResidentBusy reports whether err is the concurrent-claim decline above.
@@ -39,9 +38,8 @@ func ErrBlockSpecResidentBusy(err error) bool { return errors.Is(err, errBlockSp
 type ResidentBlockDrafter interface {
 	// FuseContext projects concatenated tap hidden states to the trunk's width and norms them.
 	FuseContext(rows [][]float32) ([][]float32, error)
-	// ExtendContext appends fused rows to the drafter's own K/V at the current context end.
-	// Incremental by contract: rebuilding the whole context per block measured 2.4x the cost
-	// at a 1024-token context (docs/spec/08), widening with length.
+	// ExtendContext appends fused rows to the drafter's own K/V at the current context end. Incremental by contract: rebuilding the whole
+	// context per block costs more, and the gap widens with length (docs/spec/08).
 	ExtendContext(fused [][]float32) error
 	// ContextLen is how many positions the drafter's context currently holds.
 	ContextLen() int
@@ -65,27 +63,20 @@ type ResidentDrafterHost interface {
 	// — all the accept decision reads. Only the ARGMAX must match a sequential Forward, not the
 	// logits bit-for-bit, which is what lets the LM head be batched (docs/spec/08).
 	PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-	// SetBatchedCapture arms the hidden-state seam for the whole batch: the next
-	// PrefillLastNArgmax records the residual at each named layer for ALL its rows. The
-	// per-token seam costs a sync and a download per tap PER TOKEN; this pays one per tap for
-	// the block (1.09 ms vs 2.79 ms at M=6, measured).
+	// SetBatchedCapture arms the hidden-state seam for the whole batch: the next PrefillLastNArgmax records the residual at each named layer
+	// for ALL its rows. The per-token seam costs a sync and a download per tap per token; this pays one per tap for the block.
 	SetBatchedCapture(taps []int) error
 	// BatchedCapture returns the last batched forward's rows as [tap][M*hidden].
 	BatchedCapture() [][]float32
 }
 
-// ResidentSeedArgmax is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed: the one
-// place the loop asks for M rows of argmax and reads exactly one of them.
+// ResidentSeedArgmax is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed, the one place the loop asks for M rows of argmax
+// and reads exactly one of them. Without it the seed materialises the batched logits (M x vocab: gigabytes on a large-vocab target at
+// prompt lengths over ~1k) and runs the head over every row to obtain one token id. The capture the seed needs comes from the layer loop,
+// not the head, so heading one row loses nothing.
 //
-// The seed calls PrefillLastNArgmax over the whole prompt and uses `ids[len(ids)-1]`. On a
-// vocab-151,936 target a 2048-token prompt therefore allocates 1.24 GB of VRAM for the batched
-// logits, a 1.24 GB host slice and a 1.24 GB device-to-host copy, runs the head GEMV over 2048 rows
-// and a single-threaded host argmax over 311M floats — to obtain ONE token id. The capture the seed
-// actually needs comes from the LAYER LOOP, not the head, so heading one row loses nothing
-// (audit-2026-09-02 C-12).
-//
-// Optional rather than added to ResidentDrafterHost, following ResidentCapped/ResidentGreedy: a
-// backend that has not implemented it keeps working through the wide path.
+// Optional rather than part of ResidentDrafterHost, following ResidentCapped and ResidentGreedy: a backend without it keeps working
+// through the wide path.
 type ResidentSeedArgmax interface {
 	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.
 	// The batched capture seam must be armed and filled exactly as PrefillLastNArgmax fills it.
@@ -105,51 +96,36 @@ func (m *Model) BlockSpecCapable() bool {
 
 // BlockSpecOptions tunes block-drafting speculation.
 type BlockSpecOptions struct {
-	// VerifyWidth is how many block positions the TARGET verifies per round (anchor plus
-	// VerifyWidth-1 drafts). 0 selects the default below.
+	// VerifyWidth is how many block positions the TARGET verifies per round (anchor plus VerifyWidth-1 drafts). 0 selects the default below.
 	//
-	// It is NOT the drafter's trained block width, and that distinction is the single biggest
-	// lever measured: the drafter drafts its full block either way, but verifying all 16
-	// positions makes code a 0.89x LOSS, while verifying 7 makes it 1.60x. The tail positions
-	// rarely land and cost full batched-verify price — positions 12-15 gain 0.09 accepted
-	// tokens BETWEEN THEM while costing 9.4 ms of verify per round (docs/spec/08).
+	// It is not the drafter's trained block width, and the distinction is the biggest lever: the drafter drafts its full block either way, but
+	// the tail positions rarely land and cost full batched-verify price, so verifying the full width can turn a win into a loss.
+	// docs/code-notes/decoder.md#BlockSpecOptions.VerifyWidth has the measurement.
 	VerifyWidth int
 	// MaxTokens caps generation; 0 means unlimited (the caller stops on EOS).
 	MaxTokens int
 
-	// StopIDs are the caller's extra stop tokens — SamplingParams.StopIDs, which for a served
-	// request carries the CHAT TEMPLATE's stops on top of the model's own.
-	//
-	// It exists because this loop rebuilt its stop set from Cfg.EOSIDs() alone while every other
-	// speculative loop asks target.isStop(tok, sp). For the pairing this ships for (Qwen3-4B +
-	// DFlash) that is {151645} against m.eosIDs' {151645, 151643}, so a <|endoftext|> was emitted
-	// as ordinary content and generation ran on to <|im_end|> or max_tokens — with streamTokens
-	// decoding the stop token into the response. The "lossless by construction" contract was
-	// broken by the STOP SET, not by the verify (audit-2026-09-02 C-11).
+	// StopIDs are the caller's extra stop tokens: SamplingParams.StopIDs, which for a served request carries the chat template's stops on top
+	// of the model's own. The loop's stop set must agree with Model.isStop, which every other speculative loop consults (blockSpecStopSet);
+	// otherwise a stop token is emitted as content and the lossless contract is broken by the stop set rather than the verify.
 	StopIDs []int
 
-	// OnRound, if non-nil, is called after each completed round with the verify width that
-	// round used and the tokens it committed (accepted drafts plus the target's own token).
-	//
-	// It is one seam serving two needs the campaign has: the adaptive controller cannot be
-	// judged on end-to-end speed alone — a regime change mid-generation is exactly where a
-	// cumulative-average signal lags, and an aggregate number hides that — and `serve` owes
-	// per-request accept-rate and tok/verify in its response metadata regardless.
+	// OnRound, if non-nil, is called after each completed round with the verify width that round used and the tokens it committed
+	// (accepted drafts plus the target's own token). It is the per-round seam for the adaptive controller, which cannot be judged on
+	// end-to-end speed alone (a cumulative average lags a regime change mid-generation), and for `serve`'s per-request accept-rate and
+	// tok/verify metadata.
 	OnRound func(width, committed int)
 }
 
-// defaultVerifyWidth is 8 — measured as the optimum for math (1.79x), within 2% of code's
-// optimum of 7 (1.60x), and serving both pairings tested. Per-traffic-class tuning is worth
-// a few percent (code 7, chat 4) and needs a router; 8 is the one number that works everywhere.
+// defaultVerifyWidth is 8, the one number that serves both measured pairings (the optimum for math, within 2% of code's optimum of 7).
+// Per-traffic-class tuning is worth a few percent and needs a router; docs/code-notes/decoder.md#defaultVerifyWidth has the figures.
 const defaultVerifyWidth = 8
 
 // BlockSpec is an attached block drafter, ready to serve many generations.
 //
-// ATTACHING IS SEPARATE FROM GENERATING, and that split is not cosmetic. AttachBlockDrafter
-// uploads the drafter's weights (~500 MB for the 4B pairing) to the device; doing it per request
-// made the production path measure 0.17x — a 6x LOSS — while the loop itself was healthy and
-// lossless at 5.76 tok/round. Acceptance looked fine and the wiring was throwing the speedup
-// away. Attach once per process, generate per request.
+// Attaching is separate from generating, and that split is not cosmetic: AttachBlockDrafter uploads the drafter's weights to the device,
+// and doing it per request costs more than the speedup earns (a several-fold loss) while the loop stays lossless and acceptance looks
+// fine. Attach once per process, generate per request.
 type BlockSpec struct {
 	m    *Model
 	host ResidentDrafterHost
@@ -200,9 +176,9 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) ([]int, int, er
 // tokens per round instead of at the end.
 func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) (out []int, rounds int, err error) {
 	m, host, rd, dw := s.m, s.host, s.rd, s.dw
-	// Defense in depth, and NOT load-bearing today: this loop takes no M=1 decode step (it seeds through a batched pass and then only verifies), so with the
-	// multi-row verify lane off its verify rows are exact whether or not this scope is held — removing it does not change TestFlashDecodeBlockSpecLane's outcome
-	// (checked: the mutant survives). It is here so a future edit that adds an M=1 step to this loop cannot silently mix trees. Counted, so GenerateStream's hold nests.
+	// Defense in depth, not load-bearing today: this loop takes no M=1 decode step (it seeds through a batched pass and then only verifies),
+	// so with the multi-row verify lane off its verify rows are exact whether or not this scope is held. It is here so a future edit that
+	// adds an M=1 step cannot silently mix attention trees. Counted, so GenerateStream's hold nests.
 	defer m.enterExactAttention()()
 	width := opt.VerifyWidth
 	if width <= 0 {
@@ -214,14 +190,10 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	if width < 2 {
 		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d is too narrow", width)
 	}
-	// Claim the single shared resident KV before any device write (audit R-00): this path drives
-	// the same positional cache as Model.Generate and the n-gram/speculative paths, none of which
-	// it coordinated with before this fix. A loser returns before touching state, so the caller's
-	// existing fallback to plain Generate is exact (M9's "concurrent distinct sequences still
-	// complete correctly, only resident speed is lost"). Gated on m.resident != nil, mirroring
-	// model.go's useGPU check: a host without a resident keeps its KV in its own CPU cache and
-	// never touches the resident device KV (the removed CPU BlockSpec was one such host), so it
-	// must not contend for resBusy or forget a resIDs commit it never wrote.
+	// Claim the single shared resident KV before any device write: this path drives the same positional cache as Model.Generate and the
+	// n-gram/speculative paths. A loser returns before touching state, so the caller's fallback to plain Generate is exact. Gated on
+	// m.resident != nil, mirroring model.go's useGPU check: a host without a resident keeps its KV in its own CPU cache and must not
+	// contend for resBusy or forget a resIDs commit it never wrote.
 	var reuseFrom int
 	if m.resident != nil {
 		// tryClaimResident, not a bare CAS: it also refuses while an MC3 generation holds a batch place, which never
@@ -230,9 +202,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			return nil, 0, errBlockSpecResidentBusy
 		}
 		defer atomic.StoreInt32(&m.resBusy, 0)
-		// P-05 (audit-2026-09-10), the deferred drafter-reuse half: compute reuse BEFORE
-		// forgetting — forgetting clears the very state residentReuseLen reads. BlockSpec never
-		// binds an adapter (nil lora, matching residentCommitIDs' own nil below).
+		// Compute reuse before forgetting: forgetting clears the very state residentReuseLen reads. BlockSpec never binds an adapter (nil lora,
+		// matching residentCommitIDs' own nil below).
 		reuseFrom = m.residentAcquire(prompt, nil, nil) // MC1: binds the KV slot (clearing resDrafterSynced on a switch)
 		// resIDs matching is NOT enough on its own: a plain Generate or n-gram-speculative turn
 		// can commit resIDs without ever touching THIS drafter's own context, so the token
@@ -250,11 +221,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		return nil, 0, err
 	}
 	defer func() { _ = host.SetBatchedCapture(nil) }()
-	// Keep the drafter's own context for the reused prefix instead of always wiping to 0: its
-	// positions correspond 1:1 with the target's (each prompt token appends exactly one fused
-	// row via fuse, below), so TruncateContext(reuseFrom) is the drafter-side twin of the
-	// target's own resident-KV reuse — reuseFrom is 0 (a full wipe, byte-identical to before
-	// this fix) whenever nothing is safely reusable.
+	// Keep the drafter's own context for the reused prefix instead of wiping to 0: its positions correspond 1:1 with the target's (each
+	// prompt token appends exactly one fused row via fuse, below), so TruncateContext(reuseFrom) is the drafter-side twin of the target's
+	// resident-KV reuse. reuseFrom is 0 (a full wipe) whenever nothing is safely reusable.
 	rd.TruncateContext(reuseFrom)
 
 	hidden := m.w.arch.HiddenDim
@@ -282,8 +251,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	for i, id := range suffix {
 		embs[i] = m.embedResident(id)
 	}
-	// C-12: the seed reads ONE id. Ask for one when the backend can, which skips an M x vocab
-	// device buffer, host slice, D2H copy and host argmax — gigabytes at prompt lengths over ~1k.
+	// The seed reads one id: ask for one when the backend can (ResidentSeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
 	var anchor int
 	if seeder, ok := host.(ResidentSeedArgmax); ok {
 		anchor, err = seeder.PrefillSeedArgmax(embs, reuseFrom)
@@ -317,23 +285,17 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			break
 		}
 		if guard.stopped {
-			// The drafter is not paying for itself on this generation. Finish with plain
-			// resident decoding rather than continuing to lose ~20% invisibly.
-			//
-			// DISARM THE CAPTURE SEAM FIRST. Leaving it armed makes every fallback token pay
-			// five tap downloads for hidden states nothing will read — measured turning a
-			// 0.98x generation into 0.87x, i.e. the guard made things WORSE than not guarding.
+			// The drafter is not paying for itself on this generation: finish with plain resident decoding. Disarm the capture seam first: left
+			// armed, every fallback token pays tap downloads for hidden states nothing will read, and the guard then costs more than it saves.
 			if !seamOff {
 				if e := host.SetBatchedCapture(nil); e != nil {
 					return out, rounds, e
 				}
 				seamOff = true
 			}
-			// The FAST greedy step where the backend has one: argmax reduced on-device with a
-			// 4-byte readback, which is what Model.Generate uses. Falling back through
-			// PrefillLastNArgmax(M=1) instead downloads the full logit row per token — the
-			// same slow primitive that made gate 3's baseline wrong, and it left the guard
-			// converting a 0.82x into 0.82x instead of into plain-decode speed.
+			// Use the fast greedy step where the backend has one (argmax reduced on-device with a 4-byte readback, as Model.Generate does).
+			// Falling back through PrefillLastNArgmax(M=1) downloads the full logit row per token, so the guard would turn a loss into the same
+			// loss instead of into plain-decode speed.
 			var e error
 			if g, ok := m.resident.(ResidentGreedy); ok {
 				anchor, e = g.ForwardArgmax(m.embedResident(anchor), pos)
@@ -348,9 +310,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 				return out, rounds, e
 			}
 			pos++
-			// The stop token is NOT emitted here either. The loop-top check breaks on it, but
-			// only AFTER this append ran — so without this the fallback emits one token past
-			// where plain decoding stops, which is exactly the 259-vs-258 mismatch.
+			// The stop token is not emitted here either: the loop-top check breaks on it only after this append, so without this check the fallback
+			// emits one token past where plain decoding stops.
 			if eos[anchor] {
 				break
 			}
@@ -360,17 +321,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			}
 			continue
 		}
-		// M-13: the round's width is clamped by what is left of BOTH budgets.
-		//
-		// MaxTokens: the loop condition is checked per ROUND while a round commits up to `width`
-		// tokens at once, so max_tokens=2 could return 9 and usage.completion_tokens could exceed
-		// the request's own cap. The losslessness gates could not see it — the (since removed) CPU one
-		// compared only the common prefix, and the CUDA one asks the reference for exactly len(got) tokens.
-		//
-		// The context cap: verifying `width` rows at `pos` with no clamp makes checkCap refuse the
-		// WHOLE round near the end of the window, so a nearly complete response ends in a
-		// generation error. Plain Generate and the server both clamp instead, so a max-length turn
-		// finishes cleanly with "length"; this path did not.
+		// The round's width is clamped by what is left of both budgets (blockSpecRoundWidth): the token budget is tested per round while a round
+		// commits up to width tokens, and an unclamped verify near the end of the context window makes checkCap refuse the whole round.
 		width := blockSpecRoundWidth(width, opt.MaxTokens, len(out), pos, m.ResidentContextCap())
 		if width < 1 {
 			break // no room in either budget: finish cleanly rather than erroring
@@ -411,15 +363,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		burst = append(burst, drafted[:accepted]...)
 		next := tgt[accepted] // the target's own token at the first disagreement
 		burst = append(burst, next)
-		// TRUNCATE BEFORE EOS INSIDE THE BURST. A round commits several tokens at once, so a
-		// stop token can land in the MIDDLE of one; appending the whole burst emits content
-		// AFTER it, which plain decoding never does. And the stop token itself is EXCLUDED,
-		// because Generate breaks on it without emitting (model.go, isStop) — matching that
-		// exactly is what makes the two paths token-identical.
-		//
-		// Caught by a 384-token run where spec emitted 259 tokens against greedy's 258. At 96
-		// tokens neither generation reached EOS, so the bug was invisible — a reminder that a
-		// losslessness gate only covers the lengths it actually runs.
+		// Truncate before EOS inside the burst. A round commits several tokens at once, so a stop token can land in the middle of one;
+		// appending the whole burst emits content after it, which plain decoding never does. The stop token itself is excluded, because Generate
+		// breaks on it without emitting (model.go, isStop): matching that exactly is what makes the two paths token-identical.
 		stop := false
 		for i, id := range burst {
 			if eos[id] {
@@ -442,27 +388,19 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 			break
 		}
 		anchor = next
-		// M-13: `width` here is the CLAMPED width this round actually verified, which is what the
-		// telemetry must count — drafted = the positions offered (width-1, the anchor is not a
-		// draft), evaluated = the positions tested. GenerateStream left Drafted and Evaluated at
-		// zero, so AcceptanceRate() was 0 for every block-spec generation and the adaptive
-		// controller's own signal was unreadable.
+		// `width` here is the clamped width this round actually verified, which is what the telemetry must count: drafted = width-1 (the anchor
+		// is not a draft), evaluated = the positions tested.
 		if opt.OnRound != nil {
 			opt.OnRound(width, 1+accepted)
 		}
 		guard.observe(1 + accepted)
 	}
-	// P-05 (audit-2026-09-10): the ONLY exit that commits, mirroring generateInto's own rule
-	// (decoder/model.go, "the ONLY place the resident cache's contents are recorded: a
-	// generation that ran to completion"). Every early return above (a device error, or the
-	// caller's emit stopping consumption early) leaves resIDs nil, so the next turn cold-prefills
-	// rather than trusting a state this function cannot vouch for as fully written. This gives the
-	// next PLAIN Generate turn a warm prefix after a --drafter turn. resDrafterSynced = s marks
-	// THIS BlockSpec instance's own drafter context as the one that's actually in sync with the
-	// commit below (the deferred half this fix completes) — the next call into this same
-	// instance's generate() can then reuse both the target's resident KV AND the drafter's own
-	// context; any OTHER writer's commit (plain Generate, n-gram) clears it via
-	// residentForgetIDs, so a drafter turn never trusts a context it never built.
+	// The only exit that commits, mirroring generateInto's rule that a generation which ran to completion is the only place the resident
+	// cache's contents are recorded (model.go). Every early return above (a device error, or the caller's emit stopping consumption) leaves
+	// resIDs nil, so the next turn cold-prefills rather than trusting a state this function cannot vouch for. resDrafterSynced = s marks this
+	// BlockSpec's own drafter context as in sync with the commit below, so its next generate() can reuse both the target's resident KV and
+	// the drafter's context; any other writer's commit (plain Generate, n-gram) clears it via residentForgetIDs, so a drafter turn never
+	// trusts a context it never built.
 	if m.resident != nil {
 		// The trailing token. The seed and every round end on the target's own output: emitted, but not yet forwarded,
 		// because it is the next round's anchor. So at this exit the cache holds prompt+out less its last token, and
@@ -498,16 +436,10 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	return out, rounds, nil
 }
 
-// blockSpecStopSet is this loop's stop predicate, and it must agree with Model.isStop — the
-// predicate plain decoding and every OTHER speculative loop use.
-//
-// It did not. The set was rebuilt from Cfg.EOSIDs() alone: config.json's eos_token_id, without
-// generation_config.json's additions (which resolveEOSIDs merges into m.eosIDs) and without the
-// caller's SamplingParams.StopIDs (which for a served request carries the chat template's stops).
-// On the pairing this ships for, Qwen3-4B + DFlash, that is {151645} against {151645, 151643}: a
-// <|endoftext|> was emitted as ordinary content and generation ran on to <|im_end|> or max_tokens,
-// with streamTokens decoding the stop token into the response. "Lossless by construction" was
-// broken by the STOP SET, not by the verify (audit-2026-09-02 C-11).
+// blockSpecStopSet is this loop's stop predicate, and it must agree with Model.isStop, the predicate plain decoding and every other
+// speculative loop use: m.eosIDs (config.json's eos_token_id merged with generation_config.json's additions by resolveEOSIDs) plus the
+// caller's SamplingParams.StopIDs (for a served request, the chat template's stops). Building it from Cfg.EOSIDs() alone emits a stop
+// token as content and breaks "lossless by construction" through the stop set rather than the verify.
 func blockSpecStopSet(m *Model, opt BlockSpecOptions) map[int]bool {
 	eos := make(map[int]bool, len(m.eosIDs)+len(opt.StopIDs))
 	for _, e := range m.eosIDs {
@@ -519,18 +451,10 @@ func blockSpecStopSet(m *Model, opt BlockSpecOptions) map[int]bool {
 	return eos
 }
 
-// blockSpecRoundWidth clamps a round's verify width to what is left of BOTH budgets. Returns < 1
-// when neither has room, which the caller treats as a clean finish.
-//
-// TWO SEPARATE M-13 DEFECTS, ONE CLAMP. The loop tests its token budget once per ROUND while a
-// round commits up to `width` tokens at once, so max_tokens=2 could return 9 and
-// usage.completion_tokens could exceed the request's own cap. And verifying `width` rows at `pos`
-// with no context clamp made the backend's checkCap refuse the WHOLE round near the end of the
-// window, so a nearly complete response ended in a generation error — where plain Generate and the
-// server both clamp instead, and a max-length turn finishes cleanly with "length".
-//
-// The losslessness gates could not see either one: the (since removed) CPU gate compared only the
-// common prefix, and the CUDA gate asks the reference for exactly len(got) tokens.
+// blockSpecRoundWidth clamps a round's verify width to what is left of both budgets. It returns < 1 when neither has room, which the
+// caller treats as a clean finish. Two limits, one clamp: the loop tests its token budget once per round while a round commits up to
+// `width` tokens, so max_tokens could be exceeded; and verifying `width` rows at `pos` past the context window makes the backend's
+// checkCap refuse the whole round, where plain Generate clamps and a max-length turn finishes cleanly with "length".
 func blockSpecRoundWidth(width, maxTokens, emitted, pos, ctxCap int) int {
 	if maxTokens > 0 {
 		if left := maxTokens - emitted; left < width {
@@ -584,12 +508,8 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 			}
 			return true
 		}
-		// StopIDs: this loop is the one speculative path that did not consult the caller's stop
-		// set, so a chat-template stop was decoded into the response as content (C-11).
-		//
-		// Drafted/Evaluated come from the per-round hook because only the loop knows the CLAMPED
-		// width each round used; computing them out here from len(toks) would assume every round
-		// ran at the configured width, which is exactly what the M-13 clamp makes untrue.
+		// Drafted/Evaluated come from the per-round hook because only the loop knows the clamped width each round used; computing them here from
+		// len(toks) would assume every round ran at the configured width.
 		var drafted, evaluated int
 		opt := BlockSpecOptions{
 			MaxTokens: maxTokens,
@@ -613,68 +533,34 @@ func (s *BlockSpec) GenerateStream(ctx context.Context, prompt []int, maxTokens 
 		if err != nil {
 			g.err = err
 		} else if ctx.Err() != nil {
-			// M-13: a cancelled generation returned with g.err nil, so the caller read a truncated
-			// stream as a clean finish. Same shape as M-23 one tranche earlier, in a different loop.
+			// A cancelled generation reports ctx.Err(), so the caller does not read a truncated stream as a clean finish.
 			g.err = ctx.Err()
 		}
 	}()
 	return out, g, nil
 }
 
-// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.
+// breakEvenTokensPerRound is the acceptance below which the guard disables block drafting.
 //
-// A round costs draft + batched verify + the capture seam whatever it accepts; plain decoding
-// costs one target forward per token. So the drafter pays only when it commits more tokens per
-// round than the round costs in decode-equivalents. On the measured 4B/2070S pairing that is
-// ~39 ms per round against an 11.1 ms decode — about 3.5.
-//
-// 2.5, BELOW break-even, not above it. This was 3.8 and that was backwards. The reasoning for a
-// margin ABOVE break-even was "disabling a drafter that is merely breaking even costs nothing" —
-// which is false, because acceptance MEASURED OVER THE FIRST FEW ROUNDS is not acceptance over
-// the generation. Math averages 5.88 tok/round end to end and is a 1.58x workload, but its
-// opening rounds are slow enough that a 3.8 threshold disabled it: 1.58x became 0.97x, the guard
-// costing 39% on a workload it was supposed to protect.
-//
-// So the margin belongs BELOW break-even. A false negative (disabling a paying workload) costs
-// ~40%; a false positive (six unprofitable rounds before tripping) costs ~8%. The guard should
-// only fire when a workload is CLEARLY losing — chat sits at 1.96 and still trips at 2.5 — and
-// should leave anything ambiguous alone.
+// A round costs draft + batched verify + the capture seam whatever it accepts, against one target forward per token, so true break-even is
+// higher than this. The threshold sits BELOW break-even on purpose: acceptance over the first few rounds is not acceptance over the
+// generation (math opens slowly and is a win end to end), and a false negative (disabling a paying workload) costs far more than a false
+// positive (a few unprofitable rounds before tripping). The guard should fire only when a workload is clearly losing. Do not raise it toward
+// break-even: that disabled a paying workload. docs/code-notes/decoder.md#breakEvenTokensPerRound has the measurements.
 const breakEvenTokensPerRound = 2.5
 
-// guardWindow is how many rounds to observe before judging.
-//
-// SIX. Three was TRIED AND REVERTED, and the measurement is worth keeping because it refutes
-// the reasoning that motivated it:
-//
-//	case      window 6   window 3
-//	code        1.57x      1.54x   (kept either way)
-//	MATH        1.58x      0.91x   <- falsely tripped
-//	chat A      0.91x      0.90x
-//	chat B      0.94x      0.96x
-//	thinking    0.96x      0.92x
-//
-// Three bought nothing on chat and cost 42% on math by disabling a drafter that was paying.
-// The argument for shortening was that a response OPENS with boilerplate, so early rounds are
-// optimistic and judging early errs toward keeping a good drafter. That is false for math,
-// whose opening is evidently less predictable than its body — the whole-generation average
-// (5.88 tok/round) hides a slow start.
-//
-// It also confirms the asymmetry that shapes this whole design: a false negative costs ~42%
-// (a paying workload disabled) where a false positive costs ~8% (six unprofitable rounds).
-// The window should err LONG. Six, not twelve, because the rounds spent deciding are pure loss when the answer is "stop":
-// twelve rounds is a third of a 96-token response, and halving the window halves that. The risk
-// of judging early is disabling a drafter that would have paid — and that risk is LOW here in a
-// way worth stating: a response's opening is boilerplate ("Here's a Python function...", a code
-// fence), which is the part a drafter predicts BEST. Early rounds are optimistic, so a short
-// window errs toward keeping a good drafter, not dropping one.
+// guardWindow is how many rounds to observe before judging. Six: a shorter window falsely trips workloads that open slowly (a response's
+// opening is not uniformly predictable, and the whole-generation average hides a slow start), while a longer one spends more rounds on a
+// drafter that is not paying. The window should err long, because a false negative costs far more than a false positive. Do not shorten
+// it without re-running the whole-generation comparison: docs/code-notes/decoder.md#guardWindow has the table and the reverted three-round
+// attempt.
 const guardWindow = 6
 
 // acceptanceGuard disables a drafter that is not paying for itself, per generation.
 //
-// It exists because the failure it catches is SILENT. A mis-paired drafter, a target in a mode
-// the drafter was not trained for, or an out-of-domain workload all produce correct output at
-// reduced speed — losslessness guarantees the tokens are right. Without this, `--drafter` on a
-// thinking-mode Qwen3 serves at 0.83x and nothing anywhere says so.
+// It exists because the failure it catches is silent: a mis-paired drafter, a target in a mode the drafter was not trained for, or an
+// out-of-domain workload all produce correct output at reduced speed, since losslessness guarantees the tokens are right. Without it
+// `--drafter` on such a workload serves slower than plain decoding and nothing says so.
 type acceptanceGuard struct {
 	rounds  int
 	tokens  int
@@ -688,12 +574,9 @@ func (g *acceptanceGuard) observe(committed int) bool {
 	}
 	g.rounds++
 	g.tokens += committed
-	// CUMULATIVE, not per-window. Resetting the counters after a passing window gave a losing
-	// workload a fresh budget every time: chat survived its first six rounds, reset, and only
-	// tripped on the twelfth — measured 0.79x where tripping at six gives 0.91x. Keeping the
-	// running average means a workload trips as soon as its EVIDENCE says so, while a
-	// slow-starting profitable one (math opens below its own average) recovers as later rounds
-	// pull the average up, instead of being judged on a six-round snapshot.
+	// Cumulative, not per-window: resetting the counters after a passing window gives a losing workload a fresh budget every time. The
+	// running average trips a workload as soon as its evidence says so, while a slow-starting profitable one recovers as later rounds pull
+	// the average up instead of being judged on a snapshot.
 	if g.rounds >= guardWindow {
 		if float64(g.tokens)/float64(g.rounds) < breakEvenTokensPerRound {
 			g.stopped = true

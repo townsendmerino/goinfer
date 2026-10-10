@@ -2,16 +2,14 @@ package decoder
 
 import "fmt"
 
-// Placement is which of tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend.
-// The enum exists in full even though this phase only ever returns three of them — Phase 1 is
-// scoped to the pure decision function ("no behaviour change yet"), and PlacementHostComputedExperts
-// is reserved so a later phase (L-01) does not need to rewrite the type.
+// Placement is which of docs/tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend. PlacementHostComputedExperts is
+// reserved and never chosen, so adding it later does not rewrite the type.
 type Placement int
 
 const (
 	PlacementResident Placement = iota
 	PlacementExpertCached
-	PlacementHostComputedExperts // reserved for L-01 (misses computed on CPU from a pinned host copy); never chosen today
+	PlacementHostComputedExperts // reserved: misses computed on CPU from a pinned host copy; never chosen
 	PlacementWeightPaged
 	PlacementDecline
 )
@@ -33,42 +31,29 @@ func (p Placement) String() string {
 	}
 }
 
-// ctxPlanFloor is the smallest context Plan will shrink to before giving up — task-fit-to-
-// hardware.md §2's priority order ("shrink context toward a floor of 4096 before moving anything
-// [else]"). Same figure decoder/fitguard.go's ctxFloor uses for the CPU staged-load guard, kept
-// as its own constant here rather than imported: the two guards are independent by design
-// (fitguard.go predates this file and is not being folded into it this phase), and a future
-// change to one floor should not silently move the other's.
+// ctxPlanFloor is the smallest context Plan will shrink to before giving up (docs/tasks/task-fit-to-hardware.md §2: shrink context
+// toward a floor before moving anything else). It is not fitguard.go's ctxFloor, the CPU staged-load guard's own floor: the two guards are
+// independent by design, so a change to one floor must not silently move the other's.
 const ctxPlanFloor = 4096
 
-// PlanRequest is what the user asked for, with every default already resolved by the CALLER
-// (tasks/task-fit-to-hardware.md §2: "request — what the user asked for, with the defaults filled").
-// Plan itself invents no defaults, so a caller (goinfer-chat fit, the startup banner, a table
-// test) can see and vary exactly what it asked for rather than a default buried inside the
-// function under test.
+// PlanRequest is what the user asked for, with every default already resolved by the CALLER (docs/tasks/task-fit-to-hardware.md §2).
+// Plan itself invents no defaults, so a caller (goinfer-chat fit, the startup banner, a table test) can see and vary exactly what it asked
+// for rather than a default buried inside the function under test.
 type PlanRequest struct {
 	Ctx       int  // requested context; Plan may shrink it toward ctxPlanFloor unless CtxPinned
 	CtxPinned bool // true for an explicit -ctx: refuse (PlacementDecline) rather than silently shrink
 	Slots     int  // an explicit --moe-cache-slots / GOINFER_METAL_MOE_SLOTS; 0 means "let Plan choose"
 
-	// KVF16/KVI8 select a lossy KV precision. Both false means f32 (bit-exact, the default per
-	// tasks/task-fit-to-hardware.md §0: "the plan never selects a lossy... precision to make something
-	// fit without saying so... and requiring the flag" — so these must come from an explicit flag
-	// the caller read, never be set by Plan on its own initiative).
+	// KVF16/KVI8 select a lossy KV precision; both false means f32 (bit-exact, the default). They must come from an explicit flag the caller
+	// read, never be set by Plan on its own initiative: the plan never selects a lossy precision to make something fit without saying so
+	// (docs/tasks/task-fit-to-hardware.md §0).
 	KVF16, KVI8 bool
 
-	// ExtraBytes prices whatever the model itself does not know about but will share its device:
-	// a block drafter's weights + verify/capture buffers, a vision tower. tasks/task-fit-to-hardware.md
-	// §2's "every allocation is a term of the plan, including the ones that attach after load" —
-	// the concrete example that motivated it (a 26B's expert cache sized before a later --drafter
-	// attach grabbed room NewBlockSpec then needed) is exactly what this term exists to prevent
-	// PLAN from repeating. capSlots itself is now fixed too (docs/tasks/task-gpu-paths-2026-09.md,
-	// 2026-09-09): no ResidencyBackend interface change was needed after all — an out-of-band
-	// hint on decoder.Model (Options.ExtraResidentBytes / Model.ExtraResidentBytes()) was enough,
-	// since cuda/backend.go's BuildResident already receives *Model and can read it directly.
-	// resolveCtxCapFit passes the SAME value as this field's own ExtraBytes when it asks Plan for
-	// an unpinned ctx, so the two paths (Plan's dry run and the real load) price a drafter
-	// identically.
+	// ExtraBytes prices whatever the model itself does not know about but will share its device: a block drafter's weights and verify/capture
+	// buffers, a vision tower (every allocation is a term of the plan, including the ones that attach after load). Without it an expert cache
+	// is sized before a later --drafter attach claims the room NewBlockSpec then needs. The backend learns the same value out of band through
+	// Options.ExtraResidentBytes / Model.ExtraResidentBytes(), and resolveCtxCapFit passes it here when it asks Plan for an unpinned ctx, so
+	// Plan's dry run and the real load price a drafter identically.
 	ExtraBytes int64
 }
 
@@ -101,27 +86,15 @@ func (p Plan) NeedBytes() int64 {
 	return p.DenseBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
 }
 
-// kvBytesPerPositionAllLayers is Plan's own KV-cost formula: per-layer (a per-layer-varying
-// family like Gemma 4 is not approximated by one model-level figure — the same reason
-// metal/backend.go's residentKVBytes sums per layer rather than using a single kvDim), summed
-// for K+V, at the requested precision. Bytes-per-element figures match
-// decoder/arch.go's kvBytesForCtx exactly (f32 4.0, f16 2, int8 1.125-including-scale).
+// kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
+// model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision. Bytes per element match
+// kvBytesForCtx in decoder/arch.go (f32 4.0, f16 2, int8 1.125 including scale). The per-layer width is Architecture.kvDimAt: zero for a
+// linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width.
 //
-// M-28 (docs/audit-2026-09-10.md): the per-layer WIDTH now uses Architecture.kvDimAt — zero for
-// a linear/mamba/conv mixer layer (no position-indexed K/V at all), MLA's real compressed
-// latent width instead of the reconstructed per-head width — fixing the same overpricing bug
-// decoder/fitguard.go's estimateKVBytes fixes for the load-time host-RAM guard.
-//
-// DELIBERATELY NOT applying the sliding-window COUNT cap (kvPositionsAt) here, unlike
-// kvBytesForCtx: this function returns a flat PER-POSITION rate (the caller multiplies by
-// whatever ctx it is evaluating), and a sliding-window layer's true cost is not linear in ctx —
-// it flattens at SlidingWindow. Doing that properly needs tryCtx/chooseCtx below to search
-// rather than multiply, a real restructuring with no sliding-window fixture in this file's own
-// test suite to verify against; scoped out of this pass rather than guessed at. Every family
-// this IS fixed for (MLA, DeltaNet/Mamba/conv hybrids) has no sliding window, so this rate stays
-// exact for them; a family with BOTH (none exists in the registry today) would still be
-// overpriced by the uncapped ctx term, the same direction the guard already erred in before
-// M-28, never the unsafe direction.
+// It deliberately does NOT apply kvBytesForCtx's sliding-window cap (kvPositionsAt): this returns a flat per-position rate that the caller
+// multiplies by ctx, while a sliding-window layer's cost flattens at SlidingWindow, so capping it needs tryCtx/chooseCtx to search rather
+// than multiply, and a sliding-window fixture to verify against. The rate stays exact for families without a window (MLA, DeltaNet/Mamba/
+// conv hybrids); a family with both would be overpriced, the safe direction.
 func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	perElem := 4.0
 	switch {
@@ -157,15 +130,11 @@ func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
 	return nE, k, true
 }
 
-// WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling —
-// gpu/residency.go's own ctxCap before any -ctx request lowers it further via min(): 16384
-// positions at f32 (the proven 8 GB fit), 32768 at f16 (half the per-token bytes), 65536 at i8
-// (a quarter). Shared here, and gpu/residency.go calls THIS function instead of repeating the
-// three literals, so the planner's ctx choice and the backend's actual allocation can never
-// drift apart — exactly what Phase 3 (tasks/task-fit-to-hardware.md §7) needs before admitting webgpu:
-// a freeBytes-driven plan alone could pick a context above this fixed ceiling (VRAM allowing),
-// which BuildResident would then silently NOT honour (min() keeps the ceiling, and the plan's
-// promise would be wrong).
+// WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling, gpu/residency.go's ctxCap before any -ctx request
+// lowers it further via min(): 16384 positions at f32, 32768 at f16 (half the per-token bytes), 65536 at i8 (a quarter). gpu/residency.go
+// calls this function instead of repeating the literals, so the planner's ctx choice and the backend's allocation cannot drift apart: a
+// freeBytes-driven plan could otherwise pick a context above the ceiling, which BuildResident would not honour (min() keeps the ceiling),
+// and the plan's promise would be wrong.
 func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 	switch {
 	case kvI8:
@@ -177,29 +146,23 @@ func WebGPUCtxCeiling(kvF16, kvI8 bool) int {
 	}
 }
 
-// MetalCtxDefault and MetalCtxCeiling are the Metal backend's resident KV capacity: what an unpinned load allocates,
-// and the most an explicit -ctx may ask for. metal/model.go takes its constants from these, so Plan("metal") plans
-// exactly what Metal allocates, as WebGPUCtxCeiling does for webgpu (C-C01, docs/audit-metal-2026-09-30.md).
+// MetalCtxDefault and MetalCtxCeiling are the Metal backend's resident KV capacity: what an unpinned load allocates, and the most an
+// explicit -ctx may ask for. metal/model.go takes its constants from these, so Plan("metal") plans exactly what Metal allocates, as
+// WebGPUCtxCeiling does for webgpu.
 const (
 	MetalCtxDefault = 4096
 	MetalCtxCeiling = 32768
 )
 
-// Plan is tasks/task-fit-to-hardware.md §2's pure function ("no behaviour change yet [Phase 1] — the
-// plan is printed beside today's decision"): given this model, a candidate backend, how many
-// bytes are free on it, and what the caller asked for, decide a placement — resident,
-// expert-cached, weight-paged, or decline — following §2's priority order (shrink context toward
-// ctxPlanFloor first, since it costs no numerics; then cap routed experts into a cache; dense
-// weights always stay resident; CPU alone falls to weight-paging rather than ever declining).
+// Plan is the planner's pure function (docs/tasks/task-fit-to-hardware.md §2): given this model, a candidate backend, how many bytes are
+// free on it and what the caller asked for, decide a placement (resident, expert-cached, weight-paged, or decline) in §2's priority order:
+// shrink context toward ctxPlanFloor first, since it costs no numerics; then cap routed experts into a cache; dense weights always stay
+// resident; CPU alone falls to weight-paging rather than ever declining.
 //
-// No I/O, no side effects, and no defaults invented — see PlanRequest's own doc comment. backend
-// is "cuda", "metal", "cpu", or (Phase 3, tasks/task-fit-to-hardware.md §7) "webgpu" — admitted now that
-// M-32 is fixed (gpu/residency.go: BuildResident declines the same Nemotron/Qwen3.5/MLA +
-// KVF16/KVI8 combo Plan declines below, and honours -ctx via the same WebGPUCtxCeiling); an
-// unrecognised backend name gets the same GPU-shaped feature-eligibility decline a real one would
-// for an unsupported arch, rather than a panic or a silent wrong answer — enforced by the
-// ResidentEligible(m.w.arch, backend) check below, not by MissingResidentFeatures alone (M-08:
-// that check alone passed a feature-free arch on ANY name, including an unregistered one).
+// No I/O, no side effects, and no defaults invented (see PlanRequest). backend is "cuda", "metal", "cpu" or "webgpu"; an unrecognised name
+// gets the same feature-eligibility decline an unsupported arch would, enforced by the ResidentEligible check below rather than by
+// MissingResidentFeatures alone, which passes a feature-free arch on any name. webgpu's declines mirror gpu/residency.go's BuildResident
+// (the Nemotron/Qwen3.5/MLA combination with KVF16/KVI8, and WebGPUCtxCeiling).
 func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	p := Plan{Backend: backend, FreeBytes: freeBytes, ExtraBytes: req.ExtraBytes}
 
@@ -209,14 +172,9 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 			p.Reason = fmt.Sprintf("%s does not implement %v for this architecture — use the staged/CPU path", backend, missing)
 			return p
 		}
-		// M-08 (docs/audit-2026-09-10.md): MissingResidentFeatures alone is not admission —
-		// ResidentEligible additionally checks that the backend is a REGISTERED one at all (an
-		// unrecognised name plus a feature-free arch made the check above vacuously pass, since
-		// missingFeatures(nil-required, nil-implemented) is empty), that the arch's own forward
-		// is bridged to the resident runner (decodeRunnerEligible), that its MoE router fits the
-		// backend's fixed-size scoreboard, and that per-layer attention geometry (Gemma 4's split
-		// head_dim) is implemented. Missing any of those reported "resident" for Llama-4/cuda,
-		// dense Gemma-4/webgpu, Kimi-K2/metal, and any unrecognised backend name.
+		// MissingResidentFeatures alone is not admission: ResidentEligible also checks that the backend is a registered one (an unrecognised name
+		// plus a feature-free arch passes the check above vacuously), that the arch's own forward is bridged to the resident runner
+		// (decodeRunnerEligible), that its MoE router fits the backend's fixed-size scoreboard, and per-layer attention geometry.
 		if !ResidentEligible(m.w.arch, backend) {
 			p.Placement = PlacementDecline
 			p.Reason = fmt.Sprintf("%s: not eligible for this architecture's resident path (unrecognised backend, "+
@@ -226,14 +184,12 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		}
 	}
 
-	// M-32 (webgpu only): the Nemotron, Qwen3.5 and MLA branches always allocate f32 KV
-	// regardless of the flag — mirrors gpu/residency.go's own decline EXACTLY (same three
-	// eligibility checks, same combination), so Plan never promises a KV precision BuildResident
-	// will not actually honour.
+	// webgpu only: the Nemotron, Qwen3.5 and MLA branches always allocate f32 KV regardless of the flag. This mirrors gpu/residency.go's own
+	// decline exactly (same three eligibility checks, same combination), so Plan never promises a KV precision BuildResident will not honour.
 	var ctxCeiling int
 	if backend == "metal" {
-		// An unpinned Metal load allocates MetalCtxDefault positions however much memory there is; only an explicit -ctx
-		// reaches past it, up to MetalCtxCeiling, above which Metal refuses (C-C01).
+		// An unpinned Metal load allocates MetalCtxDefault positions however much memory there is; only an explicit -ctx reaches past it, up to
+		// MetalCtxCeiling, above which Metal refuses.
 		ctxCeiling = MetalCtxCeiling
 		if !req.CtxPinned {
 			ctxCeiling = MetalCtxDefault
@@ -261,12 +217,10 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		p.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
 	}
 
-	// tryCtx computes KV bytes at ctx and reports whether dense+KV+extra alone (i.e. a model with
-	// no experts, or one whose experts are being ignored by THIS attempt) fits — AND, on webgpu,
-	// whether ctx is within WebGPUCtxCeiling: bytes fitting is not enough there, since the fixed
-	// per-precision cap refuses positions past it regardless of free VRAM (M-32).
-	// hostFixed is the host copy that stays whatever the expert cache does: the dense weights' (paged
-	// experts stream and hold no host copy, so slots=1 prices exactly that). Zero off Metal.
+	// tryCtx computes KV bytes at ctx and reports whether dense+KV+extra alone (a model with no experts, or one whose experts this attempt
+	// ignores) fits, and on webgpu whether ctx is within WebGPUCtxCeiling: bytes fitting is not enough there, since the fixed per-precision cap
+	// refuses positions past it regardless of free VRAM. hostFixed is the host copy that stays whatever the expert cache does: the dense
+	// weights' (paged experts stream and hold no host copy, so slots=1 prices exactly that). Zero off Metal.
 	hostFixed := m.residentHostCopyFor(backend, 1)
 	kvAt := func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, req.KVF16, req.KVI8) }
 	tryCtx := func(ctx int) (kv int64, fits bool) {
@@ -386,9 +340,8 @@ func hostCopyNote(b int64) string {
 	return fmt.Sprintf(" + host copy %.2f GB", gb(b))
 }
 
-// decline finishes Plan on the non-fitting path: CPU alone never declines outright — its whole
-// point is that it can always fall back to weight-paging from disk (tasks/task-fit-to-hardware.md §1:
-// "-weight-cache 0 is auto, ~half of available RAM"), just slower, so a CPU "decline" reads as
+// decline finishes Plan on the non-fitting path. CPU alone never declines outright: it can always fall back to weight-paging from disk
+// (docs/tasks/task-fit-to-hardware.md §1: -weight-cache 0 is auto, about half of available RAM), just slower, so a CPU decline reads as
 // weight-paged with the same numbers instead of a hard refusal.
 func (p Plan) decline(backend, format string, args ...any) Plan {
 	p.Reason = fmt.Sprintf(format, args...)

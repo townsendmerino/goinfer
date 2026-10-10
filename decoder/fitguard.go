@@ -13,31 +13,17 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// The load-time fit guard: refuse a model that cannot fit in RAM BEFORE allocating it, naming
-// the numbers and the flag that fixes it.
+// The load-time fit guard: refuse a model that cannot fit in RAM BEFORE allocating it, naming the numbers and the flag that fixes it (an
+// unpinned context that does not fit is pinned smaller instead: see guardFit). It prices and refuses; choosing a placement is Plan's job
+// (fitplan.go) and whether to retry with -stream-weights is the caller's (FitDeclineError.DenseStreamable). The failure it prevents, a
+// 35B-A3B on a 16 GB Mac paging into swap in seconds with no message, is docs/measurements/cold-user-2026-09-06.md scenario D.
 //
-// WHY. Cold-user run 2026-09-06 scenario D (docs/measurements/cold-user-2026-09-06.md): a 21 GB
-// 35B-A3B on a 16 GB Mac drove the box +7,819 MB into swap in FIVE SECONDS with no message —
-// "the tool never told me it would not fit, the machine told me". `serve --help` already names
-// -stream-weights for exactly that model and that RAM, and with it RSS capped at 8.95 GB with
-// zero swapouts. The engine does the right thing; nothing told the user it existed.
-//
-// SCOPE, deliberately. This is Phase 0 of docs/tasks/task-fit-to-hardware.md and nothing else: a
-// refusal with arithmetic. It does NOT plan a configuration and it does NOT flip -stream-weights
-// on for you; both are that doc's later phases, and choosing for the user is a bigger change than
-// telling them.
-//
-// EVERY UNKNOWN PROCEEDS. An unreadable RAM figure, an unsupported source format, a zero-byte
-// estimate — each returns "don't know" and the load continues. The guard's failure mode must be
-// letting a doomed load through (the status quo), never refusing one that would have run.
+// EVERY UNKNOWN PROCEEDS. An unreadable RAM figure, an unsupported source format, a zero-byte estimate: each returns "don't know" and the
+// load continues. The guard's failure mode must be letting a doomed load through, never refusing one that would have run.
 
-// fitMemFraction is the share of the fit check's base memory figure the WEIGHTS alone may occupy.
-// Same figure and same provenance as metal/backend.go's residentMemFraction: ONE measured failure
-// (11.28 GB of 16 GB = 70.5% thrashed to swap exhaustion), so a threshold rather than a swept
-// curve. The rest is not slack — KV, scratch, the tokenizer, and the operating system live there
-// too. Originally fractioned against TOTAL physical RAM; fitCheckFor now fractions it against
-// CURRENTLY AVAILABLE memory instead (R13-follow-on) — the threshold itself is unchanged, only
-// what it is a fraction OF.
+// fitMemFraction is the share of the fit check's base memory figure (currently available memory) the WEIGHTS alone may occupy. The rest is
+// not slack: KV, scratch, the tokenizer and the operating system live there too. Same figure as metal/backend.go's residentMemFraction,
+// from one measured thrash failure, so a threshold rather than a swept curve.
 const fitMemFraction = WeightsMemFraction
 
 // fitWarnRatio is how close to the budget the load has to come before the banner prints the
@@ -48,15 +34,13 @@ const fitWarnRatio = 0.75
 // hostRAM is indirected so a test can inject a machine's worth of RAM instead of needing one.
 var hostRAM = HostRAMBytes
 
-// hostRAMAvailable is the same indirection for CURRENTLY AVAILABLE memory (prefill_budget.go,
-// R13-follow-on) — a live figure, never cached, unlike hostRAM's total-RAM snapshot.
+// hostRAMAvailable is the same indirection for CURRENTLY AVAILABLE memory (prefill_budget.go): a live figure, never cached, unlike
+// hostRAM's total-RAM snapshot.
 var hostRAMAvailable = HostRAMAvailableBytes
 
-// ctxFloor is the smallest context this guard will auto-pin down to when the caller did not pin
-// one and the model's own maximum does not fit. Below this a context is not useful enough to hand
-// a user silently — refuse instead, the way R3 already does for the rest of the model. Named,
-// not measured: R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md) did not measure a
-// real floor, and 2048 is stated as a product choice pending a real one.
+// ctxFloor is the smallest context this guard will auto-pin down to when the caller did not pin one and the model's own maximum does not
+// fit; below it a context is not useful enough to hand a user silently, so refuse instead. A product choice, not a measured floor, and
+// separate from Plan's ctxPlanFloor.
 const ctxFloor = 2048
 
 // fitCheck is the arithmetic, separated from every source of it so it can be driven with the
@@ -67,65 +51,36 @@ type fitCheck struct {
 	quant       string // the requested quant, named because it moves the weight term the most
 	weightBytes int64  // estimated resident weight bytes AT THAT QUANT
 	kvBytes     int64  // KV at effCtx (see below) — always priced now, not only when pinned
-	availBytes  int64  // CURRENTLY AVAILABLE memory at check time (R13-follow-on), 0 when unknown
+	availBytes  int64  // CURRENTLY AVAILABLE memory at check time, 0 when unknown
 
-	// srcFileBytes is the on-disk size of a plain (non-streamed) .gguf SOURCE file, priced as an
-	// ADDITIONAL transient term alongside weightBytes+kvBytes.
+	// srcFileBytes is the on-disk size of a plain (non-streamed) .gguf SOURCE file, priced as an additional transient term beside
+	// weightBytes+kvBytes: the mapping (embed.OpenGGUFMmap) stays open for the whole build and the per-row dequantizer touches essentially
+	// every page, so for most of the load the whole source file is resident at the same time as the resident weight set built from it. That is
+	// source and destination coexisting, not double-buffering: nothing releases the source pages as each tensor is consumed (that would need
+	// per-tensor madvise inside aikit/embed).
 	//
-	// MEASURED, 2026-09-18, docs/measurements/cold-user-2026-09-18-nobara-pc.md Scenario D,
-	// reproduced directly on nobara-pc (the same box) with a heap profile + /proc RSS sampling
-	// around a real `decoder.Load` of gpt-oss-20b (12.11 GB MXFP4 GGUF, int4 resident weights
-	// 12.58 GB): peak RSS reached ~24.5 GB — matching weightBytes+fileSize (12.58+12.11=24.69 GB)
-	// to within 2%, NOT the ~12.58 GB this guard priced before this field existed. Once
-	// decoder.Load returns and the mmap is closed, RSS drops back to ~13.0 GB, confirming the
-	// extra ~12 GB was the mmap'd SOURCE file, not a second copy of the resident weights.
-	//
-	// WHY: loadGGUFWeights's own comment ("mmap, not heap-read: the raw quantized bytes stay in
-	// reclaimable page cache") is true but incomplete — those pages are reclaimable in principle,
-	// but the mapping (embed.OpenGGUFMmap) is held open for the ENTIRE build (buildWeightsFromGGUF
-	// runs parallelLayers across every layer before the deferred g.Close() in loadGGUFWeights
-	// finally runs), and RowDequantizer's per-row reads touch essentially every page of the file
-	// by the time the model is fully quantized — so for most of the load, the WHOLE source file is
-	// resident in RAM at the same time as the (also whole, by the end) resident weight set. This is
-	// not double-buffering of the SAME data — it is source-plus-destination coexisting because
-	// nothing releases the source pages incrementally as each tensor is consumed. That release
-	// would need per-tensor madvise inside aikit/embed (a separate module, out of scope here); this
-	// guard fixes what goinfer controls — pricing the real peak instead of only the final size.
-	//
-	// Only meaningful for a plain resident `.gguf` load (isGGUF && !streamWeights): a `.giw` load
-	// mmaps its own weight blob directly (no separate dequant-and-copy pass) and a safetensors
-	// directory's loader has its own accounting; StreamWeights (once transcoded to .giw) also
-	// leaves this repo through a different Load branch entirely (see model.go's ".giw" branch,
-	// which never reaches fitCheckFor at all — by design, not a gap: measured 2026-09-20, a 7.8 GB
-	// `.giw` loads as 1.46 GB anonymous + 7.4 GB file-backed pages the kernel can drop under
-	// pressure, so there is no allocation peak for a guard to price). Zero when not applicable, so an existing fitCheck literal built by a test or another
-	// caller is unaffected.
+	// Only meaningful for a plain resident .gguf load (isGGUF && !streamWeights). A .giw load mmaps its weight blob directly and never reaches
+	// fitCheckFor (model.go's .giw branch: its pages are file-backed and droppable under pressure, so there is no allocation peak to price),
+	// and a safetensors directory's loader has its own accounting. Zero when not applicable, so a fitCheck literal built elsewhere is
+	// unaffected. The measurement: docs/code-notes/decoder.md#fitCheck.srcFileBytes.
 	srcFileBytes int64
 
-	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda
-	// --moe-cache-experts) from a plain .gguf: 2*weightBytes + expertBytes. Zero when that path is
-	// not in play. It REPLACES the weights+KV+srcFileBytes total when it is larger rather than adding
-	// to it, because the phases do not overlap: decoder.Load unmaps the source file before
-	// cuda.BuildResident starts, and on the resident path KV lives in VRAM.
-	//
-	// MEASURED 2026-09-19 on the real gpt-oss-20b (docs/measurements/cold-user-2026-09-18-nobara-pc.md
-	// follow-up), GC-traced with a per-region /proc breakdown: after Load the canonical weights sit on
-	// the Go heap (~13 GB live); BuildResident then host-packs every layer (a second, packed copy of
-	// the same size) and cacheWQ copies each expert stack into pinned host memory (~10 GB, counted
-	// as neither anon nor file). Peak RSS 39.1 GB against this model's 2*12.2 + 11.1 = 35.5 GB — the
-	// ~9% remainder is Go heap slack, not priced here. Before cuda.packWeightStack stopped regrowing
-	// its slices the same load reached 50 GB+ and was killed unfinished.
+	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda --moe-cache-experts) from a plain .gguf:
+	// 2*weightBytes + expertBytes (the canonical weights on the Go heap, a second host-packed copy, and a pinned host copy of the experts).
+	// Zero when that path is not in play. It REPLACES the weights+KV+srcFileBytes total when it is larger rather than adding to it, because
+	// the phases do not overlap: decoder.Load unmaps the source file before cuda.BuildResident starts, and on the resident path KV lives in
+	// VRAM. Go heap slack (about 9% over this estimate on the measured model) is not priced. The measurement:
+	// docs/code-notes/decoder.md#fitCheck.cudaBuildBytes.
 	cudaBuildBytes int64
 	expertBytes    int64
 
-	// cfg, effCtx, pinned, kvF16, kvI8 carry what R13's re-pricing needs to recompute KV at a
-	// SMALLER context when the load does not fit and the caller never pinned one — see
-	// smallerFittingContext. cfg is nil when the GGUF's config could not be read (proceeds as
-	// before: kvBytes stays 0, "unknown" wins as it always has).
+	// cfg, effCtx, pinned, kvF16, kvI8 carry what re-pricing needs to recompute KV at a SMALLER context when the load does not fit and the
+	// caller never pinned one (see smallerFittingContext). cfg is nil when the GGUF's config could not be read: kvBytes stays 0 and unknown
+	// proceeds.
 	cfg    *Config
 	effCtx int  // the context KV was priced at: opts.ResidentContext if pinned, else cfg.MaxPositions
 	pinned bool // true when the caller explicitly requested effCtx (an explicit request that
-	// cannot be honoured is refused, never silently downgraded — the G-07 principle)
+	// cannot be honoured is refused, never silently downgraded)
 	kvF16 bool
 	kvI8  bool
 
@@ -135,9 +90,8 @@ type fitCheck struct {
 	// retry is sound without re-deriving this from the arch registry itself.
 	denseStreamable bool
 
-	// isGGUF is true when the source that was priced is a .gguf FILE, false for a safetensors
-	// DIRECTORY (M-30, docs/audit-2026-09-10.md) — remedy() needs this because -stream-weights
-	// only has anything to do for a .gguf source; see that function's own doc comment.
+	// isGGUF is true when the source that was priced is a .gguf FILE, false for a safetensors DIRECTORY; remedy() needs it because
+	// -stream-weights only has anything to do for a .gguf source.
 	isGGUF bool
 }
 
@@ -197,23 +151,12 @@ func (f fitCheck) warning() string {
 		f.arithmetic(), f.ratio()*100, f.remedy())
 }
 
-// remedy names -stream-weights (a .gguf source) or GOINFER_NO_FIT_GUARD=1 (a safetensors
-// directory) and says what it will do, because the user who reads this message is by definition
-// the one who did not know the option existed.
-//
-// M-30 (docs/audit-2026-09-10.md): this used to return the -stream-weights text unconditionally,
-// on the stale claim that only a .gguf can reach a refusal. P9(b) (b7715ca) made a safetensors
-// DIRECTORY reachable here too (it now prices those, correctly — before it they silently always
-// "fit"), and -stream-weights genuinely does nothing for one: serve's manual and auto-retry gates
-// are both .gguf-suffix-only, and decoder.Load ignores Options.StreamWeights for a directory
-// input — so the flag was being recommended as a fix that could not possibly change anything,
-// producing an identical refusal after the user did what they were told.
-//
-// cmd/prequant builds a .giw from a directory one layer at a time since 2026-10-09 (StreamTranscodeDir,
-// docs/tasks/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
-// guard, and it is the remedy for a directory (goinfer-serve and goinfer-chat already take that route unless --direct-load).
-// Before that, the directory transcode loaded fully resident and could not help, so GOINFER_NO_FIT_GUARD=1 was named
-// instead; it stays in the text for the case the 70% margin is being conservative about.
+// remedy names the way out and what it will do, because the user who reads this message is by definition the one who did not know the
+// option existed: -stream-weights for a .gguf source. For a safetensors directory -stream-weights does nothing (serve's gates are
+// .gguf-suffix-only and decoder.Load ignores Options.StreamWeights for a directory), and recommending it gives an identical refusal after
+// the user did as told; the remedy there is a one-time .giw build with cmd/prequant, which streams one layer at a time
+// (StreamTranscodeDir) and no longer hits this guard. GOINFER_NO_FIT_GUARD=1 stays in that text for the case the 70% margin is being
+// conservative about.
 func (f fitCheck) remedy() string {
 	if f.isGGUF {
 		return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
@@ -235,33 +178,22 @@ var ErrWontFitResident = errors.New("decoder: model will not fit resident RAM")
 type FitDeclineError struct {
 	msg string
 
-	// DenseStreamable is true when a -stream-weights retry after this refusal would engage
-	// decoder/layerpaging.go's windowed dense pager — the mechanism tasks/task-fit-to-hardware.md's
-	// CPU placement piece measured as sound for an AUTOMATIC retry
-	// (docs/tasks/task-gpu-paths-2026-09.md). It is false for MoE models and "own-forward" families
-	// (gemma4, nemotron-h-moe, lfm2): MoE CPU weight streaming is a documented, MEASURED failure
-	// mode instead — docs/benchmarks.md "M35/M26 on the Mac" ran a real 20 GB MoE checkpoint
-	// through the CPU-staged --stream-weights path for 2h10min with ZERO completions (RSS pinned
-	// at ~3.2 GB against a 20 GB model — re-reading weights from disk essentially every token, no
-	// useful cache retention), and that run is very likely what produced a genuine kernel panic on
-	// this machine shortly afterward. An automatic retry into that path would risk repeating the
-	// same incident silently, so it stays a manual, explicit choice (-stream-weights typed by
-	// hand) rather than something the guard does on the caller's behalf.
+	// DenseStreamable is true when a -stream-weights retry after this refusal would engage decoder/layerpaging.go's windowed dense pager, the
+	// path measured as sound for an automatic retry (docs/tasks/task-fit-to-hardware.md, docs/tasks/task-gpu-paths-2026-09.md). It is false for
+	// MoE models and own-forward families: MoE CPU weight streaming is a documented, measured failure (docs/benchmarks.md "M35/M26 on the
+	// Mac": a real 20 GB MoE through the CPU-staged path ran for hours with no completions, re-reading weights from disk on essentially every
+	// token), so there the retry stays a manual, explicit choice and is never something the guard does on the caller's behalf.
 	DenseStreamable bool
 }
 
 func (e *FitDeclineError) Error() string { return e.msg }
 func (e *FitDeclineError) Unwrap() error { return ErrWontFitResident }
 
-// denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the
-// fit guard's retry decision and the pager's own decision to actually build one can never
-// disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable's doc for
-// why that path stays manual), and an "own-forward" family (resolved dynamically via
-// arch.ownForward() — not a hand-written list, per the C-02/C-03 lfm2 miss newLayerPager's own
-// comment names) runs a layer loop that never calls enterLayer, so layerPager would never engage
-// for it either. cfg == nil (header unreadable) answers false: "don't know" must not attempt a
-// retry the fit guard cannot vouch for, the same "every unknown proceeds [without acting]"
-// discipline this file states at the top for the refusal path itself.
+// denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the fit guard's retry decision and the
+// pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and an
+// own-forward family (resolved through arch.ownForward(), not a hand-written list) runs a layer loop that never calls enterLayer, so
+// layerPager would never engage for it. cfg == nil (header unreadable) answers false: don't know must not attempt a retry the guard cannot
+// vouch for.
 func denseStreamable(cfg *Config) bool {
 	if cfg == nil {
 		return false
@@ -277,16 +209,10 @@ func denseStreamable(cfg *Config) bool {
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a
 // machine that stops responding: the user cannot read a warning on a box that is thrashing.
 func (f fitCheck) declineErr() *FitDeclineError {
-	// Suggesting a smaller quant to someone already at int4 is noise, and noise in a refusal is
-	// how the useful line gets skipped.
-	//
-	// AND int4 IS NOT ALWAYS THE SMALLER ONE. On arm64-with-dotprod (and AVX2-without-VNNI) the
-	// loader keeps a repacked second copy of the nibbles beside the canonical ones, so int4
-	// measures ~1.25 bytes/element against int8's ~1.02 — MORE resident memory, not less
-	// (measured in CI on darwin/arm64, docs/tasks/task-first-hour.md). Offering "int4, the smallest"
-	// there would send a user who is already out of memory in the wrong direction, so the line is
-	// derived from the same measurement the arithmetic above uses rather than from the nominal
-	// bit width.
+	// Suggesting a smaller quant to someone already at int4 is noise, and noise in a refusal is how the useful line gets skipped. And int4 is
+	// not always the smaller one: where the loader keeps a repacked second copy of the nibbles (arm64 with dotprod, AVX2 without VNNI) int4
+	// costs more resident memory than int8, so the line is derived from the same measured bytes-per-element as the arithmetic
+	// (quantBytesPerElem) rather than from the nominal bit width.
 	alt := "  Or run a smaller model.\n"
 	if f.quant != "int4" && f.quant != "int4mix" &&
 		quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8) {
@@ -301,19 +227,14 @@ func (f fitCheck) declineErr() *FitDeclineError {
 	return &FitDeclineError{msg: msg, DenseStreamable: f.denseStreamable}
 }
 
-// guardFit runs the check. It returns the context to PIN — 0 meaning "leave the caller's request
-// alone", nonzero meaning "the guard chose this smaller one, apply it" — and the refusal, or
-// (0, nil) to proceed unchanged. It prints the arithmetic to stderr when the load is within
+// guardFit runs the check. It returns the context to PIN (0 meaning leave the caller's request alone, nonzero meaning the guard chose this
+// smaller one, apply it) and the refusal, or (0, nil) to proceed unchanged. It prints the arithmetic to stderr when the load is within
 // fitWarnRatio of refusing, or when it auto-pins.
 //
-// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): before this, an unpinned load
-// that did not fit at its own maximum context simply loaded anyway (kvBytes was 0, so `fits()`
-// only ever saw the weight term) — the guard existed and said nothing, because nothing asked it
-// the question a real request would ask. Three outcomes now, in order: an explicit pin that does
-// not fit is REFUSED (G-07: an explicit request that cannot be honoured is refused, not silently
-// downgraded); an unpinned load that does not fit at the model's maximum but DOES fit at some
-// smaller context ≥ ctxFloor is auto-pinned to that context, reported, and proceeds; an unpinned
-// load that does not fit even at ctxFloor is refused, same as a pinned one.
+// Three outcomes, in order: an explicit pin that does not fit is refused (an explicit request that cannot be honoured is refused, not
+// silently downgraded); an unpinned load that does not fit at the model's maximum but does fit at some smaller context >= ctxFloor is
+// auto-pinned to it, reported, and proceeds; an unpinned load that does not fit even at ctxFloor is refused. KV is always priced, at the
+// model's own maximum when nothing is pinned, because nothing else bounds the CPU cache's growth.
 func guardFit(f fitCheck) (int, error) {
 	if f.noGuard {
 		return 0, nil
@@ -334,31 +255,22 @@ func guardFit(f fitCheck) (int, error) {
 	return 0, nil
 }
 
-// giwMemMargin is S4's own literal (task-never-swap-2026-09.md, item 1): "HostRAMAvailableBytes
-// minus a 1 GB margin". A .giw load's WEIGHTS are file-backed (S0's own table: zero-copy aliases,
-// evictable under memory pressure — decoder.Load's own .giw branch never calls loadWeights at
-// all), so guardGIWFit deliberately does NOT reuse fitMemFraction's 70%-of-available conservatism
-// (that number is sized for a load that genuinely commits anonymous memory for its weights); only
-// KV and scratch are real anonymous cost here, and a flat margin against the live probe is what
-// the brief registered.
+// giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/tasks/task-never-swap-2026-09.md, item 1).
+// A .giw load's weights are file-backed (zero-copy aliases, evictable under memory pressure), so it deliberately does not reuse
+// fitMemFraction's 70% conservatism, which is sized for a load that commits anonymous memory for its weights; only KV and scratch are real
+// anonymous cost here.
 const giwMemMargin = 1 << 30 // 1 GB
 
-// guardGIWFit is item 1's load-time check for a .giw load: refuse, or auto-pin to a smaller
-// context, when KV + scratch would exceed CURRENTLY AVAILABLE memory minus giwMemMargin. Mirrors
-// guardFit's own return shape (0 = no pin needed) so decoder.Load can treat either path the same
-// way. Every unknown proceeds, same rule as guardFit: no cfg, no live probe reading, or no usable
-// context all mean "cannot price this, so do not refuse a load that might have been fine."
+// guardGIWFit is the load-time check for a .giw load: refuse, or auto-pin to a smaller context, when KV + scratch would exceed CURRENTLY
+// AVAILABLE memory minus giwMemMargin. Same return shape as guardFit (0 = no pin needed). Every unknown proceeds, as in guardFit: no
+// cfg, no live probe reading, or no usable context all mean cannot price, so do not refuse.
 //
-// Scratch is priced at prefillAttnScratchBudget alone (the FIXED attention-scratch cap every
-// prefill already enforces) — prefillScratchBytes' other term (gate/up MLP activations) scales
-// with a specific PROMPT's length, which load time does not know; this is the same "state a scope
-// cut rather than guess" prefillScratchBytes' own doc comment already takes for its fixed half.
+// Scratch is priced at prefillAttnScratchBudget alone, the fixed attention-scratch cap every prefill enforces; prefillScratchBytes' other
+// term (gate/up MLP activations) scales with a prompt's length, which load time does not know.
 //
-// NOT priced here: a Metal buffer-copy term (S4's own item 1 also names "(Metal) buffer
-// projection" — metal/model.go's int4Buf/int4Concat make a real host copy per dense projection on
-// that backend, unlike CPU's pure mmap alias). decoder cannot import metal (metal imports
-// decoder), so that term needs its own hook — not built in this pass; CPU is this function's only
-// backend today.
+// Limitation: Metal's per-projection host buffer copies (metal/model.go's int4Buf/int4Concat) are not priced, so on Metal this under-counts.
+// decoder cannot import metal, so pricing it needs its own hook, which is not built; CPU is this function's only backend. Recorded in
+// docs/tasks/task-never-swap-2026-09.md ("Not priced").
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	if loadKnob(opts, knobNoFitGuard) != "" {
 		return 0, nil
@@ -371,7 +283,7 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 		return 0, nil
 	}
 	budget := max(avail-giwMemMargin, 0)
-	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling (A3)
+	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling
 	if !ok {
 		return 0, nil // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
@@ -411,20 +323,10 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 	return lo, nil
 }
 
-// resolveWeightCacheBudget is S4 item 2 (task-never-swap-2026-09.md): when the caller leaves
-// WeightCacheBytes at its 0 "auto" default, price the streamed-weight budget from THIS platform's
-// own live probe (hostRAMAvailable — vm_stat on darwin, /proc/meminfo on linux) rather than
-// leaving it entirely to aikit's mmap.AutoBudget(), which is Linux-only (reads /proc/meminfo
-// itself) and falls back to a FIXED 8 GB on every other platform including darwin — a number with
-// no relation to what this machine actually has free right now. Same math AutoBudget itself uses
-// (half of available), so an "auto" request costs nothing new when the live probe already agrees
-// with what AutoBudget would have found on Linux; it only fixes the darwin case AutoBudget cannot
-// see (S0's own finding: the pager's auto budget was Linux-only with an 8 GB darwin fallback).
-//
-// requested > 0 (an explicit --weight-cache) passes straight through unchanged — this resolves
-// only the "auto" (0) case. Falls through to 0 (aikit's own AutoBudget, now genuinely the WORST
-// case rather than the only one) when this platform's own probe is unavailable too, logging that
-// so the fallback is visible rather than silent.
+// resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: vm_stat on
+// darwin, /proc/meminfo on linux): half of available memory, the same math aikit's mmap.AutoBudget() uses, but AutoBudget is Linux-only and
+// falls back to a fixed 8 GB elsewhere, a number with no relation to what the machine has free. An explicit request (> 0) passes through
+// unchanged. When this platform's probe is unavailable too it returns 0 (aikit's own AutoBudget) and logs that, so the fallback is visible.
 func resolveWeightCacheBudget(requested int64) int64 {
 	if requested > 0 {
 		return requested
@@ -436,30 +338,18 @@ func resolveWeightCacheBudget(requested int64) int64 {
 	return 0
 }
 
-// quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each
-// quant mode — MEASURED by running a probe matrix through the loader's own quantization, not
-// derived from the nominal bit width.
+// quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each quant mode, MEASURED by running a probe
+// matrix through the loader's own quantization, not derived from the nominal bit width. The loader repacks (repackW4A8Row4IfEligible on
+// arm64, repackW4A8SplitHalfIfEligible on AVX2-without-VNNI amd64) and keeps the canonical nibbles beside the repacked buffer, so an int4
+// weight can cost about twice its encoding; wmBytes counts both. A constant tuned on one box is wrong exactly where the guard matters
+// (Apple Silicon); measuring through the real path tracks the arch, the CPU features and any repack added later.
+// TestFitEstimate_agreesWithResidentWeightBytes pins the estimate against the loader's own accounting.
 //
-// WHY IT IS MEASURED. The arithmetic answer ("int4 is 0.5 bytes plus a scale per group of 32, so
-// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader repacks:
-// repackW4A8Row4IfEligible on arm64 and repackW4A8SplitHalfIfEligible on AVX2-without-VNNI amd64
-// both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside it, so an int4 weight
-// really costs about twice its encoding on those hosts. wmBytes counts both, correctly.
-//
-// Caught by CI, not by reasoning: TestFitEstimate_agreesWithResidentWeightBytes passed on
-// linux/amd64 (ratio 0.96) and failed on darwin/arm64 at ratio 0.53 — estimate 104256 against
-// 195584 accounted. Apple Silicon is exactly the platform the fit guard exists for
-// (docs/measurements/cold-user-2026-09-06.md was a 16 GB M1 Pro), so a constant tuned on the
-// developer's box was ~1.8x low precisely where it mattered. Measuring through the real path
-// tracks the arch, the CPU features, and any repack added later, none of which a constant can.
-//
-// THE RESIDUAL, stated rather than hidden. The probe is 256x256, which the repacks accept (rows a
-// multiple of 4, cols a multiple of int4GroupSize). A model built entirely from matrices the
-// repack REJECTS would be over-priced by up to that factor — the direction that can refuse a
-// model which would have fit. Real transformer matrices are multiples of 4 and 32 by
-// construction, the 70% budget carries slack of its own, and GOINFER_NO_FIT_GUARD is named in the
-// refusal; that is the trade, taken deliberately, because the alternative was a guard that
-// under-reports by ~2x on the platform it was written for.
+// The residual, stated rather than hidden: the probe is 256x256, which the repacks accept (rows a multiple of 4, cols a multiple of
+// int4GroupSize). A model built entirely from matrices the repack rejects would be over-priced, the direction that can refuse a model
+// that would have fit. Real transformer matrices are multiples of 4 and 32, the 70% budget has slack of its own, and
+// GOINFER_NO_FIT_GUARD is named in the refusal: taken deliberately, because the alternative under-reports by ~2x on the platform the guard
+// was written for.
 func quantBytesPerElem(q quantMode) float64 {
 	bpeMu.Lock()
 	defer bpeMu.Unlock()
@@ -503,29 +393,20 @@ func measureBytesPerElem(q quantMode) float64 {
 	return 4
 }
 
-// f32PinnedTensorName reports whether a checkpoint tensor name is one the loaders ALWAYS keep
-// resident at f32 regardless of the requested quant (M-29, docs/audit-2026-09-10.md): a Mamba-2
-// mixer (Granite-4.0-H's "mamba.*" prefix, GGUF "ssm_*") or an MLA attention projection
-// (DeepSeek/Bailing — GGUF "attn_q_a"/"attn_q_b"/"attn_kv_a_mqa"/"attn_kv_b", safetensors
-// "q_a_proj"/"q_b_proj"/"kv_a_proj"/"kv_b_proj").
+// f32PinnedTensorName reports whether a checkpoint tensor name is one the loaders ALWAYS keep resident at f32 regardless of the requested
+// quant: a Mamba-2 mixer (Granite-4.0-H's "mamba.*" prefix, GGUF "ssm_*") or an MLA attention projection (GGUF
+// "attn_q_a"/"attn_q_b"/"attn_kv_a_mqa"/"attn_kv_b", safetensors "q_a_proj"/"q_b_proj"/"kv_a_proj"/"kv_b_proj").
 //
-// DELIBERATELY NOT a bare "mixer."/"in_proj"/"out_proj" match: Nemotron-H shares the "mixer."
-// prefix across its Mamba-2 (f32), attention, MLP, and MoE layer types (decoder/weights.go's
-// buildNemotronWeights loadLayer — same prefix, different block kinds), and "in_proj"/"out_proj"
-// alone collide with LFM2's conv mixer and qwen3.5/qwen3_next's DeltaNet hybrid, where SOME
-// "linear_attn.in_proj_*" sub-tensors are f32 and OTHERS (loaded via mkQ two lines away in
-// weights.go) are genuinely quantized — a name-only classifier cannot safely tell those apart.
-// Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched below, but via the full
-// "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound (never bare "mixer." or bare
-// "in_proj"), which no other Nemotron block-kind tensor name contains.
+// DELIBERATELY NOT a bare "mixer."/"in_proj"/"out_proj" match: Nemotron-H shares the "mixer." prefix across its Mamba-2 (f32), attention,
+// MLP and MoE layer types, and bare "in_proj"/"out_proj" collide with LFM2's conv mixer and qwen3.5/qwen3_next's DeltaNet hybrid, where
+// SOME "linear_attn.in_proj_*" sub-tensors are f32 and OTHERS are genuinely quantized, so a name-only classifier cannot tell them apart.
+// Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched, via the full "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound
+// (never bare "mixer." or bare "in_proj"), which no other Nemotron block kind contains.
 //
-// KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection
-// (self_attn.o_proj.weight / Bailing's dense.weight) is ALSO f32-pinned
-// (loadDeepseekAttn/loadDeepseekAttnGGUF), but "o_proj"/"dense.weight" are ordinary, WIDELY-used
-// quantizable tensor names in every non-MLA family — matching them bare would misclassify most
-// of the registry. Left as a small, honest under-estimate (verified in
-// TestFitEstimate_f32PinnedMixersAgreeWithResident: o_proj is a minority of MLA's own attention
-// weight, not the dominant term) rather than risk a much larger false-positive elsewhere.
+// KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection (self_attn.o_proj.weight / Bailing's dense.weight) is
+// ALSO f32-pinned (loadDeepseekAttn/loadDeepseekAttnGGUF), but "o_proj"/"dense.weight" are ordinary, widely used quantizable tensor names
+// in every non-MLA family, so matching them bare would misclassify most of the registry. The result is a small, honest under-estimate
+// (o_proj is a minority of MLA's attention weight: TestFitEstimate_f32PinnedMixersAgreeWithResident).
 func f32PinnedTensorName(name string) bool {
 	for _, s := range []string{
 		"ssm_", "mamba.",
@@ -540,21 +421,16 @@ func f32PinnedTensorName(name string) bool {
 	return false
 }
 
-// visionTowerTensorName reports whether name belongs to a bundled multimodal vision tower or
-// projector rather than the text decoder (M-29, docs/audit-2026-09-10.md). decoder/weights.go's
-// text loader already never REQUESTS these names (see its own comment on this exact prefix
-// pair) — it only reads specific tensor names, so they are silently skipped there. This
-// estimator instead walks EVERY tensor in the checkpoint's metadata, so it must recognize and
-// exclude them explicitly or they get swept into the text model's per-element quant price.
+// visionTowerTensorName reports whether name belongs to a bundled multimodal vision tower or projector rather than the text decoder.
+// decoder/weights.go's text loader never requests these names, but this estimator walks EVERY tensor in the checkpoint's metadata, so it
+// must exclude them explicitly or they are swept into the text model's per-element quant price.
 func visionTowerTensorName(name string) bool {
 	return strings.Contains(name, "vision_tower.") || strings.Contains(name, "multi_modal_projector.")
 }
 
-// gptqAWQAuxSuffix reports whether name is a GPTQ/AWQ auxiliary tensor (qzeros/g_idx/scales,
-// decoder/gptq.go, decoder/awq.go) that is fully consumed during the one-time
-// reconstruct-then-requantize step and never itself kept resident — pricing it as an ordinary
-// weight matrix at the target quant's rate would double-count storage the real load path
-// discards after use. M-29 (docs/audit-2026-09-10.md).
+// gptqAWQAuxSuffix reports whether name is a GPTQ/AWQ auxiliary tensor (qzeros/g_idx/scales, decoder/gptq.go, decoder/awq.go) that is fully
+// consumed during the one-time reconstruct-then-requantize step and never itself kept resident: pricing it as an ordinary weight matrix at
+// the target quant's rate would double-count storage the real load path discards.
 func gptqAWQAuxSuffix(name string) bool {
 	for _, s := range []string{".qzeros", ".g_idx", ".scales"} {
 		if strings.HasSuffix(name, s) {
@@ -564,13 +440,10 @@ func gptqAWQAuxSuffix(name string) bool {
 	return false
 }
 
-// gptqAWQPackFactor is how many 4-bit codes GPTQ/AWQ pack into each element along qweight's
-// packed dimension (decoder/gptq.go: "8 4-bit codes pack into each int32... qweight packs the
-// input dim") — so qweight's ON-DISK shape under-counts the LOGICAL [in,out] matrix it
-// represents by exactly this factor. M-29 (docs/audit-2026-09-10.md): without correcting for it,
-// the estimator priced the packed shape's element count at the target quant's bytes/elem,
-// landing ~8x low — the checkpoint is fully unpacked and RE-quantized to the requested resident
-// quant at load time (decoder/weights.go's loadProj), not kept in its packed on-disk form.
+// gptqAWQPackFactor is how many 4-bit codes GPTQ/AWQ pack into each element along qweight's packed dimension (decoder/gptq.go: 8 4-bit codes
+// per int32), so qweight's ON-DISK shape under-counts the logical [in,out] matrix by exactly this factor. The checkpoint is fully unpacked
+// and re-quantized to the requested resident quant at load time (decoder/weights.go's loadProj), so the estimator must correct for it or
+// lands ~8x low.
 const gptqAWQPackFactor = 8
 
 // estimateGGUFWeightBytes sums every tensor's element count from the GGUF's metadata and prices
@@ -613,8 +486,7 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 			sum += 4 * float64(n)
 			continue
 		}
-		// M-29 (docs/audit-2026-09-10.md): Mamba-2/MLA tensors stay f32 regardless of the
-		// requested quant — price them at what they actually cost, not the ambient rate.
+		// Mamba-2/MLA tensors stay f32 regardless of the requested quant: price them at what they cost, not the ambient rate.
 		if f32PinnedTensorName(name) {
 			sum += 4 * float64(n)
 			continue
@@ -628,19 +500,14 @@ func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64
 	return int64(sum), int64(exp)
 }
 
-// estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: same
-// shape-only, quant-independent accounting (sum every tensor's element count, price 2-D+
-// tensors at the target quant, 1-D norms/biases at f32), reusing openCheckpointMmap so single-file
-// and sharded (model.safetensors.index.json) checkpoints are handled identically to a real load.
+// estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: shape-only, quant-independent accounting (sum every
+// tensor's element count, price 2-D+ tensors at the target quant, 1-D norms/biases at f32), reusing openCheckpointMmap so single-file and
+// sharded (model.safetensors.index.json) checkpoints are handled as a real load handles them.
 //
-// WHY SHAPE-ONLY, NOT ON-DISK FILE SIZE (see fitCheckFor's own header comment on why safetensors
-// was excluded before this function existed): a safetensors checkpoint is usually f32 or bf16 on
-// disk and shrinks several-fold once quantized on load, so pricing the ON-DISK bytes would refuse
-// loads that fit comfortably — wrong in the refusing direction, which this guard's own design
-// principle treats as worse than not pricing at all. Reading SHAPES (element counts, which do not
-// depend on the on-disk dtype) and pricing them at the REQUESTED load quant is the same technique
-// estimateGGUFWeightBytes already uses — a GGUF file is quantized on disk too, and that function
-// never reads its byte size either.
+// WHY SHAPE-ONLY, NOT ON-DISK FILE SIZE: a safetensors checkpoint is usually f32 or bf16 on disk and shrinks several-fold once quantized on
+// load, so pricing the on-disk bytes would refuse loads that fit comfortably. That is wrong in the refusing direction, which this guard's
+// design treats as worse than not pricing at all. Element counts do not depend on the on-disk dtype, and are priced at the REQUESTED load
+// quant, as estimateGGUFWeightBytes does.
 func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 	st, err := openCheckpointMmap(dir)
 	if err != nil {
@@ -664,9 +531,7 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 		if n == 0 {
 			continue
 		}
-		// M-29 (docs/audit-2026-09-10.md): a GPTQ/AWQ auxiliary tensor is fully consumed during
-		// reconstruction and never itself kept resident — price it at zero, not as an ordinary
-		// weight matrix (which would double-count storage the real load path discards).
+		// A GPTQ/AWQ auxiliary tensor is fully consumed during reconstruction and never kept resident: price it at zero, not as a weight matrix.
 		if gptqAWQAuxSuffix(name) {
 			continue
 		}
@@ -682,7 +547,7 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 			total += 4 * float64(n)
 			continue
 		}
-		// M-29: Mamba-2/MLA tensors stay f32 regardless of the requested quant.
+		// Mamba-2/MLA tensors stay f32 regardless of the requested quant.
 		if f32PinnedTensorName(name) {
 			total += 4 * float64(n)
 			continue
@@ -720,9 +585,7 @@ func embeddingTensorName(name string) bool {
 	return false
 }
 
-// kvBytesPerPosition is the KV cost of ONE position, so both estimateKVBytes and
-// smallerFittingContext (R13) share the identical per-position rate — the cost is exactly linear
-// in context, so solving "the largest context that fits" is arithmetic, not a search.
+// kvBytesPerPosition is the KV cost of ONE position, so estimateKVBytes and smallerFittingContext share the identical per-position rate.
 func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {
 	if cfg == nil || cfg.NumLayers <= 0 || cfg.NumKVHeads <= 0 {
 		return 0
@@ -739,59 +602,32 @@ func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {
 	return int64(2 * perElem * float64(kvDim) * float64(cfg.NumLayers))
 }
 
-// estimateKVBytes is the KV cache at ctx positions.
-//
-// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): this used to return 0 whenever
-// no context was explicitly pinned, reasoning that "the CPU cache grows with the conversation
-// rather than being allocated up front, so counting a context nobody asked for would refuse
-// models that run fine for short turns." That reasoning is true about short turns and wrong about
-// what a user actually sends: a 7B int4 model priced at "79% of budget" (KV priced at 0) reached
-// 14 GB RSS and swapped the machine hard on its first real agent request — an opencode system
-// prompt plus tool schema, tens of thousands of tokens, well inside the model's own context
-// window. "No context pinned" does not mean "no KV ever allocated"; it means the ceiling is
-// whatever the model's own maximum context is, because nothing else bounds the CPU/Metal-staged
-// KV cache's growth. ctx is now the caller's job to choose correctly (fitCheckFor picks
-// opts.ResidentContext when pinned, else cfg.MaxPositions) — this function just prices whatever
-// it is given.
+// estimateKVBytes is the KV cache at ctx positions. ctx is the caller's job to choose (fitCheckFor picks opts.ResidentContext when pinned,
+// else cfg.MaxPositions): "no context pinned" does not mean no KV is ever allocated, it means the ceiling is the model's own maximum,
+// because nothing else bounds the CPU/Metal-staged KV cache's growth, and a real agent request (system prompt plus tool schema, tens of
+// thousands of tokens) reaches it. This function just prices what it is given.
 func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 	if ctx <= 0 {
 		return 0
 	}
-	// M-28 (docs/audit-2026-09-10.md): kvBytesPerPosition's flat formula overpriced hybrid
-	// (DeltaNet/conv/Mamba), sliding-window, and MLA models 3-7x. Resolve the real per-layer
-	// geometry when possible (kvBytesForCtx, decoder/arch.go) and fall back to the flat formula
-	// only when the architecture cannot be resolved at all — not a real load (every real GGUF/
-	// safetensors config that reaches this point already resolved one further up in
-	// fitCheckFor/denseStreamable), but a synthetic Config with no registered model_type, the
-	// shape several of this file's own unit tests construct directly.
+	// Resolve the real per-layer geometry when possible (kvBytesForCtx, decoder/arch.go): the flat kvBytesPerPosition formula overprices
+	// hybrid (DeltaNet/conv/Mamba), sliding-window and MLA models. Fall back to the flat formula only when the architecture cannot be
+	// resolved at all: not a real load, but a synthetic Config with no registered model_type, which several unit tests construct.
 	if arch, _, err := resolveArchitecture(cfg); err == nil && arch != nil {
 		return kvBytesForCtx(arch, ctx, kvF16, kvI8)
 	}
 	return kvBytesPerPosition(cfg, kvF16, kvI8) * int64(ctx)
 }
 
-// fitCheckFor assembles the check for a load that has not happened yet. It prices both a .gguf
-// and a safetensors directory (P9b, docs/multimodal.md) the SAME way — shape-only, quant-priced
-// element counts (estimateGGUFWeightBytes / estimateSafetensorsWeightBytes) — never from on-disk
-// file size: a safetensors checkpoint is usually f32 or bf16 on disk and shrinks several-fold once
-// quantized on load, so pricing the on-disk bytes would refuse models that fit comfortably. An
-// estimate that is wrong in the refusing direction is worse than none, which is why this waited
-// for the shape-based technique rather than shipping the naive (and wrong) file-size one earlier.
-// Anything neither format resolves (a bare .giw path, an unreadable config, in-flux directory) is
-// "unknown ⇒ proceed", same as always.
+// fitCheckFor assembles the check for a load that has not happened yet. It prices a .gguf and a safetensors directory the same way:
+// shape-only, quant-priced element counts (estimateGGUFWeightBytes / estimateSafetensorsWeightBytes), never on-disk file size, because a
+// safetensors checkpoint shrinks several-fold on quantization and an estimate that is wrong in the refusing direction is worse than none.
+// Anything neither format resolves (a bare .giw path, an unreadable config, a directory in flux) is unknown, so proceed.
 //
-// PRICED AGAINST CURRENTLY-AVAILABLE MEMORY, NOT TOTAL RAM (R13-follow-on,
-// docs/measurements/cold-user-2026-09-07-macbook-arm64.md's SECOND live re-run). The first
-// version of this function read hostRAM() — total physical RAM, a fixed number that assumes
-// nothing else on the machine ever needs more than the 30% fitMemFraction reserves. The live
-// re-run of R13's own fix (which changed prefill_budget.go's request-time check the same way)
-// found the load-time guard's version of this bug too: on a real, shared Mac, swap began within
-// 15 SECONDS OF LOAD COMPLETING, with the server sitting idle and no request in flight yet — proof
-// the "30% of total RAM is always enough for everything else" assumption is what was actually
-// wrong, not merely a per-request pricing gap. Weights ARE still subtracted here (unlike
-// prefill_budget.go's request-time check): at LOAD time the weights this call is about to allocate
-// are NOT YET resident (guardFit runs before loadWeights, decoder/model.go), so the current
-// availability figure does not yet reflect their cost the way it does for an already-loaded model.
+// PRICED AGAINST CURRENTLY-AVAILABLE MEMORY, NOT TOTAL RAM: a fixed fraction of total RAM assumes nothing else on a shared machine ever
+// needs more than the rest. Weights are still subtracted here (unlike prefill_budget.go's request-time check) because guardFit runs before
+// loadWeights (decoder/model.go): the weights this call is about to allocate are not yet resident, so the availability figure does not yet
+// reflect their cost.
 func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck {
 	if quantName == "" {
 		quantName = "f32"
@@ -813,15 +649,10 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 			f.expertBytes = expertBytes
 			f.cudaBuildBytes = 2*f.weightBytes + expertBytes
 		}
-		// srcFileBytes prices the TRANSIENT peak (see its own doc comment), not the final resident
-		// weight estimate above — the two are deliberately separate terms and this does not
-		// contradict this function's own "never from on-disk file size" rule for weightBytes: that
-		// rule is about not mis-estimating the FINAL size from a shrinking-on-quantize file; this is
-		// about the SOURCE file staying mapped resident for the whole build, on top of whatever the
-		// final size turns out to be. Only priced for a plain resident load: StreamWeights means
-		// this exact path is about to be transcoded to a .giw and re-loaded from THAT (a different
-		// Load call that never reaches fitCheckFor — file-backed, so deliberately unpriced; see
-		// srcFileBytes's doc comment).
+		// srcFileBytes prices the TRANSIENT peak (see its doc comment), a term separate from the final resident estimate above; it does not
+		// contradict the never-from-on-disk-size rule for weightBytes, which is about the final size shrinking on quantize. Only priced for a plain
+		// resident load: StreamWeights means this path is transcoded to a .giw and re-loaded by a different Load call that never reaches
+		// fitCheckFor.
 		if !opts.StreamWeights {
 			if n, ok := GGUFFileBytes(path); ok { // a split set's whole size, not its first shard's
 				f.srcFileBytes = n
@@ -849,13 +680,9 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 	return f.priceCtxAndKV(cfg, opts)
 }
 
-// FitDescribe returns the same priced-terms sentence the fit guard's own refusal/warning
-// messages use (fitCheck.arithmetic() — "X needs ~N GB resident at quant Q + M GB reading the
-// checkpoint = T GB; this machine currently has A GB available"), for a caller that wants to name
-// resident-weight and mapped-source bytes in its own message without re-deriving decoder's
-// pricing. Built for S3's load-time swap-abort wrap (docs/tasks/task-never-swap-2026-09.md):
-// Options.LoadAbort's own doc comment promises a caller will add "reason/pricing detail" once
-// ErrLoadAborted comes back, and this is that detail's source.
+// FitDescribe returns the same priced-terms sentence the fit guard's own refusal and warning messages use (fitCheck.arithmetic()), for a
+// caller that wants to name resident-weight and mapped-source bytes in its own message without re-deriving decoder's pricing. It is the
+// source of the "reason/pricing detail" Options.LoadAbort's doc promises a caller once ErrLoadAborted comes back.
 func FitDescribe(path string, opts Options) (string, error) {
 	opts = opts.withAutoBackend()
 	quant, err := parseQuant(opts.Quant)
@@ -865,9 +692,8 @@ func FitDescribe(path string, opts Options) (string, error) {
 	return fitCheckFor(path, opts.Quant, quant, opts).arithmetic(), nil
 }
 
-// priceCtxAndKV fills in effCtx/pinned/kvBytes from a resolved Config — the ctx-pricing logic
-// fitCheckFor's .gguf and safetensors branches share verbatim (R13: price at opts.ResidentContext
-// when pinned, else the model's own MaxPositions, the worst case a real request can reach).
+// priceCtxAndKV fills in effCtx/pinned/kvBytes from a resolved Config: the ctx-pricing logic fitCheckFor's .gguf and safetensors branches
+// share. Price at opts.ResidentContext when pinned, else the model's own MaxPositions, the worst case a real request can reach.
 func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	f.cfg = cfg
 	f.denseStreamable = denseStreamable(cfg)
@@ -889,19 +715,17 @@ type kvPrice struct {
 	metalSizing bool // priced as the Metal resident will allocate, not at the CPU's per-request ceiling
 }
 
-// kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what
-// the load will actually allocate (A3, docs/completed/task-audit-followups-2026-10-06.md).
+// kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what the load will
+// actually allocate.
 //
-//   - A load that will be Metal-resident — Metal compiled in, the resolved backend, and the architecture inside Metal's
-//     feature gate — holds f16 KV (the only KV Metal ships) for MetalCtxDefault positions unless the caller pinned a
-//     context, clamped to the model's window. Until 2026-10-07 the guards priced it at Options.KVPrecision (f32 unless
-//     -kv f16) over the model's whole window: on Gemma 4 E2B, 3.6 GB against the ~75 MB the resident holds, enough to
-//     refuse or pin down a load that fits.
-//   - Every other load keeps the old pricing: the CPU allocates KV per request, at Options.KVPrecision, up to the
-//     window, and that ceiling is what a long request reaches (R13).
+//   - A load that will be Metal-resident (Metal compiled in, the resolved backend, and the architecture inside Metal's feature gate) holds
+//     f16 KV, the only KV Metal ships, for MetalCtxDefault positions unless the caller pinned a context, clamped to the model's window.
+//     Pricing it at Options.KVPrecision over the whole window would refuse or pin down a load that fits.
+//   - Every other load: the CPU allocates KV per request, at Options.KVPrecision, up to the window, and that ceiling is what a long
+//     request reaches.
 //
-// A Metal resident that then declines for memory falls back to the CPU, whose per-request KV this no longer prices at
-// load. The weights term is unchanged by that fallback, and serve's -require-backend refuses rather than fall back.
+// A Metal resident that then declines for memory falls back to the CPU, whose per-request KV this no longer prices at load. The weights
+// term is unchanged by that fallback, and serve's -require-backend refuses rather than fall back.
 //
 // ok is false when nothing is pinned and the model's own maximum is unknown: nothing to price.
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
@@ -925,7 +749,7 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 			p.ctx = cfg.MaxPositions // a pin past the model's own window prices no higher than the window
 		}
 	case cfg.MaxPositions > 0:
-		p.ctx = cfg.MaxPositions // R13: the worst case a real request can reach, unpinned
+		p.ctx = cfg.MaxPositions // the worst case a real request can reach, unpinned
 	default:
 		return p, false
 	}
@@ -947,28 +771,20 @@ func metalWillBeResident(cfg *Config, opts Options) bool {
 	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) == 0
 }
 
-// smallerFittingContext solves for the largest context ≤ f.effCtx whose weights+KV fit the
-// budget, floored at ctxFloor. Only meaningful when the caller did not pin a context — a pin is
-// an explicit request and is refused outright rather than silently downgraded (see guardFit).
-//
-// M-28 (docs/audit-2026-09-10.md): this used to divide the budget by a single flat per-position
-// rate, exact only because the flat formula priced every position identically. estimateKVBytes
-// is no longer exactly linear in ctx once a sliding-window layer's cost flattens past its own
-// window — but it IS still monotonic non-decreasing (more context never needs LESS KV), so a
-// binary search finds the largest fitting ctx exactly, the same guarantee the division used to
-// give for free.
+// smallerFittingContext solves for the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor. Only meaningful
+// when the caller did not pin a context: a pin is an explicit request and is refused outright (see guardFit). estimateKVBytes is not
+// exactly linear in ctx once a sliding-window layer's cost flattens past its window, but it is monotonic non-decreasing, so a binary
+// search finds the largest fitting ctx exactly.
 func (f fitCheck) smallerFittingContext() (int, bool) {
 	if f.pinned || f.cfg == nil {
 		return 0, false
 	}
-	// srcFileBytes is a FIXED term exactly like weightBytes (see its own doc comment) — it does not
-	// shrink when ctx shrinks, so it has to come out of the budget here too, or a load whose
-	// weights+file already exceed the budget would still get offered a smaller-context "fit" that
-	// only ever re-prices KV.
 	// The CUDA build peak has no KV in it, so a smaller context cannot bring it under the budget.
 	if f.cudaBuildBytes > f.budget() {
 		return 0, false
 	}
+	// srcFileBytes is a fixed term like weightBytes: it does not shrink with ctx, so it comes out of the budget too, or a load whose
+	// weights+file already exceed the budget would be offered a smaller-context "fit" that only re-prices KV.
 	available := f.budget() - f.weightBytes - f.srcFileBytes
 	if available <= 0 {
 		return 0, false
