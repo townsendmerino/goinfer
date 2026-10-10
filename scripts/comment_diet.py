@@ -5,6 +5,8 @@
                                            carries a history marker, and the declaration under it. Comments inside a raw string
                                            (an embedded MSL/CUDA/WGSL kernel) are not comments and are not listed.
   comment_diet.py census FILE...           comment lines and history-marked comment lines per file
+  comment_diet.py pointers                 check every `docs/code-notes/<pkg>.md#Heading` (or `<pkg>.md, "Heading"`) pointer in the Go
+                                           comments of the tree against the headings of that notes file; exit 1 on an unresolved one
   comment_diet.py apply PLAN.py            replace comment blocks and move the removed text verbatim to docs/code-notes/<pkg>.md
 
 A plan is a Python file defining FILE (repo-relative .go path), optionally NOTES (default docs/code-notes/<dir with / as ->.md) and
@@ -130,7 +132,7 @@ def cmd_apply(plan_path):
     plan = runpy.run_path(plan_path)
     file = plan['FILE']
     notes = plan.get('NOTES') or 'docs/code-notes/' + os.path.dirname(file).replace('/', '-') + '.md'
-    date = plan.get('DATE', '2026-10-10')
+    date = plan.get('DATE', '2026-10-09')
     pkg = os.path.dirname(file)
     src = open(file).read()
     _, valid = blocks(src)
@@ -179,12 +181,52 @@ def cmd_apply(plan_path):
     print(f"{file}: {len(plan['EDITS'])} edit(s), {len(moved)} moved block(s) -> {notes}")
 
 
+def cmd_pointers():
+    import glob
+    import subprocess
+    root = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True).stdout.strip()
+    notes = {}
+    for f in glob.glob(os.path.join(root, 'docs/code-notes/*.md')):
+        notes[os.path.basename(f)[:-3]] = set(re.findall(r'^## (.+?)\s*$', open(f).read(), re.M))
+    ref = re.compile(r'docs/code-notes/([\w-]+)\.md(?:#(\S.*)|,\s*"([^"]+)")?')
+    bad, n = [], 0
+    files = subprocess.run(['git', 'ls-files', '*.go'], capture_output=True, text=True, cwd=root).stdout.split()
+    for rel in files:
+        if rel == 'cmd/gate/comments_only_test.go':  # its fixtures name notes files that do not exist
+            continue
+        for i, line in enumerate(open(os.path.join(root, rel)).read().split('\n'), 1):
+            if '//' not in line:
+                continue
+            for m in ref.finditer(line.split('//', 1)[1]):
+                pkg, frag, quoted = m.group(1), m.group(2), m.group(3)
+                if frag is None and quoted is None:
+                    continue
+                n += 1
+                heads = notes.get(pkg)
+                if heads is None:
+                    bad.append(f"{rel}:{i}: no notes file docs/code-notes/{pkg}.md")
+                    continue
+                want = quoted if quoted is not None else frag.rstrip('.,;:)\'"`')
+                if quoted is None:
+                    ok = any(want == h or want.startswith(h) and not (want[len(h):len(h) + 1].isalnum() or want[len(h):len(h) + 1] in '_.') for h in heads)
+                else:
+                    ok = want in heads
+                if not ok:
+                    bad.append(f"{rel}:{i}: docs/code-notes/{pkg}.md has no heading {want[:60]!r}")
+    print(f"{n} pointer(s) checked, {len(bad)} unresolved")
+    for b in bad:
+        print("  " + b)
+    return 1 if bad else 0
+
+
 if __name__ == '__main__':
     a = sys.argv[1:]
     if len(a) >= 2 and a[0] == 'blocks':
         cmd_blocks(a[1], int(a[2]) if len(a) > 2 else 6)
     elif len(a) >= 2 and a[0] == 'census':
         cmd_census(a[1:])
+    elif a == ['pointers']:
+        sys.exit(cmd_pointers())
     elif len(a) == 2 and a[0] == 'apply':
         cmd_apply(a[1])
     else:
