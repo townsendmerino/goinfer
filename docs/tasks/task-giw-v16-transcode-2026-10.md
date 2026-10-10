@@ -548,6 +548,32 @@ The first night grades T; a later night grades V.
 - Shape: `docs/measurements/giw-v16-transcode-2026-10/run-*.sh` with pre-built old and new binaries, queued with
   `scripts/night.py add`. Records are committed the next morning.
 
+### As queued, 2026-10-10 (before any run; no band moves)
+
+The T night's runs, as built: `docs/measurements/giw-v16-transcode-2026-10/gt_night.py`, driven by
+`run-gt-night-mac.sh` and `run-gt-night-nobara.sh`, with binaries built on the Mac from pinned revisions
+(`GOWORK=off -mod=readonly -trimpath`; nobara's are cross-compiled, because the branch is not pushed).
+
+- **Arms.** New is `6398b0f8` (T0–T6 bar T4b, the read-back, aikit v1.65.0). Old is `cf66f5b3` for every figure, the
+  graded wall included: it is `eee75d83`'s transcode with T0's phase line added and nothing else, so one old arm serves
+  both the graded ratio and the stream-phase ratio the amendment above asks for.
+- **What is timed.** The wall is the driver's clock around the whole process; the phases are prequant's own line.
+  Peak memory is `time -l`'s peak memory footprint on the Mac and `time -v`'s maximum resident set size on nobara.
+  Swap is `vm.swapusage` before and after each Mac transcode.
+- **Order, one change from G-T2c's text.** The two copies are made straight after the old arm in every pair (pair 1:
+  old, copies, new; pair 2: new, old, copies), not after both arms. The copies read the old arm's output, and the Mac
+  has about 7 GB free: a 5 GB 7B sidecar cannot sit beside the new arm's and a third copy. Where even old plus one
+  copy does not fit, C-io's write is skipped and the record says why, as the text already rules for C-src.
+- **Where the files go.** Outputs are written to `~/goinfer-bench/giw-v16/out` (the same filesystem as `~/models` on
+  both boxes), not beside the source, so the sidecars already there are not replaced. Each is hashed and deleted.
+- **Cells.** Mac: 1.5B int4 `cpu-arm64` and `metal`, three pairs each; 7B int4 `metal`, two pairs. nobara: 1.5B and 7B
+  int4 `cpu-amd64`, three pairs each; 7B int4 `cuda`, two pairs; Qwen3-VL-30B-A3B int4 `cpu-amd64` from its directory,
+  two pairs. One discarded warm-up per arm in every cell. G-T1's real cells are every pair's sha256.
+- **Estimates, revised from the text above:** Mac 20 min, nobara 85 min. The additions are the sha256 of every output
+  (about a minute for each 17 GB file) and the 30B's three old-arm runs at about 11 minutes each.
+- **Exit.** Non-zero if a transcode fails or a cell's two arms write different bytes. Nothing else is judged by the
+  script; the bands above are applied by hand from the record the next morning.
+
 ## Order and cost
 
 1. **T0** (half a day): the phase line, `gate identity --giw`, and the Mac profile. **T6** (an hour) rides along: it
