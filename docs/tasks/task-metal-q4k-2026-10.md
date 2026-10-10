@@ -1,7 +1,8 @@
 # `--quant q4k` on Metal: Phi-3 mini resident (2026-10)
 
-**Status: the decode lane is BUILT 2026-10-08; G-Q1 PASS; G-Q2 and G-Q3 owed** (blocked by day on the Mac's memory,
-below). Registered 2026-10-08, before any code. Owner decision 2026-10-08: "for Phi-3, Mac Metal lets do the code fix
+**Status: the decode lane is BUILT 2026-10-08; G-Q1 PASS; G-Q2 and G-Q3 owed.** Their first night (2026-10-08) was
+void on memory, the fit guard on. They are queued again for the night of 2026-10-10 with the load-time fit guard
+bypassed on the owner's word, under a swap watch (below). Registered 2026-10-08, before any code. Owner decision 2026-10-08: "for Phi-3, Mac Metal lets do the code fix
 now".
 
 ## Why
@@ -172,3 +173,18 @@ either gate runs:
     q4k is a heap load, and the guard prices the mapped .gguf on top.
   - **What would run it:** memory freed (apps closed), the guard bypassed for this job (the owner's call), or a q4k
     .giw form.
+
+### Owner decision 2026-10-10: bypass the fit guard and queue it
+
+"for metal-q4k-gq, bypass fit and queue it." This replaces the 2026-10-08 decision's "the fit guard stays on" for this
+run. Nothing else in the registration moves: the procedure, the reference, the bands and the arms are as written above.
+
+- **What is bypassed:** the load-time fit guard only (`GOINFER_NO_FIT_GUARD=1`, set by the job when
+  `GQ_NO_FIT_GUARD=1`). It is the guard that refused both gates on 2026-10-08. Metal's resident memory guard is not
+  bypassed: if it declines the resident build, that is the reading.
+- **The safety in its place:** a swap watch in the job. Per gate it takes swap-used as its baseline, samples every 3 s
+  and, when swap has grown more than 1,024 MB, kills that gate's test and serve processes, which fails the gate. Checked
+  by day on stand-in processes: over the limit they were killed within 3 s, under it they ran to completion.
+- **The binaries:** re-pinned to the commit that carries this decision (the 2026-10-08 pin, `1d3ba518`, never produced
+  a reading). The job is `docs/measurements/metal-q4k-2026-10/run-gq-mac.sh` with `GQ_REV` and `GQ_NO_FIT_GUARD=1`.
+- **Queue:** `metal-q4k-gq-2` on the Mac for the night of 2026-10-10, 45 minutes.
