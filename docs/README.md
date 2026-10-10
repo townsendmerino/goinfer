@@ -55,7 +55,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (59: 50 in `tasks/`, 9 in `tasks/parked/`)
+## Design records — `task-*.md` (68: 59 in `tasks/`, 9 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -125,6 +125,12 @@ criterion needs, parity bookkeeping that re-validates every family for a local e
 gate that reads current load, sequential counterbalanced gates, prompt budgets sized per criterion, the cheapest
 instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with a proof
 that it still detects what it did.
+
+[`task-code-comments-2026-10.md`](tasks/task-code-comments-2026-10.md) (CC0–CC6, filed 2026-10-09, scoped) moves the history
+out of the Go comments and keeps the guardrails: a census of where it sits (long comments, most of them dated, cited or
+carrying figures), docs linking to code by declaration name and dated records pinned to their own commit (CC0, first),
+a `gate comments-only` check, notes files for moved text, a pilot with its band written first, and the package order.
+Its rule is `CLAUDE.md` § "Code comments".
 
 Two are the outside view rather than a design. [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running

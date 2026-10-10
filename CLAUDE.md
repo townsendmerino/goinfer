@@ -95,6 +95,29 @@ dir-only skip-guards think a fixture exists and flips skips into failures. Stage
 rebase before pushing, and if a file you are editing has changes you did not make, they are
 someone else's in-flight work — commit *your* hunks, leave theirs in the tree.
 
+## Code comments
+
+**A Go comment says what is true now.** It states what the code does, its contract (ownership, units,
+concurrency, what a caller must check), and, where the shape is not obvious, the reason in a sentence or
+two. It keeps every guardrail — "`fastAttn` is a parameter so spec-decode verify cannot turn it on",
+"the floor keys on K deliberately; re-keying it needs a measurement at that shape first" — with a pointer
+to where the evidence lives.
+
+**It does not carry the history.** How a bug was found, dates, commit ids, which session or reviewer,
+audit or tracker ids used as content, measured figures and tables, retractions and open work go
+elsewhere: the commit message, the measurement or task doc, or the queue. A comment points at those by
+doc path and heading, and at code by declaration name — never `file.go:NNN`, which goes stale on the
+next edit above the line.
+
+**The test for a sentence:** would someone changing this code next week act differently because of it?
+Keep it. Does it explain how we came to know? Move it.
+
+**The comments around you do not set the style; this section does.** Many files still carry long
+history comments; clearing them is `docs/tasks/task-code-comments-2026-10.md`'s work, done package by
+package with a comments-only gate. Do not rewrite comments in a file you are only passing through, and
+do not add to the history in one. Directive comments (`//go:build`, `//go:embed`, `//nolint`, an
+Example's `// Output:`) are code, not comments, for every purpose here.
+
 ## Tests
 
 **A SKIP IS NOT A PASS.** `go test` prints `ok` for a package whose tests all skipped, so a
