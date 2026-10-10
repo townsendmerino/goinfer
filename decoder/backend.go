@@ -31,25 +31,16 @@ type Backend interface {
 	Close() error
 }
 
-// QuantBackend is an optional Backend extension: a backend that can run the
-// int8×int8 (W8A8) weight matmul on-device. linalg.WeightMat type-asserts for it and
-// routes the W8A8 path through it — keeping the weight resident, keyed by the q8
-// slice's backing pointer — falling back to the CPU kernel when the backend
-// doesn't implement it or a call declines (returns false on any GPU error, so
-// results stay correct). The fused qkv / gate-up batch dispatches
-// (MatmulBTW8A8Batch) are a CPU optimization and are NOT routed here yet; full
-// decode coverage needs a batch equivalent (a follow-on).
+// QuantBackend is an optional Backend extension: a backend that can run the int8xint8 (W8A8) weight matmul on-device.
+// linalg.WeightMat type-asserts for it and routes the W8A8 path through it, keeping the weight resident keyed by the q8
+// slice's backing pointer, and falls back to the CPU kernel when the backend does not implement it or a call declines
+// (false on any GPU error, so results stay correct). The shared-activation batches go through QuantBatchBackend.
 type QuantBackend interface {
 	MatmulW8A8(a []float32, bQ []int8, bScales []float32, dst []float32, M, K, N int) bool
 }
 
-// QuantBackend4 is QuantBackend's int4 (W4A8) counterpart — G6 (docs/tasks/task-gpu-paths-2026-09.md),
-// the "staged int4" item: matmulInto's int8 branch already checked QuantBackend before falling
-// back to the CPU kernel, but its int4 branch never consulted a backend at all, so an int4 model
-// on the STAGED (non-resident) path ran every projection on the CPU regardless of which backend
-// was active. Keyed by the packed-nibble slice's backing pointer, same residency convention as
-// QuantBackend. Declines (false) fall back to linalg.WeightMat's own CPU W4A8 kernel, so results
-// stay correct either way.
+// QuantBackend4 is QuantBackend's int4 (W4A8) counterpart for the staged (non-resident) path, keyed by the
+// packed-nibble slice's backing pointer. A decline (false) falls back to linalg.WeightMat's CPU W4A8 kernel.
 type QuantBackend4 interface {
 	MatmulW4A8(a []float32, bQ4 []byte, bScales16 []uint16, group int, dst []float32, M, K, N int) bool
 }
@@ -77,11 +68,8 @@ func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, op
 	linalg.MatmulBTW8A8Batch(ws, a, M, K, ops)
 }
 
-// QuantBatchBackend4 is QuantBatchBackend's int4 (W4A8) counterpart (P-16, audit-2026-09-10):
-// staged int4 had no batch dispatch on any GPU backend, so a fused q/k/v or gate/up call on an
-// int4 model paid one sync PER PROJECTION instead of one for the whole group — exactly the
-// per-dispatch overhead QuantBatchBackend exists to remove for int8, never extended to int4.
-// Same decline contract: false falls back to the CPU batch kernel.
+// QuantBatchBackend4 is QuantBatchBackend's int4 (W4A8) counterpart, with the same decline contract: false falls back
+// to the CPU batch kernel.
 type QuantBatchBackend4 interface {
 	MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool
 }
@@ -101,10 +89,8 @@ var (
 	backendRegistry = map[string]func() (Backend, error){}
 )
 
-// RegisterBackend registers a named Backend factory. The goinfer/gpu module
-// calls this from init() (under `-tags gpu`) to make "webgpu" available
-// without the decoder importing the cgo WebGPU implementation. Safe for
-// concurrent use; a later registration of the same name replaces the earlier.
+// RegisterBackend registers a named Backend factory; the goinfer/gpu, cuda and metal modules call it from init() so
+// the decoder does not import them. Safe for concurrent use; a later registration of a name replaces the earlier.
 func RegisterBackend(name string, factory func() (Backend, error)) {
 	backendMu.Lock()
 	defer backendMu.Unlock()
@@ -133,12 +119,8 @@ type AutoChoice struct {
 }
 
 // AutoBackend resolves a backend of "auto": the first GPU backend this binary links whose device probe answers, cuda
-// then metal, else "cpu". A GPU backend it picks that then cannot build a model resident still declines to the CPU path
+// then metal, else "cpu". A backend it picks that then cannot build a model resident still declines to the CPU path
 // with its own message, as an explicit -backend cuda or metal does.
-//
-// R17 (docs/tasks/task-first-hour.md, cold-user run 3): the CLIs defaulted to "cpu", so on a machine with an NVIDIA GPU
-// the first run took 19.3 s at 14.4 tok/s where -backend cuda took 9.1 s at 173.8 tok/s, under a README that says the
-// GPU is built in.
 func AutoBackend() AutoChoice { return autoBackend(CompiledBackends(), FreeBytesFor, runtime.GOARCH) }
 
 // autoBackend is AutoBackend over its inputs: the linked backends, the memory probe and the architecture.
@@ -153,8 +135,8 @@ func autoBackend(linked []string, probe func(string) (int64, bool), goarch strin
 			continue
 		}
 		if b == "metal" && goarch != "arm64" {
-			// docs/completed/task-metal-cgofree-spike.md scoped Intel Macs out, and no record since has run Metal on one,
-			// though the darwin/amd64 release asset links it.
+			// Intel Macs were scoped out (docs/completed/task-metal-cgofree-spike.md) and no record has run Metal on one, though the
+			// darwin/amd64 release asset links it.
 			passed = append(passed, "metal is built in, but has only been run on Apple silicon; -backend metal asks for it")
 			continue
 		}
@@ -172,9 +154,8 @@ func autoBackend(linked []string, probe func(string) (int64, bool), goarch strin
 	return AutoChoice{Backend: "cpu", Reason: "auto: this binary has no GPU backend"}
 }
 
-// withAutoBackend returns o with a Backend of "auto" resolved, so that every check a load makes by backend name (the
-// int4 layout, the fit guard, the banner's requested-vs-running split) sees the backend that will run. Each exported
-// entry point that takes Options calls it first.
+// withAutoBackend returns o with a Backend of "auto" resolved, so every later check by backend name (int4 layout, fit
+// guard, banner) sees the backend that will run. Each exported entry point that takes Options calls it first.
 func (o Options) withAutoBackend() Options {
 	if o.Backend == "auto" {
 		o.Backend, o.BackendAuto = AutoBackend().Backend, true
@@ -182,13 +163,9 @@ func (o Options) withAutoBackend() Options {
 	return o
 }
 
-// CompiledBackends lists the backends this BINARY can actually run: "cpu" (always) plus every
-// name a linked module registered from init(). It is the compiled-in truth, not a menu of
-// accepted flag values — --backend accepts "metal" on a Linux CPU-only build and falls back.
-//
-// R2 (docs/measurements/cold-user-2026-09-06.md): the released darwin asset was built from the
-// root cmd/serve, so it contained no Metal backend at all, and nothing on the binary said so.
-// A user could only discover it by loading a model and reading a warning that scrolled past.
+// CompiledBackends lists the backends this binary can run: "cpu" plus every name a linked module registered from init().
+// It is the compiled-in truth, not the accepted --backend values: --backend accepts "metal" on a CPU-only build and
+// falls back.
 func CompiledBackends() []string {
 	backendMu.RLock()
 	names := make([]string, 0, len(backendRegistry)+1)
@@ -205,26 +182,19 @@ var (
 	memProbes  = map[string]func() (freeBytes int64, ok bool){}
 )
 
-// RegisterMemoryProbe registers a live free-memory query for a named backend, for Model.Plan
-// (decoder/fitplan.go) and `goinfer-chat fit` to call without decoder importing the cgo/GPU
-// packages that know how to ask (the same "register from init(), decoder stays clean" shape
-// RegisterBackend already uses, for the same reason). metal/backend.go registers "metal" with
-// 70% of `hw.memsize` — NOT a live query, matching its OWN resident guard's existing budget
-// exactly (darwin's UBC makes "available" memory unreliable, so the guard never asks for it —
-// see metal/backend.go's residentMemFraction comment); cuda/backend.go registers "cuda" with
-// the CUDA driver's live MemInfo(). ok=false means "unknown" (no device, no driver, a query
-// error) — Plan's own contract treats an unknown freeBytes as "cannot judge, proceed", so a
-// probe should never fabricate a number to avoid returning ok=false.
+// RegisterMemoryProbe registers a live free-memory query for a named backend, for Model.Plan and `goinfer-chat fit`, so
+// decoder need not import the GPU packages that know how to ask (the RegisterBackend shape). ok=false means unknown (no
+// device, no driver, a query error), which Plan treats as "cannot judge, proceed": a probe must never fabricate a number
+// to avoid returning ok=false. The metal probe is a fixed fraction of hw.memsize, not a live query, matching the metal
+// resident guard's own budget (darwin's UBC makes "available" memory unreliable).
 func RegisterMemoryProbe(name string, probe func() (freeBytes int64, ok bool)) {
 	memProbeMu.Lock()
 	defer memProbeMu.Unlock()
 	memProbes[name] = probe
 }
 
-// FreeBytesFor calls the named backend's registered memory probe. ok=false when no probe is
-// registered for this backend (an unlinked GPU module, or "cpu" — which has its own
-// HostRAMAvailableBytes rather than a probe, since it predates this registry and is used by
-// decoder/fitguard.go directly) or when the probe itself reports unknown.
+// FreeBytesFor calls the named backend's registered memory probe. ok=false when no probe is registered (an unlinked GPU
+// module, or "cpu", which uses HostRAMAvailableBytes directly) or when the probe reports unknown.
 func FreeBytesFor(name string) (freeBytes int64, ok bool) {
 	memProbeMu.RLock()
 	p := memProbes[name]
@@ -235,11 +205,9 @@ func FreeBytesFor(name string) (freeBytes int64, ok bool) {
 	return p()
 }
 
-// NewBackend returns the named backend. "" and "cpu" always resolve to the
-// pure-Go CPU backend. Other names resolve through the registry; "webgpu"
-// falls back to CPU with an explanatory error (rather than hard-failing) when
-// goinfer/gpu has not been imported, so a `--backend webgpu` flag still runs
-// on a build without the GPU module.
+// NewBackend returns the named backend. "auto" resolves through AutoBackend; "" and "cpu" are the pure-Go CPU backend;
+// other names resolve through the registry. A GPU name with no linked module ("webgpu", "cuda", "metal") returns the CPU
+// backend together with an explanatory error, so the caller can keep running and report the fallback.
 func NewBackend(name string) (Backend, error) {
 	if name == "auto" {
 		name = AutoBackend().Backend
@@ -254,8 +222,7 @@ func NewBackend(name string) (Backend, error) {
 	if factory != nil {
 		return factory()
 	}
-	// Since v0.10.0 (audit M-19) the backend lives in a submodule ENTRYPOINT, not a build tag on
-	// the root binary — `-tags gpu|cuda|metal` on cmd/serve does nothing. Point at the real one.
+	// The root cmd/serve cannot enable a GPU backend with a build tag: it lives in a submodule entrypoint, so name that one.
 	if name == "webgpu" {
 		return &cpuBackend{}, fmt.Errorf("decoder: webgpu backend not built in; build the submodule entrypoint (go build -tags gpu github.com/townsendmerino/goinfer/gpu/cmd/serve) — not `-tags gpu` on the root cmd/serve; using cpu")
 	}
@@ -263,17 +230,13 @@ func NewBackend(name string) (Backend, error) {
 		return &cpuBackend{}, fmt.Errorf("decoder: cuda backend not built in; build the submodule entrypoint (CGO_ENABLED=0 go build -tags cuda github.com/townsendmerino/goinfer/cuda/cmd/serve) — not `-tags cuda` on the root cmd/serve; using cpu")
 	}
 	if name == "metal" {
-		// Same CPU-fallback+note treatment as webgpu/cuda: Options.Validate accepts "metal",
-		// so an untagged build reaching here must fall back, not return a nil backend (M14).
+		// Options.Validate accepts "metal", so an untagged build reaching here falls back to CPU rather than returning a nil backend.
 		return &cpuBackend{}, fmt.Errorf("decoder: metal backend not built in; build the submodule entrypoint (go build github.com/townsendmerino/goinfer/metal/cmd/serve, darwin) — not `-tags metal` on the root cmd/serve; using cpu")
 	}
 	return nil, fmt.Errorf("decoder: unknown backend %q (have: cpu, webgpu, cuda, metal)", name)
 }
 
-// cpuBackend dispatches the hot matmul to the shared linalg package
-// (M7): SIMD dot kernels (AVX2/NEON) parallelized across output columns. The
-// math is identical to the previous naive triple-loop — the decoder parity
-// tests (which match HF exactly) still pass — just multiple-× faster.
+// cpuBackend dispatches the matmul to linalg.MatmulBT (SIMD dot kernels parallelized across output columns).
 type cpuBackend struct{}
 
 func (*cpuBackend) Name() string { return "cpu" }
@@ -284,19 +247,10 @@ func (*cpuBackend) MatmulBT(a, b, dst []float32, M, K, N int) {
 
 func (*cpuBackend) Close() error { return nil }
 
-// backendNames resolves what the caller REQUESTED against what will actually execute, and the
-// reason they differ.
-//
-// NewBackend answers a not-built-in request by returning the CPU backend AND an error — a
-// deliberate fallback, not a failure. Nothing recorded which of the two names was true, so
-// callers printed the requested one. A cold-user run against v0.16.0 caught the result on two
-// consecutive lines: "decoder: metal backend not built in … using cpu", then
-// "loaded 28-layer model … [backend=metal quant=int4]". The warning scrolls; the status line is
-// what gets pasted into an issue. On that Mac it was the difference between 37.9 and 82.3 tok/s
-// (docs/measurements/cold-user-2026-09-06.md, finding #3).
-//
-// req is normalised ("" means cpu) so a caller that passed nothing does not report an empty
-// backend. reason is "" when nothing was declined.
+// backendNames resolves what the caller requested against what will execute, and why they differ. NewBackend answers a
+// not-built-in request with the CPU backend AND an error, a deliberate fallback; callers must report eff, not req, in the
+// status line (history: docs/code-notes/decoder.md#backendNames). req is normalised ("" means cpu); reason is "" when
+// nothing was declined.
 func backendNames(requested string, beErr error) (req, eff, reason string) {
 	req = requested
 	if req == "" {
@@ -322,9 +276,8 @@ func BackendSummary(req, eff, reason string) string {
 	return fmt.Sprintf("requested %s → running on %s: %s", req, eff, reason)
 }
 
-// withBackendNames records the requested/effective backend split on a freshly built Model. Every
-// Model construction calls it: there are four, and a fix applied to one of them is how a banner
-// starts lying again the next time a load path is added.
+// withBackendNames records the requested/effective backend split on a freshly built Model. Every Model construction
+// calls it, so a banner cannot start naming a backend that is not running when a load path is added.
 func (m *Model) withBackendNames(requested string, beErr error) *Model {
 	m.reqBackend, m.effBackend, m.beDecline = backendNames(requested, beErr)
 	return m

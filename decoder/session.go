@@ -28,10 +28,11 @@ type Session struct {
 	cache  *KVCache
 	tokens []int // the token sequence whose KV is live in cache (prompt + generated)
 
-	// cleanCache: the cache was fully reset and nothing has run through it since, so a second TruncateTo(0) would find nothing to do (audit R-16). True only from
-	// NewSession (a born-zero cache) and Reset; rewindForReuse consumes it. The zero value is the safe side: a session restored from a snapshot, and every session
-	// after its first generation, takes the full reset. It is NOT a general "the state is clean" claim; the extra checks in rewindForReuse (no tokens, pos 0) exist
-	// because tests and snapshot loaders build caches by hand.
+	// cleanCache: the cache was fully reset and nothing has run through it since, so a second TruncateTo(0) would find nothing
+	// to do. True only from NewSession and Reset; rewindForReuse consumes it. The zero value is the safe side (a session
+	// restored from a snapshot, and every session after its first generation, takes the full reset), and it is not a general
+	// "the state is clean" claim: rewindForReuse also checks no tokens and pos 0, because tests and snapshot loaders build
+	// caches by hand.
 	cleanCache bool
 
 	// kvAdapter is the compute-time adapter tokens' KV was built under — the cache-state grid's
@@ -53,12 +54,9 @@ func (m *Model) NewSession(capHint int) *Session {
 // mutate the returned slice. The SessionLRU keys prefix matching off it.
 func (s *Session) Tokens() []int { return s.tokens }
 
-// UseAdapter activates a compute-time LoRA adapter (Model.LoadAdapter, #7) for
-// this session's subsequent Generate calls, so a single resident base serves many
-// fine-tunes without paying its RAM per adapter. Switching adapters changes the
-// projections, so any KV built under a different (or no) adapter is stale: the next
-// Generate notices and prefills cold rather than reusing it (since 2026-10-08; before,
-// the caller had to Reset).
+// UseAdapter activates a compute-time LoRA adapter (Model.LoadAdapter) for this session's subsequent Generate calls, so one
+// resident base serves many fine-tunes. Switching adapters changes the projections, so KV built under a different (or no)
+// adapter is stale: the next Generate prefills cold rather than reusing it.
 func (s *Session) UseAdapter(name string) error {
 	rt := s.m.adapter(name) // locked read — LoadAdapter may mutate the map concurrently (audit C-29)
 	if rt == nil {
@@ -79,15 +77,13 @@ func (s *Session) Reset() {
 	s.cleanCache = true
 }
 
-// rewindForReuse rewinds the cache to the longest reusable prefix shared with prompt and returns
-// how many tokens to reuse. On an INEXACT rewind — a wrapped sliding-window ring can't restore the
-// positions it dropped (C1) — it Resets and returns 0 (cold prefill), so prefix reuse never reads
-// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejected call
+// rewindForReuse rewinds the cache to the longest reusable prefix shared with prompt and returns how many tokens to reuse.
+// On an inexact rewind (a wrapped sliding-window ring cannot restore the positions it dropped) it resets and returns 0, so
+// prefix reuse never reads stale history. Callers must skip it, and reconcile, for an empty prompt so a rejected call
 // leaves a warm session untouched.
 func (s *Session) rewindForReuse(prompt []int) int {
-	// R-16: a session that was just created, or Reset (sessionLRU.fresh's eviction path), has already had everything TruncateTo(0) clears cleared, and nothing has
-	// run since, so the reset below would zero a recurrent state (about 63 MB for a 30-layer DeltaNet model, an estimate) that is already zero. Every guard fails
-	// toward doing the reset: the flag is consumed here whatever happens, and a session with tokens or a cache past position 0 never skips.
+	// A just-created or Reset session has nothing for TruncateTo(0) to clear, and the reset would otherwise zero a recurrent
+	// state that is already zero. Every guard fails toward resetting: the flag is consumed here whatever happens.
 	clean := s.cleanCache && len(s.tokens) == 0 && s.cache.Pos() == 0
 	s.cleanCache = false
 	if clean {
@@ -107,10 +103,9 @@ func (s *Session) rewindForReuse(prompt []int) int {
 	return matched
 }
 
-// reconcile sets s.tokens to EXACTLY what the cache holds after a generation. seq mirrors the cache
-// (prompt + each committed token); on a prefill/forward error the cache may hold fewer positions
-// than seq claims, so clamp — otherwise the next call "reuses" KV that was never written and
-// prefills at the wrong position (M10).
+// reconcile sets s.tokens to exactly what the cache holds after a generation. seq mirrors the cache (prompt + each
+// committed token); on a prefill/forward error the cache may hold fewer positions than seq claims, so clamp, or the next
+// call reuses KV that was never written and prefills at the wrong position.
 func (s *Session) reconcile(seq []int) {
 	// A forward that errored mid-sweep leaves the cache position behind the emitted token stream.
 	p := s.cache.Pos()
@@ -118,32 +113,19 @@ func (s *Session) reconcile(seq []int) {
 	if rolledBack {
 		seq = seq[:p]
 	}
-	// Recurrent (Mamba-2 / Gated DeltaNet) rolling state is not positional: TruncateTo cannot rewind
-	// it (it reports inexact), and a mid-sweep error can leave it over-advanced past the committed KV.
-	// Clamping seq to cache.Pos() makes the truncate a no-op (exact), so the corrupt state would be
-	// warm-reused on the next call and decode a new sequence from leaked state (C-01 class). On any
-	// rollback, reset a recurrent session to cold so the next call re-prefills (audit R-14).
+	// Recurrent (Mamba-2 / Gated DeltaNet) rolling state is not positional: TruncateTo cannot rewind it, and a mid-sweep error
+	// can leave it past the committed KV, which clamping seq to cache.Pos() would then warm-reuse. On any rollback a recurrent
+	// session resets to cold.
 	if rolledBack && s.cache.hasRecurrentState() {
-		s.cache.TruncateTo(0) // re-zeroes the rolling state (C-01)
+		s.cache.TruncateTo(0) // re-zeroes the rolling state
 		s.tokens = nil
 		return
 	}
-	// CONSUME THE BOOL. TruncateTo reports whether the rewind was EXACT, and this line discarded it
-	// — the same answer rewindForReuse above has always acted on.
-	//
-	// It is reachable, and G18 is what made it so (3a16a4b, 2026-08-25: the batched sweep aborts per
-	// LAYER on a cancelled context). Layers below the abort point have already commitBatch'd, so
-	// their ring count is startPos+K while c.pos is still startPos — advanceTo runs only at the end
-	// of a completed sweep. Truncating to c.pos then rewinds those rings by K on a WRAPPED window,
-	// which cannot restore the rows the commit evicted: ring.truncate returns false. Ignoring that
-	// left the aborted turn's K/V — RoPE'd at positions startPos.. — physically resident, and
-	// s.tokens pointing at the prefix, so the next request that extends the conversation matched,
-	// rewound to a no-op "exact", and read those rows as history for EARLIER positions. Silently
-	// wrong attention on every local layer below the abort point, and plausible text
-	// (audit-2026-09-02 C-05). A cancelled request reports a clean end, so nothing else notices.
-	//
-	// Rings cannot restore evicted rows, so cold reset is the only exact answer — same remedy,
-	// same reason, as rewindForReuse.
+	// Consume the bool: TruncateTo reports whether the rewind was exact. A batched sweep aborted by a cancelled context has
+	// committed the layers below the abort point to their rings (ring count startPos+K, c.pos still startPos), and truncating
+	// a wrapped sliding-window ring cannot restore evicted rows. Ignoring the result left the aborted turn's K/V resident
+	// under a matching s.tokens, so the next request read it as history. Cold reset is the only exact answer, as in
+	// rewindForReuse (history: docs/code-notes/decoder.md#Session.reconcile.truncate).
 	if !s.cache.TruncateTo(len(seq)) {
 		s.cache.TruncateTo(0)
 		s.tokens = nil
@@ -169,13 +151,8 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	if len(prompt) > 0 {
 		matched = s.rewindForReuse(prompt)
 	}
-	// generateInto only sets g.PrefillReused itself on the resident/GPU path (prefillFrom == 0,
-	// so matched == 0 here too — this write is a harmless no-op there, since that branch may
-	// still overwrite it with the resident's own reuse count once the goroutine below runs). A
-	// plain session (commit != nil, no adapter) always takes generateInto's CPU/staged path
-	// instead (see its own "G3" comment), which never touches g.PrefillReused at all — without
-	// this line, every session's real, correctly-computed prefix reuse (rewindForReuse above)
-	// silently reported 0 to every caller, including usage.prefill_reused_tokens in the API.
+	// generateInto sets g.PrefillReused only on the resident path. A plain session takes its CPU/staged path, which never
+	// touches it, so set it here or the API's usage.prefill_reused_tokens reports 0 for every session turn.
 	g.PrefillReused = matched
 
 	// After prefill the cache holds the whole prompt; commit appends each generated token as its
@@ -186,9 +163,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 
 	go func() {
 		defer close(out)
-		// P-01 (audit-2026-09-10): nil newCache — s.cache always exists already (the session
-		// owns its cache's whole lifetime), so generateInto's lazy-allocation branch (cache ==
-		// nil) is never taken for a session call; nothing here needs to construct one.
+		// A session always owns its cache, so generateInto's lazy cache allocation is never taken (newCache is nil).
 		s.m.generateInto(ctx, out, g, s.cache, nil, prompt, matched, maxTokens, sp, commit)
 		// Bookkeeping runs before the deferred close, so a consumer that observes the channel close
 		// (and then starts the next request) always sees a reconciled session: tokens == what the
@@ -222,10 +197,8 @@ func (s *Session) GenerateNgramSpeculativeAdaptive(ctx context.Context, prompt [
 	}
 	ad.ensure()
 	if ad.Theta >= 1 {
-		// P-16: see *Model.GenerateNgramSpeculativeAdaptive's comment — Depth()
-		// always returns 0, so every round would still pay to draft and verify
-		// nothing. Session.Generate reuses the warm KV prefix exactly as genSpec
-		// does, so this loses no session behavior.
+		// Theta >= 1 means Depth() would always return 0 (see Model.GenerateNgramSpeculativeAdaptive), so every round would pay
+		// to draft and verify nothing: run plain Session.Generate, which reuses the warm prefix the same way.
 		if err := validateNgramSpec(s.m, drafter, sp); err != nil {
 			return nil, nil, err
 		}
@@ -252,7 +225,7 @@ func (s *Session) GenerateGrammarSpeculative(ctx context.Context, prompt []int, 
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
 
-	matched := s.rewindForReuse(prompt) // cold-prefill on an inexact rewind (C1)
+	matched := s.rewindForReuse(prompt) // cold-prefill on an inexact rewind
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
 
@@ -273,10 +246,10 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 	g := &Generation{Spec: stats}
 
 	// An empty prompt is a genNgramInto error: don't rewind/reconcile the cache, so a rejected
-	// call leaves a warm session's KV intact — matching Session.Generate (N-01).
+	// call leaves a warm session's KV intact — matching Session.Generate.
 	matched := 0
 	if len(prompt) > 0 {
-		matched = s.rewindForReuse(prompt) // cold-prefill on an inexact rewind (C1)
+		matched = s.rewindForReuse(prompt) // cold-prefill on an inexact rewind
 	}
 	seq := append([]int(nil), prompt...)
 	commit := func(id int) { seq = append(seq, id) }
@@ -284,12 +257,8 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 	go func() {
 		defer close(out)
 		s.m.genNgramInto(ctx, out, g, stats, drafter, prompt, matched, maxTokens, K, sp, nil, ad, s.cache, commit)
-		// Reconcile: seq == prompt + every token committed to the cache, so the session's token
-		// list mirrors the cache exactly for the next call's prefix match — clamped to what the
-		// cache actually holds if a forward errored (the final pending token was emitted but not
-		// committed — one behind, same as a fresh prefill would leave it). Skip on an empty prompt:
-		// genNgramInto rejected it without touching the cache, so reconcile(seq=[]) would TruncateTo(0)
-		// and wipe a warm session's KV — the same guard Session.Generate has (audit R-13 / N-01).
+		// An empty prompt is a genNgramInto error: skip rewind and reconcile so a rejected call leaves a warm session's KV intact,
+		// as Session.Generate does.
 		if len(prompt) > 0 {
 			s.reconcile(seq)
 		}
