@@ -39,9 +39,9 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	switch t.name {
 	case "chatml", "mellum2":
 		if t.usesNativeTools() {
-			return renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
+			return t.bos + renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
 		}
-		return renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults) + t.thinkSuffixText()
+		return t.bos + renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults) + t.thinkSuffixText()
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
 	case "llama3":
