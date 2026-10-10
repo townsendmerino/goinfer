@@ -94,7 +94,7 @@ func (m *Model) residentHostCopyFor(backend string, slots int) int64 {
 func (m *Model) cudaKVBytes(ctx int) int64 {
 	a := m.w.arch
 	_, nLayers, _, _, _, _, _ := m.Dims()
-	var perPos int64
+	var perPos, windowed int64
 	for l := range nLayers {
 		if m.KVSrcAtResident(l) != l {
 			continue // a Gemma 4 E-model KV-shared layer aliases its source's cache (cuda/backend.go)
@@ -104,7 +104,13 @@ func (m *Model) cudaKVBytes(ctx int) int64 {
 			perPos += kvDim * 4 // one latent row per position
 			continue
 		}
+		if m.WindowedKVLayer(l) {
+			// A windowed layer holds window+slack positions (cuda/kvwindow.go allocates exactly this), not the context.
+			win := int64(ResidentWindowedKVCap(m.SlidingWindowResident(), ctx))
+			windowed += 2 * kvDim * 4 * win
+			continue
+		}
 		perPos += 2 * kvDim * 4 // K and V, f32
 	}
-	return perPos * int64(ctx)
+	return perPos*int64(ctx) + windowed
 }

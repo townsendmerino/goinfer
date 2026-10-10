@@ -245,6 +245,23 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 			kv, _ := tryCtx(req.Ctx)
 			return req.Ctx, kv, false
 		}
+		if backend == "cuda" && m.windowedKV {
+			// KV bytes are affine in ctx here, not linear: a windowed layer flattens at window+slack. The linear rate below prices every
+			// layer at its full-context rate and would shrink the context needlessly, so search for the largest context that fits
+			// (tryCtx is monotone in ctx). Same floor and same "never grow past what was asked" as the arithmetic path.
+			if _, fits := tryCtx(ctxPlanFloor); !fits {
+				return req.Ctx, kvAt(req.Ctx), false
+			}
+			lo, hi := ctxPlanFloor, req.Ctx // fits(lo), !fits(hi)
+			for hi-lo > 1 {
+				if mid := lo + (hi-lo)/2; func() bool { _, ok := tryCtx(mid); return ok }() {
+					lo = mid
+				} else {
+					hi = mid
+				}
+			}
+			return lo, kvAt(lo), true
+		}
 		// Metal allocates KV in 8-position steps, so evaluate the rate over one step and keep the
 		// shrunk ctx on that grid: then kvAt(fitCtx) is exactly perPos*fitCtx, what Metal allocates.
 		step := 1

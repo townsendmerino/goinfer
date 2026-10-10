@@ -237,6 +237,18 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_neutralOptions"),
 		},
 	),
+	// CUDA's windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md): a sliding-window layer holds window+slack positions instead of the
+	// context. Metal and WebGPU ignore it. The identity tests live in cuda/kvwindow_test.go (a GPU job, tags cuda goinfer_testhooks) and
+	// compare logits bit for bit against the same load without the option.
+	"ResidentWindowedKV": ogMerge(
+		ogCPUNA("a CUDA resident's KV layout; the CPU cache keeps its own ring"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestWindowedKV_decodeIdentity"),
+			pathResidentPrefill:  ogTestedBy("TestWindowedKV_prefillIdentity"),
+			pathSpecVerify:       ogTestedBy("TestWindowedKV_verifyIdentity"),
+			pathSessionLifecycle: ogTestedBy("TestWindowedKV_reuseFloor"),
+		},
+	),
 	"ResidentPrefillChunk": ogMerge(
 		ogCPUNA("chunks a resident's batched prefill under MC3"),
 		map[ogPath]ogCell{

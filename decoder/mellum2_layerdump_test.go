@@ -21,7 +21,7 @@ var layerDumpPositions = []int{10, 300, 600, 900, 1000, 1030, 1100, 1300, 1440}
 // forward). It also recomputes the window golden's sample-256 logit cosine from this run's own final logits, so the dump is proved to be
 // of the run that measured the number under study. Only runs with GOINFER_MELLUM_GOLDEN_PREFIX set (it writes beside that pair).
 // The reader is scripts/diff_mellum_layers.py; this test asserts nothing about the model, only that the dump was made from the same
-// forward (argmax equals the golden's) and writes a file.
+// forward (argmax equals the golden's, for the default quant) and writes a file.
 func TestMellum2_layerDump(t *testing.T) {
 	prefix := os.Getenv("GOINFER_MELLUM_GOLDEN_PREFIX")
 	if prefix == "" {
@@ -40,7 +40,13 @@ func TestMellum2_layerDump(t *testing.T) {
 		t.Fatalf("golden has %d ids; the window split needs more than 1024", len(g.IDs))
 	}
 	path := assetPath(t, "GOINFER_MELLUM_CKPT")
-	m, err := Load(path, Options{Quant: "int8int8"})
+	// The default is the window gate's own path. GOINFER_MELLUM_DUMP_QUANT picks another quant ("" for f32, "int8" for weight-only) to
+	// separate activation and weight quantization from the window path (follow-up A2); such a dump is written under its own name.
+	quant := "int8int8"
+	if q, ok := os.LookupEnv("GOINFER_MELLUM_DUMP_QUANT"); ok {
+		quant = q
+	}
+	m, err := Load(path, Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -109,10 +115,17 @@ func TestMellum2_layerDump(t *testing.T) {
 	}
 	cos := dot / (math.Sqrt(na) * math.Sqrt(nb))
 	t.Logf("this run: argmax %d (golden %d), sample-256 logit cosine %.5f", got, g.Argmax, cos)
-	if got != g.Argmax {
+	suffix := "_layers_goinfer.json.gz"
+	if quant != "int8int8" {
+		// another quant may legitimately pick another argmax: it is reported, and the reader (scripts/diff_mellum_layers.py) reads the quant from the dump
+		suffix = "_layers_goinfer_" + map[bool]string{true: "f32", false: quant}[quant == ""] + ".json.gz"
+		if got != g.Argmax {
+			t.Logf("quant %q: argmax %d differs from the int8int8 golden's %d (reported, not an error)", quant, got, g.Argmax)
+		}
+	} else if got != g.Argmax {
 		t.Errorf("argmax %d != golden %d: this is not the run the window gate measured", got, g.Argmax)
 	}
-	out := strings.TrimSuffix(mellum2GoldenPath("window"), "_golden.json") + "_layers_goinfer.json.gz"
+	out := strings.TrimSuffix(mellum2GoldenPath("window"), "_golden.json") + suffix
 	f, err := os.Create(out)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +133,7 @@ func TestMellum2_layerDump(t *testing.T) {
 	zw := gzip.NewWriter(f)
 	rec := map[string]any{
 		"positions": layerDumpPositions, "n_ids": n, "layers": L, "hidden": m.w.arch.HiddenDim,
-		"quant": "int8int8", "argmax": got, "golden_argmax": g.Argmax, "sample256_logit_cosine": cos,
+		"quant": map[bool]string{true: "f32", false: quant}[quant == ""], "argmax": got, "golden_argmax": g.Argmax, "sample256_logit_cosine": cos,
 		"resid": resid, // [layer][position index][hidden]
 	}
 	if err := json.NewEncoder(zw).Encode(rec); err != nil {

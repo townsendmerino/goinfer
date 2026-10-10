@@ -144,7 +144,7 @@ func (r *cudaResident) flashDecodeAttn(l, pos int) error {
 	if Ly.window > 0 && nKeys > int(Ly.window) {
 		winStart = nKeys - int(Ly.window)
 	}
-	return r.flashDecodeLaunch(r.qB, r.kc[l], r.vc[l], r.cctx, Ly.hd, Ly.nKV, winStart, nKeys)
+	return r.flashDecodeLaunch(r.qB, r.kvK(l), r.kvV(l), r.cctx, Ly.hd, Ly.nKV, winStart, nKeys)
 }
 
 // flashDecodeLaunch is flashDecodeAttn's body over explicit buffers, so a test can drive it on synthetic K/V.
@@ -246,7 +246,7 @@ func (r *cudaResident) flashVerifyAttn(l, startPos, from, m int, q, ctx Buffer) 
 			sub.row0 = from + run.row0 + a
 			sub.n = min(faMaxRows, run.n-a)
 			sub.nKeys0 = run.nKeys0 + a
-			if e := r.flashDecodeRowsLaunch(q, r.kc[l], r.vc[l], ctx, Ly.hd, Ly.nKV, sub); e != nil {
+			if e := r.flashDecodeRowsLaunch(q, r.kvK(l), r.kvV(l), ctx, Ly.hd, Ly.nKV, sub); e != nil {
 				return e
 			}
 		}

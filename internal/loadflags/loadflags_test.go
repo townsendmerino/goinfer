@@ -76,6 +76,7 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 			return o.ExactPrefill && (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0"
 		}},
 		"cpu-exact-prefill": {"--cpu-exact-prefill", func(o decoder.Options, _ *Flags) bool { return (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0" }},
+		"windowed-kv":       {"--windowed-kv", func(o decoder.Options, _ *Flags) bool { return o.ResidentWindowedKV }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}
