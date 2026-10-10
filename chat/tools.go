@@ -35,6 +35,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	if len(tools) == 0 {
 		return t.Render(system, turns)
 	}
+	system = t.systemOr(system)
 	switch t.name {
 	case "chatml", "mellum2":
 		if t.usesNativeTools() {

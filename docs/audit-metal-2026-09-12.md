@@ -722,7 +722,7 @@ re-baked by the code it checks (G-04).
   `metal/moe.go:681-683`, `metal/backend.go:416-295` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
   `--moe-cache-slots`); `internal/loadflags/loadflags.go:276` (`--moe-cache-experts` … "CUDA only"),
-  `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
+  `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1698-1708` ("falls back
   automatically to a CPU-staged … path … killed after 2h10min with zero completions");
   `docs/completed/task-metal-expert-streaming-at-scale.md:288-291` (recommendation: default N=64).
 - **Mechanism and bound (confirmed):** `MoECacheExperts()` has no reader in `metal/`; a zero slot
@@ -819,7 +819,7 @@ re-baked by the code it checks (G-04).
   (per-op `Run1D`/`Run2D`, each a commit + `waitUntilCompleted` + pool drain: 544–704 synchronous
   submits per image at 32 blocks); aikit `CHANGELOG.md:332-333` (batched SigLIP tower 0.46×/0.33× of
   CPU by its own crossover), `:316-318` (M-10 "NOT DONE: the Metal half"); `docs/multimodal.md:195`
-  ("Metal — still not started"), `docs/benchmarks.md:554-557` (CPU SigLIP 31.3 s/image).
+  ("Metal — still not started"), `docs/benchmarks.md:566-569` (CPU SigLIP 31.3 s/image).
 <!-- citation-lint: allow-path qwenmetal/encoder.go aikit's own SEPARATE Go module (own go.mod), added after the aikit/gpu v0.32.0 release goinfer's cuda/go.mod currently pins — goinfer does not depend on it yet (line 477's own "nothing imports qwenmetal" is this in prose), so no checked-out or module-cache root can verify it here. -->
 <!-- citation-lint: allow-path visionmetal/encoder.go same as qwenmetal/encoder.go above: aikit's own separate, not-yet-pinned Go module. -->
 - **Mechanism and bound (counted):** at so400m (np=4096, nH=16, hd=72, 27 layers) the attention
@@ -884,7 +884,7 @@ re-baked by the code it checks (G-04).
   session had no real SigLIP/Qwen2.5-VL checkpoint or Metal hardware benchmark run to confirm the
   Mechanism section's arithmetic actually closes the gap to the CPU tower's recorded times, only
   that each kernel change is individually correct; (c) `docs/multimodal.md:195` /
-  `docs/benchmarks.md:554-557`, the two doc paths this finding's own Where cites, do not exist
+  `docs/benchmarks.md:566-569`, the two doc paths this finding's own Where cites, do not exist
   under those names in the current aikit tree — reconciling the promised "crossover row" needs
   finding wherever that content now lives first.
 
@@ -1272,10 +1272,10 @@ re-baked by the code it checks (G-04).
   2026-09-13**: both rows now carry a SUPERSEDED callout naming why (fused kernel + M-03's GEMM
   tile) instead of a corrected ratio — no fresh same-session Ollama re-run exists yet, so none is
   invented.
-- N-02 `docs/benchmarks.md:985-991` — §B3 "declines batched prefill by default … 54% stream
+- N-02 `docs/benchmarks.md:997-1003` — §B3 "declines batched prefill by default … 54% stream
   divergence": default ON since 09-09; `:972` "`//go:build darwin && metal`": every file is
   `//go:build darwin`. **FIXED 2026-09-13.**
-- N-03 `docs/benchmarks.md:998-1022` — the §B3 depth curve is `TestZZ_metalDepthBench`, a tight
+- N-03 `docs/benchmarks.md:1010-1034` — the §B3 depth curve is `TestZZ_metalDepthBench`, a tight
   `ForwardArgmax` loop; `metalResident` does not implement `ResidentGreedy`, so production greedy
   runs `ForwardEmbPipe` → full head + host argmax. Labelling defect (fused argmax is a recorded
   speed-neutral on UMA), but the curve measures a path serve never takes. **FIXED 2026-09-13**: a
@@ -1589,7 +1589,7 @@ re-baked by the code it checks (G-04).
   because nothing wires compute-time LoRA into the resident prefix-reuse path yet — that gap is
   real and stays open, only the comment's blanket "it drops to the staged path" claim was wrong.
   Comment-only.
-- N-40 `docs/benchmarks.md:975` — §B3 "4-bit both sides": the tied LM head (24% of per-token bytes)
+- N-40 `docs/benchmarks.md:987` — §B3 "4-bit both sides": the tied LM head (24% of per-token bytes)
   runs int8 by a deliberate fidelity pin; up to ~117 MB/token (≈1.4 ms) of the 1.5B decode deficit
   is a chosen precision trade, not kernel quality. Labelling, not a defect.
 - **N-41** (found 2026-09-14, incidental to the aikit v1.42.0/`gpu/v0.33.1` bump's verification

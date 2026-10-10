@@ -301,6 +301,18 @@ pinned versions, dated, thermal note, verified-idle box).
 
 ---
 
+### Prompt changes that move comparability
+
+- **2026-10-09: ChatML templates' own default system message.** A Qwen 2.5 checkpoint (text, coder or VL) now gets the
+  system message its own template inserts when a request has none: "You are Qwen, created by Alibaba Cloud. You are a
+  helpful assistant." (Qwen2.5-VL: "You are a helpful assistant."). Before, goinfer sent no system turn
+  (`chat/default_system.go`; owner, 2026-10-09).
+  - This matches HF, llama.cpp and Ollama, so peer rows become more like for like.
+  - **A goinfer-against-goinfer A/B across this change (`goinfer_old` built before it) compares different prompts for
+    these models.** A row's prompt token counts from `usage` show it: about +20 tokens on Qwen 2.5 text without a system
+    message.
+  - Qwen 3, Mellum and every family whose template declares no default are unchanged.
+
 ## Model storage — archive remote, benchmark local
 
 > **This section is the authority on where a measurement may read its checkpoint from.**

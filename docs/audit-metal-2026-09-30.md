@@ -1688,7 +1688,7 @@ intended behaviour. Nothing schedules the paged build.
 
 **Claim.** Qwen3.5/3.6/3.8 and Olmo-Hybrid families prefill as M decode tokens because DeltaNet is excluded
 from `PrefillLast` (`metal/model.go:1321-1323`). The record's stated reason ("a DeltaNet layer's conv/matrix state must
-advance one token at a time", `docs/benchmarks.md:1913-1915`) is a statement about the recurrence only. It
+advance one token at a time", `docs/benchmarks.md:1925-1927`) is a statement about the recurrence only. It
 does not preclude batching the projections, MLP and softmax-attention layers, and running only the
 recurrence as a token loop inside one kernel.
 

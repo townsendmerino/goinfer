@@ -946,8 +946,8 @@ supports.
 | `docs/tasks/task-actquant-pergroup-2026-09.md|internal/modelload/modelload.go:232` | goinfer | `//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the re` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:313` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:220` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
-| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:155` | goinfer | `// chat-template string; if that's empty, it falls back to the special-token` |
-| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:157` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
+| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:158` | goinfer | `// chat-template string; if that's empty, it falls back to the special-token` |
+| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:160` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1464` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:337` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:537` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
@@ -1071,8 +1071,8 @@ supports.
 | `docs/tasks/task-recompute-audit.md|internal/serveapp/openai.go:1587` | goinfer | `sess := lm.sessions.acquire(gr.promptIDs)` |
 | `docs/tasks/task-recompute-audit.md|tokenizer/sentencepiece.go:886` | goinfer | `// Decoding prompt+generation together gives the right answer too, by re-decoding the` |
 | `docs/tasks/task-spark-x2-5.md|decoder/arch.go:288` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
-| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:101` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
-| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:119` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |
+| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:102` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
+| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:120` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/constrain.go:23` | goinfer | `type Grammar interface {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/tool_grammar.go:30` | goinfer | `func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, paramSchema [` |
 | `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:624` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
@@ -1111,7 +1111,7 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:337` | goinfer | `if hi := haltState(); hi != nil {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:63` | goinfer | `type responseStore struct {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
-| `docs/use-from-go.md|chat/chat.go:114` | goinfer | `// Render builds the complete prompt string (including any leading BOS marker the` |
+| `docs/use-from-go.md|chat/chat.go:116` | goinfer | `// Render builds the complete prompt string (including any leading BOS marker the` |
 | `site/different/REVIEW-08.md|internal/serveapp/main.go:437` | goinfer | `fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at star` |
 | `site/different/REVIEW-10.md|internal/serveapp/batches_http.go:84` | goinfer | `if req.Endpoint != "/v1/chat/completions" {` |
 | `site/different/REVIEW-10.md|internal/serveapp/main.go:403` | goinfer | `fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir ` |

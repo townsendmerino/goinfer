@@ -277,7 +277,7 @@ benchmarks, **OPEN, filed 2026-09-19**
 
 We have both and advertise neither. `docs/multimodal.md`'s P9(a) shipped image-block resident
 prefix reuse — a cold turn's forced full CPU prefill drops to warm resident reuse, measured
-**159.98×** (8.215 s → 0.051 s, `docs/benchmarks.md:759–760`) — and `--session-dir` persists warm
+**159.98×** (8.215 s → 0.051 s, `docs/benchmarks.md:771–760`) — and `--session-dir` persists warm
 `.giw-kv` sessions to disk **and restores them on restart**
 ([`docs/server.md:211`](server.md)). Neither appears in the README pitch or the landing-site plan
 (U8).

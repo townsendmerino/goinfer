@@ -60,7 +60,7 @@ The last phase puts the answer where users look first, the README, with a check 
 - **Models:**
   - Qwen3-VL MoE images have never been run. Qwen3.5+ MoE images passed the served check on CUDA (G-S6m, 2026-10-09).
   - Gemma 4 E4B is validated on CUDA, not on Metal. Gemma 4 31B: CPU only, text agreement with Hugging Face read 2026-10-09 ((b'), below); images not checked against Hugging Face.
-  - Ministral 3 (Pixtral), LFM2.5-VL and North have no tower (S10).
+  - Ministral 3 (Pixtral) and LFM2.5-VL have no tower (S10). North was dropped, never identified.
   - Video (S15) is not supported. Several images per message are, since S11 (2026-10-09).
 - **Audio:**
   - Gemma 4 E2B audio into the model works on CPU and Metal.
@@ -2472,12 +2472,87 @@ different rows.
 
 Added 2026-10-07: Ministral 3 (Pixtral), LFM2.5-VL, North, and Qwen3-VL's image path (today text only).
 
+**2026-10-09: "North" is dropped** (owner: "i have no idea what north meant"). No checkpoint or repo was ever recorded
+for it; re-add it with one if it resurfaces. Order from here (owner, 2026-10-09: "on to s10s families, s12 and s15, and
+then full s13"): Ministral 3 (Pixtral), whose 3B is on nobara; then LFM2.5-VL; then Qwen3-VL MoE. Qwen3-VL MoE's 30B
+cannot hold a float32 HF reference in nobara's 62 GB, so it would need the 31B's layer-streaming reference (step (b')).
+
 - **Pattern:** the Gemma 4 and Qwen ones: the tower in aikit (batched into the cycle's one release), the decoder splice
   and prompt layout in goinfer, then serve. One sub-phase per family, in order of what users ask for; each starts with
   a desk map of its HF processor (image budget, special tokens, position scheme).
 - **Gates, per family, before starting it:** the tower's stages against HF on the real checkpoint; full-model logits on an
   image prompt against HF; a served request.
 - **Size:** M each.
+
+**S10, Ministral 3 (Pixtral): desk map, plan and gates, registered 2026-10-09 before any code** (owner: "on to s10s
+families"). Checkpoint `mistralai/Ministral-3-3B-Instruct-2512` (bf16, `~/models/ministral3-3b-bf16` on nobara).
+
+**Gate 0, the desk map** (transformers 5.15.0's `pixtral` and `mistral3` sources and the real checkpoint, read 2026-10-09):
+- **Preprocessing** (`PixtralImageProcessor`):
+  - Scale down so the longest side is at most 1540, then round each side UP to a multiple of 28 (patch 14 x merge 2).
+  - Bicubic with antialias on uint8, then CLIP mean/std.
+  - Measured with the real processor: a 1024x768 image gives a 784x1036 tensor.
+- **Token layout:** one merged 2x2 unit per `[IMG]` (id 10), each merged row ending in `[IMG_BREAK]` (12), the last
+  `[IMG_END]` (13). The 1024x768 example is 1,036 `[IMG]`, 27 `[IMG_BREAK]`, 1 `[IMG_END]`.
+- **The tower** (`PixtralVisionModel`, 24 layers, hidden 1024, 16 heads, head dim 64):
+  - Patch conv with no bias, then RMSNorm `ln_pre` (eps 1e-5).
+  - 2-D rotate-half RoPE (theta 10000, position row*110+col). Rows take the even-indexed frequencies, columns the
+    odd-indexed ones.
+  - Pre-norm blocks: separate q/k/v/o with no bias, then a SiLU-gated MLP. No final norm.
+  - Several images run as one sequence with a block-diagonal mask.
+- **Projector:** RMSNorm, then a 2x2 patch merger (channel-major unfold over the row-major grid, a 4096->1024 linear),
+  then linear 1024->3072, exact GELU, linear 3072->3072. No biases.
+- **Decoder:**
+  - Features replace the `[IMG]` positions only; `[IMG_BREAK]` and `[IMG_END]` are ordinary text.
+  - Plain causal attention and plain 1-D positions: no bidirectional block, no m-RoPE.
+  - goinfer's `ministral3` text decoder exists, is resident on Metal and CUDA, and has a real-checkpoint gate.
+- **Chat:**
+  - The checkpoint ships no chat template. The HF one (fetched and read) puts a bare `[IMG]` per image inline inside
+    `[INST]`, in content order, and moves a [text, image] message's image first.
+  - Its long default system prompt is deliberately not replicated (`chat/templates.go`, Ministral()), so the
+    reference harnesses send an explicit system message and goinfer's own token ids.
+- **Today:** serve has no `mistral3` loader. An image request is a 400 "no vision tower", and the support table's
+  loader check plants exactly this row as its defect.
+
+**Plan:**
+1. **aikit** (local branch `s10-pixtral`, off `origin/main`, pushed and tagged by the owner): `PixtralVisionEncoder`
+   (loader, conv, the RoPE table, blocks reusing the Qwen tower's attention and MLP helpers, multi-image segments) and
+   `PixtralPreprocess` (the resize rule on `ResizeBicubicAA`, normalise, the grid), with a tiny-tower test.
+2. **goinfer** (worktree branch `s10-pixtral`, merged after the aikit release):
+   - the projector (`multimodal`);
+   - the prompt block (rows of `[IMG]` with breaks and the end token);
+   - a CAUSAL span entry, one span per merged row, splicing only the `[IMG]` positions, with no image block. Its
+     resident path is the plain batched prefill over the spliced rows.
+   - serve's `mistral3` branch;
+   - the support-table row.
+
+**Gates:**
+- **G-S10m-a, preprocessing:** against HF's `PixtralImageProcessor` (`~/.venv-vl`, torchvision 0.27) on the four
+  images. Sizes equal, pixel values within rounding, token counts equal. Also the layout edge cases: a single merged
+  row (no break), a 3000x2000 image (downscaled), two images.
+- **G-S10m-b, the tower and projector against HF on the real 3B:**
+  - Every stage (conv, ln_pre, each block, the projector's norm, merger, linear_1, linear_2) at soft-token cosine
+    >= 0.9999 on the four images. HF's tower runs alone in float32 from its own pixel values; 0.999-0.9999 is ambiguous
+    (parked).
+  - A two-image run must equal each image's single-image output.
+  - aikit's tiny tower with norms randomised, planted defects each red:
+    1. column frequencies from the even list;
+    2. row and column halves swapped;
+    3. the block mask dropped (two images);
+    4. the merger in position-major order.
+- **G-S10m-c, the full model on an image prompt against HF `Mistral3ForConditionalGeneration`:**
+  - Float32, nobara, an explicit system message, goinfer's ids. G-S5b's bar: last-position cosine >= 0.999, argmax
+    equal, argmax agreement >= 95% over the text after the image.
+  - Planted defects, each red:
+    1. features also written over `[IMG_BREAK]`/`[IMG_END]`;
+    2. a bidirectional image block;
+    3. the rows shifted by one.
+- **G-S10m-d, served:** one-image and two-image requests, `--backend cpu` against `--backend metal` with equal load
+  flags, plus a CPU repeat. Identical replies, or a first divergence at an R10 near-tie.
+- **Tier:** b and c hold about 17 GB in float32 on nobara. Each runs by day only if its cell estimate is under 10
+  minutes, otherwise on the night queue.
+
+**Size:** aikit about 500 lines, goinfer about 800, both with tests: M, as registered for S10.
 
 **S10, Qwen3-VL first (owner, 2026-10-07: "Qwen3-VL first, on nobara").** This lifts the park on `docs/multimodal.md`'s
 P8c ("Qwen3-VL DeepStack, PARKED", 2026-09-30), whose trigger was Qwen3-VL drawing use Qwen3.5+ does not cover; the
@@ -2883,7 +2958,15 @@ tokens, the first 32 compared.
      exploratory real check above).
   2. Qwen2.5-VL's missing default system message, a template gap that predates S11.
   3. transformers 5.15's change to a "vision" Gemma 4's bidirectional mask (step 2's finding).
-- **Not built:** a resident DeepStack prefill for several images (Qwen3-VL's multi-image turns take the bridge). Until then a
+- **Not built:** a resident DeepStack prefill for several images (Qwen3-VL's multi-image turns take the bridge).
+
+**Owner decisions on S11's three open items, 2026-10-09:**
+1. **Keep the resident two-block prefill on**, as G-IP4's single-image one.
+2. **Fix the default system message, for every template that has one.** Done: `Detect` reads the default from the
+   checkpoint's own ChatML template (`chat/default_system.go`), and every render path applies it when a request has
+   none. Qwen 2.5's no-system rendering is now its template's byte for byte. The prompt change for bench comparability
+   is recorded in `docs/benchmarks.md`, "Prompt changes that move comparability".
+3. **transformers 5.15's Gemma 4 mask:** recorded, unchanged ("sounds good"). Until then a
 Gemma 3 multi-image turn on CUDA prefills on the CPU and uploads (logged); on Metal it takes the resident two-block
 prefill (below). Qwen2.5-VL and Qwen3.5 take their
 resident m-RoPE prefill with several images already; Qwen3-VL's DeepStack resident prefill declines to the bridge; a
