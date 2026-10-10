@@ -28,7 +28,7 @@ with torch.no_grad():
 model.save_pretrained(out)
 gc = {"decoder_start_token_id": SOT, "eos_token_id": EOS, "pad_token_id": EOS, "bos_token_id": EOS, "no_timestamps_token_id": NOTS, "max_initial_timestamp_index": 50, "max_length": 64, "is_multilingual": True,
       "lang_to_id": {"<|en|>": LANG, "<|fr|>": LANG + 1, "<|de|>": LANG + 2}, "task_to_id": {"translate": TRANSL, "transcribe": TRANSC},
-      "suppress_tokens": [1, 2, 7, 8, 9, 10, 14, 25, 26, 27, 28, 29, 31, 58, 59, 60, 61, 62, 63, 90, 91, 92, 93, 359, 503, 522, 542, 873, 893, 902, 918, 922, 931], "begin_suppress_tokens": [220, EOS], "return_timestamps": False}
+      "suppress_tokens": [1, 2, 7, 8, 9, 10, 14, 25, 26, 27, 28, 29, 31, 58, 59, 60, 61, 62, 63, 90, 91, 92, 93, 359, 503, 522, 542, 873, 893, 902, 918, 922, 931], "begin_suppress_tokens": [220, EOS], "return_timestamps": False, "prev_sot_token_id": 1599}
 json.dump(gc, open(f"{out}/generation_config.json", "w"), indent=1)
 model = WhisperForConditionalGeneration.from_pretrained(out, dtype=torch.float32, attn_implementation="eager").eval()
 fe = WhisperFeatureExtractor(feature_size=80)

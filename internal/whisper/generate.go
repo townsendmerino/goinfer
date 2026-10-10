@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,6 +18,7 @@ type GenConfig struct {
 	NoTimestamps  int            `json:"no_timestamps_token_id"`
 	MaxLength     int            `json:"max_length"`
 	MaxInitialTS  *int           `json:"max_initial_timestamp_index"`
+	PrevSOT       *int           `json:"prev_sot_token_id"`
 	LangToID      map[string]int `json:"lang_to_id"`
 	TaskToID      map[string]int `json:"task_to_id"`
 	Suppress      []int          `json:"suppress_tokens"`
@@ -98,6 +100,17 @@ const (
 	tsNoTimeOffset  // (long form) the window's time offset not added
 )
 
+// planted conditioning defects of policy_test.go: the zero value is the correct prompt.
+const (
+	condNone             = iota
+	condNoCut            // the whole previous text, uncut
+	condNoDoubleTrim     // a segment's double ending timestamp not trimmed
+	condNoStartOfPrev    // no <|startofprev|> in front
+	polNoSpeechProcessed // the no-speech probability read from the processed scores, not the raw logits
+	polSkipIgnored       // a silent window is not skipped
+	polAvgNoStop         // the stop token's log-probability left out of the sum
+)
+
 // maxLength is generate's cap on the whole sequence (prompt included): max_length raised by the prompt's length (at most max_target_positions/2 - 1 of it), and never past max_target_positions
 // (generation_whisper.py, _set_max_new_tokens_and_length).
 func (d *Decoder) maxLength(g GenConfig, promptLen int) int {
@@ -143,44 +156,172 @@ func (d *Decoder) Generate(enc []float32, g GenConfig, language, task string) (*
 	if err != nil {
 		return nil, err
 	}
-	ids, stopped, err := d.generate(enc, g, prompt, false)
+	a, err := d.generate(enc, g, prompt, false, 0, nil, -1)
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Prompt: prompt, IDs: ids, Language: langTok, Stopped: stopped}, nil
+	return &Result{Prompt: prompt, IDs: a.ids, Language: langTok, Stopped: a.stopped}, nil
 }
 
-// generate runs the greedy loop from prompt. The processors run in transformers' order, each on the previous one's output: begin_suppress_tokens (the first generated position only), suppress_tokens,
-// and with timestamps the WhisperTimeStampLogitsProcessor.
-func (d *Decoder) generate(enc []float32, g GenConfig, prompt []int, timestamps bool) ([]int, bool, error) {
+// attempt is one decoding of one window at one temperature.
+type attempt struct {
+	ids          []int     // generated ids, the stop token included when the model ended the text itself
+	stopped      bool      // ended on the stop token
+	sumLogprob   float64   // sum over ids of the log-probability of the chosen token under the scores the generation produced
+	lps          []float64 // each generated token's log-probability (the stop token's included)
+	noSpeechProb float64   // the no-speech probability at the <|startoftranscript|> position (raw logits), when asked for
+}
+
+// avgLogprob is _retrieve_avg_logprobs: the sum over the generated tokens (the stop token counted) over their number.
+func (a attempt) avgLogprob() float64 { return a.sumLogprob / float64(len(a.ids)) }
+
+// topK is the generation config's default top-k, which a sampling generate applies after the temperature.
+const topK = 50
+
+// generate runs the loop from prompt, greedy at temperature 0 and sampled above it. The processors run in transformers' order, each on the previous one's output: begin_suppress_tokens (the first
+// generated position only), suppress_tokens, and with timestamps the WhisperTimeStampLogitsProcessor; a sampled token then comes from those scores divided by the temperature, cut to the top-k, softmaxed
+// and drawn with rng. sotAt is the index of <|startoftranscript|> in prompt, where the no-speech probability is read (-1: not asked for).
+func (d *Decoder) generate(enc []float32, g GenConfig, prompt []int, timestamps bool, temperature float64, rng *rand.Rand, sotAt int) (attempt, error) {
+	var out attempt
 	st, err := d.NewState(enc)
 	if err != nil {
-		return nil, false, err
+		return out, err
 	}
-	logits, err := st.Forward(prompt, false)
-	if err != nil {
-		return nil, false, err
+	var logits [][]float32
+	if sotAt >= 0 {
+		// the raw logits at the start token give the no-speech probability, before any processor
+		first, err := st.Forward(prompt[:sotAt+1], false)
+		if err != nil {
+			return out, err
+		}
+		out.noSpeechProb = softmaxAt(first[0], g.NoTimestamps-1)
+		if sotAt+1 < len(prompt) {
+			if logits, err = st.Forward(prompt[sotAt+1:], false); err != nil {
+				return out, err
+			}
+		} else {
+			logits = first
+		}
+	} else if logits, err = st.Forward(prompt, false); err != nil {
+		return out, err
 	}
 	maxLen := d.maxLength(g, len(prompt))
-	var ids []int
-	for len(prompt)+len(ids) < maxLen {
+	for len(prompt)+len(out.ids) < maxLen {
 		l := logits[0]
-		d.processLogits(l, ids, g, timestamps)
-		best := 0
-		for i, v := range l {
-			if v > l[best] {
-				best = i
+		d.processLogits(l, out.ids, g, timestamps)
+		if d.condDefect == polNoSpeechProcessed && sotAt >= 0 && len(out.ids) == 0 {
+			out.noSpeechProb = softmaxAt(l, g.NoTimestamps-1)
+		}
+		if temperature > 0 {
+			sampleRescale(l, temperature)
+		}
+		var best int
+		if temperature > 0 {
+			best = sampleFrom(l, temperature, rng)
+		} else {
+			for i, v := range l {
+				if v > l[best] {
+					best = i
+				}
 			}
 		}
-		ids = append(ids, best)
+		lp := logSoftmaxAt(l, best)
+		out.lps = append(out.lps, lp)
+		if !(best == g.EOS && d.condDefect == polAvgNoStop) {
+			out.sumLogprob += lp
+		}
+		out.ids = append(out.ids, best)
 		if best == g.EOS {
-			return ids, true, nil
+			out.stopped = true
+			return out, nil
 		}
 		if logits, err = st.Forward([]int{best}, false); err != nil {
-			return nil, false, err
+			return out, err
 		}
 	}
-	return ids, false, nil
+	return out, nil
+}
+
+// sampleRescale is transformers' TopKLogitsWarper on the processed scores l (the TemperatureLogitsWarper before it only divides every score, so the ranking is the same): the entries outside the top-k
+// become -inf, the rest keep their processed value. _retrieve_avg_logprobs multiplies the generation's scores back by the temperature before its log-softmax, so the log-probabilities it reads are those of
+// the processed scores restricted to the top-k set, which is what l holds afterwards; the draw is from softmax(l / temperature).
+func sampleRescale(l []float32, temperature float64) {
+	if len(l) <= topK {
+		return
+	}
+	idx := make([]int, len(l))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+	kept := make(map[int]bool, topK)
+	for _, i := range idx[:topK] {
+		kept[i] = true
+	}
+	neg := float32(math.Inf(-1))
+	for i := range l {
+		if !kept[i] {
+			l[i] = neg
+		}
+	}
+}
+
+// sampleFrom draws an index from softmax(l / temperature), where l carries -inf outside the kept set (sampleRescale).
+func sampleFrom(l []float32, temperature float64, rng *rand.Rand) int {
+	mx := float32(math.Inf(-1))
+	for _, v := range l {
+		if v > mx {
+			mx = v
+		}
+	}
+	var z float64
+	p := make([]float64, len(l))
+	for i, v := range l {
+		if !math.IsInf(float64(v), -1) {
+			p[i] = math.Exp(float64(v-mx) / temperature)
+			z += p[i]
+		}
+	}
+	u := rng.Float64() * z
+	var c float64
+	for i, pi := range p {
+		c += pi
+		if u < c {
+			return i
+		}
+	}
+	return len(l) - 1
+}
+
+func softmaxAt(l []float32, i int) float64 {
+	mx := float32(math.Inf(-1))
+	for _, v := range l {
+		if v > mx {
+			mx = v
+		}
+	}
+	var z float64
+	for _, v := range l {
+		z += math.Exp(float64(v - mx))
+	}
+	return math.Exp(float64(l[i]-mx)) / z
+}
+
+// logSoftmaxAt is the log-probability of index i under softmax(l), l carrying -inf for masked entries.
+func logSoftmaxAt(l []float32, i int) float64 {
+	mx := float32(math.Inf(-1))
+	for _, v := range l {
+		if v > mx {
+			mx = v
+		}
+	}
+	var z float64
+	for _, v := range l {
+		if !math.IsInf(float64(v), -1) {
+			z += math.Exp(float64(v - mx))
+		}
+	}
+	return float64(l[i]-mx) - math.Log(z)
 }
 
 // processLogits applies transformers' logits processors to l, the scores for the token after ids (the tokens generated so far), in its order: begin_suppress_tokens (the first generated position

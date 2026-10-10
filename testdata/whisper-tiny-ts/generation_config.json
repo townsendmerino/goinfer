@@ -55,5 +55,6 @@
   220,
   1600
  ],
- "return_timestamps": false
+ "return_timestamps": false,
+ "prev_sot_token_id": 1599
 }
