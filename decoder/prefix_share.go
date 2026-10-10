@@ -5,10 +5,11 @@ import (
 	"fmt"
 )
 
-// D8 (docs/tasks/task-constrained-confidence.md): shared state, many questions. A decision request asks several questions about one state, and on the
-// hybrid Qwen3.5 family each question used to prefill the whole prompt again (decisions-d7-2026-09-28.md: five questions cost exactly five times one).
-// The state is the same in every question's prompt, so its prefill can be done once and its CACHE (the KV rows of the attention layers and the Gated
-// DeltaNet's recurrent state, which has no per-position history and so cannot be rewound, only copied) resumed once per question.
+// Shared state, many questions (docs/tasks/task-constrained-confidence.md, D8). A decision request asks several
+// questions about one state, and on the hybrid Qwen3.5 family each question would prefill the whole prompt again. The
+// state is the same in every question's prompt, so its prefill is done once and its CACHE (the KV rows of the attention
+// layers and the Gated DeltaNet's recurrent state, which has no per-position history and so cannot be rewound, only
+// copied) is resumed once per question.
 //
 // What this covers, and what it deliberately does not:
 //   - The CPU path only. A model with a resident backend keeps answering from the device (PromptHidden and Generate prefer it), whose own prefill is

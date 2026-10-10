@@ -31,9 +31,8 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	}
 	blocks := u("block_count")
 	numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)
-	// Bound before the per-layer append loop below: a hostile block_count would grow
-	// LayerTypes unboundedly (a fatal OOM recover can't catch) before validateGGUFDims
-	// runs (M16).
+	// Bound before the per-layer append loop below: a hostile block_count would grow LayerTypes unboundedly (a fatal OOM
+	// that recover cannot catch) before validateGGUFDims runs.
 	if numLayers <= 0 || numLayers > maxGGUFLayers {
 		return nil, fmt.Errorf("decoder(gguf-qwen35): bad block_count=%d (nextn=%d)", blocks, u("nextn_predict_layers"))
 	}
@@ -95,16 +94,10 @@ func ggufQwen35Config(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
-// ggufQwen35DenseConfig reads the DENSE hybrid (llama.cpp arch "qwen35" — Qwen3.8), the sibling of
-// "qwen35moe" above. Same Gated-DeltaNet/softmax 3:1 interleave, same SSM geometry keys; the only
-// structural difference is a plain SwiGLU where the MoE sibling has a router, so the expert keys are
-// replaced by feed_forward_length. It resolves to the qwen3_5 adapter, which is the dense descriptor
-// the safetensors bring-up added.
-//
-// WHY IT IS WORTH HAVING at all, given the safetensors loader already works: the 27.8B ships as
-// 55.6 GB of bf16, which goinfer re-quantizes on EVERY load (68 s measured), against 16.5 GB of
-// pre-quantized GGUF that mmaps in about a second. Same model, 3.4x less disk and a load that stops
-// dominating short runs.
+// ggufQwen35DenseConfig reads the dense hybrid (llama.cpp arch "qwen35"), the sibling of "qwen35moe" above: the same
+// Gated-DeltaNet/softmax 3:1 interleave and SSM geometry keys; the only structural difference is a plain SwiGLU where
+// the MoE sibling has a router, so the expert keys are replaced by feed_forward_length. It resolves to the qwen3_5
+// adapter, the dense descriptor.
 func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
 	u := func(k string) int {
 		v, _ := g.Uint("qwen35." + k)
@@ -164,11 +157,10 @@ func ggufQwen35DenseConfig(g *embed.GGUFFile) (*Config, error) {
 	if dc := u("rope.dimension_count"); dc > 0 && headDim > 0 {
 		partial = float64(dc) / float64(headDim)
 	}
-	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split. For TEXT the three position
-	// components are identical, so interleaved m-RoPE reduces exactly to standard partial RoPE
-	// (verified against modeling_qwen3_5.py during the safetensors bring-up) and ropeAt never reads
-	// the split without image positions; it is carried (ggufMRopeJSON) so a GGUF text model can take
-	// an image turn with an mmproj tower (P8b, docs/multimodal.md F5), as the safetensors config does.
+	// rope.dimension_sections ([11,11,10,0]) is the m-RoPE split. For text the three position components are identical, so
+	// interleaved m-RoPE reduces exactly to standard partial RoPE and ropeAt never reads the split without image
+	// positions; it is carried (ggufMRopeJSON) so a GGUF text model can take an image turn with an mmproj tower, as the
+	// safetensors config does (docs/multimodal.md).
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
 		`{"rope_type":"default","rope_theta":%g,"partial_rotary_factor":%g%s}`, base, partial, ggufMRopeJSON(g, "qwen35")))
 	ggufEOS(g, cfg)

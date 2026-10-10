@@ -12,15 +12,13 @@ import (
 	"syscall"
 )
 
-// HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined — and 0 is a
-// real answer that every caller must treat as "proceed", never as "no memory".
+// HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined; 0 is a real answer that every caller
+// must treat as "proceed", never as "no memory".
 //
-// The hw.memsize sysctl read with a bare sysctl(2) through the stdlib, once per process. It is a
-// little-endian u64; syscall.Sysctl drops a single trailing NUL byte (16 GB = 0x4_0000_0000 loses its
-// zero high byte), so the value is zero-extended back to 8 bytes. An earlier version shelled out to
-// `sysctl -n hw.memsize` on the belief that syscall.Sysctl truncates at the FIRST NUL; it drops only
-// the last one. Not forking matters here: every exec is a fork(), and a fork of a process whose .giw
-// mapping a GPU backend has wired used to copy the whole mapping
+// It reads the hw.memsize sysctl with a bare sysctl(2) through the stdlib, once per process. The value is a
+// little-endian u64 and syscall.Sysctl drops a single trailing NUL byte (16 GB = 0x4_0000_0000 loses its zero high
+// byte), so it is zero-extended back to 8 bytes. It does not shell out to `sysctl`: every exec is a fork(), and a fork
+// of a process whose .giw mapping a GPU backend has wired copies the whole mapping
 // (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 func HostRAMBytes() int64 { return hostRAMOnce() }
 
@@ -47,30 +45,21 @@ func decodeSysctlU64(b []byte) int64 {
 	return int64(n)
 }
 
-// HostRAMAvailableBytes is this machine's CURRENTLY AVAILABLE memory — free plus reclaimable
-// pages, an approximation of what `vm_stat` and Activity Monitor's "memory pressure" both draw
-// from — or 0 when it cannot be determined. Unlike HostRAMBytes, this is NOT cached: it changes
-// continuously as other processes run, which is the entire reason it exists (R13-follow-on,
-// docs/measurements/cold-user-2026-09-07-macbook-arm64.md's live re-run of the R13 fix): a
-// budget computed as a fraction of TOTAL RAM assumes nothing else on the machine ever needs more
-// than the remaining fraction, which a real laptop with a browser and an IDE open routinely
-// breaks. `serve check`'s own requests pushed a load that the load-time guard had already
-// correctly auto-pinned into 9.7 GB of swap, because "70% of 16 GB" was never actually free —
-// this reads what IS actually free instead.
+// HostRAMAvailableBytes is this machine's currently available memory, free plus reclaimable pages (an approximation of
+// what `vm_stat` and Activity Monitor's "memory pressure" draw from), or 0 when it cannot be determined. Unlike
+// HostRAMBytes it is not cached: it changes continuously as other processes run, which is why it exists. A budget
+// computed as a fraction of total RAM assumes nothing else on the machine needs more than the remaining fraction,
+// which a laptop with a browser and an IDE open routinely breaks
+// (docs/measurements/cold-user-2026-09-07-macbook-arm64.md).
 //
-// Still an exec of vm_stat (the inactive-page count has no sysctl): it runs at load and from the web
-// UI's status, not on a timer, and the .giw mapping is VM_INHERIT_NONE (forkinherit_darwin.go), so the
-// fork it costs no longer copies the weights.
+// Still an exec of vm_stat (the inactive-page count has no sysctl): it runs at load and from the web UI's status, not
+// on a timer, and the .giw mapping is VM_INHERIT_NONE (forkinherit_darwin.go), so the fork it costs does not copy the
+// weights.
 //
-// APPROXIMATION, STATED RATHER THAN HIDDEN: free + inactive + speculative + purgeable pages,
-// matching the pages vm_stat itself reports and the ones macOS reclaims before it would ever
-// swap (inactive is the disk-cache equivalent; purgeable is explicitly discardable on demand).
-// wired and active pages are excluded — those are genuinely in use. This is the same kind of
-// measured-approximation-with-a-stated-residual as quantBytesPerElem's probe matrix (fitguard.go)
-// — real numbers from the real tool, with the one simplification named.
-//
-// Apple Silicon uses 16 KB pages, not the traditional 4 KB (confirmed on the M1 Pro that found
-// this bug) — the page size is read from vm_stat's own header, never assumed.
+// The approximation is free + inactive + speculative + purgeable pages: the pages vm_stat reports and the ones macOS
+// reclaims before it would swap (inactive is the disk-cache equivalent; purgeable is discardable on demand). Wired and
+// active pages are excluded as genuinely in use. Apple Silicon uses 16 KB pages, not 4 KB; the page size is read from
+// vm_stat's own header, never assumed.
 func HostRAMAvailableBytes() int64 {
 	out, err := exec.Command("vm_stat").Output()
 	if err != nil {

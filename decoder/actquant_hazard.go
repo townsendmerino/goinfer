@@ -13,12 +13,10 @@ import (
 // row by one max/127. A family whose projection inputs carry massive outliers loses nearly all of
 // each row to rounding.
 //
-// Measured for Phi-3-mini (queue-engineering.md H2, 2026-09-25): at a filler position the down_proj
-// input's max/rms is ~80-90 in most layers, so a per-row scale rounds 99.9% of the row to zero;
-// int4 and int8int8 fall to logit cosine ~0 vs f32 by position 16 while weight-only int8 holds
-// >= 0.95 and f32 matches HF exactly. Keyed on model type, so Phi-4 (also "phi3") is covered
-// without having been measured. This is a guard until per-group activation scales land in the
-// kernels; it is not the fix.
+// Phi-3-mini is the measured case (docs/queue-engineering.md, H2): the down_proj input's max/rms is about 80-90 in most
+// layers, so a per-row scale rounds nearly the whole row to zero, and int4 and int8int8 lose the logits while weight-only
+// int8 holds. Keyed on model type, so Phi-4 (also "phi3") is covered without having been measured. This is a guard until
+// per-group activation scales land in the kernels; it is not the fix.
 func ActivationQuantHazard(modelType string) string {
 	if modelType == "phi3" {
 		return "Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2)"

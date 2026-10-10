@@ -7,18 +7,13 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// fakeQuantScheme (GOINFER_FAKEQUANT=affine|sym|symmse) is a DIAGNOSTIC: when set, the
-// int4 quantization path (quantizeWM's quantInt4 case) instead quantize→dequantizes each
-// weight with the named 4-bit scheme and stores the result at int8 (W8A8). This isolates
-// the 4-bit WEIGHT-scheme quality without any packed-nibble format, dequant routine, W4A8
-// kernel, or .giw change — the int8 path is essentially transparent (0.99995 reconstruction),
-// so the fake-int4 error survives to the forward. Lands ~26 GB (fits a 64 GB box). "sym" is
-// the CONTROL: it must reproduce the real-int4 garbage, or the harness is lying — asserted
-// bit-for-bit by TestFakeQuantSymMatchesRuntimeInt4. Not for prod.
-//
-// It built the int4-quality matrix in docs/task-gemma4-moe.md (sym/affine × int8/f32 act ×
-// full/experts-only). The env is read ONCE here at package load; default (unset) is a strict
-// no-op → every int4 consumer stays bit-identical (TestFakeQuantOffBitIdentical).
+// fakeQuantScheme (GOINFER_FAKEQUANT=affine|sym|symmse) is a diagnostic, not for production: when set, the int4
+// quantization path (quantizeWM's quantInt4 case) quantize→dequantizes each weight with the named 4-bit scheme and
+// stores the result at int8 (W8A8). That isolates the 4-bit weight-scheme quality without any packed-nibble format,
+// dequant routine, W4A8 kernel or .giw change: the int8 path is nearly transparent (0.99995 reconstruction), so the
+// fake-int4 error survives to the forward. "sym" is the control: it must reproduce the real-int4 output, or the
+// harness is lying (asserted bit-for-bit by TestFakeQuantSymMatchesRuntimeInt4). The env is read once at package load;
+// unset is a strict no-op, so every int4 consumer stays bit-identical (TestFakeQuantOffBitIdentical).
 var (
 	fakeQuantScheme      = os.Getenv("GOINFER_FAKEQUANT")
 	fakeQuantF32Act      = os.Getenv("GOINFER_FAKEQUANT_ACT") == "f32"
@@ -26,15 +21,12 @@ var (
 	fakeQuantPerRow      bool // §7 Phase 0b: one scale per row; a test seam (tests set it; env read retired 2026-09-24)
 )
 
-// fakeQuantF32Act (GOINFER_FAKEQUANT_ACT=f32) stores the fake-quant reconstruction at
-// weight-only int8 (Q8, f32 activations) instead of W8A8 (int8 activations) — so the probe
-// can test a scheme against BOTH activation precisions. MLX's coherent config is affine
-// weights + f16 activations, so affine+f32-act is the direct comparison.
+// fakeQuantF32Act (GOINFER_FAKEQUANT_ACT=f32) stores the fake-quant reconstruction at weight-only int8 (Q8, f32
+// activations) instead of W8A8 (int8 activations), so a scheme can be tested against both activation precisions.
 //
-// fakeQuantExpertsOnly (GOINFER_FAKEQUANT_EXPERTS=1) restricts the fake-quant to the MoE
-// experts (streamExperts) — load at int8int8 so attention/dense/embed stay int8 and only
-// the experts take the 4-bit scheme. Tests whether the experts alone tolerate 4-bit when
-// the router's input hidden state is kept accurate (the ~14.5 GB config).
+// fakeQuantExpertsOnly (GOINFER_FAKEQUANT_EXPERTS=1) restricts the fake-quant to the MoE experts (streamExperts): load
+// at int8int8 so attention/dense/embed stay int8 and only the experts take the 4-bit scheme. It tests whether the
+// experts alone tolerate 4-bit when the router's input hidden state is kept accurate.
 
 // fakeInt4WM fake-quantizes an f32 WeightMat with a 4-bit scheme (grouped along cols at
 // int4GroupSize, matching aikit's int4 + scripts/gemma4_quant_recon.py) then stores the
@@ -42,10 +34,9 @@ var (
 // GOINFER_FAKEQUANT_ACT=f32. The int8 re-quant is transparent (0.99995), so the 4-bit error
 // survives; the activation precision is the only other variable.
 //
-// fakeQuantPerRow (set by the §7 Phase 0b test; its GOINFER_FAKEQUANT_PERROW env read was retired
-// 2026-09-24 — §7's per-row fork is decided, docs/tasks/task-env-config-2026-09.md phase 6) forces the group to the FULL row — one scale per output row, the §7 per-row/IMMA granularity — so
-// the probe can measure per-row vs per-group forward quality (Phase 0b) without a new kernel. Default
-// off ⇒ the shipped 32-elem grouping, so the fakequant-off invariant is untouched.
+// fakeQuantPerRow (set by tests) forces the group to the full row, one scale per output row (the per-row/IMMA
+// granularity), so the probe can measure per-row vs per-group forward quality without a new kernel. Default off: the
+// shipped 32-element grouping, so the fakequant-off invariant is untouched.
 func fakeInt4WM(f32 []float32, rows, cols int, scheme string) linalg.WeightMat {
 	group := int4GroupSize
 	if fakeQuantPerRow {

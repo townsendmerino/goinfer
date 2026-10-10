@@ -1,9 +1,9 @@
 package decoder
 
-// S8 (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"): what the README and docs/multimodal.md
-// support table's decoder cells are computed from. Each cell answers "after an image, does this family's turn decode on
-// this backend's resident?", from the declarations the runtime itself admits on, so the table cannot say more than the
-// code does (it did, once, by hand: Qwen3.5+ on Metal).
+// What the README and docs/multimodal.md support table's decoder cells are computed from
+// (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"). Each cell answers "after an image, does this
+// family's turn decode on this backend's resident?", from the declarations the runtime itself admits on, so the table
+// cannot say more than the code does.
 
 // HybridImagePrefillDeclared reports whether backend's resident image prefill builds a Gated-DeltaNet hybrid's recurrent
 // state itself (ResidentHybridMRoPEPrefill) for a hybrid with (moe) or without MoE layers. Without it a hybrid's image turn

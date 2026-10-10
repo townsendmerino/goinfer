@@ -2,34 +2,27 @@ package decoder
 
 import "math"
 
-// F4 (docs/completed/task-families-2026-09.md): KDA (Kimi Delta Attention) recurrence rehearsal for
-// Ling-3.0-tiny / Kimi K3's linear-attention mixer, written as the scoped bring-up the F4 brief
-// asked for: prove the one genuinely new piece of KDA's math against a real reference before any
-// registry work. N-08 (audit-2026-09-10): "NOT wired to any registered family" went stale as of
-// e6b31cc — kdaMixerStep (decoder/kda.go, called from forward_bailing.go's served path for
-// bailing_hybrid/Ling 3.0) reuses kdaLowerBoundGate and kdaRecurrentStep below directly, so this
-// is production code now, not just a bring-up rehearsal.
+// KDA (Kimi Delta Attention) recurrence for the linear-attention mixer of Ling-3.0-tiny / Kimi K3
+// (docs/completed/task-families-2026-09.md, F4). It began as a rehearsal that proved the one new piece of KDA's math
+// against a real reference; kdaMixerStep (kda.go, called from forward_bailing.go for bailing_hybrid) now reuses
+// kdaLowerBoundGate and kdaRecurrentStep directly, so this is production code.
 //
-// Verified against fla-org/flash-linear-attention's actual source (fla/ops/kda/{naive,gate}.py,
-// not the HF modeling file's paraphrase, which only calls the opaque Triton kernel): KDA's
-// delta-rule recurrence is structurally IDENTICAL to the Gated DeltaNet this repo already ships
-// for qwen3_5_moe (gatedDeltaNetStep, decoder/deltanet.go) -- same beta write-gate, same
-// outer-product delta update, same q/k L2-norm-in-kernel, same final q·S read -- except the decay
-// that Gated DeltaNet applies as ONE SCALAR to the whole [head_k_dim, head_v_dim] state block is,
-// in KDA, PER-CHANNEL: one decay value per row of S (one per key-dimension), not one for the
-// entire block. That is the one new primitive; everything else composes from what qwen3_5_moe
-// already validated.
+// Verified against fla-org/flash-linear-attention's source (fla/ops/kda/{naive,gate}.py), not the HF modeling file's
+// paraphrase, which only calls the opaque Triton kernel: KDA's delta-rule recurrence is structurally identical to the
+// Gated DeltaNet this repo ships for qwen3_5_moe (gatedDeltaNetStep, deltanet.go), with the same beta write-gate,
+// outer-product delta update, q/k L2-norm-in-kernel and final q·S read. The one difference: the decay Gated DeltaNet
+// applies as one scalar to the whole [head_k_dim, head_v_dim] state block is per-channel in KDA, one decay value per
+// row of S (per key dimension). That is the one new primitive; everything else composes from what qwen3_5_moe
+// validated.
 
-// kdaLowerBoundGate computes KDA's "safe_gate" per-channel log-decay:
+// kdaLowerBoundGateInto writes KDA's "safe_gate" per-channel log-decay into out:
 //
 //	g = lower_bound * sigmoid(exp(A_log) * (rawGate + dtBias))
 //
-// the exact function Ling-3.0-tiny's released config selects (kda_safe_gate: true,
-// kda_lower_bound: -5), verified against fla's naive_kda_lowerbound_gate. rawGate/dtBias/the
-// output are all per-channel ([head_k_dim] for one head); aLog is that head's single scalar
-// parameter. The result is a log-decay in (lowerBound, 0), exponentiated by the caller before
-// use in kdaRecurrentStep.
-// kdaLowerBoundGateInto computes KDA's "safe_gate" per-channel log-decay directly into out.
+// the function Ling-3.0-tiny's released config selects (kda_safe_gate: true, kda_lower_bound: -5), verified against fla's
+// naive_kda_lowerbound_gate. rawGate, dtBias and out are per-channel ([head_k_dim] for one head); aLog is that head's
+// single scalar parameter. The result is a log-decay in (lowerBound, 0), exponentiated by the caller before use in
+// kdaRecurrentStep.
 func kdaLowerBoundGateInto(out, rawGate, dtBias []float32, aLog, lowerBound float32) {
 	n := len(rawGate)
 	if n == 0 {
@@ -51,6 +44,7 @@ func kdaLowerBoundGateInto(out, rawGate, dtBias []float32, aLog, lowerBound floa
 	}
 }
 
+// kdaLowerBoundGate is kdaLowerBoundGateInto into a fresh slice.
 func kdaLowerBoundGate(rawGate, dtBias []float32, aLog, lowerBound float32) []float32 {
 	out := make([]float32, len(rawGate))
 	kdaLowerBoundGateInto(out, rawGate, dtBias, aLog, lowerBound)

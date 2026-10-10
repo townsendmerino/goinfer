@@ -7,15 +7,14 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// MC3c step 2 (docs/tasks/task-concurrency-2026-09.md): several CPU generations of one model decoding at once join
-// their decode tokens into one batched forward (decodeMultiStep) instead of running N independent forwards. The
-// trigger measured it on nobara's 7B: batched B = 4 is 2.25-2.41x J8's 4 independent workers, which barely scale
-// there (docs/measurements/concurrency-mc2-2026-09-26.md, "Linux 7B cell").
+// MC3c step 2 (docs/tasks/task-concurrency-2026-09.md): several CPU generations of one model decoding at once join their
+// decode tokens into one batched forward (decodeMultiStep) instead of running N independent forwards. Measurements:
+// docs/measurements/concurrency-mc2-2026-09-26.md.
 //
 // The coalescing is MC3's (tokenCoalescer, mc3_batch.go): a run starts once every decoding generation has submitted
 // its token, or when the straggler window expires. A run of at least two tokens is one decodeMultiStep; a lone token is
 // production's own m.forward, so a request served alone takes exactly today's path. Unlike the resident batcher there
-// is nothing to hold exclusively — prefill and every non-batched path run outside it, as under step 1.
+// is nothing to hold exclusively: prefill and every non-batched path run outside it, as under step 1.
 
 // CPUBatchDecode values (Options.CPUBatchDecode).
 const (
@@ -24,12 +23,10 @@ const (
 	CPUBatchOff  = -1 // never batch: step 1's independent workers
 )
 
-// cpuBatchAutoMinBytes is CPUBatchAuto's threshold, pre-registered 2026-09-27. Batching's lead over the workers at
-// B = N = 4 measured 0.64-0.75x on the 0.5B (0.47 GB of dense weights), 1.02-1.11x on the 1.5B (1.23 GB) and 2.25-2.41x
-// on the 7B (4.93 GB) on nobara, and the workers led on the Mac's 0.5B and 1.5B. On the Mac's 7B batching leads by
-// 1.54x (depth 128) and 1.38x (512) (2026-09-27, docs/measurements/concurrency-mc2-2026-09-26.md, "Mac 7B cell"), so
-// the threshold holds on darwin too. Below it the workers are no worse off; above it batching wins by a wide margin.
-// The range between 2 GiB and the 7B is unmeasured.
+// cpuBatchAutoMinBytes is CPUBatchAuto's threshold, pre-registered. Batching beats the independent workers on 7B-class
+// dense weights (4.93 GB), loses on 0.5B-class (0.47 GB) and is a wash on 1.5B-class (1.23 GB), on both amd64 and
+// darwin; below the threshold the workers are no worse off. The range between 2 GiB and the 7B is unmeasured. Figures:
+// docs/measurements/concurrency-mc2-2026-09-26.md.
 const cpuBatchAutoMinBytes = 2 << 30
 
 // cpuBatcher is a Model's MC3c step-2 coordinator (Model.EnableCPUBatch).
@@ -133,12 +130,11 @@ func cpuBatchCacheEligible(c *KVCache) error {
 	return nil
 }
 
-// cpuBatchFusedW4A8 lets decodeMultiStep run an int4 layer's q‖k‖v, and its gate‖up, each as ONE batched W4A8 call
-// over the B rows (MC3c step 2 S1, docs/tasks/task-concurrency-2026-09.md) instead of one matmul per projection. The
-// kernel (linalg.MatmulBTW4A8Batch) is numerically identical to calling MatmulBTW4A8Into once per op, so this changes
-// only how many fork/joins a step pays: the probe put the small projections (q/o, k/v) at 1.6-3.0x one row's cost at
-// M = 4, which is fork/join and compute, not bandwidth. A package variable, not an environment read: the S1
-// measurement flips it in-process to interleave its arms.
+// cpuBatchFusedW4A8 lets decodeMultiStep run an int4 layer's q‖k‖v, and its gate‖up, each as one batched W4A8 call over
+// the B rows instead of one matmul per projection. The kernel (linalg.MatmulBTW4A8Batch) is numerically identical to
+// calling MatmulBTW4A8Into once per op, so this changes only how many fork/joins a step pays. A package variable, not
+// an environment read: the measurement (docs/tasks/task-concurrency-2026-09.md, MC3c step 2 S1) flips it in-process to
+// interleave its arms.
 var cpuBatchFusedW4A8 = true
 
 // w4a8FusedOps fills ops with one linalg.W4A8Op per weight for a fused batched W4A8 call and reports whether the group
@@ -164,12 +160,12 @@ func w4a8FusedOps(ops []linalg.W4A8Op, ws []*linalg.WeightMat, dsts [][]float32)
 	return group, ws[0].ActQuantGroup(), true
 }
 
-// decodeMultiStep is MC3c step 2's batched step (promoted from MC2's test-only prototype): ONE forward carrying B
-// independent sequences, each with its own KV cache at its own position, one token each. The projections, o-proj, MLP
-// and LM head run as M = B matmuls through the kernels forwardN uses (bit-identical to M = 1 row for row, by forwardN's
-// own contract). Attention runs per sequence over its own cache, exactly as causalAttention's default (f32 KV,
-// append-forever) case does at decode. Every row's logits are bit-identical to that sequence's own m.forward
-// (TestMC2_decodeMultiStepBitIdentical, TestCPUBatch_everyEligibleFixtureBitIdentical).
+// decodeMultiStep is MC3c step 2's batched step: one forward carrying B independent sequences, each with its own KV
+// cache at its own position, one token each. The projections, o-proj, MLP and LM head run as M = B matmuls through the
+// kernels forwardN uses (bit-identical to M = 1 row for row, by forwardN's own contract). Attention runs per sequence
+// over its own cache, exactly as causalAttention's default (f32 KV, append-forever) case does at decode. Every row's
+// logits are bit-identical to that sequence's own m.forward (TestMC2_decodeMultiStepBitIdentical,
+// TestCPUBatch_everyEligibleFixtureBitIdentical).
 func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, error) {
 	if err := m.cpuBatchModelEligible(); err != nil {
 		return nil, err

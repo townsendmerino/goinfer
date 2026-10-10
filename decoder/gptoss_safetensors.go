@@ -10,17 +10,16 @@ import (
 // buildGptOssWeights loads gpt-oss (20b/120b) from the released SAFETENSORS checkpoint,
 // whose experts are MXFP4 while everything else is BF16.
 //
-// TWO LAYOUT FACTS DRIVE THIS FILE, and both were established by diffing a dequantized
-// expert against the same weight read through the already-T3-validated GGUF path — not
-// from the format's documentation, which does not say either one:
+// Two layout facts drive this file, and neither is in the format's documentation (they were established by diffing a
+// dequantized expert against the same weight read through the already-validated GGUF path):
 //
 //  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML
-//     packs j and j+16. Measured: cosine 1.000000 sequential vs 0.081 GGML.
+//     packs j and j+16.
 //  2. gate_up_proj is INTERLEAVED, not concatenated: row 2k is gate row k and row 2k+1 is
-//     UP row k. Measured the same way (st row 1 == gguf up row 0, cosine 1.000000).
+//     UP row k.
 //
-// Either mistake yields correct shapes, finite values, plausible magnitudes and entirely
-// wrong weights, so both are asserted by the parity gate rather than trusted.
+// Either mistake yields correct shapes, finite values, plausible magnitudes and entirely wrong weights, so both are
+// asserted by the parity gate rather than trusted.
 //
 // MEMORY. The experts never materialize as f32: gpt-oss-20b is ~76GB dequantized across
 // all layers. Each output row is dequantized on demand straight into streamQuantized,
@@ -35,10 +34,9 @@ func buildGptOssWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
-	// qw is quantizeWM/quantizeWMSkipRow4 (M-07, audit-metal-2026-09-12.md) for every layer
-	// projection below — Embed/LMHead deliberately stay on plain quantizeWM. streamQ is
-	// streamQuantized's own skip-aware twin, for the MoE experts (streamed row by row — see this
-	// file's own MEMORY note on why they never materialize as f32).
+	// qw is quantizeWM/quantizeWMSkipRow4 for every layer projection below; Embed/LMHead deliberately stay on plain
+	// quantizeWM. streamQ is streamQuantized's own skip-aware twin, for the MoE experts (streamed row by row; see this
+	// file's MEMORY note on why they never materialize as f32).
 	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
 		if skipRow4 {
 			return quantizeWMSkipRow4(m, mode)

@@ -11,13 +11,13 @@ import (
 
 // cpuFusedGateUp is the fused gate+up+SwiGLU decode path for W4A8 SiLU-gated MLPs: ONE fork/join per
 // layer in which every worker computes gate AND up for its own column chunk and then applies the
-// activation to that same chunk, instead of two fork/joins followed by a serial activation.
-// docs/measurements/cpu-decode-roofline-2026-09-23.md.
+// activation to that same chunk, instead of two fork/joins followed by a serial activation
+// (docs/measurements/cpu-decode-roofline-2026-09-23.md).
 //
-// It removes two costs the per-component roofline attributes to the MLP block: a fork/join (~one
-// goroutine-wake stagger, aikit S-02) and the SwiGLU's 3.65 ms/token of scalar float64 exp on the 1.5B,
-// which ran serial because fanning it out separately loses (cpu-decode-attribution-2026-09-22-linux.md).
-// Folded into the matmul's own barrier it costs nothing extra to run in parallel.
+// It removes two costs the per-component roofline attributes to the MLP block: a fork/join (about one goroutine-wake
+// stagger) and the SwiGLU's scalar float64 exp, which ran serial because fanning it out separately loses
+// (docs/measurements/cpu-decode-attribution-2026-09-22-linux.md). Folded into the matmul's own barrier it costs nothing
+// extra to run in parallel.
 //
 // Bit-identical to the unfused path, not merely close: each output column is a self-contained int4·int8
 // dot whose value does not depend on which worker computes it or how the columns are chunked (the
@@ -25,9 +25,9 @@ import (
 // Nothing here reorders any arithmetic. TestGatedMLPFusedGateUp_bitIdentical pins that; the paired A/B
 // harness (cpu_roofline_ab_test.go) additionally fails on any greedy-token divergence.
 //
-// Default per architecture (fusedGateUpDefault, cpu_tuning_{arm64,other}.go): measured on the amd64
-// Ryzen 7 3700X only, so arm64 stays off until the Mac measures it. GOINFER_CPU_FUSED_GATEUP=0 forces the
-// unfused path (an A/B handle and an escape hatch), =1 forces it on.
+// Default per architecture (fusedGateUpDefault, cpu_tuning_{arm64,other}.go): on where it was measured (amd64), off where
+// it was not (arm64). GOINFER_CPU_FUSED_GATEUP=0 forces the unfused path (an A/B handle and an escape hatch), =1 forces
+// it on.
 var cpuFusedGateUp = envBoolDefault("GOINFER_CPU_FUSED_GATEUP", fusedGateUpDefault)
 
 func envBoolDefault(name string, def bool) bool {
@@ -94,10 +94,10 @@ func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr 
 
 	w := fusedWorkers(N)
 	wss := scr.fusedPair.workspaces(w)
-	// h quantized once for every worker's gate and up chunk (R-13): each MatmulBTW4A8F16Into re-quantized all of h,
-	// 2w times a layer. The workers' workspaces carry the weight's activation group, or none (then aikit's process
-	// default applies), so the block is quantized with the group they resolve to; the kernels only read it.
-	// w4a8PreOff (tests only) restores a quantization per call, as it was.
+	// h is quantized once for every worker's gate and up chunk: each MatmulBTW4A8F16Into would otherwise re-quantize all of
+	// h, 2w times a layer. The workers' workspaces carry the weight's activation group, or none (then aikit's process
+	// default applies), so the block is quantized with the group they resolve to; the kernels only read it. w4a8PreOff
+	// (tests only) restores a quantization per call.
 	pre := !w4a8PreOff
 	if pre {
 		ag := lw.GateProj.ActQuantGroup()

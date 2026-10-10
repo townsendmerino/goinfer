@@ -6,12 +6,10 @@ import (
 	"sync"
 )
 
-// P2b — deterministic parallel host normalization.
-//
-// The temperature-only path's cost is the full-vocabulary exp+sum, measured at ~31-34 ns per
-// vocabulary entry and ~78% of the whole temperature-only penalty (bc59c56). Lazy Z tried to SKIP
-// that work and was refuted; this instead does the same work in parallel, and deletes the separate
-// normalize-divide pass by drawing against unnormalized weights.
+// P2b: deterministic parallel host normalization. The full-vocabulary exp+sum is the dominant host cost of a draw's
+// normalizer; it is done in parallel over a fixed chunk shape. Production users are chunkedZ (the top-p denominator)
+// and the Gumbel-max host draw (forEachChunk, sampler_gumbel.go). The inverse-CDF draw it was built for, sampleChunked,
+// now lives only as the reference in sampler_chunked_ref_test.go.
 //
 // ── THE LOAD-BEARING DESIGN DECISION: numChunks IS A COMPILE-TIME CONSTANT ──────────────────────
 //
@@ -135,10 +133,9 @@ func forEachChunk(n int, fn func(c, lo, hi int)) {
 	wg.Wait()
 }
 
-// chunkedZ is the top-p denominator (step 3), given the same fixed-chunk treatment so the nucleus
-// cut shifts in the SAME release as the temperature-only change rather than dribbling out later.
-// scratch is the caller's reused vocab-sized buffer (Sampler.vocabBuf via vocabBufN) — expChunked's
-// per-id `e` output is discarded here (only the folded sum matters), so scratch just needs len(logits).
+// chunkedZ is the top-p denominator, given the same fixed-chunk treatment so the nucleus cut is machine-independent.
+// scratch is the caller's reused vocab-sized buffer (Sampler.vocabBuf via vocabBufN); expChunked's per-id e output is
+// discarded here (only the folded sum matters), so scratch just needs len(logits).
 func chunkedZ(logits []float32, maxv, temperature float64, scratch []float64) float64 {
 	return foldChunkSums(expChunked(logits, scratch, maxv, temperature))
 }

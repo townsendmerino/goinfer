@@ -1,17 +1,13 @@
 package decoder
 
-// The option grid (docs/tasks/task-option-path-admission-2026-10.md §4.0, stage 2): every
-// decoder.Options field against every execution path, with what that path does with it and the
-// evidence. Step 1 (docs/measurements/audit-classes-2026-10-08.md) found 22 audit findings of one
-// shape here — a load option no guard on a path knew about (-kv i8 into Metal's batched prefill,
-// 09-30 A-C01; paged MoE slots into three Metal entry points, 09-10 C-08 and 09-12 C-02; int4 into
-// WebGPU's speculative verify, 09-10 M-09).
+// The option grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every decoder.Options field against every
+// execution path, with what that path does with it and the evidence. It guards against a load option that no guard on
+// some path knew about (docs/measurements/audit-classes-2026-10-08.md).
 //
-// Owner decision 2026-10-08: no behaviour changes in this stage. A combination that runs today
-// without a test that drives it is declared ogUntested and keeps running; TestOptionGrid_ratchet
-// holds the number of such cells at a ceiling that can only come down. What fails closed is the
-// registry itself: a new Options field fails TestOptionGrid_everyOptionClassified until it is
-// classified on every path, and a cell that claims a test or a decline must name one that exists.
+// A combination that runs without a test that drives it is declared ogUntested and keeps running; TestOptionGrid_ratchet
+// holds the number of such cells at a ceiling that can only come down. What fails closed is the registry itself: a new
+// Options field fails TestOptionGrid_everyOptionClassified until it is classified on every path, and a cell that claims
+// a test or a decline must name one that exists.
 
 import "maps"
 
@@ -134,8 +130,8 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	}, ogUntestedCell()),
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
 		pathCPUDecode: ogTestedBy("TestActQuantGroup_perModel"),
-		// Tested on CUDA, the one resident with per-group activation scales. Metal and WebGPU decline the load to
-		// the CPU (actGroupResidentDecline, since 2026-10-08; before, Metal ran it resident at per-vector scales).
+		// Tested on CUDA, the one resident with per-group activation scales. Metal and WebGPU decline the load to the CPU
+		// (actGroupResidentDecline).
 		pathResidentDecode:   ogTestedBy("TestActGroup_phi3ResidentMatchesCPU"),
 		pathResidentPrefill:  ogDeclinedAt("actGroupResidentDecline", "TestOptionPathMetal_actQuantGroupDeclines"),
 		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
@@ -166,11 +162,11 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 	),
 
-	// Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3, finding 2, closed 2026-10-08): bit-identical
-	// to fully resident when both prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical
-	// to sequential, so the reference is the resident load with ExactPrefill; the 0.004 first recorded here was the
-	// default resident's batched f16 prefill, which --exact-prefill alone reproduces. int8 experts decline by name
-	// (errPagedExpertsNotInt4) instead of a recovered panic.
+	// Metal's expert cache (docs/tasks/task-option-path-admission-2026-10.md §4.3): bit-identical to fully resident when both
+	// prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical to sequential, so the
+	// reference is the resident load with ExactPrefill (the default resident's batched f16 prefill differs, and only
+	// --exact-prefill reproduces the paged one). int8 experts decline by name (errPagedExpertsNotInt4) rather than via a
+	// recovered panic.
 	"MoECacheExperts": ogMerge(
 		ogCPUNA("\"CUDA and Metal residency; the CPU's expert paging is StreamWeights\""),
 		map[ogPath]ogCell{

@@ -18,15 +18,13 @@ import "math"
 //   - top-p:        the K returned probabilities already carry topP·Z of the mass, so the nucleus
 //                   ends inside the K (the same check topPCandidates makes host-side).
 //
-// TEMPERATURE-ONLY SAMPLING IS NOT SERVED HERE, and cannot be: it draws by inverse CDF in vocabulary
-// index order over a full-V normalisation (sampleChunked), and P2b already refuted a truncated-tail
-// shortcut. It stays on the full-row path.
+// Temperature-only sampling is not served here, and cannot be: it draws by inverse CDF in vocabulary index order over a
+// full-V normalisation (sampleChunked), and a truncated-tail shortcut was refuted. It stays on the full-row path.
 //
-// top-p's Z comes from the device (an f32 exp sum reduced in f64), not from chunkedZ's f64 sum, so it
-// differs from the host's by rounding. It can only matter when the cumulative mass lands within that
-// rounding of topP·Z — the same class of given-seed shift P2b accepted for regrouping Z on the host.
-// The mismatch rate against the full path is measured and recorded (cuda TestSampledTopKStreamIdentity)
-// rather than assumed.
+// top-p's Z comes from the device (an f32 exp sum reduced in f64), not from chunkedZ's f64 sum, so it differs from the
+// host's by rounding. That only matters when the cumulative mass lands within that rounding of topP·Z: the same class
+// of given-seed shift as regrouping Z on the host. The mismatch rate against the full path is measured, not assumed:
+// cuda TestSampledTopKStreamIdentity.
 
 const (
 	// topKWidthDefault is the number of candidates requested per token.
@@ -124,18 +122,14 @@ func (s *Sampler) SampleFromTopK(row TopKRow, vocab int) (SampleInfo, bool) {
 
 	var ips []indexedProb
 	if topPActive && topK == 0 && minP == 0 {
-		// Nucleus-only. Walk the candidates in row order — (logit desc, id asc), which is (prob desc, id
-		// asc) for every prefix that matters, since distinct float32 logits never collide after exp — and
-		// stop as soon as the cumulative mass reaches topP·Z. That both PROVES the K carry the nucleus (if
-		// the loop runs out first, they might not) and bounds the exp work to the nucleus, which is what
-		// this costs on a core that has just woken from the GPU sync: math.Exp measured ~360 ns/call
-		// there, so the old "sum all K, then exp all K again" pass was ~190 us per token. cum here is
-		// accumulated in the same order finishFilter will use, so its cut lands at the same index. No
-		// tie handling past the cut is needed: two distinct float32 logits do not give the same float64
-		// exp at any realistic temperature (it takes T around 1e7), so equal probabilities mean equal logits,
-		// which the row already orders by ascending id —
-		// the order finishFilter sorts to. (A mutation that deleted such a loop survived every test, which
-		// is how this was found to be dead.)
+		// Nucleus-only. Walk the candidates in row order, (logit desc, id asc), which is (prob desc, id asc) for every prefix
+		// that matters since distinct float32 logits never collide after exp, and stop as soon as the cumulative mass reaches
+		// topP·Z. That both proves the K carry the nucleus (if the loop runs out first, they might not) and bounds the exp work
+		// to the nucleus, which matters on a core that has just woken from the GPU sync (math.Exp is slow there). cum is
+		// accumulated in the same order finishFilter will use, so its cut lands at the same index. No tie handling past the cut
+		// is needed: two distinct float32 logits do not give the same float64 exp at any realistic temperature (it takes T
+		// around 1e7), so equal probabilities mean equal logits, which the row already orders by ascending id, the order
+		// finishFilter sorts to.
 		target := topP * Z
 		ips = s.ipsBufN(n)
 		var cum float64

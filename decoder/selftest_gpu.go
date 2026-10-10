@@ -18,10 +18,11 @@ import (
 // the cost is the tiny models' own, not a context creation). On a mismatch the real model's resident is dropped and the model continues on the CPU path with the reason on its decode path,
 // the existing decline route, instead of producing wrong numbers silently.
 //
-// The fixtures are four tiny random-weight checkpoints, chosen for the kernels they reach: qwen35vl-tiny (a 512-position window, so attention runs past 256 keys, beyond both softmax reduction widths,
-// beside DeltaNet layers), llama-tiny (the plain dense path), gemma3-vl-tiny (GELU-tanh and QK-norm: the sink-token GELU NaN class) and qwen35-tiny (the DeltaNet hybrid with a MoE FFN). Phi-3 was tried
-// first and declines to go resident on CUDA by design, so it would have checked nothing. They are embedded copies of testdata/ ones, and a
-// test asserts they stay byte-identical.
+// The fixtures are four tiny random-weight checkpoints, chosen for the kernels they reach: qwen35vl-tiny (a 512-position
+// window, so attention runs past 256 keys, beyond both softmax reduction widths, beside DeltaNet layers), llama-tiny (the
+// plain dense path), gemma3-vl-tiny (GELU-tanh and QK-norm: the sink-token GELU NaN class) and qwen35-tiny (the DeltaNet
+// hybrid with a MoE FFN). A fixture that declines to go resident on a backend checks nothing there, so it is not
+// chosen for that backend. They are embedded copies of testdata/ ones, and a test asserts they stay byte-identical.
 
 //go:embed selftestdata
 var selfTestFS embed.FS
@@ -48,10 +49,12 @@ var (
 	gpuProbeCache = map[string]SelfTestResult{}
 )
 
-// probeMeasured lists the backends whose healthy-hardware margins against the bars were measured, each on ONE device (the task doc has the figures). A backend not on it is NOT probed (its result is
-// simply absent from the report) rather than probed against bars nobody has seen it clear. WebGPU is on it from one NVIDIA adapter over Vulkan; AMD, Intel and DX12 adapters are probed against those bars
-// unmeasured, which is a risk of a false decline, disclosed in the task doc. Metal is on it from one M1 Pro (int4 worst cosine 0.99937 / relative L2 0.0358, int8int8 0.99971 / 0.0243, three runs
-// each); a fixture Metal re-quantizes to int4 is not compared (residentPrecision). Add a backend here with its margins.
+// probeMeasured lists the backends whose healthy-hardware margins against the bars were measured, each on ONE device
+// (figures: docs/tasks/task-hardware-coverage-2026-10.md). A backend not on it is NOT probed (its result is simply
+// absent from the report) rather than probed against bars nobody has seen it clear. WebGPU's margins come from one
+// NVIDIA adapter over Vulkan, so AMD, Intel and DX12 adapters are probed against those bars unmeasured, a risk of a
+// false decline. Metal's come from one M1 Pro; a fixture Metal re-quantizes to int4 is not compared
+// (residentPrecision). Add a backend here with its margins.
 var probeMeasured = map[string]bool{"cuda": true, "webgpu": true, "metal": true}
 
 // gpuProbeAfterResident is called by withResidency once a resident is attached. It returns the (cached) result for this model's backend and quant, and whether a probe applies at all.

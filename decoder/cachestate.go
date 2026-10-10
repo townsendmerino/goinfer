@@ -1,12 +1,10 @@
 package decoder
 
-// The cache-state grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every kind of
-// per-sequence state a KVCache can hold, against every lifecycle path that has to know about it,
-// with what that path does with it. Step 1 of that task (docs/measurements/audit-classes-2026-10-08.md)
-// counted ten audit findings of one shape here — a kind of state a lifecycle path never accounted
-// for: Mamba-2 and DeltaNet state across a reset (08-05 C-01, C-17), LFM2's conv window at every
-// site (09-02 C-02), Bailing Hybrid's KDA state at every site (09-10 C-03), the adapter that built
-// a reused prefix (09-10 C-02). Each was found by an audit, after it shipped, one path at a time.
+// The cache-state grid (docs/tasks/task-option-path-admission-2026-10.md §4.0): every kind of per-sequence state a
+// KVCache can hold, against every lifecycle path that has to know about it, with what that path does with it. It
+// guards against a kind of state a lifecycle path never accounted for (Mamba-2 and DeltaNet state across a reset,
+// LFM2's conv window, Bailing Hybrid's KDA state, the adapter that built a reused prefix), which an audit would
+// otherwise find after it shipped, one path at a time (docs/measurements/audit-classes-2026-10-08.md).
 //
 // Two things make the grid fail closed rather than document intent:
 //

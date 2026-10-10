@@ -6,53 +6,37 @@ import (
 	"sync/atomic"
 )
 
-// Decoder-as-embedder seam (docs/completed/task-decoder-as-embedder.md).
-//
-// qwen3-embedding and embeddinggemma are causal decoders used as EMBEDDERS: the sentence-
-// transformers stack around them is just `Transformer → Pooling → Normalize`. The only thing the
-// decoder itself must expose for that is the transformer's output — the final hidden state — which
-// until now was unreachable: forward() runs the stack and immediately consumes the hidden state
-// through the LM head (logitsFromHidden normalizes it IN PLACE, then projects to vocab), and
-// ForwardCapture hands back per-LAYER residuals, which are pre-final-norm and so are NOT what
-// pooling wants.
+// Decoder-as-embedder seam (docs/completed/task-decoder-as-embedder.md). qwen3-embedding and embeddinggemma are causal
+// decoders used as embedders: the sentence-transformers stack around them is Transformer -> Pooling -> Normalize, so the
+// decoder must expose the final hidden state. forward() consumes it through the LM head (logitsFromHidden normalizes it
+// in place), and ForwardCapture returns per-layer residuals, which are pre-final-norm and not what pooling wants.
 
-// HiddenLast runs ids through the layer stack causally in one fresh KV cache and returns the final
-// hidden state of the LAST token, AFTER the model's final norm — exactly HF's
-// `last_hidden_state[:, -1, :]`, which is what sentence-transformers' last-token pooling reads.
+// HiddenLast runs ids causally through the layer stack in one fresh KV cache and returns the final hidden state of the
+// last token after the model's final norm: HF's `last_hidden_state[:, -1, :]`, which sentence-transformers' last-token
+// pooling reads. It stops before the LM head, which an embedder never needs and which is the most expensive matmul in a
+// forward.
 //
-// It deliberately stops before the LM head: an embedder never needs the logits, and the head is the
-// single most expensive matmul in a forward (vocab×hidden — for a tied 151k-row Qwen3 head, far
-// more work than the rest of the token combined).
+// It takes one sequence, so the last token is always the last real token; there is no padded batch whose last slot
+// could be a pad. Callers that want a batch call it per sequence. The returned slice is a fresh copy the caller owns.
 //
-// Padding note (the classic last-token-pooling silent-wrong): this takes ONE sequence and pools the
-// last element of it, so "last token" is always the last REAL token. There is no padded batch here
-// in which the last slot could be a pad — callers that want a batch must call this per sequence.
-//
-// The returned slice is a fresh copy the caller owns: the hidden state aliases the per-token decode
-// scratch, which the next token would overwrite.
-//
-// Generic decode path only. The families with their own runLayers (gemma4/qwen35/granite/nemotron/
-// mla/llama4) return an error rather than a silently wrong vector — the same contract, and the same
-// guard, as ForwardCapture.
+// Generic decode path only: families with their own runLayers return an error rather than a silently wrong vector, the
+// same contract and guard as ForwardCapture.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("decoder.HiddenLast: empty token sequence")
 	}
 	a := m.w.arch
-	// Derived from the dispatch table. The hand-written list had fallen TWO families behind, not
-	// one: lfm2 and gpt-oss both reached this seam (audit-2026-09-02 C-02).
+	// Derived from the dispatch table (ownForward), not a hand-written list.
 	if _, own := a.ownForward(); own {
 		return nil, fmt.Errorf("decoder.HiddenLast: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
 	if err := m.checkHiddenIDs("decoder.HiddenLast", ids); err != nil {
 		return nil, err
 	}
-	// G4 (docs/tasks/task-gpu-paths-2026-09.md): on a GPU box this arch may decode resident while
-	// embedding requests still ran the whole text decoder on the CPU — the same class of gap G2
-	// documents for image turns. Same resBusy claim Generate uses (M9): a loser (a generation
-	// already in flight on this Model) falls through to the CPU path below exactly like it
-	// always has, and resIDs is left unknown either way (residentForgetIDs), since a HiddenLast
-	// prefill has nothing durable worth remembering for the next Generate call.
+	// On a GPU box this arch may decode resident, so try the resident backend first, under the same resBusy claim Generate
+	// uses: a loser (a generation already in flight on this Model) falls through to the CPU path below. resIDs is left
+	// unknown either way (residentForgetIDs), since a HiddenLast prefill leaves nothing durable to reuse in the next
+	// Generate call.
 	if m.resident != nil {
 		if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
 			out, err := m.hiddenLastResident(context.Background(), rh, ids)
@@ -64,12 +48,9 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 			// fall through to the CPU path exactly as if this arch had no resident backend at all.
 		}
 	}
-	// P-17: canBatchN excludes K==1 (nothing to batch), the own-runLayers families (already
-	// rejected above), and the NonGatedMLP/LearnedPosEmbed families runLayersFromEmbedN doesn't
-	// implement — those keep the per-token loop (hiddenLastSequential). Everything else runs the
-	// whole sequence through the SAME batched prefill path plain generation's prompt phase
-	// already uses (the "sequential prefill" this seam took the ~9x-slower name from), instead of
-	// one runLayers call per token.
+	// canBatchN excludes K==1, the own-runLayers families (rejected above) and the NonGatedMLP/LearnedPosEmbed families
+	// runLayersFromEmbedN does not implement; those keep the per-token loop (hiddenLastSequential). Everything else runs
+	// the whole sequence through the same batched prefill path plain generation's prompt phase uses.
 	if m.canBatchN(len(ids)) {
 		return m.hiddenLastBatched(ids)
 	}
@@ -127,18 +108,14 @@ func (m *Model) hiddenLastSequential(ids []int) ([]float32, error) {
 // checkHiddenIDs is HiddenLast's and PromptHidden's input check: a length bound and a vocab bound. who prefixes the error.
 func (m *Model) checkHiddenIDs(who string, ids []int) error {
 	a := m.w.arch
-	// A LENGTH BOUND, NOT JUST A VOCAB ONE. This preallocates KV for len(ids) positions and then
-	// runs one sequential forward per token with no context to cancel it, so an over-long input is
-	// not slow — it is a ~114 GB allocation (28 layers, kvDim 1024, 500k positions) and attention
-	// over up to len(ids) keys per token, holding the caller's mutex until the process is OOM-killed.
-	// The serving embedder now truncates to MaxPositions before it gets here (C-07), and this is
-	// the same bound stated where the cost is actually incurred, so a DIFFERENT caller cannot
-	// reintroduce it. Positions past the window would also pool from out-of-range RoPE — plausible,
-	// and wrong — which is the quieter half of the same defect.
-	// m.Config().MaxPositions (max_position_embeddings), NOT a.MaxPositions — the Architecture field
-	// of that name is the GPT-2 learned-position TABLE SIZE and is 0 for every RoPE family, so
-	// keying on it would have made this guard silently inert for almost every model. Same shape as
-	// the LFM2 bugs: the wrong key reads as a legal zero.
+	// A length bound, not just a vocab one. This preallocates KV for len(ids) positions and runs one sequential forward per
+	// token with no context to cancel it, so an over-long input is a huge allocation (hundreds of GB at 500k positions) plus
+	// attention over up to len(ids) keys per token, holding the caller's mutex until the process is OOM-killed. Positions
+	// past the window would also pool from out-of-range RoPE: plausible and wrong. The serving embedder truncates to
+	// MaxPositions first; this states the bound where the cost is incurred so a different caller cannot reintroduce it.
+	// The key is m.Config().MaxPositions (max_position_embeddings), not a.MaxPositions: the Architecture field of that name
+	// is the GPT-2 learned-position table size and is 0 for every RoPE family, so keying on it would make this guard
+	// silently inert.
 	if mp := m.Config().MaxPositions; mp > 0 && len(ids) > mp {
 		return fmt.Errorf("%s: %d tokens exceeds the model's context window of "+
 			"%d (context_length_exceeded); truncate before pooling", who, len(ids), mp)
@@ -151,21 +128,20 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 	return nil
 }
 
-// PromptHidden returns the final-norm hidden state at the last position of prompt: HF's output_hidden_states[-1][:, -1], which is
-// last_hidden_state[:, -1]. It is the input a Route B decision head reads (D2, docs/tasks/task-constrained-confidence.md): JEV's
-// readout takes the last prompt token's final-norm hidden state through a linear head.
+// PromptHidden returns the final-norm hidden state at the last position of prompt: HF's output_hidden_states[-1][:, -1],
+// equal to last_hidden_state[:, -1]. It is the input a Route B decision head reads
+// (docs/tasks/task-constrained-confidence.md): a linear head over the last prompt token's final-norm hidden state.
 //
-// Unlike HiddenLast it serves every family, those with their own layer loop included (Qwen3.5, the JEV models' family): it runs
-// the same per-token forward Generate's CPU path runs, runLayers, which dispatches to them, in a fresh cache, then the final norm
-// logitsFromHidden applies before the LM head. So the hidden state is the one the logits are computed from, by construction. A
-// family on the generic batched path (canBatchN) takes hiddenLastBatched instead, which ends at the same final norm, and
-// Qwen3.5 takes its own batched forward (runLayersQwen35N: every projection one matmul over the prompt, the DeltaNet
-// recurrence still sequential), bounded against the per-token forward by TestPromptHidden_batchedMatchesSequential.
+// Unlike HiddenLast it serves every family, including those with their own layer loop: it runs the per-token forward
+// Generate's CPU path runs (runLayers), in a fresh cache, then the final norm logitsFromHidden applies before the LM
+// head, so the hidden state is the one the logits are computed from. Families on the generic batched path (canBatchN)
+// take hiddenLastBatched, which ends at the same final norm, and Qwen3.5 takes runLayersQwen35N;
+// TestPromptHidden_batchedMatchesSequential bounds both against the per-token forward.
 //
-// On a resident backend it runs on the device first, through ResidentHiddenLast (CUDA's batched prefill with a headless tail,
-// Metal's per-token headless forward), and falls back to the CPU on a decline. The resident's numerics are its kernels', not
-// the CPU reference's: TestPromptHidden_residentMatchesCPU in the backend modules bounds the difference. ctx is checked between
-// tokens (CPU) or at the backend's own granularity, so a long prompt can be abandoned.
+// On a resident backend it runs on the device first, through ResidentHiddenLast, and falls back to the CPU on a decline.
+// The resident's numerics are its kernels', not the CPU reference's; TestPromptHidden_residentMatchesCPU in the backend
+// modules bounds the difference. ctx is checked between tokens (CPU) or at the backend's own granularity, so a long
+// prompt can be abandoned.
 func (m *Model) PromptHidden(ctx context.Context, prompt []int) ([]float32, error) {
 	if len(prompt) == 0 {
 		return nil, fmt.Errorf("decoder.PromptHidden: empty prompt")
@@ -173,10 +149,10 @@ func (m *Model) PromptHidden(ctx context.Context, prompt []int) ([]float32, erro
 	if err := m.checkHiddenIDs("decoder.PromptHidden", prompt); err != nil {
 		return nil, err
 	}
-	// A resident backend answers first, through the same seam HiddenLast uses (G4): the whole prompt on the device,
-	// stopping at the final norm. A decline (an arch the backend's headless forward does not cover, a paged MoE, a
-	// cap) falls through to the CPU exactly as if there were no resident; a cancellation returns. The resident's
-	// prefix-reuse record is forgotten either way, since the prompt overwrote its KV.
+	// A resident backend answers first, through the seam HiddenLast uses, over the whole prompt up to the final norm. A
+	// decline (an arch the headless forward does not cover, a paged MoE, a cap) falls through to the CPU as if there were no
+	// resident; a cancellation returns. The resident's prefix-reuse record is forgotten either way, since the prompt
+	// overwrote its KV.
 	if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
 		out, err := m.hiddenLastResident(ctx, rh, prompt)
 		atomic.StoreInt32(&m.resBusy, 0)

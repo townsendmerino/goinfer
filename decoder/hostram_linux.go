@@ -9,31 +9,28 @@ import (
 	"sync"
 )
 
-// HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined — and 0 is a
-// real answer that every caller must treat as "proceed", never as "no memory".
+// HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined; 0 is a real answer that every caller
+// must treat as "proceed", never as "no memory".
 //
-// Read from /proc/meminfo rather than through a syscall wrapper so the pure-Go root module stays
-// free of golang.org/x/sys (audit M-19 keeps the root dependency graph minimal; the Metal module,
-// which already depends on it, uses unix.SysctlUint64 for the same figure).
+// Read from /proc/meminfo rather than through a syscall wrapper so the pure-Go root module stays free of
+// golang.org/x/sys (the Metal module, which already depends on it, uses unix.SysctlUint64 for the same figure).
 //
-// KNOWN LIMIT: MemTotal is the HOST's memory. Inside a container with a cgroup memory limit this
-// over-reports, so the guard can let a doomed load through there — the safe direction, and the
-// direction the whole guard errs in. Reading memory.max is a follow-on, not this pass.
+// KNOWN LIMIT: MemTotal is the HOST's memory. Inside a container with a cgroup memory limit this over-reports, so the
+// guard can let a doomed load through there, which is the safe direction and the direction the whole guard errs in.
+// Reading memory.max is not done.
 func HostRAMBytes() int64 { return hostRAMOnce() }
 
 var hostRAMOnce = sync.OnceValue(func() int64 {
 	return meminfoField(readMeminfo(), "MemTotal:")
 })
 
-// HostRAMAvailableBytes is this machine's CURRENTLY AVAILABLE memory — what the kernel estimates
-// can be allocated by a new process without swapping (free pages plus reclaimable cache) — or 0
-// when it cannot be determined. Unlike HostRAMBytes, this is NOT cached: it changes continuously
-// as other processes run, which is the entire reason it exists (R13-follow-on,
-// docs/measurements/... the Mac re-run that found this). HostRAMBytes reports total physical RAM,
-// which never changes and is safe to read once; MemAvailable is the opposite by nature.
+// HostRAMAvailableBytes is this machine's currently available memory, what the kernel estimates can be allocated by a new
+// process without swapping (free pages plus reclaimable cache), or 0 when it cannot be determined. Unlike HostRAMBytes it
+// is not cached: it changes continuously as other processes run, which is why it exists. HostRAMBytes reports total
+// physical RAM, which never changes and is safe to read once; MemAvailable is the opposite by nature.
 //
-// KNOWN LIMIT: same container caveat as HostRAMBytes — /proc/meminfo reports the HOST's memory
-// inside a container with a cgroup limit, over-reporting availability there. The safe direction.
+// KNOWN LIMIT: same container caveat as HostRAMBytes. /proc/meminfo reports the HOST's memory inside a container with a
+// cgroup limit, over-reporting availability there. The safe direction.
 func HostRAMAvailableBytes() int64 {
 	return meminfoField(readMeminfo(), "MemAvailable:")
 }

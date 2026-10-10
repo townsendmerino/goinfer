@@ -43,9 +43,8 @@ func buildInternLM2Weights(cfg *Config, arch *Architecture, st *embed.Safetensor
 
 	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
 	var err error
-	// qw is quantizeWM/quantizeWMSkipRow4 (M-07, audit-metal-2026-09-12.md) for every layer
-	// projection below — Embed/LMHead deliberately stay on plain quantizeWM. Named qw, not q,
-	// because q is already the query-tensor local below.
+	// qw is quantizeWM/quantizeWMSkipRow4 for every layer projection below; Embed/LMHead deliberately stay on plain
+	// quantizeWM. Named qw, not q, because q is already the query-tensor local below.
 	qw := func(m linalg.WeightMat, mode quantMode) linalg.WeightMat {
 		if skipRow4 {
 			return quantizeWMSkipRow4(m, mode)

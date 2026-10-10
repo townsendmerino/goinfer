@@ -2,9 +2,9 @@ package decoder
 
 import "fmt"
 
-// ImageSpan is one image's placeholder run in a prompt (S11, docs/tasks/task-multimodal-support-2026-10.md): ids[Pos,
-// Pos+Len) are replaced by that image's projected features. Hash identifies the image for resident prefix reuse (P9a);
-// 0 makes no claim and never matches (M-06).
+// ImageSpan is one image's placeholder run in a prompt (docs/tasks/task-multimodal-support-2026-10.md): ids[Pos, Pos+Len)
+// are replaced by that image's projected features. Hash identifies the image for resident prefix reuse; 0 makes no claim
+// and never matches.
 //
 // A prompt's spans are in prompt order and do not overlap. Each is its own block: two images are never one block, even
 // when they are adjacent and the same size (docs/multimodal.md, "Do not pair images").

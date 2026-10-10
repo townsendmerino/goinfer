@@ -6,15 +6,17 @@ import (
 	"sync/atomic"
 )
 
-// PromptHiddenAll returns the final-norm hidden state at EVERY position of prompt: HF's last_hidden_state[0, :] (which is
-// output_hidden_states[-1]), K rows of HiddenDim. It is what a head that reads all positions consumes (D11 of
-// docs/tasks/task-constrained-confidence.md, Route C: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md); D2's
+// PromptHiddenAll returns the final-norm hidden state at EVERY position of prompt: HF's last_hidden_state[0, :] (which
+// is output_hidden_states[-1]), K rows of HiddenDim. It is what a head that reads all positions consumes (Route C of
+// docs/tasks/task-constrained-confidence.md: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md);
 // PromptHidden returns only the last row.
 //
-// A resident backend that implements ResidentResidualAll answers first (CUDA does; D11's follow-up): the whole prompt runs on the device, the residual stream of
-// every row comes back, and the final norm is applied HERE on the host in f32, so the rows are not the int8-requantized vectors ResidentHiddenLast returns. Its numerics are
-// the device kernels', not the CPU reference's (the backend modules bound the difference); a decline falls through to the CPU exactly as if there were no resident, and a
-// cancellation returns. Otherwise it takes the same CPU paths PromptHidden takes, in the same order, so the last row is the row PromptHidden returns on a model with no resident:
+// A resident backend that implements ResidentResidualAll answers first: the whole prompt runs on the device, the
+// residual stream of every row comes back, and the final norm is applied HERE on the host in f32, so the rows are not the
+// int8-requantized vectors ResidentHiddenLast returns. Its numerics are the device kernels', not the CPU reference's (the
+// backend modules bound the difference); a decline falls through to the CPU exactly as if there were no resident, and a
+// cancellation returns. Otherwise it takes the same CPU paths PromptHidden takes, in the same order, so the last row is
+// the row PromptHidden returns on a model with no resident:
 //   - a family on the generic batched path (canBatchN): runLayersFromEmbedN, whose last step applies the final norm to each row;
 //   - Qwen3.5 (qwen35BatchN): runLayersQwen35N, which returns the post-final-norm rows;
 //   - everything else, and K == 1: one runLayers per token in a fresh cache, then the final norm on a copy of each row (h aliases the
