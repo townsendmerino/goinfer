@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// G-S14d2 (small) and G-S14d3 (large-v3) of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): a real Whisper checkpoint's encoder, goinfer float32 on the CPU, against
+// G-S14d2 (small) and G-S14d3 (large-v3) of docs/tasks/task-multimodal-support-2026-10.md: a real Whisper checkpoint's encoder, goinfer float32 on the CPU, against
 // transformers float32 (scripts/pin_whisper_real.py: the reference is proved real by transcribing the LibriSpeech clip) on the LibriSpeech clip and 25 s of synthetic signal. Bar: every one of
 // the 1500 frames' cosine >= 0.9999; the largest absolute difference is recorded. The Go front end's features are run through the encoder as well and recorded beside.
 //

@@ -11,14 +11,14 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// G-S14b1 and G-S14b2 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): aikit's Qwen3-ASR front end against transformers 5.15.0's
+// G-S14b1 and G-S14b2 of docs/tasks/task-multimodal-support-2026-10.md: aikit's Qwen3-ASR front end against transformers 5.15.0's
 // Qwen3ASRFeatureExtractor, and its audio encoder and projector against the transformers modules on a tiny random-weight checkpoint in the real layout. Goldens: scripts/pin_qwen3asr_features.py,
 // scripts/pin_qwen3asr_tiny.py.
 
 const (
 	qwenFeatMaxBar, qwenFeatMeanBar = 1e-4, 1e-6
 	qwenEncCosBar                   = 0.99999
-	// qwenEncAbsBar is a second criterion added to the registered cosine one (amendment A1 of G-S14b, 2026-10-08): two GELUs that differ by 1e-3 leave the projected cosine at 0.9999998, above
+	// qwenEncAbsBar is a second criterion added to the registered cosine one (amendment A1 of G-S14b): two GELUs that differ by 1e-3 leave the projected cosine at 0.9999998, above
 	// the cosine bar, so cosine alone cannot see the tanh-for-erf defect. The projected outputs have rms 1.3-1.9 and the port matches the reference to ~6e-06.
 	qwenEncAbsBar = 2e-5
 )

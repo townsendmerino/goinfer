@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// TestGemma4E2BAudioTower is G-S5a of docs/tasks/task-multimodal-support-2026-10.md (S5, registered before this ran):
+// TestGemma4E2BAudioTower is G-S5a of docs/tasks/task-multimodal-support-2026-10.md (S5):
 // Gemma 4 E2B's audio tower and embed_audio, from E2B's own checkpoint (GOINFER_GEMMA4_E2B, default
 // ~/models/gemma-4-E2B-unq), through aikit's audio package, against transformers' reference
 // (scripts/pin_gemma4_e2b_audio.py; its artifacts in GOINFER_E2B_AUDIO_ARTIFACTS, default

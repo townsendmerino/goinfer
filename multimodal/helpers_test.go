@@ -3,8 +3,7 @@ package multimodal
 import "math"
 
 // cosine returns the cosine similarity and max abs elementwise difference of two
-// equal-length vectors — the parity metric for TestProjector_parity. (Moved here
-// with the projector; the encoder half's copy now lives in aikit/vision.)
+// equal-length vectors — the parity metric for TestProjector_parity.
 func cosine(a, b []float32) (cos, maxAbs float64) {
 	var dot, na, nb float64
 	for i := range a {

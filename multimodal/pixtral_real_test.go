@@ -13,8 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 )
 
-// S10, Ministral 3 (Pixtral), G-S10m-a and G-S10m-b (docs/tasks/task-multimodal-support-2026-10.md, registered
-// 2026-10-09 before any code), against transformers' references from scripts/pin_pixtral_real.py (nobara;
+// S10, Ministral 3 (Pixtral), G-S10m-a and G-S10m-b (docs/tasks/task-multimodal-support-2026-10.md), against transformers' references from scripts/pin_pixtral_real.py (nobara;
 // GOINFER_PIXTRAL_REAL_ARTIFACTS, default ~/goinfer-logs/pixtral-real) and the real checkpoint (GOINFER_MINISTRAL3,
 // default ~/models/ministral3-3b-bf16).
 //
