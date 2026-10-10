@@ -12,10 +12,12 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Gemma 4 vision tower on CUDA (S4 of docs/tasks/task-multimodal-support-2026-10.md): aikit's Gemma4Encoder.Forward up to its pool, in float32, from aikit's
-// export (Gemma4Encoder.Weights), on the CUDA tower base (tower_base.go). The patch embed and the 16 layers run here; the pool and the projection after them stay
-// aikit's (FinishHidden), on the host. The port of metal/gemma4_vision.go: the same ops in the same order, with aikit's bidirectional attention kernel (scale 1.0,
-// one head per KV head, no window) in place of Metal's matmul-blocked attention. Registered as multimodal's "cuda" Gemma 4 tower.
+// The Gemma 4 vision tower on CUDA (docs/tasks/task-multimodal-support-2026-10.md): aikit's Gemma4Encoder.Forward up to
+// its pool, in float32, from aikit's export (Gemma4Encoder.Weights), on the CUDA tower base (tower_base.go). The patch
+// embed and the layers run here; the pool and the projection after them stay aikit's (FinishHidden), on the host. The
+// port of metal/gemma4_vision.go: the same ops in the same order, with aikit's bidirectional attention kernel (scale
+// 1.0, one head per KV head, no window) in place of Metal's matmul-blocked attention. Registered as multimodal's "cuda"
+// Gemma 4 tower.
 
 func init() {
 	multimodal.RegisterGemma4Tower("cuda", func(enc *vision.Gemma4Encoder) (multimodal.Gemma4TowerAccelerator, error) {
@@ -35,7 +37,8 @@ type g4Layer struct {
 	q, k, v, o, gate, up, down                                g4Proj
 }
 
-// g4Defect is the test seam for planted defects (G-S2c's CUDA list): each bool breaks one thing the tower must get right, so a gate can show it notices.
+// g4Defect is the test seam for planted defects: each bool breaks one thing the tower must get right, so a gate can show
+// it notices.
 type g4Defect struct {
 	noClamp       bool // skip every ClippableLinear clamp
 	swapPosXY     bool // add the Y table by x and the X table by y

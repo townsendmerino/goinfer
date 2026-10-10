@@ -2,12 +2,11 @@
 
 package cuda
 
-// Speculative decoding (D1) — n-gram / prompt-lookup drafting + batched verify. Greedy-lossless by
-// construction: the verify's per-position logits (PrefillLastN) are bit-identical to a sequential
-// Forward at each position, so the accepted tokens are exactly the sequential greedy tokens. The
-// drafter is FREE (no draft model — a context lookup), so the whole cost is the batched M=k verify,
-// which amortizes the weight read across k tokens (measured 2.5–3.6× cheaper than k decodes at k=4–8,
-// TestSpecVerifyCeiling). See docs/ollama-chase.md §D1.
+// Speculative decoding by n-gram / prompt-lookup drafting plus batched verify (docs/ollama-chase.md §D1).
+// Greedy-lossless by construction: the verify's per-position logits (PrefillLastN) are bit-identical to a sequential
+// Forward at each position, so the accepted tokens are exactly the sequential greedy tokens. The drafter is free (a
+// context lookup), so the whole cost is the batched M=k verify, which amortizes the weight read across k tokens
+// (TestSpecVerifyCeiling).
 
 // ngramDraft proposes up to k tokens by finding the most recent earlier occurrence of the last
 // ctxLen tokens in hist and returning the tokens that followed it ("prompt lookup"). Returns nil when
@@ -44,13 +43,11 @@ func ngramDraft(hist []int, k, ctxLen int) []int {
 	return nil
 }
 
-// GPUSpecStats reports one GPU (batched-verify) speculative-decode run. It is a
-// DISTINCT type from decoder.SpecStats (the CPU-spec counters), renamed off the shared
-// name so telemetry code can't silently conflate the two (audit M-22) — the fields do
-// not line up 1:1. Rough correspondence to decoder.SpecStats: Generated≈Emitted,
-// VerifyToks≈Evaluated (GPU counts every position fed to the batched verify; CPU counts
-// positions actually checked before the first reject), Rounds/Drafted/Accepted align;
-// PlainRounds is GPU-only (a round that fell back to a 1-token step).
+// GPUSpecStats reports one GPU (batched-verify) speculative-decode run. It is a distinct type from decoder.SpecStats
+// (the CPU-spec counters), so telemetry cannot conflate the two; the fields do not line up 1:1. Roughly:
+// Generated~Emitted, VerifyToks~Evaluated (GPU counts every position fed to the batched verify; CPU counts positions
+// actually checked before the first reject), Rounds/Drafted/Accepted align; PlainRounds is GPU-only (a round that fell
+// back to a 1-token step).
 type GPUSpecStats struct {
 	Generated   int // tokens produced (excluding the seed)
 	Rounds      int // verify rounds

@@ -12,19 +12,11 @@ import (
 	"math"
 )
 
-// residentDrafter is a block drafter's weights on the device, attached to an existing resident
-// target (P10 / docs/spec/08).
-//
-// IT SHARES THE TARGET'S DEVICE, STREAM AND KERNELS rather than building its own context. The
-// n-gram/EAGLE precedent (decoder/speculative.go) runs its draft as a separate *Model with its
-// own context, which is right there because the draft IS a model. A block drafter is not: it has
-// no embedding and no LM head (it borrows the target's), its context comes from the target's
-// hidden states rather than from tokens, and it is FIVE layers against the target's thirty-six.
-// Sharing means the drafter's block forward and the target's verify are already ordered on one
-// stream, with no cross-context synchronisation between them — which matters because the two
-// alternate every round.
-//
-// Built against decoder.BlockDrafterWeights, so DFlash and DSpark both work with no type switch.
+// residentDrafter is a block drafter's weights on the device, attached to an existing resident target (docs/spec/08). It
+// shares the target's device, stream and kernels rather than building its own context: a block drafter has no embedding
+// or LM head (it borrows the target's) and its context comes from the target's hidden states, and sharing keeps its
+// block forward and the target's verify, which alternate every round, ordered on one stream with no cross-context
+// synchronisation. It is built against decoder.BlockDrafterWeights, so DFlash and DSpark both work with no type switch.
 type residentDrafter struct {
 	r   *cudaResident // the target this is attached to; owns the device, stream and kernels
 	geo decoder.DrafterGeometry
@@ -65,7 +57,7 @@ type residentDrafter struct {
 	headQ     Buffer
 	headSc    Buffer
 	headOut   Buffer
-	headIdx   Buffer // [headCap] int32: argmax_rows' output (R14)
+	headIdx   Buffer // [headCap] int32: argmax_rows' output
 	headCap   int
 	attnBlock Pipeline // attn_block_full — bound HERE, where the consumer now exists
 }
@@ -80,12 +72,9 @@ type drafterLayer struct {
 	postAttnNorm   Buffer
 }
 
-// AttachDrafter uploads a block drafter's weights to the device this resident already owns.
-//
-// The geometry is CHECKED against the target rather than trusted: a drafter reads the target's
-// residual stream, so a hidden-dim mismatch is not a resizing problem, it is the wrong pairing —
-// and the failure mode is a drafter that runs and drafts noise. docs/spec/08 records that exact
-// shape of bug costing a full measurement round.
+// AttachDrafter uploads a block drafter's weights to the device this resident already owns. The geometry is checked
+// against the target, not trusted: a drafter reads the target's residual stream, so a hidden-dim mismatch is the wrong
+// pairing, and the failure mode is a drafter that runs and drafts noise (docs/spec/08).
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
 	if r.eModel {
 		return nil, fmt.Errorf("cuda drafter: the target is a Gemma 4 E-model, whose verify pass needs the batched prefill it declines (per-layer embeddings, shared KV, per-layer FFN width)")
@@ -101,15 +90,10 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 		return nil, fmt.Errorf("cuda drafter: zero layers")
 	}
 	d := &residentDrafter{r: r, geo: geo}
-	// N-08: r.upW / r.up32 do not return errors — they record into r.setupErr, which the BUILD
-	// path already consumed by the time the drafter is constructed. So every upload failure
-	// below landed in a field nothing reads again, and the drafter was returned successfully
-	// with zeroed weights: a drafter that proposes garbage, which lossless verify then rejects,
-	// so it costs acceptance rather than correctness and no gate can see it.
-	//
-	// Snapshot and compare rather than clear: another goroutine's build is not in flight here
-	// (this runs inside r.do), but leaving an unrelated earlier error in place is not this
-	// function's business either.
+	// r.upW / r.up32 do not return errors: they record into r.setupErr, which the build path has already consumed by now. An
+	// upload failure below would go unread and the drafter would be returned with zeroed weights, proposing garbage that
+	// lossless verify rejects, a cost in acceptance that no gate can see. Compare r.setupErr with this snapshot afterwards
+	// rather than clearing it.
 	setupBefore := r.setupErr
 	err := r.do(func() error {
 		fcw, e := packWeight(w.DrafterFC())
@@ -167,16 +151,10 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	return d, nil
 }
 
-// FuseContext projects the target's concatenated tap hidden states down to the trunk's width and
-// norms them — the drafter's `fc` + `hiddenNorm`, batched over all rows in one pass.
-//
-// This is the one projection with no counterpart in a normal decoder layer, which is why it is
-// the first thing built: if packWeight/upW mishandle the drafter's weights, it shows up here
-// rather than eighteen kernels later.
-//
-// The rows are quantized to int8 on the way in, exactly as the target's own activations are, so
-// the result is NOT bit-identical to the CPU f32 path — it is the same int8 arithmetic the
-// resident target runs everywhere else, and the parity gate compares by cosine accordingly.
+// FuseContext projects the target's concatenated tap hidden states down to the trunk's width and norms them (the
+// drafter's fc and hiddenNorm), batched over all rows in one pass. The rows are quantized to int8 on the way in, as the
+// target's own activations are, so the result is not bit-identical to the CPU f32 path; the parity gate compares by
+// cosine.
 func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 	n := len(rows)
 	if n == 0 {
@@ -192,9 +170,7 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 	out := make([][]float32, n)
 	err := d.r.do(func() error {
 		if n > d.ctxCap {
-			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md), the same shape
-			// batchedHeadArgmax already fixed (cuda/prefill.go) for the identical grow-and-abandon
-			// pattern — audit-2026-09-02 C-12 reached logitsB only, not this drafter's own buffers.
+			// Release before growing, as batchedHeadArgmax does, so a larger buffer does not strand its predecessor on the device ledger.
 			if d.ctxCap > 0 {
 				d.r.dev.ReleaseBuf(d.ctxIn)
 				d.r.dev.ReleaseBuf(d.ctxQ)
@@ -252,24 +228,16 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 	return out, nil
 }
 
-// ExtendContext projects the fused context rows into every layer's K/V cache, at positions
-// [ctxLen, ctxLen+len(fused)), and advances ctxLen.
+// ExtendContext projects the fused context rows into every layer's K/V cache, at positions [ctxLen, ctxLen+len(fused)),
+// and advances ctxLen. Two things differ from a decoder layer, and both are load-bearing. There is no input norm: the
+// context's K/V come from the fused rows raw (blockTrunk.layer: input_layernorm normalizes the block only, and the
+// reference passes target_hidden straight into k_proj/v_proj; norming both would be the natural-looking port and wrong).
+// There is no Q: the context supplies keys and values only, and because rope_kv_batched rotates q and k together a q
+// scratch is projected and discarded, which is cheaper than a second kernel and keeps the context on the same code path
+// as the block, so the two cannot drift apart.
 //
-// TWO THINGS HERE ARE NOT WHAT A DECODER LAYER DOES, and both are load-bearing:
-//
-//	NO INPUT NORM. The context's K/V come from the fused rows RAW. blockTrunk.layer says it
-//	outright — "input_layernorm normalizes the BLOCK only... the reference passes target_hidden
-//	straight into k_proj/v_proj while only hidden_states goes through the norm. Norming both
-//	would be the natural-looking port and would be wrong."
-//
-//	NO Q. The context supplies keys and values only; queries come from the block. rope_kv_batched
-//	rotates q and k together, so a q scratch is projected and discarded — cheaper than a second
-//	kernel, and it keeps the context on the SAME code path as the block, which is what stops the
-//	two drifting apart.
-//
-// INCREMENTAL BY CONSTRUCTION: it appends at ctxLen rather than rebuilding. The CPU measurement
-// (TestDFlashDraftScaling) put the rebuild path at 2.4x the incremental one at a 1024-token
-// context, widening with length — a full drafter-prefill of the whole context on every block.
+// It is incremental by construction: it appends at ctxLen rather than rebuilding, which would re-prefill the whole
+// context on every block (TestDFlashDraftScaling).
 func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 	n := len(fused)
 	if n == 0 {
@@ -281,20 +249,15 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 	need := d.ctxLen + n
 	return d.r.do(func() error {
 		if need > d.kvCap {
-			// REFUSE BEFORE ALLOCATING, NOT AFTER. The check sat below the allocation, so a
-			// mid-sequence overflow had ALREADY replaced d.kc/d.vc with fresh empty buffers before
-			// returning its error — the K/V it warns about dropping was dropped by the line above
-			// the warning (audit-2026-09-02 M-15).
+			// Refuse before allocating: if the check sat after the allocation, a mid-sequence overflow would already have replaced
+			// d.kc/d.vc with fresh empty buffers, dropping the K/V the error warns about.
 			if d.ctxLen > 0 {
 				return fmt.Errorf("cuda drafter: context grew past capacity mid-sequence (%d > %d); "+
 					"reallocating would drop the K/V already written", need, d.kvCap)
 			}
-			// SIZED TO THE TARGET'S CONTEXT, not need+512. The drafter is a 5-layer trunk, so its
-			// whole K/V is layers*ctxCap*kvDim*2 floats — small. At need+512 the capacity froze at
-			// len(prompt)+512 on the first call and never grew, so any greedy generation past
-			// ~500 tokens failed mid-stream, prompt-length independent, and blockspec returned that
-			// as the generation's terminal error. Every committed block-spec test stops at <= 96
-			// tokens, so none of them could reach it.
+			// Sized to the target's context, not need+512: the drafter's K/V is small (layers*ctxCap*kvDim*2 floats), and a capacity
+			// frozen at len(prompt)+512 on the first call never grows, so any generation past ~500 tokens would fail mid-stream
+			// regardless of the prompt length.
 			capRows := max(d.r.ctxCap, need+512)
 			d.kc = make([]Buffer, geo.Layers)
 			d.vc = make([]Buffer, geo.Layers)
@@ -304,13 +267,10 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 			}
 			d.kvCap = capRows
 		}
-		// Sized from THIS call's row count, not from whatever FuseContext last allocated.
-		// Coupling the two would make ExtendContext depend on a prior FuseContext having run
-		// with at least as many rows — an ordering rule between two exported methods that
-		// nothing states and that fails as a confusing capacity error.
+		// Sized from THIS call's row count, not from whatever FuseContext last allocated: coupling them would make ExtendContext
+		// depend on an unstated ordering between two exported methods.
 		if n > d.extCap {
-			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md) — see FuseContext's identical
-			// fix above for the shared rationale.
+			// Release before growing (see FuseContext), so a larger buffer does not strand its predecessor on the device ledger.
 			if d.extCap > 0 {
 				d.r.dev.ReleaseBuf(d.extIn)
 				d.r.dev.ReleaseBuf(d.ctxFQ)
@@ -371,14 +331,11 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 				Arg(d.ctxQ2), Arg(d.ctxKB), Arg(d.ctxVB), Arg(d.invF), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
 				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(int32(d.rhalf)), gpu.ArgValue(int32(n)),
-				// Drafters build from a geometry (no decoder.Model), which carries no YaRN
-				// attention_factor — so 1.0, not a value fetched from nowhere. A YaRN drafter
-				// would have to thread RopeMscaleLayer through geo first; this is where it lands.
+				// Drafters build from a geometry (no decoder.Model), which carries no YaRN attention_factor, so 1.0. A YaRN drafter
+				// would have to thread RopeMscaleLayer through geo first.
 				gpu.ArgValue(float32(1)),
-				// Same reasoning for FeatAttnTemp (G5 docs/tasks/task-gpu-paths-2026-09.md): no drafter
-				// geometry carries AttnTempBeta/OrigMaxPos, and beta=0 makes rope_kv_batched skip
-				// the scale entirely (see its own comment) — a Ministral-3-shaped drafter would
-				// need AttnTempParams threaded through geo first, same as YaRN above.
+				// The same for FeatAttnTemp: no drafter geometry carries AttnTempBeta/OrigMaxPos, and beta=0 makes rope_kv_batched skip
+				// the scale. A Ministral-3-shaped drafter would need AttnTempParams threaded through geo first.
 				gpu.ArgValue(float32(0)), gpu.ArgValue(float32(0))); e != nil {
 				return e
 			}
@@ -405,13 +362,10 @@ type blockScratch struct {
 	g, u, dScr         Buffer
 }
 
-// checkDrafterShmem is DraftBlock's shared-memory guard, extracted so it is testable without a
-// live device (V-05, docs/review-2026-09-04.md): the drafter's attnBlock launch sizes its dynamic
-// shared memory the same way decode's does, (nKeys+128)*4 bytes, with no split-KV fallback here
-// either. Every drafter layer attends the WHOLE context plus the whole block (no per-layer
-// window, unlike the target's prefill), so one check covers all layers — unlike
-// checkPrefillShmem's per-layer loop. M-15's kvCap = ctxCap means a --drafter run can reach this
-// boundary exactly where the target's own batched prefill does.
+// checkDrafterShmem is DraftBlock's shared-memory guard, extracted so it is testable without a device: the attnBlock
+// launch sizes its dynamic shared memory as decode does, (nKeys+128)*4 bytes, with no split-KV fallback. Every drafter
+// layer attends the whole context plus the block (no per-layer window), so one check covers all layers, unlike
+// checkPrefillShmem's per-layer loop.
 func checkDrafterShmem(ctxLen, M int) error {
 	nKeys := ctxLen + M
 	if splitKVRequired(nKeys) {
@@ -423,30 +377,20 @@ func checkDrafterShmem(ctxLen, M int) error {
 	return nil
 }
 
-// DraftBlock runs the trunk over one block and returns its output rows.
+// DraftBlock runs the trunk over one block and returns its output rows. The block occupies absolute positions [ctxLen,
+// ctxLen+M), directly after the context ExtendContext wrote, so attention sees ctx||block exactly, with
+// attn_block_full's uniform nKeys giving every row all of it (the block is bidirectional; see attn_block.cu). Every
+// kernel is the target's own except that one.
 //
-// The block occupies absolute positions [ctxLen, ctxLen+M), directly after the context
-// ExtendContext wrote — so the attention sees ctx‖block exactly, with attn_block_full's uniform
-// nKeys giving every row all of it (the drafter's block is bidirectional; see attn_block.cu).
+// The norm constants are the drafter's, not the target's, everywhere: bRmsB, bNormF32B and the prefill qk-norm read
+// r.eps and r.addOneArg(), and reusing them would apply the target's normalization to the drafter's weights, silently.
+// Each is launched directly with the drafter's own eps and a plain (addOne=0) norm.
 //
-// Every kernel here is the target's own except that one. The drafter is five layers of the same
-// Qwen3 shape, which is the whole reason this is assembly rather than new numerics.
-//
-// THE NORM CONSTANTS ARE THE DRAFTER'S, NOT THE TARGET'S, everywhere. bRmsB/bNormF32B/the
-// prefill qk-norm all read r.eps and r.addOneArg(), and reusing them here would apply the
-// target's normalization to the drafter's weights — silent, plausible, and wrong. Each is
-// launched directly with the drafter's own eps and a plain (addOne=0) norm.
-// N-43 (docs/audit-2026-09-10.md, documented 2026-09-16, not a correctness bug): every d.r.bGemvB
-// call below (q/k/v/o/gate/up/down) reads r.aboveFastPrefillFloor(), which is r.passPromptLen —
-// state set once at the TOP of the TARGET model's prefillCore and never cleared afterward (see
-// its own doc comment on the field, cuda/resident.go). The drafter never calls prefillCore itself,
-// so a draft block's choice between gemm_w4a8_mma and gemv_w4a8_rn is decided by the LENGTH OF THE
-// TARGET'S LAST PROMPT, not by anything about this block — an undocumented coupling nothing here
-// used to explain. It costs no correctness: speculative decoding's own verify step accepts or
-// rejects each draft token against the target's real logits regardless of which kernel produced
-// the draft, so a "wrong" kernel choice here can only shift acceptance rate, never the final
-// output (the same "costs acceptance rather than correctness" framing NewResidentDrafter's own
-// N-08 comment already uses for a different upload-failure case).
+// Coupling: every d.r.bGemvB call below reads r.aboveFastPrefillFloor(), which is r.passPromptLen, state set at the top
+// of the target's prefillCore and not cleared. The drafter never calls prefillCore, so a draft block's choice between
+// gemm_w4a8_mma and gemv_w4a8_rn follows the length of the target's last prompt. That costs no correctness, since
+// speculative verify accepts or rejects each draft token against the target's real logits whichever kernel drafted it;
+// it can only shift acceptance.
 func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	M := len(blockIn)
 	if M == 0 {
@@ -473,8 +417,7 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	err := d.r.do(func() error {
 		s := &d.blk
 		if M > s.cap {
-			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md) — see FuseContext's identical
-			// fix for the shared rationale. 16 buffers, same as this block's own allocation below.
+			// Release before growing (see FuseContext); all 16 buffers, as the allocation below.
 			if s.cap > 0 {
 				for _, b := range []Buffer{s.x, s.aq, s.aSc, s.mq, s.mSc, s.cq, s.cSc, s.dq, s.dSc,
 					s.q, s.k, s.v, s.cctx, s.g, s.u, s.dScr} {
@@ -544,13 +487,9 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nKeys + 128) * 4)},
 				Arg(s.q), Arg(d.kc[l]), Arg(d.vc[l]),
 				gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
-				// N-11: the DRAFTER's scale, not the target's. d.r.attnScale is the target
-				// model's, and this file's own rule three dozen lines up says the norm
-				// constants are the drafter's everywhere — this launch was the exception.
-				// Equal today only because DFlash drafters share head_dim 128 with Qwen3
-				// targets at the default scale, and lossless verify makes any mismatch
-				// perf-only: the drafter proposes worse tokens, verify rejects them,
-				// acceptance falls, and every correctness gate stays green.
+				// The drafter's scale, not the target's d.r.attnScale: the norm constants are the drafter's everywhere, and this launch
+				// must not be the exception. The two are equal only when the drafter shares head_dim 128 with a default-scale target,
+				// and lossless verify makes a mismatch performance-only (worse drafts, lower acceptance, every correctness gate green).
 				gpu.ArgValue(int32(d.ctxLen)), gpu.ArgValue(d.attnScale()),
 				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(s.cctx)); e != nil {
 				return e
@@ -577,9 +516,8 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 			if e := d.r.bGemvB(L.up, s.mq, s.mSc, ArgNull(), s.u, M, 0); e != nil {
 				return e
 			}
-			// act=1 is SiLU (ACT_SILU in prefill_batched.cu). Passed literally rather than
-			// r.act: that is the TARGET's activation, and a Gemma target would hand a GELU-tanh
-			// to a SwiGLU drafter — the FeatGatedGELU class of bug, silently.
+			// act=1 is SiLU (ACT_SILU in prefill_batched.cu), passed literally rather than r.act, which is the target's activation:
+			// a Gemma target would hand GELU-tanh to a SwiGLU drafter, silently.
 			if e := d.r.launch(d.r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
 				BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
 				Arg(s.g), Arg(s.u), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
@@ -616,13 +554,10 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	return out, nil
 }
 
-// SetBatchedCapture arms the batched hidden-state seam on the target: the next PrefillLastN /
-// PrefillLastNArgmax records the residual for ALL its rows at each named layer.
-//
-// The per-token seam (SetHiddenCapture) costs a sync and a download per tap PER TOKEN — measured
-// at 0.465 ms/token for five taps, ~2.3 ms per round at four accepted. This pays one download
-// per tap for the whole block, because the batched forward already has every row's residual in
-// one buffer.
+// SetBatchedCapture arms the batched hidden-state seam on the target: the next PrefillLastN / PrefillLastNArgmax records
+// the residual for ALL its rows at each named layer. The per-token seam (SetHiddenCapture) syncs and downloads once per
+// tap per token; this pays one download per tap for the whole block, because the batched forward already holds every
+// row's residual in one buffer.
 func (r *cudaResident) SetBatchedCapture(taps []int) error {
 	if len(taps) == 0 {
 		r.capBTaps, r.capBOut = nil, nil
@@ -646,14 +581,9 @@ func (r *cudaResident) SetBatchedCapture(taps []int) error {
 // BatchedCapture returns the rows recorded by the last batched forward, as [tap][M*hidden].
 func (r *cudaResident) BatchedCapture() [][]float32 { return r.capBOut }
 
-// DraftTokens turns trunk output rows into token ids using the TARGET's LM head.
-//
-// A block drafter ships no head of its own — it borrows the target's, which is why the pairing
-// is fixed and why the head cost already sits inside the verify's budget rather than the draft's.
-// The trunk's final norm has already been applied, so this is head + argmax and nothing else.
-//
-// Batched for the same reason the verify's head is: one weight read of the head's ~389 M
-// parameters for all M rows instead of one per row.
+// DraftTokens turns trunk output rows into token ids using the target's LM head: a block drafter ships no head of its
+// own, which is why the pairing is fixed. The trunk's final norm is already applied, so this is head + argmax only,
+// batched (one read of the head's weights for all M rows).
 func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 	M := len(trunk)
 	if M == 0 {
@@ -664,8 +594,7 @@ func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 	ids := make([]int, M)
 	err := r.do(func() error {
 		if M > d.headCap {
-			// RELEASE BEFORE GROWING (M-21, docs/audit-2026-09-10.md) — see FuseContext's identical
-			// fix for the shared rationale.
+			// Release before growing (see FuseContext), so a larger buffer does not strand its predecessor on the device ledger.
 			if d.headCap > 0 {
 				r.dev.ReleaseBuf(d.headIn)
 				r.dev.ReleaseBuf(d.headQ)
@@ -721,9 +650,8 @@ func (d *residentDrafter) TruncateContext(n int) {
 	}
 }
 
-// AttachBlockDrafter satisfies decoder.ResidentDrafterHost. The concrete AttachDrafter returns
-// *residentDrafter; this returns it through the interface so `decoder` can drive the loop
-// without importing this package.
+// AttachBlockDrafter satisfies decoder.ResidentDrafterHost, returning the concrete AttachDrafter result through the
+// interface so decoder can drive the loop without importing this package.
 func (r *cudaResident) AttachBlockDrafter(w decoder.BlockDrafterWeights) (decoder.ResidentBlockDrafter, error) {
 	return r.AttachDrafter(w)
 }
@@ -735,8 +663,8 @@ var (
 	_ decoder.ResidentBlockDrafter = (*residentDrafter)(nil)
 )
 
-// attnScale is the drafter's own 1/sqrt(head_dim), matching decoder/dflash.go's CPU reference.
-// Not the target's r.attnScale — see N-11 at the call site.
+// attnScale is the drafter's own 1/sqrt(head_dim), matching decoder/dflash.go's CPU reference, not the target's
+// r.attnScale (see DraftBlock's attnBlock launch).
 func (d *residentDrafter) attnScale() float32 {
 	return float32(1 / math.Sqrt(float64(d.geo.HeadDim)))
 }

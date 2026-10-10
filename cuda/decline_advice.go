@@ -4,15 +4,15 @@ package cuda
 
 import "strings"
 
-// declineAdvice turns the error that made BuildResident decline into the reason an operator reads (R20,
-// docs/tasks/task-first-hour.md). Two things were wrong with the raw error: a device OOM or an unpackable weight surfaced as
-// "executor job panicked: ... + a goroutine stack" or `unsupported projection kind ""` — a trace and a Go internal where the
-// operator needs to know what to change — and the fallback to the CPU it caused said nothing about how to stay on the GPU.
+// declineAdvice turns the error that made BuildResident decline into the reason an operator reads
+// (docs/tasks/task-first-hour.md). The raw error was a trace and a Go internal where the operator needs to know what to
+// change (a device OOM or an unpackable weight surfaced as "executor job panicked: ..." plus a goroutine stack, or
+// `unsupported projection kind ""`), and the CPU fallback it caused said nothing about how to stay on the GPU.
 //
-// reason is one line: the cause, then what to try. detail is whatever was cut (the panic's stack, kept because it localized a
-// real bug once — see runJob), for stderr only. moeCache says -moe-cache-experts is already on, so it is not offered again.
-// An error that is neither a memory failure nor an unpackable weight is a feature decline with its own explicit text and is
-// returned as it came.
+// reason is one line: the cause, then what to try. detail is whatever was cut (the panic's stack, kept because it
+// localized a real bug once; see runJob), for stderr only. moeCache says -moe-cache-experts is already on, so it is not
+// offered again. An error that is neither a memory failure nor an unpackable weight is a feature decline with its own
+// explicit text and is returned as it came.
 func declineAdvice(msg string, moeCache bool) (reason, detail string) {
 	reason = msg
 	if i := strings.Index(msg, "\ngoroutine "); i >= 0 {

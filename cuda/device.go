@@ -1,15 +1,13 @@
 //go:build cuda
 
-// CUDA device layer — now aikit's native-GPU substrate (github.com/townsendmerino/aikit/gpu),
-// the CUDA analogue of what metal/device.go did for Metal (goinfer 5ec20ff). goinfer keeps its
-// tuned decode kernels here and builds them on these device types — the GPU analogue of the
-// linalg relationship. Only the device TYPES moved; nothing about the decode path changed, so
-// it must stay bit-identical (the CUDA device-parity suite is the tripwire).
+// CUDA device layer: aikit's native-GPU substrate (github.com/townsendmerino/aikit/gpu), the CUDA analogue of
+// metal/device.go. goinfer keeps its tuned decode kernels here and builds them on these device types, as it builds on
+// linalg. Only the device types moved; the decode path is unchanged and must stay bit-identical (the CUDA device-parity
+// suite is the tripwire).
 //
-// The type + non-generic-func aliases below let the tuned code read unqualified (Buffer, Arg,
-// Grid1D, …), exactly as it did against gocudrv. Go has no generic-method/var aliases, so the
-// generic verbs (ArgValue, NewBufferOf/LenOf, Upload/Download, NewHostBuffer, ReadToHost) are
-// called as gpu.X[T](…) at the sites; everything else is unqualified here.
+// The type and non-generic-func aliases below let the tuned code read unqualified (Buffer, Arg, Grid1D, ...). Go has no
+// generic-method/var aliases, so the generic verbs (ArgValue, NewBufferOf/LenOf, Upload/Download, NewHostBuffer,
+// ReadToHost) are called as gpu.X[T](...) at the sites.
 package cuda
 
 import gpu "github.com/townsendmerino/aikit/gpu"

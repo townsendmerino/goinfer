@@ -15,73 +15,38 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// errPrefillDeclined marks an ARCH/GEOMETRY decline from the batched path (MoE, K=V, non-int4,
-// non-uniform geometry, or missing batched kernels) — as opposed to a real compute/cap error. The
-// batched forward covers the plain dense unfused family only; callers that can fall back to the
-// sequential per-token path (ForwardN for spec verify, model.go for prefill) test errors.Is(err,
-// errPrefillDeclined) to distinguish "this arch can't batch, use the slow path" (recoverable) from
-// "the batched kernels failed" (propagate). Wrapped into each decline so the message stays specific.
+// errPrefillDeclined marks an arch or geometry decline from the batched path, which covers the plain dense unfused
+// family only, as opposed to a compute or cap error. A caller that can fall back to the sequential path tests
+// errors.Is(err, errPrefillDeclined) and recovers; any other error propagates. It is wrapped into each decline so the
+// message stays specific.
 var errPrefillDeclined = errors.New("cuda prefill: batched path declined (arch/geometry)")
 
-// errPrefillOOM narrows errPrefillDeclined to the one decline that is a function of M rather than of
-// the model: the [M, inter]-sized scratch prefillCore allocates did not fit beside the weights and
-// the KV. It is wrapped alongside errPrefillDeclined (so every existing errors.Is check keeps its
-// meaning) purely so prefillChunked can tell "this prompt is too long for one pass, halve it" from
-// "this model can never batch", which must not be retried at all.
+// errPrefillOOM narrows errPrefillDeclined to the one decline that depends on M rather than the model: the [M,
+// inter]-sized scratch prefillCore allocates did not fit. It is wrapped alongside errPrefillDeclined so prefillChunked
+// can tell "halve the chunk" from "this model can never batch", which must not be retried.
 var errPrefillOOM = errors.New("cuda prefill: M-sized scratch did not fit")
 
-// prefillDefaultChunk is the default number of prompt rows per batched pass.
-//
-// WHY CHUNKING EXISTS. prefillCore's scratch is O(M·inter): at Qwen2.5-7B's inter=18944 it is
-// ~278 KB per row, so an 8k prompt asks for 2.28 GB on top of the weights and the KV. MEASURED on
-// this box (RTX 2070 SUPER, 8 GB, qwen2.5-7b-instruct-q4_k_m at int4, ResidentContext=8192, 1.96 GB
-// free after load — docs/measurements/prefill-chunking-2026-09-04/):
-//
-//	M=512   batched     2.776 ms/token      M=512   sequential  12.485 ms/token
-//	M=2048  batched     3.543 ms/token      M=2048  sequential  13.850 ms/token
-//	M=4096  batched     4.440 ms/token
-//	M=8012  DECLINED — cuMemAlloc_v2 CUDA_ERROR_OUT_OF_MEMORY on the 607 MB gate buffer
-//
-// So the batched path passed its LOAD-time report ("batched (one weight-stationary CUDA pass)") and
-// then declined every prompt long enough to need it, falling back — silently, since
-// residentPrefillSeed discards the decline — to the ~4.5× slower per-token loop. The failure grows
-// with the prompt: it is exactly the deep-context cell where TTFT matters most that lost the path.
-//
-// WHY 512. The per-token cost above is a + b·(average attended keys), and attention is charged per
-// position against its own prefix whatever the chunking, so chunk size buys nothing there — it only
-// sets how many times each weight is re-read. Fitting the three batched points gives a ≈ 2.52
-// ms/token of weight+glue work and b ≈ 1.0 µs/key; at 512 rows each weight is already amortized
-// 512-fold, which is within a hair of the M→∞ limit, and the scratch is ~146 MB rather than 2.3 GB.
-// A 2048-token prompt therefore costs the same chunked as it did in one pass (predicted 3.54 vs
-// measured 3.543 ms/token), so this is not a trade against the lengths that already worked.
-// GOINFER_PREFILL_CHUNK overrides it (0 or unset = this default).
+// prefillDefaultChunk is the default number of prompt rows per batched pass. prefillCore's scratch is O(M*inter) (~278
+// KB per row at inter=18944), so one pass over a long prompt can fail to allocate beside the weights and the KV. At 512
+// rows each weight is already amortized close to the M-to-infinity limit and the scratch stays ~146 MB.
+// GOINFER_PREFILL_CHUNK overrides it (0 or unset = this default). The measurements and the fit:
+// docs/code-notes/cuda.md#prefillDefaultChunk.
 const prefillDefaultChunk = 512
 
-// prefillMinChunk is the floor prefillChunked halves down to before giving up and letting the caller
-// take the sequential path. At 32 rows each weight is still read once per 32 tokens rather than once
-// per token, so the floor is set by diminishing returns and not by correctness; below it the batched
-// path's fixed per-pass cost stops paying for itself.
+// prefillMinChunk is the floor prefillChunked halves down to before declining to the sequential path. It is a
+// diminishing-returns floor, not a correctness one: below it the batched pass's fixed per-pass cost stops paying for
+// itself.
 const prefillMinChunk = 32
 
-// prefillImageDefaultChunk is PrefillImageLast's own row budget — separate from
-// prefillDefaultChunk because it prices a BOUNDED, KNOWN quantity (a real image's token budget —
-// Gemma 3: 256, Gemma 4: up to 1120, docs/multimodal.md — plus whatever chat text accompanies it)
-// rather than an open-ended prompt, and because PrefillImageLast never chunks at all (a
-// bidirectional image block split across a chunk boundary is unverified — its own doc comment),
-// so M > chunk is an outright decline, not a retry at a smaller width. 2048 is not a fresh guess:
-// prefillDefaultChunk's own measurement table above already measured M=2048 batched on THIS box
-// (RTX 2070 SUPER) at Qwen2.5-7B — inter=18944, the worst-case width in that table — at 3.543
-// ms/token with no OOM (the table's own OOM point is M=8012, four times higher). A card where
-// 2048 IS too wide still declines cleanly: prefillCore's own OOM handling wraps a real device OOM
-// as errPrefillDeclined/errPrefillOOM regardless of caller, and GenerateVL's fallback reuses the
-// already-computed vision features rather than re-running the tower — an overly optimistic
-// default costs one wasted allocation attempt, never a crash or a wrong answer.
-// GOINFER_PREFILL_IMAGE_CHUNK overrides it (0 or unset = this default).
+// prefillImageDefaultChunk is PrefillImageLast's row budget: one image's tokens plus its chat text, a bounded quantity,
+// unlike an open-ended prompt. PrefillImageLast never chunks, so M past the budget is an outright decline. A card where
+// 2048 is too wide still declines cleanly (prefillCore wraps a device OOM as errPrefillDeclined/errPrefillOOM) and the
+// caller reuses the computed vision features. GOINFER_PREFILL_IMAGE_CHUNK overrides it (0 or unset = this default). The
+// basis for 2048: docs/code-notes/cuda.md#prefillImageDefaultChunk.
 const prefillImageDefaultChunk = 2048
 
-// prefillImageChunkRows is PrefillImageLast's row budget — prefillImageDefaultChunk unless
-// GOINFER_PREFILL_IMAGE_CHUNK says otherwise. Same "an unparseable/non-positive override is
-// ignored, not fatal" reasoning as prefillChunkRows.
+// prefillImageChunkRows is prefillImageDefaultChunk unless GOINFER_PREFILL_IMAGE_CHUNK parses to a positive integer; an
+// unusable override is ignored, as in prefillChunkRows.
 func prefillImageChunkRows(v string) int {
 	if n, err := strconv.Atoi(v); err == nil && n > 0 {
 		return n
@@ -134,49 +99,32 @@ func (r *cudaResident) profToc(cat profCat, t0 time.Time) {
 	}
 }
 
-// PrefillLast (decoder.Prefiller) ingests a whole prompt in ONE weight-stationary pass and returns the
-// logits for the last token — the batched (M=len) counterpart of the sequential ForwardNoLogits loop.
-// It fixes the ~128-token Ollama crossover: goinfer's sequential prefill reads every weight once PER
-// PROMPT TOKEN (weight-bandwidth-bound at ~6 ms/token), while this reads each weight once for all M
-// tokens (the gemv_w4a8_batched amortization). The K/V it writes is BIT-IDENTICAL to the sequential
-// path row-for-row (every batched kernel is the M=1 kernel with an M dimension, per-row math verbatim),
-// so decode from the last prompt token stays byte-identical.
+// PrefillLast (decoder.Prefiller) ingests a whole prompt in batched weight-stationary passes (prefillChunked) and
+// returns the last token's logits: the batched counterpart of the sequential ForwardNoLogits loop, reading each weight
+// once per pass rather than once per token. The K/V it writes is bit-identical to the sequential path row for row, so
+// decode afterwards is byte-identical.
 //
-// It handles the plain dense unfused forward only (Llama/Qwen2/Mistral-class): rmsnorm→Q/K/V→rope+kv→
-// causal windowed attention→o-proj→rmsnorm→gate/up→swiglu→down. Anything it does not cover — MoE, the
-// Gemma parallel dense‖MoE, sandwich norms, per-head QK-norm, K=V (Gemma), int8 weights, non-uniform
-// per-layer geometry, or a prompt past the KV cap — returns an error so decoder/model.go falls back to
-// the sequential KV-only prefill (which is correct for every family). Uniform-only is enforced against
-// layer 0; a non-uniform family trips the guard and declines rather than reading a wrong stride.
-// PrefillLast ingests a whole prompt in one batched pass, returning the last token's logits.
+// It covers the plain dense unfused forward only. Anything else (see prefillStaticDecline) or a prompt past the KV cap
+// returns an error wrapping errPrefillDeclined, and decoder/model.go falls back to the sequential KV-only prefill.
+// Uniform per-layer geometry is checked against layer 0, so a non-uniform family declines rather than reading a wrong
+// stride.
 func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, nil)
 }
 
-// PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast's Gemma-3 twin for a turn
-// whose prompt carries a bidirectional image block [imgStart,imgEnd) (docs/multimodal.md's image
-// path — decoder/kvcache.go's SetImageBlocks/attendHi is the CPU reference this must match
-// bit-for-bit). embeddings already carry the spliced vision features at that range — the same
-// "embed by vector" convention PrefillLast already uses; there is no GPU-side embedding table to
-// bypass. startPos is always 0 today (GenerateVL's image-prefill branch only ever runs on a fresh
-// turn) but is not hardcoded, for symmetry with PrefillLast and to not foreclose a future
-// prefix-reuse combination.
+// PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast for a turn whose prompt carries a bidirectional
+// image block [imgStart,imgEnd) (docs/multimodal.md; decoder/kvcache.go's SetImageBlocks/attendHi is the CPU reference
+// it must match bit for bit). embeddings already carry the spliced vision features.
 //
-// v1 REQUIRES the whole prompt (the image block included) to fit in ONE weight-stationary pass —
-// prefillChunked's positional-KV chunking is unverified (likely unsafe) for a bidirectional block
-// split across a chunk boundary — so this never chunks, unlike PrefillLast. The row budget for
-// that one pass is prefillImageChunkRows (2048 by default), NOT prefillChunkRows's 512: real image
-// token budgets are bounded and known (see prefillImageDefaultChunk's own doc comment), so this
-// prices "one image plus its surrounding chat text" rather than an open-ended text prompt. Any
-// decline (kernel unavailable, invalid range, or M past the chunk width) wraps errPrefillDeclined;
-// the caller (decoder.GenerateVL) treats that as "fall through to the CPU-prefill+UploadKV bridge,
-// unchanged".
+// The whole prompt must fit one pass: a bidirectional block split across a chunk boundary is unverified, so this never
+// chunks. The row budget is prefillImageChunkRows, not prefillChunkRows. Any decline (kernel unavailable, invalid range,
+// M past the budget) wraps errPrefillDeclined, and decoder.GenerateVL then falls back to the CPU prefill plus UploadKV.
 func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
 	return r.PrefillImageBlocksLast(ctx, embeddings, startPos, [][2]int{{imgStart, imgEnd}})
 }
 
-// PrefillImageBlocksLast (decoder.ResidentImageBlocksPrefill; S11, several images) is PrefillImageLast for several blocks,
-// each [start, end), in order and disjoint, each attending bidirectionally within itself.
+// PrefillImageBlocksLast (decoder.ResidentImageBlocksPrefill) is PrefillImageLast for several blocks, each [start, end),
+// in order and disjoint, each attending bidirectionally within itself.
 func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
@@ -206,17 +154,10 @@ func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings []
 	}
 	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, blocks, nil, nil)
 	if err != nil {
-		// N-41 (docs/audit-2026-09-10.md): unlike prefillChunked, this call cannot retry at a
-		// smaller width — a bidirectional image block has to land in one pass, and errPrefillOOM
-		// here is a function of THIS M, not of chunk, so a smaller chunk would not change M or
-		// rescue this attempt. But leaving prefillChunkCap unlearned means the pre-check above
-		// keeps admitting up to prefillImageChunkRows() on every future image turn too, so the
-		// SAME OOM repeats on every one — and per prefillChunkCap's own doc comment
-		// (cuda/resident.go), repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY risks the
-		// context afterward launching kernels that "return SUCCESS and execute NOTHING", not just
-		// wasted retries. Halve the budget for the NEXT image call, same floor prefillChunked
-		// already uses, so a smaller image is caught by the cheap pre-check instead of repeating
-		// the same real OOM.
+		// An OOM here cannot be retried narrower (an image block must land in one pass and the OOM is a function of this M).
+		// Leaving prefillChunkCap unlearned would repeat it on every image turn, and a context repeatedly driven to
+		// out-of-memory can afterwards launch kernels that "return SUCCESS and execute NOTHING" (prefillChunkCap in
+		// resident.go). So halve the budget for the next image call, to the prefillChunked floor.
 		if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 			r.prefillChunkCap.Store(int64(max(chunk/2, prefillMinChunk)))
 		}
@@ -225,18 +166,13 @@ func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings []
 	return outs[len(outs)-1], nil
 }
 
-// PrefillMRoPELast satisfies decoder.ResidentMRoPEPrefill: PrefillLast's Qwen2.5-VL twin under
-// m-RoPE 3D rotary positions (docs/multimodal.md's image path — decoder/rope.go's
-// applyMRoPE/mropePositions is the CPU reference this must match bit-for-bit). embeddings already
-// carry the spliced merged-vision features — the same "embed by vector" convention PrefillLast
-// already uses. mropePos is decoder/rope.go's mropePositions output, one (t,h,w) triple per
-// ABSOLUTE sequence position, covering the WHOLE prompt (never pre-sliced by the caller — see
-// mropePosWindow's own doc comment for why the slicing lives inside prefillCore instead).
+// PrefillMRoPELast satisfies decoder.ResidentMRoPEPrefill: PrefillLast for Qwen2.5-VL under m-RoPE 3D positions
+// (docs/multimodal.md; decoder/rope.go's applyMRoPE/mropePositions is the CPU reference, bit for bit). embeddings carry
+// the spliced vision features. mropePos is mropePositions' output, one (t,h,w) triple per ABSOLUTE position over the
+// WHOLE prompt; it is never pre-sliced because mropePosWindow slices it inside prefillCore.
 //
-// UNLIKE PrefillImageLast, this DOES chunk: Qwen's image tokens attend causally (no bidirectional
-// mask, so attention geometry is completely unaffected by an image block), and each row's rotation
-// is independent of every other row's — there is no cross-row coupling for a chunk boundary to
-// break. Reuses prefillChunked's existing OOM-retry/cancellation loop rather than duplicating it.
+// Unlike PrefillImageLast this chunks, through prefillChunked: image tokens attend causally and each row's rotation is
+// independent, so a chunk boundary breaks nothing.
 func (r *cudaResident) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
@@ -261,15 +197,15 @@ type cudaDeepPlan struct {
 	sets     [][]float32
 }
 
-// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, ON BY THE OWNER'S DECISION of 2026-10-09 ("just turn it on"), over a registered FAIL. The record (docs/tasks/task-multimodal-support-2026-10.md):
-// G-S10g passed on all four images against a text control; G-S10j (one prompt per image, bars set without a noise floor) read FAIL and left it off; the first pass of the 896-pixel investigation found the chunk boundary exact, no
-// localized fault in the per-layer residuals, and that one equivalent CPU kernel moves the same statistic as much as G-S10j's "defect"; G-S10k (64 units, the margin taken from an A/A in the same run) read FAIL on its per-image
-// guard alone: pooled the resident prefill is within the margin (+0.0007 [-0.0044, +0.0060] against 0.0050), and on the 896-pixel image it is farther in logits cosine by about 0.011 while closer in KL and argmax agreement.
-// So the one known residual is a small cosine difference on that image, not a defect located anywhere, and what it buys is a prefill about 13x faster than the CPU prefill and upload. Off, a Qwen3-VL image turn takes the
-// CPU prefill and the upload; setting this false restores that path exactly. The gates set it explicitly and put it back.
+// cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill. False sends a Qwen3-VL image turn
+// back to the CPU prefill and upload, exactly as before the resident path existed. It is on by owner decision, over a
+// registered gate FAIL (a small logits-cosine difference on the 896-pixel image, no located defect); the gates set it
+// explicitly and restore it. Do not change the default without reading docs/code-notes/cuda.md#cudaDeepstackPrefillOn
+// and docs/tasks/task-multimodal-support-2026-10.md.
 var cudaDeepstackPrefillOn = true
 
-// deepDefectForTest is G-S10g's planted-defect seam (S16's list): 0 none, 1 the sets not added, 2 each set one layer late, 3 the sets added to the text rows too.
+// deepDefectForTest plants a defect for the DeepStack gate to catch: 1 the sets not added, 2 each set one layer late, 3
+// the sets added to the text rows too.
 var deepDefectForTest int
 
 const (
@@ -278,8 +214,9 @@ const (
 	deepDefectTextRows
 )
 
-// PrefillMRoPEDeepstackLast satisfies decoder.ResidentMRoPEDeepstackPrefill (S10 on CUDA, G-S10g): PrefillMRoPELast, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after layer l,
-// as the CPU prefill does. Only plain dense layers are claimed: a layer with an MoE, DeltaNet or Gemma 4 branch declines, and the turn keeps the CPU prefill and upload, as before.
+// PrefillMRoPEDeepstackLast satisfies decoder.ResidentMRoPEDeepstackPrefill: PrefillMRoPELast that also adds DeepStack
+// set l to the image rows [imgStart, imgStart+imgLen) after layer l, as the CPU prefill does. Only plain dense layers
+// are claimed; a layer with an MoE, DeltaNet or Gemma 4 branch declines and the turn keeps the CPU prefill and upload.
 func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
 	if !cudaDeepstackPrefillOn {
 		return nil, fmt.Errorf("cuda prefill: the resident DeepStack prefill is switched off: %w", errPrefillDeclined)
@@ -302,12 +239,12 @@ func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings
 	return r.PrefillMRoPELast(ctx, embeddings, startPos, mropePos)
 }
 
-// HybridMRoPEPrefill satisfies decoder.ResidentHybridMRoPEPrefill: for a Gated-DeltaNet hybrid (Qwen3.5+), PrefillMRoPELast builds
-// the recurrent state itself, because prefillCore runs the DeltaNet layers' recurrence over the same spliced rows
-// (prefillDeltaNetRows) and rotates the full-attention layers by the m-RoPE positions in the layout the model uses
-// (rope_kv_mrope_batched mode 1 for Qwen3.5's interleaved one). That is exercised on the dense tiny hybrid VL fixture
-// (TestGenerateQwenVL_hybridResidentPrefillMatchesCPU) and, on the real 0.8B, against the CPU path. A hybrid with MoE layers is
-// NOT claimed: no MoE hybrid image gate exists, so it stays on the CPU prefill until one does.
+// HybridMRoPEPrefill satisfies decoder.ResidentHybridMRoPEPrefill: for a Gated-DeltaNet hybrid (Qwen3.5+),
+// PrefillMRoPELast builds the recurrent state itself, because prefillCore runs the DeltaNet recurrence over the spliced
+// rows (prefillDeltaNetRows) and rotates the full-attention layers by the m-RoPE positions in the model's layout
+// (rope_kv_mrope_batched, mode 1 for Qwen3.5's interleaved one); gated by
+// TestGenerateQwenVL_hybridResidentPrefillMatchesCPU. A hybrid with MoE layers is not claimed (no MoE hybrid image gate
+// exists) and stays on the CPU prefill.
 func (r *cudaResident) HybridMRoPEPrefill() bool {
 	if !r.mropePrefillReady {
 		return false
@@ -322,10 +259,9 @@ func (r *cudaResident) HybridMRoPEPrefill() bool {
 	return delta
 }
 
-// prefillChunkRows is the row budget for one batched pass — prefillDefaultChunk unless
-// GOINFER_PREFILL_CHUNK says otherwise. An unparseable or non-positive value is ignored rather than
-// failing the request: this is a tuning knob on a path that has a correct fallback, so a typo in it
-// must not be the thing that takes a model off the fast path.
+// prefillChunkRows is prefillDefaultChunk unless GOINFER_PREFILL_CHUNK parses to a positive integer. An unusable value
+// is ignored, not an error: this is a tuning knob on a path with a correct fallback, and a typo must not take a model
+// off the fast path.
 func prefillChunkRows(v string) int {
 	if n, err := strconv.Atoi(v); err == nil && n > 0 {
 		return n
@@ -333,22 +269,19 @@ func prefillChunkRows(v string) int {
 	return prefillDefaultChunk
 }
 
-// HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for G4
-// (docs/tasks/task-gpu-paths-2026-09.md, embedding requests): the resident batched pass ingests the
-// whole sequence exactly as PrefillLast does — same chunking, same K/V it writes, bit-identical
-// per-row math — but the final chunk's tail computes the last row's post-final-norm hidden state
-// instead of logits, and never dispatches the LM head at all: an embedder never needs it
-// (decoder/embed.go's HiddenLast doc comment), and the head is the single most expensive matmul
-// in a forward. startPos is always 0 for every caller today (HiddenLast has no prefix reuse), but
-// this takes it anyway so it can share prefillChunked's chunk-boundary bookkeeping unchanged.
+// HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for embedding requests: same chunking, same K/V,
+// bit-identical per-row math, but the final tail returns the last row's post-final-norm hidden state and never
+// dispatches the LM head, which an embedder does not need (decoder/embed.go's HiddenLast). startPos is taken so it
+// shares prefillChunked's chunk bookkeeping.
 func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	return r.prefillChunked(ctx, embeddings, startPos, tailHiddenLast, nil)
 }
 
-// ResidualAll (decoder.ResidentResidualAll) returns every row's residual stream after the last layer and before the final norm: HiddenLast's twin for a head that reads
-// every position (D11's follow-up; the Clef joint head). The passes are the same chunked ones prefillChunked runs, except that every chunk keeps its rows instead of
-// discarding them, and all of them take the exact kernels (every tail but an ordinary single-row prefill does; a DeltaNet model always does). The rows are the f32 residual
-// the pass already downloads, so nothing here is quantized and the decoder's own f32 final norm finishes the job.
+// ResidualAll (decoder.ResidentResidualAll) returns every row's residual stream after the last layer and before the
+// final norm, for a head that reads every position. The passes are prefillChunked's, except that each chunk keeps its
+// rows and all of them take the exact kernels (as does every tail but an ordinary single-row prefill, and any DeltaNet
+// model). The rows are the f32 residual the pass already downloads, so nothing is quantized and the decoder's f32 final
+// norm finishes the job.
 func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) ([][]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
@@ -391,39 +324,27 @@ func (r *cudaResident) ResidualAll(ctx context.Context, embeddings [][]float32, 
 	return all, nil
 }
 
-// prefillChunked runs the prompt through the batched path in passes of at most
-// prefillChunkRows() rows, returning the LAST row's tail output — logits (tailLastLogits,
-// PrefillLast/PrefillMRoPELast) or the post-final-norm hidden state (tailHiddenLast,
-// HiddenLast/G4). mropePos is nil for every caller except PrefillMRoPELast (Qwen2.5-VL's m-RoPE
-// decode past an image block); every other caller's rotation position equals its KV position, the
-// same no-op-widening convention prefillCore/rope_kv already use. Every pass writes its own K/V at
-// absolute positions startPos+i…, and attention reads the cache — so pass k attends the keys
-// passes 0…k-1 wrote exactly as one M=len pass would have, and the result is bit-identical to the
-// unchunked path (TestPrefillChunked_bitIdentical covers the tailLastLogits case this refactor
-// must not have changed). What changes is only the peak scratch, which is what the unchunked path
-// ran out of. Every chunk but the last always runs tailKVOnly regardless of finalTail — a
-// non-final chunk's logits/hidden-state output is never read by any caller.
+// prefillChunked runs the prompt through the batched path in passes of at most prefillChunkRows() rows and returns the
+// last row's tail output: logits for tailLastLogits, the post-final-norm hidden state for tailHiddenLast. mropePos is
+// nil except for PrefillMRoPELast; otherwise a row's rotation position equals its KV position. Each pass writes K/V at
+// absolute positions startPos+i and attention reads the cache, so the result is bit-identical to one unchunked pass
+// (TestPrefillChunked_bitIdentical); chunking only bounds peak scratch. Every chunk but the last runs tailKVOnly, since
+// its output is never read.
 //
-// A chunk that OOMs is retried at half the width from the SAME position: the passes already done are
-// committed to the positional KV and stay valid, so a retry re-enters at the boundary rather than
-// restarting. Only errPrefillOOM is retried; a static decline is M-independent and would spin, so it
-// is checked once up front and returned.
+// A chunk that OOMs is retried at half the width from the same position (the earlier passes stay committed in the
+// positional KV). Only errPrefillOOM is retried: a static decline is independent of M and would spin, so it is checked
+// once up front.
 //
-// NOT CHUNKED when a batched hidden-state capture is armed (r.capBTaps): those taps record the
-// residual for ALL M rows of one pass, and a chunked run would leave a block drafter holding the last
-// chunk's rows only. That combination is not reachable today — the capture is armed by the verify
-// entry points, not by PrefillLast or HiddenLast — but a partial capture would be a silent wrong
-// answer rather than a slow one, so it declines to one pass instead of being merely documented as
-// unreachable.
+// Not chunked while a batched hidden-state capture is armed (r.capBTaps): the taps record the residual for all M rows of
+// one pass, and a chunked run would leave a block drafter holding the last chunk's rows only, a silent wrong answer. It
+// runs as one pass instead.
 func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float32, startPos int, finalTail int, mropePos [][3]int) ([]float32, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, fmt.Errorf("cuda prefill: empty prompt")
 	}
-	// AT ENTRY, before the single-pass branch below. A prompt that fits in one chunk skips the loop
-	// entirely, so without this check the whole M<=chunk case is uncancellable — on a dense model
-	// there is no per-row loop to catch it either, which is exactly the hole the chunk-boundary
-	// check alone leaves open.
+	// Checked at entry, before the single-pass branch: a prompt that fits one chunk skips the loop, and without this check
+	// that case would be uncancellable.
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -446,8 +367,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 	r.chunkPromptLen = startPos + M
 	defer func() { r.chunkOrdinary, r.chunkPromptLen = false, 0 }()
 	for i := 0; i < M; {
-		// Between passes: the coarsest of the two checks, and the one that bounds a cancelled
-		// request to a single chunk's work instead of the whole prompt.
+		// Between passes: bounds a cancelled request to one chunk's work.
 		if e := ctx.Err(); e != nil {
 			return nil, e
 		}
@@ -479,54 +399,30 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 	return nil, fmt.Errorf("cuda prefill: chunked loop ended without heading the last row (M=%d)", M)
 }
 
-// PrefillLastN is the D1 (speculative-decode) verify primitive: the SAME batched pass, but returns
-// the logits at ALL M positions (row m = the target's prediction for position startPos+m+1). The
-// batched layer stack is bit-identical to sequential per position (TestPrefillLast_e2e), and the
-// final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
-// row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
+// PrefillLastN is the speculative-decode verify primitive: the same batched pass, returning logits at all M positions
+// (row m predicts position startPos+m+1). The final norm and LM head run per row exactly as in the sequential path, so
+// each row's logits equal a sequential Forward's and greedy accept is lossless (TestPrefillLast_e2e).
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
 	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, nil, nil, nil)
 	return outs, err
 }
 
-// PrefillLastNArgmax is the spec-decode VERIFY primitive: the same batched pass, returning only
-// each row's argmax token id — which is all the accept decision needs.
-//
-// It exists because PrefillLastN's per-row tail re-reads the LM head's weights ONCE PER ROW
-// (~389 M params, ~195 MB at int4), measured at 1.046 ms marginal per row against a 0.934 ms
-// single-row head — no amortization at all, in the one place the batched pass exists to provide
-// it. This tail instead runs ONE batched final-norm, ONE batched head GEMV over all M rows, and M
-// argmax reductions, then reads back 4 bytes per row instead of 608 KB.
-//
-// LOSSLESSNESS: the accept decision compares the drafted token against the target's argmax, so
-// only the ARGMAX must match the sequential path — not the logits bit-for-bit. That is a strictly
-// weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
-// all. TestPrefillLastNArgmax_matchesPerRow gates it.
+// PrefillLastNArgmax is the spec-decode verify primitive returning only each row's argmax token id, which is all the
+// accept decision needs. PrefillLastN's tail re-reads the LM head once per row; this one runs ONE batched final norm,
+// ONE batched head GEMV over all M rows and M argmax reductions, and reads back 4 bytes per row. It is lossless because
+// only the argmax must match the sequential path, not the logits bit for bit (TestPrefillLastNArgmax_matchesPerRow).
 func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
 	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, nil, nil, nil)
 	return ids, err
 }
 
-// PrefillSeedArgmax satisfies decoder.ResidentSeedArgmax: the same batched forward and the same
-// batched capture, but the head runs over ONE row.
-//
-// The block-spec prompt seed asked for M rows of argmax and read only the last. At vocab 151,936 a
-// 2048-token prompt therefore allocated 1.24 GB of VRAM for the batched logits, a 1.24 GB host
-// slice and a 1.24 GB D2H, ran the head GEMV over 2048 rows and a single-threaded host argmax over
-// 311M floats — for one token id. logitsB is grow-only, so each longer prompt also abandoned its
-// predecessor; a 4096-token prompt on an 8 GB card OOM'd inside the executor, and per backend.go's
-// A13 a context driven to refusal and kept in use can afterwards launch kernels that "return
-// SUCCESS and execute NOTHING" (audit-2026-09-02 C-12).
-//
-// tailLastLogits, not a new kernel path: it ALREADY heads the last row only, and the seed's other
-// requirement — the batched capture — comes from the layer loop either way. One row of logits is
-// vocab floats (~0.6 MB) against M x vocab.
+// PrefillSeedArgmax satisfies decoder.ResidentSeedArgmax: the same batched forward and capture, but the head runs over
+// ONE row (tailLastLogits), since the block-spec prompt seed needs only the last row's argmax. Heading all M rows
+// allocates M x vocab of logits on device and host (1.24 GB at a 2048-token prompt, vocab 151,936), and an OOM there can
+// leave the context launching kernels that "return SUCCESS and execute NOTHING" (prefillChunkCap in resident.go).
 func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
-	// context.Background(), and it is a KNOWN GAP of the same class PrefillLast just closed:
-	// decoder.ResidentSeedArgmax carries no context, and this one DOES ingest a whole prompt, so a
-	// cancelled block-spec seed runs to completion. It is not fixed here because the fix is another
-	// interface change on a different seam, and doing it silently as a side effect of this one is
-	// how a surface changes without anyone deciding to. Filed with the P20 cancellation item.
+	// No context: decoder.ResidentSeedArgmax carries none, so a cancelled block-spec seed runs to completion. Known gap;
+	// closing it is an interface change (docs/code-notes/cuda.md#PrefillSeedArgmax: cancellation gap).
 	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, nil, nil, nil)
 	if err != nil {
 		return 0, err
@@ -544,17 +440,11 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 	return best, nil
 }
 
-// prefillStaticDecline reports why the batched path can't run for THIS model, or nil when it can. It
-// covers exactly the MODEL-dependent guards — arch, per-layer geometry, weight kind, kernel
-// availability — and deliberately not the prompt-dependent one (checkCap, which needs M/startPos).
-// That split is what lets PrefillPath answer at LOAD time from the same code prefillCore enforces at
-// call time: one source of truth, so the startup line can never drift from the actual decline.
-//
-// qk-norm (per-head Q/K RMSNorm) and Gemma sandwich norms are batched (qk_norm_batched /
-// rmsnorm_f32_batched) — neither declines. backend.go asserts qNorm/kNorm length == headDim before
-// residency (⇒ present when r.qkNorm), and the per-layer K=V / non-uniform / int4 checks still catch
-// a Gemma-4-class layer this dense-batched path can't stride. MoE and the Gemma parallel dense‖MoE
-// take the sequential path.
+// prefillStaticDecline reports why the batched path cannot run for THIS model, or nil. It covers the model-dependent
+// guards (arch, per-layer geometry, weight kind, kernel availability) and deliberately not the prompt-dependent one
+// (checkCap needs M/startPos), so PrefillPath can answer at load time from the code prefillCore enforces at call time.
+// Per-head QK norm and Gemma sandwich norms are batched and do not decline (backend.go asserts qNorm/kNorm length ==
+// headDim before residency); MoE and the Gemma parallel dense||MoE take the sequential path.
 func (r *cudaResident) prefillStaticDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
@@ -564,24 +454,13 @@ func (r *cudaResident) prefillStaticDecline() error {
 		// the sequential decode path, which runs the per-32 kernels.
 		return fmt.Errorf("cuda prefill: per-32 activation quantization has no batched kernels yet: %w", errPrefillDeclined)
 	}
-	// MoE is no longer a categorical refusal: a MoE layer's FFN runs ROW BY ROW off the batched
-	// residual (prefillCore), so the attention half batches and the routed experts keep the exact
-	// per-token sequence decode uses. What must still decline are the PER-TOKEN DEBUG SEAMS, which
-	// that row loop would fire M times per layer instead of once: hidCapTaps records one residual
-	// per tap per TOKEN for a block drafter, and layerCap appends one snapshot per layer for the
-	// divergence probe. Both would silently return M× the rows their consumers expect. Declining
-	// sends those runs down the sequential path, where their semantics are the ones they were
-	// written against.
-	// SCOPED TO MoE, because that is the only branch that can reach them. layerTail is called from
-	// prefill at exactly ONE site — inside the per-row MoE FFN loop — so on a dense model these
-	// seams are untouched by the batched pass and refusing it gains nothing.
-	//
-	// The first version of this guard was NOT scoped, and it broke a real flow: DFlash's block
-	// drafter arms hidCapTaps and verifies through the batched path on a DENSE model, so
-	// TestDFlashRoundComposition and TestDFlashCompositionResidual both failed with "per-token
-	// hidden-state taps are armed". Caught only by the full heavy suite — the targeted prefill
-	// subset does not run the drafter composition tests, which is the second time in this change
-	// that a guard written for one arch refused another.
+	// MoE batches the attention half; its FFN runs row by row off the batched residual (prefillCore) and keeps decode's
+	// exact per-token expert sequence. The per-token debug seams would fire M times per layer in that row loop, so they
+	// decline: hidCapTaps (one residual per tap per token, for a block drafter) and layerCap (one snapshot per layer, for
+	// the divergence probe) would silently return Mx the rows their consumers expect. The guard is scoped to MoE on purpose:
+	// prefillCore calls layerTail only inside the per-row MoE FFN loop, and a block drafter arms hidCapTaps and verifies
+	// through the batched path on a DENSE model (TestDFlashRoundComposition, TestDFlashCompositionResidual), so widening it
+	// breaks that.
 	if r.moe || r.gemma4Moe {
 		if len(r.hidCapTaps) > 0 {
 			return fmt.Errorf("cuda prefill: MoE per-row FFN with per-token hidden-state taps armed "+
@@ -592,28 +471,20 @@ func (r *cudaResident) prefillStaticDecline() error {
 				"would append M snapshots per layer: %w", errPrefillDeclined)
 		}
 	}
-	// RECURRENT STATE (Gated-DeltaNet: qwen3_5 / qwen3_5_moe / qwen3_next). A DeltaNet layer's conv ring and matrix
-	// state must advance strictly one token at a time and in order. The batched path now honours that INSIDE the
-	// pass: prefillCore branches on Ly.isDeltaNet, runs the layer's projections over the M rows, and runs the
-	// recurrence through row-batched twins of decode's kernels that walk the rows in order (prefillDeltaNetRows,
-	// docs/tasks/task-cuda-deltanet-prefill-2026-09.md). It dispatches on the layer's KIND, not on which weights
-	// happen to be absent, so the LFM2 bug class (audit-2026-09-02 C-01: a dense attention stack run over conv
-	// layers that load no q/k/v/o) cannot recur through this path; nonBatchableKind checks the projections each
-	// kind actually binds. ForwardN (spec verify) keeps its sequential path for this family: verify rewinds, and
-	// recurrent state does not.
-	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
-	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
-	// M-sized scratch is sized by the MAX across layers — so a family whose layers differ (Gemma-4:
-	// 5 of its 30 are full_attention with a different KV width) strides correctly instead of being
-	// refused. What made the old uniform assertion necessary was hoisting L0 into every launch;
-	// remove the hoist and the assertion has nothing left to protect.
+	// Gated-DeltaNet layers, whose conv ring and matrix state must advance one token at a time in order, are handled inside
+	// the pass: prefillCore branches on Ly.isDeltaNet and runs the recurrence through row-batched twins of decode's kernels
+	// (prefillDeltaNetRows, docs/tasks/task-cuda-deltanet-prefill-2026-09.md). Dispatch is on the layer's kind, not on which
+	// weights happen to be absent (a dense attention stack once ran over conv layers that load no q/k/v/o), and
+	// nonBatchableKind checks the projections each kind binds. ForwardN (spec verify) stays sequential for this family:
+	// verify rewinds and recurrent state does not.
+	//
+	// Geometry is per layer: the batched launches bind each layer's own hd/nKV/qDim/kvDim/rhalf, and the M-sized scratch is
+	// sized by the maximum across layers (prefillMaxGeom), so a family whose layers differ strides correctly.
 	for l := range r.layers {
 		Ly := &r.layers[l]
-		// K=V (Gemma-4 global layers) is handled in the batched pass the same ~10 lines decode
-		// handles it in (segA): a second k-projection GEMV into the V buffer, then a scale-less
-		// v_norm over it BEFORE rope rotates k. Both kernels already take an M dimension, so this
-		// costs no new kernel — but it does need the unit-weight buffer segA uses, which is
-		// allocated only when some layer is kEqV. Refuse rather than bind a null weight.
+		// K=V layers (Gemma 4 global) batch as decode does: a second k-projection GEMV into the V buffer, then a scale-less
+		// v_norm over it before rope rotates k. That needs the unit-weight buffer, allocated only when some layer is kEqV, so
+		// refuse rather than bind a null weight.
 		if Ly.vNorm && r.vNormUnit == (Buffer{}) {
 			return fmt.Errorf("cuda prefill: v_norm layer at %d but no v_norm unit weight: %w", l, errPrefillDeclined)
 		}
@@ -624,11 +495,9 @@ func (r *cudaResident) prefillStaticDecline() error {
 	return nil
 }
 
-// prefillMaxGeom returns the largest qDim and kvDim across the layers — the row strides the M-sized
-// Q/K/V/context scratch must be allocated at once geometry is per-layer. Each launch still binds its
-// OWN layer's dims, so a narrower layer simply uses a prefix of each row; the buffers are per-pass
-// scratch with no cross-layer meaning, so that is safe and is what lets one allocation serve a
-// non-uniform stack.
+// prefillMaxGeom returns the largest qDim and kvDim across layers: the row strides the M-sized Q/K/V/context scratch is
+// allocated at. Each launch binds its own layer's dims, so a narrower layer uses a prefix of each row; the scratch has
+// no cross-layer meaning, which is what lets one allocation serve a non-uniform stack.
 func (r *cudaResident) prefillMaxGeom() (maxQDim, maxKvDim int) {
 	for l := range r.layers {
 		maxQDim = max(maxQDim, r.layers[l].qDim)
@@ -637,17 +506,12 @@ func (r *cudaResident) prefillMaxGeom() (maxQDim, maxKvDim int) {
 	return maxQDim, maxKvDim
 }
 
-// checkPrefillShmem is prefillStaticDecline's PROMPT-dependent twin (V-05, docs/review-2026-09-04.md):
-// the single-block batched-prefill attention launch sizes its dynamic shared memory the same way
-// decode's does, (maxNWin+128)*4 bytes, but — unlike decode — has no split-KV fallback kernel, so
-// there is no case where exceeding singleBlockAttnShmemLimit is survivable here. Without this check
-// the launch itself failed at the driver, prefillCore returned an unnamed error, and the caller
-// (decoder/model.go's PrefillLast handling) silently fell through to the ~9x-slower sequential
-// per-token path with nothing distinguishing "declined" from "crashed". Checked per layer because a
-// sliding-window layer's maxNWin is clamped to its own window and may stay under the limit even when
-// a global layer in the SAME model does not — mirrors the launch site's own per-layer maxNWin
-// computation in prefillCore exactly, so this can never decline a shape the launch would have run,
-// or miss one it would have failed.
+// checkPrefillShmem is prefillStaticDecline's prompt-dependent twin. Batched-prefill attention sizes its dynamic shared
+// memory as decode's does, (maxNWin+128)*4 bytes, but has no split-KV fallback, so exceeding singleBlockAttnShmemLimit
+// is not survivable and must be a named decline; otherwise the launch fails in the driver and the caller silently falls
+// to the sequential path. Checked per layer, because a sliding-window layer's maxNWin is clamped to its window. It
+// mirrors prefillCore's per-layer maxNWin exactly, so it neither declines a shape the launch would run nor misses one it
+// would fail.
 func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
 	for l := range r.layers {
 		Ly := &r.layers[l]
@@ -665,20 +529,13 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int) error {
 	return nil
 }
 
-// imgBlockMaxNWin widens a layer's plain-causal shared-memory row count (causalMaxNWin, computed
-// exactly as checkPrefillShmem/prefillCore's launch site already do) for a bidirectional image
-// block [imgStart,imgEnd) — the SAME formula both checkPrefillShmemImg (the decline check) and
-// prefillCore's attn_img_batched launch site (the actual allocation) call, so the two can never
-// drift apart. imgEnd<=imgStart (no block) returns causalMaxNWin unchanged.
-//
-// Worked out from decoder/kvcache.go's attendHi/WindowStart split (see cuda/attn_img_prefill.cu's
-// header for the full derivation): a query row INSIDE the block sees keys
-// [max(pos-window+1,0), imgEnd) when windowed, or [0, imgEnd) when not — so its own window width
-// is imgEnd-max(pos-window+1,0), maximized over pos in [imgStart,imgEnd). If the block starts at
-// or before window-1, some in-block row still has winStart=0 and the max is simply imgEnd; past
-// that, the width is DECREASING in pos, so the max is at pos=imgStart: imgEnd-(imgStart-window+1)
-// = imgLen+window-1. Unwindowed (window<=0): the block never exceeds causalMaxNWin=startPos+M,
-// since imgEnd<=startPos+M is a v1 invariant (the whole prompt, block included, fits one chunk).
+// imgBlockMaxNWin widens a layer's causal shared-memory row count (causalMaxNWin) for a bidirectional image block
+// [imgStart,imgEnd). checkPrefillShmemImg and prefillCore's attn_img_batched launch both call it, so the check and the
+// allocation cannot drift apart. No block (imgEnd<=imgStart) returns causalMaxNWin. A query row inside the block sees
+// keys [max(pos-window+1,0), imgEnd) when windowed and [0, imgEnd) when not (decoder/kvcache.go's attendHi; derivation
+// in the header of cuda/attn_img_prefill.cu): the widest row is imgEnd when the block starts at or before window-1, else
+// imgLen+window-1. Unwindowed, the block never exceeds startPos+M, because imgEnd<=startPos+M (the whole prompt fits one
+// chunk).
 func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
 	if imgEnd <= imgStart {
 		return causalMaxNWin
@@ -692,8 +549,8 @@ func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
 	return max(causalMaxNWin, blockMax)
 }
 
-// imgBlocksMaxNWin is imgBlockMaxNWin over several blocks (S11): each row sees at most its own block, so the widest
-// window is the widest over the blocks.
+// imgBlocksMaxNWin is imgBlockMaxNWin over several blocks: each row sees at most its own block, so the widest window is
+// the widest over the blocks.
 func imgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
 	n := causalMaxNWin
 	for _, b := range blocks {
@@ -702,17 +559,15 @@ func imgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
 	return n
 }
 
-// checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentImagePrefill):
-// widens the per-layer shared-memory sizing check for a bidirectional [imgStart,imgEnd) image
-// block using imgBlockMaxNWin — the SAME formula the attn_img_batched launch site in prefillCore
-// uses for the actual allocation, so this can never decline a shape the launch would run, or miss
-// one it would fail. A SEPARATE call from checkPrefillShmem, not a replacement — see prefillCore's
-// call site comment for why.
+// checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentImagePrefill): it sizes the check with
+// imgBlockMaxNWin, the formula prefillCore's attn_img_batched launch uses, so it neither declines a shape the launch
+// would run nor misses one it would fail. It is a separate call from checkPrefillShmem, not a replacement (see
+// prefillCore).
 func (r *cudaResident) checkPrefillShmemImg(startPos, M, imgStart, imgEnd int) error {
 	return r.checkPrefillShmemImgBlocks(startPos, M, [][2]int{{imgStart, imgEnd}})
 }
 
-// checkPrefillShmemImgBlocks is checkPrefillShmemImg for several image blocks (S11), sized as prefillCore's launch is
+// checkPrefillShmemImgBlocks is checkPrefillShmemImg for several image blocks, sized as prefillCore's launch is
 // (imgBlocksMaxNWin).
 func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]int) error {
 	for l := range r.layers {
@@ -732,27 +587,15 @@ func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]i
 	return nil
 }
 
-// nonBatchableKind returns the weight kind of the layer's first projection the batched GEMVs can't
-// handle, or "" when every projection is int4 or int8. The batched path dispatches per projection
-// (bGemvB): int4 → gemv_w4a8_batched/_rn (group-scaled float accumulate), int8 → gemv_w8a8_batched
-// (exact int32, §C6). A uniformly-int4, uniformly-int8, or MIXED int4mix bundle all batch; anything
-// else (e.g. a native/f32 projection) declines. Naming the kind turns "declined" into an actionable
-// startup message.
+// nonBatchableKind returns the weight kind of the layer's first projection the batched GEMVs cannot handle, or "" when
+// every projection is int4 or int8 (bGemvB: int4 uses gemv_w4a8_batched/_rn, int8 gemv_w8a8_batched; a uniform or mixed
+// int4/int8 bundle all batch). Naming the kind makes the startup message actionable.
 func nonBatchableKind(Ly *cudaLayer) string {
-	// CHECK EXACTLY THE PROJECTIONS THIS LAYER'S BATCHED PATH WILL BIND, and no others. Two of them
-	// are legitimately ABSENT on shapes that now reach here, and an absent weight has kind "" —
-	// which this function used to return and its caller reads as "no problem" (`if k := …; k != ""`).
-	// That made the check pass vacuously rather than catch anything, so tightening the sentinel
-	// without narrowing the list would swap a silent hole for a wrong refusal:
-	//
-	//   - Ly.v is absent on a K=V layer (V is derived from the k projection), and
-	//   - Ly.g/u/d are absent on a pure-MoE layer, whose FFN runs per row through doG on the
-	//     expert stacks and never touches a dense gate/up/down.
-	//
-	// The expert stacks themselves are deliberately NOT checked: the per-row MoE FFN issues exactly
-	// decode's launches on exactly decode's weights, so whatever kind decode accepts, it accepts
-	// here. Only the M-wide GEMVs (bGemvB, int4/int8 only) constrain anything, and those are the
-	// attention projections plus a dense layer's gate/up/down.
+	// Check exactly the projections this layer's batched path binds, and no others. An absent weight has kind "", which the
+	// caller reads as "no problem", so checking an absent weight passes vacuously and tightening the sentinel would turn
+	// that into a wrong refusal; narrow the list instead. Ly.v is absent on a K=V layer (V is derived from k), and Ly.g/u/d
+	// on a pure-MoE layer (its FFN runs per row on the expert stacks). The expert stacks are deliberately not checked: the
+	// per-row MoE FFN issues decode's launches on decode's weights, so whatever kind decode accepts it accepts here.
 	ws := []cudaWQ{Ly.q, Ly.o}
 	if !Ly.kvShared { // a KV-shared layer (Gemma 4 E-model) has no k_proj or v_proj: it attends over its source's cache
 		ws = append(ws, Ly.k)
@@ -781,21 +624,13 @@ func nonBatchableKind(Ly *cudaLayer) string {
 	return ""
 }
 
-// PrefillPath (decoder.PrefillPathReporter) answers, at load, whether this model will get the batched
-// prefill — before a single request has been served. Batched prefill now covers int4 AND int8 bundles
-// (§C6); it still declines a native/f32 projection or a non-uniform/K=V geometry. Before int8 batched
-// prefill landed, a dense model loaded at int8int8 built a fully resident decode path (looked healthy,
-// decoded at 0.7× int4) but every prompt took the sequential per-token prefill — measured 1.73 s vs
-// 0.19 s on a 300-token prompt (9×), 20× the CPU (4.56 vs 0.22 CPU-s), no compute hotspot: the executor
-// spin-waiting through 300 sequential launches instead of one pass.
+// PrefillPath (decoder.PrefillPathReporter) answers at load, before a request is served, whether this model gets the
+// batched prefill, and says why not. It declines what prefillStaticDecline declines, including a native/f32 projection.
 func (r *cudaResident) PrefillPath() (bool, string) {
 	err := r.prefillStaticDecline()
 	if err == nil {
-		// Say ROWS PER PASS, not "one pass". The report is read as a promise about how a long prompt
-		// is ingested, and a prompt past the chunk width is now several weight-stationary passes over
-		// the positional KV rather than one — same numbers (TestPrefillChunked_bitIdentical), bounded
-		// scratch. Claiming "one pass" was what let the O(M·inter) OOM decline hide behind a green
-		// startup line for every prompt long enough to matter.
+		// Say rows per pass, not "one pass": the report is read as a promise about how a long prompt is ingested, and a prompt
+		// past the chunk width is several weight-stationary passes (TestPrefillChunked_bitIdentical).
 		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)%s",
 			prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK")), r.fusedAttnNote())
 	}
@@ -809,11 +644,9 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 	return false, "sequential — " + detail + " (slower TTFT: one forward per prompt token)"
 }
 
-// fusedAttnNote describes the attention kernel PrefillPath is reporting on. It deliberately states
-// the CONDITION rather than a verdict: which kernel runs depends on the layer's head dim and on M,
-// and M is a call-time property PrefillPath never sees. Claiming "fused" flat out here would be the
-// same shape of untestable promise as the "one pass" claim that let an OOM decline hide behind a
-// green startup line for every prompt long enough to matter (prefill-chunking-d7-2026-09-04.md).
+// fusedAttnNote describes the attention kernel PrefillPath reports on. It states the condition, not a verdict: the
+// kernel depends on head dim and on M, and M is a call-time property PrefillPath never sees, so a flat "fused" would be
+// the same untestable promise as "one pass".
 func (r *cudaResident) fusedAttnNote() string {
 	if !r.fastAttn && !r.fastGemm {
 		return ""
@@ -839,31 +672,16 @@ func (r *cudaResident) fusedAttnNote() string {
 		strings.Join(served, "/"), attnFusedMinRows)
 }
 
-// fastPrefillEnabled reports which fast prefill kernels are selected, PER LEVER.
+// fastPrefillEnabled reports which fast prefill kernels are selected, per lever: L2 (fused attention) and L3
+// (tensor-core GEMM). They are separately selectable so each can be measured against the exact path alone, and so a
+// fidelity failure of the combined path can be attributed to a kernel.
 //
-// DEFAULT ON above fastPrefillFloor (512 prompt tokens) as of 2026-09-05, and `=0` is a complete
-// undo. It became a default only after §3's fidelity gate passed at every cell at or above that
-// floor, on BOTH bench models, against a CPU reference with f32 weights and f32 activations:
-//
-//	S  K=512 SHIPS (agree 93.91% vs exact 93.75%, flips 5 v 5, KL 0.03208 v 0.03321)
-//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three criteria
-//	D7 K=512 SHIPS (agree 86.41% v 86.56%, flips 16 v 16), D7 K=1024 SHIPS
-//
-// It FAILS at K=256, which is why the floor exists and why it is 512 and not lower; that cell
-// stands on the record and is not withdrawn (docs/completed/task-prefill-gap.md §3, and
-// measurements/prefill-l2l3-phase3-2026-09-05.md).
-//
-// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-identical to
-// the M=1 decode kernels, remains what spec-decode verify and the parity gates run, and still
-// serves every shape the fast kernels decline (hd not in {64,128}, M below the mma row floors,
-// int8 bundles, K%32 != 0, and every prompt below the floor).
-//
-// THE LEVERS ARE SEPARATELY SELECTABLE ON PURPOSE. L2 (fused attention) and L3 (tensor-core GEMM)
-// touch DIFFERENT categories of prefill — attention and the weight term — and §5 requires each to
-// be measured against the exact path alone before the two are measured together, "so the end-to-end
-// number has an attribution". §3.1 needs the same split for a different reason: if the combined
-// fast path ever scores worse than exact under the fidelity gate, the first question is WHICH
-// kernel, and an all-or-nothing flag cannot answer it.
+// Default on above fastPrefillFloor, and `=0` is a complete undo. The default rests on the fidelity gate passing at
+// every cell at or above that floor on both bench models and failing below it, which is why the floor is 512 and not
+// lower; that failure stands on the record (docs/code-notes/cuda.md#fastPrefillEnabled,
+// docs/completed/task-prefill-gap.md §3). The exact path (attn_batched, gemv_w4a8_rn) stays bit-identical to the M=1
+// decode kernels, is what spec-decode verify and the parity gates run, and serves every shape the fast kernels decline
+// (hd not in {64,128}, M below the mma row floors, int8 bundles, K%32 != 0, every prompt below the floor).
 //
 //	GOINFER_CUDA_FAST_PREFILL  unset | 1 | true   both levers — THE DEFAULT, above the floor
 //	                           0 | false | off    neither: the exact path everywhere (complete undo)
@@ -878,51 +696,40 @@ func fastPrefillEnabled(v string) (attn, gemm bool) {
 	case "gemm":
 		return false, true
 	}
-	// unset, "1", "true", or anything else: both levers. Defaulting an UNRECOGNISED value to the
-	// default rather than to off is deliberate — a typo'd knob should not silently change which
-	// kernels serve production, and PrefillPath() reports what is actually in use either way.
+	// Unset, "1", "true" or anything else: both levers. An unrecognised value takes the default, not off: a typo'd knob must
+	// not silently change which kernels serve production, and PrefillPath reports what is in use.
 	return true, true
 }
 
-// prefillCore runs the batched (M=len) forward. allLogits=false heads only the last row (PrefillLast);
-// allLogits=true heads every row (PrefillLastN, spec-decode verify).
-// prefill tail modes: what the batched pass does after the layer stack.
+// Tail modes: what the batched pass does after the layer stack.
 const (
 	tailLastLogits = iota // head the LAST row only (PrefillLast)
 	tailAllLogits         // head every row, per-row loop, full logits (PrefillLastN)
 	tailAllArgmax         // batched head over all rows, return argmax ids (PrefillLastNArgmax)
 	tailKVOnly            // no head at all: the pass exists only to commit K/V (prefillChunked's
-	// non-final chunks). It is the batched twin of the sequential path's
-	// ForwardNoLogits — the final norm, the ~389 M-parameter head GEMV and the
-	// [M, hidden] readback are all dead work for a chunk whose logits nobody reads.
+	// non-final chunks), the batched twin of ForwardNoLogits: the final norm, the head GEMV and the [M, hidden] readback
+	// would be dead work for a chunk whose logits nobody reads.
 	tailHiddenLast // head the LAST row only, but with the norm instead of the head (HiddenLast,
-	// G4, docs/tasks/task-gpu-paths-2026-09.md): runs the SAME per-row final-norm+quant
-	// the head reads from, then dequantizes r.aq/r.aSc into a float32 hidden
-	// vector instead of running the LM head GEMV at all — an embedder never
-	// needs logits, and the head is the single most expensive matmul in a
-	// forward. Never batched across rows, like tailLastLogits.
-	tailResidualAll // return EVERY row's residual stream after the last layer, BEFORE the final norm (ResidualAll, D11's follow-up): the f32 [M, hidden] block the
+	// an embedder never needs the head): it dequantizes r.aq/r.aSc, the per-row final-norm+quant the head would read, into a
+	// float32 hidden vector. Never batched across rows, like tailLastLogits.
+	tailResidualAll // return EVERY row's residual stream after the last layer, BEFORE the final norm (ResidualAll): the f32 [M, hidden] block the
 	// batched pass already downloads for its tails. No norm, no quantization, no head: the decoder applies the final norm on the host in f32.
 )
 
-// mropePosWindow returns the [startPos, startPos+M) slice of the WHOLE-PROMPT, ABSOLUTE-indexed
-// mropePos array. Named and extracted specifically because this is the one place a chunk-relative
-// vs prompt-absolute mismatch could silently ship: prefillChunked passes embeddings CHUNK-RELATIVE
-// (embeddings[i:i+n]) but mropePos stays WHOLE on every call — sliced here by ABSOLUTE startPos,
-// never by the chunk loop's own relative index i. Getting this backwards (e.g. mropePos[i:i+n]
-// instead of mropePos[startPos+i:startPos+i+n]) silently reintroduces the exact wrong-rotation
-// bug this whole feature exists to fix, and — unlike an image-block mask bug — it is invisible to
-// a real-checkpoint gate whose prompt is too short to ever invoke prefillChunked's multi-pass
-// loop. See cuda/mropepos_window_test.go's dedicated coverage of exactly this.
+// mropePosWindow returns the [startPos, startPos+M) slice of the WHOLE-prompt, absolute-indexed mropePos. prefillChunked
+// passes embeddings chunk-relative (embeddings[i:i+n]) but mropePos whole on every call, so slicing by the chunk loop's
+// own i instead of the absolute startPos silently reintroduces the wrong rotation, and no real-checkpoint gate whose
+// prompt is too short to chunk would see it (cuda/mropepos_window_test.go covers exactly this).
 func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 	return mropePos[startPos : startPos+M]
 }
 
-// rows (MC3 on CUDA, batchstep.go) is the multi-sequence mode: non-nil means row m is ONE decode token of its own
-// sequence — KV slot rows[m].slot at position rows[m].pos — rather than prompt row startPos+m of one sequence. The
-// batched layer stack is unchanged; rope, the KV store and attention run per row through decode's own gap
-// (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row head is decode's, and a row
-// with a draw ends in ForwardSample's pick. nil is every other caller: behaviour unchanged.
+// prefillCore runs the batched (M=len) forward; tail selects what follows the layer stack. blocks (bidirectional image
+// blocks) and mropePos (whole-prompt m-RoPE positions) are nil for every other caller. rows is the multi-sequence mode
+// (batchstep.go): non-nil means row m is one decode token of its own sequence, KV slot rows[m].slot at position
+// rows[m].pos, rather than prompt row startPos+m. The layer stack is unchanged; rope, the KV store and attention run per
+// row through decode's own gap (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row
+// head is decode's, and a row with a draw ends in ForwardSample's pick.
 func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
@@ -932,8 +739,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		return nil, nil, e
 	}
 	if r.eModel {
-		// Gemma 4 E-model (S9 on CUDA, part A): text prompts batch. What stays sequential, by name: a step (MC3 rows are per-sequence decode tokens whose PLE
-		// tails and KV slots the step path does not stage), an image block (part B), and m-RoPE (no E-model has it).
+		// Gemma 4 E-model: text prompts batch. A step (its rows' PLE tails and KV slots are not staged by the step path), an
+		// image block and m-RoPE (no E-model has it) stay sequential.
 		if rows != nil || len(blocks) > 0 || mropePos != nil {
 			return nil, nil, fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no MC3 step, image block or m-RoPE yet): %w", errPrefillDeclined)
 		}
@@ -963,11 +770,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			return nil, nil, e
 		}
 	}
-	// Gemma 3 image-block prefill (decoder.ResidentImagePrefill). imgEnd<=imgStart is the "no
-	// block" sentinel every other caller passes (0,0) — see cuda/attn_img_prefill.cu's header
-	// for why checkPrefillShmemImg's widened check is a SEPARATE call from checkPrefillShmem
-	// above rather than a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards statically
-	// pins prefillCore's call to checkPrefillShmem by name, and this must not remove it.
+	// Image-block prefill (decoder.ResidentImagePrefill); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
+	// a separate call from checkPrefillShmem above, not a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards pins
+	// prefillCore's call to checkPrefillShmem by name (see the header of cuda/attn_img_prefill.cu).
 	if len(blocks) > 0 {
 		if !r.imgPrefillReady {
 			return nil, nil, fmt.Errorf("cuda prefill: image-block batched kernel unavailable: %w", errPrefillDeclined)
@@ -976,10 +781,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			return nil, nil, e
 		}
 	}
-	// Qwen2.5-VL m-RoPE prefill (decoder.ResidentMRoPEPrefill). mropePos == nil is the "not
-	// m-RoPE" sentinel every other caller passes — matches decoder/rope.go's ropeAt's own
-	// mropePos==nil convention exactly. No shmem-widening check needed here, unlike the image
-	// block above: m-RoPE never widens attention geometry, only the rotation angle.
+	// m-RoPE prefill (decoder.ResidentMRoPEPrefill); nil mropePos means not m-RoPE, as in decoder/rope.go's ropeAt. No
+	// shared-memory widening check: m-RoPE changes the rotation angle, not attention geometry.
 	if mropePos != nil && !r.mropePrefillReady {
 		return nil, nil, fmt.Errorf("cuda prefill: m-RoPE batched kernel unavailable: %w", errPrefillDeclined)
 	}
@@ -988,26 +791,21 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	r.passPromptLen = max(r.chunkPromptLen,
 		// a chunk of a longer prompt: the floor is the prompt's, not this pass's
 		startPos+M)
-	// M-09/M-10/M-11 (docs/audit-2026-09-10.md): every tail EXCEPT tailLastLogits (ordinary
-	// single-row prefill) needs decode-identical numerics — HiddenLast's bit-identity contract,
-	// speculative verify's "verify == sequential greedy" invariant — so the fast L2/L3 levers,
-	// which are cosine-close but not proven bit-identical, must not engage for those tails. See
-	// forceExactKernels's own doc comment (cuda/resident.go) for why this is a field rather than a
-	// parameter threaded through bGemvB's ~20 call sites.
+	// Every tail except tailLastLogits (an ordinary single-row prefill) needs decode-identical numerics (HiddenLast's
+	// bit-identity contract, speculative verify's "verify == sequential greedy"), so the fast L2/L3 levers, cosine-close but
+	// not proven bit-identical, must not engage. forceExactKernels is a field, not a parameter, to avoid threading it
+	// through bGemvB's call sites (see its comment in resident.go).
 	r.forceExactKernels = tail != tailLastLogits && !(tail == tailKVOnly && r.chunkOrdinary) ||
-		// Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after
-		// token — measured on Qwen3.5-9B, 561 tokens: cosine 0.994 and different greedy continuations with them,
-		// bit-identical to decode without (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+		// Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after token, so they
+		// stay off (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
 		r.dnet != nil ||
-		// Gemma 4 E-model (S9 on CUDA part A): the fast levers have no fidelity evidence on this family, and the first served read showed it. On the real E2B, a
-		// 2,170-token prompt above the 512-row floor took the fast kernels and first differed from the sequential path at generated token 10 (' and' 0.19 against
-		// ' issues' 0.19, the latter outside the sequential top 3: not a near-tie under the registered rule), while the same prompt on the exact kernels matched
-		// the sequential path in every logprob (docs/tasks/task-multimodal-support-2026-10.md, G3p). So an E-model batches on the exact kernels, bit-identical to
-		// decode at every length, until the levers pass a fidelity gate of their own.
+		// Gemma 4 E-model: the fast levers have no fidelity evidence on this family, and a real E2B prompt above the floor
+		// diverged from the sequential path. It batches on the exact kernels, bit-identical to decode at every length, until the
+		// levers pass a fidelity gate of their own (docs/tasks/task-multimodal-support-2026-10.md, G3p).
 		r.eModel ||
-		// Qwen3-VL's DeepStack prefill (S10 on CUDA, G-S10g): the first real reading failed on table.png (986 rows, past the 512-row floor): the last-row logits read 0.9125 against the CPU prefill with the fast levers
-		// on, 0.9741 with them off (and 0.9711 with them on but no sets added), under a text control minimum of 0.9539. The levers have no fidelity evidence on image rows carrying DeepStack sets, so such a pass runs
-		// the exact kernels, as the E-model does, until they have.
+		// Qwen3-VL's DeepStack prefill: the levers have no fidelity evidence on image rows carrying DeepStack sets (the first
+		// real reading was clearly worse with them on), so such a pass runs the exact kernels, as the E-model does, until they
+		// have.
 		r.deepPlan != nil
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
@@ -1022,18 +820,12 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	var ids []int
 	err := r.do(func() error {
 		defer func() { r.forceExactKernels = false }()
-		r.launchErr = nil // N-04: clear the sticky accumulator first (like launchToken), so a prior
+		r.launchErr = nil // clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
-		// --- M-sized scratch (device), freed at the end.
-		//
-		// The free list and its defer are registered BEFORE the first allocation, and each buffer
-		// joins the list as it is created (audit C-24). Allocation PANICS on OOM per
-		// gpu.NewBufferLenOf's contract, and at M=3000 this is hundreds of MB, so a partial
-		// allocation is the expected failure on a nearly-full card — not a rare one. Building the
-		// list first and deferring after (the previous shape) freed nothing at all when allocation
-		// #10 of 17 panicked, because the defer had not been registered yet. That leaked only
-		// because the panic used to kill the process anyway; now that runJob recovers it into a
-		// decline, the leak would be real, repeatable, and would push the NEXT prompt closer to OOM.
+		// M-sized scratch (device), freed at the end. The free list and its defer are registered BEFORE the first allocation,
+		// and each buffer joins the list as it is created: allocation panics on OOM (gpu.NewBufferLenOf's contract), runJob
+		// recovers the panic into a decline, and at M=3000 this is hundreds of MB, so a partial allocation is an expected
+		// failure on a nearly full card and must not leak.
 		var scratch []Buffer
 		defer func() {
 			for _, b := range scratch {
@@ -1080,8 +872,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			sbB = af(M * hidden)
 		}
 		residMN := uint32((M*hidden + 255) / 256)
-		// S10 on CUDA (G-S10g): Qwen3-VL's DeepStack sets, for the rows of THIS pass that fall in the image run, uploaded once and added to the residual after each layer (the loop below). A pass that
-		// holds none of the image run (a chunk of text before or after it) uploads nothing.
+		// Qwen3-VL's DeepStack sets for the rows of THIS pass that fall in the image run: uploaded once, added to the residual
+		// after each layer (the loop below). A pass holding none of the image run uploads nothing.
 		var dsBufs []Buffer
 		dsOff, dsN := 0, 0
 		if ds := r.deepPlan; ds != nil {
@@ -1093,7 +885,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				}
 				for _, set := range ds.sets {
 					rows := set[(a-ds.start)*hidden : (b-ds.start)*hidden]
-					if deepDefectForTest == deepDefectTextRows { // G-S10g planted defect: the set added to the text rows too (the image rows' values cycled over the whole pass)
+					if deepDefectForTest == deepDefectTextRows { // planted defect: the set added to the text rows too (the image rows' values cycled over the whole pass)
 						rows = make([]float32, M*hidden)
 						for i := range rows {
 							rows[i] = set[(a-ds.start)*hidden+i%imgN]
@@ -1134,11 +926,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			return e
 		}
 
-		// Qwen2.5-VL m-RoPE: build and upload this pass's per-row (t,h,w) rotation triples ONCE,
-		// reused unchanged across every layer's rope_kv_mrope_batched launch below.
-		// mropePosWindow's own doc comment explains why the absolute-vs-chunk-relative slicing
-		// lives in a named, separately-tested function rather than an inline expression here.
-		// S11: every image block's [start, end), uploaded once for every layer's attn_img_batched launch.
+		// Every image block's [start, end), uploaded once for every layer's attn_img_batched launch.
 		var imgBlk Buffer
 		if len(blocks) > 0 {
 			flat := make([]int32, 0, 2*len(blocks))
@@ -1150,6 +938,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				return e
 			}
 		}
+		// m-RoPE: this pass's per-row (t,h,w) rotation triples, uploaded once and reused by every layer's
+		// rope_kv_mrope_batched launch (slicing: mropePosWindow).
 		var rposT, rposH, rposW Buffer
 		if mropePos != nil {
 			window := mropePosWindow(mropePos, startPos, M)
@@ -1232,10 +1022,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				} else if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
 					return e
 				} else if Ly.kEqV {
-					// K=V (Gemma-4 global layers): this layer has NO v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the V buffer here and normalize it
-					// below, before rope_kv_batched rotates k. Mirrors segA's decode path op for op. It used to project k a SECOND time "because decode does": decode now copies too
-					// (R-23, docs/tasks/task-recompute-audit.md), so the two still agree, and neither reads the k weight twice. kBb and vBb are [M, kvDim] row-major, so one contiguous
-					// copy of M*kvDim floats moves every row.
+					// K=V (Gemma 4 global layers): no v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the
+					// V buffer and normalize it below, before rope_kv_batched rotates k, as segA's decode path does. kBb and vBb are [M,
+					// kvDim] row-major, so one contiguous copy of M*kvDim floats moves every row.
 					if e := r.copyF32(kBb, vBb, M*Ly.kvDim); e != nil {
 						return e
 					}
@@ -1283,8 +1072,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					r.profToc(glueCat, t)
 				}
 				if rows != nil {
-					// MC3 on CUDA: rope, the KV store and attention per sequence, through decode's own gap, each row on its own
-					// slot at its own position; the batched stack resumes at the ctx-quant below.
+					// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
+					// at its own position; the batched stack resumes at the ctx-quant below.
 					t = r.profTic()
 					if e := r.stepAttnRows(Ly, l, rows, qBb, kBb, vBb, cctxB); e != nil {
 						return e
@@ -1309,12 +1098,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						}
 						ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
 					} else {
-						// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different
-						// positions (startPos+m), so each row's post-RoPE query scale comes from a table
-						// built on the host with launchToken's own float64 expression. That keeps a batched
-						// row bit-identical to decode (audit-2026-09-10 G-11). Not carried into the m-RoPE
-						// branch above: rope_kv_mrope_batched has no attention temperature, and no family
-						// needs both today (Ministral 3 has no m-RoPE, Qwen2.5-VL no temperature).
+						// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different positions, so each row's post-RoPE query
+						// scale comes from a host-built table using launchToken's own float64 expression, which keeps a batched row
+						// bit-identical to decode. Not carried into the m-RoPE branch above: rope_kv_mrope_batched has no attention temperature,
+						// and no family needs both.
 						qTemp, qe := r.attnTempRows(startPos, M)
 						if qe != nil {
 							return qe
@@ -1331,39 +1118,32 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						maxNWin = int(Ly.window)
 					}
 					if len(blocks) > 0 {
-						// Widened per checkPrefillShmemImgBlocks's SAME formula (imgBlocksMaxNWin) — the two must
-						// never drift apart, or this allocation under-sizes the launch it is meant to cover.
+						// Widened by imgBlocksMaxNWin, the formula checkPrefillShmemImgBlocks uses; the two must not drift, or this allocation
+						// under-sizes the launch it covers.
 						maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
 					}
 					t = r.profTic()
-					// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
-					// argument list by construction, so the two launches differ only in pipeline, grid and
-					// shared memory — see useAttnFused for the selection rule.
-					// The argument list is IDENTICAL for all three kernels by construction, so it is built
-					// once; the launches differ only in pipeline, grid and shared memory. Each names its
-					// pipeline field directly — see useAttnFused for why a local variable will not do.
+					// L2: the fused kernel when it serves this (hd, M), else attn_batched (see useAttnFused for the selection rule). The
+					// argument list is identical for all of them, so it is built once; the launches differ only in pipeline, grid and shared
+					// memory. Each names its pipeline field directly (see useAttnFused for why a local variable will not do).
 					attnArgs := []gpu.KernelArg{
 						Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
 						gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
-						// N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
-						// learned sink through and this one hard-coded null — unreachable today only
-						// because every gpt-oss model is MoE and MoE declines batched prefill, which
-						// is a property of a DIFFERENT check and not something this call site should
-						// depend on.
+						// r.sinkArg(l), not ArgNull(): decode threads the gpt-oss learned sink through, and this launch must not depend on a
+						// different check declining gpt-oss.
 						gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
 					}
 					var attnErr error
-					// FLASH-DECODE LANE FOR SPECULATIVE VERIFY (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
-					// verify batch are served by the multi-row lane, whose output is bit-identical to the M=1 lane at each row's position
-					// (TestFlashDecodeRowsBitIdentical), so a verified position scores exactly as plain lane decode scores it. Rows below
-					// laneFrom are under the attended-span floor and take the exact path below, as their M=1 decode would. laneFrom == M is
-					// "no lane rows" (the common case, and everything when the lane is off). laneFrom == 0 skips the exact launch entirely.
+					// Flash-decode lane for speculative verify (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
+					// verify batch are served by the multi-row lane, bit-identical to the M=1 lane at each row's position
+					// (TestFlashDecodeRowsBitIdentical), so a verified position scores as plain lane decode scores it. Rows below laneFrom
+					// are under the attended-span floor and take the exact path, as their M=1 decode would. laneFrom == M means no lane rows
+					// (the common case); laneFrom == 0 skips the exact launch.
 					laneFrom := r.verifyLaneFrom(l, startPos, M, tail, len(blocks) > 0)
-					// IMAGE BLOCK FIRST, unconditionally, before useAttnFused is even consulted — attn_fused's
-					// tile-level aggregates assume monotonic per-row nKeys across a 64-row tile, which an image
-					// block breaks (not supported; attn_batched's exact-path twin, attn_img_batched, is used
-					// instead). Checking imgEnd>imgStart after useAttnFused would risk silently routing a >=512
-					// -token image prompt through the incompatible fused kernel instead of declining to it.
+					// Image block first, unconditionally, before useAttnFused is consulted: attn_fused's tile-level aggregates assume
+					// monotonic per-row nKeys across a 64-row tile, which an image block breaks, so the exact attn_img_batched is used
+					// instead. Checking the block after useAttnFused would silently route a long image prompt through the incompatible fused
+					// kernel.
 					if laneFrom == 0 {
 						// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
 					} else if len(blocks) > 0 {
@@ -1375,17 +1155,17 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						fcfg := LaunchConfig{GridX: uint32(r.nH),
 							GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
 							BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
-						// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the
-						// 128-row-tile kernel (bit-identical to the 64x64 one for window == 0, 2.4x faster at K=3900). hd64 stays 64x64
-						// (0.5B measured ~5% slower with it), and so do windowed layers (their key-tile grouping starts at the block's
-						// first row, so a taller block is not bit-identical there). GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
+						// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the 128-row-tile
+						// kernel, bit-identical to the 64x64 one for window == 0. hd64 stays 64x64, and so do windowed layers: their key-tile
+						// grouping starts at the block's first row, so a taller block is not bit-identical there.
+						// GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
 						tile := r.attnTile
 						if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
 							tile = 3
 						}
 						if tile > 0 {
-							// R5 phase-1/diagnostic arms (attn-fused-tile-PREREGISTERED.md): query tile 32 / 32 / 128 rows.
-							// Each pipeline is named at its launch (TestPipelineLint_boundKernelsAreLaunched keys on that).
+							// Diagnostic query-tile arms (attn-fused-tile-PREREGISTERED.md): 32 / 32 / 128 rows. Name each pipeline at its launch:
+							// TestPipelineLint_boundKernelsAreLaunched keys on that.
 							bm, bn := 32, 64
 							if tile == 2 {
 								bn = 32
@@ -1468,31 +1248,20 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				r.profToc(gemvCat, t)
 			} // !Ly.isDeltaNet
 
-			// --- FFN. Dense batches; MoE runs ROW BY ROW off the batched residual. ---
+			// FFN: dense batches; MoE runs row by row off the batched residual. The routed-expert GEMVs are indexed by a device-side
+			// routing decision that differs per token, so there is no M-wide form without an expert-major gather (the expert-major
+			// path below); the batched attention half still reads its weights once per pass. gpu.Buffer.At gives a zero-copy
+			// sub-view, so row m of the batched residual is a valid single-row residual for the per-token FFN chain (segBFFN,
+			// layerTail, segC: decode's calls in decode's order, including the g4x2 accumulator clear and the C' routed-expert DMA).
 			//
-			// The routed-expert GEMVs are indexed by a DEVICE-side routing decision that differs per
-			// token, so there is no M-wide form of them without an expert-major gather and a new
-			// kernel (queue-performance P20 step 2). What there IS, for free, is the attention half
-			// above: on Gemma-4-26B-A4B the attention projections are ~45% of the per-token weight
-			// traffic and the dense FFN branch another ~25%, all of it re-read once per token on the
-			// sequential path and once per PASS here.
-			//
-			// aikit/gpu.Buffer.At gives a zero-copy sub-view that binds as a raw device pointer, so
-			// row m of the batched residual IS a valid single-row residual for the existing per-token
-			// FFN chain — segBFFN → layerTail → segC, the same calls decode makes, in the same order,
-			// including the g4x2 accumulator clear and the C′ routed-expert DMA. Nothing about the
-			// expert path changes; it simply no longer drags the attention weights along with it.
-			//
-			// gC=false: prefill never replays captured graphs (a graph bakes r.x, and these rows are
-			// not r.x). The per-token debug seams layerTail also carries — hidCapTaps, layerCap —
-			// would fire M times per layer here, which is why prefillStaticDecline refuses a model
-			// with either armed rather than quietly returning M× the rows they expect.
+			// gC=false: prefill never replays captured graphs (a graph bakes r.x, and these rows are not r.x). layerTail also
+			// carries per-token debug seams (hidCapTaps, layerCap) that would fire M times per layer here; prefillStaticDecline
+			// refuses a model with either armed.
 			if Ly.g4moe || Ly.isMoE {
 				t = r.profTic()
-				// R11/P20 (cuda/moe_expert_major.go + moe_expert_major_gemma4.go,
-				// docs/measurements/p20-expert-locality-2026-09-21.md): route+bucket+admit-once-per-distinct-
-				// expert instead of once per (row, rank), when eligible. Checked once per layer, not per
-				// row, so ineligible layers pay nothing beyond one field-and-map read.
+				// Expert-major MoE (moe_expert_major.go, moe_expert_major_gemma4.go;
+				// docs/measurements/p20-expert-locality-2026-09-21.md): route, bucket and admit once per distinct expert instead of once
+				// per (row, rank), when eligible. Checked once per layer, so ineligible layers pay one field-and-map read.
 				if !Ly.g4moe && r.prefillMoEExpertMajorEligible(Ly) {
 					if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
 						return e
@@ -1503,11 +1272,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 				} else {
 					for m := range M {
-						// Between ROWS: this loop is the one that made cancellation coarse. A MoE
-						// chunk is M sequential per-token FFNs, so without this a cancelled 512-row
-						// chunk still runs every one of them — measured ~22 s on M26, against the
-						// ~46 ms the per-token fallback it replaced would have taken to notice.
-						// Checked per row, so the granularity is back to roughly one token.
+						// Between rows: a MoE chunk is M sequential per-token FFNs, so without this check a cancelled chunk still runs all of
+						// them. Checking per row keeps cancellation at roughly one token's granularity.
 						if e := ctx.Err(); e != nil {
 							return e
 						}
@@ -1601,13 +1367,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 							return e
 						}
 					}
-					// Gemma 4 dense per-layer output scalar — segB's sequential-decode twin (the
-					// decode path's own fix, cuda/resident.go). fScaleVec is a pure elementwise
-					// dst[i]*=s with no per-row structure, so it batches over the flattened
-					// M*hidden buffer exactly like bRes above, in one launch. Missing this here
-					// (while segB had it) is exactly what TestPrefillNonUniform_bitIdentical exists
-					// to catch: batched prefill and sequential decode diverging on a real per-layer
-					// value, not agreeing on a shared no-op.
+					// Gemma 4 dense per-layer output scalar, segB's decode twin. fScaleVec is a pure elementwise dst[i]*=s, so it batches
+					// over the flattened M*hidden buffer in one launch, like bRes above. TestPrefillNonUniform_bitIdentical exists to catch
+					// batched prefill omitting it while decode has it.
 					if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
 						if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 							Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
@@ -1619,7 +1381,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				}
 				r.profToc(gemvCat, t)
 			}
-			// DeepStack (S10, G-S10g): after decoder layer l, set l is added to the image rows, as the CPU prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]).
+			// DeepStack: after decoder layer l, set l is added to the image rows, as the CPU prefill does (addDeepstack; HF's
+			// hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]).
 			if dsN > 0 && deepDefectForTest != deepDefectNotAdded {
 				k := l
 				if deepDefectForTest == deepDefectOneLayerLate {
@@ -1632,11 +1395,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					}
 				}
 			}
-			// BATCHED HIDDEN-STATE CAPTURE (P10). The per-token seam (capVec) syncs and
-			// downloads once per TAP PER TOKEN; a block drafter needs the taps for every token
-			// the verify commits, so on this path that is 5 taps x M tokens of stalls. Here the
-			// residual for all M rows is already in xB, so one download per tap covers the whole
-			// block — 5 downloads per verify instead of 5*M.
+			// Batched hidden-state capture (block drafter): the per-token seam (capVec) syncs and downloads once per tap per token.
+			// Here the residual for all M rows is already in xB, so one download per tap covers the whole block.
 			if len(r.capBTaps) > 0 {
 				for slot, tap := range r.capBTaps {
 					if tap != l {
@@ -1655,24 +1415,21 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 		}
 
-		// Final norm + LM head, per row — copy xB[m] into the M=1 scratch and reuse the exact Forward
-		// tail, so each row's logits are bit-identical to a sequential Forward at position startPos+m
-		// (given identical residual, which the KV/logits gate checks). allLogits=false heads only the
-		// last row (the crossover-fixing PrefillLast); allLogits=true heads every row (verify). Drain
-		// the layer launches first: they run on r.stream, and the DtoH below is not ordered after it.
+		// Drain the layer launches first: they run on r.stream and the DtoH below is not ordered after it. The tails below reuse
+		// the exact Forward tail, so each row's logits are bit-identical to a sequential Forward at position startPos+m (given
+		// an identical residual, which the KV/logits gate checks).
 		if e := r.stream.Sync(); e != nil {
 			return e
 		}
-		// KV-only chunk: the layer stack has run and its K/V is committed, which is the entire point
-		// of a non-final chunk. Return before the [M, hidden] readback and the head. The sync above
-		// has already drained the launches, so r.launchErr is complete here.
+		// KV-only chunk: the K/V is committed, which is all a non-final chunk is for. Return before the [M, hidden] readback and
+		// the head; the sync above drained the launches, so r.launchErr is complete.
 		if tail == tailKVOnly {
 			return r.launchErr
 		}
 		if tail == tailResidualAll {
-			// The ONLY tail that reads the whole residual on the host (audit R-24): the argmax and all-logits heads below read xB on the device, and
-			// the last-row tails need one row, copied device-to-device. Downloading all M rows for them was M*hidden*4 bytes (23 MB at M=2048 on a
-			// 2816-wide model) of pageable D2H after every pass, for nothing.
+			// The only tail that reads the whole residual on the host: the argmax and all-logits heads read xB on the device, and
+			// the last-row tails copy one row device-to-device. Downloading all M rows for them was pageable D2H after every pass
+			// for nothing.
 			if e := gpu.Download(xB, xhost); e != nil {
 				return e
 			}
@@ -1687,20 +1444,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		}
 		outs = make([][]float32, M)
 		if tail == tailAllLogits {
-			// Every row needs the head (PrefillLastN, speculative verify, MC3's step) — batch it:
-			// ONE norm+quant+GEMV over all M rows instead of M single-row calls, the same batched
-			// primitives batchedHeadArgmax already uses and bGemvB's own doc comment documents as
-			// bit-identical to the per-row GEMV by construction. See batchedHeadFull's own doc
-			// comment for what stays per-row (draw, softcap, logit scale, host download) and why.
+			// Every row needs the head (PrefillLastN, speculative verify, the multi-sequence step): batch it, ONE norm+quant+GEMV
+			// over all M rows, bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
 			var e error
 			if outs, ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows); e != nil {
 				return e
 			}
 			return r.launchErr
 		}
-		// tailLastLogits / tailHiddenLast: only the LAST row's output is ever used, so batching the
-		// head here would compute M-1 rows nobody reads — the exact regression the tailAllLogits
-		// branch above exists to avoid. One row, unchanged from before this lever.
+		// tailLastLogits / tailHiddenLast: only the last row's output is used, so batching the head would compute M-1 rows
+		// nobody reads.
 		for m := M - 1; m < M; m++ {
 			// The last row goes xB -> r.x on the device, the same bytes the host round trip (Download all, Upload one row) produced. A launch on r.stream
 			// like every other op here, so it is ordered after the layer stack with no extra sync.
@@ -1711,9 +1464,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				return e
 			}
 			if tail == tailHiddenLast {
-				// No head dispatch at all — r.aq/r.aSc (just written by rms above) already hold
-				// exactly what the head would have read: the quantized, post-final-norm hidden
-				// state. Download and dequantize instead of projecting to vocab.
+				// No head dispatch: r.aq/r.aSc (just written by the norm above) already hold what the head would read, the quantized
+				// post-final-norm hidden state. Download and dequantize it instead.
 				if e := r.stream.Sync(); e != nil {
 					return e
 				}
@@ -1761,50 +1513,37 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		return r.launchErr
 	})
 	if err != nil {
-		// An OOM inside the job arrives as a recovered panic (runJob, audit C-24) carrying aikit
-		// MustBuf's "device allocation failed" message. For prefill specifically that is a DECLINE, not
-		// a request failure: the sequential per-token path needs no M-sized scratch and will serve this
-		// prompt. Match that OOM SENTINEL, not any "panicked" (audit R-20): a future programming-bug
-		// panic in the batched path must surface as a real error, not be silently absorbed into the
-		// ~9×-slower sequential path. Errors that are already declines (static guards, checkCap) keep
-		// their own wrapping.
+		// An OOM inside the job arrives as a recovered panic (runJob) carrying aikit MustBuf's "device allocation failed"
+		// message. For prefill that is a decline, not a request failure: the sequential path needs no M-sized scratch. Match
+		// that OOM sentinel, not any "panicked": a programming-bug panic in the batched path must surface as an error, not be
+		// absorbed into the slower path. Errors that are already declines keep their own wrapping.
 		if strings.Contains(err.Error(), "device allocation failed") && !errors.Is(err, errPrefillDeclined) {
 			return nil, nil, fmt.Errorf("cuda prefill: out of device memory for M=%d scratch (%w; %w): %v", M, errPrefillDeclined, errPrefillOOM, err)
 		}
 		return nil, nil, err
 	}
-	// Final-logit softcap (Gemma) — host-side, exactly as step(). No-op (0) for the dense families
-	// this path serves, but kept so the contract matches Forward if a softcapped dense arch appears.
-	// SKIPPED for tailHiddenLast: outs holds a HIDDEN STATE there, not logits, and Gemma's softcap
-	// is a logit-only transform — applying it here would silently corrupt every G4 embedding on a
-	// softcapped family.
+	// Final-logit softcap and logit scale (Gemma), host-side, as step() does. Skipped for tailHiddenLast and
+	// tailResidualAll: outs holds hidden states there, not logits, and a logit-only transform would silently corrupt them.
 	if tail == tailHiddenLast || tail == tailResidualAll {
 		return outs, ids, nil
 	}
 	for _, out := range outs {
 		applySoftcap(out, r.finalSoftcap)
-		applyLogitScale(out, r.logitScale) // step() applies both; this tail used to apply only the softcap (audit C-04)
+		applyLogitScale(out, r.logitScale) // step() applies both
 	}
 	return outs, ids, nil
 }
 
-// batchedHeadArgmax is tailAllArgmax's tail: ONE batched final-norm, ONE batched head GEMV over
-// all M rows, M argmax reductions, then a 4-bytes-per-row readback.
+// batchedHeadArgmax is tailAllArgmax's tail: ONE batched final norm, ONE batched head GEMV over all M rows, M argmax
+// reductions, then a 4-bytes-per-row readback. The per-row tail issues the head as an M=1 GEMV per row, re-reading the
+// head's weights M times with no amortization.
 //
-// The win it exists for: the per-row tail issues the head as an M=1 GEMV per row, so the head's
-// ~389 M parameters are re-read from VRAM M times. Measured, that marginal row costs 1.046 ms
-// against a 0.934 ms single-row head — no amortization whatsoever, in the one place the batched
-// pass exists to provide it.
-//
-// Buffers are allocated lazily HERE because af/ai need r.dev's context current, which holds on
-// the executor thread this runs on. They are sized to M and reused; a wider block reallocates
-// once. The old buffers are left to the device ledger rather than freed mid-job, which is the
-// same lifetime the rest of the resident scratch has.
+// Buffers are allocated lazily here because af/ai need r.dev's context current, which holds on the executor thread this
+// runs on. They are sized to M and reused; a wider block releases the old ones and reallocates.
 func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int) error {
 	if M > r.logitsBCap {
-		// RELEASE BEFORE GROWING. This was grow-only: each larger prompt abandoned the previous
-		// buffer to the device ledger, bounded only by 2*ctxCap*vocab*4 B — about 5 GB at the 4096
-		// default, on top of the live one (audit-2026-09-02 C-12).
+		// Release before growing: abandoning the old buffer to the device ledger would strand each shorter prompt's M x vocab
+		// logits.
 		if r.logitsBCap > 0 {
 			r.dev.ReleaseBuf(r.logitsB)
 			r.dev.ReleaseBuf(r.logitsBIdx)
@@ -1821,10 +1560,8 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 	if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {
 		return e
 	}
-	// The argmax used to be taken on the HOST after downloading all M×vocab logits ("a batched
-	// argmax kernel is a later, separate ~1 ms"). R14 measured that tail at 15-16% of a spec round
-	// (docs/measurements/r14-drafter-argmax-2026-09-22.md); argmax_rows now reduces on the device
-	// and M ints come back.
+	// The argmax is taken on the device (argmax_rows) and M ints come back, not M x vocab logits to the host
+	// (docs/measurements/r14-drafter-argmax-2026-09-22.md).
 	ids := make([]int, M)
 	if e := r.argmaxRows(r.logitsB, r.logitsBIdx, M, ids); e != nil {
 		return e
@@ -1833,29 +1570,16 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 	return r.launchErr
 }
 
-// batchedHeadFull is prefillCore's batched head for tailAllLogits, where every row's FULL logits
-// are needed (PrefillLastN, speculative verify, MC3's StepBatch) — unlike batchedHeadArgmax, which
-// only ever returns an id per row. It replaces the M single-row upload+norm+GEMV calls the tail
-// used to make with ONE batched norm+quant (bNormB) and ONE batched GEMV (bGemvB) over all M rows
-// — the same primitives batchedHeadArgmax already uses, and bGemvB's own doc comment documents its
-// int8 kernel as "bit-identical to gemv_w8a8_fwd by construction" (exact int32 accumulation; tiling
-// M changes no element) — the S0 measurement (concurrency-mc3-cuda-s0-2026-09-27.md) found the same
-// holds for the int4 kernels used elsewhere in this same batched pass. The GEMV was the only
-// redundant part of the old loop: it read the SAME lm_head weights M times over.
+// batchedHeadFull is prefillCore's batched head for tailAllLogits, where every row's FULL logits are needed
+// (PrefillLastN, speculative verify, the multi-sequence StepBatch), unlike batchedHeadArgmax. It runs ONE batched
+// norm+quant (bNormB) and ONE batched GEMV (bGemvB) over all M rows instead of M single-row calls, so the lm_head
+// weights are read once; bGemvB's kernels are bit-identical to the per-row GEMVs by construction.
 //
-// Everything downstream of the GEMV stays exactly as the loop it replaces did it, per row:
-//   - a step row with an on-device draw (rows[m].draw != nil) still goes through the unmodified
-//     stepDraw/gumbelPick kernels, which read the single-row r.logits field, not a batched buffer —
-//     rather than touching those kernels, this copies that row's slice of the batched logits into
-//     r.logits first (gpu.CopyDevice, a existing, documented, synchronous device-to-device verb),
-//     which is cheap for one vocab-sized row and leaves the sampling kernels themselves untouched;
-//   - every other row is downloaded to the SAME pinned host buffer the per-row loop already used
-//     (r.logitsPinned/r.logitsHost), one row at a time — the download itself was never the
-//     redundant part, since M rows always need M separate host slices regardless of how the GEMV
-//     that produced them was dispatched;
-//   - softcap and logit scale are applied per row exactly as before (rows != nil only — the same
-//     condition the loop already used, for the same reason: a step row must equal Forward's own
-//     return, not only the device buffer's raw contents).
+// Everything after the GEMV stays per row. A step row with an on-device draw goes through the unmodified
+// stepDraw/gumbelPick kernels, which read r.logits, so that row's slice is copied there first (gpu.CopyDevice). Every
+// other row is downloaded to the pinned host buffer (r.logitsPinned/r.logitsHost) one at a time. Softcap and logit scale
+// apply per row and only for step rows (rows != nil): a step row must equal Forward's return, not only the device
+// buffer.
 func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow) (outs [][]float32, ids []int, err error) {
 	if M > r.logitsBCap {
 		if r.logitsBCap > 0 {
@@ -1906,12 +1630,10 @@ func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepR
 	return outs, ids, r.launchErr
 }
 
-// bRmsB launches rmsnorm_quant_batched over M rows (shared = [blockDim]+[hidden]).
-// attnTempRows returns rope_kv_batched's per-row query-scale table for rows at positions
-// [startPos, startPos+M). Each entry is launchToken's float64 expression, rounded to float32 once,
-// so a batched row's Q matches decode bit for bit (audit-2026-09-10 G-11). A family without an
-// attention temperature gets a NULL argument, which the kernel reads as scale 1. The table is
-// rebuilt only when (startPos, M) changes, so every layer of one prefill shares one upload.
+// attnTempRows returns rope_kv_batched's per-row query-scale table for rows at positions [startPos, startPos+M): each
+// entry is launchToken's float64 expression rounded once to float32, so a batched row's Q matches decode bit for bit. A
+// family without an attention temperature gets a NULL argument, which the kernel reads as scale 1. The table is rebuilt
+// only when (startPos, M) changes, so every layer of one prefill shares one upload.
 func (r *cudaResident) attnTempRows(startPos, M int) (gpu.KernelArg, error) {
 	if r.attnTempBeta == 0 {
 		return ArgNull(), nil
@@ -1963,6 +1685,7 @@ func (r *cudaResident) bLayerNormQuantB(x, w Buffer, N, M int, qOut, sOut Buffer
 	return nil
 }
 
+// bRmsB launches rmsnorm_quant_batched over M rows (shared = [blockDim]+[hidden]).
 func (r *cudaResident) bRmsB(x, w Buffer, N int, qOut, sOut Buffer, M int) error {
 	return r.launch(r.bRms, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
 		SharedMemBytes: uint32((256 + N) * 4)},
@@ -1993,21 +1716,11 @@ const (
 	attnFusedMinRows = 16
 )
 
-// fastPrefillFloor is the PROMPT-LENGTH floor below which neither fast lever engages.
-//
-// It is set from measurement, not chosen. Two independent lines of evidence put it here and they
-// were taken in that order:
-//
-//   - PERFORMANCE (Phase 1/2, measured before any fidelity run): L2 is 0.94x — SLOWER — at K=128,
-//     where attention is 5.0% of prefill and a 64-row query tile still stages 64 keys per block.
-//     The win begins by K=512 (1.13x) and grows. L3 wins at every depth measured (1.85x at K=128).
-//   - FIDELITY (Phase 3, docs/measurements/prefill-l2l3-phase3-2026-09-05.md): the §3 gate PASSES
-//     at K>=512 and FAILS at K=256 for the two levers combined, on both S and D7.
-//
-// THE FLOOR IS AT A DEPTH THAT WAS ACTUALLY MEASURED. The §3 decision cells were 256 and 1024; a
-// floor placed between them would have been interpolating a fidelity result nobody took, so a
-// K=512 cell was generated and run specifically to justify this number. Moving it DOWN requires a
-// passing gate cell at the new depth — not an argument that the curve looks smooth.
+// fastPrefillFloor is the prompt length below which neither fast lever engages. It sits at a depth that was actually
+// measured: L2 is slower than the exact path at K=128 and wins from K=512, and the fidelity gate passes at K>=512 and
+// fails at K=256 for the two levers combined. Moving it DOWN requires a passing fidelity-gate cell at the new depth, not
+// an argument that the curve looks smooth (docs/code-notes/cuda.md#fastPrefillFloor,
+// docs/measurements/prefill-l2l3-phase3-2026-09-05.md).
 const fastPrefillFloor = 512
 
 // fastPrefillFloorFor returns the floor, allowing an experiment to move it. Set
@@ -2040,22 +1753,16 @@ func (r *cudaResident) FastPrefillFloor() int {
 	return max(1, fastPrefillFloorFor(r.knobValue("GOINFER_CUDA_FAST_PREFILL_FLOOR")))
 }
 
-// attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus
-// Vtsh[hd][BN+KPAD], in halves.
-//
-// IT IS CONSTANT IN K, and that is a property worth stating rather than a detail. The exact path
-// sizes its attention scratch (maxNWin+128)*4, so checkPrefillShmem must decline any layer
-// attending more than 12,160 keys (resident.go:143) — past that a prompt falls back to the
-// sequential per-token path. This kernel's footprint does not grow with the attended span at all.
+// attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus Vtsh[hd][BN+KPAD], in halves. It
+// is constant in K, unlike the exact path's (maxNWin+128)*4 scratch, which makes checkPrefillShmem decline any layer
+// attending more than 12,160 keys (singleBlockAttnShmemLimit).
 func attnFusedShmem(hd int) uint32 {
 	return uint32(2 * (attnFusedBM*(hd+attnFusedKPAD) + hd*(attnFusedBM+attnFusedKPAD)))
 }
 
-// attnFusedFor returns the fused pipeline serving this head dim, or the zero Pipeline if none does.
-// hd 64 and 128 are the two instantiations attn_fused.cu emits; anything else — and any hd on a
-// build where the module did not load — is served by attn_batched instead. Declining is the whole
-// answer for an unsupported shape: there is no special case to write, because the exact path
-// already handles every shape correctly.
+// attnFusedFor returns the fused pipeline serving this head dim, or the zero Pipeline. hd 64 and 128 are the two
+// instantiations attn_fused.cu emits; any other hd, or a build where the module did not load, is served by attn_batched,
+// which handles every shape, so there is no special case to write.
 func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 	switch hd {
 	case 64:
@@ -2066,23 +1773,16 @@ func (r *cudaResident) attnFusedFor(hd int) (Pipeline, uint32) {
 	return Pipeline{}, 0
 }
 
-// useAttnFused is the ONE place the L2 kernel is chosen, so the fallback cannot drift between call
-// sites. Every "no" means attn_batched, which is the exact path, is bit-identical to decode, and is
-// what spec-decode verify and the parity gates run.
+// useAttnFused is the ONE place the L2 kernel is chosen, so the fallback cannot drift between call sites. Every "no"
+// means attn_batched, the exact path, bit-identical to decode and what spec-decode verify and the parity gates run. That
+// is a guarantee only because forceExactKernels (set by prefillCore) makes it an unconditional "no" for any tail but
+// tailLastLogits, independent of M/K/position; the M/floor gates alone (attnFusedMinRows, aboveFastPrefillFloor) could
+// be met by verify's own M by coincidence of constants.
 //
-// THAT LAST CLAIM WAS ASPIRATIONAL UNTIL M-11 (docs/audit-2026-09-10.md): before
-// forceExactKernels existed, the only gates here were M/floor-based (attnFusedMinRows,
-// aboveFastPrefillFloor), which verify's own M (often >=16 past the floor) could satisfy by
-// coincidence of constants, not by construction — "is what spec-decode verify runs" was true of
-// serve's DEFAULT widths, not guaranteed for every caller. forceExactKernels (set by prefillCore,
-// cuda/resident.go's own field comment) now makes it a real guarantee: unconditional "no" for any
-// tail but tailLastLogits, independent of M/K/position.
-// It returns only the shared-memory size, NOT the pipeline: the launch site names
-// r.bAttnFused64 / r.bAttnFused128 explicitly. Handing back a Pipeline in a local variable would
-// hide WHICH kernel runs from every static reader, including
-// TestPipelineLint_boundKernelsAreLaunched, which flags a field bound at every model load and
-// launched by nothing — the exact state gemv_w4a8_batched sat in while a benchmark quoted its
-// throughput as the shipping kernel's.
+// It returns only the shared-memory size, NOT the pipeline: the launch site names r.bAttnFused64 / r.bAttnFused128
+// explicitly. Handing back a Pipeline in a local variable would hide WHICH kernel runs from every static reader,
+// including TestPipelineLint_boundKernelsAreLaunched, which flags a field bound at every model load and launched by
+// nothing.
 func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
 	if r.forceExactKernels || !r.fastAttn || M < attnFusedMinRows || !r.aboveFastPrefillFloor() {
 		return 0, false
@@ -2101,8 +1801,8 @@ const (
 	gemmMMAThreads = 128
 	gemmMMAKStep   = 128
 	gemmMMAAPad    = 4
-	// gemmMMAMinRows: tensor cores lose below a warp's worth of rows, and §4 L3 pre-registers
-	// gemv_w4a8_rn — the EXACT path — as the M<16 path for that reason. 16 is two m8n8k16 M-tiles.
+	// gemmMMAMinRows: tensor cores lose below a warp's worth of rows, so M<16 takes gemv_w4a8_rn, the exact path. 16 is two
+	// m8n8k16 M-tiles.
 	gemmMMAMinRows = 16
 )
 
@@ -2111,32 +1811,27 @@ func gemmMMAShmem() uint32 {
 	return uint32(gemmMMABM * (gemmMMAKStep/4 + gemmMMAAPad) * 4)
 }
 
-// useGemmMMA is the ONE place the L3 kernel is chosen. Every "no" means gemv_w4a8_rn, which is the
-// exact path, is bit-identical to the M=1 decode GEMV, and is what the parity gates run.
+// useGemmMMA is the ONE place the L3 kernel is chosen. Every "no" means gemv_w4a8_rn, the exact path, bit-identical to
+// the M=1 decode GEMV and what the parity gates run. forceExactKernels makes that unconditional for any prefillCore tail
+// but tailLastLogits (speculative verify's own M could otherwise cross the shape gates by coincidence).
 //
-// M-09/M-11 (docs/audit-2026-09-10.md): before forceExactKernels (see its own doc comment,
-// cuda/resident.go), the only gate here was shape-based (gemmMMAMinRows, aboveFastPrefillFloor) —
-// speculative verify's own M (often >=16) could cross it by coincidence, not by construction, the
-// same M-dependent-kernel gap WebGPU's staged int4 path has independently (M-09). forceExactKernels
-// now makes exactness unconditional for any prefillCore tail but tailLastLogits.
-//
-// The K constraints are not defensive padding: the kernel contracts 32 elements per group scale and
-// 8 per packed weight word, so a K that is not a multiple of 32 would misalign the group-scale fold.
-// Every production shape here satisfies it (1536, 3584, 8960, 18944 are all multiples of 32), and a
-// shape that does not is served correctly by the exact path rather than by a special case.
+// The K constraint is not defensive padding: the kernel contracts 32 elements per group scale and 8 per packed weight
+// word, so a K that is not a multiple of 32 would misalign the group-scale fold. The exact path serves such a shape
+// correctly.
 func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {
 	return !r.forceExactKernels && r.fastGemm && kind == "int4" && M >= gemmMMAMinRows &&
 		r.aboveFastPrefillFloor() && r.bGemmMMA != (Pipeline{}) && K%32 == 0
 }
 
-// rnBlockRows must equal RN in gemv_w4a8_rn.cu — each warp computes this many output rows, so the grid
-// covers ceil(N/rnBlockRows) warps. Bit-identical for any RN; 2 is the profiled knee (halves the L1TEX
-// load count → halves the scoreboard stall, 4.41→3.38 ms, at the 64-reg / 100%-occupancy limit).
+// rnBlockRows must equal RN in gemv_w4a8_rn.cu: each warp computes this many output rows, so the grid covers
+// ceil(N/rnBlockRows) warps. Results are bit-identical for any RN; 2 is the profiled optimum at the register/occupancy
+// limit.
 const rnBlockRows = 2
 
-// bGemvB launches the register-blocked gemv_w4a8_rn (RN rows/warp). Bit-identical to the M=1 GEMV
-// (each row keeps its own facc across all K, one warp-reduce), just with each activation load reused
-// across RN rows. Grid = ceil(N/RN) warps → ceil(that/8) blocks of 256 threads.
+// bGemvB launches the batched GEMV for a projection. int4 uses gemm_w4a8_mma when useGemmMMA selects it, else the
+// register-blocked gemv_w4a8_rn (RN rows per warp), bit-identical to the M=1 GEMV because each row keeps its own
+// accumulator across all K. int8 uses gemv_w8a8_batched, bit-identical to gemv_w8a8_fwd by construction (exact int32
+// accumulation, so tiling M changes no element).
 func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
 	switch wt.kind {
 	case "int4":
@@ -2157,9 +1852,8 @@ func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffe
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
 			gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
 	case "int8":
-		// Batched W8A8 (§C6). One warp per output row (8 warps/block), same layout as doG's int8
-		// GEMV (wt.ws = per-row f32 scale, K/4 int words). Bit-identical to gemv_w8a8_fwd by
-		// construction — exact int32 accumulation, so tiling M cannot change any element.
+		// Batched W8A8: one warp per output row (8 warps per block), the layout of doG's int8 GEMV (wt.ws = per-row f32 scale,
+		// K/4 int words).
 		cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		return r.launch(r.bW8, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/4)), gpu.ArgValue(int32(M)),

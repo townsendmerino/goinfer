@@ -12,10 +12,11 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Qwen3.5+ and GLM-OCR vision towers on CUDA (S4 and S2's CUDA twins, docs/tasks/task-multimodal-support-2026-10.md): aikit's CPU Forward up to the merger, in
-// float32, from aikit's export (Qwen3VisionEncoder.Weights, GlmOcrVisionEncoder.Weights), on the CUDA tower base. The port of metal/grid_vision.go with aikit's own
-// scaled bidirectional attention kernel (one call per image frame, the frame being the attention segment) in place of Metal's matmul-blocked attention, and a
-// separate q, k and v throughout (GLM-OCR norms q and k per head before RoPE, which a fused qkv buffer cannot do).
+// The Qwen3.5+ and GLM-OCR vision towers on CUDA (docs/tasks/task-multimodal-support-2026-10.md): aikit's CPU Forward up
+// to the merger, in float32, from aikit's export (Qwen3VisionEncoder.Weights, GlmOcrVisionEncoder.Weights), on the CUDA
+// tower base. It is the port of metal/grid_vision.go with aikit's own scaled bidirectional attention kernel (one call
+// per image frame, the frame being the attention segment) in place of Metal's matmul-blocked attention, and a separate
+// q, k and v throughout (GLM-OCR norms q and k per head before RoPE, which a fused qkv buffer cannot do).
 //
 // Both towers' blocks: biased q, k and v (the fused [3*hidden, hidden] qkv split at upload), NeoX rotate-half RoPE from aikit's own tables, attention at scale
 // 1/sqrt(head_dim) within each image frame, biased proj and residual, then the MLP and residual. Qwen3: LayerNorm with bias (eps 1e-6), MLP fc1 -> GELU-tanh -> fc2,
@@ -220,8 +221,9 @@ func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error
 	return out, err
 }
 
-// HiddenTaps is Hidden plus the outputs of the given blocks, in that order (multimodal.GridTowerTapper): Qwen3-VL's DeepStack taps (S10, G-S10f). Each tap is the residual right after its block,
-// read by finishing the queue there and downloading it, which stalls the stream once per tap (three for Qwen3-VL-2B).
+// HiddenTaps is Hidden plus the outputs of the given blocks, in that order (multimodal.GridTowerTapper): Qwen3-VL's
+// DeepStack taps. Each tap is the residual right after its block, read by finishing the queue there and downloading it,
+// which stalls the stream once per tap.
 func (a *gridTower) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) ([]float32, [][]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

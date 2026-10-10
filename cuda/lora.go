@@ -10,21 +10,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md).
+// Compute-time LoRA on the resident path (docs/tasks/task-gpu-paths-2026-09.md). Like Metal and unlike WebGPU:
+// launchToken re-issues live kernel launches every token (segA/segB/segBFFN), so binding or clearing an adapter is a
+// Go-side `if r.loraLayers != nil` at each of the 7 projection sites, with no fixed dispatch plan to rebuild (contrast
+// gpu/lora_resident.go's rebuildSteps). CUDA graphs are the exception: a captured graph replays the launches recorded
+// with r.loraLayers == nil and would silently skip every LoRA dispatch, so SetAdapter refuses under graphs (see the
+// loraLayers field in resident.go).
 //
-// Architecturally this backend is like Metal, not WebGPU: launchToken re-issues live kernel
-// launches every token (segA/segB/segBFFN), so binding/clearing an adapter is just a Go-side
-// `if r.loraLayers != nil` at each of the 7 projection sites — no fixed dispatch-plan surgery
-// needed (contrast gpu/lora_resident.go's rebuildSteps, forced by WebGPU's fixed-plan-replay
-// architecture). The one thing THIS backend has that neither of the others does is CUDA graphs
-// (r.graphs, opt-in via GOINFER_CUDA_GRAPHS, off by default): a captured graph replays the exact
-// launches recorded at capture time, which happened with r.loraLayers == nil, so a graph replay
-// would silently skip every LoRA dispatch — SetAdapter refuses rather than bind under graphs (see
-// resident.go's r.loraLayers field comment).
-//
-// The delta itself, and its two-kernel down/up split, mirror metal/lora.go and gpu/lora.go
-// exactly: y[o] += scale·Σ_r B[o,r]·(A·x)[r], applied AFTER the base projection's matmul on the
-// SAME quantized activation the base projection consumed.
+// The delta and its two-kernel down/up split mirror metal/lora.go and gpu/lora.go: y[o] += scale * sum_r
+// B[o,r]*(A.x)[r], applied after the base projection's matmul on the same quantized activation the base projection
+// consumed.
 
 // loraRMax bounds the LoRA rank this backend accepts — generous against real adapters
 // (typically rank 4-64, rarely above 128). SetAdapter declines (does not silently truncate) a
@@ -68,9 +63,8 @@ func (r *cudaResident) releaseLoraLayers(layers []cudaLoraLayer) {
 	}
 }
 
-// loraCacheDisabled is the escape hatch / A-B switch for the adapter device cache (audit P-10),
-// same convention as GOINFER_NO_RESIDENT_REUSE: with it set, every bind uploads and every clear
-// frees, which is exactly the pre-cache behaviour.
+// loraCacheDisabled is the escape hatch / A-B switch for the adapter device cache, in the convention of
+// GOINFER_NO_RESIDENT_REUSE: with it set, every bind uploads and every clear frees.
 func (r *cudaResident) loraCacheDisabled() bool { return r.knobValue("GOINFER_NO_LORA_CACHE") != "" }
 
 // loraKeyOf records what a bind would upload, projection by projection.
@@ -106,15 +100,13 @@ func sameLoraKey(x, y [][7]loraProjKey) bool {
 	return true
 }
 
-// SetAdapter implements decoder.ResidentAdapter: binds (layers != nil) or clears (layers == nil)
-// the compute-time LoRA delta for every subsequent Forward call, until the next SetAdapter. Runs on
-// the executor thread (r.do) like every other device-touching call in this file — CUDA contexts
-// are thread-affine, and BuildResident's own setup follows the same rule.
+// SetAdapter implements decoder.ResidentAdapter: binds (layers != nil) or clears (layers == nil) the compute-time LoRA
+// delta for every subsequent Forward call, until the next SetAdapter. It runs on the executor thread (r.do), like every
+// device-touching call here: CUDA contexts are thread-affine.
 //
-// Clearing UNBINDS but keeps the uploaded buffers (audit P-10), so the next bind of the same
-// adapter is a pointer swap rather than a full re-upload; a different adapter evicts them. The
-// cache holds one adapter — the most recently uploaded — so it adds no VRAM beyond what a bound
-// adapter already costs, and adapters that alternate still upload each time, as before.
+// Clearing unbinds but keeps the uploaded buffers, so the next bind of the same adapter is a pointer swap rather than a
+// re-upload; a different adapter evicts them. The cache holds one adapter, the most recently uploaded, so it adds no
+// VRAM beyond what a bound adapter already costs.
 func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	if r.actG32 && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA reads per-vector activation scales; not implemented for a per-32 activation model")
@@ -195,11 +187,10 @@ func (r *cudaResident) applyLora(p *cudaLoraProj, aq, ascale Buffer, k int, dst 
 		gpu.ArgValue(int32(p.rank)), gpu.ArgValue(int32(p.outn)), gpu.ArgValue(p.scale))
 }
 
-// loraCacheState is the adapter device cache (audit P-10). generateInto binds an adapter before
-// every adapter generation and clears it after, and SetAdapter used to upload every A/B matrix
-// and free them all again each time — ~90 MB and ~400 allocations per request on a 7B at rank 16,
-// before the first token. The cache keeps the most recently bound adapter's buffers across a
-// clear, so repeated requests to one fine-tune (an agent loop) upload it once.
+// loraCacheState is the adapter device cache. generateInto binds an adapter before every adapter generation and clears
+// it after, so without a cache every request would upload every A/B matrix and free it again (~90 MB and ~400
+// allocations on a 7B at rank 16, before the first token). The cache keeps the most recently bound adapter's buffers
+// across a clear, so repeated requests to one fine-tune upload it once.
 type loraCacheState struct {
 	cache   []cudaLoraLayer  // device buffers of the most recently uploaded adapter
 	key     [][7]loraProjKey // what those buffers were uploaded FROM
@@ -217,10 +208,9 @@ type loraProjKey struct {
 	scale      float32
 }
 
-// loraDownCfg is lora_delta_down's launch shape (audit P-11): one 256-thread block per rank, so the
-// R reductions run side by side instead of one after another in a single block. loraDownSerial
-// restores the old single-block shape. It exists so a test can prove the two shapes bit-identical,
-// and so the measurement can A/B them on one resident.
+// loraDownCfg is lora_delta_down's launch shape: one 256-thread block per rank, so the R reductions run side by side
+// instead of one after another in a single block. loraDownSerial restores the single-block shape, so a test can prove
+// the two shapes bit-identical and a measurement can A/B them on one resident.
 func loraDownCfg(rank int) LaunchConfig {
 	cfg := onecfg(256, 256*4)
 	if !loraDownSerial {

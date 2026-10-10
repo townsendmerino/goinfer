@@ -11,8 +11,10 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Qwen2.5-VL's vision tower in float32 on the CUDA tower base (S7 on CUDA's fix, docs/tasks/task-multimodal-support-2026-10.md): the port of metal/vl_towers.go's qwen25VResident, replacing aikit's gpu/qwencuda
-// (7.97 s on the 896x896 image, with aikit's unfused attention, and an allocation that failed beside the decoder at serve's defaults). Everything positional comes from aikit's own exports, not a reimplementation:
+// Qwen2.5-VL's vision tower in float32 on the CUDA tower base (docs/tasks/task-multimodal-support-2026-10.md): the port
+// of metal/vl_towers.go's qwen25VResident, replacing aikit's gpu/qwencuda (unfused attention, and an allocation that
+// failed beside the decoder at serve's defaults). Everything positional comes from aikit's own exports, not a
+// reimplementation:
 // BuildWindowPlan gives the window permutation, both segmentations and the RoPE tables in window order; the pixel rows are permuted into window order before the patch embed (a per-row matmul, so this equals permuting
 // its output), each block attends per window except the full-attention blocks (per frame), and the result is permuted back to the original patch order; the merger (MergeHidden) stays aikit's, on the host, where Forward calls it.
 // Block: RMSNorm (eps 1e-6, aikit's rmsNorm), biased q/k/v from the fused qkv split at upload, NeoX rotate-half RoPE, attention at scale 1/sqrt(head_dim) through the fused kernel (tower_base.cu), biased proj and residual,
@@ -40,9 +42,10 @@ func newQwen25Tower(enc *vision.QwenVisionEncoder) (*qwen25Tower, error) {
 		}
 		return m.F32, nil
 	}
-	// The intermediate width is padded up to a multiple of 64 with zeros: Qwen2.5-VL-3B's is 3420 (3420 % 16 = 12), which sends the down projection (K = 3420) and the biased epilogue through the tiled GEMM at 1.8 TFLOPS,
-	// about half of what the register-blocked kernel reaches on this base (S17 step 0 on this tower: GEMM 92% of 3.8 s). The extra gate and up rows and bias entries are zero, so silu(0) * 0 = 0 exactly and the padded
-	// columns of down add nothing: the arithmetic is the unpadded tower's.
+	// The intermediate width is padded up to a multiple of 64 with zeros: Qwen2.5-VL-3B's is 3420 (3420 % 16 = 12), which
+	// would send the down projection (K = 3420) and the biased epilogue through the tiled GEMM, about half the speed of the
+	// register-blocked kernel. The extra gate and up rows and bias entries are zero, so silu(0) * 0 = 0 exactly and the
+	// padded columns of down add nothing: the arithmetic is the unpadded tower's.
 	inter := (w.Inter + 63) / 64 * 64
 	g, err := newGridTower(gridQwen25, w.Hidden, inter, w.NumHeads, w.PatchDim, 1e-6) // aikit's rmsNorm: eps 1e-6
 	if err != nil {

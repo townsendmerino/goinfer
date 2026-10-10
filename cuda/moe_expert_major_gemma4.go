@@ -8,26 +8,23 @@ import (
 	"github.com/townsendmerino/aikit/gpu"
 )
 
-// Gemma-4 extension of cuda/moe_expert_major.go's expert-major restructuring (R11/P20, this is the
-// item docs/queue-performance.md's P20 entry names as "OPEN, ORPHANED: the gemma4-specific extension
-// this needs to actually reach M26" — see docs/measurements/p20-expert-major-2026-09-21.md).
+// Gemma-4 extension of moe_expert_major.go's expert-major restructuring (docs/queue-performance.md P20,
+// docs/measurements/p20-expert-major-2026-09-21.md).
 //
-// gemma4MoeMLPPre/Post (cuda/resident.go) is a PARALLEL dense‖MoE FFN, structurally different from
-// the generic moeMLPPre/Post the other file covers:
+// gemma4MoeMLPPre/Post (resident.go) is a parallel dense||MoE FFN, structurally different from the generic
+// moeMLPPre/Post:
 //
 //	x1 = postFFNNorm1( mlpDown( geluTanh(mlpGate·xd)·(mlpUp·xd) ) )      xd = preFFNNorm(h)   [dense]
 //	rn = rmsnorm_nw(h); logits = RouterProjScaled·rn; idx,wgt = route    wgt *= perExpertScale[idx]
 //	x2 = postFFNNorm2( Σ_j wgt[j]·expertDown_j(geluTanh(gu_j)·up_j) )    xe = preFFNNorm2(h)  [MoE]
 //	h  = (h + postFFNNorm(x1 + x2)) · layerScalar                                             [join]
 //
-// Same mechanism as the generic file (route every row first, bucket by expert, admit/DMA each
-// distinct expert once, fold each row's topK contributions in RANK ORDER via sequential
-// residual_batched launches so bit-identity holds by the same argument — see that file's header for
-// the full proof), but the EXPERT LOOP here accumulates into a PER-ROW g4x2 buffer (not directly
-// into the residual xB), because gemma4's join (normF32(g4x2) -> x1+=x2 -> normF32 -> h+=comb ->
-// *layerScalar) still has to run per row afterward. The dense branch (x1) and the router's
-// pre-fold activation (xe) are computed in the SAME pre-pass, per row, into their own per-row
-// scratch, since both are needed again only after the (deferred) expert-major fold completes.
+// Same mechanism as the generic file (route every row first, bucket by expert, admit/DMA each distinct expert once, fold
+// each row's topK contributions in rank order via sequential residual_batched launches; see that file's header for the
+// bit-identity argument), but the expert loop accumulates into a per-row g4x2 buffer, not the residual xB, because
+// gemma4's join (normF32(g4x2), x1+=x2, normF32, h+=comb, *layerScalar) still has to run per row afterward. The dense
+// branch (x1) and the router's pre-fold activation (xe) are computed in the same pre-pass, per row, into their own
+// scratch, since both are needed again only after the deferred expert-major fold completes.
 
 // prefillGemma4ExpertMajorEligible mirrors prefillMoEExpertMajorEligible's shape for g4moe layers.
 // No shared-expert / gpt-oss-bias exclusion needed here — gemma4's join has neither.
@@ -54,13 +51,13 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 	mqAll := ai(M * hidden / 4)
 	mScAll := af(M)
 	wgtAll := af(M * r.topK)
-	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop (audit R-22)
+	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop
 	emSlot := r.au32(1)
 	rankScratch := make([]Buffer, r.topK) // this layer's Σ_j wgt[j]·expertDown_j(...), per rank
 	for j := range rankScratch {
 		rankScratch[j] = af(M * hidden)
-		// The expert kernel ACCUMULATES into these, so they must start at zero: stream-ordered on r.stream, no host zero slice (46 MB per layer per
-		// chunk at M=512 on the real model) and no context sync. The buffer is fresh, so there is no earlier reader to wait for.
+		// The expert kernel accumulates into these, so they must start at zero: zeroed on r.stream, with no host zero slice and
+		// no context sync, and the fresh buffer has no earlier reader to wait for.
 		if e := r.stream.ZeroAsync(rankScratch[j], M*hidden*4); e != nil {
 			return e
 		}
@@ -112,9 +109,9 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 			Arg(wgtAll.At(m*r.topK*4)), Arg(idxAll.At(m*r.topK*4)), Arg(Ly.perExpertScaleB), gpu.ArgValue(int32(r.topK))); e != nil {
 			return e
 		}
-		// No per-row Sync and Downloads (audit R-22): this row's route output and per-expert scale sit in its own slice of idxAll/wgtAll; the loop
-		// is launches only, in stream order. The weights never come to the host: the host only buckets by expert id.
-		// xe = preFFNNorm2(h), the MoE branch's own input norm — straight into this row's slot.
+		// No per-row Sync or Download: this row's route output and per-expert scale sit in its own slice of idxAll/wgtAll; the
+		// loop is launches only, in stream order, and the host only buckets by expert id. xe = preFFNNorm2(h), the MoE branch's
+		// own input norm, straight into this row's slot.
 		if e := r.rms(xm, Ly.g4preFFN2, mqAll.At(m*hidden/4*4), mScAll.At(m*4)); e != nil {
 			return e
 		}

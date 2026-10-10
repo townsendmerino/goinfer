@@ -9,14 +9,17 @@ import (
 	gpu "github.com/townsendmerino/aikit/gpu"
 )
 
-// The CUDA vision-tower base (S4 of docs/tasks/task-multimodal-support-2026-10.md, Gate 0: docs/measurements/multimodal-support-2026-10/s4-gate0-cuda-towers.md).
-// It is aikit's gpu.ViT (f32 GEMMs with bias and bias+residual epilogues, LayerNorm, RMSNorm, GELU, scaled attention, a NeoX RoPE) plus the six kernels of
-// tower_base.cu, behind one executor goroutine that owns the device (CUDA contexts are thread-affine, as in vision_encoder.go) and a launch helper that latches
-// the first error. Metal's base is eg2Ops; this is the CUDA counterpart, not a port: CUDA kernels take their scalars as launch arguments, and attention is aikit's
-// own kernel (np <= 12288 by its shared-memory row), so Metal's matmul-blocked attention is not needed for a correct baseline.
+// The CUDA vision-tower base (docs/tasks/task-multimodal-support-2026-10.md;
+// docs/measurements/multimodal-support-2026-10/s4-gate0-cuda-towers.md): aikit's gpu.ViT (f32 GEMMs with bias and
+// bias+residual epilogues, LayerNorm, RMSNorm, GELU, scaled attention, a NeoX RoPE) plus the six kernels of
+// tower_base.cu, behind one executor goroutine that owns the device (CUDA contexts are thread-affine, as in
+// vision_encoder.go) and a launch helper that latches the first error. It is the counterpart of Metal's eg2Ops, not a
+// port: CUDA kernels take their scalars as launch arguments, and attention is aikit's own kernel (np <= 12288 by its
+// shared-memory row).
 //
-// Every method except new/close/do must run inside do(): they touch the device. A failed allocation panics inside the executor (gpu.NewBufferLenOf's contract)
-// and do() turns it into an error, so a tower's factory and Hidden return errors, never panics, and serve can name the CPU fallback.
+// Every method except new/close/do must run inside do(), which turns a failed allocation (a panic inside the executor,
+// gpu.NewBufferLenOf's contract) into an error, so a tower's factory and Hidden return errors and serve can name the CPU
+// fallback.
 
 type towerOps struct {
 	dev *Device
@@ -288,8 +291,9 @@ func (t *towerOps) attention(q, k, v, out Buffer, np, nH, hd int, scale float32)
 	return nil
 }
 
-// towerAttnAikit routes the towers back to aikit's attention kernel (the A/B arm of S17 lever A's whole-tower comparison and the fallback's own test); towerAttnDefect plants the fused kernel's
-// defects for its tests (1: no rescale when the running max moves; 2: the key mask one past the segment). Both are zero in production.
+// towerAttnAikit routes the towers back to aikit's attention kernel (the A/B arm of the whole-tower comparison and the
+// fallback's own test); towerAttnDefect plants the fused kernel's defects for its tests (1: no rescale when the running
+// max moves; 2: the key mask one past the segment). Both are zero in production.
 var (
 	towerAttnAikit  bool
 	towerAttnDefect int

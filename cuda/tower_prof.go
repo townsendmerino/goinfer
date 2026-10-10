@@ -4,10 +4,11 @@ package cuda
 
 import "time"
 
-// The S17 step 0 profile on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): with profiling on, towerOps drains its queue at every change of
-// kernel class and attributes the host time since the previous drain to the class that was running. aikit's Event has no elapsed-time call, so this is a wall-clock split with
-// the queue drained at each class boundary, and the launch latency of the first kernel after a drain sits inside its class. With profiling off (towerOps.prof nil) every hook is a
-// nil check and nothing else changes.
+// The tower profile on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): with
+// profiling on, towerOps drains its queue at every change of kernel class and attributes the host time since the
+// previous drain to the class that was running. aikit's Event has no elapsed-time call, so this is a wall-clock split
+// with the queue drained at each class boundary, and the launch latency of the first kernel after a drain sits inside
+// its class. With profiling off (towerOps.prof nil) every hook is a nil check and nothing else changes.
 
 type towerClass int
 

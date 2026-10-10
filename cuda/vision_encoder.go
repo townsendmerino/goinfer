@@ -1,24 +1,16 @@
 //go:build cuda
 
-// vision_encoder.go — resident CUDA SigLIP vision tower (P6, docs/multimodal.md's "P6's other
-// half"). A genuinely separate, lightweight device — NOT a *cudaResident (no KV cache, no
-// text-decoder state, no layer-fusion admission) — mirroring gpu/vision_encoder.go's shape
-// (WebGPU's own resident tower) but composed almost entirely from kernels this session's own
-// text-decoder prefill work already shipped:
+// vision_encoder.go: the resident CUDA SigLIP vision tower (docs/multimodal.md). A separate, lightweight device, not a
+// *cudaResident (no KV cache, text-decoder state or layer-fusion admission), mirroring gpu/vision_encoder.go's shape and
+// composed almost entirely from the text decoder's prefill kernels. Attention is attn_img_batched
+// (cuda/attn_img_prefill.cu) called with imgStart=0, imgEnd=M, so every row has nKeys=M and winStart=0: full
+// bidirectional attention over all M patches by parameters alone. Projections are the bW8-shaped batched int8 GEMV
+// (gemv_w8a8_batched.ptx), and the patch-embed and attention-output requantize is quant_vec_batched
+// (prefill_batched.ptx). Only layernorm_quant.cu and gelu_quant.cu are new (SigLIP uses LayerNorm and a plain, non-gated
+// GELU-tanh MLP).
 //
-//   - attention: attn_img_batched (cuda/attn_img_prefill.cu), called with imgStart=0, imgEnd=M —
-//     every row then satisfies imgStart<=pos<imgEnd, so nKeys=M and winStart=0 for every row: full
-//     bidirectional attention over all M patches, reachable via parameters alone, no new kernel.
-//   - projections: bW8-shaped batched int8 GEMV (gemv_w8a8_batched.ptx), already M-batched and
-//     already used for ordinary int8 text prefill — no new GEMM kernel.
-//   - patch-embed / attention-output requantize: quant_vec_batched (prefill_batched.ptx) — the
-//     SAME plain (no-norm) batched int8 quantize the text decoder's own segB ctx-quant step uses.
-//
-// What genuinely IS new (SigLIP uses LayerNorm, not RMSNorm, and a plain non-gated GELU-tanh MLP —
-// neither exists anywhere else in this codebase): layernorm_quant.cu, gelu_quant.cu.
-//
-// Own device/context/goroutine — CUDA contexts are thread-affine, so this mirrors cudaResident's
-// own reqCh/ackCh/LockOSThread pattern (cuda/backend.go's BuildResident) rather than reusing it.
+// It owns its device, context and goroutine: CUDA contexts are thread-affine, so it mirrors cudaResident's
+// reqCh/ackCh/LockOSThread pattern (BuildResident) rather than reusing it.
 package cuda
 
 import (
@@ -57,8 +49,8 @@ type VisionEncoder struct {
 	bQuant          Pipeline // quant_vec_batched (prefill_batched.ptx) — plain int8 quantize
 	bW8             Pipeline // gemv_w8a8_batched — every linear projection
 	bAttnImg        Pipeline // attn_img_batched — full bidirectional attention, imgStart=0/imgEnd=M
-	// R8 phase A: fused non-causal attention for hd 72 (padded to 80), two query-tile heights. Zero-valued if the module did not
-	// load; visionAttn picks the arm (0 = attn_img_batched, 1 = bm64, 2 = bm128) — GOINFER_CUDA_VISION_ATTN = exact | bm64 | bm128.
+	// Fused non-causal attention for hd 72 (padded to 80), two query-tile heights; zero-valued if the module did not load.
+	// visionAttn picks the arm (0 = attn_img_batched, 1 = bm64, 2 = bm128): GOINFER_CUDA_VISION_ATTN = exact | bm64 | bm128.
 	bAttnVit64, bAttnVit128 Pipeline
 	visionAttn              int
 
@@ -126,7 +118,7 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 			*dst = p
 			return nil
 		}
-		// R8 phase A kernels: a load failure is not fatal (the tower falls back to attn_img_batched).
+		// Fused-attention kernels: a load failure is not fatal (the tower falls back to attn_img_batched).
 		if vmod, ve := r.dev.CompileLibrary(attnFusedVitPTX); ve == nil {
 			loadV := func(dst *Pipeline, name string) {
 				if pl, pe := r.dev.NewComputePipeline(vmod, name); pe == nil {
@@ -135,11 +127,9 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 			}
 			loadV(&r.bAttnVit64, "attn_vit_hd72_bm64")
 			loadV(&r.bAttnVit128, "attn_vit_hd72_bm128")
-			// DEFAULT since 2026-09-21 (owner override of the pre-registered rule; the served downstream
-			// gate came back f_N=6/8 against the registered <=1 pass line — docs/measurements/
-			// vision-tower-downstream-2026-09-21.md — with no defect found; the owner chose the 6.4x
-			// speedup anyway, the same shape as R2's "shipped anyway" call). GOINFER_CUDA_VISION_ATTN=exact
-			// restores the old kernel; =bm64 selects the other fused arm.
+			// Default, by owner override of the pre-registered rule: the served downstream gate missed its registered bar and no
+			// defect was found (docs/measurements/vision-tower-downstream-2026-09-21.md). GOINFER_CUDA_VISION_ATTN=exact restores
+			// attn_img_batched; =bm64 selects the other fused arm.
 			r.visionAttn = 2
 			switch os.Getenv("GOINFER_CUDA_VISION_ATTN") {
 			case "exact":
@@ -251,14 +241,8 @@ func (r *VisionEncoder) geluQuant(q *Queue, x Buffer, N int, qOut, sOut Buffer, 
 		Arg(x), gpu.ArgValue(int32(N)), Arg(qOut), Arg(sOut))
 }
 
-// residual: x += y (elementwise), same shape as cuda/glue.cu's own `residual` kernel — but that
-// kernel lives in glue.ptx, a module this tower does not load (it never touches the text decoder's
-// glue kernels other than the shared quant_vec_batched). Reuses quant_vec_batched's own module
-// (prefill_batched.ptx) is not possible for a plain add, so this is a tiny host-side loop over a
-// download+add+upload instead — the residual add is O(hidden) per row, not the bottleneck.
-//
-// NOT a new kernel: see ForwardPatches's own comment at each residual site for why a device-side
-// add was skipped for v1 (small, and correctness-first).
+// residual: x += y by a host round trip (download, add, upload). glue.cu's `residual` kernel lives in glue.ptx, a module
+// this tower does not load, and the add is O(hidden) per row, not the bottleneck.
 
 // ForwardPatches runs one image's patches through the full resident tower. patches is
 // [NumPatches * (C*P*P)] (vision.Encoder.GridPatches' own output — the CPU im2col step stays on
@@ -276,13 +260,9 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	err := r.do(func() error {
 		q := r.stream
 
-		// --- M-sized scratch (device), freed at the end. Mirrors cuda/prefill.go's own free-list
-		// (audit C-24 there): the list and its defer are registered BEFORE the first allocation,
-		// and each buffer joins the list as it is created via the af/ai closures below, so a later
-		// allocation panicking (gpu.NewBufferLenOf's OOM contract) still releases every buffer
-		// already made — not just the ones a flat post-hoc list would have caught. Before this fix
-		// (M-18, docs/audit-2026-09-10.md) NONE of these 19 buffers, nor the queue above, were ever
-		// released: ~265 MB per image call, held for the encoder's lifetime.
+		// M-sized scratch (device), freed at the end, with prefillCore's free-list discipline: the list and its defer are
+		// registered BEFORE the first allocation and each buffer joins it as created via the af/ai closures, so a later
+		// allocation panicking (gpu.NewBufferLenOf's OOM contract) still releases every buffer already made.
 		var scratch []Buffer
 		defer func() {
 			for _, b := range scratch {
@@ -307,12 +287,9 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		if e := q.Sync(); e != nil {
 			return e
 		}
-		// posEmb add — PER-PATCH (posEmb is [NumPatches,Hidden], the same full size as h), NOT a
-		// broadcast bias — addInPlaceHost (the plain full-array elementwise add), not addRowsHost
-		// (which broadcasts one [hidden] row to every patch — right for patchB, wrong here: it
-		// would silently add row 0's positional embedding to every patch, correct only for patch
-		// 0 by coincidence). Small enough for a host round-trip at v1 (correctness first, matching
-		// this file's residual-add note).
+		// posEmb add is per patch (posEmb is [NumPatches,Hidden], the same size as h), not a broadcast bias: use addInPlaceHost,
+		// the plain full-array add, not addRowsHost, which broadcasts one [hidden] row to every patch and would silently add row
+		// 0's positional embedding everywhere, correct only for patch 0. Small enough for a host round trip.
 		if e := addInPlaceHost(&q, h, r.posEmb, M*hidden); e != nil {
 			return e
 		}
@@ -341,14 +318,11 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			if e := r.bGemv(&q, L.vw, aq, as, L.vb, vb, M); e != nil {
 				return e
 			}
-			// attn_img_batched, imgStart=0/imgEnd=M: full bidirectional attention over all M
-			// patches — see this file's header for the derivation. kb/vb ARE the "KV cache"
-			// (row-major [M,qDim], position=row index=startPos+m with startPos=0) — no separate
-			// store step, unlike the text decoder's rope kernel which writes q/k/v INTO r.kc/r.vc
-			// as a side effect; this tower has no rope at all, so qb/kb/vb already sit where the
-			// attention kernel expects to read them.
-			// R8 phase A: the fused non-causal kernel for hd 72 (padded to 80) when selected and loaded; otherwise (or for any
-			// other head dim) attn_img_batched exactly as before. Each pipeline is named at its own launch (pipeline lint).
+			// attn_img_batched with imgStart=0/imgEnd=M: full bidirectional attention over all M patches (see this file's header).
+			// kb/vb are the "KV cache" (row-major [M,qDim], position = row index): this tower has no rope and no store step, so
+			// qb/kb/vb already sit where the kernel reads them. The fused non-causal kernel for hd 72 (padded to 80) is used when
+			// selected and loaded; otherwise, or for any other head dim, attn_img_batched. Each pipeline is named at its own launch
+			// (pipeline lint).
 			vitBM := 0
 			if hd == 72 && nKVvit == nH {
 				if r.visionAttn == 1 && r.bAttnVit64 != (Pipeline{}) {
@@ -428,12 +402,8 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	return out, nil
 }
 
-// addInPlaceHost: x += y (elementwise, full arrays of matched length n — NOT a broadcast; every
-// caller here, including the posEmb add, needs a same-shape add). Correctness-first v1 via a host
-// round-trip (small — O(M*hidden) per call, not the per-layer GEMV/attention bottleneck). A
-// device-side elementwise-add kernel is a natural, cheap follow-on if profiling ever shows this
-// matters; not attempted here (P6's own scope is the tower's GEMV/attention cost, untouched by
-// this).
+// addInPlaceHost: x += y, full arrays of matched length n (not a broadcast; the posEmb add needs a same-shape add), by a
+// host round trip. O(M*hidden) per call, not the per-layer GEMV/attention bottleneck.
 func addInPlaceHost(q *Queue, x, y Buffer, n int) error {
 	if e := q.Sync(); e != nil {
 		return e
@@ -452,12 +422,10 @@ func addInPlaceHost(q *Queue, x, y Buffer, n int) error {
 	return gpu.Upload(x, xh)
 }
 
-// Close tears down the device and its executor goroutine. The release runs ON the executor (via
-// reqCh, not called directly from Close's own caller goroutine) because CUDA contexts are
-// thread-affine — the context was created on the executor's locked OS thread (NewVisionEncoder),
-// so it must be released there too, mirroring cudaResident's own Close (cuda/resident.go: send the
-// teardown job, wait for its ack, THEN close reqCh — not the reverse). Before this fix (M-18,
-// docs/audit-2026-09-10.md) ReleaseAll ran directly on whatever goroutine called Close.
+// Close tears down the device and its executor goroutine. The release runs on the executor (via reqCh) because CUDA
+// contexts are thread-affine: the context was created on the executor's locked OS thread (NewVisionEncoder), so it must
+// be released there, as cudaResident's Close does (send the teardown job, wait for its ack, then close reqCh, not the
+// reverse).
 func (r *VisionEncoder) Close() {
 	if r.reqCh == nil {
 		return

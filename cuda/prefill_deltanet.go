@@ -60,8 +60,8 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 		return e
 	}
 	if dp.hk == 128 && dp.hv == 128 {
-		// Every released model's geometry: the state row stays in registers across the rows (1.23 s → see the task
-		// doc for the measured cost of the generic scan on the 9B).
+		// Every released model's geometry: the state row stays in registers across the rows (the measured cost of the generic
+		// scan: docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
 		if e := r.launch(r.dnRuleRows128, LaunchConfig{GridX: uint32(dp.nv), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1},
 			Arg(b.qn), Arg(b.kn), Arg(b.conv), Arg(b.headP), Arg(Ly.dnState), Arg(b.core),
 			gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.rep)), gpu.ArgValue(int32(2*dp.keyDim)),
