@@ -590,8 +590,8 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 }
 
 // finishLayers runs a builder's per-layer loads. Resident (sink nil): in parallel. Streaming: the bundle head (every
-// global exists by now), then each layer loaded, written and freed in order, so the model is never resident at once; the
-// head records no quant label, as StreamTranscodeGGUF's does.
+// global exists by now), then the layers through streamLayers, a window at a time, so the model is never resident at
+// once; the head records no quant label, as StreamTranscodeGGUF's does.
 func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, sink *giwWriter, id string) (*Weights, error) {
 	n := len(w.Layers)
 	if sink == nil {
@@ -606,19 +606,8 @@ func finishLayers(w *Weights, arch *Architecture, loadLayer func(i int) error, s
 	}
 	// The logit tables and Gemma 4's per-layer token table are written; nothing after the head reads them.
 	w.Embed, w.LMHead, w.PerLayerTokenEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
-	for k := range n {
-		i := k
-		if streamDirSwapForTest && n > 1 && k < 2 {
-			i = 1 - k // G-DS1's planted defect: layers 0 and 1 written in each other's place
-		}
-		if err := loadLayer(i); err != nil {
-			return nil, err
-		}
-		sink.layer(&w.Layers[i])
-		if sink.err != nil {
-			return nil, sink.err
-		}
-		w.Layers[i] = LayerWeights{} // release before the next layer
+	if err := streamLayers(w, arch, sink, loadLayer); err != nil {
+		return nil, err
 	}
 	return w, nil
 }

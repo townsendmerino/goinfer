@@ -1354,7 +1354,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	// else in RAM (repackForDecode). abort=nil: this is the cmd/prequant
 	// transcode path, which observes ctx per layer through ctxWriter; the swap tripwire's load-time consumer is scoped to
 	// decoder.Load's resident build only (see Options.LoadAbort).
-	wr := &giwWriter{sink: out, target: target}
+	wr := &giwWriter{sink: out, target: target, layerBudget: streamLayerBudget()}
 	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id, nil); err != nil {
 		return wr.n, err
 	}
@@ -1947,20 +1947,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			l.SharedGate = linalg.WrapF32(sg, 1, hidden)
 			return nil
 		}
-		// Streaming (sink != nil, e.g. cmd/prequant): loadQ35 already builds one layer's data independently of every other layer
-		// (parallelLayers's concurrency is a speed choice, not a correctness dependency), so a sequential build, write and release
-		// loop produces bit-identical per-layer output while bounding peak RSS to about one layer. Non-streaming (sink == nil):
-		// unchanged, still parallel.
+		// Streaming (sink != nil, e.g. cmd/prequant): loadQ35 builds one layer's data independently of every other layer
+		// (parallelLayers's concurrency is a speed choice, not a correctness dependency), so streamLayers' build, write and
+		// release, a window of layers at a time, writes bit-identical per-layer output while bounding peak RSS to about one
+		// window. Non-streaming (sink == nil): all layers in parallel.
 		if sink != nil {
-			for i := range arch.NumLayers {
-				if err := loadQ35(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadQ35); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2066,18 +2059,11 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		// Streaming (sink != nil): loadGptOss builds one layer's data independently of every other layer (every tensor it reads is
 		// named blk.{i}.*, including the per-layer AttnSinks and RouterBias; stackedExperts and stackedExpertBias are per-tensor
-		// RowDequantizer reads keyed by the same name), so the loadQ35 shape applies: a sequential build, write and release loop
-		// bounds peak RSS to about one layer. Non-streaming (sink == nil): unchanged, still parallel.
+		// RowDequantizer reads keyed by the same name), so the loadQ35 shape applies: streamLayers' build, write and release
+		// bounds peak RSS to about one window. Non-streaming (sink == nil): all layers in parallel.
 		if sink != nil {
-			for i := range arch.NumLayers {
-				if err := loadGptOss(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadGptOss); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2200,15 +2186,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 		// shape applies unchanged.
 		if sink != nil {
-			for i := range arch.NumLayers {
-				if err := loadLaguna(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadLaguna); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2339,15 +2318,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 		// shape applies unchanged.
 		if sink != nil {
-			for i := range arch.NumLayers {
-				if err := loadGranite(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadGranite); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2489,15 +2461,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 		// shape applies unchanged.
 		if sink != nil {
-			for i := range arch.NumLayers {
-				if err := loadNemo(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadNemo); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2655,8 +2620,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// plus FFNPerLayer) are written in the head (writeHeadGlobals) before any layer and loaded above before loadG4 runs.
 		// Everything else gemma4-specific (PLE gate/proj/norm, the layer scalar, the KV-shared and K=V flags, the whole 26B-A4B
 		// MoE branch) lives in each layer's own record (giwWriter.gemma4Layer) and is read from blk.{i}.* only
-		// (decoder/gguf_streaming_shape_test.go keeps that true). So: head once the PLE globals exist, then build, write and
-		// release per layer. Non-streaming (sink == nil): unchanged, parallel.
+		// (decoder/gguf_streaming_shape_test.go keeps that true). So: head once the PLE globals exist, then streamLayers'
+		// build, write and release. Non-streaming (sink == nil): all layers in parallel.
 		if sink != nil {
 			if err := sink.writeHeadGlobals(w, id); err != nil {
 				return nil, err
@@ -2665,15 +2630,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			// this function's doc), so release them before the layers: holding them is a flat floor under the whole stream.
 			w.Embed, w.LMHead, w.PosEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
 			w.PerLayerTokenEmbed, w.PerLayerModelProj = linalg.WeightMat{}, linalg.WeightMat{}
-			for i := range arch.NumLayers {
-				if err := loadG4(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadG4); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2756,15 +2714,8 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// decoder/gguf_streaming_shape_test.go proves this from source and keeps it true), so the loadQ35/loadGptOss streaming
 		// shape applies unchanged.
 		if sink != nil {
-			for i := range arch.NumLayers {
-				if err := loadL4(i); err != nil {
-					return nil, err
-				}
-				sink.layer(&w.Layers[i])
-				if sink.err != nil {
-					return nil, sink.err
-				}
-				w.Layers[i] = LayerWeights{} // release before the next layer
+			if err := streamLayers(w, arch, sink, loadL4); err != nil {
+				return nil, err
 			}
 			return w, nil
 		}
@@ -2961,16 +2912,9 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		return nil
 	}
 	if sink != nil {
-		// Sequential load → write → free: peak RAM is one layer, not the model.
-		for i := 0; i < arch.NumLayers; i++ {
-			if err := loadLayer(i); err != nil {
-				return nil, err
-			}
-			sink.layer(&w.Layers[i])
-			if sink.err != nil {
-				return nil, sink.err
-			}
-			w.Layers[i] = LayerWeights{} // release before the next layer
+		// Build, write and free a window of layers at a time (streamLayers): peak RAM is one window, not the model.
+		if err := streamLayers(w, arch, sink, loadLayer); err != nil {
+			return nil, err
 		}
 		return w, nil
 	}
