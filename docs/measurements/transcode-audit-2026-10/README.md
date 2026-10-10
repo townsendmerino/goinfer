@@ -68,6 +68,104 @@ reused output buffer, naive / 32x32          1.823s / 1.936s   (not page faults)
 16x16 through a local tile buffer            0.336s   (5.2x vs 1.756s naive in the same run), bit-identical
 ```
 
+## arm64: the Mac, 2026-10-10 (T0's profile)
+
+**Exploratory, not a result:** by day beside the owner's session (load average 2.9-4.1), the disk 98% full (4.3 GB
+free), one cold run and one warm run per target, nothing interleaved.
+
+- **Box:** the MacBook Pro, M1 Pro (8 cores), 16 GB, macOS 26.6.2. Go 1.27.2, aikit v1.64.0, goinfer `55c6a6da` (branch
+  `giw-v16-2026-10`: T0's instruments, before T6).
+- **Model:** the real `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` from `~/models` (1,117,320,768 bytes).
+- **Command:** `prequant -quant int4 -target <target> -cpuprofile <file> -o <out> <gguf>`, `-embed-int4` off (the CLI's
+  default, as in the amd64 profile above). The numbers below the phase lines come from `/usr/bin/time -l`.
+
+### Phase lines
+
+```
+cpu-arm64, first run (source not in page cache)   wrote ...: 1155 MB (int4) in 20.3s: stream 16.5s, self-check 3.5s
+metal, straight after                             wrote ...: 1312 MB (int4) in 14.6s: stream 10.9s, self-check 3.6s
+cpu-arm64, warm source                            wrote ...: 1155 MB (int4) in 19.5s: stream 16.4s, self-check 3.0s
+    19.75 real  10.73 user  2.09 sys; peak memory footprint 1,246,857,400 B (maximum RSS 2,294,726,656 B)
+metal, warm source                                wrote ...: 1312 MB (int4) in 15.6s: stream 12.0s, self-check 3.5s
+    15.88 real  10.27 user  1.42 sys; peak memory footprint 1,146,226,800 B (maximum RSS 2,383,577,088 B)
+```
+
+### pprof, cumulative (the warm runs; the rows that carry the time)
+
+```
+# cpu-arm64 (warm source)
+Duration: 19.68s, Total samples = 12.29s (62.44%)
+         0     0%     0%     12.15s 98.86%  goinfer/internal/prequant.TranscodeTimed
+         0     0%     0%     11.56s 94.06%  goinfer/decoder.StreamTranscodeGGUF
+     0.01s 0.081% 0.081%      8.18s 66.56%  aikit/embed.dequantRange
+         0     0% 0.081%      7.11s 57.85%  goinfer/decoder.streamQuantizedRepackable
+     6.05s 49.23% 49.31%      6.72s 54.68%  aikit/embed.dequantQ4KBlock
+         0     0% 49.31%      4.12s 33.52%  goinfer/decoder.streamQuantizedRow4
+     2.08s 16.92% 66.23%      2.08s 16.92%  encoding/binary.littleEndian.Uint16 (inline)
+     1.78s 14.48% 80.72%      1.78s 14.48%  aikit/linalg.QuantizeGroupInt4Row
+     0.01s 0.081% 80.80%      1.45s 11.80%  aikit/embed.dequantQ6KBlock
+         0     0% 80.80%      0.84s  6.83%  goinfer/decoder.(*giwWriter).weightMatKind
+     0.61s  4.96% 85.76%      0.61s  4.96%  hash/crc32.ieeeUpdate
+         0     0% 85.76%      0.58s  4.72%  goinfer/decoder.streamQuantizedEmbed (inline)
+         0     0% 85.76%      0.56s  4.56%  goinfer/decoder.(*giwWriter).fusedGroup
+         0     0% 90.24%      0.54s  4.39%  goinfer/internal/prequant.selfCheck
+         0     0% 90.24%      0.52s  4.23%  syscall.write
+         0     0% 92.76%      0.25s  2.03%  aikit/linalg.(*WeightMat).RepackInt4Row4
+         0     0% 94.79%      0.25s  2.03%  aikit/linalg.quantizeRowInt8Core
+         0     0% 94.79%      0.22s  1.79%  goinfer/decoder.repackRow4ForEmit
+         0     0% 94.79%      0.20s  1.63%  runtime.mallocgc
+         0     0% 97.23%      0.15s  1.22%  goinfer/decoder.(*giwWriter).int4Scales
+# metal (warm source)
+Duration: 15.84s, Total samples = 11.24s (70.96%)
+         0     0%     0%     10.99s 97.78%  goinfer/internal/prequant.TranscodeTimed
+         0     0%     0%     10.32s 91.81%  goinfer/decoder.StreamTranscodeGGUF
+         0     0%     0%      7.56s 67.26%  aikit/embed.dequantRange
+         0     0%     0%      6.44s 57.30%  goinfer/decoder.streamQuantizedRepackable
+     5.66s 50.36% 50.36%      6.30s 56.05%  aikit/embed.dequantQ4KBlock
+         0     0% 50.36%      3.57s 31.76%  goinfer/decoder.streamQuantizedRow4
+     1.86s 16.55% 66.90%      1.86s 16.55%  encoding/binary.littleEndian.Uint16 (inline)
+     1.56s 13.88% 80.78%      1.57s 13.97%  aikit/linalg.QuantizeGroupInt4Row
+     0.02s  0.18% 80.96%      1.26s 11.21%  aikit/embed.dequantQ6KBlock
+     0.68s  6.05% 87.01%      0.68s  6.05%  hash/crc32.ieeeUpdate
+         0     0% 87.01%      0.64s  5.69%  goinfer/internal/prequant.selfCheck
+         0     0% 91.81%      0.53s  4.72%  syscall.write
+     0.01s 0.089% 91.90%      0.39s  3.47%  goinfer/decoder.(*giwWriter).fusedGroup
+         0     0% 91.90%      0.38s  3.38%  goinfer/decoder.streamQuantizedEmbed (inline)
+         0     0% 91.90%      0.28s  2.49%  goinfer/decoder.(*giwWriter).weightMatKind
+         0     0% 94.22%      0.26s  2.31%  aikit/linalg.quantizeRowInt8Core
+         0     0% 94.22%      0.21s  1.87%  aikit/linalg.(*WeightMat).RepackInt4Row4
+         0     0% 96.26%      0.07s  0.62%  runtime.mallocgc
+```
+
+### Reading
+
+| share of sampled CPU | amd64 (above) | arm64, cpu-arm64 target | arm64, metal target |
+|---|---|---|---|
+| `QuantizeGroupInt4Row` | 81.5% (`math.Round` 28.5%) | 14.5% | 14.0% |
+| GGUF dequant (`dequantRange`) | 12.7% | 66.6% | 67.3% |
+| of which `dequantQ4KBlock` | 7.4% | 54.7% (`binary.LittleEndian.Uint16` 16.9%) | 56.1% (16.6%) |
+| of which `dequantQ6KBlock` | 5.2% | 11.8% | 11.2% |
+| int8 quantize (the embedding) | 1.6% | 2.0% | 2.3% |
+| in-RAM row4 repack (`WeightMat.RepackInt4Row4`, F6) | none (a no-op off arm64) | 2.0% (0.25 s) | 1.9% (0.21 s) |
+| the writer's own row4 repack for kind 5 (`repackRow4ForEmit`) | none | 1.8% (0.22 s) | none |
+| self-check (`selfCheck`, nearly all CRC32) | not in that profile | 4.4% (0.54 s) | 5.7% (0.64 s) |
+
+- **F3: arm64's split is not amd64's.** The int4 quantizer is about 14% of the CPU here, not 81%, and `math.Round` is not
+  a node in the profile at all (it compiles to one instruction). The cost that dominates is the GGUF dequantizer, about
+  two thirds, most of it `dequantQ4KBlock`, with `encoding/binary.LittleEndian.Uint16` alone at 17%.
+  - So on the Mac a faster int4 quantizer (T4) can remove at most about 14% of the transcode's CPU.
+  - The dequantizer, which the task doc ranks after T4 from its 12.7% on amd64, is already the first cost on arm64.
+- **F6: the wasted in-RAM repack is there, and it is small.** `RepackInt4Row4` runs on both targets (0.21-0.25 s, about
+  2% of the CPU). On the cpu-arm64 target the writer then repacks from canonical again for kind 5 (0.22 s). T6 removes
+  the first of those.
+- **One core is busy,** as on amd64: user plus system time is 12.8 s of 19.8 s wall on the cpu-arm64 run, and nothing
+  in the profile runs in parallel.
+- **The self-check is not negligible here (F9):** 3.0-3.6 s of wall on a 1.2-1.3 GB file that fits in RAM, 15-25% of the
+  total, against 0.13 s on the cloud box. Its CPU is 0.5-0.6 s, the CRC. The rest is off-CPU and this profile cannot say
+  where; the disk was 98% full and the box was in use.
+- **Wall exceeds CPU in the stream too** (16.4 s of stream on the warm cpu-arm64 run against 12.8 s of CPU for the whole
+  process). A CPU profile does not attribute that either.
+
 ## What the prototypes were
 
 None of this is in the tree. Each was a throwaway edit in the cloud clone, reverted.
