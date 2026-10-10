@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S14c1 (real, the text path) and G-S14c3 (real, the composition) of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): Qwen3-ASR-0.6B, goinfer float32 on the
+// G-S14c1 (real, the text path) and G-S14c3 (real, the composition) of docs/tasks/task-multimodal-support-2026-10.md: Qwen3-ASR-0.6B, goinfer float32 on the
 // CPU, against transformers float32 (scripts/pin_qwen3asr_real.py: the checkpoint converted by a pure rename and proved by transcribing the clip). c1: logits for a fixed token sequence,
 // cosine >= 0.9999, argmax and a 6-token continuation equal. c3: the LibriSpeech clip through the Go front end, encoder, projector, soft-token splice and decoder: the prompt ids equal the
 // processor's, the greedy transcription equals transformers' token for token, and with transformers' path forced every generated position's logits have cosine >= 0.9999.

@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// A safetensors checkpoint directory keys a reference by its files (D-B01's first directory cell failed with "is a
-// directory"): the key is stable, ignores goinfer's own sidecars and hidden files, and changes when a weight byte does.
+// A safetensors checkpoint directory keys a reference by its files: the key is stable, ignores goinfer's own sidecars and
+// hidden files, and changes when a weight byte does.
 func TestCheckpointSHA256_directory(t *testing.T) {
 	t.Setenv("GOINFER_PREFILL_REF_CACHE", t.TempDir())
 	dir := t.TempDir()

@@ -38,13 +38,10 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	// Stat EVERY file Load needs, not just the dir and not just one of them. The failure mode runs
-	// both ways: the tokenizer/config JSONs can end up present (a stray `git add`) while the large
-	// model.safetensors stays uncommitted, and — as seen on a box where the HF download was
-	// interrupted — model.safetensors can be present while config.json is absent. Either way a
-	// partial fixture slips past a one-file guard and Fatalfs in Load, which reads as a numeric
-	// parity regression: it is what made scripts/refresh_parity_hashes.sh refuse a provably
-	// non-numeric refresh. An incomplete fixture must SKIP, like the siblings.
+	// Stat EVERY file Load needs, not just the dir or one of them: a partial fixture (the config JSONs present while
+	// model.safetensors stays uncommitted, or the reverse after an interrupted download) otherwise Fatalfs in Load, which reads
+	// as a numeric parity regression and makes scripts/refresh_parity_hashes.sh refuse a non-numeric refresh. An incomplete
+	// fixture must SKIP, like the siblings.
 	for _, f := range []string{"/model.safetensors", "/config.json"} {
 		if _, err := os.Stat(qwen2moeModelDir + f); errors.Is(err, fs.ErrNotExist) {
 			t.Skipf("qwen2_moe checkpoint at %s is missing %s — regenerate with scripts/pin_llama_forward.py",
@@ -101,7 +98,7 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	}
 	cos := fullCosine(t, logits, qwen2moeForwardFullPath)
 	t.Logf("qwen2_moe: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxΔ, cos)
-	// tiny-golden: goinfer vs the HF f32 forward of the seeded qwen2_moe-tiny — exact numeric oracle
-	// for the loader + gated-shared-expert routing (real Qwen1.5-MoE-A2.7B not on this box).
+	// tiny-golden: goinfer vs the HF f32 forward of the seeded qwen2_moe-tiny: exact numeric oracle for the loader +
+	// gated-shared-expert routing.
 	emitParityRow(t, "qwen2_moe", "tiny-golden", "HF f32 (qwen2_moe seeded fixture)", 100.0, cos, cos)
 }

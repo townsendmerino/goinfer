@@ -8,31 +8,24 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// The decode-matmul parallelism threshold sweep. int4ParThreshold (weightmat.go, 1<<20)
-// and DefaultDecodeParallelThreshold (tune.go, 300K) are the fan-out crossovers, in MACs,
-// below which a decode matmul runs SERIAL. Both were tuned on a Ryzen 7 3700X (8 desktop
-// cores); the M1 Pro (6 P + 2 E, very different memory latency) is Phase 5's rig and was
-// never swept — a wrong threshold understates any benchmark we eventually publish. This
-// isolates the crossover from the model: it drives the SAME kernels (MatmulBTW4A8Into /
-// MatmulBTW8A8Into) matmul() dispatches, at Gemma-4-26B-A4B's real decode shapes (M=1),
-// across a bracket of thresholds, with a per-call Workspace exactly as the forward does.
+// The decode-matmul parallelism threshold sweep. int4ParThreshold (weightmat.go) and DefaultDecodeParallelThreshold
+// (tune.go) are the fan-out crossovers, in MACs, below which a decode matmul runs SERIAL. This isolates the crossover
+// from the model: it drives the SAME kernels (MatmulBTW4A8Into / MatmulBTW8A8Into) matmul() dispatches, at
+// Gemma-4-26B-A4B's real decode shapes (M=1), across a bracket of thresholds, with a per-call Workspace exactly as the
+// forward does. Both constants were tuned on one 8-core desktop CPU (history: docs/code-notes/decoder.md#parthreshold_sweep_bench_test.header).
 //
-// Run + read (per-shape ns/op; lower is better; the winning threshold is the largest one
-// whose ns/op is still ~serial-beating for every shape it must fan out):
+// Run + read (per-shape ns/op; lower is better; the winning threshold is the largest one whose ns/op is still
+// serial-beating for every shape it must fan out):
 //
 //	go test ./decoder -run '^$' -bench 'ParThresholdSweep' -benchtime 200ms
 //
-// Interpreting it: for each shape the ns/op is flat until the threshold rises ABOVE that
-// shape's MAC count, at which point it jumps to the serial cost. The optimum is the
-// threshold that keeps every shape you want parallel below the jump while leaving truly
-// tiny ops (which over-parallelize — thread spawn > work) serial. Compare the M1 Pro
-// optimum against the constants; if it differs materially, the constant wants to be
-// per-platform (GOOS/arch or GOMAXPROCS-derived), not a universal default.
+// Interpreting it: for each shape the ns/op is flat until the threshold rises ABOVE that shape's MAC count, at which
+// point it jumps to the serial cost. The optimum keeps every shape you want parallel below the jump while leaving truly
+// tiny ops (which over-parallelize: thread spawn > work) serial. On a different CPU, if the optimum differs materially
+// from the constants, the constant wants to be per-platform, not a universal default.
 
-// gemma4-26b-a4b decode matmul shapes at M=1 (K=cols/in, N=rows/out), MACs = K*N:
-//
-//	down 1.98M is the SMALLEST — the one int4ParThreshold (1.05M) must let through;
-//	attn 11.5M the largest. hidden=2816, moe_inter=704, dense_inter=2112, nH*hd(global)=4096.
+// gemma4-26b-a4b decode matmul shapes at M=1 (K=cols/in, N=rows/out), MACs = K*N. The smallest (down) is the one
+// int4ParThreshold must let through; attn is the largest. hidden=2816, moe_inter=704, dense_inter=2112, nH*hd(global)=4096.
 var decodeShapes = []struct {
 	name string
 	K, N int // K = input dim (dot length), N = output rows (partitioned in 8-wide groups)

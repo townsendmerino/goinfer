@@ -13,17 +13,17 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// D11's gate (docs/tasks/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must match HF's
-// last_hidden_state[0, :] per position, cosine >= 0.9999 and relative L2 <= 1e-5, in f32, on the tiny Qwen3.5 checkpoints (dense, MoE, and the
-// derived qwen3_5-tiny-normw whose random final-norm weight is what lets a missing, doubled or mis-weighted final norm fail: cosine alone cannot see
-// a uniform scale, and the other tiny checkpoints' final-norm weights are all 0, a scale of exactly 1 under the add-one RMSNorm).
+// D11's gate (docs/tasks/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must
+// match HF's last_hidden_state[0, :] per position, cosine >= 0.9999 and relative L2 <= 1e-5, in f32, on the tiny Qwen3.5
+// checkpoints (dense, MoE, and the derived qwen3_5-tiny-normw whose random final-norm weight is what lets a missing, doubled
+// or mis-weighted final norm fail: cosine alone cannot see a uniform scale, and the other tiny checkpoints' final-norm
+// weights are all 0, a scale of exactly 1 under the add-one RMSNorm).
 //
-// UNLIKE TestPromptHidden_matchesHF, A MISSING CHECKPOINT OR GOLDEN FAILS: that test skips when qwen3_5-tiny-normw has no model.safetensors, and D2
-// committed its config but not that file, so on a fresh checkout the one fixture that sees the final norm was skipped (found 2026-10-02; the file is
-// committed now). A gate whose key subtest can vanish into a skip is not a gate.
+// UNLIKE TestPromptHidden_matchesHF, A MISSING CHECKPOINT OR GOLDEN FAILS: that test skips when qwen3_5-tiny-normw has no
+// model.safetensors, and a gate whose key subtest can vanish into a skip is not a gate.
 //
-// Both the public path and the sequential path are compared with HF, so a mutation of either final-norm site fails. Regenerate the golden with
-// scripts/pin_prompt_hidden_all.py.
+// Both the public path and the sequential path are compared with HF, so a mutation of either final-norm site fails.
+// Regenerate the golden with scripts/pin_prompt_hidden_all.py.
 type hiddenAllGolden struct {
 	Fixtures []struct {
 		Checkpoint string
@@ -198,11 +198,11 @@ func TestPromptHiddenAll_batchedMatchesSequential(t *testing.T) {
 					}
 					rels[pos] = math.Sqrt(ne / nb)
 				}
-				// f32: every position within 1e-6. int4: the activations are quantized to int8, so a few-ulp difference between the batched and
-				// per-token kernels can tip ONE activation code and move one position by about 1e-3 (measured on the Mac's arm64 CI runner, 2026-10-02:
-				// 1 of 64 positions at 1.75e-3, position 47, the 16 after it back at <=1e-7, so it is a flip and not carried state; the same fixture
-				// unquantized has none above 1.2e-7). A real batched-path bug elevates many positions, so the int4 bar is a flip ALLOWANCE (at most 1
-				// position or 2% above 1e-6, each under 1e-2, the median still within 1e-6), not a looser per-position number.
+				// f32: every position within 1e-6. int4: the activations are quantized to int8, so a few-ulp difference between the batched
+				// and per-token kernels can tip ONE activation code and move one position by about 1e-3 (a flip, not carried state: the
+				// positions after it are back at <=1e-7). A real batched-path bug elevates many positions, so the int4 bar is a flip
+				// ALLOWANCE (at most 1 position or 2% above 1e-6, each under 1e-2, the median still within 1e-6), not a looser
+				// per-position number.
 				over, worst, med := 0, 0.0, medianOf(rels)
 				for pos, r := range rels {
 					worst = math.Max(worst, r)

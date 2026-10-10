@@ -1,8 +1,7 @@
 //go:build arm64
 
-// arm64 only: the S-05 fold is an arm64 SDOT kernel, and aikit v1.47.0 declares its A/B toggle
-// (linalg.SetW4A8RowFold / W4A8RowFold) in an arm64-tagged file, so this file does not compile
-// on linux/amd64 without the tag (CI run 35763888743 found that the hard way).
+// arm64 only: the S-05 fold is an arm64 SDOT kernel, and aikit declares its A/B toggle (linalg.SetW4A8RowFold /
+// W4A8RowFold) in an arm64-tagged file, so this file does not compile on linux/amd64 without the tag.
 
 package decoder
 
@@ -17,21 +16,17 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestR9_s05FoldAB is the end-to-end arm of aikit S-05 (docs/task-simd-audit.md: the
-// -8 centering folded into the SDOT accumulator of the M=1 W4A8 decode kernel,
-// bit-identical). The kernel's single-core win is measured in aikit's own harness; this
-// is the separate token-level number the decision rule asks for — one loaded 1.5B, depth
-// 128, 24 greedy tokens, the fold flipped IN-PROCESS via linalg.SetW4A8RowFold, ABBA
-// pairs, paired ratio with a win count (the same shape as TestR9_cpuTuningAB). The
-// per-component split names where any change lands: the matmul terms (q/k/v, o,
-// gate+up, down, LM head) are the only ones the kernel touches.
+// TestR9_s05FoldAB is the end-to-end arm of aikit S-05 (docs/task-simd-audit.md: the -8 centering folded into the SDOT
+// accumulator of the M=1 W4A8 decode kernel, bit-identical). The kernel's single-core win is measured in aikit's own
+// harness; this is the separate token-level number the decision rule asks for: one loaded 1.5B, depth 128, 24 greedy tokens,
+// the fold flipped IN-PROCESS via linalg.SetW4A8RowFold, ABBA pairs, paired ratio with a win count (the same shape as
+// TestR9_cpuTuningAB). The per-component split names where any change lands: the matmul terms (q/k/v, o, gate+up, down, LM
+// head) are the only ones the kernel touches.
 //
-// Pre-registered band (docs/measurements/s05-centering-fold-2026-09-22.md): expected
-// ~0 — step 0's split puts the 1.5B's MLP matmuls at 54% of the read ceiling and ~40% of
-// the kernel's hot rate per worker, i.e. fan-out-bound (S-02), where a faster kernel is
-// mostly hidden. ≥3% paired on 3/3 pairs = reaches the token; 1.5–3% = ambiguous, parked;
-// <1.5% = does not reach the token, as predicted. The ship decision is the single-core
-// harness either way; this number is reported beside it, not gated on.
+// Pre-registered band (docs/measurements/s05-centering-fold-2026-09-22.md): expected ~0, since the 1.5B's MLP matmuls are
+// fan-out-bound, where a faster kernel is mostly hidden. >=3% paired on 3/3 pairs = reaches the token; 1.5-3% = ambiguous,
+// parked; <1.5% = does not reach the token, as predicted. The ship decision is the single-core harness either way; this number
+// is reported beside it, not gated on.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestR9_s05FoldAB -v -timeout 20m
 func TestR9_s05FoldAB(t *testing.T) {

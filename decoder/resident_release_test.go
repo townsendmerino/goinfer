@@ -17,11 +17,10 @@ func (b *releaseTestBackend) BuildResident(m *Model) (ResidentForward, bool, err
 
 func (b *releaseTestBackend) Close() error { return nil }
 
-// TestWithResidency_releasesHostMemoryOnlyAfterASuccessfulBuild pins the load-time release added after a measured
-// leak-in-effect: with a real gpt-oss-20b on CUDA the process sat at ~39 GB RSS for ~5 minutes after the load
-// finished (Go's scavenger returning the host-side packing lazily) and dropped to ~22 GB within ~10 s once the
-// heap was released explicitly. The release must happen after a resident build succeeds — and must NOT happen for a
-// decline, which built nothing and would only pay for a pointless collection.
+// TestWithResidency_releasesHostMemoryOnlyAfterASuccessfulBuild pins the load-time release of host memory: Go's scavenger
+// otherwise returns the host-side packing lazily, so a real gpt-oss-20b on CUDA sat at its peak RSS for minutes after the load
+// finished. The release must happen after a resident build succeeds, and must NOT happen for a decline, which built nothing
+// and would only pay for a pointless collection.
 func TestWithResidency_releasesHostMemoryOnlyAfterASuccessfulBuild(t *testing.T) {
 	calls := 0
 	old := releaseHostMemory

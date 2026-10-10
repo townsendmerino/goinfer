@@ -223,23 +223,15 @@ func TestQwen38Real_gate(t *testing.T) {
 	}
 }
 
-// TestQwen38Real_oracle is the T3 numeric row: the released bf16 weights matched against an
-// HF bf16 forward of the SAME weights, pinned offline via scripts/pin_sequential_oracle.py
-// (accelerate disk offload, the same technique pin_qwen3next_real.py proved on an 80B model).
-// Until this gate, TestQwen38Real_gate above was coherence-only — this doc's own manifest text
-// said plainly that no bf16 reference forward had ever been run. The released checkpoint is a
-// vision-language wrapper (Qwen3_5ForConditionalGeneration) even though only the text path is
-// used; the pin script loads it via AutoModelForImageTextToText with pixel_values=None, the
-// same shape mistral3's own real-checkpoint gate needed.
+// TestQwen38Real_oracle is the T3 numeric row: the released weights matched against an HF bf16 forward of the SAME weights,
+// pinned offline via scripts/pin_sequential_oracle.py (accelerate disk offload, the technique pin_qwen3next_real.py proved
+// on an 80B model). TestQwen38Real_gate above is coherence-only; this is the numeric reference. The released checkpoint is a
+// vision-language wrapper (Qwen3_5ForConditionalGeneration) though only the text path is used; the pin script loads it via
+// AutoModelForImageTextToText with pixel_values=None, the same shape mistral3's real-checkpoint gate needed.
 //
-// int8, NOT int4 (changed 2026-09-18) — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md.
-// This comment used to say int8 "does not fit alongside f32 activations in 62 GB of RAM" — WRONG,
-// and never actually measured. Measured 2026-09-18: int8 peaks at ~27GB RSS here, ~90s. The int4
-// gate this defended had a real, reproducible divergence at continuation[2] (int4: cosine
-// 0.993235, "Paris" repeating instead of a newline; confirmed via a floating-point-rounding-noise
-// control as a genuine near-tie in int4's coarser grid, sharing the same signature Laguna showed
-// despite the two families sharing no mixer — both resolved by the same fix). At int8: cosine
-// 0.999886, all 8 continuation tokens exact.
+// int8, NOT int4 (docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md): the int4 gate had a reproducible divergence
+// at continuation[2], a near-tie in int4's coarser grid that shares its signature with Laguna's. int8 fits in 62 GB of RAM
+// alongside f32 activations.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen38Real_oracle -v -timeout 60m
 func TestQwen38Real_oracle(t *testing.T) {

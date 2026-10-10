@@ -31,11 +31,10 @@ func realLogitOracle(t *testing.T, ckpt, golden, wantArch, family, reference str
 	realLogitOracleQuant(t, ckpt, golden, wantArch, family, reference, "int8int8")
 }
 
-// realLogitOracleQuant is realLogitOracle with the load precision named. Most families use
-// int8int8 (weights AND activations int8), which is what the resident GPU paths run. A family
-// whose routing is too sensitive for int8 ACTIVATIONS passes its own quant — see
-// nemotron3nano_real_test.go, where 6-of-128 sparse routing costs 0.978 at int8int8 and 0.9977
-// with f32 activations, on a forward that is otherwise correct.
+// realLogitOracleQuant is realLogitOracle with the load precision named. Most families use int8int8 (weights AND activations
+// int8), which is what the resident GPU paths run. A family whose routing is too sensitive for int8 ACTIVATIONS passes its
+// own quant: see nemotron3nano_real_test.go, where 6-of-128 sparse routing costs far more at int8int8 than with f32
+// activations, on a forward that is otherwise correct.
 func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, reference, quant string) {
 	t.Helper()
 	raw, err := readGolden(golden)
@@ -110,18 +109,13 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 	emitParityRow(t, family, "real-model-oracle", reference, 100.0, float64(cos), float64(cos))
 }
 
-// oracleCosFloor is the last-logit cosine bar for a T3 real-model oracle, BY PRECISION.
+// oracleCosFloor is the last-logit cosine bar for a T3 real-model oracle, BY PRECISION. int4 is a coarser grid than int8, so
+// holding both to one number is the same category of error as holding gpt2's int4 goldens to the tiny fixtures' absolute
+// gate; the first int4 oracle (qwen3_next, int4 by capacity) is what separated them.
 //
-// There was one bar for a long time, 0.99, and its comment said what it was: "int8 W8A8 vs bf16 —
-// same bar as the deepseek real gates". That was fine while every real oracle was int8. It stopped
-// being fine when qwen3_next arrived at int4 — not by choice but by capacity, since 80B at int8 is
-// ~80 GB against 62 GB of RAM — and was measured against a bar calibrated on a population it is
-// not in. int4 is a coarser grid than int8; holding both to one number is the same category of
-// error as holding gpt2's int4 goldens to the tiny fixtures' absolute gate.
-//
-// An UNREGISTERED precision is a hard failure rather than a default. Silently inheriting a bar
-// belonging to some other precision is exactly how the int4 gate ended up judged by an int8 number,
-// and a default would let the next precision repeat it without anyone deciding anything.
+// An UNREGISTERED precision is a hard failure rather than a default: silently inheriting a bar belonging to some other
+// precision is how the int4 gate ended up judged by an int8 number, and a default would let the next precision repeat it
+// without anyone deciding anything.
 func oracleCosFloor(t *testing.T, quant string) float64 {
 	t.Helper()
 	switch quant {
@@ -129,10 +123,8 @@ func oracleCosFloor(t *testing.T, quant string) float64 {
 		// Calibrated on the deepseek real gates. int8 weights with f32 or int8 activations.
 		return 0.99
 	case "int4":
-		// Pre-registered in docs/queue-correctness.md G5 BEFORE the qwen3_next checkpoint had
-		// finished downloading and before any number existed — which is what makes it usable.
-		// It is not the int8 bar relaxed after a near miss; it is the bar written down in advance
-		// for the precision the run was always going to use.
+		// Pre-registered in docs/queue-correctness.md G5 for the precision the run was always going to use, before any number
+		// existed; it is not the int8 bar relaxed after a near miss.
 		return 0.98
 	default:
 		t.Fatalf("no oracle cosine bar registered for quant %q — decide one deliberately in "+

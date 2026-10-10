@@ -7,18 +7,12 @@ import (
 	"time"
 )
 
-// Gates for G18 — prefill honoring cancellation.
+// Gates for G18: prefill honors cancellation. The serve layer passes r.Context() into drive, and the context must reach
+// prefillLogits, forwardLayersN and runLayersFromEmbedN: otherwise an abandoned client leaves a core prefilling to
+// completion, and a retrying harness stacks one such generation per retry.
 //
-// The before-state these pin: the serve layer passed r.Context() into drive
-// correctly, but the context stopped at generateInto — prefillLogits,
-// forwardLayersN and runLayersFromEmbedN took no context at all. An abandoned
-// client therefore left a core prefilling to completion, measured at 47:38 of
-// CPU with nothing attached, and a retrying harness stacked one such generation
-// per retry.
-//
-// These use an ALREADY-cancelled context and a mid-flight cancel rather than a
-// long prompt, so they are fast and deterministic: what is being gated is that
-// the loop looks at all, and that it stops promptly once it does.
+// These use an ALREADY-cancelled context and a mid-flight cancel rather than a long prompt, so they are fast and
+// deterministic: what is gated is that the loop looks at all, and that it stops promptly once it does.
 
 func benchModelOrSkip(t *testing.T) *Model {
 	t.Helper()

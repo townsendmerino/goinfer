@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/aikit/audio"
 )
 
-// G-S14c1 and G-S14c2 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): Qwen3-ASR's decoder loads from the checkpoint's own layout (nested thinker_config,
+// G-S14c1 and G-S14c2 of docs/tasks/task-multimodal-support-2026-10.md: Qwen3-ASR's decoder loads from the checkpoint's own layout (nested thinker_config,
 // tensors under thinker.*), its text path matches transformers, and the composition audio samples -> Go front end -> Go encoder and projector -> soft-token splice -> Go decoder matches
 // transformers' Qwen3ASRForConditionalGeneration on the same prompt. The checkpoint is testdata/qwen3asr-tiny (scripts/pin_qwen3asr_tiny.py).
 

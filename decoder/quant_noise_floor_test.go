@@ -10,28 +10,18 @@ import (
 	"testing"
 )
 
-// TestQuantNoiseFloor_gemma4MoE is the Split-B pre-flight: it measures, on CPU, the two things that
-// actually predict whether a resident (GPU) MoE kernel can hit parity on this fixture — measured
-// BEFORE any kernel is written, at the cost of a few CPU forwards and no GPU.
+// TestQuantNoiseFloor_gemma4MoE is the Split-B pre-flight: it measures, on CPU, the two things that predict whether a
+// resident (GPU) MoE kernel can hit parity on this fixture, before any kernel is written, at the cost of a few CPU forwards
+// and no GPU.
 //
-// It began as a pure int4-vs-f32 "noise floor" (CPU-at-quant vs CPU-f32) gated at 0.97, on the theory
-// that a resident backend can only agree with CPU-int4 as well as int4 agrees with f32. The 0.97 bar
-// turned out UNCALIBRATED (not the floor irrelevant): the Split-A dense two-geometry control PASSES
-// the resident gate (cuda-int4 vs cpu-int4) at cosine 0.979 while its own int4-vs-f32 floor is only
-// 0.880 (NOISE_FLOOR_CKPT=../testdata/gemma4-dense-twogeom-tiny). The floor is a CONDITIONING PROXY,
-// correlated with — not independent of — resident parity (both moved together: hidden=64 floor bad +
-// gate 0.82; hidden=256 floor 0.88 + gate 0.979). CUDA-vs-CPU-int4 is only PARTLY common-mode: same
-// quantized weights, but each side quantizes activations with its own rounding/grouping, and how much
-// that difference amplifies is exactly the conditioning the floor measures. One control point fixes
-// 0.88-was-fine for that fixture, not a general threshold — so keep the floor REPORTED as a warning
-// signal, demoted from a hard gate.
+// ROUTING. What a resident MoE kernel can get wrong that a dense one can't is a ROUTING FLIP: quant noise near a router tie
+// picks a DIFFERENT expert, a different computation, not a small numeric error. So the gate is (1) routing agreement 100%
+// and (2) a min routing MARGIN wide enough that the tighter cpu-int4-vs-gpu-int4 gap can't flip it either.
 //
-// What a resident MoE kernel can get wrong that a dense one can't is a ROUTING FLIP: quant noise near
-// a router tie picks a DIFFERENT expert — a different computation, not a small numeric error. So the
-// gate is (1) routing agreement 100% and (2) a min routing MARGIN wide enough that the tighter
-// cpu-int4-vs-gpu-int4 gap can't flip it either. (History: the Split-A dense fixture at hidden=64
-// manufactured a phantom "bug" — cuda resident cosine drifted to 0.82, pure int8-activation
-// sensitivity, fixed by hidden≥256. Same instinct built this fixture at hidden=64; measure first.)
+// The int4-vs-f32 logit floor (CPU-at-quant vs CPU-f32) is REPORTED as a warning signal, not gated: it is a conditioning
+// proxy, correlated with (not independent of) resident parity, and the 0.97 bar it once carried was uncalibrated. Fixture
+// size matters (a hidden=64 fixture manufactures phantom parity failures from int8-activation sensitivity), so measure
+// first. History and the calibration point: docs/code-notes/decoder.md#TestQuantNoiseFloor_gemma4MoE.
 func TestQuantNoiseFloor_gemma4MoE(t *testing.T) {
 	ckpt := "../testdata/gemma4-moe-tiny"
 	if e := os.Getenv("NOISE_FLOOR_CKPT"); e != "" {
@@ -153,20 +143,15 @@ func TestQuantNoiseFloor_gemma4MoE(t *testing.T) {
 		"min routing margin f32=%.4f int4=%.4f, max f32→int4 erosion=%.4f (conservative bound on CUDA erosion) over %d decisions",
 		minCos, agree, total, routeAgree*100, mmF, mm4, maxErosion, total)
 
-	// GATE. What a resident MoE kernel can get wrong that dense can't is a ROUTING FLIP — the one
-	// discrete failure mode, unrecoverable by any kernel. So the pre-flight gates on:
-	//   (1) routing agreement 100% (int4 must not flip the top-k vs f32 — a flip is a fixture defect), and
-	//   (2) a min int4 routing margin comfortably above the perturbation, so the residual CUDA-vs-CPU-int4
-	//       gap can't flip it either. 0.02 ≈ 2 pts of router prob; mm4=0.12 gives ~6× headroom, and the
-	//       reported f32→int4 erosion shows the actual margin loss for context.
+	// GATE. A routing flip is the one discrete failure mode a resident MoE kernel can get wrong that a dense one can't, and no
+	// kernel can recover from it, so the pre-flight gates on:
+	//   (1) routing agreement 100% (int4 must not flip the top-k vs f32; a flip is a fixture defect), and
+	//   (2) a min int4 routing margin comfortably above the perturbation, so the residual CUDA-vs-CPU-int4 gap can't flip it
+	//       either (marginFloor is about 2 points of router prob; the reported f32->int4 erosion shows the actual margin loss).
 	//
-	// The int4-vs-f32 logit floor is a WARNING SIGNAL, not a gate — a conditioning proxy, CORRELATED with
-	// (not independent of) resident parity: at hidden=64 the floor was bad AND the resident gate was 0.82;
-	// at hidden=256 the floor was 0.88 AND the gate was 0.979 — both moved together. The one control point
-	// (dense two-geom: f32-floor 0.880 → resident 0.979, NOISE_FLOOR_CKPT=…/gemma4-dense-twogeom-tiny)
-	// establishes 0.88 was fine FOR THAT FIXTURE, NOT that any lower value is fine in general. So the 0.97
-	// bar was uncalibrated, not wrong to measure — keep it REPORTED and demoted. If the resident MoE gate
-	// comes back marginal, this low floor (0.79) is the first suspect, and the number is already on record.
+	// The int4-vs-f32 logit floor is a WARNING SIGNAL, not a gate: a conditioning proxy correlated with (not independent of)
+	// resident parity, whose one calibration point establishes a value as fine FOR THAT FIXTURE, not that any lower value is
+	// fine in general. If the resident MoE gate comes back marginal, a low floor is the first suspect.
 	const marginFloor = 0.02
 	if routeAgree < 1.0 || mm4 < marginFloor {
 		t.Skipf("gemma4-moe-tiny is NOT resident-gate-ready: expert-set agreement %.1f%%, min int4 routing margin %.4f "+

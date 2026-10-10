@@ -12,21 +12,16 @@ import (
 	"time"
 )
 
-// A long test must be legible WHILE it runs: at any moment the operator should be able to tell
-// whether it is stuck and roughly how much is left. t.Logf cannot do that — it is buffered until
-// the test returns, and dropped entirely for a passing test without -v. That is not a style
-// preference; the tests wired to this helper each ran for 2–15 minutes emitting nothing at all,
-// which is indistinguishable from a hang until the whole suite ends.
+// A long test must be legible WHILE it runs: at any moment the operator should be able to tell whether it is stuck and
+// roughly how much is left. t.Logf cannot do that: it is buffered until the test returns, and dropped entirely for a
+// passing test without -v.
 //
-// So: os.Stderr, unbuffered, independent of -v, on a TIME ticker rather than an iteration count
-// (an iteration count picked for one machine goes silent on a slower one, which is exactly when
-// the heartbeat matters most). TEST_PROGRESS_INTERVAL overrides the cadence; "0" silences it.
+// So: os.Stderr, unbuffered, on a TIME ticker rather than an iteration count (a count picked for one machine goes silent on
+// a slower one, exactly when the heartbeat matters most). TEST_PROGRESS_INTERVAL overrides the cadence; "0" silences it.
 //
-// RUN THESE UNDER -v. `go test` buffers a package's output and DISCARDS it entirely when the
-// package passes, so without -v these lines never appear — measured, not assumed: a passing run of
-// TestA3FastAttentionDivergence emitted a 55-byte log holding only the "ok" line. os.Stderr does
-// not dodge that; what it buys over t.Logf is that under -v the lines stream AS THEY HAPPEN
-// (verified: 5s apart by wall clock mid-test) instead of arriving in one dump when the test ends.
+// RUN THESE UNDER -v. `go test` buffers a package's output and DISCARDS it entirely when the package passes, so without -v
+// these lines never appear; os.Stderr does not dodge that. What it buys over t.Logf is that under -v the lines stream AS
+// THEY HAPPEN instead of arriving in one dump when the test ends.
 const defaultProgressInterval = 45 * time.Second
 
 func progressInterval() time.Duration {
@@ -161,11 +156,9 @@ func (p *progress) emit(tag string) {
 	if d := p.done.Load(); p.total > 0 {
 		line += fmt.Sprintf(" %d/%d", d, p.total)
 		if d > 0 && d < p.total && !p.uneven {
-			// From the RECENT rate, not from total elapsed over total done. A test whose counted
-			// work follows a long uncounted phase — an 80B checkpoint load, say — otherwise
-			// divides 14 minutes by one finished item and reports eta=2h20m for work that took
-			// six. Measured on exactly that run. Uneven() still turns it off entirely where the
-			// items differ in cost and no window makes the projection honest.
+			// From the RECENT rate, not total elapsed over total done: a test whose counted work follows a long uncounted phase (an
+			// 80B checkpoint load) would otherwise divide that whole span by one finished item and report an absurd eta. Uneven() still
+			// turns it off where the items differ in cost and no window makes the projection honest.
 			if perMin, ok := p.peekRatePerMin(); ok && perMin > 0 {
 				eta := time.Duration(float64(p.total-d) / perMin * float64(time.Minute)).Round(time.Second)
 				line += fmt.Sprintf(" eta=%s", eta)
@@ -174,18 +167,14 @@ func (p *progress) emit(tag string) {
 	} else if d := p.done.Load(); d > 0 {
 		line += fmt.Sprintf(" %d done", d)
 	}
-	// Rate over the LAST interval, not the whole run. A cumulative average is still digesting
-	// cold-cache page-ins minutes in -- measured here: mellum2's cumulative eta read 31m, 25m,
-	// 22m, 20m on successive ticks while the machine had not actually changed speed that much. A
-	// recent rate tracks what it is doing NOW, and stays honest on uneven work where an ETA cannot.
+	// Rate over the LAST interval, not the whole run: a cumulative average is still digesting cold-cache page-ins minutes in. A
+	// recent rate tracks what the run is doing NOW, and stays honest on uneven work where an ETA cannot.
 	if r, ok := p.rate(now); ok {
 		line += fmt.Sprintf(" rate=%s", r)
 	}
-	// Bytes read by this process. A phase with nothing to count -- loading a 162GB checkpoint, say
-	// -- otherwise produces a heartbeat that proves only that the process is ALIVE, not that it is
-	// getting anywhere, and those are the two states the reader needs to tell apart. This is the
-	// exact signal that had to be dug out of /proc/PID/io by hand while the qwen3next oracle sat
-	// silent for ten minutes. Linux-only; absent elsewhere, and simply omitted there.
+	// Bytes read by this process. A phase with nothing to count (loading a 162GB checkpoint) otherwise produces a heartbeat
+	// that proves only that the process is ALIVE, not that it is getting anywhere, and those are the two states the reader
+	// needs to tell apart. Linux-only; absent elsewhere, and simply omitted there.
 	if io, rate, ok := p.ioProgress(now); ok {
 		line += fmt.Sprintf(" io=%s", io)
 		if rate != "" {
@@ -255,12 +244,10 @@ func (p *progress) ioProgress(now time.Time) (total, rate string, ok bool) {
 	return p.ioProgressFrom(now, cur)
 }
 
-// ioProgressFrom is the rate arithmetic, split from the /proc read so it can be driven with known
-// values on any platform. The bug it now covers only showed on a real 162GB load.
+// ioProgressFrom is the rate arithmetic, split from the /proc read so it can be driven with known values on any platform.
 func (p *progress) ioProgressFrom(now time.Time, cur int64) (total, rate string, ok bool) {
-	// Its own timestamp, NOT lastAt. emit() calls rate() first, which sets lastAt = now, so
-	// reusing it here made dt zero every time and the io rate never printed once — visible only
-	// on a real 162GB load, where the field showed a total and never a rate.
+	// Its own timestamp, NOT lastAt: emit() calls rate() first, which sets lastAt = now, so reusing it would make dt zero and
+	// the io rate would never print.
 	p.mu.Lock()
 	prev, prevAt := p.lastIO, p.lastIOAt
 	p.lastIO, p.lastIOAt = cur, now

@@ -1,23 +1,20 @@
 package decoder
 
-// Parity validation manifest + staleness detector (docs/completed/task-parity-coverage.md
-// Item 1). The manifest testdata/parity_manifest.json records, per family, the
-// exact set of source files its numerics depend on (named shared sets via `uses`
+// Parity validation manifest and staleness detector (docs/completed/task-parity-coverage.md). The manifest
+// testdata/parity_manifest.json records, per family, the source files its numerics depend on (shared sets via `uses`
 // plus per-family `own`), a content hash of that set, and the validation metrics.
 //
 // TestParityManifest_fresh is model-free (no assets) and runs every push:
 //
-//   - STRUCTURE: every file path in every shared set and every family's `own`
-//     list must exist on disk (catches renames).
-//   - COVERAGE: the manifest's family keys must equal the capability matrix's
-//     family set (adding a family without a manifest row fails CI).
-//   - HASH/ENFORCEMENT: for each family, re-hash the SORTED, DEDUPED union of its
-//     dependency files (+ aikit_version); for VALIDATED families a mismatch vs.
-//     the recorded deps_hash fails ("parity stale") — pending families do not.
+//   - STRUCTURE: every path in every shared set and every family's `own` list must exist on disk (catches renames).
+//   - COVERAGE: the manifest's family keys must equal the capability matrix's family set (a family added without a
+//     manifest row fails CI).
+//   - HASH/ENFORCEMENT: for each family, re-hash the SORTED, DEDUPED union of its dependency files plus the root
+//     go.mod's aikit pin; for VALIDATED families a mismatch against the recorded deps_hash fails ("parity stale"),
+//     pending families do not.
 //
-// Run `go test ./decoder -run ParityManifest -update` to fill/refresh deps_hash;
-// the plain run is the staleness gate. The -update flag is shared with the
-// capability matrix test (var updateMatrix in capability_matrix_test.go).
+// Run `go test ./decoder -run ParityManifest -update` to fill/refresh deps_hash; the plain run is the staleness gate.
+// The -update flag is shared with the capability matrix test (var updateMatrix in capability_matrix_test.go).
 
 import (
 	"bytes"
@@ -43,18 +40,12 @@ import (
 // validation fields. Driven by EMIT_MANIFEST=1 go run ./cmd/gate parity.
 var mergeRowsPath = flag.String("merge-rows", "", "merge collected PARITY_ROW lines from this file into the parity manifest")
 
-// parityManifest mirrors testdata/parity_manifest.json. familyParity uses
-// json.RawMessage for fields the test must preserve verbatim on -update
-// (metrics/status/dates/etc.) while still letting us read+rewrite deps_hash and
-// inspect uses/own/validated_at. Field order matches the on-disk schema so that
-// re-marshaling produces a stable, zero-diff layout.
+// parityManifest mirrors testdata/parity_manifest.json. familyParity uses json.RawMessage for fields the test must
+// preserve verbatim on -update (metrics, status, dates) while still reading and rewriting deps_hash and reading
+// uses/own/validated_at. Field order matches the on-disk schema so re-marshaling gives a zero-diff layout.
 //
-// No AikitVersion field (G-01, audit-2026-09-10): the manifest used to carry a hand-typed
-// "aikit_version" string mixed into every family's deps_hash, which drifted from the real pin —
-// stale seventeen versions once (CHANGELOG v0.17.0's "re-arm"), then drifted again two releases
-// later when that fix re-TYPED the value instead of deriving it. freshDepsHash now reads the
-// ROOT go.mod's aikit require directly (rootAikitVersion, below) at hash time, so there is no
-// stored value left to drift from reality — the file this field used to duplicate.
+// There is deliberately no AikitVersion field: freshDepsHash reads the root go.mod's aikit require at hash time
+// (rootAikitVersion), so no stored value can drift from the pin. History: docs/code-notes/decoder.md#parityManifest.
 type parityManifest struct {
 	SharedSets map[string][]string     `json:"shared_sets"`
 	Families   map[string]familyParity `json:"families"`
@@ -75,17 +66,10 @@ type familyParity struct {
 
 const parityManifestPath = "../testdata/parity_manifest.json"
 
-// writeManifest serialises the manifest back to disk FAITHFULLY.
-//
-// Two round-trip defects made scripts/refresh_parity_hashes.sh unusable — it correctly ABORTED on
-// "the update changed more than deps_hash" every time, which is the guard working, but it meant the
-// sanctioned goldens-gated refresh could not actually be used:
-//
-//   - json.MarshalIndent HTML-escapes, turning a ">" inside a `reference` string into "\u003e".
-//   - `Method` was a plain string, so a JSON `null` came back as `""`.
-//
-// Neither changed any meaning, and both showed up as a diff the abort guard could not distinguish
-// from a real edit. Fixed here rather than by loosening the guard: the guard was right.
+// writeManifest serialises the manifest back to disk faithfully: no HTML escaping (a ">" inside a `reference` string
+// stays ">") and a JSON `null` Method stays null (Method is a RawMessage). scripts/refresh_parity_hashes.sh aborts when
+// the update changes more than deps_hash, so a lossy round trip reads as a real edit; fix the writer, do not loosen that
+// guard. History: docs/code-notes/decoder.md#writeManifest.
 func writeManifest(m *parityManifest) error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -154,15 +138,8 @@ func TestParityManifest_merge(t *testing.T) {
 	date := time.Now().Format("2006-01-02")
 	machine := os.Getenv("GOINFER_MANIFEST_MACHINE")
 	if machine == "" {
-		// A hardcoded specific box's name here is a mislabel waiting to happen, not a
-		// convenience: it WAS "linux-62gb" unconditionally, so a merge run from any OTHER
-		// machine silently stamped every row as having been validated on nobara's 62 GB
-		// box. Caught 2026-09-06 running the arm64/Metal sweep from a 16 GB Mac — five
-		// rows it re-validated (granite-dense, ministral3, olmo3, qwen3_moe, smollm3) got
-		// overwritten from the correct "mac" to the wrong "linux-62gb", because nobody
-		// had ever needed to run this from a second machine before. GOOS-GOARCH can never
-		// be wrong the way a remembered hostname can; it is less pretty than "mac" or
-		// "linux-62gb", but pass GOINFER_MANIFEST_MACHINE explicitly for that.
+		// Not a hardcoded box name: a fixed label mislabels every row re-validated from another machine. GOOS-GOARCH cannot be
+		// wrong that way; pass GOINFER_MANIFEST_MACHINE for a friendlier name. History: docs/code-notes/decoder.md#TestParityManifest_merge.machine.
 		machine = runtime.GOOS + "-" + runtime.GOARCH
 	}
 
@@ -213,11 +190,8 @@ func familyDepFiles(m *parityManifest, fam familyParity) []string {
 // root-go.mod-only twin.
 var aikitVersionRE = regexp.MustCompile(`(?m)^\s*github\.com/townsendmerino/aikit (v[0-9][^\s]*)`)
 
-// rootAikitVersion reads the ROOT go.mod's aikit require directly (G-01, audit-2026-09-10) —
-// freshDepsHash's replacement for the manifest's old hand-typed "aikit_version" field. Deriving
-// it here instead of storing it makes drift structurally impossible: the hash always mixes in
-// whatever go.mod actually pins, at the moment it is computed, not whatever someone last typed
-// into the JSON.
+// rootAikitVersion reads the ROOT go.mod's aikit require directly. freshDepsHash mixes in whatever go.mod pins at the
+// moment it hashes, so the manifest holds no hand-typed aikit version that could drift.
 func rootAikitVersion() (string, error) {
 	b, err := os.ReadFile(repoPath("go.mod"))
 	if err != nil {
@@ -230,13 +204,10 @@ func rootAikitVersion() (string, error) {
 	return m[1], nil
 }
 
-// TestRootAikitVersion_readsFromGoMod is G-01's direct unit gate (audit-2026-09-10): asserts
-// rootAikitVersion actually reads go.mod rather than returning a stale or hardcoded value.
-// Deliberately does NOT assert a specific version string — that would just be a second place to
-// remember to bump on every aikit release, the exact hand-typed-value failure mode this fix
-// removes. Instead: independently re-parse go.mod with a SEPARATE regexp match (not calling
-// rootAikitVersion's own machinery) and require exact agreement, so a bug in the function itself
-// (wrong path, wrong pattern) cannot pass by coincidence.
+// TestRootAikitVersion_readsFromGoMod pins that rootAikitVersion actually reads go.mod rather than returning a stale or
+// hardcoded value. It deliberately asserts no specific version string (a second place to bump on every aikit release);
+// it re-parses go.mod with a SEPARATE regexp match, not rootAikitVersion's own machinery, and requires exact agreement,
+// so a bug in the function (wrong path, wrong pattern) cannot pass by coincidence.
 func TestRootAikitVersion_readsFromGoMod(t *testing.T) {
 	got, err := rootAikitVersion()
 	if err != nil {
@@ -371,11 +342,9 @@ func TestParityManifest_fresh(t *testing.T) {
 			continue
 		}
 		enforced++
-		// A validated family whose uses/own sets name no files hashes nothing but the aikit version,
-		// so no edit to its forward can ever restale it (audit-2026-09-10 G-02: olmo_hybrid sat
-		// validated with "uses": [], "own": []). Its green would cover nothing. Keyed on status, not
-		// validated_at: an experimental family (bailing_hybrid) carries a validated_at but claims no
-		// validation, and gets its sets when it is promoted.
+		// A validated family whose uses/own sets name no files hashes only the aikit pin, so no edit to its forward can ever
+		// restale it and its green covers nothing. Keyed on status, not validated_at: an experimental family can carry a
+		// validated_at without claiming validation, and gets its sets when it is promoted.
 		if f.Status == "validated" && len(familyDepFiles(&m, f)) == 0 {
 			emptyDeps = append(emptyDeps, fam)
 		}
@@ -461,19 +430,14 @@ func identityInherited(m string) (inner, rev string, ok bool) {
 	return body[:i], body[i+3:], true
 }
 
-// TestParityManifest_methodTier is the claim-discipline gate: it makes "validated" MEAN T3.
+// TestParityManifest_methodTier is the claim-discipline gate: it makes "validated" MEAN T3. parity-coverage-policy.md
+// defines which methods clear T3; this test enforces it. A T1 method (`tiny-golden`, cosine against the family's own
+// seeded tiny golden, no released checkpoint) must not sit at `status: "validated"`, where the capability matrix and the
+// README's supported count read it. The staleness gate cannot catch that: it keys on deps_hash freshness, which says
+// nothing about how the row was validated.
 //
-// WHY IT EXISTS. `parity-coverage-policy.md` has always defined which methods clear T3, but nothing
-// enforced it — `Method` was parsed as a `json.RawMessage` and never compared to the list. That let
-// five rows sit at `status: validated` with `method: tiny-golden` / `tiny-golden+coherent`: a T1
-// artifact (cosine vs the family's own seeded tiny golden — no released checkpoint involved)
-// recorded in a T3 slot, and therefore counted as "supported". The staleness gate could not catch it
-// because it keys on `deps_hash` freshness, which says nothing about how the row was validated.
-//
-// THE HONEST ALTERNATIVE, so a weak row does not have to lie. `status: "experimental"` records a
-// family whose gate is real but sub-T3. Such a row keeps its method and metrics, renders distinctly
-// in the capability matrix, and is EXCLUDED from the supported count. Downgrading is not a
-// regression — it is the matrix finally saying what the row always was.
+// A weak row does not have to lie: `status: "experimental"` keeps its method and metrics, renders distinctly in the
+// capability matrix and is excluded from the supported count. Downgrading is not a regression.
 func TestParityManifest_methodTier(t *testing.T) {
 	m, err := loadParityManifest()
 	if err != nil {
@@ -517,10 +481,8 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// applyParityRows folds PARITY_ROW lines into m and returns the families it touched. It is a
-// FUNCTION rather than inline loop body so the B15 regression test can drive the real merge
-// instead of a re-implementation of it — the defect it guards against (status promoted without
-// the method to support it) was exactly the kind a parallel test-only copy would have missed.
+// applyParityRows folds PARITY_ROW lines into m and returns the families it touched. It is a function, not an inline
+// loop body, so the regression gates in parity_emit_b15_test.go drive the real merge rather than a test-only copy of it.
 func applyParityRows(m *parityManifest, rows, sha, date, machine string) ([]string, error) {
 	var applied []string
 	for line := range strings.SplitSeq(rows, "\n") {
@@ -545,16 +507,9 @@ func applyParityRows(m *parityManifest, rows, sha, date, machine string) ([]stri
 		if !ok {
 			return nil, fmt.Errorf("PARITY_ROW for unknown family %q (not in %s)", row.Family, parityManifestPath)
 		}
-		// STATUS IS DERIVED FROM THE METHOD, NOT ASSERTED (B15). This used to read
-		// `f.Status = "validated"` unconditionally, so one sweep with EMIT_MANIFEST=1 promoted
-		// glm4_moe, mixtral, qwen2_5_vl and qwen2_moe to *supported* on tiny-golden evidence —
-		// the published capability matrix's "supported" count, upgraded by a tool, from rows
-		// that said tiny-golden right next to the promotion. TestParityManifest_methodTier
-		// caught it, which is the gate working; but a writer that produces claims a reader has
-		// to reject is the wrong shape. The rule the tier gate enforces is now the rule the
-		// writer applies: T3 method ⇒ validated, anything else ⇒ experimental. A row can
-		// therefore DEMOTE a family whose evidence was downgraded, instead of leaving a stale
-		// "validated" standing over a weaker method.
+		// Status is DERIVED FROM THE METHOD, not asserted: a T3 method means validated, anything else experimental. A row can
+		// therefore demote a family whose evidence was downgraded, and a sweep with EMIT_MANIFEST=1 cannot promote a
+		// tiny-golden row to supported. TestParityManifest_methodTier enforces the same rule on the file.
 		if isT3Method(row.Method) {
 			f.Status = "validated"
 		} else {

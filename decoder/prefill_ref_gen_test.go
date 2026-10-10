@@ -17,44 +17,29 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateReference is Phase A of docs/completed/task-prefill-gap.md §3.1's L1 re-run: build the CPU
-// f32-activation reference logits that BOTH Metal arms (metal/prefill_gate_ref_test.go, Phase B)
-// are scored against. §3's first form scored Metal's fast (f16-activation) path against Metal's
-// own exact (int8-per-row-activation) path and called the exact path truth — but the exact path is
-// itself a quantisation, guaranteed to disagree with the fast path for a reason that has nothing
-// to do with a defect (see the doc's §3.1 correction). This reference is what actually has no
-// activation-precision loss to attribute anything to.
+// TestPrefillGateReference is Phase A of docs/completed/task-prefill-gap.md §3.1's L1 re-run: it builds the CPU
+// f32-activation reference logits that BOTH Metal arms (metal/prefill_gate_ref_test.go, Phase B) are scored against.
+// Metal's exact path (int8-per-row activation) is itself a quantisation, so scoring the fast path against it blames a
+// defect for a disagreement that has nothing to do with one; this reference has no activation-precision loss to attribute
+// anything to.
 //
-// Runs in its OWN process, deliberately separate from the Metal gate: a 7B CPU reference and a 7B
-// Metal resident sharing 16GB at once on this machine is exactly the failure mode that produced a
-// real kernel panic here before a model was ever intentionally run oversized. Two models:
-//   - S (1.5B): Options{Backend:"cpu", Quant:""} — f32 weights, f32 activations, ~6GB.
-//   - D7 (7B):  Options{Backend:"cpu", Quant:"int8"} — weight-only per-row int8, f32 activations,
-//     ~7.6GB. The f32 weights for D7 would be ~28GB and do not fit; per the brief, if the q4_k_m
-//     GGUF cannot load under "int8" this subtest logs why and skips — D7 is the confirmation
-//     model, S is the one the decision rests on.
+// Runs in its OWN process, deliberately separate from the Metal gate: a 7B CPU reference and a 7B Metal resident sharing
+// 16GB is a kernel-panic risk. Two models:
+//   - S (1.5B): Options{Backend:"cpu", Quant:""}: f32 weights, f32 activations. The one the decision rests on.
+//   - D7 (7B): Options{Backend:"cpu", Quant:"int8"}: weight-only per-row int8, f32 activations (f32 weights would not
+//     fit). The confirmation model: if the q4_k_m GGUF cannot load under "int8" the subtest logs why and skips.
 //
-// The reference is the CPU backend's own prefill (PrefillLogitsForTest, the batched prompt path —
-// weights streamed once and reused across all K positions, ~1.7-2x faster than a naive per-token
-// loop and bit-identical to it) with GOINFER_CPU_FAST_ATTENTION forced to "0", i.e. the exact
-// f64-accumulating attention kernel, never the f32-fast one that is default ON elsewhere in this
-// tree. The 64-token greedy continuation past the prompt still runs one token at a time
-// (ForwardForTest) — inherent to greedy decoding (each step needs the previous step's own choice),
-// and cheap next to K up to 3900.
+// The reference is the CPU backend's own batched prefill (PrefillLogitsForTest, bit-identical to a per-token loop) with
+// GOINFER_CPU_FAST_ATTENTION forced to "0": the exact f64-accumulating attention kernel, never the f32-fast one. The
+// 64-token greedy continuation past the prompt runs one token at a time (ForwardForTest), as greedy decoding requires.
 //
-// PARALLEL ACROSS PROMPTS: the 10 prompts per (model, K) run concurrently, one goroutine per CPU
-// (capped), each with its own *KVCache. This is safe because a CPU forward's mutable scratch state
-// lives on the KVCache it's given (decoder/model.go's cache.scr), not on the shared *Model — the
-// only mutex on *Model guards LoRA adapter swaps, a different concern. Verified empirically, not
-// just argued: before the real run, a short preflight sends the SAME prompt through N concurrent
-// workers on independent caches and requires bit-identical seed logits; a real corruption would
-// show up there in seconds rather than being discovered hours into results that already cost the
-// wall-clock this parallelism exists to avoid.
+// PARALLEL ACROSS PROMPTS: the prompts of a (model, K) cell run concurrently, one goroutine per CPU (capped), each with its
+// own *KVCache. That is safe because a CPU forward's mutable scratch lives on the KVCache it is given (cache.scr in
+// model.go), not on the shared *Model; the only mutex on *Model guards LoRA adapter swaps. preflightConcurrencySafety
+// checks it before the real run. At depth concurrency can lose: see refWorkers.
 //
-// Output is NOT written into the repo — these are large, per-machine, per-session binaries
-// (10 prompts x 65 x vocab float32s per cell) meant only for the Phase B run on this box, not a
-// committed artifact. Written to ~/goinfer-logs/prefill-ref/<model>-K<k>-p<i>.bin via
-// decoder.WritePrefillReferenceForTest.
+// Output is NOT written into the repo: these are large, per-machine binaries (prompts x 65 x vocab float32s per cell) for the
+// Phase B run on this box. They go to ~/goinfer-logs/prefill-ref/<model>-K<k>-p<i>.bin via decoder.WritePrefillReferenceForTest.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestPrefillGateReference -v -timeout 4h
 func TestPrefillGateReference(t *testing.T) {
@@ -87,10 +72,8 @@ func TestPrefillGateReference(t *testing.T) {
 
 	const continuationN = 64
 	workers := refWorkers(min(8, runtime.NumCPU()))
-	// K=512 joins the decision set here (docs/completed/task-prefill-gap.md §4 L1, 2026-09-09): CUDA's floor was
-	// set from a MEASURED K=512 cell, never interpolated between 256 and 1024 (§3, "a floor placed
-	// between two measured cells would be interpolating a fidelity result nobody took") — Metal's
-	// floor needs the same discipline if this run ships.
+	// K=512 is in the decision set because a floor must be measured at the depth it is set to, not interpolated between cells
+	// (docs/completed/task-prefill-gap.md §3 and §4 L1).
 	models := []struct {
 		name        string
 		pathEnv     string
@@ -135,13 +118,10 @@ func TestPrefillGateReference(t *testing.T) {
 					maxK = k
 				}
 			}
-			// ResidentContext is a GPU-resident-KV concept (decoder/model.go's Options doc: "Ignored
-			// off the residency path") — it does not change what the CPU backend actually allocates,
-			// only what fitCheckFor prices the load's KV term at (decoder/fitguard.go's effCtx: pinned
-			// ResidentContext when set, else the model's own MaxPositions — 32768 here, priced whether
-			// or not this run ever reaches it). Pinning it to what this run actually touches
-			// (maxK+continuationN) turns an 8.4 GB / 12.0 GB-available guard threshold, priced against
-			// a context length nothing below ever requests, into an honest ~6.8 GB / 9.8 GB one.
+			// ResidentContext is a GPU-resident-KV concept (Options doc: "Ignored off the residency path"). On the CPU backend it only
+			// changes what fitCheckFor prices the load's KV term at (effCtx in fitguard.go: the pinned ResidentContext when set, else
+			// the model's own MaxPositions). Pin it to what this run touches (maxK+continuationN) so the guard prices a context the run
+			// actually reaches.
 			m, err := Load(path, Options{Backend: "cpu", Quant: mc.quant, ResidentContext: maxK + continuationN})
 			if err != nil {
 				if mc.name == "D7" {
@@ -169,13 +149,9 @@ func TestPrefillGateReference(t *testing.T) {
 	}
 }
 
-// refKs lets a run build references at depths beyond the standing set, via
-// GOINFER_CPU_REF_KS (comma-separated). The defaults are the §3 decision + confirmation cells and
-// do not move.
-//
-// It exists because a FLOOR must be measured at the depth it is set to. The §3 cells are 256 and
-// 1024; a floor placed anywhere between them would be interpolating a fidelity result that was
-// never taken, which is how an unmeasured number ends up quoted as one.
+// refKs lets a run build references at depths beyond the standing set, via GOINFER_CPU_REF_KS (comma-separated). The
+// defaults are the §3 decision + confirmation cells and do not move. It exists because a FLOOR must be measured at the
+// depth it is set to: a floor placed between two measured cells interpolates a fidelity result nobody took.
 func refKs(def []int) []int {
 	v := os.Getenv("GOINFER_CPU_REF_KS")
 	if strings.TrimSpace(v) == "" {
@@ -193,24 +169,13 @@ func refKs(def []int) []int {
 	return out
 }
 
-// refWorkers lets a run cap how many prompts are prefilled CONCURRENTLY, via
-// GOINFER_CPU_REF_WORKERS. The default (8) is unchanged and right for the shallow standing cells.
+// refWorkers lets a run cap how many prompts are prefilled CONCURRENTLY, via GOINFER_CPU_REF_WORKERS. The default (8) is
+// right for the shallow standing cells.
 //
-// AT DEPTH, CONCURRENCY IS A LOSS, NOT A WIN — measured, and expensively. The exact f64-accumulating
-// attention materialises K x K score rows per head, which at K=8000 sit far outside the 3700X's
-// 32 MB of L3; eight prompts doing that at once contend for memory bandwidth until each is slower
-// than running them in series:
-//
-//   - S (1.5B, f32) at K=8000: eight concurrent prompts took 88 min EACH; the last two, running as a
-//     pair, took 10.6 min each. Throughput 0.091 -> 0.189 prompts/min on FEWER workers.
-//   - D7 (7B, int8) at K=8000 with 8 workers wrote no file in 8h50m; its KV fill (RSS growth, which
-//     matched S's own timeline to 2 min) put it ~8 of 28 layers in, projecting 24-28 h against a
-//     16 h test timeout. One prompt alone at f32 fits K=1024/2048/4096 at 2.11/3.32/6.83 min and
-//     projects ~17.5 min at K=8000: the 8-worker run was paying a 10x+ contention penalty.
-//   - two workers at K=2048 (f32) bought +8.6% throughput over one — so the break-even is somewhere
-//     between 2048 and 8000, and one worker is the safe choice at the deep cells.
-//
-// Record: docs/measurements/vsum-split-fidelity-2026-09-13.md, deviation D2.
+// AT DEPTH, CONCURRENCY IS A LOSS, NOT A WIN. The exact f64-accumulating attention materialises K x K score rows per head,
+// which at K=8000 sit far outside a desktop CPU's L3; concurrent prompts doing that contend for memory bandwidth until each
+// is slower than running them in series. One worker is the safe choice at the deep cells; the break-even lies between K=2048
+// and K=8000. The measurements and the run that found it: docs/measurements/vsum-split-fidelity-2026-09-13.md, deviation D2.
 func refWorkers(def int) int {
 	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("GOINFER_CPU_REF_WORKERS"))); err == nil && v > 0 {
 		return v
@@ -218,19 +183,15 @@ func refWorkers(def int) int {
 	return def
 }
 
-// d7RefQuant picks D7's reference weight precision. The default is "int8" — weight-only per-row
-// int8 with f32 ACTIVATIONS — because the machine this generator was written on has 16 GB and a
-// f32 7B is ~28 GB. That default is correct there and is left alone.
+// d7RefQuant picks D7's reference weight precision. The default is "int8" (weight-only per-row int8, f32 ACTIVATIONS)
+// because a f32 7B is ~28 GB and does not fit the 16 GB machine this generator targets.
 //
-// GOINFER_CPU_REF_QUANT_D7="" selects true f32 weights, which is what the 62 GB Linux box uses for
-// the CUDA gate (docs/completed/task-prefill-gap.md Phase 3 names `Options{Backend:"cpu", Quant:""}` for both
-// models there). Either is a valid reference for the property that matters: §3.1's point is that
-// the reference must have f32 ACTIVATIONS, since that is the axis both arms differ from it on, and
-// the weight-requantisation error is common-mode across the two arms — they share identical int4
-// weights, so it cancels out of the PAIRED comparison the gate actually decides on.
-//
-// A reference built at one precision is not comparable to one built at another, so the choice is
-// recorded in the measurement doc for the run that used it.
+// GOINFER_CPU_REF_QUANT_D7="" selects true f32 weights, as on the 62 GB Linux box for the CUDA gate
+// (docs/completed/task-prefill-gap.md Phase 3). Either is a valid reference for the property that matters: the reference
+// must have f32 ACTIVATIONS (§3.1), since that is the axis both arms differ from it on, while the weight-requantisation error
+// is common-mode (both arms share identical int4 weights) and cancels out of the PAIRED comparison the gate decides on. A
+// reference built at one precision is not comparable to one built at another, so record the choice in the measurement doc for
+// the run that used it.
 func d7RefQuant() string {
 	if v, ok := os.LookupEnv("GOINFER_CPU_REF_QUANT_D7"); ok {
 		return v

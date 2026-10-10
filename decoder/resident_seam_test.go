@@ -8,26 +8,18 @@ import (
 	"testing"
 )
 
-// The seam gate.
+// The seam gate. A resident backend that nothing asserts is actually used is indistinguishable from CPU-only: `serve
+// --backend cuda|metal|webgpu` once ran CPU-only on EVERY backend with a green suite, because every test called
+// decoder.Forward directly, the cmd/serve tests pin Backend: "cpu", and ResidentActive() was asserted only inside gpu/. Two
+// independent bugs lived in that gap, either fatal alone:
 //
-// WHY THIS EXISTS. `serve --backend cuda|metal|webgpu` was silently CPU-only on EVERY backend
-// for five weeks (0eefd77 -> 7557723). TWO independent bugs lived in the same gap, either of
-// which alone was fatal:
+//   - Options.Validate rejected the backend NAME, so `serve --backend cuda` failed at flag validation even where the module
+//     was built in.
+//   - Model.Generate gates the GPU on `useGPU := resident != nil && prefillFrom == 0 && commit == nil`, and Session.Generate
+//     ALWAYS sets commit, so routing a request through the session cache silently disabled residency.
 //
-//   - Options.Validate rejected the backend NAME, so `serve --backend cuda` failed at flag
-//     validation even where the module was built in (727f198).
-//   - Model.Generate gates the GPU on `useGPU := resident != nil && prefillFrom == 0 &&
-//     commit == nil`, and Session.Generate ALWAYS sets commit — so routing a request through
-//     the session cache silently disabled residency (7557723).
-//
-// Neither was caught, because nothing ever asserted "is this actually running on the GPU?".
-// Every test called decoder.Forward directly; all 12 cmd/serve tests pin Backend: "cpu"; and
-// ResidentActive() was asserted only inside gpu/. The flagship feature did not work at all and
-// the suite was green. It was found by noticing a tok/s number, which is not a gate.
-//
-// The tests below need NO GPU and NO downloaded model — they fake the resident backend and use
-// the committed tiny fixture — so this seam is gated in CI, on every push, rather than by a
-// human remembering to look at throughput.
+// The tests below need NO GPU and NO downloaded model (they fake the resident backend and use the committed tiny fixture), so
+// the seam is gated in CI on every push rather than by a human remembering to look at throughput.
 
 // fakeResident is a ResidentForward that records whether the resident path was ACTUALLY taken.
 // It returns a deterministic non-nil logit row so callers proceed normally; the point is the
@@ -157,9 +149,8 @@ func TestSeam_ResidentBackendIsActuallyUsed(t *testing.T) {
 	}
 }
 
-// TestSeam_GenerateRunsOnTheResident is the gate for 7557723. Generate on a resident model MUST
-// dispatch to the resident runner. The five-week bug was exactly this: it silently ran on the
-// CPU and every test still passed, because nothing counted resident calls.
+// TestSeam_GenerateRunsOnTheResident: Generate on a resident model MUST dispatch to the resident runner. The failure it
+// guards ran silently on the CPU with every test passing, because nothing counted resident calls.
 func TestSeam_GenerateRunsOnTheResident(t *testing.T) {
 	m, be := loadWithFakeResident(t)
 	if !m.ResidentActive() {
@@ -181,11 +172,10 @@ func TestSeam_GenerateRunsOnTheResident(t *testing.T) {
 	t.Logf("resident forwards during Generate: %d", be.rf.forwards-before)
 }
 
-// TestSeam_SessionsDoNotSilentlyDisableResidency pins the exact mechanism of 7557723 so the
-// trade stays a DECISION rather than drifting back into a silent regression. A session sets
-// commit, which turns residency off. cmd/serve therefore bypasses sessions for resident models
-// (openai.go). If a future change routes resident requests back through sessions, decode
-// silently returns to the CPU — this test makes that loud.
+// TestSeam_SessionsDoNotSilentlyDisableResidency pins the exact mechanism so the trade stays a DECISION rather than drifting
+// back into a silent regression. A session sets commit, which turns residency off. cmd/serve therefore bypasses sessions for
+// resident models (openai.go). If a future change routes resident requests back through sessions, decode silently returns to
+// the CPU; this test makes that loud.
 func TestSeam_SessionsDoNotSilentlyDisableResidency(t *testing.T) {
 	m, be := loadWithFakeResident(t)
 	if !m.ResidentActive() {
@@ -217,11 +207,10 @@ func TestSeam_SessionsDoNotSilentlyDisableResidency(t *testing.T) {
 	}
 }
 
-// TestSeam_ValidateAcceptsEveryBackendName is the gate for 727f198: Options.Validate rejected
-// "cuda"/"metal", so `serve --backend cuda` died at flag validation even with the module built
-// in. Accepting the name is deliberately NOT a claim the backend is compiled in — an
-// unregistered backend falls back to CPU with a note (NewBackend) — so validation must accept
-// every name the CLI advertises.
+// TestSeam_ValidateAcceptsEveryBackendName: Options.Validate once rejected "cuda"/"metal", so `serve --backend cuda` died at
+// flag validation even with the module built in. Accepting the name is deliberately NOT a claim the backend is compiled in
+// (an unregistered backend falls back to CPU with a note, NewBackend), so validation must accept every name the CLI
+// advertises.
 func TestSeam_ValidateAcceptsEveryBackendName(t *testing.T) {
 	// The names `cmd/serve --backend` documents. Adding a backend means adding it here.
 	for _, name := range []string{"", "cpu", "webgpu", "cuda", "metal"} {

@@ -6,11 +6,9 @@ import (
 	"unsafe"
 )
 
-// The recurrent-state census (audit 2026-09-10 C-03 / G-05): helpers that ASK THE STRUCT which
-// recurrent kinds a KVCache holds, and generic fill / check-zero over them, so no test here carries
-// a list of kinds or families to forget. hasRecurrentState's own comment predicted the failure —
-// "the fourth kind will be added here, once, or it will be missed at four sites again" — and the
-// fourth kind (KDA) was missed. With these, a fifth is covered the day its field is added.
+// The recurrent-state census (audit 2026-09-10 C-03 / G-05): helpers that ASK THE STRUCT which recurrent kinds a KVCache
+// holds, and generic fill / check-zero over them, so no test here carries a list of kinds or families to forget. A new kind
+// is covered the day its field is added.
 
 // ownForwardModelType maps an ownForwards table name to the model_type representativeConfig
 // takes. Only names that differ appear; an unknown family makes realCacheFor fail loudly.

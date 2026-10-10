@@ -54,16 +54,13 @@ func TestGiwRecordsResolvedQuant(t *testing.T) {
 	}
 }
 
-// TestGiwInt4LabelNotMix is the T1-6 regression. A .giw baked with `-quant int4` has int4
-// projections but an int8-pinned embedding / LM head (the logit-critical default; the
-// EmbedInt4 knob relaxes it). quantLabel used to scan those tables, see int4 coexisting with
-// int8, and report "int4mix" — while the batched-prefill gate, which inspects only the seven
-// int4 projections, correctly batched. So /health showed `decode_path: …(int4mix)` beside
-// `prefill_batched: true`, and the label named a quant the bundle is not.
+// TestGiwInt4LabelNotMix is the T1-6 regression. A .giw baked with `-quant int4` has int4 projections but an int8-pinned
+// embedding / LM head (the logit-critical default; the EmbedInt4 knob relaxes it). quantLabel must not scan those tables,
+// see int4 coexisting with int8, and report "int4mix": /health would show `decode_path: …(int4mix)` beside
+// `prefill_batched: true`, naming a quant the bundle is not.
 //
-// The .giw path is what triggers the inference: a direct Load records the requested quant
-// string and returns it verbatim, never inferring. So the round-trip through SerializeWeights
-// is load-bearing here, not incidental.
+// The .giw path is what triggers the inference: a direct Load records the requested quant string and returns it verbatim,
+// never inferring. So the round-trip through SerializeWeights is load-bearing here, not incidental.
 func TestGiwInt4LabelNotMix(t *testing.T) {
 	path := prequantGGUF(t)
 	m, err := Load(path, Options{Quant: "int4"})

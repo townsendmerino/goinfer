@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G-S10c of docs/tasks/task-multimodal-support-2026-10.md (S10, registered before this ran): Qwen3-VL-2B on an image
+// G-S10c of docs/tasks/task-multimodal-support-2026-10.md (S10): Qwen3-VL-2B on an image
 // prompt, goinfer's float32 CPU prefill (aikit's tower with DeepStack, then the decoder adding each DeepStack set after
 // its layer) against transformers' Qwen3VLForConditionalGeneration in float32, on identical inputs: HF's own ids, pixel
 // values and grid (scripts/pin_qwen3vl_image_real.py, GOINFER_S10C_OUT). PASS: last-position logit cosine >= 0.999,

@@ -7,18 +7,11 @@ import (
 	"testing"
 )
 
-// G16 gate — prefill attention's head-parallel fan-out must be BIT-IDENTICAL to
-// the serial path it replaces.
-//
-// A1's constraint is the whole reason this is allowed at all: "Parallelism may
-// only split independent outputs across workers/registers — heads, ...". Splitting
-// heads across workers therefore cannot change any value, only who computes it.
-// That is a claim about the code, and this is the test that makes it a fact.
-//
-// A1 asserted its own bit-identity through the parity goldens and left no
-// pool-invariance test, so this is new: same prompt, same cache, pool len 1 vs
-// the budgeted count, compared float-for-float. Exact equality, not a tolerance —
-// a tolerance here would silently accept the reassociation A1 exists to prevent.
+// G16 gate: prefill attention's head-parallel fan-out must be BIT-IDENTICAL to the serial path it replaces. A1's
+// constraint ("Parallelism may only split independent outputs across workers/registers — heads, ...") is the only reason
+// the fan-out is allowed: splitting heads across workers cannot change any value, only who computes it. This test makes
+// that a fact: same prompt, same cache, pool len 1 vs the budgeted count, compared float-for-float. Exact equality, not a
+// tolerance: a tolerance would silently accept the reassociation A1 exists to prevent.
 func TestPrefillAttnPoolInvariance(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {
@@ -68,17 +61,9 @@ func TestPrefillAttnPoolInvariance(t *testing.T) {
 	}
 }
 
-// The worker count must stay inside its caps and honor its override.
-//
-// NOTE — this test was rewritten when G20 landed, and the reason matters more
-// than the assertions. As written for G16 it asserted that K=32768 "must fall
-// back to serial, a 4 GB slot", because an untiled slot's scores buffer was
-// K*nKeys floats. G20 tiles the query rows, so no such slot exists any more: a
-// slot is one row tile wide (attnScoreTileBytes), and six workers at 32k cost
-// ~150 MB, not ~25 GB. The old assertion was not wrong when written; its premise
-// was removed. That is why it is replaced rather than relaxed — the property it
-// protected (unbounded per-slot growth must not happen) is now asserted directly,
-// against the real tiled size, by TestAttnRowTileBoundsScratch.
+// The worker count must stay inside its caps and honor its override. The property pinned is that per-slot growth stays
+// bounded: a slot is one row tile wide (attnScoreTileBytes), not K*nKeys floats, which is what lets the pool keep its
+// workers on a long prompt. TestAttnRowTileBoundsScratch asserts the tiled size directly.
 func TestPrefillAttnWorkerBudget(t *testing.T) {
 	os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")
 	os.Unsetenv("GOINFER_ATTN_ROW_TILE")
@@ -196,13 +181,11 @@ func TestAttnRowTileBoundsScratch(t *testing.T) {
 	}
 }
 
-// TestPrefillAttnWorkerBudget_countsFusedScratch is P-05's gate: prefillAttnWorkers' budget must
-// bound what newHeadWorkerPool ACTUALLY allocates. newHeadWorkerPool allocates a fusedScratch
-// (sBlk+tmp+acc+mRun+lRun+vBlk) ALONGSIDE the materialized shape (scores/kh/vt/qh/ch) whenever
-// GOINFER_FUSED_ATTENTION is enabled — "both exist while fusion is a flag" — so the real per-slot
-// footprint is the materialized shape PLUS fusedScratch, not the materialized shape alone. Before
-// the fix, the budget counted only the materialized shape and oversubscribed
-// prefillAttnScratchBudget by ~25% at K=nKeys=8192.
+// TestPrefillAttnWorkerBudget_countsFusedScratch pins that prefillAttnWorkers' budget bounds what newHeadWorkerPool
+// ACTUALLY allocates. newHeadWorkerPool allocates a fusedScratch (sBlk+tmp+acc+mRun+lRun+vBlk) ALONGSIDE the materialized
+// shape (scores/kh/vt/qh/ch) whenever GOINFER_FUSED_ATTENTION is enabled ("both exist while fusion is a flag"), so the real
+// per-slot footprint is the materialized shape PLUS fusedScratch; a budget that counts only the materialized shape
+// oversubscribes prefillAttnScratchBudget.
 func TestPrefillAttnWorkerBudget_countsFusedScratch(t *testing.T) {
 	os.Unsetenv("GOINFER_PREFILL_ATTN_WORKERS")
 	os.Unsetenv("GOINFER_ATTN_ROW_TILE")
@@ -232,17 +215,12 @@ func TestPrefillAttnWorkerBudget_countsFusedScratch(t *testing.T) {
 	}
 }
 
-// TestNewHeadWorkerPool_skipsMaterializedWhenFused is P-05's completion (audit-2026-09-02): the
-// budget-accounting fix above closed the measurable oversubscription, but left this doc's own
-// disposition text recording that "vt is unused when fusion is ACTIVE ... and scores ... is unused
-// whenever fusion is active REGARDLESS of useAcc64" as a genuine, un-eliminated allocation — real
-// memory allocated and never touched. This asserts the elimination directly, not just that the
-// paths it feeds still compute the right answer (TestFusedAttention_matchesMaterialized and
-// TestAttendF32Fanout_bitIdentical already gate that): a caller that can promise fusedOK stays true
-// for the whole pool's lifetime (wantFused=true) gets NIL vt/scores when fusion is actually enabled,
-// and the ordinary fully-allocated pool otherwise — proving both the win and that no caller silently
-// loses a buffer it needs (which is the nil-slice-access risk the original disposition declined to
-// risk without this exact three-way condition pinned down).
+// TestNewHeadWorkerPool_skipsMaterializedWhenFused pins the elimination of memory allocated and never touched: vt is unused
+// when fusion is ACTIVE, and scores is unused whenever fusion is active regardless of useAcc64. A caller that can promise
+// fusedOK stays true for the pool's lifetime (wantFused=true) gets NIL vt/scores when fusion is enabled, and the ordinary
+// fully-allocated pool otherwise: this proves both the win and that no caller silently loses a buffer it needs (the
+// nil-slice-access risk). That the paths it feeds still compute the right answer is gated by
+// TestFusedAttention_matchesMaterialized and TestAttendF32Fanout_bitIdentical.
 func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
 	const K, nKeys, hd = 128, 8192, 64
 
@@ -286,13 +264,10 @@ func TestNewHeadWorkerPool_skipsMaterializedWhenFused(t *testing.T) {
 	})
 }
 
-// TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64 is P-03 (audit-2026-09-10), the decode-path
-// sibling of P-05 (09-02, newHeadWorkerPool): the acc64 kernels (MatmulQKAcc64/MatmulAVAcc64) read
-// keys/vals directly with strided addressing, so kh/vt are unused whenever useAcc64 is true — and
-// attention.go's decode path hardcodes acc64 := true unconditionally, making this the ONLY case
-// headWorkerPool's one caller ever reaches. Both states are checked directly (kh/vt nil under
-// acc64, still allocated under !acc64) so this doesn't just prove "the acc64 case works" while
-// silently also proving a caller that genuinely needs kh/vt would be left with nothing.
+// TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64: the acc64 kernels (MatmulQKAcc64/MatmulAVAcc64) read keys/vals
+// directly with strided addressing, so kh/vt are unused whenever useAcc64 is true, and attention.go's decode path always
+// sets acc64 := true, making that the only case headWorkerPool's one caller reaches. Both states are checked directly
+// (kh/vt nil under acc64, still allocated under !acc64), so a caller that genuinely needs kh/vt is not left with nothing.
 func TestDecodeScratch_headWorkerPool_skipsKhVtUnderAcc64(t *testing.T) {
 	arch := &Architecture{HiddenDim: 8, NumHeads: 2, NumKVHeads: 2, HeadDim: 4, IntermediateDim: 8, VocabSize: 8}
 	const nH, K, nKeys, hd = 2, 1, 64, 4

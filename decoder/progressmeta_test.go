@@ -118,10 +118,9 @@ func TestIOProgressMatchesPlatform(t *testing.T) {
 	}
 }
 
-// emit() calls rate() before ioProgress(), and rate() stamps its own window. When both read the
-// same timestamp field, ioProgress always saw dt == 0 and silently never printed a rate — the
-// total appeared, the rate never did, and it took a 162GB load to notice. The windows are separate
-// now, and this drives the arithmetic with known values so the regression cannot return unseen.
+// TestIORateSurvivesTheItemRateWindow pins that ioProgress keeps its own window: emit() calls rate() before ioProgress(),
+// and rate() stamps its own window; when both read the same timestamp field, ioProgress always saw dt == 0 and silently
+// never printed a rate. This drives the arithmetic with known values so the regression cannot return unseen.
 func TestIORateSurvivesTheItemRateWindow(t *testing.T) {
 	p := newProgress(t, "io-rate", 0)
 	t0 := time.Now()
@@ -146,10 +145,9 @@ func TestIORateSurvivesTheItemRateWindow(t *testing.T) {
 	}
 }
 
-// The ETA is built from the recent rate. That matters when counted work follows a long UNCOUNTED
-// phase: the qwen3next oracle spends ~13 minutes loading an 80B checkpoint before its first
-// countable token, and a cumulative estimate divided that whole span by one finished item and
-// announced eta=2h20m for work that took six minutes. The recent window has to dominate.
+// The ETA is built from the recent rate. That matters when counted work follows a long UNCOUNTED phase (loading a large
+// checkpoint before the first countable item): a cumulative estimate divides that whole span by one finished item and
+// announces an absurd eta. The recent window has to dominate.
 func TestRateTracksRecentWindowNotAllHistory(t *testing.T) {
 	p := newProgress(t, "eta", 11)
 	t0 := time.Now()

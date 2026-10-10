@@ -21,16 +21,10 @@ func injectHostRAMAvailable(t *testing.T, bytes int64) func() {
 	return restore
 }
 
-// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time guard prices the
-// worst case a request COULD reach; it cannot see the request that actually arrives. This is the
-// request-time counterpart — driven with numbers shaped like the actual failure (a 7B-class
-// model whose weights alone fit, but whose KV+scratch for a real agent-sized prompt does not).
-//
-// R13-follow-on: total RAM here is AMPLE (so Load succeeds and the load-time guard has nothing to
-// say) but currently-AVAILABLE RAM is tight — the shape of the live re-run's actual failure: the
-// load-time guard correctly auto-pinned a smaller context against total RAM, and the request
-// still swapped, because other processes on the real machine had already claimed most of what
-// the guard assumed was free.
+// R13 (docs/measurements/cold-user-2026-09-07-macbook-arm64.md): the load-time guard prices the worst case a request COULD
+// reach; it cannot see the request that actually arrives. This is the request-time counterpart, driven with numbers shaped
+// like the failure: total RAM is AMPLE (Load succeeds, the load-time guard has nothing to say) but currently-AVAILABLE RAM
+// is tight, and a 7B-class model whose weights fit gets a prompt whose KV+scratch does not.
 func TestAdmitPrefillMemory_refusesAnOversizedRequest(t *testing.T) {
 	const gguf = "testdata/gptoss_tiny.gguf"
 	restore := injectHostRAM(t, 64<<30) // 64 GB total: ample, so Load succeeds regardless
@@ -45,9 +39,8 @@ func TestAdmitPrefillMemory_refusesAnOversizedRequest(t *testing.T) {
 	defer m.Close()
 
 	before := prefillEnters.Load()
-	// A prompt+max_tokens shaped like the run's own opencode request: tens of thousands of
-	// positions, which this fixture's KV rate (measured elsewhere: 512 B/position) alone already
-	// exceeds a few-MiB available-memory margin.
+	// An agent-sized prompt+max_tokens: tens of thousands of positions, whose KV at this fixture's rate (512 B/position) alone
+	// exceeds the few-MiB available-memory margin.
 	err = m.AdmitPrefillMemory(20000, 4096, false)
 	if err == nil {
 		t.Fatal("AdmitPrefillMemory admitted a request that cannot fit the currently-available memory")
@@ -124,13 +117,12 @@ func TestAdmitPrefillMemory_unknownAvailabilityProceeds(t *testing.T) {
 	}
 }
 
-// TestAdmitPrefillMemory_residentPathSkipsHostKV is P-01(b) (audit-2026-09-10): a request that will
-// actually run the stateless GPU-resident path never allocates the host KV AdmitPrefillMemory
-// prices, so pricing it anyway could 413 a request an 8 GB CUDA box would have served entirely in
-// VRAM. availBytes is chosen so the window is narrow: prefill scratch alone must fit (residentPath
-// admits), but scratch+KV together must not (residentPath=false — the CPU/staged path, which does
-// need the term — still refuses). If admission stopped depending on residentPath at all, the first
-// assertion would go green vacuously; if the KV term were never skipped, the second would fail.
+// TestAdmitPrefillMemory_residentPathSkipsHostKV pins that a request that will run the stateless GPU-resident path never
+// allocates the host KV AdmitPrefillMemory prices, so pricing it anyway could 413 a request an 8 GB CUDA box would have
+// served entirely in VRAM. availBytes is chosen so the window is narrow: prefill scratch alone must fit (residentPath
+// admits), but scratch+KV together must not (residentPath=false, the CPU/staged path that does need the term, still
+// refuses). If admission stopped depending on residentPath at all, the first assertion would go green vacuously; if the KV
+// term were never skipped, the second would fail.
 func TestAdmitPrefillMemory_residentPathSkipsHostKV(t *testing.T) {
 	restore := injectHostRAM(t, 64<<30)
 	defer restore()
@@ -204,11 +196,10 @@ func TestPrefillScratchBytes_scalesWithPromptLength(t *testing.T) {
 	}
 }
 
-// TestCachedHostRAMAvailable_rateLimits is P-13 (audit-2026-09-10): AdmitPrefillMemory runs on
-// every request that reaches prefill, and the raw probe forks+execs (vm_stat on darwin). This
-// asserts the rate-limiting directly — calls within the TTL window must not reach the underlying
-// probe — rather than only asserting AdmitPrefillMemory still returns the right answer, which
-// would pass whether or not caching ever happened.
+// TestCachedHostRAMAvailable_rateLimits: AdmitPrefillMemory runs on every request that reaches prefill, and the raw probe
+// forks+execs (vm_stat on darwin). This asserts the rate-limiting directly (calls within the TTL window must not reach the
+// underlying probe) rather than only that AdmitPrefillMemory still returns the right answer, which would pass whether or
+// not caching ever happened.
 func TestCachedHostRAMAvailable_rateLimits(t *testing.T) {
 	prev := hostRAMAvailable
 	defer func() { hostRAMAvailable = prev }()

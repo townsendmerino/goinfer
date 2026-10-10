@@ -9,17 +9,12 @@
 // GGUF loader lands at the dequant floor for each tensor's OWN source quant; a transform bug
 // craters one tensor's cosine and names it.
 //
-// THE FLOOR IS PER TENSOR, AND THAT IS THE WHOLE POINT — it was not, and the gate was wrong
-// for it. A single 0.999 bar was inherited from the MoE sibling, whose asset is a uniform
-// Q8_0 file. This one's asset is unsloth's UD-Q4_K_M, a DYNAMIC quant carrying nine ggml
-// types chosen per tensor by sensitivity, and under one whole-file bar the gate stopped being
-// a statement about the loader: it became a statement about whichever tensor the quantizer
-// spent the fewest bits on. It duly failed on its first-ever execution (2026-09-06) at
-// k_proj 0.997047 / in_proj_z 0.996974, printing "loader transform bug" — and those are
-// exactly, and only, the Q4_K tensors (blk.3.attn_k, blk.{1,2}.attn_gate), sitting where the
-// first-principles Q4_K dequant estimate of ~0.9967 says they should, while their Q5_K and
-// Q6_K siblings in the same layer cleared the bar. Nothing was wrong with the loader. See
-// ggufQuantCosFloor (gguf_tensorquant_test.go) for the budgets and the arithmetic.
+// THE FLOOR IS PER TENSOR, AND THAT IS THE WHOLE POINT. A single whole-file bar (inherited from the MoE sibling, whose asset
+// is a uniform Q8_0 file) does not fit this asset: unsloth's UD-Q4_K_M is a DYNAMIC quant carrying nine ggml types chosen
+// per tensor by sensitivity, so under one bar the gate stops measuring the loader and measures whichever tensor the quantizer
+// spent the fewest bits on (Q4_K tensors sit near cosine 0.9967 by first-principles estimate, below a 0.999 bar). Each tensor
+// is held to the dequant floor of its OWN source quant; see ggufQuantCosFloor (gguf_tensorquant_test.go) for the budgets and
+// the arithmetic.
 //
 // Unlike the MoE sibling, this checkpoint has no router — TestQwen35GGUF_weightDiff's router
 // checks are no-ops here (lr.Router.Rows() == 0 on both sides) rather than removed, so the two

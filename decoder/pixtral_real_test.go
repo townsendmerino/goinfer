@@ -1,8 +1,7 @@
 //go:build realckpt
 
-// G-S10m-c of docs/tasks/task-multimodal-support-2026-10.md (S10, Ministral 3 (Pixtral), registered 2026-10-09 before
-// any code): Ministral 3 3B on an image prompt, goinfer's float32 CPU prefill against transformers'
-// Mistral3ForConditionalGeneration in float32. Three steps, so the same ids reach both sides (nobara):
+// G-S10m-c of docs/tasks/task-multimodal-support-2026-10.md (S10, Ministral 3 (Pixtral)): Ministral 3 3B on an image
+// prompt, goinfer's float32 CPU prefill against transformers' Mistral3ForConditionalGeneration in float32. Three steps, so the same ids reach both sides (nobara):
 //
 //  1. GOINFER_S10M_STEP=ids writes <out>/ids.json: the prompt serve builds for glm_ocr/table.png with an explicit system
 //     message (chat.Ministral, the image first, multimodal.PixtralImageBlock spliced as serve does).
