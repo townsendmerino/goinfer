@@ -422,7 +422,7 @@ positions are inherent, not recompute.
   the new part is that a session whose STORED tokens are no longer fully contained in the prompt —
   a stop-string hit's invisible tail, a `max_tokens` cut, or an edited last message — now still
   gets picked and handed to `decoder/session.go`'s `rewindForReuse`, which was already correct and
-  needed no change (confirmed by tracing `internal/serveapp/openai.go:1590`'s
+  needed no change (confirmed by tracing `internal/serveapp/openai.go:1593`'s
   `sess := lm.sessions.acquire(gr.promptIDs)` into the very next `sess.Generate(ctx, gr.promptIDs,
   ...)` call: same prompt both times, so `Generate`'s own `rewindForReuse` independently recomputes
   the true common prefix regardless of what `bestExtend` matched — `bestExtend` only decides WHICH
@@ -637,7 +637,7 @@ positions are inherent, not recompute.
   **`gemmaapp` genuinely was untouched, and is now fixed too (2026-09-23, this pass).** Unlike
   chatapp/agent, `internal/gemmaapp/main.go`'s loop ALSO decodes the prompt (through the same call
   that renders the generation), specifically to make the SentencePiece leading-space strip land
-  once at the true sequence start (`tokenizer/sentencepiece.go:886`'s own comment describes this
+  once at the true sequence start (`tokenizer/sentencepiece.go:891`'s own comment describes this
   design; the gemma demo itself was removed 2026-09-25 as never-released dead surface). The fix keeps that one-time whole-sequence `Decode` call for the prompt exactly as
   before (it already ran once per request, not once per token, so it was never the O(n²) source)
   and only replaces the GENERATION loop's repeated whole-sequence re-decode with `DecodePiece`

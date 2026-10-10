@@ -79,7 +79,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
   - `tok = PerLayerTokenEmbed.Row(pleTokenID) × √P`, shape `[L·P]` (:81-85).
   - `ctx = PerLayerModelProj · h` (`[L·P × H]`, :87), then `× 1/√H` (:88-91), then per layer an RMSNorm over its
     P-segment with the shared weight `PerLayerProjNorm` (:95). This is `normalize(arch, …)`. `arch.RMSAddOne` is
-    false for gemma4 (`decoder/registry.go:367`).
+    false for gemma4 (`decoder/registry.go:368`).
   - `perLayer[l] = (tok[l] + ctx[l]) × 1/√2` (:92-99). Matches HF `project_per_layer_inputs`
     (`TF/models/gemma4/modeling_gemma4.py:1781-1811`).
   - `pleTokenID` is the token id for text. At an image/audio position it is **`arch.gemma4.PadTokenID`**: in the
@@ -103,7 +103,7 @@ E4B: no checkpoint on either box (task doc). Shape is INFERRED to be the same fa
   - Shared layer: no projection, no append.
   - Attention over `cache.Keys(kvSrc(l))` from `cache.WindowStart(pos, global)` (:180-186), where `global` is THIS
     layer's type, which equals the source's type by construction. Scale is `arch.AttnScale = 1.0`
-    (`decoder/registry.go:373-375`).
+    (`decoder/registry.go:374-376`).
   - o_proj → `PostAttnNorm` (sandwich) → residual add (:188-190).
 - **Dense FFN**, at the **per-layer width** `ffn = arch.ffnAt(l)` (:146, `decoder/arch.go:611-616`):
   - pre-MLP norm.
@@ -261,7 +261,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 - **Tests pinning the E-model decline** (update these on declare):
   - `decoder/gemma4_admission_test.go:62-73`.
   - `decoder/gemma4_emodel_real_test.go:40-49`.
-  - `decoder/features_test.go:553-555`, the derivation table, which stays valid.
+  - `decoder/features_test.go:555-557`, the derivation table, which stays valid.
   - The generated hardware matrix (`decoder/hardware_matrix_test.go`).
 
 ---
@@ -417,7 +417,7 @@ This is used only for bidirectional-vision checkpoints (26B/31B).
 | Real E2B GGUF CPU vs HF bf16, argmax + sample cosine ≥ 0.98 | `decoder/gemma4_parity_test.go:16-70`, golden `testdata/gemma4_forward_golden.json` ("The capital of France is", argmax 7001) | heavy; `~/models/gemma-4-E2B_q4_0-it.gguf` present on the Mac |
 | Real E2B config/load | `decoder/gemma4_load_test.go:16,94` | heavy |
 | Real E2B declines resident | `decoder/gemma4_emodel_real_test.go:15-50` | invert for metal on declare |
-| Synthetic E-model admission | `decoder/gemma4_admission_test.go:62-73`; derivation `decoder/features_test.go:553-555` | update metal |
+| Synthetic E-model admission | `decoder/gemma4_admission_test.go:62-73`; derivation `decoder/features_test.go:555-557` | update metal |
 | kvSrc map | `decoder/gemma4_kvsrc_test.go:14-90` | reuse |
 | Shared-KV-only tiny (PLE-free): `gemma4-vl-tiny`, 4 layers, `num_kv_shared_layers=2`, K=V globals | `scripts/pin_gemma4_vl_tiny.py:36-56`; tests `decoder/gemma4_vl_test.go:24,96` | gitignored (`.gitignore:213`), **absent on the Mac**; regen needs `~/.venv-vl` |
 | E2B vision tower on Metal | `metal/gemma4_vision_e2b_real_test.go:21` | tower only |
@@ -547,7 +547,7 @@ twogeom does (`metal/gemma4_twogeom_test.go:52`), before Metal declares the feat
   - Heavy (`GOINFER_HEAVY_TESTS=1`).
   - INFERRED cost: about 2-4 min, dominated by CPU decode of ~500 tokens and two loads. Day-OK, one cell.
 - **G4. Real E2B image chat.** The served reply through Metal resident decode matches the CPU decoder (F2b shape,
-  `docs/multimodal.md:1043,1029`), under the same R10 bar caveat. Same size as G3.
+  `docs/multimodal.md:1044,1029`), under the same R10 bar caveat. Same size as G3.
 - **Speed (night only):** E2B decode tok/s, resident vs CPU, same-session interleaved; record host PLE ms/token.
 
 Size: M-L, consistent with the task doc. S1.0 is S; S1.1 is S-M; S1.3-S1.5 together are M; S1.6-S1.8 are S each. No

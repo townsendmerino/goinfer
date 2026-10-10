@@ -25,7 +25,7 @@
 ## Confirmed findings — critical bar (ranked)
 
 ### R-01 · Adapter requests are served with base weights when the base is resident
-`internal/serveapp/openai.go:752` (drive's resident fast path) · **silent wrong output** · residual of the C-29/#7 multi-LoRA feature area
+`internal/serveapp/openai.go:755` (drive's resident fast path) · **silent wrong output** · residual of the C-29/#7 multi-LoRA feature area
 
 Compute-time LoRA is applied only via the session binding: `sessionLRU.acquire` → `Session.UseAdapter` → `cache.lora` (sessions.go:73, decoder/session.go:54), and the forward reads it per layer at `decoder/model.go:515`. But `drive()` branches on `lm.model.ResidentActive()` **before** touching sessions and calls the stateless `lm.model.Generate(...)` / `GenerateNgramSpeculativeAdaptive(...)`, whose fresh cache has `lora == nil`. There is no `lm.adapter` check in that branch, and nothing rejects the combination at startup — `loadAdapters` rejects only `--stream-weights`, and `LoadAdapter` (decoder/lora.go:260) rejects gguf/MoE/gemma4/non-gated but not a resident base. The dense safetensors class it accepts is exactly the resident-eligible class, and `loadAdapters`' own comment says the adapter "shares the base's **resident** decoder.Model".
 
@@ -61,7 +61,7 @@ Fix shape: don't skip the whole line for `for (` — strip the header up to the 
 ### R-05 · The M-12 fix regressed MLA: every DeepSeek/Kimi model is silently declined from webgpu residency
 `gpu/decoderunner.go:255` · **feature-killing regression** (output stays correct via CPU fallback) · regression of M-12
 
-`attnHeadDimSupported(hd, m.layers)` is the first, unconditional check in `newDecodeRunner`. DeepSeek arches set `HeadDim = qk_nope + qk_rope` (decoder/registry.go:1268) = **192** for real V2-Lite/V3/Kimi — but the MLA plan (`m.mla != nil`, decoderunner.go:285) never dispatches the 128-wide GQA attention kernels the guard protects; it uses the mlaAttn family with its own rank-bounded accumulator. Net: `BuildResident` errors, `withResidency` silently falls back, and the entire MLA residency lever (gpu/mla.go) is dead for every real checkpoint. The gates stay green because `mla_test.go:355` passes `vHead` (=32) as hd instead of the qk head dim. (Related residual, R-24: the resident MLA path also lacks the `kvLoRARank ≤ 1024` bound that `Context.MLAAttn` enforces — worth adding when un-regressing this.)
+`attnHeadDimSupported(hd, m.layers)` is the first, unconditional check in `newDecodeRunner`. DeepSeek arches set `HeadDim = qk_nope + qk_rope` (decoder/registry.go:1269) = **192** for real V2-Lite/V3/Kimi — but the MLA plan (`m.mla != nil`, decoderunner.go:285) never dispatches the 128-wide GQA attention kernels the guard protects; it uses the mlaAttn family with its own rank-bounded accumulator. Net: `BuildResident` errors, `withResidency` silently falls back, and the entire MLA residency lever (gpu/mla.go) is dead for every real checkpoint. The gates stay green because `mla_test.go:355` passes `vHead` (=32) as hd instead of the qk head dim. (Related residual, R-24: the resident MLA path also lacks the `kvLoRARank ≤ 1024` bound that `Context.MLAAttn` enforces — worth adding when un-regressing this.)
 
 Fix shape: exempt `m.mla != nil` from the GQA head-dim guard (and add the rank bound to the resident admission); fix the test to use real qk geometry.
 
@@ -121,7 +121,7 @@ Fix shape: mirror the OpenAI 400 (or implement tools-in-vision) on the Anthropic
 - **R-28** `metal/model.go:639` — C-10's decline set (H, 2I, V, MoE inters) doesn't include the fused-QKV width `(nH+2nKV)·hd` dispatched at width 256 via `pSABias` (model.go:1266); an admitted arch with `hd%8 ≠ 0` would corrupt rather than decline. All shipped admitted arches are safe (hd ∈ {64,80,96,128,…}); add `qkvRows` to `bad8` for the guarantee C-10 promised.
 
 **tokenizer**
-- **R-29** `tokenizer/sentencepiece.go:674` (new in b548449) — the SPM-scores encode breaks equal-score merge ties by **token id**; llama.cpp breaks by **leftmost position**. On a vocab with equal-score competing merges this diverges from the reference tokenization silently. Medium confidence (mechanism certain, real-vocab frequency unknown; the parity test's 6 fixture cases don't exercise a tie). Worth matching llama.cpp's comparator since byte-identity with llama.cpp is the stated bar elsewhere.
+- **R-29** `tokenizer/sentencepiece.go:679` (new in b548449) — the SPM-scores encode breaks equal-score merge ties by **token id**; llama.cpp breaks by **leftmost position**. On a vocab with equal-score competing merges this diverges from the reference tokenization silently. Medium confidence (mechanism certain, real-vocab frequency unknown; the parity test's 6 fixture cases don't exercise a tie). Worth matching llama.cpp's comparator since byte-identity with llama.cpp is the stated bar elsewhere.
 
 ---
 

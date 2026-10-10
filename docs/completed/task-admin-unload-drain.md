@@ -39,10 +39,10 @@ WebGPU C-26 `closed` flag). So *closing is safe.* **Closing at the wrong time is
 
 ### Why the one-liner is a use-after-free
 
-Every handler has the shape `pick() → work → enter()`. `pick` (internal/serveapp/openai.go:216) returns the
-`*loadedModel` under `regMu`; `enter` (internal/serveapp/openai.go:169) is where `lm.mu` is finally taken. Between them
-the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (internal/serveapp/openai.go:468)
-→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (internal/serveapp/openai.go:493).
+Every handler has the shape `pick() → work → enter()`. `pick` (internal/serveapp/openai.go:219) returns the
+`*loadedModel` under `regMu`; `enter` (internal/serveapp/openai.go:172) is where `lm.mu` is finally taken. Between them
+the **preamble** touches `lm.model`/`lm.tk` with **no lock** — in `handleChat`: `pick` (internal/serveapp/openai.go:471)
+→ `promptTooLargeForContext` → `chatPrompt` (a full BPE) → `prepare` → `enter` (internal/serveapp/openai.go:496).
 `handleAdminUnload`'s `lm.mu.TryLock()` sees an idle model and would grant the unload while that
 request is mid-tokenize against weights about to be freed; the request then `drive()`s on a torn-down
 backend. On CUDA that is a driver SIGSEGV that kills the server; on CPU it is a quieter read of reused
@@ -50,8 +50,8 @@ memory. Seven handlers share the shape:
 
 | handler | `pick` |
 |---|---|
-| `handleChat` | internal/serveapp/openai.go:468 |
-| `handleCompletions` | internal/serveapp/openai.go:546 |
+| `handleChat` | internal/serveapp/openai.go:471 |
+| `handleCompletions` | internal/serveapp/openai.go:549 |
 | `handleMessages` | internal/serveapp/anthropic.go:412 |
 | `handleCountTokens` | internal/serveapp/anthropic.go:541 |
 | `handleChatTools` | internal/serveapp/tools.go:19 |
@@ -195,7 +195,7 @@ bounded-wait hybrid, which survives the strongest 202 argument (recourse for the
 while keeping `freed:true`⇒safe-reload for the common case.
 
 **Q5 — queued requests.** Premise corrected: admission is non-blocking *before* generation
-(`limitInflight`, internal/serveapp/helpers.go:78, is a non-blocking semaphore → 503; `tryEnter`, internal/serveapp/openai.go:156, does a
+(`limitInflight`, internal/serveapp/helpers.go:78, is a non-blocking semaphore → 503; `tryEnter`, internal/serveapp/openai.go:159, does a
 non-blocking queue send → 429). The only post-`pick` block is `mu.Lock`. So a "queued" request has
 already resolved its model and holds the liveness `RLock`; it is drained like any other and **served
 to completion** on the still-valid model (the close waits for it), not errored. Requests arriving

@@ -116,7 +116,7 @@ elsewhere in the codebase; only the *combination* is new to the resident path:
 `registry.go` `gemma3Architecture`). Sliding window and per-layer dual-base RoPE
 are now handled (C6/C7); the remaining deltas are all expressible primitives:
 - **`NormSandwich4`** — post-attention and post-FFN norms in addition to the two
-  pre-norms (`decoder/registry.go:273`). The runner does Pre2 only; this needs 2
+  pre-norms (`decoder/registry.go:274`). The runner does Pre2 only; this needs 2
   extra RMSNorm dispatches/weights per layer and a norm-placement branch.
 - **GeGLU** (gelu activation in the gated MLP) instead of SwiGLU(silu) — a
   one-line activation variant of the existing `swigluQuant` fuse.
@@ -284,7 +284,7 @@ whole conversation), so this is a throughput trade, not a correctness change.~~
 shipped NATIVELY on the resident KV itself in `3358e6b` (2026-09-02) — "agent turn 3 goes
 9.13s → 0.42s (21.7x)" — so a resident model is not left without reuse at all, it does reuse
 on-device instead of via the CPU-side session cache this note assumed. Speculative decoding is
-also not skipped: `internal/serveapp/openai.go:1009-1031` runs BOTH the pretrained block drafter
+also not skipped: `internal/serveapp/openai.go:1012-1034` runs BOTH the pretrained block drafter
 (`--drafter`, which the flag's own help text says *requires* a resident GPU backend) and lossless
 n-gram speculative decode on the resident path, using the resident KV and a batched `ForwardN`
 (the comment there: "the resident batched ForwardN ... genNgramInto claims the shared resident KV
